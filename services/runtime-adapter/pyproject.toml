@@ -3,11 +3,13 @@ requires = ["setuptools==80.9.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "byq-gateway"
+name = "byq-runtime-adapter"
 version = "0.1.0"
-description = "Minimal BeyondQuant Gateway bootstrap"
-requires-python = ">=3.13,<3.15"
+description = "BeyondQuant Product Plane adapter for the official DSH Python SDK seam"
+requires-python = ">=3.10,<3.15"
 dependencies = [
+  "deepseek-harness-sdk==0.1.0rc6",
+  "deepseek-harness-runtime-bin==0.1.0rc6",
   "fastapi==0.116.1",
   "httpx==0.28.1",
   "uvicorn[standard]==0.35.0",
@@ -15,7 +17,6 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
-  "httpx==0.28.1",
   "pytest==8.4.1",
 ]
 

@@ -133,7 +133,76 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         compose = (ROOT / "compose.yml").read_text()
         self.assertIn("mcp:\n        condition: service_healthy", service_block("dsh"))
         self.assertIn("backend:\n        condition: service_healthy", service_block("mcp"))
-        self.assertNotIn("depends_on:", service_block("gateway"))
+        self.assertIn("runtime-adapter:\n        condition: service_healthy", service_block("gateway"))
+        self.assertNotIn("dsh:", service_block("gateway"))
+
+    def test_gateway_does_not_import_or_parse_dsh_types(self) -> None:
+        gateway = "\n".join(
+            path.read_text()
+            for path in (ROOT / "services/gateway").rglob("*.py")
+        )
+        self.assertNotIn("deepseek_harness", gateway)
+        self.assertNotIn("Notification", gateway)
+        self.assertNotIn("session.event", gateway)
+
+    def test_runtime_adapter_owns_the_official_sdk_and_explicit_runtime(self) -> None:
+        adapter = "\n".join(
+            path.read_text()
+            for path in (ROOT / "services/runtime-adapter").rglob("*.py")
+        )
+        self.assertIn("DeepSeekHarnessConfig", adapter)
+        self.assertIn("launch_args_override", adapter)
+        self.assertNotIn("DeepSeekHarness()", adapter)
+
+        pyproject = (ROOT / "services/runtime-adapter/pyproject.toml").read_text()
+        self.assertIn('"deepseek-harness-sdk==0.1.0rc6"', pyproject)
+        self.assertIn('"deepseek-harness-runtime-bin==0.1.0rc6"', pyproject)
+
+        composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
+        self.assertIn("@deepseek-ai/dsh-sdk-jsonrpc-server", composition)
+        self.assertIn("@deepseek-ai/dsh-mcp-client", composition)
+        self.assertIn("toolBash: false", composition)
+        self.assertIn("toolJobs: false", composition)
+        self.assertIn("enabled: false", composition)
+        self.assertNotRegex(
+            composition,
+            r"(?m)^\s+name:\s+['\"]?@deepseek-ai/dsh-(tool-bash|tool-fs|tool-str-replace-editor|terminal)",
+        )
+
+        runtime_package = json.loads(
+            (ROOT / "services/runtime-adapter/runtime/package.json").read_text()
+        )
+        for dependency in (
+            "@deepseek-ai/dsh-agent-spine-demo",
+            "@deepseek-ai/dsh-mcp-client",
+            "@deepseek-ai/dsh-session-checkpoint-policy",
+            "@deepseek-ai/dsh-session-persistence-jsonl",
+            "@deepseek-ai/dsh-sdk-jsonrpc-demo",
+            "@deepseek-ai/dsh-sdk-jsonrpc-server",
+        ):
+            self.assertEqual(runtime_package["dependencies"][dependency], "0.1.0-rc.6")
+
+    def test_runtime_adapter_does_not_mount_application_source(self) -> None:
+        dockerfile = (ROOT / "services/runtime-adapter/Dockerfile").read_text()
+        copy_lines = [line for line in dockerfile.splitlines() if line.startswith("COPY")]
+        self.assertNotIn("COPY .", dockerfile)
+        self.assertIn("packages/contracts", "\n".join(copy_lines))
+        self.assertIn("plugins/dsh-byq/compositions", "\n".join(copy_lines))
+        self.assertNotIn("services/backend", dockerfile)
+        self.assertNotIn(".git", dockerfile)
+
+    def test_sdk_runtime_does_not_use_bundled_zero_config(self) -> None:
+        adapter = (ROOT / "services/runtime-adapter/app/runtime.py").read_text()
+        self.assertIn("launch_args_override=self.runtime_command", adapter)
+        self.assertIn("cordis=str(self._composition)", adapter)
+        self.assertNotIn("resolve_bundled_launch_args", adapter)
+
+    def test_runtime_adapter_does_not_bypass_mcp(self) -> None:
+        composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
+        self.assertIn("name: '@deepseek-ai/dsh-mcp-client'", composition)
+        self.assertIn("failOnStartupError: true", composition)
+        self.assertNotIn("postgres", composition.lower())
+        self.assertNotIn("redis", composition.lower())
 
     def test_frontend_has_no_dsh_event_schema_dependency(self) -> None:
         frontend = ROOT / "apps/frontend"

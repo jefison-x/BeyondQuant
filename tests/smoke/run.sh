@@ -12,7 +12,7 @@ while IFS= read -r health; do
 done < <("${compose[@]}" ps --format '{{.Health}}')
 
 echo "== non-root runtime users =="
-for service in gateway backend mcp dsh; do
+for service in gateway backend mcp dsh runtime-adapter; do
   uid=$("${compose[@]}" exec -T "$service" id -u | tr -d '\r')
   test "$uid" != "0"
 done
@@ -83,8 +83,43 @@ with urlopen("http://127.0.0.1:8100/readyz", timeout=5) as response:
 assert response.status == 200
 assert payload["service"] == "byq-gateway"
 assert payload["status"] == "ok"
-assert payload["dsh_runtime_integration"] == "not-configured"
+assert payload["dsh_runtime_integration"] == "runtime-adapter"
 print(json.dumps(payload, sort_keys=True))
 PY
 
-echo "Phase 5 smoke PASS"
+echo "== Runtime Adapter keyless initialize and hard cancel =="
+docker compose exec -T runtime-adapter python3 - <<'PY'
+import json
+import uuid
+from urllib.request import Request, urlopen
+
+session_id = f"phase6-smoke-{uuid.uuid4().hex}"
+base = "http://127.0.0.1:8400/internal/runtime"
+
+def post(path, payload=None):
+    body = None if payload is None else json.dumps(payload).encode()
+    request = Request(
+        base + path,
+        data=body,
+        headers={"content-type": "application/json"} if body else {},
+        method="POST",
+    )
+    with urlopen(request, timeout=20) as response:
+        assert response.status in (200, 201)
+        return json.load(response)
+
+created = post("/sessions", {"session_id": session_id, "trace_id": "phase6-smoke-trace"})
+assert created["status"] == "ready"
+assert created["process_ownership"] == "dedicated"
+assert created["persistence"] == "dsh-owned"
+cancelled = post(f"/sessions/{session_id}/cancel?mode=hard")
+assert cancelled["status"] == "interrupted"
+print(json.dumps({"created": created, "cancelled": cancelled}, sort_keys=True))
+PY
+adapter_id=$("${compose[@]}" ps -q runtime-adapter)
+if docker top "$adapter_id" -eo pid,args | grep -q 'packaged-bin.js'; then
+  echo "Hard cancel left an owned DSH runtime process behind" >&2
+  exit 1
+fi
+
+echo "Phase 5 + Phase 6 smoke PASS"

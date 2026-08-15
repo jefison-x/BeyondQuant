@@ -1,0 +1,33 @@
+# BYQ Product SDK composition. This is the single Product capability source
+# for the explicit stdio JSON-RPC runtime; it intentionally has no coding
+# executor, filesystem mutation, Git, or Engineering Plane plugin.
+- id: sdk-jsonrpc-server
+  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    toolBash: false
+    toolJobs: false
+    skills:
+      enabled: false
+    workspaceContext: false
+    goals: false
+
+- id: sessions
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js process.env.DSH_SESSION_ROOT ?? './.sessions'
+
+- id: session-checkpoints
+  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+
+- id: mcp-byq
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: byq
+    transport: streamable-http
+    url: !!js process.env.BYQ_MCP_URL ?? 'http://mcp:8300/mcp/v1'
+    headers:
+      Authorization: !!js '`Bearer ${process.env.BYQ_MCP_TOKEN}`'
+    failOnStartupError: true

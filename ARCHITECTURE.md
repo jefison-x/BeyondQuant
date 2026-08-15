@@ -21,7 +21,9 @@ BYQ Frontend
   ↓
 BYQ Gateway
   ↓
-DSH + dsh-byq
+DSH Runtime Adapter
+  ↓ official SDK / stdio JSON-RPC
+DSH + dsh-byq Product composition
   ↓
 BeyondQuant MCP
   ↓
@@ -45,6 +47,12 @@ Draft PR
 ```
 
 Product Plane conversations MUST NOT acquire Engineering Plane privileges by ordinary prompt escalation.
+
+The Gateway MUST communicate with DSH through the dedicated Runtime Adapter.
+The Gateway MUST NOT own DSH subprocesses, import the DSH SDK, or parse raw
+DSH event/notification schemas. The adapter owns the official SDK boundary,
+runtime process lifecycle, and translation to BYQ framework-neutral contracts.
+The DSH Web surface MUST NOT be used as the Gateway transport.
 
 ## B. DSH responsibilities
 

@@ -1,4 +1,4 @@
-name: Phase 5 CI
+name: Phase 5 + Phase 6 CI
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   pull_request:
 
 jobs:
-  phase5:
+  phase6:
     runs-on: ubuntu-latest
     env:
       BYQ_MCP_TOKEN: ci-phase5-test-only
@@ -44,6 +44,9 @@ jobs:
 
       - name: Gateway tests
         run: docker compose exec -T gateway python -m pytest -q -p no:cacheprovider
+
+      - name: Runtime Adapter tests
+        run: docker compose exec -T runtime-adapter python3 -m pytest -q -p no:cacheprovider
 
       - name: MCP tests
         run: docker compose exec -T mcp npm test
