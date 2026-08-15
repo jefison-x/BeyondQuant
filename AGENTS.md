@@ -31,6 +31,22 @@ These rules apply to Codex, DSH engineering agents, and any other AI coding agen
 - Record exceptions and boundary changes in `docs/architecture/adr/`.
 - Never use the old Community or Legacy repositories as the Git history for this project.
 
+## Single-maintainer human merge gate
+
+For a repository with a single human maintainer:
+
+- CI and all required status checks must pass.
+- Codex must stop at a Draft PR and must not push directly to `main`.
+- The human repository owner must manually review the PR and should leave a
+  GitHub review or comment as an audit record.
+- A GitHub `APPROVED` state is not required when the PR author and sole
+  repository maintainer are the same person and GitHub therefore disallows
+  self-approval.
+- Codex must not merge or mark the PR ready for review.
+- Only the human maintainer may mark the PR ready and merge it.
+- If repository rules later require independent approvals, those approvals
+  must be satisfied.
+
 ## Before starting implementation
 
 Read all of the following before selecting or implementing work:

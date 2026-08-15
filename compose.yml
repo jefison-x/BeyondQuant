@@ -5,6 +5,12 @@ services:
       dockerfile: services/gateway/Dockerfile
     ports:
       - "127.0.0.1:8100:8100"
+    environment:
+      BYQ_PRODUCT_TOKEN: ${BYQ_PRODUCT_TOKEN:?BYQ_PRODUCT_TOKEN must be set}
+      BYQ_PRODUCT_PRINCIPAL: ${BYQ_PRODUCT_PRINCIPAL:-product-user}
+      BYQ_WORKFLOW_TRACE_ROOT: /var/lib/byq/workflow-traces
+    volumes:
+      - byq_workflow_traces:/var/lib/byq/workflow-traces
     networks:
       - byq_product
     depends_on:
@@ -31,6 +37,7 @@ services:
     environment:
       BYQ_MCP_TOKEN: ${BYQ_MCP_TOKEN:?BYQ_MCP_TOKEN must be set}
       BYQ_MCP_URL: http://mcp:8300/mcp/v1
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       BYQ_DSH_RUNTIME_ROOT: /opt/dsh-runtime
       BYQ_DSH_COMPOSITION: /opt/byq/compositions/byq-product-sdk.cordis.yml
       DSH_SESSION_ROOT: /var/lib/byq/dsh-sessions
@@ -108,3 +115,5 @@ networks:
 volumes:
   byq_dsh_sessions:
     name: byq_dsh_sessions
+  byq_workflow_traces:
+    name: byq_workflow_traces
