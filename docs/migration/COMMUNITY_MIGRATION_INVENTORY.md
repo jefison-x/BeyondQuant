@@ -35,6 +35,10 @@ the new BeyondQuant architecture.
   and must not be revived.
 - `DROP`: explicitly excluded technology or implementation; no adapter,
   compatibility layer, dependency, or fallback may be added.
+- `MIGRATE_WHERE_VALID`: data-only migration policy for a logical source
+  dataset. It is not blanket acceptance: provenance, units, schema, coverage,
+  point-in-time semantics, quality, conflicts, and manifest evidence must all
+  pass before import.
 
 ## Global exclusions
 
@@ -59,6 +63,60 @@ explicitly reverses them:
 | Phase 11 | Strategy Artifact, immutable strategy versions, validation, approval boundary, and strategy provenance. |
 | Phase 12 | Native deterministic backtest job/worker, A-share execution rules, input/result manifests, object lifecycle, retries, and result artifacts. |
 | Phase 13+ | Agent/learning/engineering workflows, audit views, approval policy, and DSH capability integration. |
+| Phase 16 | Product API/BFF, durable market-data storage ADR, Community frontend mapping, and logical historical-cache migration design. |
+| Phase 17 | Browser shell, auth UX, Product API client, Community visual/UX port, responsive and Playwright foundation. |
+| Phase 18 | Agent Research Workbench, normalized WorkflowTrace/product events, ResearchTask/Experiment/Artifact/Approval UX. |
+| Phase 19 | Quant Workspace for Factor, Strategy, StrategyVersion, Approval, Backtest, charts, metrics, manifests, and lineage. |
+| Phase 20 | User Profile, Model/Data/Agent settings, Approval Inbox, Assets, Storage Status, and secret-safe capabilities. |
+| Phase 21 | BYQ-owned Stock Pool and simulation-only Paper Trading product contracts and UX. |
+| Phase 22 | Operations, deployment, observability, backup/restore, and production-safe migration operations. |
+| Phase 23 | Community feature parity matrix, golden journey, release candidate, and explicit DROP/DEFER decisions. |
+
+## Productization frontend audit
+
+The Community frontend was inspected before planning Phase 17+. The detailed
+page/component mapping, observed layout and workflow behavior, API replacement
+policy, and test obligations are in
+[`docs/migration/COMMUNITY_FRONTEND_MIGRATION.md`](COMMUNITY_FRONTEND_MIGRATION.md).
+
+| Area | Community evidence | Decision |
+|---|---|---|
+| Stack | Vue 3, Vite, Vue Router, Pinia, Element Plus, ECharts, Axios, Playwright, OpenAPI type generation | Keep the technical direction unless an ADR identifies a blocker. |
+| App shell | `App.vue`, `AppLayout`, header, collapsible sidebar, mobile bottom navigation, separate operations shell | Port layout/style/UX; rewrite state/API/auth. |
+| Agent | `AgentView.vue`, thinking/progress, assistant drawer, approval center, session history | Port conversation/result UX; replace old Agent API/SSE/event schema with BYQ Product API and WorkflowTrace. |
+| Research | `HomeView.vue`, `StrategyView.vue`, `BacktestView.vue`, `DemoChartView.vue` | Port information architecture and chart/table interaction; rewrite domain/API bindings. |
+| Stock pool | `StockPoolView.vue`, `StockPoolDialog.vue` | Port UX after domain invariant inspection; reimplement BYQ-owned snapshots/provenance. |
+| Paper trading | `PaperTradingView.vue` | Port UX only; redesign separate BYQ simulation domain. |
+| User/settings | profile, models, assets, Agent policy, model settings | Port forms/tables and safe states; replace auth/secret/approval APIs. |
+| Operations | `frontend/src/views/operations/` | Port read-mostly information architecture; redesign topology, RBAC, secret safety, and controls. |
+| Old coupling | `/agent-api`, raw/legacy Agent payloads, direct internal `/api/v1` calls | `REPLACE`; frontend must call Product API only. |
+
+## Historical market-cache audit and migration policy
+
+Community schema/model evidence identifies `market_data_daily`,
+`market_adjustment_factors`, `market_trading_status`,
+`market_corporate_actions`, `stock_universe`, `index_master`,
+`index_constituent_weights`, and `security_name_history`, plus related
+Tushare-derived research tables and sync state. The live cluster was not
+available during this roadmap audit, so actual table existence, row counts,
+source distributions, date ranges, and checksums remain Phase 16 work.
+
+The detailed logical process and schema mapping are in
+[`docs/migration/COMMUNITY_MARKET_DATA_MIGRATION.md`](COMMUNITY_MARKET_DATA_MIGRATION.md).
+
+| Data/capability | Classification | Rule |
+|---|---|---|
+| Tushare historical daily bars and validated Tushare-derived canonical market data | `MIGRATE_WHERE_VALID` | Read-only logical export, source/unit/schema/quality/coverage validation, manifest, idempotent BYQ import, verification, and deterministic conflict policy. |
+| Proven provider-independent canonical rows | `MIGRATE_WHERE_VALID` | Accept only with evidence of canonical symbols, units, dates, semantics, and integrity; otherwise quarantine. |
+| Rows marked AKShare or BaoStock | `DROP` | Never migrate, adapt, or use as fallback. |
+| VectorBT results/engine metadata | `DROP` | Engine-independent metric semantics may be reimplemented, but no engine or compatibility path returns. |
+| Physical `Community/data/postgres` directory | `DROP` | Never copy, mount, open as BYQ storage, or use as authoritative data. |
+| Community PostgreSQL | `REFERENCE_ONLY` source | `SELECT`/`COPY OUT`/data-only export only; never update/delete/alter/drop/truncate. |
+| Community sync-state rows | `REFERENCE_ONLY` | Rebuild BYQ migration/refresh state; old flags do not prove canonical data validity. |
+
+The target is a new BYQ Data Plane. Before any formal import, Phase 16 must
+Accepted the Durable Market Data Storage ADR and complete a live read-only
+audit. No data was migrated by the current roadmap change.
 
 ## Detailed inventory
 
@@ -104,7 +162,7 @@ explicitly reverses them:
 | Old Agent workflow state and persistence | `agent-service/app/workflows/contracts.py`, `agent-service/app/workflows/repository.py`, `agent-service/app/harness/*` | Graph checkpoints, leases, DSH run state, workflow recovery | `REFERENCE_ONLY` | DSH workflow state may correlate to BYQ entities but cannot own domain lifecycle, artifact state, or business idempotency. | Agent graph/workflow tests | Phase 13 | DSH native presets/skills/subagents are used for generic orchestration; BYQ stores only its own run, audit, approval, and domain records. Agent Service SQL/graph state was not migrated. |
 | Old MCP gateway and server | `agent-service/app/tools/mcp_gateway.py`, `beyondquant-mcp/src/server.js`, MCP tests | Tool effects, normalized outcomes, timeouts, bounded diagnostics, trusted context | `REFACTOR` | Agent-to-domain calls go through MCP; tools should expose normalized capability contracts, bounded errors, stable idempotency context, and no storage details. | `beyondquant-mcp/test/tools.test.js`, MCP gateway tests | Phase 9 / Phase 13 | `services/mcp` now carries the Phase 13 agent boundary and trusted context forwarding. Old Agent Gateway/runtime coupling, direct internal endpoints, and raw schemas are not copied. |
 | PydanticAI/Hermes and old runtime coupling | `agent-service/app/runtime/pydantic_ai.py`, runtime factory, Hermes migration docs, old gateway wiring | Legacy agent runtime/orchestration | `REPLACE` | None of the runtime implementation is a BYQ domain asset. Generic runtime belongs to DSH; BYQ owns only domain contracts and MCP capabilities. | Runtime tests are migration evidence only | None | Explicitly do not reintroduce PydanticAI, Hermes, old model gateway coupling, SSE coupling, or Agent direct database access. |
-| Old frontend/Agent schema coupling | `frontend/*`, old Agent event and API contracts | UI integration with runtime-specific state | `REFERENCE_ONLY` | Frontend should consume BYQ Gateway/WorkflowTrace contracts, not raw Agent event schemas or Agent persistence models. | Frontend contract tests are evidence only | Phase 14+ | Current architecture boundary supersedes the old coupling; Phase 13 exposes a BYQ audit view rather than DSH event schemas. |
+| Old frontend/Agent schema coupling | `frontend/*`, old Agent event and API contracts | UI integration with runtime-specific state | `REFERENCE_ONLY` | Frontend should consume BYQ Product API/WorkflowTrace contracts, not raw Agent event schemas or Agent persistence models. | Frontend contract tests are evidence only | Phase 17–23 | Current architecture boundary supersedes the old coupling; Community visual/UX behavior is mapped for port/redesign, while API/event/state ownership is replaced. |
 
 ## Phase 13 migration audit
 

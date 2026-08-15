@@ -36,6 +36,33 @@ These rules apply to Codex, DSH engineering agents, and any other AI coding agen
     compatibility layer for them unless a future Accepted ADR explicitly
     reverses this decision.
 
+27. Productization Phase 17+ frontend work MUST inspect and classify the
+    corresponding BeyondQuant-Community frontend page/component before
+    implementation. Reuse visual language and UX only after deciding whether
+    each asset is `REUSE_AS_IS`, `PORT_COMPONENT`, `PORT_STYLE`, `PORT_LAYOUT`,
+    `PORT_UX`, `REFACTOR`, `REFERENCE_ONLY`, `REPLACE`, or `DROP`.
+28. Productization frontend code MUST use BYQ Product API and normalized
+    WorkflowTrace projections. It MUST NOT call raw Backend-internal APIs,
+    MCP, DSH, or raw DSH event schemas.
+29. Market-data migration MUST inspect the Community cache and schema first.
+    The Community repository and PostgreSQL database are read-only sources;
+    they MUST NOT be updated, deleted, altered, truncated, mounted, or used
+    as BYQ authoritative storage.
+30. Community PostgreSQL market-cache migration MUST be logical and
+    repeatable: read-only export → validation/normalization → manifest →
+    BYQ Data Plane import → post-import verification. Physical PostgreSQL
+    data-directory copying or mounting is prohibited.
+31. Do not redownload historical Tushare data when a validated Community
+    cached copy is available. Prefer validate → migrate → incremental refresh,
+    while treating data correctness, provenance, units, coverage, and
+    reproducibility as higher priority than download avoidance.
+32. If Community data cannot prove its provider/source, units, schema,
+    canonical symbol/date semantics, lifecycle coverage, or integrity, do not
+    migrate it; quarantine and report it instead.
+33. BaoStock, AKShare, and VectorBT rows, adapters, fallbacks, dependencies,
+    and compatibility paths remain DROP. Only validated Tushare or proven
+    provider-independent canonical data may be considered for migration.
+
 ## Change discipline
 
 - Keep Product Plane and Engineering Plane privileges separate.
@@ -43,6 +70,8 @@ These rules apply to Codex, DSH engineering agents, and any other AI coding agen
 - Preserve framework-neutral BYQ contracts at integration boundaries.
 - Record exceptions and boundary changes in `docs/architecture/adr/`.
 - Never use the old Community or Legacy repositories as the Git history for this project.
+- Productization is not complete at Phase 15. Phase 16–23 are future roadmap
+  constraints until the current STATUS phase permits implementation.
 
 ## Single-maintainer human merge gate
 

@@ -28,3 +28,14 @@ Legacy modules must eventually be classified in `legacy-inventory.md` as one of:
 - `DROP`
 
 No legacy module may be copied into this repository without an explicit inventory decision and architecture review.
+
+## Productization references
+
+- [Productization Gap Audit](../roadmap/PRODUCTIZATION_GAP_AUDIT.md)
+- [Community Frontend Migration](COMMUNITY_FRONTEND_MIGRATION.md)
+- [Community Market Data Migration](COMMUNITY_MARKET_DATA_MIGRATION.md)
+- [Permanent Community Migration Inventory](COMMUNITY_MIGRATION_INVENTORY.md)
+
+The frontend and market-data documents are planning records for Phases 16–23.
+They do not authorize future-phase implementation or any write to the
+Community repository/database.
