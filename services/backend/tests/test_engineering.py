@@ -23,7 +23,7 @@ def test_engineering_task_requires_isolated_evidence_before_completion(tmp_path)
     assert task["status"] == "proposed"
     assert create(store)["task_id"] == task["task_id"]
 
-    with pytest.raises(EngineeringForbidden, match="approved"):
+    with pytest.raises(EngineeringForbidden, match="cannot transition"):
         store.transition(
             {"task_id": task["task_id"], "target_status": "in_progress", "idempotency_key": "bad-start"},
             trusted_owner="alice",
