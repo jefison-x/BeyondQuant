@@ -95,6 +95,7 @@ services:
       - byq_product
     environment:
       BYQ_DOMAIN_DB_PATH: /var/lib/byq/domain/byq.sqlite3
+      BYQ_BACKTEST_OBJECT_ROOT: /var/lib/byq/domain/backtest-objects
       TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
       TUSHARE_API_URL: ${TUSHARE_API_URL:-http://api.tushare.pro}
     volumes:

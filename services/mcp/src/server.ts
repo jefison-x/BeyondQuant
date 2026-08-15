@@ -5,6 +5,13 @@ import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import { fetchByqHealth } from "./backend-health.js";
+import {
+  fetchByqBacktestCancel,
+  fetchByqBacktestGet,
+  fetchByqBacktestRun,
+  fetchByqBacktestSubmit,
+  type BacktestRequest,
+} from "./backtest.js";
 import { fetchByqFactorCompute, type FactorComputeRequest } from "./factor-research.js";
 import {
   fetchByqStrategyApprove,
@@ -57,6 +64,22 @@ function authorized(request: IncomingMessage): boolean {
 
 async function byqHealth() {
   return fetchByqHealth(BACKEND_URL);
+}
+
+async function byqBacktestSubmit(args: BacktestRequest) {
+  return fetchByqBacktestSubmit(BACKEND_URL, args ?? {});
+}
+
+async function byqBacktestGet(args: { job_id: string }) {
+  return fetchByqBacktestGet(BACKEND_URL, args.job_id);
+}
+
+async function byqBacktestRun(args: { job_id: string }) {
+  return fetchByqBacktestRun(BACKEND_URL, args.job_id);
+}
+
+async function byqBacktestCancel(args: { job_id: string }) {
+  return fetchByqBacktestCancel(BACKEND_URL, args.job_id);
 }
 
 async function byqMarketDaily(args: MarketDailyRequest) {
@@ -125,6 +148,52 @@ function buildServer(): McpServer {
       },
     },
     byqMarketDaily,
+  );
+  server.registerTool(
+    "byq_backtest_submit",
+    {
+      description: "Queue a validated strategy version against a frozen universe and deterministic input snapshot.",
+      inputSchema: {
+        task_id: z.string(),
+        experiment_id: z.string().optional(),
+        strategy_version_artifact_id: z.string(),
+        approval_artifact_id: z.string(),
+        trace_id: z.string(),
+        idempotency_key: z.string(),
+        universe: z.object({
+          universe_id: z.string().optional(),
+          version_id: z.string(),
+          membership_fingerprint: z.string(),
+          symbols: z.array(z.string()).min(1),
+        }),
+        bars: z.array(z.object({
+          symbol: z.string(), trade_date: z.string(), open: z.number(), high: z.number(), low: z.number(), close: z.number(),
+          volume: z.number().optional(), prev_close: z.number().optional(), is_suspended: z.boolean().optional(),
+          up_limit: z.number().optional(), down_limit: z.number().optional(),
+        })).min(1),
+        signals: z.array(z.object({
+          symbol: z.string(), trade_date: z.string(), side: z.union([z.enum(["buy", "sell", "hold"]), z.number()]), quantity: z.number().int().positive().optional(),
+        })),
+        execution: z.record(z.string(), z.unknown()).optional(),
+        corporate_actions: z.array(z.record(z.string(), z.unknown())).optional(),
+      },
+    },
+    byqBacktestSubmit,
+  );
+  server.registerTool(
+    "byq_backtest_get",
+    { description: "Read durable BYQ backtest job state and immutable result reference.", inputSchema: { job_id: z.string() } },
+    byqBacktestGet,
+  );
+  server.registerTool(
+    "byq_backtest_run",
+    { description: "Run one queued deterministic BYQ backtest job through the worker boundary.", inputSchema: { job_id: z.string() } },
+    byqBacktestRun,
+  );
+  server.registerTool(
+    "byq_backtest_cancel",
+    { description: "Cancel a queued or running BYQ backtest job.", inputSchema: { job_id: z.string() } },
+    byqBacktestCancel,
   );
   server.registerTool(
     "byq_factor_compute",

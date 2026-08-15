@@ -234,6 +234,12 @@ Execution capabilities may be independently containerized:
 
 ## L. Container principle
 
+Phase 12 backtests use a BYQ-owned deterministic signal-snapshot engine. The
+backtest worker may be deployed independently and receives only a durable job
+identity; it does not execute strategy source, access DSH state, or access
+provider credentials. Full results are immutable object references owned by
+the Backend/Domain plane, while business job state remains in BYQ storage.
+
 Future core components MUST be independently deployable, independently upgradeable, and fault isolated.
 
 The target product topology is:

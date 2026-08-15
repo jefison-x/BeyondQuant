@@ -12,6 +12,15 @@ from .data_provider import (
     TushareProvider,
 )
 from .factor_research import compute_factor
+from .backtest import (
+    BacktestConflict,
+    BacktestJobStore,
+    BacktestNotFound,
+    BacktestStorageError,
+    BacktestWorker,
+    LocalObjectStore,
+    normalize_backtest_request,
+)
 from .research import (
     IdempotencyConflict,
     InvalidTransition,
@@ -35,6 +44,8 @@ VERSION = "0.1.0"
 app = FastAPI(title="BeyondQuant Backend", version=VERSION)
 data_provider = TushareProvider.from_env()
 research_store = ResearchStore.from_env()
+backtest_store = BacktestJobStore.from_env()
+backtest_objects = LocalObjectStore.from_env()
 
 
 def _health_payload() -> dict[str, str]:
@@ -100,6 +111,21 @@ def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, obje
         raise HTTPException(status_code=409, detail=str(error)) from error
     except ResearchPersistenceError as error:
         raise HTTPException(status_code=503, detail="research storage is unavailable") from error
+
+
+def _backtest_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except ResearchNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except BacktestNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except BacktestConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except BacktestStorageError as error:
+        raise HTTPException(status_code=503, detail="backtest storage is unavailable") from error
 
 
 def _strategy_payload(payload: object, allowed: set[str]) -> dict[str, Any]:
@@ -356,3 +382,74 @@ def export_strategy_version_artifact(artifact_id: str) -> dict[str, object]:
 @app.post("/v1/research/artifacts/{artifact_id}/transitions")
 def transition_artifact(artifact_id: str, payload: dict[str, Any]) -> dict[str, object]:
     return _research_transition("artifact", artifact_id, payload)
+
+
+def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
+    allowed = {
+        "task_id", "experiment_id", "strategy_version_artifact_id", "approval_artifact_id",
+        "trace_id", "idempotency_key", "universe", "bars", "signals", "execution", "corporate_actions",
+    }
+    request = _strategy_payload(payload, allowed)
+    version_artifact = research_store.get_artifact(request.get("strategy_version_artifact_id"))
+    if version_artifact["kind"] != "strategy_version":
+        raise ValueError("strategy_version_artifact_id must reference a strategy_version artifact")
+    if version_artifact["status"] != "validated":
+        raise ValueError("strategy version must be validated before backtest")
+    if version_artifact["task_id"] != request.get("task_id"):
+        raise ValueError("strategy version artifact does not belong to task_id")
+    validated_version = validate_version_content(version_artifact["content"])
+    approval_artifact = research_store.get_artifact(request.get("approval_artifact_id"))
+    if approval_artifact["kind"] != "strategy_approval" or approval_artifact["status"] != "validated":
+        raise ValueError("approval_artifact_id must reference a validated strategy approval")
+    if approval_artifact["task_id"] != request.get("task_id"):
+        raise ValueError("approval artifact does not belong to task_id")
+    approval = approval_artifact["content"]
+    if not isinstance(approval, dict):
+        raise ValueError("strategy approval content is invalid")
+    if approval.get("strategy_version_artifact_id") != version_artifact["artifact_id"]:
+        raise ValueError("approval does not authorize this strategy version")
+    if approval.get("decision") != "approved" or approval.get("execution_authorized") is not True:
+        raise ValueError("strategy version is not approved for execution")
+    if validated_version.get("version_id") != version_artifact["content"].get("version_id"):
+        raise ValueError("strategy version content is inconsistent")
+    task = research_store.get_task(request.get("task_id"))
+    experiment_id = request.get("experiment_id")
+    if experiment_id is not None:
+        experiment = research_store.get_experiment(experiment_id)
+        if experiment["task_id"] != task["task_id"]:
+            raise ValueError("experiment does not belong to task_id")
+    return normalize_backtest_request(
+        request,
+        strategy_version_artifact_id=version_artifact["artifact_id"],
+        approval_artifact_id=approval_artifact["artifact_id"],
+    )
+
+
+@app.post("/v1/research/backtests", status_code=202)
+def create_backtest_job(payload: dict[str, Any]) -> dict[str, object]:
+    def operation() -> dict[str, object]:
+        request = _validated_backtest_request(payload)
+        task = research_store.get_task(request["task_id"])
+        job = backtest_store.create(request, owner_principal=task["owner_principal"])
+        return {"job": job}
+
+    return _backtest_call(operation)
+
+
+@app.get("/v1/research/backtests/{job_id}")
+def get_backtest_job(job_id: str) -> dict[str, object]:
+    return _backtest_call(lambda: {"job": backtest_store.get(job_id)})
+
+
+@app.post("/v1/research/backtests/{job_id}/run")
+def run_backtest_job(job_id: str) -> dict[str, object]:
+    def operation() -> dict[str, object]:
+        worker = BacktestWorker(backtest_store, research_store, backtest_objects)
+        return {"job": worker.run_once(job_id)}
+
+    return _backtest_call(operation)
+
+
+@app.post("/v1/research/backtests/{job_id}/cancel")
+def cancel_backtest_job(job_id: str) -> dict[str, object]:
+    return _backtest_call(lambda: {"job": backtest_store.cancel(job_id)})
