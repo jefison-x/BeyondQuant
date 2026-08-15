@@ -14,6 +14,111 @@
     workspaceContext: false
     goals: false
 
+- id: skills
+  name: '@deepseek-ai/dsh-skill'
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    includeDefaultRoots: false
+    customSkillDirs:
+      - /opt/dsh/bundles/dsh-byq/skills
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+- id: subagents
+  name: '@deepseek-ai/dsh-subagent'
+
+- id: subagent-spawn
+  name: '@deepseek-ai/dsh-subagent-spawn-in-process'
+  config:
+    providerName: spawn
+
+- id: delegate-market-research
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: byq_delegate_market_research
+    enableRunInBackground: false
+    persona: "You are the BYQ market researcher. Collect normalized market evidence, record bounded provenance, and do not design strategies, run backtests, or approve actions."
+    toolFilter:
+      allow:
+        - byq_agent_context
+        - byq_agent_roles
+        - byq_agent_run_start
+        - byq_agent_authorize
+        - byq_agent_audit
+        - byq_market_daily
+        - byq_research_task_create
+        - byq_research_get
+        - byq_experiment_create
+        - byq_artifact_create
+    maxDepth: 1
+
+- id: delegate-factor-research
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: byq_delegate_factor_research
+    enableRunInBackground: false
+    persona: "You are the BYQ factor researcher. Compute only reproducible BYQ factors from point-in-time inputs and record lineage; do not approve strategies or execute backtests."
+    toolFilter:
+      allow:
+        - byq_agent_context
+        - byq_agent_roles
+        - byq_agent_run_start
+        - byq_agent_authorize
+        - byq_agent_audit
+        - byq_market_daily
+        - byq_factor_compute
+        - byq_research_get
+        - byq_experiment_create
+        - byq_artifact_create
+    maxDepth: 1
+
+- id: delegate-strategy-research
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: byq_delegate_strategy_research
+    enableRunInBackground: false
+    persona: "You are the BYQ strategy researcher. Produce validated strategy artifacts only; strategy code remains domain data, and approval/execution are outside your role."
+    toolFilter:
+      allow:
+        - byq_agent_context
+        - byq_agent_roles
+        - byq_agent_run_start
+        - byq_agent_authorize
+        - byq_agent_audit
+        - byq_research_get
+        - byq_experiment_create
+        - byq_artifact_create
+        - byq_strategy_validate
+        - byq_strategy_version_create
+        - byq_strategy_export
+    maxDepth: 1
+
+- id: delegate-backtest-analysis
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: byq_delegate_backtest_analysis
+    enableRunInBackground: false
+    persona: "You are the BYQ backtest analyst. Inspect authorized deterministic jobs and report evidence; consequential submission and execution remain approval-gated BYQ actions."
+    toolFilter:
+      allow:
+        - byq_agent_context
+        - byq_agent_roles
+        - byq_agent_run_start
+        - byq_agent_authorize
+        - byq_agent_audit
+        - byq_research_get
+        - byq_backtest_get
+        - byq_backtest_submit
+        - byq_backtest_run
+    maxDepth: 1
+
 - id: sessions
   name: '@deepseek-ai/dsh-session-persistence-jsonl'
   config:
@@ -30,4 +135,9 @@
     url: !!js process.env.BYQ_MCP_URL ?? 'http://mcp:8300/mcp/v1'
     headers:
       Authorization: !!js '`Bearer ${process.env.BYQ_MCP_TOKEN}`'
+      X-BYQ-Owner-Principal: !!js process.env.BYQ_OWNER_PRINCIPAL
+      X-BYQ-Actor-Principal: !!js process.env.BYQ_ACTOR_PRINCIPAL
+      X-BYQ-Trace-ID: !!js process.env.BYQ_TRACE_ID
+      X-BYQ-Session-ID: !!js process.env.BYQ_SESSION_ID
+      X-BYQ-DSH-Run-ID: !!js process.env.BYQ_DSH_RUN_ID
     failOnStartupError: true

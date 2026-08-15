@@ -23,6 +23,7 @@ COPY packages/contracts ./packages/contracts
 RUN python3 -m pip install --break-system-packages --no-cache-dir ".[test]"
 
 COPY plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml /opt/byq/compositions/byq-product-sdk.cordis.yml
+COPY plugins/dsh-byq/skills /opt/dsh/bundles/dsh-byq/skills
 
 RUN groupadd --system --gid 10002 byq \
     && useradd --system --uid 10002 --gid byq --no-create-home \

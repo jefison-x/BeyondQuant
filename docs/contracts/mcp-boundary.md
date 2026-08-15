@@ -34,6 +34,16 @@ schemas, or Backend implementation exceptions. DSH may request a domain
 operation through MCP, but it cannot mutate research state by accessing the
 Backend database or filesystem directly.
 
+## Phase 13 agent capabilities
+
+The `byq_agent_*` tools expose a BYQ-owned role catalogue, trusted runtime
+context, owner-scoped agent runs, action authorization, bounded audit views,
+and human approval state. MCP derives owner/actor/session/trace headers from
+the authenticated Runtime Adapter path; model-supplied identity fields cannot
+override them. DSH may delegate through its native subagent seam, but it
+cannot bypass BYQ authorization or approval with a prompt or a direct storage
+call.
+
 ## Non-goals
 
 - This document does not define a complete tool schema.

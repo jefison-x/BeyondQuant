@@ -57,6 +57,7 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
         "content": "summarize the health contract",
         "require_model_key": True,
     }
+    assert calls[0][1]["owner_principal"] == main.PRODUCT_PRINCIPAL
     assert TOKEN not in str(calls)
 
 

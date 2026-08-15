@@ -278,6 +278,26 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("postgres", composition.lower())
         self.assertNotIn("redis", composition.lower())
 
+    def test_phase13_roles_use_official_dsh_seams_and_bounded_capabilities(self) -> None:
+        composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
+        self.assertIn("@deepseek-ai/dsh-skill-filesystem", composition)
+        self.assertIn("@deepseek-ai/dsh-subagent-spawn-in-process", composition)
+        self.assertIn("@deepseek-ai/dsh-tool-subagent", composition)
+        self.assertIn("maxDepth: 1", composition)
+        self.assertIn("customSkillDirs:", composition)
+        self.assertIn("/opt/dsh/bundles/dsh-byq/skills", composition)
+        self.assertNotIn("byq_strategy_approve", composition)
+        self.assertNotIn("byq_backtest_cancel", composition)
+
+        role_contract = (ROOT / "services/backend/app/agent_research.py").read_text()
+        self.assertIn("ROLE_CATALOG", role_contract)
+        self.assertIn("agent_approvals", role_contract)
+        self.assertIn("agent_audit", role_contract)
+        self.assertNotIn("psycopg", role_contract.lower())
+
+        runtime_dockerfile = (ROOT / "services/runtime-adapter/Dockerfile").read_text()
+        self.assertIn("plugins/dsh-byq/skills /opt/dsh/bundles/dsh-byq/skills", runtime_dockerfile)
+
     def test_frontend_has_no_dsh_event_schema_dependency(self) -> None:
         frontend = ROOT / "apps/frontend"
         implementation_files = [

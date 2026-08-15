@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from collections.abc import Callable
 from typing import Any
 
@@ -20,6 +20,15 @@ from .backtest import (
     BacktestWorker,
     LocalObjectStore,
     normalize_backtest_request,
+)
+from .agent_research import (
+    AgentConflict,
+    AgentForbidden,
+    AgentNotFound,
+    AgentPersistenceError,
+    AgentResearchStore,
+    AgentUnauthorized,
+    role_catalog,
 )
 from .research import (
     IdempotencyConflict,
@@ -44,6 +53,7 @@ VERSION = "0.1.0"
 app = FastAPI(title="BeyondQuant Backend", version=VERSION)
 data_provider = TushareProvider.from_env()
 research_store = ResearchStore.from_env()
+agent_store = AgentResearchStore.from_env()
 backtest_store = BacktestJobStore.from_env()
 backtest_objects = LocalObjectStore.from_env()
 
@@ -126,6 +136,51 @@ def _backtest_call(operation: Callable[[], dict[str, object]]) -> dict[str, obje
         raise HTTPException(status_code=409, detail=str(error)) from error
     except BacktestStorageError as error:
         raise HTTPException(status_code=503, detail="backtest storage is unavailable") from error
+
+
+def _agent_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except AgentUnauthorized as error:
+        raise HTTPException(status_code=401, detail=str(error)) from error
+    except AgentForbidden as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except AgentNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except AgentConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except AgentPersistenceError as error:
+        raise HTTPException(status_code=503, detail="agent research storage is unavailable") from error
+
+
+def _agent_context(request: Request, payload: dict[str, Any]) -> dict[str, str | None]:
+    """Resolve trusted runtime context without forwarding credentials."""
+
+    header_values = {
+        "owner_principal": request.headers.get("x-byq-owner-principal"),
+        "actor_principal": request.headers.get("x-byq-actor-principal"),
+        "trace_id": request.headers.get("x-byq-trace-id"),
+        "session_id": request.headers.get("x-byq-session-id"),
+        "dsh_run_id": request.headers.get("x-byq-dsh-run-id"),
+    }
+    for field, header_value in header_values.items():
+        body_value = payload.get(field)
+        if header_value and body_value not in {None, header_value}:
+            raise HTTPException(status_code=401, detail=f"{field} does not match trusted runtime context")
+    return {
+        field: header_value or (str(payload[field]) if payload.get(field) is not None else None)
+        for field, header_value in header_values.items()
+    }
+
+
+def _required_agent_context(request: Request, payload: dict[str, Any] | None = None) -> dict[str, str]:
+    context = _agent_context(request, payload or {})
+    missing = sorted(field for field, value in context.items() if value is None)
+    if missing:
+        raise HTTPException(status_code=401, detail="trusted agent context is required")
+    return {field: value for field, value in context.items() if value is not None}
 
 
 def _strategy_payload(payload: object, allowed: set[str]) -> dict[str, Any]:
@@ -453,3 +508,81 @@ def run_backtest_job(job_id: str) -> dict[str, object]:
 @app.post("/v1/research/backtests/{job_id}/cancel")
 def cancel_backtest_job(job_id: str) -> dict[str, object]:
     return _backtest_call(lambda: {"job": backtest_store.cancel(job_id)})
+
+
+@app.get("/v1/agents/roles")
+def get_agent_roles() -> dict[str, object]:
+    """Return the versioned BYQ role catalogue, not DSH implementation state."""
+
+    return {"roles": role_catalog()}
+
+
+@app.post("/v1/agents/runs", status_code=201)
+def start_agent_run(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    request_payload = dict(payload)
+    for field, value in context.items():
+        if value is not None:
+            request_payload[field] = value
+    return _agent_call(lambda: {"run": agent_store.start_run(
+        request_payload,
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.post("/v1/agents/authorize")
+def authorize_agent_action(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    return _agent_call(lambda: {"authorization": agent_store.authorize(
+        {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.post("/v1/agents/audit")
+def record_agent_audit(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    return _agent_call(lambda: {"audit": agent_store.record_audit(
+        {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.get("/v1/agents/runs/{run_id}/audit")
+def get_agent_audit(run_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _agent_call(lambda: agent_store.list_audit(run_id, trusted_owner=context["owner_principal"]))
+
+
+@app.post("/v1/agents/approvals", status_code=201)
+def create_agent_approval(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    return _agent_call(lambda: {"approval": agent_store.create_approval(
+        {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.get("/v1/agents/approvals/{approval_id}")
+def get_agent_approval(approval_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _agent_call(lambda: {"approval": agent_store.get_approval(
+        approval_id,
+        trusted_owner=context["owner_principal"],
+    )})
+
+
+@app.post("/v1/agents/approvals/{approval_id}/decision")
+def decide_agent_approval(approval_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    request_payload = dict(payload)
+    request_payload["approval_id"] = approval_id
+    return _agent_call(lambda: {"approval": agent_store.decide_approval(
+        request_payload,
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})

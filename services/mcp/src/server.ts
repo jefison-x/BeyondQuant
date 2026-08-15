@@ -14,6 +14,18 @@ import {
 } from "./backtest.js";
 import { fetchByqFactorCompute, type FactorComputeRequest } from "./factor-research.js";
 import {
+  fetchByqAgentApprovalDecide,
+  fetchByqAgentApprovalGet,
+  fetchByqAgentApprovalRequest,
+  fetchByqAgentAudit,
+  fetchByqAgentAuditGet,
+  fetchByqAgentAuthorize,
+  fetchByqAgentRoles,
+  fetchByqAgentRunStart,
+  type AgentResult,
+  type AgentContext,
+} from "./agent.js";
+import {
   fetchByqStrategyApprove,
   fetchByqStrategyExport,
   fetchByqStrategyValidate,
@@ -66,6 +78,105 @@ async function byqHealth() {
   return fetchByqHealth(BACKEND_URL);
 }
 
+function headerValue(headers: unknown, name: string): string | undefined {
+  if (headers && typeof (headers as { get?: unknown }).get === "function") {
+    const value = (headers as { get: (key: string) => string | null }).get(name);
+    return value || undefined;
+  }
+  if (headers && typeof headers === "object") {
+    const value = (headers as Record<string, unknown>)[name] ?? (headers as Record<string, unknown>)[name.toLowerCase()];
+    return typeof value === "string" && value ? value : undefined;
+  }
+  return undefined;
+}
+
+function agentContext(extra: unknown): AgentContext {
+  if (extra && typeof extra === "object" && "owner_principal" in extra) {
+    const value = extra as AgentContext;
+    return {
+      owner_principal: value.owner_principal,
+      actor_principal: value.actor_principal,
+      trace_id: value.trace_id,
+      session_id: value.session_id,
+      dsh_run_id: value.dsh_run_id,
+    };
+  }
+  const request = (extra as { request?: { headers?: unknown }; requestInfo?: { headers?: unknown } } | undefined);
+  const headers = request?.request?.headers ?? request?.requestInfo?.headers;
+  return {
+    owner_principal: headerValue(headers, "x-byq-owner-principal"),
+    actor_principal: headerValue(headers, "x-byq-actor-principal"),
+    trace_id: headerValue(headers, "x-byq-trace-id"),
+    session_id: headerValue(headers, "x-byq-session-id"),
+    dsh_run_id: headerValue(headers, "x-byq-dsh-run-id"),
+  };
+}
+
+function agentContextUnavailable(): AgentResult {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify({ service: SERVICE, status: "error", backend: { status: "agent_context_unavailable" } }) }],
+    isError: true,
+  };
+}
+
+function completeAgentContext(extra: unknown): Required<AgentContext> | undefined {
+  const context = agentContext(extra);
+  if (!context.owner_principal || !context.actor_principal || !context.trace_id || !context.session_id || !context.dsh_run_id) {
+    return undefined;
+  }
+  return context as Required<AgentContext>;
+}
+
+async function byqAgentContext(_args: Record<string, never>, extra: unknown) {
+  const context = completeAgentContext(extra);
+  if (!context) return agentContextUnavailable();
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify({ service: SERVICE, status: "ok", context }) }],
+    isError: false,
+  };
+}
+
+async function byqAgentRoles() {
+  return fetchByqAgentRoles(BACKEND_URL);
+}
+
+async function byqAgentRunStart(args: Record<string, unknown>, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqAgentRunStart(BACKEND_URL, args, context) : agentContextUnavailable();
+}
+
+async function byqAgentAuthorize(args: Record<string, unknown>, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqAgentAuthorize(BACKEND_URL, args, context) : agentContextUnavailable();
+}
+
+async function byqAgentAudit(args: Record<string, unknown>, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqAgentAudit(BACKEND_URL, args, context) : agentContextUnavailable();
+}
+
+async function byqAgentAuditGet(args: { run_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqAgentAuditGet(BACKEND_URL, args.run_id, context) : agentContextUnavailable();
+}
+
+async function byqAgentApprovalRequest(args: Record<string, unknown>, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqAgentApprovalRequest(BACKEND_URL, args, context) : agentContextUnavailable();
+}
+
+async function byqAgentApprovalGet(args: { approval_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqAgentApprovalGet(BACKEND_URL, args.approval_id, context) : agentContextUnavailable();
+}
+
+async function byqAgentApprovalDecide(args: { approval_id: string; decision: string; rationale?: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  if (!context) return agentContextUnavailable();
+  const { approval_id, ...request } = args;
+  return fetchByqAgentApprovalDecide(BACKEND_URL, approval_id, request, context);
+}
+
 async function byqBacktestSubmit(args: BacktestRequest) {
   return fetchByqBacktestSubmit(BACKEND_URL, args ?? {});
 }
@@ -106,8 +217,14 @@ async function byqStrategyExport(args: { artifact_id: string }) {
   return fetchByqStrategyExport(BACKEND_URL, args.artifact_id);
 }
 
-async function byqResearchTaskCreate(args: ResearchTaskCreateRequest) {
-  return fetchByqResearchTaskCreate(BACKEND_URL, args);
+async function byqResearchTaskCreate(args: ResearchTaskCreateRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  if (!context) return agentContextUnavailable();
+  return fetchByqResearchTaskCreate(BACKEND_URL, {
+    ...args,
+    owner_principal: context.owner_principal,
+    trace_id: context.trace_id,
+  });
 }
 
 async function byqResearchGet(args: { entity_type: ResearchEntityType; entity_id: string }) {
@@ -126,7 +243,8 @@ async function byqArtifactCreate(args: ArtifactCreateRequest) {
   return fetchByqArtifactCreate(BACKEND_URL, args);
 }
 
-function buildServer(): McpServer {
+function buildServer(factoryContext: unknown = undefined): McpServer {
+  const trustedContext = agentContext(factoryContext);
   const server = new McpServer({ name: SERVICE, version: VERSION });
   server.registerTool(
     "byq_health",
@@ -135,6 +253,103 @@ function buildServer(): McpServer {
       inputSchema: {},
     },
     byqHealth,
+  );
+  server.registerTool(
+    "byq_agent_context",
+    {
+      description: "Return the trusted BYQ owner, actor, trace, and DSH session context for this agent run.",
+      inputSchema: {},
+    },
+    () => byqAgentContext({}, trustedContext),
+  );
+  server.registerTool(
+    "byq_agent_roles",
+    {
+      description: "List the versioned BYQ quant research role catalogue and capability policy.",
+      inputSchema: {},
+    },
+    byqAgentRoles,
+  );
+  server.registerTool(
+    "byq_agent_run_start",
+    {
+      description: "Start an owner-scoped BYQ agent run correlated to the trusted DSH session and trace.",
+      inputSchema: {
+        role_id: z.enum(["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"]),
+        parent_run_id: z.string().optional(),
+        idempotency_key: z.string(),
+      },
+    },
+    (args) => byqAgentRunStart(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_agent_authorize",
+    {
+      description: "Ask BYQ whether the active role may invoke a domain action; approval-required actions never auto-authorize.",
+      inputSchema: {
+        run_id: z.string(),
+        action: z.string(),
+        resource_type: z.string().optional(),
+        resource_id: z.string().optional(),
+      },
+    },
+    (args) => byqAgentAuthorize(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_agent_audit",
+    {
+      description: "Append a bounded, owner-scoped audit outcome for a BYQ domain action.",
+      inputSchema: {
+        run_id: z.string(),
+        action: z.string(),
+        outcome: z.string(),
+        resource_type: z.string().optional(),
+        resource_id: z.string().optional(),
+        detail: z.record(z.string(), z.unknown()).optional(),
+      },
+    },
+    (args) => byqAgentAudit(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_agent_audit_get",
+    {
+      description: "Read the owner-scoped audit view for one BYQ agent run.",
+      inputSchema: { run_id: z.string() },
+    },
+    (args) => byqAgentAuditGet(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_agent_approval_request",
+    {
+      description: "Create a pending BYQ human approval for a consequential agent action.",
+      inputSchema: {
+        run_id: z.string(),
+        action: z.string(),
+        reason: z.string(),
+        idempotency_key: z.string(),
+      },
+    },
+    (args) => byqAgentApprovalRequest(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_agent_approval_get",
+    {
+      description: "Read one owner-scoped BYQ agent approval and its separate execution outcome.",
+      inputSchema: { approval_id: z.string() },
+    },
+    (args) => byqAgentApprovalGet(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_agent_approval_decide",
+    {
+      description: "Record a trusted human approval decision; the initiating agent cannot self-approve.",
+      inputSchema: {
+        approval_id: z.string(),
+        decision: z.enum(["approved", "rejected"]),
+        rationale: z.string().optional(),
+      },
+    },
+    (args) => byqAgentApprovalDecide(args, trustedContext),
   );
   server.registerTool(
     "byq_market_daily",
@@ -319,7 +534,7 @@ function buildServer(): McpServer {
         idempotency_key: z.string(),
       },
     },
-    byqResearchTaskCreate,
+    (args) => byqResearchTaskCreate(args, trustedContext),
   );
   server.registerTool(
     "byq_research_get",
