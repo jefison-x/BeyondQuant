@@ -248,6 +248,21 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
         self.assertIn("engineering_tasks", backend_files)
 
+    def test_phase16_product_api_is_gateway_owned_and_safe(self) -> None:
+        gateway = "\n".join(
+            path.read_text() for path in (ROOT / "services/gateway").rglob("*.py")
+        )
+        self.assertIn("/api/product", gateway)
+        self.assertNotIn("BYQ_MCP_TOKEN", gateway)
+        self.assertNotIn("deepseek_harness", gateway)
+        self.assertNotIn("api.tushare.pro", gateway)
+
+        self.assertIn("BYQ_BACKEND_URL: http://backend:8000", service_block("gateway"))
+        openapi = (ROOT / "docs/contracts/product-api.openapi.yaml").read_text()
+        self.assertIn("openapi: 3.0.3", openapi)
+        self.assertNotIn("TUSHARE_TOKEN", openapi)
+        self.assertNotIn("BYQ_MCP_TOKEN", openapi)
+
     def test_runtime_adapter_owns_the_official_sdk_and_explicit_runtime(self) -> None:
         adapter = "\n".join(
             path.read_text()
