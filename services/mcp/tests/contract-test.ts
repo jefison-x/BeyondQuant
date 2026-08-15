@@ -19,6 +19,7 @@ try {
   const listed = await client.listTools();
   assert.ok(listed.tools.some((tool) => tool.name === "byq_health"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_market_daily"));
+  assert.ok(listed.tools.some((tool) => tool.name === "byq_factor_compute"));
   for (const name of [
     "byq_research_task_create",
     "byq_research_get",
