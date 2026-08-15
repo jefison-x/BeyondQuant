@@ -1,0 +1,19 @@
+- id: agent-presets
+  name: '@deepseek-ai/dsh-agent-presets'
+  config:
+    default: byq-product
+    roots:
+      - path: /opt/dsh/bundles/dsh-byq/presets
+        trust: system
+    includeUserRoot: false
+
+- insert:
+    - id: mcp-byq
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: byq
+        transport: streamable-http
+        url: http://mcp:8300/mcp/v1
+        headers:
+          Authorization: !!js '`Bearer ${process.env.BYQ_MCP_TOKEN}`'
+        failOnStartupError: true

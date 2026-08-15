@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "byq-backend"
+version = "0.1.0"
+description = "Minimal BeyondQuant domain service bootstrap"
+requires-python = ">=3.13,<3.15"
+dependencies = [
+  "fastapi==0.116.1",
+  "uvicorn[standard]==0.35.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "httpx==0.28.1",
+  "pytest==8.4.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]

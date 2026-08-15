@@ -1,0 +1,59 @@
+name: Phase 5 CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'bootstrap/**'
+  pull_request:
+
+jobs:
+  phase5:
+    runs-on: ubuntu-latest
+    env:
+      BYQ_MCP_TOKEN: ci-phase5-test-only
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check committed pull request diff
+        if: github.event_name == 'pull_request'
+        run: git diff --check "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
+
+      - name: Check committed push diff
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: git diff --check "${{ github.event.before }}...${{ github.sha }}"
+
+      - name: Architecture tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+
+      - name: Compose config
+        run: docker compose config
+
+      - name: Build service images
+        run: docker compose build
+
+      - name: Start healthy topology
+        run: docker compose up -d --wait
+
+      - name: Backend tests
+        run: docker compose exec -T backend python -m pytest -q -p no:cacheprovider
+
+      - name: Gateway tests
+        run: docker compose exec -T gateway python -m pytest -q -p no:cacheprovider
+
+      - name: MCP tests
+        run: docker compose exec -T mcp npm test
+
+      - name: DSH profile composition
+        run: docker compose run --rm --no-deps dsh dsh --profile byq --dump-config
+
+      - name: Full smoke
+        run: ./tests/smoke/run.sh
+
+      - name: Cleanup Compose
+        if: always()
+        run: docker compose down -v

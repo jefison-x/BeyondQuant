@@ -1,0 +1,21 @@
+{
+  "name": "@beyondquant/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
+    "test": "node dist/tests/backend-health-test.js && node dist/tests/contract-test.js",
+    "test:build": "npm run build && npm test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@types/node": "26.2.0",
+    "typescript": "7.0.2"
+  }
+}
