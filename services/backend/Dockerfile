@@ -13,7 +13,9 @@ RUN pip install --no-cache-dir ".[test]"
 
 RUN groupadd --system --gid 10001 byq \
     && useradd --system --uid 10001 --gid byq --no-create-home \
-       --shell /usr/sbin/nologin byq
+       --shell /usr/sbin/nologin byq \
+    && mkdir -p /var/lib/byq/domain \
+    && chown -R byq:byq /var/lib/byq/domain
 
 USER byq
 

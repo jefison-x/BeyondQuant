@@ -62,6 +62,26 @@ need lifecycle and cleanup evidence. Product/Engineering capability changes
 need explicit isolation tests. A green test without architecture evidence is
 not sufficient acceptance.
 
+## Phase 9+ Community migration discipline
+
+Before implementing a Phase 9 or later domain capability, Codex MUST:
+
+1. Check `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`.
+2. Inspect the matching BeyondQuant-Community implementation and tests.
+3. Classify each reusable asset as `REUSE_AS_IS`, `PORT_LOGIC`, `PORT_TESTS`,
+   `REFACTOR`, `REFERENCE_ONLY`, `REPLACE`, or `DROP`.
+4. Preserve current BYQ ownership and MCP/DSH architecture boundaries.
+5. Port only justified domain semantics and regression tests into BYQ-owned
+   contracts.
+6. Record the migration decision and any future-phase candidate in the
+   inventory.
+
+Failure to inspect and classify an existing Community implementation is a
+STOP CONDITION. Reintroducing BaoStock, AKShare, VectorBT, PydanticAI, Hermes,
+old Agent runtime coupling, Agent direct database access, or frontend coupling
+to raw Agent schemas is also a STOP CONDITION. No compatibility layer may be
+created to avoid that decision.
+
 ## STOP CONDITIONS
 
 Codex must stop and report evidence, alternatives, and a recommendation when

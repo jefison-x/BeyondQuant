@@ -1,7 +1,7 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-project stage is **Phase 8 / Data Provider Abstraction + Tushare**.
+project stage is **Phase 9 / ResearchTask + Experiment + Artifact**.
 
 ## Project identity
 
@@ -53,6 +53,18 @@ Phase 8 adds the first BYQ-owned market-data provider boundary:
 remain in the local ignored `.env` file. It is never passed to DSH, MCP,
 Gateway, or frontend code. The boundary is recorded in
 [ADR-0005](docs/architecture/adr/ADR-0005-phase8-data-provider.md).
+
+Phase 9 adds the first durable research-domain entity boundary:
+
+- Backend-owned ResearchTask, Experiment, and Artifact state machines
+- SQLite persistence behind a Backend repository interface and named volume
+- idempotent mutations, bounded JSON content, provenance, and lineage hashes
+- MCP capabilities for creating, reading, and transitioning research state
+
+The Phase 9 storage implementation is intentionally single-Backend SQLite;
+PostgreSQL migration and multi-writer deployment require a later ADR. The
+domain boundary is recorded in
+[ADR-0006](docs/architecture/adr/ADR-0006-phase9-research-entities.md).
 
 The base Compose topology requires `BYQ_MCP_TOKEN` and `BYQ_PRODUCT_TOKEN`.
 Set `DEEPSEEK_API_KEY` only when intentionally running a real provider-backed

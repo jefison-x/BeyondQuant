@@ -6,6 +6,18 @@ import { z } from "zod";
 
 import { fetchByqHealth } from "./backend-health.js";
 import { fetchByqMarketDaily, type MarketDailyRequest } from "./market-data.js";
+import {
+  fetchByqArtifactCreate,
+  fetchByqExperimentCreate,
+  fetchByqResearchGet,
+  fetchByqResearchTaskCreate,
+  fetchByqResearchTransition,
+  type ArtifactCreateRequest,
+  type ExperimentCreateRequest,
+  type ResearchEntityType,
+  type ResearchTaskCreateRequest,
+  type ResearchTransitionRequest,
+} from "./research.js";
 
 const SERVICE = "beyondquant-mcp";
 const VERSION = "0.1.0";
@@ -43,6 +55,26 @@ async function byqMarketDaily(args: MarketDailyRequest) {
   return fetchByqMarketDaily(BACKEND_URL, args ?? {});
 }
 
+async function byqResearchTaskCreate(args: ResearchTaskCreateRequest) {
+  return fetchByqResearchTaskCreate(BACKEND_URL, args);
+}
+
+async function byqResearchGet(args: { entity_type: ResearchEntityType; entity_id: string }) {
+  return fetchByqResearchGet(BACKEND_URL, args.entity_type, args.entity_id);
+}
+
+async function byqResearchTransition(args: ResearchTransitionRequest) {
+  return fetchByqResearchTransition(BACKEND_URL, args);
+}
+
+async function byqExperimentCreate(args: ExperimentCreateRequest) {
+  return fetchByqExperimentCreate(BACKEND_URL, args);
+}
+
+async function byqArtifactCreate(args: ArtifactCreateRequest) {
+  return fetchByqArtifactCreate(BACKEND_URL, args);
+}
+
 function buildServer(): McpServer {
   const server = new McpServer({ name: SERVICE, version: VERSION });
   server.registerTool(
@@ -65,6 +97,74 @@ function buildServer(): McpServer {
       },
     },
     byqMarketDaily,
+  );
+  server.registerTool(
+    "byq_research_task_create",
+    {
+      description: "Create a durable BYQ ResearchTask with idempotency and trace provenance.",
+      inputSchema: {
+        owner_principal: z.string(),
+        title: z.string(),
+        objective: z.string(),
+        trace_id: z.string(),
+        idempotency_key: z.string(),
+      },
+    },
+    byqResearchTaskCreate,
+  );
+  server.registerTool(
+    "byq_research_get",
+    {
+      description: "Read one BYQ ResearchTask, Experiment, or Artifact by identity.",
+      inputSchema: {
+        entity_type: z.enum(["research_task", "experiment", "artifact"]),
+        entity_id: z.string(),
+      },
+    },
+    byqResearchGet,
+  );
+  server.registerTool(
+    "byq_research_transition",
+    {
+      description: "Apply one validated, idempotent BYQ research-domain state transition.",
+      inputSchema: {
+        entity_type: z.enum(["research_task", "experiment", "artifact"]),
+        entity_id: z.string(),
+        target_status: z.string(),
+        idempotency_key: z.string(),
+      },
+    },
+    byqResearchTransition,
+  );
+  server.registerTool(
+    "byq_experiment_create",
+    {
+      description: "Create a durable Experiment with required data provenance sources.",
+      inputSchema: {
+        task_id: z.string(),
+        name: z.string(),
+        input_snapshot: z.record(z.string(), z.unknown()),
+        trace_id: z.string(),
+        idempotency_key: z.string(),
+      },
+    },
+    byqExperimentCreate,
+  );
+  server.registerTool(
+    "byq_artifact_create",
+    {
+      description: "Create a bounded, hashed, lineage-bearing BYQ Artifact.",
+      inputSchema: {
+        task_id: z.string(),
+        experiment_id: z.string().optional(),
+        kind: z.string(),
+        content: z.record(z.string(), z.unknown()),
+        lineage: z.array(z.object({ kind: z.string(), id: z.string() })),
+        trace_id: z.string(),
+        idempotency_key: z.string(),
+      },
+    },
+    byqArtifactCreate,
   );
   return server;
 }

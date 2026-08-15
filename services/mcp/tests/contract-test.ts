@@ -19,6 +19,15 @@ try {
   const listed = await client.listTools();
   assert.ok(listed.tools.some((tool) => tool.name === "byq_health"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_market_daily"));
+  for (const name of [
+    "byq_research_task_create",
+    "byq_research_get",
+    "byq_research_transition",
+    "byq_experiment_create",
+    "byq_artifact_create",
+  ]) {
+    assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);
+  }
 
   const called = await client.callTool({ name: "byq_health", arguments: {} });
   const textBlock = called.content.find((block) => block.type === "text");
