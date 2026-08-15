@@ -30,3 +30,23 @@ These rules apply to Codex, DSH engineering agents, and any other AI coding agen
 - Preserve framework-neutral BYQ contracts at integration boundaries.
 - Record exceptions and boundary changes in `docs/architecture/adr/`.
 - Never use the old Community or Legacy repositories as the Git history for this project.
+
+## Before starting implementation
+
+Read all of the following before selecting or implementing work:
+
+- `docs/roadmap/STATUS.md`
+- `docs/roadmap/IMPLEMENTATION_PLAN.md`
+- `docs/DEVELOPMENT_WORKFLOW.md`
+- every Accepted ADR relevant to the phase
+
+“Continue development” means read `STATUS.md` and execute its `Next phase`
+according to the implementation plan. It does not authorize selecting an
+unrelated task or skipping the workflow. Codex must still use an isolated
+worktree and must not automatically merge `main`.
+
+`STATUS.md` is the repository phase source of truth, not a Git source of truth:
+it must not hard-code a main SHA or transient PR state. Derive the clean base
+with `git rev-parse origin/main` after synchronizing `main`. An Accepted ADR
+and the current phase acceptance criteria are required before moving to the
+next phase.

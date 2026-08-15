@@ -3,68 +3,33 @@ set -euo pipefail
 
 compose=(docker compose)
 
-echo "== compose status =="
+echo "== base compose status =="
 "${compose[@]}" ps
 
-echo "== all services healthy =="
+echo "== base services healthy =="
 while IFS= read -r health; do
   test "$health" = "healthy"
 done < <("${compose[@]}" ps --format '{{.Health}}')
 
 echo "== non-root runtime users =="
-for service in gateway backend mcp dsh; do
+for service in gateway backend mcp runtime-adapter; do
   uid=$("${compose[@]}" exec -T "$service" id -u | tr -d '\r')
   test "$uid" != "0"
 done
 
-echo "== DSH has no runtime mounts =="
-dsh_id=$("${compose[@]}" ps -q dsh)
-test -n "$dsh_id"
-mounts=$(docker inspect "$dsh_id" --format '{{json .Mounts}}')
-test "$mounts" = "[]"
+echo "== Runtime Adapter has only the session persistence mount =="
+runtime_id=$("${compose[@]}" ps -q runtime-adapter)
+mounts=$(docker inspect "$runtime_id" --format '{{range .Mounts}}{{println .Destination}}{{end}}')
+test "$mounts" = "/var/lib/byq/dsh-sessions"
 
-echo "== MCP contract =="
+echo "== Runtime Adapter filesystem permissions =="
+"${compose[@]}" exec -T runtime-adapter sh -c \
+  'test -w /var/lib/byq/dsh-sessions && test ! -w /app && test ! -w /opt/dsh-runtime && test ! -w /opt/byq'
+
+echo "== MCP contract and auth wall =="
 "${compose[@]}" exec -T mcp npm test
-
-echo "== MCP auth wall =="
 "${compose[@]}" exec -T mcp node --input-type=module -e \
   "const r=await fetch('http://127.0.0.1:8300/mcp/v1',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}); if(r.status!==401) process.exit(1);"
-
-echo "== DSH composed config =="
-config=$("${compose[@]}" run --rm --no-deps dsh dsh --profile byq --dump-config)
-grep -q '@deepseek-ai/dsh-mcp-client' <<<"$config"
-grep -q 'serverName: byq' <<<"$config"
-grep -q 'transport: streamable-http' <<<"$config"
-grep -q 'failOnStartupError: true' <<<"$config"
-preset_block=$(awk '/^- id: agent-presets$/{capture=1} /^- id: mcp-byq$/{capture=0} capture' <<<"$config")
-grep -q 'default: byq-product' <<<"$preset_block"
-grep -q 'path: /opt/dsh/bundles/dsh-byq/presets' <<<"$preset_block"
-grep -q 'includeUserRoot: false' <<<"$preset_block"
-if grep -Eiq 'default: (standard|minimal|code|cordis)' <<<"$preset_block"; then
-  echo "Shipped coding preset selected by Product DSH" >&2
-  exit 1
-fi
-
-echo "== DSH logs =="
-logs=$("${compose[@]}" logs dsh 2>&1)
-if grep -Eiq '(mcp.*startup.*fail|startup.*mcp.*fail|failed.*mcp)' <<<"$logs"; then
-  echo "DSH MCP startup failure detected" >&2
-  exit 1
-fi
-if grep -Eiq '(--host[ =]0\.0\.0\.0|socat|nginx|iptables|network_mode: host|RCE.*workaround)' <<<"$logs"; then
-  echo "DSH Web exposure workaround detected" >&2
-  exit 1
-fi
-
-# With failOnStartupError=true, a healthy DSH process proves that the initial
-# MCP connection and tool synchronization did not fail. rc.6 does not expose
-# a stable non-LLM tool-registry endpoint, so the accepted evidence is config
-# composition + the MCP contract + clean DSH startup logs.
-echo "DSH MCP discovery evidence: config + MCP contract + clean startup logs"
-if ! grep -Eiq '(mcp__byq__byq_health|byq_health|registered.*tool|tools?.*(sync|discover|register)|connected.*byq)' <<<"$logs"; then
-  echo "DSH logs do not expose the tool name; retaining the permitted combined evidence." >&2
-  echo "$logs" >&2
-fi
 
 echo "== Gateway health and readyz =="
 python3 - <<'PY'
@@ -79,12 +44,134 @@ assert health["status"] == "ok"
 
 with urlopen("http://127.0.0.1:8100/readyz", timeout=5) as response:
     payload = json.load(response)
-
 assert response.status == 200
 assert payload["service"] == "byq-gateway"
 assert payload["status"] == "ok"
-assert payload["dsh_runtime_integration"] == "not-configured"
+assert payload["dsh_runtime_integration"] == "runtime-adapter"
 print(json.dumps(payload, sort_keys=True))
 PY
 
-echo "Phase 5 smoke PASS"
+echo "== Gateway receives BYQ normalized streaming event =="
+python3 - <<'PY'
+import json
+import threading
+import time
+import uuid
+from urllib.request import Request, urlopen
+
+session_id = f"phase6-stream-{uuid.uuid4().hex}"
+gateway = "http://127.0.0.1:8100/internal/runtime"
+
+def post(path, payload=None):
+    body = None if payload is None else json.dumps(payload).encode()
+    request = Request(
+        gateway + path,
+        data=body,
+        headers={"content-type": "application/json"} if body else {},
+        method="POST",
+    )
+    with urlopen(request, timeout=20) as response:
+        assert response.status in (200, 201, 202)
+        return json.load(response)
+
+post("/sessions", {"session_id": session_id, "trace_id": "phase6-stream-trace"})
+events = []
+
+def read_one_event():
+    with urlopen(f"http://127.0.0.1:8100/internal/workflows/{session_id}/events", timeout=20) as response:
+        for line in response:
+            if line.startswith(b"data: "):
+                events.append(json.loads(line[6:]))
+                return
+
+reader = threading.Thread(target=read_one_event, daemon=True)
+reader.start()
+time.sleep(0.2)
+post(f"/sessions/{session_id}/prompt", {"content": "stream smoke"})
+try:
+    post(f"/sessions/{session_id}/cancel?mode=hard")
+except Exception as exc:
+    # A keyless runtime may settle before the cancel request reaches it. That
+    # is a valid 409 lifecycle result; release below waits for idle/failed.
+    if getattr(exc, "code", None) != 409:
+        raise
+reader.join(timeout=10)
+assert events and events[0]["kind"] == "session.started"
+assert events[0]["source"] == "runtime-adapter"
+assert "session.event" not in json.dumps(events[0])
+for _ in range(20):
+    try:
+        post(f"/sessions/{session_id}/release")
+        break
+    except Exception as exc:
+        if getattr(exc, "code", None) != 409:
+            raise
+        time.sleep(0.1)
+else:
+    raise AssertionError("stream session did not become releasable")
+print(json.dumps(events[0], sort_keys=True))
+PY
+
+echo "== Runtime Adapter keyless initialize, lifecycle and release =="
+docker compose exec -T runtime-adapter python3 - <<'PY'
+import json
+import uuid
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
+session_id = f"phase6-smoke-{uuid.uuid4().hex}"
+base = "http://127.0.0.1:8400/internal/runtime"
+
+def post(path, payload=None, expected=(200, 201, 202)):
+    body = None if payload is None else json.dumps(payload).encode()
+    request = Request(
+        base + path,
+        data=body,
+        headers={"content-type": "application/json"} if body else {},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            assert response.status in expected
+            return response.status, json.load(response)
+    except HTTPError as exc:
+        return exc.code, json.loads(exc.read())
+
+status, created = post("/sessions", {"session_id": session_id, "trace_id": "phase6-smoke-trace"})
+assert status == 201
+assert created["status"] == "ready"
+assert created["process_ownership"] == "dedicated"
+assert created["persistence"] == "dsh-owned"
+
+duplicate_status, _ = post("/sessions", {"session_id": session_id, "trace_id": "duplicate"})
+assert duplicate_status == 409
+
+# The enqueue is keyless. If the provider fails immediately, the lifecycle
+# settles to failed/idle and hard cancel correctly returns 409; otherwise the
+# active run is hard-cancelled and the owned process is closed.
+prompt_status, _ = post(f"/sessions/{session_id}/prompt", {"content": "keyless smoke"})
+assert prompt_status == 202
+cancel_status, cancelled = post(f"/sessions/{session_id}/cancel?mode=hard")
+assert cancel_status in (200, 409)
+if cancel_status == 200:
+    assert cancelled["status"] == "interrupted"
+
+release_status, released = post(f"/sessions/{session_id}/release")
+assert release_status == 200
+assert released["status"] == "closed"
+print(json.dumps({"created": created, "prompt_status": prompt_status, "cancelled": cancelled, "released": released}, sort_keys=True))
+PY
+
+echo "== owned DSH child cleanup =="
+if docker top "$runtime_id" -eo pid,args | grep -E 'dsh-jsonrpc-agent|packaged-bin.js|/lib/bin.js'; then
+  echo "Released session left an owned DSH runtime process behind" >&2
+  exit 1
+fi
+
+echo "== named session volume survives adapter restart =="
+marker="/var/lib/byq/dsh-sessions/phase6-volume-marker"
+"${compose[@]}" exec -T runtime-adapter sh -c "printf phase6 > '$marker'"
+"${compose[@]}" restart runtime-adapter
+"${compose[@]}" exec -T runtime-adapter sh -c "test \"\$(cat '$marker')\" = phase6"
+
+echo "Phase 5 + Phase 6 base smoke PASS"
