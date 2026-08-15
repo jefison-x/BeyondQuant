@@ -4,6 +4,15 @@ This is the repository roadmap for autonomous development. Only the current
 phase may be implemented in a normal phase branch. Later phases are planning
 constraints, not permission to pre-build product scope.
 
+For Phase 9 and later, the permanent migration source of truth is
+`docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`. Before a phase is
+implemented, its Community candidates MUST be inspected and classified there.
+Provider-independent or engine-independent semantics may be reimplemented in
+BYQ-owned contracts; Community runtime, storage, provider, and engine
+architecture MUST NOT be copied. BaoStock, AKShare, VectorBT, PydanticAI, and
+Hermes remain excluded unless a future Accepted ADR explicitly reverses that
+decision.
+
 ## Phase 6 — Runtime seam, ADR-0003, and development framework
 
 ### Goal
@@ -168,8 +177,31 @@ artifact foundations.
 
 ### Scope
 
-Factor definitions, input snapshots, computation metadata, evaluation,
-results as artifacts, and leakage/look-ahead checks.
+Factor definitions, canonical security identity, lifecycle-aware input
+coverage, trading-session calendars, deterministic input normalization,
+computation metadata, evaluation, results as artifacts, and leakage/look-ahead
+checks.
+
+Phase 10 MUST establish the BYQ-owned input boundary for the provider-neutral
+semantics identified by the Community audit:
+
+- canonical A-share symbol, exchange, and asset-type semantics;
+- listing/delisting and suspension/resumption lifecycle snapshots;
+- a distinction between a missing bar and not-listed, delisted, suspended,
+  boundary, or non-trading coverage states;
+- trading-session windows and lag rules rather than naive calendar-day offsets;
+- one deterministic bar per `(symbol, trade_date)`, an explicit duplicate-key
+  policy, stable ordering, finite-value checks, and OHLC relationship checks;
+- dataset identity, request provenance, reproducibility status, and effective
+  date/announcement date/`as_of` semantics for revised or non-price data; and
+- point-in-time universe or index membership using the latest snapshot visible
+  on the research date.
+
+If duplicate handling, deterministic ordering, or finite/OHLC validation is
+implemented in a small Phase 8 Data Contract hardening PR, it MUST remain
+limited to that contract. Otherwise the Phase 10 input boundary MUST enforce
+the same rules before any factor is accepted. This is not permission to rewrite
+the Phase 8 Tushare adapter.
 
 ### Non-goals
 
@@ -177,22 +209,32 @@ No strategy execution or portfolio/backtest job orchestration.
 
 ### Dependencies
 
-Phases 8–9 and reviewed quant methodology contracts.
+Phases 8–9, the Community migration inventory, and reviewed quant methodology
+contracts. The Phase 8 retrospective entry gates MUST be satisfied by the
+Phase 10 input contract before factor implementation begins.
 
 ### Architecture constraints
 
 Computation runs in BYQ workers/services; DSH proposes or invokes domain
-operations through MCP and cannot bypass validation.
+operations through MCP and cannot bypass validation. Factor inputs and
+provenance are BYQ-owned immutable snapshots. Tushare remains behind the BYQ
+Data Provider Contract; no BaoStock, AKShare, or provider-specific Community
+implementation may be introduced.
 
 ### Acceptance criteria
 
-Deterministic fixture runs, provenance, missing-data/temporal checks, and
-artifact lineage are tested and reproducible.
+Deterministic fixture runs, canonical security/lifecycle semantics, trading
+calendar and coverage classification, duplicate/order/OHLC validation,
+point-in-time/as-of checks, provenance and reproducibility status, no-lookahead
+checks, and artifact lineage are tested and reproducible. A factor cannot be
+accepted when its input identity, effective visibility, or coverage status is
+ambiguous.
 
 ### Stop conditions
 
-Look-ahead leakage, non-reproducible inputs, or factor invariants enforced only
-by prompts.
+Look-ahead leakage, undefined as-of visibility, missing lifecycle/calendar
+semantics, ambiguous coverage, duplicate or malformed bars, non-reproducible
+inputs, or factor invariants enforced only by prompts.
 
 ## Phase 11 — Strategy Artifact + Validation
 
@@ -203,8 +245,16 @@ artifact.
 
 ### Scope
 
-StrategyDraft/StrategyArtifact schema, validation, approval gates, provenance,
-versioning, and MCP operations.
+StrategyDraft/StrategyArtifact schema, immutable content-addressed
+StrategyVersion snapshots, validation evidence, approval gates, provenance,
+versioning, export hygiene, and MCP operations.
+
+Strategy version identity MUST be derived from a deterministic semantic
+snapshot and source/content fingerprint, excluding mutable timestamps. Exported
+artifacts MUST omit credentials, runtime settings, and Agent internals.
+Validation, approval, and execution outcome remain separate state and audit
+concepts: approval authorizes an attempt and does not prove successful business
+mutation.
 
 ### Non-goals
 
@@ -223,12 +273,15 @@ the repository; validation is BYQ-owned and explicit.
 ### Acceptance criteria
 
 Invalid strategies are rejected with contract errors, approved artifacts are
-immutable/versioned, and execution permissions are auditable.
+immutable/versioned, historical replay resolves the stored version, exports
+are deterministic and secret-free, validation evidence is retained, approval
+records are auditable, and approval is not conflated with execution success.
 
 ### Stop conditions
 
-Application-source access, missing approval semantics, or an unsafe execution
-boundary.
+Application-source access, mutable or non-reproducible strategy versions,
+secret-bearing exports, missing approval or execution-failure semantics, or an
+unsafe execution boundary.
 
 ## Phase 12 — Backtest Job + Worker
 
@@ -238,8 +291,19 @@ Execute validated strategy artifacts through durable, isolated backtest jobs.
 
 ### Scope
 
-Job state machine, worker queue, resource/time limits, result artifacts,
-retries/idempotency, and audit/observability.
+BYQ-owned native deterministic backtest execution, A-share execution rules,
+frozen universe and strategy-version authorization, content-addressed input
+and result manifests, job state machine, worker queue, resource/time limits,
+result artifacts, retries/idempotency, object references/lifecycle, and
+audit/observability.
+
+The native engine MUST encode and test T+1, limit-up/limit-down, suspension,
+lot-size, fees, stamp tax, cash, corporate-action, and stable blocked-trade
+reason semantics. Input manifests MUST freeze signal/execution prices, status,
+corporate actions, universe membership, strategy version, environment/engine
+contract version, and reproducibility status. Result objects MUST retain
+namespace/object identity, media type, size, and SHA-256 rather than embedding
+unbounded result data in business rows.
 
 ### Non-goals
 
@@ -252,16 +316,25 @@ Phases 8–11, worker deployment design, and artifact storage.
 ### Architecture constraints
 
 Workers are independently deployable; BYQ owns business job state; DSH cannot
-directly access business storage or worker internals.
+directly access business storage or worker internals. The engine is BYQ-owned
+and deterministic; VectorBT and Community provider/runtime boundaries are not
+backtest dependencies or compatibility paths. Universe authorization and
+object deletion are enforced by BYQ using owner and live-reference checks.
 
 ### Acceptance criteria
 
 Jobs are isolated, restartable, idempotent, resource-bounded, and produce
-traceable result artifacts under contract tests.
+traceable result artifacts under contract tests. Golden regression fixtures
+cover the A-share execution rules, authorized frozen universes, deterministic
+input/result manifests, bounded retries, immutable result references, and
+fail-closed deletion of referenced or tampered objects.
 
 ### Stop conditions
 
-Unbounded execution, non-idempotent retries, or untrusted artifact execution.
+Unbounded execution, non-idempotent retries, mutable input identity, missing
+A-share execution constraints, universe escape, non-reproducible manifests,
+untrusted artifact execution, or deletion that ignores ownership/live
+references.
 
 ## Phase 13 — Quant Research Agents
 
@@ -273,7 +346,8 @@ keeping domain authority in BYQ.
 ### Scope
 
 Researcher roles, prompt/skill contracts, tool permissions, delegation policy,
-and traceable multi-agent orchestration.
+traceable multi-agent orchestration, owner/actor authorization, human approval
+integration, audit views, and DSH-run correlation.
 
 ### Non-goals
 
@@ -287,12 +361,17 @@ Phases 7–12 and reviewed domain MCP contracts.
 ### Architecture constraints
 
 Roles are DSH configuration where generic; domain invariants remain BYQ;
-workflow trace and artifact state remain separate.
+workflow trace and artifact state remain separate. Authorization, approval,
+audit, and evidence-promotion decisions remain BYQ domain capabilities reached
+through MCP; DSH supplies generic role and orchestration capability only.
 
 ### Acceptance criteria
 
 Role capabilities are explicit, least-privileged, observable, and covered by
-capability-isolation and end-to-end contract tests.
+capability-isolation and end-to-end contract tests. Audit records correlate the
+owner, actor, DSH run/session, domain action, result, and failure; approval
+failures remain distinct from successful execution; and no role can bypass BYQ
+invariants or promote unreviewed evidence.
 
 ### Stop conditions
 
@@ -309,7 +388,7 @@ loop with measurable feedback.
 ### Scope
 
 Evaluation signals, experiment comparison, feedback lineage, repair/retry
-policy, and bounded agent iteration.
+policy, evidence promotion, and bounded agent iteration.
 
 ### Non-goals
 
@@ -328,7 +407,9 @@ contracts; approvals cannot be replaced by prompts.
 ### Acceptance criteria
 
 Learning runs have explicit budgets, lineage, stopping rules, human gates, and
-replayable results.
+replayable results. Promoted lessons retain evidence, validation, review,
+provenance, and a controlled promotion history; ordinary chat output cannot
+become trusted Quant knowledge directly.
 
 ### Stop conditions
 
