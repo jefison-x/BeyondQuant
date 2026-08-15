@@ -95,7 +95,7 @@ def test_engineering_task_requires_isolated_evidence_before_completion(tmp_path)
     assert completed["status"] == "completed"
     assert completed["merge_status"] == "not_merged"
 
-    with pytest.raises(EngineeringForbidden, match="self"):
+    with pytest.raises(EngineeringForbidden, match="own human merge"):
         store.record_human_merge(
             {"task_id": task["task_id"], "decision": "merged", "idempotency_key": "merge-self"},
             trusted_owner="alice",
