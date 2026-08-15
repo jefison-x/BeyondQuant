@@ -291,6 +291,17 @@ or other point-in-time inputs are added, the as-of rule is mandatory.
 | Community SQLAlchemy/Pandas/Agent Service strategy runtime | Not imported or copied | `REFERENCE_ONLY` / `REPLACE` |
 | BaoStock, AKShare, VectorBT | Not present in the new implementation | `DROP` |
 
+### Phase 12 implementation reuse status (current branch)
+
+| Community semantic | Current BYQ implementation | Classification / status |
+|---|---|---|
+| Native A-share execution rules and golden cases | `services/backend/app/backtest.py::run_native_backtest` and `test_backtest.py` | `PORT_LOGIC` / `PORT_TESTS` — signal-snapshot engine; next-session open, T+1, limits, suspension, lots, fees, tax, corporate actions, and stable blocked reasons are BYQ-owned |
+| Frozen universe authorization | `normalize_backtest_request` universe membership fingerprint and signal/bar containment | `PORT_LOGIC` / `PORT_TESTS` — no Community stock-pool ORM or index runtime is copied |
+| Content-addressed input manifest | `normalize_backtest_request` and `input_manifest_id` | `REFACTOR` — canonical BYQ manifest with explicit strategy/approval, bars, signals, execution, and engine contract identity |
+| Durable jobs, retries, and worker recovery | `BacktestJobStore`, `BacktestWorker`, `workers/backtest/worker.py` | `REFACTOR` — SQLite Backend state, strict task-scoped idempotency, bounded attempts, and stale requeue; old Agent workflow state is not migrated |
+| Immutable result object and lifecycle guard | `LocalObjectStore`, `backtest_result` Artifact, and object integrity tests | `PORT_LOGIC` / `PORT_TESTS` — namespace/object identity, media type, size, SHA-256, owner/live-reference deletion checks |
+| Community Pandas/ORM/Agent runtime and VectorBT engine | Not imported or copied | `REFERENCE_ONLY` / `DROP` |
+
 ### Retrospective migration summary
 
 - `PORT_NOW`: duplicate-key policy, deterministic ordering, and finite/OHLC
