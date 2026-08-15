@@ -18,6 +18,7 @@ try {
   await client.connect(transport);
   const listed = await client.listTools();
   assert.ok(listed.tools.some((tool) => tool.name === "byq_health"));
+  assert.ok(listed.tools.some((tool) => tool.name === "byq_market_daily"));
 
   const called = await client.callTool({ name: "byq_health", arguments: {} });
   const textBlock = called.content.find((block) => block.type === "text");
