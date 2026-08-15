@@ -1,0 +1,30 @@
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+virtualenv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# JavaScript / tooling caches
+node_modules/
+dist/
+build/
+.cache/
+
+# Local editor and OS files
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Local engineering work products
+.byq-worktrees/
+coverage/
