@@ -68,7 +68,7 @@ def test_product_trace_stream_replays_ordered_byq_events(monkeypatch, tmp_path: 
     session = main.ProductSession(
         session_id="session-1",
         trace_id="trace-1",
-        principal=main.Principal(subject="product-user"),
+        principal=main.Principal(subject=main.PRODUCT_PRINCIPAL),
     )
     main.product_sessions.add(session)
     store.append(
