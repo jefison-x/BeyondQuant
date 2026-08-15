@@ -18,6 +18,10 @@ class RuntimeSessionRequest(BaseModel):
     trace_id: str
 
 
+class PromptRequest(BaseModel):
+    content: str
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {
@@ -67,12 +71,43 @@ def create_runtime_session(request: RuntimeSessionRequest) -> dict[str, object]:
     return response.json()
 
 
+@app.post("/internal/runtime/sessions/{session_id}/prompt", status_code=202)
+def submit_runtime_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
+    try:
+        response = httpx.post(
+            f"{RUNTIME_ADAPTER_URL}/internal/runtime/sessions/{session_id}/prompt",
+            json=request.model_dump(),
+            timeout=5.0,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="runtime adapter unavailable") from exc
+    return response.json()
+
+
 @app.post("/internal/runtime/sessions/{session_id}/cancel")
 def cancel_runtime_session(session_id: str, mode: str = "hard") -> dict[str, object]:
     try:
         response = httpx.post(
             f"{RUNTIME_ADAPTER_URL}/internal/runtime/sessions/{session_id}/cancel",
             params={"mode": mode},
+            timeout=5.0,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="runtime adapter unavailable") from exc
+    return response.json()
+
+
+@app.post("/internal/runtime/sessions/{session_id}/release")
+def release_runtime_session(session_id: str) -> dict[str, object]:
+    try:
+        response = httpx.post(
+            f"{RUNTIME_ADAPTER_URL}/internal/runtime/sessions/{session_id}/release",
             timeout=5.0,
         )
         response.raise_for_status()

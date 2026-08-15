@@ -11,9 +11,10 @@ task from repository history.
 1. Read `AGENTS.md`, `ARCHITECTURE.md`, `docs/roadmap/STATUS.md`,
    `docs/roadmap/IMPLEMENTATION_PLAN.md`, this workflow, and every Accepted
    ADR relevant to the phase.
-2. From the repository root, synchronize a clean `main` with
-   `origin/main` using fast-forward-only updates. Confirm the expected base
-   SHA and record any mismatch.
+2. From the repository root, synchronize a clean `main` with `origin/main`
+   using fast-forward-only updates. Derive the expected base dynamically with
+   `git rev-parse origin/main`; `STATUS.md` is not a Git SHA source of truth
+   and must not be used to compare against a hard-coded SHA.
 3. Inspect the phase scope, dependencies, non-goals, architecture constraints,
    acceptance criteria, and stop conditions before editing.
 4. Create an isolated worktree under `/home/jefison/projects/.byq-worktrees/`

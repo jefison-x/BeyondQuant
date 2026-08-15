@@ -82,6 +82,33 @@ upstream `python/sdk-runtime/package.json` inspected at the same time also
 contains no MCP client entry. The installed artifact is authoritative for BYQ
 compatibility, so the bundled closure is recorded as **MCP client absent**.
 
+## rc.6 JSON-RPC carrier verification
+
+The official npm metadata was re-queried on 2026-08-15. `@deepseek-ai/dsh`
+still resolves `latest` and `next` to `0.1.0-rc.6`. For
+`@deepseek-ai/dsh-sdk-jsonrpc-demo@0.1.0-rc.6`, the public package metadata
+declares:
+
+```text
+bin: dsh-jsonrpc-agent -> lib/bin.js
+exports: ./bin -> ./lib/bin.js
+exports: ./packaged-bin -> ./lib/packaged-bin.js
+```
+
+The installed rc.6 artifact was run through both entrypoints with the BYQ
+composition and healthy BeyondQuant MCP. Both completed SDK initialize and
+remained alive through the keyless idle probe; both closed cleanly. The
+selected carrier is the public `dsh-jsonrpc-agent` entrypoint (`lib/bin.js`),
+because it loads the exact BYQ composition without the packaged-runtime base
+override and preserves the public package contract. `packaged-bin.js` remains
+an rc.6 compatibility probe only; it is not a claim of long-term upstream
+stability.
+
+The public bin is still exact-pinned to rc.6 and protected by the runtime
+launch/initialize smoke. A future DSH release may change carrier behavior and
+requires a separate compatibility decision; BYQ does not treat the public bin
+as a permanent production compatibility guarantee.
+
 ## Public Python SDK capability inventory
 
 ### High-level API

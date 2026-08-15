@@ -44,3 +44,9 @@ Read all of the following before selecting or implementing work:
 according to the implementation plan. It does not authorize selecting an
 unrelated task or skipping the workflow. Codex must still use an isolated
 worktree and must not automatically merge `main`.
+
+`STATUS.md` is the repository phase source of truth, not a Git source of truth:
+it must not hard-code a main SHA or transient PR state. Derive the clean base
+with `git rev-parse origin/main` after synchronizing `main`. An Accepted ADR
+and the current phase acceptance criteria are required before moving to the
+next phase.

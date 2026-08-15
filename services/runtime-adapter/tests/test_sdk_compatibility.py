@@ -7,6 +7,14 @@ def test_installed_official_sdk_pair_is_exact_rc6() -> None:
     assert version("deepseek-harness-runtime-bin") == "0.1.0rc6"
 
 
+def test_runtime_uses_public_rc6_jsonrpc_agent_bin() -> None:
+    from app.runtime import RuntimeAdapter
+
+    assert RuntimeAdapter().runtime_command[1].endswith(
+        "@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/bin.js"
+    )
+
+
 def test_product_composition_contains_jsonrpc_and_byq_mcp_without_coding() -> None:
     candidates = [Path("/opt/byq/compositions/byq-product-sdk.cordis.yml")]
     candidates.extend(

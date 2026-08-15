@@ -63,7 +63,7 @@ Gateway
   → internal HTTP/SSE BYQ seam
   → Product Plane Runtime Adapter (Python/FastAPI)
   → deepseek-harness-sdk==0.1.0rc6
-  → launch_args_override: node + dsh-sdk-jsonrpc-demo/packaged-bin.js
+  → launch_args_override: node + dsh-sdk-jsonrpc-demo/lib/bin.js (`dsh-jsonrpc-agent`)
   → exact npm rc.6 JSON-RPC runtime
       ├── @deepseek-ai/dsh-sdk-jsonrpc-server@0.1.0-rc.6
       ├── @deepseek-ai/dsh-agent-spine-demo@0.1.0-rc.6
@@ -85,11 +85,17 @@ The runtime adapter never calls zero-config `DeepSeekHarness()`. It supplies
 default injection is bypassed. `runtime_bin` is retained as a documented SDK
 option but is not selected for Product operation.
 
+The rc.6 `dsh-jsonrpc-agent` public bin was tested against the exact BYQ
+composition and healthy MCP and passed initialize/idle/close. The exported
+`packaged-bin.js` entrypoint was also probed for comparison, but is not the
+selected carrier. Both are exact rc.6 artifacts; neither test promises future
+DSH-version compatibility.
+
 ### Prototype result
 
-The installed npm rc.6 artifact was executed with its actual
-`packaged-bin.js`; `--help`, `--version`, profile/config introspection, and
-JSON-RPC behavior were observed. The initial composition exposed one real
+The installed npm rc.6 artifact was executed with its public `lib/bin.js`
+(`dsh-jsonrpc-agent`) and its exported `packaged-bin.js`; profile/config
+introspection and JSON-RPC behavior were observed. The initial composition exposed one real
 configuration error (`skills: false` instead of the rc.6 schema's
 `skills.enabled: false`); after correcting it, the runtime returned a valid
 `initialize` response and a clean `shutdown` response without a model key.

@@ -241,7 +241,7 @@ The target product topology is:
 ```text
 frontend
 gateway
-dsh
+runtime-adapter
 mcp
 backend
 backtest-worker
@@ -249,6 +249,10 @@ data-worker
 postgres
 redis
 ```
+
+The Phase 5 DSH Web bootstrap is diagnostic-profile only and is not a Gateway
+request transport. Product requests use Gateway → Runtime Adapter → owned
+stdio JSON-RPC DSH → MCP.
 
 The Engineering Plane is independent:
 

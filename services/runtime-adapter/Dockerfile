@@ -28,7 +28,7 @@ RUN groupadd --system --gid 10002 byq \
     && useradd --system --uid 10002 --gid byq --no-create-home \
        --home-dir /nonexistent --shell /usr/sbin/nologin byq \
     && mkdir -p /var/lib/byq/dsh-sessions \
-    && chown -R byq:byq /app /opt/dsh-runtime /opt/byq /var/lib/byq
+    && chown -R byq:byq /var/lib/byq/dsh-sessions
 
 USER byq
 

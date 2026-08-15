@@ -24,32 +24,6 @@ services:
       retries: 12
       start_period: 5s
 
-  dsh:
-    build:
-      context: .
-      dockerfile: services/dsh/Dockerfile
-    environment:
-      BYQ_MCP_TOKEN: ${BYQ_MCP_TOKEN:?BYQ_MCP_TOKEN must be set}
-      DSH_HOME: /opt/dsh
-      DSH_TELEMETRY_DISABLED: "true"
-    networks:
-      - byq_product
-    depends_on:
-      mcp:
-        condition: service_healthy
-    healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - >-
-          fetch('http://127.0.0.1:3080/').then(response =>
-          process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))
-      interval: 5s
-      timeout: 5s
-      retries: 18
-      start_period: 10s
-
   runtime-adapter:
     build:
       context: .
@@ -60,6 +34,8 @@ services:
       BYQ_DSH_RUNTIME_ROOT: /opt/dsh-runtime
       BYQ_DSH_COMPOSITION: /opt/byq/compositions/byq-product-sdk.cordis.yml
       DSH_SESSION_ROOT: /var/lib/byq/dsh-sessions
+    volumes:
+      - byq_dsh_sessions:/var/lib/byq/dsh-sessions
     networks:
       - byq_product
     depends_on:
@@ -128,3 +104,7 @@ networks:
   byq_product:
     name: byq_product
     driver: bridge
+
+volumes:
+  byq_dsh_sessions:
+    name: byq_dsh_sessions

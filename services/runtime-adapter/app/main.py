@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .runtime import RuntimeAdapter
+from .runtime import RuntimeAdapter, SessionConflict
 
 
 class CreateSessionRequest(BaseModel):
@@ -39,8 +39,10 @@ def readyz() -> dict[str, object]:
 def create_session(request: CreateSessionRequest) -> dict[str, object]:
     try:
         return adapter.create_session(request.session_id, request.trace_id)
-    except ValueError as exc:
+    except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail="DSH runtime failed to initialize") from exc
 
@@ -48,10 +50,12 @@ def create_session(request: CreateSessionRequest) -> dict[str, object]:
 @app.post("/internal/runtime/sessions/{session_id}/prompt", status_code=202)
 def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
     try:
-        adapter.submit_prompt(session_id, request.content)
+        run_id = adapter.submit_prompt(session_id, request.content)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {"accepted": True, "session_id": session_id}
+    except SessionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"accepted": True, "session_id": session_id, "run_id": run_id}
 
 
 @app.post("/internal/runtime/sessions/{session_id}/cancel")
@@ -60,8 +64,25 @@ def cancel_session(session_id: str, mode: str = Query("hard")) -> dict[str, obje
         return adapter.cancel_session(session_id, mode)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SessionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/internal/runtime/sessions/{session_id}/release")
+def release_session(session_id: str) -> dict[str, object]:
+    try:
+        return adapter.release_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SessionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.delete("/internal/runtime/sessions/{session_id}")
+def close_session(session_id: str) -> dict[str, object]:
+    return release_session(session_id)
 
 
 @app.get("/internal/runtime/sessions/{session_id}/events")

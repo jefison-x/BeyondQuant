@@ -51,12 +51,21 @@ jobs:
       - name: MCP tests
         run: docker compose exec -T mcp npm test
 
-      - name: DSH profile composition
-        run: docker compose run --rm --no-deps dsh dsh --profile byq --dump-config
-
       - name: Full smoke
         run: ./tests/smoke/run.sh
 
+      - name: DSH Web diagnostic profile config
+        run: docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web config
+
+      - name: Build DSH Web diagnostic profile
+        run: docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web build dsh
+
+      - name: Start DSH Web diagnostic profile
+        run: docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web up -d --wait
+
+      - name: DSH Web diagnostic smoke
+        run: ./tests/smoke/run-dsh-web.sh
+
       - name: Cleanup Compose
         if: always()
-        run: docker compose down -v
+        run: docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web down -v

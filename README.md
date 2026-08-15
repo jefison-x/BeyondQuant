@@ -21,7 +21,8 @@ The completed Phase 5 spine provides:
 - BeyondQuant MCP Streamable HTTP at `/mcp/v1`
 - the authenticated `byq_health` MCP tool
 - Backend health endpoints
-- an isolated Docker topology for `gateway`, `dsh`, `mcp`, and `backend`
+- an isolated Docker topology for `gateway`, `runtime-adapter`, `mcp`, and
+  `backend`; the old DSH Web bootstrap is diagnostic-profile only
 
 Phase 6 adds the formal programmatic runtime seam:
 
@@ -32,9 +33,10 @@ Phase 6 adds the formal programmatic runtime seam:
 - BYQ-owned `WorkflowTraceEvent` normalization
 - keyless JSON-RPC initialize, MCP startup, and hard-cleanup smoke coverage
 
-The DSH Web surface is bound only to container-local `127.0.0.1` for runtime
-bootstrap and verification. It has no host port and is not a BYQ product API.
-Phase 6 does not turn Web into an API and does not provide a public chat API.
+The DSH Web surface is available only through the diagnostic `dsh-web` Compose
+profile, remains bound to container-local `127.0.0.1`, has no host port, and is
+not a BYQ product API. Phase 6 does not turn Web into an API and does not
+provide a public chat API.
 The programmatic decision is recorded in
 [ADR-0003](docs/architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md).
 
