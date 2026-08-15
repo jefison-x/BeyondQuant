@@ -37,6 +37,22 @@ task from repository history.
 15. Stop at the human merge gate. Codex must not merge or push directly to
     `main`.
 
+## Single-maintainer Human Merge Gate
+
+When the repository has one human maintainer and that maintainer is also the
+PR author:
+
+- CI and all required status checks MUST pass.
+- Codex MUST stop at a Draft PR and MUST NOT push directly to `main`.
+- The human repository owner MUST manually review the PR. The owner SHOULD
+  leave a GitHub review or comment as an audit record.
+- A GitHub `APPROVED` state is not required when GitHub prevents the PR author
+  from approving their own PR.
+- Codex MUST NOT merge or mark the PR ready for review.
+- Only the human maintainer may mark the PR ready and merge it.
+- If repository rules later require independent approvals, those approvals
+  MUST be satisfied.
+
 ## Evidence expectations
 
 Architecture changes need an ADR or an update to a relevant Accepted ADR.
