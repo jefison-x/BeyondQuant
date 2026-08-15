@@ -29,6 +29,19 @@ try {
     assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);
   }
   for (const name of [
+    "byq_agent_context",
+    "byq_agent_roles",
+    "byq_agent_run_start",
+    "byq_agent_authorize",
+    "byq_agent_audit",
+    "byq_agent_audit_get",
+    "byq_agent_approval_request",
+    "byq_agent_approval_get",
+    "byq_agent_approval_decide",
+  ]) {
+    assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);
+  }
+  for (const name of [
     "byq_research_task_create",
     "byq_research_get",
     "byq_research_transition",

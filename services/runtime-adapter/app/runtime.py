@@ -50,6 +50,7 @@ class RuntimeSession:
     session_id: str
     trace_id: str
     harness: DeepSeekHarness
+    owner_principal: str | None = None
     status: str = SessionStatus.STARTING
     active_run: ActiveRun | None = None
     interrupted_run_id: str | None = None
@@ -115,7 +116,7 @@ class RuntimeAdapter:
             ],
         }
 
-    def create_session(self, session_id: str, trace_id: str) -> dict[str, Any]:
+    def create_session(self, session_id: str, trace_id: str, owner_principal: str | None = None) -> dict[str, Any]:
         validate_identifier(session_id, field="session_id")
         validate_identifier(trace_id, field="trace_id")
         session_root = contained_session_path(self._session_root, session_id)
@@ -123,8 +124,18 @@ class RuntimeAdapter:
         with self._lock:
             if session_id in self._sessions:
                 raise SessionConflict(f"BYQ session already exists: {session_id}")
-            harness = self._build_harness(session_id, session_root)
-            record = RuntimeSession(session_id=session_id, trace_id=trace_id, harness=harness)
+            harness = self._build_harness(
+                session_id,
+                session_root,
+                trace_id=trace_id,
+                owner_principal=owner_principal,
+            )
+            record = RuntimeSession(
+                session_id=session_id,
+                trace_id=trace_id,
+                harness=harness,
+                owner_principal=owner_principal,
+            )
             self._sessions[session_id] = record
 
         try:
@@ -254,6 +265,8 @@ class RuntimeAdapter:
         harness = self._build_harness(
             record.session_id,
             contained_session_path(self._session_root, record.session_id),
+            trace_id=record.trace_id,
+            owner_principal=record.owner_principal,
         )
         try:
             harness.start()
@@ -321,6 +334,7 @@ class RuntimeAdapter:
                 "active_prompt": record.active_run is not None,
                 "process_ownership": "dedicated",
                 "persistence": "dsh-owned",
+                "owner_context": "configured" if record.owner_principal else "missing",
             }
 
     def close(self) -> None:
@@ -344,10 +358,24 @@ class RuntimeAdapter:
             raise KeyError(f"unknown BYQ session: {session_id}")
         return record
 
-    def _build_harness(self, session_id: str, session_root: Path) -> DeepSeekHarness:
+    def _build_harness(
+        self,
+        session_id: str,
+        session_root: Path,
+        *,
+        trace_id: str,
+        owner_principal: str | None,
+    ) -> DeepSeekHarness:
         environment = {
             "BYQ_MCP_URL": os.environ.get("BYQ_MCP_URL", "http://mcp:8300/mcp/v1"),
             "BYQ_MCP_TOKEN": os.environ.get("BYQ_MCP_TOKEN", ""),
+            "BYQ_OWNER_PRINCIPAL": owner_principal or "",
+            "BYQ_ACTOR_PRINCIPAL": owner_principal or "",
+            "BYQ_TRACE_ID": trace_id,
+            "BYQ_SESSION_ID": session_id,
+            # The adapter uses the durable session as the stable DSH
+            # correlation when rc.6 does not expose a per-MCP-call header.
+            "BYQ_DSH_RUN_ID": session_id,
         }
         # The provider credential enters only the adapter-owned SDK child
         # environment. It is never returned in readiness, lifecycle responses,

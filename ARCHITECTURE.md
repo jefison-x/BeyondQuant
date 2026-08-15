@@ -240,6 +240,12 @@ identity; it does not execute strategy source, access DSH state, or access
 provider credentials. Full results are immutable object references owned by
 the Backend/Domain plane, while business job state remains in BYQ storage.
 
+Phase 13 quant roles use DSH presets, skills, and the official subagent seam.
+The role allowlist, owner/actor authorization, approval state, audit records,
+and evidence promotion remain BYQ-owned contracts reached through MCP. DSH
+does not receive business storage access, provider credentials, application
+source access, or authority to self-approve consequential actions.
+
 Future core components MUST be independently deployable, independently upgradeable, and fault isolated.
 
 The target product topology is:

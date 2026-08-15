@@ -195,7 +195,7 @@ def create_product_session(request: Request) -> dict[str, object]:
     trace_id = f"byq-trace-{uuid.uuid4().hex}"
     body = _adapter_post(
         "/internal/runtime/sessions",
-        payload={"session_id": session_id, "trace_id": trace_id},
+        payload={"session_id": session_id, "trace_id": trace_id, "owner_principal": principal.subject},
     )
     session = ProductSession(session_id=session_id, trace_id=trace_id, principal=principal)
     product_sessions.add(session)

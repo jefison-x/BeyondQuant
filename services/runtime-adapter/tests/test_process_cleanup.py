@@ -152,6 +152,17 @@ def test_configured_model_credential_is_scoped_to_the_owned_sdk_environment(
     adapter.release_session("s-1")
 
 
+def test_product_context_is_scoped_to_the_owned_sdk_environment(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-1", "t-1", "alice")
+    sdk_environment = FakeHarness.instances[0].config.env
+    assert sdk_environment["BYQ_OWNER_PRINCIPAL"] == "alice"
+    assert sdk_environment["BYQ_ACTOR_PRINCIPAL"] == "alice"
+    assert sdk_environment["BYQ_TRACE_ID"] == "t-1"
+    assert sdk_environment["BYQ_SESSION_ID"] == "s-1"
+    assert sdk_environment["BYQ_DSH_RUN_ID"] == "s-1"
+    adapter.release_session("s-1")
+
+
 def test_soft_cancel_is_scoped_to_current_run_and_returns_to_idle(adapter: RuntimeAdapter) -> None:
     adapter.create_session("s-1", "t-1")
     adapter.submit_prompt("s-1", "first")

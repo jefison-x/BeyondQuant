@@ -15,11 +15,15 @@ and cannot be passed as an application argument after `--profile byq`:
 dsh --profile byq --host 127.0.0.1 --port 3080
 ```
 
-The Web/bootstrap surface is used only to start the runtime, load the profile,
-and verify MCP composition. It is not a product API and is not published to a
-host port. Gateway-to-DSH runtime integration is intentionally deferred to
-Phase 6.
+The Web/bootstrap surface is used only to start the diagnostic runtime, load
+the profile, and verify MCP composition. It is not a product API and is not
+published to a host port. The actual Product SDK path is the Runtime Adapter;
+its composition owns the Phase 13 role skills, official in-process subagents,
+and trusted BYQ MCP context. The diagnostic Web profile remains deliberately
+free of product role state.
 
 The Product preset roster is also bundle-owned: only `byq-product` is scanned,
 it is the default, and the user preset root is disabled. The preset composition
-contains no coding or filesystem mutation tools.
+contains no coding or filesystem mutation tools. The Product SDK composition
+likewise contains no source mount, Git, database, or Engineering Plane
+capability.
