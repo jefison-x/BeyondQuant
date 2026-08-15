@@ -234,6 +234,20 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("evaluation_signals", backend_files)
         self.assertIn("lessons", backend_files)
 
+    def test_phase15_engineering_task_is_not_exposed_to_product_plane(self) -> None:
+        mcp = "\n".join(
+            path.read_text() for path in (ROOT / "services/mcp/src").rglob("*.ts")
+        )
+        self.assertNotIn("byq_engineering_", mcp)
+
+        roles = (ROOT / "services/backend/app/agent_research.py").read_text()
+        self.assertNotIn("byq_engineering_", roles)
+
+        backend_files = "\n".join(
+            path.read_text() for path in (ROOT / "services/backend/app").rglob("*.py")
+        )
+        self.assertIn("engineering_tasks", backend_files)
+
     def test_runtime_adapter_owns_the_official_sdk_and_explicit_runtime(self) -> None:
         adapter = "\n".join(
             path.read_text()

@@ -38,6 +38,14 @@ from .learning_loop import (
     LearningUnauthorized,
     LearningLoopStore,
 )
+from .engineering import (
+    EngineeringConflict,
+    EngineeringForbidden,
+    EngineeringNotFound,
+    EngineeringPersistenceError,
+    EngineeringUnauthorized,
+    EngineeringTaskStore,
+)
 from .research import (
     IdempotencyConflict,
     InvalidTransition,
@@ -63,6 +71,7 @@ data_provider = TushareProvider.from_env()
 research_store = ResearchStore.from_env()
 agent_store = AgentResearchStore.from_env()
 learning_store = LearningLoopStore.from_env(research_store)
+engineering_store = EngineeringTaskStore.from_env()
 backtest_store = BacktestJobStore.from_env()
 backtest_objects = LocalObjectStore.from_env()
 
@@ -181,6 +190,23 @@ def _learning_call(operation: Callable[[], dict[str, object]]) -> dict[str, obje
         raise HTTPException(status_code=404, detail=str(error)) from error
     except LearningPersistenceError as error:
         raise HTTPException(status_code=503, detail="learning storage is unavailable") from error
+
+
+def _engineering_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except EngineeringUnauthorized as error:
+        raise HTTPException(status_code=401, detail=str(error)) from error
+    except EngineeringForbidden as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except EngineeringNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except EngineeringConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except EngineeringPersistenceError as error:
+        raise HTTPException(status_code=503, detail="engineering storage is unavailable") from error
 
 
 def _agent_context(request: Request, payload: dict[str, Any]) -> dict[str, str | None]:
@@ -756,6 +782,87 @@ def review_lesson(lesson_id: str, payload: dict[str, Any], request: Request) -> 
     }
     request_payload["lesson_id"] = lesson_id
     return _learning_call(lambda: {"lesson": learning_store.review_lesson(
+        request_payload,
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.post("/v1/engineering/tasks", status_code=201)
+def create_engineering_task(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    request_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}
+    }
+    request_payload["trace_id"] = context["trace_id"]
+    return _engineering_call(lambda: {"task": engineering_store.create_task(
+        request_payload,
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.get("/v1/engineering/tasks")
+def list_engineering_tasks(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _engineering_call(lambda: engineering_store.list_tasks(
+        trusted_owner=context["owner_principal"],
+    ))
+
+
+@app.get("/v1/engineering/tasks/{task_id}")
+def get_engineering_task(task_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _engineering_call(lambda: {"task": engineering_store.get_task(
+        task_id,
+        trusted_owner=context["owner_principal"],
+    )})
+
+
+@app.post("/v1/engineering/tasks/{task_id}/transitions", status_code=201)
+def transition_engineering_task(task_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    request_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}
+    }
+    request_payload["task_id"] = task_id
+    return _engineering_call(lambda: {"task": engineering_store.transition(
+        request_payload,
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.post("/v1/engineering/tasks/{task_id}/evidence", status_code=200)
+def report_engineering_evidence(task_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    request_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}
+    }
+    request_payload["task_id"] = task_id
+    return _engineering_call(lambda: {"task": engineering_store.report_evidence(
+        request_payload,
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.post("/v1/engineering/tasks/{task_id}/merge")
+def record_human_engineering_merge(task_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    request_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}
+    }
+    request_payload["task_id"] = task_id
+    return _engineering_call(lambda: {"task": engineering_store.record_human_merge(
         request_payload,
         trusted_owner=context["owner_principal"],
         trusted_actor=context["actor_principal"],

@@ -196,6 +196,15 @@ in BYQ-owned learning contracts.
 | Evidence compaction and secret redaction | `agent-service/app/harness/output.py` | bounded JSON validation and recursive secret-key rejection in learning payloads | Port the invariant; old Agent Service persistence is not copied. |
 | Promotion/review provenance | `agent-service/app/services/approval_policy.py`, history tests | `lessons` state machine and ordered `learning_history` records | Port semantics only; BYQ owns promotion state and human review. |
 
+## Phase 15 migration audit
+
+The mandatory Phase 15 sequence was completed as: search the Community
+repository for EngineeringTask or Engineering Plane task implementations and
+find none. Phase 15 is therefore a new BYQ-owned contract, not a migration.
+The BYQ implementation records isolated worktree, branch, Draft PR, CI,
+self-review, and architecture evidence gates; Community has no reusable
+EngineeringTask asset and none was copied.
+
 ## Current Phase 9 comparison
 
 ### A. Correctly reimplemented
