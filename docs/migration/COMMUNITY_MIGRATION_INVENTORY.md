@@ -195,3 +195,86 @@ main-branch change, or reintroduction of an excluded technology.
 - `REPLACE`: old PydanticAI/Hermes/runtime coupling is superseded by DSH and the
   current Runtime Adapter.
 - `DROP`: BaoStock, AKShare, VectorBT and all associated compatibility paths.
+
+## Phase 8 retrospective Community reuse audit
+
+This retrospective was performed after the Phase 8 merge. It does not change
+the Phase 8 architecture, roll back PR #5, or reimplement the Tushare
+provider. The comparison baseline is the current BYQ adapter at
+`services/backend/app/data_provider.py` and the Community reference at commit
+`58dd99d`.
+
+The requested Community path
+`backend/app/core/data/market_coverage_service.py` does not exist. The actual
+reference is `backend/app/services/market_coverage_service.py`; that path is
+used below. The other requested paths were inspected as provided.
+
+### No-change decisions
+
+| Phase 8 capability | Current evidence | Decision |
+|---|---|---|
+| BYQ-owned provider boundary and normalized JSON transport | `services/backend/app/data_provider.py`, ADR-0005 | Keep. The Community `tushare` SDK adapter and SQLAlchemy/Pandas service boundary are not copied. |
+| Canonical request shape and bounded request cost | `DailyRequest.normalized()`, `docs/contracts/data-provider.md` | Keep. Canonical `NNNNNN.SH/SZ/BJ`, exact date or bounded symbol range, bounded rows, retries, and cache are deliberate Phase 8 decisions. |
+| Raw unadjusted daily bars | `DAILY_FIELDS`, `DailyBar`, ADR-0005 | Keep. Adjustment and execution-specific inputs remain later contracts. |
+| Secret boundary and request-level provenance | `TushareConfig`, `Provenance`, `TushareProvider` | Keep. Token redaction, request fingerprint, retrieval time, cache state, and row count are correct foundations; Phase 10 must add dataset/input identity without exposing secrets. |
+
+Community's short-symbol heuristic (`000001`, `sh000001`, and
+`sz000001`) is evidence for a future BYQ canonicalizer, not a reason to relax
+the accepted Phase 8 boundary. The heuristic's prefix fallback can silently
+misclassify symbols and must not be copied as-is.
+
+### Provider-independent semantics and migration classification
+
+| Community source | Domain capability | Current Phase 8 finding | Classification | Target / status |
+|---|---|---|---|---|
+| `backend/app/core/data/providers/tushare.py:22-58`; `backend/app/core/data/backtest_datasets.py:223-236` | A-share symbol normalization and exchange/asset semantics | Current requests accept only already-qualified symbols and do not expose provider-independent stock/index/ETF classification. | `PORT_PHASE10` | Add a BYQ-owned canonical symbol/security contract before factor universes are built. Keep the Phase 8 strict boundary until that contract is accepted; do not port prefix heuristics blindly. |
+| `backend/app/core/data/providers/tushare.py:163-177`; `backend/app/services/market_coverage_service.py:69-127` | Listing/delisting lifecycle | Phase 8 daily bars have no security master, `list_date`, `delist_date`, or status-aware valid lifespan. | `PORT_PHASE10` | Required for factor-universe membership and historical eligibility. `BLOCKER_BEFORE_PHASE10` unless Phase 10 explicitly consumes an equivalent BYQ lifecycle snapshot. |
+| `backend/app/core/data/providers/tushare.py:391-402`; `backend/app/core/data/market_data_repository.py:888-940` | Suspension/resumption semantics | Phase 8 does not provide daily trading-status or suspension events. Community distinguishes suspension from resumption and preserves timing/type. | `PORT_PHASE10` | Port the invariant and stable status reason codes to factor coverage first, then reuse them in the native execution engine. `BLOCKER_BEFORE_PHASE10` for any factor that treats a missing observation as a return/data failure. |
+| `backend/app/services/market_coverage_service.py:34-193,199-276,336-373` | Missing bar is not automatically missing data | Phase 8 has no lifecycle- and suspension-aware coverage assessment. | `PORT_PHASE10` | Coverage must classify not-listed, delisted, suspended, boundary, and genuine missing-data cases. `BLOCKER_BEFORE_PHASE10`. |
+| `backend/app/core/data/providers/tushare.py:636-650` | Trading-calendar semantics | Phase 8 validates calendar-date syntax only; it does not identify open trading sessions. | `PORT_PHASE10` | Factor windows and lag rules must operate on trading sessions, not naive calendar-day offsets. `BLOCKER_BEFORE_PHASE10`. |
+| `backend/app/core/data/providers/tushare.py:590-611`; `backend/app/core/data/backtest_datasets.py:258-296` | Duplicate daily bars and deterministic ordering | Current `DailyResult` preserves provider row order and does not define a `(symbol, trade_date)` duplicate policy. Community de-duplicates paged ETF snapshots and sorts downstream frames, but only part of the rule is explicit. | `PORT_NOW` | Recommend a small Data Contract hardening PR before Phase 10: define reject-vs-last-write behavior for duplicate keys, canonicalize rows, and sort by symbol/date. No Phase 8 rewrite is needed. `BLOCKER_BEFORE_PHASE10` until the contract is enforced by the Phase 10 input boundary. |
+| `backend/app/core/data/providers/tushare.py:613-634`; `backend/app/core/data/market_data_repository.py:711-819` | OHLC and data-quality validation | Current code checks fields and converts numeric values, but neither current nor Community code fully defines finite values, `high/low` relationships, or duplicate conflict handling. | `PORT_NOW` | Recommend the same small hardening PR to reject malformed bars before factor computation. This audit found a contract gap, not evidence of already-corrupt persisted Phase 8 rows. `BLOCKER_BEFORE_PHASE10` for unvalidated factor inputs. |
+| `backend/app/services/market_coverage_service.py:199-334` | Coverage completeness and bounded backfill | No Phase 8 coverage service exists; Community provides gap classification, lifecycle-aware boundaries, and bounded repair. | `PORT_PHASE10` | Factor input preparation needs read-only coverage assessment; durable repair/backfill belongs with the future Phase 12 Data Worker/backtest data pipeline. |
+| `backend/app/core/data/providers/tushare.py:303-342`; `backend/app/core/data/market_data_repository.py:403-446` | Provenance and point-in-time fundamental data | Current provenance identifies the request, not an effective data snapshot or announcement-visible version. Community retains `ann_date` and filters by `as_of_date`. | `PORT_PHASE10` | Factor inputs need effective-date, announcement-date, dataset identity, and reproducibility status. `BLOCKER_BEFORE_PHASE10` whenever a factor uses fundamentals or other revised data. |
+| `backend/app/core/data/backtest_datasets.py:104-221,298-368`; `backend/app/core/data/market_data_repository.py:647-680` | Point-in-time index membership and look-ahead prevention | Phase 8 has no index-universe or as-of contract. Community chooses the latest membership snapshot visible on the research date and records snapshot metadata. | `PORT_PHASE10` | Port the rule into factor input snapshots first and reuse it in Phase 12 native backtest manifests. `BLOCKER_BEFORE_PHASE10`. |
+| `backend/app/core/data/backtest_datasets.py:34-67,146-221,298-368` | Dataset bundle and input manifests | Phase 8 exposes one daily response; it does not assemble execution prices, signal prices, status, corporate actions, universe snapshots, and manifests as one frozen input bundle. | `PORT_PHASE12` | Preserve the provider-neutral manifest idea for the native deterministic backtest worker. Do not migrate the old backtest engine or runtime boundary. |
+| `backend/app/core/data/providers/tushare.py` and `backend/app/core/data/market_data_repository.py` | Old provider SDK, ORM repository, and Pandas service architecture | These are Community implementation details, not BYQ contracts. | `REFERENCE_ONLY` | Extract field meanings and invariants only. Current BYQ remains JSON transport plus BYQ-owned contracts. |
+| Community BaoStock and AKShare adapters and fallbacks | Legacy provider implementations | Incompatible with the current Tushare direction. | `DROP` | BaoStock = DROP; AKShare = DROP. No dependencies, adapters, fallbacks, or compatibility layer. |
+| Community VectorBT engine and compatibility paths | Legacy optional backtest engine | Incompatible with the BYQ-owned deterministic engine direction. | `DROP` | VectorBT = DROP. Engine-independent metrics/tests may be harvested in Phase 12, but no VectorBT code or dependency returns. |
+
+### Blockers before Phase 10
+
+The retrospective records these as design/contract blockers for starting
+Phase 10 factor implementation, not as reasons to modify or reopen Phase 8:
+
+1. A factor input must use a trading-session calendar and distinguish genuine
+   missing data from pre-listing, post-delisting, suspension, and non-trading
+   boundaries.
+2. Any non-price or revised dataset must carry an effective/announcement
+   `as_of` rule and reject look-ahead. Index membership must be the latest
+   snapshot visible on the research date, not the latest snapshot available
+   today.
+3. The factor input boundary must enforce one deterministic bar per
+   `(symbol, trade_date)`, stable ordering, and explicit finite/OHLC quality
+   validation. These are suitable for a small Data Contract hardening PR;
+   they do not justify a Phase 8 rewrite.
+
+If Phase 10 is deliberately restricted to raw daily prices, it must still
+adopt the calendar, lifecycle, coverage, uniqueness, ordering, and OHLC rules
+above before the first factor is accepted. If fundamentals, index membership,
+or other point-in-time inputs are added, the as-of rule is mandatory.
+
+### Retrospective migration summary
+
+- `PORT_NOW`: duplicate-key policy, deterministic ordering, and finite/OHLC
+  validation as a small optional Data Contract hardening PR.
+- `PORT_PHASE10`: symbol/security semantics, lifecycle, suspension-aware
+  coverage, trading calendar, point-in-time inputs, provenance extension, and
+  look-ahead prevention.
+- `PORT_PHASE12`: frozen dataset bundles, execution/status inputs, durable
+  coverage repair, and backtest manifests.
+- `REFERENCE_ONLY`: Community Tushare SDK usage, ORM repository, Pandas
+  service structure, and provider-specific implementation details.
+- `DROP`: BaoStock, AKShare, VectorBT, and their dependencies/fallbacks.
+- No Phase 8 source file, architecture decision, dependency, or API was
+  changed by this retrospective.
