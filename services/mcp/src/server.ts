@@ -2,8 +2,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
+import { z } from "zod";
 
 import { fetchByqHealth } from "./backend-health.js";
+import { fetchByqMarketDaily, type MarketDailyRequest } from "./market-data.js";
 
 const SERVICE = "beyondquant-mcp";
 const VERSION = "0.1.0";
@@ -37,6 +39,10 @@ async function byqHealth() {
   return fetchByqHealth(BACKEND_URL);
 }
 
+async function byqMarketDaily(args: MarketDailyRequest) {
+  return fetchByqMarketDaily(BACKEND_URL, args ?? {});
+}
+
 function buildServer(): McpServer {
   const server = new McpServer({ name: SERVICE, version: VERSION });
   server.registerTool(
@@ -46,6 +52,19 @@ function buildServer(): McpServer {
       inputSchema: {},
     },
     byqHealth,
+  );
+  server.registerTool(
+    "byq_market_daily",
+    {
+      description: "Return BYQ-normalized unadjusted A-share daily bars with provenance.",
+      inputSchema: {
+        ts_code: z.string().optional().describe("One A-share code such as 000001.SZ."),
+        trade_date: z.string().optional().describe("Exact YYYYMMDD trade date."),
+        start_date: z.string().optional().describe("Inclusive YYYYMMDD start date."),
+        end_date: z.string().optional().describe("Inclusive YYYYMMDD end date."),
+      },
+    },
+    byqMarketDaily,
   );
   return server;
 }

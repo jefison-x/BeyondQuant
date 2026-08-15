@@ -186,6 +186,18 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("Last-Event-ID", workflow)
         self.assertIn("DSH's durable session log", workflow)
 
+    def test_phase8_tushare_secret_is_backend_only_and_data_uses_mcp(self) -> None:
+        backend = service_block("backend")
+        self.assertIn("TUSHARE_TOKEN", backend)
+        for service in ("gateway", "runtime-adapter", "mcp"):
+            self.assertNotIn("TUSHARE_TOKEN", service_block(service))
+
+        mcp = "\n".join(
+            path.read_text() for path in (ROOT / "services/mcp/src").rglob("*.ts")
+        )
+        self.assertIn("byq_market_daily", mcp)
+        self.assertNotIn("api.tushare.pro", mcp)
+
     def test_runtime_adapter_owns_the_official_sdk_and_explicit_runtime(self) -> None:
         adapter = "\n".join(
             path.read_text()

@@ -6,12 +6,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
-    "test": "node dist/tests/backend-health-test.js && node dist/tests/contract-test.js",
+    "test": "node dist/tests/backend-health-test.js && node dist/tests/contract-test.js && node dist/tests/market-data-test.js",
     "test:build": "npm run build && npm test"
   },
   "dependencies": {
     "@modelcontextprotocol/node": "2.0.0",
-    "@modelcontextprotocol/server": "2.0.0"
+    "@modelcontextprotocol/server": "2.0.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.0.0",

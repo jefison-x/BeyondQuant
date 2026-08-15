@@ -93,6 +93,9 @@ services:
       dockerfile: services/backend/Dockerfile
     networks:
       - byq_product
+    environment:
+      TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
+      TUSHARE_API_URL: ${TUSHARE_API_URL:-http://api.tushare.pro}
     healthcheck:
       test:
         - CMD

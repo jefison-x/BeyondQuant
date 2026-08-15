@@ -1,7 +1,7 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-project stage is **Phase 7 / First Product Agent Turn and WorkflowTrace**.
+project stage is **Phase 8 / Data Provider Abstraction + Tushare**.
 
 ## Project identity
 
@@ -41,6 +41,19 @@ Phase 7 adds the first authenticated Product Agent boundary:
 - interrupted-session resume with a new adapter-owned runtime
 - BYQ-owned append-only WorkflowTrace persistence and `Last-Event-ID` replay
 
+Phase 8 adds the first BYQ-owned market-data provider boundary:
+
+- bounded, normalized A-share unadjusted daily-bar requests
+- Backend-only Tushare credential handling with bounded retry and TTL cache
+- provenance metadata for provider, request fingerprint, retrieval time, and
+  cache state
+- the `byq_market_daily` MCP capability for Agent-to-Domain access
+
+`TUSHARE_TOKEN` is required only for the opt-in live integration check and must
+remain in the local ignored `.env` file. It is never passed to DSH, MCP,
+Gateway, or frontend code. The boundary is recorded in
+[ADR-0005](docs/architecture/adr/ADR-0005-phase8-data-provider.md).
+
 The base Compose topology requires `BYQ_MCP_TOKEN` and `BYQ_PRODUCT_TOKEN`.
 Set `DEEPSEEK_API_KEY` only when intentionally running a real provider-backed
 Product turn; keyless CI and smoke tests must not embed that secret. The
@@ -54,8 +67,8 @@ Product Agent API.
 The programmatic decision is recorded in
 [ADR-0003](docs/architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md).
 
-It does not yet implement strategy, factors, backtests, Tushare, a complete
-Xiaoba product, multi-agent workflows, or a WorkflowTrace UI. PostgreSQL,
+It does not yet implement strategy, factors, backtests, a complete Xiaoba
+product, multi-agent workflows, or a WorkflowTrace UI. PostgreSQL,
 Redis, frontend, data-worker, backtest-worker, and engineering-dsh remain out
 of scope for this phase.
 
