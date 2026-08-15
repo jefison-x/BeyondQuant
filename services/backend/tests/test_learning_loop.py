@@ -109,7 +109,7 @@ def test_learning_run_is_bounded_idempotent_and_reaches_human_gate(tmp_path) -> 
     )
     assert second["run"]["status"] == "awaiting_review"
 
-    with pytest.raises(LearningForbidden, match="budget"):
+    with pytest.raises(LearningForbidden, match="not active"):
         store.record_iteration(
             {
                 "run_id": run["learning_run_id"],
@@ -174,7 +174,7 @@ def test_failed_iteration_retry_and_human_review_are_explicit(tmp_path) -> None:
     )
     assert repaired["run"]["status"] == "awaiting_review"
 
-    with pytest.raises(LearningForbidden, match="self-review"):
+    with pytest.raises(LearningForbidden, match="cannot review their own"):
         store.review_run(
             {"run_id": run["learning_run_id"], "decision": "approved"},
             trusted_owner="alice",
@@ -297,7 +297,7 @@ def test_lesson_promotion_requires_validated_evidence_and_human_review(tmp_path)
             trusted_actor="alice",
         )
 
-    with pytest.raises(LearningForbidden, match="self-promote"):
+    with pytest.raises(LearningForbidden, match="cannot promote their own"):
         store.review_lesson(
             {"lesson_id": proposed["lesson_id"], "decision": "approved"},
             trusted_owner="alice",
@@ -324,7 +324,12 @@ def test_learning_payloads_reject_secret_material(tmp_path) -> None:
             {
                 "task_id": task["task_id"],
                 "budget": {"max_iterations": 1, "max_repairs": 0},
-                "stopping_rules": {"target_metric": "token", "target_value": 1, "operator": "gte"},
+                "stopping_rules": {
+                    "target_metric": "sharpe",
+                    "target_value": 1,
+                    "operator": "gte",
+                    "api_key": "must-not-be-recorded",
+                },
                 "trace_id": "trace-learning-secret",
                 "idempotency_key": "run-secret",
             },
