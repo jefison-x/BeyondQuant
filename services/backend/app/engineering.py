@@ -355,31 +355,65 @@ class EngineeringTaskStore:
             {"task_id", "worktree_path", "branch_name", "draft_pr_number", "ci_status", "self_review", "architecture_evidence", "idempotency_key"},
         )
         task_id = _task_id(payload.get("task_id"))
-        key = _idempotency(payload.get("idempotency_key"))
-        worktree_path = _text(payload.get("worktree_path"), field="worktree_path", max_length=512) if payload.get("worktree_path") else None
-        if worktree_path is not None and not worktree_path.startswith(_WORKTREE_PREFIX):
-            raise ValueError("worktree_path must be under the BYQ disposable worktree root")
-        branch_name = _text(payload.get("branch_name"), field="branch_name", max_length=128) if payload.get("branch_name") else None
-        if branch_name is not None:
-            if _BRANCH_PATTERN.fullmatch(branch_name) is None:
-                raise ValueError("branch_name is not a valid BYQ branch name")
-            if branch_name in {"main", "master"}:
-                raise ValueError("engineering branch must not be main or master")
-        draft_pr_number = payload.get("draft_pr_number")
-        if draft_pr_number is not None and (not isinstance(draft_pr_number, int) or isinstance(draft_pr_number, bool) or draft_pr_number < 1):
-            raise ValueError("draft_pr_number must be a positive integer")
-        ci_status = _text(payload.get("ci_status"), field="ci_status", max_length=16) if payload.get("ci_status") else None
-        if ci_status is not None and ci_status not in {"pending", "success", "failure"}:
-            raise ValueError("ci_status must be pending, success, or failure")
-        self_review = payload.get("self_review")
-        if self_review is not None and not isinstance(self_review, bool):
-            raise ValueError("self_review must be a boolean")
-        evidence, evidence_json = _json_object(payload.get("architecture_evidence", {}), field="architecture_evidence")
         with self._lock, self._connection:
             row = self._connection.execute("SELECT * FROM engineering_tasks WHERE task_id = ?", (task_id,)).fetchone()
             if row is None:
                 raise EngineeringNotFound("engineering task not found")
             self._check_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
+
+            worktree_path = row["worktree_path"]
+            if "worktree_path" in payload:
+                worktree_path = (
+                    _text(payload["worktree_path"], field="worktree_path", max_length=512)
+                    if payload["worktree_path"]
+                    else None
+                )
+                if worktree_path is not None and not worktree_path.startswith(_WORKTREE_PREFIX):
+                    raise ValueError("worktree_path must be under the BYQ disposable worktree root")
+
+            branch_name = row["branch_name"]
+            if "branch_name" in payload:
+                branch_name = (
+                    _text(payload["branch_name"], field="branch_name", max_length=128)
+                    if payload["branch_name"]
+                    else None
+                )
+                if branch_name is not None:
+                    if _BRANCH_PATTERN.fullmatch(branch_name) is None:
+                        raise ValueError("branch_name is not a valid BYQ branch name")
+                    if branch_name in {"main", "master"}:
+                        raise ValueError("engineering branch must not be main or master")
+
+            draft_pr_number = row["draft_pr_number"]
+            if "draft_pr_number" in payload:
+                draft_pr_number = payload["draft_pr_number"]
+                if draft_pr_number is not None and (
+                    not isinstance(draft_pr_number, int)
+                    or isinstance(draft_pr_number, bool)
+                    or draft_pr_number < 1
+                ):
+                    raise ValueError("draft_pr_number must be a positive integer")
+
+            ci_status = row["ci_status"]
+            if "ci_status" in payload:
+                ci_status = (
+                    _text(payload["ci_status"], field="ci_status", max_length=16)
+                    if payload["ci_status"]
+                    else None
+                )
+                if ci_status is not None and ci_status not in {"pending", "success", "failure"}:
+                    raise ValueError("ci_status must be pending, success, or failure")
+
+            self_review = row["self_review"]
+            if "self_review" in payload:
+                self_review = payload["self_review"]
+                if self_review is not None and not isinstance(self_review, bool):
+                    raise ValueError("self_review must be a boolean")
+
+            evidence_json = row["architecture_evidence_json"]
+            if "architecture_evidence" in payload:
+                evidence, evidence_json = _json_object(payload.get("architecture_evidence", {}), field="architecture_evidence")
+
             now = _now()
             self._connection.execute(
                 """UPDATE engineering_tasks
