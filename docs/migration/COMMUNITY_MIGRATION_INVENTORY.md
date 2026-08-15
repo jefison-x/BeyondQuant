@@ -180,6 +180,22 @@ configuration. No Community runtime, repository, or SQL schema was copied.
 | Human approval and execution outcome | `approval_policy.py`, `approval_executor.py`, approval tests | `agent_approvals`, normalized MCP approval tools, self-approval rejection, separate outcome | Port semantics only; do not port Community executor/runtime. |
 | Audit correlation | `history.py`, recovery tests | `agent_audit` with owner, actor, trace/session/DSH run correlation and bounded details | Reimplement as a BYQ view; DSH events remain outside domain storage. |
 
+## Phase 14 migration audit
+
+The mandatory Phase 14 sequence was completed as: inspect the Community
+evidence compaction, bounded execution profiles, retryable error
+classification, and deterministic trajectory evaluation contracts; classify
+them as reference or port material; extract bounded iteration, feedback
+lineage, and evidence-promotion invariants; then implement those invariants
+in BYQ-owned learning contracts.
+
+| Capability | Community evidence | BYQ implementation | Decision |
+|---|---|---|---|
+| Bounded agent budgets and repair/retry policy | `agent-service/app/harness/limits.py`, `agent-service/app/harness/errors.py` | `services/backend/app/learning_loop.py` budgets and ordered retryable iterations | Port semantics only; no Community runtime or prompt execution is copied. |
+| Deterministic evaluation and replay evidence | `agent-service/app/evals/research_replay.py`, eval fixtures | `evaluation_signals`, deterministic `compare_experiments`, ordered iteration history | Reimplement as a BYQ contract; never trust model output as a signal without a validated artifact. |
+| Evidence compaction and secret redaction | `agent-service/app/harness/output.py` | bounded JSON validation and recursive secret-key rejection in learning payloads | Port the invariant; old Agent Service persistence is not copied. |
+| Promotion/review provenance | `agent-service/app/services/approval_policy.py`, history tests | `lessons` state machine and ordered `learning_history` records | Port semantics only; BYQ owns promotion state and human review. |
+
 ## Current Phase 9 comparison
 
 ### A. Correctly reimplemented
@@ -375,6 +391,17 @@ or other point-in-time inputs are added, the as-of rule is mandatory.
 | Durable jobs, retries, and worker recovery | `BacktestJobStore`, `BacktestWorker`, `workers/backtest/worker.py` | `REFACTOR` — SQLite Backend state, strict task-scoped idempotency, bounded attempts, and stale requeue; old Agent workflow state is not migrated |
 | Immutable result object and lifecycle guard | `LocalObjectStore`, `backtest_result` Artifact, and object integrity tests | `PORT_LOGIC` / `PORT_TESTS` — namespace/object identity, media type, size, SHA-256, owner/live-reference deletion checks |
 | Community Pandas/ORM/Agent runtime and VectorBT engine | Not imported or copied | `REFERENCE_ONLY` / `DROP` |
+
+### Phase 14 implementation reuse status (current branch)
+
+| Community semantic | Current BYQ implementation | Classification / status |
+|---|---|---|
+| Bounded agent iteration and repair/retry | `LearningLoopStore` run/iteration budgets, repair attempts, stopping rules | `PORT_LOGIC` — Community execution profiles are not copied; BYQ owns domain limits |
+| Deterministic trajectory evaluation | `EvaluationSignal` plus `compare_experiments` | `REFACTOR` / `PORT_TESTS` — Community eval fixtures are reference material only |
+| Evidence-backed promotion | `Lesson` proposal requires validated artifacts or evaluation signals; human review and promotion history | `PORT_LOGIC` — old Agent approval/executor is not migrated |
+| Secret-safe bounded evidence | Recursive secret-key rejection and bounded JSON in learning payloads | `PORT_LOGIC` / `PORT_TESTS` |
+| Community Agent Service runtime and persistence | Not imported or copied | `REFERENCE_ONLY` / `REPLACE` |
+| BaoStock, AKShare, VectorBT | Not present in the new implementation | `DROP` |
 
 ### Retrospective migration summary
 

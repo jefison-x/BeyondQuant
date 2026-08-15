@@ -26,6 +26,19 @@ import {
   type AgentContext,
 } from "./agent.js";
 import {
+  fetchByqExperimentCompare,
+  fetchByqLearningIterationList,
+  fetchByqLearningIterationRecord,
+  fetchByqLearningRunGet,
+  fetchByqLearningRunReview,
+  fetchByqLearningRunStart,
+  fetchByqLearningSignalCreate,
+  fetchByqLearningSignalGet,
+  fetchByqLessonGet,
+  fetchByqLessonPropose,
+  fetchByqLessonReview,
+} from "./learning.js";
+import {
   fetchByqStrategyApprove,
   fetchByqStrategyExport,
   fetchByqStrategyValidate,
@@ -175,6 +188,67 @@ async function byqAgentApprovalDecide(args: { approval_id: string; decision: str
   if (!context) return agentContextUnavailable();
   const { approval_id, ...request } = args;
   return fetchByqAgentApprovalDecide(BACKEND_URL, approval_id, request, context);
+}
+
+async function byqLearningRunStart(args: Record<string, unknown>, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqLearningRunStart(BACKEND_URL, args, context) : agentContextUnavailable();
+}
+
+async function byqLearningRunGet(args: { run_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqLearningRunGet(BACKEND_URL, args.run_id, context) : agentContextUnavailable();
+}
+
+async function byqLearningIterationRecord(args: { run_id: string } & Record<string, unknown>, extra: unknown) {
+  const context = completeAgentContext(extra);
+  if (!context) return agentContextUnavailable();
+  const { run_id, ...request } = args;
+  return fetchByqLearningIterationRecord(BACKEND_URL, run_id, request, context);
+}
+
+async function byqLearningIterationList(args: { run_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqLearningIterationList(BACKEND_URL, args.run_id, context) : agentContextUnavailable();
+}
+
+async function byqLearningRunReview(args: { run_id: string; decision: string; rationale?: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  if (!context) return agentContextUnavailable();
+  const { run_id, ...request } = args;
+  return fetchByqLearningRunReview(BACKEND_URL, run_id, request, context);
+}
+
+async function byqLearningSignalCreate(args: Record<string, unknown>, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqLearningSignalCreate(BACKEND_URL, args, context) : agentContextUnavailable();
+}
+
+async function byqLearningSignalGet(args: { signal_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqLearningSignalGet(BACKEND_URL, args.signal_id, context) : agentContextUnavailable();
+}
+
+async function byqExperimentCompare(args: Record<string, unknown>, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqExperimentCompare(BACKEND_URL, args, context) : agentContextUnavailable();
+}
+
+async function byqLessonPropose(args: Record<string, unknown>, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqLessonPropose(BACKEND_URL, args, context) : agentContextUnavailable();
+}
+
+async function byqLessonGet(args: { lesson_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqLessonGet(BACKEND_URL, args.lesson_id, context) : agentContextUnavailable();
+}
+
+async function byqLessonReview(args: { lesson_id: string; decision: string; rationale?: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  if (!context) return agentContextUnavailable();
+  const { lesson_id, ...request } = args;
+  return fetchByqLessonReview(BACKEND_URL, lesson_id, request, context);
 }
 
 async function byqBacktestSubmit(args: BacktestRequest) {
@@ -589,6 +663,144 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       },
     },
     byqArtifactCreate,
+  );
+  server.registerTool(
+    "byq_learning_run_start",
+    {
+      description: "Start a bounded, owner-scoped BYQ learning run with explicit budgets and stopping rules.",
+      inputSchema: {
+        task_id: z.string(),
+        budget: z.object({
+          max_iterations: z.number().int().min(1).max(100),
+          max_repairs: z.number().int().min(0).max(10),
+        }),
+        stopping_rules: z.object({
+          target_metric: z.string(),
+          target_value: z.number(),
+          operator: z.enum(["gte", "lte"]),
+        }).optional(),
+        lineage: z.array(z.object({ kind: z.string(), id: z.string() })).optional(),
+        idempotency_key: z.string(),
+      },
+    },
+    (args) => byqLearningRunStart(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_learning_run_get",
+    {
+      description: "Read one owner-scoped BYQ learning run and its bounded state.",
+      inputSchema: { run_id: z.string() },
+    },
+    (args) => byqLearningRunGet(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_learning_iteration_record",
+    {
+      description: "Append one ordered, idempotent learning iteration to an active bounded run.",
+      inputSchema: {
+        run_id: z.string(),
+        iteration_index: z.number().int().positive(),
+        attempt: z.number().int().positive(),
+        outcome: z.enum(["produced", "no_change", "failed"]),
+        feedback: z.record(z.string(), z.unknown()).optional(),
+        source_refs: z.array(z.object({ kind: z.string(), id: z.string() })).optional(),
+        result_refs: z.array(z.object({ kind: z.string(), id: z.string() })).optional(),
+        idempotency_key: z.string(),
+      },
+    },
+    (args) => byqLearningIterationRecord(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_learning_iteration_list",
+    {
+      description: "Read the ordered, replayable iteration history of one BYQ learning run.",
+      inputSchema: { run_id: z.string() },
+    },
+    (args) => byqLearningIterationList(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_learning_run_review",
+    {
+      description: "Record a trusted human review that approves or rejects an awaiting learning run.",
+      inputSchema: {
+        run_id: z.string(),
+        decision: z.enum(["approved", "rejected"]),
+        rationale: z.string().optional(),
+      },
+    },
+    (args) => byqLearningRunReview(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_evaluation_signal_create",
+    {
+      description: "Create a finite, artifact-backed BYQ evaluation signal for a metric.",
+      inputSchema: {
+        task_id: z.string(),
+        experiment_id: z.string().optional(),
+        source_artifact_id: z.string(),
+        metric: z.string(),
+        value: z.number(),
+        unit: z.string().optional(),
+        lineage: z.array(z.object({ kind: z.string(), id: z.string() })).optional(),
+        idempotency_key: z.string(),
+      },
+    },
+    (args) => byqLearningSignalCreate(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_evaluation_signal_get",
+    {
+      description: "Read one owner-scoped BYQ evaluation signal.",
+      inputSchema: { signal_id: z.string() },
+    },
+    (args) => byqLearningSignalGet(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_experiment_compare",
+    {
+      description: "Compare two experiments' deterministic evaluation signals for one metric.",
+      inputSchema: {
+        task_id: z.string(),
+        experiment_a_id: z.string(),
+        experiment_b_id: z.string(),
+        metric: z.string(),
+      },
+    },
+    (args) => byqExperimentCompare(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_lesson_propose",
+    {
+      description: "Propose a bounded BYQ lesson from validated artifact or evaluation-signal evidence.",
+      inputSchema: {
+        task_id: z.string(),
+        content: z.record(z.string(), z.unknown()),
+        evidence: z.array(z.object({ kind: z.enum(["artifact", "evaluation_signal"]), id: z.string() })).min(1),
+        validation: z.record(z.string(), z.unknown()).optional(),
+        idempotency_key: z.string(),
+      },
+    },
+    (args) => byqLessonPropose(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_lesson_get",
+    {
+      description: "Read one owner-scoped BYQ lesson and its promotion history.",
+      inputSchema: { lesson_id: z.string() },
+    },
+    (args) => byqLessonGet(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_lesson_review",
+    {
+      description: "Record a trusted human promotion decision for a proposed lesson.",
+      inputSchema: {
+        lesson_id: z.string(),
+        decision: z.enum(["approved", "rejected", "superseded"]),
+        rationale: z.string().optional(),
+      },
+    },
+    (args) => byqLessonReview(args, trustedContext),
   );
   return server;
 }

@@ -219,6 +219,21 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
         self.assertNotIn("WorkflowTraceEvent", backend_files)
 
+    def test_phase14_learning_loop_is_backend_owned_and_mcp_only(self) -> None:
+        mcp = "\n".join(
+            path.read_text() for path in (ROOT / "services/mcp/src").rglob("*.ts")
+        )
+        self.assertIn("byq_learning_run_start", mcp)
+        self.assertIn("byq_lesson_propose", mcp)
+        self.assertNotIn("sqlite", mcp.lower())
+
+        backend_files = "\n".join(
+            path.read_text() for path in (ROOT / "services/backend/app").rglob("*.py")
+        )
+        self.assertIn("learning_runs", backend_files)
+        self.assertIn("evaluation_signals", backend_files)
+        self.assertIn("lessons", backend_files)
+
     def test_runtime_adapter_owns_the_official_sdk_and_explicit_runtime(self) -> None:
         adapter = "\n".join(
             path.read_text()

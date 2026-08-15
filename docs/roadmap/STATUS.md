@@ -3,8 +3,8 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 13**
-- Next phase: **Phase 14**
+- Current completed phase: **Phase 14**
+- Next phase: **Phase 15**
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -12,7 +12,8 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 11 strategy-artifact ADR: **ADR-0007**
 - Accepted Phase 12 backtest-worker ADR: **ADR-0008**
 - Accepted Phase 13 quant-research-agent ADR: **ADR-0009**
-- Open architecture decisions: none for the Phase 13 quant-research-agent boundary;
+- Accepted Phase 14 quant-learning-loop ADR: **ADR-0010**
+- Open architecture decisions: none for the Phase 14 quant-learning-loop boundary;
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
   is Accepted.
   [ADR-0004](../architecture/adr/ADR-0004-phase7-product-authentication.md)
@@ -22,9 +23,10 @@ Codex session does not infer project state from commit history.
   [ADR-0007](../architecture/adr/ADR-0007-phase11-strategy-artifact.md) is Accepted.
   [ADR-0008](../architecture/adr/ADR-0008-phase12-backtest-worker.md) is Accepted.
   [ADR-0009](../architecture/adr/ADR-0009-phase13-quant-research-agents.md) is Accepted.
-- Phase 13 acceptance evidence covers BYQ-owned role authorization, approval,
-  audit, and trusted-context contracts; bounded DSH role/skill/subagent
-  composition; and backend, MCP, gateway, runtime, and architecture tests.
+  [ADR-0010](../architecture/adr/ADR-0010-phase14-quant-learning-loop.md) is Accepted.
+- Phase 14 acceptance evidence covers bounded learning runs, ordered iteration
+  history, deterministic evaluation signals/experiment comparison, and
+  evidence-backed lesson promotion with human review and promotion history.
 - Active architecture blockers: **none**
 
 Git SHA is not phase state. The current clean baseline must always be derived
