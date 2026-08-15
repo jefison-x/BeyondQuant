@@ -349,7 +349,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             for path in frontend.rglob("*")
             if path.is_file() and path.suffix in {".py", ".js", ".ts", ".tsx", ".vue"}
         ]
-        self.assertEqual(implementation_files, [])
+        contents = "\n".join(path.read_text() for path in implementation_files)
+        self.assertIn("/api/product", contents)
+        self.assertNotIn("deepseek_harness", contents)
+        self.assertNotIn("session.event", contents)
+        self.assertNotIn("BYQ_MCP_TOKEN", contents)
+        self.assertNotIn("/mcp/v1", contents)
         readme = (frontend / "README.md").read_text()
         self.assertIn("must not depend directly on DSH internal event schemas", readme)
 

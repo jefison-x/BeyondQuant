@@ -53,6 +53,31 @@ jobs:
       - name: MCP tests
         run: docker compose exec -T mcp npm test
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install frontend dependencies
+        working-directory: apps/frontend
+        run: npm install
+
+      - name: Frontend build
+        working-directory: apps/frontend
+        run: npm run build
+
+      - name: Frontend unit tests
+        working-directory: apps/frontend
+        run: npm run test
+
+      - name: Install Playwright browsers
+        working-directory: apps/frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Frontend Playwright smoke
+        working-directory: apps/frontend
+        run: npm run test:e2e
+
       - name: Full smoke
         run: ./tests/smoke/run.sh
 
