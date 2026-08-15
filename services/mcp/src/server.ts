@@ -6,6 +6,13 @@ import { z } from "zod";
 
 import { fetchByqHealth } from "./backend-health.js";
 import { fetchByqFactorCompute, type FactorComputeRequest } from "./factor-research.js";
+import {
+  fetchByqStrategyApprove,
+  fetchByqStrategyExport,
+  fetchByqStrategyValidate,
+  fetchByqStrategyVersionCreate,
+  type StrategyRequest,
+} from "./strategy.js";
 import { fetchByqMarketDaily, type MarketDailyRequest } from "./market-data.js";
 import {
   fetchByqArtifactCreate,
@@ -58,6 +65,22 @@ async function byqMarketDaily(args: MarketDailyRequest) {
 
 async function byqFactorCompute(args: FactorComputeRequest) {
   return fetchByqFactorCompute(BACKEND_URL, args ?? {});
+}
+
+async function byqStrategyValidate(args: StrategyRequest) {
+  return fetchByqStrategyValidate(BACKEND_URL, args ?? {});
+}
+
+async function byqStrategyVersionCreate(args: StrategyRequest) {
+  return fetchByqStrategyVersionCreate(BACKEND_URL, args ?? {});
+}
+
+async function byqStrategyApprove(args: StrategyRequest) {
+  return fetchByqStrategyApprove(BACKEND_URL, args ?? {});
+}
+
+async function byqStrategyExport(args: { artifact_id: string }) {
+  return fetchByqStrategyExport(BACKEND_URL, args.artifact_id);
 }
 
 async function byqResearchTaskCreate(args: ResearchTaskCreateRequest) {
@@ -152,6 +175,68 @@ function buildServer(): McpServer {
       },
     },
     byqFactorCompute,
+  );
+  server.registerTool(
+    "byq_strategy_validate",
+    {
+      description: "Run BYQ-owned static validation and persist a StrategyDraft Artifact.",
+      inputSchema: {
+        task_id: z.string(),
+        experiment_id: z.string().optional(),
+        trace_id: z.string(),
+        idempotency_key: z.string(),
+        strategy: z.object({
+          strategy_id: z.string(),
+          name: z.string(),
+          category: z.enum(["trend_following", "mean_reversion", "momentum", "volatility_based", "arbitrage", "custom"]),
+          description: z.string().optional(),
+          parameters: z.record(z.string(), z.unknown()).optional(),
+          parameter_schema: z.record(z.string(), z.unknown()).optional(),
+          source_type: z.literal("python_script").optional(),
+          script: z.string(),
+        }),
+      },
+    },
+    byqStrategyValidate,
+  );
+  server.registerTool(
+    "byq_strategy_version_create",
+    {
+      description: "Materialize an immutable content-addressed StrategyVersion from a validated draft.",
+      inputSchema: {
+        task_id: z.string(),
+        experiment_id: z.string().optional(),
+        draft_artifact_id: z.string(),
+        trace_id: z.string(),
+        idempotency_key: z.string(),
+      },
+    },
+    byqStrategyVersionCreate,
+  );
+  server.registerTool(
+    "byq_strategy_approve",
+    {
+      description: "Record an auditable approval decision separate from future execution outcome.",
+      inputSchema: {
+        task_id: z.string(),
+        experiment_id: z.string().optional(),
+        strategy_version_artifact_id: z.string(),
+        reviewer_principal: z.string(),
+        decision: z.enum(["approved", "rejected"]),
+        rationale: z.string().optional(),
+        trace_id: z.string(),
+        idempotency_key: z.string(),
+      },
+    },
+    byqStrategyApprove,
+  );
+  server.registerTool(
+    "byq_strategy_export",
+    {
+      description: "Return a deterministic, secret-free StrategyVersion export.",
+      inputSchema: { artifact_id: z.string() },
+    },
+    byqStrategyExport,
   );
   server.registerTool(
     "byq_research_task_create",

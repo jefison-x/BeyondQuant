@@ -170,8 +170,11 @@ the recorded domain semantics.
 - Phase 10: deterministic factor-input identity, missing/temporal-data status,
   no look-ahead, and reproducible factor artifacts.
 - Phase 11: immutable StrategyVersion snapshots, script/content fingerprints,
-  validation evidence, artifact export hygiene, and approval as a separate
-  state machine.
+  validation evidence including static strategy-safety checks, artifact export
+  hygiene, and approval as a separate state machine. The static checks include
+  synchronous output methods, no historical-loop model fitting, and the
+  supported PortfolioState field contract; execution-output validation remains
+  a future BYQ-owned worker concern.
 - Phase 12: A-share T+1/limit/suspension/lot/fee/tax rules, frozen universe
   authorization, content-addressed input/result manifests, bounded worker
   retries, object references, and unreferenced-object deletion.
@@ -275,6 +278,17 @@ or other point-in-time inputs are added, the as-of rule is mandatory.
 | Point-in-time universe and announcement/effective visibility | latest visible `universe_snapshots`, source as-of checks | `PORT_LOGIC` / `PORT_TESTS` |
 | Content-addressed input identity and factor result metadata | factor input SHA-256 manifest summary plus `factor_result` Artifact | `REFACTOR` — Community manifest semantics reimplemented behind BYQ ResearchStore |
 | Community provider SDK, ORM, Pandas service, and old runtime | Not imported or copied | `REFERENCE_ONLY` / `REPLACE` |
+| BaoStock, AKShare, VectorBT | Not present in the new implementation | `DROP` |
+
+### Phase 11 implementation reuse status (current branch)
+
+| Community semantic | Current BYQ implementation | Classification / status |
+|---|---|---|
+| Immutable strategy semantic snapshot and source fingerprint | `services/backend/app/strategy_artifact.py` StrategyVersion identity and source SHA-256 | `PORT_LOGIC` / `PORT_TESTS` — timestamps and Agent runtime state excluded |
+| Static source safety and strategy method contract | BYQ stdlib AST validator with persisted validation evidence | `PORT_LOGIC` / `PORT_TESTS` — forbidden imports/calls, synchronous output contract, historical-loop `model.fit`, and PortfolioState field checks are ported; Community execution sandbox is not copied |
+| Deterministic export hygiene | `strategy_version` export endpoint and contract | `PORT_LOGIC` / `PORT_TESTS` — JSON export only; object bundles remain a later candidate |
+| Approval separate from execution outcome | `strategy_approval` Artifact linked to validated version | `REFACTOR` / `PORT_TESTS` — old Agent approval policy and SQL are not migrated |
+| Community SQLAlchemy/Pandas/Agent Service strategy runtime | Not imported or copied | `REFERENCE_ONLY` / `REPLACE` |
 | BaoStock, AKShare, VectorBT | Not present in the new implementation | `DROP` |
 
 ### Retrospective migration summary

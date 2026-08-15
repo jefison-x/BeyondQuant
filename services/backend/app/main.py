@@ -19,6 +19,14 @@ from .research import (
     ResearchPersistenceError,
     ResearchStore,
 )
+from .strategy_artifact import (
+    content_sha256,
+    export_strategy_version,
+    prepare_strategy,
+    strategy_draft_content,
+    strategy_version_content,
+    validate_version_content,
+)
 
 
 SERVICE = "byq-backend"
@@ -92,6 +100,15 @@ def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, obje
         raise HTTPException(status_code=409, detail=str(error)) from error
     except ResearchPersistenceError as error:
         raise HTTPException(status_code=503, detail="research storage is unavailable") from error
+
+
+def _strategy_payload(payload: object, allowed: set[str]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("strategy request must be an object")
+    unknown = sorted(set(payload) - allowed)
+    if unknown:
+        raise ValueError(f"strategy request has unknown fields: {', '.join(unknown)}")
+    return payload
 
 
 def _transition_args(payload: dict[str, Any]) -> tuple[object, object]:
@@ -173,6 +190,164 @@ def compute_research_factor(payload: dict[str, Any]) -> dict[str, object]:
             "input_manifest": computed["input_manifest"],
             "coverage": computed["coverage"],
             "artifact": artifact,
+        }
+
+    return _research_call(operation)
+
+
+@app.post("/v1/research/strategies/validate", status_code=201)
+def validate_strategy_draft(payload: dict[str, Any]) -> dict[str, object]:
+    def operation() -> dict[str, object]:
+        request = _strategy_payload(
+            payload,
+            {"task_id", "experiment_id", "strategy", "trace_id", "idempotency_key"},
+        )
+        prepared = prepare_strategy(request.get("strategy"))
+        artifact = research_store.create_artifact(
+            {
+                "task_id": request.get("task_id"),
+                "experiment_id": request.get("experiment_id"),
+                "kind": "strategy_draft",
+                "content": strategy_draft_content(prepared),
+                "lineage": [],
+                "trace_id": request.get("trace_id"),
+                "idempotency_key": request.get("idempotency_key"),
+            }
+        )
+        if artifact["status"] == "draft":
+            artifact = research_store.transition(
+                "artifact",
+                artifact["artifact_id"],
+                "validated",
+                f"strategy-draft-validate-{prepared['version_id']}",
+            )
+        return {"strategy": prepared["snapshot"], "validation": prepared["validation"], "artifact": artifact}
+
+    return _research_call(operation)
+
+
+@app.post("/v1/research/strategies/versions", status_code=201)
+def create_strategy_version(payload: dict[str, Any]) -> dict[str, object]:
+    def operation() -> dict[str, object]:
+        request = _strategy_payload(
+            payload,
+            {"task_id", "experiment_id", "draft_artifact_id", "trace_id", "idempotency_key"},
+        )
+        draft = research_store.get_artifact(request.get("draft_artifact_id"))
+        if draft["kind"] != "strategy_draft":
+            raise ValueError("draft_artifact_id must reference a strategy_draft artifact")
+        if draft["task_id"] != request.get("task_id"):
+            raise ValueError("draft artifact does not belong to task_id")
+        draft_content = draft["content"]
+        if not isinstance(draft_content, dict):
+            raise ValueError("strategy draft content is invalid")
+        prepared = prepare_strategy(draft_content.get("snapshot"))
+        if draft_content.get("validation") != prepared["validation"]:
+            raise ValueError("strategy draft validation evidence does not match its snapshot")
+        version_content = strategy_version_content(prepared)
+        version_fingerprint = content_sha256(version_content)
+        artifact = research_store.find_artifact_by_content(
+            request.get("task_id"), "strategy_version", version_fingerprint
+        )
+        if artifact is None:
+            artifact = research_store.create_artifact(
+                {
+                    "task_id": request.get("task_id"),
+                    "experiment_id": request.get("experiment_id"),
+                    "kind": "strategy_version",
+                    "content": version_content,
+                    "lineage": [{"kind": "artifact", "id": draft["artifact_id"]}],
+                    "trace_id": request.get("trace_id"),
+                    "idempotency_key": request.get("idempotency_key"),
+                }
+            )
+        if artifact["status"] == "draft":
+            artifact = research_store.transition(
+                "artifact",
+                artifact["artifact_id"],
+                "validated",
+                f"strategy-version-validate-{prepared['version_id']}",
+            )
+        return {
+            "strategy_version": version_content,
+            "artifact": artifact,
+            "source_draft_artifact_id": draft["artifact_id"],
+        }
+
+    return _research_call(operation)
+
+
+@app.post("/v1/research/strategies/approvals", status_code=201)
+def create_strategy_approval(payload: dict[str, Any]) -> dict[str, object]:
+    def operation() -> dict[str, object]:
+        request = _strategy_payload(
+            payload,
+            {
+                "task_id", "experiment_id", "strategy_version_artifact_id", "reviewer_principal",
+                "decision", "rationale", "trace_id", "idempotency_key",
+            },
+        )
+        version_artifact = research_store.get_artifact(request.get("strategy_version_artifact_id"))
+        if version_artifact["kind"] != "strategy_version":
+            raise ValueError("strategy_version_artifact_id must reference a strategy_version artifact")
+        if version_artifact["task_id"] != request.get("task_id"):
+            raise ValueError("strategy version artifact does not belong to task_id")
+        if version_artifact["status"] != "validated":
+            raise ValueError("strategy version must be validated before approval")
+        version_content = validate_version_content(version_artifact["content"])
+        reviewer = request.get("reviewer_principal")
+        if not isinstance(reviewer, str) or not reviewer.strip() or len(reviewer.strip()) > 128:
+            raise ValueError("reviewer_principal must be a non-empty string")
+        decision = request.get("decision")
+        if decision not in {"approved", "rejected"}:
+            raise ValueError("decision must be approved or rejected")
+        rationale = request.get("rationale", "")
+        if not isinstance(rationale, str) or len(rationale) > 4000:
+            raise ValueError("rationale must be a string of at most 4000 characters")
+        approval_content = {
+            "schema_version": "strategy-approval-v1",
+            "strategy_version_id": version_content["version_id"],
+            "strategy_version_artifact_id": version_artifact["artifact_id"],
+            "decision": decision,
+            "reviewer_principal": reviewer.strip(),
+            "rationale": rationale,
+            "execution_authorized": decision == "approved",
+            "execution_outcome": "not_started",
+        }
+        approval = research_store.create_artifact(
+            {
+                "task_id": request.get("task_id"),
+                "experiment_id": request.get("experiment_id"),
+                "kind": "strategy_approval",
+                "content": approval_content,
+                "lineage": [{"kind": "artifact", "id": version_artifact["artifact_id"]}],
+                "trace_id": request.get("trace_id"),
+                "idempotency_key": request.get("idempotency_key"),
+            }
+        )
+        if approval["status"] == "draft":
+            approval = research_store.transition(
+                "artifact",
+                approval["artifact_id"],
+                "validated",
+                f"strategy-approval-validate-{request.get('idempotency_key')}",
+            )
+        return {"approval": approval_content, "artifact": approval}
+
+    return _research_call(operation)
+
+
+@app.get("/v1/research/strategies/versions/{artifact_id}/export")
+def export_strategy_version_artifact(artifact_id: str) -> dict[str, object]:
+    def operation() -> dict[str, object]:
+        artifact = research_store.get_artifact(artifact_id)
+        if artifact["kind"] != "strategy_version":
+            raise ValueError("artifact is not a strategy_version")
+        exported = export_strategy_version(artifact["content"])
+        return {
+            "strategy_version_id": exported["version_id"],
+            "content_sha256": artifact["content_sha256"],
+            "export": exported,
         }
 
     return _research_call(operation)

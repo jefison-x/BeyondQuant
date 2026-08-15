@@ -21,6 +21,14 @@ try {
   assert.ok(listed.tools.some((tool) => tool.name === "byq_market_daily"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_factor_compute"));
   for (const name of [
+    "byq_strategy_validate",
+    "byq_strategy_version_create",
+    "byq_strategy_approve",
+    "byq_strategy_export",
+  ]) {
+    assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);
+  }
+  for (const name of [
     "byq_research_task_create",
     "byq_research_get",
     "byq_research_transition",
