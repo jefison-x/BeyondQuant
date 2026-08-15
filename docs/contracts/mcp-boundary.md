@@ -20,6 +20,20 @@ capability. It must not receive or forward `TUSHARE_TOKEN`, and it must not
 pass through arbitrary Tushare endpoint names, raw parameters, or raw provider
 response envelopes.
 
+## Phase 9 research capabilities
+
+The Phase 9 tools `byq_research_task_create`, `byq_research_get`,
+`byq_research_transition`, `byq_experiment_create`, and
+`byq_artifact_create` are the Agent-to-Domain entry points for durable
+research state. Backend owns validation, state transitions, idempotency,
+provenance, lineage, and persistence. MCP forwards only the normalized domain
+fields and returns normalized domain records.
+
+MCP must not expose SQL, SQLite paths, database rows, DSH WorkflowTrace
+schemas, or Backend implementation exceptions. DSH may request a domain
+operation through MCP, but it cannot mutate research state by accessing the
+Backend database or filesystem directly.
+
 ## Non-goals
 
 - This document does not define a complete tool schema.

@@ -198,6 +198,27 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("byq_market_daily", mcp)
         self.assertNotIn("api.tushare.pro", mcp)
 
+    def test_phase9_domain_state_is_backend_owned_and_mcp_only(self) -> None:
+        compose = (ROOT / "compose.yml").read_text()
+        backend = service_block("backend")
+        self.assertIn("BYQ_DOMAIN_DB_PATH: /var/lib/byq/domain/byq.sqlite3", backend)
+        self.assertIn("byq_domain_state:/var/lib/byq/domain", backend)
+        self.assertIn("byq_domain_state:", compose)
+        for service in ("gateway", "runtime-adapter", "mcp"):
+            block = service_block(service)
+            self.assertNotIn("BYQ_DOMAIN_DB_PATH", block)
+            self.assertNotIn("byq_domain_state", block)
+
+        mcp = "\n".join(
+            path.read_text() for path in (ROOT / "services/mcp/src").rglob("*.ts")
+        )
+        self.assertIn("byq_research_task_create", (ROOT / "services/mcp/src/server.ts").read_text())
+        self.assertNotIn("sqlite", mcp.lower())
+        backend_files = "\n".join(
+            path.read_text() for path in (ROOT / "services/backend/app").rglob("*.py")
+        )
+        self.assertNotIn("WorkflowTraceEvent", backend_files)
+
     def test_runtime_adapter_owns_the_official_sdk_and_explicit_runtime(self) -> None:
         adapter = "\n".join(
             path.read_text()

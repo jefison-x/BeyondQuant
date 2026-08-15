@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi import HTTPException
+from collections.abc import Callable
+from typing import Any
 
 from .data_provider import (
     DailyRequest,
@@ -9,6 +11,13 @@ from .data_provider import (
     ProviderRateLimited,
     TushareProvider,
 )
+from .research import (
+    IdempotencyConflict,
+    InvalidTransition,
+    ResearchNotFound,
+    ResearchPersistenceError,
+    ResearchStore,
+)
 
 
 SERVICE = "byq-backend"
@@ -16,6 +25,7 @@ VERSION = "0.1.0"
 
 app = FastAPI(title="BeyondQuant Backend", version=VERSION)
 data_provider = TushareProvider.from_env()
+research_store = ResearchStore.from_env()
 
 
 def _health_payload() -> dict[str, str]:
@@ -68,3 +78,81 @@ def daily_data(
         "data": [bar.as_dict() for bar in result.bars],
         "provenance": result.provenance.as_dict(),
     }
+
+
+def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except ResearchNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except (IdempotencyConflict, InvalidTransition) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ResearchPersistenceError as error:
+        raise HTTPException(status_code=503, detail="research storage is unavailable") from error
+
+
+def _transition_args(payload: dict[str, Any]) -> tuple[object, object]:
+    if set(payload) != {"target_status", "idempotency_key"}:
+        raise ValueError("transition request has invalid fields")
+    return payload["target_status"], payload["idempotency_key"]
+
+
+def _research_transition(
+    entity_type: str,
+    entity_id: str,
+    payload: dict[str, Any],
+) -> dict[str, object]:
+    return _research_call(
+        lambda: research_store.transition(
+            entity_type,
+            entity_id,
+            *_transition_args(payload),
+        )
+    )
+
+
+@app.post("/v1/research/tasks", status_code=201)
+def create_research_task(payload: dict[str, Any]) -> dict[str, object]:
+    return _research_call(lambda: research_store.create_task(payload))
+
+
+@app.get("/v1/research/tasks/{task_id}")
+def get_research_task(task_id: str) -> dict[str, object]:
+    return _research_call(lambda: research_store.get_task(task_id))
+
+
+@app.post("/v1/research/tasks/{task_id}/transitions")
+def transition_research_task(task_id: str, payload: dict[str, Any]) -> dict[str, object]:
+    return _research_transition("research_task", task_id, payload)
+
+
+@app.post("/v1/research/experiments", status_code=201)
+def create_experiment(payload: dict[str, Any]) -> dict[str, object]:
+    return _research_call(lambda: research_store.create_experiment(payload))
+
+
+@app.get("/v1/research/experiments/{experiment_id}")
+def get_experiment(experiment_id: str) -> dict[str, object]:
+    return _research_call(lambda: research_store.get_experiment(experiment_id))
+
+
+@app.post("/v1/research/experiments/{experiment_id}/transitions")
+def transition_experiment(experiment_id: str, payload: dict[str, Any]) -> dict[str, object]:
+    return _research_transition("experiment", experiment_id, payload)
+
+
+@app.post("/v1/research/artifacts", status_code=201)
+def create_artifact(payload: dict[str, Any]) -> dict[str, object]:
+    return _research_call(lambda: research_store.create_artifact(payload))
+
+
+@app.get("/v1/research/artifacts/{artifact_id}")
+def get_artifact(artifact_id: str) -> dict[str, object]:
+    return _research_call(lambda: research_store.get_artifact(artifact_id))
+
+
+@app.post("/v1/research/artifacts/{artifact_id}/transitions")
+def transition_artifact(artifact_id: str, payload: dict[str, Any]) -> dict[str, object]:
+    return _research_transition("artifact", artifact_id, payload)

@@ -94,8 +94,11 @@ services:
     networks:
       - byq_product
     environment:
+      BYQ_DOMAIN_DB_PATH: /var/lib/byq/domain/byq.sqlite3
       TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
       TUSHARE_API_URL: ${TUSHARE_API_URL:-http://api.tushare.pro}
+    volumes:
+      - byq_domain_state:/var/lib/byq/domain
     healthcheck:
       test:
         - CMD
@@ -116,6 +119,8 @@ networks:
     driver: bridge
 
 volumes:
+  byq_domain_state:
+    name: byq_domain_state
   byq_dsh_sessions:
     name: byq_dsh_sessions
   byq_workflow_traces:

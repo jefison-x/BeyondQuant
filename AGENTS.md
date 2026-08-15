@@ -18,10 +18,23 @@ These rules apply to Codex, DSH engineering agents, and any other AI coding agen
 14. Generic agent capabilities belong to DSH whenever possible.
 15. Any exception to architectural rules requires an ADR.
 16. Prefer tests and contracts before broad refactors.
-17. Do not migrate legacy code by copy unless `legacy-inventory.md` explicitly marks it for migration.
+17. Do not migrate legacy code by copy unless `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md` explicitly classifies it for migration.
 18. The old repository at `/home/jefison/projects/BeyondQuant-community` is a READ-ONLY reference.
 19. Never edit `BeyondQuant-community` as part of new project work.
 20. Before implementing a legacy feature, inspect the old implementation, identify its domain invariant, implement it cleanly in the new architecture, and do not blindly copy its architecture.
+
+21. Before implementing any Phase 9+ domain capability, Codex MUST inspect the
+    corresponding BeyondQuant-Community implementation first.
+22. The mandatory migration sequence is: inspect → classify → extract
+    invariants/tests → decide reuse/port/refactor/drop → implement. Existing
+    Community code is evidence, not an authorization to copy it.
+23. BaoStock MUST NOT be reintroduced.
+24. AKShare MUST NOT be reintroduced.
+25. VectorBT MUST NOT be reintroduced.
+26. Community implementations using those technologies are reference-only for
+    provider-independent or engine-independent semantics. Do not add a
+    compatibility layer for them unless a future Accepted ADR explicitly
+    reverses this decision.
 
 ## Change discipline
 
