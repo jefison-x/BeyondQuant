@@ -9,6 +9,7 @@ services:
       BYQ_PRODUCT_TOKEN: ${BYQ_PRODUCT_TOKEN:?BYQ_PRODUCT_TOKEN must be set}
       BYQ_PRODUCT_PRINCIPAL: ${BYQ_PRODUCT_PRINCIPAL:-product-user}
       BYQ_WORKFLOW_TRACE_ROOT: /var/lib/byq/workflow-traces
+      BYQ_BACKEND_URL: http://backend:8000
     volumes:
       - byq_workflow_traces:/var/lib/byq/workflow-traces
     networks:

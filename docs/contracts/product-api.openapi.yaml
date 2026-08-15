@@ -1,0 +1,209 @@
+openapi: 3.0.3
+info:
+  title: BeyondQuant Product API
+  version: 0.1.0
+  description: Browser-facing BYQ Product API/BFF. This contract never exposes MCP, DSH, provider, or raw Backend storage details.
+servers:
+  - url: /api/product
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      summary: Return Product API health.
+      responses:
+        "200":
+          description: Healthy product API.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /dashboard:
+    get:
+      summary: Return a bounded dashboard projection.
+      responses:
+        "200":
+          description: Dashboard projection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /data/status:
+    get:
+      summary: Return data provider and migration status without credentials.
+      responses:
+        "200":
+          description: Data/migration status projection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataStatus"
+  /agents/sessions:
+    get:
+      summary: List owner-scoped product agent sessions.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Session list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSessionList"
+  /workflows/{session_id}/events:
+    get:
+      summary: Stream normalized BYQ WorkflowTrace events.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Last-Event-ID
+          in: header
+          schema: { type: string }
+      responses:
+        "200":
+          description: BYQ WorkflowTrace SSE stream.
+  /research/tasks:
+    get:
+      summary: List owner-scoped ResearchTasks.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: ResearchTask list.
+  /research/experiments:
+    get:
+      summary: List owner-scoped Experiments.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Experiment list.
+  /research/artifacts:
+    get:
+      summary: List owner-scoped Artifacts.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Artifact list.
+  /factors:
+    get:
+      summary: List owner-scoped factor results.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Factor list.
+  /strategies:
+    get:
+      summary: List owner-scoped strategy artifacts.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Strategy list.
+  /backtests:
+    get:
+      summary: List owner-scoped backtest jobs and immutable result references.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Backtest list.
+  /approvals:
+    get:
+      summary: List owner-scoped approval records.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Approval list.
+  /audit:
+    get:
+      summary: List owner-scoped audit events.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Audit event list.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            request_id: { type: string }
+    Health:
+      type: object
+      required: [status, version]
+      properties:
+        status: { type: string }
+        version: { type: string }
+    Dashboard:
+      type: object
+      required: [status, resources]
+      properties:
+        status: { type: string }
+        resources:
+          type: object
+          additionalProperties: { type: string }
+    DataStatus:
+      type: object
+      required: [status, provider, migration]
+      properties:
+        status: { type: string }
+        provider: { type: string }
+        migration: { type: string }
+    AgentSessionList:
+      type: object
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [session_id, trace_id, status]
+            properties:
+              session_id: { type: string }
+              trace_id: { type: string }
+              status: { type: string }
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+    Pagination:
+      type: object
+      required: [limit, offset, total]
+      properties:
+        limit: { type: integer }
+        offset: { type: integer }
+        total: { type: integer }

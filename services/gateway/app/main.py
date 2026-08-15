@@ -9,20 +9,36 @@ from dataclasses import dataclass
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
+from .product_api import ProductError, router as product_router
 from .trace_store import TraceStore
 
 
 SERVICE = "byq-gateway"
 VERSION = "0.1.0"
 app = FastAPI(title="BeyondQuant Gateway", version=VERSION)
+app.include_router(product_router)
 RUNTIME_ADAPTER_URL = os.environ.get("BYQ_RUNTIME_ADAPTER_URL", "http://runtime-adapter:8400")
 PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
 trace_store = TraceStore(os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"))
+
+
+@app.exception_handler(ProductError)
+async def product_error_handler(request: Request, exc: ProductError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": exc.code,
+                "message": exc.message,
+                "request_id": exc.request_id,
+            }
+        },
+    )
 
 
 class RuntimeSessionRequest(BaseModel):
