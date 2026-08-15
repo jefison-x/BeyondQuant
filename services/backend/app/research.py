@@ -468,6 +468,27 @@ class ResearchStore:
             raise ResearchNotFound("artifact not found")
         return self._artifact_row(row)
 
+    def find_artifact_by_content(
+        self,
+        task_id: object,
+        kind: object,
+        content_sha256: object,
+    ) -> dict[str, object] | None:
+        """Resolve one immutable content-addressed artifact within a task."""
+        task_id = _identifier(task_id, field="task_id")
+        kind = _text(kind, field="kind", max_length=64)
+        fingerprint = _text(content_sha256, field="content_sha256", max_length=64)
+        if re.fullmatch(r"[a-f0-9]{64}", fingerprint) is None:
+            raise ValueError("content_sha256 is not a valid SHA-256 fingerprint")
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT * FROM artifacts
+                WHERE task_id = ? AND kind = ? AND content_sha256 = ?
+                ORDER BY created_at ASC, artifact_id ASC LIMIT 1""",
+                (task_id, kind, fingerprint),
+            ).fetchone()
+        return None if row is None else self._artifact_row(row)
+
     def transition(
         self,
         entity_type: object,
