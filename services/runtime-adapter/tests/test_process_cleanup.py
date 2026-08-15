@@ -10,7 +10,7 @@ from deepseek_harness import Notification
 
 import app.runtime as runtime_module
 from app.identifiers import MAX_IDENTIFIER_LENGTH
-from app.runtime import RuntimeAdapter, SessionConflict, SessionStatus
+from app.runtime import ModelCredentialUnavailable, RuntimeAdapter, SessionConflict, SessionStatus
 
 
 class FakeHarness:
@@ -106,6 +106,50 @@ def test_hard_cancel_closes_runtime_and_rejects_later_prompt(adapter: RuntimeAda
 
     released = adapter.release_session("s-1")
     assert released["status"] == SessionStatus.CLOSED
+
+
+def test_hard_cancel_resume_uses_a_new_owned_runtime(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-1", "t-1")
+    adapter.submit_prompt("s-1", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+
+    adapter.cancel_session("s-1", "hard")
+    resumed = adapter.resume_session("s-1")
+
+    assert resumed["status"] == SessionStatus.READY
+    assert resumed["resumed_from_run_id"]
+    assert len(FakeHarness.instances) == 2
+    assert FakeHarness.instances[0].closed is True
+    adapter.release_session("s-1")
+
+
+def test_product_turn_requires_a_model_credential_without_exposing_it(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-1", "t-1")
+    with pytest.raises(ModelCredentialUnavailable):
+        adapter.submit_prompt("s-1", "product turn", require_model_key=True)
+    assert "DEEPSEEK_API_KEY" not in str(adapter.readiness())
+    assert "DEEPSEEK_API_KEY" not in str(adapter.describe_session(adapter._get("s-1")))
+    adapter.release_session("s-1")
+
+
+def test_configured_model_credential_is_scoped_to_the_owned_sdk_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    FakeHarness.reset()
+    monkeypatch.setattr(runtime_module, "DeepSeekHarness", FakeHarness)
+    monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-provider-secret")
+
+    adapter = RuntimeAdapter()
+    adapter.create_session("s-1", "t-1")
+    sdk_environment = FakeHarness.instances[0].config.env
+    assert sdk_environment["DEEPSEEK_API_KEY"] == "test-provider-secret"
+    assert "test-provider-secret" not in str(adapter.readiness())
+    assert "test-provider-secret" not in str(adapter.describe_session(adapter._get("s-1")))
+    adapter.release_session("s-1")
 
 
 def test_soft_cancel_is_scoped_to_current_run_and_returns_to_idle(adapter: RuntimeAdapter) -> None:

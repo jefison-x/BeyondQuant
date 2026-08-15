@@ -1,4 +1,4 @@
-name: Phase 5 + Phase 6 CI
+name: Phase 5 + Phase 6 + Phase 7 CI
 
 on:
   push:
@@ -8,10 +8,12 @@ on:
   pull_request:
 
 jobs:
-  phase6:
+  phase7:
     runs-on: ubuntu-latest
     env:
       BYQ_MCP_TOKEN: ci-phase5-test-only
+      BYQ_PRODUCT_TOKEN: ci-phase7-product-test-only
+      BYQ_PRODUCT_PRINCIPAL: ci-product-user
 
     steps:
       - name: Check out repository

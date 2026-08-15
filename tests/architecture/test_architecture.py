@@ -172,6 +172,20 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("Notification", gateway)
         self.assertNotIn("session.event", gateway)
 
+    def test_phase7_auth_and_model_secret_boundaries_are_separate(self) -> None:
+        compose = (ROOT / "compose.yml").read_text()
+        gateway = service_block("gateway")
+        runtime = service_block("runtime-adapter")
+        self.assertIn("BYQ_PRODUCT_TOKEN", gateway)
+        self.assertNotIn("DEEPSEEK_API_KEY", gateway)
+        self.assertIn("DEEPSEEK_API_KEY", runtime)
+        self.assertNotIn("BYQ_PRODUCT_TOKEN", runtime)
+        self.assertIn("byq_workflow_traces", compose)
+
+        workflow = (ROOT / "docs/contracts/workflow-trace.md").read_text()
+        self.assertIn("Last-Event-ID", workflow)
+        self.assertIn("DSH's durable session log", workflow)
+
     def test_runtime_adapter_owns_the_official_sdk_and_explicit_runtime(self) -> None:
         adapter = "\n".join(
             path.read_text()

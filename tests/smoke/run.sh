@@ -51,6 +51,66 @@ assert payload["dsh_runtime_integration"] == "runtime-adapter"
 print(json.dumps(payload, sort_keys=True))
 PY
 
+echo "== Authenticated Product Agent session and BYQ trace replay =="
+python3 - <<'PY'
+import json
+import os
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
+gateway = "http://127.0.0.1:8100"
+token = os.environ.get("BYQ_PRODUCT_TOKEN", "ci-phase7-product-test-only")
+
+def request(path, *, method="GET", payload=None, auth=True):
+    body = None if payload is None else json.dumps(payload).encode()
+    headers = {"content-type": "application/json"} if body else {}
+    if auth:
+        headers["authorization"] = f"Bearer {token}"
+    request = Request(gateway + path, data=body, headers=headers, method=method)
+    return urlopen(request, timeout=20)
+
+try:
+    request("/v1/agent/sessions", method="POST", payload={}, auth=False)
+except HTTPError as exc:
+    assert exc.code == 401
+else:
+    raise AssertionError("Product Agent accepted an unauthenticated request")
+
+with request("/v1/agent/sessions", method="POST", payload={}) as response:
+    assert response.status == 201
+    created = json.load(response)
+session_id = created["session_id"]
+assert session_id.startswith("byq-session-")
+
+with request(f"/v1/workflows/{session_id}/events") as response:
+    assert response.status == 200
+    first_event = None
+    for line in response:
+        if line.startswith(b"data: "):
+            first_event = json.loads(line[6:])
+            break
+assert first_event and first_event["kind"] == "session.ready"
+assert first_event["source"] == "runtime-adapter"
+assert "session.event" not in json.dumps(first_event)
+
+if not os.environ.get("DEEPSEEK_API_KEY"):
+    try:
+        request(
+            f"/v1/agent/sessions/{session_id}/turns",
+            method="POST",
+            payload={"content": "keyless phase 7 smoke"},
+        )
+    except HTTPError as exc:
+        assert exc.code == 503
+    else:
+        raise AssertionError("keyless Product Agent turn was not rejected")
+
+with request(f"/v1/agent/sessions/{session_id}", method="DELETE") as response:
+    assert response.status == 200
+    assert json.load(response)["status"] == "closed"
+print(json.dumps({"session_id": session_id, "first_event": first_event}, sort_keys=True))
+PY
+
 echo "== Gateway receives BYQ normalized streaming event =="
 python3 - <<'PY'
 import json
@@ -174,4 +234,4 @@ marker="/var/lib/byq/dsh-sessions/phase6-volume-marker"
 "${compose[@]}" restart runtime-adapter
 "${compose[@]}" exec -T runtime-adapter sh -c "test \"\$(cat '$marker')\" = phase6"
 
-echo "Phase 5 + Phase 6 base smoke PASS"
+echo "Phase 5 + Phase 6 + Phase 7 keyless smoke PASS"

@@ -20,6 +20,10 @@ class SessionConflict(RuntimeError):
     """The requested lifecycle operation is invalid for the current state."""
 
 
+class ModelCredentialUnavailable(RuntimeError):
+    """A model-keyed Product turn was requested without its provider secret."""
+
+
 class SessionStatus:
     STARTING: ClassVar[str] = "starting"
     READY: ClassVar[str] = "ready"
@@ -48,7 +52,9 @@ class RuntimeSession:
     harness: DeepSeekHarness
     status: str = SessionStatus.STARTING
     active_run: ActiveRun | None = None
+    interrupted_run_id: str | None = None
     sequence: int = 0
+    history: list[WorkflowTraceEvent] = field(default_factory=list)
     subscribers: list[queue.Queue[WorkflowTraceEvent | None]] = field(default_factory=list)
     lock: threading.RLock = field(default_factory=threading.RLock)
 
@@ -77,6 +83,7 @@ class RuntimeAdapter:
         ).expanduser().resolve()
         self._provider = os.environ.get("BYQ_DSH_PROVIDER", "deepseek-official")
         self._model = os.environ.get("BYQ_DSH_MODEL", "deepseek-v4-flash")
+        self._model_api_key = os.environ.get("DEEPSEEK_API_KEY")
 
     @property
     def runtime_command(self) -> tuple[str, ...]:
@@ -92,6 +99,9 @@ class RuntimeAdapter:
             "explicit_runtime": self.runtime_command[1],
             "composition": str(self._composition),
             "composition_exists": self._composition.is_file(),
+            "model_credentials": "configured" if self._model_api_key else "missing",
+            "model_provider": self._provider,
+            "model": self._model,
             "process_ownership": "one-per-active-session",
             "session_states": [
                 SessionStatus.STARTING,
@@ -113,20 +123,7 @@ class RuntimeAdapter:
         with self._lock:
             if session_id in self._sessions:
                 raise SessionConflict(f"BYQ session already exists: {session_id}")
-            config = DeepSeekHarnessConfig(
-                provider=self._provider,
-                model=self._model,
-                cordis=str(self._composition),
-                session_root=str(session_root),
-                launch_args_override=self.runtime_command,
-                env={
-                    "BYQ_MCP_URL": os.environ.get("BYQ_MCP_URL", "http://mcp:8300/mcp/v1"),
-                    "BYQ_MCP_TOKEN": os.environ.get("BYQ_MCP_TOKEN", ""),
-                },
-                request_timeout_seconds=15.0,
-                shutdown_timeout_seconds=2.0,
-            )
-            harness = DeepSeekHarness(config=config)
+            harness = self._build_harness(session_id, session_root)
             record = RuntimeSession(session_id=session_id, trace_id=trace_id, harness=harness)
             self._sessions[session_id] = record
 
@@ -142,7 +139,9 @@ class RuntimeAdapter:
             harness.close()
             raise
 
-    def submit_prompt(self, session_id: str, content: str) -> str:
+    def submit_prompt(self, session_id: str, content: str, *, require_model_key: bool = False) -> str:
+        if require_model_key and not self._model_api_key:
+            raise ModelCredentialUnavailable("the configured model provider has no credential")
         record = self._get(session_id)
         with record.lock:
             if record.status not in SessionStatus.PROMPTABLE or record.active_run is not None:
@@ -223,6 +222,7 @@ class RuntimeAdapter:
                 record.status = SessionStatus.CANCELLING
             else:
                 run.hard_cancelled = True
+                record.interrupted_run_id = run.run_id
                 record.status = SessionStatus.INTERRUPTED
                 # The owned process is closed synchronously below. Detach the
                 # run now so no post-close result can be accepted or emitted.
@@ -236,6 +236,44 @@ class RuntimeAdapter:
         if mode == "hard":
             record.harness.close()
         return self.describe_session(record)
+
+    def resume_session(self, session_id: str) -> dict[str, Any]:
+        record = self._get(session_id)
+        with record.lock:
+            if record.status != SessionStatus.INTERRUPTED or record.active_run is not None:
+                raise SessionConflict(f"session {session_id} is not interrupted")
+            resumed_from_run_id = record.interrupted_run_id
+            record.status = SessionStatus.STARTING
+            self._emit(
+                record,
+                "session.resuming",
+                "runtime-adapter",
+                {"resumed_from_run_id": resumed_from_run_id},
+            )
+
+        harness = self._build_harness(
+            record.session_id,
+            contained_session_path(self._session_root, record.session_id),
+        )
+        try:
+            harness.start()
+        except Exception:
+            harness.close()
+            with record.lock:
+                record.status = SessionStatus.FAILED
+                self._emit(record, "session.failed", "runtime-adapter", {"error": "resume-initialize"})
+            raise
+
+        with record.lock:
+            record.harness = harness
+            record.status = SessionStatus.READY
+            self._emit(
+                record,
+                "session.resumed",
+                "runtime-adapter",
+                {"resumed_from_run_id": resumed_from_run_id},
+            )
+        return {**self.describe_session(record), "resumed_from_run_id": resumed_from_run_id}
 
     def release_session(self, session_id: str) -> dict[str, Any]:
         record = self._get(session_id)
@@ -253,13 +291,16 @@ class RuntimeAdapter:
                 subscriber.put(None)
         return self.describe_session(record)
 
-    def subscribe(self, session_id: str) -> queue.Queue[WorkflowTraceEvent | None]:
+    def subscribe(self, session_id: str, *, replay: bool = False) -> queue.Queue[WorkflowTraceEvent | None]:
         record = self._get(session_id)
         subscriber: queue.Queue[WorkflowTraceEvent | None] = queue.Queue()
         with record.lock:
             if record.status == SessionStatus.CLOSED:
                 raise KeyError(f"closed BYQ session: {session_id}")
             record.subscribers.append(subscriber)
+            if replay:
+                for event in record.history:
+                    subscriber.put(event)
         return subscriber
 
     def unsubscribe(self, session_id: str, subscriber: queue.Queue[WorkflowTraceEvent | None]) -> None:
@@ -303,6 +344,28 @@ class RuntimeAdapter:
             raise KeyError(f"unknown BYQ session: {session_id}")
         return record
 
+    def _build_harness(self, session_id: str, session_root: Path) -> DeepSeekHarness:
+        environment = {
+            "BYQ_MCP_URL": os.environ.get("BYQ_MCP_URL", "http://mcp:8300/mcp/v1"),
+            "BYQ_MCP_TOKEN": os.environ.get("BYQ_MCP_TOKEN", ""),
+        }
+        # The provider credential enters only the adapter-owned SDK child
+        # environment. It is never returned in readiness, lifecycle responses,
+        # trace payloads, or exception details.
+        if self._model_api_key:
+            environment["DEEPSEEK_API_KEY"] = self._model_api_key
+        config = DeepSeekHarnessConfig(
+            provider=self._provider,
+            model=self._model,
+            cordis=str(self._composition),
+            session_root=str(session_root),
+            launch_args_override=self.runtime_command,
+            env=environment,
+            request_timeout_seconds=15.0,
+            shutdown_timeout_seconds=2.0,
+        )
+        return DeepSeekHarness(config=config)
+
     def _on_notification(self, record: RuntimeSession, notification: Notification) -> None:
         event = normalize_dsh_notification(
             notification,
@@ -335,5 +398,6 @@ class RuntimeAdapter:
 
         record.sequence += 1
         ordered_event = {**event, "sequence": record.sequence}
+        record.history.append(ordered_event)
         for subscriber in list(record.subscribers):
             subscriber.put(ordered_event)

@@ -1,7 +1,7 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-project stage is **Phase 6 / Runtime Seam and Development Framework**.
+project stage is **Phase 7 / First Product Agent Turn and WorkflowTrace**.
 
 ## Project identity
 
@@ -33,10 +33,24 @@ Phase 6 adds the formal programmatic runtime seam:
 - BYQ-owned `WorkflowTraceEvent` normalization
 - keyless JSON-RPC initialize, MCP startup, and hard-cleanup smoke coverage
 
+Phase 7 adds the first authenticated Product Agent boundary:
+
+- Gateway-only opaque Bearer authentication for `/v1/agent` and
+  `/v1/workflows`
+- model/provider secret handling confined to the Runtime Adapter
+- interrupted-session resume with a new adapter-owned runtime
+- BYQ-owned append-only WorkflowTrace persistence and `Last-Event-ID` replay
+
+The base Compose topology requires `BYQ_MCP_TOKEN` and `BYQ_PRODUCT_TOKEN`.
+Set `DEEPSEEK_API_KEY` only when intentionally running a real provider-backed
+Product turn; keyless CI and smoke tests must not embed that secret. The
+authentication and secret boundary is recorded in
+[ADR-0004](docs/architecture/adr/ADR-0004-phase7-product-authentication.md).
+
 The DSH Web surface is available only through the diagnostic `dsh-web` Compose
 profile, remains bound to container-local `127.0.0.1`, has no host port, and is
-not a BYQ product API. Phase 6 does not turn Web into an API and does not
-provide a public chat API.
+not a BYQ product API. The diagnostic Web surface remains outside the Phase 7
+Product Agent API.
 The programmatic decision is recorded in
 [ADR-0003](docs/architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md).
 

@@ -1,3 +1,5 @@
+import os
+
 from fastapi.testclient import TestClient
 
 from app import main
@@ -26,6 +28,7 @@ def test_readyz_reports_runtime_adapter_integration() -> None:
         "status": "ok",
         "version": "0.1.0",
         "dsh_runtime_integration": "runtime-adapter",
+        "product_authentication": "configured" if os.environ.get("BYQ_PRODUCT_TOKEN") else "missing",
     }
 
 
