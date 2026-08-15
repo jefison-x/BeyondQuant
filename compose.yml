@@ -1,0 +1,98 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    ports:
+      - "127.0.0.1:8100:8100"
+    networks:
+      - byq_product
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          response = urllib.request.urlopen('http://127.0.0.1:8100/readyz', timeout=3);
+          raise SystemExit(0 if response.status == 200 else 1)
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  dsh:
+    build:
+      context: .
+      dockerfile: services/dsh/Dockerfile
+    environment:
+      BYQ_MCP_TOKEN: ${BYQ_MCP_TOKEN:?BYQ_MCP_TOKEN must be set}
+      DSH_HOME: /opt/dsh
+      DSH_TELEMETRY_DISABLED: "true"
+    networks:
+      - byq_product
+    depends_on:
+      mcp:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3080/').then(response =>
+          process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 10s
+
+  mcp:
+    build:
+      context: .
+      dockerfile: services/mcp/Dockerfile
+    environment:
+      BYQ_BACKEND_URL: http://backend:8000
+      BYQ_MCP_TOKEN: ${BYQ_MCP_TOKEN:?BYQ_MCP_TOKEN must be set}
+    networks:
+      - byq_product
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:8300/healthz').then(response =>
+          process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  backend:
+    build:
+      context: .
+      dockerfile: services/backend/Dockerfile
+    networks:
+      - byq_product
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          response = urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3);
+          raise SystemExit(0 if response.status == 200 else 1)
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+networks:
+  byq_product:
+    name: byq_product
+    driver: bridge

@@ -1,0 +1,14 @@
+{
+  "name": "dsh-byq",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal BeyondQuant DSH configuration bundle",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-mcp-client": "0.1.0-rc.6"
+  }
+}
