@@ -30,6 +30,14 @@ from .agent_research import (
     AgentUnauthorized,
     role_catalog,
 )
+from .learning_loop import (
+    LearningConflict,
+    LearningForbidden,
+    LearningNotFound,
+    LearningPersistenceError,
+    LearningUnauthorized,
+    LearningLoopStore,
+)
 from .research import (
     IdempotencyConflict,
     InvalidTransition,
@@ -54,6 +62,7 @@ app = FastAPI(title="BeyondQuant Backend", version=VERSION)
 data_provider = TushareProvider.from_env()
 research_store = ResearchStore.from_env()
 agent_store = AgentResearchStore.from_env()
+learning_store = LearningLoopStore.from_env(research_store)
 backtest_store = BacktestJobStore.from_env()
 backtest_objects = LocalObjectStore.from_env()
 
@@ -153,6 +162,25 @@ def _agent_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]
         raise HTTPException(status_code=409, detail=str(error)) from error
     except AgentPersistenceError as error:
         raise HTTPException(status_code=503, detail="agent research storage is unavailable") from error
+
+
+def _learning_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except LearningUnauthorized as error:
+        raise HTTPException(status_code=401, detail=str(error)) from error
+    except LearningForbidden as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except LearningNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except LearningConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ResearchNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except LearningPersistenceError as error:
+        raise HTTPException(status_code=503, detail="learning storage is unavailable") from error
 
 
 def _agent_context(request: Request, payload: dict[str, Any]) -> dict[str, str | None]:
@@ -582,6 +610,152 @@ def decide_agent_approval(approval_id: str, payload: dict[str, Any], request: Re
     request_payload = dict(payload)
     request_payload["approval_id"] = approval_id
     return _agent_call(lambda: {"approval": agent_store.decide_approval(
+        request_payload,
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.post("/v1/learning/runs", status_code=201)
+def start_learning_run(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    request_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}
+    }
+    request_payload["trace_id"] = context["trace_id"]
+    return _learning_call(lambda: {"run": learning_store.start_run(
+        request_payload,
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.get("/v1/learning/runs/{run_id}")
+def get_learning_run(run_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _learning_call(lambda: {"run": learning_store.get_run(
+        run_id,
+        trusted_owner=context["owner_principal"],
+    )})
+
+
+@app.post("/v1/learning/runs/{run_id}/iterations", status_code=201)
+def record_learning_iteration(run_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    request_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}
+    }
+    request_payload["run_id"] = run_id
+    request_payload["trace_id"] = context["trace_id"]
+    return _learning_call(lambda: learning_store.record_iteration(
+        request_payload,
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    ))
+
+
+@app.get("/v1/learning/runs/{run_id}/iterations")
+def list_learning_iterations(run_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _learning_call(lambda: learning_store.list_iterations(
+        run_id,
+        trusted_owner=context["owner_principal"],
+    ))
+
+
+@app.post("/v1/learning/runs/{run_id}/review")
+def review_learning_run(run_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    request_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}
+    }
+    request_payload["run_id"] = run_id
+    return _learning_call(lambda: {"run": learning_store.review_run(
+        request_payload,
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.post("/v1/learning/signals", status_code=201)
+def create_evaluation_signal(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    request_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}
+    }
+    request_payload["trace_id"] = context["trace_id"]
+    return _learning_call(lambda: {"signal": learning_store.create_signal(
+        request_payload,
+        trusted_owner=context["owner_principal"],
+    )})
+
+
+@app.get("/v1/learning/signals/{signal_id}")
+def get_evaluation_signal(signal_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _learning_call(lambda: {"signal": learning_store.get_signal(
+        signal_id,
+        trusted_owner=context["owner_principal"],
+    )})
+
+
+@app.post("/v1/learning/experiments/compare")
+def compare_experiments(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    request_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}
+    }
+    return _learning_call(lambda: learning_store.compare_experiments(
+        request_payload,
+        trusted_owner=context["owner_principal"],
+    ))
+
+
+@app.post("/v1/learning/lessons", status_code=201)
+def propose_lesson(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    request_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}
+    }
+    request_payload["trace_id"] = context["trace_id"]
+    return _learning_call(lambda: learning_store.propose_lesson(
+        request_payload,
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    ))
+
+
+@app.get("/v1/learning/lessons/{lesson_id}")
+def get_lesson(lesson_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _learning_call(lambda: {"lesson": learning_store.get_lesson(
+        lesson_id,
+        trusted_owner=context["owner_principal"],
+    )})
+
+
+@app.post("/v1/learning/lessons/{lesson_id}/review")
+def review_lesson(lesson_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    request_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}
+    }
+    request_payload["lesson_id"] = lesson_id
+    return _learning_call(lambda: {"lesson": learning_store.review_lesson(
         request_payload,
         trusted_owner=context["owner_principal"],
         trusted_actor=context["actor_principal"],

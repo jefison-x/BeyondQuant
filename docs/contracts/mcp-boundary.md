@@ -44,6 +44,16 @@ override them. DSH may delegate through its native subagent seam, but it
 cannot bypass BYQ authorization or approval with a prompt or a direct storage
 call.
 
+## Phase 14 learning capabilities
+
+The `byq_learning_*`, `byq_evaluation_signal_*`, `byq_experiment_compare`,
+and `byq_lesson_*` tools expose bounded learning runs, ordered iteration
+history, deterministic evaluation-signal comparison, and evidence-backed
+lesson promotion. Backend owns budgets, stopping rules, idempotency,
+validation, human review, and promotion history. MCP forwards only normalized
+domain fields and never exposes SQLite paths, raw rows, DSH event schemas,
+provider credentials, or Backend implementation exceptions.
+
 ## Non-goals
 
 - This document does not define a complete tool schema.
