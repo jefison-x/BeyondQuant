@@ -3,12 +3,14 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 6**
-- Next phase: **Phase 7**
+- Current completed phase: **Phase 7**
+- Next phase: **Phase 8**
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
-- Open architecture decisions: none for the Phase 6 runtime seam;
+- Open architecture decisions: none for the Phase 7 product turn;
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
+  is Accepted.
+  [ADR-0004](../architecture/adr/ADR-0004-phase7-product-authentication.md)
   is Accepted.
 - Active architecture blockers: **none**
 
