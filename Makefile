@@ -24,8 +24,8 @@ smoke:
 test:
 	$(COMPOSE) up -d --wait
 	python3 -m unittest discover -s tests -p 'test_*.py'
-	$(COMPOSE) exec -T backend python -m pytest -q
-	$(COMPOSE) exec -T gateway python -m pytest -q
+	$(COMPOSE) exec -T backend python -m pytest -q -p no:cacheprovider
+	$(COMPOSE) exec -T gateway python -m pytest -q -p no:cacheprovider
 	$(COMPOSE) exec -T mcp npm test
 
 dsh-config:

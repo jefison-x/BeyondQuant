@@ -11,6 +11,12 @@ while IFS= read -r health; do
   test "$health" = "healthy"
 done < <("${compose[@]}" ps --format '{{.Health}}')
 
+echo "== non-root runtime users =="
+for service in gateway backend mcp dsh; do
+  uid=$("${compose[@]}" exec -T "$service" id -u | tr -d '\r')
+  test "$uid" != "0"
+done
+
 echo "== DSH has no runtime mounts =="
 dsh_id=$("${compose[@]}" ps -q dsh)
 test -n "$dsh_id"
@@ -30,6 +36,14 @@ grep -q '@deepseek-ai/dsh-mcp-client' <<<"$config"
 grep -q 'serverName: byq' <<<"$config"
 grep -q 'transport: streamable-http' <<<"$config"
 grep -q 'failOnStartupError: true' <<<"$config"
+preset_block=$(awk '/^- id: agent-presets$/{capture=1} /^- id: mcp-byq$/{capture=0} capture' <<<"$config")
+grep -q 'default: byq-product' <<<"$preset_block"
+grep -q 'path: /opt/dsh/bundles/dsh-byq/presets' <<<"$preset_block"
+grep -q 'includeUserRoot: false' <<<"$preset_block"
+if grep -Eiq 'default: (standard|minimal|code|cordis)' <<<"$preset_block"; then
+  echo "Shipped coding preset selected by Product DSH" >&2
+  exit 1
+fi
 
 echo "== DSH logs =="
 logs=$("${compose[@]}" logs dsh 2>&1)

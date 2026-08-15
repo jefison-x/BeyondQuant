@@ -3,6 +3,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 
+import { fetchByqHealth } from "./backend-health.js";
+
 const SERVICE = "beyondquant-mcp";
 const VERSION = "0.1.0";
 const PORT = Number(process.env.PORT ?? "8300");
@@ -31,37 +33,8 @@ function authorized(request: IncomingMessage): boolean {
   return request.headers.authorization === `Bearer ${MCP_TOKEN}`;
 }
 
-async function byqHealth(): Promise<{
-  content: Array<{ type: "text"; text: string }>;
-  isError?: boolean;
-}> {
-  try {
-    const response = await fetch(`${BACKEND_URL}/healthz`);
-    const backend = (await response.json()) as Record<string, unknown>;
-    const payload = {
-      service: SERVICE,
-      status: response.ok ? "ok" : "error",
-      backend,
-    };
-    return {
-      content: [{ type: "text", text: JSON.stringify(payload) }],
-      ...(response.ok ? {} : { isError: true }),
-    };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            service: SERVICE,
-            status: "error",
-            backend: { status: "unreachable", error: String(error) },
-          }),
-        },
-      ],
-      isError: true,
-    };
-  }
+async function byqHealth() {
+  return fetchByqHealth(BACKEND_URL);
 }
 
 function buildServer(): McpServer {

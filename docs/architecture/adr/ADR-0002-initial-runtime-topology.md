@@ -100,6 +100,19 @@ production interface. Phase 5 uses DSH Web bound only to container-local
 container publishes no host port, and no proxy, redirect, host network, or
 other security bypass is permitted.
 
+## Product Agent Capability Boundary
+
+Product DSH does not inherit or expose the shipped coding-capable DSH
+presets. BYQ owns an explicit Product preset roster rooted only at the
+bundle-controlled `presets` directory. The `byq-product` preset is the default
+and `includeUserRoot` is `false`, so user-authored or Engineering Plane preset
+roots cannot enter the Product roster.
+
+The Product preset composition contains no bash, terminal, filesystem
+mutation, edit, write, `str_replace_editor`, Git write, Codex, or subagent
+coding capabilities. Engineering-capable presets belong only to the
+Engineering Plane.
+
 ## Consequences
 
 - BYQ has independently runnable Gateway, Backend, and MCP service skeletons
@@ -109,6 +122,8 @@ other security bypass is permitted.
 - `byq_health` is the first MCP contract and proves MCP-to-Backend routing.
 - DSH verifies the outbound DSH-to-MCP boundary without making its Web surface
   a product API.
+- Product DSH and Engineering DSH have separate capability rosters; Product
+  DSH exposes only the BYQ-controlled `byq-product` preset.
 - The DSH baseline is upgradeable only after a compatibility gate and contract
   test pass.
 - PostgreSQL, Redis, strategy, factor, backtest, Tushare, user, and agent

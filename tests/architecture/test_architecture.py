@@ -86,6 +86,31 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("latest", patch)
         self.assertNotRegex(patch, r"(?m)^\s+Authorization:\s+Bearer\s+")
 
+    def test_product_preset_roster_is_byq_only(self) -> None:
+        patch = (ROOT / "plugins/dsh-byq/cordis.patch.yml").read_text()
+        self.assertIn("default: byq-product", patch)
+        self.assertIn("path: /opt/dsh/bundles/dsh-byq/presets", patch)
+        self.assertIn("includeUserRoot: false", patch)
+        self.assertNotRegex(patch, r"(?m)^\s+default:\s+(standard|minimal|code|cordis)$")
+
+        preset_root = ROOT / "plugins/dsh-byq/presets"
+        self.assertEqual(sorted(path.name for path in preset_root.iterdir()), ["byq-product"])
+        composition = (preset_root / "byq-product/agent.cordis.yml").read_text()
+        self.assertEqual(composition.strip(), "[]")
+        self.assertNotRegex(
+            composition,
+            r"(?i)(bash|pwsh|terminal|edit|write|str_replace_editor|filesystem|git|codex|subagent|mutation)",
+        )
+        self.assertNotRegex(composition, r"(?m)^\s*name:\s+['\"]?(standard|minimal|code|cordis)")
+
+    def test_runtime_images_use_non_root_users(self) -> None:
+        for service, user in (("gateway", "byq"), ("backend", "byq"), ("mcp", "node")):
+            dockerfile = (ROOT / f"services/{service}/Dockerfile").read_text()
+            self.assertRegex(dockerfile, rf"(?m)^USER {user}$")
+
+        dsh = (ROOT / "services/dsh/Dockerfile").read_text()
+        self.assertRegex(dsh, r"(?m)^USER node$")
+
     def test_dsh_does_not_reference_postgres_or_redis(self) -> None:
         dsh_files = [
             ROOT / "services/dsh/Dockerfile",
@@ -94,6 +119,15 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         dsh = service_block("dsh")
         contents = dsh + "\n" + "\n".join(path.read_text() for path in dsh_files)
         self.assertNotRegex(contents, r"(?i)(postgres|postgresql|redis)")
+
+    def test_dsh_has_no_engineering_credentials(self) -> None:
+        dsh_files = [
+            ROOT / "services/dsh/Dockerfile",
+            ROOT / "services/dsh/README.md",
+            ROOT / "plugins/dsh-byq/cordis.patch.yml",
+        ]
+        contents = "\n".join(path.read_text() for path in dsh_files)
+        self.assertNotRegex(contents, r"(?i)(github_token|gh_token|codex_auth|docker_host)")
 
     def test_compose_dependency_direction_is_dsh_outbound_to_mcp(self) -> None:
         compose = (ROOT / "compose.yml").read_text()

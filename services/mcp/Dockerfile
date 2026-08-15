@@ -10,6 +10,7 @@ COPY services/mcp/tests ./tests
 RUN npm run build
 
 ENV NODE_ENV=production
+USER node
 EXPOSE 8300
 
 CMD ["node", "dist/src/server.js"]

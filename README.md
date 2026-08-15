@@ -17,6 +17,7 @@ The Phase 5 spine currently implements only:
 - Gateway health and bootstrap readiness only
 - a thin DSH runtime pinned to `@deepseek-ai/dsh@0.1.0-rc.6`
 - the `dsh-byq` configuration bundle
+- a BYQ-controlled `byq-product` preset with no source-editing capabilities
 - BeyondQuant MCP Streamable HTTP at `/mcp/v1`
 - the authenticated `byq_health` MCP tool
 - Backend health endpoints

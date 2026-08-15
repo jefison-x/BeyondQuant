@@ -19,3 +19,7 @@ The Web/bootstrap surface is used only to start the runtime, load the profile,
 and verify MCP composition. It is not a product API and is not published to a
 host port. Gateway-to-DSH runtime integration is intentionally deferred to
 Phase 6.
+
+The Product preset roster is also bundle-owned: only `byq-product` is scanned,
+it is the default, and the user preset root is disabled. The preset composition
+contains no coding or filesystem mutation tools.

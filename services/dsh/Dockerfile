@@ -32,6 +32,10 @@ RUN BYQ_MCP_TOKEN=validation \
     && grep -q '@deepseek-ai/dsh-mcp-client' /tmp/byq-dsh-config \
     && grep -q 'serverName: byq' /tmp/byq-dsh-config \
     && grep -q 'transport: streamable-http' /tmp/byq-dsh-config \
+    && grep -q 'default: byq-product' /tmp/byq-dsh-config \
+    && grep -q 'path: /opt/dsh/bundles/dsh-byq/presets' /tmp/byq-dsh-config \
+    && grep -q 'includeUserRoot: false' /tmp/byq-dsh-config \
+    && test -f /opt/dsh/bundles/dsh-byq/presets/byq-product/agent.cordis.yml \
     && rm -f /tmp/byq-dsh-config
 
 # rc.6 intentionally keeps this Web/bootstrap surface container-local. It is
