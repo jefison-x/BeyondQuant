@@ -11,6 +11,7 @@ from .data_provider import (
     ProviderRateLimited,
     TushareProvider,
 )
+from .factor_research import compute_factor
 from .research import (
     IdempotencyConflict,
     InvalidTransition,
@@ -151,6 +152,30 @@ def create_artifact(payload: dict[str, Any]) -> dict[str, object]:
 @app.get("/v1/research/artifacts/{artifact_id}")
 def get_artifact(artifact_id: str) -> dict[str, object]:
     return _research_call(lambda: research_store.get_artifact(artifact_id))
+
+
+@app.post("/v1/research/factors/compute", status_code=201)
+def compute_research_factor(payload: dict[str, Any]) -> dict[str, object]:
+    def operation() -> dict[str, object]:
+        computed = compute_factor(payload)
+        artifact_payload = {
+            "task_id": payload.get("task_id"),
+            "experiment_id": payload.get("experiment_id"),
+            "kind": "factor_result",
+            "content": computed["artifact_content"],
+            "lineage": computed["artifact_lineage"],
+            "trace_id": payload.get("trace_id"),
+            "idempotency_key": payload.get("idempotency_key"),
+        }
+        artifact = research_store.create_artifact(artifact_payload)
+        return {
+            "factor": computed["factor"],
+            "input_manifest": computed["input_manifest"],
+            "coverage": computed["coverage"],
+            "artifact": artifact,
+        }
+
+    return _research_call(operation)
 
 
 @app.post("/v1/research/artifacts/{artifact_id}/transitions")

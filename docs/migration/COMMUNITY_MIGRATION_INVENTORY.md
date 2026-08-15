@@ -264,6 +264,19 @@ adopt the calendar, lifecycle, coverage, uniqueness, ordering, and OHLC rules
 above before the first factor is accepted. If fundamentals, index membership,
 or other point-in-time inputs are added, the as-of rule is mandatory.
 
+### Phase 10 implementation reuse status (current branch)
+
+| Community semantic | Current BYQ implementation | Classification / status |
+|---|---|---|
+| Explicit canonical symbol/exchange and asset identity | `services/backend/app/factor_research.py::normalize_symbol`, security snapshot | `PORT_LOGIC` — prefix heuristics intentionally excluded |
+| Listing/delisting, suspension, and non-trading coverage states | `prepare_factor_input` lifecycle/status/session coverage | `PORT_LOGIC` — missing active bars fail closed; lifecycle states remain distinct |
+| Trading-session lag semantics | `sessions` normalization and session-position factor windows | `PORT_LOGIC` / `PORT_TESTS` |
+| Duplicate bars, stable ordering, finite/OHLC validation | BYQ factor input boundary and factor regression tests | `PORT_LOGIC` / `PORT_TESTS` — Phase 8 adapter unchanged |
+| Point-in-time universe and announcement/effective visibility | latest visible `universe_snapshots`, source as-of checks | `PORT_LOGIC` / `PORT_TESTS` |
+| Content-addressed input identity and factor result metadata | factor input SHA-256 manifest summary plus `factor_result` Artifact | `REFACTOR` — Community manifest semantics reimplemented behind BYQ ResearchStore |
+| Community provider SDK, ORM, Pandas service, and old runtime | Not imported or copied | `REFERENCE_ONLY` / `REPLACE` |
+| BaoStock, AKShare, VectorBT | Not present in the new implementation | `DROP` |
+
 ### Retrospective migration summary
 
 - `PORT_NOW`: duplicate-key policy, deterministic ordering, and finite/OHLC
