@@ -16,9 +16,16 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Check working tree diff
-        run: git diff --check
+      - name: Check committed pull request diff
+        if: github.event_name == 'pull_request'
+        run: git diff --check "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
+
+      - name: Check committed push diff
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: git diff --check "${{ github.event.before }}...${{ github.sha }}"
 
       - name: Architecture tests
         run: python3 -m unittest discover -s tests -p 'test_*.py'
