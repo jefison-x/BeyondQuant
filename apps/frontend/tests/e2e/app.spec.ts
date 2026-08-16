@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function login(page: Page) {
+  let meAuthenticated = false;
   await page.route("**/api/auth/login", (route) =>
     route.fulfill({
       status: 200,
@@ -10,7 +11,9 @@ async function login(page: Page) {
     }),
   );
   await page.route("**/api/auth/me", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ subject: "testuser" }) }),
+    meAuthenticated
+      ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ subject: "testuser" }) })
+      : (meAuthenticated = true, route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { message: "unauthenticated" } }) })),
   );
   await page.goto("/login");
   await page.getByLabel("用户名").fill("testuser");
