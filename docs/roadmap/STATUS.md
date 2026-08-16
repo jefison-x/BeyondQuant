@@ -3,8 +3,8 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 19**
-- Next phase: **Phase 20**
+- Current completed phase: **Phase 20**
+- Next phase: **Phase 21**
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -16,7 +16,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 15 engineering-plane ADR: **ADR-0011**
 - Accepted Phase 16 product-api ADR: **ADR-0012**
 - Accepted Phase 16 durable-market-data-storage ADR: **ADR-0013**
-- Open architecture decisions: none for the Phase 19 quant-workspace boundary;
+- Open architecture decisions: none for the Phase 20 user-platform-settings boundary;
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
   is Accepted.
   [ADR-0004](../architecture/adr/ADR-0004-phase7-product-authentication.md)
@@ -30,9 +30,9 @@ Codex session does not infer project state from commit history.
   [ADR-0011](../architecture/adr/ADR-0011-phase15-engineering-plane.md) is Accepted.
   [ADR-0012](../architecture/adr/ADR-0012-phase16-product-api-bff.md) is Accepted.
   [ADR-0013](../architecture/adr/ADR-0013-phase16-durable-market-data-storage.md) is Accepted.
-- Phase 19 acceptance evidence covers a Quant Workspace with Factor, Strategy,
-  and Backtest surfaces, Product API-backed entity/version/backtest reads, run/
-  cancel actions, and deterministic normalized result projection.
+- Phase 20 acceptance evidence covers a secret-safe User & Platform Settings
+  surface with masked model/provider status, data/migration status, approval
+  inbox, and asset/storage projection without exposing credentials.
 - Active architecture blockers: **none**
 
 Git SHA is not phase state. The current clean baseline must always be derived

@@ -33,6 +33,11 @@ const router = createRouter({
           name: "quant",
           component: () => import("@/views/QuantWorkspaceView.vue"),
         },
+        {
+          path: "settings",
+          name: "settings",
+          component: () => import("@/views/SettingsView.vue"),
+        },
       ],
     },
   ],
