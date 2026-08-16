@@ -54,3 +54,10 @@ body { margin: 0; background: var(--byq-bg); color: var(--byq-text); font-family
   .agent-workbench { grid-template-columns: 1fr; }
   .agent-sessions, .agent-trace { display: none; }
 }
+
+.quant-tabs { display: flex; gap: 8px; margin: 12px 0; }
+.quant-tabs button { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--byq-border); background: var(--byq-surface); cursor: pointer; }
+.quant-tabs button.active { background: var(--byq-accent); color: white; border-color: var(--byq-accent); }
+.quant-panel { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.quant-panel input, .quant-panel select { padding: 10px; border: 1px solid var(--byq-border); border-radius: 8px; }
+.quant-result { background: #111827; color: #f9fafb; padding: 14px; border-radius: 10px; overflow: auto; }

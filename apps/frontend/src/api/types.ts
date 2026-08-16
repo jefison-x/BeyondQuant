@@ -38,3 +38,9 @@ export interface WorkflowTraceEvent {
   source?: string;
   payload?: Record<string, unknown>;
 }
+
+export interface BacktestJob {
+  job_id?: string;
+  status?: string;
+  summary?: Record<string, unknown>;
+}

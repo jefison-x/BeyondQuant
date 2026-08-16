@@ -28,6 +28,11 @@ const router = createRouter({
           name: "agent",
           component: () => import("@/views/AgentView.vue"),
         },
+        {
+          path: "quant",
+          name: "quant",
+          component: () => import("@/views/QuantWorkspaceView.vue"),
+        },
       ],
     },
   ],
