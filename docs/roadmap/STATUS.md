@@ -4,7 +4,7 @@ This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
 - Current completed phase: **Phase 30**
-- Next phase: **BeyondQuant Next v1.0 RC Review (human gate)**
+- Next phase: **Community feature-depth gap closure (next: Backtest product depth)**
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -40,10 +40,11 @@ Codex session does not infer project state from commit history.
 - Phase 30 acceptance evidence covers the V2 parity matrix with no `FAIL`
   items, a golden journey covering core product pages, and BYQ artifact/
   approval list surfaces without raw DSH or backend exposure.
-- Community Parity Delivery Plan Phases 1-8 are complete; Chrome MCP browser
-  evidence is recorded in
-  `docs/roadmap/COMMUNITY_FEATURE_PARITY_CHROME_MCP_REVIEW.md`, and the V2
-  matrix has no `FAIL` or `DEFERRED` items.
+- Community Parity Delivery Plan Phases 1-8 restored the product shell and
+  Chrome MCP browser evidence, but
+  `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` records substantial remaining
+  `PARTIAL`/`MISSING` product-depth workflows. The v1.0 RC review gate is not
+  yet satisfied.
 - Active architecture blockers: **none**
 
 Git SHA is not phase state. The current clean baseline must always be derived

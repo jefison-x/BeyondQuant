@@ -1,30 +1,34 @@
 # Community Feature Parity Matrix V2
 
-Phase 8 release-parity browser evidence. Each Community surface is marked
-`PASS`, `REDESIGNED_PASS`, `INTENTIONAL_DROP`, or `FAIL`. No `DEFERRED` is
-accepted in this V2 release conclusion. Browser observations are recorded in
+Community feature parity status after the Phase 7/8 browser review. Each
+surface is marked `PASS`, `REDESIGNED_PASS`, `PARTIAL`, `MISSING`,
+`INTENTIONAL_DROP`, or `FAIL`. Browser observations are recorded in
 [`COMMUNITY_FEATURE_PARITY_CHROME_MCP_REVIEW.md`](COMMUNITY_FEATURE_PARITY_CHROME_MCP_REVIEW.md).
+Detailed gaps are in
+[`COMMUNITY_FEATURE_PARITY_GAP.md`](COMMUNITY_FEATURE_PARITY_GAP.md).
 
 | Community surface | Status | Notes |
 |---|---|---|
 | Login | REDESIGNED_PASS | Durable username/password session replaces Product Token browser login. |
-| Home/Dashboard | REDESIGNED_PASS | Real system status; recent-research/approval sections are empty-state until data exists. |
-| Agent | REDESIGNED_PASS | Normalized WorkflowTrace workbench; artifact/approval depth remains limited but no raw DSH events. |
-| Research | REDESIGNED_PASS | Research/Approval Center provides BYQ entity lookup; full lineage DAG not yet implemented. |
-| Strategy | REDESIGNED_PASS | BFF lookup/export/approval projection exists; full strategy editor flow not yet implemented. |
-| Backtest | REDESIGNED_PASS | BFF job run/cancel/result metric projection and chart wrapper; full equity/trades data not yet wired. |
-| Stock Pool | REDESIGNED_PASS | BYQ paper stock-pool create and paper-trading surface exist. |
-| Paper Trading | REDESIGNED_PASS | Simulation account/order rules and blocked reasons exist. |
-| Profile | REDESIGNED_PASS | Durable user principal and masked settings status; full change-password UI not yet implemented. |
-| Models | REDESIGNED_PASS | Masked configured status; no secret exposure. |
-| Assets | REDESIGNED_PASS | Artifact browser now lists BYQ artifacts with type/status identity; full import/export remains future hardening. |
-| Agent Policy | REDESIGNED_PASS | Approval Inbox lists pending/approved/rejected BYQ approvals; full policy editing remains future hardening. |
-| Operations | REDESIGNED_PASS | Safe operations status and admin user management; full backup/restore runbooks not complete. |
-| Shared components | REDESIGNED_PASS | Card/table/badge/loading/error/empty/chart/metric components introduced. |
+| Home/Dashboard | PARTIAL | Resource status and recent lists exist; Community card/quick-action depth is reduced. |
+| Agent | PARTIAL | Normalized trace/approval/context panels exist; conversation/tool/card depth is missing. |
+| Research | PARTIAL | Entity/approval lookup exists; lineage DAG and full research workspace are missing. |
+| Strategy | PARTIAL | List/validate/export exists; full editor, templates, version history, and save/delete are missing. |
+| Backtest | PARTIAL | List/status/empty chart exists; create wizard, comparison, trades/positions/logs/snapshot are missing. |
+| Stock Pool | PARTIAL | Create/list exists; catalog types, member editing, index constituents, filters, weights, snapshots are missing. |
+| Paper Trading | PARTIAL | Create/order/positions/fills exist; ledger, snapshots, settlement, risk controls, import/export are missing. |
+| Profile | REDESIGNED_PASS | Durable profile form and owner-scoped save work through Product API. |
+| Models | PARTIAL | Masked configured status exists; credential/profile/Agent binding management is missing. |
+| Assets | PARTIAL | Asset index and config-asset import/export exist; strategy/backtest re-import is not implemented. |
+| Agent Policy | PARTIAL | Platform policy and approval history exist; personal preferences/presets/rule CRUD are missing. |
+| Operations | PARTIAL | Safe status and admin user/approval projections exist; most operations workbenches are placeholders or missing. |
+| Data Center | PARTIAL | Provider/migration/quality status exists; data-source config, sync, and coverage detail are missing. |
+| Shared components | PARTIAL | Shell/chart/metric/loading/empty/error exist; deeper Community components are missing. |
 
 ## Release conclusion
 
-All listed Community surfaces render through the BYQ Product API in a real
-browser session with no raw MCP/DSH/Backend/storage/provider exposure. No
-surface is `FAIL` or `DEFERRED`. Remaining depth differences are captured as
-future hardening in the notes above rather than release blockers.
+The current release is not yet a v1.0 RC. Several high-value Community
+workflows remain `PARTIAL` or `MISSING`, especially Strategy, Backtest, Stock
+Pool, Paper Trading, Agent, Models, Assets, Agent Policy, and Operations. The
+next work must close these product-depth gaps before the RC review gate can be
+reopened.
