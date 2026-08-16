@@ -110,3 +110,53 @@ test("operations page renders safe status projection", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Operations 状态" })).toBeVisible();
   await expect(page.getByText("runtime-adapter")).toBeVisible();
 });
+
+test("golden journey covers login, dashboard, agent, quant, settings, and operations", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("byq-product-token", "product-test-token");
+  });
+  await page.route("**/api/product/dashboard", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ status: "ok", resources: { backend: "ok", data: "not_loaded", migration: "not_started" } }),
+    }),
+  );
+  await page.route("**/api/product/settings/status", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        profile: { configured: true },
+        model_provider: { configured: false },
+        data_provider: { provider: "tushare", migration: "not_started" },
+        storage: { status: "ready" },
+        approval_inbox: { pending: 0 },
+      }),
+    }),
+  );
+  await page.route("**/api/product/operations/status", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        backend: "ok",
+        runtime: "runtime-adapter",
+        storage: "ready",
+        migration: "not_started",
+        observability: { workflow_trace: "configured", audit: "configured" },
+      }),
+    }),
+  );
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "首页" })).toBeVisible();
+  await page.goto("/agent");
+  await expect(page.getByRole("heading", { name: "研究对话" })).toBeVisible();
+  await page.goto("/quant");
+  await expect(page.getByRole("heading", { name: "量化工作台" })).toBeVisible();
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "用户与平台设置" })).toBeVisible();
+  await page.goto("/operations");
+  await expect(page.getByRole("heading", { name: "Operations 状态" })).toBeVisible();
+});
