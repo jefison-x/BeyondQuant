@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import type { EChartsOption } from "echarts";
 import {
   cancelBacktest,
@@ -13,7 +13,8 @@ import ChartWrapper from "@/components/charts/ChartWrapper.vue";
 import MetricCard from "@/components/ui/MetricCard.vue";
 
 const auth = useAuthStore();
-const tab = ref<"factor" | "strategy" | "backtest">("backtest");
+const props = defineProps<{ initialTab?: "factor" | "strategy" | "backtest" }>();
+const tab = ref<"factor" | "strategy" | "backtest">(props.initialTab ?? "backtest");
 const entityType = ref<"tasks" | "experiments" | "artifacts">("artifacts");
 const entityId = ref("");
 const artifactId = ref("");
@@ -21,6 +22,16 @@ const jobId = ref("");
 const result = ref<unknown>(null);
 const error = ref("");
 const busy = ref(false);
+const heading = computed(() =>
+  tab.value === "strategy" ? "策略管理" : tab.value === "backtest" ? "回测管理" : "量化工作台",
+);
+
+watch(
+  () => props.initialTab,
+  (value) => {
+    if (value) tab.value = value;
+  },
+);
 
 const backtest = computed(() =>
   result.value as { status?: string; summary?: { total_return?: number; max_drawdown?: number } } | null,
@@ -80,7 +91,7 @@ async function run(operation: () => Promise<unknown>) {
 
 <template>
   <section class="page-card">
-    <h2>量化工作台</h2>
+    <h2>{{ heading }}</h2>
     <div class="quant-tabs">
       <button type="button" :class="{ active: tab === 'factor' }" @click="tab = 'factor'">Factor</button>
       <button type="button" :class="{ active: tab === 'strategy' }" @click="tab = 'strategy'">Strategy</button>

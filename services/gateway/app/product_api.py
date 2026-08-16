@@ -55,6 +55,19 @@ def _product_principal(request: Request) -> Principal:
     return _authenticate(request.headers.get("authorization"))
 
 
+def _trusted_agent_headers(request: Request) -> dict[str, str]:
+    """Build backend-owned agent context headers for browser Product API calls."""
+    principal = _product_principal(request)
+    session_id = request.cookies.get(SESSION_COOKIE, "browser")
+    return {
+        "x-byq-owner-principal": principal.subject,
+        "x-byq-actor-principal": principal.subject,
+        "x-byq-trace-id": f"product-{uuid.uuid4().hex}",
+        "x-byq-session-id": session_id,
+        "x-byq-dsh-run-id": "browser",
+    }
+
+
 def _backend_get(path: str) -> dict[str, object]:
     try:
         response = httpx.get(f"{BACKEND_URL}{path}", timeout=3.0)
@@ -177,7 +190,7 @@ def product_research_entity(entity_type: str, entity_id: str, request: Request) 
 @router.get("/research/artifacts")
 def product_artifacts(request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", "/v1/research/artifacts")
+    return _backend_request("GET", "/v1/research/artifacts", headers=_trusted_agent_headers(request))
 
 
 @router.get("/backtests/{job_id}")
@@ -207,13 +220,17 @@ def product_strategy_export(artifact_id: str, request: Request) -> dict[str, obj
 @router.get("/approvals/{approval_id}")
 def product_approval_get(approval_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", f"/v1/agents/approvals/{approval_id}")
+    return _backend_request(
+        "GET",
+        f"/v1/agents/approvals/{approval_id}",
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/approvals")
 def product_approvals(request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", "/v1/agents/approvals")
+    return _backend_request("GET", "/v1/agents/approvals", headers=_trusted_agent_headers(request))
 
 
 @router.get("/data-center/status")

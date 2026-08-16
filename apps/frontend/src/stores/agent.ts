@@ -20,6 +20,11 @@ export const useAgentStore = defineStore("agent", {
       this.messages = [];
       this.events = [];
     },
+    setActiveSession(sessionId: string) {
+      this.activeSessionId = sessionId;
+      this.messages = [];
+      this.events = [];
+    },
     addMessage(message: AgentMessage) {
       this.messages.push(message);
     },
