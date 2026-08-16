@@ -13,6 +13,15 @@ const error = ref("");
 const backtests = ref<Array<Record<string, unknown>>>([]);
 const selected = ref<Record<string, unknown> | null>(null);
 const job = ref<Awaited<ReturnType<typeof getBacktest>> | null>(null);
+const statusFilter = ref("");
+const search = ref("");
+const filteredBacktests = computed(() =>
+  backtests.value.filter((row) => {
+    const matchesStatus = !statusFilter.value || row.status === statusFilter.value;
+    const matchesSearch = !search.value || String(row.job_id ?? "").includes(search.value);
+    return matchesStatus && matchesSearch;
+  }),
+);
 
 const summary = computed(() => {
   const value = job.value as { summary?: Record<string, unknown> } | null;
@@ -76,8 +85,15 @@ onMounted(loadList);
             <small class="card-sub">Artifact kind: backtest_result</small>
           </div>
         </template>
-        <el-empty v-if="!backtests.length" description="暂无回测结果" />
-        <el-table v-else :data="backtests" highlight-current-row @current-change="select">
+        <el-input v-model="search" placeholder="搜索 Job ID" clearable />
+        <el-select v-model="statusFilter" placeholder="状态筛选" clearable>
+          <el-option label="queued" value="queued" />
+          <el-option label="running" value="running" />
+          <el-option label="completed" value="completed" />
+          <el-option label="failed" value="failed" />
+        </el-select>
+        <el-empty v-if="!filteredBacktests.length" description="暂无回测结果" />
+        <el-table v-else :data="filteredBacktests" highlight-current-row @current-change="select">
           <el-table-column prop="job_id" label="Job ID" min-width="220" show-overflow-tooltip />
           <el-table-column prop="status" label="状态" width="110" />
           <el-table-column label="创建时间" min-width="180">
