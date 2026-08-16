@@ -62,6 +62,26 @@ These rules apply to Codex, DSH engineering agents, and any other AI coding agen
 33. BaoStock, AKShare, and VectorBT rows, adapters, fallbacks, dependencies,
     and compatibility paths remain DROP. Only validated Tushare or proven
     provider-independent canonical data may be considered for migration.
+34. Phases 24-30 are Product Completion phases. Implement exactly one phase
+    per isolated worktree/branch/Draft PR and stop at the human merge gate.
+    Do not start the next phase until the current phase is merged.
+35. Product Completion is not satisfied by Vue file, page, endpoint, or
+    placeholder existence. Required features must work through Product API,
+    real browser flows, persistence where required, and feature checklist
+    evidence.
+36. Product phases affecting UI require a Chrome MCP browser review and a
+    Community feature checklist before the phase may be marked complete.
+37. Community frontend remains READ ONLY and is the Product reference
+    baseline. Inspect feature-by-feature before port/redesign/rewrite; do not
+    copy the Community repository.
+38. Browser requests must use Gateway/Product API only. The frontend MUST NOT
+    call Backend, MCP, DSH, PostgreSQL, Redis, or Tushare directly.
+39. Product Token is bootstrap/internal/service compatibility only. Normal
+    browser login for Phase 24+ must use durable BYQ user identity.
+40. No fake completion: placeholder, mock page, static fake dataset, fake
+    login, local-only profile persistence, hardcoded user, empty tabs, or
+    disabled UI without a documented backend blocker are not phase
+    completion.
 
 ## Change discipline
 

@@ -106,3 +106,16 @@ Draft PR, files changed, architecture decision/status, tests and CI, external
 dependency versions, known limitations, blockers, and whether `main` or the
 legacy repository was modified. The final line must say whether the next phase
 is permitted or the phase is blocked pending review.
+
+## Product Completion Phase Gate
+
+For Phases 24-30, the workflow above is extended:
+
+- one phase per isolated worktree/branch/Draft PR;
+- stop after the Draft PR is created and CI passes;
+- do not merge or mark ready;
+- product UI phases require Chrome MCP browser evidence and a Community
+  feature checklist before the phase is considered complete;
+- PR bodies must include Product Evidence: Community references inspected,
+  browser journeys tested, Chrome MCP review, frontend tests, backend/Product
+  API tests, screens/surfaces completed, and remaining missing items.

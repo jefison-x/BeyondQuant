@@ -4,7 +4,7 @@ This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
 - Current completed phase: **Phase 23**
-- Next phase: **Release Candidate Review (human gate)**
+- Next phase: **Phase 24 — Durable User Identity & Authentication**
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -33,6 +33,9 @@ Codex session does not infer project state from commit history.
 - Phase 23 acceptance evidence covers the Community Feature Parity Matrix,
   golden journey E2E smoke, release-candidate status, and explicit DROP/DEFER
   classifications for remaining hardening work.
+- Phase 23 produced a Product Skeleton release-parity baseline. It did not
+  establish final Community feature parity. Remaining product-depth work is
+  tracked in Phases 24-30.
 - Active architecture blockers: **none**
 
 Git SHA is not phase state. The current clean baseline must always be derived

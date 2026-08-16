@@ -1009,3 +1009,125 @@ domain invariants remain in BYQ; Community is not the new architecture.
 Any missing core product journey, unresolved parity classification, failed
 secret/trace/reproducibility/restore check, raw DSH coupling, live-trading
 scope creep, or an attempt to bypass the human release gate.
+
+## BeyondQuant Product Completion Program
+
+Phases 5-15 established the Core Platform. Phases 16-23 established a Product
+Skeleton, not a final release. Phase 23 produced a baseline parity matrix and
+browser smoke, but did not complete durable user identity, full Community UX
+depth, complete quant workspace workflows, approval/artifact/lineage product
+surfaces, historical market-data migration, or production operations.
+
+Phases 24-30 are the Product Completion Program. Each phase is implemented in
+one isolated worktree/branch, with independent tests, one Draft PR, one human
+review gate, and a Chrome MCP browser gate where UI is affected. A phase must
+not be marked complete merely because a Vue file, endpoint, or page exists.
+Required features must be demonstrably working through Product API, real
+browser flows, persistence where required, error/loading/empty states, and
+feature checklist evidence.
+
+## Phase 24 — Durable User Identity & Authentication
+
+### Goal
+
+Replace Product Token browser login with a durable BYQ-owned user identity,
+password authentication, secure session, and owner isolation.
+
+### Key acceptance
+
+BYQ-owned User domain with password hashing; username/password login through
+Gateway Product API; secure HTTP-only session cookie or equivalent ADR-
+approved session boundary; logout/session revoke/expiration; change password;
+bootstrap admin; admin/user authorization; disabled users cannot login; owner
+isolation across research, strategy, backtest, stock pool, paper account,
+agent session, approval, and audit. Browser login shows username/password, not
+Product Token. Product Token remains internal/service bootstrap only.
+
+## Phase 25 — Community Frontend Full UX Restoration
+
+### Goal
+
+Restore Community core information architecture, responsive shell, shared
+components, and real-data dashboard depth.
+
+### Key acceptance
+
+App shell/sidebar/header/navigation match Community familiarity while using
+BYQ contracts; dashboard uses real BYQ data for market/data status, recent
+research, recent agent runs, recent strategies/backtests, pending approvals,
+stock pools, and paper summary; shared cards/tables/pagination/dialogs/forms/
+status badges/empty/loading/error/chart wrappers are reusable; Chrome MCP
+visual comparison against Community is performed and recorded.
+
+## Phase 26 — Full Quant Workspace
+
+### Goal
+
+Turn the Phase 19 skeleton into a real Factor, Strategy, and Backtest
+workspace.
+
+### Key acceptance
+
+Factor list/create/definition/universe/date range/compute/status/coverage/
+results/history/artifact linkage; strategy list/draft/editor/validation/
+version/history/approval status/backtest linkage; backtest create/status/
+retry where allowed, metrics, ECharts equity/drawdown/trades/positions/blocked
+reasons/fees/tax/manifest/lineage; no fake metrics or fake charts.
+
+## Phase 27 — Research, Artifact and Approval Center
+
+### Goal
+
+Productize the new BYQ Research/Artifact/Lineage/Approval domain capabilities.
+
+### Key acceptance
+
+ResearchTasks, Experiments, Artifacts, Evidence, Lineage, and Approvals are
+visible and manageable; artifact browser shows real metadata/hash/lineage/
+provenance without embedding large objects; lineage view is based on real
+BYQ lineage; Approval Inbox supports pending/approved/rejected and human
+approve/reject while keeping execution outcome separate.
+
+## Phase 28 — Historical Market Data Migration & Data Center
+
+### Goal
+
+Complete logical migration of validated Community Tushare historical cache and
+expose a real Data Center.
+
+### Key acceptance
+
+Read-only Community audit with real table/row/date/symbol/source statistics;
+validation/normalization/quarantine/manifest/import/verification are executed
+and idempotent; no physical PostgreSQL directory copy; BaoStock/AKShare/
+VectorBT remain DROP; deterministic conflict policy; incremental Tushare
+refresh; Data Center shows datasets/coverage/sync/provider/row counts/quality/
+migration/quarantine/refresh status without secrets.
+
+## Phase 29 — Platform Administration & Operations Completion
+
+### Goal
+
+Turn Settings/Operations into an actual administration and operations surface.
+
+### Key acceptance
+
+User administration, model management, data management, agent management,
+runtime operations, backup/restore with a real restore test, safe logging/
+WorkflowTrace/audit/job-failure lookup without leaking credentials.
+
+## Phase 30 — True Community Feature Parity & BeyondQuant Next v1.0 RC
+
+### Goal
+
+Final product release candidate with real Community feature parity and
+multi-user golden journeys.
+
+### Key acceptance
+
+New `COMMUNITY_FEATURE_PARITY_MATRIX_V2.md` with per-feature
+PASS/REDESIGNED_PASS/INTENTIONAL_DROP/FAIL; no DEFERRED items remain in the
+release conclusion; Chrome MCP browser comparison against Community; complete
+golden journey through real Product API with no mocks/direct Backend/MCP/DSH;
+multi-user isolation E2E; Phase 30 cannot complete while required items are
+missing.
