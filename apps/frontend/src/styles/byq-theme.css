@@ -85,3 +85,9 @@ body { margin: 0; background: var(--byq-bg); color: var(--byq-text); font-family
 .base-badge.danger { background: #fef2f2; color: #dc2626; }
 
 .dashboard { display: flex; flex-direction: column; gap: 16px; }
+
+.chart-wrapper { width: 100%; height: 320px; }
+.metric-card { padding: 14px; border: 1px solid var(--byq-border); border-radius: 10px; display: flex; flex-direction: column; gap: 4px; }
+.metric-label { color: var(--byq-muted); font-size: 12px; }
+.metric-value { font-size: 20px; }
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 12px 0; }

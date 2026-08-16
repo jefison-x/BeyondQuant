@@ -8,6 +8,8 @@ import {
   runBacktest,
 } from "@/api/quant";
 import { useAuthStore } from "@/stores/auth";
+import ChartWrapper from "@/components/charts/ChartWrapper.vue";
+import MetricCard from "@/components/ui/MetricCard.vue";
 
 const auth = useAuthStore();
 const tab = ref<"factor" | "strategy" | "backtest">("backtest");
@@ -95,6 +97,20 @@ async function run(operation: () => Promise<unknown>) {
     </div>
 
     <p v-if="error" class="page-error">{{ error }}</p>
-    <pre v-if="result" class="quant-result">{{ JSON.stringify(result, null, 2) }}</pre>
+    <div v-if="result && tab === 'backtest'" class="backtest-result">
+      <div class="metric-grid">
+        <MetricCard label="Status" :value="String((result as { status?: string }).status ?? 'unknown')" />
+        <MetricCard
+          label="Total Return"
+          :value="String((result as { summary?: { total_return?: number } }).summary?.total_return ?? 'n/a')"
+        />
+        <MetricCard
+          label="Max Drawdown"
+          :value="String((result as { summary?: { max_drawdown?: number } }).summary?.max_drawdown ?? 'n/a')"
+        />
+      </div>
+      <ChartWrapper :option="{ title: { text: 'Equity Curve' }, xAxis: { type: 'category', data: [] }, yAxis: { type: 'value' }, series: [{ type: 'line', data: [] }] }" empty />
+    </div>
+    <pre v-else-if="result" class="quant-result">{{ JSON.stringify(result, null, 2) }}</pre>
   </section>
 </template>
