@@ -71,3 +71,17 @@ body { margin: 0; background: var(--byq-bg); color: var(--byq-text); font-family
 
 .paper-form { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .paper-form input, .paper-form select { padding: 10px; border: 1px solid var(--byq-border); border-radius: 8px; }
+
+.base-card { background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: 12px; overflow: hidden; }
+.base-card-header { padding: 14px 16px; border-bottom: 1px solid var(--byq-border); }
+.base-card-header h3 { margin: 0; }
+.base-card-body { padding: 16px; }
+.base-empty, .base-loading, .base-error { padding: 20px; text-align: center; color: var(--byq-muted); }
+.base-error { color: #dc2626; }
+.base-badge { display: inline-flex; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+.base-badge.info { background: #eff6ff; color: #2563eb; }
+.base-badge.success { background: #ecfdf5; color: #059669; }
+.base-badge.warning { background: #fffbeb; color: #d97706; }
+.base-badge.danger { background: #fef2f2; color: #dc2626; }
+
+.dashboard { display: flex; flex-direction: column; gap: 16px; }
