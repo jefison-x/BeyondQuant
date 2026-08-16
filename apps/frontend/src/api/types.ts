@@ -84,3 +84,10 @@ export interface OperationsStatus {
   migration: string;
   observability: { workflow_trace: string; audit: string };
 }
+
+export interface DataCenterStatus {
+  migration: string;
+  datasets: Array<Record<string, unknown>>;
+  provider: string;
+  quality: string;
+}

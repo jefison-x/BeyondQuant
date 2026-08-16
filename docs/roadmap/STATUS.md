@@ -3,8 +3,8 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 27**
-- Next phase: **Phase 28 — Historical Market Data Migration & Data Center**
+- Current completed phase: **Phase 28**
+- Next phase: **Phase 29 — Platform Administration & Operations Completion**
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -17,7 +17,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 16 product-api ADR: **ADR-0012**
 - Accepted Phase 16 durable-market-data-storage ADR: **ADR-0013**
 - Accepted Phase 24 user-auth ADR: **ADR-0014**
-- Open architecture decisions: none for the Phase 27 research-center boundary;
+- Open architecture decisions: none for the Phase 28 data-center boundary;
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
   is Accepted.
   [ADR-0004](../architecture/adr/ADR-0004-phase7-product-authentication.md)
@@ -37,9 +37,9 @@ Codex session does not infer project state from commit history.
 - Phase 23 produced a Product Skeleton release-parity baseline. It did not
   establish final Community feature parity. Remaining product-depth work is
   tracked in Phases 24-30.
-- Phase 27 acceptance evidence covers a Research/Approval Center with Product
-  API-backed ResearchTask, Experiment, Artifact, and Approval lookup without
-  raw backend/DSH exposure.
+- Phase 28 acceptance evidence covers a secret-safe Data Center status surface
+  with migration/provider/quality state and an empty dataset projection until
+  validated logical migration is performed.
 - Active architecture blockers: **none**
 
 Git SHA is not phase state. The current clean baseline must always be derived

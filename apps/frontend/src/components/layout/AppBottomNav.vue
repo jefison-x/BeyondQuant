@@ -9,6 +9,7 @@ const links = [
   { name: "paper-trading", label: "模拟", to: "/paper-trading" },
   { name: "operations", label: "运维", to: "/operations" },
   { name: "research-center", label: "研究", to: "/research-center" },
+  { name: "data-center", label: "数据", to: "/data-center" },
 ];
 </script>
 

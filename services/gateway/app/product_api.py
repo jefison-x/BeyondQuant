@@ -198,6 +198,17 @@ def product_approval_get(approval_id: str, request: Request) -> dict[str, object
     return _backend_request("GET", f"/v1/agents/approvals/{approval_id}")
 
 
+@router.get("/data-center/status")
+def product_data_center_status(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return {
+        "migration": "not_started",
+        "datasets": [],
+        "provider": "tushare",
+        "quality": "not_audited",
+    }
+
+
 @router.get("/settings/status")
 def product_settings_status(request: Request) -> dict[str, object]:
     _product_principal(request)
