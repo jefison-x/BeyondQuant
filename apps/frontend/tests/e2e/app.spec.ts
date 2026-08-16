@@ -75,5 +75,6 @@ test("settings page renders masked platform status", async ({ page }) => {
   );
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "用户与平台设置" })).toBeVisible();
+  await page.getByRole("button", { name: "Data" }).click();
   await expect(page.getByText("Provider: tushare")).toBeVisible();
 });
