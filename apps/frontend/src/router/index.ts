@@ -58,6 +58,11 @@ const router = createRouter({
           name: "research-center",
           component: () => import("@/views/ResearchCenterView.vue"),
         },
+        {
+          path: "data-center",
+          name: "data-center",
+          component: () => import("@/views/DataCenterView.vue"),
+        },
       ],
     },
   ],
