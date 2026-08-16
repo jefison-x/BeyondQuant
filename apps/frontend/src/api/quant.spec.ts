@@ -18,7 +18,9 @@ describe("quant api client", () => {
   });
 
   it("runs and cancels a backtest through product paths", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ job_id: "job_1", status: "completed" }), { status: 200 }));
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ job_id: "job_1", status: "completed" }), { status: 200 })),
+    );
     vi.stubGlobal("fetch", fetchMock);
     await getBacktest("job_1", "test-token");
     await runBacktest("job_1", "test-token");
