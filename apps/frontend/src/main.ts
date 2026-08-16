@@ -10,7 +10,9 @@ import "./styles/byq-theme.css";
 const app = createApp(App);
 app.use(createPinia());
 const auth = useAuthStore();
-await auth.fetchMe().catch(() => undefined);
 app.use(router).use(ElementPlus);
-await router.isReady();
-app.mount("#app");
+auth.fetchMe()
+  .catch(() => undefined)
+  .finally(() => {
+    router.isReady().then(() => app.mount("#app"));
+  });
