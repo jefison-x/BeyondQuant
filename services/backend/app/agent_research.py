@@ -607,6 +607,19 @@ class AgentResearchStore:
             raise AgentUnauthorized("agent approval is not owned by this principal")
         return self._approval_row(row)
 
+    def list_approvals(self, *, trusted_owner: str | None = None) -> dict[str, object]:
+        with self._lock:
+            if trusted_owner:
+                rows = self._connection.execute(
+                    "SELECT * FROM agent_approvals WHERE owner_principal = ? ORDER BY created_at DESC, approval_id DESC LIMIT 200",
+                    (trusted_owner,),
+                ).fetchall()
+            else:
+                rows = self._connection.execute(
+                    "SELECT * FROM agent_approvals ORDER BY created_at DESC, approval_id DESC LIMIT 200"
+                ).fetchall()
+        return {"approvals": [self._approval_row(row) for row in rows]}
+
     def _check_run_access(self, row: sqlite3.Row, *, trusted_owner: str | None, trusted_actor: str | None) -> None:
         if trusted_owner and row["owner_principal"] != trusted_owner:
             raise AgentUnauthorized("agent run is not owned by this principal")

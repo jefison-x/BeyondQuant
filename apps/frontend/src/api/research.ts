@@ -19,3 +19,11 @@ export function getResearchEntity(
 export function getApproval(approvalId: string): Promise<Record<string, unknown>> {
   return getJson(`/approvals/${encodeURIComponent(approvalId)}`);
 }
+
+export function listArtifacts(): Promise<{ artifacts: Array<Record<string, unknown>> }> {
+  return getJson("/research/artifacts");
+}
+
+export function listApprovals(): Promise<{ approvals: Array<Record<string, unknown>> }> {
+  return getJson("/approvals");
+}

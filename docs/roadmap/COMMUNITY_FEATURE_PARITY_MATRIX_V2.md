@@ -16,8 +16,8 @@ accepted in this V2 release conclusion.
 | Paper Trading | REDESIGNED_PASS | Simulation account/order rules and blocked reasons exist. |
 | Profile | REDESIGNED_PASS | Durable user principal and masked settings status; full change-password UI not yet implemented. |
 | Models | REDESIGNED_PASS | Masked configured status; no secret exposure. |
-| Assets | FAIL | No complete artifact asset index/import-export yet. |
-| Agent Policy | FAIL | Approval policy UI not complete. |
+| Assets | REDESIGNED_PASS | Artifact browser now lists BYQ artifacts with type/status identity; full import/export remains future hardening. |
+| Agent Policy | REDESIGNED_PASS | Approval Inbox lists pending/approved/rejected BYQ approvals; full policy editing remains future hardening. |
 | Operations | REDESIGNED_PASS | Safe operations status and admin user management; full backup/restore runbooks not complete. |
 | Shared components | REDESIGNED_PASS | Card/table/badge/loading/error/empty/chart/metric components introduced. |
 
