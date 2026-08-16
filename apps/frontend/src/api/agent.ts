@@ -6,9 +6,9 @@ const WORKFLOW_ROOT = "/v1/workflows";
 async function jsonRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     ...init,
+    credentials: "include",
     headers: {
       "content-type": "application/json",
-      Authorization: `Bearer ${token}`,
       ...(init.headers ?? {}),
     },
   });
@@ -56,8 +56,8 @@ export async function streamWorkflowEvents(
   lastEventId = "0",
 ): Promise<void> {
   const response = await fetch(`${WORKFLOW_ROOT}/${encodeURIComponent(sessionId)}/events`, {
+    credentials: "include",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Last-Event-ID": lastEventId,
       Accept: "text/event-stream",
     },

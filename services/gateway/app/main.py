@@ -13,7 +13,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
+from .auth_api import router as auth_router
 from .product_api import ProductError, router as product_router
+from .user_session import ProductAuthError, resolve_principal
 from .trace_store import TraceStore
 
 
@@ -21,6 +23,7 @@ SERVICE = "byq-gateway"
 VERSION = "0.1.0"
 app = FastAPI(title="BeyondQuant Gateway", version=VERSION)
 app.include_router(product_router)
+app.include_router(auth_router)
 RUNTIME_ADAPTER_URL = os.environ.get("BYQ_RUNTIME_ADAPTER_URL", "http://runtime-adapter:8400")
 PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
@@ -134,6 +137,15 @@ def _authenticate(authorization: str | None) -> Principal:
         ) from exc
 
 
+def _authenticate_request(request: Request) -> Principal:
+    if "byq_session" in request.cookies:
+        try:
+            return resolve_principal(request)
+        except ProductAuthError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return _authenticate(request.headers.get("authorization"))
+
+
 def _adapter_post(path: str, *, payload: dict[str, object] | None = None, timeout: float = 20.0) -> dict[str, object]:
     try:
         response = httpx.post(
@@ -200,13 +212,13 @@ def _collect_trace(session: ProductSession) -> None:
 
 
 def _product_session(request: Request, session_id: str) -> ProductSession:
-    principal = _authenticate(request.headers.get("authorization"))
+    principal = _authenticate_request(request)
     return product_sessions.get_owned(session_id, principal)
 
 
 @app.post("/v1/agent/sessions", status_code=201)
 def create_product_session(request: Request) -> dict[str, object]:
-    principal = _authenticate(request.headers.get("authorization"))
+    principal = _authenticate_request(request)
     session_id = f"byq-session-{uuid.uuid4().hex}"
     trace_id = f"byq-trace-{uuid.uuid4().hex}"
     body = _adapter_post(
@@ -280,7 +292,7 @@ def cancel_product_session(
 
 @app.delete("/v1/agent/sessions/{session_id}")
 def release_product_session(session_id: str, request: Request) -> dict[str, object]:
-    principal = _authenticate(request.headers.get("authorization"))
+    principal = _authenticate_request(request)
     session = product_sessions.get_owned(session_id, principal)
     body = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/release", timeout=5.0)
     product_sessions.mark_released(session.session_id, principal)
