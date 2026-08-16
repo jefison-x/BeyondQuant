@@ -15,7 +15,7 @@ const entityType = ref<"tasks" | "experiments" | "artifacts">("artifacts");
 const entityId = ref("");
 const artifactId = ref("");
 const jobId = ref("");
-const result = ref<Record<string, unknown> | null>(null);
+const result = ref<unknown>(null);
 const error = ref("");
 const busy = ref(false);
 
