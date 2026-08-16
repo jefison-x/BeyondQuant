@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
+import type { EChartsOption } from "echarts";
 import {
   cancelBacktest,
   exportStrategyVersion,
@@ -8,6 +9,8 @@ import {
   runBacktest,
 } from "@/api/quant";
 import { useAuthStore } from "@/stores/auth";
+import ChartWrapper from "@/components/charts/ChartWrapper.vue";
+import MetricCard from "@/components/ui/MetricCard.vue";
 
 const auth = useAuthStore();
 const tab = ref<"factor" | "strategy" | "backtest">("backtest");
@@ -18,6 +21,19 @@ const jobId = ref("");
 const result = ref<unknown>(null);
 const error = ref("");
 const busy = ref(false);
+
+const backtest = computed(() =>
+  result.value as { status?: string; summary?: { total_return?: number; max_drawdown?: number } } | null,
+);
+const backtestStatus = computed(() => backtest.value?.status ?? "unknown");
+const totalReturn = computed(() => backtest.value?.summary?.total_return ?? "n/a");
+const maxDrawdown = computed(() => backtest.value?.summary?.max_drawdown ?? "n/a");
+const equityOption = computed<EChartsOption>(() => ({
+  title: { text: "Equity Curve" },
+  xAxis: { type: "category" as const, data: [] as string[] },
+  yAxis: { type: "value" as const },
+  series: [{ type: "line" as const, data: [] as number[] }],
+}));
 
 async function loadEntity() {
   await run(async () => {
@@ -95,6 +111,14 @@ async function run(operation: () => Promise<unknown>) {
     </div>
 
     <p v-if="error" class="page-error">{{ error }}</p>
-    <pre v-if="result" class="quant-result">{{ JSON.stringify(result, null, 2) }}</pre>
+    <div v-if="result && tab === 'backtest'" class="backtest-result">
+      <div class="metric-grid">
+        <MetricCard label="Status" :value="backtestStatus" />
+        <MetricCard label="Total Return" :value="String(totalReturn)" />
+        <MetricCard label="Max Drawdown" :value="String(maxDrawdown)" />
+      </div>
+      <ChartWrapper :option="equityOption" empty />
+    </div>
+    <pre v-else-if="result" class="quant-result">{{ JSON.stringify(result, null, 2) }}</pre>
   </section>
 </template>

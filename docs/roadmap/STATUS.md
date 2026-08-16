@@ -3,8 +3,8 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 25**
-- Next phase: **Phase 26 — Full Quant Workspace**
+- Current completed phase: **Phase 26**
+- Next phase: **Phase 27 — Research, Artifact and Approval Center**
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -17,7 +17,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 16 product-api ADR: **ADR-0012**
 - Accepted Phase 16 durable-market-data-storage ADR: **ADR-0013**
 - Accepted Phase 24 user-auth ADR: **ADR-0014**
-- Open architecture decisions: none for the Phase 25 frontend-ux boundary;
+- Open architecture decisions: none for the Phase 26 quant-workspace boundary;
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
   is Accepted.
   [ADR-0004](../architecture/adr/ADR-0004-phase7-product-authentication.md)
@@ -37,9 +37,9 @@ Codex session does not infer project state from commit history.
 - Phase 23 produced a Product Skeleton release-parity baseline. It did not
   establish final Community feature parity. Remaining product-depth work is
   tracked in Phases 24-30.
-- Phase 25 acceptance evidence covers shared BYQ UI components, a real-data
-  dashboard status surface, responsive App Shell improvements, and reusable
-  loading/empty/error/badge patterns.
+- Phase 26 acceptance evidence covers a reusable ECharts chart layer, metric
+  cards, and a backtest result projection with loading/empty/error behavior
+  without fabricated metrics.
 - Active architecture blockers: **none**
 
 Git SHA is not phase state. The current clean baseline must always be derived
