@@ -46,6 +46,13 @@ from .engineering import (
     EngineeringUnauthorized,
     EngineeringTaskStore,
 )
+from .paper_trading import (
+    PaperTradingConflict,
+    PaperTradingForbidden,
+    PaperTradingNotFound,
+    PaperTradingPersistenceError,
+    PaperTradingStore,
+)
 from .research import (
     IdempotencyConflict,
     InvalidTransition,
@@ -72,6 +79,7 @@ research_store = ResearchStore.from_env()
 agent_store = AgentResearchStore.from_env()
 learning_store = LearningLoopStore.from_env(research_store)
 engineering_store = EngineeringTaskStore.from_env()
+paper_store = PaperTradingStore.from_env()
 backtest_store = BacktestJobStore.from_env()
 backtest_objects = LocalObjectStore.from_env()
 
@@ -207,6 +215,21 @@ def _engineering_call(operation: Callable[[], dict[str, object]]) -> dict[str, o
         raise HTTPException(status_code=409, detail=str(error)) from error
     except EngineeringPersistenceError as error:
         raise HTTPException(status_code=503, detail="engineering storage is unavailable") from error
+
+
+def _paper_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except PaperTradingForbidden as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except PaperTradingNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PaperTradingConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except PaperTradingPersistenceError as error:
+        raise HTTPException(status_code=503, detail="paper trading storage is unavailable") from error
 
 
 def _agent_context(request: Request, payload: dict[str, Any]) -> dict[str, str | None]:
@@ -867,3 +890,57 @@ def record_human_engineering_merge(task_id: str, payload: dict[str, Any], reques
         trusted_owner=context["owner_principal"],
         trusted_actor=context["actor_principal"],
     )})
+
+
+@app.post("/v1/paper/accounts", status_code=201)
+def create_paper_account(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    return _paper_call(lambda: {"account": paper_store.create_account(
+        {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
+        trusted_owner=context["owner_principal"],
+    )})
+
+
+@app.get("/v1/paper/accounts/{account_id}")
+def get_paper_account(account_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: {"account": paper_store.get_account(
+        account_id,
+        trusted_owner=context["owner_principal"],
+    )})
+
+
+@app.post("/v1/paper/pools", status_code=201)
+def create_stock_pool(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    return _paper_call(lambda: {"pool": paper_store.create_pool(
+        {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
+        trusted_owner=context["owner_principal"],
+    )})
+
+
+@app.get("/v1/paper/pools/{pool_id}")
+def get_stock_pool(pool_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: {"pool": paper_store.get_pool(
+        pool_id,
+        trusted_owner=context["owner_principal"],
+    )})
+
+
+@app.post("/v1/paper/orders", status_code=201)
+def submit_paper_order(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    return _paper_call(lambda: {"order": paper_store.submit_order(
+        {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
+        trusted_owner=context["owner_principal"],
+    )})
+
+
+@app.get("/v1/paper/accounts/{account_id}/orders")
+def list_paper_orders(account_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: paper_store.list_orders(
+        account_id,
+        trusted_owner=context["owner_principal"],
+    ))
