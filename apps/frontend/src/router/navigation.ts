@@ -60,7 +60,10 @@ export const businessNavGroups: NavGroup[] = [
     label: "我的空间",
     icon: FolderOpened,
     items: [
-      { to: "/settings", label: "个人设置", icon: SetUp },
+      { to: "/assets", label: "用户资产", icon: FolderOpened },
+      { to: "/models", label: "个人模型", icon: SetUp },
+      { to: "/agent-settings", label: "智能体策略", icon: SetUp },
+      { to: "/profile", label: "个人设置", icon: SetUp },
       { to: "/research-center", label: "研究/审批", icon: Bell },
     ],
   },

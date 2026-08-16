@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Request
@@ -21,6 +22,16 @@ SERVICE = "byq-gateway"
 PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
 BACKEND_URL = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
+_SECRET_KEY_FRAGMENTS = (
+    "token",
+    "password",
+    "secret",
+    "apikey",
+    "accesskey",
+    "privatekey",
+    "credential",
+    "authorization",
+)
 router = APIRouter(prefix="/api/product")
 
 
@@ -66,6 +77,76 @@ def _trusted_agent_headers(request: Request) -> dict[str, str]:
         "x-byq-session-id": session_id,
         "x-byq-dsh-run-id": "browser",
     }
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _public_profile(user: dict[str, object]) -> dict[str, object]:
+    return {
+        "subject": str(user.get("username") or user.get("user_id")),
+        "display_name": str(user.get("display_name") or ""),
+        "preferences": user.get("preferences") or "",
+        "default_prompt": user.get("default_prompt") or "",
+        "role": str(user.get("role", "user")),
+        "status": str(user.get("status", "active")),
+    }
+
+
+def _reject_secret_fields(value: object) -> None:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            normalized = "".join(character for character in str(key).lower() if character.isalnum())
+            if any(fragment in normalized for fragment in _SECRET_KEY_FRAGMENTS):
+                raise ProductError(422, "product_asset_bundle_invalid", "asset bundle must not contain credential fields")
+            _reject_secret_fields(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            _reject_secret_fields(nested)
+
+
+def _owner_scoped_list(path: str, key: str, headers: dict[str, str]) -> list[object]:
+    try:
+        body = _backend_request("GET", path, headers=headers)
+    except ProductError:
+        return []
+    items = body.get(key, [])
+    return items if isinstance(items, list) else []
+
+
+def _asset_lists(request: Request) -> tuple[list[object], list[object], list[object], list[object]]:
+    headers = _trusted_agent_headers(request)
+    artifacts = _owner_scoped_list("/v1/research/artifacts", "artifacts", headers)
+    strategies = [
+        artifact
+        for artifact in artifacts
+        if isinstance(artifact, dict) and artifact.get("kind") in {"strategy_version", "strategy_draft"}
+    ]
+    backtests = _owner_scoped_list("/v1/research/backtests", "backtests", headers)
+    pools = _owner_scoped_list("/v1/paper/pools", "pools", headers)
+    accounts = _owner_scoped_list("/v1/paper/accounts", "accounts", headers)
+    return strategies, backtests, pools, accounts
+
+
+def _clean_pool(pool: object) -> dict[str, object]:
+    if not isinstance(pool, dict):
+        raise ValueError("pool asset must be an object")
+    result: dict[str, object] = {}
+    for key in ("name", "symbols", "provenance"):
+        if key in pool:
+            result[key] = pool[key]
+    return result
+
+
+def _clean_account(account: object) -> dict[str, object]:
+    if not isinstance(account, dict):
+        raise ValueError("paper account asset must be an object")
+    result: dict[str, object] = {}
+    for key in ("name", "cash"):
+        if key in account:
+            result[key] = account[key]
+    return result
 
 
 def _backend_get(path: str) -> dict[str, object]:
@@ -327,6 +408,140 @@ def product_settings_status(request: Request) -> dict[str, object]:
         "data_provider": {"provider": "tushare", "migration": "not_started"},
         "storage": {"status": "ready"},
         "approval_inbox": {"pending": 0},
+    }
+
+
+@router.get("/profile")
+def product_profile_get(request: Request) -> dict[str, object]:
+    return {"profile": _public_profile(resolve_user(request))}
+
+
+@router.put("/profile")
+def product_profile_update(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    user = resolve_user(request)
+    user_id = user.get("user_id")
+    if not isinstance(user_id, str):
+        raise ProductError(502, "backend_invalid_response", "backend returned an invalid user")
+    body = _backend_request(
+        "PUT",
+        f"/v1/users/{user_id}/profile",
+        payload,
+        headers={"x-byq-owner-user-id": user_id},
+    )
+    updated = body.get("user")
+    if not isinstance(updated, dict):
+        raise ProductError(502, "backend_invalid_response", "backend returned an invalid user")
+    return {"profile": _public_profile(updated)}
+
+
+@router.get("/settings/models")
+def product_model_settings(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return {
+        "provider": "deepseek",
+        "configured": bool(os.environ.get("DEEPSEEK_API_KEY")),
+        "models": [],
+        "credentials": {"masked": True, "write_only": True},
+    }
+
+
+@router.get("/settings/agent-policy")
+def product_agent_policy(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    approvals = _owner_scoped_list("/v1/agents/approvals", "approvals", _trusted_agent_headers(request))
+    pending = sum(1 for approval in approvals if isinstance(approval, dict) and approval.get("status") == "pending")
+    return {
+        "platform_policy": {
+            "automation_enabled": False,
+            "paused": False,
+            "default_decision_mode": "manual",
+            "max_auto_executions_per_hour": 20,
+            "max_auto_failures_per_hour": 3,
+        },
+        "approval_inbox": {"pending": pending},
+    }
+
+
+@router.get("/settings/assets")
+def product_assets(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    strategies, backtests, pools, accounts = _asset_lists(request)
+    return {
+        "strategies": strategies,
+        "backtests": backtests,
+        "pools": pools,
+        "paper_accounts": accounts,
+        "summary": {
+            "strategies": len(strategies),
+            "backtests": len(backtests),
+            "pools": len(pools),
+            "paper_accounts": len(accounts),
+        },
+    }
+
+
+@router.get("/settings/assets/export")
+def product_assets_export(request: Request) -> dict[str, object]:
+    principal = _product_principal(request)
+    strategies, backtests, pools, accounts = _asset_lists(request)
+    return {
+        "schema_version": "byq-workspace-assets-v1",
+        "exported_at": _now(),
+        "owner_principal": principal.subject,
+        "assets": {
+            "strategies": strategies,
+            "backtests": backtests,
+            "pools": pools,
+            "paper_accounts": accounts,
+        },
+    }
+
+
+@router.post("/settings/assets/import")
+def product_assets_import(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    if not isinstance(payload, dict) or payload.get("schema_version") != "byq-workspace-assets-v1":
+        raise ProductError(422, "product_asset_bundle_invalid", "asset bundle is invalid")
+    assets = payload.get("assets")
+    if not isinstance(assets, dict):
+        raise ProductError(422, "product_asset_bundle_invalid", "asset bundle is invalid")
+    _reject_secret_fields(assets)
+
+    headers = _trusted_agent_headers(request)
+    imported_pools = 0
+    imported_accounts = 0
+    errors: list[dict[str, str]] = []
+
+    pools = assets.get("pools", [])
+    if not isinstance(pools, list):
+        pools = []
+    for pool in pools:
+        try:
+            _backend_request("POST", "/v1/paper/pools", _clean_pool(pool), headers=headers)
+            imported_pools += 1
+        except (ProductError, ValueError) as exc:
+            errors.append({"kind": "pool", "message": str(exc)})
+
+    accounts = assets.get("paper_accounts", [])
+    if not isinstance(accounts, list):
+        accounts = []
+    for account in accounts:
+        try:
+            _backend_request("POST", "/v1/paper/accounts", _clean_account(account), headers=headers)
+            imported_accounts += 1
+        except (ProductError, ValueError) as exc:
+            errors.append({"kind": "paper_account", "message": str(exc)})
+
+    strategies = assets.get("strategies", [])
+    backtests = assets.get("backtests", [])
+    return {
+        "imported": {"pools": imported_pools, "paper_accounts": imported_accounts},
+        "skipped": {
+            "strategies": len(strategies) if isinstance(strategies, list) else 0,
+            "backtests": len(backtests) if isinstance(backtests, list) else 0,
+            "reason": "research artifacts require validation or recomputation",
+        },
+        "errors": errors,
     }
 
 

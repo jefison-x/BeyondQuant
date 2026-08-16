@@ -172,27 +172,54 @@ test("backtest workspace renders backtest result list", async ({ page }) => {
   await expect(page.getByText("回测结果", { exact: true })).toBeVisible();
 });
 
-test("settings page renders masked platform status", async ({ page }) => {
-  await page.route("**/api/product/settings/status", (route) =>
+test("my space pages render profile, models, assets, and agent policy", async ({ page }) => {
+  await page.route("**/api/product/profile", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({
-        profile: { configured: true },
-        model_provider: { configured: false },
-        data_provider: { provider: "tushare", migration: "not_started" },
-        storage: { status: "ready" },
-        approval_inbox: { pending: 0 },
-      }),
+      body: JSON.stringify({ profile: { subject: "testuser", display_name: "老李", preferences: "低波动", default_prompt: "先给结论", role: "user", status: "active" } }),
     }),
   );
-  await mockResearchLists(page);
+  await page.route("**/api/product/settings/models", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ provider: "deepseek", configured: false, models: [], credentials: { masked: true, write_only: true } }),
+    }),
+  );
+  await page.route("**/api/product/settings/assets", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ strategies: [], backtests: [], pools: [], paper_accounts: [], summary: { strategies: 0, backtests: 0, pools: 0, paper_accounts: 0 } }),
+    }),
+  );
+  await page.route("**/api/product/settings/agent-policy", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ platform_policy: { automation_enabled: false, paused: false, default_decision_mode: "manual", max_auto_executions_per_hour: 20, max_auto_failures_per_hour: 3 }, approval_inbox: { pending: 0 } }),
+    }),
+  );
+  await page.route("**/api/product/approvals", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ approvals: [] }) }),
+  );
+
   await login(page);
+  await openNav(page, "用户资产");
+  await expect(page.getByRole("heading", { name: "用户资产" })).toBeVisible();
+  await expect(page.getByText("导出资产包")).toBeVisible();
+
+  await openNav(page, "个人模型");
+  await expect(page.getByRole("heading", { name: "模型设置" })).toBeVisible();
+  await expect(page.getByText("已掩码，仅可写入")).toBeVisible();
+
+  await openNav(page, "智能体策略");
+  await expect(page.getByRole("heading", { name: "智能体策略" })).toBeVisible();
+
   await openNav(page, "个人设置");
   await expect(page.getByRole("heading", { name: "个人设置" })).toBeVisible();
-  await page.getByRole("tab", { name: "数据" }).click();
-  await expect(page.getByText("Provider")).toBeVisible();
-  await expect(page.getByText("Migration")).toBeVisible();
+  await expect(page.getByLabel("昵称")).toHaveValue("老李");
 });
 
 test("paper trading and stock pool pages render", async ({ page }) => {
@@ -243,17 +270,11 @@ test("golden journey covers login, dashboard, agent, strategy, settings, and ope
       body: JSON.stringify({ status: "ok", resources: { backend: "ok", data: "not_loaded", migration: "not_started" } }),
     }),
   );
-  await page.route("**/api/product/settings/status", (route) =>
+  await page.route("**/api/product/profile", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({
-        profile: { configured: true },
-        model_provider: { configured: false },
-        data_provider: { provider: "tushare", migration: "not_started" },
-        storage: { status: "ready" },
-        approval_inbox: { pending: 0 },
-      }),
+      body: JSON.stringify({ profile: { subject: "testuser", display_name: "老李", preferences: "低波动", default_prompt: "先给结论", role: "user", status: "active" } }),
     }),
   );
   await page.route("**/api/product/operations/status", (route) =>

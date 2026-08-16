@@ -1071,3 +1071,11 @@ def list_users(request: Request) -> dict[str, object]:
 def disable_user(user_id: str, request: Request) -> dict[str, object]:
     actor_role = request.headers.get("x-byq-actor-role")
     return _user_call(lambda: {"user": user_store.disable_user(user_id, actor_role=actor_role)})
+
+
+@app.put("/v1/users/{user_id}/profile")
+def update_user_profile(user_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    owner_user_id = request.headers.get("x-byq-owner-user-id")
+    if owner_user_id != user_id:
+        raise HTTPException(status_code=403, detail="profile update is owner-scoped")
+    return _user_call(lambda: {"user": user_store.update_profile(user_id, payload)})
