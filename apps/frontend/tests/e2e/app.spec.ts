@@ -131,7 +131,7 @@ test("authenticated dashboard shows resource cards", async ({ page }) => {
     }),
   );
   await login(page);
-  await expect(page.getByText("Backend")).toBeVisible();
+  await expect(page.getByText("Backend", { exact: true }).first()).toBeVisible();
 });
 
 test("agent workbench renders a normalized BYQ workflow surface", async ({ page }) => {
