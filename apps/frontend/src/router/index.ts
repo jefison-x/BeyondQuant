@@ -63,6 +63,11 @@ const router = createRouter({
           name: "data-center",
           component: () => import("@/views/DataCenterView.vue"),
         },
+        {
+          path: "admin",
+          name: "admin",
+          component: () => import("@/views/AdminView.vue"),
+        },
       ],
     },
   ],

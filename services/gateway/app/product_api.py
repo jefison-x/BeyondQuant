@@ -14,7 +14,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
-from .user_session import SESSION_COOKIE, ProductAuthError, login as login_user, logout as logout_user, resolve_principal
+from .user_session import SESSION_COOKIE, ProductAuthError, login as login_user, logout as logout_user, resolve_principal, resolve_user
 
 
 SERVICE = "byq-gateway"
@@ -67,12 +67,18 @@ def _backend_get(path: str) -> dict[str, object]:
     return body
 
 
-def _backend_request(method: str, path: str, payload: object | None = None) -> dict[str, object]:
+def _backend_request(
+    method: str,
+    path: str,
+    payload: object | None = None,
+    headers: dict[str, str] | None = None,
+) -> dict[str, object]:
     try:
         response = httpx.request(
             method,
             f"{BACKEND_URL}{path}",
             json=payload,
+            headers=headers,
             timeout=8.0,
         )
         response.raise_for_status()
@@ -207,6 +213,22 @@ def product_data_center_status(request: Request) -> dict[str, object]:
         "provider": "tushare",
         "quality": "not_audited",
     }
+
+
+@router.get("/admin/users")
+def product_admin_users(request: Request) -> dict[str, object]:
+    user = resolve_user(request)
+    if user.get("role") != "admin":
+        raise ProductError(403, "product_forbidden", "admin role required")
+    return _backend_request("GET", "/v1/users", headers={"x-byq-actor-role": "admin"})
+
+
+@router.post("/admin/users/{user_id}/disable")
+def product_admin_disable_user(user_id: str, request: Request) -> dict[str, object]:
+    user = resolve_user(request)
+    if user.get("role") != "admin":
+        raise ProductError(403, "product_forbidden", "admin role required")
+    return _backend_request("POST", f"/v1/users/{user_id}/disable", headers={"x-byq-actor-role": "admin"})
 
 
 @router.get("/settings/status")
