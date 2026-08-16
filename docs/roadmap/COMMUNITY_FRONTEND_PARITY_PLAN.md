@@ -1,6 +1,6 @@
 # Community Parity Delivery Plan
 
-Status: `COMPLETE`
+Status: `IN_PROGRESS`
 
 This plan restores Community user features in BeyondQuant while preserving the
 new architecture:
@@ -222,5 +222,7 @@ Status: merged in PR #49.
 
 Each phase stops at a Draft PR and the human merge gate.
 
-All Community Parity Delivery Plan phases are complete. The product now waits
-on the human v1.0 RC review gate described in `docs/roadmap/STATUS.md`.
+Phases 1-8 restored the product shell and browser evidence, but the audit in
+`docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` shows many Community product-depth
+workflows remain `PARTIAL` or `MISSING`. The plan is therefore not complete and
+must continue with product-depth phases before the v1.0 RC review gate.
