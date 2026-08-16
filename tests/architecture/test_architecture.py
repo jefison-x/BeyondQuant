@@ -263,6 +263,13 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("TUSHARE_TOKEN", openapi)
         self.assertNotIn("BYQ_MCP_TOKEN", openapi)
 
+    def test_phase23_parity_matrix_and_golden_journey_exist(self) -> None:
+        matrix = ROOT / "docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX.md"
+        self.assertTrue(matrix.exists())
+        self.assertIn("Release-candidate conclusion", matrix.read_text())
+        e2e = (ROOT / "apps/frontend/tests/e2e/app.spec.ts").read_text()
+        self.assertIn("golden journey covers login", e2e)
+
     def test_runtime_adapter_owns_the_official_sdk_and_explicit_runtime(self) -> None:
         adapter = "\n".join(
             path.read_text()
