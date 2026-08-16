@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi import HTTPException, Request
 from collections.abc import Callable
