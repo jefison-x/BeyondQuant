@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { getApproval, getResearchEntity, listApprovals, listArtifacts } from "@/api/research";
+import { formatChinaTime } from "@/time";
 
 const tab = ref<"research" | "approval" | "assets" | "inbox">("assets");
 const entityType = ref<"tasks" | "experiments" | "artifacts">("artifacts");
@@ -78,7 +79,9 @@ onMounted(async () => {
             </el-table-column>
             <el-table-column prop="artifact_id" label="Artifact ID" min-width="260" show-overflow-tooltip />
             <el-table-column prop="status" label="状态" width="120" />
-            <el-table-column prop="created_at" label="创建时间" min-width="190" />
+            <el-table-column label="创建时间" min-width="190">
+              <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
+            </el-table-column>
           </el-table>
           <el-empty v-if="!artifacts.length && !busy" description="暂无研究资产" />
         </el-tab-pane>
