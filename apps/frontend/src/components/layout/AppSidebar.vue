@@ -1,0 +1,22 @@
+<script setup lang="ts">
+const links = [
+  { name: "dashboard", label: "首页", to: "/" },
+  { name: "system-status", label: "系统状态", to: "/system-status" },
+];
+</script>
+
+<template>
+  <aside class="app-sidebar">
+    <nav>
+      <RouterLink
+        v-for="link in links"
+        :key="link.name"
+        :to="link.to"
+        class="app-nav-link"
+        active-class="active"
+      >
+        {{ link.label }}
+      </RouterLink>
+    </nav>
+  </aside>
+</template>
