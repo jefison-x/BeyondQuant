@@ -23,6 +23,11 @@ const router = createRouter({
           name: "system-status",
           component: () => import("@/views/SystemStatusView.vue"),
         },
+        {
+          path: "agent",
+          name: "agent",
+          component: () => import("@/views/AgentView.vue"),
+        },
       ],
     },
   ],

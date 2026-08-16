@@ -21,3 +21,26 @@ test("authenticated dashboard shows resource cards", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("backend")).toBeVisible();
 });
+
+test("agent workbench renders a normalized BYQ workflow surface", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("byq-product-token", "product-test-token");
+  });
+  await page.route("**/v1/agent/sessions", (route) =>
+    route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ session_id: "session-1", trace_id: "trace-1", status: "ready" }),
+    }),
+  );
+  await page.route("**/v1/workflows/session-1/events", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: 'data: {"kind":"session.ready","source":"runtime-adapter"}\n\n',
+    }),
+  );
+  await page.goto("/agent");
+  await expect(page.getByRole("heading", { name: "研究对话" })).toBeVisible();
+  await expect(page.getByText("session.ready")).toBeVisible();
+});
