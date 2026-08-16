@@ -5,6 +5,8 @@ const links = [
   { name: "agent", label: "研究工作台", to: "/agent" },
   { name: "quant", label: "量化工作台", to: "/quant" },
   { name: "settings", label: "设置", to: "/settings" },
+  { name: "stock-pool", label: "股票池", to: "/stock-pool" },
+  { name: "paper-trading", label: "模拟交易", to: "/paper-trading" },
 ];
 </script>
 

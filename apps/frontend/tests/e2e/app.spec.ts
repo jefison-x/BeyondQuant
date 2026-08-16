@@ -78,3 +78,13 @@ test("settings page renders masked platform status", async ({ page }) => {
   await page.getByRole("button", { name: "Data" }).click();
   await expect(page.getByText("Provider: tushare")).toBeVisible();
 });
+
+test("paper trading and stock pool pages render", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("byq-product-token", "product-test-token");
+  });
+  await page.goto("/paper-trading");
+  await expect(page.getByRole("heading", { name: "模拟交易" })).toBeVisible();
+  await page.goto("/stock-pool");
+  await expect(page.getByRole("heading", { name: "股票池" })).toBeVisible();
+});

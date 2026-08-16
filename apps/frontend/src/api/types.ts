@@ -52,3 +52,27 @@ export interface SettingsStatus {
   storage: { status: string };
   approval_inbox: { pending: number };
 }
+
+export interface PaperAccount {
+  account_id?: string;
+  name?: string;
+  cash?: number;
+  status?: string;
+}
+
+export interface StockPool {
+  pool_id?: string;
+  name?: string;
+  symbols?: string[];
+  version?: string;
+}
+
+export interface PaperOrder {
+  order_id?: string;
+  symbol?: string;
+  side?: "buy" | "sell";
+  quantity?: number;
+  price?: number;
+  status?: "filled" | "blocked";
+  blocked_reason?: string;
+}

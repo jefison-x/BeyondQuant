@@ -68,3 +68,6 @@ body { margin: 0; background: var(--byq-bg); color: var(--byq-text); font-family
 .settings-panel { display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
 .settings-panel label { font-weight: 600; }
 .settings-panel input, .settings-panel textarea { padding: 10px; border: 1px solid var(--byq-border); border-radius: 8px; }
+
+.paper-form { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.paper-form input, .paper-form select { padding: 10px; border: 1px solid var(--byq-border); border-radius: 8px; }

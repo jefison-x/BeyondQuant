@@ -151,3 +151,39 @@ def product_settings_status(request: Request) -> dict[str, object]:
         "storage": {"status": "ready"},
         "approval_inbox": {"pending": 0},
     }
+
+
+@router.post("/paper/accounts", status_code=201)
+def product_paper_account_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("POST", "/v1/paper/accounts", payload)
+
+
+@router.get("/paper/accounts/{account_id}")
+def product_paper_account_get(account_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/paper/accounts/{account_id}")
+
+
+@router.post("/paper/pools", status_code=201)
+def product_stock_pool_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("POST", "/v1/paper/pools", payload)
+
+
+@router.get("/paper/pools/{pool_id}")
+def product_stock_pool_get(pool_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/paper/pools/{pool_id}")
+
+
+@router.post("/paper/orders", status_code=201)
+def product_paper_order_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("POST", "/v1/paper/orders", payload)
+
+
+@router.get("/paper/accounts/{account_id}/orders")
+def product_paper_orders(account_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/paper/accounts/{account_id}/orders")

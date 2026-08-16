@@ -38,6 +38,16 @@ const router = createRouter({
           name: "settings",
           component: () => import("@/views/SettingsView.vue"),
         },
+        {
+          path: "stock-pool",
+          name: "stock-pool",
+          component: () => import("@/views/StockPoolView.vue"),
+        },
+        {
+          path: "paper-trading",
+          name: "paper-trading",
+          component: () => import("@/views/PaperTradingView.vue"),
+        },
       ],
     },
   ],
