@@ -13,7 +13,7 @@ describe("paper trading api client", () => {
     expect(account.account.account_id).toBe("a1");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/paper/accounts",
-      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ Authorization: "Bearer test-token" }) }),
+      expect.objectContaining({ method: "POST", credentials: "include" }),
     );
   });
 

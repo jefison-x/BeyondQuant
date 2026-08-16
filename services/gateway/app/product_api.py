@@ -11,8 +11,10 @@ import uuid
 
 import httpx
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
+from .user_session import SESSION_COOKIE, ProductAuthError, login as login_user, logout as logout_user, resolve_principal
 
 
 SERVICE = "byq-gateway"
@@ -45,6 +47,11 @@ def _authenticate(authorization: str | None) -> Principal:
 
 
 def _product_principal(request: Request) -> Principal:
+    if SESSION_COOKIE in request.cookies:
+        try:
+            return resolve_principal(request)
+        except ProductAuthError as exc:
+            raise ProductError(exc.status_code, exc.code, exc.message) from exc
     return _authenticate(request.headers.get("authorization"))
 
 
@@ -81,6 +88,50 @@ def _backend_request(method: str, path: str, payload: object | None = None) -> d
 def product_health(request: Request) -> dict[str, object]:
     _product_principal(request)
     return {"status": "ok", "service": SERVICE}
+
+
+@router.post("/auth/login")
+def product_login(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    username = payload.get("username")
+    password = payload.get("password")
+    if not isinstance(username, str) or not isinstance(password, str):
+        raise ProductError(422, "product_request_invalid", "username and password are required")
+    try:
+        result = login_user(username, password)
+    except ProductAuthError as exc:
+        raise ProductError(exc.status_code, exc.code, exc.message) from exc
+    response = JSONResponse(
+        content={"user": result.get("user", {})},
+    )
+    session_id = result.get("session_id")
+    if isinstance(session_id, str):
+        response.set_cookie(
+            SESSION_COOKIE,
+            session_id,
+            httponly=True,
+            samesite="lax",
+            path="/",
+        )
+    return response
+
+
+@router.post("/auth/logout")
+def product_logout(request: Request) -> dict[str, object]:
+    session_id = request.cookies.get(SESSION_COOKIE)
+    if session_id:
+        try:
+            logout_user(session_id)
+        except ProductAuthError:
+            pass
+    response = JSONResponse(content={"status": "ok"})
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
+
+
+@router.get("/auth/me")
+def product_me(request: Request) -> dict[str, object]:
+    principal = _product_principal(request)
+    return {"subject": principal.subject}
 
 
 @router.get("/dashboard")

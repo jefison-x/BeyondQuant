@@ -15,9 +15,7 @@ export class ProductApiError extends Error {
 
 async function request<T>(path: string, token: string): Promise<T> {
   const response = await fetch(`${API_ROOT}${path}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    credentials: "include",
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as Partial<{ error: { code?: string; message?: string } }>;

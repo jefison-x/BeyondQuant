@@ -3,8 +3,8 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 23**
-- Next phase: **Phase 24 — Durable User Identity & Authentication**
+- Current completed phase: **Phase 24**
+- Next phase: **Phase 25 — Community Frontend Full UX Restoration**
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -16,7 +16,8 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 15 engineering-plane ADR: **ADR-0011**
 - Accepted Phase 16 product-api ADR: **ADR-0012**
 - Accepted Phase 16 durable-market-data-storage ADR: **ADR-0013**
-- Open architecture decisions: none for the Phase 23 release-parity boundary;
+- Accepted Phase 24 user-auth ADR: **ADR-0014**
+- Open architecture decisions: none for the Phase 24 user-auth boundary;
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
   is Accepted.
   [ADR-0004](../architecture/adr/ADR-0004-phase7-product-authentication.md)
@@ -36,6 +37,9 @@ Codex session does not infer project state from commit history.
 - Phase 23 produced a Product Skeleton release-parity baseline. It did not
   establish final Community feature parity. Remaining product-depth work is
   tracked in Phases 24-30.
+- Phase 24 acceptance evidence covers durable users, scrypt password hashing,
+  HTTP-only cookie sessions, admin/user roles, session revoke, and owner
+  principal resolution through Product API.
 - Active architecture blockers: **none**
 
 Git SHA is not phase state. The current clean baseline must always be derived

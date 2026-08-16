@@ -5,10 +5,7 @@ const ROOT = "/api/product";
 async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${ROOT}${path}`, {
     ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(init.headers ?? {}),
-    },
+    credentials: "include",
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: { message?: string } };

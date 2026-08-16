@@ -6,16 +6,21 @@ import { useAuthStore } from "@/stores/auth";
 const auth = useAuthStore();
 const route = useRoute();
 const router = useRouter();
-const token = ref("");
+const username = ref("");
+const password = ref("");
 const error = ref("");
 
-function submit() {
-  if (!token.value.trim()) {
-    error.value = "请输入产品访问令牌";
+async function submit() {
+  if (!username.value.trim() || !password.value) {
+    error.value = "请输入用户名和密码";
     return;
   }
-  auth.setToken(token.value);
-  router.push((route.query.redirect as string) || "/");
+  try {
+    await auth.login(username.value, password.value);
+    router.push((route.query.redirect as string) || "/");
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "登录失败";
+  }
 }
 </script>
 
@@ -23,8 +28,9 @@ function submit() {
   <div class="login-page">
     <form class="login-card" @submit.prevent="submit">
       <h1>BeyondQuant Next</h1>
-      <p>输入产品访问令牌以进入研究工作台</p>
-      <input v-model="token" type="password" placeholder="Product Token" aria-label="产品访问令牌" />
+      <p>使用用户名和密码登录研究工作台</p>
+      <input v-model="username" placeholder="用户名" aria-label="用户名" />
+      <input v-model="password" type="password" placeholder="密码" aria-label="密码" />
       <p v-if="error" class="login-error">{{ error }}</p>
       <button type="submit">进入</button>
     </form>
