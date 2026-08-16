@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { createPaperAccount, listPaperOrders, submitPaperOrder } from "@/api/paper";
+import { onMounted, ref } from "vue";
+import { createPaperAccount, listPaperAccounts, listPaperFills, listPaperOrders, listPaperPositions, submitPaperOrder } from "@/api/paper";
 import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
@@ -17,6 +17,19 @@ const tradeDate = ref("20240102");
 const orders = ref<Awaited<ReturnType<typeof listPaperOrders>>["orders"]>([]);
 const error = ref("");
 const busy = ref(false);
+const accounts = ref<Array<Record<string, unknown>>>([]);
+const positions = ref<Array<Record<string, unknown>>>([]);
+const fills = ref<Array<Record<string, unknown>>>([]);
+
+async function loadAccounts() {
+  try {
+    accounts.value = (await listPaperAccounts(auth.token)).accounts;
+  } catch {
+    accounts.value = [];
+  }
+}
+
+onMounted(loadAccounts);
 
 async function createAccount() {
   error.value = "";
@@ -50,6 +63,8 @@ async function placeOrder() {
       auth.token,
     );
     orders.value = (await listPaperOrders(accountId.value, auth.token)).orders;
+    positions.value = (await listPaperPositions(accountId.value, auth.token)).positions;
+    fills.value = (await listPaperFills(accountId.value, auth.token)).fills;
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "下单失败";
   } finally {
@@ -96,6 +111,22 @@ async function placeOrder() {
       </div>
     </el-card>
 
+    <el-card shadow="never" class="top-band">
+      <template #header>
+        <div class="panel-heading">
+          <span class="card-title">模拟账户列表</span>
+          <el-button size="small" @click="loadAccounts">刷新</el-button>
+        </div>
+      </template>
+      <el-empty v-if="!accounts.length" description="暂无模拟账户" />
+      <el-table v-else :data="accounts">
+        <el-table-column prop="account_id" label="Account ID" min-width="240" show-overflow-tooltip />
+        <el-table-column prop="name" label="名称" min-width="160" />
+        <el-table-column prop="cash" label="现金" width="140" />
+        <el-table-column prop="status" label="状态" width="120" />
+      </el-table>
+    </el-card>
+
     <p v-if="error" class="page-error">{{ error }}</p>
 
     <el-card v-if="orders.length" shadow="never" class="top-band">
@@ -109,6 +140,26 @@ async function placeOrder() {
         <el-table-column prop="price" label="价格" width="110" />
         <el-table-column prop="status" label="状态" width="120" />
         <el-table-column prop="blocked_reason" label="拦截原因" min-width="180" show-overflow-tooltip />
+      </el-table>
+    </el-card>
+
+    <el-card v-if="positions.length" shadow="never" class="top-band">
+      <template #header><div class="card-title">持仓</div></template>
+      <el-table :data="positions">
+        <el-table-column prop="symbol" label="Symbol" width="140" />
+        <el-table-column prop="quantity" label="数量" width="120" />
+        <el-table-column prop="last_buy_date" label="最后买入日期" min-width="160" />
+      </el-table>
+    </el-card>
+
+    <el-card v-if="fills.length" shadow="never" class="top-band">
+      <template #header><div class="card-title">成交明细</div></template>
+      <el-table :data="fills">
+        <el-table-column prop="fill_id" label="Fill ID" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="symbol" label="Symbol" width="140" />
+        <el-table-column prop="side" label="方向" width="90" />
+        <el-table-column prop="quantity" label="数量" width="100" />
+        <el-table-column prop="price" label="价格" width="110" />
       </el-table>
     </el-card>
   </section>

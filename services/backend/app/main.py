@@ -971,6 +971,12 @@ def get_paper_account(account_id: str, request: Request) -> dict[str, object]:
     )})
 
 
+@app.get("/v1/paper/accounts")
+def list_paper_accounts(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: paper_store.list_accounts(trusted_owner=context["owner_principal"]))
+
+
 @app.post("/v1/paper/pools", status_code=201)
 def create_stock_pool(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, payload)
@@ -989,6 +995,12 @@ def get_stock_pool(pool_id: str, request: Request) -> dict[str, object]:
     )})
 
 
+@app.get("/v1/paper/pools")
+def list_stock_pools(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: paper_store.list_pools(trusted_owner=context["owner_principal"]))
+
+
 @app.post("/v1/paper/orders", status_code=201)
 def submit_paper_order(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, payload)
@@ -1002,6 +1014,24 @@ def submit_paper_order(payload: dict[str, Any], request: Request) -> dict[str, o
 def list_paper_orders(account_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
     return _paper_call(lambda: paper_store.list_orders(
+        account_id,
+        trusted_owner=context["owner_principal"],
+    ))
+
+
+@app.get("/v1/paper/accounts/{account_id}/positions")
+def list_paper_positions(account_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: paper_store.list_positions(
+        account_id,
+        trusted_owner=context["owner_principal"],
+    ))
+
+
+@app.get("/v1/paper/accounts/{account_id}/fills")
+def list_paper_fills(account_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: paper_store.list_fills(
         account_id,
         trusted_owner=context["owner_principal"],
     ))
