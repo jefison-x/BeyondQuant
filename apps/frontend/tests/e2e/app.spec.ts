@@ -226,7 +226,7 @@ test("admin operations workspace renders database and access sections", async ({
 
   await page.goto("/admin/access");
   await expect(page.getByRole("heading", { name: "权限与审计" })).toBeVisible();
-  await expect(page.getByText("用户")).toBeVisible();
+  await expect(page.getByText("用户", { exact: true })).toBeVisible();
 });
 
 test("golden journey covers login, dashboard, agent, strategy, settings, and operations", async ({ page }) => {
