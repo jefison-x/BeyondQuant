@@ -111,6 +111,13 @@ test("operations page renders safe status projection", async ({ page }) => {
       }),
     }),
   );
+  await page.route("**/api/product/data-center/status", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ migration: "not_started", datasets: [], provider: "tushare", quality: "not_audited" }),
+    }),
+  );
   await login(page);
   await page.getByRole("link", { name: "Operations" }).click();
   await expect(page.getByRole("heading", { name: "Operations 状态" })).toBeVisible();
@@ -162,4 +169,8 @@ test("golden journey covers login, dashboard, agent, quant, settings, and operat
   await expect(page.getByRole("heading", { name: "用户与平台设置" })).toBeVisible();
   await page.getByRole("link", { name: "Operations" }).click();
   await expect(page.getByRole("heading", { name: "Operations 状态" })).toBeVisible();
+  await page.getByRole("link", { name: "数据中心" }).click();
+  await expect(page.getByRole("heading", { name: "Data Center" })).toBeVisible();
+  await page.getByRole("link", { name: "研究/审批" }).click();
+  await expect(page.getByRole("heading", { name: "Research / Approval Center" })).toBeVisible();
 });
