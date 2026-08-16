@@ -9,6 +9,7 @@ import {
   streamWorkflowEvents,
   submitTurn,
 } from "@/api/agent";
+import { listApprovals } from "@/api/research";
 import { useAgentStore } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
 
@@ -18,6 +19,7 @@ const agent = useAgentStore();
 const prompt = ref("");
 const error = ref("");
 const busy = ref(false);
+const approvals = ref<Array<Record<string, unknown>>>([]);
 
 function handleEvent(event: Parameters<typeof agent.addEvent>[0]) {
   agent.addEvent(event);
@@ -68,6 +70,12 @@ onMounted(() => {
   void listAgentSessions(auth.token)
     .then((response) => {
       response.sessions.forEach((session) => agent.addSession(session));
+    })
+    .catch(() => undefined);
+
+  void listApprovals()
+    .then((response) => {
+      approvals.value = response.approvals;
     })
     .catch(() => undefined);
 
@@ -138,6 +146,16 @@ onMounted(() => {
           <div class="trace-source">{{ event.source }}</div>
         </el-timeline-item>
       </el-timeline>
+      <div class="panel-heading">
+        <span class="panel-title">审批收件箱</span>
+        <el-tag>{{ approvals.length }}</el-tag>
+      </div>
+      <el-empty v-if="!approvals.length" description="暂无审批" />
+      <ul v-else class="approval-list">
+        <li v-for="approval in approvals" :key="String(approval.approval_id)">
+          {{ approval.action }} - {{ approval.status }}
+        </li>
+      </ul>
     </el-card>
   </section>
 </template>
@@ -162,5 +180,22 @@ onMounted(() => {
 .trace-source {
   color: var(--byq-text-muted);
   font-size: 12px;
+}
+
+.approval-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.approval-list li {
+  border-radius: var(--byq-radius-sm);
+  color: var(--byq-text);
+  font-size: 12px;
+  padding: 0.45rem 0.5rem;
+}
+
+.approval-list li:hover {
+  background: var(--byq-surface-subtle);
 }
 </style>
