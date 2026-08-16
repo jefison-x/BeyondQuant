@@ -13,8 +13,8 @@ describe("settings api client", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("loads and updates durable profile fields", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ profile: { subject: "testuser", display_name: "老李", preferences: "低波动", default_prompt: "先结论" } }), { status: 200 }),
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ profile: { subject: "testuser", display_name: "老李", preferences: "低波动", default_prompt: "先结论" } }), { status: 200 })),
     );
     vi.stubGlobal("fetch", fetchMock);
 
