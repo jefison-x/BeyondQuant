@@ -259,6 +259,12 @@ def product_strategies(request: Request) -> dict[str, object]:
     return {"strategies": []}
 
 
+@router.post("/strategies/validate", status_code=201)
+def product_strategy_validate(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("POST", "/v1/research/strategies/validate", payload)
+
+
 @router.get("/factors")
 def product_factors(request: Request) -> dict[str, object]:
     _product_principal(request)
