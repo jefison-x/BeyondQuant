@@ -47,10 +47,12 @@ def _authenticate(authorization: str | None) -> Principal:
 
 
 def _product_principal(request: Request) -> Principal:
-    try:
-        return resolve_principal(request)
-    except ProductAuthError as exc:
-        raise ProductError(exc.status_code, exc.code, exc.message) from exc
+    if SESSION_COOKIE in request.cookies:
+        try:
+            return resolve_principal(request)
+        except ProductAuthError as exc:
+            raise ProductError(exc.status_code, exc.code, exc.message) from exc
+    return _authenticate(request.headers.get("authorization"))
 
 
 def _backend_get(path: str) -> dict[str, object]:
