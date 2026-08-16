@@ -153,7 +153,7 @@ test("golden journey covers login, dashboard, agent, quant, settings, and operat
   );
 
   await login(page);
-  await expect(page.getByRole("heading", { name: "首页" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "系统状态" })).toBeVisible();
   await page.getByRole("link", { name: "研究工作台" }).click();
   await expect(page.getByRole("heading", { name: "研究对话" })).toBeVisible();
   await page.getByRole("link", { name: "量化工作台" }).click();
