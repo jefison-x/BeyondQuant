@@ -1,4 +1,4 @@
-name: Phase 5 + Phase 6 + Phase 7 + Phase 8 + Phase 9 CI
+name: BeyondQuant Incremental CI
 
 on:
   push:
@@ -7,14 +7,54 @@ on:
       - 'bootstrap/**'
   pull_request:
 
-jobs:
-  phase7:
-    runs-on: ubuntu-latest
-    env:
-      BYQ_MCP_TOKEN: ci-phase5-test-only
-      BYQ_PRODUCT_TOKEN: ci-phase7-product-test-only
-      BYQ_PRODUCT_PRINCIPAL: ci-product-user
+permissions:
+  contents: read
 
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.diff.outputs.backend }}
+      gateway: ${{ steps.diff.outputs.gateway }}
+      runtime: ${{ steps.diff.outputs.runtime }}
+      mcp: ${{ steps.diff.outputs.mcp }}
+      frontend: ${{ steps.diff.outputs.frontend }}
+      infra: ${{ steps.diff.outputs.infra }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute changed paths
+        id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            BASE="${{ github.event.before }}"
+          else
+            BASE="$(git rev-list --max-parents=0 HEAD)"
+          fi
+          git diff --name-only "$BASE"...HEAD > /tmp/byq-changed.txt
+          printf '%s\n' '--- changed files ---'
+          sed -n '1,120p' /tmp/byq-changed.txt
+          set_flag() {
+            flag=no
+            if grep -qE "$2" /tmp/byq-changed.txt; then flag=yes; fi
+            printf '%s=%s\n' "$1" "$flag" >> "$GITHUB_OUTPUT"
+          }
+          set_flag backend  '^services/backend/'
+          set_flag gateway  '^services/gateway/|^packages/'
+          set_flag runtime  '^services/runtime-adapter/|^services/dsh/|^plugins/|^packages/'
+          set_flag mcp      '^services/mcp/'
+          set_flag frontend '^apps/frontend/'
+          set_flag infra    '^\.github/workflows/|^compose.*\.yml$|^infra/|^tests/smoke/'
+
+  architecture:
+    runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -31,6 +71,24 @@ jobs:
 
       - name: Architecture tests
         run: python3 -m unittest discover -s tests -p 'test_*.py'
+
+  stack:
+    needs: changes
+    if: >-
+      needs.changes.outputs.backend == 'yes' ||
+      needs.changes.outputs.gateway == 'yes' ||
+      needs.changes.outputs.runtime == 'yes' ||
+      needs.changes.outputs.mcp == 'yes' ||
+      needs.changes.outputs.infra == 'yes'
+    runs-on: ubuntu-latest
+    env:
+      BYQ_MCP_TOKEN: ci-phase5-test-only
+      BYQ_PRODUCT_TOKEN: ci-phase7-product-test-only
+      BYQ_PRODUCT_PRINCIPAL: ci-product-user
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
 
       - name: Compose config
         run: docker compose config
@@ -52,6 +110,35 @@ jobs:
 
       - name: MCP tests
         run: docker compose exec -T mcp npm test
+
+      - name: Full smoke
+        run: ./tests/smoke/run.sh
+
+      - name: DSH Web diagnostic profile config
+        run: docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web config
+
+      - name: Build DSH Web diagnostic profile
+        run: docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web build dsh
+
+      - name: Start DSH Web diagnostic profile
+        run: docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web up -d --wait
+
+      - name: DSH Web diagnostic smoke
+        run: ./tests/smoke/run-dsh-web.sh
+
+      - name: Cleanup Compose
+        if: always()
+        run: docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web down -v
+
+  frontend:
+    needs: changes
+    if: >-
+      needs.changes.outputs.frontend == 'yes' ||
+      needs.changes.outputs.infra == 'yes'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -77,22 +164,3 @@ jobs:
       - name: Frontend Playwright smoke
         working-directory: apps/frontend
         run: npm run test:e2e
-
-      - name: Full smoke
-        run: ./tests/smoke/run.sh
-
-      - name: DSH Web diagnostic profile config
-        run: docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web config
-
-      - name: Build DSH Web diagnostic profile
-        run: docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web build dsh
-
-      - name: Start DSH Web diagnostic profile
-        run: docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web up -d --wait
-
-      - name: DSH Web diagnostic smoke
-        run: ./tests/smoke/run-dsh-web.sh
-
-      - name: Cleanup Compose
-        if: always()
-        run: docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web down -v
