@@ -3,8 +3,8 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 17**
-- Next phase: **Phase 18**
+- Current completed phase: **Phase 18**
+- Next phase: **Phase 19**
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -16,7 +16,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 15 engineering-plane ADR: **ADR-0011**
 - Accepted Phase 16 product-api ADR: **ADR-0012**
 - Accepted Phase 16 durable-market-data-storage ADR: **ADR-0013**
-- Open architecture decisions: none for the Phase 17 frontend-foundation boundary;
+- Open architecture decisions: none for the Phase 18 agent-workbench boundary;
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
   is Accepted.
   [ADR-0004](../architecture/adr/ADR-0004-phase7-product-authentication.md)
@@ -30,9 +30,9 @@ Codex session does not infer project state from commit history.
   [ADR-0011](../architecture/adr/ADR-0011-phase15-engineering-plane.md) is Accepted.
   [ADR-0012](../architecture/adr/ADR-0012-phase16-product-api-bff.md) is Accepted.
   [ADR-0013](../architecture/adr/ADR-0013-phase16-durable-market-data-storage.md) is Accepted.
-- Phase 17 acceptance evidence covers a Vue 3/Vite/TypeScript `apps/frontend`
-  shell, product auth bootstrap, Login/Dashboard/System Status views, typed
-  Product API client, responsive layout, unit tests, and Playwright smoke.
+- Phase 18 acceptance evidence covers an Agent Research Workbench consuming
+  normalized BYQ agent sessions and WorkflowTrace projections, with conversation,
+  streaming, cancellation/resume controls, and no raw DSH event schema.
 - Active architecture blockers: **none**
 
 Git SHA is not phase state. The current clean baseline must always be derived

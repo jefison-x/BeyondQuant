@@ -39,3 +39,18 @@ body { margin: 0; background: var(--byq-bg); color: var(--byq-text); font-family
   .app-bottom-nav { display: flex; justify-content: space-around; border-top: 1px solid var(--byq-border); background: var(--byq-surface); padding: 8px 0; }
   .app-main { padding: 16px; }
 }
+
+.agent-workbench { display: grid; grid-template-columns: 220px minmax(0, 1fr) 260px; gap: 16px; min-height: 70vh; }
+.agent-sessions, .agent-conversation, .agent-trace { background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: 12px; padding: 16px; }
+.message-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; max-height: 48vh; overflow: auto; }
+.message { padding: 10px 12px; border-radius: 10px; }
+.message.user { background: #fff3e8; align-self: flex-end; }
+.message.agent { background: #f3f4f6; align-self: flex-start; }
+.agent-composer { display: flex; gap: 8px; align-items: flex-end; }
+.agent-composer textarea { flex: 1; border: 1px solid var(--byq-border); border-radius: 8px; padding: 8px; }
+.agent-trace ol { padding-left: 18px; }
+
+@media (max-width: 900px) {
+  .agent-workbench { grid-template-columns: 1fr; }
+  .agent-sessions, .agent-trace { display: none; }
+}
