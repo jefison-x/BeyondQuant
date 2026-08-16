@@ -55,3 +55,25 @@ test("quant workspace renders factor, strategy, and backtest tabs", async ({ pag
   await expect(page.getByRole("button", { name: "Strategy" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Backtest" })).toBeVisible();
 });
+
+test("settings page renders masked platform status", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("byq-product-token", "product-test-token");
+  });
+  await page.route("**/api/product/settings/status", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        profile: { configured: true },
+        model_provider: { configured: false },
+        data_provider: { provider: "tushare", migration: "not_started" },
+        storage: { status: "ready" },
+        approval_inbox: { pending: 0 },
+      }),
+    }),
+  );
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "用户与平台设置" })).toBeVisible();
+  await expect(page.getByText("Provider: tushare")).toBeVisible();
+});

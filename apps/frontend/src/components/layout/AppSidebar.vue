@@ -4,6 +4,7 @@ const links = [
   { name: "system-status", label: "系统状态", to: "/system-status" },
   { name: "agent", label: "研究工作台", to: "/agent" },
   { name: "quant", label: "量化工作台", to: "/quant" },
+  { name: "settings", label: "设置", to: "/settings" },
 ];
 </script>
 

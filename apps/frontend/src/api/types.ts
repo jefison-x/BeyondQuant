@@ -44,3 +44,11 @@ export interface BacktestJob {
   status?: string;
   summary?: Record<string, unknown>;
 }
+
+export interface SettingsStatus {
+  profile: { configured: boolean };
+  model_provider: { configured: boolean };
+  data_provider: { provider: string; migration: string };
+  storage: { status: string };
+  approval_inbox: { pending: number };
+}

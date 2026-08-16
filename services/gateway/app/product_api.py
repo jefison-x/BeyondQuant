@@ -139,3 +139,15 @@ def product_backtest_cancel(job_id: str, request: Request) -> dict[str, object]:
 def product_strategy_export(artifact_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request("GET", f"/v1/research/strategies/versions/{artifact_id}/export")
+
+
+@router.get("/settings/status")
+def product_settings_status(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return {
+        "profile": {"configured": True},
+        "model_provider": {"configured": False},
+        "data_provider": {"provider": "tushare", "migration": "not_started"},
+        "storage": {"status": "ready"},
+        "approval_inbox": {"pending": 0},
+    }
