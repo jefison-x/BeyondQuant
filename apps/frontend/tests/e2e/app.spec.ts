@@ -54,14 +54,14 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
     }),
   );
   await login(page);
-  await page.goto("/agent");
+  await page.getByRole("link", { name: "研究工作台" }).click();
   await expect(page.getByRole("heading", { name: "研究对话" })).toBeVisible();
   await expect(page.getByText("session.ready")).toBeVisible();
 });
 
 test("quant workspace renders factor, strategy, and backtest tabs", async ({ page }) => {
   await login(page);
-  await page.goto("/quant");
+  await page.getByRole("link", { name: "量化工作台" }).click();
   await expect(page.getByRole("heading", { name: "量化工作台" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Factor" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Strategy" })).toBeVisible();
@@ -83,7 +83,7 @@ test("settings page renders masked platform status", async ({ page }) => {
     }),
   );
   await login(page);
-  await page.goto("/settings");
+  await page.getByRole("link", { name: "设置" }).click();
   await expect(page.getByRole("heading", { name: "用户与平台设置" })).toBeVisible();
   await page.getByRole("button", { name: "Data" }).click();
   await expect(page.getByText("Provider: tushare")).toBeVisible();
@@ -91,9 +91,9 @@ test("settings page renders masked platform status", async ({ page }) => {
 
 test("paper trading and stock pool pages render", async ({ page }) => {
   await login(page);
-  await page.goto("/paper-trading");
+  await page.getByRole("link", { name: "模拟交易" }).click();
   await expect(page.getByRole("heading", { name: "模拟交易" })).toBeVisible();
-  await page.goto("/stock-pool");
+  await page.getByRole("link", { name: "股票池" }).click();
   await expect(page.getByRole("heading", { name: "股票池" })).toBeVisible();
 });
 
@@ -112,7 +112,7 @@ test("operations page renders safe status projection", async ({ page }) => {
     }),
   );
   await login(page);
-  await page.goto("/operations");
+  await page.getByRole("link", { name: "Operations" }).click();
   await expect(page.getByRole("heading", { name: "Operations 状态" })).toBeVisible();
   await expect(page.getByText("runtime-adapter")).toBeVisible();
 });
@@ -154,12 +154,12 @@ test("golden journey covers login, dashboard, agent, quant, settings, and operat
 
   await login(page);
   await expect(page.getByRole("heading", { name: "首页" })).toBeVisible();
-  await page.goto("/agent");
+  await page.getByRole("link", { name: "研究工作台" }).click();
   await expect(page.getByRole("heading", { name: "研究对话" })).toBeVisible();
-  await page.goto("/quant");
+  await page.getByRole("link", { name: "量化工作台" }).click();
   await expect(page.getByRole("heading", { name: "量化工作台" })).toBeVisible();
-  await page.goto("/settings");
+  await page.getByRole("link", { name: "设置" }).click();
   await expect(page.getByRole("heading", { name: "用户与平台设置" })).toBeVisible();
-  await page.goto("/operations");
+  await page.getByRole("link", { name: "Operations" }).click();
   await expect(page.getByRole("heading", { name: "Operations 状态" })).toBeVisible();
 });
