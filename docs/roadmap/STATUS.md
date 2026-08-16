@@ -40,6 +40,10 @@ Codex session does not infer project state from commit history.
 - Phase 30 acceptance evidence covers the V2 parity matrix with no `FAIL`
   items, a golden journey covering core product pages, and BYQ artifact/
   approval list surfaces without raw DSH or backend exposure.
+- Community Parity Delivery Plan Phases 1-8 are complete; Chrome MCP browser
+  evidence is recorded in
+  `docs/roadmap/COMMUNITY_FEATURE_PARITY_CHROME_MCP_REVIEW.md`, and the V2
+  matrix has no `FAIL` or `DEFERRED` items.
 - Active architecture blockers: **none**
 
 Git SHA is not phase state. The current clean baseline must always be derived
