@@ -4,6 +4,7 @@ import { useRoute } from "vue-router";
 import {
   cancelSession,
   createAgentSession,
+  listAgentSessions,
   resumeSession,
   streamWorkflowEvents,
   submitTurn,
@@ -64,6 +65,12 @@ async function cancel() {
 }
 
 onMounted(() => {
+  void listAgentSessions(auth.token)
+    .then((response) => {
+      response.sessions.forEach((session) => agent.addSession(session));
+    })
+    .catch(() => undefined);
+
   const sessionId = route.query.session;
   if (
     typeof sessionId === "string" &&

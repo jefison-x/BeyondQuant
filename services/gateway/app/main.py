@@ -96,6 +96,14 @@ class ProductSessionRegistry:
             session.released = True
         return session
 
+    def list_owned(self, principal: Principal) -> list[ProductSession]:
+        with self._lock:
+            return [
+                session
+                for session in self._sessions.values()
+                if session.principal.subject == principal.subject and not session.released
+            ]
+
 
 product_sessions = ProductSessionRegistry()
 
@@ -232,6 +240,18 @@ def create_product_session(request: Request) -> dict[str, object]:
         "session_id": session_id,
         "trace_id": trace_id,
         "status": body.get("status", "ready"),
+    }
+
+
+@app.get("/v1/agent/sessions")
+def list_product_sessions(request: Request) -> dict[str, object]:
+    principal = _authenticate_request(request)
+    sessions = product_sessions.list_owned(principal)
+    return {
+        "sessions": [
+            {"session_id": session.session_id, "trace_id": session.trace_id}
+            for session in sessions
+        ]
     }
 
 
