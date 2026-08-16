@@ -4,7 +4,7 @@ import { cancelSession, createAgentSession, submitTurn } from "./agent";
 describe("agent api client", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("creates a product session with the bearer token", async () => {
+  it("creates a product session with the session cookie", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ session_id: "s1", trace_id: "t1", status: "ready" }), { status: 201 }),
     );
@@ -13,7 +13,7 @@ describe("agent api client", () => {
     expect(session.session_id).toBe("s1");
     expect(fetchMock).toHaveBeenCalledWith(
       "/v1/agent/sessions",
-      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer test-token" }) }),
+      expect.objectContaining({ credentials: "include" }),
     );
   });
 
