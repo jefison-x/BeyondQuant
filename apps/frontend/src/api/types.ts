@@ -76,3 +76,11 @@ export interface PaperOrder {
   status?: "filled" | "blocked";
   blocked_reason?: string;
 }
+
+export interface OperationsStatus {
+  backend: string;
+  runtime: string;
+  storage: string;
+  migration: string;
+  observability: { workflow_trace: string; audit: string };
+}
