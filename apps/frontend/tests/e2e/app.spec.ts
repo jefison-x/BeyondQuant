@@ -22,6 +22,72 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/\/$/);
 }
 
+async function loginAsAdmin(page: Page) {
+  let meAuthenticated = false;
+  await page.route("**/api/auth/login", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ user: { subject: "admin", role: "admin" }, session_id: "session-admin" }),
+      headers: { "set-cookie": "byq_session=session-admin; Path=/; HttpOnly; SameSite=Lax" },
+    }),
+  );
+  await page.route("**/api/auth/me", (route) =>
+    meAuthenticated
+      ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ subject: "admin", role: "admin" }) })
+      : (meAuthenticated = true, route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { message: "unauthenticated" } }) })),
+  );
+  await page.goto("/login");
+  await page.getByLabel("用户名").fill("admin");
+  await page.getByLabel("密码").fill("adminpass123");
+  await page.getByRole("button", { name: "进入" }).click();
+  await expect(page).toHaveURL(/\/$/);
+}
+
+async function mockAdminOps(page: Page) {
+  await page.route("**/api/product/operations/status", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        backend: "ok",
+        runtime: "runtime-adapter",
+        storage: "ready",
+        migration: "not_started",
+        observability: { workflow_trace: "configured", audit: "configured" },
+      }),
+    }),
+  );
+  await page.route("**/api/product/data/status", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "ok", provider: "tushare", migration: "not_started", backend: "ok" }) }),
+  );
+  await page.route("**/api/product/data-center/status", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ migration: "not_started", datasets: [], provider: "tushare", quality: "not_audited" }) }),
+  );
+  await page.route("**/api/product/settings/status", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        profile: { configured: true },
+        model_provider: { configured: false },
+        data_provider: { provider: "tushare", migration: "not_started" },
+        storage: { status: "ready" },
+        approval_inbox: { pending: 0 },
+      }),
+    }),
+  );
+  await page.route("**/api/product/health", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "ok", service: "byq-gateway" }) }),
+  );
+  await page.route("**/api/product/admin/users", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ users: [] }) }),
+  );
+  await page.route("**/api/product/approvals", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ approvals: [] }) }),
+  );
+}
+
 async function openNav(page: Page, label: string) {
   await page.getByRole("menuitem", { name: label }).click();
 }
@@ -149,6 +215,18 @@ test("operations page renders safe status projection", async ({ page }) => {
   await openNav(page, "系统运维");
   await expect(page.getByRole("heading", { name: "系统运维" })).toBeVisible();
   await expect(page.getByText("runtime-adapter")).toBeVisible();
+});
+
+test("admin operations workspace renders database and access sections", async ({ page }) => {
+  await mockAdminOps(page);
+  await loginAsAdmin(page);
+  await page.goto("/admin/database");
+  await expect(page.getByRole("heading", { name: "数据库管理" })).toBeVisible();
+  await expect(page.getByText("Backend")).toBeVisible();
+
+  await page.goto("/admin/access");
+  await expect(page.getByRole("heading", { name: "权限与审计" })).toBeVisible();
+  await expect(page.getByText("用户")).toBeVisible();
 });
 
 test("golden journey covers login, dashboard, agent, strategy, settings, and operations", async ({ page }) => {

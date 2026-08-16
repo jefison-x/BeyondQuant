@@ -11,6 +11,23 @@ const router = createRouter({
       meta: { public: true },
     },
     {
+      path: "/admin",
+      component: () => import("@/components/layout/OpsLayout.vue"),
+      meta: { requiresAdmin: true },
+      children: [
+        { path: "", redirect: "/admin/database" },
+        { path: "database", name: "admin-database", component: () => import("@/views/AdminOpsView.vue"), props: { section: "database" }, meta: { title: "数据库管理", kicker: "系统运维", subtitle: "数据库连接、迁移与底层结构状态" } },
+        { path: "sources", name: "admin-sources", component: () => import("@/views/AdminOpsView.vue"), props: { section: "sources" }, meta: { title: "数据源管理", kicker: "系统运维", subtitle: "数据源插件、同步任务与覆盖审计" } },
+        { path: "cache", name: "admin-cache", component: () => import("@/views/AdminOpsView.vue"), props: { section: "cache" }, meta: { title: "缓存管理", kicker: "系统运维", subtitle: "行情缓存覆盖、健康与重建" } },
+        { path: "models", name: "admin-models", component: () => import("@/views/AdminOpsView.vue"), props: { section: "models" }, meta: { title: "模型运维", kicker: "系统运维", subtitle: "提供商、逻辑模型、密钥状态和 Agent 绑定" } },
+        { path: "agents", name: "admin-agents", component: () => import("@/views/AdminOpsView.vue"), props: { section: "agents" }, meta: { title: "智能体运维", kicker: "系统运维", subtitle: "Agent 架构、技能配置与运行质量" } },
+        { path: "budget", name: "admin-budget", component: () => import("@/views/AdminOpsView.vue"), props: { section: "budget" }, meta: { title: "执行预算", kicker: "系统运维", subtitle: "Agent 执行预算总开关与限额" } },
+        { path: "runtime", name: "admin-runtime", component: () => import("@/views/AdminOpsView.vue"), props: { section: "runtime" }, meta: { title: "运行诊断", kicker: "系统运维", subtitle: "runtime 健康、限制、使用量与错误分类" } },
+        { path: "graphs", name: "admin-graphs", component: () => import("@/views/AdminOpsView.vue"), props: { section: "graphs" }, meta: { title: "Graph 工作流", kicker: "系统运维", subtitle: "定义拓扑、运行节点和安全 checkpoint 摘要" } },
+        { path: "access", name: "admin-access", component: () => import("@/views/AdminOpsView.vue"), props: { section: "access" }, meta: { title: "权限与审计", kicker: "系统运维", subtitle: "角色权限、审批策略和系统访问审计" } },
+      ],
+    },
+    {
       path: "/",
       component: () => import("@/components/layout/AppShell.vue"),
       children: [
@@ -125,16 +142,6 @@ const router = createRouter({
           },
         },
         {
-          path: "admin",
-          name: "admin",
-          component: () => import("@/views/AdminView.vue"),
-          meta: {
-            title: "管理",
-            kicker: "系统运维",
-            subtitle: "用户与平台管理",
-          },
-        },
-        {
           path: "quant",
           redirect: "/backtest",
         },
@@ -147,6 +154,9 @@ router.beforeEach((to) => {
   const auth = useAuthStore();
   if (!to.meta.public && !auth.isAuthenticated) {
     return { name: "login", query: { redirect: to.fullPath } };
+  }
+  if (to.matched.some((record) => Boolean(record.meta.requiresAdmin)) && !auth.isAdmin) {
+    return { name: "dashboard" };
   }
   if (to.name === "login" && auth.isAuthenticated) {
     return { name: "dashboard" };

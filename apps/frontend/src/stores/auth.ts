@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 
 interface CurrentUser {
   subject: string;
+  role?: string;
 }
 
 export const useAuthStore = defineStore("auth", {
@@ -11,6 +12,7 @@ export const useAuthStore = defineStore("auth", {
   }),
   getters: {
     isAuthenticated: (state) => state.user !== null,
+    isAdmin: (state) => state.user?.role === "admin",
   },
   actions: {
     setUser(user: CurrentUser) {
