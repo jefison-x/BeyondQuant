@@ -4,6 +4,7 @@ import { fetchDashboard, fetchHealth, fetchDataStatus } from "@/api/client";
 import { getOperationsStatus } from "@/api/operations";
 import { getSettingsStatus } from "@/api/settings";
 import { listArtifacts } from "@/api/research";
+import { listBacktests } from "@/api/quant";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 
@@ -16,6 +17,8 @@ const dataStatus = ref<Awaited<ReturnType<typeof fetchDataStatus>> | null>(null)
 const operations = ref<Awaited<ReturnType<typeof getOperationsStatus>> | null>(null);
 const settings = ref<Awaited<ReturnType<typeof getSettingsStatus>> | null>(null);
 const artifacts = ref<Array<Record<string, unknown>>>([]);
+const backtests = ref<Array<Record<string, unknown>>>([]);
+const failedResources = ref<string[]>([]);
 
 const summaryCards = computed(() => [
   { label: "Backend", value: String(dashboard.value?.resources.backend ?? "unknown") },
@@ -29,7 +32,7 @@ const summaryCards = computed(() => [
 onMounted(async () => {
   try {
     const token = auth.token;
-    const [dashboardResult, healthResult, dataResult, operationsResult, settingsResult, artifactResult] =
+    const [dashboardResult, healthResult, dataResult, operationsResult, settingsResult, artifactResult, backtestResult] =
       await Promise.allSettled([
         fetchDashboard(token),
         fetchHealth(token),
@@ -37,6 +40,7 @@ onMounted(async () => {
         getOperationsStatus(token),
         getSettingsStatus(token),
         listArtifacts(),
+        listBacktests(token),
       ]);
     if (dashboardResult.status === "fulfilled") dashboard.value = dashboardResult.value;
     if (healthResult.status === "fulfilled") health.value = healthResult.value;
@@ -44,6 +48,19 @@ onMounted(async () => {
     if (operationsResult.status === "fulfilled") operations.value = operationsResult.value;
     if (settingsResult.status === "fulfilled") settings.value = settingsResult.value;
     if (artifactResult.status === "fulfilled") artifacts.value = artifactResult.value.artifacts;
+    if (backtestResult.status === "fulfilled") backtests.value = backtestResult.value.backtests;
+    const checks: Array<[string, PromiseSettledResult<unknown>]> = [
+      ["dashboard", dashboardResult as PromiseSettledResult<unknown>],
+      ["health", healthResult as PromiseSettledResult<unknown>],
+      ["data", dataResult as PromiseSettledResult<unknown>],
+      ["operations", operationsResult as PromiseSettledResult<unknown>],
+      ["settings", settingsResult as PromiseSettledResult<unknown>],
+      ["artifacts", artifactResult as PromiseSettledResult<unknown>],
+      ["backtests", backtestResult as PromiseSettledResult<unknown>],
+    ];
+    failedResources.value = checks
+      .filter((entry) => entry[1].status === "rejected")
+      .map((entry) => entry[0]);
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "加载失败";
   } finally {
@@ -66,12 +83,39 @@ function kindLabel(kind: unknown): string {
     <div v-else-if="error" class="base-error">{{ error }}</div>
 
     <template v-else>
+      <el-alert
+        v-if="failedResources.length"
+        type="warning"
+        :closable="false"
+        :title="`部分数据加载失败：${failedResources.join('、')}`"
+      />
+
       <div class="stats-strip">
         <div v-for="card in summaryCards" :key="card.label" class="stat-item">
           <span>{{ card.label }}</span>
           <strong>{{ card.value }}</strong>
         </div>
       </div>
+
+      <el-card shadow="never" class="top-band">
+        <template #header>
+          <div class="card-title">资源状态</div>
+        </template>
+        <div class="resource-bars">
+          <div>
+            <span>Backend</span>
+            <el-progress :percentage="dashboard?.resources.backend === 'ok' ? 100 : 0" />
+          </div>
+          <div>
+            <span>数据迁移</span>
+            <el-progress :percentage="dataStatus?.migration === 'not_started' ? 0 : 100" />
+          </div>
+          <div>
+            <span>存储</span>
+            <el-progress :percentage="operations?.storage === 'ready' ? 100 : 0" />
+          </div>
+        </div>
+      </el-card>
 
       <div class="page-toolbar">
         <el-button type="primary" plain @click="$router.push('/agent')">开始研究</el-button>
@@ -102,6 +146,19 @@ function kindLabel(kind: unknown): string {
       </el-card>
 
       <div class="section-label-row">
+        <span>最近回测</span>
+        <small>来自 BYQ Backtest 列表</small>
+      </div>
+      <el-card shadow="never" class="top-band">
+        <el-table v-if="backtests.length" :data="backtests" size="default">
+          <el-table-column prop="job_id" label="Job ID" min-width="240" show-overflow-tooltip />
+          <el-table-column prop="status" label="状态" width="120" />
+          <el-table-column prop="created_at" label="创建时间" min-width="190" />
+        </el-table>
+        <el-empty v-else description="暂无回测任务" />
+      </el-card>
+
+      <div class="section-label-row">
         <span>服务健康</span>
         <small>Product API / Gateway 边界</small>
       </div>
@@ -117,3 +174,20 @@ function kindLabel(kind: unknown): string {
     </template>
   </section>
 </template>
+
+<style scoped>
+.resource-bars {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.resource-bars > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.resource-bars span {
+  color: var(--byq-text-muted);
+  font-size: 12px;
+}
+</style>
