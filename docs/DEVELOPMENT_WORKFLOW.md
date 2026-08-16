@@ -53,6 +53,12 @@ PR author:
 - If repository rules later require independent approvals, those approvals
   MUST be satisfied.
 
+Pre-release exception (ADR-0015): until the official BeyondQuant Next v1.0
+release, Codex may create non-draft PRs, mark them ready, and enable GitHub
+auto-merge (squash) when all required checks pass. This exception expires at
+the release boundary; the single-maintainer gate above is then restored and
+auto-merge must be disabled.
+
 ## Evidence expectations
 
 Architecture changes need an ADR or an update to a relevant Accepted ADR.

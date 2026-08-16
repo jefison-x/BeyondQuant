@@ -17,6 +17,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 16 product-api ADR: **ADR-0012**
 - Accepted Phase 16 durable-market-data-storage ADR: **ADR-0013**
 - Accepted Phase 24 user-auth ADR: **ADR-0014**
+- Accepted pre-release auto-merge ADR: **ADR-0015**
 - Open architecture decisions: none for the Phase 30 release-candidate boundary;
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
   is Accepted.
@@ -31,6 +32,8 @@ Codex session does not infer project state from commit history.
   [ADR-0011](../architecture/adr/ADR-0011-phase15-engineering-plane.md) is Accepted.
   [ADR-0012](../architecture/adr/ADR-0012-phase16-product-api-bff.md) is Accepted.
   [ADR-0013](../architecture/adr/ADR-0013-phase16-durable-market-data-storage.md) is Accepted.
+  [ADR-0015](../architecture/adr/ADR-0015-phase-release-automerge.md) is
+  Accepted until the BeyondQuant Next v1.0 release boundary.
 - Phase 23 acceptance evidence covers the Community Feature Parity Matrix,
   golden journey E2E smoke, release-candidate status, and explicit DROP/DEFER
   classifications for remaining hardening work.
@@ -45,6 +48,8 @@ Codex session does not infer project state from commit history.
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` records substantial remaining
   `PARTIAL`/`MISSING` product-depth workflows. The v1.0 RC review gate is not
   yet satisfied.
+- Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
+  disable GitHub auto-merge and restore the single-maintainer human merge gate.
 - Active architecture blockers: **none**
 
 Git SHA is not phase state. The current clean baseline must always be derived
