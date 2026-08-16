@@ -80,6 +80,34 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     fetched = client.get(f"/v1/research/backtests/{job['job_id']}")
     assert fetched.status_code == 200
     assert fetched.json()["job"]["result_artifact_id"].startswith("artifact_")
+    result = client.get(
+        f"/v1/research/backtests/{job['job_id']}/result",
+        headers={
+            "x-byq-owner-principal": "product-user",
+            "x-byq-actor-principal": "product-user",
+            "x-byq-trace-id": "byq-trace-backtest-api",
+            "x-byq-session-id": "byq-session-backtest-api",
+            "x-byq-dsh-run-id": "byq-run-backtest-api",
+        },
+    )
+    assert result.status_code == 200
+    result_body = result.json()
+    assert result_body["job_id"] == job["job_id"]
+    assert result_body["result"]["total_return"] == 0.0
+    assert result_body["result"]["trade_count"] == 1
+    assert result_body["result"]["equity_curve"][-1]["trade_date"] == "2026-01-06"
+
+    denied = client.get(
+        f"/v1/research/backtests/{job['job_id']}/result",
+        headers={
+            "x-byq-owner-principal": "other-user",
+            "x-byq-actor-principal": "other-user",
+            "x-byq-trace-id": "byq-trace-other",
+            "x-byq-session-id": "byq-session-other",
+            "x-byq-dsh-run-id": "byq-run-other",
+        },
+    )
+    assert denied.status_code == 404
     listed = client.get(
         "/v1/research/backtests",
         headers={

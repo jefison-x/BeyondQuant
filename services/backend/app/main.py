@@ -18,9 +18,11 @@ from .backtest import (
     BacktestConflict,
     BacktestJobStore,
     BacktestNotFound,
+    ObjectIntegrityError,
     BacktestStorageError,
     BacktestWorker,
     LocalObjectStore,
+    load_result,
     normalize_backtest_request,
 )
 from .agent_research import (
@@ -620,6 +622,22 @@ def create_backtest_job(payload: dict[str, Any]) -> dict[str, object]:
 @app.get("/v1/research/backtests/{job_id}")
 def get_backtest_job(job_id: str) -> dict[str, object]:
     return _backtest_call(lambda: {"job": backtest_store.get(job_id)})
+
+
+@app.get("/v1/research/backtests/{job_id}/result")
+def get_backtest_result(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    job = _backtest_call(lambda: backtest_store.get(job_id))
+    if job["owner_principal"] != context["owner_principal"]:
+        raise HTTPException(status_code=404, detail="backtest result not found")
+    reference = job.get("result_reference")
+    if not isinstance(reference, dict):
+        raise HTTPException(status_code=409, detail="backtest job has no result yet")
+    try:
+        result = load_result(backtest_objects, reference)
+    except ObjectIntegrityError as error:
+        raise HTTPException(status_code=503, detail="backtest result object is unavailable") from error
+    return {"job_id": job_id, "result": result}
 
 
 @app.get("/v1/research/backtests")

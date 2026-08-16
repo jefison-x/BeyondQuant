@@ -53,10 +53,33 @@ export interface BacktestJob {
   job_id?: string;
   status?: string;
   summary?: Record<string, unknown>;
+  input_manifest?: Record<string, unknown>;
   attempts?: number;
   max_attempts?: number;
   error_code?: string;
   error_message?: string;
+}
+
+export interface BacktestEquityPoint {
+  trade_date: string;
+  equity: number;
+  cash: number;
+  positions_count: number;
+}
+
+export interface BacktestResult {
+  schema_version?: string;
+  engine?: string;
+  final_value?: number;
+  total_return?: number;
+  max_drawdown?: number;
+  trade_count?: number;
+  blocked_trade_count?: number;
+  trades?: Array<Record<string, unknown>>;
+  blocked_trades?: Array<Record<string, unknown>>;
+  corporate_action_events?: Array<Record<string, unknown>>;
+  equity_curve?: BacktestEquityPoint[];
+  reproducibility?: string;
 }
 
 export interface SettingsStatus {
