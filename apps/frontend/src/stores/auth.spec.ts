@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { useAuthStore } from "./auth";
 
@@ -8,12 +8,13 @@ describe("auth store", () => {
     setActivePinia(createPinia());
   });
 
-  it("stores and clears the product token", () => {
+  it("tracks the current durable user and logs out", async () => {
     const auth = useAuthStore();
     expect(auth.isAuthenticated).toBe(false);
-    auth.setToken("test-token");
+    auth.setUser({ subject: "testuser" });
     expect(auth.isAuthenticated).toBe(true);
-    auth.logout();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "ok" }), { status: 200 })));
+    await auth.logout();
     expect(auth.isAuthenticated).toBe(false);
   });
 });
