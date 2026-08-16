@@ -306,6 +306,16 @@ def product_backtest_get(job_id: str, request: Request) -> dict[str, object]:
     return _backend_request("GET", f"/v1/research/backtests/{job_id}")
 
 
+@router.get("/backtests/{job_id}/result")
+def product_backtest_result(job_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET",
+        f"/v1/research/backtests/{job_id}/result",
+        headers=_trusted_agent_headers(request),
+    )
+
+
 @router.get("/backtests")
 def product_backtests(request: Request) -> dict[str, object]:
     _product_principal(request)

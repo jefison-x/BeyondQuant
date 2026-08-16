@@ -151,6 +151,37 @@ def test_product_assets_export_and_import_are_owner_scoped(monkeypatch) -> None:
     assert imported.json()["imported"]["pools"] == 1
 
 
+def test_product_backtest_result_is_owner_scoped(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"job_id": "backtest_1", "result": {"total_return": 0.1, "trade_count": 2, "equity_curve": []}}
+
+    captured: dict[str, object] = {}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = kwargs.get("headers", {})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    response = client.get(
+        "/api/product/backtests/backtest_1/result",
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+    assert response.status_code == 200
+    assert response.json()["result"]["trade_count"] == 2
+    assert captured["url"].endswith("/v1/research/backtests/backtest_1/result")
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+
 def test_product_asset_import_rejects_secret_fields(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")

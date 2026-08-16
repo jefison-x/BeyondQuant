@@ -166,10 +166,46 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
 
 test("backtest workspace renders backtest result list", async ({ page }) => {
   await mockResearchLists(page);
+  await page.route("**/api/product/backtests", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        backtests: [{ job_id: "backtest_1", status: "completed", summary: { total_return: 0.05, max_drawdown: 0.1, trade_count: 2 }, input_manifest: { execution: {} }, created_at: "2026-08-16T00:00:00+00:00" }],
+      }),
+    }),
+  );
+  await page.route("**/api/product/backtests/backtest_1", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ job_id: "backtest_1", status: "completed", summary: { total_return: 0.05, max_drawdown: 0.1, trade_count: 2 }, input_manifest: { execution: { initial_capital: 100000 } } }),
+    }),
+  );
+  await page.route("**/api/product/backtests/backtest_1/result", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        job_id: "backtest_1",
+        result: {
+          total_return: 0.05,
+          max_drawdown: 0.1,
+          trade_count: 1,
+          equity_curve: [{ trade_date: "2026-01-05", equity: 100000, cash: 100000, positions_count: 0 }],
+          trades: [{ timestamp: "2026-01-05", symbol: "000001.SZ", order_type: "buy", quantity: 100, price: 10, commission: 0, tax: 0, realized_pnl: null }],
+          blocked_trades: [],
+          corporate_action_events: [],
+        },
+      }),
+    }),
+  );
   await login(page);
   await openNav(page, "回测管理");
   await expect(page.getByRole("heading", { name: "回测管理" })).toBeVisible();
   await expect(page.getByText("回测结果", { exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "权益曲线" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "交易明细" })).toBeVisible();
 });
 
 test("my space pages render profile, models, assets, and agent policy", async ({ page }) => {

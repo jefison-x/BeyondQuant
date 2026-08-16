@@ -1,4 +1,4 @@
-import type { BacktestJob } from "./types";
+import type { BacktestJob, BacktestResult } from "./types";
 
 const ROOT = "/api/product";
 
@@ -24,6 +24,10 @@ export function getResearchEntity(
 
 export function getBacktest(jobId: string, token: string): Promise<BacktestJob> {
   return request(`/backtests/${encodeURIComponent(jobId)}`, token);
+}
+
+export function getBacktestResult(jobId: string, token: string): Promise<{ job_id: string; result: BacktestResult }> {
+  return request(`/backtests/${encodeURIComponent(jobId)}/result`, token);
 }
 
 export function runBacktest(jobId: string, token: string): Promise<BacktestJob> {

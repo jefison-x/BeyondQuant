@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cancelBacktest, getBacktest, getResearchEntity, runBacktest } from "./quant";
+import { cancelBacktest, getBacktest, getBacktestResult, getResearchEntity, runBacktest } from "./quant";
 
 describe("quant api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -32,6 +32,22 @@ describe("quant api client", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/backtests/job_1/cancel",
       expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("reads the immutable backtest result object", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ job_id: "job_1", result: { total_return: 0.05, trade_count: 2, equity_curve: [] } }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const body = await getBacktestResult("job_1", "test-token");
+    expect(body.result.total_return).toBe(0.05);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/backtests/job_1/result",
+      expect.objectContaining({ credentials: "include" }),
     );
   });
 });
