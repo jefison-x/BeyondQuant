@@ -38,3 +38,26 @@ def test_password_is_verified_with_modern_kdf_and_owner_session_revoked(tmp_path
     with pytest.raises(UserForbidden):
         store.get_session_user(result["session_id"])
     store.close()
+
+
+def test_profile_preferences_are_durable_and_owner_scoped(tmp_path) -> None:
+    store = UserAuthStore(tmp_path / "users.sqlite3")
+    user = store.create_user(
+        {"username": "user", "password": "password123", "display_name": "User"},
+        actor_role="admin",
+    )
+    updated = store.update_profile(
+        user["user_id"],
+        {"display_name": "老李", "preferences": "低波动", "default_prompt": "先给结论"},
+    )
+    assert updated["display_name"] == "老李"
+    assert updated["preferences"] == "低波动"
+    assert updated["default_prompt"] == "先给结论"
+    assert "password_hash" not in updated
+
+    refreshed = store.get_user(user["user_id"])
+    assert refreshed["preferences"] == "低波动"
+
+    with pytest.raises(ValueError):
+        store.update_profile(user["user_id"], {"role": "admin"})
+    store.close()

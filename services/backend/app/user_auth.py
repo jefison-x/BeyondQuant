@@ -57,6 +57,17 @@ def _text(value: object, *, field: str, max_length: int) -> str:
     return normalized
 
 
+def _optional_text(value: object, *, field: str, max_length: int) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string or null")
+    normalized = value.strip()
+    if len(normalized) > max_length:
+        raise ValueError(f"{field} exceeds {max_length} characters")
+    return normalized
+
+
 def _username(value: object) -> str:
     normalized = _text(value, field="username", max_length=64)
     if _USERNAME_PATTERN.fullmatch(normalized) is None:
@@ -133,6 +144,8 @@ class UserAuthStore:
                     updated_at TEXT NOT NULL,
                     last_login_at TEXT,
                     password_changed_at TEXT,
+                    preferences TEXT,
+                    default_prompt TEXT,
                     preferences_version INTEGER NOT NULL DEFAULT 1
                 );
                 CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -145,6 +158,14 @@ class UserAuthStore:
                     ON auth_sessions(user_id, expires_at);
                 """
             )
+        self._ensure_profile_columns()
+
+    def _ensure_profile_columns(self) -> None:
+        for column in ("preferences", "default_prompt"):
+            try:
+                self._connection.execute(f"ALTER TABLE users ADD COLUMN {column} TEXT")
+            except sqlite3.OperationalError:
+                pass
 
     def create_user(self, payload: object, *, actor_role: str | None = None) -> dict[str, object]:
         if actor_role not in {"admin"}:
@@ -189,6 +210,45 @@ class UserAuthStore:
         if row is None:
             raise UserNotFound("user not found")
         return self._user_row(row)
+
+    def update_profile(self, user_id: object, payload: object) -> dict[str, object]:
+        user_id = _user_id(user_id)
+        if not isinstance(payload, dict):
+            raise ValueError("profile request must be an object")
+        allowed = {"display_name", "preferences", "default_prompt"}
+        unknown = sorted(set(payload) - allowed)
+        if unknown:
+            raise ValueError(f"profile request has unknown fields: {', '.join(unknown)}")
+
+        updates: list[str] = []
+        params: list[object] = []
+        if "display_name" in payload:
+            updates.append("display_name = ?")
+            params.append(_text(payload.get("display_name"), field="display_name", max_length=128))
+        if "preferences" in payload:
+            updates.append("preferences = ?")
+            params.append(_optional_text(payload.get("preferences"), field="preferences", max_length=2000))
+        if "default_prompt" in payload:
+            updates.append("default_prompt = ?")
+            params.append(_optional_text(payload.get("default_prompt"), field="default_prompt", max_length=2000))
+
+        if not updates:
+            return self.get_user(user_id)
+
+        updates.append("updated_at = ?")
+        params.append(_now().isoformat())
+        params.append(user_id)
+        with self._lock, self._connection:
+            row = self._connection.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if row is None:
+                raise UserNotFound("user not found")
+            self._connection.execute(
+                f"UPDATE users SET {', '.join(updates)} WHERE user_id = ?",
+                params,
+            )
+            updated = self._connection.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            assert updated is not None
+            return self._user_row(updated)
 
     def list_users(self, *, actor_role: str | None = None) -> dict[str, object]:
         if actor_role not in {"admin"}:

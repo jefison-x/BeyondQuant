@@ -102,16 +102,6 @@ const router = createRouter({
           },
         },
         {
-          path: "settings",
-          name: "settings",
-          component: () => import("@/views/SettingsView.vue"),
-          meta: {
-            title: "个人设置",
-            kicker: "我的空间",
-            subtitle: "用户与平台设置",
-          },
-        },
-        {
           path: "research-center",
           name: "research-center",
           component: () => import("@/views/ResearchCenterView.vue"),
@@ -119,6 +109,46 @@ const router = createRouter({
             title: "研究/审批",
             kicker: "我的空间",
             subtitle: "研究实体与审批记录",
+          },
+        },
+        {
+          path: "assets",
+          name: "assets",
+          component: () => import("@/views/AssetsView.vue"),
+          meta: {
+            title: "用户资产",
+            kicker: "我的空间",
+            subtitle: "策略、股票池、回测资产详情，支持导出与导入",
+          },
+        },
+        {
+          path: "models",
+          name: "models",
+          component: () => import("@/views/ModelsView.vue"),
+          meta: {
+            title: "模型设置",
+            kicker: "个人模型",
+            subtitle: "维护个人模型凭据、模型档案和 Agent 绑定",
+          },
+        },
+        {
+          path: "agent-settings",
+          name: "agent-settings",
+          component: () => import("@/views/AgentPolicyView.vue"),
+          meta: {
+            title: "智能体策略",
+            kicker: "我的空间",
+            subtitle: "配置个人审批偏好和智能体运行规则",
+          },
+        },
+        {
+          path: "profile",
+          name: "profile",
+          component: () => import("@/views/ProfileView.vue"),
+          meta: {
+            title: "个人设置",
+            kicker: "个性化",
+            subtitle: "设置用户昵称、研究偏好与默认提示词",
           },
         },
         {

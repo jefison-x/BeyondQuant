@@ -67,6 +67,52 @@ export interface SettingsStatus {
   approval_inbox: { pending: number };
 }
 
+export interface UserProfile {
+  subject: string;
+  display_name: string;
+  preferences: string;
+  default_prompt: string;
+  role: string;
+  status: string;
+}
+
+export interface ModelSettings {
+  provider: string;
+  configured: boolean;
+  models: Array<Record<string, unknown>>;
+  credentials: { masked: boolean; write_only: boolean };
+}
+
+export interface AssetSummary {
+  strategies: Array<Record<string, unknown>>;
+  backtests: Array<Record<string, unknown>>;
+  pools: Array<Record<string, unknown>>;
+  paper_accounts: Array<Record<string, unknown>>;
+  summary: {
+    strategies: number;
+    backtests: number;
+    pools: number;
+    paper_accounts: number;
+  };
+}
+
+export interface AgentPolicyStatus {
+  platform_policy: {
+    automation_enabled: boolean;
+    paused: boolean;
+    default_decision_mode: string;
+    max_auto_executions_per_hour: number;
+    max_auto_failures_per_hour: number;
+  };
+  approval_inbox: { pending: number };
+}
+
+export interface AssetImportReport {
+  imported: { pools: number; paper_accounts: number };
+  skipped: { strategies: number; backtests: number; reason: string };
+  errors: Array<{ kind: string; message: string }>;
+}
+
 export interface PaperAccount {
   account_id?: string;
   name?: string;
