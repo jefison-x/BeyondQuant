@@ -35,6 +35,11 @@ def test_product_dashboard_is_safe_and_normalized(monkeypatch) -> None:
             return {"status": "ok"}
 
     monkeypatch.setattr(product_api.httpx, "get", lambda *args, **kwargs: FakeResponse())
+    monkeypatch.setattr(
+        product_api.httpx,
+        "request",
+        lambda *args, **kwargs: FakeResponse(),
+    )
     client = TestClient(main.app)
     response = client.get(
         "/api/product/dashboard",

@@ -13,7 +13,17 @@ export interface ProductHealth {
 
 export interface ProductDashboard {
   status: string;
-  resources: Record<string, string>;
+  resources: {
+    backend: string;
+    data: string;
+    migration: string;
+    counts?: {
+      tasks?: number | string;
+      experiments?: number | string;
+      artifacts?: number | string;
+      backtests?: number | string;
+    };
+  };
 }
 
 export interface ProductDataStatus {
