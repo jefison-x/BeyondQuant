@@ -9,7 +9,7 @@ import {
   streamWorkflowEvents,
   submitTurn,
 } from "@/api/agent";
-import { listApprovals } from "@/api/research";
+import { listApprovals, listArtifacts } from "@/api/research";
 import { listBacktests } from "@/api/quant";
 import { useAgentStore } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
@@ -22,6 +22,7 @@ const error = ref("");
 const busy = ref(false);
 const approvals = ref<Array<Record<string, unknown>>>([]);
 const backtests = ref<Array<Record<string, unknown>>>([]);
+const artifacts = ref<Array<Record<string, unknown>>>([]);
 const thinkingSteps = computed(() =>
   agent.events
     .filter((event) => typeof event.payload?.text === "string")
@@ -89,6 +90,12 @@ onMounted(() => {
   void listBacktests(auth.token)
     .then((response) => {
       backtests.value = response.backtests;
+    })
+    .catch(() => undefined);
+
+  void listArtifacts()
+    .then((response) => {
+      artifacts.value = response.artifacts;
     })
     .catch(() => undefined);
 
@@ -190,6 +197,17 @@ onMounted(() => {
           {{ job.job_id }} - {{ job.status }}
         </li>
       </ul>
+      <div class="panel-heading">
+        <span class="panel-title">研究资产</span>
+        <el-tag>{{ artifacts.length }}</el-tag>
+      </div>
+      <el-empty v-if="!artifacts.length" description="暂无研究资产" />
+      <div v-else class="artifact-cards">
+        <div v-for="artifact in artifacts" :key="String(artifact.artifact_id)" class="artifact-card">
+          <strong>{{ artifact.kind }}</strong>
+          <small>{{ artifact.artifact_id }}</small>
+        </div>
+      </div>
     </el-card>
   </section>
 </template>
@@ -237,5 +255,33 @@ onMounted(() => {
   color: var(--byq-text-muted);
   font-size: 12px;
   white-space: pre-wrap;
+}
+
+.artifact-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.artifact-card {
+  background: var(--byq-surface-subtle);
+  border: 1px solid var(--byq-border-subtle);
+  border-radius: var(--byq-radius-sm);
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.5rem;
+}
+
+.artifact-card strong {
+  color: var(--byq-text);
+  font-size: 12px;
+}
+
+.artifact-card small {
+  color: var(--byq-text-soft);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
