@@ -342,6 +342,12 @@ def product_paper_account_get(account_id: str, request: Request) -> dict[str, ob
     return _backend_request("GET", f"/v1/paper/accounts/{account_id}")
 
 
+@router.get("/paper/accounts")
+def product_paper_accounts(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", "/v1/paper/accounts", headers=_trusted_agent_headers(request))
+
+
 @router.post("/paper/pools", status_code=201)
 def product_stock_pool_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
@@ -354,6 +360,12 @@ def product_stock_pool_get(pool_id: str, request: Request) -> dict[str, object]:
     return _backend_request("GET", f"/v1/paper/pools/{pool_id}")
 
 
+@router.get("/paper/pools")
+def product_stock_pools(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", "/v1/paper/pools", headers=_trusted_agent_headers(request))
+
+
 @router.post("/paper/orders", status_code=201)
 def product_paper_order_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
@@ -364,6 +376,18 @@ def product_paper_order_create(request: Request, payload: dict[str, object]) -> 
 def product_paper_orders(account_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request("GET", f"/v1/paper/accounts/{account_id}/orders")
+
+
+@router.get("/paper/accounts/{account_id}/positions")
+def product_paper_positions(account_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/paper/accounts/{account_id}/positions")
+
+
+@router.get("/paper/accounts/{account_id}/fills")
+def product_paper_fills(account_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/paper/accounts/{account_id}/fills")
 
 
 @router.get("/operations/status")

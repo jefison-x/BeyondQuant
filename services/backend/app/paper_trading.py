@@ -239,6 +239,19 @@ class PaperTradingStore:
         result = dict(row)
         return result
 
+    def list_accounts(self, *, trusted_owner: str | None = None) -> dict[str, object]:
+        with self._lock:
+            if trusted_owner:
+                rows = self._connection.execute(
+                    "SELECT * FROM paper_accounts WHERE owner_principal = ? ORDER BY created_at DESC, account_id DESC",
+                    (trusted_owner,),
+                ).fetchall()
+            else:
+                rows = self._connection.execute(
+                    "SELECT * FROM paper_accounts ORDER BY created_at DESC, account_id DESC"
+                ).fetchall()
+        return {"accounts": [dict(row) for row in rows]}
+
     def create_pool(self, payload: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("pool request must be an object")
@@ -278,6 +291,25 @@ class PaperTradingStore:
         result["symbols"] = _loads(result.pop("symbols_json"), field="symbols")
         result["provenance"] = _loads(result.pop("provenance_json"), field="provenance")
         return result
+
+    def list_pools(self, *, trusted_owner: str | None = None) -> dict[str, object]:
+        with self._lock:
+            if trusted_owner:
+                rows = self._connection.execute(
+                    "SELECT * FROM stock_pools WHERE owner_principal = ? ORDER BY created_at DESC, pool_id DESC",
+                    (trusted_owner,),
+                ).fetchall()
+            else:
+                rows = self._connection.execute(
+                    "SELECT * FROM stock_pools ORDER BY created_at DESC, pool_id DESC"
+                ).fetchall()
+        pools = []
+        for row in rows:
+            item = dict(row)
+            item["symbols"] = _loads(item.pop("symbols_json"), field="symbols")
+            item["provenance"] = _loads(item.pop("provenance_json"), field="provenance")
+            pools.append(item)
+        return {"pools": pools}
 
     def submit_order(self, payload: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
@@ -379,6 +411,30 @@ class PaperTradingStore:
                 (account_id,),
             ).fetchall()
         return {"orders": [self._order_row(row) for row in rows]}
+
+    def list_positions(self, account_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
+        account_id = _id(account_id, prefix="paper_account")
+        with self._lock:
+            account = self._connection.execute("SELECT * FROM paper_accounts WHERE account_id = ?", (account_id,)).fetchone()
+            if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
+                raise PaperTradingForbidden("paper account is not owned by this principal")
+            rows = self._connection.execute(
+                "SELECT * FROM paper_positions WHERE account_id = ? ORDER BY symbol ASC",
+                (account_id,),
+            ).fetchall()
+        return {"positions": [dict(row) for row in rows]}
+
+    def list_fills(self, account_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
+        account_id = _id(account_id, prefix="paper_account")
+        with self._lock:
+            account = self._connection.execute("SELECT * FROM paper_accounts WHERE account_id = ?", (account_id,)).fetchone()
+            if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
+                raise PaperTradingForbidden("paper account is not owned by this principal")
+            rows = self._connection.execute(
+                "SELECT * FROM paper_fills WHERE account_id = ? ORDER BY created_at DESC, fill_id DESC",
+                (account_id,),
+            ).fetchall()
+        return {"fills": [dict(row) for row in rows]}
 
     def _blocked_reason(
         self,

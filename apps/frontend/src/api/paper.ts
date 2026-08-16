@@ -26,6 +26,10 @@ export function getPaperAccount(accountId: string, token: string): Promise<{ acc
   return request(`/accounts/${encodeURIComponent(accountId)}`, token);
 }
 
+export function listPaperAccounts(token: string): Promise<{ accounts: Array<Record<string, unknown>> }> {
+  return request(`/accounts`, token);
+}
+
 export function createStockPool(
   name: string,
   symbols: string[],
@@ -34,11 +38,23 @@ export function createStockPool(
   return request("/pools", token, { method: "POST", body: JSON.stringify({ name, symbols, provenance: { source: "frontend" } }) });
 }
 
+export function listStockPools(token: string): Promise<{ pools: Array<Record<string, unknown>> }> {
+  return request(`/pools`, token);
+}
+
 export function submitPaperOrder(
   payload: Record<string, unknown>,
   token: string,
 ): Promise<{ order: PaperOrder }> {
   return request("/orders", token, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function listPaperPositions(accountId: string, token: string): Promise<{ positions: Array<Record<string, unknown>> }> {
+  return request(`/accounts/${encodeURIComponent(accountId)}/positions`, token);
+}
+
+export function listPaperFills(accountId: string, token: string): Promise<{ fills: Array<Record<string, unknown>> }> {
+  return request(`/accounts/${encodeURIComponent(accountId)}/fills`, token);
 }
 
 export function listPaperOrders(accountId: string, token: string): Promise<{ orders: PaperOrder[] }> {
