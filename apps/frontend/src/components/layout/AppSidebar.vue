@@ -8,6 +8,7 @@ const links = [
   { name: "stock-pool", label: "股票池", to: "/stock-pool" },
   { name: "paper-trading", label: "模拟交易", to: "/paper-trading" },
   { name: "operations", label: "Operations", to: "/operations" },
+  { name: "research-center", label: "研究/审批", to: "/research-center" },
 ];
 </script>
 

@@ -91,3 +91,9 @@ body { margin: 0; background: var(--byq-bg); color: var(--byq-text); font-family
 .metric-label { color: var(--byq-muted); font-size: 12px; }
 .metric-value { font-size: 20px; }
 .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 12px 0; }
+
+.research-tabs { display: flex; gap: 8px; margin: 12px 0; }
+.research-tabs button { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--byq-border); background: var(--byq-surface); cursor: pointer; }
+.research-tabs button.active { background: var(--byq-accent); color: white; border-color: var(--byq-accent); }
+.research-form { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+.research-form input, .research-form select { padding: 10px; border: 1px solid var(--byq-border); border-radius: 8px; }

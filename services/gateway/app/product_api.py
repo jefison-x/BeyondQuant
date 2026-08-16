@@ -192,6 +192,12 @@ def product_strategy_export(artifact_id: str, request: Request) -> dict[str, obj
     return _backend_request("GET", f"/v1/research/strategies/versions/{artifact_id}/export")
 
 
+@router.get("/approvals/{approval_id}")
+def product_approval_get(approval_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/agents/approvals/{approval_id}")
+
+
 @router.get("/settings/status")
 def product_settings_status(request: Request) -> dict[str, object]:
     _product_principal(request)
