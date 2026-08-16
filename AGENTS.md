@@ -109,6 +109,12 @@ For a repository with a single human maintainer:
 - If repository rules later require independent approvals, those approvals
   must be satisfied.
 
+Exception (pre-release only): until the official BeyondQuant Next v1.0 release,
+[ADR-0015](docs/architecture/adr/ADR-0015-phase-release-automerge.md)
+allows Codex to mark PRs ready and enable CI-green auto-merge. This exception
+expires at the v1.0 release boundary, after which the single-maintainer gate
+above is restored and auto-merge must be disabled.
+
 ## Before starting implementation
 
 Read all of the following before selecting or implementing work:
