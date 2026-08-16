@@ -10,6 +10,7 @@ import {
   submitTurn,
 } from "@/api/agent";
 import { listApprovals } from "@/api/research";
+import { listBacktests } from "@/api/quant";
 import { useAgentStore } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
 
@@ -20,6 +21,7 @@ const prompt = ref("");
 const error = ref("");
 const busy = ref(false);
 const approvals = ref<Array<Record<string, unknown>>>([]);
+const backtests = ref<Array<Record<string, unknown>>>([]);
 const thinkingSteps = computed(() =>
   agent.events
     .filter((event) => typeof event.payload?.text === "string")
@@ -81,6 +83,12 @@ onMounted(() => {
   void listApprovals()
     .then((response) => {
       approvals.value = response.approvals;
+    })
+    .catch(() => undefined);
+
+  void listBacktests(auth.token)
+    .then((response) => {
+      backtests.value = response.backtests;
     })
     .catch(() => undefined);
 
@@ -170,6 +178,16 @@ onMounted(() => {
       <ul v-else class="approval-list">
         <li v-for="approval in approvals" :key="String(approval.approval_id)">
           {{ approval.action }} - {{ approval.status }}
+        </li>
+      </ul>
+      <div class="panel-heading">
+        <span class="panel-title">回测上下文</span>
+        <el-tag>{{ backtests.length }}</el-tag>
+      </div>
+      <el-empty v-if="!backtests.length" description="暂无回测任务" />
+      <ul v-else class="approval-list">
+        <li v-for="job in backtests" :key="String(job.job_id)">
+          {{ job.job_id }} - {{ job.status }}
         </li>
       </ul>
     </el-card>
