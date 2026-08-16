@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { getResearchEntity, exportStrategyVersion, listStrategies } from "@/api/quant";
+import { getResearchEntity, exportStrategyVersion, listStrategies, validateStrategy } from "@/api/quant";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 
@@ -11,6 +11,7 @@ const busy = ref(false);
 const artifacts = ref<Array<Record<string, unknown>>>([]);
 const selected = ref<Record<string, unknown> | null>(null);
 const detail = ref<Record<string, unknown> | null>(null);
+const draftScript = ref("");
 
 const strategies = computed(() => artifacts.value.filter((artifact) => artifact.kind === "strategy_version"));
 
@@ -51,6 +52,34 @@ async function exportVersion() {
     detail.value = result as Record<string, unknown>;
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "导出失败";
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function validateDraft() {
+  if (!selected.value || !draftScript.value.trim()) return;
+  busy.value = true;
+  error.value = "";
+  try {
+    const result = await validateStrategy(
+      {
+        task_id: selected.value.task_id,
+        strategy: {
+          strategy_id: "CustomStrategy",
+          name: "Custom",
+          category: "custom",
+          source_type: "python_script",
+          script: draftScript.value,
+        },
+        trace_id: "product-browser-strategy",
+        idempotency_key: crypto.randomUUID(),
+      },
+      auth.token,
+    );
+    detail.value = result;
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "验证失败";
   } finally {
     busy.value = false;
   }
@@ -97,8 +126,10 @@ onMounted(loadList);
             <el-button type="primary" :loading="busy" :disabled="!selected" @click="exportVersion">
               导出版本
             </el-button>
+            <el-button :loading="busy" :disabled="!selected" @click="validateDraft">验证草稿</el-button>
           </div>
         </template>
+        <el-input v-model="draftScript" type="textarea" :rows="8" placeholder="输入 Python 策略脚本..." />
         <p v-if="error" class="page-error">{{ error }}</p>
         <el-empty v-else-if="!detail" description="请选择左侧策略版本" />
         <pre v-else class="quant-result">{{ JSON.stringify(detail, null, 2) }}</pre>

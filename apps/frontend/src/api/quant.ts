@@ -49,3 +49,11 @@ export function listFactors(token: string): Promise<{ factors: Array<Record<stri
 export function listBacktests(token: string): Promise<{ backtests: Array<Record<string, unknown>> }> {
   return request(`/backtests`, token);
 }
+
+export function validateStrategy(payload: Record<string, unknown>, token: string): Promise<Record<string, unknown>> {
+  return request(`/strategies/validate`, token, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
