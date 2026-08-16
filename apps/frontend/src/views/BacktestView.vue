@@ -6,6 +6,7 @@ import { listArtifacts } from "@/api/research";
 import { useAuthStore } from "@/stores/auth";
 import ChartWrapper from "@/components/charts/ChartWrapper.vue";
 import MetricCard from "@/components/ui/MetricCard.vue";
+import { formatChinaTime } from "@/time";
 
 const auth = useAuthStore();
 const loading = ref(true);
@@ -81,7 +82,9 @@ onMounted(loadList);
         <el-table v-else :data="results" highlight-current-row @current-change="select">
           <el-table-column prop="artifact_id" label="Artifact ID" min-width="220" show-overflow-tooltip />
           <el-table-column prop="status" label="状态" width="110" />
-          <el-table-column prop="created_at" label="创建时间" min-width="180" />
+          <el-table-column label="创建时间" min-width="180">
+            <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
+          </el-table-column>
         </el-table>
       </el-card>
 

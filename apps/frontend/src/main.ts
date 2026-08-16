@@ -7,12 +7,24 @@ import router from "./router";
 import { useAuthStore } from "./stores/auth";
 import "./styles/byq-theme.css";
 
-const app = createApp(App);
-app.use(createPinia());
-const auth = useAuthStore();
-app.use(router).use(ElementPlus);
-auth.fetchMe()
-  .catch(() => undefined)
-  .finally(() => {
-    router.isReady().then(() => app.mount("#app"));
-  });
+async function bootstrap() {
+  const app = createApp(App);
+  app.use(createPinia());
+  const auth = useAuthStore();
+  app.use(ElementPlus);
+
+  // Resolve the durable session before installing the router so the auth
+  // guard observes the authenticated principal instead of redirecting to
+  // login during the initial navigation after a page refresh.
+  try {
+    await auth.fetchMe();
+  } catch {
+    auth.user = null;
+  }
+
+  app.use(router);
+  await router.isReady();
+  app.mount("#app");
+}
+
+void bootstrap();

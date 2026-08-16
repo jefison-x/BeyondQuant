@@ -5,6 +5,7 @@ import { getOperationsStatus } from "@/api/operations";
 import { getSettingsStatus } from "@/api/settings";
 import { listArtifacts } from "@/api/research";
 import { useAuthStore } from "@/stores/auth";
+import { formatChinaTime } from "@/time";
 
 const auth = useAuthStore();
 const loading = ref(true);
@@ -86,7 +87,9 @@ function kindLabel(kind: unknown): string {
           </el-table-column>
           <el-table-column prop="artifact_id" label="Artifact ID" min-width="260" show-overflow-tooltip />
           <el-table-column prop="status" label="状态" width="120" />
-          <el-table-column prop="created_at" label="创建时间" min-width="190" />
+          <el-table-column label="创建时间" min-width="190">
+            <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
+          </el-table-column>
         </el-table>
         <el-empty v-else description="暂无研究资产" />
       </el-card>
