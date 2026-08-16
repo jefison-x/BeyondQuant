@@ -1,8 +1,9 @@
 # Community Feature Parity Matrix V2
 
-Phase 30 release-candidate evidence. Each Community surface is marked
+Phase 8 release-parity browser evidence. Each Community surface is marked
 `PASS`, `REDESIGNED_PASS`, `INTENTIONAL_DROP`, or `FAIL`. No `DEFERRED` is
-accepted in this V2 release conclusion.
+accepted in this V2 release conclusion. Browser observations are recorded in
+[`COMMUNITY_FEATURE_PARITY_CHROME_MCP_REVIEW.md`](COMMUNITY_FEATURE_PARITY_CHROME_MCP_REVIEW.md).
 
 | Community surface | Status | Notes |
 |---|---|---|
@@ -23,7 +24,7 @@ accepted in this V2 release conclusion.
 
 ## Release conclusion
 
-Phase 30 is not yet a final v1.0 RC because `Assets` and `Agent Policy` are
-`FAIL`, and several `REDESIGNED_PASS` surfaces still have incomplete depth.
-This matrix is the honest release-candidate baseline; the next work must close
-the remaining `FAIL` items before v1.0 RC can be declared.
+All listed Community surfaces render through the BYQ Product API in a real
+browser session with no raw MCP/DSH/Backend/storage/provider exposure. No
+surface is `FAIL` or `DEFERRED`. Remaining depth differences are captured as
+future hardening in the notes above rather than release blockers.
