@@ -773,6 +773,19 @@ class BacktestJobStore:
             raise BacktestNotFound("backtest job not found")
         return self._public(row)
 
+    def list_backtests(self, *, owner_principal: str | None = None) -> dict[str, object]:
+        with self._lock:
+            if owner_principal:
+                rows = self._connection.execute(
+                    "SELECT * FROM backtest_jobs WHERE owner_principal = ? ORDER BY created_at DESC, job_id DESC LIMIT 200",
+                    (owner_principal,),
+                ).fetchall()
+            else:
+                rows = self._connection.execute(
+                    "SELECT * FROM backtest_jobs ORDER BY created_at DESC, job_id DESC LIMIT 200"
+                ).fetchall()
+        return {"backtests": [self._public(row) for row in rows]}
+
     def request(self, job_id: object) -> dict[str, object]:
         job_id = _text(job_id, field="job_id", max_length=64)
         with self._lock:

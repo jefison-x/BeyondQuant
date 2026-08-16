@@ -349,6 +349,19 @@ class ResearchStore:
             raise ResearchNotFound("research task not found")
         return self._task_row(row)
 
+    def list_tasks(self, *, owner_principal: str | None = None) -> dict[str, object]:
+        with self._lock:
+            if owner_principal:
+                rows = self._connection.execute(
+                    "SELECT * FROM research_tasks WHERE owner_principal = ? ORDER BY created_at DESC, task_id DESC LIMIT 200",
+                    (owner_principal,),
+                ).fetchall()
+            else:
+                rows = self._connection.execute(
+                    "SELECT * FROM research_tasks ORDER BY created_at DESC, task_id DESC LIMIT 200"
+                ).fetchall()
+        return {"tasks": [self._task_row(row) for row in rows]}
+
     def create_experiment(self, payload: object) -> dict[str, object]:
         data = self._experiment_payload(payload)
         request_hash = _hash_request(data)
@@ -399,6 +412,19 @@ class ResearchStore:
         if row is None:
             raise ResearchNotFound("experiment not found")
         return self._experiment_row(row)
+
+    def list_experiments(self, *, owner_principal: str | None = None) -> dict[str, object]:
+        with self._lock:
+            if owner_principal:
+                rows = self._connection.execute(
+                    "SELECT * FROM experiments WHERE owner_principal = ? ORDER BY created_at DESC, experiment_id DESC LIMIT 200",
+                    (owner_principal,),
+                ).fetchall()
+            else:
+                rows = self._connection.execute(
+                    "SELECT * FROM experiments ORDER BY created_at DESC, experiment_id DESC LIMIT 200"
+                ).fetchall()
+        return {"experiments": [self._experiment_row(row) for row in rows]}
 
     def create_artifact(self, payload: object) -> dict[str, object]:
         data = self._artifact_payload(payload)

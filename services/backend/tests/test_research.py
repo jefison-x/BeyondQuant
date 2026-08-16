@@ -163,3 +163,17 @@ def test_artifact_content_hash_is_canonical_across_object_key_order(tmp_path) ->
     )
     assert first["content_sha256"] == second["content_sha256"]
     store.close()
+
+
+def test_list_tasks_and_experiments_are_owner_scoped(tmp_path) -> None:
+    store = ResearchStore(tmp_path / "domain.sqlite3")
+    task = store.create_task(task_payload(idempotency_key="task-list-1"))
+    experiment = store.create_experiment(experiment_payload(task["task_id"], idempotency_key="experiment-list-1"))
+
+    listed_tasks = store.list_tasks(owner_principal="product-user")
+    listed_experiments = store.list_experiments(owner_principal="product-user")
+    assert listed_tasks["tasks"][0]["task_id"] == task["task_id"]
+    assert listed_experiments["experiments"][0]["experiment_id"] == experiment["experiment_id"]
+    assert store.list_tasks(owner_principal="someone-else")["tasks"] == []
+    assert store.list_experiments(owner_principal="someone-else")["experiments"] == []
+    store.close()

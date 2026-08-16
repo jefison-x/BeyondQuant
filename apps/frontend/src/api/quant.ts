@@ -37,3 +37,15 @@ export function cancelBacktest(jobId: string, token: string): Promise<BacktestJo
 export function exportStrategyVersion(artifactId: string, token: string): Promise<Record<string, unknown>> {
   return request(`/strategies/versions/${encodeURIComponent(artifactId)}/export`, token);
 }
+
+export function listStrategies(token: string): Promise<{ strategies: Array<Record<string, unknown>> }> {
+  return request(`/strategies`, token);
+}
+
+export function listFactors(token: string): Promise<{ factors: Array<Record<string, unknown>> }> {
+  return request(`/factors`, token);
+}
+
+export function listBacktests(token: string): Promise<{ backtests: Array<Record<string, unknown>> }> {
+  return request(`/backtests`, token);
+}

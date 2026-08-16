@@ -107,6 +107,12 @@ async function mockResearchLists(page: Page) {
       body: JSON.stringify({ approvals: [] }),
     }),
   );
+  await page.route("**/api/product/strategies", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ strategies: [] }) }),
+  );
+  await page.route("**/api/product/backtests", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ backtests: [] }) }),
+  );
 }
 
 test("login page requires username and password", async ({ page }) => {

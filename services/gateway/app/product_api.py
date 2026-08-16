@@ -157,12 +157,26 @@ def product_me(request: Request) -> dict[str, object]:
 def product_dashboard(request: Request) -> dict[str, object]:
     _product_principal(request)
     backend = _backend_get("/readyz")
+    headers = _trusted_agent_headers(request)
+    counts: dict[str, object] = {}
+    for path, key in (
+        ("/v1/research/tasks", "tasks"),
+        ("/v1/research/experiments", "experiments"),
+        ("/v1/research/artifacts", "artifacts"),
+        ("/v1/research/backtests", "backtests"),
+    ):
+        try:
+            body = _backend_request("GET", path, headers=headers)
+            counts[key] = len(body.get(key, body.get("artifacts", [])))
+        except ProductError:
+            counts[key] = "unavailable"
     return {
         "status": "ok",
         "resources": {
             "backend": str(backend.get("status", "unknown")),
             "data": "not_loaded",
             "migration": "not_started",
+            "counts": counts,
         },
     }
 
@@ -193,10 +207,28 @@ def product_artifacts(request: Request) -> dict[str, object]:
     return _backend_request("GET", "/v1/research/artifacts", headers=_trusted_agent_headers(request))
 
 
+@router.get("/research/tasks")
+def product_research_tasks(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", "/v1/research/tasks", headers=_trusted_agent_headers(request))
+
+
+@router.get("/research/experiments")
+def product_research_experiments(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", "/v1/research/experiments", headers=_trusted_agent_headers(request))
+
+
 @router.get("/backtests/{job_id}")
 def product_backtest_get(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request("GET", f"/v1/research/backtests/{job_id}")
+
+
+@router.get("/backtests")
+def product_backtests(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", "/v1/research/backtests", headers=_trusted_agent_headers(request))
 
 
 @router.post("/backtests/{job_id}/run")
@@ -215,6 +247,26 @@ def product_backtest_cancel(job_id: str, request: Request) -> dict[str, object]:
 def product_strategy_export(artifact_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request("GET", f"/v1/research/strategies/versions/{artifact_id}/export")
+
+
+@router.get("/strategies")
+def product_strategies(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    body = _backend_request("GET", "/v1/research/artifacts", headers=_trusted_agent_headers(request))
+    artifacts = body.get("artifacts", [])
+    if isinstance(artifacts, list):
+        return {"strategies": [a for a in artifacts if isinstance(a, dict) and a.get("kind") in {"strategy_version", "strategy_draft"}]}
+    return {"strategies": []}
+
+
+@router.get("/factors")
+def product_factors(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    body = _backend_request("GET", "/v1/research/artifacts", headers=_trusted_agent_headers(request))
+    artifacts = body.get("artifacts", [])
+    if isinstance(artifacts, list):
+        return {"factors": [a for a in artifacts if isinstance(a, dict) and a.get("kind") == "factor_result"]}
+    return {"factors": []}
 
 
 @router.get("/approvals/{approval_id}")

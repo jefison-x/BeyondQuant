@@ -330,6 +330,12 @@ def get_research_task(task_id: str) -> dict[str, object]:
     return _research_call(lambda: research_store.get_task(task_id))
 
 
+@app.get("/v1/research/tasks")
+def list_research_tasks(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _research_call(lambda: research_store.list_tasks(owner_principal=context["owner_principal"]))
+
+
 @app.post("/v1/research/tasks/{task_id}/transitions")
 def transition_research_task(task_id: str, payload: dict[str, Any]) -> dict[str, object]:
     return _research_transition("research_task", task_id, payload)
@@ -343,6 +349,12 @@ def create_experiment(payload: dict[str, Any]) -> dict[str, object]:
 @app.get("/v1/research/experiments/{experiment_id}")
 def get_experiment(experiment_id: str) -> dict[str, object]:
     return _research_call(lambda: research_store.get_experiment(experiment_id))
+
+
+@app.get("/v1/research/experiments")
+def list_experiments(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _research_call(lambda: research_store.list_experiments(owner_principal=context["owner_principal"]))
 
 
 @app.post("/v1/research/experiments/{experiment_id}/transitions")
@@ -608,6 +620,12 @@ def create_backtest_job(payload: dict[str, Any]) -> dict[str, object]:
 @app.get("/v1/research/backtests/{job_id}")
 def get_backtest_job(job_id: str) -> dict[str, object]:
     return _backtest_call(lambda: {"job": backtest_store.get(job_id)})
+
+
+@app.get("/v1/research/backtests")
+def list_backtest_jobs(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _backtest_call(lambda: backtest_store.list_backtests(owner_principal=context["owner_principal"]))
 
 
 @app.post("/v1/research/backtests/{job_id}/run")
