@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import type { EChartsOption } from "echarts";
-import { getBacktest } from "@/api/quant";
-import { listArtifacts } from "@/api/research";
+import { getBacktest, listBacktests } from "@/api/quant";
 import { useAuthStore } from "@/stores/auth";
 import ChartWrapper from "@/components/charts/ChartWrapper.vue";
 import MetricCard from "@/components/ui/MetricCard.vue";
@@ -11,15 +10,14 @@ import { formatChinaTime } from "@/time";
 const auth = useAuthStore();
 const loading = ref(true);
 const error = ref("");
-const artifacts = ref<Array<Record<string, unknown>>>([]);
+const backtests = ref<Array<Record<string, unknown>>>([]);
 const selected = ref<Record<string, unknown> | null>(null);
 const job = ref<Awaited<ReturnType<typeof getBacktest>> | null>(null);
 
-const results = computed(() => artifacts.value.filter((artifact) => artifact.kind === "backtest_result"));
-
 const summary = computed(() => {
-  const value = selected.value?.content as { summary?: Record<string, unknown> } | undefined;
-  return value?.summary ?? {};
+  const value = job.value as { summary?: Record<string, unknown> } | null;
+  const selectedSummary = selected.value?.summary as Record<string, unknown> | undefined;
+  return value?.summary ?? selectedSummary ?? {};
 });
 
 const equityOption = computed<EChartsOption>(() => ({
@@ -34,10 +32,10 @@ async function loadList() {
   loading.value = true;
   error.value = "";
   try {
-    const response = await listArtifacts();
-    artifacts.value = response.artifacts;
-    if (results.value.length) {
-      await select(results.value[0]);
+    const response = await listBacktests(auth.token);
+    backtests.value = response.backtests;
+    if (backtests.value.length) {
+      await select(backtests.value[0]);
     }
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "加载失败";
@@ -50,13 +48,13 @@ async function select(row: Record<string, unknown>) {
   selected.value = row;
   job.value = null;
   error.value = "";
-  const content = row.content as { job_id?: string } | undefined;
-  if (!content?.job_id) {
+  const jobId = row.job_id;
+  if (typeof jobId !== "string") {
     error.value = "回测结果缺少 job_id";
     return;
   }
   try {
-    job.value = await getBacktest(content.job_id, auth.token);
+    job.value = await getBacktest(jobId, auth.token);
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "读取回测任务失败";
   }
@@ -78,9 +76,9 @@ onMounted(loadList);
             <small class="card-sub">Artifact kind: backtest_result</small>
           </div>
         </template>
-        <el-empty v-if="!results.length" description="暂无回测结果" />
-        <el-table v-else :data="results" highlight-current-row @current-change="select">
-          <el-table-column prop="artifact_id" label="Artifact ID" min-width="220" show-overflow-tooltip />
+        <el-empty v-if="!backtests.length" description="暂无回测结果" />
+        <el-table v-else :data="backtests" highlight-current-row @current-change="select">
+          <el-table-column prop="job_id" label="Job ID" min-width="220" show-overflow-tooltip />
           <el-table-column prop="status" label="状态" width="110" />
           <el-table-column label="创建时间" min-width="180">
             <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>

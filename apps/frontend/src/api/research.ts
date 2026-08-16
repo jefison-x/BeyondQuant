@@ -24,6 +24,14 @@ export function listArtifacts(): Promise<{ artifacts: Array<Record<string, unkno
   return getJson("/research/artifacts");
 }
 
+export function listTasks(): Promise<{ tasks: Array<Record<string, unknown>> }> {
+  return getJson("/research/tasks");
+}
+
+export function listExperiments(): Promise<{ experiments: Array<Record<string, unknown>> }> {
+  return getJson("/research/experiments");
+}
+
 export function listApprovals(): Promise<{ approvals: Array<Record<string, unknown>> }> {
   return getJson("/approvals");
 }

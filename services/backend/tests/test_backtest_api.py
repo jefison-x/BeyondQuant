@@ -80,6 +80,18 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     fetched = client.get(f"/v1/research/backtests/{job['job_id']}")
     assert fetched.status_code == 200
     assert fetched.json()["job"]["result_artifact_id"].startswith("artifact_")
+    listed = client.get(
+        "/v1/research/backtests",
+        headers={
+            "x-byq-owner-principal": "product-user",
+            "x-byq-actor-principal": "product-user",
+            "x-byq-trace-id": "byq-trace-backtest-api",
+            "x-byq-session-id": "byq-session-backtest-api",
+            "x-byq-dsh-run-id": "byq-run-backtest-api",
+        },
+    )
+    assert listed.status_code == 200
+    assert listed.json()["backtests"][0]["job_id"] == job["job_id"]
     retry = client.post(
         "/v1/research/backtests",
         json={

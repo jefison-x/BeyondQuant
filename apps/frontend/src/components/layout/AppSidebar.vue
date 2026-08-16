@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Menu } from "@element-plus/icons-vue";
+import { Menu, Tools } from "@element-plus/icons-vue";
 import { businessNavGroups, findActiveNavItem } from "@/router/navigation";
 import { useAgentStore } from "@/stores/agent";
+import { useAuthStore } from "@/stores/auth";
 import UserSettingsMenu from "./UserSettingsMenu.vue";
 
 defineProps<{ isCollapsed: boolean }>();
@@ -12,9 +13,23 @@ const emit = defineEmits<{ (event: "toggle-collapse"): void }>();
 const route = useRoute();
 const router = useRouter();
 const agent = useAgentStore();
+const auth = useAuthStore();
 
 const activeIndex = computed(() => findActiveNavItem(route.path));
 const openGroups = businessNavGroups.map((group) => group.index);
+const navGroups = computed(() =>
+  auth.isAdmin
+    ? [
+        ...businessNavGroups,
+        {
+          index: "admin-ops",
+          label: "系统运维",
+          icon: Tools,
+          items: [{ to: "/admin/database", label: "运维管理", icon: Tools }],
+        },
+      ]
+    : businessNavGroups,
+);
 
 function handleMenuSelect(index: string) {
   if (route.path !== index) {
@@ -56,7 +71,7 @@ function openSession(sessionId: string) {
       class="sidebar-menu"
       @select="handleMenuSelect"
     >
-      <el-sub-menu v-for="group in businessNavGroups" :key="group.index" :index="group.index">
+      <el-sub-menu v-for="group in navGroups" :key="group.index" :index="group.index">
         <template #title>
           <el-icon><component :is="group.icon" /></el-icon>
           <span>{{ group.label }}</span>

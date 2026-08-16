@@ -1,154 +1,207 @@
-# Community Frontend Parity Plan
+# Community Parity Delivery Plan
 
 Status: `PLANNED`
 
-This plan restores the Community frontend's user features, information
-architecture, and interaction patterns in the new BeyondQuant frontend while
-keeping the new BYQ architecture intact:
+This plan restores Community user features in BeyondQuant while preserving the
+new architecture:
 
 ```text
 Browser -> BYQ Product API / Gateway -> BYQ domain or Runtime Adapter
         -> MCP / Backend / DSH behind accepted boundaries
 ```
 
-Community source is read-only reference at
-`/home/jefison/projects/BeyondQuant-community/frontend`. Port visual language,
-layout, and UX only after classification. No Community API, event schema,
-storage, provider, or runtime coupling is reintroduced.
+Every phase must deliver three layers together:
+
+1. Frontend page/UX aligned with the Community reference.
+2. Product API and Backend capability behind that page.
+3. Community-derived contract/regression tests plus BYQ Playwright coverage.
+
+No phase is complete with a page-only shell or placeholder business state.
 
 ## Guiding rules
 
 - One phase per isolated worktree/branch/Draft PR.
-- Build one block, test its business capabilities before moving on.
-- No placeholder-only or fake completion.
-- Product/Admin UI must use BYQ Product API and normalized projections only.
-- Time values are rendered in `Asia/Shanghai` by default.
-- Durable browser session survives page refresh.
+- Build one business block, test its business capabilities, then stop at the
+  human merge gate.
+- Community source is read-only reference; port logic/tests only after the
+  inspect -> classify -> extract invariants -> implement sequence.
+- BaoStock, AKShare, VectorBT, PydanticAI, Hermes, and old raw API/event/DB
+  coupling remain `DROP` or `REPLACE`.
+- Browser time values use `Asia/Shanghai`.
+- Durable browser session survives refresh.
 
 ## Phase 1 - Session reliability and timezone
 
-Scope:
+Frontend:
 
-- Fix auth bootstrap so a valid `byq_session` cookie survives refresh without
-  redirecting to login.
-- Introduce shared China-time formatting and apply it to `created_at` /
-  `updated_at` columns in Home, Strategy, Backtest, and Research views.
+- Fix auth bootstrap refresh redirect.
+- China-time formatting.
 
-Tests:
+Backend/Product API:
 
-- Playwright: login, reload page, assert dashboard remains authenticated.
-- Unit test for the China-time formatter.
-
-## Phase 2 - Admin operations workspace
-
-Community reference:
-
-- `components/layout/OpsLayout.vue`, `OpsSidebar.vue`
-- `views/operations/*.vue`
-
-Scope:
-
-- Build a role-protected Admin/Ops shell with grouped sidebar:
-  - 基础设施: 数据库管理, 数据源管理, 缓存管理
-  - 智能体平台: 模型运维, 智能体运维, 执行预算, 运行诊断, Graph 工作流
-  - 权限与审计: 权限与审计
-- Build each page with BYQ Product API projections; add gateway/backend
-  endpoints only where a real capability already exists.
-- Protect destructive actions; keep read-only diagnostics safe.
+- `/api/auth/me` returns a durable subject and role.
 
 Tests:
 
-- Product API contract fixtures for each operations projection.
-- Playwright admin journey: login as admin, open each operations page,
-  verify loading/empty/error/success states.
-- Secret-boundary assertions.
+- Playwright reload-after-login.
+- Time formatter unit test.
+
+Status: merged in PR #34.
+
+## Phase 2 - Admin operations workspace and operations projections
+
+Frontend:
+
+- Role-protected `OpsLayout + OpsSidebar`.
+- Nine operations pages: database, sources, cache, models, agents, budget,
+  runtime, graphs, access.
+
+Backend/Product API:
+
+- Add owner-scoped list projections used by operations and research pages:
+  - `GET /api/product/research/tasks`
+  - `GET /api/product/research/experiments`
+  - `GET /api/product/backtests`
+  - `GET /api/product/strategies`
+  - `GET /api/product/factors`
+- Add a real dashboard aggregation endpoint:
+  - `GET /api/product/dashboard` returns counts/status from BYQ stores.
+- Keep destructive operations read-only behind RBAC.
+
+Community tests to port/adapt:
+
+- Research transition/idempotency regression ideas.
+- Backtest job/retry/resource regression ideas.
+- Owner/actor authorization assertions.
+
+Tests:
+
+- Product API contract tests for every new list/aggregation endpoint.
+- Playwright admin journey and list/empty/error states.
 
 ## Phase 3 - Home dashboard parity
 
-Community reference: `views/HomeView.vue`
+Frontend:
 
-Scope:
+- Community Home cards: strategies, backtests, stock pools, cache coverage,
+  system health, quick actions, recent results, resource bars.
 
-- Strategy, backtest, stock-pool, cache coverage, and system health cards.
-- Quick actions, recent results, resource bars, partial-failure messaging.
-- Reuse the existing Product dashboard/data/status endpoints; add list
-  projections as needed.
+Backend/Product API:
+
+- Dashboard aggregation from BYQ stores (strategy/backtest/pool/artifact
+  counts, recent items, data status).
+- Health/status projections from real service readiness.
+
+Community tests to port/adapt:
+
+- Partial-failure summary semantics.
+- Asset/resource count regression expectations.
 
 Tests:
 
-- Playwright dashboard with mocked/real Product API, partial failure cases.
+- Dashboard aggregation contract tests.
+- Playwright dashboard partial-failure journeys.
 
 ## Phase 4 - Agent research workbench parity
 
-Community reference: `views/AgentView.vue`, `components/agent/*.vue`
+Frontend:
 
-Scope:
+- Conversation-first flow, session history, streaming WorkflowTrace, thinking
+  steps, artifact cards, approvals, backtest context.
 
-- Conversation-first flow, session history, streaming normalized
-  WorkflowTrace events, thinking steps, artifact cards, approvals.
-- Backtest context pane and composer.
+Backend/Product API:
+
+- Session list/projection, turn/resume/cancel already exists; add normalized
+  event replay where required.
+- Approval inbox/decision projections.
+
+Community tests to port/adapt:
+
+- Approval policy/audit invariants.
+- Session history and recovery expectations.
 
 Tests:
 
 - Agent session/turn contract tests.
-- Playwright stream, history, approval, and empty/error states.
+- Playwright stream/history/approval/error states.
 
 ## Phase 5 - Strategy and Backtest workspaces
 
-Community reference: `views/StrategyView.vue`, `views/BacktestView.vue`
+Frontend:
 
-Scope:
+- Strategy list/detail, Python editor, templates, validation, version history.
+- Backtest task list/filters/compare/preflight/result detail with charts,
+  trades, positions, returns, logs, metrics.
 
-- Strategy list/detail split, Python editor, templates/snippets, validation,
-  version inspection, save/delete.
-- Backtest task table, filters, comparison, preflight, result detail with
-  equity curve, trades, daily positions/returns, logs, metrics.
+Backend/Product API:
+
+- Strategy list/version/export/validation endpoints.
+- Backtest list/submit/run/cancel/result endpoints.
+- Content-addressed manifests and immutable result references.
+
+Community tests to port/adapt:
+
+- Strategy version snapshot tests.
+- Backtest input manifest tests.
+- Native A-share execution golden regression tests.
+- Backtest result object integrity tests.
 
 Tests:
 
-- Strategy version/validation/export contract tests.
-- Backtest run/cancel/result projection tests.
+- Product API contract tests for strategy/backtest.
 - Playwright list/detail/editor/compare journeys.
 
 ## Phase 6 - Stock Pool and Paper Trading
 
-Community reference: `views/StockPoolView.vue`, `views/PaperTradingView.vue`
+Frontend:
 
-Scope:
-
-- Pool catalog, create dialog, membership tabs, snapshots, weights, mobile
-  cards.
+- Pool catalog, create dialog, membership, snapshots, weights, mobile cards.
 - Paper accounts, positions, orders, ledger, snapshots, strategy tracking,
   risk controls.
 
+Backend/Product API:
+
+- Stock pool list/version/membership endpoints.
+- Paper account list, order, position/ledger/snapshot endpoints.
+
+Community tests to port/adapt:
+
+- Stock pool version snapshot tests.
+- Universe authorization guard tests.
+- Paper trade/risk semantics.
+
 Tests:
 
-- Paper domain contract tests.
-- Playwright create/list/detail flows and owner isolation.
+- Paper/pool contract tests.
+- Playwright create/list/detail and owner isolation.
 
 ## Phase 7 - My Space pages
 
-Community reference:
+Frontend:
 
-- `views/UserAssetsView.vue`, `UserModelsView.vue`,
-  `UserAgentPolicyView.vue`, `UserProfileView.vue`
+- Split assets, models, agent policy, profile pages.
 
-Scope:
+Backend/Product API:
 
-- Split current Settings into durable My Space entries: assets, models,
-  agent policy, profile.
-- Secret-safe masked model settings; write-only credentials.
+- Durable profile/preferences endpoints.
+- Masked model credential endpoints.
+- Owner-scoped asset index/export/import.
+
+Community tests to port/adapt:
+
+- Asset bundle determinism/secret exclusion tests.
+- Object lifecycle ownership tests.
 
 Tests:
 
 - Settings/profile/asset contract tests.
-- Playwright masked secret fields and owner scoping.
+- Playwright masked secrets and owner scoping.
 
 ## Phase 8 - Release parity and browser evidence
 
 Scope:
 
-- Run the full Community feature checklist.
+- Full Community feature checklist.
 - Chrome MCP review of every restored page.
 - Playwright golden journey through real Product API.
 - Update `COMMUNITY_FEATURE_PARITY_MATRIX_V2.md`.

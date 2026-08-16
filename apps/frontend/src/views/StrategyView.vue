@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { getResearchEntity, exportStrategyVersion } from "@/api/quant";
-import { listArtifacts } from "@/api/research";
+import { getResearchEntity, exportStrategyVersion, listStrategies } from "@/api/quant";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 
@@ -19,8 +18,8 @@ async function loadList() {
   loading.value = true;
   error.value = "";
   try {
-    const response = await listArtifacts();
-    artifacts.value = response.artifacts;
+    const response = await listStrategies(auth.token);
+    artifacts.value = response.strategies;
     if (strategies.value.length) {
       await select(strategies.value[0]);
     }

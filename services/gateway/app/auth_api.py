@@ -55,4 +55,9 @@ def me(request: Request) -> JSONResponse:
         user = resolve_user(request)
     except ProductAuthError as exc:
         return JSONResponse(status_code=exc.status_code, content={"error": {"code": exc.code, "message": exc.message}})
-    return JSONResponse(content={"subject": str(user.get("username") or user.get("user_id"))})
+    return JSONResponse(
+        content={
+            "subject": str(user.get("username") or user.get("user_id")),
+            "role": str(user.get("role") or "user"),
+        }
+    )
