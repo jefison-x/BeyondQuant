@@ -117,6 +117,12 @@ onMounted(loadList);
             <MetricCard label="Max Drawdown" :value="String(summary.max_drawdown ?? 'n/a')" />
             <MetricCard label="Trade Count" :value="String(summary.trade_count ?? 'n/a')" />
             <MetricCard label="Status" :value="String(job.status ?? 'unknown')" />
+            <MetricCard label="Attempts" :value="String(job.attempts ?? '-')" />
+            <MetricCard label="Max Attempts" :value="String(job.max_attempts ?? '-')" />
+          </div>
+          <div class="status-list">
+            <div><span>Error Code</span><strong>{{ job.error_code ?? "-" }}</strong></div>
+            <div><span>Error Message</span><strong>{{ job.error_message ?? "-" }}</strong></div>
           </div>
           <ChartWrapper :option="equityOption" empty />
           <details class="quant-result">
