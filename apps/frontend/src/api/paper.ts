@@ -5,8 +5,8 @@ const ROOT = "/api/product/paper";
 async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${ROOT}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
-      Authorization: `Bearer ${token}`,
       "content-type": "application/json",
       ...(init.headers ?? {}),
     },

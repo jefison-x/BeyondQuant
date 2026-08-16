@@ -13,7 +13,7 @@ describe("quant api client", () => {
     expect(entity).toMatchObject({ artifact_id: "artifact_1" });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/research/artifacts/artifact_1",
-      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer test-token" }) }),
+      expect.objectContaining({ credentials: "include" }),
     );
   });
 

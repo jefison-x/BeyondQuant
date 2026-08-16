@@ -1,16 +1,32 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-test("login page requires a product token", async ({ page }) => {
+async function login(page: Page) {
+  await page.route("**/api/auth/login", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ user: { subject: "testuser" }, session_id: "session-test" }),
+      headers: { "set-cookie": "byq_session=session-test; Path=/; HttpOnly; SameSite=Lax" },
+    }),
+  );
+  await page.route("**/api/auth/me", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ subject: "testuser" }) }),
+  );
+  await page.goto("/login");
+  await page.getByLabel("用户名").fill("testuser");
+  await page.getByLabel("密码").fill("password123");
+  await page.getByRole("button", { name: "进入" }).click();
+  await expect(page).toHaveURL(/\/$/);
+}
+
+test("login page requires username and password", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "BeyondQuant Next" })).toBeVisible();
   await page.getByRole("button", { name: "进入" }).click();
-  await expect(page.getByText("请输入产品访问令牌")).toBeVisible();
+  await expect(page.getByText("请输入用户名和密码")).toBeVisible();
 });
 
 test("authenticated dashboard shows resource cards", async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("byq-product-token", "product-test-token");
-  });
   await page.route("**/api/product/dashboard", (route) =>
     route.fulfill({
       status: 200,
@@ -18,14 +34,11 @@ test("authenticated dashboard shows resource cards", async ({ page }) => {
       body: JSON.stringify({ status: "ok", resources: { backend: "ok", data: "not_loaded", migration: "not_started" } }),
     }),
   );
-  await page.goto("/");
+  await login(page);
   await expect(page.getByText("backend")).toBeVisible();
 });
 
 test("agent workbench renders a normalized BYQ workflow surface", async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("byq-product-token", "product-test-token");
-  });
   await page.route("**/v1/agent/sessions", (route) =>
     route.fulfill({
       status: 201,
@@ -40,15 +53,14 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
       body: 'data: {"kind":"session.ready","source":"runtime-adapter"}\n\n',
     }),
   );
+  await login(page);
   await page.goto("/agent");
   await expect(page.getByRole("heading", { name: "研究对话" })).toBeVisible();
   await expect(page.getByText("session.ready")).toBeVisible();
 });
 
 test("quant workspace renders factor, strategy, and backtest tabs", async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("byq-product-token", "product-test-token");
-  });
+  await login(page);
   await page.goto("/quant");
   await expect(page.getByRole("heading", { name: "量化工作台" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Factor" })).toBeVisible();
@@ -57,9 +69,6 @@ test("quant workspace renders factor, strategy, and backtest tabs", async ({ pag
 });
 
 test("settings page renders masked platform status", async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("byq-product-token", "product-test-token");
-  });
   await page.route("**/api/product/settings/status", (route) =>
     route.fulfill({
       status: 200,
@@ -73,6 +82,7 @@ test("settings page renders masked platform status", async ({ page }) => {
       }),
     }),
   );
+  await login(page);
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "用户与平台设置" })).toBeVisible();
   await page.getByRole("button", { name: "Data" }).click();
@@ -80,9 +90,7 @@ test("settings page renders masked platform status", async ({ page }) => {
 });
 
 test("paper trading and stock pool pages render", async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("byq-product-token", "product-test-token");
-  });
+  await login(page);
   await page.goto("/paper-trading");
   await expect(page.getByRole("heading", { name: "模拟交易" })).toBeVisible();
   await page.goto("/stock-pool");
@@ -90,9 +98,6 @@ test("paper trading and stock pool pages render", async ({ page }) => {
 });
 
 test("operations page renders safe status projection", async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("byq-product-token", "product-test-token");
-  });
   await page.route("**/api/product/operations/status", (route) =>
     route.fulfill({
       status: 200,
@@ -106,15 +111,13 @@ test("operations page renders safe status projection", async ({ page }) => {
       }),
     }),
   );
+  await login(page);
   await page.goto("/operations");
   await expect(page.getByRole("heading", { name: "Operations 状态" })).toBeVisible();
   await expect(page.getByText("runtime-adapter")).toBeVisible();
 });
 
 test("golden journey covers login, dashboard, agent, quant, settings, and operations", async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("byq-product-token", "product-test-token");
-  });
   await page.route("**/api/product/dashboard", (route) =>
     route.fulfill({
       status: 200,
@@ -149,7 +152,7 @@ test("golden journey covers login, dashboard, agent, quant, settings, and operat
     }),
   );
 
-  await page.goto("/");
+  await login(page);
   await expect(page.getByRole("heading", { name: "首页" })).toBeVisible();
   await page.goto("/agent");
   await expect(page.getByRole("heading", { name: "研究对话" })).toBeVisible();

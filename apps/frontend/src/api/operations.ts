@@ -2,7 +2,7 @@ import type { OperationsStatus } from "./types";
 
 export async function getOperationsStatus(token: string): Promise<OperationsStatus> {
   const response = await fetch("/api/product/operations/status", {
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: "include",
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: { message?: string } };

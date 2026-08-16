@@ -53,6 +53,14 @@ from .paper_trading import (
     PaperTradingPersistenceError,
     PaperTradingStore,
 )
+from .user_auth import (
+    UserAuthError,
+    UserAuthPersistenceError,
+    UserAuthStore,
+    UserConflict,
+    UserForbidden,
+    UserNotFound,
+)
 from .research import (
     IdempotencyConflict,
     InvalidTransition,
@@ -80,6 +88,12 @@ agent_store = AgentResearchStore.from_env()
 learning_store = LearningLoopStore.from_env(research_store)
 engineering_store = EngineeringTaskStore.from_env()
 paper_store = PaperTradingStore.from_env()
+user_store = UserAuthStore.from_env()
+if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
+    user_store.ensure_bootstrap_admin(
+        os.environ["BYQ_BOOTSTRAP_ADMIN_USERNAME"],
+        os.environ["BYQ_BOOTSTRAP_ADMIN_PASSWORD"],
+    )
 backtest_store = BacktestJobStore.from_env()
 backtest_objects = LocalObjectStore.from_env()
 
@@ -230,6 +244,21 @@ def _paper_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]
         raise HTTPException(status_code=409, detail=str(error)) from error
     except PaperTradingPersistenceError as error:
         raise HTTPException(status_code=503, detail="paper trading storage is unavailable") from error
+
+
+def _user_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except UserForbidden as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except UserNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except UserConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except UserAuthPersistenceError as error:
+        raise HTTPException(status_code=503, detail="user storage is unavailable") from error
 
 
 def _agent_context(request: Request, payload: dict[str, Any]) -> dict[str, str | None]:
@@ -944,3 +973,39 @@ def list_paper_orders(account_id: str, request: Request) -> dict[str, object]:
         account_id,
         trusted_owner=context["owner_principal"],
     ))
+
+
+@app.post("/v1/auth/login")
+def login(payload: dict[str, Any]) -> dict[str, object]:
+    return _user_call(lambda: user_store.login(payload.get("username"), payload.get("password")))
+
+
+@app.post("/v1/auth/logout")
+def logout(payload: dict[str, Any]) -> dict[str, object]:
+    return _user_call(lambda: user_store.logout(payload.get("session_id")))
+
+
+@app.get("/v1/auth/session")
+def get_session(request: Request) -> dict[str, object]:
+    session_id = request.headers.get("x-byq-session-id")
+    if not session_id:
+        raise HTTPException(status_code=401, detail="session required")
+    return _user_call(lambda: {"user": user_store.get_session_user(session_id)})
+
+
+@app.post("/v1/users", status_code=201)
+def create_user(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    actor_role = request.headers.get("x-byq-actor-role")
+    return _user_call(lambda: {"user": user_store.create_user(payload, actor_role=actor_role)})
+
+
+@app.get("/v1/users")
+def list_users(request: Request) -> dict[str, object]:
+    actor_role = request.headers.get("x-byq-actor-role")
+    return _user_call(lambda: user_store.list_users(actor_role=actor_role))
+
+
+@app.post("/v1/users/{user_id}/disable")
+def disable_user(user_id: str, request: Request) -> dict[str, object]:
+    actor_role = request.headers.get("x-byq-actor-role")
+    return _user_call(lambda: {"user": user_store.disable_user(user_id, actor_role=actor_role)})

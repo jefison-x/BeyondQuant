@@ -22,5 +22,9 @@ describe("settings api client", () => {
     expect(status.model_provider.configured).toBe(false);
     expect(JSON.stringify(status)).not.toContain("token");
     expect(JSON.stringify(status)).not.toContain("secret");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/settings/status",
+      expect.objectContaining({ credentials: "include" }),
+    );
   });
 });

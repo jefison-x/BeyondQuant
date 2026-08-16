@@ -13,7 +13,7 @@ describe("product api client", () => {
     expect(result.status).toBe("ok");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/health",
-      expect.objectContaining({ headers: { Authorization: "Bearer test-token" } }),
+      expect.objectContaining({ credentials: "include" }),
     );
   });
 
