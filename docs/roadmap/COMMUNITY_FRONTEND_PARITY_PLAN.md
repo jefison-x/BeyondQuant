@@ -1,6 +1,6 @@
 # Community Parity Delivery Plan
 
-Status: `PLANNED`
+Status: `COMPLETE`
 
 This plan restores Community user features in BeyondQuant while preserving the
 new architecture:
@@ -79,6 +79,8 @@ Tests:
 - Product API contract tests for every new list/aggregation endpoint.
 - Playwright admin journey and list/empty/error states.
 
+Status: merged in PR #35.
+
 ## Phase 3 - Home dashboard parity
 
 Frontend:
@@ -102,6 +104,8 @@ Tests:
 - Dashboard aggregation contract tests.
 - Playwright dashboard partial-failure journeys.
 
+Status: merged in PR #36 and #37.
+
 ## Phase 4 - Agent research workbench parity
 
 Frontend:
@@ -124,6 +128,8 @@ Tests:
 
 - Agent session/turn contract tests.
 - Playwright stream/history/approval/error states.
+
+Status: merged in PR #38, #39, #40, and #41.
 
 ## Phase 5 - Strategy and Backtest workspaces
 
@@ -151,6 +157,8 @@ Tests:
 - Product API contract tests for strategy/backtest.
 - Playwright list/detail/editor/compare journeys.
 
+Status: merged in PR #42, #43, #44, #45, and #46.
+
 ## Phase 6 - Stock Pool and Paper Trading
 
 Frontend:
@@ -175,6 +183,8 @@ Tests:
 - Paper/pool contract tests.
 - Playwright create/list/detail and owner isolation.
 
+Status: merged in PR #47.
+
 ## Phase 7 - My Space pages
 
 Frontend:
@@ -197,6 +207,8 @@ Tests:
 - Settings/profile/asset contract tests.
 - Playwright masked secrets and owner scoping.
 
+Status: merged in PR #48.
+
 ## Phase 8 - Release parity and browser evidence
 
 Scope:
@@ -206,4 +218,9 @@ Scope:
 - Playwright golden journey through real Product API.
 - Update `COMMUNITY_FEATURE_PARITY_MATRIX_V2.md`.
 
+Status: merged in PR #49.
+
 Each phase stops at a Draft PR and the human merge gate.
+
+All Community Parity Delivery Plan phases are complete. The product now waits
+on the human v1.0 RC review gate described in `docs/roadmap/STATUS.md`.
