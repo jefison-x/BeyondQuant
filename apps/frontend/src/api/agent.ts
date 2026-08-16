@@ -23,6 +23,10 @@ export function createAgentSession(token: string): Promise<AgentSession> {
   return jsonRequest<AgentSession>(`${AGENT_ROOT}/sessions`, token, { method: "POST" });
 }
 
+export function listAgentSessions(token: string): Promise<{ sessions: AgentSession[] }> {
+  return jsonRequest<{ sessions: AgentSession[] }>(`${AGENT_ROOT}/sessions`, token);
+}
+
 export function submitTurn(
   sessionId: string,
   content: string,
