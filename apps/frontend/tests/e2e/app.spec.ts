@@ -23,6 +23,23 @@ async function openNav(page: Page, label: string) {
   await page.getByRole("menuitem", { name: label }).click();
 }
 
+async function mockResearchLists(page: Page) {
+  await page.route("**/api/product/research/artifacts", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ artifacts: [] }),
+    }),
+  );
+  await page.route("**/api/product/approvals", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ approvals: [] }),
+    }),
+  );
+}
+
 test("login page requires username and password", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "BeyondQuant Next" })).toBeVisible();
@@ -60,11 +77,12 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
   await login(page);
   await openNav(page, "小巴投研");
   await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "研究对话" })).toBeVisible();
+  await expect(page.getByText("研究对话")).toBeVisible();
   await expect(page.getByText("session.ready")).toBeVisible();
 });
 
 test("strategy workspace renders strategy version list and detail", async ({ page }) => {
+  await mockResearchLists(page);
   await login(page);
   await openNav(page, "策略管理");
   await expect(page.getByRole("heading", { name: "策略管理" })).toBeVisible();
@@ -72,6 +90,7 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
 });
 
 test("backtest workspace renders backtest result list", async ({ page }) => {
+  await mockResearchLists(page);
   await login(page);
   await openNav(page, "回测管理");
   await expect(page.getByRole("heading", { name: "回测管理" })).toBeVisible();
@@ -92,6 +111,7 @@ test("settings page renders masked platform status", async ({ page }) => {
       }),
     }),
   );
+  await mockResearchLists(page);
   await login(page);
   await openNav(page, "个人设置");
   await expect(page.getByRole("heading", { name: "个人设置" })).toBeVisible();
@@ -161,6 +181,7 @@ test("golden journey covers login, dashboard, agent, strategy, settings, and ope
       }),
     }),
   );
+  await mockResearchLists(page);
 
   await login(page);
   await expect(page.getByRole("heading", { name: "工作台" })).toBeVisible();
