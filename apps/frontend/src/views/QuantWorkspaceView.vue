@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import {
   cancelBacktest,
   exportStrategyVersion,
@@ -20,6 +20,19 @@ const jobId = ref("");
 const result = ref<unknown>(null);
 const error = ref("");
 const busy = ref(false);
+
+const backtest = computed(() =>
+  result.value as { status?: string; summary?: { total_return?: number; max_drawdown?: number } } | null,
+);
+const backtestStatus = computed(() => backtest.value?.status ?? "unknown");
+const totalReturn = computed(() => backtest.value?.summary?.total_return ?? "n/a");
+const maxDrawdown = computed(() => backtest.value?.summary?.max_drawdown ?? "n/a");
+const equityOption = computed(() => ({
+  title: { text: "Equity Curve" },
+  xAxis: { type: "category", data: [] },
+  yAxis: { type: "value" },
+  series: [{ type: "line", data: [] }],
+}));
 
 async function loadEntity() {
   await run(async () => {
@@ -99,17 +112,11 @@ async function run(operation: () => Promise<unknown>) {
     <p v-if="error" class="page-error">{{ error }}</p>
     <div v-if="result && tab === 'backtest'" class="backtest-result">
       <div class="metric-grid">
-        <MetricCard label="Status" :value="String((result as { status?: string }).status ?? 'unknown')" />
-        <MetricCard
-          label="Total Return"
-          :value="String((result as { summary?: { total_return?: number } }).summary?.total_return ?? 'n/a')"
-        />
-        <MetricCard
-          label="Max Drawdown"
-          :value="String((result as { summary?: { max_drawdown?: number } }).summary?.max_drawdown ?? 'n/a')"
-        />
+        <MetricCard label="Status" :value="backtestStatus" />
+        <MetricCard label="Total Return" :value="String(totalReturn)" />
+        <MetricCard label="Max Drawdown" :value="String(maxDrawdown)" />
       </div>
-      <ChartWrapper :option="{ title: { text: 'Equity Curve' }, xAxis: { type: 'category', data: [] }, yAxis: { type: 'value' }, series: [{ type: 'line', data: [] }] }" empty />
+      <ChartWrapper :option="equityOption" empty />
     </div>
     <pre v-else-if="result" class="quant-result">{{ JSON.stringify(result, null, 2) }}</pre>
   </section>
