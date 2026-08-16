@@ -15,6 +15,7 @@ const selected = ref<Record<string, unknown> | null>(null);
 const job = ref<Awaited<ReturnType<typeof getBacktest>> | null>(null);
 const statusFilter = ref("");
 const search = ref("");
+const showPreflight = ref(false);
 const filteredBacktests = computed(() =>
   backtests.value.filter((row) => {
     const matchesStatus = !statusFilter.value || row.status === statusFilter.value;
@@ -22,6 +23,14 @@ const filteredBacktests = computed(() =>
     return matchesStatus && matchesSearch;
   }),
 );
+const compareIds = ref<string[]>([]);
+const compareJobs = computed(() =>
+  backtests.value.filter((row) => compareIds.value.includes(String(row.job_id))),
+);
+const preflight = computed(() => {
+  const value = job.value as { input_manifest?: Record<string, unknown> } | null;
+  return value?.input_manifest ?? {};
+});
 
 const summary = computed(() => {
   const value = job.value as { summary?: Record<string, unknown> } | null;
@@ -100,6 +109,14 @@ onMounted(loadList);
             <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
           </el-table-column>
         </el-table>
+        <div class="page-toolbar">
+          <el-button
+            :disabled="filteredBacktests.length < 2"
+            @click="compareIds = filteredBacktests.slice(0, 2).map((row) => String(row.job_id))"
+          >
+            对比前两个任务
+          </el-button>
+        </div>
       </el-card>
 
       <el-card shadow="never" class="backtest-detail-pane">
@@ -124,7 +141,18 @@ onMounted(loadList);
             <div><span>Error Code</span><strong>{{ job.error_code ?? "-" }}</strong></div>
             <div><span>Error Message</span><strong>{{ job.error_message ?? "-" }}</strong></div>
           </div>
+          <el-dialog v-model="showPreflight" title="Preflight 摘要" width="720px">
+            <pre class="quant-result">{{ JSON.stringify(preflight, null, 2) }}</pre>
+          </el-dialog>
+          <el-button @click="showPreflight = true">Preflight</el-button>
           <ChartWrapper :option="equityOption" empty />
+          <div v-if="compareJobs.length" class="compare-grid">
+            <div v-for="item in compareJobs" :key="String(item.job_id)" class="compare-card">
+              <strong>{{ item.job_id }}</strong>
+              <span>Status: {{ item.status }}</span>
+              <span>Summary: {{ JSON.stringify(item.summary ?? {}) }}</span>
+            </div>
+          </div>
           <details class="quant-result">
             <summary>原始任务投影</summary>
             <pre>{{ JSON.stringify(job, null, 2) }}</pre>
@@ -146,5 +174,20 @@ onMounted(loadList);
   .backtest-workbench {
     grid-template-columns: 1fr;
   }
+}
+
+.compare-grid {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.compare-card {
+  background: var(--byq-surface-subtle);
+  border: 1px solid var(--byq-border-subtle);
+  border-radius: var(--byq-radius-sm);
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.65rem;
 }
 </style>
