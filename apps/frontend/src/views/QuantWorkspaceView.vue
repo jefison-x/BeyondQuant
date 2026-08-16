@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import type { EChartsOption } from "echarts";
 import {
   cancelBacktest,
   exportStrategyVersion,
@@ -27,11 +28,11 @@ const backtest = computed(() =>
 const backtestStatus = computed(() => backtest.value?.status ?? "unknown");
 const totalReturn = computed(() => backtest.value?.summary?.total_return ?? "n/a");
 const maxDrawdown = computed(() => backtest.value?.summary?.max_drawdown ?? "n/a");
-const equityOption = computed(() => ({
+const equityOption = computed<EChartsOption>(() => ({
   title: { text: "Equity Curve" },
-  xAxis: { type: "category", data: [] },
-  yAxis: { type: "value" },
-  series: [{ type: "line", data: [] }],
+  xAxis: { type: "category" as const, data: [] as string[] },
+  yAxis: { type: "value" as const },
+  series: [{ type: "line" as const, data: [] as number[] }],
 }));
 
 async function loadEntity() {
