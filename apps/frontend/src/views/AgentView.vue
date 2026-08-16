@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import {
   cancelSession,
@@ -20,6 +20,11 @@ const prompt = ref("");
 const error = ref("");
 const busy = ref(false);
 const approvals = ref<Array<Record<string, unknown>>>([]);
+const thinkingSteps = computed(() =>
+  agent.events
+    .filter((event) => typeof event.payload?.text === "string")
+    .map((event) => ({ kind: event.kind, text: String(event.payload?.text) })),
+);
 
 function handleEvent(event: Parameters<typeof agent.addEvent>[0]) {
   agent.addEvent(event);
@@ -139,6 +144,17 @@ onMounted(() => {
       <template #header>
         <span class="panel-title">WorkflowTrace</span>
       </template>
+      <div class="panel-heading">
+        <span class="panel-title">思考步骤</span>
+        <el-tag>{{ thinkingSteps.length }}</el-tag>
+      </div>
+      <el-empty v-if="!thinkingSteps.length" description="暂无思考步骤" />
+      <el-collapse v-else>
+        <el-collapse-item v-for="(step, index) in thinkingSteps" :key="index" :title="step.kind">
+          <div class="step-text">{{ step.text }}</div>
+        </el-collapse-item>
+      </el-collapse>
+
       <el-empty v-if="!agent.events.length" description="暂无事件" />
       <el-timeline v-else>
         <el-timeline-item v-for="event in agent.events" :key="event.sequence" :timestamp="event.timestamp">
@@ -197,5 +213,11 @@ onMounted(() => {
 
 .approval-list li:hover {
   background: var(--byq-surface-subtle);
+}
+
+.step-text {
+  color: var(--byq-text-muted);
+  font-size: 12px;
+  white-space: pre-wrap;
 }
 </style>
