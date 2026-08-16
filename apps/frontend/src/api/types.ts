@@ -53,6 +53,10 @@ export interface BacktestJob {
   job_id?: string;
   status?: string;
   summary?: Record<string, unknown>;
+  attempts?: number;
+  max_attempts?: number;
+  error_code?: string;
+  error_message?: string;
 }
 
 export interface SettingsStatus {
