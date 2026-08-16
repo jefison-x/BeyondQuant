@@ -52,6 +52,10 @@ def logout(session_id: str) -> None:
 
 
 def resolve_principal(request: Request) -> Principal:
+    return Principal(subject=str(resolve_user(request).get("username") or resolve_user(request).get("user_id")))
+
+
+def resolve_user(request: Request) -> dict[str, object]:
     session_id = request.cookies.get(SESSION_COOKIE)
     if not session_id:
         raise ProductAuthError(401, "product_authentication_required", "product authentication required")
@@ -70,4 +74,4 @@ def resolve_principal(request: Request) -> Principal:
     if not isinstance(body, dict) or not isinstance(body.get("user"), dict):
         raise ProductAuthError(502, "backend_invalid_response", "backend returned an invalid response")
     user = body["user"]
-    return Principal(subject=str(user.get("username") or user.get("user_id")))
+    return user

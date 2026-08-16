@@ -97,3 +97,6 @@ body { margin: 0; background: var(--byq-bg); color: var(--byq-text); font-family
 .research-tabs button.active { background: var(--byq-accent); color: white; border-color: var(--byq-accent); }
 .research-form { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
 .research-form input, .research-form select { padding: 10px; border: 1px solid var(--byq-border); border-radius: 8px; }
+
+.admin-table { width: 100%; border-collapse: collapse; }
+.admin-table th, .admin-table td { text-align: left; padding: 10px; border-bottom: 1px solid var(--byq-border); }
