@@ -3,6 +3,7 @@ const links = [
   { name: "dashboard", label: "首页", to: "/" },
   { name: "system-status", label: "系统状态", to: "/system-status" },
   { name: "agent", label: "研究工作台", to: "/agent" },
+  { name: "quant", label: "量化工作台", to: "/quant" },
 ];
 </script>
 

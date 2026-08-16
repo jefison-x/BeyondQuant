@@ -44,3 +44,14 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
   await expect(page.getByRole("heading", { name: "研究对话" })).toBeVisible();
   await expect(page.getByText("session.ready")).toBeVisible();
 });
+
+test("quant workspace renders factor, strategy, and backtest tabs", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("byq-product-token", "product-test-token");
+  });
+  await page.goto("/quant");
+  await expect(page.getByRole("heading", { name: "量化工作台" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Factor" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Strategy" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Backtest" })).toBeVisible();
+});
