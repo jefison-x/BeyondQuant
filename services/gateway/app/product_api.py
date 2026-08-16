@@ -187,3 +187,19 @@ def product_paper_order_create(request: Request, payload: dict[str, object]) -> 
 def product_paper_orders(account_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request("GET", f"/v1/paper/accounts/{account_id}/orders")
+
+
+@router.get("/operations/status")
+def product_operations_status(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    backend = _backend_get("/readyz")
+    return {
+        "backend": str(backend.get("status", "unknown")),
+        "runtime": "runtime-adapter",
+        "storage": "ready",
+        "migration": "not_started",
+        "observability": {
+            "workflow_trace": "configured",
+            "audit": "configured",
+        },
+    }

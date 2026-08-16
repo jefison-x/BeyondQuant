@@ -88,3 +88,25 @@ test("paper trading and stock pool pages render", async ({ page }) => {
   await page.goto("/stock-pool");
   await expect(page.getByRole("heading", { name: "股票池" })).toBeVisible();
 });
+
+test("operations page renders safe status projection", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("byq-product-token", "product-test-token");
+  });
+  await page.route("**/api/product/operations/status", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        backend: "ok",
+        runtime: "runtime-adapter",
+        storage: "ready",
+        migration: "not_started",
+        observability: { workflow_trace: "configured", audit: "configured" },
+      }),
+    }),
+  );
+  await page.goto("/operations");
+  await expect(page.getByRole("heading", { name: "Operations 状态" })).toBeVisible();
+  await expect(page.getByText("runtime-adapter")).toBeVisible();
+});
