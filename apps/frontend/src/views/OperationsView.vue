@@ -20,17 +20,31 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="page-card">
-    <h2>Operations 状态</h2>
-    <p v-if="loading">加载中...</p>
-    <p v-else-if="error" class="page-error">{{ error }}</p>
-    <dl v-else class="status-list">
-      <div><dt>Backend</dt><dd>{{ status?.backend }}</dd></div>
-      <div><dt>Runtime</dt><dd>{{ status?.runtime }}</dd></div>
-      <div><dt>Storage</dt><dd>{{ status?.storage }}</dd></div>
-      <div><dt>Migration</dt><dd>{{ status?.migration }}</dd></div>
-      <div><dt>WorkflowTrace</dt><dd>{{ status?.observability.workflow_trace }}</dd></div>
-      <div><dt>Audit</dt><dd>{{ status?.observability.audit }}</dd></div>
-    </dl>
+  <section class="system-page">
+    <div v-if="loading" class="base-loading">加载中...</div>
+    <div v-else-if="error" class="base-error">{{ error }}</div>
+
+    <template v-else>
+      <div class="stats-strip">
+        <div class="stat-item"><span>Backend</span><strong>{{ status?.backend }}</strong></div>
+        <div class="stat-item"><span>Runtime</span><strong>{{ status?.runtime }}</strong></div>
+        <div class="stat-item"><span>Storage</span><strong>{{ status?.storage }}</strong></div>
+        <div class="stat-item"><span>Migration</span><strong>{{ status?.migration }}</strong></div>
+      </div>
+
+      <el-card shadow="never" class="top-band">
+        <template #header>
+          <div class="card-title">可观测性</div>
+        </template>
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="WorkflowTrace">
+            {{ status?.observability.workflow_trace }}
+          </el-descriptions-item>
+          <el-descriptions-item label="Audit">
+            {{ status?.observability.audit }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </el-card>
+    </template>
   </section>
 </template>

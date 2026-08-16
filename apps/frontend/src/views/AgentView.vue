@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import {
   cancelSession,
   createAgentSession,
@@ -11,6 +12,7 @@ import { useAgentStore } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
+const route = useRoute();
 const agent = useAgentStore();
 const prompt = ref("");
 const error = ref("");
@@ -62,23 +64,50 @@ async function cancel() {
 }
 
 onMounted(() => {
-  void ensureSession().catch((exc) => {
-    error.value = exc instanceof Error ? exc.message : "初始化失败";
-  });
+  const sessionId = route.query.session;
+  if (
+    typeof sessionId === "string" &&
+    agent.sessions.some((session) => session.session_id === sessionId)
+  ) {
+    agent.setActiveSession(sessionId);
+    void streamWorkflowEvents(sessionId, auth.token, handleEvent, "0").catch((exc) => {
+      error.value = exc instanceof Error ? exc.message : "事件流失败";
+    });
+  } else {
+    void ensureSession().catch((exc) => {
+      error.value = exc instanceof Error ? exc.message : "初始化失败";
+    });
+  }
 });
 </script>
 
 <template>
   <section class="agent-workbench">
-    <aside class="agent-sessions">
-      <h2>会话</h2>
-      <button type="button" @click="ensureSession">新建会话</button>
-      <ul>
-        <li v-for="session in agent.sessions" :key="session.session_id">{{ session.session_id.slice(-8) }}</li>
+    <el-card shadow="never" class="agent-sessions">
+      <template #header>
+        <div class="panel-heading">
+          <span class="panel-title">会话</span>
+          <el-button size="small" @click="ensureSession">新建</el-button>
+        </div>
+      </template>
+      <el-empty v-if="!agent.sessions.length" description="暂无会话" />
+      <ul v-else class="session-list">
+        <li v-for="session in agent.sessions" :key="session.session_id">
+          {{ session.session_id.slice(-8) }}
+        </li>
       </ul>
-    </aside>
-    <main class="agent-conversation">
-      <h2>研究对话</h2>
+    </el-card>
+
+    <el-card shadow="never" class="agent-conversation">
+      <template #header>
+        <div class="panel-heading">
+          <span class="panel-title">研究对话</span>
+          <div>
+            <el-button size="small" @click="resume">恢复</el-button>
+            <el-button size="small" type="danger" plain @click="cancel">取消</el-button>
+          </div>
+        </div>
+      </template>
       <p v-if="error" class="page-error">{{ error }}</p>
       <div class="message-list">
         <div v-for="(message, index) in agent.messages" :key="index" :class="['message', message.role]">
@@ -86,20 +115,45 @@ onMounted(() => {
         </div>
       </div>
       <form class="agent-composer" @submit.prevent="send">
-        <textarea v-model="prompt" rows="3" placeholder="输入研究问题..." />
-        <button type="submit" :disabled="busy">{{ busy ? "发送中..." : "发送" }}</button>
-        <button type="button" @click="resume">恢复</button>
-        <button type="button" @click="cancel">取消</button>
+        <el-input v-model="prompt" type="textarea" :rows="3" placeholder="输入研究问题..." />
+        <el-button type="primary" :loading="busy" @click="send">发送</el-button>
       </form>
-    </main>
-    <aside class="agent-trace">
-      <h2>WorkflowTrace</h2>
-      <ol>
-        <li v-for="event in agent.events" :key="event.sequence">
+    </el-card>
+
+    <el-card shadow="never" class="agent-trace">
+      <template #header>
+        <span class="panel-title">WorkflowTrace</span>
+      </template>
+      <el-empty v-if="!agent.events.length" description="暂无事件" />
+      <el-timeline v-else>
+        <el-timeline-item v-for="event in agent.events" :key="event.sequence" :timestamp="event.timestamp">
           <strong>{{ event.kind }}</strong>
-          <span>{{ event.source }}</span>
-        </li>
-      </ol>
-    </aside>
+          <div class="trace-source">{{ event.source }}</div>
+        </el-timeline-item>
+      </el-timeline>
+    </el-card>
   </section>
 </template>
+
+<style scoped>
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.session-list li {
+  border-radius: var(--byq-radius-sm);
+  color: var(--byq-text);
+  padding: 0.45rem 0.5rem;
+}
+
+.session-list li:hover {
+  background: var(--byq-surface-subtle);
+}
+
+.trace-source {
+  color: var(--byq-text-muted);
+  font-size: 12px;
+}
+</style>

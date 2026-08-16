@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { getDataCenterStatus } from "@/api/dataCenter";
-import BaseCard from "@/components/ui/BaseCard.vue";
-import BaseEmpty from "@/components/ui/BaseEmpty.vue";
-import BaseError from "@/components/ui/BaseError.vue";
-import BaseLoading from "@/components/ui/BaseLoading.vue";
 
 const loading = ref(true);
 const error = ref("");
@@ -22,22 +18,28 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="page-card">
-    <h2>Data Center</h2>
-    <BaseLoading v-if="loading" />
-    <BaseError v-else-if="error" :message="error" />
+  <section class="data-sync-page">
+    <div v-if="loading" class="base-loading">加载中...</div>
+    <div v-else-if="error" class="base-error">{{ error }}</div>
+
     <template v-else>
-      <BaseCard title="迁移状态">
-        <p>Migration: {{ status?.migration }}</p>
-        <p>Provider: {{ status?.provider }}</p>
-        <p>Quality: {{ status?.quality }}</p>
-      </BaseCard>
-      <BaseCard title="Datasets">
-        <BaseEmpty v-if="!status?.datasets.length" message="暂无已迁移数据集" />
-        <ul v-else>
-          <li v-for="dataset in status?.datasets" :key="String(dataset.id)">{{ dataset }}</li>
-        </ul>
-      </BaseCard>
+      <div class="stats-strip">
+        <div class="stat-item"><span>Provider</span><strong>{{ status?.provider }}</strong></div>
+        <div class="stat-item"><span>Migration</span><strong>{{ status?.migration }}</strong></div>
+        <div class="stat-item"><span>Quality</span><strong>{{ status?.quality }}</strong></div>
+      </div>
+
+      <el-card shadow="never" class="top-band">
+        <template #header>
+          <div class="card-title">已迁移数据集</div>
+        </template>
+        <el-empty v-if="!status?.datasets.length" description="暂无已迁移数据集" />
+        <el-table v-else :data="status?.datasets">
+          <el-table-column prop="id" label="ID" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="name" label="名称" min-width="180" />
+          <el-table-column prop="status" label="状态" width="140" />
+        </el-table>
+      </el-card>
     </template>
   </section>
 </template>

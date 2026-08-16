@@ -19,6 +19,27 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/\/$/);
 }
 
+async function openNav(page: Page, label: string) {
+  await page.getByRole("menuitem", { name: label }).click();
+}
+
+async function mockResearchLists(page: Page) {
+  await page.route("**/api/product/research/artifacts", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ artifacts: [] }),
+    }),
+  );
+  await page.route("**/api/product/approvals", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ approvals: [] }),
+    }),
+  );
+}
+
 test("login page requires username and password", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "BeyondQuant Next" })).toBeVisible();
@@ -35,7 +56,7 @@ test("authenticated dashboard shows resource cards", async ({ page }) => {
     }),
   );
   await login(page);
-  await expect(page.getByText("backend")).toBeVisible();
+  await expect(page.getByText("Backend")).toBeVisible();
 });
 
 test("agent workbench renders a normalized BYQ workflow surface", async ({ page }) => {
@@ -54,18 +75,26 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
     }),
   );
   await login(page);
-  await page.getByRole("link", { name: "研究工作台" }).click();
-  await expect(page.getByRole("heading", { name: "研究对话" })).toBeVisible();
+  await openNav(page, "小巴投研");
+  await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
+  await expect(page.getByText("研究对话")).toBeVisible();
   await expect(page.getByText("session.ready")).toBeVisible();
 });
 
-test("quant workspace renders factor, strategy, and backtest tabs", async ({ page }) => {
+test("strategy workspace renders strategy version list and detail", async ({ page }) => {
+  await mockResearchLists(page);
   await login(page);
-  await page.getByRole("link", { name: "量化工作台" }).click();
-  await expect(page.getByRole("heading", { name: "量化工作台" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Factor" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Strategy" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Backtest" })).toBeVisible();
+  await openNav(page, "策略管理");
+  await expect(page.getByRole("heading", { name: "策略管理" })).toBeVisible();
+  await expect(page.getByText("策略版本", { exact: true })).toBeVisible();
+});
+
+test("backtest workspace renders backtest result list", async ({ page }) => {
+  await mockResearchLists(page);
+  await login(page);
+  await openNav(page, "回测管理");
+  await expect(page.getByRole("heading", { name: "回测管理" })).toBeVisible();
+  await expect(page.getByText("回测结果", { exact: true })).toBeVisible();
 });
 
 test("settings page renders masked platform status", async ({ page }) => {
@@ -82,19 +111,21 @@ test("settings page renders masked platform status", async ({ page }) => {
       }),
     }),
   );
+  await mockResearchLists(page);
   await login(page);
-  await page.getByRole("link", { name: "设置" }).click();
-  await expect(page.getByRole("heading", { name: "用户与平台设置" })).toBeVisible();
-  await page.getByRole("button", { name: "Data" }).click();
-  await expect(page.getByText("Provider: tushare")).toBeVisible();
+  await openNav(page, "个人设置");
+  await expect(page.getByRole("heading", { name: "个人设置" })).toBeVisible();
+  await page.getByRole("tab", { name: "数据" }).click();
+  await expect(page.getByText("Provider")).toBeVisible();
+  await expect(page.getByText("Migration")).toBeVisible();
 });
 
 test("paper trading and stock pool pages render", async ({ page }) => {
   await login(page);
-  await page.getByRole("link", { name: "模拟交易" }).click();
-  await expect(page.getByRole("heading", { name: "模拟交易" })).toBeVisible();
-  await page.getByRole("link", { name: "股票池" }).click();
-  await expect(page.getByRole("heading", { name: "股票池" })).toBeVisible();
+  await openNav(page, "模拟操盘");
+  await expect(page.getByRole("heading", { name: "模拟操盘" })).toBeVisible();
+  await openNav(page, "股票管理");
+  await expect(page.getByRole("heading", { name: "股票管理" })).toBeVisible();
 });
 
 test("operations page renders safe status projection", async ({ page }) => {
@@ -111,20 +142,13 @@ test("operations page renders safe status projection", async ({ page }) => {
       }),
     }),
   );
-  await page.route("**/api/product/data-center/status", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ migration: "not_started", datasets: [], provider: "tushare", quality: "not_audited" }),
-    }),
-  );
   await login(page);
-  await page.getByRole("link", { name: "Operations" }).click();
-  await expect(page.getByRole("heading", { name: "Operations 状态" })).toBeVisible();
+  await openNav(page, "系统运维");
+  await expect(page.getByRole("heading", { name: "系统运维" })).toBeVisible();
   await expect(page.getByText("runtime-adapter")).toBeVisible();
 });
 
-test("golden journey covers login, dashboard, agent, quant, settings, and operations", async ({ page }) => {
+test("golden journey covers login, dashboard, agent, strategy, settings, and operations", async ({ page }) => {
   await page.route("**/api/product/dashboard", (route) =>
     route.fulfill({
       status: 200,
@@ -158,19 +182,20 @@ test("golden journey covers login, dashboard, agent, quant, settings, and operat
       }),
     }),
   );
+  await mockResearchLists(page);
 
   await login(page);
-  await expect(page.getByRole("heading", { name: "系统状态" })).toBeVisible();
-  await page.getByRole("link", { name: "研究工作台" }).click();
-  await expect(page.getByRole("heading", { name: "研究对话" })).toBeVisible();
-  await page.getByRole("link", { name: "量化工作台" }).click();
-  await expect(page.getByRole("heading", { name: "量化工作台" })).toBeVisible();
-  await page.getByRole("link", { name: "设置" }).click();
-  await expect(page.getByRole("heading", { name: "用户与平台设置" })).toBeVisible();
-  await page.getByRole("link", { name: "Operations" }).click();
-  await expect(page.getByRole("heading", { name: "Operations 状态" })).toBeVisible();
-  await page.getByRole("link", { name: "数据中心" }).click();
-  await expect(page.getByRole("heading", { name: "Data Center" })).toBeVisible();
-  await page.getByRole("link", { name: "研究/审批" }).click();
-  await expect(page.getByRole("heading", { name: "Research / Approval Center" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "工作台" })).toBeVisible();
+  await openNav(page, "小巴投研");
+  await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
+  await openNav(page, "策略管理");
+  await expect(page.getByRole("heading", { name: "策略管理" })).toBeVisible();
+  await openNav(page, "个人设置");
+  await expect(page.getByRole("heading", { name: "个人设置" })).toBeVisible();
+  await openNav(page, "系统运维");
+  await expect(page.getByRole("heading", { name: "系统运维" })).toBeVisible();
+  await openNav(page, "数据中心");
+  await expect(page.getByRole("heading", { name: "数据中心" })).toBeVisible();
+  await openNav(page, "研究/审批");
+  await expect(page.getByRole("heading", { name: "研究/审批" })).toBeVisible();
 });
