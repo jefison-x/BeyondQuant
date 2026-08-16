@@ -19,11 +19,11 @@ const artifacts = ref<Array<Record<string, unknown>>>([]);
 
 const summaryCards = computed(() => [
   { label: "Backend", value: String(dashboard.value?.resources.backend ?? "unknown") },
-  { label: "行情数据", value: String(dataStatus.value?.provider ?? "tushare") },
-  { label: "数据迁移", value: String(dataStatus.value?.migration ?? "not_started") },
+  { label: "Research Tasks", value: String(dashboard.value?.resources.counts?.tasks ?? "-") },
+  { label: "Experiments", value: String(dashboard.value?.resources.counts?.experiments ?? "-") },
+  { label: "策略/资产", value: String(dashboard.value?.resources.counts?.artifacts ?? artifacts.value.length) },
+  { label: "回测任务", value: String(dashboard.value?.resources.counts?.backtests ?? "-") },
   { label: "运行时", value: String(operations.value?.runtime ?? "runtime-adapter") },
-  { label: "存储", value: String(operations.value?.storage ?? "ready") },
-  { label: "研究资产", value: String(artifacts.value.length) },
 ]);
 
 onMounted(async () => {
@@ -71,6 +71,13 @@ function kindLabel(kind: unknown): string {
           <span>{{ card.label }}</span>
           <strong>{{ card.value }}</strong>
         </div>
+      </div>
+
+      <div class="page-toolbar">
+        <el-button type="primary" plain @click="$router.push('/agent')">开始研究</el-button>
+        <el-button plain @click="$router.push('/strategy')">策略管理</el-button>
+        <el-button plain @click="$router.push('/backtest')">回测管理</el-button>
+        <el-button plain @click="$router.push('/stock-pool')">股票管理</el-button>
       </div>
 
       <div class="section-label-row">
