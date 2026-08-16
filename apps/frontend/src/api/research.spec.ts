@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getApproval, getResearchEntity } from "./research";
+import { getApproval, getResearchEntity, listApprovals, listArtifacts } from "./research";
 
 describe("research api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -20,5 +20,16 @@ describe("research api client", () => {
     );
     const approval = await getApproval("agent_approval_1");
     expect(approval).toMatchObject({ approval_id: "agent_approval_1" });
+  });
+
+  it("lists artifacts and approvals", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ artifacts: [{ artifact_id: "artifact_1" }] }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ approvals: [{ approval_id: "agent_approval_1" }] }), { status: 200 })),
+    );
+    expect((await listArtifacts()).artifacts).toHaveLength(1);
+    expect((await listApprovals()).approvals).toHaveLength(1);
   });
 });

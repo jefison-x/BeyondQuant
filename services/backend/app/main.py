@@ -360,6 +360,12 @@ def get_artifact(artifact_id: str) -> dict[str, object]:
     return _research_call(lambda: research_store.get_artifact(artifact_id))
 
 
+@app.get("/v1/research/artifacts")
+def list_artifacts(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _research_call(lambda: research_store.list_artifacts(owner_principal=context["owner_principal"]))
+
+
 @app.post("/v1/research/factors/compute", status_code=201)
 def compute_research_factor(payload: dict[str, Any]) -> dict[str, object]:
     def operation() -> dict[str, object]:
@@ -682,6 +688,12 @@ def get_agent_approval(approval_id: str, request: Request) -> dict[str, object]:
         approval_id,
         trusted_owner=context["owner_principal"],
     )})
+
+
+@app.get("/v1/agents/approvals")
+def list_agent_approvals(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _agent_call(lambda: agent_store.list_approvals(trusted_owner=context["owner_principal"]))
 
 
 @app.post("/v1/agents/approvals/{approval_id}/decision")

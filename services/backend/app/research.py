@@ -489,6 +489,19 @@ class ResearchStore:
             ).fetchone()
         return None if row is None else self._artifact_row(row)
 
+    def list_artifacts(self, *, owner_principal: str | None = None) -> dict[str, object]:
+        with self._lock:
+            if owner_principal:
+                rows = self._connection.execute(
+                    "SELECT * FROM artifacts WHERE owner_principal = ? ORDER BY created_at DESC, artifact_id DESC LIMIT 200",
+                    (owner_principal,),
+                ).fetchall()
+            else:
+                rows = self._connection.execute(
+                    "SELECT * FROM artifacts ORDER BY created_at DESC, artifact_id DESC LIMIT 200"
+                ).fetchall()
+        return {"artifacts": [self._artifact_row(row) for row in rows]}
+
     def transition(
         self,
         entity_type: object,

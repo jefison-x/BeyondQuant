@@ -174,6 +174,12 @@ def product_research_entity(entity_type: str, entity_id: str, request: Request) 
     return _backend_request("GET", f"/v1/research/{entity_type}/{entity_id}")
 
 
+@router.get("/research/artifacts")
+def product_artifacts(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", "/v1/research/artifacts")
+
+
 @router.get("/backtests/{job_id}")
 def product_backtest_get(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
@@ -202,6 +208,12 @@ def product_strategy_export(artifact_id: str, request: Request) -> dict[str, obj
 def product_approval_get(approval_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request("GET", f"/v1/agents/approvals/{approval_id}")
+
+
+@router.get("/approvals")
+def product_approvals(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", "/v1/agents/approvals")
 
 
 @router.get("/data-center/status")
