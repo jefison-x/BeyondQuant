@@ -86,7 +86,7 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
   await login(page);
   await openNav(page, "策略管理");
   await expect(page.getByRole("heading", { name: "策略管理" })).toBeVisible();
-  await expect(page.getByText("策略版本")).toBeVisible();
+  await expect(page.getByText("策略版本", { exact: true })).toBeVisible();
 });
 
 test("backtest workspace renders backtest result list", async ({ page }) => {
@@ -94,7 +94,7 @@ test("backtest workspace renders backtest result list", async ({ page }) => {
   await login(page);
   await openNav(page, "回测管理");
   await expect(page.getByRole("heading", { name: "回测管理" })).toBeVisible();
-  await expect(page.getByText("回测结果")).toBeVisible();
+  await expect(page.getByText("回测结果", { exact: true })).toBeVisible();
 });
 
 test("settings page renders masked platform status", async ({ page }) => {
@@ -116,7 +116,8 @@ test("settings page renders masked platform status", async ({ page }) => {
   await openNav(page, "个人设置");
   await expect(page.getByRole("heading", { name: "个人设置" })).toBeVisible();
   await page.getByRole("tab", { name: "数据" }).click();
-  await expect(page.locator('input[value="tushare"]')).toBeVisible();
+  await expect(page.getByText("Provider")).toBeVisible();
+  await expect(page.getByText("Migration")).toBeVisible();
 });
 
 test("paper trading and stock pool pages render", async ({ page }) => {
