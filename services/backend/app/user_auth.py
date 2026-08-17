@@ -1,4 +1,4 @@
-"""BYQ-owned durable user identity and authentication contracts."""
+"""BYQ-owned durable user identity and authentication contracts (ADR-0016 PG)."""
 
 from __future__ import annotations
 
@@ -6,12 +6,13 @@ import hashlib
 import hmac
 import os
 import re
-import sqlite3
-import threading
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
+
+from sqlalchemy.exc import SQLAlchemyError
+
+from .db import PgStoreMixin, ensure_column, execute, fetch_one
 
 
 _USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{2,63}$")
@@ -105,67 +106,56 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
 
 
-class UserAuthStore:
-    def __init__(self, path: str | Path) -> None:
-        self.path = str(path)
-        self._lock = threading.RLock()
-        if self.path != ":memory:":
-            Path(self.path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+class UserAuthStore(PgStoreMixin):
+    SCHEMA_DDL: list[str] = [
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            user_id TEXT PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            email TEXT,
+            display_name TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            status TEXT NOT NULL,
+            role TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            last_login_at TIMESTAMPTZ,
+            password_changed_at TIMESTAMPTZ,
+            preferences TEXT,
+            default_prompt TEXT,
+            preferences_version INTEGER NOT NULL DEFAULT 1
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            session_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(user_id),
+            created_at TIMESTAMPTZ NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS auth_sessions_user
+            ON auth_sessions(user_id, expires_at)
+        """,
+    ]
+
+    def __init__(self, database_url: str | None = None) -> None:
         try:
-            self._connection = sqlite3.connect(self.path, timeout=10.0, check_same_thread=False)
-            self._connection.row_factory = sqlite3.Row
-            self._connection.execute("PRAGMA foreign_keys = ON")
-            self._connection.execute("PRAGMA busy_timeout = 10000")
-            self._create_schema()
-        except sqlite3.Error as exc:
+            super().__init__(database_url)
+        except SQLAlchemyError as exc:
             raise UserAuthPersistenceError("user storage is unavailable") from exc
+
+    def bootstrap_schema(self) -> None:
+        super().bootstrap_schema()
+        # Column back-migration parity with the former SQLite schema.
+        with self.engine.begin() as connection:
+            ensure_column(connection, "users", "preferences", "TEXT")
+            ensure_column(connection, "users", "default_prompt", "TEXT")
 
     @classmethod
     def from_env(cls) -> "UserAuthStore":
-        return cls(os.getenv("BYQ_DOMAIN_DB_PATH", "/tmp/byq-domain.sqlite3"))
-
-    def close(self) -> None:
-        with self._lock:
-            self._connection.close()
-
-    def _create_schema(self) -> None:
-        with self._connection:
-            self._connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    user_id TEXT PRIMARY KEY,
-                    username TEXT NOT NULL UNIQUE,
-                    email TEXT,
-                    display_name TEXT NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    last_login_at TEXT,
-                    password_changed_at TEXT,
-                    preferences TEXT,
-                    default_prompt TEXT,
-                    preferences_version INTEGER NOT NULL DEFAULT 1
-                );
-                CREATE TABLE IF NOT EXISTS auth_sessions (
-                    session_id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES users(user_id),
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS auth_sessions_user
-                    ON auth_sessions(user_id, expires_at);
-                """
-            )
-        self._ensure_profile_columns()
-
-    def _ensure_profile_columns(self) -> None:
-        for column in ("preferences", "default_prompt"):
-            try:
-                self._connection.execute(f"ALTER TABLE users ADD COLUMN {column} TEXT")
-            except sqlite3.OperationalError:
-                pass
+        return cls()
 
     def create_user(self, payload: object, *, actor_role: str | None = None) -> dict[str, object]:
         if actor_role not in {"admin"}:
@@ -183,19 +173,28 @@ class UserAuthStore:
             raise ValueError("role must be admin or user")
         now = _now().isoformat()
         user_id = _new_id("user")
-        with self._lock, self._connection:
-            self._connection.execute(
-                """INSERT INTO users
-                (user_id, username, email, display_name, password_hash, status, role,
-                 created_at, updated_at, last_login_at, password_changed_at, preferences_version)
-                VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, NULL, ?, 1)""",
-                (user_id, username, email, display_name, _password_hash(password), role, now, now, now),
-            )
-            return self.get_user(user_id)
+        self._execute(
+            """INSERT INTO users
+            (user_id, username, email, display_name, password_hash, status, role,
+             created_at, updated_at, last_login_at, password_changed_at, preferences_version)
+            VALUES (:user_id, :username, :email, :display_name, :password_hash, 'active',
+                    :role, :created_at, :updated_at, NULL, :password_changed_at, 1)""",
+            {
+                "user_id": user_id,
+                "username": username,
+                "email": email,
+                "display_name": display_name,
+                "password_hash": _password_hash(password),
+                "role": role,
+                "created_at": now,
+                "updated_at": now,
+                "password_changed_at": now,
+            },
+        )
+        return self.get_user(user_id)
 
     def ensure_bootstrap_admin(self, username: str, password: str) -> dict[str, object]:
-        with self._lock:
-            existing = self._connection.execute("SELECT user_id FROM users LIMIT 1").fetchone()
+        existing = self._fetch_one("SELECT user_id FROM users LIMIT 1")
         if existing is not None:
             return self.get_user(existing["user_id"])
         return self.create_user(
@@ -205,8 +204,7 @@ class UserAuthStore:
 
     def get_user(self, user_id: object) -> dict[str, object]:
         user_id = _user_id(user_id)
-        with self._lock:
-            row = self._connection.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        row = self._fetch_one("SELECT * FROM users WHERE user_id = :user_id", {"user_id": user_id})
         if row is None:
             raise UserNotFound("user not found")
         return self._user_row(row)
@@ -221,64 +219,61 @@ class UserAuthStore:
             raise ValueError(f"profile request has unknown fields: {', '.join(unknown)}")
 
         updates: list[str] = []
-        params: list[object] = []
+        params: dict[str, object] = {}
         if "display_name" in payload:
-            updates.append("display_name = ?")
-            params.append(_text(payload.get("display_name"), field="display_name", max_length=128))
+            updates.append("display_name = :display_name")
+            params["display_name"] = _text(payload.get("display_name"), field="display_name", max_length=128)
         if "preferences" in payload:
-            updates.append("preferences = ?")
-            params.append(_optional_text(payload.get("preferences"), field="preferences", max_length=2000))
+            updates.append("preferences = :preferences")
+            params["preferences"] = _optional_text(payload.get("preferences"), field="preferences", max_length=2000)
         if "default_prompt" in payload:
-            updates.append("default_prompt = ?")
-            params.append(_optional_text(payload.get("default_prompt"), field="default_prompt", max_length=2000))
+            updates.append("default_prompt = :default_prompt")
+            params["default_prompt"] = _optional_text(payload.get("default_prompt"), field="default_prompt", max_length=2000)
 
         if not updates:
             return self.get_user(user_id)
 
-        updates.append("updated_at = ?")
-        params.append(_now().isoformat())
-        params.append(user_id)
-        with self._lock, self._connection:
-            row = self._connection.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        updates.append("updated_at = :updated_at")
+        params["updated_at"] = _now().isoformat()
+        params["user_id"] = user_id
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT * FROM users WHERE user_id = :user_id", {"user_id": user_id})
             if row is None:
                 raise UserNotFound("user not found")
-            self._connection.execute(
-                f"UPDATE users SET {', '.join(updates)} WHERE user_id = ?",
-                params,
-            )
-            updated = self._connection.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
-            assert updated is not None
-            return self._user_row(updated)
+            execute(connection, f"UPDATE users SET {', '.join(updates)} WHERE user_id = :user_id", params)
+            updated = fetch_one(connection, "SELECT * FROM users WHERE user_id = :user_id", {"user_id": user_id})
+        assert updated is not None
+        return self._user_row(updated)
 
     def list_users(self, *, actor_role: str | None = None) -> dict[str, object]:
         if actor_role not in {"admin"}:
             raise UserForbidden("only admin may list users")
-        with self._lock:
-            rows = self._connection.execute("SELECT * FROM users ORDER BY created_at ASC").fetchall()
+        rows = self._execute("SELECT * FROM users ORDER BY created_at ASC")
         return {"users": [self._user_row(row) for row in rows]}
 
     def disable_user(self, user_id: object, *, actor_role: str | None = None) -> dict[str, object]:
         if actor_role not in {"admin"}:
             raise UserForbidden("only admin may disable users")
         user_id = _user_id(user_id)
-        with self._lock, self._connection:
-            row = self._connection.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT * FROM users WHERE user_id = :user_id", {"user_id": user_id})
             if row is None:
                 raise UserNotFound("user not found")
-            self._connection.execute(
-                "UPDATE users SET status = 'disabled', updated_at = ? WHERE user_id = ?",
-                (_now().isoformat(), user_id),
+            execute(
+                connection,
+                "UPDATE users SET status = 'disabled', updated_at = :updated_at WHERE user_id = :user_id",
+                {"updated_at": _now().isoformat(), "user_id": user_id},
             )
-            self._connection.execute("DELETE FROM auth_sessions WHERE user_id = ?", (user_id,))
-            updated = self._connection.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
-            assert updated is not None
-            return self._user_row(updated)
+            execute(connection, "DELETE FROM auth_sessions WHERE user_id = :user_id", {"user_id": user_id})
+            updated = fetch_one(connection, "SELECT * FROM users WHERE user_id = :user_id", {"user_id": user_id})
+        assert updated is not None
+        return self._user_row(updated)
 
     def login(self, username: object, password: object) -> dict[str, object]:
         username = _username(username)
         password = _text(password, field="password", max_length=256)
-        with self._lock, self._connection:
-            row = self._connection.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT * FROM users WHERE username = :username", {"username": username})
             if row is None or not _verify_password(password, row["password_hash"]):
                 raise UserForbidden("invalid username or password")
             if row["status"] != "active":
@@ -286,30 +281,30 @@ class UserAuthStore:
             now = _now()
             session_id = _new_id("session")
             expires_at = (now + timedelta(hours=12)).isoformat()
-            self._connection.execute(
-                "INSERT INTO auth_sessions (session_id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-                (session_id, row["user_id"], now.isoformat(), expires_at),
+            execute(
+                connection,
+                "INSERT INTO auth_sessions (session_id, user_id, created_at, expires_at) VALUES (:session_id, :user_id, :created_at, :expires_at)",
+                {"session_id": session_id, "user_id": row["user_id"], "created_at": now.isoformat(), "expires_at": expires_at},
             )
-            self._connection.execute(
-                "UPDATE users SET last_login_at = ? WHERE user_id = ?",
-                (now.isoformat(), row["user_id"]),
+            execute(
+                connection,
+                "UPDATE users SET last_login_at = :last_login_at WHERE user_id = :user_id",
+                {"last_login_at": now.isoformat(), "user_id": row["user_id"]},
             )
-            return {"user": self._user_row(row), "session_id": session_id}
+        return {"user": self._user_row(row), "session_id": session_id}
 
     def logout(self, session_id: object) -> None:
         session_id = self._session_id(session_id)
-        with self._lock, self._connection:
-            self._connection.execute("DELETE FROM auth_sessions WHERE session_id = ?", (session_id,))
+        self._execute("DELETE FROM auth_sessions WHERE session_id = :session_id", {"session_id": session_id})
 
     def get_session_user(self, session_id: object) -> dict[str, object]:
         session_id = self._session_id(session_id)
-        with self._lock:
-            row = self._connection.execute(
-                """SELECT u.*, s.expires_at AS session_expires_at
-                FROM auth_sessions s JOIN users u ON u.user_id = s.user_id
-                WHERE s.session_id = ?""",
-                (session_id,),
-            ).fetchone()
+        row = self._fetch_one(
+            """SELECT u.*, s.expires_at AS session_expires_at
+            FROM auth_sessions s JOIN users u ON u.user_id = s.user_id
+            WHERE s.session_id = :session_id""",
+            {"session_id": session_id},
+        )
         if row is None or row["session_expires_at"] < _now().isoformat() or row["status"] != "active":
             raise UserForbidden("session is not valid")
         return self._user_row(row)
@@ -322,7 +317,7 @@ class UserAuthStore:
         return normalized
 
     @staticmethod
-    def _user_row(row: sqlite3.Row) -> dict[str, object]:
+    def _user_row(row: dict[str, Any]) -> dict[str, object]:
         result = dict(row)
         result.pop("password_hash", None)
         return result

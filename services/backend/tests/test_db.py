@@ -1,26 +1,10 @@
 from __future__ import annotations
 
-import os
-
-import pytest
-
-from app.db import (
-    bootstrap_research_schema,
-    connect,
-    create_db_engine,
-    execute,
-    fetch_one,
-)
+from app.db import bootstrap_research_schema, connect, execute, fetch_one
 
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("BYQ_DATABASE_URL"),
-    reason="BYQ_DATABASE_URL is not set",
-)
-
-
-def test_research_schema_bootstrap_and_crud() -> None:
-    engine = create_db_engine()
+def test_research_schema_bootstrap_and_crud(byq_test_engine) -> None:
+    engine = byq_test_engine
     bootstrap_research_schema(engine)
 
     with connect(engine) as connection:
@@ -55,4 +39,3 @@ def test_research_schema_bootstrap_and_crud() -> None:
     assert row is not None
     assert row["owner_principal"] == "pg-test-user"
     assert row["title"] == "PG foundation"
-    engine.dispose()

@@ -1,14 +1,15 @@
-"""BYQ-owned personal agent approval policy preferences."""
+"""BYQ-owned personal agent approval policy preferences (ADR-0016 PG)."""
 
 from __future__ import annotations
 
 import os
 import re
-import sqlite3
-import threading
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
+
+from sqlalchemy.exc import SQLAlchemyError
+
+from .db import PgStoreMixin
 
 
 _PRINCIPAL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$")
@@ -55,43 +56,30 @@ def _int(value: object, *, field: str, minimum: int, maximum: int) -> int:
     return value
 
 
-class UserPolicyStore:
-    def __init__(self, path: str | Path) -> None:
-        self.path = str(path)
-        self._lock = threading.RLock()
-        if self.path != ":memory:":
-            Path(self.path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+class UserPolicyStore(PgStoreMixin):
+    SCHEMA_DDL: list[str] = [
+        """
+        CREATE TABLE IF NOT EXISTS user_agent_policy (
+            owner_principal TEXT PRIMARY KEY,
+            automation_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            paused BOOLEAN NOT NULL DEFAULT FALSE,
+            default_decision_mode TEXT NOT NULL DEFAULT 'manual',
+            max_auto_executions_per_hour INTEGER NOT NULL DEFAULT 20,
+            max_auto_failures_per_hour INTEGER NOT NULL DEFAULT 3,
+            updated_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+    ]
+
+    def __init__(self, database_url: str | None = None) -> None:
         try:
-            self._connection = sqlite3.connect(self.path, timeout=10.0, check_same_thread=False)
-            self._connection.row_factory = sqlite3.Row
-            self._connection.execute("PRAGMA busy_timeout = 10000")
-            self._create_schema()
-        except sqlite3.Error as exc:
+            super().__init__(database_url)
+        except SQLAlchemyError as exc:
             raise UserPolicyPersistenceError("user policy storage is unavailable") from exc
 
     @classmethod
     def from_env(cls) -> "UserPolicyStore":
-        return cls(os.getenv("BYQ_DOMAIN_DB_PATH", "/tmp/byq-domain.sqlite3"))
-
-    def close(self) -> None:
-        with self._lock:
-            self._connection.close()
-
-    def _create_schema(self) -> None:
-        with self._connection:
-            self._connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS user_agent_policy (
-                    owner_principal TEXT PRIMARY KEY,
-                    automation_enabled INTEGER NOT NULL DEFAULT 0,
-                    paused INTEGER NOT NULL DEFAULT 0,
-                    default_decision_mode TEXT NOT NULL DEFAULT 'manual',
-                    max_auto_executions_per_hour INTEGER NOT NULL DEFAULT 20,
-                    max_auto_failures_per_hour INTEGER NOT NULL DEFAULT 3,
-                    updated_at TEXT NOT NULL
-                );
-                """
-            )
+        return cls()
 
     def get(self, owner: object) -> dict[str, object]:
         owner = _principal(owner, field="owner_principal")
@@ -103,11 +91,10 @@ class UserPolicyStore:
             "max_auto_executions_per_hour": 20,
             "max_auto_failures_per_hour": 3,
         }
-        with self._lock:
-            row = self._connection.execute(
-                "SELECT * FROM user_agent_policy WHERE owner_principal = ?",
-                (owner,),
-            ).fetchone()
+        row = self._fetch_one(
+            "SELECT * FROM user_agent_policy WHERE owner_principal = :owner_principal",
+            {"owner_principal": owner},
+        )
         if row is None:
             return defaults
         result = dict(row)
@@ -142,29 +129,29 @@ class UserPolicyStore:
             maximum=100,
         )
         now = _now()
-        with self._lock, self._connection:
-            self._connection.execute(
-                """INSERT INTO user_agent_policy
-                (owner_principal, automation_enabled, paused, default_decision_mode,
-                 max_auto_executions_per_hour, max_auto_failures_per_hour, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(owner_principal) DO UPDATE SET
-                    automation_enabled = excluded.automation_enabled,
-                    paused = excluded.paused,
-                    default_decision_mode = excluded.default_decision_mode,
-                    max_auto_executions_per_hour = excluded.max_auto_executions_per_hour,
-                    max_auto_failures_per_hour = excluded.max_auto_failures_per_hour,
-                    updated_at = excluded.updated_at""",
-                (
-                    owner,
-                    int(automation_enabled),
-                    int(paused),
-                    mode,
-                    max_executions,
-                    max_failures,
-                    now,
-                ),
-            )
+        self._execute(
+            """INSERT INTO user_agent_policy
+            (owner_principal, automation_enabled, paused, default_decision_mode,
+             max_auto_executions_per_hour, max_auto_failures_per_hour, updated_at)
+            VALUES (:owner_principal, :automation_enabled, :paused, :mode,
+                    :max_executions, :max_failures, :updated_at)
+            ON CONFLICT(owner_principal) DO UPDATE SET
+                automation_enabled = excluded.automation_enabled,
+                paused = excluded.paused,
+                default_decision_mode = excluded.default_decision_mode,
+                max_auto_executions_per_hour = excluded.max_auto_executions_per_hour,
+                max_auto_failures_per_hour = excluded.max_auto_failures_per_hour,
+                updated_at = excluded.updated_at""",
+            {
+                "owner_principal": owner,
+                "automation_enabled": automation_enabled,
+                "paused": paused,
+                "mode": mode,
+                "max_executions": max_executions,
+                "max_failures": max_failures,
+                "updated_at": now,
+            },
+        )
         return self.get(owner)
 
 
