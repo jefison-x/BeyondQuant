@@ -319,8 +319,30 @@ test("paper trading and stock pool pages render", async ({ page }) => {
   await login(page);
   await openNav(page, "模拟操盘");
   await expect(page.getByRole("heading", { name: "模拟操盘" })).toBeVisible();
+  await page.route("**/api/product/paper/pools", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        pools: [
+          {
+            pool_id: "stock_pool_1",
+            name: "沪深300",
+            pool_type: "index",
+            description: "指数池",
+            symbols: ["000001.SZ", "600000.SH"],
+            weights: { "000001.SZ": 0.6 },
+            version: "v1",
+            created_at: "2026-08-16T00:00:00+00:00",
+          },
+        ],
+      }),
+    }),
+  );
   await openNav(page, "股票管理");
   await expect(page.getByRole("heading", { name: "股票管理" })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "指数" }).first()).toBeVisible();
+  await expect(page.getByText("沪深300", { exact: true })).toBeVisible();
 });
 
 test("operations page renders safe status projection", async ({ page }) => {

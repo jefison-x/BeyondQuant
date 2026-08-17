@@ -34,8 +34,19 @@ export function createStockPool(
   name: string,
   symbols: string[],
   token: string,
+  options: { poolType?: string; description?: string; weights?: Record<string, number> } = {},
 ): Promise<{ pool: StockPool }> {
-  return request("/pools", token, { method: "POST", body: JSON.stringify({ name, symbols, provenance: { source: "frontend" } }) });
+  return request("/pools", token, {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      symbols,
+      provenance: { source: "frontend" },
+      pool_type: options.poolType ?? "custom",
+      description: options.description ?? null,
+      weights: options.weights ?? {},
+    }),
+  });
 }
 
 export function listStockPools(token: string): Promise<{ pools: Array<Record<string, unknown>> }> {

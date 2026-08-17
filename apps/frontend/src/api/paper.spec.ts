@@ -36,4 +36,20 @@ describe("paper trading api client", () => {
     expect(result.orders).toEqual([]);
     expect(String(fetchMock.mock.calls[0][1]?.headers)).not.toContain("tushare");
   });
+
+  it("creates a catalog stock pool with type, description, and weights", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ pool: { pool_id: "p1", pool_type: "index" } }), { status: 201 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await createStockPool("沪深300", ["000001.SZ", "600000.SH"], "test-token", {
+      poolType: "index",
+      description: "指数池",
+      weights: { "000001.SZ": 0.6 },
+    });
+    expect(result.pool.pool_type).toBe("index");
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.pool_type).toBe("index");
+    expect(body.weights).toEqual({ "000001.SZ": 0.6 });
+  });
 });

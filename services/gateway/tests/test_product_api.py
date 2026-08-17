@@ -213,6 +213,36 @@ def test_product_strategy_version_create_proxy(monkeypatch) -> None:
     assert captured["payload"] == {"task_id": "task_1", "draft_artifact_id": "artifact_draft_1"}
 
 
+def test_product_stock_pool_create_forwards_owner_headers(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"pool": {"pool_id": "stock_pool_1", "name": "测试池", "pool_type": "custom"}}
+
+    captured: dict[str, object] = {}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured["url"] = url
+        captured["headers"] = kwargs.get("headers", {})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/product/paper/pools",
+        headers={"Authorization": "Bearer product-test-token"},
+        json={"name": "测试池", "symbols": ["000001.SZ"], "pool_type": "custom"},
+    )
+    assert response.status_code == 201
+    assert captured["url"].endswith("/v1/paper/pools")
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+
 def test_product_asset_import_rejects_secret_fields(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
