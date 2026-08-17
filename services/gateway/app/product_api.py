@@ -482,6 +482,11 @@ def product_agent_policy(request: Request) -> dict[str, object]:
     _product_principal(request)
     approvals = _owner_scoped_list("/v1/agents/approvals", "approvals", _trusted_agent_headers(request))
     pending = sum(1 for approval in approvals if isinstance(approval, dict) and approval.get("status") == "pending")
+    personal = _backend_request(
+        "GET",
+        "/v1/users/agent-policy",
+        headers=_trusted_agent_headers(request),
+    ).get("policy", {})
     return {
         "platform_policy": {
             "automation_enabled": False,
@@ -490,8 +495,21 @@ def product_agent_policy(request: Request) -> dict[str, object]:
             "max_auto_executions_per_hour": 20,
             "max_auto_failures_per_hour": 3,
         },
+        "personal_policy": personal,
         "approval_inbox": {"pending": pending},
     }
+
+
+@router.put("/settings/agent-policy")
+def product_agent_policy_update(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    body = _backend_request(
+        "PUT",
+        "/v1/users/agent-policy",
+        payload,
+        headers=_trusted_agent_headers(request),
+    )
+    return {"personal_policy": body.get("policy", {})}
 
 
 @router.get("/settings/assets")

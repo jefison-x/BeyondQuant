@@ -65,6 +65,7 @@ from .user_auth import (
     UserForbidden,
     UserNotFound,
 )
+from .user_policy import UserPolicyStore, UserPolicyError, UserPolicyPersistenceError, public_policy
 from .research import (
     IdempotencyConflict,
     InvalidTransition,
@@ -93,6 +94,7 @@ learning_store = LearningLoopStore.from_env(research_store)
 engineering_store = EngineeringTaskStore.from_env()
 paper_store = PaperTradingStore.from_env()
 user_store = UserAuthStore.from_env()
+user_policy_store = UserPolicyStore.from_env()
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
     user_store.ensure_bootstrap_admin(
         os.environ["BYQ_BOOTSTRAP_ADMIN_USERNAME"],
@@ -1129,3 +1131,24 @@ def update_user_profile(user_id: str, payload: dict[str, Any], request: Request)
     if owner_user_id != user_id:
         raise HTTPException(status_code=403, detail="profile update is owner-scoped")
     return _user_call(lambda: {"user": user_store.update_profile(user_id, payload)})
+
+
+def _policy_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except UserPolicyPersistenceError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.get("/v1/users/agent-policy")
+def get_user_agent_policy(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _policy_call(lambda: {"policy": public_policy(user_policy_store.get(context["owner_principal"]))})
+
+
+@app.put("/v1/users/agent-policy")
+def update_user_agent_policy(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _policy_call(lambda: {"policy": public_policy(user_policy_store.update(context["owner_principal"], payload))})

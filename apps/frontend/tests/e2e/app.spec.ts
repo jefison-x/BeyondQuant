@@ -306,7 +306,11 @@ test("my space pages render profile, models, assets, and agent policy", async ({
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ platform_policy: { automation_enabled: false, paused: false, default_decision_mode: "manual", max_auto_executions_per_hour: 20, max_auto_failures_per_hour: 3 }, approval_inbox: { pending: 0 } }),
+      body: JSON.stringify({
+        platform_policy: { automation_enabled: false, paused: false, default_decision_mode: "manual", max_auto_executions_per_hour: 20, max_auto_failures_per_hour: 3 },
+        personal_policy: { automation_enabled: false, paused: false, default_decision_mode: "manual", max_auto_executions_per_hour: 20, max_auto_failures_per_hour: 3 },
+        approval_inbox: { pending: 0 },
+      }),
     }),
   );
   await page.route("**/api/product/approvals", (route) =>
@@ -324,6 +328,7 @@ test("my space pages render profile, models, assets, and agent policy", async ({
 
   await openNav(page, "智能体策略");
   await expect(page.getByRole("heading", { name: "智能体策略" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "保存" })).toBeVisible();
 
   await openNav(page, "个人设置");
   await expect(page.getByRole("heading", { name: "个人设置" })).toBeVisible();

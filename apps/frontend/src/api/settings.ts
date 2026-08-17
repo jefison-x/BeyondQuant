@@ -46,6 +46,10 @@ export function getAgentPolicyStatus(): Promise<AgentPolicyStatus> {
   return request("/settings/agent-policy");
 }
 
+export function updateAgentPolicy(payload: Record<string, unknown>): Promise<{ personal_policy: AgentPolicyStatus["personal_policy"] }> {
+  return request("/settings/agent-policy", { method: "PUT", body: JSON.stringify(payload) });
+}
+
 export async function getSettingsStatus(token: string): Promise<SettingsStatus> {
   const response = await fetch("/api/product/settings/status", {
     credentials: "include",

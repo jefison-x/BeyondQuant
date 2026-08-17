@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { getAgentPolicyStatus } from "@/api/settings";
+import { getAgentPolicyStatus, updateAgentPolicy } from "@/api/settings";
 import { listApprovals } from "@/api/research";
 import type { AgentPolicyStatus } from "@/api/types";
 
@@ -8,11 +8,20 @@ const loading = ref(true);
 const error = ref("");
 const policy = ref<AgentPolicyStatus | null>(null);
 const approvals = ref<Array<Record<string, unknown>>>([]);
+const saving = ref(false);
+const personal = ref<AgentPolicyStatus["personal_policy"]>({
+  automation_enabled: false,
+  paused: false,
+  default_decision_mode: "manual",
+  max_auto_executions_per_hour: 20,
+  max_auto_failures_per_hour: 3,
+});
 
 onMounted(async () => {
   try {
     const [policyBody, approvalBody] = await Promise.all([getAgentPolicyStatus(), listApprovals()]);
     policy.value = policyBody;
+    personal.value = { ...personal.value, ...(policyBody.personal_policy ?? {}) };
     approvals.value = approvalBody.approvals ?? [];
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "加载智能体策略失败";
@@ -20,6 +29,21 @@ onMounted(async () => {
     loading.value = false;
   }
 });
+
+async function savePersonal() {
+  saving.value = true;
+  try {
+    const { owner_principal: _owner, ...payload } = personal.value;
+    const body = await updateAgentPolicy(payload);
+    personal.value = { ...personal.value, ...body.personal_policy };
+    const policyBody = await getAgentPolicyStatus();
+    policy.value = policyBody;
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "保存审批偏好失败";
+  } finally {
+    saving.value = false;
+  }
+}
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "待审批",
@@ -60,6 +84,29 @@ function statusLabel(value: unknown) {
       </el-card>
 
       <el-card shadow="never">
+        <template #header>
+          <div class="card-header">
+            <div><strong>个人审批偏好</strong><p class="muted">仅影响当前账号发起的智能体操作。</p></div>
+            <el-button type="primary" :loading="saving" @click="savePersonal">保存</el-button>
+          </div>
+        </template>
+        <div class="settings-grid">
+          <div class="setting-item"><span>启用个人自动审批</span><el-switch v-model="personal.automation_enabled" /></div>
+          <div class="setting-item"><span>个人暂停自动审批</span><el-switch v-model="personal.paused" /></div>
+          <div class="setting-item">
+            <span>无匹配规则</span>
+            <el-select v-model="personal.default_decision_mode" size="small">
+              <el-option label="转人工审批" value="manual" />
+              <el-option label="自动批准" value="auto_approve" />
+              <el-option label="自动拒绝" value="auto_deny" />
+            </el-select>
+          </div>
+          <div class="setting-item"><span>每小时自动执行上限</span><el-input-number v-model="personal.max_auto_executions_per_hour" :min="1" :max="1000" size="small" /></div>
+          <div class="setting-item"><span>每小时失败熔断</span><el-input-number v-model="personal.max_auto_failures_per_hour" :min="1" :max="100" size="small" /></div>
+        </div>
+      </el-card>
+
+      <el-card shadow="never">
         <template #header><div><strong>我的审批历史</strong><p class="muted">只展示当前账号的审批请求和执行结果。</p></div></template>
         <el-table :data="approvals" size="small" empty-text="暂无审批记录">
           <el-table-column label="操作" min-width="170">
@@ -92,6 +139,13 @@ function statusLabel(value: unknown) {
   color: var(--byq-text-muted);
   font-size: 12px;
   margin: 0.3rem 0 0;
+}
+
+.card-header {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
 }
 
 .settings-grid {

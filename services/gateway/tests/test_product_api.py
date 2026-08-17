@@ -334,6 +334,41 @@ def test_product_approval_decision_forwards_owner_headers(monkeypatch) -> None:
     assert captured["payload"] == {"decision": "approved", "rationale": "ok"}
 
 
+def test_product_agent_policy_get_and_update(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+
+    class FakeResponse:
+        def __init__(self, body: dict[str, object]) -> None:
+            self.body = body
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self.body
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        if url.endswith("/v1/agents/approvals"):
+            return FakeResponse({"approvals": []})
+        return FakeResponse({"policy": {"owner_principal": "product-user", "automation_enabled": True, "default_decision_mode": "manual"}})
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    auth = {"Authorization": "Bearer product-test-token"}
+    response = client.get("/api/product/settings/agent-policy", headers=auth)
+    assert response.status_code == 200
+    assert response.json()["personal_policy"]["automation_enabled"] is True
+
+    updated = client.put(
+        "/api/product/settings/agent-policy",
+        headers=auth,
+        json={"automation_enabled": False, "paused": True},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["personal_policy"]["paused"] is True
+
+
 def test_product_asset_import_rejects_secret_fields(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
