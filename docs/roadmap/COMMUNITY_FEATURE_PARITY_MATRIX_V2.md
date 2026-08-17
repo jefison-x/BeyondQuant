@@ -11,24 +11,26 @@ Detailed gaps are in
 |---|---|---|
 | Login | REDESIGNED_PASS | Durable username/password session replaces Product Token browser login. |
 | Home/Dashboard | PARTIAL | Resource status and recent lists exist; Community card/quick-action depth is reduced. |
-| Agent | PARTIAL | Normalized trace/approval/context panels exist; conversation/tool/card depth is missing. |
+| Agent | REDESIGNED_PASS | Sessions, conversation composer, WorkflowTrace, thinking panel, approval decisions, backtest context, and artifacts are real; assistant drawer remains partial. |
 | Research | PARTIAL | Entity/approval lookup exists; lineage DAG and full research workspace are missing. |
-| Strategy | PARTIAL | List/validate/export exists; full editor, templates, version history, and save/delete are missing. |
-| Backtest | PARTIAL | List/status/empty chart exists; create wizard, comparison, trades/positions/logs/snapshot are missing. |
-| Stock Pool | PARTIAL | Create/list exists; catalog types, member editing, index constituents, filters, weights, snapshots are missing. |
-| Paper Trading | PARTIAL | Create/order/positions/fills exist; ledger, snapshots, settlement, risk controls, import/export are missing. |
+| Strategy | REDESIGNED_PASS | Editor with templates/snippets, draft save/validate, immutable version creation, export, and approval banner are real. |
+| Backtest | REDESIGNED_PASS | Result workspace (filters, mobile cards, equity curve, trades, blocked trades, corporate actions, compare, run/cancel) is real; create wizard is DEFERRED until a strategy signal-source ADR. |
+| Stock Pool | REDESIGNED_PASS | Catalog types, description, weights, membership detail, filters, and mobile cards are real; snapshot history remains partial. |
+| Paper Trading | REDESIGNED_PASS | Accounts, orders, positions, fills, and derived ledger are real; snapshots/settlement/import-export remain partial. |
 | Profile | REDESIGNED_PASS | Durable profile form and owner-scoped save work through Product API. |
-| Models | PARTIAL | Masked configured status exists; credential/profile/Agent binding management is missing. |
+| Models | PARTIAL | Masked configured status exists; credential/profile/Agent binding management is DEFERRED. |
 | Assets | PARTIAL | Asset index and config-asset import/export exist; strategy/backtest re-import is not implemented. |
-| Agent Policy | PARTIAL | Platform policy and approval history exist; personal preferences/presets/rule CRUD are missing. |
+| Agent Policy | REDESIGNED_PASS | Personal approval preferences persist through Product API; presets and rule CRUD remain partial. |
 | Operations | PARTIAL | Safe status and admin user/approval projections exist; most operations workbenches are placeholders or missing. |
-| Data Center | PARTIAL | Provider/migration/quality status exists; data-source config, sync, and coverage detail are missing. |
+| Data Center | REDESIGNED_PASS | Provider capability (masked) and sync status are real; data-source config and sync jobs remain partial. |
 | Shared components | PARTIAL | Shell/chart/metric/loading/empty/error exist; deeper Community components are missing. |
 
 ## Release conclusion
 
-The current release is not yet a v1.0 RC. Several high-value Community
-workflows remain `PARTIAL` or `MISSING`, especially Strategy, Backtest, Stock
-Pool, Paper Trading, Agent, Models, Assets, Agent Policy, and Operations. The
-next work must close these product-depth gaps before the RC review gate can be
-reopened.
+Product-depth phases delivered: Backtest result workspace, Strategy, Stock
+Pool, Paper Trading, Agent workbench, personal Agent Policy, and Data Center.
+Remaining `PARTIAL`/`DEFERRED` items are explicitly bounded: Backtest create
+wizard (needs a strategy signal-source ADR), model credential CRUD, asset
+strategy/backtest re-import, agent policy presets/rule CRUD, operations
+workbenches, data sync jobs, and paper snapshots/settlement. The next step is
+the human v1.0 RC review with these deferred items recorded.

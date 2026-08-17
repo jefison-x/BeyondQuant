@@ -1,6 +1,6 @@
 # Community Parity Delivery Plan
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE`
 
 This plan restores Community user features in BeyondQuant while preserving the
 new architecture:
@@ -222,7 +222,11 @@ Status: merged in PR #49.
 
 Each phase stops at a Draft PR and the human merge gate.
 
-Phases 1-8 restored the product shell and browser evidence, but the audit in
-`docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` shows many Community product-depth
-workflows remain `PARTIAL` or `MISSING`. The plan is therefore not complete and
-must continue with product-depth phases before the v1.0 RC review gate.
+Phases 1-8 restored the product shell, and the subsequent product-depth
+phases delivered Backtest result workspace, Strategy, Stock Pool, Paper
+Trading, Agent workbench, personal Agent Policy, and Data Center depth.
+Explicitly deferred items (Backtest create wizard pending a strategy
+signal-source ADR, model credential CRUD, asset re-import, agent policy
+presets/rule CRUD, operations workbenches, data sync jobs, paper
+snapshots/settlement) are recorded in
+`docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX_V2.md` for the v1.0 RC review.
