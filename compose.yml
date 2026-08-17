@@ -138,6 +138,8 @@ services:
     environment:
       BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
       BYQ_BACKTEST_OBJECT_ROOT: /var/lib/byq/domain/backtest-objects
+      BYQ_BOOTSTRAP_ADMIN_USERNAME: ${BYQ_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BYQ_BOOTSTRAP_ADMIN_PASSWORD: ${BYQ_BOOTSTRAP_ADMIN_PASSWORD:-UIop7890}
       TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
       TUSHARE_API_URL: ${TUSHARE_API_URL:-http://api.tushare.pro}
     depends_on:
