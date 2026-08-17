@@ -393,6 +393,17 @@ def product_approvals(request: Request) -> dict[str, object]:
     return _backend_request("GET", "/v1/agents/approvals", headers=_trusted_agent_headers(request))
 
 
+@router.post("/approvals/{approval_id}/decision")
+def product_approval_decision(approval_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "POST",
+        f"/v1/agents/approvals/{approval_id}/decision",
+        payload,
+        headers=_trusted_agent_headers(request),
+    )
+
+
 @router.get("/data-center/status")
 def product_data_center_status(request: Request) -> dict[str, object]:
     _product_principal(request)
