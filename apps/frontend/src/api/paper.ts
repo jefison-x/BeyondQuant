@@ -1,4 +1,4 @@
-import type { PaperAccount, PaperOrder, StockPool } from "./types";
+import type { PaperAccount, PaperLedgerEntry, PaperOrder, StockPool } from "./types";
 
 const ROOT = "/api/product/paper";
 
@@ -66,6 +66,10 @@ export function listPaperPositions(accountId: string, token: string): Promise<{ 
 
 export function listPaperFills(accountId: string, token: string): Promise<{ fills: Array<Record<string, unknown>> }> {
   return request(`/accounts/${encodeURIComponent(accountId)}/fills`, token);
+}
+
+export function listPaperLedger(accountId: string, token: string): Promise<{ ledger: PaperLedgerEntry[] }> {
+  return request(`/accounts/${encodeURIComponent(accountId)}/ledger`, token);
 }
 
 export function listPaperOrders(accountId: string, token: string): Promise<{ orders: PaperOrder[] }> {

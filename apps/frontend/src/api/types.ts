@@ -163,6 +163,20 @@ export interface PaperOrder {
   blocked_reason?: string;
 }
 
+export interface PaperLedgerEntry {
+  fill_id?: string;
+  trade_date?: string;
+  symbol?: string;
+  side?: "buy" | "sell";
+  quantity?: number;
+  price?: number;
+  amount?: number;
+  fees?: number;
+  cash_delta?: number;
+  realized_pnl?: number;
+  created_at?: string;
+}
+
 export interface OperationsStatus {
   backend: string;
   runtime: string;

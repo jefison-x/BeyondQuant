@@ -317,8 +317,29 @@ test("my space pages render profile, models, assets, and agent policy", async ({
 
 test("paper trading and stock pool pages render", async ({ page }) => {
   await login(page);
+  await page.route("**/api/product/paper/accounts", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ accounts: [{ account_id: "paper_account_1", name: "sim", cash: 100000, status: "active" }] }),
+    }),
+  );
+  await page.route("**/api/product/paper/accounts/paper_account_1/positions", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ positions: [] }) }),
+  );
+  await page.route("**/api/product/paper/accounts/paper_account_1/orders", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ orders: [] }) }),
+  );
+  await page.route("**/api/product/paper/accounts/paper_account_1/fills", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ fills: [] }) }),
+  );
+  await page.route("**/api/product/paper/accounts/paper_account_1/ledger", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ledger: [] }) }),
+  );
   await openNav(page, "模拟操盘");
   await expect(page.getByRole("heading", { name: "模拟操盘" })).toBeVisible();
+  await expect(page.getByText("sim", { exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "资金流水" })).toBeVisible();
   await page.route("**/api/product/paper/pools", (route) =>
     route.fulfill({
       status: 200,

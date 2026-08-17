@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPaperAccount, createStockPool, listPaperOrders, submitPaperOrder } from "./paper";
+import { createPaperAccount, createStockPool, listPaperLedger, listPaperOrders, submitPaperOrder } from "./paper";
 
 describe("paper trading api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -51,5 +51,18 @@ describe("paper trading api client", () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(body.pool_type).toBe("index");
     expect(body.weights).toEqual({ "000001.SZ": 0.6 });
+  });
+
+  it("lists the derived paper ledger", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ledger: [{ fill_id: "f1", cash_delta: -1000 }] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await listPaperLedger("a1", "test-token");
+    expect(result.ledger[0].cash_delta).toBe(-1000);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/paper/accounts/a1/ledger",
+      expect.objectContaining({ credentials: "include" }),
+    );
   });
 });
