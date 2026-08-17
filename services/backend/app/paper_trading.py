@@ -1,4 +1,4 @@
-"""BYQ-owned simulation-only Paper Trading and Stock Pool contracts."""
+"""BYQ-owned simulation-only Paper Trading and Stock Pool contracts (ADR-0016 PG)."""
 
 from __future__ import annotations
 
@@ -7,12 +7,13 @@ import json
 import math
 import os
 import re
-import sqlite3
-import threading
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
+
+from sqlalchemy.exc import SQLAlchemyError
+
+from .db import PgStoreMixin, ensure_column, execute, fetch_one
 
 
 SYMBOL_PATTERN = re.compile(r"^\d{6}\.(SH|SZ|BJ)$")
@@ -107,113 +108,108 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
 
 
-def _loads(value: str, *, field: str) -> object:
-    try:
-        return json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise PaperTradingPersistenceError(f"stored {field} is invalid") from exc
+class PaperTradingStore(PgStoreMixin):
+    SCHEMA_DDL: list[str] = [
+        """
+        CREATE TABLE IF NOT EXISTS paper_accounts (
+            account_id TEXT PRIMARY KEY,
+            owner_principal TEXT NOT NULL,
+            name TEXT NOT NULL,
+            cash NUMERIC(18,4) NOT NULL,
+            status TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            version INTEGER NOT NULL
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS paper_accounts_owner_name
+            ON paper_accounts(owner_principal, name)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS stock_pools (
+            pool_id TEXT PRIMARY KEY,
+            owner_principal TEXT NOT NULL,
+            name TEXT NOT NULL,
+            pool_type TEXT NOT NULL,
+            description TEXT,
+            weights_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            symbols_json JSONB NOT NULL,
+            version TEXT NOT NULL,
+            provenance_json JSONB NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS paper_positions (
+            account_id TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            quantity INTEGER NOT NULL,
+            last_buy_date TEXT,
+            PRIMARY KEY(account_id, symbol)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS paper_orders (
+            order_id TEXT PRIMARY KEY,
+            account_id TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            side TEXT NOT NULL,
+            quantity INTEGER NOT NULL,
+            price NUMERIC(18,4) NOT NULL,
+            status TEXT NOT NULL,
+            blocked_reason TEXT,
+            fees NUMERIC(18,4) NOT NULL DEFAULT 0,
+            tax NUMERIC(18,4) NOT NULL DEFAULT 0,
+            cash_delta NUMERIC(18,4) NOT NULL DEFAULT 0,
+            trade_date TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS paper_orders_idempotency
+            ON paper_orders(account_id, idempotency_key)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS paper_fills (
+            fill_id TEXT PRIMARY KEY,
+            order_id TEXT NOT NULL,
+            account_id TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            side TEXT NOT NULL,
+            quantity INTEGER NOT NULL,
+            price NUMERIC(18,4) NOT NULL,
+            fees NUMERIC(18,4) NOT NULL,
+            tax NUMERIC(18,4) NOT NULL,
+            trade_date TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS paper_fills_account_created
+            ON paper_fills(account_id, created_at)
+        """,
+    ]
 
-
-class PaperTradingStore:
-    def __init__(self, path: str | Path) -> None:
-        self.path = str(path)
-        self._lock = threading.RLock()
-        if self.path != ":memory:":
-            Path(self.path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, database_url: str | None = None) -> None:
         try:
-            self._connection = sqlite3.connect(self.path, timeout=10.0, check_same_thread=False)
-            self._connection.row_factory = sqlite3.Row
-            self._connection.execute("PRAGMA foreign_keys = ON")
-            self._connection.execute("PRAGMA busy_timeout = 10000")
-            self._create_schema()
-        except sqlite3.Error as exc:
+            super().__init__(database_url)
+        except SQLAlchemyError as exc:
             raise PaperTradingPersistenceError("paper trading storage is unavailable") from exc
+
+    def bootstrap_schema(self) -> None:
+        super().bootstrap_schema()
+        # Column back-migration parity with the former SQLite schema.
+        with self.engine.begin() as connection:
+            ensure_column(connection, "stock_pools", "pool_type", "TEXT")
+            ensure_column(connection, "stock_pools", "description", "TEXT")
+            ensure_column(connection, "stock_pools", "weights_json", "JSONB")
 
     @classmethod
     def from_env(cls) -> "PaperTradingStore":
-        return cls(os.getenv("BYQ_DOMAIN_DB_PATH", "/tmp/byq-domain.sqlite3"))
-
-    def close(self) -> None:
-        with self._lock:
-            self._connection.close()
-
-    def _create_schema(self) -> None:
-        with self._connection:
-            self._connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS paper_accounts (
-                    account_id TEXT PRIMARY KEY,
-                    owner_principal TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    cash REAL NOT NULL,
-                    status TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    version INTEGER NOT NULL
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS paper_accounts_owner_name
-                    ON paper_accounts(owner_principal, name);
-                CREATE TABLE IF NOT EXISTS stock_pools (
-                    pool_id TEXT PRIMARY KEY,
-                    owner_principal TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    pool_type TEXT NOT NULL,
-                    description TEXT,
-                    weights_json TEXT,
-                    symbols_json TEXT NOT NULL,
-                    version TEXT NOT NULL,
-                    provenance_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS paper_positions (
-                    account_id TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    quantity INTEGER NOT NULL,
-                    last_buy_date TEXT,
-                    PRIMARY KEY(account_id, symbol)
-                );
-                CREATE TABLE IF NOT EXISTS paper_orders (
-                    order_id TEXT PRIMARY KEY,
-                    account_id TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    side TEXT NOT NULL,
-                    quantity INTEGER NOT NULL,
-                    price REAL NOT NULL,
-                    status TEXT NOT NULL,
-                    blocked_reason TEXT,
-                    fees REAL NOT NULL DEFAULT 0,
-                    tax REAL NOT NULL DEFAULT 0,
-                    cash_delta REAL NOT NULL DEFAULT 0,
-                    trade_date TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    request_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS paper_orders_idempotency
-                    ON paper_orders(account_id, idempotency_key);
-                CREATE TABLE IF NOT EXISTS paper_fills (
-                    fill_id TEXT PRIMARY KEY,
-                    order_id TEXT NOT NULL,
-                    account_id TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    side TEXT NOT NULL,
-                    quantity INTEGER NOT NULL,
-                    price REAL NOT NULL,
-                    fees REAL NOT NULL,
-                    tax REAL NOT NULL,
-                    trade_date TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                """
-            )
-        self._ensure_pool_columns()
-
-    def _ensure_pool_columns(self) -> None:
-        for column in ("pool_type", "description", "weights_json"):
-            try:
-                self._connection.execute(f"ALTER TABLE stock_pools ADD COLUMN {column} TEXT")
-            except sqlite3.OperationalError:
-                pass
+        return cls()
 
     def create_account(self, payload: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
@@ -223,44 +219,39 @@ class PaperTradingStore:
             raise PaperTradingForbidden("account requires a trusted owner")
         name = _text(payload.get("name"), field="name", max_length=128)
         cash = _finite(payload.get("cash"), field="cash")
-        with self._lock, self._connection:
-            existing = self._connection.execute(
-                "SELECT * FROM paper_accounts WHERE owner_principal = ? AND name = ?", (owner, name)
-            ).fetchone()
-            if existing is not None:
-                raise PaperTradingConflict("account name already exists")
-            now = _now()
-            account_id = _new_id("paper_account")
-            self._connection.execute(
-                """INSERT INTO paper_accounts
-                (account_id, owner_principal, name, cash, status, created_at, updated_at, version)
-                VALUES (?, ?, ?, ?, 'active', ?, ?, 1)""",
-                (account_id, owner, name, cash, now, now),
-            )
-            return self.get_account(account_id, trusted_owner=owner)
+        existing = self._fetch_one(
+            "SELECT * FROM paper_accounts WHERE owner_principal = :owner AND name = :name",
+            {"owner": owner, "name": name},
+        )
+        if existing is not None:
+            raise PaperTradingConflict("account name already exists")
+        now = _now()
+        account_id = _new_id("paper_account")
+        self._execute(
+            """INSERT INTO paper_accounts
+            (account_id, owner_principal, name, cash, status, created_at, updated_at, version)
+            VALUES (:account_id, :owner, :name, :cash, 'active', :created_at, :updated_at, 1)""",
+            {"account_id": account_id, "owner": owner, "name": name, "cash": cash, "created_at": now, "updated_at": now},
+        )
+        return self.get_account(account_id, trusted_owner=owner)
 
     def get_account(self, account_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         account_id = _id(account_id, prefix="paper_account")
-        with self._lock:
-            row = self._connection.execute("SELECT * FROM paper_accounts WHERE account_id = ?", (account_id,)).fetchone()
+        row = self._fetch_one("SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
         if row is None:
             raise PaperTradingNotFound("paper account not found")
         if trusted_owner and row["owner_principal"] != trusted_owner:
             raise PaperTradingForbidden("paper account is not owned by this principal")
-        result = dict(row)
-        return result
+        return dict(row)
 
     def list_accounts(self, *, trusted_owner: str | None = None) -> dict[str, object]:
-        with self._lock:
-            if trusted_owner:
-                rows = self._connection.execute(
-                    "SELECT * FROM paper_accounts WHERE owner_principal = ? ORDER BY created_at DESC, account_id DESC",
-                    (trusted_owner,),
-                ).fetchall()
-            else:
-                rows = self._connection.execute(
-                    "SELECT * FROM paper_accounts ORDER BY created_at DESC, account_id DESC"
-                ).fetchall()
+        if trusted_owner:
+            rows = self._execute(
+                "SELECT * FROM paper_accounts WHERE owner_principal = :owner_principal ORDER BY created_at DESC, account_id DESC",
+                {"owner_principal": trusted_owner},
+            )
+        else:
+            rows = self._execute("SELECT * FROM paper_accounts ORDER BY created_at DESC, account_id DESC")
         return {"accounts": [dict(row) for row in rows]}
 
     def create_pool(self, payload: object, *, trusted_owner: str | None = None) -> dict[str, object]:
@@ -297,54 +288,54 @@ class PaperTradingStore:
         provenance = payload.get("provenance", {})
         if not isinstance(provenance, dict):
             raise ValueError("provenance must be an object")
-        symbols_json = json.dumps(symbols, separators=(",", ":"))
-        weights_json = json.dumps(normalized_weights, separators=(",", ":"), sort_keys=True)
-        provenance_json = json.dumps(provenance, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         pool_id = _new_id("stock_pool")
         now = _now()
-        with self._lock, self._connection:
-            self._connection.execute(
-                """INSERT INTO stock_pools
-                (pool_id, owner_principal, name, pool_type, description, weights_json,
-                 symbols_json, version, provenance_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'v1', ?, ?)""",
-                (pool_id, owner, name, pool_type, description, weights_json, symbols_json, provenance_json, now),
-            )
-            return self.get_pool(pool_id, trusted_owner=owner)
+        self._execute(
+            """INSERT INTO stock_pools
+            (pool_id, owner_principal, name, pool_type, description, weights_json,
+             symbols_json, version, provenance_json, created_at)
+            VALUES (:pool_id, :owner, :name, :pool_type, :description, :weights_json,
+                    :symbols_json, 'v1', :provenance_json, :created_at)""",
+            {
+                "pool_id": pool_id,
+                "owner": owner,
+                "name": name,
+                "pool_type": pool_type,
+                "description": description,
+                "weights_json": normalized_weights,
+                "symbols_json": symbols,
+                "provenance_json": provenance,
+                "created_at": now,
+            },
+        )
+        return self.get_pool(pool_id, trusted_owner=owner)
 
     def get_pool(self, pool_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         pool_id = _id(pool_id, prefix="stock_pool")
-        with self._lock:
-            row = self._connection.execute("SELECT * FROM stock_pools WHERE pool_id = ?", (pool_id,)).fetchone()
+        row = self._fetch_one("SELECT * FROM stock_pools WHERE pool_id = :pool_id", {"pool_id": pool_id})
         if row is None:
             raise PaperTradingNotFound("stock pool not found")
         if trusted_owner and row["owner_principal"] != trusted_owner:
             raise PaperTradingForbidden("stock pool is not owned by this principal")
-        result = dict(row)
-        result["symbols"] = _loads(result.pop("symbols_json"), field="symbols")
-        result["weights"] = _loads(result.pop("weights_json") or "{}", field="weights")
-        result["provenance"] = _loads(result.pop("provenance_json"), field="provenance")
-        return result
+        return self._pool_row(row)
 
     def list_pools(self, *, trusted_owner: str | None = None) -> dict[str, object]:
-        with self._lock:
-            if trusted_owner:
-                rows = self._connection.execute(
-                    "SELECT * FROM stock_pools WHERE owner_principal = ? ORDER BY created_at DESC, pool_id DESC",
-                    (trusted_owner,),
-                ).fetchall()
-            else:
-                rows = self._connection.execute(
-                    "SELECT * FROM stock_pools ORDER BY created_at DESC, pool_id DESC"
-                ).fetchall()
-        pools = []
-        for row in rows:
-            item = dict(row)
-            item["symbols"] = _loads(item.pop("symbols_json"), field="symbols")
-            item["weights"] = _loads(item.pop("weights_json") or "{}", field="weights")
-            item["provenance"] = _loads(item.pop("provenance_json"), field="provenance")
-            pools.append(item)
-        return {"pools": pools}
+        if trusted_owner:
+            rows = self._execute(
+                "SELECT * FROM stock_pools WHERE owner_principal = :owner_principal ORDER BY created_at DESC, pool_id DESC",
+                {"owner_principal": trusted_owner},
+            )
+        else:
+            rows = self._execute("SELECT * FROM stock_pools ORDER BY created_at DESC, pool_id DESC")
+        return {"pools": [self._pool_row(row) for row in rows]}
+
+    @staticmethod
+    def _pool_row(row: dict[str, Any]) -> dict[str, object]:
+        result = dict(row)
+        result["symbols"] = result.pop("symbols_json") or []
+        result["weights"] = result.pop("weights_json") or {}
+        result["provenance"] = result.pop("provenance_json") or {}
+        return result
 
     def submit_order(self, payload: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
@@ -379,27 +370,28 @@ class PaperTradingStore:
             "idempotency_key": key,
         }
         request_hash = _hash(request)
-        with self._lock, self._connection:
-            account = self._connection.execute("SELECT * FROM paper_accounts WHERE account_id = ?", (account_id,)).fetchone()
+        with self._transaction() as connection:
+            account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
             if account is None or account["owner_principal"] != owner:
                 raise PaperTradingForbidden("paper account is not owned by this principal")
-            pool = self._connection.execute("SELECT * FROM stock_pools WHERE pool_id = ?", (pool_id,)).fetchone()
+            pool = fetch_one(connection, "SELECT * FROM stock_pools WHERE pool_id = :pool_id", {"pool_id": pool_id})
             if pool is None or pool["owner_principal"] != owner:
                 raise PaperTradingForbidden("stock pool is not owned by this principal")
-            symbols = _loads(pool["symbols_json"], field="symbols")
+            symbols = pool["symbols_json"]
             if not isinstance(symbols, list) or symbol not in symbols:
                 raise PaperTradingForbidden("symbol is not in the authorized stock pool")
-            existing = self._connection.execute(
-                "SELECT * FROM paper_orders WHERE account_id = ? AND idempotency_key = ?",
-                (account_id, key),
-            ).fetchone()
+            existing = fetch_one(
+                connection,
+                "SELECT * FROM paper_orders WHERE account_id = :account_id AND idempotency_key = :key",
+                {"account_id": account_id, "key": key},
+            )
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise PaperTradingConflict("order idempotency key was reused")
                 return self._order_row(existing)
 
             blocked = self._blocked_reason(
-                account, side, quantity, price, trade_date, is_suspended, up_limit, down_limit, symbol
+                connection, account, side, quantity, price, trade_date, is_suspended, up_limit, down_limit, symbol
             )
             now = _now()
             order_id = _new_id("paper_order")
@@ -407,17 +399,19 @@ class PaperTradingStore:
                 fees, tax, cash_delta = self._execution_cost(side, quantity, price)
                 status = "filled"
                 new_cash = float(account["cash"]) + cash_delta
-                self._connection.execute(
-                    "UPDATE paper_accounts SET cash = ?, updated_at = ?, version = version + 1 WHERE account_id = ?",
-                    (new_cash, now, account_id),
+                execute(
+                    connection,
+                    "UPDATE paper_accounts SET cash = :cash, updated_at = :updated_at, version = version + 1 WHERE account_id = :account_id",
+                    {"cash": new_cash, "updated_at": now, "account_id": account_id},
                 )
-                self._upsert_position(account_id, symbol, side, quantity, trade_date)
+                self._upsert_position(connection, account_id, symbol, side, quantity, trade_date)
                 fill_id = _new_id("paper_fill")
-                self._connection.execute(
+                execute(
+                    connection,
                     """INSERT INTO paper_fills
                     (fill_id, order_id, account_id, symbol, side, quantity, price, fees, tax, trade_date, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (fill_id, order_id, account_id, symbol, side, quantity, price, fees, tax, trade_date, now),
+                    VALUES (:fill_id, :order_id, :account_id, :symbol, :side, :quantity, :price, :fees, :tax, :trade_date, :created_at)""",
+                    {"fill_id": fill_id, "order_id": order_id, "account_id": account_id, "symbol": symbol, "side": side, "quantity": quantity, "price": price, "fees": fees, "tax": tax, "trade_date": trade_date, "created_at": now},
                 )
                 blocked_reason = None
             else:
@@ -426,54 +420,55 @@ class PaperTradingStore:
                 tax = 0.0
                 cash_delta = 0.0
                 blocked_reason = blocked
-            self._connection.execute(
+            execute(
+                connection,
                 """INSERT INTO paper_orders
                 (order_id, account_id, symbol, side, quantity, price, status, blocked_reason,
                  fees, tax, cash_delta, trade_date, idempotency_key, request_hash, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (order_id, account_id, symbol, side, quantity, price, status, blocked_reason, fees, tax, cash_delta, trade_date, key, request_hash, now),
+                VALUES (:order_id, :account_id, :symbol, :side, :quantity, :price, :status, :blocked_reason,
+                        :fees, :tax, :cash_delta, :trade_date, :idempotency_key, :request_hash, :created_at)""",
+                {"order_id": order_id, "account_id": account_id, "symbol": symbol, "side": side, "quantity": quantity, "price": price, "status": status, "blocked_reason": blocked_reason, "fees": fees, "tax": tax, "cash_delta": cash_delta, "trade_date": trade_date, "idempotency_key": key, "request_hash": request_hash, "created_at": now},
             )
-            return self._order_row(self._connection.execute("SELECT * FROM paper_orders WHERE order_id = ?", (order_id,)).fetchone())
+            order_row = fetch_one(connection, "SELECT * FROM paper_orders WHERE order_id = :order_id", {"order_id": order_id})
+        return self._order_row(order_row)
 
     def list_orders(self, account_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         account_id = _id(account_id, prefix="paper_account")
-        with self._lock:
-            account = self._connection.execute("SELECT * FROM paper_accounts WHERE account_id = ?", (account_id,)).fetchone()
-            if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
-                raise PaperTradingForbidden("paper account is not owned by this principal")
-            rows = self._connection.execute(
-                "SELECT * FROM paper_orders WHERE account_id = ? ORDER BY created_at DESC, order_id DESC",
-                (account_id,),
-            ).fetchall()
+        account = self._fetch_one("SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
+        if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
+            raise PaperTradingForbidden("paper account is not owned by this principal")
+        rows = self._execute(
+            "SELECT * FROM paper_orders WHERE account_id = :account_id ORDER BY created_at DESC, order_id DESC",
+            {"account_id": account_id},
+        )
         return {"orders": [self._order_row(row) for row in rows]}
 
     def list_positions(self, account_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         account_id = _id(account_id, prefix="paper_account")
-        with self._lock:
-            account = self._connection.execute("SELECT * FROM paper_accounts WHERE account_id = ?", (account_id,)).fetchone()
-            if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
-                raise PaperTradingForbidden("paper account is not owned by this principal")
-            rows = self._connection.execute(
-                "SELECT * FROM paper_positions WHERE account_id = ? ORDER BY symbol ASC",
-                (account_id,),
-            ).fetchall()
+        account = self._fetch_one("SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
+        if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
+            raise PaperTradingForbidden("paper account is not owned by this principal")
+        rows = self._execute(
+            "SELECT * FROM paper_positions WHERE account_id = :account_id ORDER BY symbol ASC",
+            {"account_id": account_id},
+        )
         return {"positions": [dict(row) for row in rows]}
 
     def list_fills(self, account_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         account_id = _id(account_id, prefix="paper_account")
-        with self._lock:
-            account = self._connection.execute("SELECT * FROM paper_accounts WHERE account_id = ?", (account_id,)).fetchone()
-            if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
-                raise PaperTradingForbidden("paper account is not owned by this principal")
-            rows = self._connection.execute(
-                "SELECT * FROM paper_fills WHERE account_id = ? ORDER BY created_at DESC, fill_id DESC",
-                (account_id,),
-            ).fetchall()
+        account = self._fetch_one("SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
+        if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
+            raise PaperTradingForbidden("paper account is not owned by this principal")
+        rows = self._execute(
+            "SELECT * FROM paper_fills WHERE account_id = :account_id ORDER BY created_at DESC, fill_id DESC",
+            {"account_id": account_id},
+        )
         return {"fills": [dict(row) for row in rows]}
 
     def _blocked_reason(
         self,
-        account: sqlite3.Row,
+        connection: Any,
+        account: dict[str, Any],
         side: str,
         quantity: int,
         price: float,
@@ -491,10 +486,11 @@ class PaperTradingStore:
             return "limit_up"
         if side == "sell" and down_limit is not None and price < float(down_limit):
             return "limit_down"
-        position = self._connection.execute(
-            "SELECT * FROM paper_positions WHERE account_id = ? AND symbol = ?",
-            (account["account_id"], symbol),
-        ).fetchone()
+        position = fetch_one(
+            connection,
+            "SELECT * FROM paper_positions WHERE account_id = :account_id AND symbol = :symbol",
+            {"account_id": account["account_id"], "symbol": symbol},
+        )
         if side == "sell":
             if position is None or position["quantity"] < quantity:
                 return "insufficient_position"
@@ -514,10 +510,12 @@ class PaperTradingStore:
         cash_delta = amount + fees + tax if side == "buy" else -(amount - fees - tax)
         return fees, tax, cash_delta
 
-    def _upsert_position(self, account_id: str, symbol: str, side: str, quantity: int, trade_date: str) -> None:
-        row = self._connection.execute(
-            "SELECT * FROM paper_positions WHERE account_id = ? AND symbol = ?", (account_id, symbol)
-        ).fetchone()
+    def _upsert_position(self, connection: Any, account_id: str, symbol: str, side: str, quantity: int, trade_date: str) -> None:
+        row = fetch_one(
+            connection,
+            "SELECT * FROM paper_positions WHERE account_id = :account_id AND symbol = :symbol",
+            {"account_id": account_id, "symbol": symbol},
+        )
         if side == "buy":
             new_qty = (row["quantity"] if row else 0) + quantity
             last_buy_date = trade_date
@@ -525,18 +523,23 @@ class PaperTradingStore:
             new_qty = (row["quantity"] if row else 0) - quantity
             last_buy_date = row["last_buy_date"] if row else None
         if new_qty == 0:
-            self._connection.execute("DELETE FROM paper_positions WHERE account_id = ? AND symbol = ?", (account_id, symbol))
+            execute(
+                connection,
+                "DELETE FROM paper_positions WHERE account_id = :account_id AND symbol = :symbol",
+                {"account_id": account_id, "symbol": symbol},
+            )
         else:
-            self._connection.execute(
+            execute(
+                connection,
                 """INSERT INTO paper_positions (account_id, symbol, quantity, last_buy_date)
-                VALUES (?, ?, ?, ?)
+                VALUES (:account_id, :symbol, :quantity, :last_buy_date)
                 ON CONFLICT(account_id, symbol)
                 DO UPDATE SET quantity = excluded.quantity, last_buy_date = excluded.last_buy_date""",
-                (account_id, symbol, new_qty, last_buy_date),
+                {"account_id": account_id, "symbol": symbol, "quantity": new_qty, "last_buy_date": last_buy_date},
             )
 
     @staticmethod
-    def _order_row(row: sqlite3.Row) -> dict[str, object]:
+    def _order_row(row: dict[str, Any]) -> dict[str, object]:
         result = dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -119,9 +120,12 @@ def test_native_engine_blocks_limit_up_and_suspension_with_stable_codes() -> Non
     assert suspended_result["blocked_trades"][0]["reason_code"] == "suspended"
 
 
+@pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
 def test_job_worker_is_idempotent_bounded_and_stores_result_by_reference(tmp_path) -> None:
-    domain_path = tmp_path / "domain.sqlite3"
-    research = ResearchStore(domain_path)
+    research = ResearchStore(tmp_path / "domain.sqlite3")
     task = research.create_task({
         "owner_principal": "product-user", "title": "Backtest", "objective": "Native fixture",
         "trace_id": "byq-trace-backtest-test", "idempotency_key": "task-backtest-1",
@@ -154,7 +158,7 @@ def test_job_worker_is_idempotent_bounded_and_stores_result_by_reference(tmp_pat
         strategy_version_artifact_id=version["artifact_id"],
         approval_artifact_id=approval["artifact_id"],
     )
-    jobs = BacktestJobStore(domain_path)
+    jobs = BacktestJobStore()
     job = jobs.create(job_request, owner_principal="product-user")
     assert jobs.create(job_request, owner_principal="product-user")["job_id"] == job["job_id"]
     with pytest.raises(BacktestConflict):
@@ -176,8 +180,10 @@ def test_job_worker_is_idempotent_bounded_and_stores_result_by_reference(tmp_pat
     recovery_job = jobs.create(recovery_job_request, owner_principal="product-user")
     assert jobs.claim(recovery_job["job_id"])["status"] == "running"
     stale = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-    jobs._connection.execute("UPDATE backtest_jobs SET updated_at = ? WHERE job_id = ?", (stale, recovery_job["job_id"]))
-    jobs._connection.commit()
+    jobs._execute(
+        "UPDATE backtest_jobs SET updated_at = :updated_at WHERE job_id = :job_id",
+        {"updated_at": stale, "job_id": recovery_job["job_id"]},
+    )
     assert jobs.requeue_stale(older_than_seconds=60) == 1
     assert jobs.get(recovery_job["job_id"])["status"] == "queued"
 

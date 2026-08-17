@@ -14,14 +14,16 @@ import json
 import math
 import os
 import re
-import sqlite3
 import tempfile
-import threading
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
+
+from sqlalchemy.exc import SQLAlchemyError
+
+from .db import PgStoreMixin, execute, fetch_one
 
 
 BACKTEST_SCHEMA_VERSION = "backtest-input-v1"
@@ -668,62 +670,51 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class BacktestJobStore:
-    """Durable BYQ job state with strict same-key/different-input conflicts."""
+class BacktestJobStore(PgStoreMixin):
+    """Durable BYQ job state with strict same-key/different-input conflicts (ADR-0016 PG)."""
 
-    def __init__(self, path: str | Path) -> None:
-        self.path = str(path)
-        self._lock = threading.RLock()
-        if self.path != ":memory:":
-            Path(self.path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+    SCHEMA_DDL: list[str] = [
+        """
+        CREATE TABLE IF NOT EXISTS backtest_jobs (
+            job_id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            experiment_id TEXT,
+            owner_principal TEXT NOT NULL,
+            status TEXT NOT NULL,
+            request_json JSONB NOT NULL,
+            request_hash TEXT NOT NULL,
+            input_manifest_id TEXT NOT NULL,
+            input_manifest_json JSONB NOT NULL,
+            strategy_version_artifact_id TEXT NOT NULL,
+            approval_artifact_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            max_attempts INTEGER NOT NULL,
+            result_reference_json JSONB,
+            result_artifact_id TEXT,
+            summary_json JSONB,
+            error_code TEXT,
+            error_message TEXT,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            finished_at TIMESTAMPTZ
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS backtest_jobs_idempotency
+            ON backtest_jobs(task_id, idempotency_key)
+        """,
+    ]
+
+    def __init__(self, database_url: str | None = None) -> None:
         try:
-            self._connection = sqlite3.connect(self.path, timeout=10.0, check_same_thread=False)
-            self._connection.row_factory = sqlite3.Row
-            self._connection.execute("PRAGMA busy_timeout = 10000")
-            self._create_schema()
-        except sqlite3.Error as error:
+            super().__init__(database_url)
+        except SQLAlchemyError as error:
             raise BacktestStorageError("backtest job storage is unavailable") from error
 
     @classmethod
     def from_env(cls) -> "BacktestJobStore":
-        return cls(os.getenv("BYQ_DOMAIN_DB_PATH", "/tmp/byq-domain.sqlite3"))
-
-    def close(self) -> None:
-        with self._lock:
-            self._connection.close()
-
-    def _create_schema(self) -> None:
-        with self._connection:
-            self._connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS backtest_jobs (
-                    job_id TEXT PRIMARY KEY,
-                    task_id TEXT NOT NULL,
-                    experiment_id TEXT,
-                    owner_principal TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    request_json TEXT NOT NULL,
-                    request_hash TEXT NOT NULL,
-                    input_manifest_id TEXT NOT NULL,
-                    input_manifest_json TEXT NOT NULL,
-                    strategy_version_artifact_id TEXT NOT NULL,
-                    approval_artifact_id TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    attempts INTEGER NOT NULL,
-                    max_attempts INTEGER NOT NULL,
-                    result_reference_json TEXT,
-                    result_artifact_id TEXT,
-                    summary_json TEXT,
-                    error_code TEXT,
-                    error_message TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    finished_at TEXT
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS backtest_jobs_idempotency
-                    ON backtest_jobs(task_id, idempotency_key);
-                """
-            )
+        return cls()
 
     @staticmethod
     def _request_hash(request: dict[str, object]) -> str:
@@ -736,101 +727,111 @@ class BacktestJobStore:
         owner = _text(owner_principal, field="owner_principal", max_length=128)
         max_attempts = _integer(manifest["execution"].get("max_attempts", 2) if isinstance(manifest.get("execution"), dict) else 2, field="max_attempts", minimum=1, maximum=3)
         request_hash = self._request_hash(request)
-        with self._lock, self._connection:
-            existing = self._connection.execute(
-                "SELECT * FROM backtest_jobs WHERE task_id = ? AND idempotency_key = ?",
-                (request["task_id"], request["idempotency_key"]),
-            ).fetchone()
-            if existing is not None:
-                if existing["request_hash"] != request_hash:
-                    raise BacktestConflict("backtest idempotency key was reused")
-                return self._public(existing)
-            now = _now()
-            job_id = _new_job_id()
-            manifest_json = _canonical(manifest)
-            self._connection.execute(
-                """INSERT INTO backtest_jobs
-                (job_id, task_id, experiment_id, owner_principal, status, request_json,
-                 request_hash, input_manifest_id, input_manifest_json,
-                 strategy_version_artifact_id, approval_artifact_id, idempotency_key,
-                 attempts, max_attempts, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)""",
-                (
-                    job_id, request["task_id"], request.get("experiment_id"), owner, _canonical(request), request_hash,
-                    request["input_manifest_id"], manifest_json, request["strategy_version_artifact_id"],
-                    request["approval_artifact_id"], request["idempotency_key"], max_attempts, now, now,
-                ),
-            )
-            return self.get(job_id)
+        existing = self._fetch_one(
+            "SELECT * FROM backtest_jobs WHERE task_id = :task_id AND idempotency_key = :idempotency_key",
+            {"task_id": request["task_id"], "idempotency_key": request["idempotency_key"]},
+        )
+        if existing is not None:
+            if existing["request_hash"] != request_hash:
+                raise BacktestConflict("backtest idempotency key was reused")
+            return self._public(existing)
+        now = _now()
+        job_id = _new_job_id()
+        self._execute(
+            """INSERT INTO backtest_jobs
+            (job_id, task_id, experiment_id, owner_principal, status, request_json,
+             request_hash, input_manifest_id, input_manifest_json,
+             strategy_version_artifact_id, approval_artifact_id, idempotency_key,
+             attempts, max_attempts, created_at, updated_at)
+            VALUES (:job_id, :task_id, :experiment_id, :owner_principal, 'queued', :request_json,
+                    :request_hash, :input_manifest_id, :input_manifest_json,
+                    :strategy_version_artifact_id, :approval_artifact_id, :idempotency_key,
+                    0, :max_attempts, :created_at, :updated_at)""",
+            {
+                "job_id": job_id,
+                "task_id": request["task_id"],
+                "experiment_id": request.get("experiment_id"),
+                "owner_principal": owner,
+                "request_json": request,
+                "request_hash": request_hash,
+                "input_manifest_id": request["input_manifest_id"],
+                "input_manifest_json": manifest,
+                "strategy_version_artifact_id": request["strategy_version_artifact_id"],
+                "approval_artifact_id": request["approval_artifact_id"],
+                "idempotency_key": request["idempotency_key"],
+                "max_attempts": max_attempts,
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+        return self.get(job_id)
 
     def get(self, job_id: object) -> dict[str, object]:
         job_id = _text(job_id, field="job_id", max_length=64)
         if JOB_ID_PATTERN.fullmatch(job_id) is None:
             raise ValueError("job_id is not a valid backtest identifier")
-        with self._lock:
-            row = self._connection.execute("SELECT * FROM backtest_jobs WHERE job_id = ?", (job_id,)).fetchone()
+        row = self._fetch_one("SELECT * FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
         if row is None:
             raise BacktestNotFound("backtest job not found")
         return self._public(row)
 
     def list_backtests(self, *, owner_principal: str | None = None) -> dict[str, object]:
-        with self._lock:
-            if owner_principal:
-                rows = self._connection.execute(
-                    "SELECT * FROM backtest_jobs WHERE owner_principal = ? ORDER BY created_at DESC, job_id DESC LIMIT 200",
-                    (owner_principal,),
-                ).fetchall()
-            else:
-                rows = self._connection.execute(
-                    "SELECT * FROM backtest_jobs ORDER BY created_at DESC, job_id DESC LIMIT 200"
-                ).fetchall()
+        if owner_principal:
+            rows = self._execute(
+                "SELECT * FROM backtest_jobs WHERE owner_principal = :owner_principal ORDER BY created_at DESC, job_id DESC LIMIT 200",
+                {"owner_principal": owner_principal},
+            )
+        else:
+            rows = self._execute("SELECT * FROM backtest_jobs ORDER BY created_at DESC, job_id DESC LIMIT 200")
         return {"backtests": [self._public(row) for row in rows]}
 
     def request(self, job_id: object) -> dict[str, object]:
         job_id = _text(job_id, field="job_id", max_length=64)
-        with self._lock:
-            row = self._connection.execute("SELECT request_json FROM backtest_jobs WHERE job_id = ?", (job_id,)).fetchone()
+        row = self._fetch_one("SELECT request_json FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
         if row is None:
             raise BacktestNotFound("backtest job not found")
-        return json.loads(row["request_json"])
+        return row["request_json"]
 
     def claim(self, job_id: object) -> dict[str, object] | None:
         job_id = _text(job_id, field="job_id", max_length=64)
         now = _now()
-        with self._lock, self._connection:
-            row = self._connection.execute("SELECT status FROM backtest_jobs WHERE job_id = ?", (job_id,)).fetchone()
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT status FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
             if row is None:
                 raise BacktestNotFound("backtest job not found")
             if row["status"] != "queued":
                 return None
-            self._connection.execute(
-                "UPDATE backtest_jobs SET status = 'running', attempts = attempts + 1, updated_at = ?, error_code = NULL, error_message = NULL WHERE job_id = ?",
-                (now, job_id),
+            execute(
+                connection,
+                "UPDATE backtest_jobs SET status = 'running', attempts = attempts + 1, updated_at = :updated_at, error_code = NULL, error_message = NULL WHERE job_id = :job_id",
+                {"updated_at": now, "job_id": job_id},
             )
         return self.get(job_id)
 
     def complete(self, job_id: object, *, result_reference: dict[str, object], result_artifact_id: str, summary: dict[str, object]) -> dict[str, object]:
         job_id = _text(job_id, field="job_id", max_length=64)
-        with self._lock, self._connection:
-            row = self._connection.execute("SELECT status FROM backtest_jobs WHERE job_id = ?", (job_id,)).fetchone()
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT status FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
             if row is None:
                 raise BacktestNotFound("backtest job not found")
             if row["status"] != "running":
                 raise BacktestConflict("backtest job is not running")
             now = _now()
-            self._connection.execute(
-                """UPDATE backtest_jobs SET status = 'completed', result_reference_json = ?,
-                result_artifact_id = ?, summary_json = ?, updated_at = ?, finished_at = ?
-                WHERE job_id = ?""",
-                (_canonical(result_reference), result_artifact_id, _canonical(summary), now, now, job_id),
+            execute(
+                connection,
+                """UPDATE backtest_jobs SET status = 'completed', result_reference_json = :result_reference,
+                result_artifact_id = :result_artifact_id, summary_json = :summary,
+                updated_at = :updated_at, finished_at = :finished_at
+                WHERE job_id = :job_id""",
+                {"result_reference": result_reference, "result_artifact_id": result_artifact_id, "summary": summary, "updated_at": now, "finished_at": now, "job_id": job_id},
             )
         return self.get(job_id)
 
     def retry_or_fail(self, job_id: object, *, error_code: str, error_message: str) -> dict[str, object]:
         job_id = _text(job_id, field="job_id", max_length=64)
         safe_message = _text(error_message, field="error_message", max_length=512)
-        with self._lock, self._connection:
-            row = self._connection.execute("SELECT status, attempts, max_attempts FROM backtest_jobs WHERE job_id = ?", (job_id,)).fetchone()
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT status, attempts, max_attempts FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
             if row is None:
                 raise BacktestNotFound("backtest job not found")
             if row["status"] != "running":
@@ -838,48 +839,49 @@ class BacktestJobStore:
             terminal = int(row["attempts"]) >= int(row["max_attempts"])
             status = "failed" if terminal else "queued"
             now = _now()
-            self._connection.execute(
-                "UPDATE backtest_jobs SET status = ?, error_code = ?, error_message = ?, updated_at = ?, finished_at = ? WHERE job_id = ?",
-                (status, _text(error_code, field="error_code", max_length=64), safe_message, now, now if terminal else None, job_id),
+            execute(
+                connection,
+                "UPDATE backtest_jobs SET status = :status, error_code = :error_code, error_message = :error_message, updated_at = :updated_at, finished_at = :finished_at WHERE job_id = :job_id",
+                {"status": status, "error_code": _text(error_code, field="error_code", max_length=64), "error_message": safe_message, "updated_at": now, "finished_at": now if terminal else None, "job_id": job_id},
             )
         return self.get(job_id)
 
     def requeue_stale(self, *, older_than_seconds: int = 300) -> int:
         cutoff = datetime.now(timezone.utc).timestamp() - max(1, int(older_than_seconds))
         changed = 0
-        with self._lock, self._connection:
-            rows = self._connection.execute(
-                "SELECT job_id, updated_at FROM backtest_jobs WHERE status = 'running'"
-            ).fetchall()
+        with self._transaction() as connection:
+            rows = execute(connection, "SELECT job_id, updated_at FROM backtest_jobs WHERE status = 'running'")
             for row in rows:
                 try:
                     updated = datetime.fromisoformat(row["updated_at"]).timestamp()
                 except ValueError:
                     updated = 0
                 if updated < cutoff:
-                    self._connection.execute(
-                        "UPDATE backtest_jobs SET status = 'queued', error_code = 'worker_restart', error_message = 'stale running job requeued', updated_at = ? WHERE job_id = ?",
-                        (_now(), row["job_id"]),
+                    execute(
+                        connection,
+                        "UPDATE backtest_jobs SET status = 'queued', error_code = 'worker_restart', error_message = 'stale running job requeued', updated_at = :updated_at WHERE job_id = :job_id",
+                        {"updated_at": _now(), "job_id": row["job_id"]},
                     )
                     changed += 1
         return changed
 
     def cancel(self, job_id: object) -> dict[str, object]:
         job_id = _text(job_id, field="job_id", max_length=64)
-        with self._lock, self._connection:
-            row = self._connection.execute("SELECT status FROM backtest_jobs WHERE job_id = ?", (job_id,)).fetchone()
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT status FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
             if row is None:
                 raise BacktestNotFound("backtest job not found")
             if row["status"] in {"queued", "running"}:
                 now = _now()
-                self._connection.execute(
-                    "UPDATE backtest_jobs SET status = 'cancelled', error_code = 'cancelled', error_message = 'cancelled by owner', updated_at = ?, finished_at = ? WHERE job_id = ?",
-                    (now, now, job_id),
+                execute(
+                    connection,
+                    "UPDATE backtest_jobs SET status = 'cancelled', error_code = 'cancelled', error_message = 'cancelled by owner', updated_at = :updated_at, finished_at = :finished_at WHERE job_id = :job_id",
+                    {"updated_at": now, "finished_at": now, "job_id": job_id},
                 )
         return self.get(job_id)
 
     @staticmethod
-    def _public(row: sqlite3.Row) -> dict[str, object]:
+    def _public(row: dict[str, Any]) -> dict[str, object]:
         result: dict[str, object] = {
             "job_id": row["job_id"], "task_id": row["task_id"], "experiment_id": row["experiment_id"],
             "owner_principal": row["owner_principal"], "status": row["status"],
@@ -887,12 +889,12 @@ class BacktestJobStore:
             "approval_artifact_id": row["approval_artifact_id"], "attempts": row["attempts"], "max_attempts": row["max_attempts"],
             "result_artifact_id": row["result_artifact_id"], "error_code": row["error_code"], "error_message": row["error_message"],
             "created_at": row["created_at"], "updated_at": row["updated_at"], "finished_at": row["finished_at"],
-            "input_manifest": json.loads(row["input_manifest_json"]),
+            "input_manifest": row["input_manifest_json"],
         }
         if row["result_reference_json"]:
-            result["result_reference"] = json.loads(row["result_reference_json"])
+            result["result_reference"] = row["result_reference_json"]
         if row["summary_json"]:
-            result["summary"] = json.loads(row["summary_json"])
+            result["summary"] = row["summary_json"]
         return result
 
 
