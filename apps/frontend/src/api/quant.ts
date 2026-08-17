@@ -22,20 +22,23 @@ export function getResearchEntity(
   return request(`/research/${entityType}/${encodeURIComponent(entityId)}`, token);
 }
 
-export function getBacktest(jobId: string, token: string): Promise<BacktestJob> {
-  return request(`/backtests/${encodeURIComponent(jobId)}`, token);
+export async function getBacktest(jobId: string, token: string): Promise<BacktestJob> {
+  const body = await request<{ job: BacktestJob }>(`/backtests/${encodeURIComponent(jobId)}`, token);
+  return body.job ?? (body as unknown as BacktestJob);
 }
 
 export function getBacktestResult(jobId: string, token: string): Promise<{ job_id: string; result: BacktestResult }> {
   return request(`/backtests/${encodeURIComponent(jobId)}/result`, token);
 }
 
-export function runBacktest(jobId: string, token: string): Promise<BacktestJob> {
-  return request(`/backtests/${encodeURIComponent(jobId)}/run`, token, { method: "POST" });
+export async function runBacktest(jobId: string, token: string): Promise<BacktestJob> {
+  const body = await request<{ job: BacktestJob }>(`/backtests/${encodeURIComponent(jobId)}/run`, token, { method: "POST" });
+  return body.job ?? (body as unknown as BacktestJob);
 }
 
-export function cancelBacktest(jobId: string, token: string): Promise<BacktestJob> {
-  return request(`/backtests/${encodeURIComponent(jobId)}/cancel`, token, { method: "POST" });
+export async function cancelBacktest(jobId: string, token: string): Promise<BacktestJob> {
+  const body = await request<{ job: BacktestJob }>(`/backtests/${encodeURIComponent(jobId)}/cancel`, token, { method: "POST" });
+  return body.job ?? (body as unknown as BacktestJob);
 }
 
 export function exportStrategyVersion(artifactId: string, token: string): Promise<Record<string, unknown>> {

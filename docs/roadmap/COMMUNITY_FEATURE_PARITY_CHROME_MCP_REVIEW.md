@@ -59,3 +59,32 @@ The reviewed release candidate still shows empty states for research/backtest/
 pool/paper data when no owner-scoped records exist, and some advanced editors
 remain future hardening. These are recorded as `REDESIGNED_PASS` rather than
 complete product depth.
+
+## Backtest result workspace review (2026-08-17)
+
+- Browser method: Chrome DevTools MCP (`chrome-devtools-mcp`, stdio, headed
+  mode, viewport 1440x900)
+- Topology: local `beyondquant` compose rebuilt from `main` at `5af1668`,
+  including the merged Backtest result workspace (PR #52)
+- Browser origin: `http://127.0.0.1`
+- Authenticated principal: `chromeuser` / role `admin`
+
+Observed at `/backtest` with a real completed owner-scoped job
+(`backtest_6346a4d5cfae4e818df0e5b22e6744fd`, `completed`, total return
+0.67%, max drawdown 0.00%, trade count 3, final value 201,336.64):
+
+- List pane renders search by Job ID, status filter, selection checkboxes,
+  per-row 收益/回撤/创建时间, run/cancel actions, 对比所选任务, and 刷新.
+- Detail pane renders real metrics: Total Return, Max Drawdown, Trade Count,
+  Blocked Trades, Final Value, Status.
+- Tabs render: 权益曲线 (real equity data), 交易明细 (3 trade rows with
+  date/symbol/side/quantity/price/commission/tax/realized PnL), 拦截明细,
+  公司行动, and 输入清单 / Preflight (full frozen input manifest with
+  strategy/approval ids, universe fingerprint, bars, signals, execution).
+- No raw MCP/DSH/Backend/storage/provider URL or secret appeared in the
+  rendered page; the page consumed Product API routes only.
+
+This review also exposed and fixed a real defect: the Product API wraps
+backtest jobs in `{"job": ...}` and the frontend client did not unwrap it,
+so job detail never loaded. The fix unwraps `job` in the quant API client and
+adds unit/e2e coverage.
