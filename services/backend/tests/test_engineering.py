@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from app.engineering import EngineeringForbidden, EngineeringTaskStore
 
+
+
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
 
 def create(store: EngineeringTaskStore, **overrides: object) -> dict[str, object]:
     payload = {
@@ -18,7 +27,7 @@ def create(store: EngineeringTaskStore, **overrides: object) -> dict[str, object
 
 
 def test_engineering_task_requires_isolated_evidence_before_completion(tmp_path) -> None:
-    store = EngineeringTaskStore(tmp_path / "engineering.sqlite3")
+    store = EngineeringTaskStore()
     task = create(store)
     assert task["status"] == "proposed"
     assert create(store)["task_id"] == task["task_id"]
@@ -112,7 +121,7 @@ def test_engineering_task_requires_isolated_evidence_before_completion(tmp_path)
 
 
 def test_engineering_task_rejects_non_isolated_worktree_and_secrets(tmp_path) -> None:
-    store = EngineeringTaskStore(tmp_path / "engineering.sqlite3")
+    store = EngineeringTaskStore()
     task = create(store)
     with pytest.raises(ValueError, match="worktree"):
         store.report_evidence(

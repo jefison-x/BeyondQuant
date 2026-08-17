@@ -12,12 +12,14 @@ import json
 import math
 import os
 import re
-import sqlite3
-import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from sqlalchemy.exc import SQLAlchemyError
+
+from .db import PgStoreMixin, execute, fetch_one
 
 from .research import ResearchNotFound, ResearchStore
 
@@ -195,126 +197,131 @@ def _loads(value: str, *, field: str) -> object:
         raise LearningPersistenceError(f"stored {field} is invalid") from exc
 
 
-class LearningLoopStore:
-    """Durable BYQ store for bounded learning runs and promoted lessons."""
+class LearningLoopStore(PgStoreMixin):
+    """Durable BYQ store for bounded learning runs and promoted lessons (ADR-0016 PG)."""
 
-    def __init__(self, path: str | Path, research_store: ResearchStore) -> None:
-        self.path = str(path)
+    SCHEMA_DDL: list[str] = [
+        """
+        CREATE TABLE IF NOT EXISTS learning_runs (
+            learning_run_id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            owner_principal TEXT NOT NULL,
+            actor_principal TEXT NOT NULL,
+            trace_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            budget_json JSONB NOT NULL,
+            stopping_rules_json JSONB NOT NULL,
+            lineage_json JSONB NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            version INTEGER NOT NULL
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS learning_runs_idempotency
+            ON learning_runs(owner_principal, idempotency_key)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS learning_iterations (
+            iteration_id TEXT PRIMARY KEY,
+            learning_run_id TEXT NOT NULL REFERENCES learning_runs(learning_run_id),
+            sequence INTEGER NOT NULL,
+            iteration_index INTEGER NOT NULL,
+            attempt INTEGER NOT NULL,
+            outcome TEXT NOT NULL,
+            feedback_json JSONB NOT NULL,
+            source_refs_json JSONB NOT NULL,
+            result_refs_json JSONB NOT NULL,
+            trace_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS learning_iterations_idempotency
+            ON learning_iterations(learning_run_id, idempotency_key)
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS learning_iterations_order
+            ON learning_iterations(learning_run_id, sequence)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS evaluation_signals (
+            signal_id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            experiment_id TEXT,
+            source_artifact_id TEXT NOT NULL,
+            metric TEXT NOT NULL,
+            value DOUBLE PRECISION NOT NULL,
+            unit TEXT,
+            lineage_json JSONB NOT NULL,
+            trace_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS evaluation_signals_idempotency
+            ON evaluation_signals(task_id, idempotency_key)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS lessons (
+            lesson_id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            owner_principal TEXT NOT NULL,
+            actor_principal TEXT NOT NULL,
+            trace_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            content_json JSONB NOT NULL,
+            evidence_json JSONB NOT NULL,
+            validation_json JSONB NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            version INTEGER NOT NULL
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS lessons_idempotency
+            ON lessons(task_id, idempotency_key)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS learning_history (
+            history_id TEXT PRIMARY KEY,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            from_status TEXT NOT NULL,
+            to_status TEXT NOT NULL,
+            reviewer_principal TEXT NOT NULL,
+            decision TEXT NOT NULL,
+            rationale TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS learning_history_entity
+            ON learning_history(entity_type, entity_id, created_at, history_id)
+        """,
+    ]
+
+    def __init__(self, database_url: str | None = None, research_store: ResearchStore | None = None) -> None:
+        if research_store is None:
+            from .research import ResearchStore as _ResearchStore
+            research_store = _ResearchStore.from_env()
         self.research_store = research_store
-        self._lock = threading.RLock()
-        if self.path != ":memory:":
-            Path(self.path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
         try:
-            self._connection = sqlite3.connect(self.path, timeout=10.0, check_same_thread=False)
-            self._connection.row_factory = sqlite3.Row
-            self._connection.execute("PRAGMA foreign_keys = ON")
-            self._connection.execute("PRAGMA busy_timeout = 10000")
-            self._create_schema()
-        except sqlite3.Error as exc:
+            super().__init__(database_url)
+        except SQLAlchemyError as exc:
             raise LearningPersistenceError("learning storage is unavailable") from exc
 
     @classmethod
     def from_env(cls, research_store: ResearchStore) -> "LearningLoopStore":
-        return cls(os.getenv("BYQ_DOMAIN_DB_PATH", "/tmp/byq-domain.sqlite3"), research_store)
-
-    def close(self) -> None:
-        with self._lock:
-            self._connection.close()
-
-    def _create_schema(self) -> None:
-        with self._connection:
-            self._connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS learning_runs (
-                    learning_run_id TEXT PRIMARY KEY,
-                    task_id TEXT NOT NULL,
-                    owner_principal TEXT NOT NULL,
-                    actor_principal TEXT NOT NULL,
-                    trace_id TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    budget_json TEXT NOT NULL,
-                    stopping_rules_json TEXT NOT NULL,
-                    lineage_json TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    request_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    version INTEGER NOT NULL
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS learning_runs_idempotency
-                    ON learning_runs(owner_principal, idempotency_key);
-
-                CREATE TABLE IF NOT EXISTS learning_iterations (
-                    iteration_id TEXT PRIMARY KEY,
-                    learning_run_id TEXT NOT NULL REFERENCES learning_runs(learning_run_id),
-                    sequence INTEGER NOT NULL,
-                    iteration_index INTEGER NOT NULL,
-                    attempt INTEGER NOT NULL,
-                    outcome TEXT NOT NULL,
-                    feedback_json TEXT NOT NULL,
-                    source_refs_json TEXT NOT NULL,
-                    result_refs_json TEXT NOT NULL,
-                    trace_id TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    request_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS learning_iterations_idempotency
-                    ON learning_iterations(learning_run_id, idempotency_key);
-                CREATE UNIQUE INDEX IF NOT EXISTS learning_iterations_order
-                    ON learning_iterations(learning_run_id, sequence);
-
-                CREATE TABLE IF NOT EXISTS evaluation_signals (
-                    signal_id TEXT PRIMARY KEY,
-                    task_id TEXT NOT NULL,
-                    experiment_id TEXT,
-                    source_artifact_id TEXT NOT NULL,
-                    metric TEXT NOT NULL,
-                    value REAL NOT NULL,
-                    unit TEXT,
-                    lineage_json TEXT NOT NULL,
-                    trace_id TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    request_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS evaluation_signals_idempotency
-                    ON evaluation_signals(task_id, idempotency_key);
-
-                CREATE TABLE IF NOT EXISTS lessons (
-                    lesson_id TEXT PRIMARY KEY,
-                    task_id TEXT NOT NULL,
-                    owner_principal TEXT NOT NULL,
-                    actor_principal TEXT NOT NULL,
-                    trace_id TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    content_json TEXT NOT NULL,
-                    evidence_json TEXT NOT NULL,
-                    validation_json TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    request_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    version INTEGER NOT NULL
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS lessons_idempotency
-                    ON lessons(task_id, idempotency_key);
-
-                CREATE TABLE IF NOT EXISTS learning_history (
-                    history_id TEXT PRIMARY KEY,
-                    entity_type TEXT NOT NULL,
-                    entity_id TEXT NOT NULL,
-                    from_status TEXT NOT NULL,
-                    to_status TEXT NOT NULL,
-                    reviewer_principal TEXT NOT NULL,
-                    decision TEXT NOT NULL,
-                    rationale TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS learning_history_entity
-                    ON learning_history(entity_type, entity_id, created_at, history_id);
-                """
-            )
+        return cls(None, research_store)
 
     def start_run(
         self,
@@ -332,9 +339,9 @@ class LearningLoopStore:
             raise LearningUnauthorized("learning run requires trusted owner and actor")
         task_id = _text(payload.get("task_id"), field="task_id", max_length=64)
         task = self._owned_task(task_id, owner)
-        budget, budget_json = self._budget(payload.get("budget"))
-        stopping_rules, stopping_json = self._stopping_rules(payload.get("stopping_rules", {}))
-        lineage, lineage_json = _lineage(payload.get("lineage", []))
+        budget, _ = self._budget(payload.get("budget"))
+        stopping_rules, _ = self._stopping_rules(payload.get("stopping_rules", {}))
+        lineage, _ = _lineage(payload.get("lineage", []))
         trace_id = _trace(payload.get("trace_id"), field="trace_id")
         key = _idempotency(payload.get("idempotency_key"))
         request = {
@@ -348,33 +355,38 @@ class LearningLoopStore:
             "idempotency_key": key,
         }
         request_hash = _hash(request)
-        with self._lock, self._connection:
-            existing = self._connection.execute(
-                "SELECT * FROM learning_runs WHERE owner_principal = ? AND idempotency_key = ?",
-                (owner, key),
-            ).fetchone()
+        with self._transaction() as connection:
+            existing = fetch_one(
+                connection,
+                "SELECT * FROM learning_runs WHERE owner_principal = :owner AND idempotency_key = :key",
+                {"owner": owner, "key": key},
+            )
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise LearningConflict("learning run idempotency key was reused")
                 return self._run_row(existing)
             now = _now()
             run_id = _new_id("learning_run")
-            self._connection.execute(
+            execute(
+                connection,
                 """INSERT INTO learning_runs
                 (learning_run_id, task_id, owner_principal, actor_principal, trace_id,
                  status, budget_json, stopping_rules_json, lineage_json,
                  idempotency_key, request_hash, created_at, updated_at, version)
-                VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, 1)""",
-                (run_id, task_id, owner, actor, trace_id, budget_json, stopping_json, lineage_json, key, request_hash, now, now),
+                VALUES (:run_id, :task_id, :owner, :actor, :trace_id, 'active',
+                        :budget_json, :stopping_rules_json, :lineage_json,
+                        :key, :request_hash, :created_at, :updated_at, 1)""",
+                {"run_id": run_id, "task_id": task_id, "owner": owner, "actor": actor, "trace_id": trace_id,
+                 "budget_json": budget, "stopping_rules_json": stopping_rules, "lineage_json": lineage,
+                 "key": key, "request_hash": request_hash, "created_at": now, "updated_at": now},
             )
-            row = self._connection.execute("SELECT * FROM learning_runs WHERE learning_run_id = ?", (run_id,)).fetchone()
-            assert row is not None
-            return self._run_row(row)
+            row = fetch_one(connection, "SELECT * FROM learning_runs WHERE learning_run_id = :run_id", {"run_id": run_id})
+        assert row is not None
+        return self._run_row(row)
 
     def get_run(self, run_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         run_id = _learning_id(run_id, field="learning_run_id", prefix="learning_run")
-        with self._lock:
-            row = self._connection.execute("SELECT * FROM learning_runs WHERE learning_run_id = ?", (run_id,)).fetchone()
+        row = self._fetch_one("SELECT * FROM learning_runs WHERE learning_run_id = :run_id", {"run_id": run_id})
         if row is None:
             raise LearningNotFound("learning run not found")
         if trusted_owner and row["owner_principal"] != trusted_owner:
@@ -395,8 +407,7 @@ class LearningLoopStore:
             {"run_id", "iteration_index", "attempt", "outcome", "feedback", "source_refs", "result_refs", "trace_id", "idempotency_key"},
         )
         run_id = _learning_id(payload.get("run_id"), field="run_id", prefix="learning_run")
-        with self._lock:
-            run = self._connection.execute("SELECT * FROM learning_runs WHERE learning_run_id = ?", (run_id,)).fetchone()
+        run = self._fetch_one("SELECT * FROM learning_runs WHERE learning_run_id = :run_id", {"run_id": run_id})
         if run is None:
             raise LearningNotFound("learning run not found")
         self._check_run_access(run, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
@@ -407,9 +418,9 @@ class LearningLoopStore:
         outcome = _text(payload.get("outcome"), field="outcome", max_length=32)
         if outcome not in {"produced", "no_change", "failed"}:
             raise ValueError("outcome must be produced, no_change, or failed")
-        feedback, feedback_json = _json_object(payload.get("feedback", {}), field="feedback")
-        source_refs, source_json = _lineage(payload.get("source_refs", []))
-        result_refs, result_json = _lineage(payload.get("result_refs", []))
+        feedback, _ = _json_object(payload.get("feedback", {}), field="feedback")
+        source_refs, _ = _lineage(payload.get("source_refs", []))
+        result_refs, _ = _lineage(payload.get("result_refs", []))
         trace_id = _trace(payload.get("trace_id"), field="trace_id")
         key = _idempotency(payload.get("idempotency_key"))
         request = {
@@ -424,43 +435,52 @@ class LearningLoopStore:
             "idempotency_key": key,
         }
         request_hash = _hash(request)
-        with self._lock, self._connection:
-            existing = self._connection.execute(
-                "SELECT * FROM learning_iterations WHERE learning_run_id = ? AND idempotency_key = ?",
-                (run_id, key),
-            ).fetchone()
+        with self._transaction() as connection:
+            existing = fetch_one(
+                connection,
+                "SELECT * FROM learning_iterations WHERE learning_run_id = :run_id AND idempotency_key = :key",
+                {"run_id": run_id, "key": key},
+            )
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise LearningConflict("learning iteration idempotency key was reused")
                 return {"iteration": self._iteration_row(existing), "run": self._run_row(run)}
-            rows = self._connection.execute(
-                "SELECT * FROM learning_iterations WHERE learning_run_id = ? ORDER BY sequence ASC",
-                (run_id,),
-            ).fetchall()
+            rows = execute(
+                connection,
+                "SELECT * FROM learning_iterations WHERE learning_run_id = :run_id ORDER BY sequence ASC",
+                {"run_id": run_id},
+            )
             budget = self._stored_budget(run["budget_json"])
             self._validate_iteration_sequence(rows, iteration_index, attempt, budget)
             now = _now()
             iteration_id = _new_id("learning_iteration")
             sequence = len(rows) + 1
-            self._connection.execute(
+            execute(
+                connection,
                 """INSERT INTO learning_iterations
                 (iteration_id, learning_run_id, sequence, iteration_index, attempt,
                  outcome, feedback_json, source_refs_json, result_refs_json,
                  trace_id, idempotency_key, request_hash, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (iteration_id, run_id, sequence, iteration_index, attempt, outcome, feedback_json, source_json, result_json, trace_id, key, request_hash, now),
+                VALUES (:iteration_id, :run_id, :sequence, :iteration_index, :attempt,
+                        :outcome, :feedback_json, :source_refs_json, :result_refs_json,
+                        :trace_id, :key, :request_hash, :created_at)""",
+                {"iteration_id": iteration_id, "run_id": run_id, "sequence": sequence,
+                 "iteration_index": iteration_index, "attempt": attempt, "outcome": outcome,
+                 "feedback_json": feedback, "source_refs_json": source_refs, "result_refs_json": result_refs,
+                 "trace_id": trace_id, "key": key, "request_hash": request_hash, "created_at": now},
             )
-            inserted = self._connection.execute("SELECT * FROM learning_iterations WHERE iteration_id = ?", (iteration_id,)).fetchone()
+            inserted = fetch_one(connection, "SELECT * FROM learning_iterations WHERE iteration_id = :iteration_id", {"iteration_id": iteration_id})
             assert inserted is not None
             new_status = self._next_run_status(run, outcome, iteration_index, attempt, budget, feedback)
             if new_status != run["status"]:
-                self._connection.execute(
-                    "UPDATE learning_runs SET status = ?, updated_at = ?, version = version + 1 WHERE learning_run_id = ?",
-                    (new_status, now, run_id),
+                execute(
+                    connection,
+                    "UPDATE learning_runs SET status = :status, updated_at = :updated_at, version = version + 1 WHERE learning_run_id = :run_id",
+                    {"status": new_status, "updated_at": now, "run_id": run_id},
                 )
-                run = self._connection.execute("SELECT * FROM learning_runs WHERE learning_run_id = ?", (run_id,)).fetchone()
+                run = fetch_one(connection, "SELECT * FROM learning_runs WHERE learning_run_id = :run_id", {"run_id": run_id})
                 assert run is not None
-            return {"iteration": self._iteration_row(inserted), "run": self._run_row(run)}
+        return {"iteration": self._iteration_row(inserted), "run": self._run_row(run)}
 
     def review_run(
         self,
@@ -480,8 +500,8 @@ class LearningLoopStore:
         if decision not in {"approved", "rejected"}:
             raise ValueError("decision must be approved or rejected")
         rationale = _text(payload.get("rationale") or "", field="rationale", max_length=2000) if payload.get("rationale") else ""
-        with self._lock, self._connection:
-            run = self._connection.execute("SELECT * FROM learning_runs WHERE learning_run_id = ?", (run_id,)).fetchone()
+        with self._transaction() as connection:
+            run = fetch_one(connection, "SELECT * FROM learning_runs WHERE learning_run_id = :run_id", {"run_id": run_id})
             if run is None:
                 raise LearningNotFound("learning run not found")
             if trusted_owner and run["owner_principal"] != trusted_owner:
@@ -492,27 +512,27 @@ class LearningLoopStore:
                 raise LearningForbidden("learning run is not awaiting human review")
             target = "completed" if decision == "approved" else "failed"
             now = _now()
-            self._connection.execute(
-                "UPDATE learning_runs SET status = ?, updated_at = ?, version = version + 1 WHERE learning_run_id = ?",
-                (target, now, run_id),
+            execute(
+                connection,
+                "UPDATE learning_runs SET status = :status, updated_at = :updated_at, version = version + 1 WHERE learning_run_id = :run_id",
+                {"status": target, "updated_at": now, "run_id": run_id},
             )
-            self._record_history("learning_run", run_id, "awaiting_review", target, reviewer, decision, rationale)
-            updated = self._connection.execute("SELECT * FROM learning_runs WHERE learning_run_id = ?", (run_id,)).fetchone()
-            assert updated is not None
-            return self._run_row(updated)
+            self._record_history(connection, "learning_run", run_id, "awaiting_review", target, reviewer, decision, rationale)
+            updated = fetch_one(connection, "SELECT * FROM learning_runs WHERE learning_run_id = :run_id", {"run_id": run_id})
+        assert updated is not None
+        return self._run_row(updated)
 
     def list_iterations(self, run_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         run_id = _learning_id(run_id, field="run_id", prefix="learning_run")
-        with self._lock:
-            run = self._connection.execute("SELECT * FROM learning_runs WHERE learning_run_id = ?", (run_id,)).fetchone()
-            if run is None:
-                raise LearningNotFound("learning run not found")
-            if trusted_owner and run["owner_principal"] != trusted_owner:
-                raise LearningUnauthorized("learning run is not owned by this principal")
-            rows = self._connection.execute(
-                "SELECT * FROM learning_iterations WHERE learning_run_id = ? ORDER BY sequence ASC",
-                (run_id,),
-            ).fetchall()
+        run = self._fetch_one("SELECT * FROM learning_runs WHERE learning_run_id = :run_id", {"run_id": run_id})
+        if run is None:
+            raise LearningNotFound("learning run not found")
+        if trusted_owner and run["owner_principal"] != trusted_owner:
+            raise LearningUnauthorized("learning run is not owned by this principal")
+        rows = self._execute(
+            "SELECT * FROM learning_iterations WHERE learning_run_id = :run_id ORDER BY sequence ASC",
+            {"run_id": run_id},
+        )
         return {"run": self._run_row(run), "iterations": [self._iteration_row(row) for row in rows]}
 
     def create_signal(
@@ -544,7 +564,7 @@ class LearningLoopStore:
         metric = _text(payload.get("metric"), field="metric", max_length=128)
         value = self._finite_value(payload.get("value"), "value")
         unit = _text(payload["unit"], field="unit", max_length=32) if payload.get("unit") else None
-        lineage, lineage_json = _lineage(payload.get("lineage", []))
+        lineage, _ = _lineage(payload.get("lineage", []))
         trace_id = _trace(payload.get("trace_id"), field="trace_id")
         key = _idempotency(payload.get("idempotency_key"))
         request = {
@@ -559,33 +579,39 @@ class LearningLoopStore:
             "idempotency_key": key,
         }
         request_hash = _hash(request)
-        with self._lock, self._connection:
-            existing = self._connection.execute(
-                "SELECT * FROM evaluation_signals WHERE task_id = ? AND idempotency_key = ?",
-                (task_id, key),
-            ).fetchone()
+        with self._transaction() as connection:
+            existing = fetch_one(
+                connection,
+                "SELECT * FROM evaluation_signals WHERE task_id = :task_id AND idempotency_key = :key",
+                {"task_id": task_id, "key": key},
+            )
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise LearningConflict("evaluation signal idempotency key was reused")
                 return self._signal_row(existing)
             now = _now()
             signal_id = _new_id("evaluation_signal")
-            self._connection.execute(
+            execute(
+                connection,
                 """INSERT INTO evaluation_signals
                 (signal_id, task_id, experiment_id, source_artifact_id, metric,
                  value, unit, lineage_json, trace_id, idempotency_key,
                  request_hash, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (signal_id, task_id, experiment_id, artifact_id, metric, value, unit, lineage_json, trace_id, key, request_hash, now),
+                VALUES (:signal_id, :task_id, :experiment_id, :source_artifact_id, :metric,
+                        :value, :unit, :lineage_json, :trace_id, :key,
+                        :request_hash, :created_at)""",
+                {"signal_id": signal_id, "task_id": task_id, "experiment_id": experiment_id,
+                 "source_artifact_id": artifact_id, "metric": metric, "value": value, "unit": unit,
+                 "lineage_json": lineage, "trace_id": trace_id, "key": key,
+                 "request_hash": request_hash, "created_at": now},
             )
-            row = self._connection.execute("SELECT * FROM evaluation_signals WHERE signal_id = ?", (signal_id,)).fetchone()
-            assert row is not None
-            return self._signal_row(row)
+            row = fetch_one(connection, "SELECT * FROM evaluation_signals WHERE signal_id = :signal_id", {"signal_id": signal_id})
+        assert row is not None
+        return self._signal_row(row)
 
     def get_signal(self, signal_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         signal_id = _learning_id(signal_id, field="signal_id", prefix="evaluation_signal")
-        with self._lock:
-            row = self._connection.execute("SELECT * FROM evaluation_signals WHERE signal_id = ?", (signal_id,)).fetchone()
+        row = self._fetch_one("SELECT * FROM evaluation_signals WHERE signal_id = :signal_id", {"signal_id": signal_id})
         if row is None:
             raise LearningNotFound("evaluation signal not found")
         if trusted_owner:
@@ -610,9 +636,8 @@ class LearningLoopStore:
             if experiment["task_id"] != task_id:
                 raise ValueError("experiment does not belong to research task")
         metric = _text(payload.get("metric"), field="metric", max_length=128)
-        with self._lock:
-            a = self._latest_signal(task_id, experiment_a, metric)
-            b = self._latest_signal(task_id, experiment_b, metric)
+        a = self._latest_signal(task_id, experiment_a, metric)
+        b = self._latest_signal(task_id, experiment_b, metric)
         if a is None or b is None:
             raise ValueError("both experiments must have an evaluation signal for the requested metric")
         a_value = float(a["value"])
@@ -649,9 +674,9 @@ class LearningLoopStore:
             raise LearningUnauthorized("lesson proposal requires trusted owner and actor")
         task_id = _text(payload.get("task_id"), field="task_id", max_length=64)
         self._owned_task(task_id, owner)
-        content, content_json = _json_object(payload.get("content"), field="content")
-        validation, validation_json = _json_object(payload.get("validation", {}), field="validation")
-        evidence, evidence_json = self._evidence_refs(payload.get("evidence"), task_id=task_id, owner=owner)
+        content, _ = _json_object(payload.get("content"), field="content")
+        validation, _ = _json_object(payload.get("validation", {}), field="validation")
+        evidence, _ = self._evidence_refs(payload.get("evidence"), task_id=task_id, owner=owner)
         trace_id = _trace(payload.get("trace_id"), field="trace_id")
         key = _idempotency(payload.get("idempotency_key"))
         request = {
@@ -665,33 +690,38 @@ class LearningLoopStore:
             "idempotency_key": key,
         }
         request_hash = _hash(request)
-        with self._lock, self._connection:
-            existing = self._connection.execute(
-                "SELECT * FROM lessons WHERE task_id = ? AND idempotency_key = ?",
-                (task_id, key),
-            ).fetchone()
+        with self._transaction() as connection:
+            existing = fetch_one(
+                connection,
+                "SELECT * FROM lessons WHERE task_id = :task_id AND idempotency_key = :key",
+                {"task_id": task_id, "key": key},
+            )
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise LearningConflict("lesson idempotency key was reused")
                 return self._lesson_with_history(existing)
             now = _now()
             lesson_id = _new_id("lesson")
-            self._connection.execute(
+            execute(
+                connection,
                 """INSERT INTO lessons
                 (lesson_id, task_id, owner_principal, actor_principal, trace_id,
                  status, content_json, evidence_json, validation_json,
                  idempotency_key, request_hash, created_at, updated_at, version)
-                VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, ?, ?, ?, ?, ?, 1)""",
-                (lesson_id, task_id, owner, actor, trace_id, content_json, evidence_json, validation_json, key, request_hash, now, now),
+                VALUES (:lesson_id, :task_id, :owner, :actor, :trace_id, 'proposed',
+                        :content_json, :evidence_json, :validation_json,
+                        :key, :request_hash, :created_at, :updated_at, 1)""",
+                {"lesson_id": lesson_id, "task_id": task_id, "owner": owner, "actor": actor, "trace_id": trace_id,
+                 "content_json": content, "evidence_json": evidence, "validation_json": validation,
+                 "key": key, "request_hash": request_hash, "created_at": now, "updated_at": now},
             )
-            row = self._connection.execute("SELECT * FROM lessons WHERE lesson_id = ?", (lesson_id,)).fetchone()
-            assert row is not None
-            return self._lesson_with_history(row)
+            row = fetch_one(connection, "SELECT * FROM lessons WHERE lesson_id = :lesson_id", {"lesson_id": lesson_id})
+        assert row is not None
+        return self._lesson_with_history(row)
 
     def get_lesson(self, lesson_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         lesson_id = _learning_id(lesson_id, field="lesson_id", prefix="lesson")
-        with self._lock:
-            row = self._connection.execute("SELECT * FROM lessons WHERE lesson_id = ?", (lesson_id,)).fetchone()
+        row = self._fetch_one("SELECT * FROM lessons WHERE lesson_id = :lesson_id", {"lesson_id": lesson_id})
         if row is None:
             raise LearningNotFound("lesson not found")
         if trusted_owner and row["owner_principal"] != trusted_owner:
@@ -716,8 +746,8 @@ class LearningLoopStore:
         if decision not in {"approved", "rejected", "superseded"}:
             raise ValueError("decision must be approved, rejected, or superseded")
         rationale = _text(payload.get("rationale") or "", field="rationale", max_length=2000) if payload.get("rationale") else ""
-        with self._lock, self._connection:
-            row = self._connection.execute("SELECT * FROM lessons WHERE lesson_id = ?", (lesson_id,)).fetchone()
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT * FROM lessons WHERE lesson_id = :lesson_id", {"lesson_id": lesson_id})
             if row is None:
                 raise LearningNotFound("lesson not found")
             if trusted_owner and row["owner_principal"] != trusted_owner:
@@ -729,14 +759,15 @@ class LearningLoopStore:
             if target not in LESSON_TRANSITIONS[current]:
                 raise LearningForbidden(f"cannot transition lesson from {current} to {target}")
             now = _now()
-            self._connection.execute(
-                "UPDATE lessons SET status = ?, updated_at = ?, version = version + 1 WHERE lesson_id = ?",
-                (target, now, lesson_id),
+            execute(
+                connection,
+                "UPDATE lessons SET status = :status, updated_at = :updated_at, version = version + 1 WHERE lesson_id = :lesson_id",
+                {"status": target, "updated_at": now, "lesson_id": lesson_id},
             )
-            self._record_history("lesson", lesson_id, current, target, reviewer, decision, rationale)
-            updated = self._connection.execute("SELECT * FROM lessons WHERE lesson_id = ?", (lesson_id,)).fetchone()
-            assert updated is not None
-            return self._lesson_with_history(updated)
+            self._record_history(connection, "lesson", lesson_id, current, target, reviewer, decision, rationale)
+            updated = fetch_one(connection, "SELECT * FROM lessons WHERE lesson_id = :lesson_id", {"lesson_id": lesson_id})
+        assert updated is not None
+        return self._lesson_with_history(updated)
 
     def _owned_task(self, task_id: str, owner: str) -> dict[str, object]:
         try:
@@ -797,15 +828,13 @@ class LearningLoopStore:
         return {"target_metric": metric, "target_value": float(target), "operator": operator}, rules_json
 
     @staticmethod
-    def _stored_budget(budget_json: str) -> dict[str, int]:
-        budget = _loads(budget_json, field="budget")
+    def _stored_budget(budget: object) -> dict[str, int]:
         if not isinstance(budget, dict):
             raise LearningPersistenceError("stored learning budget is invalid")
         return budget
 
     @staticmethod
-    def _stored_stopping_rules(rules_json: str) -> dict[str, object]:
-        rules = _loads(rules_json, field="stopping_rules")
+    def _stored_stopping_rules(rules: object) -> dict[str, object]:
         if not isinstance(rules, dict):
             raise LearningPersistenceError("stored learning stopping rules are invalid")
         return rules
@@ -827,7 +856,7 @@ class LearningLoopStore:
 
     @staticmethod
     def _validate_iteration_sequence(
-        rows: list[sqlite3.Row],
+        rows: list[dict[str, Any]],
         iteration_index: int,
         attempt: int,
         budget: dict[str, int],
@@ -852,7 +881,7 @@ class LearningLoopStore:
 
     @staticmethod
     def _next_run_status(
-        run: sqlite3.Row,
+        run: dict[str, Any],
         outcome: str,
         iteration_index: int,
         attempt: int,
@@ -877,22 +906,23 @@ class LearningLoopStore:
                     return "awaiting_review"
         return "active"
 
-    def _check_run_access(self, run: sqlite3.Row, *, trusted_owner: str | None, trusted_actor: str | None) -> None:
+    def _check_run_access(self, run: dict[str, Any], *, trusted_owner: str | None, trusted_actor: str | None) -> None:
         if trusted_owner and run["owner_principal"] != trusted_owner:
             raise LearningUnauthorized("learning run is not owned by this principal")
         if trusted_actor and run["actor_principal"] != trusted_actor:
             raise LearningUnauthorized("learning run actor does not match the active run")
 
-    def _latest_signal(self, task_id: str, experiment_id: str, metric: str) -> sqlite3.Row | None:
-        return self._connection.execute(
+    def _latest_signal(self, task_id: str, experiment_id: str, metric: str) -> dict[str, Any] | None:
+        return self._fetch_one(
             """SELECT * FROM evaluation_signals
-            WHERE task_id = ? AND experiment_id = ? AND metric = ?
+            WHERE task_id = :task_id AND experiment_id = :experiment_id AND metric = :metric
             ORDER BY created_at DESC, signal_id DESC LIMIT 1""",
-            (task_id, experiment_id, metric),
-        ).fetchone()
+            {"task_id": task_id, "experiment_id": experiment_id, "metric": metric},
+        )
 
     def _record_history(
         self,
+        connection: Any,
         entity_type: str,
         entity_id: str,
         from_status: str,
@@ -902,60 +932,63 @@ class LearningLoopStore:
         rationale: str,
     ) -> None:
         history_id = _new_id("learning_history")
-        self._connection.execute(
+        execute(
+            connection,
             """INSERT INTO learning_history
             (history_id, entity_type, entity_id, from_status, to_status,
              reviewer_principal, decision, rationale, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (history_id, entity_type, entity_id, from_status, to_status, reviewer, decision, rationale, _now()),
+            VALUES (:history_id, :entity_type, :entity_id, :from_status, :to_status,
+                    :reviewer_principal, :decision, :rationale, :created_at)""",
+            {"history_id": history_id, "entity_type": entity_type, "entity_id": entity_id,
+             "from_status": from_status, "to_status": to_status, "reviewer_principal": reviewer,
+             "decision": decision, "rationale": rationale, "created_at": _now()},
         )
 
     @staticmethod
-    def _run_row(row: sqlite3.Row) -> dict[str, object]:
+    def _run_row(row: dict[str, Any]) -> dict[str, object]:
         result = dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
-        result["budget"] = _loads(result.pop("budget_json"), field="budget")
-        result["stopping_rules"] = _loads(result.pop("stopping_rules_json"), field="stopping_rules")
-        result["lineage"] = _loads(result.pop("lineage_json"), field="lineage")
+        result["budget"] = result.pop("budget_json") or {}
+        result["stopping_rules"] = result.pop("stopping_rules_json") or {}
+        result["lineage"] = result.pop("lineage_json") or []
         return result
 
     @staticmethod
-    def _iteration_row(row: sqlite3.Row) -> dict[str, object]:
+    def _iteration_row(row: dict[str, Any]) -> dict[str, object]:
         result = dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
-        result["feedback"] = _loads(result.pop("feedback_json"), field="feedback")
-        result["source_refs"] = _loads(result.pop("source_refs_json"), field="source_refs")
-        result["result_refs"] = _loads(result.pop("result_refs_json"), field="result_refs")
+        result["feedback"] = result.pop("feedback_json") or {}
+        result["source_refs"] = result.pop("source_refs_json") or []
+        result["result_refs"] = result.pop("result_refs_json") or []
         return result
 
     @staticmethod
-    def _signal_row(row: sqlite3.Row) -> dict[str, object]:
+    def _signal_row(row: dict[str, Any]) -> dict[str, object]:
         result = dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
-        result["lineage"] = _loads(result.pop("lineage_json"), field="lineage")
+        result["lineage"] = result.pop("lineage_json") or []
         return result
 
     @staticmethod
-    def _lesson_row(row: sqlite3.Row) -> dict[str, object]:
+    def _lesson_row(row: dict[str, Any]) -> dict[str, object]:
         result = dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
-        result["content"] = _loads(result.pop("content_json"), field="content")
-        result["evidence"] = _loads(result.pop("evidence_json"), field="evidence")
-        result["validation"] = _loads(result.pop("validation_json"), field="validation")
+        result["content"] = result.pop("content_json") or {}
+        result["evidence"] = result.pop("evidence_json") or []
+        result["validation"] = result.pop("validation_json") or {}
         return result
 
-    def _lesson_with_history(self, row: sqlite3.Row) -> dict[str, object]:
+    def _lesson_with_history(self, row: dict[str, Any]) -> dict[str, object]:
         lesson = self._lesson_row(row)
-        with self._lock:
-            rows = self._connection.execute(
-                """SELECT * FROM learning_history
-                WHERE entity_type = 'lesson' AND entity_id = ?
-                ORDER BY created_at ASC, history_id ASC""",
-                (lesson["lesson_id"],),
-            ).fetchall()
+        rows = self._execute(
+            """SELECT * FROM learning_history
+            WHERE entity_type = 'lesson' AND entity_id = :entity_id
+            ORDER BY created_at ASC, history_id ASC""",
+            {"entity_id": lesson["lesson_id"]},
+        )
         lesson["history"] = [dict(item) for item in rows]
         return lesson

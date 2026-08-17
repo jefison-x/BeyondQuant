@@ -8,7 +8,7 @@ Guards:
 
 The autouse fixture resets the shared PostgreSQL test schema before every test
 and runs the DDL of every store registered here. The registry grows as stores
-migrate (Stage 2: + PaperTrading, BacktestJob).
+migrate (Stage 3: + AgentResearch, Engineering, LearningLoop).
 """
 
 from __future__ import annotations
@@ -19,8 +19,11 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from app.agent_research import AgentResearchStore
 from app.backtest import BacktestJobStore
 from app.db import create_db_engine, run_ddl
+from app.engineering import EngineeringTaskStore
+from app.learning_loop import LearningLoopStore
 from app.paper_trading import PaperTradingStore
 from app.user_auth import UserAuthStore
 from app.user_policy import UserPolicyStore
@@ -34,9 +37,10 @@ REGISTERED_SCHEMA_DDL: list[str] = [
     *UserPolicyStore.SCHEMA_DDL,
     *PaperTradingStore.SCHEMA_DDL,
     *BacktestJobStore.SCHEMA_DDL,
+    *AgentResearchStore.SCHEMA_DDL,
+    *EngineeringTaskStore.SCHEMA_DDL,
+    *LearningLoopStore.SCHEMA_DDL,
 ]
-
-_ENGINE_CACHE: dict[str, Engine] = {}
 
 
 def _require_test_database_url() -> str | None:
@@ -52,42 +56,45 @@ def _require_test_database_url() -> str | None:
     return url
 
 
-def _test_engine() -> Engine | None:
-    url = _require_test_database_url()
-    if url is None:
-        return None
-    engine = _ENGINE_CACHE.get(url)
-    if engine is None:
-        engine = create_db_engine(url)
-        _ENGINE_CACHE[url] = engine
-    return engine
-
-
 @pytest.fixture(scope="session")
 def byq_test_engine():
-    """Session-scoped engine against the isolated test database."""
-    engine = _test_engine()
-    if engine is None:
+    """Fresh engine against the isolated test database (used by test_db.py).
+
+    A fresh engine is used (rather than a long-lived pooled engine) so that
+    repeated ``DROP SCHEMA public CASCADE`` resets never reuse a stale pooled
+    connection, which triggered PostgreSQL ``unexpected data beyond EOF``
+    storage errors during ADR-0016 Stage 3 validation.
+    """
+    url = _require_test_database_url()
+    if url is None:
         pytest.skip("BYQ_DATABASE_URL is not set; PostgreSQL-backed tests are skipped")
-    yield engine
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _dispose_test_engines():
-    yield
-    for engine in _ENGINE_CACHE.values():
+    engine = create_db_engine(url)
+    try:
+        yield engine
+    finally:
         engine.dispose()
 
 
 @pytest.fixture(autouse=True)
 def _byq_reset_schema():
-    """Reset the shared PostgreSQL test schema before each test (inert when unset)."""
-    engine = _test_engine()
-    if engine is None:
+    """Reset the shared PostgreSQL test schema before each test (inert when unset).
+
+    Uses one fresh AUTOCOMMIT connection per test (ADR-0016 plan section 5.1),
+    so the reset never reuses a pooled connection that previously dropped the
+    schema. This avoids the PostgreSQL page-level error seen when reusing a
+    long-lived engine across repeated DROP SCHEMA cycles.
+    """
+    url = _require_test_database_url()
+    if url is None:
         yield
         return
-    with engine.begin() as connection:
-        connection.execute(text("DROP SCHEMA public CASCADE"))
-        connection.execute(text("CREATE SCHEMA public"))
-        run_ddl(connection, REGISTERED_SCHEMA_DDL)
-    yield
+    engine = create_db_engine(url)
+    try:
+        with engine.connect() as connection:
+            autocommit = connection.execution_options(isolation_level="AUTOCOMMIT")
+            autocommit.execute(text("DROP SCHEMA public CASCADE"))
+            autocommit.execute(text("CREATE SCHEMA public"))
+            run_ddl(autocommit, REGISTERED_SCHEMA_DDL)
+        yield
+    finally:
+        engine.dispose()

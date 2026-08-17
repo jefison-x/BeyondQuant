@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import os
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app import main
 from app.learning_loop import LearningLoopStore
 from app.research import ResearchStore
 
+
+
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
 
 CONTEXT = {
     "x-byq-owner-principal": "alice",
@@ -27,7 +37,7 @@ def test_learning_api_requires_context_and_stops_at_human_gate(monkeypatch, tmp_
             "idempotency_key": "task-learning-api",
         }
     )
-    learning = LearningLoopStore(tmp_path / "learning-api.sqlite3", research)
+    learning = LearningLoopStore(research_store=research)
     monkeypatch.setattr(main, "research_store", research)
     monkeypatch.setattr(main, "learning_store", learning)
     client = TestClient(main.app)

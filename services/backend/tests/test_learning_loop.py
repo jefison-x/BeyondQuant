@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from app.learning_loop import (
@@ -9,6 +11,13 @@ from app.learning_loop import (
 )
 from app.research import ResearchStore
 
+
+
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
 
 def make_task(store: ResearchStore, owner: str = "alice") -> dict[str, object]:
     return store.create_task(
@@ -51,7 +60,7 @@ def make_artifact(
 def test_learning_run_is_bounded_idempotent_and_reaches_human_gate(tmp_path) -> None:
     research = ResearchStore(tmp_path / "research.sqlite3")
     task = make_task(research)
-    store = LearningLoopStore(tmp_path / "learning.sqlite3", research)
+    store = LearningLoopStore(research_store=research)
 
     run = store.start_run(
         {
@@ -132,7 +141,7 @@ def test_learning_run_is_bounded_idempotent_and_reaches_human_gate(tmp_path) -> 
 def test_failed_iteration_retry_and_human_review_are_explicit(tmp_path) -> None:
     research = ResearchStore(tmp_path / "research.sqlite3")
     task = make_task(research)
-    store = LearningLoopStore(tmp_path / "learning.sqlite3", research)
+    store = LearningLoopStore(research_store=research)
 
     run = store.start_run(
         {
@@ -222,7 +231,7 @@ def test_evaluation_signals_and_experiment_comparison_are_deterministic(tmp_path
     artifact_a = make_artifact(research, task["task_id"], experiment_id=experiment_a["experiment_id"])
     artifact_b = make_artifact(research, task["task_id"], experiment_id=experiment_b["experiment_id"], owner="alice")
 
-    store = LearningLoopStore(tmp_path / "learning.sqlite3", research)
+    store = LearningLoopStore(research_store=research)
     store.create_signal(
         {
             "task_id": task["task_id"],
@@ -266,7 +275,7 @@ def test_lesson_promotion_requires_validated_evidence_and_human_review(tmp_path)
     research = ResearchStore(tmp_path / "research.sqlite3")
     task = make_task(research)
     artifact = make_artifact(research, task["task_id"])
-    store = LearningLoopStore(tmp_path / "learning.sqlite3", research)
+    store = LearningLoopStore(research_store=research)
 
     proposed = store.propose_lesson(
         {
@@ -318,7 +327,7 @@ def test_lesson_promotion_requires_validated_evidence_and_human_review(tmp_path)
 def test_learning_payloads_reject_secret_material(tmp_path) -> None:
     research = ResearchStore(tmp_path / "research.sqlite3")
     task = make_task(research)
-    store = LearningLoopStore(tmp_path / "learning.sqlite3", research)
+    store = LearningLoopStore(research_store=research)
     with pytest.raises(ValueError, match="credential"):
         store.start_run(
             {
