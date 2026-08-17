@@ -342,7 +342,7 @@ test("paper trading and stock pool pages render", async ({ page }) => {
   await openNav(page, "股票管理");
   await expect(page.getByRole("heading", { name: "股票管理" })).toBeVisible();
   await expect(page.getByRole("radio", { name: "指数" }).first()).toBeVisible();
-  await expect(page.getByText("沪深300", { exact: true })).toBeVisible();
+  await expect(page.getByText("沪深300", { exact: true }).first()).toBeVisible();
 });
 
 test("operations page renders safe status projection", async ({ page }) => {
