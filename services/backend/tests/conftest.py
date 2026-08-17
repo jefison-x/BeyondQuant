@@ -24,6 +24,7 @@ from app.backtest import BacktestJobStore
 from app.db import create_db_engine, run_ddl
 from app.engineering import EngineeringTaskStore
 from app.learning_loop import LearningLoopStore
+from app.market_data import MarketDataStore
 from app.paper_trading import PaperTradingStore
 from app.research import ResearchStore
 from app.user_auth import UserAuthStore
@@ -42,6 +43,7 @@ REGISTERED_SCHEMA_DDL: list[str] = [
     *EngineeringTaskStore.SCHEMA_DDL,
     *LearningLoopStore.SCHEMA_DDL,
     *ResearchStore.SCHEMA_DDL,
+    *MarketDataStore.SCHEMA_DDL,
 ]
 
 
