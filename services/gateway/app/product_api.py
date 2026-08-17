@@ -356,6 +356,17 @@ def product_strategy_validate(request: Request, payload: dict[str, object]) -> d
     return _backend_request("POST", "/v1/research/strategies/validate", payload)
 
 
+@router.post("/strategies/versions", status_code=201)
+def product_strategy_version_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "POST",
+        "/v1/research/strategies/versions",
+        payload,
+        headers=_trusted_agent_headers(request),
+    )
+
+
 @router.get("/factors")
 def product_factors(request: Request) -> dict[str, object]:
     _product_principal(request)

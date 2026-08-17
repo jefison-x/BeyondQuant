@@ -182,6 +182,37 @@ def test_product_backtest_result_is_owner_scoped(monkeypatch) -> None:
     assert captured["headers"]["x-byq-owner-principal"] == "product-user"
 
 
+def test_product_strategy_version_create_proxy(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"artifact": {"artifact_id": "artifact_version_1", "kind": "strategy_version"}}
+
+    captured: dict[str, object] = {}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured["method"] = method
+        captured["url"] = url
+        captured["payload"] = kwargs.get("json")
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/product/strategies/versions",
+        headers={"Authorization": "Bearer product-test-token"},
+        json={"task_id": "task_1", "draft_artifact_id": "artifact_draft_1"},
+    )
+    assert response.status_code == 201
+    assert captured["url"].endswith("/v1/research/strategies/versions")
+    assert captured["payload"] == {"task_id": "task_1", "draft_artifact_id": "artifact_draft_1"}
+
+
 def test_product_asset_import_rejects_secret_fields(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
