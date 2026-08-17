@@ -4,7 +4,7 @@ This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
 - Current completed phase: **Phase 30**
-- Next phase: **Community feature-depth gap closure (next: Backtest product depth)**
+- Next phase: **BeyondQuant Next v1.0 RC Review (human gate)**
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -48,6 +48,13 @@ Codex session does not infer project state from commit history.
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` records substantial remaining
   `PARTIAL`/`MISSING` product-depth workflows. The v1.0 RC review gate is not
   yet satisfied.
+- Product-depth phases delivered: Backtest result workspace, Strategy, Stock
+  Pool, Paper Trading, Agent workbench, personal Agent Policy, and Data
+  Center. Remaining deferred items (Backtest create wizard pending a strategy
+  signal-source ADR, model credential CRUD, asset re-import, agent policy
+  presets/rule CRUD, operations workbenches, data sync jobs, paper
+  snapshots/settlement) are recorded in the V2 parity matrix for the RC
+  review.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
 - Active architecture blockers: **none**
