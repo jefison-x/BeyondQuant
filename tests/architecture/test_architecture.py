@@ -201,13 +201,24 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_phase9_domain_state_is_backend_owned_and_mcp_only(self) -> None:
         compose = (ROOT / "compose.yml").read_text()
         backend = service_block("backend")
-        self.assertIn("BYQ_DOMAIN_DB_PATH: /var/lib/byq/domain/byq.sqlite3", backend)
+        self.assertIn("BYQ_DATABASE_URL", backend)
+        self.assertNotIn("BYQ_DOMAIN_DB_PATH", compose)
         self.assertIn("byq_domain_state:/var/lib/byq/domain", backend)
         self.assertIn("byq_domain_state:", compose)
         for service in ("gateway", "runtime-adapter", "mcp"):
             block = service_block(service)
             self.assertNotIn("BYQ_DOMAIN_DB_PATH", block)
+            self.assertNotIn("BYQ_DATABASE_URL", block)
             self.assertNotIn("byq_domain_state", block)
+
+        # ADR-0016 Stage 6: SQLite is removed from runtime store code paths; the
+        # only remaining sqlite3 import is the read-only migration export tool.
+        sqlite_importers = sorted(
+            path.relative_to(ROOT).as_posix()
+            for path in (ROOT / "services/backend/app").rglob("*.py")
+            if "import sqlite3" in path.read_text()
+        )
+        self.assertEqual(sqlite_importers, ["services/backend/app/sqlite_export.py"])
 
         mcp = "\n".join(
             path.read_text() for path in (ROOT / "services/mcp/src").rglob("*.ts")
