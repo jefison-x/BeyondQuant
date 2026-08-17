@@ -3,8 +3,9 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 30**
-- Next phase: **PostgreSQL single domain store adoption (ADR-0016)**
+- Current completed phase: **Phase 31**
+- Next phase: **not yet defined** (Phase 31 is the last documented phase in
+  `docs/roadmap/IMPLEMENTATION_PLAN.md`; the next phase needs a roadmap decision)
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -46,6 +47,15 @@ Codex session does not infer project state from commit history.
 - Phase 30 acceptance evidence covers the V2 parity matrix with no `FAIL`
   items, a golden journey covering core product pages, and BYQ artifact/
   approval list surfaces without raw DSH or backend exposure.
+- Phase 31 (ADR-0016) completed: all eight domain stores run on PostgreSQL via
+  `services/backend/app/db.py` (`BYQ_DATABASE_URL`); SQLite runtime code paths
+  and `BYQ_DOMAIN_DB_PATH` are removed; the logical SQLite -> PostgreSQL
+  migration was executed and verified idempotently against the dev volume; the
+  `pg_dump`/`pg_restore` backup/restore drill passed; the ADR-0013 durable
+  market-data target (`MarketDataStore`) and migration pipeline are ready.
+  Formal ADR-0013 bulk Community market-data import still requires a live
+  read-only Community audit snapshot (ADR-0013 decision 6); Community
+  PostgreSQL remains read-only evidence and is untouched.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence, but
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` records substantial remaining
