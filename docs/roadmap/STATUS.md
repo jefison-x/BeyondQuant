@@ -4,7 +4,7 @@ This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
 - Current completed phase: **Phase 30**
-- Next phase: **BeyondQuant Next v1.0 RC Review (human gate)**
+- Next phase: **PostgreSQL single domain store adoption (ADR-0016)**
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -18,6 +18,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 16 durable-market-data-storage ADR: **ADR-0013**
 - Accepted Phase 24 user-auth ADR: **ADR-0014**
 - Accepted pre-release auto-merge ADR: **ADR-0015**
+- Accepted PostgreSQL single-domain-store ADR: **ADR-0016**
 - Open architecture decisions: none for the Phase 30 release-candidate boundary;
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
   is Accepted.
@@ -34,6 +35,8 @@ Codex session does not infer project state from commit history.
   [ADR-0013](../architecture/adr/ADR-0013-phase16-durable-market-data-storage.md) is Accepted.
   [ADR-0015](../architecture/adr/ADR-0015-phase-release-automerge.md) is
   Accepted until the BeyondQuant Next v1.0 release boundary.
+  [ADR-0016](../architecture/adr/ADR-0016-postgresql-single-domain-store.md)
+  is Accepted.
 - Phase 23 acceptance evidence covers the Community Feature Parity Matrix,
   golden journey E2E smoke, release-candidate status, and explicit DROP/DEFER
   classifications for remaining hardening work.

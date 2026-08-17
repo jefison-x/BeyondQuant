@@ -71,6 +71,7 @@ explicitly reverses them:
 | Phase 21 | BYQ-owned Stock Pool and simulation-only Paper Trading product contracts and UX. |
 | Phase 22 | Operations, deployment, observability, backup/restore, and production-safe migration operations. |
 | Phase 23 | Community feature parity matrix, golden journey, release candidate, and explicit DROP/DEFER decisions. |
+| Phase 31 | PostgreSQL single domain store: SQLite -> PostgreSQL logical migration, backup/restore, then ADR-0013 durable market-data import. |
 
 ## Productization frontend audit
 
@@ -112,6 +113,7 @@ The detailed logical process and schema mapping are in
 | VectorBT results/engine metadata | `DROP` | Engine-independent metric semantics may be reimplemented, but no engine or compatibility path returns. |
 | Physical `Community/data/postgres` directory | `DROP` | Never copy, mount, open as BYQ storage, or use as authoritative data. |
 | Community PostgreSQL | `REFERENCE_ONLY` source | `SELECT`/`COPY OUT`/data-only export only; never update/delete/alter/drop/truncate. |
+| Community Redis (cache/agent runtime state) | `DROP` | No cache or runtime state is migrated; BYQ uses in-process TTL caching and PostgreSQL domain state, and DSH must not access Redis. |
 | Community sync-state rows | `REFERENCE_ONLY` | Rebuild BYQ migration/refresh state; old flags do not prove canonical data validity. |
 
 The target is a new BYQ Data Plane. Before any formal import, Phase 16 must
