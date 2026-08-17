@@ -136,7 +136,6 @@ services:
     networks:
       - byq_product
     environment:
-      BYQ_DOMAIN_DB_PATH: /var/lib/byq/domain/byq.sqlite3
       BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
       BYQ_BACKTEST_OBJECT_ROOT: /var/lib/byq/domain/backtest-objects
       TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
