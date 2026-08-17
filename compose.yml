@@ -1,4 +1,23 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-byq_domain}
+      POSTGRES_USER: ${POSTGRES_USER:-byq_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-byq-app-dev}
+    volumes:
+      - byq_postgres_data:/var/lib/postgresql/data
+    networks:
+      - byq_product
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
   frontend:
     build:
       context: .
@@ -117,9 +136,13 @@ services:
       - byq_product
     environment:
       BYQ_DOMAIN_DB_PATH: /var/lib/byq/domain/byq.sqlite3
+      BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
       BYQ_BACKTEST_OBJECT_ROOT: /var/lib/byq/domain/backtest-objects
       TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
       TUSHARE_API_URL: ${TUSHARE_API_URL:-http://api.tushare.pro}
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - byq_domain_state:/var/lib/byq/domain
     healthcheck:
@@ -142,6 +165,8 @@ networks:
     driver: bridge
 
 volumes:
+  byq_postgres_data:
+    name: byq_postgres_data
   byq_domain_state:
     name: byq_domain_state
   byq_dsh_sessions:
