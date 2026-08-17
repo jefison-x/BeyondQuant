@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -125,7 +127,7 @@ def test_native_engine_blocks_limit_up_and_suspension_with_stable_codes() -> Non
     reason="BYQ_DATABASE_URL is not set",
 )
 def test_job_worker_is_idempotent_bounded_and_stores_result_by_reference(tmp_path) -> None:
-    research = ResearchStore(tmp_path / "domain.sqlite3")
+    research = ResearchStore()
     task = research.create_task({
         "owner_principal": "product-user", "title": "Backtest", "objective": "Native fixture",
         "trace_id": "byq-trace-backtest-test", "idempotency_key": "task-backtest-1",

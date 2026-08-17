@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+
+import os
 import pytest
 
 from fastapi.testclient import TestClient
@@ -27,7 +29,7 @@ CONTEXT = {
 
 
 def test_learning_api_requires_context_and_stops_at_human_gate(monkeypatch, tmp_path) -> None:
-    research = ResearchStore(tmp_path / "learning-api-research.sqlite3")
+    research = ResearchStore()
     task = research.create_task(
         {
             "owner_principal": "alice",

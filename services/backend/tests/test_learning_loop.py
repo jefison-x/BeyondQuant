@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+import os
+
 import pytest
 
 from app.learning_loop import (
@@ -58,7 +60,7 @@ def make_artifact(
 
 
 def test_learning_run_is_bounded_idempotent_and_reaches_human_gate(tmp_path) -> None:
-    research = ResearchStore(tmp_path / "research.sqlite3")
+    research = ResearchStore()
     task = make_task(research)
     store = LearningLoopStore(research_store=research)
 
@@ -139,7 +141,7 @@ def test_learning_run_is_bounded_idempotent_and_reaches_human_gate(tmp_path) -> 
 
 
 def test_failed_iteration_retry_and_human_review_are_explicit(tmp_path) -> None:
-    research = ResearchStore(tmp_path / "research.sqlite3")
+    research = ResearchStore()
     task = make_task(research)
     store = LearningLoopStore(research_store=research)
 
@@ -208,7 +210,7 @@ def test_failed_iteration_retry_and_human_review_are_explicit(tmp_path) -> None:
 
 
 def test_evaluation_signals_and_experiment_comparison_are_deterministic(tmp_path) -> None:
-    research = ResearchStore(tmp_path / "research.sqlite3")
+    research = ResearchStore()
     task = make_task(research)
     experiment_a = research.create_experiment(
         {
@@ -272,7 +274,7 @@ def test_evaluation_signals_and_experiment_comparison_are_deterministic(tmp_path
 
 
 def test_lesson_promotion_requires_validated_evidence_and_human_review(tmp_path) -> None:
-    research = ResearchStore(tmp_path / "research.sqlite3")
+    research = ResearchStore()
     task = make_task(research)
     artifact = make_artifact(research, task["task_id"])
     store = LearningLoopStore(research_store=research)
@@ -325,7 +327,7 @@ def test_lesson_promotion_requires_validated_evidence_and_human_review(tmp_path)
 
 
 def test_learning_payloads_reject_secret_material(tmp_path) -> None:
-    research = ResearchStore(tmp_path / "research.sqlite3")
+    research = ResearchStore()
     task = make_task(research)
     store = LearningLoopStore(research_store=research)
     with pytest.raises(ValueError, match="credential"):

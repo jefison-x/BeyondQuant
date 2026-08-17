@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from app.db import bootstrap_research_schema, connect, execute, fetch_one
+from app.db import connect, execute, fetch_one, run_ddl
+from app.research import ResearchStore
 
 
-def test_research_schema_bootstrap_and_crud(byq_test_engine) -> None:
+def test_shared_sql_layer_bootstrap_and_crud(byq_test_engine) -> None:
     engine = byq_test_engine
-    bootstrap_research_schema(engine)
+    with engine.begin() as connection:
+        run_ddl(connection, ResearchStore.SCHEMA_DDL)
 
     with connect(engine) as connection:
         execute(
@@ -33,9 +35,11 @@ def test_research_schema_bootstrap_and_crud(byq_test_engine) -> None:
 
         row = fetch_one(
             connection,
-            "SELECT task_id, owner_principal, title FROM research_tasks WHERE task_id = :task_id",
+            "SELECT task_id, owner_principal, title, created_at FROM research_tasks WHERE task_id = :task_id",
             {"task_id": "task_pg_foundation"},
         )
     assert row is not None
     assert row["owner_principal"] == "pg-test-user"
     assert row["title"] == "PG foundation"
+    # Row normalization: TIMESTAMPTZ is returned as an ISO-8601 string.
+    assert isinstance(row["created_at"], str)

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app import main
@@ -7,8 +10,15 @@ from app.research import ResearchStore
 from test_factor_research import factor_payload
 
 
-def test_factor_endpoint_persists_factor_result_artifact(monkeypatch, tmp_path) -> None:
-    store = ResearchStore(tmp_path / "factor.sqlite3")
+
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
+
+def test_factor_endpoint_persists_factor_result_artifact(monkeypatch) -> None:
+    store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
     task = client.post(
