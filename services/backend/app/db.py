@@ -34,8 +34,9 @@ def connect(engine: Engine) -> Iterator[Connection]:
 
 def execute(connection: Connection, sql: str, params: Sequence[Any] | dict[str, Any] | None = None) -> list[dict[str, Any]]:
     result = connection.execute(text(sql), params or {})
-    rows = result.mappings().all()
-    return [dict(row) for row in rows]
+    if not result.returns_rows:
+        return []
+    return [dict(row) for row in result.mappings().all()]
 
 
 def fetch_one(connection: Connection, sql: str, params: Sequence[Any] | dict[str, Any] | None = None) -> dict[str, Any] | None:
