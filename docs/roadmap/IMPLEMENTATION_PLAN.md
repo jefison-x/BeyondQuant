@@ -1131,3 +1131,41 @@ release conclusion; Chrome MCP browser comparison against Community; complete
 golden journey through real Product API with no mocks/direct Backend/MCP/DSH;
 multi-user isolation E2E; Phase 30 cannot complete while required items are
 missing.
+
+## Phase 31 — PostgreSQL Single Domain Store (ADR-0016)
+
+### Goal
+
+Replace SQLite with PostgreSQL as the single BYQ domain-store engine so
+production concurrency, role isolation, backup/restore, and the ADR-0013
+durable market-data target are supported, and later feature phases have one
+connection/dialect path.
+
+### Scope
+
+- Add a PostgreSQL service and bootstrap databases/roles
+  (`byq_domain`, `byq_domain_test`, `byq_bootstrap`).
+- Introduce `services/backend/app/db.py` (SQLAlchemy Core + psycopg) as the
+  single shared SQL layer and migrate ResearchStore as the reference pattern.
+- Migrate remaining stores (UserAuth, UserPolicy, PaperTrading, Backtest,
+  AgentResearch, LearningLoop, Engineering) to the same layer; remove SQLite
+  code paths and `BYQ_DOMAIN_DB_PATH`.
+- Add idempotent logical SQLite -> PostgreSQL data migration with
+  `KEEP_NEW`/`VERIFY_EQUAL`/`REPORT_MISMATCH`, plus verification.
+- Add `pg_dump`/`pg_restore` backup/restore drill as a gate before ADR-0013
+  bulk market-data import.
+- Keep LocalObjectStore (filesystem) unchanged; never store large blobs in
+  PostgreSQL.
+
+### Architecture constraints
+
+DSH/MCP/Gateway/Product boundaries are unchanged; DSH never accesses
+PostgreSQL directly. Community PostgreSQL remains read-only evidence.
+Detailed plan: `docs/architecture/POSTGRESQL_MIGRATION_PLAN.md`.
+
+### Acceptance criteria
+
+All backend tests run against the PostgreSQL test database; no SQLite code
+path remains; public store method shapes are unchanged; data migration is
+idempotent and verified; backup/restore drill passes; compose/docs are
+updated.
