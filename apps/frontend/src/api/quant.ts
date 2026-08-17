@@ -64,3 +64,11 @@ export function validateStrategy(payload: Record<string, unknown>, token: string
     body: JSON.stringify(payload),
   });
 }
+
+export function createStrategyVersion(payload: Record<string, unknown>, token: string): Promise<Record<string, unknown>> {
+  return request(`/strategies/versions`, token, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}

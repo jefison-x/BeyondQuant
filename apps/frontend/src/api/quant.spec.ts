@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cancelBacktest, getBacktest, getBacktestResult, getResearchEntity, runBacktest } from "./quant";
+import { cancelBacktest, createStrategyVersion, getBacktest, getBacktestResult, getResearchEntity, runBacktest } from "./quant";
 
 describe("quant api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -52,6 +52,22 @@ describe("quant api client", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/backtests/job_1/result",
       expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
+  it("creates an immutable strategy version through the product path", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ artifact: { artifact_id: "artifact_version_1", kind: "strategy_version" } }), { status: 201 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const body = await createStrategyVersion(
+      { task_id: "task_1", draft_artifact_id: "artifact_draft_1" },
+      "test-token",
+    );
+    expect((body.artifact as { artifact_id: string }).artifact_id).toBe("artifact_version_1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/strategies/versions",
+      expect.objectContaining({ method: "POST", credentials: "include" }),
     );
   });
 });

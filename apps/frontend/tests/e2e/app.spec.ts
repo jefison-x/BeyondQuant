@@ -158,10 +158,67 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
 
 test("strategy workspace renders strategy version list and detail", async ({ page }) => {
   await mockResearchLists(page);
+  await page.route("**/api/product/research/tasks", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ tasks: [{ task_id: "task_1" }] }) }),
+  );
+  await page.route("**/api/product/strategies", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        strategies: [
+          {
+            artifact_id: "artifact_draft_1",
+            kind: "strategy_draft",
+            status: "draft",
+            content: { snapshot: { strategy_id: "MomentumStrategy", script: "class CustomStrategy:\n    def generate_signals(self, data, parameters=None):\n        return {}" } },
+            created_at: "2026-08-16T00:00:00+00:00",
+          },
+          {
+            artifact_id: "artifact_version_1",
+            kind: "strategy_version",
+            status: "validated",
+            content: { snapshot: { strategy_id: "MomentumStrategy", script: "class CustomStrategy:\n    def generate_signals(self, data, parameters=None):\n        return {}" } },
+            created_at: "2026-08-16T00:00:00+00:00",
+          },
+          {
+            artifact_id: "artifact_approval_1",
+            kind: "strategy_approval",
+            status: "validated",
+            content: { strategy_version_artifact_id: "artifact_version_1", decision: "approved", execution_authorized: true },
+            created_at: "2026-08-16T00:00:00+00:00",
+          },
+        ],
+      }),
+    }),
+  );
+  await page.route("**/api/product/research/artifacts/artifact_version_1", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ artifact_id: "artifact_version_1", kind: "strategy_version" }) }),
+  );
+  await page.route("**/api/product/research/artifacts", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        artifacts: [
+          {
+            artifact_id: "artifact_approval_1",
+            kind: "strategy_approval",
+            status: "validated",
+            content: { strategy_version_artifact_id: "artifact_version_1", decision: "approved", execution_authorized: true },
+            created_at: "2026-08-16T00:00:00+00:00",
+          },
+        ],
+      }),
+    }),
+  );
   await login(page);
   await openNav(page, "策略管理");
   await expect(page.getByRole("heading", { name: "策略管理" })).toBeVisible();
-  await expect(page.getByText("策略版本", { exact: true })).toBeVisible();
+  await expect(page.getByText("策略编辑器", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "插入模板" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "创建不可变版本" })).toBeVisible();
+  await expect(page.getByText("已批准")).toBeVisible();
 });
 
 test("backtest workspace renders backtest result list", async ({ page }) => {

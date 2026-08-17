@@ -88,3 +88,28 @@ This review also exposed and fixed a real defect: the Product API wraps
 backtest jobs in `{"job": ...}` and the frontend client did not unwrap it,
 so job detail never loaded. The fix unwraps `job` in the quant API client and
 adds unit/e2e coverage.
+
+## Strategy workspace review (2026-08-17)
+
+- Browser method: Chrome DevTools MCP (`chrome-devtools-mcp`, stdio, headed
+  mode, viewport 1440x900)
+- Topology: local `beyondquant` compose with the Strategy product-depth
+  branch frontend/gateway images
+- Browser origin: `http://127.0.0.1`
+- Authenticated principal: `chromeuser` / role `admin`
+
+Observed at `/strategy` with real owner-scoped artifacts (a validated
+`strategy_version`, its source `strategy_draft`, and an approved
+`strategy_approval`):
+
+- List pane renders search, 全部/草稿/版本 radio filters, per-row
+  Artifact ID/类型/状态/创建时间, and mobile cards.
+- Selecting a version shows a read-only editor (版本只读), the immutable
+  version detail with validation evidence, 导出版本, and a real approval
+  banner: 审批状态 已批准 / 已授权执行.
+- Selecting a draft enables the editor (草稿可编辑), template select,
+  插入模板 / 插入信号片段, 验证并保存草稿, and 创建不可变版本.
+- The editor preloads the draft script from the artifact snapshot, and the
+  task selector binds new drafts to an existing ResearchTask.
+- No raw MCP/DSH/Backend/storage/provider URL or secret appeared in the
+  rendered page; the page consumed Product API routes only.
