@@ -19,12 +19,16 @@ describe("quant api client", () => {
 
   it("runs and cancels a backtest through product paths", async () => {
     const fetchMock = vi.fn().mockImplementation(() =>
-      Promise.resolve(new Response(JSON.stringify({ job_id: "job_1", status: "completed" }), { status: 200 })),
+      Promise.resolve(new Response(JSON.stringify({ job: { job_id: "job_1", status: "completed" } }), { status: 200 })),
     );
     vi.stubGlobal("fetch", fetchMock);
-    await getBacktest("job_1", "test-token");
-    await runBacktest("job_1", "test-token");
-    await cancelBacktest("job_1", "test-token");
+    const fetched = await getBacktest("job_1", "test-token");
+    expect(fetched.job_id).toBe("job_1");
+    expect(fetched.status).toBe("completed");
+    const ran = await runBacktest("job_1", "test-token");
+    expect(ran.job_id).toBe("job_1");
+    const cancelled = await cancelBacktest("job_1", "test-token");
+    expect(cancelled.status).toBe("completed");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/backtests/job_1/run",
       expect.objectContaining({ method: "POST" }),
