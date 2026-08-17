@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from app.user_auth import UserAuthStore, UserForbidden
 
 
-def test_user_login_session_and_disable(tmp_path) -> None:
-    store = UserAuthStore(tmp_path / "users.sqlite3")
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
+
+
+def test_user_login_session_and_disable() -> None:
+    store = UserAuthStore()
     admin = store.create_user(
         {"username": "admin", "password": "adminpass123", "display_name": "Admin"},
         actor_role="admin",
@@ -25,8 +33,8 @@ def test_user_login_session_and_disable(tmp_path) -> None:
     store.close()
 
 
-def test_password_is_verified_with_modern_kdf_and_owner_session_revoked(tmp_path) -> None:
-    store = UserAuthStore(tmp_path / "users.sqlite3")
+def test_password_is_verified_with_modern_kdf_and_owner_session_revoked() -> None:
+    store = UserAuthStore()
     store.create_user(
         {"username": "user", "password": "password123", "display_name": "User"},
         actor_role="admin",
@@ -40,8 +48,8 @@ def test_password_is_verified_with_modern_kdf_and_owner_session_revoked(tmp_path
     store.close()
 
 
-def test_profile_preferences_are_durable_and_owner_scoped(tmp_path) -> None:
-    store = UserAuthStore(tmp_path / "users.sqlite3")
+def test_profile_preferences_are_durable_and_owner_scoped() -> None:
+    store = UserAuthStore()
     user = store.create_user(
         {"username": "user", "password": "password123", "display_name": "User"},
         actor_role="admin",

@@ -100,7 +100,10 @@ jobs:
         run: docker compose up -d --wait
 
       - name: Backend tests
-        run: docker compose exec -T backend python -m pytest -q -p no:cacheprovider
+        run: >-
+          docker compose exec -T
+          -e BYQ_DATABASE_URL=postgresql+psycopg://byq_test:byq-test-dev@postgres:5432/byq_domain_test
+          backend python -m pytest -q -p no:cacheprovider
 
       - name: Gateway tests
         run: docker compose exec -T gateway python -m pytest -q -p no:cacheprovider

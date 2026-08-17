@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from fastapi.testclient import TestClient
@@ -8,8 +10,14 @@ from app import main
 from app.user_policy import UserPolicyStore
 
 
-def test_user_policy_defaults_and_update(tmp_path) -> None:
-    store = UserPolicyStore(tmp_path / "policy.sqlite3")
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
+
+
+def test_user_policy_defaults_and_update() -> None:
+    store = UserPolicyStore()
     defaults = store.get("alice")
     assert defaults["automation_enabled"] is False
     assert defaults["default_decision_mode"] == "manual"
@@ -33,8 +41,8 @@ def test_user_policy_defaults_and_update(tmp_path) -> None:
     store.close()
 
 
-def test_user_policy_endpoints_are_owner_scoped(monkeypatch, tmp_path) -> None:
-    store = UserPolicyStore(tmp_path / "policy.sqlite3")
+def test_user_policy_endpoints_are_owner_scoped(monkeypatch) -> None:
+    store = UserPolicyStore()
     monkeypatch.setattr(main, "user_policy_store", store)
     client = TestClient(main.app)
     headers = {
