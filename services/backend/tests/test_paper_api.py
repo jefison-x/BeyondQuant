@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+import os
+
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app import main
 from app.paper_trading import PaperTradingStore
 
 
-def test_paper_ledger_endpoint_derives_cash_flow(monkeypatch, tmp_path) -> None:
-    store = PaperTradingStore(tmp_path / "paper.sqlite3")
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
+
+
+def test_paper_ledger_endpoint_derives_cash_flow(monkeypatch) -> None:
+    store = PaperTradingStore()
     monkeypatch.setattr(main, "paper_store", store)
     client = TestClient(main.app)
 

@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import os
+
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app import main
 from app.backtest import BacktestJobStore, LocalObjectStore, membership_fingerprint
 from app.research import ResearchStore
+
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
 
 
 SYMBOL = "000001.SZ"
@@ -24,9 +34,8 @@ def _strategy() -> dict[str, object]:
 
 
 def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
-    path = tmp_path / "domain.sqlite3"
-    store = ResearchStore(path)
-    jobs = BacktestJobStore(path)
+    store = ResearchStore(tmp_path / "domain.sqlite3")
+    jobs = BacktestJobStore()
     monkeypatch.setattr(main, "research_store", store)
     monkeypatch.setattr(main, "backtest_store", jobs)
     monkeypatch.setattr(main, "backtest_objects", LocalObjectStore(tmp_path / "objects"))

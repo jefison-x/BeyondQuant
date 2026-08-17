@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from app.paper_trading import PaperTradingForbidden, PaperTradingStore
 
 
-def test_paper_trading_enforces_pool_lot_limit_and_cash(tmp_path) -> None:
-    store = PaperTradingStore(tmp_path / "paper.sqlite3")
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
+
+
+def test_paper_trading_enforces_pool_lot_limit_and_cash() -> None:
+    store = PaperTradingStore()
     account = store.create_account({"name": "sim", "cash": 100000}, trusted_owner="alice")
     pool = store.create_pool(
         {"name": "p1", "symbols": ["000001.SZ"], "provenance": {"source": "unit-test"}},
@@ -60,8 +68,8 @@ def test_paper_trading_enforces_pool_lot_limit_and_cash(tmp_path) -> None:
     store.close()
 
 
-def test_paper_trading_blocks_suspension_and_t_plus_one(tmp_path) -> None:
-    store = PaperTradingStore(tmp_path / "paper.sqlite3")
+def test_paper_trading_blocks_suspension_and_t_plus_one() -> None:
+    store = PaperTradingStore()
     account = store.create_account({"name": "sim", "cash": 100000}, trusted_owner="alice")
     pool = store.create_pool({"name": "p1", "symbols": ["000001.SZ"]}, trusted_owner="alice")
     suspended = store.submit_order(
@@ -110,8 +118,8 @@ def test_paper_trading_blocks_suspension_and_t_plus_one(tmp_path) -> None:
     store.close()
 
 
-def test_stock_pool_catalog_type_description_and_weights(tmp_path) -> None:
-    store = PaperTradingStore(tmp_path / "paper.sqlite3")
+def test_stock_pool_catalog_type_description_and_weights() -> None:
+    store = PaperTradingStore()
     pool = store.create_pool(
         {
             "name": "沪深300增强",

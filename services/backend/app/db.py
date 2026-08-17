@@ -20,6 +20,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from psycopg.types.json import Jsonb
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 
@@ -75,8 +77,23 @@ def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _adapt_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Adapt Python dict/list parameters so psycopg binds them as JSONB.
+
+    SQLAlchemy ``text()`` + psycopg AUTO format does not infer the target column
+    type, so raw dict/list values cannot be bound to ``JSONB`` columns. Wrapping
+    them with ``Jsonb`` lets psycopg dump and cast them correctly. All dict/list
+    store parameters target JSONB columns in the ADR-0016 store translations.
+    """
+    return {
+        key: (Jsonb(value) if isinstance(value, (dict, list)) else value)
+        for key, value in params.items()
+    }
+
+
 def execute(connection: Connection, sql: str, params: Sequence[Any] | dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    result = connection.execute(text(sql), params or {})
+    bind = _adapt_params(dict(params or {}))
+    result = connection.execute(text(sql), bind)
     if not result.returns_rows:
         return []
     return [_normalize_row(dict(row)) for row in result.mappings().all()]

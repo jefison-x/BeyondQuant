@@ -8,7 +8,7 @@ Guards:
 
 The autouse fixture resets the shared PostgreSQL test schema before every test
 and runs the DDL of every store registered here. The registry grows as stores
-migrate (Stage 1: UserAuth + UserPolicy).
+migrate (Stage 2: + PaperTrading, BacktestJob).
 """
 
 from __future__ import annotations
@@ -19,7 +19,9 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from app.backtest import BacktestJobStore
 from app.db import create_db_engine, run_ddl
+from app.paper_trading import PaperTradingStore
 from app.user_auth import UserAuthStore
 from app.user_policy import UserPolicyStore
 
@@ -30,6 +32,8 @@ TEST_DB_NAME = "byq_domain_test"
 REGISTERED_SCHEMA_DDL: list[str] = [
     *UserAuthStore.SCHEMA_DDL,
     *UserPolicyStore.SCHEMA_DDL,
+    *PaperTradingStore.SCHEMA_DDL,
+    *BacktestJobStore.SCHEMA_DDL,
 ]
 
 _ENGINE_CACHE: dict[str, Engine] = {}
