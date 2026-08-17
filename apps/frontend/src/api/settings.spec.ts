@@ -6,6 +6,7 @@ import {
   getModelSettings,
   getProfile,
   importAssets,
+  updateAgentPolicy,
   updateProfile,
 } from "./settings";
 
@@ -68,5 +69,18 @@ describe("settings api client", () => {
     );
     const report = await importAssets(bundle);
     expect(report.imported.pools).toBe(1);
+  });
+
+  it("updates personal agent approval policy", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ personal_policy: { automation_enabled: true, paused: false, default_decision_mode: "manual" } }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await updateAgentPolicy({ automation_enabled: true });
+    expect(result.personal_policy.automation_enabled).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/settings/agent-policy",
+      expect.objectContaining({ method: "PUT", credentials: "include" }),
+    );
   });
 });

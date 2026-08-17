@@ -127,6 +127,14 @@ export interface AgentPolicyStatus {
     max_auto_executions_per_hour: number;
     max_auto_failures_per_hour: number;
   };
+  personal_policy: {
+    owner_principal?: string;
+    automation_enabled: boolean;
+    paused: boolean;
+    default_decision_mode: string;
+    max_auto_executions_per_hour: number;
+    max_auto_failures_per_hour: number;
+  };
   approval_inbox: { pending: number };
 }
 

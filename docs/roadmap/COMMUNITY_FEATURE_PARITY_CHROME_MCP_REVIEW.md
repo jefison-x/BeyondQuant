@@ -84,6 +84,27 @@ Observed at `/backtest` with a real completed owner-scoped job
 - No raw MCP/DSH/Backend/storage/provider URL or secret appeared in the
   rendered page; the page consumed Product API routes only.
 
+## Agent Policy workspace review (2026-08-17)
+
+- Browser method: Chrome DevTools MCP (headed, viewport 1440x900)
+- Topology: local `beyondquant` compose with the My Space agent-policy branch
+  images
+- Browser origin: `http://127.0.0.1`
+- Authenticated principal: `chromeuser` / role `admin`
+
+Observed at `/agent-settings`:
+
+- 我的审批偏好 renders platform defaults (人工审批, limits) and the real
+  pending approval count.
+- 个人审批偏好 card renders editable switches (自动审批/暂停), 无匹配规则
+  select (manual/auto_approve/auto_deny), and execution/failure limits, with a
+  保存 button; saving persists the owner-scoped personal policy through the
+  Product API.
+- 我的审批历史 renders the real pending `byq_backtest_run` approval with
+  decision metadata.
+- No raw MCP/DSH/Backend/storage/provider URL or secret appeared in the
+  rendered page; the page consumed Product API routes only.
+
 ## Agent workbench review (2026-08-17)
 
 - Browser method: Chrome DevTools MCP (headed, viewport 1440x900)
