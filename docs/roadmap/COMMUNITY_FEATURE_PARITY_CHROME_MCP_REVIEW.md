@@ -84,6 +84,31 @@ Observed at `/backtest` with a real completed owner-scoped job
 - No raw MCP/DSH/Backend/storage/provider URL or secret appeared in the
   rendered page; the page consumed Product API routes only.
 
+## Paper Trading workspace review (2026-08-17)
+
+- Browser method: Chrome DevTools MCP (headed, viewport 1440x900)
+- Topology: local `beyondquant` compose with the Paper Trading product-depth
+  branch images
+- Browser origin: `http://127.0.0.1`
+- Authenticated principal: `chromeuser` / role `admin`
+
+Observed at `/paper-trading`:
+
+- Account cards render name/id/cash/status and switch selection; creating a
+  simulation account through the browser form works end-to-end.
+- Order form accepts Stock Pool ID, symbol, side, quantity, price, trade date;
+  submitting a buy order through the Product API produced a real fill.
+- Tabs render 总览 (cash/positions/orders/fills), 持仓 (000001.SZ, 100,
+  20240102), 订单, 成交, and 资金流水 (20240102, 000001.SZ, buy, 100,
+  cash_delta -1005, fees 5, realized 0).
+- No raw MCP/DSH/Backend/storage/provider URL or secret appeared in the
+  rendered page; the page consumed Product API routes only.
+
+This review also exposed and fixed a Product API gap: paper order/positions/
+orders/fills proxies did not forward trusted owner headers, so browser writes
+and reads failed owner-scoped backend checks. The proxies now forward the
+headers and the flow is verified end-to-end.
+
 ## Stock Pool workspace review (2026-08-17)
 
 - Browser method: Chrome DevTools MCP (headed, viewport 1440x900)

@@ -1055,6 +1055,38 @@ def list_paper_fills(account_id: str, request: Request) -> dict[str, object]:
     ))
 
 
+@app.get("/v1/paper/accounts/{account_id}/ledger")
+def list_paper_ledger(account_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    fills = _paper_call(lambda: paper_store.list_fills(
+        account_id,
+        trusted_owner=context["owner_principal"],
+    ))["fills"]
+    ledger: list[dict[str, object]] = []
+    for fill in fills:
+        side = str(fill["side"])
+        quantity = int(fill["quantity"])
+        price = float(fill["price"])
+        amount = quantity * price
+        fees = float(fill["fees"]) + float(fill["tax"])
+        cash_delta = (-amount - fees) if side == "buy" else (amount - fees)
+        ledger.append({
+            "fill_id": fill["fill_id"],
+            "trade_date": fill["trade_date"],
+            "symbol": fill["symbol"],
+            "side": side,
+            "quantity": quantity,
+            "price": price,
+            "amount": round(amount, 10),
+            "fees": round(fees, 10),
+            "cash_delta": round(cash_delta, 10),
+            "realized_pnl": fill.get("realized_pnl", 0.0),
+            "created_at": fill["created_at"],
+        })
+    ledger.sort(key=lambda row: str(row["created_at"]), reverse=True)
+    return {"ledger": ledger}
+
+
 @app.post("/v1/auth/login")
 def login(payload: dict[str, Any]) -> dict[str, object]:
     return _user_call(lambda: user_store.login(payload.get("username"), payload.get("password")))

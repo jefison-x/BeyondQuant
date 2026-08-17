@@ -615,25 +615,52 @@ def product_stock_pools(request: Request) -> dict[str, object]:
 @router.post("/paper/orders", status_code=201)
 def product_paper_order_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("POST", "/v1/paper/orders", payload)
+    return _backend_request(
+        "POST",
+        "/v1/paper/orders",
+        payload,
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/paper/accounts/{account_id}/orders")
 def product_paper_orders(account_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", f"/v1/paper/accounts/{account_id}/orders")
+    return _backend_request(
+        "GET",
+        f"/v1/paper/accounts/{account_id}/orders",
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/paper/accounts/{account_id}/positions")
 def product_paper_positions(account_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", f"/v1/paper/accounts/{account_id}/positions")
+    return _backend_request(
+        "GET",
+        f"/v1/paper/accounts/{account_id}/positions",
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/paper/accounts/{account_id}/fills")
 def product_paper_fills(account_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", f"/v1/paper/accounts/{account_id}/fills")
+    return _backend_request(
+        "GET",
+        f"/v1/paper/accounts/{account_id}/fills",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/paper/accounts/{account_id}/ledger")
+def product_paper_ledger(account_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET",
+        f"/v1/paper/accounts/{account_id}/ledger",
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/operations/status")

@@ -243,6 +243,65 @@ def test_product_stock_pool_create_forwards_owner_headers(monkeypatch) -> None:
     assert captured["headers"]["x-byq-owner-principal"] == "product-user"
 
 
+def test_product_paper_ledger_forwards_owner_headers(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"ledger": [{"fill_id": "fill_1", "cash_delta": -1000.0}]}
+
+    captured: dict[str, object] = {}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured["url"] = url
+        captured["headers"] = kwargs.get("headers", {})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    response = client.get(
+        "/api/product/paper/accounts/paper_account_1/ledger",
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+    assert response.status_code == 200
+    assert captured["url"].endswith("/v1/paper/accounts/paper_account_1/ledger")
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+
+def test_product_paper_order_create_forwards_owner_headers(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"order": {"order_id": "order_1", "status": "filled"}}
+
+    captured: dict[str, object] = {}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured["url"] = url
+        captured["headers"] = kwargs.get("headers", {})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/product/paper/orders",
+        headers={"Authorization": "Bearer product-test-token"},
+        json={"account_id": "paper_account_1", "symbol": "000001.SZ", "side": "buy"},
+    )
+    assert response.status_code == 201
+    assert captured["url"].endswith("/v1/paper/orders")
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+
 def test_product_asset_import_rejects_secret_fields(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
