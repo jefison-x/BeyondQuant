@@ -62,7 +62,11 @@ async function mockAdminOps(page: Page) {
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "ok", provider: "tushare", migration: "not_started", backend: "ok" }) }),
   );
   await page.route("**/api/product/data-center/status", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ migration: "not_started", datasets: [], provider: "tushare", quality: "not_audited" }) }),
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ migration: "not_started", datasets: [], provider: "tushare", quality: "not_audited", provider_status: { configured: true, sync: "not_started" } }),
+    }),
   );
   await page.route("**/api/product/settings/status", (route) =>
     route.fulfill({

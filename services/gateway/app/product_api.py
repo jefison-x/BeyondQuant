@@ -412,6 +412,10 @@ def product_data_center_status(request: Request) -> dict[str, object]:
         "datasets": [],
         "provider": "tushare",
         "quality": "not_audited",
+        "provider_status": {
+            "configured": bool(os.environ.get("TUSHARE_TOKEN")),
+            "sync": "not_started",
+        },
     }
 
 

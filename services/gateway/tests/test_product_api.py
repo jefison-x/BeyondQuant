@@ -371,6 +371,20 @@ def test_product_agent_policy_get_and_update(monkeypatch) -> None:
     assert updated.json()["personal_policy"]["paused"] is True
 
 
+def test_product_data_center_status_exposes_masked_provider_capability(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    monkeypatch.setattr(product_api.os, "environ", {**product_api.os.environ, "TUSHARE_TOKEN": "ci-test"})
+    client = TestClient(main.app)
+    response = client.get(
+        "/api/product/data-center/status",
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+    assert response.status_code == 200
+    assert response.json()["provider_status"] == {"configured": True, "sync": "not_started"}
+    assert "ci-test" not in response.text
+
+
 def test_product_asset_import_rejects_secret_fields(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")

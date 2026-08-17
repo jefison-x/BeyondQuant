@@ -27,6 +27,8 @@ onMounted(async () => {
         <div class="stat-item"><span>Provider</span><strong>{{ status?.provider }}</strong></div>
         <div class="stat-item"><span>Migration</span><strong>{{ status?.migration }}</strong></div>
         <div class="stat-item"><span>Quality</span><strong>{{ status?.quality }}</strong></div>
+        <div class="stat-item"><span>数据源状态</span><strong>{{ status?.provider_status.configured ? "已配置" : "未配置" }}</strong></div>
+        <div class="stat-item"><span>同步状态</span><strong>{{ status?.provider_status.sync }}</strong></div>
       </div>
 
       <el-card shadow="never" class="top-band">
