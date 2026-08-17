@@ -9,7 +9,7 @@ import {
   streamWorkflowEvents,
   submitTurn,
 } from "@/api/agent";
-import { listApprovals, listArtifacts } from "@/api/research";
+import { decideApproval, listApprovals, listArtifacts } from "@/api/research";
 import { listBacktests } from "@/api/quant";
 import { useAgentStore } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
@@ -25,8 +25,13 @@ const backtests = ref<Array<Record<string, unknown>>>([]);
 const artifacts = ref<Array<Record<string, unknown>>>([]);
 const thinkingSteps = computed(() =>
   agent.events
-    .filter((event) => typeof event.payload?.text === "string")
-    .map((event) => ({ kind: event.kind, text: String(event.payload?.text) })),
+    .filter(
+      (event) =>
+        typeof event.payload?.text === "string" ||
+        String(event.kind ?? "").includes("thinking") ||
+        String(event.kind ?? "").includes("step"),
+    )
+    .map((event) => ({ kind: event.kind, text: String(event.payload?.text ?? "") })),
 );
 
 function handleEvent(event: Parameters<typeof agent.addEvent>[0]) {
@@ -46,6 +51,27 @@ async function ensureSession() {
   const session = await createAgentSession(auth.token);
   agent.addSession(session);
   void streamWorkflowEvents(session.session_id, auth.token, handleEvent, "0");
+}
+
+async function selectSession(sessionId: string) {
+  agent.setActiveSession(sessionId);
+  try {
+    await streamWorkflowEvents(sessionId, auth.token, handleEvent, "0");
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "事件流失败";
+  }
+}
+
+async function decide(approval: Record<string, unknown>, decision: "approved" | "denied") {
+  const approvalId = String(approval.approval_id ?? "");
+  if (!approvalId) return;
+  try {
+    await decideApproval(approvalId, decision, `browser decision by ${auth.user?.subject ?? "user"}`);
+    const response = await listApprovals();
+    approvals.value = response.approvals;
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "审批决策失败";
+  }
 }
 
 async function send() {
@@ -127,8 +153,13 @@ onMounted(() => {
       </template>
       <el-empty v-if="!agent.sessions.length" description="暂无会话" />
       <ul v-else class="session-list">
-        <li v-for="session in agent.sessions" :key="session.session_id">
-          {{ session.session_id.slice(-8) }}
+        <li
+          v-for="session in agent.sessions"
+          :key="session.session_id"
+          :class="{ active: agent.activeSessionId === session.session_id }"
+          @click="selectSession(String(session.session_id))"
+        >
+          {{ String(session.session_id).slice(-8) }}
         </li>
       </ul>
     </el-card>
@@ -184,7 +215,15 @@ onMounted(() => {
       <el-empty v-if="!approvals.length" description="暂无审批" />
       <ul v-else class="approval-list">
         <li v-for="approval in approvals" :key="String(approval.approval_id)">
-          {{ approval.action }} - {{ approval.status }}
+          <div>
+            <strong>{{ approval.action }}</strong>
+            <small>{{ approval.approval_id }}</small>
+          </div>
+          <div class="approval-actions">
+            <el-tag size="small">{{ approval.status }}</el-tag>
+            <el-button v-if="approval.status === 'pending'" size="small" type="primary" @click="decide(approval, 'approved')">通过</el-button>
+            <el-button v-if="approval.status === 'pending'" size="small" type="danger" plain @click="decide(approval, 'denied')">拒绝</el-button>
+          </div>
         </li>
       </ul>
       <div class="panel-heading">
@@ -283,5 +322,36 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.session-list li {
+  border-radius: var(--byq-radius-sm);
+  cursor: pointer;
+  padding: 0.45rem 0.6rem;
+}
+
+.session-list li.active {
+  background: var(--byq-brand-soft);
+  color: var(--byq-brand);
+  font-weight: 700;
+}
+
+.approval-list li {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.35rem 0;
+}
+
+.approval-list li small {
+  color: var(--byq-text-muted);
+  display: block;
+}
+
+.approval-actions {
+  align-items: center;
+  display: flex;
+  gap: 0.4rem;
 }
 </style>

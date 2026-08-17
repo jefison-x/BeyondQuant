@@ -1,7 +1,14 @@
 const ROOT = "/api/product";
 
-async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${ROOT}${path}`, { credentials: "include" });
+async function getJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${ROOT}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: {
+      ...(init.body ? { "content-type": "application/json" } : {}),
+      ...(init.headers ?? {}),
+    },
+  });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
     throw new Error(body.error?.message ?? "research request failed");
@@ -34,4 +41,15 @@ export function listExperiments(): Promise<{ experiments: Array<Record<string, u
 
 export function listApprovals(): Promise<{ approvals: Array<Record<string, unknown>> }> {
   return getJson("/approvals");
+}
+
+export function decideApproval(
+  approvalId: string,
+  decision: "approved" | "denied",
+  rationale: string,
+): Promise<{ approval: Record<string, unknown> }> {
+  return getJson(`/approvals/${encodeURIComponent(approvalId)}/decision`, {
+    method: "POST",
+    body: JSON.stringify({ decision, rationale }),
+  });
 }

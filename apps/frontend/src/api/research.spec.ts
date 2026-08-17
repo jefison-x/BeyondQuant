@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getApproval, getResearchEntity, listApprovals, listArtifacts } from "./research";
+import { decideApproval, getApproval, getResearchEntity, listApprovals, listArtifacts } from "./research";
 
 describe("research api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -31,5 +31,18 @@ describe("research api client", () => {
     );
     expect((await listArtifacts()).artifacts).toHaveLength(1);
     expect((await listApprovals()).approvals).toHaveLength(1);
+  });
+
+  it("decides an approval through the product path", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ approval: { approval_id: "agent_approval_1", status: "approved" } }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await decideApproval("agent_approval_1", "approved", "ok");
+    expect(result.approval.status).toBe("approved");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/approvals/agent_approval_1/decision",
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
   });
 });

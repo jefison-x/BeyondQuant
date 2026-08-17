@@ -84,6 +84,29 @@ Observed at `/backtest` with a real completed owner-scoped job
 - No raw MCP/DSH/Backend/storage/provider URL or secret appeared in the
   rendered page; the page consumed Product API routes only.
 
+## Agent workbench review (2026-08-17)
+
+- Browser method: Chrome DevTools MCP (headed, viewport 1440x900)
+- Topology: local `beyondquant` compose with the Agent workbench product-depth
+  branch images
+- Browser origin: `http://127.0.0.1`
+- Authenticated principal: `chromeuser` / role `admin`
+
+Observed at `/agent` with a live session and a real pending approval fixture:
+
+- Session list is selectable (click to switch and stream events); 新建 creates
+  a session, and 历史会话 shows it in the sidebar.
+- Conversation composer (输入研究问题...) with 发送, plus 恢复/取消 actions.
+- WorkflowTrace renders the real `session.ready` event from
+  `runtime-adapter`; 思考步骤 panel and event timeline are present.
+- 审批收件箱 renders a pending `byq_backtest_run` approval with 通过/拒绝
+  decision buttons; attempting a self-decision is correctly rejected by the
+  domain self-approval invariant.
+- 回测上下文 and 研究资产 render real owner-scoped lists (1 backtest,
+  4 artifacts).
+- No raw MCP/DSH/Backend/storage/provider URL or secret appeared in the
+  rendered page; the page consumed Product API routes only.
+
 ## Paper Trading workspace review (2026-08-17)
 
 - Browser method: Chrome DevTools MCP (headed, viewport 1440x900)

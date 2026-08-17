@@ -149,11 +149,26 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
       body: 'data: {"kind":"session.ready","source":"runtime-adapter"}\n\n',
     }),
   );
+  await page.route("**/api/product/approvals", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ approvals: [{ approval_id: "agent_approval_1", action: "run_backtest", status: "pending" }] }),
+    }),
+  );
+  await page.route("**/api/product/approvals/agent_approval_1/decision", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ approval: { approval_id: "agent_approval_1", status: "approved" } }),
+    }),
+  );
   await login(page);
   await openNav(page, "小巴投研");
   await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
   await expect(page.getByText("研究对话")).toBeVisible();
   await expect(page.getByText("session.ready")).toBeVisible();
+  await expect(page.getByRole("button", { name: "通过" })).toBeVisible();
 });
 
 test("strategy workspace renders strategy version list and detail", async ({ page }) => {

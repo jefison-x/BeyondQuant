@@ -302,6 +302,38 @@ def test_product_paper_order_create_forwards_owner_headers(monkeypatch) -> None:
     assert captured["headers"]["x-byq-owner-principal"] == "product-user"
 
 
+def test_product_approval_decision_forwards_owner_headers(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"approval": {"approval_id": "agent_approval_1", "status": "approved"}}
+
+    captured: dict[str, object] = {}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured["url"] = url
+        captured["headers"] = kwargs.get("headers", {})
+        captured["payload"] = kwargs.get("json")
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/product/approvals/agent_approval_1/decision",
+        headers={"Authorization": "Bearer product-test-token"},
+        json={"decision": "approved", "rationale": "ok"},
+    )
+    assert response.status_code == 200
+    assert captured["url"].endswith("/v1/agents/approvals/agent_approval_1/decision")
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+    assert captured["payload"] == {"decision": "approved", "rationale": "ok"}
+
+
 def test_product_asset_import_rejects_secret_fields(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
