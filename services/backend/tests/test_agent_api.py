@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import os
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app import main
 from app.agent_research import AgentResearchStore
 
+
+
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
 
 CONTEXT = {
     "x-byq-owner-principal": "alice",
@@ -16,7 +26,7 @@ CONTEXT = {
 
 
 def test_agent_api_uses_trusted_runtime_context_and_exposes_audit(monkeypatch, tmp_path) -> None:
-    store = AgentResearchStore(tmp_path / "agent-api.sqlite3")
+    store = AgentResearchStore()
     monkeypatch.setattr(main, "agent_store", store)
     client = TestClient(main.app)
 

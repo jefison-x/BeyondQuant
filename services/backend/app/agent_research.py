@@ -12,13 +12,15 @@ import hashlib
 import json
 import os
 import re
-import sqlite3
-import threading
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from sqlalchemy.exc import SQLAlchemyError
+
+from .db import PgStoreMixin, execute, fetch_one
 
 
 MAX_DETAIL_BYTES = 16 * 1024
@@ -307,86 +309,83 @@ def role_catalog() -> list[dict[str, object]]:
     return [role.as_dict() for role in ROLE_CATALOG]
 
 
-class AgentResearchStore:
-    """Durable BYQ store for agent runs, approvals, and bounded audit events."""
+class AgentResearchStore(PgStoreMixin):
+    """Durable BYQ store for agent runs, approvals, and bounded audit events (ADR-0016 PG)."""
 
-    def __init__(self, path: str | Path) -> None:
-        self.path = str(path)
-        self._lock = threading.RLock()
-        if self.path != ":memory:":
-            Path(self.path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+    SCHEMA_DDL: list[str] = [
+        """
+        CREATE TABLE IF NOT EXISTS agent_runs (
+            run_id TEXT PRIMARY KEY,
+            owner_principal TEXT NOT NULL,
+            actor_principal TEXT NOT NULL,
+            role_id TEXT NOT NULL,
+            role_version TEXT NOT NULL,
+            trace_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            dsh_run_id TEXT NOT NULL,
+            parent_run_id TEXT,
+            status TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            version INTEGER NOT NULL
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS agent_runs_idempotency
+            ON agent_runs(owner_principal, idempotency_key)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS agent_audit (
+            audit_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES agent_runs(run_id),
+            owner_principal TEXT NOT NULL,
+            actor_principal TEXT NOT NULL,
+            action TEXT NOT NULL,
+            outcome TEXT NOT NULL,
+            resource_type TEXT,
+            resource_id TEXT,
+            detail_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS agent_audit_run ON agent_audit(run_id, created_at, audit_id)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS agent_approvals (
+            approval_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES agent_runs(run_id),
+            owner_principal TEXT NOT NULL,
+            actor_principal TEXT NOT NULL,
+            action TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            status TEXT NOT NULL,
+            decision_by TEXT,
+            decision_reason TEXT,
+            execution_outcome TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS agent_approvals_idempotency
+            ON agent_approvals(run_id, idempotency_key)
+        """,
+    ]
+
+    def __init__(self, database_url: str | None = None) -> None:
         try:
-            self._connection = sqlite3.connect(self.path, timeout=10.0, check_same_thread=False)
-            self._connection.row_factory = sqlite3.Row
-            self._connection.execute("PRAGMA busy_timeout = 10000")
-            self._create_schema()
-        except sqlite3.Error as exc:
+            super().__init__(database_url)
+        except SQLAlchemyError as exc:
             raise AgentPersistenceError("agent research storage is unavailable") from exc
 
     @classmethod
     def from_env(cls) -> "AgentResearchStore":
-        return cls(os.getenv("BYQ_DOMAIN_DB_PATH", "/tmp/byq-domain.sqlite3"))
-
-    def close(self) -> None:
-        with self._lock:
-            self._connection.close()
-
-    def _create_schema(self) -> None:
-        with self._connection:
-            self._connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS agent_runs (
-                    run_id TEXT PRIMARY KEY,
-                    owner_principal TEXT NOT NULL,
-                    actor_principal TEXT NOT NULL,
-                    role_id TEXT NOT NULL,
-                    role_version TEXT NOT NULL,
-                    trace_id TEXT NOT NULL,
-                    session_id TEXT NOT NULL,
-                    dsh_run_id TEXT NOT NULL,
-                    parent_run_id TEXT,
-                    status TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    request_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    version INTEGER NOT NULL
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS agent_runs_idempotency
-                    ON agent_runs(owner_principal, idempotency_key);
-                CREATE TABLE IF NOT EXISTS agent_audit (
-                    audit_id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL REFERENCES agent_runs(run_id),
-                    owner_principal TEXT NOT NULL,
-                    actor_principal TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    outcome TEXT NOT NULL,
-                    resource_type TEXT,
-                    resource_id TEXT,
-                    detail_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS agent_audit_run ON agent_audit(run_id, created_at, audit_id);
-                CREATE TABLE IF NOT EXISTS agent_approvals (
-                    approval_id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL REFERENCES agent_runs(run_id),
-                    owner_principal TEXT NOT NULL,
-                    actor_principal TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    reason TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    decision_by TEXT,
-                    decision_reason TEXT,
-                    execution_outcome TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    request_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS agent_approvals_idempotency
-                    ON agent_approvals(run_id, idempotency_key);
-                """
-            )
+        return cls()
 
     def start_run(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
@@ -424,17 +423,18 @@ class AgentResearchStore:
             "idempotency_key": key,
         }
         request_hash = _hash(request)
-        with self._lock, self._connection:
-            existing = self._connection.execute(
-                "SELECT * FROM agent_runs WHERE owner_principal = ? AND idempotency_key = ?",
-                (owner, key),
-            ).fetchone()
+        with self._transaction() as connection:
+            existing = fetch_one(
+                connection,
+                "SELECT * FROM agent_runs WHERE owner_principal = :owner AND idempotency_key = :key",
+                {"owner": owner, "key": key},
+            )
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise AgentConflict("agent run idempotency key was reused")
                 return self._run_row(existing)
             if parent_run_id:
-                parent = self._connection.execute("SELECT * FROM agent_runs WHERE run_id = ?", (parent_run_id,)).fetchone()
+                parent = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :parent_run_id", {"parent_run_id": parent_run_id})
                 if parent is None or parent["owner_principal"] != owner:
                     raise AgentForbidden("parent agent run is not owned by this principal")
                 parent_role = ROLE_BY_ID[parent["role_id"]]
@@ -442,17 +442,22 @@ class AgentResearchStore:
                     raise AgentForbidden("parent role is not authorized to delegate to this role")
             now = _now()
             run_id = _new_id("agent_run")
-            self._connection.execute(
+            execute(
+                connection,
                 """INSERT INTO agent_runs
                 (run_id, owner_principal, actor_principal, role_id, role_version,
                  trace_id, session_id, dsh_run_id, parent_run_id, status,
                  idempotency_key, request_hash, created_at, updated_at, version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, 1)""",
-                (run_id, owner, actor, role_id, role.version, trace_id, session_id, dsh_run_id, parent_run_id, key, request_hash, now, now),
+                VALUES (:run_id, :owner, :actor, :role_id, :role_version,
+                        :trace_id, :session_id, :dsh_run_id, :parent_run_id, 'active',
+                        :key, :request_hash, :created_at, :updated_at, 1)""",
+                {"run_id": run_id, "owner": owner, "actor": actor, "role_id": role_id, "role_version": role.version,
+                 "trace_id": trace_id, "session_id": session_id, "dsh_run_id": dsh_run_id, "parent_run_id": parent_run_id,
+                 "key": key, "request_hash": request_hash, "created_at": now, "updated_at": now},
             )
-            row = self._connection.execute("SELECT * FROM agent_runs WHERE run_id = ?", (run_id,)).fetchone()
-            assert row is not None
-            return self._run_row(row)
+            row = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
+        assert row is not None
+        return self._run_row(row)
 
     def authorize(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
@@ -465,8 +470,7 @@ class AgentResearchStore:
         action = _text(payload.get("action"), field="action", max_length=128)
         resource_type = payload.get("resource_type")
         resource_id = payload.get("resource_id")
-        with self._lock:
-            row = self._connection.execute("SELECT * FROM agent_runs WHERE run_id = ?", (run_id,)).fetchone()
+        row = self._fetch_one("SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
         if row is None:
             raise AgentNotFound("agent run not found")
         self._check_run_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
@@ -496,8 +500,7 @@ class AgentResearchStore:
         action = _text(payload.get("action"), field="action", max_length=128)
         outcome = _text(payload.get("outcome"), field="outcome", max_length=64)
         detail, _ = _json_object(payload.get("detail", {}), field="detail")
-        with self._lock:
-            row = self._connection.execute("SELECT * FROM agent_runs WHERE run_id = ?", (run_id,)).fetchone()
+        row = self._fetch_one("SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
         if row is None:
             raise AgentNotFound("agent run not found")
         self._check_run_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
@@ -505,16 +508,15 @@ class AgentResearchStore:
 
     def list_audit(self, run_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         run_id = _entity_id(run_id, field="run_id", prefix="agent_run")
-        with self._lock:
-            run = self._connection.execute("SELECT * FROM agent_runs WHERE run_id = ?", (run_id,)).fetchone()
-            if run is None:
-                raise AgentNotFound("agent run not found")
-            if trusted_owner and run["owner_principal"] != trusted_owner:
-                raise AgentUnauthorized("agent run is not owned by this principal")
-            rows = self._connection.execute(
-                "SELECT * FROM agent_audit WHERE run_id = ? ORDER BY created_at ASC, audit_id ASC",
-                (run_id,),
-            ).fetchall()
+        run = self._fetch_one("SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
+        if run is None:
+            raise AgentNotFound("agent run not found")
+        if trusted_owner and run["owner_principal"] != trusted_owner:
+            raise AgentUnauthorized("agent run is not owned by this principal")
+        rows = self._execute(
+            "SELECT * FROM agent_audit WHERE run_id = :run_id ORDER BY created_at ASC, audit_id ASC",
+            {"run_id": run_id},
+        )
         return {"run": self._run_row(run), "events": [self._audit_row(row) for row in rows]}
 
     def create_approval(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None) -> dict[str, object]:
@@ -528,8 +530,8 @@ class AgentResearchStore:
         action = _text(payload.get("action"), field="action", max_length=128)
         reason = _text(payload.get("reason"), field="reason", max_length=2000)
         key = _idempotency(payload.get("idempotency_key"))
-        with self._lock, self._connection:
-            run = self._connection.execute("SELECT * FROM agent_runs WHERE run_id = ?", (run_id,)).fetchone()
+        with self._transaction() as connection:
+            run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
             if run is None:
                 raise AgentNotFound("agent run not found")
             self._check_run_access(run, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
@@ -538,25 +540,33 @@ class AgentResearchStore:
                 raise AgentForbidden("agent action does not require or support this approval boundary")
             request = {"run_id": run_id, "action": action, "reason": reason, "idempotency_key": key}
             request_hash = _hash(request)
-            existing = self._connection.execute("SELECT * FROM agent_approvals WHERE run_id = ? AND idempotency_key = ?", (run_id, key)).fetchone()
+            existing = fetch_one(
+                connection,
+                "SELECT * FROM agent_approvals WHERE run_id = :run_id AND idempotency_key = :key",
+                {"run_id": run_id, "key": key},
+            )
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise AgentConflict("agent approval idempotency key was reused")
                 return self._approval_row(existing)
             now = _now()
             approval_id = _new_id("agent_approval")
-            self._connection.execute(
+            execute(
+                connection,
                 """INSERT INTO agent_approvals
                 (approval_id, run_id, owner_principal, actor_principal, action, reason,
                  status, decision_by, decision_reason, execution_outcome,
                  idempotency_key, request_hash, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, 'not_started', ?, ?, ?, ?)""",
-                (approval_id, run_id, run["owner_principal"], run["actor_principal"], action, reason, key, request_hash, now, now),
+                VALUES (:approval_id, :run_id, :owner_principal, :actor_principal, :action, :reason,
+                        'pending', NULL, NULL, 'not_started', :key, :request_hash, :created_at, :updated_at)""",
+                {"approval_id": approval_id, "run_id": run_id, "owner_principal": run["owner_principal"],
+                 "actor_principal": run["actor_principal"], "action": action, "reason": reason,
+                 "key": key, "request_hash": request_hash, "created_at": now, "updated_at": now},
             )
-            row = self._connection.execute("SELECT * FROM agent_approvals WHERE approval_id = ?", (approval_id,)).fetchone()
+            row = fetch_one(connection, "SELECT * FROM agent_approvals WHERE approval_id = :approval_id", {"approval_id": approval_id})
             assert row is not None
-            self._record_audit_row(run, action="approval.request", outcome="pending", resource_type="agent_approval", resource_id=approval_id, detail={"action": action})
-            return self._approval_row(row)
+            self._record_audit_row(run, action="approval.request", outcome="pending", resource_type="agent_approval", resource_id=approval_id, detail={"action": action}, connection=connection)
+        return self._approval_row(row)
 
     def decide_approval(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
@@ -573,8 +583,8 @@ class AgentResearchStore:
         reviewer = _principal(trusted_actor, field="reviewer_principal") if trusted_actor else None
         if reviewer is None:
             raise AgentUnauthorized("human approval requires a trusted reviewer principal")
-        with self._lock, self._connection:
-            row = self._connection.execute("SELECT * FROM agent_approvals WHERE approval_id = ?", (approval_id,)).fetchone()
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT * FROM agent_approvals WHERE approval_id = :approval_id", {"approval_id": approval_id})
             if row is None:
                 raise AgentNotFound("agent approval not found")
             if trusted_owner and row["owner_principal"] != trusted_owner:
@@ -586,21 +596,21 @@ class AgentResearchStore:
             now = _now()
             status = "approved" if decision == "approved" else "rejected"
             outcome = "authorized" if status == "approved" else "not_authorized"
-            self._connection.execute(
-                "UPDATE agent_approvals SET status = ?, decision_by = ?, decision_reason = ?, execution_outcome = ?, updated_at = ? WHERE approval_id = ?",
-                (status, reviewer, rationale, outcome, now, approval_id),
+            execute(
+                connection,
+                "UPDATE agent_approvals SET status = :status, decision_by = :decision_by, decision_reason = :decision_reason, execution_outcome = :execution_outcome, updated_at = :updated_at WHERE approval_id = :approval_id",
+                {"status": status, "decision_by": reviewer, "decision_reason": rationale, "execution_outcome": outcome, "updated_at": now, "approval_id": approval_id},
             )
-            updated = self._connection.execute("SELECT * FROM agent_approvals WHERE approval_id = ?", (approval_id,)).fetchone()
+            updated = fetch_one(connection, "SELECT * FROM agent_approvals WHERE approval_id = :approval_id", {"approval_id": approval_id})
             assert updated is not None
-            run = self._connection.execute("SELECT * FROM agent_runs WHERE run_id = ?", (row["run_id"],)).fetchone()
+            run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": row["run_id"]})
             assert run is not None
-            self._record_audit_row(run, action="approval.decision", outcome=status, resource_type="agent_approval", resource_id=approval_id, detail={"reviewer": reviewer, "decision": decision})
-            return self._approval_row(updated)
+            self._record_audit_row(run, action="approval.decision", outcome=status, resource_type="agent_approval", resource_id=approval_id, detail={"reviewer": reviewer, "decision": decision}, connection=connection)
+        return self._approval_row(updated)
 
     def get_approval(self, approval_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         approval_id = _entity_id(approval_id, field="approval_id", prefix="agent_approval")
-        with self._lock:
-            row = self._connection.execute("SELECT * FROM agent_approvals WHERE approval_id = ?", (approval_id,)).fetchone()
+        row = self._fetch_one("SELECT * FROM agent_approvals WHERE approval_id = :approval_id", {"approval_id": approval_id})
         if row is None:
             raise AgentNotFound("agent approval not found")
         if trusted_owner and row["owner_principal"] != trusted_owner:
@@ -608,19 +618,16 @@ class AgentResearchStore:
         return self._approval_row(row)
 
     def list_approvals(self, *, trusted_owner: str | None = None) -> dict[str, object]:
-        with self._lock:
-            if trusted_owner:
-                rows = self._connection.execute(
-                    "SELECT * FROM agent_approvals WHERE owner_principal = ? ORDER BY created_at DESC, approval_id DESC LIMIT 200",
-                    (trusted_owner,),
-                ).fetchall()
-            else:
-                rows = self._connection.execute(
-                    "SELECT * FROM agent_approvals ORDER BY created_at DESC, approval_id DESC LIMIT 200"
-                ).fetchall()
+        if trusted_owner:
+            rows = self._execute(
+                "SELECT * FROM agent_approvals WHERE owner_principal = :owner_principal ORDER BY created_at DESC, approval_id DESC LIMIT 200",
+                {"owner_principal": trusted_owner},
+            )
+        else:
+            rows = self._execute("SELECT * FROM agent_approvals ORDER BY created_at DESC, approval_id DESC LIMIT 200")
         return {"approvals": [self._approval_row(row) for row in rows]}
 
-    def _check_run_access(self, row: sqlite3.Row, *, trusted_owner: str | None, trusted_actor: str | None) -> None:
+    def _check_run_access(self, row: dict[str, Any], *, trusted_owner: str | None, trusted_actor: str | None) -> None:
         if trusted_owner and row["owner_principal"] != trusted_owner:
             raise AgentUnauthorized("agent run is not owned by this principal")
         if trusted_actor and row["actor_principal"] != trusted_actor:
@@ -628,22 +635,36 @@ class AgentResearchStore:
         if row["status"] != "active":
             raise AgentForbidden("agent run is not active")
 
-    def _record_audit_row(self, run: sqlite3.Row, *, action: object, outcome: object, resource_type: object, resource_id: object, detail: object) -> dict[str, object]:
+    def _record_audit_row(self, run: dict[str, Any], *, action: object, outcome: object, resource_type: object, resource_id: object, detail: object, connection: Any = None) -> dict[str, object]:
         action_text = _text(action, field="action", max_length=128)
         outcome_text = _text(outcome, field="outcome", max_length=64)
         resource_type_text = _text(resource_type, field="resource_type", max_length=64) if resource_type is not None else None
         resource_id_text = _text(resource_id, field="resource_id", max_length=128) if resource_id is not None else None
-        detail_value, detail_json = _json_object(detail, field="detail")
+        detail_value, _ = _json_object(detail, field="detail")
         audit_id = _new_id("agent_audit")
         created_at = _now()
-        with self._lock, self._connection:
-            self._connection.execute(
-                """INSERT INTO agent_audit
-                (audit_id, run_id, owner_principal, actor_principal, action, outcome,
-                 resource_type, resource_id, detail_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (audit_id, run["run_id"], run["owner_principal"], run["actor_principal"], action_text, outcome_text, resource_type_text, resource_id_text, detail_json, created_at),
-            )
+        params = {
+            "audit_id": audit_id,
+            "run_id": run["run_id"],
+            "owner_principal": run["owner_principal"],
+            "actor_principal": run["actor_principal"],
+            "action": action_text,
+            "outcome": outcome_text,
+            "resource_type": resource_type_text,
+            "resource_id": resource_id_text,
+            "detail_json": detail_value,
+            "created_at": created_at,
+        }
+        sql = """INSERT INTO agent_audit
+            (audit_id, run_id, owner_principal, actor_principal, action, outcome,
+             resource_type, resource_id, detail_json, created_at)
+            VALUES (:audit_id, :run_id, :owner_principal, :actor_principal, :action, :outcome,
+                    :resource_type, :resource_id, :detail_json, :created_at)"""
+        if connection is None:
+            with self._transaction() as tx_connection:
+                execute(tx_connection, sql, params)
+        else:
+            execute(connection, sql, params)
         return {
             "audit_id": audit_id,
             "run_id": run["run_id"],
@@ -658,20 +679,20 @@ class AgentResearchStore:
         }
 
     @staticmethod
-    def _run_row(row: sqlite3.Row) -> dict[str, object]:
+    def _run_row(row: dict[str, Any]) -> dict[str, object]:
         result = dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
         return result
 
     @staticmethod
-    def _audit_row(row: sqlite3.Row) -> dict[str, object]:
+    def _audit_row(row: dict[str, Any]) -> dict[str, object]:
         result = dict(row)
-        result["detail"] = _loads(result.pop("detail_json"), field="audit_detail")
+        result["detail"] = result.pop("detail_json") or {}
         return result
 
     @staticmethod
-    def _approval_row(row: sqlite3.Row) -> dict[str, object]:
+    def _approval_row(row: dict[str, Any]) -> dict[str, object]:
         result = dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)

@@ -12,12 +12,14 @@ import hashlib
 import json
 import os
 import re
-import sqlite3
-import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from sqlalchemy.exc import SQLAlchemyError
+
+from .db import PgStoreMixin, execute, fetch_one
 
 
 MAX_JSON_BYTES = 32 * 1024
@@ -161,74 +163,65 @@ def _loads(value: str, *, field: str) -> object:
         raise EngineeringPersistenceError(f"stored {field} is invalid") from exc
 
 
-class EngineeringTaskStore:
-    """Durable BYQ store for isolated EngineeringTask records."""
+class EngineeringTaskStore(PgStoreMixin):
+    """Durable BYQ store for isolated EngineeringTask records (ADR-0016 PG)."""
 
-    def __init__(self, path: str | Path) -> None:
-        self.path = str(path)
-        self._lock = threading.RLock()
-        if self.path != ":memory:":
-            Path(self.path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+    SCHEMA_DDL: list[str] = [
+        """
+        CREATE TABLE IF NOT EXISTS engineering_tasks (
+            task_id TEXT PRIMARY KEY,
+            owner_principal TEXT NOT NULL,
+            actor_principal TEXT NOT NULL,
+            trace_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            worktree_path TEXT,
+            branch_name TEXT,
+            draft_pr_number INTEGER,
+            ci_status TEXT,
+            self_review BOOLEAN,
+            architecture_evidence_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            merge_status TEXT NOT NULL DEFAULT 'not_merged',
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            version INTEGER NOT NULL
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS engineering_tasks_idempotency
+            ON engineering_tasks(owner_principal, idempotency_key)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS engineering_history (
+            history_id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL REFERENCES engineering_tasks(task_id),
+            from_status TEXT NOT NULL,
+            to_status TEXT NOT NULL,
+            actor_principal TEXT NOT NULL,
+            decision TEXT NOT NULL,
+            rationale TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS engineering_history_task
+            ON engineering_history(task_id, created_at, history_id)
+        """,
+    ]
+
+    def __init__(self, database_url: str | None = None) -> None:
         try:
-            self._connection = sqlite3.connect(self.path, timeout=10.0, check_same_thread=False)
-            self._connection.row_factory = sqlite3.Row
-            self._connection.execute("PRAGMA foreign_keys = ON")
-            self._connection.execute("PRAGMA busy_timeout = 10000")
-            self._create_schema()
-        except sqlite3.Error as exc:
+            super().__init__(database_url)
+        except SQLAlchemyError as exc:
             raise EngineeringPersistenceError("engineering storage is unavailable") from exc
 
     @classmethod
     def from_env(cls) -> "EngineeringTaskStore":
-        return cls(os.getenv("BYQ_DOMAIN_DB_PATH", "/tmp/byq-domain.sqlite3"))
-
-    def close(self) -> None:
-        with self._lock:
-            self._connection.close()
-
-    def _create_schema(self) -> None:
-        with self._connection:
-            self._connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS engineering_tasks (
-                    task_id TEXT PRIMARY KEY,
-                    owner_principal TEXT NOT NULL,
-                    actor_principal TEXT NOT NULL,
-                    trace_id TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    scope TEXT NOT NULL,
-                    worktree_path TEXT,
-                    branch_name TEXT,
-                    draft_pr_number INTEGER,
-                    ci_status TEXT,
-                    self_review INTEGER,
-                    architecture_evidence_json TEXT NOT NULL DEFAULT '{}',
-                    merge_status TEXT NOT NULL DEFAULT 'not_merged',
-                    idempotency_key TEXT NOT NULL,
-                    request_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    version INTEGER NOT NULL
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS engineering_tasks_idempotency
-                    ON engineering_tasks(owner_principal, idempotency_key);
-
-                CREATE TABLE IF NOT EXISTS engineering_history (
-                    history_id TEXT PRIMARY KEY,
-                    task_id TEXT NOT NULL REFERENCES engineering_tasks(task_id),
-                    from_status TEXT NOT NULL,
-                    to_status TEXT NOT NULL,
-                    actor_principal TEXT NOT NULL,
-                    decision TEXT NOT NULL,
-                    rationale TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS engineering_history_task
-                    ON engineering_history(task_id, created_at, history_id);
-                """
-            )
+        return cls()
 
     def create_task(
         self,
@@ -259,35 +252,40 @@ class EngineeringTaskStore:
             "idempotency_key": key,
         }
         request_hash = _hash(request)
-        with self._lock, self._connection:
-            existing = self._connection.execute(
-                "SELECT * FROM engineering_tasks WHERE owner_principal = ? AND idempotency_key = ?",
-                (owner, key),
-            ).fetchone()
+        with self._transaction() as connection:
+            existing = fetch_one(
+                connection,
+                "SELECT * FROM engineering_tasks WHERE owner_principal = :owner AND idempotency_key = :key",
+                {"owner": owner, "key": key},
+            )
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise EngineeringConflict("engineering task idempotency key was reused")
                 return self._task_row(existing)
             now = _now()
             task_id = _new_id("engineering_task")
-            self._connection.execute(
+            execute(
+                connection,
                 """INSERT INTO engineering_tasks
                 (task_id, owner_principal, actor_principal, trace_id, status,
                  title, description, scope, worktree_path, branch_name,
                  draft_pr_number, ci_status, self_review,
                  architecture_evidence_json, merge_status,
                  idempotency_key, request_hash, created_at, updated_at, version)
-                VALUES (?, ?, ?, ?, 'proposed', ?, ?, ?, NULL, NULL, NULL, NULL, NULL, '{}', 'not_merged', ?, ?, ?, ?, 1)""",
-                (task_id, owner, actor, trace_id, title, description, scope, key, request_hash, now, now),
+                VALUES (:task_id, :owner, :actor, :trace_id, 'proposed', :title, :description, :scope,
+                        NULL, NULL, NULL, NULL, NULL, '{}', 'not_merged',
+                        :key, :request_hash, :created_at, :updated_at, 1)""",
+                {"task_id": task_id, "owner": owner, "actor": actor, "trace_id": trace_id,
+                 "title": title, "description": description, "scope": scope,
+                 "key": key, "request_hash": request_hash, "created_at": now, "updated_at": now},
             )
-            row = self._connection.execute("SELECT * FROM engineering_tasks WHERE task_id = ?", (task_id,)).fetchone()
-            assert row is not None
-            return self._task_row(row)
+            row = fetch_one(connection, "SELECT * FROM engineering_tasks WHERE task_id = :task_id", {"task_id": task_id})
+        assert row is not None
+        return self._task_row(row)
 
     def get_task(self, task_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         task_id = _task_id(task_id)
-        with self._lock:
-            row = self._connection.execute("SELECT * FROM engineering_tasks WHERE task_id = ?", (task_id,)).fetchone()
+        row = self._fetch_one("SELECT * FROM engineering_tasks WHERE task_id = :task_id", {"task_id": task_id})
         if row is None:
             raise EngineeringNotFound("engineering task not found")
         if trusted_owner and row["owner_principal"] != trusted_owner:
@@ -295,16 +293,13 @@ class EngineeringTaskStore:
         return self._task_with_history(row)
 
     def list_tasks(self, *, trusted_owner: str | None = None) -> dict[str, object]:
-        with self._lock:
-            if trusted_owner:
-                rows = self._connection.execute(
-                    "SELECT * FROM engineering_tasks WHERE owner_principal = ? ORDER BY created_at DESC, task_id DESC",
-                    (trusted_owner,),
-                ).fetchall()
-            else:
-                rows = self._connection.execute(
-                    "SELECT * FROM engineering_tasks ORDER BY created_at DESC, task_id DESC"
-                ).fetchall()
+        if trusted_owner:
+            rows = self._execute(
+                "SELECT * FROM engineering_tasks WHERE owner_principal = :owner_principal ORDER BY created_at DESC, task_id DESC",
+                {"owner_principal": trusted_owner},
+            )
+        else:
+            rows = self._execute("SELECT * FROM engineering_tasks ORDER BY created_at DESC, task_id DESC")
         return {"tasks": [self._task_row(row) for row in rows]}
 
     def transition(
@@ -320,8 +315,8 @@ class EngineeringTaskStore:
         task_id = _task_id(payload.get("task_id"))
         target = _text(payload.get("target_status"), field="target_status", max_length=32)
         key = _idempotency(payload.get("idempotency_key"))
-        with self._lock, self._connection:
-            row = self._connection.execute("SELECT * FROM engineering_tasks WHERE task_id = ?", (task_id,)).fetchone()
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT * FROM engineering_tasks WHERE task_id = :task_id", {"task_id": task_id})
             if row is None:
                 raise EngineeringNotFound("engineering task not found")
             self._check_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
@@ -331,13 +326,14 @@ class EngineeringTaskStore:
             self._enforce_transition_evidence(row, target)
             now = _now()
             if target != current:
-                self._connection.execute(
-                    "UPDATE engineering_tasks SET status = ?, updated_at = ?, version = version + 1 WHERE task_id = ?",
-                    (target, now, task_id),
+                execute(
+                    connection,
+                    "UPDATE engineering_tasks SET status = :status, updated_at = :updated_at, version = version + 1 WHERE task_id = :task_id",
+                    {"status": target, "updated_at": now, "task_id": task_id},
                 )
                 decision = target if target in {"approved", "rejected", "completed"} else "transition"
-                self._record_history(task_id, current, target, trusted_actor or row["actor_principal"], decision, "")
-                row = self._connection.execute("SELECT * FROM engineering_tasks WHERE task_id = ?", (task_id,)).fetchone()
+                self._record_history(connection, task_id, current, target, trusted_actor or row["actor_principal"], decision, "")
+                row = fetch_one(connection, "SELECT * FROM engineering_tasks WHERE task_id = :task_id", {"task_id": task_id})
                 assert row is not None
             return self._task_with_history(row)
 
@@ -355,8 +351,8 @@ class EngineeringTaskStore:
             {"task_id", "worktree_path", "branch_name", "draft_pr_number", "ci_status", "self_review", "architecture_evidence", "idempotency_key"},
         )
         task_id = _task_id(payload.get("task_id"))
-        with self._lock, self._connection:
-            row = self._connection.execute("SELECT * FROM engineering_tasks WHERE task_id = ?", (task_id,)).fetchone()
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT * FROM engineering_tasks WHERE task_id = :task_id", {"task_id": task_id})
             if row is None:
                 raise EngineeringNotFound("engineering task not found")
             self._check_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
@@ -410,22 +406,25 @@ class EngineeringTaskStore:
                 if self_review is not None and not isinstance(self_review, bool):
                     raise ValueError("self_review must be a boolean")
 
-            evidence_json = row["architecture_evidence_json"]
+            evidence_value = row["architecture_evidence_json"]
             if "architecture_evidence" in payload:
-                evidence, evidence_json = _json_object(payload.get("architecture_evidence", {}), field="architecture_evidence")
+                evidence_value, _ = _json_object(payload.get("architecture_evidence", {}), field="architecture_evidence")
 
             now = _now()
-            self._connection.execute(
+            execute(
+                connection,
                 """UPDATE engineering_tasks
-                SET worktree_path = ?, branch_name = ?, draft_pr_number = ?,
-                    ci_status = ?, self_review = ?, architecture_evidence_json = ?,
-                    updated_at = ?, version = version + 1
-                WHERE task_id = ?""",
-                (worktree_path, branch_name, draft_pr_number, ci_status, int(self_review) if self_review is not None else None, evidence_json, now, task_id),
+                SET worktree_path = :worktree_path, branch_name = :branch_name, draft_pr_number = :draft_pr_number,
+                    ci_status = :ci_status, self_review = :self_review, architecture_evidence_json = :architecture_evidence_json,
+                    updated_at = :updated_at, version = version + 1
+                WHERE task_id = :task_id""",
+                {"worktree_path": worktree_path, "branch_name": branch_name, "draft_pr_number": draft_pr_number,
+                 "ci_status": ci_status, "self_review": self_review, "architecture_evidence_json": evidence_value,
+                 "updated_at": now, "task_id": task_id},
             )
-            updated = self._connection.execute("SELECT * FROM engineering_tasks WHERE task_id = ?", (task_id,)).fetchone()
-            assert updated is not None
-            return self._task_with_history(updated)
+            updated = fetch_one(connection, "SELECT * FROM engineering_tasks WHERE task_id = :task_id", {"task_id": task_id})
+        assert updated is not None
+        return self._task_with_history(updated)
 
     def record_human_merge(
         self,
@@ -446,8 +445,8 @@ class EngineeringTaskStore:
             raise ValueError("decision must be merged or rejected")
         rationale = _text(payload.get("rationale") or "", field="rationale", max_length=2000) if payload.get("rationale") else ""
         key = _idempotency(payload.get("idempotency_key"))
-        with self._lock, self._connection:
-            row = self._connection.execute("SELECT * FROM engineering_tasks WHERE task_id = ?", (task_id,)).fetchone()
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT * FROM engineering_tasks WHERE task_id = :task_id", {"task_id": task_id})
             if row is None:
                 raise EngineeringNotFound("engineering task not found")
             if trusted_owner and row["owner_principal"] != trusted_owner:
@@ -459,21 +458,22 @@ class EngineeringTaskStore:
             if row["merge_status"] != "not_merged":
                 return self._task_with_history(row)
             now = _now()
-            self._connection.execute(
-                "UPDATE engineering_tasks SET merge_status = ?, updated_at = ?, version = version + 1 WHERE task_id = ?",
-                (decision, now, task_id),
+            execute(
+                connection,
+                "UPDATE engineering_tasks SET merge_status = :merge_status, updated_at = :updated_at, version = version + 1 WHERE task_id = :task_id",
+                {"merge_status": decision, "updated_at": now, "task_id": task_id},
             )
-            self._record_history(task_id, "completed", "completed", reviewer, f"merge_{decision}", rationale)
-            updated = self._connection.execute("SELECT * FROM engineering_tasks WHERE task_id = ?", (task_id,)).fetchone()
-            assert updated is not None
-            return self._task_with_history(updated)
+            self._record_history(connection, task_id, "completed", "completed", reviewer, f"merge_{decision}", rationale)
+            updated = fetch_one(connection, "SELECT * FROM engineering_tasks WHERE task_id = :task_id", {"task_id": task_id})
+        assert updated is not None
+        return self._task_with_history(updated)
 
-    def _check_access(self, row: sqlite3.Row, *, trusted_owner: str | None, trusted_actor: str | None) -> None:
+    def _check_access(self, row: dict[str, Any], *, trusted_owner: str | None, trusted_actor: str | None) -> None:
         if trusted_owner and row["owner_principal"] != trusted_owner:
             raise EngineeringUnauthorized("engineering task is not owned by this principal")
 
     @staticmethod
-    def _enforce_transition_evidence(row: sqlite3.Row, target: str) -> None:
+    def _enforce_transition_evidence(row: dict[str, Any], target: str) -> None:
         if target == "in_progress" and row["status"] != "approved":
             raise EngineeringForbidden("only an approved engineering task may start work")
         if target == "review_required":
@@ -486,15 +486,16 @@ class EngineeringTaskStore:
                 raise EngineeringForbidden("completion requires a draft PR number")
             if row["ci_status"] != "success":
                 raise EngineeringForbidden("completion requires successful CI status")
-            if row["self_review"] != 1:
+            if row["self_review"] is not True:
                 raise EngineeringForbidden("completion requires an explicit self-review")
-            if row["architecture_evidence_json"] == "{}":
+            if not row["architecture_evidence_json"]:
                 raise EngineeringForbidden("completion requires non-empty architecture evidence")
             if row["merge_status"] != "not_merged":
                 raise EngineeringForbidden("completion requires an unmerged human merge state")
 
     def _record_history(
         self,
+        connection: Any,
         task_id: str,
         from_status: str,
         to_status: str,
@@ -503,29 +504,30 @@ class EngineeringTaskStore:
         rationale: str,
     ) -> None:
         history_id = _new_id("engineering_history")
-        self._connection.execute(
+        execute(
+            connection,
             """INSERT INTO engineering_history
             (history_id, task_id, from_status, to_status, actor_principal, decision, rationale, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (history_id, task_id, from_status, to_status, actor, decision, rationale, _now()),
+            VALUES (:history_id, :task_id, :from_status, :to_status, :actor_principal, :decision, :rationale, :created_at)""",
+            {"history_id": history_id, "task_id": task_id, "from_status": from_status, "to_status": to_status,
+             "actor_principal": actor, "decision": decision, "rationale": rationale, "created_at": _now()},
         )
 
     @staticmethod
-    def _task_row(row: sqlite3.Row) -> dict[str, object]:
+    def _task_row(row: dict[str, Any]) -> dict[str, object]:
         result = dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
-        result["architecture_evidence"] = _loads(result.pop("architecture_evidence_json"), field="architecture_evidence")
+        result["architecture_evidence"] = result.pop("architecture_evidence_json") or {}
         result["self_review"] = bool(result["self_review"]) if result["self_review"] is not None else None
         return result
 
-    def _task_with_history(self, row: sqlite3.Row) -> dict[str, object]:
+    def _task_with_history(self, row: dict[str, Any]) -> dict[str, object]:
         task = self._task_row(row)
-        with self._lock:
-            rows = self._connection.execute(
-                """SELECT * FROM engineering_history
-                WHERE task_id = ? ORDER BY created_at ASC, history_id ASC""",
-                (task["task_id"],),
-            ).fetchall()
+        rows = self._execute(
+            """SELECT * FROM engineering_history
+            WHERE task_id = :task_id ORDER BY created_at ASC, history_id ASC""",
+            {"task_id": task["task_id"]},
+        )
         task["history"] = [dict(item) for item in rows]
         return task

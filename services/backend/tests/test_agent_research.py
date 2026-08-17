@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from app.agent_research import (
@@ -9,6 +11,13 @@ from app.agent_research import (
     role_catalog,
 )
 
+
+
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
 
 def start(store: AgentResearchStore, **overrides: object) -> dict[str, object]:
     payload = {
@@ -40,7 +49,7 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
 
 
 def test_runs_are_owner_scoped_idempotent_and_delegation_is_allowlisted(tmp_path) -> None:
-    store = AgentResearchStore(tmp_path / "agent.sqlite3")
+    store = AgentResearchStore()
     parent = start(store)
     same = start(store)
     assert same["run_id"] == parent["run_id"]
@@ -64,7 +73,7 @@ def test_runs_are_owner_scoped_idempotent_and_delegation_is_allowlisted(tmp_path
 
 
 def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> None:
-    store = AgentResearchStore(tmp_path / "agent.sqlite3")
+    store = AgentResearchStore()
     run = start(store)
 
     allowed = store.authorize({"run_id": run["run_id"], "action": "byq_factor_compute"})

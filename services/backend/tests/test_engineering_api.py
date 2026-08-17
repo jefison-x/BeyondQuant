@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import os
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app import main
 from app.engineering import EngineeringTaskStore
 
+
+
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
 
 CONTEXT = {
     "x-byq-owner-principal": "alice",
@@ -16,7 +26,7 @@ CONTEXT = {
 
 
 def test_engineering_api_requires_context_and_evidence_gate(monkeypatch, tmp_path) -> None:
-    store = EngineeringTaskStore(tmp_path / "engineering-api.sqlite3")
+    store = EngineeringTaskStore()
     monkeypatch.setattr(main, "engineering_store", store)
     client = TestClient(main.app)
 
