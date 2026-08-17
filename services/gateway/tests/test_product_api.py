@@ -351,6 +351,8 @@ def test_product_agent_policy_get_and_update(monkeypatch) -> None:
     def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
         if url.endswith("/v1/agents/approvals"):
             return FakeResponse({"approvals": []})
+        if method == "PUT":
+            return FakeResponse({"policy": {"owner_principal": "product-user", "automation_enabled": False, "paused": True, "default_decision_mode": "manual"}})
         return FakeResponse({"policy": {"owner_principal": "product-user", "automation_enabled": True, "default_decision_mode": "manual"}})
 
     monkeypatch.setattr(product_api.httpx, "request", fake_request)
