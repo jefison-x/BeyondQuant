@@ -569,7 +569,12 @@ def product_assets_import(request: Request, payload: dict[str, object]) -> dict[
 @router.post("/paper/accounts", status_code=201)
 def product_paper_account_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("POST", "/v1/paper/accounts", payload)
+    return _backend_request(
+        "POST",
+        "/v1/paper/accounts",
+        payload,
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/paper/accounts/{account_id}")
@@ -587,7 +592,12 @@ def product_paper_accounts(request: Request) -> dict[str, object]:
 @router.post("/paper/pools", status_code=201)
 def product_stock_pool_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("POST", "/v1/paper/pools", payload)
+    return _backend_request(
+        "POST",
+        "/v1/paper/pools",
+        payload,
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/paper/pools/{pool_id}")

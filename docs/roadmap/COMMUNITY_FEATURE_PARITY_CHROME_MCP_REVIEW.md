@@ -84,6 +84,27 @@ Observed at `/backtest` with a real completed owner-scoped job
 - No raw MCP/DSH/Backend/storage/provider URL or secret appeared in the
   rendered page; the page consumed Product API routes only.
 
+## Stock Pool workspace review (2026-08-17)
+
+- Browser method: Chrome DevTools MCP (headed, viewport 1440x900)
+- Topology: local `beyondquant` compose with the Stock Pool product-depth
+  branch images
+- Browser origin: `http://127.0.0.1`
+- Authenticated principal: `chromeuser` / role `admin`
+
+Observed at `/stock-pool`:
+
+- Create form renders 股票池名称, 类型 radios (自建/指数/动态), 说明,
+  成分股, and optional 权重 JSON.
+- A pool was created through the real browser form and the fixed Product API
+  proxy: 沪深300增强 / 指数 / 2 只成分 / v1 / 浏览器审查指数池.
+- List pane renders name/type/count/version/description/updated-time with
+  全部/自建/指数/动态 filters, search, and refresh.
+- Detail pane renders the immutable snapshot: symbols 000001.SZ + 600000.SH
+  and weights {"000001.SZ": 0.6, "600000.SH": 0.4}.
+- No raw MCP/DSH/Backend/storage/provider URL or secret appeared in the
+  rendered page; the page consumed Product API routes only.
+
 This review also exposed and fixed a real defect: the Product API wraps
 backtest jobs in `{"job": ...}` and the frontend client did not unwrap it,
 so job detail never loaded. The fix unwraps `job` in the quant API client and

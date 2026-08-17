@@ -146,7 +146,10 @@ export interface PaperAccount {
 export interface StockPool {
   pool_id?: string;
   name?: string;
+  pool_type?: string;
+  description?: string;
   symbols?: string[];
+  weights?: Record<string, number>;
   version?: string;
 }
 

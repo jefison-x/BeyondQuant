@@ -108,3 +108,37 @@ def test_paper_trading_blocks_suspension_and_t_plus_one(tmp_path) -> None:
     )
     assert same_day_sell["blocked_reason"] == "t_plus_one"
     store.close()
+
+
+def test_stock_pool_catalog_type_description_and_weights(tmp_path) -> None:
+    store = PaperTradingStore(tmp_path / "paper.sqlite3")
+    pool = store.create_pool(
+        {
+            "name": "沪深300增强",
+            "pool_type": "index",
+            "description": "指数股票池样例",
+            "symbols": ["000001.SZ", "600000.SH"],
+            "weights": {"000001.SZ": 0.6, "600000.SH": 0.4},
+        },
+        trusted_owner="alice",
+    )
+    assert pool["pool_type"] == "index"
+    assert pool["description"] == "指数股票池样例"
+    assert pool["weights"] == {"000001.SZ": 0.6, "600000.SH": 0.4}
+    assert pool["version"] == "v1"
+
+    listed = store.list_pools(trusted_owner="alice")["pools"]
+    assert listed[0]["pool_type"] == "index"
+    assert listed[0]["symbols"] == ["000001.SZ", "600000.SH"]
+
+    with pytest.raises(ValueError):
+        store.create_pool(
+            {"name": "bad", "pool_type": "unknown", "symbols": ["000001.SZ"]},
+            trusted_owner="alice",
+        )
+    with pytest.raises(ValueError):
+        store.create_pool(
+            {"name": "bad-weight", "symbols": ["000001.SZ"], "weights": {"600000.SH": 1}},
+            trusted_owner="alice",
+        )
+    store.close()

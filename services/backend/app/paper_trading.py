@@ -157,6 +157,9 @@ class PaperTradingStore:
                     pool_id TEXT PRIMARY KEY,
                     owner_principal TEXT NOT NULL,
                     name TEXT NOT NULL,
+                    pool_type TEXT NOT NULL,
+                    description TEXT,
+                    weights_json TEXT,
                     symbols_json TEXT NOT NULL,
                     version TEXT NOT NULL,
                     provenance_json TEXT NOT NULL,
@@ -203,6 +206,14 @@ class PaperTradingStore:
                 );
                 """
             )
+        self._ensure_pool_columns()
+
+    def _ensure_pool_columns(self) -> None:
+        for column in ("pool_type", "description", "weights_json"):
+            try:
+                self._connection.execute(f"ALTER TABLE stock_pools ADD COLUMN {column} TEXT")
+            except sqlite3.OperationalError:
+                pass
 
     def create_account(self, payload: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
@@ -259,23 +270,45 @@ class PaperTradingStore:
         if owner is None:
             raise PaperTradingForbidden("pool requires a trusted owner")
         name = _text(payload.get("name"), field="name", max_length=128)
+        pool_type = _text(payload.get("pool_type", "custom"), field="pool_type", max_length=16)
+        if pool_type not in {"custom", "index", "dynamic"}:
+            raise ValueError("pool_type must be custom, index, or dynamic")
+        description = payload.get("description")
+        if description is not None:
+            description = _text(description, field="description", max_length=2000)
         symbols_value = payload.get("symbols")
         if not isinstance(symbols_value, list) or not symbols_value:
             raise ValueError("symbols must be a non-empty list")
         symbols = sorted({_symbol(item) for item in symbols_value})
+        weights = payload.get("weights", {})
+        if not isinstance(weights, dict):
+            raise ValueError("weights must be an object")
+        unknown_weights = sorted(set(weights) - set(symbols))
+        if unknown_weights:
+            raise ValueError("weights contain symbols outside the pool membership")
+        normalized_weights: dict[str, float] = {}
+        for symbol, weight in weights.items():
+            if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+                raise ValueError("weights must be numeric")
+            value = float(weight)
+            if not math.isfinite(value) or value < 0:
+                raise ValueError("weights must be finite and non-negative")
+            normalized_weights[symbol] = value
         provenance = payload.get("provenance", {})
         if not isinstance(provenance, dict):
             raise ValueError("provenance must be an object")
         symbols_json = json.dumps(symbols, separators=(",", ":"))
+        weights_json = json.dumps(normalized_weights, separators=(",", ":"), sort_keys=True)
         provenance_json = json.dumps(provenance, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         pool_id = _new_id("stock_pool")
         now = _now()
         with self._lock, self._connection:
             self._connection.execute(
                 """INSERT INTO stock_pools
-                (pool_id, owner_principal, name, symbols_json, version, provenance_json, created_at)
-                VALUES (?, ?, ?, ?, 'v1', ?, ?)""",
-                (pool_id, owner, name, symbols_json, provenance_json, now),
+                (pool_id, owner_principal, name, pool_type, description, weights_json,
+                 symbols_json, version, provenance_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'v1', ?, ?)""",
+                (pool_id, owner, name, pool_type, description, weights_json, symbols_json, provenance_json, now),
             )
             return self.get_pool(pool_id, trusted_owner=owner)
 
@@ -289,6 +322,7 @@ class PaperTradingStore:
             raise PaperTradingForbidden("stock pool is not owned by this principal")
         result = dict(row)
         result["symbols"] = _loads(result.pop("symbols_json"), field="symbols")
+        result["weights"] = _loads(result.pop("weights_json") or "{}", field="weights")
         result["provenance"] = _loads(result.pop("provenance_json"), field="provenance")
         return result
 
@@ -307,6 +341,7 @@ class PaperTradingStore:
         for row in rows:
             item = dict(row)
             item["symbols"] = _loads(item.pop("symbols_json"), field="symbols")
+            item["weights"] = _loads(item.pop("weights_json") or "{}", field="weights")
             item["provenance"] = _loads(item.pop("provenance_json"), field="provenance")
             pools.append(item)
         return {"pools": pools}
