@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy import create_engine, text
@@ -25,6 +26,7 @@ def create_db_engine(database_url: str | None = None) -> Engine:
     return create_engine(database_url or DEFAULT_DATABASE_URL, pool_pre_ping=True, future=True)
 
 
+@contextmanager
 def connect(engine: Engine) -> Iterator[Connection]:
     with engine.connect() as connection:
         yield connection
