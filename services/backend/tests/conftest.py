@@ -8,7 +8,7 @@ Guards:
 
 The autouse fixture resets the shared PostgreSQL test schema before every test
 and runs the DDL of every store registered here. The registry grows as stores
-migrate (Stage 3: + AgentResearch, Engineering, LearningLoop).
+migrate (Stage 4: + Research (all eight stores registered).
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from app.db import create_db_engine, run_ddl
 from app.engineering import EngineeringTaskStore
 from app.learning_loop import LearningLoopStore
 from app.paper_trading import PaperTradingStore
+from app.research import ResearchStore
 from app.user_auth import UserAuthStore
 from app.user_policy import UserPolicyStore
 
@@ -40,6 +41,7 @@ REGISTERED_SCHEMA_DDL: list[str] = [
     *AgentResearchStore.SCHEMA_DDL,
     *EngineeringTaskStore.SCHEMA_DDL,
     *LearningLoopStore.SCHEMA_DDL,
+    *ResearchStore.SCHEMA_DDL,
 ]
 
 

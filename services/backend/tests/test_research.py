@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import hashlib
 import json
 
@@ -12,6 +14,13 @@ from app.research import (
     ResearchStore,
 )
 
+
+
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
 
 def task_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
@@ -65,15 +74,14 @@ def artifact_payload(task_id: str, experiment_id: str, **overrides: object) -> d
     return payload
 
 
-def test_research_entities_persist_with_lineage_and_provenance(tmp_path) -> None:
-    path = tmp_path / "domain.sqlite3"
-    store = ResearchStore(path)
+def test_research_entities_persist_with_lineage_and_provenance() -> None:
+    store = ResearchStore()
     task = store.create_task(task_payload())
     experiment = store.create_experiment(experiment_payload(task["task_id"]))
     artifact = store.create_artifact(artifact_payload(task["task_id"], experiment["experiment_id"]))
     store.close()
 
-    reopened = ResearchStore(path)
+    reopened = ResearchStore()
     assert reopened.get_task(task["task_id"])["status"] == "planned"
     assert reopened.get_experiment(experiment["experiment_id"])["input_snapshot"] == snapshot()
     assert artifact["status"] == "draft"
@@ -94,8 +102,8 @@ def test_research_entities_persist_with_lineage_and_provenance(tmp_path) -> None
     reopened.close()
 
 
-def test_create_and_transition_are_idempotent_and_conflicts_are_rejected(tmp_path) -> None:
-    store = ResearchStore(tmp_path / "domain.sqlite3")
+def test_create_and_transition_are_idempotent_and_conflicts_are_rejected() -> None:
+    store = ResearchStore()
     first = store.create_task(task_payload())
     retry = store.create_task(task_payload())
     assert retry == first
@@ -116,8 +124,8 @@ def test_create_and_transition_are_idempotent_and_conflicts_are_rejected(tmp_pat
     store.close()
 
 
-def test_experiment_requires_phase8_provenance_and_artifact_rejects_secrets(tmp_path) -> None:
-    store = ResearchStore(tmp_path / "domain.sqlite3")
+def test_experiment_requires_phase8_provenance_and_artifact_rejects_secrets() -> None:
+    store = ResearchStore()
     task = store.create_task(task_payload())
 
     with pytest.raises(ValueError, match="sources"):
@@ -139,8 +147,8 @@ def test_experiment_requires_phase8_provenance_and_artifact_rejects_secrets(tmp_
     store.close()
 
 
-def test_artifact_content_hash_is_canonical_across_object_key_order(tmp_path) -> None:
-    store = ResearchStore(tmp_path / "domain.sqlite3")
+def test_artifact_content_hash_is_canonical_across_object_key_order() -> None:
+    store = ResearchStore()
     task = store.create_task(task_payload(idempotency_key="task-hash-1"))
     experiment = store.create_experiment(
         experiment_payload(task["task_id"], idempotency_key="experiment-hash-1")
@@ -165,8 +173,8 @@ def test_artifact_content_hash_is_canonical_across_object_key_order(tmp_path) ->
     store.close()
 
 
-def test_list_tasks_and_experiments_are_owner_scoped(tmp_path) -> None:
-    store = ResearchStore(tmp_path / "domain.sqlite3")
+def test_list_tasks_and_experiments_are_owner_scoped() -> None:
+    store = ResearchStore()
     task = store.create_task(task_payload(idempotency_key="task-list-1"))
     experiment = store.create_experiment(experiment_payload(task["task_id"], idempotency_key="experiment-list-1"))
 

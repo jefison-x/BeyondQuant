@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import os
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app import main
 from app.research import ResearchStore
 from test_strategy_artifact import strategy_payload
 
+
+
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
 
 def _task(client: TestClient) -> dict[str, object]:
     response = client.post(
@@ -22,8 +32,8 @@ def _task(client: TestClient) -> dict[str, object]:
     return response.json()
 
 
-def test_strategy_draft_version_export_and_approval_flow(monkeypatch, tmp_path) -> None:
-    store = ResearchStore(tmp_path / "strategy.sqlite3")
+def test_strategy_draft_version_export_and_approval_flow(monkeypatch) -> None:
+    store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
     task = _task(client)
@@ -89,8 +99,8 @@ def test_strategy_draft_version_export_and_approval_flow(monkeypatch, tmp_path) 
     store.close()
 
 
-def test_strategy_api_rejects_invalid_source_without_creating_artifact(monkeypatch, tmp_path) -> None:
-    store = ResearchStore(tmp_path / "strategy.sqlite3")
+def test_strategy_api_rejects_invalid_source_without_creating_artifact(monkeypatch) -> None:
+    store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
     task = _task(client)
@@ -104,5 +114,5 @@ def test_strategy_api_rejects_invalid_source_without_creating_artifact(monkeypat
         },
     )
     assert response.status_code == 422
-    assert store._connection.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0] == 0
+    assert store._execute("SELECT COUNT(*) FROM artifacts")[0]["count"] == 0
     store.close()

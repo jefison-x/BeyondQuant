@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+import os
+
 import pytest
 
 from fastapi.testclient import TestClient
@@ -34,7 +36,7 @@ def _strategy() -> dict[str, object]:
 
 
 def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
-    store = ResearchStore(tmp_path / "domain.sqlite3")
+    store = ResearchStore()
     jobs = BacktestJobStore()
     monkeypatch.setattr(main, "research_store", store)
     monkeypatch.setattr(main, "backtest_store", jobs)

@@ -4,12 +4,14 @@ import hashlib
 import json
 import os
 import re
-import sqlite3
-import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from sqlalchemy.exc import SQLAlchemyError
+
+from .db import PgStoreMixin, ensure_column, execute, fetch_one
 
 
 MAX_JSON_BYTES = 64 * 1024
@@ -195,301 +197,255 @@ def _result_json(value: dict[str, object]) -> str:
         raise ResearchPersistenceError("research result is not JSON-serializable") from error
 
 
-def _row_dict(row: sqlite3.Row) -> dict[str, object]:
+def _row_dict(row: dict[str, Any]) -> dict[str, object]:
     return dict(row)
 
 
-class ResearchStore:
-    """Backend-owned durable repository for Phase 9 business entities."""
+class ResearchStore(PgStoreMixin):
+    """Backend-owned durable repository for Phase 9 business entities (ADR-0016 PG)."""
 
-    def __init__(self, path: str | Path) -> None:
-        self.path = str(path)
-        self._lock = threading.RLock()
-        if self.path != ":memory:":
-            Path(self.path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+    SCHEMA_DDL: list[str] = [
+        """
+        CREATE TABLE IF NOT EXISTS research_tasks (
+            task_id TEXT PRIMARY KEY,
+            owner_principal TEXT NOT NULL,
+            title TEXT NOT NULL,
+            objective TEXT NOT NULL,
+            status TEXT NOT NULL,
+            trace_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            version INTEGER NOT NULL
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS research_tasks_idempotency
+            ON research_tasks(owner_principal, idempotency_key)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS experiments (
+            experiment_id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL REFERENCES research_tasks(task_id),
+            owner_principal TEXT NOT NULL,
+            name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            input_snapshot JSONB NOT NULL,
+            trace_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            version INTEGER NOT NULL
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS experiments_idempotency
+            ON experiments(task_id, idempotency_key)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS artifacts (
+            artifact_id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL REFERENCES research_tasks(task_id),
+            experiment_id TEXT REFERENCES experiments(experiment_id),
+            owner_principal TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            content JSONB NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            lineage JSONB NOT NULL,
+            trace_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            version INTEGER NOT NULL
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS artifacts_idempotency
+            ON artifacts(task_id, idempotency_key)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS artifacts_kind ON artifacts(kind)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS research_transitions (
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            target_status TEXT NOT NULL,
+            result_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            PRIMARY KEY(entity_type, entity_id, idempotency_key)
+        )
+        """,
+    ]
+
+    def __init__(self, database_url: str | None = None) -> None:
         try:
-            self._connection = sqlite3.connect(
-                self.path,
-                timeout=10.0,
-                check_same_thread=False,
-            )
-            self._connection.row_factory = sqlite3.Row
-            self._connection.execute("PRAGMA foreign_keys = ON")
-            self._connection.execute("PRAGMA busy_timeout = 10000")
-            self._create_schema()
-        except sqlite3.Error as error:
+            super().__init__(database_url)
+        except SQLAlchemyError as error:
             raise ResearchPersistenceError("research storage is unavailable") from error
+
+    def bootstrap_schema(self) -> None:
+        super().bootstrap_schema()
+        # Column back-migration parity with the former SQLite schema.
+        with self.engine.begin() as connection:
+            ensure_column(connection, "research_transitions", "result_json", "JSONB")
 
     @classmethod
     def from_env(cls) -> "ResearchStore":
-        return cls(os.getenv("BYQ_DOMAIN_DB_PATH", "/tmp/byq-domain.sqlite3"))
-
-    def close(self) -> None:
-        with self._lock:
-            self._connection.close()
-
-    def _create_schema(self) -> None:
-        with self._connection:
-            self._connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS research_tasks (
-                    task_id TEXT PRIMARY KEY,
-                    owner_principal TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    objective TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    trace_id TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    request_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    version INTEGER NOT NULL
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS research_tasks_idempotency
-                    ON research_tasks(owner_principal, idempotency_key);
-
-                CREATE TABLE IF NOT EXISTS experiments (
-                    experiment_id TEXT PRIMARY KEY,
-                    task_id TEXT NOT NULL REFERENCES research_tasks(task_id),
-                    owner_principal TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    input_snapshot TEXT NOT NULL,
-                    trace_id TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    request_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    version INTEGER NOT NULL
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS experiments_idempotency
-                    ON experiments(task_id, idempotency_key);
-
-                CREATE TABLE IF NOT EXISTS artifacts (
-                    artifact_id TEXT PRIMARY KEY,
-                    task_id TEXT NOT NULL REFERENCES research_tasks(task_id),
-                    experiment_id TEXT REFERENCES experiments(experiment_id),
-                    owner_principal TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    content_sha256 TEXT NOT NULL,
-                    lineage TEXT NOT NULL,
-                    trace_id TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    request_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    version INTEGER NOT NULL
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS artifacts_idempotency
-                    ON artifacts(task_id, idempotency_key);
-
-                CREATE TABLE IF NOT EXISTS research_transitions (
-                    entity_type TEXT NOT NULL,
-                    entity_id TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    request_hash TEXT NOT NULL,
-                    target_status TEXT NOT NULL,
-                    result_json TEXT NOT NULL DEFAULT '{}',
-                    PRIMARY KEY(entity_type, entity_id, idempotency_key)
-                );
-                """
-            )
-            transition_columns = {
-                row["name"]
-                for row in self._connection.execute("PRAGMA table_info(research_transitions)").fetchall()
-            }
-            if "result_json" not in transition_columns:
-                self._connection.execute(
-                    "ALTER TABLE research_transitions ADD COLUMN result_json TEXT NOT NULL DEFAULT '{}'"
-                )
+        return cls()
 
     def create_task(self, payload: object) -> dict[str, object]:
         data = self._task_payload(payload)
         request_hash = _hash_request(data)
-        with self._lock, self._connection:
-            existing = self._connection.execute(
-                "SELECT * FROM research_tasks WHERE owner_principal = ? AND idempotency_key = ?",
-                (data["owner_principal"], data["idempotency_key"]),
-            ).fetchone()
+        with self._transaction() as connection:
+            existing = fetch_one(
+                connection,
+                "SELECT * FROM research_tasks WHERE owner_principal = :owner_principal AND idempotency_key = :idempotency_key",
+                {"owner_principal": data["owner_principal"], "idempotency_key": data["idempotency_key"]},
+            )
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise IdempotencyConflict("research task idempotency key was reused")
                 return self._task_row(existing)
-
             now = _now()
             task_id = _new_id("task")
-            self._connection.execute(
+            execute(
+                connection,
                 """INSERT INTO research_tasks
                 (task_id, owner_principal, title, objective, status, trace_id,
                  idempotency_key, request_hash, created_at, updated_at, version)
-                VALUES (?, ?, ?, ?, 'planned', ?, ?, ?, ?, ?, 1)""",
-                (
-                    task_id,
-                    data["owner_principal"],
-                    data["title"],
-                    data["objective"],
-                    data["trace_id"],
-                    data["idempotency_key"],
-                    request_hash,
-                    now,
-                    now,
-                ),
+                VALUES (:task_id, :owner_principal, :title, :objective, 'planned', :trace_id,
+                        :idempotency_key, :request_hash, :created_at, :updated_at, 1)""",
+                {"task_id": task_id, "owner_principal": data["owner_principal"], "title": data["title"],
+                 "objective": data["objective"], "trace_id": data["trace_id"],
+                 "idempotency_key": data["idempotency_key"], "request_hash": request_hash,
+                 "created_at": now, "updated_at": now},
             )
-            return self.get_task(task_id)
+        return self.get_task(task_id)
 
     def get_task(self, task_id: object) -> dict[str, object]:
         task_id = _identifier(task_id, field="task_id")
-        with self._lock:
-            row = self._connection.execute(
-                "SELECT * FROM research_tasks WHERE task_id = ?", (task_id,)
-            ).fetchone()
+        row = self._fetch_one("SELECT * FROM research_tasks WHERE task_id = :task_id", {"task_id": task_id})
         if row is None:
             raise ResearchNotFound("research task not found")
         return self._task_row(row)
 
     def list_tasks(self, *, owner_principal: str | None = None) -> dict[str, object]:
-        with self._lock:
-            if owner_principal:
-                rows = self._connection.execute(
-                    "SELECT * FROM research_tasks WHERE owner_principal = ? ORDER BY created_at DESC, task_id DESC LIMIT 200",
-                    (owner_principal,),
-                ).fetchall()
-            else:
-                rows = self._connection.execute(
-                    "SELECT * FROM research_tasks ORDER BY created_at DESC, task_id DESC LIMIT 200"
-                ).fetchall()
+        if owner_principal:
+            rows = self._execute(
+                "SELECT * FROM research_tasks WHERE owner_principal = :owner_principal ORDER BY created_at DESC, task_id DESC LIMIT 200",
+                {"owner_principal": owner_principal},
+            )
+        else:
+            rows = self._execute("SELECT * FROM research_tasks ORDER BY created_at DESC, task_id DESC LIMIT 200")
         return {"tasks": [self._task_row(row) for row in rows]}
 
     def create_experiment(self, payload: object) -> dict[str, object]:
         data = self._experiment_payload(payload)
         request_hash = _hash_request(data)
-        with self._lock, self._connection:
-            task = self._connection.execute(
-                "SELECT * FROM research_tasks WHERE task_id = ?", (data["task_id"],)
-            ).fetchone()
+        with self._transaction() as connection:
+            task = fetch_one(connection, "SELECT * FROM research_tasks WHERE task_id = :task_id", {"task_id": data["task_id"]})
             if task is None:
                 raise ResearchNotFound("research task not found")
-            existing = self._connection.execute(
-                "SELECT * FROM experiments WHERE task_id = ? AND idempotency_key = ?",
-                (data["task_id"], data["idempotency_key"]),
-            ).fetchone()
+            existing = fetch_one(
+                connection,
+                "SELECT * FROM experiments WHERE task_id = :task_id AND idempotency_key = :idempotency_key",
+                {"task_id": data["task_id"], "idempotency_key": data["idempotency_key"]},
+            )
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise IdempotencyConflict("experiment idempotency key was reused")
                 return self._experiment_row(existing)
-
             now = _now()
             experiment_id = _new_id("experiment")
-            self._connection.execute(
+            execute(
+                connection,
                 """INSERT INTO experiments
                 (experiment_id, task_id, owner_principal, name, status,
                  input_snapshot, trace_id, idempotency_key, request_hash,
                  created_at, updated_at, version)
-                VALUES (?, ?, ?, ?, 'planned', ?, ?, ?, ?, ?, ?, 1)""",
-                (
-                    experiment_id,
-                    data["task_id"],
-                    task["owner_principal"],
-                    data["name"],
-                    data["input_snapshot_json"],
-                    data["trace_id"],
-                    data["idempotency_key"],
-                    request_hash,
-                    now,
-                    now,
-                ),
+                VALUES (:experiment_id, :task_id, :owner_principal, :name, 'planned',
+                        :input_snapshot, :trace_id, :idempotency_key, :request_hash,
+                        :created_at, :updated_at, 1)""",
+                {"experiment_id": experiment_id, "task_id": data["task_id"], "owner_principal": task["owner_principal"],
+                 "name": data["name"], "input_snapshot": data["input_snapshot"], "trace_id": data["trace_id"],
+                 "idempotency_key": data["idempotency_key"], "request_hash": request_hash,
+                 "created_at": now, "updated_at": now},
             )
-            return self.get_experiment(experiment_id)
+        return self.get_experiment(experiment_id)
 
     def get_experiment(self, experiment_id: object) -> dict[str, object]:
         experiment_id = _identifier(experiment_id, field="experiment_id")
-        with self._lock:
-            row = self._connection.execute(
-                "SELECT * FROM experiments WHERE experiment_id = ?", (experiment_id,)
-            ).fetchone()
+        row = self._fetch_one("SELECT * FROM experiments WHERE experiment_id = :experiment_id", {"experiment_id": experiment_id})
         if row is None:
             raise ResearchNotFound("experiment not found")
         return self._experiment_row(row)
 
     def list_experiments(self, *, owner_principal: str | None = None) -> dict[str, object]:
-        with self._lock:
-            if owner_principal:
-                rows = self._connection.execute(
-                    "SELECT * FROM experiments WHERE owner_principal = ? ORDER BY created_at DESC, experiment_id DESC LIMIT 200",
-                    (owner_principal,),
-                ).fetchall()
-            else:
-                rows = self._connection.execute(
-                    "SELECT * FROM experiments ORDER BY created_at DESC, experiment_id DESC LIMIT 200"
-                ).fetchall()
+        if owner_principal:
+            rows = self._execute(
+                "SELECT * FROM experiments WHERE owner_principal = :owner_principal ORDER BY created_at DESC, experiment_id DESC LIMIT 200",
+                {"owner_principal": owner_principal},
+            )
+        else:
+            rows = self._execute("SELECT * FROM experiments ORDER BY created_at DESC, experiment_id DESC LIMIT 200")
         return {"experiments": [self._experiment_row(row) for row in rows]}
 
     def create_artifact(self, payload: object) -> dict[str, object]:
         data = self._artifact_payload(payload)
         request_hash = _hash_request(data)
-        with self._lock, self._connection:
-            task = self._connection.execute(
-                "SELECT * FROM research_tasks WHERE task_id = ?", (data["task_id"],)
-            ).fetchone()
+        with self._transaction() as connection:
+            task = fetch_one(connection, "SELECT * FROM research_tasks WHERE task_id = :task_id", {"task_id": data["task_id"]})
             if task is None:
                 raise ResearchNotFound("research task not found")
             experiment_id = data["experiment_id"]
             if experiment_id is not None:
-                experiment = self._connection.execute(
-                    "SELECT * FROM experiments WHERE experiment_id = ?", (experiment_id,)
-                ).fetchone()
+                experiment = fetch_one(connection, "SELECT * FROM experiments WHERE experiment_id = :experiment_id", {"experiment_id": experiment_id})
                 if experiment is None or experiment["task_id"] != data["task_id"]:
                     raise ResearchNotFound("experiment does not belong to research task")
             lineage = [{"kind": "research_task", "id": data["task_id"]}]
             if experiment_id is not None:
                 lineage.append({"kind": "experiment", "id": experiment_id})
             lineage.extend(data["lineage"])
-            lineage, lineage_json = _lineage(lineage)
-            data["lineage_json"] = lineage_json
+            lineage, _ = _lineage(lineage)
+            data["lineage"] = lineage
             request_hash = _hash_request(data)
-            existing = self._connection.execute(
-                "SELECT * FROM artifacts WHERE task_id = ? AND idempotency_key = ?",
-                (data["task_id"], data["idempotency_key"]),
-            ).fetchone()
+            existing = fetch_one(
+                connection,
+                "SELECT * FROM artifacts WHERE task_id = :task_id AND idempotency_key = :idempotency_key",
+                {"task_id": data["task_id"], "idempotency_key": data["idempotency_key"]},
+            )
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise IdempotencyConflict("artifact idempotency key was reused")
                 return self._artifact_row(existing)
-
             now = _now()
             artifact_id = _new_id("artifact")
-            self._connection.execute(
+            execute(
+                connection,
                 """INSERT INTO artifacts
                 (artifact_id, task_id, experiment_id, owner_principal, kind,
                  status, content, content_sha256, lineage, trace_id,
                  idempotency_key, request_hash, created_at, updated_at, version)
-                VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
-                (
-                    artifact_id,
-                    data["task_id"],
-                    experiment_id,
-                    task["owner_principal"],
-                    data["kind"],
-                    data["content_json"],
-                    data["content_sha256"],
-                    lineage_json,
-                    data["trace_id"],
-                    data["idempotency_key"],
-                    request_hash,
-                    now,
-                    now,
-                ),
+                VALUES (:artifact_id, :task_id, :experiment_id, :owner_principal, :kind,
+                        'draft', :content, :content_sha256, :lineage, :trace_id,
+                        :idempotency_key, :request_hash, :created_at, :updated_at, 1)""",
+                {"artifact_id": artifact_id, "task_id": data["task_id"], "experiment_id": experiment_id,
+                 "owner_principal": task["owner_principal"], "kind": data["kind"], "content": data["content"],
+                 "content_sha256": data["content_sha256"], "lineage": lineage, "trace_id": data["trace_id"],
+                 "idempotency_key": data["idempotency_key"], "request_hash": request_hash,
+                 "created_at": now, "updated_at": now},
             )
-            return self.get_artifact(artifact_id)
+        return self.get_artifact(artifact_id)
 
     def get_artifact(self, artifact_id: object) -> dict[str, object]:
         artifact_id = _identifier(artifact_id, field="artifact_id")
-        with self._lock:
-            row = self._connection.execute(
-                "SELECT * FROM artifacts WHERE artifact_id = ?", (artifact_id,)
-            ).fetchone()
+        row = self._fetch_one("SELECT * FROM artifacts WHERE artifact_id = :artifact_id", {"artifact_id": artifact_id})
         if row is None:
             raise ResearchNotFound("artifact not found")
         return self._artifact_row(row)
@@ -506,26 +462,22 @@ class ResearchStore:
         fingerprint = _text(content_sha256, field="content_sha256", max_length=64)
         if re.fullmatch(r"[a-f0-9]{64}", fingerprint) is None:
             raise ValueError("content_sha256 is not a valid SHA-256 fingerprint")
-        with self._lock:
-            row = self._connection.execute(
-                """SELECT * FROM artifacts
-                WHERE task_id = ? AND kind = ? AND content_sha256 = ?
-                ORDER BY created_at ASC, artifact_id ASC LIMIT 1""",
-                (task_id, kind, fingerprint),
-            ).fetchone()
+        row = self._fetch_one(
+            """SELECT * FROM artifacts
+            WHERE task_id = :task_id AND kind = :kind AND content_sha256 = :content_sha256
+            ORDER BY created_at ASC, artifact_id ASC LIMIT 1""",
+            {"task_id": task_id, "kind": kind, "content_sha256": fingerprint},
+        )
         return None if row is None else self._artifact_row(row)
 
     def list_artifacts(self, *, owner_principal: str | None = None) -> dict[str, object]:
-        with self._lock:
-            if owner_principal:
-                rows = self._connection.execute(
-                    "SELECT * FROM artifacts WHERE owner_principal = ? ORDER BY created_at DESC, artifact_id DESC LIMIT 200",
-                    (owner_principal,),
-                ).fetchall()
-            else:
-                rows = self._connection.execute(
-                    "SELECT * FROM artifacts ORDER BY created_at DESC, artifact_id DESC LIMIT 200"
-                ).fetchall()
+        if owner_principal:
+            rows = self._execute(
+                "SELECT * FROM artifacts WHERE owner_principal = :owner_principal ORDER BY created_at DESC, artifact_id DESC LIMIT 200",
+                {"owner_principal": owner_principal},
+            )
+        else:
+            rows = self._execute("SELECT * FROM artifacts ORDER BY created_at DESC, artifact_id DESC LIMIT 200")
         return {"artifacts": [self._artifact_row(row) for row in rows]}
 
     def transition(
@@ -554,22 +506,24 @@ class ResearchStore:
                 "target_status": target_status,
             }
         )
-        with self._lock, self._connection:
-            row = self._connection.execute(
-                f"SELECT * FROM {table} WHERE {self._id_column(entity_type)} = ?",
-                (entity_id,),
-            ).fetchone()
+        with self._transaction() as connection:
+            row = fetch_one(
+                connection,
+                f"SELECT * FROM {table} WHERE {self._id_column(entity_type)} = :entity_id",
+                {"entity_id": entity_id},
+            )
             if row is None:
                 raise ResearchNotFound(f"{entity_type} not found")
-            existing = self._connection.execute(
+            existing = fetch_one(
+                connection,
                 """SELECT * FROM research_transitions
-                WHERE entity_type = ? AND entity_id = ? AND idempotency_key = ?""",
-                (entity_type, entity_id, idempotency_key),
-            ).fetchone()
+                WHERE entity_type = :entity_type AND entity_id = :entity_id AND idempotency_key = :idempotency_key""",
+                {"entity_type": entity_type, "entity_id": entity_id, "idempotency_key": idempotency_key},
+            )
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise IdempotencyConflict("transition idempotency key was reused")
-                result = _loads(existing["result_json"], field="transition_result")
+                result = existing["result_json"]
                 if not isinstance(result, dict):
                     raise ResearchPersistenceError("stored transition result is invalid")
                 return result
@@ -580,36 +534,35 @@ class ResearchStore:
                 )
             if target_status == current:
                 result = row_mapper(row)
-                self._connection.execute(
+                execute(
+                    connection,
                     """INSERT INTO research_transitions
                     (entity_type, entity_id, idempotency_key, request_hash, target_status, result_json)
-                    VALUES (?, ?, ?, ?, ?, ?)""",
-                    (entity_type, entity_id, idempotency_key, request_hash, target_status, _result_json(result)),
+                    VALUES (:entity_type, :entity_id, :idempotency_key, :request_hash, :target_status, :result_json)""",
+                    {"entity_type": entity_type, "entity_id": entity_id, "idempotency_key": idempotency_key,
+                     "request_hash": request_hash, "target_status": target_status, "result_json": result},
                 )
                 return result
             now = _now()
-            self._connection.execute(
-                f"UPDATE {table} SET status = ?, updated_at = ?, version = version + 1 WHERE {self._id_column(entity_type)} = ?",
-                (target_status, now, entity_id),
+            execute(
+                connection,
+                f"UPDATE {table} SET status = :status, updated_at = :updated_at, version = version + 1 WHERE {self._id_column(entity_type)} = :entity_id",
+                {"status": target_status, "updated_at": now, "entity_id": entity_id},
             )
-            updated = self._connection.execute(
-                f"SELECT * FROM {table} WHERE {self._id_column(entity_type)} = ?",
-                (entity_id,),
-            ).fetchone()
+            updated = fetch_one(
+                connection,
+                f"SELECT * FROM {table} WHERE {self._id_column(entity_type)} = :entity_id",
+                {"entity_id": entity_id},
+            )
             assert updated is not None
             result = row_mapper(updated)
-            self._connection.execute(
+            execute(
+                connection,
                 """INSERT INTO research_transitions
                 (entity_type, entity_id, idempotency_key, request_hash, target_status, result_json)
-                VALUES (?, ?, ?, ?, ?, ?)""",
-                (
-                    entity_type,
-                    entity_id,
-                    idempotency_key,
-                    request_hash,
-                    target_status,
-                    _result_json(result),
-                ),
+                VALUES (:entity_type, :entity_id, :idempotency_key, :request_hash, :target_status, :result_json)""",
+                {"entity_type": entity_type, "entity_id": entity_id, "idempotency_key": idempotency_key,
+                 "request_hash": request_hash, "target_status": target_status, "result_json": result},
             )
             return result
 
@@ -639,12 +592,11 @@ class ResearchStore:
         if not isinstance(payload, dict):
             raise ValueError("experiment request must be an object")
         _reject_unknown(payload, {"task_id", "name", "input_snapshot", "trace_id", "idempotency_key"})
-        snapshot, snapshot_json = _snapshot(payload.get("input_snapshot"))
+        snapshot, _ = _snapshot(payload.get("input_snapshot"))
         return {
             "task_id": _identifier(payload.get("task_id"), field="task_id"),
             "name": _text(payload.get("name"), field="name", max_length=200),
             "input_snapshot": snapshot,
-            "input_snapshot_json": snapshot_json,
             "trace_id": _trace_id(payload.get("trace_id")),
             "idempotency_key": _idempotency_key(payload.get("idempotency_key")),
         }
@@ -670,7 +622,6 @@ class ResearchStore:
             ),
             "kind": _text(payload.get("kind"), field="kind", max_length=64),
             "content": content,
-            "content_json": content_json,
             "content_sha256": hashlib.sha256(content_json.encode("utf-8")).hexdigest(),
             "lineage": lineage,
             "trace_id": _trace_id(payload.get("trace_id")),
@@ -678,25 +629,25 @@ class ResearchStore:
         }
 
     @staticmethod
-    def _task_row(row: sqlite3.Row) -> dict[str, object]:
+    def _task_row(row: dict[str, Any]) -> dict[str, object]:
         result = _row_dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
         return result
 
     @staticmethod
-    def _experiment_row(row: sqlite3.Row) -> dict[str, object]:
+    def _experiment_row(row: dict[str, Any]) -> dict[str, object]:
         result = _row_dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
-        result["input_snapshot"] = _loads(result.pop("input_snapshot"), field="input_snapshot")
+        result["input_snapshot"] = result.pop("input_snapshot") or {}
         return result
 
     @staticmethod
-    def _artifact_row(row: sqlite3.Row) -> dict[str, object]:
+    def _artifact_row(row: dict[str, Any]) -> dict[str, object]:
         result = _row_dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
-        result["content"] = _loads(result.pop("content"), field="content")
-        result["lineage"] = _loads(result.pop("lineage"), field="lineage")
+        result["content"] = result.pop("content") or {}
+        result["lineage"] = result.pop("lineage") or []
         return result

@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import os
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app import main
 from app.research import ResearchStore
 
+
+
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BYQ_DATABASE_URL"),
+    reason="BYQ_DATABASE_URL is not set",
+)
 
 def task_body() -> dict[str, object]:
     return {
@@ -16,8 +26,8 @@ def task_body() -> dict[str, object]:
     }
 
 
-def test_research_api_exposes_normalized_persistent_entity_flow(monkeypatch, tmp_path) -> None:
-    store = ResearchStore(tmp_path / "api.sqlite3")
+def test_research_api_exposes_normalized_persistent_entity_flow(monkeypatch) -> None:
+    store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
 
@@ -46,8 +56,8 @@ def test_research_api_exposes_normalized_persistent_entity_flow(monkeypatch, tmp
     store.close()
 
 
-def test_research_api_maps_idempotency_and_transition_conflicts(monkeypatch, tmp_path) -> None:
-    store = ResearchStore(tmp_path / "api.sqlite3")
+def test_research_api_maps_idempotency_and_transition_conflicts(monkeypatch) -> None:
+    store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
 
