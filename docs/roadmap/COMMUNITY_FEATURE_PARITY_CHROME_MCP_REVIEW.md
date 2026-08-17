@@ -84,6 +84,22 @@ Observed at `/backtest` with a real completed owner-scoped job
 - No raw MCP/DSH/Backend/storage/provider URL or secret appeared in the
   rendered page; the page consumed Product API routes only.
 
+## Data Center review (2026-08-17)
+
+- Browser method: Chrome DevTools MCP (headed, viewport 1440x900)
+- Topology: local `beyondquant` compose with the Data Center branch images
+- Browser origin: `http://127.0.0.1`
+- Authenticated principal: `chromeuser` / role `admin`
+
+Observed at `/data-center`:
+
+- Stats strip renders Provider (tushare), Migration (not_started), Quality
+  (not_audited), 数据源状态 (未配置, derived from masked provider capability),
+  and 同步状态 (not_started).
+- 已迁移数据集 renders an honest empty state; no dataset is fabricated.
+- No token, credential, or raw MCP/DSH/Backend/storage/provider URL appeared
+  in the rendered page; the page consumed Product API routes only.
+
 ## Agent Policy workspace review (2026-08-17)
 
 - Browser method: Chrome DevTools MCP (headed, viewport 1440x900)

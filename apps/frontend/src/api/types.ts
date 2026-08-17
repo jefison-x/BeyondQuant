@@ -198,4 +198,8 @@ export interface DataCenterStatus {
   datasets: Array<Record<string, unknown>>;
   provider: string;
   quality: string;
+  provider_status: {
+    configured: boolean;
+    sync: string;
+  };
 }
