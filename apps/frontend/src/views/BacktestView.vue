@@ -86,6 +86,17 @@ function summaryValue(row: Record<string, unknown>, key: string): unknown {
   return rowSummary?.[key];
 }
 
+function formatPositions(row: Record<string, unknown>): string {
+  const positions = row.positions;
+  if (!Array.isArray(positions) || positions.length === 0) return "空仓";
+  return positions.map((p: Record<string, unknown>) => `${String(p.symbol)}×${String(p.quantity)}`).join("、");
+}
+
+function dailyReturnFor(tradeDate: unknown): unknown {
+  const rows = dailyReturns.value as Array<Record<string, unknown>>;
+  return rows.find((d) => d.trade_date === tradeDate)?.daily_return;
+}
+
 async function loadList() {
   loading.value = true;
   error.value = "";
@@ -407,12 +418,11 @@ onMounted(loadList);
                 <el-table-column prop="trade_date" label="日期" width="120" />
                 <el-table-column label="持仓" min-width="260">
                   <template #default="{ row }">
-                    <span v-if="!row.positions?.length" class="muted">空仓</span>
-                    <span v-else>{{ row.positions.map((p) => `${p.symbol}×${p.quantity}`).join("、") }}</span>
+                    {{ formatPositions(row) }}
                   </template>
                 </el-table-column>
                 <el-table-column label="日收益" width="110" align="right">
-                  <template #default="{ row }">{{ formatPercent(dailyReturns.find((d) => d.trade_date === row.trade_date)?.daily_return) }}</template>
+                  <template #default="{ row }">{{ formatPercent(dailyReturnFor(row.trade_date)) }}</template>
                 </el-table-column>
               </el-table>
             </el-tab-pane>
