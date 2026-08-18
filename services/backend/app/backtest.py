@@ -489,6 +489,7 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
         rows.sort(key=lambda row: str(row["symbol"]))
 
     cash = float(execution["initial_capital"])
+    initial = cash
     positions: dict[str, list[dict[str, object]]] = {}
     trades: list[dict[str, object]] = []
     blocked: list[dict[str, object]] = []
@@ -679,7 +680,6 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
         log("info", "session_processed", trade_date=current_date, cash=_money(cash), equity=_money(equity), positions_count=position_count)
 
     values = [float(row["equity"]) for row in equity_curve]
-    initial = float(execution["initial_capital"])
     peak = initial
     max_drawdown = 0.0
     for value in values:
