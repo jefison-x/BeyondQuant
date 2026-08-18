@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import type { EChartsOption } from "echarts";
-import { cancelBacktest, getBacktest, getBacktestResult, listBacktests, runBacktest } from "@/api/quant";
+import { cancelBacktest, deleteBacktest, getBacktest, getBacktestResult, listBacktests, runBacktest } from "@/api/quant";
 import type { BacktestJob, BacktestResult } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import ChartWrapper from "@/components/charts/ChartWrapper.vue";
@@ -62,6 +62,14 @@ const equityOption = computed<EChartsOption>(() => ({
 const trades = computed(() => result.value?.trades ?? []);
 const blockedTrades = computed(() => result.value?.blocked_trades ?? []);
 const corporateEvents = computed(() => result.value?.corporate_action_events ?? []);
+const dailyPositions = computed(() => result.value?.daily_positions ?? []);
+const dailyReturns = computed(() => result.value?.daily_returns ?? []);
+const backtestLogs = computed(() => result.value?.logs ?? []);
+const strategySnapshot = computed(() => ({
+  strategy_version_artifact_id: job.value?.strategy_version_artifact_id ?? result.value?.strategy_version_artifact_id ?? null,
+  approval_artifact_id: job.value?.approval_artifact_id ?? result.value?.approval_artifact_id ?? null,
+  input_manifest: job.value?.input_manifest ?? null,
+}));
 
 function formatPercent(value: unknown) {
   const number = Number(value);
@@ -76,6 +84,17 @@ function formatMoney(value: unknown) {
 function summaryValue(row: Record<string, unknown>, key: string): unknown {
   const rowSummary = row.summary as Record<string, unknown> | undefined;
   return rowSummary?.[key];
+}
+
+function formatPositions(row: Record<string, unknown>): string {
+  const positions = row.positions;
+  if (!Array.isArray(positions) || positions.length === 0) return "空仓";
+  return positions.map((p: Record<string, unknown>) => `${String(p.symbol)}×${String(p.quantity)}`).join("、");
+}
+
+function dailyReturnFor(tradeDate: unknown): unknown {
+  const rows = dailyReturns.value as Array<Record<string, unknown>>;
+  return rows.find((d) => d.trade_date === tradeDate)?.daily_return;
 }
 
 async function loadList() {
@@ -147,6 +166,26 @@ async function cancel(row: Record<string, unknown>) {
     await loadList();
   } catch (exc) {
     ElMessage.error(exc instanceof Error ? exc.message : "取消回测失败");
+  } finally {
+    busy.value = "";
+  }
+}
+
+async function remove(row: Record<string, unknown>) {
+  const jobId = String(row.job_id ?? "");
+  if (!jobId) return;
+  busy.value = jobId;
+  try {
+    await deleteBacktest(jobId, auth.token);
+    ElMessage.success("回测任务已删除");
+    if (selected.value && String(selected.value.job_id) === jobId) {
+      selected.value = null;
+      job.value = null;
+      result.value = null;
+    }
+    await loadList();
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "删除回测失败");
   } finally {
     busy.value = "";
   }
@@ -236,7 +275,7 @@ onMounted(loadList);
           <el-table-column label="创建时间" min-width="170">
             <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="150" fixed="right">
+          <el-table-column label="操作" width="190" fixed="right">
             <template #default="{ row }">
               <el-button
                 v-if="row.status === 'queued' || row.status === 'failed'"
@@ -257,6 +296,16 @@ onMounted(loadList);
               >
                 取消
               </el-button>
+              <el-button
+                v-if="['completed', 'cancelled', 'failed'].includes(String(row.status))"
+                size="small"
+                type="danger"
+                link
+                :loading="busy === row.job_id"
+                @click.stop="remove(row)"
+              >
+                删除
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -276,6 +325,11 @@ onMounted(loadList);
             <div class="mobile-card-meta">
               <span>收益 {{ formatPercent(summaryValue(row, "total_return")) }}</span>
               <span>{{ formatChinaTime(row.created_at) }}</span>
+            </div>
+            <div v-if="['completed', 'cancelled', 'failed'].includes(String(row.status))" class="mobile-card-actions">
+              <el-button size="small" type="danger" link :loading="busy === row.job_id" @click.stop="remove(row)">
+                删除
+              </el-button>
             </div>
           </el-card>
         </div>
@@ -358,6 +412,43 @@ onMounted(loadList);
                   <template #default="{ row }">{{ formatMoney(row.cash_dividend) }}</template>
                 </el-table-column>
               </el-table>
+            </el-tab-pane>
+            <el-tab-pane label="每日持仓&收益" name="daily">
+              <el-table :data="dailyPositions" size="small" empty-text="暂无每日数据">
+                <el-table-column prop="trade_date" label="日期" width="120" />
+                <el-table-column label="持仓" min-width="260">
+                  <template #default="{ row }">
+                    {{ formatPositions(row) }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="日收益" width="110" align="right">
+                  <template #default="{ row }">{{ formatPercent(dailyReturnFor(row.trade_date)) }}</template>
+                </el-table-column>
+              </el-table>
+            </el-tab-pane>
+            <el-tab-pane label="日志输出" name="logs">
+              <el-alert v-if="result?.log_truncated" title="日志已截断，仅显示前 500 条" type="warning" :closable="false" class="log-truncated" />
+              <el-table :data="backtestLogs" size="small" empty-text="暂无日志" max-height="420">
+                <el-table-column prop="seq" label="#" width="70" />
+                <el-table-column prop="level" label="级别" width="80" />
+                <el-table-column prop="message" label="事件" min-width="180" />
+                <el-table-column label="详情" min-width="320">
+                  <template #default="{ row }">
+                    <span class="muted">{{ JSON.stringify(Object.fromEntries(Object.entries(row).filter(([k]) => !["seq", "level", "message"].includes(k)))) }}</span>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-tab-pane>
+            <el-tab-pane label="策略快照" name="snapshot">
+              <el-descriptions :column="1" border>
+                <el-descriptions-item label="策略版本工件">
+                  <code>{{ strategySnapshot.strategy_version_artifact_id ?? "-" }}</code>
+                </el-descriptions-item>
+                <el-descriptions-item label="审批工件">
+                  <code>{{ strategySnapshot.approval_artifact_id ?? "-" }}</code>
+                </el-descriptions-item>
+              </el-descriptions>
+              <pre class="quant-result">{{ JSON.stringify(strategySnapshot.input_manifest ?? {}, null, 2) }}</pre>
             </el-tab-pane>
             <el-tab-pane label="输入清单 / Preflight" name="manifest">
               <el-button @click="showManifest = true">查看 Preflight</el-button>

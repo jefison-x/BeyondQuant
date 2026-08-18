@@ -107,6 +107,11 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     assert result_body["result"]["total_return"] == 0.0
     assert result_body["result"]["trade_count"] == 1
     assert result_body["result"]["equity_curve"][-1]["trade_date"] == "2026-01-06"
+    assert result_body["result"]["daily_positions"][-1]["trade_date"] == "2026-01-06"
+    assert result_body["result"]["daily_returns"][-1]["trade_date"] == "2026-01-06"
+    assert result_body["result"]["logs"]
+    assert result_body["result"]["strategy_version_artifact_id"] == version["artifact"]["artifact_id"]
+    assert result_body["result"]["approval_artifact_id"] == approval["artifact"]["artifact_id"]
 
     denied = client.get(
         f"/v1/research/backtests/{job['job_id']}/result",
@@ -143,5 +148,29 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     )
     assert retry.status_code == 202
     assert retry.json()["job"]["job_id"] == job["job_id"]
+    denied_delete = client.delete(
+        f"/v1/research/backtests/{job['job_id']}",
+        headers={
+            "x-byq-owner-principal": "other-user",
+            "x-byq-actor-principal": "other-user",
+            "x-byq-trace-id": "byq-trace-other",
+            "x-byq-session-id": "byq-session-other",
+            "x-byq-dsh-run-id": "byq-run-other",
+        },
+    )
+    assert denied_delete.status_code == 409
+    deleted = client.delete(
+        f"/v1/research/backtests/{job['job_id']}",
+        headers={
+            "x-byq-owner-principal": "product-user",
+            "x-byq-actor-principal": "product-user",
+            "x-byq-trace-id": "byq-trace-backtest-api",
+            "x-byq-session-id": "byq-session-backtest-api",
+            "x-byq-dsh-run-id": "byq-run-backtest-api",
+        },
+    )
+    assert deleted.status_code == 200
+    assert client.get(f"/v1/research/backtests/{job['job_id']}").status_code == 404
+
     store.close()
     jobs.close()
