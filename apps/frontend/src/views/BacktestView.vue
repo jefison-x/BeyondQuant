@@ -315,6 +315,11 @@ onMounted(loadList);
               <span>收益 {{ formatPercent(summaryValue(row, "total_return")) }}</span>
               <span>{{ formatChinaTime(row.created_at) }}</span>
             </div>
+            <div v-if="['completed', 'cancelled', 'failed'].includes(String(row.status))" class="mobile-card-actions">
+              <el-button size="small" type="danger" link :loading="busy === row.job_id" @click.stop="remove(row)">
+                删除
+              </el-button>
+            </div>
           </el-card>
         </div>
 
