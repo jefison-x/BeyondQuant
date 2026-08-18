@@ -308,6 +308,14 @@ def product_backtest_options(request: Request) -> dict[str, object]:
     )
 
 
+@router.post("/backtests", status_code=202)
+def product_backtest_submit(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "POST", "/v1/research/backtests", payload, headers=_trusted_agent_headers(request)
+    )
+
+
 @router.get("/backtests/{job_id}")
 def product_backtest_get(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)

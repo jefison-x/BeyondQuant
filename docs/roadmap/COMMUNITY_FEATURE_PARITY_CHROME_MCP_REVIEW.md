@@ -242,5 +242,39 @@ Observed at `/backtest` with an existing completed owner-scoped job
   states for this pre-upgrade result; the engine now emits those fields for
   new runs and backend contract tests assert them.
 
-Known remaining: create wizard is deferred until ADR-0017 (`signal_snapshot`)
-is accepted; result-object GC after job deletion is a follow-up slice.
+Known remaining: result-object GC after job deletion is a follow-up slice.
+
+## Phase 32 create wizard review (2026-08-18)
+
+- Browser method: Chrome DevTools MCP, viewport 1440x900, isolated profile.
+- Topology: local `phase-32-create-wizard` compose rebuilt from the
+  `codex/phase-32-create-wizard` worktree (ADR-0017 accepted) with clean
+  volumes; admin principal.
+- Seed data: one research task with a validated `strategy_version`
+  (`MomentumEvidence · 6a6b6c1d`), an approved `strategy_approval`, and one
+  validated `signal_snapshot` artifact (`artifact_a5b318425` produced by
+  `evidence-fixture`), created through the Backend keyless import path.
+
+Observed at `/backtest` (authenticated as `admin`):
+
+- 新建回测 button opens the "新建回测（Phase 32）" wizard.
+- 已批准策略版本 select lists `MomentumEvidence · 6a6b6c1d` (from
+  `GET /backtests/options`), confirming version + approval + task aggregation.
+- Selecting the strategy enables 信号快照 select, which lists only snapshots
+  whose `strategy.strategy_version_artifact_id` matches the chosen version
+  (`artifact_a5b318425 · evidence-fixture`).
+- Selecting the snapshot renders the frozen execution parameters read-only
+  (初始资金 2000 / 手续费率 0 / 印花税率 0 / 整手 100).
+- 创建回测 submits `POST /api/product/backtests` with
+  `signal_snapshot_artifact_id`; the job appears as `queued`
+  (`backtest_4f64f70c81c146c296874da762cb5d7a`).
+- Running the job transitions it to `completed` with 收益 0.00% and
+  回撤 0.00%; all detail tabs (权益曲线/交易明细/拦截明细/公司行动/
+  每日持仓&收益/日志输出/策略快照/输入清单) are available.
+
+Network evidence: `GET /backtests/options [200]`,
+`GET /signal-snapshots [200]`, `POST /backtests [202]`,
+`GET /backtests [200]`, `GET /backtests/{job_id} [200]`.
+
+This closes D-0001 (create wizard); the end-to-end strategy-to-backtest
+journey (signal producer) remains D-0002 pending a producer ADR.
