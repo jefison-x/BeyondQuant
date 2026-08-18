@@ -333,6 +333,15 @@ def product_backtest_cancel(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request("POST", f"/v1/research/backtests/{job_id}/cancel")
 
+@router.delete("/backtests/{job_id}")
+def product_backtest_delete(job_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "DELETE",
+        f"/v1/research/backtests/{job_id}",
+        headers=_trusted_agent_headers(request),
+    )
+
 
 @router.get("/strategies/versions/{artifact_id}/export")
 def product_strategy_export(artifact_id: str, request: Request) -> dict[str, object]:

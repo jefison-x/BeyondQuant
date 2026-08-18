@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cancelBacktest, createStrategyVersion, getBacktest, getBacktestResult, getResearchEntity, runBacktest } from "./quant";
+import { cancelBacktest, createStrategyVersion, deleteBacktest, getBacktest, getBacktestResult, getResearchEntity, runBacktest } from "./quant";
 
 describe("quant api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -36,6 +36,19 @@ describe("quant api client", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/backtests/job_1/cancel",
       expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("deletes a terminal backtest through the product path", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ job: { job_id: "job_1", status: "completed" } }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const deleted = await deleteBacktest("job_1", "test-token");
+    expect(deleted.job_id).toBe("job_1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/backtests/job_1",
+      expect.objectContaining({ method: "DELETE", credentials: "include" }),
     );
   });
 

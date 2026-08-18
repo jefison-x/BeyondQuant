@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import type { EChartsOption } from "echarts";
-import { cancelBacktest, getBacktest, getBacktestResult, listBacktests, runBacktest } from "@/api/quant";
+import { cancelBacktest, deleteBacktest, getBacktest, getBacktestResult, listBacktests, runBacktest } from "@/api/quant";
 import type { BacktestJob, BacktestResult } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import ChartWrapper from "@/components/charts/ChartWrapper.vue";
@@ -152,6 +152,26 @@ async function cancel(row: Record<string, unknown>) {
   }
 }
 
+async function remove(row: Record<string, unknown>) {
+  const jobId = String(row.job_id ?? "");
+  if (!jobId) return;
+  busy.value = jobId;
+  try {
+    await deleteBacktest(jobId, auth.token);
+    ElMessage.success("回测任务已删除");
+    if (selected.value && String(selected.value.job_id) === jobId) {
+      selected.value = null;
+      job.value = null;
+      result.value = null;
+    }
+    await loadList();
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "删除回测失败");
+  } finally {
+    busy.value = "";
+  }
+}
+
 function onSelectionChange(rows: Array<Record<string, unknown>>) {
   compareIds.value = rows.slice(0, 2).map((row) => String(row.job_id));
 }
@@ -236,7 +256,7 @@ onMounted(loadList);
           <el-table-column label="创建时间" min-width="170">
             <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="150" fixed="right">
+          <el-table-column label="操作" width="190" fixed="right">
             <template #default="{ row }">
               <el-button
                 v-if="row.status === 'queued' || row.status === 'failed'"
@@ -256,6 +276,16 @@ onMounted(loadList);
                 @click.stop="cancel(row)"
               >
                 取消
+              </el-button>
+              <el-button
+                v-if="['completed', 'cancelled', 'failed'].includes(String(row.status))"
+                size="small"
+                type="danger"
+                link
+                :loading="busy === row.job_id"
+                @click.stop="remove(row)"
+              >
+                删除
               </el-button>
             </template>
           </el-table-column>

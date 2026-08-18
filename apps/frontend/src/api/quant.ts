@@ -41,6 +41,11 @@ export async function cancelBacktest(jobId: string, token: string): Promise<Back
   return body.job ?? (body as unknown as BacktestJob);
 }
 
+export async function deleteBacktest(jobId: string, token: string): Promise<BacktestJob> {
+  const body = await request<{ job: BacktestJob }>(`/backtests/${encodeURIComponent(jobId)}`, token, { method: "DELETE" });
+  return body.job ?? (body as unknown as BacktestJob);
+}
+
 export function exportStrategyVersion(artifactId: string, token: string): Promise<Record<string, unknown>> {
   return request(`/strategies/versions/${encodeURIComponent(artifactId)}/export`, token);
 }

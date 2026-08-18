@@ -880,6 +880,24 @@ class BacktestJobStore(PgStoreMixin):
                 )
         return self.get(job_id)
 
+    def delete(self, job_id: object, *, owner_principal: str) -> dict[str, object]:
+        job_id = _text(job_id, field="job_id", max_length=64)
+        if JOB_ID_PATTERN.fullmatch(job_id) is None:
+            raise ValueError("job_id is not a valid backtest identifier")
+        if not owner_principal:
+            raise BacktestConflict("backtest deletion requires an owner principal")
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT * FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
+            if row is None:
+                raise BacktestNotFound("backtest job not found")
+            if row["owner_principal"] != owner_principal:
+                raise BacktestConflict("backtest deletion requires matching owner scope")
+            if row["status"] in {"queued", "running"}:
+                raise BacktestConflict("cannot delete an active backtest; cancel it first")
+            deleted = self._public(row)
+            execute(connection, "DELETE FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
+        return deleted
+
     @staticmethod
     def _public(row: dict[str, Any]) -> dict[str, object]:
         result: dict[str, object] = {

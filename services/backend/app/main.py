@@ -661,6 +661,14 @@ def run_backtest_job(job_id: str) -> dict[str, object]:
 def cancel_backtest_job(job_id: str) -> dict[str, object]:
     return _backtest_call(lambda: {"job": backtest_store.cancel(job_id)})
 
+@app.delete("/v1/research/backtests/{job_id}")
+def delete_backtest_job(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    def operation() -> dict[str, object]:
+        return {"job": backtest_store.delete(job_id, owner_principal=context["owner_principal"])}
+
+    return _backtest_call(operation)
+
 
 @app.get("/v1/agents/roles")
 def get_agent_roles() -> dict[str, object]:
