@@ -33,6 +33,7 @@ MAX_BARS = 50_000
 MAX_SIGNALS = 50_000
 MAX_ACTIONS = 10_000
 MAX_RESULT_BYTES = 32 * 1024 * 1024
+MAX_LOG_ENTRIES = 500
 JOB_ID_PATTERN = re.compile(r"^backtest_[0-9a-f]{32}$")
 SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 DATE_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
@@ -493,12 +494,29 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
     blocked: list[dict[str, object]] = []
     corporate_events: list[dict[str, object]] = []
     equity_curve: list[dict[str, object]] = []
+    daily_positions: list[dict[str, object]] = []
+    daily_returns: list[dict[str, object]] = []
+    logs: list[dict[str, object]] = []
+    log_truncated = False
+    log_counter = 0
+
+    def log(level: str, message: str, **fields: object) -> None:
+        nonlocal log_counter, log_truncated
+        log_counter += 1
+        if len(logs) >= MAX_LOG_ENTRIES:
+            log_truncated = True
+            return
+        entry: dict[str, object] = {"seq": log_counter, "level": level, "message": message}
+        entry.update({key: value for key, value in fields.items() if value is not None})
+        logs.append(entry)
+
     lot_size = int(execution["lot_size"])
     a_share_rules = bool(execution["a_share_rules"])
     threshold = float(execution["limit_threshold"])
 
     def block(symbol: str, trade_date: str, side: str, reason_code: str, detail: str) -> None:
         blocked.append({"symbol": symbol, "trade_date": trade_date, "side": side, "reason_code": reason_code, "detail": detail})
+        log("warn", "order_blocked", symbol=symbol, trade_date=trade_date, side=side, reason_code=reason_code)
 
     def available(symbol: str, current_date: str) -> int:
         lots = positions.get(symbol, [])
@@ -526,10 +544,12 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
                 "new_quantity": sum(int(lot["quantity"]) for lot in lots),
                 "cash_dividend": _money(cash_dividend),
             })
+            log("info", "corporate_action_applied", symbol=symbol, ex_date=current_date, new_quantity=sum(int(lot["quantity"]) for lot in lots))
 
     # A mutable cell keeps the nested corporate-action function explicit and
     # avoids hidden global state in the worker.
     cash_nonlocal = [cash]
+    log("info", "backtest_started", engine="native", schema_version=str(manifest.get("schema_version")))
     for index, current_date in enumerate(dates):
         if time.monotonic() - started > max_runtime:
             raise BacktestResourceExceeded("backtest exceeded its wall-clock limit")
@@ -602,6 +622,7 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
                         "realized_pnl": _money(realized - commission - tax),
                     }
                     trades.append(trade)
+                    log("info", "order_filled", symbol=symbol, side="sell", quantity=quantity, price=_money(execution_price))
                     if quantity < requested:
                         block(symbol, current_date, side, "t_plus_one_partial", "same-session lots remain unavailable")
                 else:
@@ -624,6 +645,7 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
                         "price": _money(execution_price), "quantity": requested, "amount": _money(amount),
                         "commission": _money(commission), "tax": 0.0, "realized_pnl": None,
                     })
+                    log("info", "order_filled", symbol=symbol, side="buy", quantity=requested, price=_money(execution_price))
         cash_nonlocal[0] = cash
         equity = cash
         position_count = 0
@@ -636,6 +658,25 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
             if valuation_bar is not None:
                 equity += quantity * float(valuation_bar["close"])
         equity_curve.append({"trade_date": current_date, "equity": _money(equity), "cash": _money(cash), "positions_count": position_count})
+        daily_positions.append({
+            "trade_date": current_date,
+            "positions": [
+                {
+                    "symbol": symbol,
+                    "quantity": sum(int(lot["quantity"]) for lot in lots),
+                    "entry_date": str(lots[0]["entry_date"]) if lots else None,
+                    "cost_per_share": _money(float(lots[0]["cost_per_share"])) if lots else None,
+                }
+                for symbol, lots in positions.items()
+                if sum(int(lot["quantity"]) for lot in lots) > 0
+            ],
+        })
+        previous_equity = float(equity_curve[-2]["equity"]) if len(equity_curve) > 1 else initial
+        daily_returns.append({
+            "trade_date": current_date,
+            "daily_return": _money(equity / previous_equity - 1) if previous_equity else 0.0,
+        })
+        log("info", "session_processed", trade_date=current_date, cash=_money(cash), equity=_money(equity), positions_count=position_count)
 
     values = [float(row["equity"]) for row in equity_curve]
     initial = float(execution["initial_capital"])
@@ -645,6 +686,7 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
         peak = max(peak, value)
         max_drawdown = max(max_drawdown, (peak - value) / peak if peak else 0.0)
     final_value = values[-1] if values else initial
+    log("info", "backtest_completed", final_value=_money(final_value), total_return=_money(final_value / initial - 1), max_drawdown=_money(max_drawdown), trade_count=len(trades))
     return {
         "schema_version": RESULT_SCHEMA_VERSION,
         "engine": "native",
@@ -658,6 +700,10 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
         "blocked_trades": blocked,
         "corporate_action_events": corporate_events,
         "equity_curve": equity_curve,
+        "daily_positions": daily_positions,
+        "daily_returns": daily_returns,
+        "logs": logs,
+        "log_truncated": log_truncated,
         "reproducibility": "reproducible",
     }
 
@@ -1014,6 +1060,8 @@ class BacktestWorker:
             result = run_native_backtest(manifest)
             result["job_id"] = job["job_id"]
             result["input_manifest_id"] = job["input_manifest_id"]
+            result["strategy_version_artifact_id"] = job["strategy_version_artifact_id"]
+            result["approval_artifact_id"] = job["approval_artifact_id"]
             payload = _canonical(result).encode("utf-8")
             reference = self.objects.put("backtest-results", payload, media_type="application/json")
             summary = {

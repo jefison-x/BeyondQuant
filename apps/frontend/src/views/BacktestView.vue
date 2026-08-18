@@ -62,6 +62,14 @@ const equityOption = computed<EChartsOption>(() => ({
 const trades = computed(() => result.value?.trades ?? []);
 const blockedTrades = computed(() => result.value?.blocked_trades ?? []);
 const corporateEvents = computed(() => result.value?.corporate_action_events ?? []);
+const dailyPositions = computed(() => result.value?.daily_positions ?? []);
+const dailyReturns = computed(() => result.value?.daily_returns ?? []);
+const backtestLogs = computed(() => result.value?.logs ?? []);
+const strategySnapshot = computed(() => ({
+  strategy_version_artifact_id: job.value?.strategy_version_artifact_id ?? result.value?.strategy_version_artifact_id ?? null,
+  approval_artifact_id: job.value?.approval_artifact_id ?? result.value?.approval_artifact_id ?? null,
+  input_manifest: job.value?.input_manifest ?? null,
+}));
 
 function formatPercent(value: unknown) {
   const number = Number(value);
@@ -388,6 +396,44 @@ onMounted(loadList);
                   <template #default="{ row }">{{ formatMoney(row.cash_dividend) }}</template>
                 </el-table-column>
               </el-table>
+            </el-tab-pane>
+            <el-tab-pane label="每日持仓&收益" name="daily">
+              <el-table :data="dailyPositions" size="small" empty-text="暂无每日数据">
+                <el-table-column prop="trade_date" label="日期" width="120" />
+                <el-table-column label="持仓" min-width="260">
+                  <template #default="{ row }">
+                    <span v-if="!row.positions?.length" class="muted">空仓</span>
+                    <span v-else>{{ row.positions.map((p) => `${p.symbol}×${p.quantity}`).join("、") }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="日收益" width="110" align="right">
+                  <template #default="{ row }">{{ formatPercent(dailyReturns.find((d) => d.trade_date === row.trade_date)?.daily_return) }}</template>
+                </el-table-column>
+              </el-table>
+            </el-tab-pane>
+            <el-tab-pane label="日志输出" name="logs">
+              <el-alert v-if="result?.log_truncated" title="日志已截断，仅显示前 500 条" type="warning" :closable="false" class="log-truncated" />
+              <el-table :data="backtestLogs" size="small" empty-text="暂无日志" max-height="420">
+                <el-table-column prop="seq" label="#" width="70" />
+                <el-table-column prop="level" label="级别" width="80" />
+                <el-table-column prop="message" label="事件" min-width="180" />
+                <el-table-column label="详情" min-width="320">
+                  <template #default="{ row }">
+                    <span class="muted">{{ JSON.stringify(Object.fromEntries(Object.entries(row).filter(([k]) => !["seq", "level", "message"].includes(k)))) }}</span>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-tab-pane>
+            <el-tab-pane label="策略快照" name="snapshot">
+              <el-descriptions :column="1" border>
+                <el-descriptions-item label="策略版本工件">
+                  <code>{{ strategySnapshot.strategy_version_artifact_id ?? "-" }}</code>
+                </el-descriptions-item>
+                <el-descriptions-item label="审批工件">
+                  <code>{{ strategySnapshot.approval_artifact_id ?? "-" }}</code>
+                </el-descriptions-item>
+              </el-descriptions>
+              <pre class="quant-result">{{ JSON.stringify(strategySnapshot.input_manifest ?? {}, null, 2) }}</pre>
             </el-tab-pane>
             <el-tab-pane label="输入清单 / Preflight" name="manifest">
               <el-button @click="showManifest = true">查看 Preflight</el-button>

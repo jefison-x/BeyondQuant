@@ -58,6 +58,9 @@ export interface BacktestJob {
   max_attempts?: number;
   error_code?: string;
   error_message?: string;
+  strategy_version_artifact_id?: string;
+  approval_artifact_id?: string;
+  result_artifact_id?: string;
 }
 
 export interface BacktestEquityPoint {
@@ -79,6 +82,12 @@ export interface BacktestResult {
   blocked_trades?: Array<Record<string, unknown>>;
   corporate_action_events?: Array<Record<string, unknown>>;
   equity_curve?: BacktestEquityPoint[];
+  daily_positions?: Array<Record<string, unknown>>;
+  daily_returns?: Array<Record<string, unknown>>;
+  logs?: Array<Record<string, unknown>>;
+  log_truncated?: boolean;
+  strategy_version_artifact_id?: string;
+  approval_artifact_id?: string;
   reproducibility?: string;
 }
 
