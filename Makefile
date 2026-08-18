@@ -1,6 +1,6 @@
 COMPOSE ?= docker compose
 
-.PHONY: build up down ps logs smoke test dsh-config
+.PHONY: build up down ps logs smoke test dsh-config local-ci
 
 build:
 	$(COMPOSE) build
@@ -30,3 +30,6 @@ test:
 
 dsh-config:
 	$(COMPOSE) run --rm dsh dsh --profile byq --dump-config
+
+local-ci:
+	./scripts/ci/local-ci.sh
