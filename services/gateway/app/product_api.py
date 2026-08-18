@@ -300,6 +300,14 @@ def product_research_experiments(request: Request) -> dict[str, object]:
     return _backend_request("GET", "/v1/research/experiments", headers=_trusted_agent_headers(request))
 
 
+@router.get("/backtests/options")
+def product_backtest_options(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET", "/v1/research/backtests/options", headers=_trusted_agent_headers(request)
+    )
+
+
 @router.get("/backtests/{job_id}")
 def product_backtest_get(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
@@ -357,6 +365,20 @@ def product_strategies(request: Request) -> dict[str, object]:
     if isinstance(artifacts, list):
         return {"strategies": [a for a in artifacts if isinstance(a, dict) and a.get("kind") in {"strategy_version", "strategy_draft"}]}
     return {"strategies": []}
+
+
+@router.get("/signal-snapshots")
+def product_signal_snapshots(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    body = _backend_request("GET", "/v1/research/artifacts", headers=_trusted_agent_headers(request))
+    artifacts = body.get("artifacts", [])
+    if isinstance(artifacts, list):
+        return {
+            "snapshots": [
+                a for a in artifacts if isinstance(a, dict) and a.get("kind") == "signal_snapshot"
+            ]
+        }
+    return {"snapshots": []}
 
 
 @router.post("/strategies/validate", status_code=201)

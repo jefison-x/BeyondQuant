@@ -33,6 +33,8 @@ MAX_BARS = 50_000
 MAX_SIGNALS = 50_000
 MAX_ACTIONS = 10_000
 MAX_RESULT_BYTES = 32 * 1024 * 1024
+SIGNAL_SNAPSHOT_SCHEMA_VERSION = "signal-snapshot-v1"
+MAX_SNAPSHOT_BYTES = MAX_RESULT_BYTES
 MAX_LOG_ENTRIES = 500
 JOB_ID_PATTERN = re.compile(r"^backtest_[0-9a-f]{32}$")
 SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
@@ -422,7 +424,15 @@ def normalize_backtest_request(payload: object, *, strategy_version_artifact_id:
             "reproducibility": "reproducible",
         },
     }
-    encoded = _canonical(manifest)
+    manifest, input_manifest_id = build_manifest(
+        strategy_version_artifact_id=version_id,
+        approval_artifact_id=approval_id,
+        universe=universe,
+        bars=bars,
+        signals=signals,
+        corporate_actions=actions,
+        execution=execution,
+    )
     return {
         "task_id": task_id,
         "experiment_id": experiment_id,
@@ -431,8 +441,115 @@ def normalize_backtest_request(payload: object, *, strategy_version_artifact_id:
         "trace_id": trace_id,
         "idempotency_key": idempotency_key,
         "manifest": manifest,
-        "input_manifest_id": _sha256(encoded),
+        "input_manifest_id": input_manifest_id,
     }
+
+
+def build_manifest(
+    *,
+    strategy_version_artifact_id: str,
+    approval_artifact_id: str,
+    universe: dict[str, object],
+    bars: list[dict[str, object]],
+    signals: list[dict[str, object]],
+    corporate_actions: list[dict[str, object]],
+    execution: dict[str, object],
+) -> tuple[dict[str, object], str]:
+    """Build a backtest input manifest from already-normalized inputs.
+
+    Used both by ``normalize_backtest_request`` (after inline normalization)
+    and by the ADR-0017 signal_snapshot submit path, which consumes a
+    validated snapshot's frozen, already-normalized inputs directly without
+    re-normalizing them.
+    """
+    manifest = {
+        "schema_version": BACKTEST_SCHEMA_VERSION,
+        "strategy": {"strategy_version_artifact_id": strategy_version_artifact_id},
+        "approval": {"approval_artifact_id": approval_artifact_id},
+        "universe": universe,
+        "bars": bars,
+        "signals": signals,
+        "corporate_actions": corporate_actions,
+        "execution": execution,
+        "environment": {
+            "engine": "native",
+            "engine_contract_version": ENGINE_CONTRACT_VERSION,
+            "reproducibility": "reproducible",
+        },
+    }
+    encoded = _canonical(manifest)
+    return manifest, _sha256(encoded)
+
+
+def normalize_signal_snapshot(
+    payload: object,
+    *,
+    strategy_version_artifact_id: object,
+    strategy_version_id: object,
+) -> dict[str, object]:
+    """Normalize a frozen signal-snapshot artifact document (ADR-0017).
+
+    Reuses the same bar/signal/universe/execution/action normalization as
+    backtest requests so the snapshot can later feed the backtest input
+    boundary without double validation. Returns a secret-free, immutable,
+    content-addressed document body; the caller owns artifact idempotency and
+    status.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("signal snapshot must be an object")
+    allowed = {"universe", "bars", "signals", "execution", "corporate_actions", "source"}
+    _reject_unknown(payload, allowed, field="signal snapshot")
+    version_artifact = _entity_id(
+        strategy_version_artifact_id, field="strategy_version_artifact_id", prefix="artifact"
+    )
+    version_id = _text(strategy_version_id, field="strategy_version_id", max_length=128)
+    universe = _normalize_universe(payload.get("universe"))
+    symbols = set(universe["symbols"])
+    bars = _normalize_bars(payload.get("bars"), symbols)
+    bar_dates = {str(item["trade_date"]) for item in bars}
+    signals = _normalize_signals(payload.get("signals", []), symbols, bar_dates)
+    execution = _normalize_execution(payload.get("execution"))
+    actions = _normalize_actions(payload.get("corporate_actions"), symbols)
+    _reject_secret_keys(
+        {
+            "universe": universe,
+            "bars": bars,
+            "signals": signals,
+            "execution": execution,
+            "corporate_actions": actions,
+        }
+    )
+    source = payload.get("source")
+    if source is None:
+        source = {}
+    if not isinstance(source, dict):
+        raise ValueError("signal snapshot source must be an object")
+    _reject_unknown(source, {"producer", "note"}, field="signal snapshot source")
+    producer = _text(source.get("producer", "keyless-import"), field="source.producer", max_length=64)
+    document = {
+        "schema_version": SIGNAL_SNAPSHOT_SCHEMA_VERSION,
+        "strategy": {
+            "strategy_version_artifact_id": version_artifact,
+            "strategy_version_id": version_id,
+        },
+        "universe": universe,
+        "bars": bars,
+        "signals": signals,
+        "corporate_actions": actions,
+        "execution": execution,
+        "source": {"producer": producer},
+    }
+    encoded = _canonical(document)
+    if len(encoded.encode("utf-8")) > MAX_SNAPSHOT_BYTES:
+        raise BacktestResourceExceeded("signal snapshot exceeds object size limit")
+    document["source"]["content_sha256"] = _sha256(encoded)
+    return document
+
+
+def signal_snapshot_content_sha256(document: dict[str, object]) -> str:
+    """Return the content-addressed fingerprint of a normalized snapshot."""
+    encoded = _canonical(document)
+    return _sha256(encoded)
 
 
 def _money(value: float) -> float:

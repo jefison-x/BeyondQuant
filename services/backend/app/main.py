@@ -24,7 +24,10 @@ from .backtest import (
     BacktestWorker,
     LocalObjectStore,
     load_result,
+    build_manifest,
     normalize_backtest_request,
+    normalize_signal_snapshot,
+    signal_snapshot_content_sha256,
 )
 from .agent_research import (
     AgentConflict,
@@ -574,8 +577,32 @@ def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
     allowed = {
         "task_id", "experiment_id", "strategy_version_artifact_id", "approval_artifact_id",
         "trace_id", "idempotency_key", "universe", "bars", "signals", "execution", "corporate_actions",
+        "signal_snapshot_artifact_id",
     }
     request = _strategy_payload(payload, allowed)
+    snapshot_content: dict[str, Any] | None = None
+    snapshot_artifact_id = request.get("signal_snapshot_artifact_id")
+    if snapshot_artifact_id is not None:
+        # ADR-0017: materialize the frozen input from an immutable,
+        # validated signal_snapshot artifact instead of inline bars/signals.
+        snapshot = research_store.get_artifact(snapshot_artifact_id)
+        if snapshot["kind"] != "signal_snapshot":
+            raise ValueError("signal_snapshot_artifact_id must reference a signal_snapshot artifact")
+        if snapshot["status"] != "validated":
+            raise ValueError("signal snapshot must be validated before backtest")
+        if snapshot["task_id"] != request.get("task_id"):
+            raise ValueError("signal snapshot artifact does not belong to task_id")
+        snapshot_content = snapshot["content"]
+        if not isinstance(snapshot_content, dict):
+            raise ValueError("signal snapshot content is invalid")
+        snapshot_strategy = snapshot_content.get("strategy")
+        if not isinstance(snapshot_strategy, dict):
+            raise ValueError("signal snapshot strategy reference is invalid")
+        if snapshot_strategy.get("strategy_version_artifact_id") != request.get("strategy_version_artifact_id"):
+            raise ValueError("signal snapshot does not match the selected strategy version")
+        for key in ("universe", "bars", "signals", "execution", "corporate_actions"):
+            if key not in snapshot_content:
+                raise ValueError(f"signal snapshot content is missing {key}")
     version_artifact = research_store.get_artifact(request.get("strategy_version_artifact_id"))
     if version_artifact["kind"] != "strategy_version":
         raise ValueError("strategy_version_artifact_id must reference a strategy_version artifact")
@@ -604,11 +631,114 @@ def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
         experiment = research_store.get_experiment(experiment_id)
         if experiment["task_id"] != task["task_id"]:
             raise ValueError("experiment does not belong to task_id")
+    if snapshot_content is not None:
+        manifest, input_manifest_id = build_manifest(
+            strategy_version_artifact_id=version_artifact["artifact_id"],
+            approval_artifact_id=approval_artifact["artifact_id"],
+            universe=snapshot_content["universe"],
+            bars=snapshot_content["bars"],
+            signals=snapshot_content["signals"],
+            corporate_actions=snapshot_content["corporate_actions"],
+            execution=snapshot_content["execution"],
+        )
+        return {
+            "task_id": task["task_id"],
+            "experiment_id": experiment_id,
+            "strategy_version_artifact_id": version_artifact["artifact_id"],
+            "approval_artifact_id": approval_artifact["artifact_id"],
+            "trace_id": request["trace_id"],
+            "idempotency_key": request["idempotency_key"],
+            "manifest": manifest,
+            "input_manifest_id": input_manifest_id,
+        }
     return normalize_backtest_request(
         request,
         strategy_version_artifact_id=version_artifact["artifact_id"],
         approval_artifact_id=approval_artifact["artifact_id"],
     )
+
+
+@app.post("/v1/research/signal-snapshots", status_code=201)
+def create_signal_snapshot(payload: dict[str, Any]) -> dict[str, object]:
+    """Create a validated signal_snapshot artifact from a keyless import.
+
+    ADR-0017: the snapshot is the immutable frozen input reference for a
+    backtest submission. Phase 32 does not execute strategy source; this is
+    the explicit keyless fixture/import path (tests and demos) until a
+    dedicated signal-producer ADR lands.
+    """
+    def operation() -> dict[str, object]:
+        request = _strategy_payload(
+            payload,
+            {
+                "task_id", "experiment_id", "strategy_version_artifact_id", "universe",
+                "bars", "signals", "execution", "corporate_actions", "source",
+                "trace_id", "idempotency_key",
+            },
+        )
+        version = research_store.get_artifact(request.get("strategy_version_artifact_id"))
+        if version["kind"] != "strategy_version":
+            raise ValueError("strategy_version_artifact_id must reference a strategy_version artifact")
+        if version["status"] != "validated":
+            raise ValueError("strategy version must be validated before creating a signal snapshot")
+        if version["task_id"] != request.get("task_id"):
+            raise ValueError("strategy version artifact does not belong to task_id")
+        validated_version = validate_version_content(version["content"])
+        document = normalize_signal_snapshot(
+            {
+                "universe": request.get("universe"),
+                "bars": request.get("bars"),
+                "signals": request.get("signals"),
+                "execution": request.get("execution"),
+                "corporate_actions": request.get("corporate_actions"),
+                "source": request.get("source"),
+            },
+            strategy_version_artifact_id=version["artifact_id"],
+            strategy_version_id=validated_version.get("version_id"),
+        )
+        fingerprint = signal_snapshot_content_sha256(document)
+        artifact = research_store.find_artifact_by_content(
+            request.get("task_id"), "signal_snapshot", fingerprint
+        )
+        if artifact is None:
+            artifact = research_store.create_artifact(
+                {
+                    "task_id": request.get("task_id"),
+                    "experiment_id": request.get("experiment_id"),
+                    "kind": "signal_snapshot",
+                    "content": document,
+                    "lineage": [{"kind": "artifact", "id": version["artifact_id"]}],
+                    "trace_id": request.get("trace_id"),
+                    "idempotency_key": request.get("idempotency_key"),
+                }
+            )
+        if artifact["status"] == "draft":
+            artifact = research_store.transition(
+                "artifact",
+                artifact["artifact_id"],
+                "validated",
+                f"signal-snapshot-validate-{fingerprint[:16]}",
+            )
+        return {
+            "snapshot": document,
+            "artifact": artifact,
+            "source_strategy_version_artifact_id": version["artifact_id"],
+        }
+
+    return _backtest_call(operation)
+
+
+@app.get("/v1/research/signal-snapshots/{artifact_id}")
+def get_signal_snapshot(artifact_id: str) -> dict[str, object]:
+    return _research_call(lambda: {"snapshot": research_store.get_artifact(artifact_id)})
+
+
+@app.get("/v1/research/signal-snapshots")
+def list_signal_snapshots(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    artifacts = research_store.list_artifacts(owner_principal=context["owner_principal"])
+    snapshots = [item for item in artifacts["artifacts"] if item["kind"] == "signal_snapshot"]
+    return {"snapshots": snapshots}
 
 
 @app.post("/v1/research/backtests", status_code=202)
@@ -620,6 +750,52 @@ def create_backtest_job(payload: dict[str, Any]) -> dict[str, object]:
         return {"job": job}
 
     return _backtest_call(operation)
+
+
+@app.get("/v1/research/backtests/options")
+def backtest_options(request: Request) -> dict[str, object]:
+    """Return runnable backtest options for the wizard (Phase 32, ADR-0017).
+
+    Aggregates validated strategy versions that have an approved
+    strategy_approval for the caller, with the task/approval identities the
+    wizard needs to submit a backtest referencing a signal_snapshot.
+    """
+    context = _required_agent_context(request)
+    artifacts = research_store.list_artifacts(owner_principal=context["owner_principal"])["artifacts"]
+    versions = {
+        item["artifact_id"]: item
+        for item in artifacts
+        if item["kind"] == "strategy_version" and item["status"] == "validated"
+    }
+    approved_by_version: dict[str, str] = {}
+    for item in artifacts:
+        if item["kind"] != "strategy_approval" or item["status"] != "validated":
+            continue
+        content = item["content"]
+        if not isinstance(content, dict):
+            continue
+        if content.get("decision") != "approved" or content.get("execution_authorized") is not True:
+            continue
+        version_id = content.get("strategy_version_artifact_id")
+        if isinstance(version_id, str) and version_id in versions and version_id not in approved_by_version:
+            approved_by_version[version_id] = item["artifact_id"]
+    options: list[dict[str, object]] = []
+    for version_id, item in versions.items():
+        if version_id not in approved_by_version:
+            continue
+        content = item["content"]
+        if not isinstance(content, dict):
+            continue
+        options.append(
+            {
+                "strategy_version_artifact_id": version_id,
+                "task_id": item["task_id"],
+                "approval_artifact_id": approved_by_version[version_id],
+                "strategy_id": content.get("strategy_id"),
+                "strategy_version_id": content.get("version_id"),
+            }
+        )
+    return {"options": options}
 
 
 @app.get("/v1/research/backtests/{job_id}")
