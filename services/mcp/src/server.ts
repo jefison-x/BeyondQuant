@@ -10,6 +10,7 @@ import {
   fetchByqBacktestGet,
   fetchByqBacktestRun,
   fetchByqBacktestSubmit,
+  fetchByqSignalSnapshotGet,
   type BacktestRequest,
 } from "./backtest.js";
 import { fetchByqFactorCompute, type FactorComputeRequest } from "./factor-research.js";
@@ -305,6 +306,10 @@ async function byqResearchGet(args: { entity_type: ResearchEntityType; entity_id
   return fetchByqResearchGet(BACKEND_URL, args.entity_type, args.entity_id);
 }
 
+async function byqSignalSnapshotGet(args: { artifact_id: string }) {
+  return fetchByqSignalSnapshotGet(BACKEND_URL, args.artifact_id);
+}
+
 async function byqResearchTransition(args: ResearchTransitionRequest) {
   return fetchByqResearchTransition(BACKEND_URL, args);
 }
@@ -473,6 +478,14 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_backtest_get",
     { description: "Read durable BYQ backtest job state and immutable result reference.", inputSchema: { job_id: z.string() } },
     byqBacktestGet,
+  );
+  server.registerTool(
+    "byq_signal_snapshot_get",
+    {
+      description: "Read an immutable, validated BYQ signal_snapshot artifact (frozen backtest input, ADR-0017). Read-only.",
+      inputSchema: { artifact_id: z.string() },
+    },
+    byqSignalSnapshotGet,
   );
   server.registerTool(
     "byq_backtest_run",

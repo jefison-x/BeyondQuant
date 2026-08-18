@@ -62,6 +62,25 @@ export function listBacktests(token: string): Promise<{ backtests: Array<Record<
   return request(`/backtests`, token);
 }
 
+export function listBacktestOptions(token: string): Promise<{ options: Array<Record<string, unknown>> }> {
+  return request(`/backtests/options`, token);
+}
+
+export function listSignalSnapshots(token: string): Promise<{ snapshots: Array<Record<string, unknown>> }> {
+  return request(`/signal-snapshots`, token);
+}
+
+export function submitBacktest(
+  payload: Record<string, unknown>,
+  token: string,
+): Promise<{ job: BacktestJob }> {
+  return request(`/backtests`, token, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function validateStrategy(payload: Record<string, unknown>, token: string): Promise<Record<string, unknown>> {
   return request(`/strategies/validate`, token, {
     method: "POST",

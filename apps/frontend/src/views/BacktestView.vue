@@ -2,7 +2,17 @@
 import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import type { EChartsOption } from "echarts";
-import { cancelBacktest, deleteBacktest, getBacktest, getBacktestResult, listBacktests, runBacktest } from "@/api/quant";
+import {
+  cancelBacktest,
+  deleteBacktest,
+  getBacktest,
+  getBacktestResult,
+  listBacktests,
+  listBacktestOptions,
+  listSignalSnapshots,
+  runBacktest,
+  submitBacktest,
+} from "@/api/quant";
 import type { BacktestJob, BacktestResult } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import ChartWrapper from "@/components/charts/ChartWrapper.vue";
@@ -229,6 +239,76 @@ const executionRuleRows = computed(() => {
   return rows;
 });
 
+const showCreate = ref(false);
+const creating = ref(false);
+const options = ref<Array<Record<string, unknown>>>([]);
+const snapshots = ref<Array<Record<string, unknown>>>([]);
+const selectedOption = ref<Record<string, unknown> | null>(null);
+const selectedSnapshot = ref<Record<string, unknown> | null>(null);
+
+const matchingSnapshots = computed(() => {
+  const versionId = selectedOption.value?.strategy_version_artifact_id;
+  if (!versionId) return [];
+  return snapshots.value.filter((snap) => {
+    const content = snap.content as Record<string, unknown> | undefined;
+    const strategy = content?.strategy as Record<string, unknown> | undefined;
+    return strategy?.strategy_version_artifact_id === versionId;
+  });
+});
+
+function snapshotProducer(snap: Record<string, unknown>): string {
+  const content = snap.content as Record<string, unknown> | undefined;
+  const source = content?.source as Record<string, unknown> | undefined;
+  return String(source?.producer ?? "unknown");
+}
+
+function snapshotExecution(snap: Record<string, unknown>, key: string): unknown {
+  const content = snap.content as Record<string, unknown> | undefined;
+  const execution = content?.execution as Record<string, unknown> | undefined;
+  return execution?.[key] ?? "-";
+}
+
+async function openCreate() {
+  showCreate.value = true;
+  selectedOption.value = null;
+  selectedSnapshot.value = null;
+  try {
+    const [o, s] = await Promise.all([listBacktestOptions(auth.token), listSignalSnapshots(auth.token)]);
+    options.value = o.options ?? [];
+    snapshots.value = s.snapshots ?? [];
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "加载回测选项失败");
+  }
+}
+
+async function submitCreate() {
+  const opt = selectedOption.value;
+  const snap = selectedSnapshot.value;
+  if (!opt || !snap) return;
+  creating.value = true;
+  const stamp = Date.now();
+  try {
+    await submitBacktest(
+      {
+        task_id: opt.task_id,
+        strategy_version_artifact_id: opt.strategy_version_artifact_id,
+        approval_artifact_id: opt.approval_artifact_id,
+        signal_snapshot_artifact_id: snap.artifact_id,
+        trace_id: `byq-wizard-${stamp}`,
+        idempotency_key: `wizard-${stamp}`,
+      },
+      auth.token,
+    );
+    ElMessage.success("回测已创建并排队");
+    showCreate.value = false;
+    await loadList();
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "创建回测失败");
+  } finally {
+    creating.value = false;
+  }
+}
+
 onMounted(loadList);
 </script>
 
@@ -254,6 +334,7 @@ onMounted(loadList);
             <el-option label="cancelled" value="cancelled" />
             <el-option label="failed" value="failed" />
           </el-select>
+          <el-button type="primary" size="small" @click="openCreate">新建回测</el-button>
         </div>
         <el-empty v-if="!filteredBacktests.length" description="暂无回测结果" />
         <el-table
@@ -490,6 +571,53 @@ onMounted(loadList);
         </el-tab-pane>
       </el-tabs>
     </el-dialog>
+    <el-dialog v-model="showCreate" title="新建回测（Phase 32）" width="min(640px, 94vw)">
+      <el-form label-position="top">
+        <el-form-item label="已批准策略版本">
+          <el-select v-model="selectedOption" filterable placeholder="选择已批准的策略版本" style="width: 100%">
+            <el-option
+              v-for="opt in options"
+              :key="String(opt.strategy_version_artifact_id)"
+              :value="opt"
+              :label="`${String(opt.strategy_id)} · ${String(opt.strategy_version_id).slice(0, 8)}`"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="信号快照（ADR-0017 冻结输入）">
+          <el-select
+            v-model="selectedSnapshot"
+            filterable
+            placeholder="选择匹配该策略的信号快照"
+            style="width: 100%"
+            :disabled="!selectedOption"
+          >
+            <el-option
+              v-for="snap in matchingSnapshots"
+              :key="String(snap.artifact_id)"
+              :value="snap"
+              :label="`${String(snap.artifact_id).slice(0, 18)} · ${snapshotProducer(snap)}`"
+            />
+          </el-select>
+          <div class="wizard-hint">信号快照来自已导入的冻结输入；提交边界会校验快照与所选策略匹配（ADR-0017）。</div>
+        </el-form-item>
+        <template v-if="selectedSnapshot">
+          <el-divider content-position="left">冻结执行参数</el-divider>
+          <el-descriptions :column="2" size="small" border>
+            <el-descriptions-item label="初始资金">{{ snapshotExecution(selectedSnapshot, "initial_capital") }}</el-descriptions-item>
+            <el-descriptions-item label="手续费率">{{ snapshotExecution(selectedSnapshot, "commission_rate") }}</el-descriptions-item>
+            <el-descriptions-item label="印花税率">{{ snapshotExecution(selectedSnapshot, "stamp_tax_rate") }}</el-descriptions-item>
+            <el-descriptions-item label="整手">{{ snapshotExecution(selectedSnapshot, "lot_size") }}</el-descriptions-item>
+          </el-descriptions>
+          <div class="wizard-hint">执行参数随快照冻结，向导不可修改（不可变输入）。</div>
+        </template>
+      </el-form>
+      <template #footer>
+        <el-button @click="showCreate = false">取消</el-button>
+        <el-button type="primary" :loading="creating" :disabled="!selectedOption || !selectedSnapshot" @click="submitCreate">
+          创建回测
+        </el-button>
+      </template>
+    </el-dialog>
   </section>
 </template>
 
@@ -534,6 +662,12 @@ onMounted(loadList);
   overflow: auto;
   padding: 0.75rem;
   white-space: pre-wrap;
+}
+
+.wizard-hint {
+  color: var(--byq-text-muted);
+  font-size: 12px;
+  margin-top: 0.35rem;
 }
 
 .mobile-list {

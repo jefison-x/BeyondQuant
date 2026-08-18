@@ -313,3 +313,162 @@ def test_backtest_delete_survives_result_gc_failure(monkeypatch, tmp_path) -> No
     assert client.get(f"/v1/research/backtests/{job['job_id']}").status_code == 404
     store.close()
     jobs.close()
+
+
+def _create_strategy_chain(client: TestClient, *, key: str) -> dict[str, object]:
+    task = client.post(
+        "/v1/research/tasks",
+        json={
+            "owner_principal": "product-user", "title": f"Snapshot {key}",
+            "objective": "Create validated strategy chain", "trace_id": f"byq-trace-{key}",
+            "idempotency_key": f"task-{key}",
+        },
+    ).json()
+    draft = client.post(
+        "/v1/research/strategies/validate",
+        json={
+            "task_id": task["task_id"], "strategy": _strategy(), "trace_id": f"byq-trace-{key}",
+            "idempotency_key": f"draft-{key}",
+        },
+    ).json()
+    version = client.post(
+        "/v1/research/strategies/versions",
+        json={
+            "task_id": task["task_id"], "draft_artifact_id": draft["artifact"]["artifact_id"],
+            "trace_id": f"byq-trace-{key}", "idempotency_key": f"version-{key}",
+        },
+    ).json()
+    approval = client.post(
+        "/v1/research/strategies/approvals",
+        json={
+            "task_id": task["task_id"], "strategy_version_artifact_id": version["artifact"]["artifact_id"],
+            "reviewer_principal": "human-owner", "decision": "approved", "trace_id": f"byq-trace-{key}",
+            "idempotency_key": f"approval-{key}",
+        },
+    ).json()
+    return {"task": task, "draft": draft, "version": version, "approval": approval}
+
+
+def _snapshot_input() -> dict[str, object]:
+    return {
+        "universe": {
+            "universe_id": "fixture", "version_id": "fixture-v1",
+            "membership_fingerprint": membership_fingerprint([SYMBOL]), "symbols": [SYMBOL],
+        },
+        "bars": [
+            {"symbol": SYMBOL, "trade_date": "2026-01-05", "open": 10, "high": 10, "low": 10, "close": 10},
+            {"symbol": SYMBOL, "trade_date": "2026-01-06", "open": 10, "high": 10, "low": 10, "close": 10},
+        ],
+        "signals": [{"symbol": SYMBOL, "trade_date": "2026-01-05", "side": "buy", "quantity": 100}],
+        "execution": {"initial_capital": 2_000, "commission_rate": 0, "stamp_tax_rate": 0, "lot_size": 100},
+    }
+
+
+def _fresh_harness(monkeypatch, tmp_path) -> tuple[ResearchStore, BacktestJobStore, LocalObjectStore, TestClient]:
+    store = ResearchStore()
+    jobs = BacktestJobStore()
+    objects = LocalObjectStore(tmp_path / "objects")
+    monkeypatch.setattr(main, "research_store", store)
+    monkeypatch.setattr(main, "backtest_store", jobs)
+    monkeypatch.setattr(main, "backtest_objects", objects)
+    return store, jobs, objects, TestClient(main.app)
+
+
+def test_signal_snapshot_create_and_backtest_submit(monkeypatch, tmp_path) -> None:
+    store, jobs, objects, client = _fresh_harness(monkeypatch, tmp_path)
+    chain = _create_strategy_chain(client, key="snapshot-e2e")
+    version_artifact_id = chain["version"]["artifact"]["artifact_id"]
+    approval_artifact_id = chain["approval"]["artifact"]["artifact_id"]
+
+    created = client.post(
+        "/v1/research/signal-snapshots",
+        json={
+            "task_id": chain["task"]["task_id"], "strategy_version_artifact_id": version_artifact_id,
+            "trace_id": "byq-trace-snapshot-e2e", "idempotency_key": "snapshot-e2e",
+            "source": {"producer": "test-fixture"}, **_snapshot_input(),
+        },
+    )
+    assert created.status_code == 201, created.text
+    snapshot = created.json()
+    assert snapshot["artifact"]["kind"] == "signal_snapshot"
+    assert snapshot["artifact"]["status"] == "validated"
+    assert snapshot["snapshot"]["strategy"]["strategy_version_artifact_id"] == version_artifact_id
+    assert snapshot["snapshot"]["source"]["producer"] == "test-fixture"
+    assert snapshot["snapshot"]["source"]["content_sha256"]
+    snapshot_artifact_id = snapshot["artifact"]["artifact_id"]
+
+    submit = client.post(
+        "/v1/research/backtests",
+        json={
+            "task_id": chain["task"]["task_id"], "strategy_version_artifact_id": version_artifact_id,
+            "approval_artifact_id": approval_artifact_id, "trace_id": "byq-trace-snapshot-e2e",
+            "idempotency_key": "backtest-snapshot-e2e",
+            "signal_snapshot_artifact_id": snapshot_artifact_id,
+        },
+    )
+    assert submit.status_code == 202, submit.text
+    job = submit.json()["job"]
+    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "completed"
+    result = client.get(
+        f"/v1/research/backtests/{job['job_id']}/result", headers=_owner_headers("product-user")
+    ).json()["result"]
+    assert result["trade_count"] == 1
+    assert result["total_return"] == 0.0
+    assert result["equity_curve"][-1]["trade_date"] == "2026-01-06"
+    store.close()
+    jobs.close()
+
+
+def test_signal_snapshot_mismatch_rejected(monkeypatch, tmp_path) -> None:
+    store, jobs, objects, client = _fresh_harness(monkeypatch, tmp_path)
+    chain = _create_strategy_chain(client, key="snapshot-mismatch")
+    task_id = chain["task"]["task_id"]
+    version_a_id = chain["version"]["artifact"]["artifact_id"]
+    # Second validated version in the SAME task with a different strategy.
+    strategy_v2 = {**_strategy(), "strategy_id": "MomentumStrategyV2", "parameters": {"lookback": 10}}
+    draft_b = client.post(
+        "/v1/research/strategies/validate",
+        json={
+            "task_id": task_id, "strategy": strategy_v2, "trace_id": "byq-trace-snapshot-mismatch",
+            "idempotency_key": "draft-mismatch-b",
+        },
+    ).json()
+    version_b = client.post(
+        "/v1/research/strategies/versions",
+        json={
+            "task_id": task_id, "draft_artifact_id": draft_b["artifact"]["artifact_id"],
+            "trace_id": "byq-trace-snapshot-mismatch", "idempotency_key": "version-mismatch-b",
+        },
+    ).json()
+    approval_b = client.post(
+        "/v1/research/strategies/approvals",
+        json={
+            "task_id": task_id, "strategy_version_artifact_id": version_b["artifact"]["artifact_id"],
+            "reviewer_principal": "human-owner", "decision": "approved",
+            "trace_id": "byq-trace-snapshot-mismatch", "idempotency_key": "approval-mismatch-b",
+        },
+    ).json()
+    created = client.post(
+        "/v1/research/signal-snapshots",
+        json={
+            "task_id": task_id, "strategy_version_artifact_id": version_a_id,
+            "trace_id": "byq-trace-snapshot-mismatch", "idempotency_key": "snapshot-mismatch",
+            **_snapshot_input(),
+        },
+    )
+    assert created.status_code == 201
+    snapshot_artifact_id = created.json()["artifact"]["artifact_id"]
+    # Submit referencing a DIFFERENT strategy version (same task) -> mismatch.
+    submit = client.post(
+        "/v1/research/backtests",
+        json={
+            "task_id": task_id, "strategy_version_artifact_id": version_b["artifact"]["artifact_id"],
+            "approval_artifact_id": approval_b["artifact"]["artifact_id"],
+            "trace_id": "byq-trace-snapshot-mismatch", "idempotency_key": "backtest-snapshot-mismatch",
+            "signal_snapshot_artifact_id": snapshot_artifact_id,
+        },
+    )
+    assert submit.status_code == 422, submit.text
+    assert "does not match" in submit.text
+    store.close()
+    jobs.close()
