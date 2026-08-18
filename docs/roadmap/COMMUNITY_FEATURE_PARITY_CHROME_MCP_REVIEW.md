@@ -219,3 +219,28 @@ Observed at `/strategy` with real owner-scoped artifacts (a validated
   task selector binds new drafts to an existing ResearchTask.
 - No raw MCP/DSH/Backend/storage/provider URL or secret appeared in the
   rendered page; the page consumed Product API routes only.
+
+## Phase 32 backtest depth review (2026-08-18)
+
+- Browser method: Chrome DevTools MCP (`chrome-devtools-mcp`, headless,
+  viewport 1440x900, isolated profile).
+- Topology: local `beyondquant` compose rebuilt with `codex/phase-32-backtest-depth`
+  backend/gateway/frontend images.
+- Browser origin: `http://127.0.0.1`
+- Authenticated principal: `admin`
+
+Observed at `/backtest` with an existing completed owner-scoped job
+(`backtest_7a98404878b14116925020071881ad4e`):
+
+- List pane shows a per-row 删除 action on completed jobs (desktop table) and
+  the same action on mobile cards.
+- Detail tabs now include 每日持仓&收益, 日志输出, and 策略快照 in addition
+  to the existing 权益曲线/交易明细/拦截明细/公司行动/输入清单 tabs.
+- 策略快照 renders real strategy-version and approval artifact ids plus the
+  full frozen input manifest (bars/signals/universe/execution).
+- 每日持仓&收益 and 日志输出 render their table headers and bounded empty
+  states for this pre-upgrade result; the engine now emits those fields for
+  new runs and backend contract tests assert them.
+
+Known remaining: create wizard is deferred until ADR-0017 (`signal_snapshot`)
+is accepted; result-object GC after job deletion is a follow-up slice.
