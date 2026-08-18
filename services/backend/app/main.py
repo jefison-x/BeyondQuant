@@ -16,6 +16,7 @@ from .data_provider import (
 from .factor_research import compute_factor
 from .backtest import (
     BacktestConflict,
+    BacktestError,
     BacktestJobStore,
     BacktestNotFound,
     ObjectIntegrityError,
@@ -665,9 +666,33 @@ def cancel_backtest_job(job_id: str) -> dict[str, object]:
 def delete_backtest_job(job_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
     def operation() -> dict[str, object]:
-        return {"job": backtest_store.delete(job_id, owner_principal=context["owner_principal"])}
+        deleted = backtest_store.delete(job_id, owner_principal=context["owner_principal"])
+        _gc_deleted_backtest_objects(deleted, owner_principal=context["owner_principal"])
+        return {"job": deleted}
 
     return _backtest_call(operation)
+
+
+def _gc_deleted_backtest_objects(deleted_job: dict[str, object], *, owner_principal: str) -> None:
+    """Best-effort garbage collection of a deleted job's result object.
+
+    Result objects are content-addressed and may be shared across jobs, so the
+    object is removed only when no other stored job still references it. GC is
+    a pure side effect; the DELETE response contract is unchanged.
+    """
+    reference = deleted_job.get("result_reference")
+    if not isinstance(reference, dict):
+        return
+    try:
+        live_references = backtest_store.all_result_references()
+        backtest_objects.delete_if_unreferenced(
+            reference,
+            live_references=live_references,
+            actor_scope=owner_principal,
+            owner_scope=deleted_job.get("owner_principal", owner_principal),
+        )
+    except (BacktestError, OSError):
+        return
 
 
 @app.get("/v1/agents/roles")

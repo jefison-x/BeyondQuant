@@ -831,6 +831,22 @@ class BacktestJobStore(PgStoreMixin):
             rows = self._execute("SELECT * FROM backtest_jobs ORDER BY created_at DESC, job_id DESC LIMIT 200")
         return {"backtests": [self._public(row) for row in rows]}
 
+    def all_result_references(self) -> list[dict[str, object]]:
+        """Return every stored backtest result reference across all owners.
+
+        Result objects are content-addressed and may be shared between jobs,
+        so the deletion-GC live set must be queried across owner scopes.
+        """
+        rows = self._execute(
+            "SELECT result_reference_json FROM backtest_jobs WHERE result_reference_json IS NOT NULL"
+        )
+        references: list[dict[str, object]] = []
+        for row in rows:
+            reference = row.get("result_reference_json")
+            if isinstance(reference, dict):
+                references.append(reference)
+        return references
+
     def request(self, job_id: object) -> dict[str, object]:
         job_id = _text(job_id, field="job_id", max_length=64)
         row = self._fetch_one("SELECT request_json FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
