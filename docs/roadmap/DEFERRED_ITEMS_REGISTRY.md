@@ -51,17 +51,19 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 
 ### D-0001 — Phase 32 Backtest create wizard
 - Phase: 32
-- Status: `READY`
+- Status: `CLOSED`
 - Precondition: ADR-0017 (`signal_snapshot` artifact) accepted.
 - Triggered: 2026-08-18 (ADR-0017 transitioned to Accepted).
+- Closed: 2026-08-18 (PR #82 merged).
 - Content: browser create-backtest wizard (Community `BacktestView.vue`,
   classified `PORT_UX`) selecting a validated StrategyVersion + matching
   `signal_snapshot` + execution parameters, submitting through Product API.
 - Acceptance: wizard creates a backtest job from a validated strategy + signal
   snapshot; no signal generation in browser or DSH; Chrome DevTools MCP
   evidence + contract tests.
-- Evidence: `COMMUNITY_FEATURE_PARITY_CHROME_MCP_REVIEW.md` §Phase 32
-  ("create wizard is deferred until ADR-0017").
+- Evidence: `COMMUNITY_FEATURE_PARITY_CHROME_MCP_REVIEW.md` §Phase 32 create
+  wizard review (job `backtest_4f64f70c81c146c296874da762cb5d7a`); six
+  backend contract tests; full local CI green; self-hosted PR CI green.
 
 ### D-0002 — Signal producer (strategy source → signal_snapshot)
 - Phase: 32 (end-to-end gap, deliberately out of scope of ADR-0017 decision 3)
