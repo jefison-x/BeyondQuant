@@ -1,0 +1,42 @@
+# BeyondQuant Self-Hosted CI
+#
+# Runs the project's own local CI (scripts/ci/local-ci.sh) on a self-hosted
+# GitHub Actions runner, so checks execute on the local machine instead of
+# GitHub-hosted runners (which require paid billing). The runner must be
+# registered with labels: byq, linux, x64 — see docs/operations/self-hosted-ci.md.
+#
+# This workflow intentionally reuses scripts/ci/local-ci.sh (the same checks
+# that `make local-ci` runs) rather than re-implementing compose steps, so it
+# avoids the shared byq_postgres_data volume and never conflicts with the
+# developer's own `docker compose` stack.
+name: BeyondQuant Self-Hosted CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'bootstrap/**'
+
+permissions:
+  contents: read
+
+jobs:
+  local-ci:
+    runs-on: [self-hosted, linux, x64, byq]
+    timeout-minutes: 30
+    env:
+      # Guard against any future opt-in compose usage colliding with the
+      # developer's local stack project name.
+      COMPOSE_PROJECT_NAME: byq-ci-runner
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch main baseline for path filtering
+        run: git fetch --quiet --depth=1 origin main || true
+
+      - name: Run local CI (all core checks)
+        run: ./scripts/ci/local-ci.sh --all
