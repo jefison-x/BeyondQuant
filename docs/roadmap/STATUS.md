@@ -3,9 +3,10 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 31**
-- Next phase: **not yet defined** (Phase 31 is the last documented phase in
-  `docs/roadmap/IMPLEMENTATION_PLAN.md`; the next phase needs a roadmap decision)
+- Current completed phase: **Phase 32**
+- Next phase: **Phase 33 — Strategy workspace depth** (see
+  `docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md` and
+  `docs/roadmap/COMMUNITY_FULL_PARITY_PHASE_DETAILS.md`)
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -20,6 +21,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 24 user-auth ADR: **ADR-0014**
 - Accepted pre-release auto-merge ADR: **ADR-0015**
 - Accepted PostgreSQL single-domain-store ADR: **ADR-0016**
+- Accepted signal-snapshot ADR: **ADR-0017**
 - Open architecture decisions: none for the Phase 30 release-candidate boundary;
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
   is Accepted.
@@ -37,6 +39,8 @@ Codex session does not infer project state from commit history.
   [ADR-0015](../architecture/adr/ADR-0015-phase-release-automerge.md) is
   Accepted until the BeyondQuant Next v1.0 release boundary.
   [ADR-0016](../architecture/adr/ADR-0016-postgresql-single-domain-store.md)
+  is Accepted.
+  [ADR-0017](../architecture/adr/ADR-0017-signal-snapshot-artifact.md)
   is Accepted.
 - Phase 23 acceptance evidence covers the Community Feature Parity Matrix,
   golden journey E2E smoke, release-candidate status, and explicit DROP/DEFER
@@ -56,6 +60,16 @@ Codex session does not infer project state from commit history.
   Formal ADR-0013 bulk Community market-data import still requires a live
   read-only Community audit snapshot (ADR-0013 decision 6); Community
   PostgreSQL remains read-only evidence and is untouched.
+- Phase 32 (Community backtest workspace depth) completed: the create wizard
+  submits a backtest referencing an immutable `signal_snapshot` artifact
+  (ADR-0017 Accepted, PR #81) with version/owner/task matching (PR #82); the
+  result workspace exposes all 8 detail tabs real (权益曲线/交易明细/拦截明细/
+  公司行动/每日持仓&收益/日志输出/策略快照/输入清单); delete/compare/mobile
+  work; Chrome DevTools MCP evidence recorded for both result depth and the
+  wizard. D-0001 (create wizard) is CLOSED in the Deferred Items Registry.
+  The end-to-end strategy-to-backtest journey remains D-0002 (signal
+  producer) pending a dedicated producer ADR; until then snapshots come from
+  the keyless fixture/import path.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence, but
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` records substantial remaining
@@ -63,8 +77,8 @@ Codex session does not infer project state from commit history.
   yet satisfied.
 - Product-depth phases delivered: Backtest result workspace, Strategy, Stock
   Pool, Paper Trading, Agent workbench, personal Agent Policy, and Data
-  Center. Remaining deferred items (Backtest create wizard pending a strategy
-  signal-source ADR, model credential CRUD, asset re-import, agent policy
+  Center. Remaining deferred items (signal producer for end-to-end
+  strategy-to-backtest, model credential CRUD, asset re-import, agent policy
   presets/rule CRUD, operations workbenches, data sync jobs, paper
   snapshots/settlement) are recorded in the V2 parity matrix for the RC
   review.

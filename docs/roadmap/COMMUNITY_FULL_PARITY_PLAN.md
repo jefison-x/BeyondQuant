@@ -44,6 +44,8 @@ after each phase is merged through the human merge gate.
 ## Phases
 
 ### Phase 32 — Backtest workspace depth
+- Status: **COMPLETE (2026-08-18)** — wizard via `signal_snapshot` (ADR-0017,
+  PR #81/#82), result depth tabs, delete/compare/mobile, Chrome evidence.
 - Community: `BacktestView.vue` (2730 lines) create wizard, compare, 5 tabs
   (overview / trades / daily positions & returns / logs / strategy snapshot),
   delete, rerun, mobile cards.

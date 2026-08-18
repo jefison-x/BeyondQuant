@@ -14,7 +14,7 @@ Detailed gaps are in
 | Agent | REDESIGNED_PASS | Sessions, conversation composer, WorkflowTrace, thinking panel, approval decisions, backtest context, and artifacts are real; assistant drawer remains partial. |
 | Research | PARTIAL | Entity/approval lookup exists; lineage DAG and full research workspace are missing. |
 | Strategy | REDESIGNED_PASS | Editor with templates/snippets, draft save/validate, immutable version creation, export, and approval banner are real. |
-| Backtest | REDESIGNED_PASS | Result workspace (filters, mobile cards, equity curve, trades, blocked trades, corporate actions, compare, run/cancel) is real; create wizard is DEFERRED until a strategy signal-source ADR. |
+| Backtest | REDESIGNED_PASS | Result workspace (filters, mobile cards, equity curve, trades, blocked trades, corporate actions, compare, run/cancel, delete, 8 detail tabs) is real; create wizard submits via an immutable signal_snapshot (ADR-0017), end-to-end verified in Chrome (job backtest_4f64f70c81c146c296874da762cb5d7a). |
 | Stock Pool | REDESIGNED_PASS | Catalog types, description, weights, membership detail, filters, and mobile cards are real; snapshot history remains partial. |
 | Paper Trading | REDESIGNED_PASS | Accounts, orders, positions, fills, and derived ledger are real; snapshots/settlement/import-export remain partial. |
 | Profile | REDESIGNED_PASS | Durable profile form and owner-scoped save work through Product API. |
@@ -29,8 +29,9 @@ Detailed gaps are in
 
 Product-depth phases delivered: Backtest result workspace, Strategy, Stock
 Pool, Paper Trading, Agent workbench, personal Agent Policy, and Data Center.
-Remaining `PARTIAL`/`DEFERRED` items are explicitly bounded: Backtest create
-wizard (needs a strategy signal-source ADR), model credential CRUD, asset
-strategy/backtest re-import, agent policy presets/rule CRUD, operations
+Remaining `PARTIAL`/`DEFERRED` items are explicitly bounded: the
+strategy-to-backtest signal producer (D-0002, needs a producer ADR), model
+credential CRUD, asset strategy/backtest re-import, agent policy presets/rule
+CRUD, operations
 workbenches, data sync jobs, and paper snapshots/settlement. The next step is
 the human v1.0 RC review with these deferred items recorded.
