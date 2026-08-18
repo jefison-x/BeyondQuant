@@ -51,8 +51,9 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 
 ### D-0001 — Phase 32 Backtest create wizard
 - Phase: 32
-- Status: `BLOCKED`
+- Status: `READY`
 - Precondition: ADR-0017 (`signal_snapshot` artifact) accepted.
+- Triggered: 2026-08-18 (ADR-0017 transitioned to Accepted).
 - Content: browser create-backtest wizard (Community `BacktestView.vue`,
   classified `PORT_UX`) selecting a validated StrategyVersion + matching
   `signal_snapshot` + execution parameters, submitting through Product API.
@@ -131,7 +132,7 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 
 | Decision | Status | Unblocks |
 |---|---|---|
-| ADR-0017 (`signal_snapshot`) | Proposed | D-0001 |
+| ADR-0017 (`signal_snapshot`) | Accepted (2026-08-18) | D-0001 |
 | Signal-producer ADR (future) | not written | D-0002 |
 | ADR-0018 (WorkflowTrace cards) | Proposed | D-0005 (with Phase 40) |
 | ADR-0019 (encrypted credentials) | Proposed | D-0006, D-0007, D-0008 |

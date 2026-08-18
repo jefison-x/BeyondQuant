@@ -1,7 +1,8 @@
 # ADR-0017: Strategy Signal Snapshot Artifact for Backtest Input
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-18
+- Accepted: 2026-08-18
 - Decision scope: Phase 32 Backtest create-wizard input boundary
 - Related: ADR-0003, ADR-0007, ADR-0008, ADR-0016
 
@@ -77,3 +78,37 @@ input without introducing unsafe strategy-source execution.
 Remove the `signal_snapshot` kind and the MCP read tool; backtest submission
 reverts to requiring callers to pass the frozen input inline. No data-plane
 migration is required.
+
+
+## Acceptance review (2026-08-18)
+
+Accepted by the repository maintainer after the review materials in
+`docs/architecture/adr/ADR-0017-signal-snapshot-artifact.md` were checked
+against the current codebase (submit boundary, Artifact store, MCP tools,
+Community wizard). The review confirmed the Context is accurate and the
+decision is consistent with ADR-0007 / ADR-0008 / ADR-0016. Acceptance is
+**conditional** on the following implementation clarifications, which bind
+any Phase 32 wizard work that consumes this ADR:
+
+1. **Phase 32 acceptance boundary**: the wizard must be able to submit a
+   backtest from a validated StrategyVersion + a matching `signal_snapshot`
+   + execution parameters through Product API. It does NOT commit to the
+   end-to-end strategy-to-backtest journey; producing signals from strategy
+   source remains deferred to a dedicated signal-producer ADR (registered as
+   D-0002). Completing the wizard without the producer is not fake
+   completion only if the phase records this boundary.
+2. **Matching rules**: a `signal_snapshot` is "matching" only when its
+   `strategy_version_artifact_id` equals the selected StrategyVersion
+   artifact id, its `owner_principal` equals the submitting principal, and
+   it belongs to the same task (or an explicit lineage link is recorded).
+3. **Approval**: backtest submission continues to authorize via the existing
+   `strategy_approval` artifact; a `signal_snapshot` introduces no new
+   independent approval step.
+4. **Content schema & size**: the snapshot content reuses the existing
+   normalization rules from `normalize_backtest_request` (one canonical OHLC
+   bar per `(symbol, trade_date)`, finite-value and OHLC validation, stable
+   signal ordering) and enforces a content size cap so a single Artifact row
+   stays bounded.
+
+These clarifications must be reflected in the Phase 32 wizard implementation
+and its contract tests.
