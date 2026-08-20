@@ -23,6 +23,7 @@ permissions:
 
 jobs:
   local-ci:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64, byq]
     timeout-minutes: 30
     env:
@@ -38,5 +39,5 @@ jobs:
       - name: Fetch main baseline for path filtering
         run: git fetch --quiet --depth=1 origin main || true
 
-      - name: Run local CI (all core checks)
-        run: ./scripts/ci/local-ci.sh --all
+      - name: Run local CI (core, mocked UI, compose, and real browser checks)
+        run: ./scripts/ci/local-ci.sh --all --with-e2e --with-smoke

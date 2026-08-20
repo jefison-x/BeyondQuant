@@ -3,29 +3,35 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0 <23"
+  },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "npm run test:e2e:mocked",
+    "test:e2e:mocked": "playwright test --config playwright.config.ts",
+    "test:e2e:real": "playwright test --config playwright.real.config.ts"
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.1",
-    "echarts": "5.5.1",
+    "echarts": "6.1.0",
     "element-plus": "2.14.3",
     "pinia": "2.1.7",
     "vue": "3.5.18",
     "vue-router": "4.0.3"
   },
   "devDependencies": {
-    "@playwright/test": "1.48.2",
-    "@vitejs/plugin-vue": "5.2.1",
+    "@playwright/test": "1.62.1",
+    "@types/node": "22.15.3",
+    "@vitejs/plugin-vue": "6.0.8",
     "@vue/test-utils": "2.4.6",
     "jsdom": "25.0.1",
     "typescript": "5.6.3",
-    "vite": "5.4.11",
-    "vitest": "2.1.8",
+    "vite": "8.2.2",
+    "vitest": "4.1.11",
     "vue-tsc": "2.1.10"
   }
 }

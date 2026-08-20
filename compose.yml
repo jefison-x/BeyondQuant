@@ -24,7 +24,7 @@ services:
       context: .
       dockerfile: apps/frontend/Dockerfile
     ports:
-      - "80:80"
+      - "${BYQ_FRONTEND_BIND:-80}:80"
     depends_on:
       gateway:
         condition: service_healthy
@@ -44,7 +44,7 @@ services:
       context: .
       dockerfile: services/gateway/Dockerfile
     ports:
-      - "127.0.0.1:8100:8100"
+      - "${BYQ_GATEWAY_BIND:-127.0.0.1:8100}:8100"
     environment:
       BYQ_PRODUCT_TOKEN: ${BYQ_PRODUCT_TOKEN:?BYQ_PRODUCT_TOKEN must be set}
       BYQ_PRODUCT_PRINCIPAL: ${BYQ_PRODUCT_PRINCIPAL:-product-user}
@@ -163,15 +163,15 @@ services:
 
 networks:
   byq_product:
-    name: byq_product
+    name: ${BYQ_PRODUCT_NETWORK_NAME:-byq_product}
     driver: bridge
 
 volumes:
   byq_postgres_data:
-    name: byq_postgres_data
+    name: ${BYQ_POSTGRES_VOLUME_NAME:-byq_postgres_data}
   byq_domain_state:
-    name: byq_domain_state
+    name: ${BYQ_DOMAIN_VOLUME_NAME:-byq_domain_state}
   byq_dsh_sessions:
-    name: byq_dsh_sessions
+    name: ${BYQ_DSH_SESSIONS_VOLUME_NAME:-byq_dsh_sessions}
   byq_workflow_traces:
-    name: byq_workflow_traces
+    name: ${BYQ_WORKFLOW_TRACES_VOLUME_NAME:-byq_workflow_traces}
