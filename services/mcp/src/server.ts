@@ -566,7 +566,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         experiment_id: z.string().optional(),
         trace_id: z.string(),
         idempotency_key: z.string(),
-        strategy: z.record(z.unknown()),
+        strategy: z.record(z.string(), z.unknown()),
       },
     },
     byqStrategyDraftSave,
