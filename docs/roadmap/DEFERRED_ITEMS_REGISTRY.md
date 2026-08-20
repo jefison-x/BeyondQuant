@@ -91,6 +91,56 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 - Acceptance: sweep deletes only unreferenced objects; never deletes a
   referenced/tampered object; runs idempotently; covered by tests.
 
+### D-0009 — Phase 33 strategy draft supersede visibility (optional hardening)
+- Phase: 33
+- Status: `READY`
+- Precondition: none (follow-up hardening recorded in PR #85).
+- Content: the strategy list still renders soft-superseded (deleted) drafts
+  with status `superseded`; there is no filter or hide-by-default for them.
+  Add a status filter / "已删除" view so deletion is visually distinguishable,
+  while keeping the immutable soft-supersede semantics.
+- Acceptance: superseded drafts are distinguishable and can be hidden/shown;
+  delete remains a soft-supersede transition; list projection contract tests;
+  Chrome evidence if UI is touched.
+- Evidence of origin: Phase 33 Chrome MCP review observed the deleted draft
+  row remaining in the list after 删除草稿; PR #85 Known limitations.
+
+### D-0010 — Phase 33 version-history projection bound (hardening)
+- Phase: 33
+- Status: `READY`
+- Precondition: none (follow-up hardening recorded in PR #85).
+- Content: `/v1/research/strategies/{id}/versions` and
+  `/v1/research/strategies/{id}/backtest-count` reuse the 200-newest artifact
+  projection (`list_artifacts`), so owners with more than 200 artifacts can
+  miss older versions/counts. Replace with a direct store query filtered by
+  kind + content `strategy_id`.
+- Acceptance: projections query PostgreSQL directly for the owner scope,
+  are complete beyond 200 artifacts, and keep the same response contract;
+  contract tests cover the projection boundary.
+
+### D-0011 — Phase 33 StrategyView component-level tests (quality follow-up)
+- Phase: 33
+- Status: `READY`
+- Precondition: none (quality gap recorded in PR #85).
+- Content: StrategyView has API-client, backend, Gateway, and MCP tests plus
+  Chrome browser evidence, but no Vitest component-level tests for the view
+  itself (draft save/delete flows, version-history rendering, read-only state,
+  stats projection).
+- Acceptance: view-level tests cover save/delete, version history, read-only
+  mode, and backtest-count stats; they run in the standard frontend CI check.
+
+### D-0012 — Phase 33 Community deep strategy profile fields (future depth)
+- Phase: 40 (final parity closure candidate; out of Phase 33 scope)
+- Status: `READY`
+- Precondition: Phase 40 shared-component/parity closure planning.
+- Content: Community `StrategyView.vue` profile depth — description,
+  parameters, parameter_schema, and status enable/disable fields, plus the
+  non-artifact strategy CRUD model — was intentionally not replicated in
+  Phase 33 (BYQ keeps strategy code as auditable artifacts).
+- Acceptance: decision recorded for each field (REUSE/REFACTOR/REPLACE/DROP);
+  any replicated field works through Product API with validation/approval
+  semantics preserved.
+
 ### D-0005 — Phase 36 Agent workbench structured cards
 - Phase: 36
 - Status: `BLOCKED`

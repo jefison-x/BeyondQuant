@@ -53,6 +53,32 @@ async function requestStrategy(
   }
 }
 
+export function fetchByqStrategyDraftSave(
+  backendUrl: string,
+  request: StrategyRequest,
+  fetcher: Fetcher = fetch,
+): Promise<ByqStrategyResult> {
+  return requestStrategy(
+    backendUrl,
+    "/v1/research/strategies/drafts",
+    { method: "POST", body: JSON.stringify(request) },
+    fetcher,
+  );
+}
+
+export function fetchByqStrategyDraftDelete(
+  backendUrl: string,
+  artifactId: string,
+  fetcher: Fetcher = fetch,
+): Promise<ByqStrategyResult> {
+  return requestStrategy(
+    backendUrl,
+    `/v1/research/strategies/drafts/${encodeURIComponent(artifactId)}`,
+    { method: "DELETE" },
+    fetcher,
+  );
+}
+
 export function fetchByqStrategyValidate(
   backendUrl: string,
   request: StrategyRequest,

@@ -41,6 +41,8 @@ import {
 } from "./learning.js";
 import {
   fetchByqStrategyApprove,
+  fetchByqStrategyDraftDelete,
+  fetchByqStrategyDraftSave,
   fetchByqStrategyExport,
   fetchByqStrategyValidate,
   fetchByqStrategyVersionCreate,
@@ -274,6 +276,14 @@ async function byqMarketDaily(args: MarketDailyRequest) {
 
 async function byqFactorCompute(args: FactorComputeRequest) {
   return fetchByqFactorCompute(BACKEND_URL, args ?? {});
+}
+
+async function byqStrategyDraftSave(args: StrategyRequest) {
+  return fetchByqStrategyDraftSave(BACKEND_URL, args);
+}
+
+async function byqStrategyDraftDelete(args: { artifact_id: string }) {
+  return fetchByqStrategyDraftDelete(BACKEND_URL, args.artifact_id);
 }
 
 async function byqStrategyValidate(args: StrategyRequest) {
@@ -546,6 +556,28 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       },
     },
     byqFactorCompute,
+  );
+  server.registerTool(
+    "byq_strategy_draft_save",
+    {
+      description: "Durably save a strategy draft (Phase 33); tolerates intermediate edits that do not yet pass static validation.",
+      inputSchema: {
+        task_id: z.string(),
+        experiment_id: z.string().optional(),
+        trace_id: z.string(),
+        idempotency_key: z.string(),
+        strategy: z.record(z.string(), z.unknown()),
+      },
+    },
+    byqStrategyDraftSave,
+  );
+  server.registerTool(
+    "byq_strategy_draft_delete",
+    {
+      description: "Delete (soft-supersede) an owner-scoped strategy draft (Phase 33).",
+      inputSchema: { artifact_id: z.string() },
+    },
+    byqStrategyDraftDelete,
   );
   server.registerTool(
     "byq_strategy_validate",

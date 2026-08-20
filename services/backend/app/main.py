@@ -1,4 +1,5 @@
 import os
+import re
 
 from fastapi import FastAPI
 from fastapi import HTTPException, Request
@@ -81,6 +82,7 @@ from .strategy_artifact import (
     content_sha256,
     export_strategy_version,
     prepare_strategy,
+    prepare_strategy_draft,
     strategy_draft_content,
     strategy_version_content,
     validate_version_content,
@@ -566,6 +568,118 @@ def export_strategy_version_artifact(artifact_id: str) -> dict[str, object]:
         }
 
     return _research_call(operation)
+
+
+_STRATEGY_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{2,63}$")
+
+
+@app.post("/v1/research/strategies/drafts", status_code=201)
+def save_strategy_draft(payload: dict[str, Any]) -> dict[str, object]:
+    """Durably save a strategy draft (Phase 33).
+
+    Persists the current editor content as an immutable strategy_draft
+    artifact. Unlike validate, this tolerates intermediate edits that do not
+    yet pass static validation (validation.success records the outcome);
+    creating a version still requires a validated draft.
+    """
+    def operation() -> dict[str, object]:
+        request = _strategy_payload(
+            payload, {"task_id", "experiment_id", "strategy", "trace_id", "idempotency_key"}
+        )
+        research_store.get_task(request.get("task_id"))
+        prepared = prepare_strategy_draft(request.get("strategy"))
+        artifact = research_store.create_artifact(
+            {
+                "task_id": request.get("task_id"),
+                "experiment_id": request.get("experiment_id"),
+                "kind": "strategy_draft",
+                "content": strategy_draft_content(prepared),
+                "lineage": [],
+                "trace_id": request.get("trace_id"),
+                "idempotency_key": request.get("idempotency_key"),
+            }
+        )
+        return {
+            "strategy": prepared["snapshot"],
+            "validation": prepared["validation"],
+            "artifact": artifact,
+        }
+
+    return _research_call(operation)
+
+
+@app.delete("/v1/research/strategies/drafts/{artifact_id}")
+def delete_strategy_draft(artifact_id: str, request: Request) -> dict[str, object]:
+    """Delete (soft-supersede) an owner-scoped strategy draft (Phase 33).
+
+    Drafts are immutable audit artifacts, so deletion is recorded as a
+    superseded status transition rather than a physical row removal.
+    """
+    def operation() -> dict[str, object]:
+        context = _required_agent_context(request)
+        artifact = research_store.get_artifact(artifact_id)
+        if artifact["kind"] != "strategy_draft":
+            raise ValueError("artifact is not a strategy draft")
+        if artifact["owner_principal"] != context["owner_principal"]:
+            raise ResearchNotFound("strategy draft not found")
+        if artifact["status"] not in {"draft", "validated"}:
+            raise ValueError("strategy draft is already superseded")
+        transitioned = research_store.transition(
+            "artifact", artifact_id, "superseded", f"strategy-draft-delete-{artifact_id[:16]}"
+        )
+        return {"artifact": transitioned}
+
+    return _research_call(operation)
+
+
+@app.get("/v1/research/strategies/{strategy_id}/versions")
+def strategy_version_history(strategy_id: str, request: Request) -> dict[str, object]:
+    """List version history for one strategy (Phase 33)."""
+    context = _required_agent_context(request)
+    if _STRATEGY_ID_RE.fullmatch(strategy_id) is None:
+        raise ValueError("strategy_id has invalid format")
+    artifacts = research_store.list_artifacts(owner_principal=context["owner_principal"])["artifacts"]
+    versions: list[dict[str, object]] = []
+    for item in artifacts:
+        if item["kind"] != "strategy_version":
+            continue
+        content = item["content"]
+        if not isinstance(content, dict) or content.get("strategy_id") != strategy_id:
+            continue
+        versions.append(
+            {
+                "artifact_id": item["artifact_id"],
+                "status": item["status"],
+                "version_id": content.get("version_id"),
+                "source_fingerprint": content.get("source_fingerprint"),
+                "created_at": item["created_at"],
+            }
+        )
+    versions.sort(key=lambda row: str(row["created_at"]), reverse=True)
+    return {"strategy_id": strategy_id, "versions": versions}
+
+
+@app.get("/v1/research/strategies/{strategy_id}/backtest-count")
+def strategy_backtest_count(strategy_id: str, request: Request) -> dict[str, object]:
+    """Return backtest job counts per strategy version (Phase 33 projection)."""
+    context = _required_agent_context(request)
+    if _STRATEGY_ID_RE.fullmatch(strategy_id) is None:
+        raise ValueError("strategy_id has invalid format")
+    artifacts = research_store.list_artifacts(owner_principal=context["owner_principal"])["artifacts"]
+    version_ids: list[str] = []
+    for item in artifacts:
+        if item["kind"] != "strategy_version":
+            continue
+        content = item["content"]
+        if isinstance(content, dict) and content.get("strategy_id") == strategy_id:
+            version_ids.append(item["artifact_id"])
+    counts = backtest_store.count_by_strategy_versions(version_ids)
+    return {
+        "strategy_id": strategy_id,
+        "version_count": len(version_ids),
+        "backtest_count": sum(counts.values()),
+        "by_version": counts,
+    }
 
 
 @app.post("/v1/research/artifacts/{artifact_id}/transitions")

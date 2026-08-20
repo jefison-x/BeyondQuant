@@ -361,6 +361,34 @@ def prepare_strategy(value: object) -> dict[str, Any]:
     }
 
 
+def prepare_strategy_draft(value: object) -> dict[str, Any]:
+    """Prepare a strategy draft for durable save (Phase 33).
+
+    Unlike ``prepare_strategy`` (which requires passing static validation and
+    raises on failure), this always returns a draft document so intermediate
+    edits can be persisted. ``validation.success`` records whether the source
+    passed static checks; structural errors (id/category/source_type/script
+    size) still raise. Creating a version still requires a validated draft
+    via ``prepare_strategy``.
+    """
+    snapshot = _strategy_snapshot(value)
+    static_check = validate_strategy_source(snapshot["script"])
+    validation = {
+        "validator": STRATEGY_VALIDATOR_VERSION,
+        "success": bool(static_check["success"]),
+        "static_check": static_check,
+        "execution_check": {
+            "status": "deferred",
+            "reason": "strategy execution belongs to a future BYQ-owned worker",
+        },
+    }
+    return {
+        "schema_version": STRATEGY_DRAFT_SCHEMA_VERSION,
+        "snapshot": snapshot,
+        "validation": validation,
+    }
+
+
 def strategy_draft_content(prepared: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema_version": STRATEGY_DRAFT_SCHEMA_VERSION,
