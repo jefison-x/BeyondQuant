@@ -274,12 +274,56 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("TUSHARE_TOKEN", openapi)
         self.assertNotIn("BYQ_MCP_TOKEN", openapi)
 
-    def test_phase23_parity_matrix_and_golden_journey_exist(self) -> None:
+    def test_phase23_historical_parity_matrix_and_ui_smoke_exist(self) -> None:
         matrix = ROOT / "docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX.md"
         self.assertTrue(matrix.exists())
         self.assertIn("Release-candidate conclusion", matrix.read_text())
         e2e = (ROOT / "apps/frontend/tests/e2e/app.spec.ts").read_text()
-        self.assertIn("golden journey covers login", e2e)
+        self.assertIn("authenticated dashboard shows resource cards", e2e)
+
+    def test_roadmap_truth_sources_are_current_and_consistent(self) -> None:
+        status = (ROOT / "docs/roadmap/STATUS.md").read_text()
+        completed = re.search(r"Current completed phase: \*\*Phase (\d+)\*\*", status)
+        self.assertIsNotNone(completed)
+        completed_phase = int(completed.group(1))
+
+        readme = (ROOT / "README.md").read_text()
+        self.assertIn(f"completed project stage is **Phase {completed_phase}**", readme)
+
+        implementation = (ROOT / "docs/roadmap/IMPLEMENTATION_PLAN.md").read_text()
+        self.assertIn("Phase 34 — Stock Pool depth (`NEXT — DECISION GATE`)", implementation)
+
+        parity_plan = (ROOT / "docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md").read_text()
+        self.assertIn("Status: `ACTIVE`", parity_plan)
+        self.assertNotIn("ADR-0017/0018/0019 awaiting review", parity_plan)
+
+        parity_matrix = (ROOT / "docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX_V2.md").read_text()
+        self.assertIn("not eligible for review", parity_matrix)
+        self.assertNotIn("The next step is\nthe human v1.0 RC review", parity_matrix)
+
+    def test_completed_phases_have_no_open_deferred_items(self) -> None:
+        status = (ROOT / "docs/roadmap/STATUS.md").read_text()
+        completed = re.search(r"Current completed phase: \*\*Phase (\d+)\*\*", status)
+        self.assertIsNotNone(completed)
+        completed_phase = int(completed.group(1))
+
+        registry = (ROOT / "docs/roadmap/DEFERRED_ITEMS_REGISTRY.md").read_text()
+        for match in re.finditer(r"(?ms)^### (D-\d+).*?(?=^### |\Z)", registry):
+            block = match.group(0)
+            phase = re.search(r"(?m)^- Phase: (\d+)", block)
+            item_status = re.search(r"(?m)^- Status: `([A-Z_]+)`", block)
+            self.assertIsNotNone(phase, match.group(1))
+            self.assertIsNotNone(item_status, match.group(1))
+            if int(phase.group(1)) <= completed_phase:
+                self.assertIn(item_status.group(1), {"CLOSED", "DROPPED"}, match.group(1))
+
+    def test_local_ci_isolated_mcp_contract_dependency(self) -> None:
+        local_ci = (ROOT / "scripts/ci/local-ci.sh").read_text()
+        self.assertIn('CI_PG_NET="byq-ci-network-$BYQ_CI_SCOPE"', local_ci)
+        self.assertIn("--network-alias backend", local_ci)
+        self.assertIn("ensure_ci_backend", local_ci)
+        self.assertNotIn("CI_PG_NET=byq_product", local_ci)
+        self.assertNotIn("npm run build >/tmp/byq-mcp-build.log 2>&1", local_ci)
 
     def test_runtime_adapter_owns_the_official_sdk_and_explicit_runtime(self) -> None:
         adapter = "\n".join(

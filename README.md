@@ -1,7 +1,10 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-project stage is **Phase 9 / ResearchTask + Experiment + Artifact**.
+completed project stage is **Phase 33**; the next implementation phase is
+**Phase 34 — Stock Pool depth**. The v1.0 release-candidate gate is not yet
+satisfied. See [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
+authoritative current state.
 
 ## Project identity
 
@@ -12,77 +15,35 @@ DSH is the general-purpose Agent Harness. BYQ is the specialized quantitative do
 
 BYQ does not fork DSH. The DSH version is pinned through an explicit dependency policy and compatibility contract. BYQ provides its own product UI, and communication between agents and the quantitative domain goes through BeyondQuant MCP.
 
-The completed Phase 5 spine provides:
+## Current capabilities
 
-- Gateway health and bootstrap readiness
-- a thin DSH runtime pinned to `@deepseek-ai/dsh@0.1.0-rc.6`
-- the `dsh-byq` configuration bundle
-- a BYQ-controlled `byq-product` preset with no source-editing capabilities
-- BeyondQuant MCP Streamable HTTP at `/mcp/v1`
-- the authenticated `byq_health` MCP tool
-- Backend health endpoints
-- an isolated Docker topology for `gateway`, `runtime-adapter`, `mcp`, and
-  `backend`; the old DSH Web bootstrap is diagnostic-profile only
+- Browser Product Plane with durable username/password sessions and
+  owner-scoped Product API access.
+- Gateway → Runtime Adapter → pinned DSH JSON-RPC runtime integration with
+  BYQ-owned normalized WorkflowTrace projections.
+- BeyondQuant MCP as the only Agent-to-Domain capability boundary.
+- PostgreSQL as the single BYQ domain store; logical migration and
+  backup/restore tooling are present.
+- ResearchTask, Experiment, Artifact, Approval, factor research, strategy
+  draft/version, deterministic signal-snapshot backtests, Stock Pool, and
+  simulation-only Paper Trading domains.
+- Vue product workspaces for research, strategy, backtest, Stock Pool, Paper
+  Trading, assets/settings, Data Center, and protected operations surfaces.
 
-Phase 6 adds the formal programmatic runtime seam:
+## Current limitations
 
-- Gateway internal lifecycle/SSE calls to a dedicated Python Runtime Adapter
-- official `deepseek-harness-sdk==0.1.0rc6`
-- explicit npm `@deepseek-ai/dsh@0.1.0-rc.6` JSON-RPC runtime composition
-- one adapter-owned DSH process per active Product session
-- BYQ-owned `WorkflowTraceEvent` normalization
-- keyless JSON-RPC initialize, MCP startup, and hard-cleanup smoke coverage
+- A BYQ-owned strategy-source → `signal_snapshot` producer is not yet defined;
+  the browser cannot complete a newly authored strategy-to-backtest journey.
+- Stock Pool, Paper Trading, Agent, My Space, Operations, Data Center, and
+  shared-component depth remain in Phases 34–40.
+- ADR-0018 and ADR-0019 remain Proposed and block their dependent phases.
+- The project is not yet eligible for the BeyondQuant Next v1.0 RC gate.
 
-Phase 7 adds the first authenticated Product Agent boundary:
-
-- Gateway-only opaque Bearer authentication for `/v1/agent` and
-  `/v1/workflows`
-- model/provider secret handling confined to the Runtime Adapter
-- interrupted-session resume with a new adapter-owned runtime
-- BYQ-owned append-only WorkflowTrace persistence and `Last-Event-ID` replay
-
-Phase 8 adds the first BYQ-owned market-data provider boundary:
-
-- bounded, normalized A-share unadjusted daily-bar requests
-- Backend-only Tushare credential handling with bounded retry and TTL cache
-- provenance metadata for provider, request fingerprint, retrieval time, and
-  cache state
-- the `byq_market_daily` MCP capability for Agent-to-Domain access
-
-`TUSHARE_TOKEN` is required only for the opt-in live integration check and must
-remain in the local ignored `.env` file. It is never passed to DSH, MCP,
-Gateway, or frontend code. The boundary is recorded in
-[ADR-0005](docs/architecture/adr/ADR-0005-phase8-data-provider.md).
-
-Phase 9 adds the first durable research-domain entity boundary:
-
-- Backend-owned ResearchTask, Experiment, and Artifact state machines
-- SQLite persistence behind a Backend repository interface and named volume
-- idempotent mutations, bounded JSON content, provenance, and lineage hashes
-- MCP capabilities for creating, reading, and transitioning research state
-
-The Phase 9 storage implementation is intentionally single-Backend SQLite;
-PostgreSQL migration and multi-writer deployment require a later ADR. The
-domain boundary is recorded in
-[ADR-0006](docs/architecture/adr/ADR-0006-phase9-research-entities.md).
-
-The base Compose topology requires `BYQ_MCP_TOKEN` and `BYQ_PRODUCT_TOKEN`.
-Set `DEEPSEEK_API_KEY` only when intentionally running a real provider-backed
-Product turn; keyless CI and smoke tests must not embed that secret. The
-authentication and secret boundary is recorded in
-[ADR-0004](docs/architecture/adr/ADR-0004-phase7-product-authentication.md).
-
-The DSH Web surface is available only through the diagnostic `dsh-web` Compose
-profile, remains bound to container-local `127.0.0.1`, has no host port, and is
-not a BYQ product API. The diagnostic Web surface remains outside the Phase 7
-Product Agent API.
-The programmatic decision is recorded in
-[ADR-0003](docs/architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md).
-
-It does not yet implement strategy, factors, backtests, a complete Xiaoba
-product, multi-agent workflows, or a WorkflowTrace UI. PostgreSQL,
-Redis, frontend, data-worker, backtest-worker, and engineering-dsh remain out
-of scope for this phase.
+The base Compose topology requires internal service secrets such as
+`BYQ_MCP_TOKEN` and bootstrap compatibility configuration. Provider secrets
+remain Backend/Runtime-Adapter owned and must never be exposed to DSH, MCP,
+Gateway responses, or frontend code. Keyless CI and smoke tests must not embed
+real credentials.
 
 See [ADR-0002](docs/architecture/adr/ADR-0002-initial-runtime-topology.md),
 [ADR-0003](docs/architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md),

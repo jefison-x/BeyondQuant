@@ -94,9 +94,11 @@ want() { # want <check>
 }
 
 # ------------------------------------------------------------------- postgres
-CI_PG=byq-ci-postgres
-CI_PG_NET=byq_product
-CI_PG_VOL=byq_ci_postgres_data
+BYQ_CI_SCOPE="${GITHUB_RUN_ID:-local-$$}"
+CI_PG="byq-ci-postgres-$BYQ_CI_SCOPE"
+CI_BACKEND="byq-ci-backend-$BYQ_CI_SCOPE"
+CI_PG_NET="byq-ci-network-$BYQ_CI_SCOPE"
+CI_PG_VOL="byq-ci-postgres-data-$BYQ_CI_SCOPE"
 ensure_clean_postgres() {
   docker network inspect "$CI_PG_NET" >/dev/null 2>&1 || docker network create "$CI_PG_NET" >/dev/null
   if ! docker inspect "$CI_PG" >/dev/null 2>&1; then
@@ -114,10 +116,30 @@ ensure_clean_postgres() {
   done
   return 1
 }
-stop_clean_postgres() {
+ensure_ci_backend() {
+  if ! docker inspect "$CI_BACKEND" >/dev/null 2>&1; then
+    step "backend: starting live MCP contract dependency ($CI_BACKEND)"
+    docker run -d --name "$CI_BACKEND" --network "$CI_PG_NET" --network-alias backend \
+      -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
+      -e PYTHONDONTWRITEBYTECODE=1 \
+      -v "$REPO_ROOT/services/backend:/app" -w /app \
+      beyondquant-backend >/dev/null
+  fi
+  for _ in $(seq 1 30); do
+    docker exec "$CI_BACKEND" python -c \
+      "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=1)" \
+      >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  docker logs "$CI_BACKEND" >&2 || true
+  return 1
+}
+cleanup_ci_services() {
+  docker rm -f "$CI_BACKEND" >/dev/null 2>&1 || true
   [ "$KEEP_POSTGRES" -eq 1 ] && return 0
   docker rm -f "$CI_PG" >/dev/null 2>&1 || true
   docker volume rm "$CI_PG_VOL" >/dev/null 2>&1 || true
+  docker network rm "$CI_PG_NET" >/dev/null 2>&1 || true
 }
 
 # ------------------------------------------------------------------- checks
@@ -159,6 +181,8 @@ check_runtime() {
 
 check_mcp() {
   step "mcp: npm test (tsc build + in-container server + contract tests)"
+  ensure_clean_postgres || { bad "clean postgres for MCP"; return; }
+  ensure_ci_backend || { bad "live backend for MCP"; return; }
   # Mount only sources so the image's complete node_modules/dist stay intact;
   # run as root so tsc can rewrite /app/dist; start the MCP server in-container
   # because the contract test connects to a live 127.0.0.1:8300 endpoint.
@@ -171,8 +195,7 @@ check_mcp() {
       -v "$REPO_ROOT/services/mcp/package.json:/app/package.json" \
       -v "$REPO_ROOT/services/mcp/tsconfig.json:/app/tsconfig.json" \
       -w /app beyondquant-mcp \
-      sh -c 'npm run build >/tmp/byq-mcp-build.log 2>&1 && (node dist/src/server.js >/tmp/byq-mcp-server.log 2>&1 &) && sleep 3 && npm test' \
-      >/dev/null 2>&1; then
+      sh -ec 'npm run build; node dist/src/server.js >/tmp/byq-mcp-server.log 2>&1 & server_pid=$!; trap "kill $server_pid >/dev/null 2>&1 || true" EXIT; sleep 3; npm test'; then
     ok "mcp tests"; else bad "mcp tests"; fi
 }
 
@@ -222,7 +245,7 @@ want mcp && check_mcp
 want frontend && check_frontend
 [ "$WITH_SMOKE" -eq 1 ] && check_smoke
 [ "$WITH_DSH_WEB" -eq 1 ] && check_dsh_web
-[ "$WITH_SMOKE" -eq 0 ] && [ "$WITH_DSH_WEB" -eq 0 ] && stop_clean_postgres
+[ "$WITH_SMOKE" -eq 0 ] && [ "$WITH_DSH_WEB" -eq 0 ] && cleanup_ci_services
 
 printf '\n=============================\n'
 if [ "$FAIL" -gt 0 ]; then
