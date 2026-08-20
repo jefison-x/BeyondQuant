@@ -279,7 +279,11 @@ def product_research_entity(entity_type: str, entity_id: str, request: Request) 
     _product_principal(request)
     if entity_type not in {"tasks", "experiments", "artifacts"}:
         raise ProductError(404, "product_entity_not_found", "research entity type is not supported")
-    return _backend_request("GET", f"/v1/research/{entity_type}/{entity_id}")
+    return _backend_request(
+        "GET",
+        f"/v1/research/{entity_type}/{entity_id}",
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/research/artifacts")
@@ -319,7 +323,11 @@ def product_backtest_submit(request: Request, payload: dict[str, object]) -> dic
 @router.get("/backtests/{job_id}")
 def product_backtest_get(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", f"/v1/research/backtests/{job_id}")
+    return _backend_request(
+        "GET",
+        f"/v1/research/backtests/{job_id}",
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/backtests/{job_id}/result")
@@ -341,13 +349,21 @@ def product_backtests(request: Request) -> dict[str, object]:
 @router.post("/backtests/{job_id}/run")
 def product_backtest_run(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("POST", f"/v1/research/backtests/{job_id}/run")
+    return _backend_request(
+        "POST",
+        f"/v1/research/backtests/{job_id}/run",
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.post("/backtests/{job_id}/cancel")
 def product_backtest_cancel(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("POST", f"/v1/research/backtests/{job_id}/cancel")
+    return _backend_request(
+        "POST",
+        f"/v1/research/backtests/{job_id}/cancel",
+        headers=_trusted_agent_headers(request),
+    )
 
 @router.delete("/backtests/{job_id}")
 def product_backtest_delete(job_id: str, request: Request) -> dict[str, object]:
@@ -362,7 +378,11 @@ def product_backtest_delete(job_id: str, request: Request) -> dict[str, object]:
 @router.get("/strategies/versions/{artifact_id}/export")
 def product_strategy_export(artifact_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", f"/v1/research/strategies/versions/{artifact_id}/export")
+    return _backend_request(
+        "GET",
+        f"/v1/research/strategies/versions/{artifact_id}/export",
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/strategies")
@@ -392,7 +412,12 @@ def product_signal_snapshots(request: Request) -> dict[str, object]:
 @router.post("/strategies/drafts", status_code=201)
 def product_strategy_draft_save(request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("POST", "/v1/research/strategies/drafts", payload)
+    return _backend_request(
+        "POST",
+        "/v1/research/strategies/drafts",
+        payload,
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.delete("/strategies/drafts/{artifact_id}")
@@ -428,7 +453,12 @@ def product_strategy_backtest_count(strategy_id: str, request: Request) -> dict[
 @router.post("/strategies/validate", status_code=201)
 def product_strategy_validate(request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("POST", "/v1/research/strategies/validate", payload)
+    return _backend_request(
+        "POST",
+        "/v1/research/strategies/validate",
+        payload,
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.post("/strategies/versions", status_code=201)
@@ -688,7 +718,11 @@ def product_paper_account_create(request: Request, payload: dict[str, object]) -
 @router.get("/paper/accounts/{account_id}")
 def product_paper_account_get(account_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", f"/v1/paper/accounts/{account_id}")
+    return _backend_request(
+        "GET",
+        f"/v1/paper/accounts/{account_id}",
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/paper/accounts")
@@ -711,7 +745,11 @@ def product_stock_pool_create(request: Request, payload: dict[str, object]) -> d
 @router.get("/paper/pools/{pool_id}")
 def product_stock_pool_get(pool_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", f"/v1/paper/pools/{pool_id}")
+    return _backend_request(
+        "GET",
+        f"/v1/paper/pools/{pool_id}",
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/paper/pools")

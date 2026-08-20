@@ -37,6 +37,7 @@ def test_strategy_draft_version_export_and_approval_flow(monkeypatch) -> None:
     store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
+    client.headers.update(_owner_headers("product-user"))
     task = _task(client)
 
     draft_response = client.post(
@@ -53,6 +54,18 @@ def test_strategy_draft_version_export_and_approval_flow(monkeypatch) -> None:
     assert draft["validation"]["success"] is True
     assert draft["artifact"]["kind"] == "strategy_draft"
     assert draft["artifact"]["status"] == "validated"
+
+    denied_version = client.post(
+        "/v1/research/strategies/versions",
+        headers=_owner_headers("other-user"),
+        json={
+            "task_id": task["task_id"],
+            "draft_artifact_id": draft["artifact"]["artifact_id"],
+            "trace_id": "byq-trace-other-user",
+            "idempotency_key": "strategy-version-denied",
+        },
+    )
+    assert denied_version.status_code == 404
 
     version_request = {
         "task_id": task["task_id"],
@@ -78,6 +91,11 @@ def test_strategy_draft_version_export_and_approval_flow(monkeypatch) -> None:
     assert exported.status_code == 200
     assert exported.json()["export"]["version_id"] == version_id
     assert "trace_id" not in exported.text
+    denied_export = client.get(
+        f"/v1/research/strategies/versions/{version['artifact']['artifact_id']}/export",
+        headers=_owner_headers("other-user"),
+    )
+    assert denied_export.status_code == 404
 
     approval = client.post(
         "/v1/research/strategies/approvals",
@@ -104,6 +122,7 @@ def test_strategy_api_rejects_invalid_source_without_creating_artifact(monkeypat
     store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
+    client.headers.update(_owner_headers("product-user"))
     task = _task(client)
     response = client.post(
         "/v1/research/strategies/validate",
@@ -132,6 +151,7 @@ def test_strategy_draft_save_tolerates_invalid_and_delete(monkeypatch) -> None:
     store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
+    client.headers.update(_owner_headers("product-user"))
     task = _task(client)
 
     saved = client.post(
@@ -183,6 +203,7 @@ def test_strategy_version_history_and_backtest_count(monkeypatch, tmp_path) -> N
     monkeypatch.setattr(main, "backtest_store", jobs)
     monkeypatch.setattr(main, "backtest_objects", objects)
     client = TestClient(main.app)
+    client.headers.update(_owner_headers("product-user"))
     task = _task(client)
     strategy = strategy_payload()
     strategy_id = str(strategy["strategy_id"])

@@ -47,6 +47,7 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(main, "backtest_store", jobs)
     monkeypatch.setattr(main, "backtest_objects", LocalObjectStore(tmp_path / "objects"))
     client = TestClient(main.app)
+    client.headers.update(_owner_headers("product-user"))
 
     task = client.post(
         "/v1/research/tasks",
@@ -92,6 +93,18 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     assert submit.status_code == 202, submit.text
     job = submit.json()["job"]
     assert job["status"] == "queued"
+    assert client.get(
+        f"/v1/research/backtests/{job['job_id']}",
+        headers=_owner_headers("other-user"),
+    ).status_code == 404
+    assert client.post(
+        f"/v1/research/backtests/{job['job_id']}/run",
+        headers=_owner_headers("other-user"),
+    ).status_code == 404
+    assert client.post(
+        f"/v1/research/backtests/{job['job_id']}/cancel",
+        headers=_owner_headers("other-user"),
+    ).status_code == 404
     assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "completed"
     fetched = client.get(f"/v1/research/backtests/{job['job_id']}")
     assert fetched.status_code == 200
@@ -254,6 +267,7 @@ def test_backtest_delete_garbage_collects_orphan_result_object(monkeypatch, tmp_
     monkeypatch.setattr(main, "backtest_store", jobs)
     monkeypatch.setattr(main, "backtest_objects", objects)
     client = TestClient(main.app)
+    client.headers.update(_owner_headers("product-user"))
 
     job = _create_completed_backtest(client, key="gc-orphan")
     reference = job["result_reference"]
@@ -273,6 +287,7 @@ def test_backtest_delete_keeps_shared_result_object(monkeypatch, tmp_path) -> No
     monkeypatch.setattr(main, "backtest_store", jobs)
     monkeypatch.setattr(main, "backtest_objects", objects)
     client = TestClient(main.app)
+    client.headers.update(_owner_headers("product-user"))
 
     job_a = _create_completed_backtest(client, key="gc-shared-a")
     job_b = _create_completed_backtest(client, key="gc-shared-b")
@@ -301,6 +316,7 @@ def test_backtest_delete_survives_result_gc_failure(monkeypatch, tmp_path) -> No
     monkeypatch.setattr(main, "backtest_store", jobs)
     monkeypatch.setattr(main, "backtest_objects", objects)
     client = TestClient(main.app)
+    client.headers.update(_owner_headers("product-user"))
 
     job = _create_completed_backtest(client, key="gc-failure")
 
@@ -371,7 +387,9 @@ def _fresh_harness(monkeypatch, tmp_path) -> tuple[ResearchStore, BacktestJobSto
     monkeypatch.setattr(main, "research_store", store)
     monkeypatch.setattr(main, "backtest_store", jobs)
     monkeypatch.setattr(main, "backtest_objects", objects)
-    return store, jobs, objects, TestClient(main.app)
+    client = TestClient(main.app)
+    client.headers.update(_owner_headers("product-user"))
+    return store, jobs, objects, client
 
 
 def test_signal_snapshot_create_and_backtest_submit(monkeypatch, tmp_path) -> None:

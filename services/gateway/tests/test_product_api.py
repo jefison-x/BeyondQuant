@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app import main
@@ -456,3 +458,55 @@ def test_product_asset_import_rejects_secret_fields(monkeypatch) -> None:
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "product_asset_bundle_invalid"
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("get", "/api/product/research/tasks/task_1", None),
+        ("get", "/api/product/backtests/backtest_1", None),
+        ("post", "/api/product/backtests/backtest_1/run", None),
+        ("post", "/api/product/backtests/backtest_1/cancel", None),
+        ("get", "/api/product/strategies/versions/artifact_1/export", None),
+        ("post", "/api/product/strategies/drafts", {}),
+        ("post", "/api/product/strategies/validate", {}),
+        ("get", "/api/product/paper/accounts/paper_account_1", None),
+        ("get", "/api/product/paper/pools/stock_pool_1", None),
+    ],
+)
+def test_product_business_proxy_routes_forward_owner_context(
+    monkeypatch,
+    method: str,
+    path: str,
+    payload: dict[str, object] | None,
+) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {}
+
+    captured: dict[str, object] = {}
+
+    def fake_request(request_method: str, url: str, **kwargs) -> FakeResponse:
+        captured["method"] = request_method
+        captured["url"] = url
+        captured["headers"] = kwargs.get("headers", {})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    response = client.request(
+        method,
+        path,
+        headers={"Authorization": "Bearer product-test-token"},
+        json=payload,
+    )
+
+    assert response.status_code < 400, response.text
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+    assert captured["headers"]["x-byq-actor-principal"] == "product-user"

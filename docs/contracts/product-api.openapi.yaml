@@ -1,157 +1,217 @@
 openapi: 3.0.3
 info:
-  title: BeyondQuant Product API
-  version: 0.1.0
-  description: Browser-facing BYQ Product API/BFF. This contract never exposes MCP, DSH, provider, or raw Backend storage details.
+  title: BeyondQuant Browser API
+  version: 0.2.0
+  description: >-
+    Browser-facing Gateway contract. Normal browser authentication uses the
+    HttpOnly byq_session cookie. The bearer scheme is internal/bootstrap
+    compatibility only. No Backend, MCP, DSH, provider, credential, or raw
+    storage contract is exposed.
 servers:
-  - url: /api/product
+  - url: /
 security:
-  - bearerAuth: []
+  - sessionCookie: []
+  - bearerBootstrap: []
+
+x-ok-responses: &okResponses
+  "200": {description: Successful normalized BYQ response.}
+x-created-responses: &createdResponses
+  "201": {description: Resource created.}
+x-accepted-responses: &acceptedResponses
+  "202": {description: Request accepted.}
+x-no-content-responses: &noContentResponses
+  "200": {description: Resource released or deleted.}
+
 paths:
-  /health:
-    get:
-      summary: Return Product API health.
-      responses:
-        "200":
-          description: Healthy product API.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Health"
-  /dashboard:
-    get:
-      summary: Return a bounded dashboard projection.
-      responses:
-        "200":
-          description: Dashboard projection.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Dashboard"
-  /data/status:
-    get:
-      summary: Return data provider and migration status without credentials.
-      responses:
-        "200":
-          description: Data/migration status projection.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DataStatus"
-  /agents/sessions:
-    get:
-      summary: List owner-scoped product agent sessions.
-      parameters:
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Offset"
-      responses:
-        "200":
-          description: Session list.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AgentSessionList"
-  /workflows/{session_id}/events:
+  /api/auth/login:
+    post: {summary: Create a durable browser session., security: [], responses: *okResponses}
+  /api/auth/logout:
+    post: {summary: Revoke the current browser session., responses: *okResponses}
+  /api/auth/me:
+    get: {summary: Resolve the current browser principal and role., responses: *okResponses}
+
+  /api/product/health:
+    get: {summary: Return Product API health., responses: *okResponses}
+  /api/product/auth/login:
+    post: {summary: Compatibility login under the Product API prefix., security: [], responses: *okResponses}
+  /api/product/auth/logout:
+    post: {summary: Compatibility logout under the Product API prefix., responses: *okResponses}
+  /api/product/auth/me:
+    get: {summary: Resolve the current Product API principal., responses: *okResponses}
+  /api/product/dashboard:
+    get: {summary: Return the bounded dashboard projection., responses: *okResponses}
+  /api/product/data/status:
+    get: {summary: Return provider and migration status without credentials., responses: *okResponses}
+  /api/product/data-center/status:
+    get: {summary: Return the browser-safe data-center capability projection., responses: *okResponses}
+  /api/product/operations/status:
+    get: {summary: Return the browser-safe operations projection., responses: *okResponses}
+
+  /api/product/research/{entity_type}/{entity_id}:
+    parameters:
+      - $ref: "#/components/parameters/EntityType"
+      - $ref: "#/components/parameters/EntityId"
+    get: {summary: Get one owner-scoped research entity., responses: *okResponses}
+  /api/product/research/tasks:
+    get: {summary: List owner-scoped research tasks., responses: *okResponses}
+  /api/product/research/experiments:
+    get: {summary: List owner-scoped experiments., responses: *okResponses}
+  /api/product/research/artifacts:
+    get: {summary: List owner-scoped artifacts., responses: *okResponses}
+  /api/product/factors:
+    get: {summary: List owner-scoped factor results., responses: *okResponses}
+  /api/product/signal-snapshots:
+    get: {summary: List owner-scoped signal snapshots., responses: *okResponses}
+
+  /api/product/backtests:
+    get: {summary: List owner-scoped backtest jobs., responses: *okResponses}
+    post: {summary: Submit an owner-scoped backtest job., responses: *acceptedResponses}
+  /api/product/backtests/options:
+    get: {summary: List runnable owner-scoped backtest options., responses: *okResponses}
+  /api/product/backtests/{job_id}:
+    parameters: [{$ref: "#/components/parameters/JobId"}]
+    get: {summary: Get one owner-scoped backtest job., responses: *okResponses}
+    delete: {summary: Delete one owner-scoped backtest job., responses: *noContentResponses}
+  /api/product/backtests/{job_id}/result:
+    parameters: [{$ref: "#/components/parameters/JobId"}]
+    get: {summary: Get an immutable owner-scoped backtest result., responses: *okResponses}
+  /api/product/backtests/{job_id}/run:
+    parameters: [{$ref: "#/components/parameters/JobId"}]
+    post: {summary: Run one owner-scoped backtest job., responses: *okResponses}
+  /api/product/backtests/{job_id}/cancel:
+    parameters: [{$ref: "#/components/parameters/JobId"}]
+    post: {summary: Cancel one owner-scoped backtest job., responses: *okResponses}
+
+  /api/product/strategies:
+    get: {summary: List owner-scoped strategy artifacts., responses: *okResponses}
+  /api/product/strategies/drafts:
+    post: {summary: Save an owner-scoped strategy draft., responses: *createdResponses}
+  /api/product/strategies/drafts/{artifact_id}:
+    parameters: [{$ref: "#/components/parameters/ArtifactId"}]
+    delete: {summary: Supersede an owner-scoped strategy draft., responses: *noContentResponses}
+  /api/product/strategies/validate:
+    post: {summary: Validate an owner-scoped strategy draft., responses: *createdResponses}
+  /api/product/strategies/versions:
+    post: {summary: Create an immutable owner-scoped strategy version., responses: *createdResponses}
+  /api/product/strategies/versions/{artifact_id}/export:
+    parameters: [{$ref: "#/components/parameters/ArtifactId"}]
+    get: {summary: Export one owner-scoped strategy version., responses: *okResponses}
+  /api/product/strategies/{strategy_id}/versions:
+    parameters: [{$ref: "#/components/parameters/StrategyId"}]
+    get: {summary: List owner-scoped strategy version history., responses: *okResponses}
+  /api/product/strategies/{strategy_id}/backtest-count:
+    parameters: [{$ref: "#/components/parameters/StrategyId"}]
+    get: {summary: Return owner-scoped strategy backtest counts., responses: *okResponses}
+
+  /api/product/approvals:
+    get: {summary: List owner-scoped approvals., responses: *okResponses}
+  /api/product/approvals/{approval_id}:
+    parameters: [{$ref: "#/components/parameters/ApprovalId"}]
+    get: {summary: Get one owner-scoped approval., responses: *okResponses}
+  /api/product/approvals/{approval_id}/decision:
+    parameters: [{$ref: "#/components/parameters/ApprovalId"}]
+    post: {summary: Record an owner-scoped approval decision., responses: *okResponses}
+
+  /api/product/profile:
+    get: {summary: Return the authenticated user profile., responses: *okResponses}
+    put: {summary: Update the authenticated user profile., responses: *okResponses}
+  /api/product/settings/status:
+    get: {summary: Return user settings capability status., responses: *okResponses}
+  /api/product/settings/models:
+    get: {summary: Return a secret-free model capability projection., responses: *okResponses}
+  /api/product/settings/agent-policy:
+    get: {summary: Return platform and personal agent policy., responses: *okResponses}
+    put: {summary: Update personal agent policy., responses: *okResponses}
+  /api/product/settings/assets:
+    get: {summary: Return owner-scoped workspace assets., responses: *okResponses}
+  /api/product/settings/assets/export:
+    get: {summary: Export a secret-free owner-scoped asset bundle., responses: *okResponses}
+  /api/product/settings/assets/import:
+    post: {summary: Import a validated owner-scoped asset bundle., responses: *okResponses}
+
+  /api/product/admin/users:
+    get: {summary: List users as an authenticated administrator., responses: *okResponses}
+  /api/product/admin/users/{user_id}/disable:
+    parameters: [{$ref: "#/components/parameters/UserId"}]
+    post: {summary: Disable one user as an authenticated administrator., responses: *okResponses}
+
+  /api/product/paper/accounts:
+    get: {summary: List owner-scoped paper accounts., responses: *okResponses}
+    post: {summary: Create an owner-scoped paper account., responses: *createdResponses}
+  /api/product/paper/accounts/{account_id}:
+    parameters: [{$ref: "#/components/parameters/AccountId"}]
+    get: {summary: Get one owner-scoped paper account., responses: *okResponses}
+  /api/product/paper/pools:
+    get: {summary: List owner-scoped stock pools., responses: *okResponses}
+    post: {summary: Create an owner-scoped stock pool., responses: *createdResponses}
+  /api/product/paper/pools/{pool_id}:
+    parameters: [{$ref: "#/components/parameters/PoolId"}]
+    get: {summary: Get one owner-scoped stock pool., responses: *okResponses}
+  /api/product/paper/orders:
+    post: {summary: Submit an owner-scoped paper order., responses: *createdResponses}
+  /api/product/paper/accounts/{account_id}/orders:
+    parameters: [{$ref: "#/components/parameters/AccountId"}]
+    get: {summary: List owner-scoped paper orders., responses: *okResponses}
+  /api/product/paper/accounts/{account_id}/positions:
+    parameters: [{$ref: "#/components/parameters/AccountId"}]
+    get: {summary: List owner-scoped paper positions., responses: *okResponses}
+  /api/product/paper/accounts/{account_id}/fills:
+    parameters: [{$ref: "#/components/parameters/AccountId"}]
+    get: {summary: List owner-scoped paper fills., responses: *okResponses}
+  /api/product/paper/accounts/{account_id}/ledger:
+    parameters: [{$ref: "#/components/parameters/AccountId"}]
+    get: {summary: List the owner-scoped paper ledger., responses: *okResponses}
+
+  /v1/agent/sessions:
+    get: {summary: List owner-scoped Product Agent sessions., responses: *okResponses}
+    post: {summary: Create an owner-scoped Product Agent session., responses: *createdResponses}
+  /v1/agent/sessions/{session_id}:
+    parameters: [{$ref: "#/components/parameters/SessionId"}]
+    delete: {summary: Release an owner-scoped Product Agent session., responses: *noContentResponses}
+  /v1/agent/sessions/{session_id}/turns:
+    parameters: [{$ref: "#/components/parameters/SessionId"}]
+    post: {summary: Submit a turn to an owner-scoped Product Agent session., responses: *acceptedResponses}
+  /v1/agent/sessions/{session_id}/resume:
+    parameters: [{$ref: "#/components/parameters/SessionId"}]
+    post: {summary: Resume an owner-scoped Product Agent session., responses: *okResponses}
+  /v1/agent/sessions/{session_id}/cancel:
+    parameters: [{$ref: "#/components/parameters/SessionId"}]
+    post: {summary: Cancel an owner-scoped Product Agent turn., responses: *okResponses}
+  /v1/workflows/{session_id}/events:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+      - $ref: "#/components/parameters/LastEventId"
     get:
       summary: Stream normalized BYQ WorkflowTrace events.
-      parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema: { type: string }
-        - name: Last-Event-ID
-          in: header
-          schema: { type: string }
       responses:
         "200":
-          description: BYQ WorkflowTrace SSE stream.
-  /research/tasks:
-    get:
-      summary: List owner-scoped ResearchTasks.
-      parameters:
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Offset"
-      responses:
-        "200":
-          description: ResearchTask list.
-  /research/experiments:
-    get:
-      summary: List owner-scoped Experiments.
-      parameters:
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Offset"
-      responses:
-        "200":
-          description: Experiment list.
-  /research/artifacts:
-    get:
-      summary: List owner-scoped Artifacts.
-      parameters:
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Offset"
-      responses:
-        "200":
-          description: Artifact list.
-  /factors:
-    get:
-      summary: List owner-scoped factor results.
-      parameters:
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Offset"
-      responses:
-        "200":
-          description: Factor list.
-  /strategies:
-    get:
-      summary: List owner-scoped strategy artifacts.
-      parameters:
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Offset"
-      responses:
-        "200":
-          description: Strategy list.
-  /backtests:
-    get:
-      summary: List owner-scoped backtest jobs and immutable result references.
-      parameters:
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Offset"
-      responses:
-        "200":
-          description: Backtest list.
-  /approvals:
-    get:
-      summary: List owner-scoped approval records.
-      parameters:
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Offset"
-      responses:
-        "200":
-          description: Approval list.
-  /audit:
-    get:
-      summary: List owner-scoped audit events.
-      parameters:
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Offset"
-      responses:
-        "200":
-          description: Audit event list.
+          description: Server-sent BYQ WorkflowTrace events.
+          content: {text/event-stream: {schema: {type: string}}}
+
 components:
   securitySchemes:
-    bearerAuth:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: byq_session
+      description: Normal durable browser session from username/password login.
+    bearerBootstrap:
       type: http
       scheme: bearer
       bearerFormat: opaque
+      description: Internal/bootstrap compatibility only; not normal browser login.
   parameters:
-    Limit:
-      name: limit
-      in: query
-      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
-    Offset:
-      name: offset
-      in: query
-      schema: { type: integer, minimum: 0, default: 0 }
+    EntityType: {name: entity_type, in: path, required: true, schema: {type: string, enum: [tasks, experiments, artifacts]}}
+    EntityId: {name: entity_id, in: path, required: true, schema: {type: string}}
+    JobId: {name: job_id, in: path, required: true, schema: {type: string}}
+    ArtifactId: {name: artifact_id, in: path, required: true, schema: {type: string}}
+    StrategyId: {name: strategy_id, in: path, required: true, schema: {type: string}}
+    ApprovalId: {name: approval_id, in: path, required: true, schema: {type: string}}
+    UserId: {name: user_id, in: path, required: true, schema: {type: string}}
+    AccountId: {name: account_id, in: path, required: true, schema: {type: string}}
+    PoolId: {name: pool_id, in: path, required: true, schema: {type: string}}
+    SessionId: {name: session_id, in: path, required: true, schema: {type: string}}
+    LastEventId: {name: Last-Event-ID, in: header, required: false, schema: {type: string}}
   schemas:
     Error:
       type: object
@@ -159,51 +219,8 @@ components:
       properties:
         error:
           type: object
-          required: [code, message, request_id]
+          required: [code, message]
           properties:
-            code: { type: string }
-            message: { type: string }
-            request_id: { type: string }
-    Health:
-      type: object
-      required: [status, version]
-      properties:
-        status: { type: string }
-        version: { type: string }
-    Dashboard:
-      type: object
-      required: [status, resources]
-      properties:
-        status: { type: string }
-        resources:
-          type: object
-          additionalProperties: { type: string }
-    DataStatus:
-      type: object
-      required: [status, provider, migration]
-      properties:
-        status: { type: string }
-        provider: { type: string }
-        migration: { type: string }
-    AgentSessionList:
-      type: object
-      required: [items, pagination]
-      properties:
-        items:
-          type: array
-          items:
-            type: object
-            required: [session_id, trace_id, status]
-            properties:
-              session_id: { type: string }
-              trace_id: { type: string }
-              status: { type: string }
-        pagination:
-          $ref: "#/components/schemas/Pagination"
-    Pagination:
-      type: object
-      required: [limit, offset, total]
-      properties:
-        limit: { type: integer }
-        offset: { type: integer }
-        total: { type: integer }
+            code: {type: string}
+            message: {type: string}
+            request_id: {type: string}

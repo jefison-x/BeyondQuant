@@ -265,7 +265,12 @@ check_smoke() {
     return
   fi
   if ./tests/smoke/run.sh; then ok "full smoke"; else bad "full smoke"; fi
-  if ( cd apps/frontend && npm run test:e2e:real ); then
+  if (
+    cd apps/frontend
+    [ -x node_modules/.bin/playwright ] || npm ci --no-audit --no-fund
+    npx playwright install chromium
+    npm run test:e2e:real
+  ); then
     ok "real Product API browser smoke"; else bad "real Product API browser smoke"; fi
   if [ "$NO_CLEANUP" -eq 0 ]; then
     docker compose down --rmi local -v >/dev/null 2>&1 || true
