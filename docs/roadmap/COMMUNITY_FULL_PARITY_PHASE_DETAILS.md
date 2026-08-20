@@ -1,6 +1,7 @@
 # Community Full Parity — Phase 33–40 Detailed Task Table
 
-Status: `PROPOSED` — complements `COMMUNITY_FULL_PARITY_PLAN.md` with
+Status: `ACTIVE` — complements `IMPLEMENTATION_PLAN.md` and
+`COMMUNITY_FULL_PARITY_PLAN.md` with
 per-phase Community comparison, current state, gaps, dependencies,
 classification, and estimates.
 
@@ -12,17 +13,15 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
 
 ## Phase 33 — Strategy workspace depth
 
+- Status: `COMPLETE` (2026-08-20, PR #85/#86).
+
 - Community: `StrategyView.vue` (1008 lines) — list/detail split, Python
   editor, templates/snippets, validate, save, delete, backtest counts,
   version history, read-only mode.
-- Current BYQ: `StrategyView.vue` (456 lines) — list (all/draft/version),
-  editor + template/snippet insertion, validate, create version, export,
-  approval banner.
-- Gaps:
-  1. Draft durable save/delete (no `strategy_draft` CRUD).
-  2. Version history list.
-  3. Backtest counts per strategy.
-  4. Detail split and read-only mode.
+- Delivered BYQ: list/detail, editor + template/snippet insertion, validation,
+  durable draft save/soft-supersede, immutable version/export, approval
+  banner, version history, real backtest counts, and read-only version mode.
+- Transferred follow-ups: D-0009–D-0012 in Phase 40.
 - Dependencies: Backend `strategy_draft` CRUD + version-history list +
   backtest-count projection; Product API routes; MCP
   `byq_strategy_draft_save`.
@@ -35,6 +34,9 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
 ---
 
 ## Phase 34 — Stock Pool depth
+
+- Status: `NEXT — BLOCKED AT DECISION GATE` until the Stock Pool
+  snapshot/version/lifecycle ADR is Accepted.
 
 - Community: `StockPoolView.vue` (925 lines) — catalog, type filters, create
   dialog with candidate filters, member editing, index constituents, custom/
@@ -51,8 +53,8 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   6. Weight editing UI.
   7. Activate/deactivate/delete.
   8. Mobile cards.
-- Dependencies: Backend pool member CRUD + weights + snapshots + catalog
-  type; Product API routes; MCP `byq_pool_*`.
+- Dependencies: Accepted Stock Pool ADR; Backend pool member CRUD + weights +
+  snapshots + catalog type; Product API routes; MCP `byq_pool_*`.
 - Classification: catalog/member/snapshot=`REFACTOR`; weights/filter=
   `PORT_UX`; create dialog=`PORT_COMPONENT`.
 - Estimate: 14 person-days (XL).

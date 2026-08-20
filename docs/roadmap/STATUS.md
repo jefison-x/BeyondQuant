@@ -4,7 +4,8 @@ This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
 - Current completed phase: **Phase 33**
-- Next phase: **Phase 34 — Stock Pool depth** (see
+- Next phase: **Phase 34 — Stock Pool depth decision gate, then
+  implementation** (see
   `docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md` and
   `docs/roadmap/COMMUNITY_FULL_PARITY_PHASE_DETAILS.md`)
 - Accepted runtime ADR: **ADR-0003**
@@ -22,7 +23,12 @@ Codex session does not infer project state from commit history.
 - Accepted pre-release auto-merge ADR: **ADR-0015**
 - Accepted PostgreSQL single-domain-store ADR: **ADR-0016**
 - Accepted signal-snapshot ADR: **ADR-0017**
-- Open architecture decisions: none for the Phase 30 release-candidate boundary;
+- Open architecture decisions: the Phase 34 Stock Pool snapshot/version/
+  lifecycle contract must be proposed and Accepted before implementation;
+  ADR-0018 and ADR-0019 remain Proposed and block their dependent future
+  phases.
+
+  Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
   is Accepted.
   [ADR-0004](../architecture/adr/ADR-0004-phase7-product-authentication.md)
@@ -36,21 +42,24 @@ Codex session does not infer project state from commit history.
   [ADR-0011](../architecture/adr/ADR-0011-phase15-engineering-plane.md) is Accepted.
   [ADR-0012](../architecture/adr/ADR-0012-phase16-product-api-bff.md) is Accepted.
   [ADR-0013](../architecture/adr/ADR-0013-phase16-durable-market-data-storage.md) is Accepted.
+  [ADR-0014](../architecture/adr/ADR-0014-phase24-durable-user-auth.md) is
+  Accepted.
   [ADR-0015](../architecture/adr/ADR-0015-phase-release-automerge.md) is
   Accepted until the BeyondQuant Next v1.0 release boundary.
   [ADR-0016](../architecture/adr/ADR-0016-postgresql-single-domain-store.md)
   is Accepted.
   [ADR-0017](../architecture/adr/ADR-0017-signal-snapshot-artifact.md)
   is Accepted.
-- Phase 23 acceptance evidence covers the Community Feature Parity Matrix,
-  golden journey E2E smoke, release-candidate status, and explicit DROP/DEFER
-  classifications for remaining hardening work.
+- Phase 23 acceptance evidence established a Product Skeleton browser and
+  parity baseline. Its mocked Playwright navigation smoke is not evidence of
+  a real Product API golden journey and is not a v1.0 RC gate.
 - Phase 23 produced a Product Skeleton release-parity baseline. It did not
-  establish final Community feature parity. Remaining product-depth work is
-  tracked in Phases 24-30.
-- Phase 30 acceptance evidence covers the V2 parity matrix with no `FAIL`
-  items, a golden journey covering core product pages, and BYQ artifact/
-  approval list surfaces without raw DSH or backend exposure.
+  establish final Community feature parity. Phases 24–31 established the
+  durable product/storage baseline; remaining product-depth work is tracked
+  in Phases 32–40.
+- Phase 30 produced the initial V2 parity matrix and browser surfaces, but its
+  original RC conclusion was superseded by the gap audit and Phases 32–40.
+  Real-Product-API, no-mock, multi-user golden-journey acceptance remains open.
 - Phase 31 (ADR-0016) completed: all eight domain stores run on PostgreSQL via
   `services/backend/app/db.py` (`BYQ_DATABASE_URL`); SQLite runtime code paths
   and `BYQ_DOMAIN_DB_PATH` are removed; the logical SQLite -> PostgreSQL
@@ -67,9 +76,10 @@ Codex session does not infer project state from commit history.
   公司行动/每日持仓&收益/日志输出/策略快照/输入清单); delete/compare/mobile
   work; Chrome DevTools MCP evidence recorded for both result depth and the
   wizard. D-0001 (create wizard) is CLOSED in the Deferred Items Registry.
-  The end-to-end strategy-to-backtest journey remains D-0002 (signal
-  producer) pending a dedicated producer ADR; until then snapshots come from
-  the keyless fixture/import path.
+  The end-to-end strategy-to-backtest journey remains D-0002 (transferred to
+  Phase 40) pending a dedicated producer ADR; until then snapshots come from
+  the keyless fixture/import path. Optional result-object sweep D-0003 was
+  also transferred to Phase 40 and remains observation-triggered.
 - Phase 33 (Strategy workspace depth) completed: durable `strategy_draft`
   save (tolerant of intermediate edits) and owner-scoped soft-supersede
   delete, per-strategy version history, and real backtest counts are exposed
@@ -78,23 +88,27 @@ Codex session does not infer project state from commit history.
   MCP evidence are recorded. Follow-up hardening/scope items are registered
   as D-0009 (superseded-draft visibility), D-0010 (version-history projection
   bound), D-0011 (StrategyView component tests), and D-0012 (Community deep
-  profile fields) in the Deferred Items Registry; the end-to-end
+  profile fields) in the Deferred Items Registry; all four are assigned to
+  Phase 40 rather than the completed Phase 33. The end-to-end
   strategy-to-backtest journey remains D-0002 (signal producer).
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence, but
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` records substantial remaining
   `PARTIAL`/`MISSING` product-depth workflows. The v1.0 RC review gate is not
   yet satisfied.
-- Product-depth phases delivered: Backtest result workspace, Strategy, Stock
-  Pool, Paper Trading, Agent workbench, personal Agent Policy, and Data
-  Center. Remaining deferred items (signal producer for end-to-end
+- Product-depth foundations delivered: Backtest result workspace, Strategy,
+  Stock Pool, Paper Trading, Agent workbench, personal Agent Policy, and Data
+  Center. These surfaces are not all parity-complete. Remaining items (signal
+  producer for end-to-end
   strategy-to-backtest, model credential CRUD, asset re-import, agent policy
   presets/rule CRUD, operations workbenches, data sync jobs, paper
-  snapshots/settlement) are recorded in the V2 parity matrix for the RC
-  review.
+  snapshots/settlement) are recorded in the V2 parity matrix, Deferred Items
+  Registry, and Phases 34–40. They must close before the RC review gate.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active architecture blockers: **none**
+- Active architecture blockers: **Phase 34 implementation is blocked pending
+  an Accepted Stock Pool snapshot/version/lifecycle decision.** ADR-0018 and
+  ADR-0019 are later-phase blockers, not Phase 34 implementation authority.
 
 Git SHA is not phase state. The current clean baseline must always be derived
 from `git fetch origin` followed by `git rev-parse origin/main`; this file must

@@ -1,11 +1,11 @@
 # Community Full Parity Plan (Phase 32–40)
 
-Status: `PROPOSED` (draft plan + ADR-0017/0018/0019 awaiting review)
+Status: `ACTIVE` (ADR-0017 Accepted; ADR-0018/0019 remain Proposed)
 
-This plan restores the remaining Community product-depth workflows that the
-Phase 17–31 contract-first skeleton deferred. It is the execution source of
-truth for the next parity batch; `docs/roadmap/STATUS.md` is updated only
-after each phase is merged through the human merge gate.
+This plan describes the remaining Community product-depth workflows that the
+Phase 17–31 contract-first skeleton deferred. `IMPLEMENTATION_PLAN.md` is the
+normative phase plan, `STATUS.md` identifies the current/next phase, and this
+document supplies the parity-batch overview and dependency map.
 
 ## Source of truth
 
@@ -16,14 +16,16 @@ after each phase is merged through the human merge gate.
 - Gap inventory: `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` and
   `COMMUNITY_FEATURE_PARITY_MATRIX_V2.md`.
 
-## Locked decisions (2026-08-18)
+## Accepted and planned decisions (2026-08-20)
 
 1. Backtest create-wizard signal source = **pre-computed `signal_snapshot`
    artifact** (ADR-0017). No strategy-source execution in this batch.
-2. Agent workbench cards = **minimal BYQ card contract + curated extraction
-   only** (ADR-0018). Raw DSH payloads never cross the Gateway.
-3. Credentials = **PostgreSQL encrypted store** (ADR-0019). System and user
-   scopes, masked read, write audit.
+2. Proposed: Agent workbench cards = **minimal BYQ card contract + curated
+   extraction only** (ADR-0018). This is not implementation authority until
+   the ADR is Accepted; raw DSH payloads never cross the Gateway.
+3. Proposed: Credentials = **PostgreSQL encrypted store** (ADR-0019). This is
+   not implementation authority until the ADR is Accepted; planned semantics
+   are system/user scopes, masked read, and write audit.
 4. Cache management = **PostgreSQL market-data cache status only**; Redis is
    not added in this batch.
 5. Execution budget = **DSH model-call token accounting**.
@@ -49,9 +51,11 @@ after each phase is merged through the human merge gate.
 - Community: `BacktestView.vue` (2730 lines) create wizard, compare, 5 tabs
   (overview / trades / daily positions & returns / logs / strategy snapshot),
   delete, rerun, mobile cards.
-- Current: list/filter/select/run/cancel/compare + real equity/trades.
-- Gap: create wizard, logs, daily positions & returns, snapshot, delete,
-  mobile cards.
+- Delivered: list/filter/select/run/cancel/delete/compare, wizard, real
+  equity/trades, logs, daily positions/returns, strategy snapshot, input
+  manifest, and mobile cards.
+- Remaining cross-phase gap: strategy source → `signal_snapshot` producer
+  (D-0002), transferred to Phase 40 pending a dedicated Accepted ADR.
 - Dependency: ADR-0017 (wizard selects a `signal_snapshot`).
 - Classification: engine=`REPLACE`, wizard/compare=`PORT_UX`, result
   object=`REFACTOR`.
@@ -60,19 +64,27 @@ after each phase is merged through the human merge gate.
   snapshot; all 5 tabs real; delete/compare/mobile work; Chrome evidence.
 
 ### Phase 33 — Strategy workspace depth
+- Status: **COMPLETE (2026-08-20)** — durable draft save/soft-supersede,
+  version history, real backtest counts, read-only detail, and Chrome evidence
+  (PR #85/#86).
 - Community: `StrategyView.vue` (1008 lines) editor, templates/snippets,
   validate, save, delete, backtest counts, version history.
-- Current: editor + templates/snippets + validate + version + export +
-  approval banner.
-- Gap: draft save/delete, version history, backtest counts, read-only detail.
+- Delivered: editor/templates/snippets, validation, durable draft save/delete,
+  immutable version/export, approval banner, version history, backtest counts,
+  and read-only version detail.
+- Remaining hardening/parity decisions are transferred to Phase 40 as
+  D-0009–D-0012.
 - Estimate: 10 person-days (L).
 
 ### Phase 34 — Stock Pool depth
+- Status: **NEXT — BLOCKED AT DECISION GATE** until the Stock Pool
+  snapshot/version/lifecycle ADR is Accepted.
 - Community: `StockPoolView.vue` (925 lines) catalog, member editing, index
   constituents, filters, weights, snapshots, activation/delete, mobile.
 - Current: create + list + type filter.
 - Gap: catalog, member editing, constituents, filters, weights, snapshots,
   activation/delete, mobile cards.
+- Dependency: Accepted Stock Pool snapshot/version/lifecycle ADR.
 - Estimate: 14 person-days (XL).
 
 ### Phase 35 — Paper Trading depth
@@ -144,6 +156,10 @@ Phase 37 (my space)  ── needs ADR-0019 + Phase 40
 Phase 38 (operations) ── needs ADR-0019 + Phase 40
 Phase 39 (data center) ── needs ADR-0019
 ```
+
+“Independent” means independent of ADR-0018/0019 and Phase 40 components. It
+does not waive the Phase 34 Stock Pool snapshot/version/lifecycle decision
+gate recorded in `STATUS.md`.
 
 ## Total estimate
 

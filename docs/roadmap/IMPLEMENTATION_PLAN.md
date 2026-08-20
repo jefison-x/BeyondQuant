@@ -1169,3 +1169,79 @@ All backend tests run against the PostgreSQL test database; no SQLite code
 path remains; public store method shapes are unchanged; data migration is
 idempotent and verified; backup/restore drill passes; compose/docs are
 updated.
+
+## Phase 32–40 — Community Product-Depth Completion
+
+These phases are the active continuation of the Product Completion Program.
+`STATUS.md` selects exactly one next phase. The per-surface checklist in
+`COMMUNITY_FULL_PARITY_PHASE_DETAILS.md` and the dependencies in
+`COMMUNITY_FULL_PARITY_PLAN.md` refine this normative scope but do not replace
+this plan or authorize work past the current phase.
+
+Every phase uses one isolated worktree/branch/PR, real Product API flows,
+contract and owner-isolation tests, Chrome DevTools MCP evidence, and a
+Community feature checklist. Mock-only Playwright navigation is useful UI
+regression coverage but is not product acceptance evidence.
+
+### Phase 32 — Backtest workspace depth (`COMPLETE`)
+
+Delivered the immutable `signal_snapshot` submit path, create wizard, result
+workspace depth, compare/delete/mobile flows, and browser evidence. The
+strategy-source → `signal_snapshot` producer was deliberately excluded by
+ADR-0017 and transferred to D-0002 / Phase 40 pending a dedicated ADR.
+
+### Phase 33 — Strategy workspace depth (`COMPLETE`)
+
+Delivered durable strategy drafts, soft-supersede delete, immutable versions,
+version history, backtest counts, read-only version detail, Product API/MCP
+contracts, and browser evidence. D-0009–D-0012 are explicitly assigned to
+Phase 40 and do not remain attached to the completed phase.
+
+### Phase 34 — Stock Pool depth (`NEXT — DECISION GATE`)
+
+Before implementation, propose and accept the BYQ Stock Pool contract for
+mutable pool identity, immutable membership snapshots, version/fingerprint,
+custom/index/dynamic provenance, weight validation, activation/deactivation,
+delete semantics, and references from Paper Trading/research/backtest.
+
+After acceptance, implement owner-scoped catalog/detail, member and weight
+editing through new snapshots, index constituents, filter conditions,
+historical snapshots, lifecycle actions, mobile cards, Product API routes,
+and MCP `byq_pool_*` capabilities. All five detail tabs must use persisted
+data; no browser-generated snapshot or direct Backend/MCP call is permitted.
+
+### Phase 35 — Paper Trading depth (`PLANNED`)
+
+Add persisted snapshots, manual settlement, order detail, BYQ asset-bundle
+import/export, explicit risk controls, and complete ledger wiring without live
+broker integration or conflating Paper Trading with Backtest.
+
+### Phase 36 — Agent workbench depth (`BLOCKED`)
+
+Implement curated WorkflowTrace cards, assistant drawer, thinking and
+approval panels, and actionable strategy/stock/optimization projections only
+after ADR-0018 is Accepted and required shared components are available.
+
+### Phase 37 — My Space depth (`BLOCKED`)
+
+Implement audited model credential CRUD/binding, asset re-import, and Agent
+Policy preset/rule CRUD only after ADR-0019 is Accepted. Secrets remain
+write-only/masked and never enter browser responses or traces.
+
+### Phase 38 — Operations workbenches (`BLOCKED`)
+
+Replace placeholder operations routes with real RBAC/audit-protected
+projections and bounded actions after ADR-0019 and shared-component gates.
+PostgreSQL market-cache status replaces Community Redis assumptions.
+
+### Phase 39 — Data Center / Data Sync depth (`BLOCKED`)
+
+Implement Tushare-only source configuration, connection test, sync jobs, and
+coverage audit after ADR-0019. BaoStock and AKShare remain DROP.
+
+### Phase 40 — Shared components and final parity closure (`PLANNED`)
+
+Finish reusable product components and resolve every transferred D-item,
+including the signal producer decision. Re-run the parity matrix with no
+unexplained PARTIAL/MISSING item and execute a real-Product-API, no-mock,
+multi-user golden journey before reopening the v1.0 RC gate.

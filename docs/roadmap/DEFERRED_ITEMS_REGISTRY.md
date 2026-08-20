@@ -1,6 +1,7 @@
 # BeyondQuant Deferred Items Registry (D-Items)
 
-Status: **Proposed** — companion to `COMMUNITY_FULL_PARITY_PLAN.md` (Phase 32–40).
+Status: **Active** — companion to `IMPLEMENTATION_PLAN.md` and
+`COMMUNITY_FULL_PARITY_PLAN.md` (Phase 32–40).
 
 This registry is the single authoritative inventory of work that was **explicitly
 skipped, blocked, or conditionally deferred** during a phase, so it can be
@@ -66,7 +67,8 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
   backend contract tests; full local CI green; self-hosted PR CI green.
 
 ### D-0002 — Signal producer (strategy source → signal_snapshot)
-- Phase: 32 (end-to-end gap, deliberately out of scope of ADR-0017 decision 3)
+- Phase: 40 (transferred from Phase 32 during Phase 32 closeout; deliberately
+  out of scope of ADR-0017 decision 3)
 - Status: `BLOCKED`
 - Precondition: a dedicated signal-producer ADR (sandbox + determinism +
   provider access) is planned and accepted. Until then only the keyless
@@ -81,10 +83,10 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
   user end-to-end strategy→backtest journey.
 
 ### D-0003 — Backtest result-object GC periodic sweep (optional hardening)
-- Phase: 32 (follow-up)
+- Phase: 40 (transferred from Phase 32 as optional hardening)
 - Status: `BLOCKED`
-- Precondition: Phase 32 result-object GC (PR #77) merged; observed orphan
-  accumulation in `BYQ_BACKTEST_OBJECT_ROOT`.
+- Precondition: measured orphan accumulation in `BYQ_BACKTEST_OBJECT_ROOT`
+  demonstrates that the Phase 32 best-effort delete (PR #77) is insufficient.
 - Content: a periodic sweep that removes result objects not referenced by any
   `backtest_jobs.result_reference_json` (best-effort delete can leave orphans
   after concurrent deletes or GC failures).
@@ -92,7 +94,7 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
   referenced/tampered object; runs idempotently; covered by tests.
 
 ### D-0009 — Phase 33 strategy draft supersede visibility (optional hardening)
-- Phase: 33
+- Phase: 40 (transferred from Phase 33 during Phase 33 closeout)
 - Status: `READY`
 - Precondition: none (follow-up hardening recorded in PR #85).
 - Content: the strategy list still renders soft-superseded (deleted) drafts
@@ -106,7 +108,7 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
   row remaining in the list after 删除草稿; PR #85 Known limitations.
 
 ### D-0010 — Phase 33 version-history projection bound (hardening)
-- Phase: 33
+- Phase: 40 (transferred from Phase 33 during Phase 33 closeout)
 - Status: `READY`
 - Precondition: none (follow-up hardening recorded in PR #85).
 - Content: `/v1/research/strategies/{id}/versions` and
@@ -119,7 +121,7 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
   contract tests cover the projection boundary.
 
 ### D-0011 — Phase 33 StrategyView component-level tests (quality follow-up)
-- Phase: 33
+- Phase: 40 (transferred from Phase 33 during Phase 33 closeout)
 - Status: `READY`
 - Precondition: none (quality gap recorded in PR #85).
 - Content: StrategyView has API-client, backend, Gateway, and MCP tests plus

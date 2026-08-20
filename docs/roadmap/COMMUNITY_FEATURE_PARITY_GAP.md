@@ -1,10 +1,10 @@
 # Community Feature Parity Gap Audit
 
-This document re-compares the current BeyondQuant frontend with the read-only
-Community reference after the Phase 7/8 release work. It exists because the
-previous V2 matrix marked the surface as release-parity complete while many
-Community product-depth features are still missing. The current state is an
-honest contract-first skeleton, not a final Community feature parity release.
+Status: current after Phase 33. This document compares the BeyondQuant
+frontend with the read-only Community reference and tracks the product-depth
+work that remains. It exists because the original V2 matrix overstated release
+parity. The current state is a working contract-first product with incomplete
+parity, not a v1.0 release candidate.
 
 ## Method
 
@@ -29,18 +29,19 @@ The current BYQ frontend restores the main information architecture and basic
 list/status projections, but it does not yet restore most Community product
 workflows. The largest gaps are:
 
-1. Agent workbench is a trace viewer, not the Community conversation/tool/
-   approval/artifact orchestration surface.
-2. Strategy is list/validate/export only; the full draft editor, templates,
-   version history, and approval flow are not restored.
-3. Backtest is list/metric/empty-chart only; create wizard, comparison,
-   trades, daily positions/returns, logs, and strategy snapshot are missing.
-4. Stock Pool is create/list only; catalog types, member editing, index
-   constituents, filters, weights, and historical snapshots are missing.
-5. Paper Trading is create/order/positions/fills only; order dialog,
-   import/export, ledger, snapshots, settlement, and risk controls are missing.
-6. Profile/Models/Assets/Agent Policy are reduced settings status pages, not
-   the Community configuration and import/export workflows.
+1. Agent workbench has real sessions, WorkflowTrace, approvals and context,
+   but structured cards, assistant drawer, and deeper tool visualization are
+   missing.
+2. Strategy workspace depth is delivered; remaining items are bounded Phase
+   40 hardening/profile-field decisions (D-0009–D-0012).
+3. Backtest result/wizard depth is delivered, but the strategy-source →
+   `signal_snapshot` producer is blocked on a dedicated ADR (D-0002).
+4. Stock Pool has create/list/catalog basics but lacks persisted member edits,
+   lifecycle actions, index/filter semantics, and historical snapshots.
+5. Paper Trading has accounts/orders/positions/fills/ledger but lacks order
+   detail, import/export, snapshots, settlement, and explicit risk controls.
+6. Models/Assets/Agent Policy remain reduced compared with Community model
+   management, re-import, preset, and rule workflows.
 7. Operations pages are mostly status/admin-user views; database, source,
    cache, model, agent, budget, runtime, graph, access-control, data-sync, and
    maintenance workbenches are missing or placeholders.
@@ -61,9 +62,9 @@ Community: session history, streaming messages, thinking steps, strategy/
 stock-candidate/optimization cards, approval cards, backtest context, assistant
 drawer, and multi-step tool visualization.
 
-Current BYQ: `PARTIAL` normalized WorkflowTrace/approval/context panels; no
-Community conversation depth, assistant drawer, or generated strategy/stock
-card flows.
+Current BYQ: `PARTIAL` sessions, conversation composer, normalized
+WorkflowTrace/approval/context panels; no assistant drawer or generated
+strategy/stock/optimization card flows.
 
 ### Strategy
 
@@ -84,9 +85,11 @@ Community: task table/mobile cards, search/status filters, pagination, two-item
 comparison, create wizard, engine/benchmark/parameters, equity/trades/daily
 positions/logs/metrics, preflight, and strategy snapshot.
 
-Current BYQ: `PARTIAL` list/search/status + empty chart + raw projection; missing
-create wizard, comparison dialog, trades/positions/logs/snapshot, and real
-equity data.
+Current BYQ: `PARTIAL` only because the end-to-end producer remains missing.
+The result workspace, real equity/trades/positions/logs/snapshot/manifest,
+create wizard, comparison, delete, and mobile flows are delivered. A newly
+authored strategy cannot yet produce the immutable `signal_snapshot` selected
+by the wizard (D-0002).
 
 ### Stock Pool
 
@@ -94,17 +97,19 @@ Community: catalog, type filters, create dialog with candidate filters,
 final membership tab, custom/index/dynamic branches, historical snapshots,
 weights, and mobile cards.
 
-Current BYQ: `PARTIAL` create/list only; missing catalog types, member editing,
-index constituents, filters, weights, and snapshot history.
+Current BYQ: `PARTIAL` create/list with custom/index/dynamic type, description,
+initial membership/weights, type/search filters, detail, and mobile cards;
+missing persisted member/weight editing, lifecycle actions, index/filter
+semantics, and snapshot history.
 
 ### Paper Trading
 
 Community: account selection, overview/positions/orders/ledger/snapshots/
 strategy tracking/risk controls, and create/import/order/settlement dialogs.
 
-Current BYQ: `PARTIAL` create account, submit order, list accounts/orders/
-positions/fills; missing ledger, snapshots, settlement, risk controls, import/
-export, and order detail dialog.
+Current BYQ: `PARTIAL` create account, submit order, and list accounts/orders/
+positions/fills/derived ledger; missing snapshots, settlement, risk controls,
+import/export, and order detail dialog.
 
 ### Profile
 
@@ -133,8 +138,8 @@ and backtests are export-only and not re-importable.
 Community: personal approval preferences, presets, rule CRUD, and approval
 history.
 
-Current BYQ: `PARTIAL` platform policy + approval history; missing personal
-preferences, presets, and rule CRUD.
+Current BYQ: `PARTIAL` platform policy, durable personal approval preferences,
+and approval history; missing presets and rule CRUD.
 
 ### Operations and Administration
 
@@ -163,8 +168,8 @@ and navigation; missing the deeper Community component set.
 
 ## Next-step recommendation
 
-Do not treat the current branch as v1.0 RC. Re-open the Community parity work
-as a sequence of product-depth phases, one worktree/branch/Draft PR at a time,
-each with Chrome MCP evidence and Community feature-checklist evidence. The
-first priority should be the high-value quant workflows: Backtest, Strategy,
-Stock Pool, Paper Trading, then Agent workbench, then My Space/Operations.
+Do not treat the current branch as v1.0 RC. Continue the active product-depth
+sequence one worktree/branch/PR at a time, each with Chrome MCP evidence and a
+Community feature checklist. The next gate is the Phase 34 Stock Pool domain
+decision, followed by its persisted Product API workflow. Phase 35 then
+deepens Paper Trading; ADR/shared-component gates control Phases 36–40.
