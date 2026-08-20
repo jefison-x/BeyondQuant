@@ -317,6 +317,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             if int(phase.group(1)) <= completed_phase:
                 self.assertIn(item_status.group(1), {"CLOSED", "DROPPED"}, match.group(1))
 
+    def test_local_ci_isolated_mcp_contract_dependency(self) -> None:
+        local_ci = (ROOT / "scripts/ci/local-ci.sh").read_text()
+        self.assertIn('CI_PG_NET="byq-ci-network-$BYQ_CI_SCOPE"', local_ci)
+        self.assertIn("--network-alias backend", local_ci)
+        self.assertIn("ensure_ci_backend", local_ci)
+        self.assertNotIn("CI_PG_NET=byq_product", local_ci)
+        self.assertNotIn("npm run build >/tmp/byq-mcp-build.log 2>&1", local_ci)
+
     def test_runtime_adapter_owns_the_official_sdk_and_explicit_runtime(self) -> None:
         adapter = "\n".join(
             path.read_text()
