@@ -57,6 +57,17 @@ const STRATEGY_TEMPLATES = [
   },
 ];
 
+function strategyPayload() {
+  return {
+    strategy_id: "CustomStrategy",
+    name: "自定义策略",
+    category: "custom",
+    description: "用户自定义策略",
+    source_type: "python_script",
+    script: script.value,
+  };
+}
+
 const SIGNAL_SNIPPET =
   "# 信号约定: 1 买入, 0 持有, -1 卖出\n" +
   "# signals[symbol] = 1 if close > ma20 else -1\n";
@@ -199,13 +210,7 @@ async function saveDraft() {
     const result = await saveStrategyDraft(
       {
         task_id: taskId.value,
-        strategy: {
-          strategy_id: "CustomStrategy",
-          name: "自定义策略",
-          category: "custom",
-          source_type: "python_script",
-          script: script.value,
-        },
+        strategy: strategyPayload(),
         trace_id: `strategy-${crypto.randomUUID()}`,
         idempotency_key: crypto.randomUUID(),
       },
@@ -267,13 +272,7 @@ async function validateDraft() {
     const result = await validateStrategy(
       {
         task_id: taskId.value,
-        strategy: {
-          strategy_id: "CustomStrategy",
-          name: "自定义策略",
-          category: "custom",
-          source_type: "python_script",
-          script: script.value,
-        },
+        strategy: strategyPayload(),
         trace_id: `strategy-${crypto.randomUUID()}`,
         idempotency_key: crypto.randomUUID(),
       },

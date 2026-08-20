@@ -278,3 +278,54 @@ Network evidence: `GET /backtests/options [200]`,
 
 This closes D-0001 (create wizard); the end-to-end strategy-to-backtest
 journey (signal producer) remains D-0002 pending a producer ADR.
+
+## Phase 33 strategy workspace depth review (2026-08-20)
+
+- Browser method: Chrome DevTools MCP (`chrome-devtools-mcp` 1.7.0, headless,
+  viewport 1440x900, isolated profile).
+- Topology: local `phase-33-strategy` compose rebuilt from
+  `codex/phase-33-strategy` (postgres/backend/mcp/runtime-adapter/gateway/
+  frontend all healthy); browser origin `http://127.0.0.1`.
+- Authenticated principal: `admin` (durable username/password login, no
+  Product Token).
+- Seed data (Backend keyless import path): one research task with two
+  validated `strategy_version` artifacts for `MomentumEvidence`, an approved
+  `strategy_approval`, one completed backtest job against version v1, and one
+  tolerant intermediate draft that fails static validation.
+
+Observed at `/strategy`:
+
+- Login used the real username/password form (用户名/密码/进入) and the durable
+  session reached the strategy workspace.
+- List pane renders the real owner-scoped artifacts (types 草稿/版本, status,
+  created time, filters 全部/草稿/版本, search).
+- Selecting a draft enables the editor (草稿可编辑) and the 保存草稿/删除草稿
+  buttons.
+- 保存草稿 persisted an intermediate script that fails static validation
+  (`import os`); toast 草稿已保存 appeared, the new `strategy_draft` artifact
+  appeared at the top of the list, and the workspace re-selected the saved
+  draft so it stays editable.
+- 删除草稿 soft-superseded the draft; toast 草稿已删除 appeared and the list
+  refreshed.
+- Selecting a version enters read-only mode (版本只读) and the detail pane
+  renders real statistics: 回测任务数 1, 版本数 2, 策略 ID MomentumEvidence,
+  plus the 版本历史 table with both immutable version rows
+  (artifact/version_id/status/created time) and the full version JSON
+  including `version_id`, `source_fingerprint`, `export`, and `lineage`.
+- The version-history and backtest-count projections were fetched through
+  `/api/product/strategies/MomentumEvidence/versions` and
+  `/api/product/strategies/MomentumEvidence/backtest-count`; Product API
+  returned 2 versions and 1 backtest job (v1).
+- Network boundary: the strategy page consumed only `/api/auth/me` and
+  `/api/product/*` routes (strategies, research tasks/artifacts, settings/
+  status, versions, backtest-count, entity detail). No `/mcp`, `/v1/*`
+  Backend, DSH, PostgreSQL, Redis, Tushare, or provider URL appeared.
+- Screenshots were captured for login home, strategy list, draft save, draft
+  delete, and version-history/stats views.
+
+Community comparison: `StrategyView.vue` (1008 lines) was inspected. The
+editor/templates/snippets map to `PORT_UX`; version history is `REFACTOR`
+(BYQ immutable artifact versions); delete is `REPLACE` (BYQ soft-supersede of
+immutable `strategy_draft` artifacts instead of Community row deletion);
+domain validation remains `REPLACE` (BYQ static validator, execution deferred
+to a future worker).
