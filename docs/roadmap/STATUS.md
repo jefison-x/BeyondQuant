@@ -3,8 +3,8 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 32**
-- Next phase: **Phase 33 — Strategy workspace depth** (see
+- Current completed phase: **Phase 33**
+- Next phase: **Phase 34 — Stock Pool depth** (see
   `docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md` and
   `docs/roadmap/COMMUNITY_FULL_PARITY_PHASE_DETAILS.md`)
 - Accepted runtime ADR: **ADR-0003**
@@ -70,6 +70,16 @@ Codex session does not infer project state from commit history.
   The end-to-end strategy-to-backtest journey remains D-0002 (signal
   producer) pending a dedicated producer ADR; until then snapshots come from
   the keyless fixture/import path.
+- Phase 33 (Strategy workspace depth) completed: durable `strategy_draft`
+  save (tolerant of intermediate edits) and owner-scoped soft-supersede
+  delete, per-strategy version history, and real backtest counts are exposed
+  through Backend/MCP/Product API and the strategy workspace UI (PR #85);
+  saved drafts stay editable, read-only version detail, and Chrome DevTools
+  MCP evidence are recorded. Follow-up hardening/scope items are registered
+  as D-0009 (superseded-draft visibility), D-0010 (version-history projection
+  bound), D-0011 (StrategyView component tests), and D-0012 (Community deep
+  profile fields) in the Deferred Items Registry; the end-to-end
+  strategy-to-backtest journey remains D-0002 (signal producer).
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence, but
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` records substantial remaining
