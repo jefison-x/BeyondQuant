@@ -389,6 +389,42 @@ def product_signal_snapshots(request: Request) -> dict[str, object]:
     return {"snapshots": []}
 
 
+@router.post("/strategies/drafts", status_code=201)
+def product_strategy_draft_save(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("POST", "/v1/research/strategies/drafts", payload)
+
+
+@router.delete("/strategies/drafts/{artifact_id}")
+def product_strategy_draft_delete(artifact_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "DELETE",
+        f"/v1/research/strategies/drafts/{artifact_id}",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/strategies/{strategy_id}/versions")
+def product_strategy_versions(strategy_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET",
+        f"/v1/research/strategies/{strategy_id}/versions",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/strategies/{strategy_id}/backtest-count")
+def product_strategy_backtest_count(strategy_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET",
+        f"/v1/research/strategies/{strategy_id}/backtest-count",
+        headers=_trusted_agent_headers(request),
+    )
+
+
 @router.post("/strategies/validate", status_code=201)
 def product_strategy_validate(request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)

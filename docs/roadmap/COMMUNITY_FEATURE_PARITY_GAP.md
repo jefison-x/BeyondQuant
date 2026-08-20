@@ -70,8 +70,13 @@ card flows.
 Community: list/detail split, Python editor, templates/snippets, validation,
 save, delete, backtest counts, version history.
 
-Current BYQ: `PARTIAL` list + textarea validation + export; missing full editor,
-templates/snippets, durable draft save/delete, and version-history UX.
+Current BYQ: `PARTIAL` list/editor split with templates/snippets, static
+validation, durable draft save/delete (immutable `strategy_draft` artifacts
+with soft-supersede), immutable version creation/export/approval banner,
+version-history list, and per-strategy backtest counts. Community deep profile
+fields (description/parameters/parameter_schema/status enable-disable) and the
+non-artifact strategy CRUD model are intentionally not replicated; BYQ keeps
+strategy code as auditable artifacts with validation/approval semantics.
 
 ### Backtest
 

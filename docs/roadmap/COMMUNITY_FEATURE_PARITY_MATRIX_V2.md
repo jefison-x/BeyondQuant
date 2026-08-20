@@ -13,7 +13,7 @@ Detailed gaps are in
 | Home/Dashboard | PARTIAL | Resource status and recent lists exist; Community card/quick-action depth is reduced. |
 | Agent | REDESIGNED_PASS | Sessions, conversation composer, WorkflowTrace, thinking panel, approval decisions, backtest context, and artifacts are real; assistant drawer remains partial. |
 | Research | PARTIAL | Entity/approval lookup exists; lineage DAG and full research workspace are missing. |
-| Strategy | REDESIGNED_PASS | Editor with templates/snippets, draft save/validate, immutable version creation, export, and approval banner are real. |
+| Strategy | REDESIGNED_PASS | Editor with templates/snippets, durable draft save/delete (soft-superseded immutable artifacts), static validation, immutable version creation, version-history list, per-strategy backtest counts, export, and approval banner are real. |
 | Backtest | REDESIGNED_PASS | Result workspace (filters, mobile cards, equity curve, trades, blocked trades, corporate actions, compare, run/cancel, delete, 8 detail tabs) is real; create wizard submits via an immutable signal_snapshot (ADR-0017), end-to-end verified in Chrome (job backtest_4f64f70c81c146c296874da762cb5d7a). |
 | Stock Pool | REDESIGNED_PASS | Catalog types, description, weights, membership detail, filters, and mobile cards are real; snapshot history remains partial. |
 | Paper Trading | REDESIGNED_PASS | Accounts, orders, positions, fills, and derived ledger are real; snapshots/settlement/import-export remain partial. |

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 
 import {
   fetchByqStrategyApprove,
+  fetchByqStrategyDraftDelete,
+  fetchByqStrategyDraftSave,
   fetchByqStrategyExport,
   fetchByqStrategyValidate,
   fetchByqStrategyVersionCreate,
@@ -27,6 +29,31 @@ const validated = await fetchByqStrategyValidate(
 );
 assert.equal(validated.isError, false);
 assert.match(validated.content[0].text, /"success":true/);
+
+const draftSaved = await fetchByqStrategyDraftSave(
+  "http://backend:8000",
+  { ...request, strategy: { strategy_id: "MomentumStrategy", name: "Momentum", category: "momentum", script: "class CustomStrategy: pass" } },
+  async (url, init) => {
+    assert.equal(url, "http://backend:8000/v1/research/strategies/drafts");
+    assert.equal(init?.method, "POST");
+    assert.doesNotMatch(String(init?.body), /password|secret|token/i);
+    return new Response(JSON.stringify({ artifact: { artifact_id: artifactId, kind: "strategy_draft", status: "draft" }, validation: { success: true } }), { status: 201 });
+  },
+);
+assert.equal(draftSaved.isError, false);
+assert.match(draftSaved.content[0].text, /strategy_draft/);
+
+const draftDeleted = await fetchByqStrategyDraftDelete(
+  "http://backend:8000",
+  artifactId,
+  async (url, init) => {
+    assert.equal(url, `http://backend:8000/v1/research/strategies/drafts/${artifactId}`);
+    assert.equal(init?.method, "DELETE");
+    return new Response(JSON.stringify({ artifact: { artifact_id: artifactId, kind: "strategy_draft", status: "superseded" } }), { status: 200 });
+  },
+);
+assert.equal(draftDeleted.isError, false);
+assert.match(draftDeleted.content[0].text, /superseded/);
 
 const version = await fetchByqStrategyVersionCreate(
   "http://backend:8000",
@@ -71,4 +98,4 @@ const invalid = await fetchByqStrategyValidate(
 assert.equal(invalid.isError, true);
 assert.match(invalid.content[0].text, /strategy_request_invalid/);
 
-console.log("Strategy MCP translation PASS: validation, version, approval, export and safe error mapping");
+console.log("Strategy MCP translation PASS: draft save/delete, validation, version, approval, export and safe error mapping");

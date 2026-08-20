@@ -1,7 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { createStrategyVersion, exportStrategyVersion, getResearchEntity, listStrategies, validateStrategy } from "@/api/quant";
+import {
+  createStrategyVersion,
+  deleteStrategyDraft,
+  exportStrategyVersion,
+  getResearchEntity,
+  getStrategyBacktestCount,
+  getStrategyVersions,
+  listStrategies,
+  saveStrategyDraft,
+  validateStrategy,
+} from "@/api/quant";
 import { listArtifacts, listTasks } from "@/api/research";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
@@ -21,6 +31,10 @@ const search = ref("");
 const script = ref("");
 const templateId = ref("");
 const lastDraftId = ref("");
+const saving = ref(false);
+const versionHistory = ref<Array<Record<string, unknown>>>([]);
+const backtestCount = ref(0);
+const versionCount = ref(0);
 
 const STRATEGY_TEMPLATES = [
   {
@@ -75,6 +89,12 @@ const approval = computed(() => {
 
 const isReadonly = computed(() => selected.value?.kind === "strategy_version");
 
+const selectedStrategyId = computed(() => {
+  const content = selected.value?.content as Record<string, unknown> | undefined;
+  const snapshot = content?.snapshot as Record<string, unknown> | undefined;
+  return String(snapshot?.strategy_id ?? "");
+});
+
 async function loadList() {
   loading.value = true;
   error.value = "";
@@ -116,8 +136,108 @@ async function select(row: Record<string, unknown>) {
   try {
     const id = String(row.artifact_id);
     detail.value = await getResearchEntity("artifacts", id, auth.token);
+    await refreshStrategyMeta();
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "读取失败";
+  }
+}
+
+async function refreshStrategyMeta() {
+  const sid = selectedStrategyId.value;
+  if (!sid) {
+    versionHistory.value = [];
+    backtestCount.value = 0;
+    versionCount.value = 0;
+    return;
+  }
+  try {
+    const [history, counts] = await Promise.all([
+      getStrategyVersions(sid, auth.token),
+      getStrategyBacktestCount(sid, auth.token),
+    ]);
+    versionHistory.value = (history.versions ?? []) as Array<Record<string, unknown>>;
+    backtestCount.value = Number(counts.backtest_count ?? 0);
+    versionCount.value = Number(counts.version_count ?? 0);
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "加载策略统计失败";
+  }
+}
+
+async function viewHistoryVersion(row: Record<string, unknown>) {
+  const found = artifacts.value.find((item) => item.artifact_id === row.artifact_id);
+  if (found) {
+    await select(found);
+    return;
+  }
+  try {
+    const id = String(row.artifact_id);
+    const entity = await getResearchEntity("artifacts", id, auth.token);
+    selected.value = entity;
+    detail.value = entity;
+    const content = entity.content as Record<string, unknown> | undefined;
+    const snapshot = content?.snapshot as Record<string, unknown> | undefined;
+    script.value = String(snapshot?.script ?? "");
+    lastDraftId.value = "";
+    await refreshStrategyMeta();
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "读取版本失败";
+  }
+}
+
+async function saveDraft() {
+  if (!script.value.trim()) {
+    ElMessage.warning("请先编写策略脚本");
+    return;
+  }
+  if (!taskId.value) {
+    ElMessage.warning("请选择研究任务");
+    return;
+  }
+  saving.value = true;
+  error.value = "";
+  try {
+    const result = await saveStrategyDraft(
+      {
+        task_id: taskId.value,
+        strategy: {
+          strategy_id: "CustomStrategy",
+          name: "自定义策略",
+          category: "custom",
+          source_type: "python_script",
+          script: script.value,
+        },
+        trace_id: `strategy-${crypto.randomUUID()}`,
+        idempotency_key: crypto.randomUUID(),
+      },
+      auth.token,
+    );
+    lastDraftId.value = String((result as { artifact?: { artifact_id?: string } }).artifact?.artifact_id ?? "");
+    ElMessage.success("草稿已保存");
+    await loadList();
+    const savedId = String((result as { artifact?: { artifact_id?: string } }).artifact?.artifact_id ?? "");
+    const savedArtifact = artifacts.value.find((item) => item.artifact_id === savedId);
+    if (savedArtifact) await select(savedArtifact);
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "保存草稿失败";
+    ElMessage.error(error.value);
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function removeDraft() {
+  if (!lastDraftId.value) {
+    ElMessage.warning("没有可删除的草稿");
+    return;
+  }
+  try {
+    await deleteStrategyDraft(lastDraftId.value, auth.token);
+    ElMessage.success("草稿已删除");
+    lastDraftId.value = "";
+    await loadList();
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "删除草稿失败";
+    ElMessage.error(error.value);
   }
 }
 
@@ -308,6 +428,12 @@ onMounted(loadList);
             <el-button type="primary" :loading="busy === 'validate'" :disabled="isReadonly" @click="validateDraft">
               验证并保存草稿
             </el-button>
+            <el-button :loading="saving" :disabled="isReadonly" @click="saveDraft">
+              保存草稿
+            </el-button>
+            <el-button type="danger" plain :disabled="isReadonly || !lastDraftId" @click="removeDraft">
+              删除草稿
+            </el-button>
             <el-button :loading="busy === 'version'" :disabled="isReadonly" @click="createVersion">
               创建不可变版本
             </el-button>
@@ -333,6 +459,22 @@ onMounted(loadList);
             </el-tag>
             <small>{{ approval.execution_authorized ? "已授权执行" : "未授权执行" }}</small>
           </div>
+          <div v-if="selectedStrategyId" class="strategy-stats">
+            <el-descriptions :column="3" size="small" border>
+              <el-descriptions-item label="回测任务数">{{ backtestCount }}</el-descriptions-item>
+              <el-descriptions-item label="版本数">{{ versionCount }}</el-descriptions-item>
+              <el-descriptions-item label="策略 ID">{{ selectedStrategyId }}</el-descriptions-item>
+            </el-descriptions>
+          </div>
+          <el-divider v-if="versionHistory.length" content-position="left">版本历史</el-divider>
+          <el-table v-if="versionHistory.length" :data="versionHistory" size="small" highlight-current-row @current-change="viewHistoryVersion">
+            <el-table-column prop="artifact_id" label="版本 Artifact" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="version_id" label="Version ID" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="status" label="状态" width="100" />
+            <el-table-column label="创建时间" min-width="150">
+              <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
+            </el-table-column>
+          </el-table>
           <p v-if="error" class="page-error">{{ error }}</p>
           <el-empty v-else-if="!detail" description="请选择左侧策略" />
           <pre v-else class="quant-result">{{ JSON.stringify(detail, null, 2) }}</pre>
@@ -391,6 +533,10 @@ onMounted(loadList);
 .task-select {
   margin-bottom: 0.6rem;
   width: 100%;
+}
+
+.strategy-stats {
+  margin-bottom: 0.75rem;
 }
 
 .approval-banner {

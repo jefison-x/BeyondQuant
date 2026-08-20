@@ -213,6 +213,63 @@ def test_product_strategy_version_create_proxy(monkeypatch) -> None:
     assert captured["payload"] == {"task_id": "task_1", "draft_artifact_id": "artifact_draft_1"}
 
 
+def test_product_strategy_draft_and_projection_routes_forward_owner_headers(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+
+    class FakeResponse:
+        def __init__(self, body: dict[str, object]) -> None:
+            self.body = body
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self.body
+
+    captured: dict[str, object] = {}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = kwargs.get("headers", {})
+        if url.endswith("/v1/research/strategies/drafts"):
+            return FakeResponse({"artifact": {"artifact_id": "artifact_draft_1", "kind": "strategy_draft"}})
+        if url.endswith("/strategies/MomentumStrategy/versions"):
+            return FakeResponse({"strategy_id": "MomentumStrategy", "versions": [{"artifact_id": "artifact_version_1"}]})
+        if url.endswith("/strategies/MomentumStrategy/backtest-count"):
+            return FakeResponse({"strategy_id": "MomentumStrategy", "version_count": 1, "backtest_count": 2})
+        return FakeResponse({"artifact": {"artifact_id": "artifact_draft_1", "status": "superseded"}})
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    auth = {"Authorization": "Bearer product-test-token"}
+
+    saved = client.post(
+        "/api/product/strategies/drafts",
+        headers=auth,
+        json={"task_id": "task_1", "strategy": {"strategy_id": "MomentumStrategy", "script": "class CustomStrategy: pass"}},
+    )
+    assert saved.status_code == 201
+    assert captured["url"].endswith("/v1/research/strategies/drafts")
+    assert saved.json()["artifact"]["kind"] == "strategy_draft"
+
+    deleted = client.delete("/api/product/strategies/drafts/artifact_draft_1", headers=auth)
+    assert deleted.status_code == 200
+    assert captured["url"].endswith("/v1/research/strategies/drafts/artifact_draft_1")
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+    history = client.get("/api/product/strategies/MomentumStrategy/versions", headers=auth)
+    assert history.status_code == 200
+    assert history.json()["versions"][0]["artifact_id"] == "artifact_version_1"
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+    counts = client.get("/api/product/strategies/MomentumStrategy/backtest-count", headers=auth)
+    assert counts.status_code == 200
+    assert counts.json()["backtest_count"] == 2
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+
 def test_product_stock_pool_create_forwards_owner_headers(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")

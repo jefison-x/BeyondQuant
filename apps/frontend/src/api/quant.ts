@@ -89,6 +89,26 @@ export function validateStrategy(payload: Record<string, unknown>, token: string
   });
 }
 
+export function saveStrategyDraft(payload: Record<string, unknown>, token: string): Promise<Record<string, unknown>> {
+  return request(`/strategies/drafts`, token, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteStrategyDraft(artifactId: string, token: string): Promise<Record<string, unknown>> {
+  return request(`/strategies/drafts/${encodeURIComponent(artifactId)}`, token, { method: "DELETE" });
+}
+
+export function getStrategyVersions(strategyId: string, token: string): Promise<Record<string, unknown>> {
+  return request(`/strategies/${encodeURIComponent(strategyId)}/versions`, token);
+}
+
+export function getStrategyBacktestCount(strategyId: string, token: string): Promise<Record<string, unknown>> {
+  return request(`/strategies/${encodeURIComponent(strategyId)}/backtest-count`, token);
+}
+
 export function createStrategyVersion(payload: Record<string, unknown>, token: string): Promise<Record<string, unknown>> {
   return request(`/strategies/versions`, token, {
     method: "POST",
