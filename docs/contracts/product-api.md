@@ -8,9 +8,13 @@ storage internals, provider credentials, or bearer tokens.
 
 ## Authentication and session
 
-Product endpoints require the Gateway-owned `Authorization: Bearer` token.
-The token is mapped to the configured BYQ product principal and is never
-forwarded to Backend, MCP, Runtime Adapter, or WorkflowTrace payloads.
+Normal browser login uses username/password through `/api/auth/login` and a
+durable Gateway `byq_session` HttpOnly cookie (`SameSite=Lax`, `Path=/`). The
+Gateway resolves that opaque Backend-owned session to the owner/actor
+principal and forwards only trusted BYQ context headers. The legacy
+`Authorization: Bearer` product token is internal/bootstrap compatibility
+only; it is not normal browser identity and is never forwarded to Backend,
+MCP, Runtime Adapter, or WorkflowTrace payloads.
 
 ## Error envelope
 
@@ -23,20 +27,21 @@ Every non-success Product response uses:
 Messages are safe and bounded; internal exception text and storage paths are
 never returned.
 
-## Pagination, filtering, and sorting
+## Bounded list policy
 
-List endpoints accept `limit` (1-200, default 50), `offset` (>= 0), `sort`
-(explicit allowlisted field and direction), and bounded filters. Every list
-response includes:
-
-```json
-{"items": [], "pagination": {"limit": 50, "offset": 0, "total": 0}}
-```
+Implemented list routes return resource-specific arrays such as `tasks`,
+`artifacts`, `backtests`, `pools`, and `accounts`. Backend queries impose their
+domain bounds and stable ordering where defined. A generic Product API
+`limit`/`offset` envelope is not implemented and must not be advertised as
+available; future pagination requires route implementation, OpenAPI changes,
+and contract tests in the same PR.
 
 ## Resource projections
 
 The versioned OpenAPI source is
-[`product-api.openapi.yaml`](product-api.openapi.yaml). It maps:
+[`product-api.openapi.yaml`](product-api.openapi.yaml). Architecture tests
+require its browser route/method set to match the implemented Gateway surface.
+It maps:
 
 - Dashboard
 - Agent sessions and WorkflowTrace
@@ -47,6 +52,5 @@ The versioned OpenAPI source is
 - Approval Inbox / Audit
 - Data status / migration status
 
-Full resource behavior is implemented in later productization phases; Phase 16
-proves the auth/error/pagination boundary and dashboard/data-status/health
-seams.
+Later productization phases implemented the mapped resource behavior. New or
+removed browser routes must update the OpenAPI source in the same change.

@@ -26,10 +26,21 @@ def task_body() -> dict[str, object]:
     }
 
 
+def _owner_headers(principal: str = "product-user") -> dict[str, str]:
+    return {
+        "x-byq-owner-principal": principal,
+        "x-byq-actor-principal": principal,
+        "x-byq-trace-id": f"byq-trace-{principal}",
+        "x-byq-session-id": f"byq-session-{principal}",
+        "x-byq-dsh-run-id": f"byq-run-{principal}",
+    }
+
+
 def test_research_api_exposes_normalized_persistent_entity_flow(monkeypatch) -> None:
     store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
+    client.headers.update(_owner_headers("product-user"))
 
     created = client.post("/v1/research/tasks", json=task_body())
     assert created.status_code == 201
@@ -40,6 +51,12 @@ def test_research_api_exposes_normalized_persistent_entity_flow(monkeypatch) -> 
     fetched = client.get(f"/v1/research/tasks/{task_id}")
     assert fetched.status_code == 200
     assert fetched.json() == task
+
+    hidden = client.get(
+        f"/v1/research/tasks/{task_id}",
+        headers=_owner_headers("other-user"),
+    )
+    assert hidden.status_code == 404
 
     transition = client.post(
         f"/v1/research/tasks/{task_id}/transitions",
@@ -60,6 +77,7 @@ def test_research_api_maps_idempotency_and_transition_conflicts(monkeypatch) -> 
     store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
+    client.headers.update(_owner_headers("product-user"))
 
     created = client.post("/v1/research/tasks", json=task_body()).json()
     conflict = client.post(

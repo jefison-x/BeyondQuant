@@ -336,8 +336,16 @@ def create_research_task(payload: dict[str, Any]) -> dict[str, object]:
 
 
 @app.get("/v1/research/tasks/{task_id}")
-def get_research_task(task_id: str) -> dict[str, object]:
-    return _research_call(lambda: research_store.get_task(task_id))
+def get_research_task(task_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        task = research_store.get_task(task_id)
+        if task["owner_principal"] != context["owner_principal"]:
+            raise ResearchNotFound("research task not found")
+        return task
+
+    return _research_call(operation)
 
 
 @app.get("/v1/research/tasks")
@@ -357,8 +365,16 @@ def create_experiment(payload: dict[str, Any]) -> dict[str, object]:
 
 
 @app.get("/v1/research/experiments/{experiment_id}")
-def get_experiment(experiment_id: str) -> dict[str, object]:
-    return _research_call(lambda: research_store.get_experiment(experiment_id))
+def get_experiment(experiment_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        experiment = research_store.get_experiment(experiment_id)
+        if experiment["owner_principal"] != context["owner_principal"]:
+            raise ResearchNotFound("experiment not found")
+        return experiment
+
+    return _research_call(operation)
 
 
 @app.get("/v1/research/experiments")
@@ -378,8 +394,16 @@ def create_artifact(payload: dict[str, Any]) -> dict[str, object]:
 
 
 @app.get("/v1/research/artifacts/{artifact_id}")
-def get_artifact(artifact_id: str) -> dict[str, object]:
-    return _research_call(lambda: research_store.get_artifact(artifact_id))
+def get_artifact(artifact_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        artifact = research_store.get_artifact(artifact_id)
+        if artifact["owner_principal"] != context["owner_principal"]:
+            raise ResearchNotFound("artifact not found")
+        return artifact
+
+    return _research_call(operation)
 
 
 @app.get("/v1/research/artifacts")
@@ -413,22 +437,27 @@ def compute_research_factor(payload: dict[str, Any]) -> dict[str, object]:
 
 
 @app.post("/v1/research/strategies/validate", status_code=201)
-def validate_strategy_draft(payload: dict[str, Any]) -> dict[str, object]:
+def validate_strategy_draft(payload: dict[str, Any], http_request: Request) -> dict[str, object]:
+    context = _required_agent_context(http_request)
+
     def operation() -> dict[str, object]:
-        request = _strategy_payload(
+        strategy_request = _strategy_payload(
             payload,
             {"task_id", "experiment_id", "strategy", "trace_id", "idempotency_key"},
         )
-        prepared = prepare_strategy(request.get("strategy"))
+        task = research_store.get_task(strategy_request.get("task_id"))
+        if task["owner_principal"] != context["owner_principal"]:
+            raise ResearchNotFound("research task not found")
+        prepared = prepare_strategy(strategy_request.get("strategy"))
         artifact = research_store.create_artifact(
             {
-                "task_id": request.get("task_id"),
-                "experiment_id": request.get("experiment_id"),
+                "task_id": strategy_request.get("task_id"),
+                "experiment_id": strategy_request.get("experiment_id"),
                 "kind": "strategy_draft",
                 "content": strategy_draft_content(prepared),
                 "lineage": [],
-                "trace_id": request.get("trace_id"),
-                "idempotency_key": request.get("idempotency_key"),
+                "trace_id": strategy_request.get("trace_id"),
+                "idempotency_key": strategy_request.get("idempotency_key"),
             }
         )
         if artifact["status"] == "draft":
@@ -444,16 +473,20 @@ def validate_strategy_draft(payload: dict[str, Any]) -> dict[str, object]:
 
 
 @app.post("/v1/research/strategies/versions", status_code=201)
-def create_strategy_version(payload: dict[str, Any]) -> dict[str, object]:
+def create_strategy_version(payload: dict[str, Any], http_request: Request) -> dict[str, object]:
+    context = _required_agent_context(http_request)
+
     def operation() -> dict[str, object]:
-        request = _strategy_payload(
+        strategy_request = _strategy_payload(
             payload,
             {"task_id", "experiment_id", "draft_artifact_id", "trace_id", "idempotency_key"},
         )
-        draft = research_store.get_artifact(request.get("draft_artifact_id"))
+        draft = research_store.get_artifact(strategy_request.get("draft_artifact_id"))
+        if draft["owner_principal"] != context["owner_principal"]:
+            raise ResearchNotFound("strategy draft not found")
         if draft["kind"] != "strategy_draft":
             raise ValueError("draft_artifact_id must reference a strategy_draft artifact")
-        if draft["task_id"] != request.get("task_id"):
+        if draft["task_id"] != strategy_request.get("task_id"):
             raise ValueError("draft artifact does not belong to task_id")
         draft_content = draft["content"]
         if not isinstance(draft_content, dict):
@@ -464,18 +497,18 @@ def create_strategy_version(payload: dict[str, Any]) -> dict[str, object]:
         version_content = strategy_version_content(prepared)
         version_fingerprint = content_sha256(version_content)
         artifact = research_store.find_artifact_by_content(
-            request.get("task_id"), "strategy_version", version_fingerprint
+            strategy_request.get("task_id"), "strategy_version", version_fingerprint
         )
         if artifact is None:
             artifact = research_store.create_artifact(
                 {
-                    "task_id": request.get("task_id"),
-                    "experiment_id": request.get("experiment_id"),
+                    "task_id": strategy_request.get("task_id"),
+                    "experiment_id": strategy_request.get("experiment_id"),
                     "kind": "strategy_version",
                     "content": version_content,
                     "lineage": [{"kind": "artifact", "id": draft["artifact_id"]}],
-                    "trace_id": request.get("trace_id"),
-                    "idempotency_key": request.get("idempotency_key"),
+                    "trace_id": strategy_request.get("trace_id"),
+                    "idempotency_key": strategy_request.get("idempotency_key"),
                 }
             )
         if artifact["status"] == "draft":
@@ -555,9 +588,13 @@ def create_strategy_approval(payload: dict[str, Any]) -> dict[str, object]:
 
 
 @app.get("/v1/research/strategies/versions/{artifact_id}/export")
-def export_strategy_version_artifact(artifact_id: str) -> dict[str, object]:
+def export_strategy_version_artifact(artifact_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
     def operation() -> dict[str, object]:
         artifact = research_store.get_artifact(artifact_id)
+        if artifact["owner_principal"] != context["owner_principal"]:
+            raise ResearchNotFound("strategy version not found")
         if artifact["kind"] != "strategy_version":
             raise ValueError("artifact is not a strategy_version")
         exported = export_strategy_version(artifact["content"])
@@ -574,7 +611,7 @@ _STRATEGY_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{2,63}$")
 
 
 @app.post("/v1/research/strategies/drafts", status_code=201)
-def save_strategy_draft(payload: dict[str, Any]) -> dict[str, object]:
+def save_strategy_draft(payload: dict[str, Any], http_request: Request) -> dict[str, object]:
     """Durably save a strategy draft (Phase 33).
 
     Persists the current editor content as an immutable strategy_draft
@@ -582,21 +619,25 @@ def save_strategy_draft(payload: dict[str, Any]) -> dict[str, object]:
     yet pass static validation (validation.success records the outcome);
     creating a version still requires a validated draft.
     """
+    context = _required_agent_context(http_request)
+
     def operation() -> dict[str, object]:
-        request = _strategy_payload(
+        strategy_request = _strategy_payload(
             payload, {"task_id", "experiment_id", "strategy", "trace_id", "idempotency_key"}
         )
-        research_store.get_task(request.get("task_id"))
-        prepared = prepare_strategy_draft(request.get("strategy"))
+        task = research_store.get_task(strategy_request.get("task_id"))
+        if task["owner_principal"] != context["owner_principal"]:
+            raise ResearchNotFound("research task not found")
+        prepared = prepare_strategy_draft(strategy_request.get("strategy"))
         artifact = research_store.create_artifact(
             {
-                "task_id": request.get("task_id"),
-                "experiment_id": request.get("experiment_id"),
+                "task_id": strategy_request.get("task_id"),
+                "experiment_id": strategy_request.get("experiment_id"),
                 "kind": "strategy_draft",
                 "content": strategy_draft_content(prepared),
                 "lineage": [],
-                "trace_id": request.get("trace_id"),
-                "idempotency_key": request.get("idempotency_key"),
+                "trace_id": strategy_request.get("trace_id"),
+                "idempotency_key": strategy_request.get("idempotency_key"),
             }
         )
         return {
@@ -856,11 +897,15 @@ def list_signal_snapshots(request: Request) -> dict[str, object]:
 
 
 @app.post("/v1/research/backtests", status_code=202)
-def create_backtest_job(payload: dict[str, Any]) -> dict[str, object]:
+def create_backtest_job(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
     def operation() -> dict[str, object]:
-        request = _validated_backtest_request(payload)
-        task = research_store.get_task(request["task_id"])
-        job = backtest_store.create(request, owner_principal=task["owner_principal"])
+        backtest_request = _validated_backtest_request(payload)
+        task = research_store.get_task(backtest_request["task_id"])
+        if task["owner_principal"] != context["owner_principal"]:
+            raise ResearchNotFound("research task not found")
+        job = backtest_store.create(backtest_request, owner_principal=context["owner_principal"])
         return {"job": job}
 
     return _backtest_call(operation)
@@ -913,8 +958,16 @@ def backtest_options(request: Request) -> dict[str, object]:
 
 
 @app.get("/v1/research/backtests/{job_id}")
-def get_backtest_job(job_id: str) -> dict[str, object]:
-    return _backtest_call(lambda: {"job": backtest_store.get(job_id)})
+def get_backtest_job(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        job = backtest_store.get(job_id)
+        if job["owner_principal"] != context["owner_principal"]:
+            raise BacktestNotFound("backtest job not found")
+        return {"job": job}
+
+    return _backtest_call(operation)
 
 
 @app.get("/v1/research/backtests/{job_id}/result")
@@ -940,8 +993,13 @@ def list_backtest_jobs(request: Request) -> dict[str, object]:
 
 
 @app.post("/v1/research/backtests/{job_id}/run")
-def run_backtest_job(job_id: str) -> dict[str, object]:
+def run_backtest_job(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
     def operation() -> dict[str, object]:
+        job = backtest_store.get(job_id)
+        if job["owner_principal"] != context["owner_principal"]:
+            raise BacktestNotFound("backtest job not found")
         worker = BacktestWorker(backtest_store, research_store, backtest_objects)
         return {"job": worker.run_once(job_id)}
 
@@ -949,8 +1007,16 @@ def run_backtest_job(job_id: str) -> dict[str, object]:
 
 
 @app.post("/v1/research/backtests/{job_id}/cancel")
-def cancel_backtest_job(job_id: str) -> dict[str, object]:
-    return _backtest_call(lambda: {"job": backtest_store.cancel(job_id)})
+def cancel_backtest_job(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        job = backtest_store.get(job_id)
+        if job["owner_principal"] != context["owner_principal"]:
+            raise BacktestNotFound("backtest job not found")
+        return {"job": backtest_store.cancel(job_id)}
+
+    return _backtest_call(operation)
 
 @app.delete("/v1/research/backtests/{job_id}")
 def delete_backtest_job(job_id: str, request: Request) -> dict[str, object]:

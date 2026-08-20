@@ -1,3 +1,4 @@
+import ast
 import json
 import re
 import unittest
@@ -271,8 +272,45 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_BACKEND_URL: http://backend:8000", service_block("gateway"))
         openapi = (ROOT / "docs/contracts/product-api.openapi.yaml").read_text()
         self.assertIn("openapi: 3.0.3", openapi)
+        self.assertIn("sessionCookie:", openapi)
+        self.assertIn("Internal/bootstrap compatibility only", openapi)
         self.assertNotIn("TUSHARE_TOKEN", openapi)
         self.assertNotIn("BYQ_MCP_TOKEN", openapi)
+
+        documented: set[tuple[str, str]] = set()
+        current_path: str | None = None
+        for line in openapi.splitlines():
+            path_match = re.fullmatch(r"  (/[^:]+):", line)
+            if path_match:
+                current_path = path_match.group(1)
+                continue
+            method_match = re.fullmatch(r"    (get|post|put|delete):.*", line)
+            if current_path and method_match:
+                documented.add((method_match.group(1), current_path))
+
+        implemented: set[tuple[str, str]] = set()
+        for relative, prefix in (
+            ("services/gateway/app/product_api.py", "/api/product"),
+            ("services/gateway/app/auth_api.py", "/api/auth"),
+        ):
+            source = (ROOT / relative).read_text()
+            implemented.update(
+                (method, prefix + path)
+                for method, path in re.findall(
+                    r'(?m)^@router\.(get|post|put|delete)\("([^"]+)"',
+                    source,
+                )
+            )
+        main_source = (ROOT / "services/gateway/app/main.py").read_text()
+        implemented.update(
+            (method, path)
+            for method, path in re.findall(
+                r'(?m)^@app\.(get|post|put|delete)\("([^"]+)"',
+                main_source,
+            )
+            if path.startswith(("/v1/agent", "/v1/workflows"))
+        )
+        self.assertEqual(documented, implemented)
 
     def test_phase23_historical_parity_matrix_and_ui_smoke_exist(self) -> None:
         matrix = ROOT / "docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX.md"
@@ -374,6 +412,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("docker compose port frontend 80", local_ci)
         self.assertIn("docker compose port gateway 8100", local_ci)
         self.assertIn("npm run test:e2e:real", local_ci)
+        self.assertIn("[ -x node_modules/.bin/playwright ] || npm ci", local_ci)
         self.assertIn("docker compose down --rmi local -v", local_ci)
 
         smoke = (ROOT / "tests/smoke/run.sh").read_text()
@@ -475,6 +514,19 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("/mcp/v1", contents)
         readme = (frontend / "README.md").read_text()
         self.assertIn("must not depend directly on DSH internal event schemas", readme)
+
+    def test_product_backend_proxy_calls_always_carry_trusted_context(self) -> None:
+        source = (ROOT / "services/gateway/app/product_api.py").read_text()
+        tree = ast.parse(source)
+        missing_headers: list[int] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Name) or node.func.id != "_backend_request":
+                continue
+            if not any(keyword.arg == "headers" for keyword in node.keywords):
+                missing_headers.append(node.lineno)
+        self.assertEqual(missing_headers, [])
 
 
 if __name__ == "__main__":
