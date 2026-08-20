@@ -34,15 +34,18 @@ echo "== MCP contract and auth wall =="
 echo "== Gateway health and readyz =="
 python3 - <<'PY'
 import json
+import os
 from urllib.request import urlopen
 
-with urlopen("http://127.0.0.1:8100/healthz", timeout=5) as response:
+gateway = os.environ.get("BYQ_SMOKE_GATEWAY_URL", "http://127.0.0.1:8100")
+
+with urlopen(gateway + "/healthz", timeout=5) as response:
     health = json.load(response)
 assert response.status == 200
 assert health["service"] == "byq-gateway"
 assert health["status"] == "ok"
 
-with urlopen("http://127.0.0.1:8100/readyz", timeout=5) as response:
+with urlopen(gateway + "/readyz", timeout=5) as response:
     payload = json.load(response)
 assert response.status == 200
 assert payload["service"] == "byq-gateway"
@@ -58,7 +61,7 @@ import os
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-gateway = "http://127.0.0.1:8100"
+gateway = os.environ.get("BYQ_SMOKE_GATEWAY_URL", "http://127.0.0.1:8100")
 token = os.environ.get("BYQ_PRODUCT_TOKEN", "ci-phase7-product-test-only")
 
 def request(path, *, method="GET", payload=None, auth=True):
@@ -114,13 +117,15 @@ PY
 echo "== Gateway receives BYQ normalized streaming event =="
 python3 - <<'PY'
 import json
+import os
 import threading
 import time
 import uuid
 from urllib.request import Request, urlopen
 
 session_id = f"phase6-stream-{uuid.uuid4().hex}"
-gateway = "http://127.0.0.1:8100/internal/runtime"
+gateway_root = os.environ.get("BYQ_SMOKE_GATEWAY_URL", "http://127.0.0.1:8100")
+gateway = gateway_root + "/internal/runtime"
 
 def post(path, payload=None):
     body = None if payload is None else json.dumps(payload).encode()
@@ -138,7 +143,7 @@ post("/sessions", {"session_id": session_id, "trace_id": "phase6-stream-trace"})
 events = []
 
 def read_one_event():
-    with urlopen(f"http://127.0.0.1:8100/internal/workflows/{session_id}/events", timeout=20) as response:
+    with urlopen(f"{gateway_root}/internal/workflows/{session_id}/events", timeout=20) as response:
         for line in response:
             if line.startswith(b"data: "):
                 events.append(json.loads(line[6:]))

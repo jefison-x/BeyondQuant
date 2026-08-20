@@ -141,6 +141,35 @@ cleanup_ci_services() {
   docker volume rm "$CI_PG_VOL" >/dev/null 2>&1 || true
   docker network rm "$CI_PG_NET" >/dev/null 2>&1 || true
 }
+prepare_ci_compose_env() {
+  export COMPOSE_PROJECT_NAME="byq-ci-stack-$BYQ_CI_SCOPE"
+  export BYQ_PRODUCT_NETWORK_NAME="byq-ci-product-$BYQ_CI_SCOPE"
+  export BYQ_POSTGRES_VOLUME_NAME="byq-ci-postgres-$BYQ_CI_SCOPE"
+  export BYQ_DOMAIN_VOLUME_NAME="byq-ci-domain-$BYQ_CI_SCOPE"
+  export BYQ_DSH_SESSIONS_VOLUME_NAME="byq-ci-dsh-sessions-$BYQ_CI_SCOPE"
+  export BYQ_WORKFLOW_TRACES_VOLUME_NAME="byq-ci-workflow-traces-$BYQ_CI_SCOPE"
+  # An empty host-port asks Docker to allocate an available loopback port.
+  # Explicit bindings remain available for local debugging.
+  export BYQ_FRONTEND_BIND="${BYQ_CI_FRONTEND_BIND:-127.0.0.1:0}"
+  export BYQ_GATEWAY_BIND="${BYQ_CI_GATEWAY_BIND:-127.0.0.1:0}"
+  export BYQ_MCP_TOKEN="${BYQ_MCP_TOKEN:-ci-mcp-test-only}"
+  export BYQ_PRODUCT_TOKEN="${BYQ_PRODUCT_TOKEN:-ci-product-test-only}"
+  export BYQ_BOOTSTRAP_ADMIN_USERNAME="${BYQ_CI_BOOTSTRAP_ADMIN_USERNAME:-ci-admin}"
+  export BYQ_BOOTSTRAP_ADMIN_PASSWORD="${BYQ_CI_BOOTSTRAP_ADMIN_PASSWORD:-ci-bootstrap-test-only}"
+  export BYQ_E2E_ADMIN_USERNAME="$BYQ_BOOTSTRAP_ADMIN_USERNAME"
+  export BYQ_E2E_ADMIN_PASSWORD="$BYQ_BOOTSTRAP_ADMIN_PASSWORD"
+}
+resolve_ci_compose_urls() {
+  local frontend_address gateway_address
+  frontend_address="$(docker compose port frontend 80)"
+  gateway_address="$(docker compose port gateway 8100)"
+  test -n "$frontend_address"
+  test -n "$gateway_address"
+  export BYQ_REAL_BASE_URL="http://$frontend_address"
+  export BYQ_SMOKE_GATEWAY_URL="http://$gateway_address"
+  printf '    isolated endpoints -> frontend=%s gateway=%s\n' \
+    "$BYQ_REAL_BASE_URL" "$BYQ_SMOKE_GATEWAY_URL"
+}
 
 # ------------------------------------------------------------------- checks
 check_architecture() {
@@ -200,26 +229,48 @@ check_mcp() {
 }
 
 check_frontend() {
-  step "frontend: install (if needed) + build + vitest (local node)"
-  # node_modules may be a partial install (missing devDependencies such as
-  # vue-tsc); top-up quietly when the build toolchain is absent.
-  ( cd apps/frontend && [ -x node_modules/.bin/vue-tsc ] || npm install --no-audit --no-fund --no-package-lock >/dev/null 2>&1 )
-  if ( cd apps/frontend && npm run build >/dev/null 2>&1 ); then
+  step "frontend: npm ci + build + vitest (locked local node toolchain)"
+  if ( cd apps/frontend && npm ci --no-audit --no-fund ); then
+    ok "frontend locked install"; else bad "frontend locked install"; return; fi
+  if ( cd apps/frontend && npm run build ); then
     ok "frontend build"; else bad "frontend build"; fi
-  if ( cd apps/frontend && npm run test >/dev/null 2>&1 ); then
+  if ( cd apps/frontend && npm run test ); then
     ok "frontend unit tests"; else bad "frontend unit tests"; fi
+  if ( cd apps/frontend && npm audit --audit-level=high ); then
+    ok "frontend dependency audit"; else bad "frontend dependency audit"; fi
   if [ "$WITH_E2E" -eq 1 ]; then
-    if ( cd apps/frontend && npm run test:e2e >/dev/null 2>&1 ); then
-      ok "frontend e2e"; else bad "frontend e2e"; fi
+    if ( cd apps/frontend && npx playwright install chromium && npm run test:e2e:mocked ); then
+      ok "frontend mocked UI e2e"; else bad "frontend mocked UI e2e"; fi
   fi
 }
 
 check_smoke() {
-  step "smoke: full compose stack"
-  if [ "$DO_BUILD" -eq 1 ]; then docker compose build >/dev/null 2>&1 || true; fi
-  docker compose up -d --wait >/dev/null 2>&1
-  if ./tests/smoke/run.sh >/dev/null 2>&1; then ok "full smoke"; else bad "full smoke"; fi
-  [ "$NO_CLEANUP" -eq 1 ] || docker compose down -v >/dev/null 2>&1 || true
+  step "smoke: isolated full compose stack"
+  prepare_ci_compose_env
+  if ! docker compose up -d --wait; then
+    docker compose logs --no-color || true
+    bad "isolated compose startup"
+    if [ "$NO_CLEANUP" -eq 0 ]; then
+      docker compose down --rmi local -v >/dev/null 2>&1 || true
+      cleanup_ci_services
+    fi
+    return
+  fi
+  if ! resolve_ci_compose_urls; then
+    bad "isolated compose endpoint discovery"
+    if [ "$NO_CLEANUP" -eq 0 ]; then
+      docker compose down --rmi local -v >/dev/null 2>&1 || true
+      cleanup_ci_services
+    fi
+    return
+  fi
+  if ./tests/smoke/run.sh; then ok "full smoke"; else bad "full smoke"; fi
+  if ( cd apps/frontend && npm run test:e2e:real ); then
+    ok "real Product API browser smoke"; else bad "real Product API browser smoke"; fi
+  if [ "$NO_CLEANUP" -eq 0 ]; then
+    docker compose down --rmi local -v >/dev/null 2>&1 || true
+    cleanup_ci_services
+  fi
 }
 
 check_dsh_web() {

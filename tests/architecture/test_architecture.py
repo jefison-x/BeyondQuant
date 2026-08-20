@@ -325,6 +325,62 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("CI_PG_NET=byq_product", local_ci)
         self.assertNotIn("npm run build >/tmp/byq-mcp-build.log 2>&1", local_ci)
 
+    def test_frontend_ci_uses_locked_dependencies_and_honest_browser_tiers(self) -> None:
+        frontend = ROOT / "apps/frontend"
+        self.assertTrue((frontend / "package-lock.json").exists())
+
+        local_ci = (ROOT / "scripts/ci/local-ci.sh").read_text()
+        self.assertIn("npm ci --no-audit --no-fund", local_ci)
+        self.assertIn("npm audit --audit-level=high", local_ci)
+        self.assertNotIn("npm install --no-audit --no-fund --no-package-lock", local_ci)
+
+        workflow = (ROOT / ".github/workflows/ci-selfhosted.yml").read_text()
+        self.assertIn(
+            "./scripts/ci/local-ci.sh --all --with-e2e --with-smoke",
+            workflow,
+        )
+        self.assertIn("head.repo.full_name == github.repository", workflow)
+
+        dockerfile = (frontend / "Dockerfile").read_text()
+        self.assertIn("FROM node:22-bookworm-slim AS build", dockerfile)
+        self.assertIn("COPY apps/frontend/package.json apps/frontend/package-lock.json", dockerfile)
+        self.assertIn("RUN npm ci --no-audit --no-fund", dockerfile)
+
+        mocked = (frontend / "tests/e2e/app.spec.ts").read_text()
+        self.assertIn("mocked UI navigation covers core product routes", mocked)
+        self.assertNotIn("golden journey covers login", mocked)
+
+        real = (frontend / "tests/e2e/real-product.spec.ts").read_text()
+        self.assertIn("real Product API login and Stock Pool create flow", real)
+        self.assertNotIn("page.route(", real)
+
+    def test_compose_smoke_resources_are_ci_isolatable(self) -> None:
+        compose = (ROOT / "compose.yml").read_text()
+        for variable in (
+            "BYQ_FRONTEND_BIND",
+            "BYQ_GATEWAY_BIND",
+            "BYQ_PRODUCT_NETWORK_NAME",
+            "BYQ_POSTGRES_VOLUME_NAME",
+            "BYQ_DOMAIN_VOLUME_NAME",
+            "BYQ_DSH_SESSIONS_VOLUME_NAME",
+            "BYQ_WORKFLOW_TRACES_VOLUME_NAME",
+        ):
+            self.assertIn(variable, compose)
+
+        local_ci = (ROOT / "scripts/ci/local-ci.sh").read_text()
+        self.assertIn('COMPOSE_PROJECT_NAME="byq-ci-stack-$BYQ_CI_SCOPE"', local_ci)
+        self.assertIn('BYQ_FRONTEND_BIND="${BYQ_CI_FRONTEND_BIND:-127.0.0.1:0}"', local_ci)
+        self.assertIn('BYQ_GATEWAY_BIND="${BYQ_CI_GATEWAY_BIND:-127.0.0.1:0}"', local_ci)
+        self.assertIn("docker compose port frontend 80", local_ci)
+        self.assertIn("docker compose port gateway 8100", local_ci)
+        self.assertIn("npm run test:e2e:real", local_ci)
+        self.assertIn("docker compose down --rmi local -v", local_ci)
+
+        smoke = (ROOT / "tests/smoke/run.sh").read_text()
+        self.assertNotIn('gateway = "http://127.0.0.1:8100/internal/runtime"', smoke)
+        self.assertNotIn('urlopen("http://127.0.0.1:8100/', smoke)
+        self.assertGreaterEqual(smoke.count("BYQ_SMOKE_GATEWAY_URL"), 3)
+
     def test_runtime_adapter_owns_the_official_sdk_and_explicit_runtime(self) -> None:
         adapter = "\n".join(
             path.read_text()

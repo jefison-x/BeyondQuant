@@ -422,7 +422,7 @@ test("admin operations workspace renders database and access sections", async ({
   await expect(page.getByText("用户", { exact: true })).toBeVisible();
 });
 
-test("golden journey covers login, dashboard, agent, strategy, settings, and operations", async ({ page }) => {
+test("mocked UI navigation covers core product routes", async ({ page }) => {
   await page.route("**/api/product/dashboard", (route) =>
     route.fulfill({
       status: 200,

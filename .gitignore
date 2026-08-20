@@ -16,6 +16,8 @@ virtualenv/
 # JavaScript / tooling caches
 node_modules/
 dist/
+test-results/
+playwright-report/
 build/
 .cache/
 

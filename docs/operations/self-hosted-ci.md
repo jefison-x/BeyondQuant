@@ -1,6 +1,6 @@
 # Self-Hosted CI (GitHub Actions Runner on the local machine)
 
-Status: **Proposed** — companion to `scripts/ci/local-ci.sh` and
+Status: **Active** — companion to `scripts/ci/local-ci.sh` and
 `.github/workflows/ci-selfhosted.yml`.
 
 ## Why
@@ -12,8 +12,10 @@ GitHub still orchestrates the checks and shows status on PRs — while every
 check **executes on the local machine** for free.
 
 The self-hosted workflow runs the project's own local CI script
-(`scripts/ci/local-ci.sh --all`), which is the same code as `make local-ci`,
-so the PR status reflects the exact checks we already validated locally.
+(`scripts/ci/local-ci.sh --all --with-e2e --with-smoke`). It runs the locked
+frontend build and unit suite, mocked browser coverage, an isolated full
+Compose stack, and a real Product API browser flow in addition to the service
+checks. High and critical npm advisories fail the frontend gate.
 
 ## Architecture
 
@@ -25,13 +27,14 @@ GitHub (orchestration only, free)
                                ├─ docker (service tests use clean CI postgres)
                                ├─ python3 (architecture tests)
                                ├─ node 22 (frontend build + vitest)
-                               └─ scripts/ci/local-ci.sh --all
+                               └─ local-ci.sh --all --with-e2e --with-smoke
 ```
 
-The local CI script deliberately does **not** use `docker compose up` for the
-service checks (it mounts sources into existing images and spins up a clean
-CI-only postgres), so it never collides with the developer's own running
-`beyondquant` compose stack.
+The core service checks use a clean CI-only PostgreSQL dependency. The smoke
+tier also starts Compose, but assigns every run a unique project name,
+network, volumes, image names, Docker-allocated loopback ports, bootstrap
+identity, and Product API URL. Cleanup removes those run-scoped resources and
+does not touch the developer's `beyondquant` stack.
 
 ## Prerequisites on the runner machine
 
@@ -40,7 +43,7 @@ CI-only postgres), so it never collides with the developer's own running
 | OS | Linux x64 (this repo's setup) | macOS/Windows work but use matching runner package |
 | Docker Engine + Compose v2 | recent | runner user must be in the `docker` group (or have socket access) |
 | Python 3 | 3.10+ | used by `python3 -m unittest` (architecture) and services already containerized |
-| Node.js | 22 | used by frontend build + vitest (matches GitHub setup-node 22) |
+| Node.js | 22.12+ (before 23) | required by the locked Vite toolchain and used by Vitest/Playwright |
 | Disk | ≥ 50 GB free | service images + node_modules + postgres volumes |
 | RAM | ≥ 8 GB | compose build and parallel service tests |
 | `git`, `bash` | — | runner and local-ci script requirements |
@@ -118,10 +121,11 @@ sudo systemctl restart actions.runner.jefison-x-BeyondQuant.byq-local-runner.ser
   - triggers on PR and on push to `main` / `bootstrap/**`;
   - checks out with full history (`fetch-depth: 0`) and fetches `origin/main`
     so the script's path-filtering baseline is correct;
-  - runs `./scripts/ci/local-ci.sh --all` (all six core checks: architecture,
-    backend, gateway, runtime-adapter, mcp, frontend);
-  - sets `COMPOSE_PROJECT_NAME=byq-ci-runner` as a guard against any future
-    compose usage colliding with the local stack.
+  - runs `./scripts/ci/local-ci.sh --all --with-e2e --with-smoke` (six core
+    checks, mocked browser checks, isolated Compose smoke, and a real Product
+    API browser flow);
+  - gives each Compose run unique resources and Docker-allocated loopback
+    ports, so it cannot collide with the developer stack.
 - The original `ci.yml` (GitHub-hosted) remains in the repo for reference /
   rollback. Once the runner is stable, you can disable it (GitHub → repo →
   Settings → Actions → General → Actions permissions → Disable workflow, or
@@ -132,8 +136,8 @@ sudo systemctl restart actions.runner.jefison-x-BeyondQuant.byq-local-runner.ser
 1. Runner online: GitHub → Settings → Actions → Runners → **Idle**.
 2. Open or update any PR — the `BeyondQuant Self-Hosted CI / local-ci` check
    appears. Watch `~/actions-runner/_diag` or `sudo ./svc.sh check` logs.
-3. Expected: the check runs `local-ci.sh --all` and reports the same results
-   we already validated locally (all six core checks PASS).
+3. Expected: the check runs the core, mocked UI, isolated Compose, and real
+   browser tiers and reports all checks PASS.
 
 ## Troubleshooting
 
@@ -144,7 +148,9 @@ sudo systemctl restart actions.runner.jefison-x-BeyondQuant.byq-local-runner.ser
 | `tsc: not found` (mcp) | host node_modules partial | script mounts only `src/tests`; ensure image is current (`docker compose build mcp`) |
 | Backend "no schema has been selected" | shared `byq_postgres_data` volume is bad | script auto-creates clean `byq-ci-postgres`; verify no stale container on the label |
 | OOM during build | RAM too low | build serially (`--build` once), stop local compose during heavy jobs |
-| Local `docker compose` stack broken after CI | collision | CI uses `byq-ci-runner` project name + clean postgres; `docker ps` to confirm |
+| Playwright cannot launch Chromium | browser missing from runner cache | run `cd apps/frontend && npx playwright install chromium`; CI also performs this install |
+| Need stable debug ports | Docker allocates CI ports dynamically | set `BYQ_CI_FRONTEND_BIND` / `BYQ_CI_GATEWAY_BIND` to explicit unused loopback bindings |
+| Local `docker compose` stack changed after CI | isolation regression | CI resources must start with `byq-ci-*`; inspect Docker containers, networks, and volumes |
 
 ## Security notes
 
@@ -152,6 +158,8 @@ sudo systemctl restart actions.runner.jefison-x-BeyondQuant.byq-local-runner.ser
   registered to. Keep `~/actions-runner` on a trusted machine and prefer
   running on pull_request (contents read only) as configured.
 - Never run untrusted third-party workflows on the self-hosted runner; only
-  this repo's workflow is scheduled here.
-- The runner does not require Tushare/DeepSeek secrets for the core checks;
-  keyless tests are used. Keep real secrets out of the runner environment.
+  same-repository PRs and trusted pushes are scheduled by this workflow.
+- The runner does not require Tushare/DeepSeek secrets; keyless tests are
+  used. The real browser tier uses a run-scoped test bootstrap account passed
+  through environment variables. Keep real secrets out of the runner
+  environment.
