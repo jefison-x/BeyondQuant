@@ -4,8 +4,8 @@ This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
 - Current completed phase: **Phase 35**
-- Next phase: **Phase 36 — Agent workbench depth**, currently **BLOCKED** on
-  acceptance of ADR-0018 (see
+- Next phase: **Phase 36 — Agent workbench depth**, **READY FOR IMPLEMENTATION**
+  under Accepted ADR-0018 (see
   `docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md` and
   `docs/roadmap/COMMUNITY_FULL_PARITY_PHASE_DETAILS.md`)
 - Accepted runtime ADR: **ADR-0003**
@@ -23,10 +23,11 @@ Codex session does not infer project state from commit history.
 - Accepted pre-release auto-merge ADR: **ADR-0015**
 - Accepted PostgreSQL single-domain-store ADR: **ADR-0016**
 - Accepted signal-snapshot ADR: **ADR-0017**
+- Accepted WorkflowTrace structured-card ADR: **ADR-0018**
 - Accepted Stock Pool snapshot/lifecycle ADR: **ADR-0020**
 - Accepted Paper Trading account/lifecycle ADR: **ADR-0021**
-- Open architecture decisions: ADR-0018 and ADR-0019 remain Proposed and
-  block their dependent future phases; they do not block Phase 35.
+- Open architecture decision: ADR-0019 remains Proposed and blocks Phases
+  37–39. No open architecture decision blocks Phase 36.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -49,6 +50,8 @@ Codex session does not infer project state from commit history.
   [ADR-0016](../architecture/adr/ADR-0016-postgresql-single-domain-store.md)
   is Accepted.
   [ADR-0017](../architecture/adr/ADR-0017-signal-snapshot-artifact.md)
+  is Accepted.
+  [ADR-0018](../architecture/adr/ADR-0018-workflow-trace-card-contract.md)
   is Accepted.
   [ADR-0020](../architecture/adr/ADR-0020-stock-pool-snapshot-lifecycle.md)
   is Accepted.
@@ -126,8 +129,8 @@ Codex session does not infer project state from commit history.
   Registry, and Phases 34–40. They must close before the RC review gate.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active architecture blocker: **ADR-0018 is Proposed and blocks Phase 36.**
-  ADR-0019 remains Proposed and blocks Phases 37–39.
+- Active architecture blocker: **none for Phase 36.** ADR-0019 remains
+  Proposed and blocks Phases 37–39.
 
 Git SHA is not phase state. The current clean baseline must always be derived
 from `git fetch origin` followed by `git rev-parse origin/main`; this file must

@@ -482,3 +482,24 @@ and is not a data or source-code migration input.
 | Account JSON export/import | Portability is useful; external owner/ID and permissive nested row reconstruction are unsafe. | `REPLACE` | Manifested/digested BYQ bundle, new ID, owner rebinding, validation, atomic import. |
 | SQLAlchemy repository, old Agent API/runtime, and PaperBroker integration | Coupled to Community ownership and deprecated runtime boundaries. | `REFERENCE_ONLY` | No source, schema, runtime, or API copied. |
 | BaoStock, AKShare, and VectorBT paths | None. | `DROP` | No dependency, adapter, fallback, row, or compatibility layer. |
+
+## Phase 36 Agent workbench pre-implementation audit
+
+The mandatory ADR-0018 sequence was completed against the read-only Community
+baseline before Phase 36 implementation: inspect `AgentView.vue`,
+`AgentThinking.vue`, `ApprovalManagementPanel.vue`,
+`GlobalApprovalCenter.vue`, and `XiaobaAssistantDrawer.vue`; classify each
+surface; extract presentation and interaction invariants; then define the BYQ
+projection and authority boundary. Community source, APIs, runtime events, and
+persistence remain reference-only and were not modified or copied.
+
+| Community capability | Reusable UX invariant | Decision | ADR-0018 / Phase 36 boundary |
+|---|---|---|---|
+| Conversation plus contextual result workspace | Keep a coherent turn timeline with structured, scan-friendly results beside public assistant output. | `PORT_LAYOUT` / `PORT_UX` | Render only versioned BYQ WorkflowTrace projections. |
+| `AgentThinking` progress visualization | Users need understandable operational phase/state feedback while work is running. | `PORT_COMPONENT` / `REFACTOR` | Implement bounded `agent.activity`; hidden reasoning, prompts, tool arguments/results, and chain-of-thought are `DROP`. |
+| Strategy draft, stock candidate, and optimization cards | Typed summaries, stable identity, revision-aware updates, and clear follow-up affordances. | `REFACTOR` | Exact `workflow-card.v1` proposal schemas; no source code, arbitrary URLs, or executable action payloads. |
+| Backtest context card | Link the conversation to an owner-visible current job/result without duplicating its full detail. | `REFACTOR` | Gateway rehydrates owner-scoped Domain state; model claims are never authoritative. |
+| Approval cards, management panel, and global center | Pending state and human decision must be visible; approval and execution outcome stay distinct. | `REFACTOR` | Current BYQ Approval resource is authoritative; fixed Product API interaction after a fresh owner-scoped read. |
+| Page-aware assistant drawer | Preserve compact open/close UX and bounded page context that helps the user continue work. | `PORT_COMPONENT` / `PORT_UX` | Context uses allow-listed BYQ route/resource identifiers; never raw page state, credentials, or runtime internals. |
+| Community Agent API, SSE/message schema, runtime state, PydanticAI/Hermes coupling | Evidence of desired behavior only. | `REFERENCE_ONLY` / `REPLACE` | Runtime Adapter curates DSH candidates; Gateway persists/streams BYQ envelopes; frontend imports only BYQ types. |
+| Model-described actions and approval/execution conflation | None; this is an unsafe authority shortcut. | `DROP` / `REPLACE` | Cards are view models, never commands. Consequential actions use fixed BYQ Product routes, validation, idempotency, concurrency, and approval contracts. |

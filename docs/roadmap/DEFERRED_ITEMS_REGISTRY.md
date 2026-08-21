@@ -145,9 +145,10 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 
 ### D-0005 — Phase 36 Agent workbench structured cards
 - Phase: 36
-- Status: `BLOCKED`
-- Precondition: ADR-0018 (WorkflowTrace card contract) accepted + Phase 40
-  shared components.
+- Status: `READY`
+- Precondition: ADR-0018 (WorkflowTrace card contract) accepted. **Satisfied
+  2026-08-22.** Phase 36 owns its required Agent-specific components; Phase
+  40 may generalize them later.
 - Content: strategy-draft / stock-candidates / optimization / backtest-context
   / approval cards in the conversation; assistant drawer; thinking panel.
 - Acceptance: cards appear and are actionable; raw DSH payloads never cross
@@ -188,9 +189,9 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 |---|---|---|
 | ADR-0017 (`signal_snapshot`) | Accepted (2026-08-18) | D-0001 |
 | Signal-producer ADR (future) | not written | D-0002 |
-| ADR-0018 (WorkflowTrace cards) | Proposed | D-0005 (with Phase 40) |
+| ADR-0018 (WorkflowTrace cards) | Accepted (2026-08-22) | D-0005 (`READY`) |
 | ADR-0019 (encrypted credentials) | Proposed | D-0006, D-0007, D-0008 |
-| Phase 40 shared components | planned | D-0005, D-0006, D-0007 |
+| Phase 40 shared components | planned | D-0006, D-0007; later generalization for D-0005 |
 
 ## Maintenance rules
 

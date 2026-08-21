@@ -108,8 +108,10 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   7. Optimization card.
   8. Tool visualization depth.
   9. Conversation starters.
-- Dependencies: ADR-0018 (WorkflowTrace card contract) + normalization
-  upgrade (currently only `text_bytes` survives); shared components (Phase 40).
+- Dependencies: ADR-0018 (Accepted) + its WorkflowTrace normalization
+  upgrade (currently only `text_bytes` survives). Phase 36 owns the specific
+  card/activity/approval/drawer components needed for acceptance; Phase 40
+  may generalize them later and is not a prerequisite.
 - Classification: drawer/thinking=`PORT_COMPONENT`; cards=`REFACTOR` (BYQ
   WorkflowTrace projection); tool viz=`REFACTOR`.
 - Estimate: 14 person-days (XL).
@@ -205,8 +207,9 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
 
 ## Cross-phase dependencies
 
-- Phase 40 shared components → prerequisite for 36/37/38.
-- Phase 36 → needs ADR-0018 + Phase 40.
+- Phase 40 shared components → later generalization and prerequisite only
+  where a later phase explicitly depends on them.
+- Phase 36 → ADR-0018 accepted; Agent-specific components are in phase scope.
 - Phase 37/39 → need ADR-0019.
 - Phase 38 → needs ADR-0019 + Phase 40.
 - Phase 32 wizard → ADR-0017 (separate from this table; slice already
