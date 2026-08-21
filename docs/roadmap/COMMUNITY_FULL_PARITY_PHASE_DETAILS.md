@@ -38,6 +38,12 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
 - Status: `NEXT — BLOCKED AT DECISION GATE` until the Stock Pool
   snapshot/version/lifecycle ADR is Accepted.
 
+- Community visual/interaction baseline: desktop and mobile catalog, custom
+  filters, index constituents/history, create-dialog, and delete-confirmation
+  evidence is indexed in
+  `docs/evidence/phase-34/community-stock-pool/README.md`. This is reference
+  evidence only and does not satisfy the BYQ real-Product-API browser gate.
+
 - Community: `StockPoolView.vue` (925 lines) — catalog, type filters, create
   dialog with candidate filters, member editing, index constituents, custom/
   index/dynamic branches, historical snapshots, weights, mobile cards,
