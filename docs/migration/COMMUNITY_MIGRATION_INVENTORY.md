@@ -72,6 +72,7 @@ explicitly reverses them:
 | Phase 22 | Operations, deployment, observability, backup/restore, and production-safe migration operations. |
 | Phase 23 | Community feature parity matrix, golden journey, release candidate, and explicit DROP/DEFER decisions. |
 | Phase 31 | PostgreSQL single domain store: SQLite -> PostgreSQL logical migration, backup/restore, then ADR-0013 durable market-data import. |
+| Phase 34 | Stock Pool identity/snapshot/lifecycle contract, historical membership, typed provenance, trusted index as-of behavior, and frozen consumer references. |
 
 ## Productization frontend audit
 
@@ -91,6 +92,39 @@ policy, and test obligations are in
 | User/settings | profile, models, assets, Agent policy, model settings | Port forms/tables and safe states; replace auth/secret/approval APIs. |
 | Operations | `frontend/src/views/operations/` | Port read-mostly information architecture; redesign topology, RBAC, secret safety, and controls. |
 | Old coupling | `/agent-api`, raw/legacy Agent payloads, direct internal `/api/v1` calls | `REPLACE`; frontend must call Product API only. |
+
+## Phase 34 Stock Pool decision audit
+
+The mandatory Phase 34 sequence was completed before implementation:
+
+1. **Inspect**: reviewed the read-only Community `StockPoolView.vue`,
+   `StockPoolDialog.vue`, stock-pool model/service/routes, version service,
+   backtest universe guard, manifest migration, and their contract tests.
+2. **Classify**: retained only the provider/framework-independent invariants
+   below; Community ORM, API, ownership, provider queries, and UI-to-old-API
+   coupling remain refactor/reference evidence.
+3. **Extract invariants/tests**: canonical membership, deterministic
+   fingerprinting, immutable history, no-look-ahead index resolution, frozen
+   universe authorization, and signal containment are required test intent.
+4. **Decide**: ADR-0020 separates mutable identity from immutable snapshots,
+   establishes typed provenance and tombstone lifecycle, and freezes all
+   consumer references by snapshot ID.
+5. **Implement**: permitted only in the next isolated Phase 34 worktree after
+   ADR-0020 is merged.
+
+| Community evidence | Classification | Phase 34 disposition |
+|---|---|---|
+| `frontend/src/views/StockPoolView.vue` | `PORT_LAYOUT` + `PORT_UX` | Use catalog/detail information hierarchy, type filtering, index history, lifecycle affordances, and responsive cards; bind only to BYQ Product API persisted projections. |
+| `frontend/src/components/stocks/StockPoolDialog.vue` | `PORT_COMPONENT` + `PORT_UX` | Rebuild candidate/filter/member workflow on the BYQ snapshot write contract; do not copy old API/state architecture. |
+| `backend/app/services/stock_pool_version_service.py` | `PORT_LOGIC` + `PORT_TESTS` | Preserve symbol normalization, dedupe/sort, deterministic fingerprints, no-op reuse, and append-only history. Exclude mutable name/description/activation from snapshot identity. |
+| `backend/app/services/backtest_universe_guard.py` | `PORT_LOGIC` + `PORT_TESTS` | Freeze an immutable snapshot, reject competing universe selectors, and contain requested/signal symbols. Integrate with ADR-0008/0017 rather than copying the old service. |
+| `backend/app/api/v1/stock_pools.py` | `REFACTOR` | Preserve typed catalog and index as-of UX semantics. Replace optional/legacy ownership, sample data, direct ORM/provider queries, and frontend-authored provenance. |
+| `backend/app/models/stock_pool.py` and Alembic stock-pool migrations | `REFERENCE_ONLY` | Do not copy the detached-version schema or delete behavior; use ADR-0020 PostgreSQL identity/snapshot/member records and tombstones. |
+| Community Tushare index cache | `REFERENCE_ONLY` / `MIGRATE_WHERE_VALID` | Read-only evidence. Phase 34 consumes only BYQ-validated Data Plane records; unproven rows are quarantined. BaoStock/AKShare remain `DROP`. |
+
+Visual interaction evidence is indexed at
+`docs/evidence/phase-34/community-stock-pool/README.md`. It is reference-only
+and does not satisfy the Phase 34 real Product API Chrome MCP exit gate.
 
 ## Historical market-cache audit and migration policy
 

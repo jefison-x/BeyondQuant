@@ -1,6 +1,6 @@
 # Community Full Parity Plan (Phase 32–40)
 
-Status: `ACTIVE` (ADR-0017 Accepted; ADR-0018/0019 remain Proposed)
+Status: `ACTIVE` (ADR-0017/0020 Accepted; ADR-0018/0019 remain Proposed)
 
 This plan describes the remaining Community product-depth workflows that the
 Phase 17–31 contract-first skeleton deferred. `IMPLEMENTATION_PLAN.md` is the
@@ -29,6 +29,8 @@ document supplies the parity-batch overview and dependency map.
 4. Cache management = **PostgreSQL market-data cache status only**; Redis is
    not added in this batch.
 5. Execution budget = **DSH model-call token accounting**.
+6. Stock Pool identity/snapshots/lifecycle = **mutable owner-scoped catalog +
+   immutable content-addressed membership snapshots** (ADR-0020).
 
 ## Global delivery rules (per phase)
 
@@ -77,14 +79,15 @@ document supplies the parity-batch overview and dependency map.
 - Estimate: 10 person-days (L).
 
 ### Phase 34 — Stock Pool depth
-- Status: **NEXT — BLOCKED AT DECISION GATE** until the Stock Pool
-  snapshot/version/lifecycle ADR is Accepted.
+- Status: **NEXT — IMPLEMENTATION** under Accepted ADR-0020.
 - Community: `StockPoolView.vue` (925 lines) catalog, member editing, index
   constituents, filters, weights, snapshots, activation/delete, mobile.
-- Current: create + list + type filter.
-- Gap: catalog, member editing, constituents, filters, weights, snapshots,
-  activation/delete, mobile cards.
-- Dependency: Accepted Stock Pool snapshot/version/lifecycle ADR.
+- Current: owner-scoped create/list, type/search filters, initial member/
+  weight display, and responsive cards on a mutable `v1` row contract.
+- Gap: persisted typed catalog/detail, snapshot-based member/weight editing,
+  index constituents/as-of history, filter/provenance/reference projections,
+  snapshot history, and lifecycle actions.
+- Dependency: ADR-0020 (Accepted).
 - Estimate: 14 person-days (XL).
 
 ### Phase 35 — Paper Trading depth

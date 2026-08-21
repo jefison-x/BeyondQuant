@@ -35,8 +35,7 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
 
 ## Phase 34 — Stock Pool depth
 
-- Status: `NEXT — BLOCKED AT DECISION GATE` until the Stock Pool
-  snapshot/version/lifecycle ADR is Accepted.
+- Status: `NEXT — IMPLEMENTATION` under Accepted ADR-0020.
 
 - Community visual/interaction baseline: desktop and mobile catalog, custom
   filters, index constituents/history, create-dialog, and delete-confirmation
@@ -49,17 +48,17 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   index/dynamic branches, historical snapshots, weights, mobile cards,
   activate/deactivate/delete.
 - Current BYQ: `StockPoolView.vue` (277 lines) — create (name/type/weights
-  JSON) + list + type filter.
+  JSON), list/search/type filter, initial detail, and mobile cards backed by a
+  mutable `v1` row.
 - Gaps:
-  1. Catalog / type taxonomy.
-  2. Member editing tab.
-  3. Index constituents tab.
-  4. Filter conditions tab.
-  5. Historical snapshot tab.
-  6. Weight editing UI.
-  7. Activate/deactivate/delete.
-  8. Mobile cards.
-- Dependencies: Accepted Stock Pool ADR; Backend pool member CRUD + weights +
+  1. Persisted catalog / type taxonomy and trusted-writer rules.
+  2. Snapshot-based member and weight editing.
+  3. Index constituents and no-look-ahead as-of history.
+  4. Persisted filter/definition and provenance/reference projections.
+  5. Historical snapshot projection.
+  6. Activate/deactivate/tombstone delete.
+  7. Bind desktop/mobile detail to the same persisted five projections.
+- Dependencies: ADR-0020 (Accepted); Backend pool member CRUD + weights +
   snapshots + catalog type; Product API routes; MCP `byq_pool_*`.
 - Classification: catalog/member/snapshot=`REFACTOR`; weights/filter=
   `PORT_UX`; create dialog=`PORT_COMPONENT`.

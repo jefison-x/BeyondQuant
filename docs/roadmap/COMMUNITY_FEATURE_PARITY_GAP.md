@@ -170,6 +170,7 @@ and navigation; missing the deeper Community component set.
 
 Do not treat the current branch as v1.0 RC. Continue the active product-depth
 sequence one worktree/branch/PR at a time, each with Chrome MCP evidence and a
-Community feature checklist. The next gate is the Phase 34 Stock Pool domain
-decision, followed by its persisted Product API workflow. Phase 35 then
+Community feature checklist. ADR-0020 has passed the Phase 34 Stock Pool
+domain decision gate; the next work is its persisted Product API workflow.
+Phase 35 then
 deepens Paper Trading; ADR/shared-component gates control Phases 36–40.
