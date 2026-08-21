@@ -331,7 +331,22 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         implementation = (ROOT / "docs/roadmap/IMPLEMENTATION_PLAN.md").read_text()
         self.assertIn("Phase 34 — Stock Pool depth (`COMPLETE`)", implementation)
         self.assertIn("Phase 35 — Paper Trading depth (`COMPLETE`)", implementation)
-        self.assertIn("Phase 36 — Agent workbench depth (`BLOCKED`)", implementation)
+        self.assertIn(
+            "Phase 36 — Agent workbench depth (`NEXT — IMPLEMENTATION`)",
+            implementation,
+        )
+
+        workflow_card_adr = (
+            ROOT
+            / "docs/architecture/adr/ADR-0018-workflow-trace-card-contract.md"
+        ).read_text()
+        self.assertIn("- Status: Accepted", workflow_card_adr)
+        self.assertIn("Cards are not commands", workflow_card_adr)
+        workflow_card_contract = (
+            ROOT / "docs/contracts/workflow-trace-cards.md"
+        ).read_text()
+        self.assertIn("workflow-card.v1", workflow_card_contract)
+        self.assertIn("owner-scoped Product API", workflow_card_contract)
 
         stock_pool_adr = (
             ROOT / "docs/architecture/adr/ADR-0020-stock-pool-snapshot-lifecycle.md"

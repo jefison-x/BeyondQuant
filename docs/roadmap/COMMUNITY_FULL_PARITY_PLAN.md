@@ -1,6 +1,6 @@
 # Community Full Parity Plan (Phase 32–40)
 
-Status: `ACTIVE` (ADR-0017/0020 Accepted; ADR-0018/0019 remain Proposed)
+Status: `ACTIVE` (ADR-0017/0018/0020/0021 Accepted; ADR-0019 remains Proposed)
 
 This plan describes the remaining Community product-depth workflows that the
 Phase 17–31 contract-first skeleton deferred. `IMPLEMENTATION_PLAN.md` is the
@@ -20,9 +20,9 @@ document supplies the parity-batch overview and dependency map.
 
 1. Backtest create-wizard signal source = **pre-computed `signal_snapshot`
    artifact** (ADR-0017). No strategy-source execution in this batch.
-2. Proposed: Agent workbench cards = **minimal BYQ card contract + curated
-   extraction only** (ADR-0018). This is not implementation authority until
-   the ADR is Accepted; raw DSH payloads never cross the Gateway.
+2. Accepted: Agent workbench cards = **versioned BYQ card contract + curated
+   extraction and owner-scoped Domain hydration** (ADR-0018). Raw DSH
+   payloads never cross the Gateway and cards never carry executable actions.
 3. Proposed: Credentials = **PostgreSQL encrypted store** (ADR-0019). This is
    not implementation authority until the ADR is Accepted; planned semantics
    are system/user scopes, masked read, and write audit.
@@ -101,12 +101,14 @@ document supplies the parity-batch overview and dependency map.
 - Estimate: 9 person-days (M).
 
 ### Phase 36 — Agent workbench depth
+- Status: **NEXT — IMPLEMENTATION** under Accepted ADR-0018.
 - Community: `AgentView.vue` (2057 lines) + AgentThinking /
   ApprovalManagementPanel / GlobalApprovalCenter / XiaobaAssistantDrawer.
 - Current: sessions/turn/resume/cancel + WorkflowTrace + approval decisions.
 - Gap: structured cards, assistant drawer, thinking panel, approval
   management, tool visualization depth.
-- Dependency: ADR-0018 (WorkflowTrace card contract + normalization upgrade).
+- Dependency: ADR-0018 (Accepted). Phase 36 owns its Agent-specific
+  components; Phase 40 may generalize them after they are proven.
 - Estimate: 14 person-days (XL).
 
 ### Phase 37 — My Space depth (Models / Assets / Agent Policy)
@@ -150,12 +152,12 @@ document supplies the parity-batch overview and dependency map.
 ## Critical path
 
 ```
-Phase 40 (shared components) ──► prerequisite for 36/37/38
+Phase 40 (shared components) ──► later generalization/final closure
 Phase 32 (backtest)  ── split: result depth (no blocker) → wizard (ADR-0017)
 Phase 33 (strategy)  ── independent
 Phase 34 (stock pool) ── independent
 Phase 35 (paper trading) ── independent
-Phase 36 (agent)     ── needs ADR-0018 + Phase 40
+Phase 36 (agent)     ── ADR-0018 accepted; ready
 Phase 37 (my space)  ── needs ADR-0019 + Phase 40
 Phase 38 (operations) ── needs ADR-0019 + Phase 40
 Phase 39 (data center) ── needs ADR-0019
