@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPaperAccount, createStockPool, listPaperLedger, listPaperOrders, submitPaperOrder } from "./paper";
+import { createPaperAccount, createStockPool, listPaperLedger, listPaperOrders, replaceStockPoolSnapshot, submitPaperOrder } from "./paper";
 
 describe("paper trading api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -37,20 +37,33 @@ describe("paper trading api client", () => {
     expect(String(fetchMock.mock.calls[0][1]?.headers)).not.toContain("tushare");
   });
 
-  it("creates a catalog stock pool with type, description, and weights", async () => {
+  it("creates a custom catalog stock pool with description and complete weights", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ pool: { pool_id: "p1", pool_type: "index" } }), { status: 201 }),
+      new Response(JSON.stringify({ pool: { pool_id: "p1", pool_type: "custom" } }), { status: 201 }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const result = await createStockPool("沪深300", ["000001.SZ", "600000.SH"], "test-token", {
-      poolType: "index",
-      description: "指数池",
-      weights: { "000001.SZ": 0.6 },
+      poolType: "custom",
+      description: "自建池",
+      weights: { "000001.SZ": 0.6, "600000.SH": 0.4 },
     });
-    expect(result.pool.pool_type).toBe("index");
+    expect(result.pool.pool_type).toBe("custom");
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(body.pool_type).toBe("index");
-    expect(body.weights).toEqual({ "000001.SZ": 0.6 });
+    expect(body.pool_type).toBe("custom");
+    expect(body.weights).toEqual({ "000001.SZ": 0.6, "600000.SH": 0.4 });
+    expect(body.provenance).toBeUndefined();
+  });
+
+  it("replaces membership through an immutable snapshot product path", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ snapshot: { snapshot_id: "s2" } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await replaceStockPoolSnapshot("p1", {
+      expected_current_snapshot_id: "s1", idempotency_key: "edit-1", symbols: ["000001.SZ"],
+    }, "test-token");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/paper/pools/p1/snapshot",
+      expect.objectContaining({ method: "PUT", credentials: "include" }),
+    );
   });
 
   it("lists the derived paper ledger", async () => {

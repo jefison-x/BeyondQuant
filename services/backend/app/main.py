@@ -29,6 +29,7 @@ from .backtest import (
     normalize_backtest_request,
     normalize_signal_snapshot,
     signal_snapshot_content_sha256,
+    membership_fingerprint,
 )
 from .agent_research import (
     AgentConflict,
@@ -390,7 +391,22 @@ def transition_experiment(experiment_id: str, payload: dict[str, Any]) -> dict[s
 
 @app.post("/v1/research/artifacts", status_code=201)
 def create_artifact(payload: dict[str, Any]) -> dict[str, object]:
-    return _research_call(lambda: research_store.create_artifact(payload))
+    def operation() -> dict[str, object]:
+        lineage = payload.get("lineage")
+        snapshot_id = lineage.get("stock_pool_snapshot_id") if isinstance(lineage, dict) else None
+        owner = payload.get("owner_principal")
+        if snapshot_id is not None:
+            if not isinstance(owner, str) or not owner:
+                raise ValueError("stock pool lineage requires owner_principal")
+            paper_store.get_pool_snapshot(snapshot_id, trusted_owner=owner)
+        artifact = research_store.create_artifact(payload)
+        if snapshot_id is not None:
+            paper_store.record_pool_reference(
+                snapshot_id, domain="research", reference_id=artifact["artifact_id"],
+                trusted_owner=artifact["owner_principal"],
+            )
+        return artifact
+    return _research_call(operation)
 
 
 @app.get("/v1/research/artifacts/{artifact_id}")
@@ -901,11 +917,50 @@ def create_backtest_job(payload: dict[str, Any], request: Request) -> dict[str, 
     context = _required_agent_context(request)
 
     def operation() -> dict[str, object]:
-        backtest_request = _validated_backtest_request(payload)
+        validation_payload = dict(payload)
+        stock_pool_snapshot_id = validation_payload.pop("stock_pool_snapshot_id", None)
+        backtest_request = _validated_backtest_request(validation_payload)
         task = research_store.get_task(backtest_request["task_id"])
         if task["owner_principal"] != context["owner_principal"]:
             raise ResearchNotFound("research task not found")
+        if stock_pool_snapshot_id is not None:
+            snapshot = paper_store.get_pool_snapshot(
+                stock_pool_snapshot_id, trusted_owner=context["owner_principal"]
+            )
+            pool = paper_store.get_pool(snapshot["pool_id"], trusted_owner=context["owner_principal"])
+            if pool["status"] != "active":
+                raise ValueError("stock pool must be active for a new backtest reference")
+            manifest = backtest_request["manifest"]
+            universe = manifest.get("universe") if isinstance(manifest, dict) else None
+            if not isinstance(universe, dict) or not isinstance(universe.get("symbols"), list):
+                raise ValueError("backtest manifest universe is invalid")
+            pool_symbols = {item["symbol"] for item in snapshot.get("members", [])}
+            requested = {str(item) for item in universe["symbols"]}
+            if not requested.issubset(pool_symbols):
+                raise ValueError("backtest universe escapes the stock pool snapshot")
+            frozen_universe = dict(universe)
+            frozen_universe["universe_id"] = snapshot["pool_id"]
+            frozen_universe["version_id"] = snapshot["snapshot_id"]
+            frozen_universe["membership_fingerprint"] = membership_fingerprint(requested)
+            frozen_universe["stock_pool_snapshot_id"] = snapshot["snapshot_id"]
+            rebuilt, manifest_id = build_manifest(
+                strategy_version_artifact_id=backtest_request["strategy_version_artifact_id"],
+                approval_artifact_id=backtest_request["approval_artifact_id"],
+                universe=frozen_universe,
+                bars=manifest["bars"], signals=manifest["signals"],
+                corporate_actions=manifest["corporate_actions"], execution=manifest["execution"],
+            )
+            backtest_request["manifest"] = rebuilt
+            backtest_request["input_manifest_id"] = manifest_id
+            backtest_request["stock_pool_snapshot_id"] = snapshot["snapshot_id"]
         job = backtest_store.create(backtest_request, owner_principal=context["owner_principal"])
+        if stock_pool_snapshot_id is not None:
+            paper_store.record_pool_reference(
+                stock_pool_snapshot_id,
+                domain="backtest",
+                reference_id=job["job_id"],
+                trusted_owner=context["owner_principal"],
+            )
         return {"job": job}
 
     return _backtest_call(operation)
@@ -1405,9 +1460,81 @@ def get_stock_pool(pool_id: str, request: Request) -> dict[str, object]:
 
 
 @app.get("/v1/paper/pools")
-def list_stock_pools(request: Request) -> dict[str, object]:
+def list_stock_pools(request: Request, limit: int = 50, offset: int = 0) -> dict[str, object]:
     context = _required_agent_context(request)
-    return _paper_call(lambda: paper_store.list_pools(trusted_owner=context["owner_principal"]))
+    return _paper_call(lambda: paper_store.list_pools(trusted_owner=context["owner_principal"], limit=limit, offset=offset))
+
+
+@app.patch("/v1/paper/pools/{pool_id}/metadata")
+def update_stock_pool_metadata(pool_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    return _paper_call(lambda: {"pool": paper_store.update_pool_metadata(
+        pool_id, payload, trusted_owner=context["owner_principal"]
+    )})
+
+
+@app.put("/v1/paper/pools/{pool_id}/snapshot")
+def replace_stock_pool_snapshot(pool_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    return _paper_call(lambda: {"snapshot": paper_store.replace_pool_snapshot(
+        pool_id, payload, trusted_owner=context["owner_principal"]
+    )})
+
+
+@app.get("/v1/paper/pools/{pool_id}/snapshots")
+def list_stock_pool_snapshots(pool_id: str, request: Request, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: paper_store.list_pool_snapshots(
+        pool_id, trusted_owner=context["owner_principal"], limit=limit, offset=offset
+    ))
+
+
+@app.get("/v1/paper/pools/{pool_id}/snapshots/{snapshot_id}")
+def get_stock_pool_snapshot(pool_id: str, snapshot_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    def operation() -> dict[str, object]:
+        snapshot = paper_store.get_pool_snapshot(snapshot_id, trusted_owner=context["owner_principal"])
+        if snapshot["pool_id"] != pool_id:
+            raise PaperTradingNotFound("stock pool snapshot not found")
+        return {"snapshot": snapshot}
+    return _paper_call(operation)
+
+
+@app.get("/v1/paper/pools/{pool_id}/as-of/{trade_date}")
+def get_stock_pool_as_of(pool_id: str, trade_date: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: {"snapshot": paper_store.get_pool_as_of(
+        pool_id, trade_date, trusted_owner=context["owner_principal"]
+    )})
+
+
+@app.patch("/v1/paper/pools/{pool_id}/lifecycle")
+def update_stock_pool_lifecycle(pool_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    return _paper_call(lambda: {"pool": paper_store.set_pool_lifecycle(
+        pool_id, payload, trusted_owner=context["owner_principal"], trusted_actor=context["actor_principal"]
+    )})
+
+
+@app.delete("/v1/paper/pools/{pool_id}")
+def delete_stock_pool(pool_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    payload = {
+        "status": "deleted",
+        "reason": request.headers.get("x-byq-delete-reason") or "user requested deletion",
+        "idempotency_key": request.headers.get("x-idempotency-key") or f"delete-{pool_id}",
+    }
+    return _paper_call(lambda: {"pool": paper_store.set_pool_lifecycle(
+        pool_id, payload, trusted_owner=context["owner_principal"], trusted_actor=context["actor_principal"]
+    )})
+
+
+@app.get("/v1/paper/pools/{pool_id}/references")
+def list_stock_pool_references(pool_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: paper_store.pool_references(
+        pool_id, trusted_owner=context["owner_principal"]
+    ))
 
 
 @app.post("/v1/paper/orders", status_code=201)

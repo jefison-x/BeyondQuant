@@ -54,6 +54,17 @@ validation, human review, and promotion history. MCP forwards only normalized
 domain fields and never exposes SQLite paths, raw rows, DSH event schemas,
 provider credentials, or Backend implementation exceptions.
 
+## Phase 34 Stock Pool capabilities
+
+The `byq_pool_list`, `byq_pool_get`, `byq_pool_create`,
+`byq_pool_snapshot_replace`, `byq_pool_history`, and `byq_pool_lifecycle`
+tools expose bounded owner-scoped Stock Pool operations. MCP derives trusted
+owner/actor/run context, creates only custom pools, and cannot submit an
+authoritative snapshot identity or provider provenance. Backend computes
+fingerprints, validates exact weights and optimistic concurrency, persists
+append-only snapshots, and owns lifecycle transitions. DSH never reads
+PostgreSQL, Tushare, or raw Backend schemas through these tools.
+
 ## Non-goals
 
 - This document does not define a complete tool schema.

@@ -31,10 +31,10 @@ never returned.
 
 Implemented list routes return resource-specific arrays such as `tasks`,
 `artifacts`, `backtests`, `pools`, and `accounts`. Backend queries impose their
-domain bounds and stable ordering where defined. A generic Product API
-`limit`/`offset` envelope is not implemented and must not be advertised as
-available; future pagination requires route implementation, OpenAPI changes,
-and contract tests in the same PR.
+domain bounds and stable ordering where defined. There is no universal
+pagination envelope. Phase 34 Stock Pool catalog/history routes implement
+bounded `limit`/`offset` parameters and return `total`, `limit`, and `offset`;
+other routes must not advertise pagination until they implement and test it.
 
 ## Resource projections
 
@@ -49,6 +49,8 @@ It maps:
 - Factor
 - Strategy / StrategyVersion / Approval
 - Backtest
+- Stock Pool catalog, immutable snapshots, typed provenance, references, and
+  lifecycle
 - Approval Inbox / Audit
 - Data status / migration status
 

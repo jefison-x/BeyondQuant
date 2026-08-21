@@ -1,8 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { ElMessage } from "element-plus";
-import { createStockPool, listStockPools } from "@/api/paper";
-import type { StockPool } from "@/api/types";
+import { ElMessage, ElMessageBox } from "element-plus";
+import {
+  createStockPool,
+  deleteStockPool,
+  getStockPoolAsOf,
+  getStockPool,
+  getStockPoolSnapshot,
+  listStockPoolReferences,
+  listStockPoolSnapshots,
+  listStockPools,
+  replaceStockPoolSnapshot,
+  setStockPoolLifecycle,
+  updateStockPoolMetadata,
+} from "@/api/paper";
+import type { StockPool, StockPoolSnapshot } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 
@@ -11,7 +23,12 @@ const loading = ref(true);
 const error = ref("");
 const busy = ref(false);
 const pools = ref<Array<Record<string, unknown>>>([]);
-const selected = ref<Record<string, unknown> | null>(null);
+const selected = ref<StockPool | null>(null);
+const snapshots = ref<StockPoolSnapshot[]>([]);
+const references = ref<Array<Record<string, unknown>>>([]);
+const activeTab = ref("overview");
+const historicalSnapshot = ref<StockPoolSnapshot | null>(null);
+const asOfDate = ref("");
 const name = ref("");
 const poolType = ref<"custom" | "index" | "dynamic">("custom");
 const description = ref("");
@@ -19,6 +36,11 @@ const symbolsText = ref("");
 const weightsText = ref("");
 const filter = ref<"all" | "custom" | "index" | "dynamic">("all");
 const search = ref("");
+const editName = ref("");
+const editDescription = ref("");
+const editSymbols = ref("");
+const editWeights = ref("");
+const editDefinition = ref("{}");
 
 const POOL_TYPE_LABELS: Record<string, string> = {
   custom: "自建",
@@ -82,7 +104,7 @@ async function submit() {
       description: description.value.trim() || undefined,
       weights,
     });
-    selected.value = created.pool as unknown as Record<string, unknown>;
+    selected.value = created.pool;
     ElMessage.success("股票池已创建");
     name.value = "";
     description.value = "";
@@ -96,8 +118,90 @@ async function submit() {
   }
 }
 
-function select(row: Record<string, unknown>) {
-  selected.value = row;
+async function select(row: Record<string, unknown>) {
+  const poolId = String(row.pool_id ?? "");
+  if (!poolId) return;
+  busy.value = true;
+  try {
+    const [detail, history, refs] = await Promise.all([
+      getStockPool(poolId, auth.token),
+      listStockPoolSnapshots(poolId, auth.token),
+      listStockPoolReferences(poolId, auth.token),
+    ]);
+    selected.value = detail.pool;
+    snapshots.value = history.snapshots;
+    references.value = refs.references;
+    editName.value = detail.pool.name ?? "";
+    editDescription.value = detail.pool.description ?? "";
+    editSymbols.value = (detail.pool.snapshot?.members ?? []).map((item) => item.symbol).join(",");
+    editWeights.value = JSON.stringify(detail.pool.weights ?? {}, null, 2);
+    editDefinition.value = JSON.stringify(detail.pool.snapshot?.definition ?? {}, null, 2);
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "加载股票池详情失败");
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function saveMetadata() {
+  if (!selected.value?.pool_id || !selected.value.metadata_version) return;
+  const result = await updateStockPoolMetadata(selected.value.pool_id, {
+    name: editName.value.trim(),
+    description: editDescription.value.trim(),
+    expected_metadata_version: selected.value.metadata_version,
+  }, auth.token);
+  selected.value = result.pool;
+  await loadPools();
+  ElMessage.success("目录信息已保存，成员快照未改变");
+}
+
+async function saveSnapshot() {
+  if (!selected.value?.pool_id || !selected.value.current_snapshot_id) return;
+  try {
+    const symbols = editSymbols.value.split(",").map((item) => item.trim()).filter(Boolean);
+    const weights = editWeights.value.trim() ? JSON.parse(editWeights.value) : {};
+    const definition = editDefinition.value.trim() ? JSON.parse(editDefinition.value) : {};
+    await replaceStockPoolSnapshot(selected.value.pool_id, {
+      expected_current_snapshot_id: selected.value.current_snapshot_id,
+      idempotency_key: crypto.randomUUID(), symbols, weights, definition,
+    }, auth.token);
+    await select({ pool_id: selected.value.pool_id });
+    await loadPools();
+    ElMessage.success("新成员快照已保存");
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "快照保存失败");
+  }
+}
+
+async function changeLifecycle(status: "active" | "inactive") {
+  if (!selected.value?.pool_id) return;
+  await setStockPoolLifecycle(selected.value.pool_id, status, status === "active" ? "用户重新启用" : "用户暂停新引用", auth.token);
+  await select({ pool_id: selected.value.pool_id });
+  await loadPools();
+}
+
+async function removeSelected() {
+  if (!selected.value?.pool_id) return;
+  await ElMessageBox.confirm("删除后不可恢复，但历史快照与已有引用会保留。", "删除股票池", { type: "warning" });
+  await deleteStockPool(selected.value.pool_id, auth.token);
+  selected.value = null;
+  await loadPools();
+  ElMessage.success("股票池已删除并保留历史快照");
+}
+
+async function inspectSnapshot(row: StockPoolSnapshot) {
+  if (!selected.value?.pool_id) return;
+  historicalSnapshot.value = (await getStockPoolSnapshot(selected.value.pool_id, row.snapshot_id, auth.token)).snapshot;
+}
+
+async function resolveAsOf() {
+  if (!selected.value?.pool_id || !asOfDate.value) return;
+  const tradeDate = asOfDate.value.replaceAll("-", "");
+  historicalSnapshot.value = (await getStockPoolAsOf(selected.value.pool_id, tradeDate, auth.token)).snapshot;
+}
+
+function toggleHistorical(open: boolean) {
+  if (!open) historicalSnapshot.value = null;
 }
 
 onMounted(loadPools);
@@ -121,11 +225,8 @@ onMounted(loadPools);
           </el-col>
           <el-col :xs="24" :sm="12">
             <el-form-item label="类型">
-              <el-radio-group v-model="poolType">
-                <el-radio-button label="custom">自建</el-radio-button>
-                <el-radio-button label="index">指数</el-radio-button>
-                <el-radio-button label="dynamic">动态</el-radio-button>
-              </el-radio-group>
+              <el-tag type="primary">自建</el-tag>
+              <small class="card-sub">指数/动态池只能由可信 BYQ 数据或计算边界生成</small>
             </el-form-item>
           </el-col>
         </el-row>
@@ -151,10 +252,10 @@ onMounted(loadPools);
           <div class="list-toolbar">
             <el-input v-model="search" placeholder="搜索名称 / ID" clearable />
             <el-radio-group v-model="filter" size="small">
-              <el-radio-button label="all">全部</el-radio-button>
-              <el-radio-button label="custom">自建</el-radio-button>
-              <el-radio-button label="index">指数</el-radio-button>
-              <el-radio-button label="dynamic">动态</el-radio-button>
+              <el-radio-button value="all">全部</el-radio-button>
+              <el-radio-button value="custom">自建</el-radio-button>
+              <el-radio-button value="index">指数</el-radio-button>
+              <el-radio-button value="dynamic">动态</el-radio-button>
             </el-radio-group>
             <el-button size="small" @click="loadPools">刷新</el-button>
           </div>
@@ -168,7 +269,7 @@ onMounted(loadPools);
           <template #default="{ row }">{{ POOL_TYPE_LABELS[String(row.pool_type ?? "custom")] ?? row.pool_type }}</template>
         </el-table-column>
         <el-table-column label="成分" width="80" align="right">
-          <template #default="{ row }">{{ Array.isArray(row.symbols) ? row.symbols.length : 0 }}</template>
+          <template #default="{ row }">{{ Number(row.member_count ?? 0) }}</template>
         </el-table-column>
         <el-table-column prop="version" label="版本" width="80" />
         <el-table-column prop="description" label="说明" min-width="200" show-overflow-tooltip />
@@ -190,31 +291,90 @@ onMounted(loadPools);
             <el-tag size="small">{{ POOL_TYPE_LABELS[String(row.pool_type ?? "custom")] ?? row.pool_type }}</el-tag>
           </div>
           <div class="mobile-card-meta">
-            <span>{{ Array.isArray(row.symbols) ? row.symbols.length : 0 }} 只成分</span>
+            <span>{{ Number(row.member_count ?? 0) }} 只成分</span>
             <span>{{ formatChinaTime(row.created_at) }}</span>
           </div>
         </el-card>
       </div>
     </el-card>
 
-    <el-card v-if="selected" shadow="never" class="top-band">
+    <el-card v-if="selected" shadow="never" class="top-band" v-loading="busy">
       <template #header>
         <div class="card-heading">
           <span class="card-title">股票池详情</span>
           <small class="card-sub">{{ String(selected.pool_id ?? "") }}</small>
         </div>
       </template>
-      <el-descriptions :column="2" border>
-        <el-descriptions-item label="名称">{{ selected.name }}</el-descriptions-item>
-        <el-descriptions-item label="类型">{{ POOL_TYPE_LABELS[String(selected.pool_type ?? "custom")] ?? selected.pool_type }}</el-descriptions-item>
-        <el-descriptions-item label="版本">{{ selected.version }}</el-descriptions-item>
-        <el-descriptions-item label="说明">{{ selected.description ?? "-" }}</el-descriptions-item>
-      </el-descriptions>
-      <el-table :data="Array.isArray(selected.symbols) ? selected.symbols.map((symbol: string) => ({ symbol })) : []" size="small">
-        <el-table-column prop="symbol" label="成分" min-width="160" />
-      </el-table>
-      <pre class="quant-result">{{ JSON.stringify(selected.weights ?? {}, null, 2) }}</pre>
+      <el-tabs v-model="activeTab">
+        <el-tab-pane label="概览" name="overview">
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="类型">{{ POOL_TYPE_LABELS[selected.pool_type ?? "custom"] }}</el-descriptions-item>
+            <el-descriptions-item label="状态"><el-tag>{{ selected.status }}</el-tag></el-descriptions-item>
+            <el-descriptions-item label="当前版本">{{ selected.version }}</el-descriptions-item>
+            <el-descriptions-item label="成员数">{{ selected.member_count }}</el-descriptions-item>
+          </el-descriptions>
+          <el-form label-position="top" class="detail-form">
+            <el-form-item label="名称"><el-input v-model="editName" /></el-form-item>
+            <el-form-item label="说明"><el-input v-model="editDescription" /></el-form-item>
+            <el-button @click="saveMetadata">保存目录信息</el-button>
+            <el-button v-if="selected.status === 'active'" @click="changeLifecycle('inactive')">停用</el-button>
+            <el-button v-else-if="selected.status === 'inactive'" type="primary" @click="changeLifecycle('active')">启用</el-button>
+            <el-button type="danger" plain @click="removeSelected">删除</el-button>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane label="成员与权重" name="members">
+          <el-alert v-if="selected.pool_type !== 'custom'" title="可信指数/动态池为只读，成员由 BYQ 数据或计算边界生成。" type="info" :closable="false" />
+          <el-form v-else label-position="top">
+            <el-form-item label="成分股（逗号分隔）"><el-input v-model="editSymbols" type="textarea" :rows="4" /></el-form-item>
+            <el-form-item label="完整权重 JSON（留空表示等权/无权重）"><el-input v-model="editWeights" type="textarea" :rows="5" /></el-form-item>
+            <el-button type="primary" @click="saveSnapshot">创建新快照</el-button>
+          </el-form>
+          <el-table :data="selected.snapshot?.members ?? []" size="small">
+            <el-table-column prop="symbol" label="成分" min-width="160" />
+            <el-table-column prop="weight" label="权重" min-width="140" />
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="定义与筛选" name="definition">
+          <el-alert title="筛选条件用于解释候选来源；只有已持久化成员才是授权范围。" type="info" :closable="false" />
+          <el-input v-model="editDefinition" type="textarea" :rows="10" :readonly="selected.pool_type !== 'custom'" />
+          <el-button v-if="selected.pool_type === 'custom'" type="primary" class="detail-action" @click="saveSnapshot">随新快照保存</el-button>
+        </el-tab-pane>
+        <el-tab-pane label="来源与引用" name="provenance">
+          <pre class="quant-result">{{ JSON.stringify(selected.snapshot?.provenance ?? {}, null, 2) }}</pre>
+          <el-table :data="references" size="small" empty-text="暂无下游引用">
+            <el-table-column prop="domain" label="领域" />
+            <el-table-column prop="snapshot_id" label="快照" min-width="260" show-overflow-tooltip />
+            <el-table-column prop="reference_count" label="引用数" />
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="快照历史" name="history">
+          <div v-if="selected.pool_type === 'index'" class="as-of-row">
+            <el-date-picker v-model="asOfDate" value-format="YYYY-MM-DD" placeholder="选择 as-of 日期" />
+            <el-button @click="resolveAsOf">按日期解析（无前视）</el-button>
+          </div>
+          <el-table :data="snapshots" size="small" @row-click="inspectSnapshot">
+            <el-table-column prop="version_number" label="版本" width="80" />
+            <el-table-column prop="member_count" label="成员" width="80" />
+            <el-table-column prop="weight_mode" label="权重模式" width="120" />
+            <el-table-column prop="effective_trade_date" label="生效日" width="110" />
+            <el-table-column prop="membership_fingerprint" label="成员指纹" min-width="220" show-overflow-tooltip />
+            <el-table-column label="创建时间" min-width="170"><template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template></el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
     </el-card>
+
+    <el-dialog :model-value="historicalSnapshot !== null" title="历史快照（只读）" width="min(760px, 92vw)" @update:model-value="toggleHistorical">
+      <el-descriptions v-if="historicalSnapshot" :column="2" border>
+        <el-descriptions-item label="版本">v{{ historicalSnapshot.version_number }}</el-descriptions-item>
+        <el-descriptions-item label="生效日">{{ historicalSnapshot.effective_trade_date ?? "-" }}</el-descriptions-item>
+        <el-descriptions-item label="成员指纹" :span="2">{{ historicalSnapshot.membership_fingerprint }}</el-descriptions-item>
+      </el-descriptions>
+      <el-table v-if="historicalSnapshot" :data="historicalSnapshot.members ?? []" size="small">
+        <el-table-column prop="symbol" label="成分" />
+        <el-table-column prop="weight" label="权重" />
+      </el-table>
+    </el-dialog>
   </section>
 </template>
 
@@ -241,6 +401,20 @@ onMounted(loadPools);
   margin-top: 0.75rem;
   overflow: auto;
   padding: 0.75rem;
+}
+
+.detail-form {
+  margin-top: 1rem;
+}
+
+.detail-action {
+  margin-top: 0.75rem;
+}
+
+.as-of-row {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
 }
 
 .mobile-list {

@@ -18,6 +18,13 @@ attempt; the input manifest freezes the actual execution data.
 - explicit execution rules or the BYQ defaults for capital, fees, lot size,
   position limit, slippage, A-share rules, and runtime bound.
 
+When `stock_pool_snapshot_id` is supplied, Backend resolves that immutable
+owner-scoped snapshot, requires its pool to be active for the new reference,
+and verifies the frozen backtest universe and every signal remain within its
+membership. The input manifest records the snapshot ID as the universe
+version; replay never resolves the pool's mutable current pointer. A separate
+index-universe selector cannot be combined with this reference.
+
 The resulting `backtest-input-v1` manifest is content-addressed. It contains
 the strategy/approval identities, universe, bars, signals, corporate actions,
 execution rules, and native engine contract version. It excludes credentials,

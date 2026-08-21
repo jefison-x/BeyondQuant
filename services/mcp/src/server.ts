@@ -50,6 +50,14 @@ import {
 } from "./strategy.js";
 import { fetchByqMarketDaily, type MarketDailyRequest } from "./market-data.js";
 import {
+  fetchByqPoolCreate,
+  fetchByqPoolGet,
+  fetchByqPoolHistory,
+  fetchByqPoolLifecycle,
+  fetchByqPoolList,
+  fetchByqPoolSnapshotReplace,
+} from "./stock-pool.js";
+import {
   fetchByqArtifactCreate,
   fetchByqExperimentCreate,
   fetchByqResearchGet,
@@ -342,6 +350,47 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       inputSchema: {},
     },
     byqHealth,
+  );
+  const poolContext = () => completeAgentContext(trustedContext);
+  server.registerTool(
+    "byq_pool_list",
+    { description: "List owner-scoped BYQ Stock Pools.", inputSchema: {} },
+    () => { const context = poolContext(); return context ? fetchByqPoolList(BACKEND_URL, context) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_pool_get",
+    { description: "Read one owner-scoped BYQ Stock Pool and its current immutable snapshot.", inputSchema: { pool_id: z.string() } },
+    (args) => { const context = poolContext(); return context ? fetchByqPoolGet(BACKEND_URL, args.pool_id, context) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_pool_create",
+    { description: "Create an owner-scoped custom Stock Pool and first immutable snapshot.", inputSchema: {
+      name: z.string(), description: z.string().optional(), symbols: z.array(z.string()).min(1),
+      weights: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
+      definition: z.record(z.string(), z.unknown()).optional(),
+    } },
+    (args) => { const context = poolContext(); return context ? fetchByqPoolCreate(BACKEND_URL, { ...args, pool_type: "custom" }, context) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_pool_snapshot_replace",
+    { description: "Append or idempotently reuse a complete custom-pool membership snapshot.", inputSchema: {
+      pool_id: z.string(), expected_current_snapshot_id: z.string(), idempotency_key: z.string(),
+      symbols: z.array(z.string()).min(1), weights: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
+      definition: z.record(z.string(), z.unknown()).optional(),
+    } },
+    (args) => { const context = poolContext(); const { pool_id, ...body } = args; return context ? fetchByqPoolSnapshotReplace(BACKEND_URL, pool_id, body, context) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_pool_history",
+    { description: "List immutable snapshot history for one owner-scoped Stock Pool.", inputSchema: { pool_id: z.string() } },
+    (args) => { const context = poolContext(); return context ? fetchByqPoolHistory(BACKEND_URL, args.pool_id, context) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_pool_lifecycle",
+    { description: "Activate, deactivate, or tombstone-delete an owner-scoped Stock Pool.", inputSchema: {
+      pool_id: z.string(), status: z.enum(["active", "inactive", "deleted"]), reason: z.string(), idempotency_key: z.string(),
+    } },
+    (args) => { const context = poolContext(); const { pool_id, ...body } = args; return context ? fetchByqPoolLifecycle(BACKEND_URL, pool_id, body, context) : agentContextUnavailable(); },
   );
   server.registerTool(
     "byq_agent_context",

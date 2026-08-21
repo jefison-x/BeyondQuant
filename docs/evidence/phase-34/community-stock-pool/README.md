@@ -86,20 +86,22 @@ BYQ Product API flows and persisted data for acceptance.
 
 ## Phase 34 checklist derived from the baseline
 
-- [ ] Owner-scoped paged catalog with custom/index/dynamic provenance.
-- [ ] Catalog/detail selection and type-specific persisted projections.
-- [ ] Persisted member editing through immutable snapshots.
-- [ ] Persisted weight validation and editing.
-- [ ] Persisted filter-condition projection.
-- [ ] Read-only index constituents with effective-date provenance.
-- [ ] Historical snapshot list with stable version/fingerprint identity.
-- [ ] ADR-defined activation, deactivation, and delete semantics.
-- [ ] References from Paper Trading, research, and backtest remain valid and
+- [x] Owner-scoped paged catalog with custom/index/dynamic provenance.
+- [x] Catalog/detail selection and type-specific persisted projections.
+- [x] Persisted member editing through immutable snapshots.
+- [x] Persisted weight validation and editing.
+- [x] Persisted filter-condition projection.
+- [x] Read-only index constituents with effective-date provenance.
+- [x] Historical snapshot list with stable version/fingerprint identity.
+- [x] ADR-defined activation, deactivation, and delete semantics.
+- [x] References from Paper Trading, research, and backtest remain valid and
       auditable across lifecycle changes.
-- [ ] Desktop table and mobile card behavior use Product API only.
-- [ ] Mobile create/edit actions remain reachable with keyboard and scrolling.
-- [ ] BYQ Chrome MCP review is captured separately using real Product API and
+- [x] Desktop table and mobile card behavior use Product API only.
+- [x] Mobile create/edit actions remain reachable with keyboard and scrolling.
+- [x] BYQ Chrome MCP review is captured separately using real Product API and
       persisted data before Phase 34 is marked complete.
+
+Completion evidence: [`../byq-stock-pool/README.md`](../byq-stock-pool/README.md).
 
 ## Capture-time observations not to copy
 

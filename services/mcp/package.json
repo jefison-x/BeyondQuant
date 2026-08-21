@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
-    "test": "node dist/tests/backend-health-test.js && node dist/tests/contract-test.js && node dist/tests/market-data-test.js && node dist/tests/research-test.js && node dist/tests/factor-research-test.js && node dist/tests/strategy-test.js && node dist/tests/backtest-test.js && node dist/tests/agent-test.js && node dist/tests/learning-test.js",
+    "test": "node dist/tests/backend-health-test.js && node dist/tests/contract-test.js && node dist/tests/market-data-test.js && node dist/tests/research-test.js && node dist/tests/factor-research-test.js && node dist/tests/strategy-test.js && node dist/tests/stock-pool-test.js && node dist/tests/backtest-test.js && node dist/tests/agent-test.js && node dist/tests/learning-test.js",
     "test:build": "npm run build && npm test"
   },
   "dependencies": {

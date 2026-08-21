@@ -35,7 +35,7 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
 
 ## Phase 34 — Stock Pool depth
 
-- Status: `NEXT — IMPLEMENTATION` under Accepted ADR-0020.
+- Status: `COMPLETE` (2026-08-21) under Accepted ADR-0020.
 
 - Community visual/interaction baseline: desktop and mobile catalog, custom
   filters, index constituents/history, create-dialog, and delete-confirmation
@@ -47,10 +47,11 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   dialog with candidate filters, member editing, index constituents, custom/
   index/dynamic branches, historical snapshots, weights, mobile cards,
   activate/deactivate/delete.
-- Current BYQ: `StockPoolView.vue` (277 lines) — create (name/type/weights
-  JSON), list/search/type filter, initial detail, and mobile cards backed by a
-  mutable `v1` row.
-- Gaps:
+- Delivered BYQ: owner-scoped paged catalog and five persisted detail tabs,
+  immutable membership snapshots, weight validation, trusted index
+  provenance/no-look-ahead history, lifecycle/tombstone actions, frozen
+  consumer references, MCP tools, and shared desktop/mobile Product API UX.
+- Closed gaps:
   1. Persisted catalog / type taxonomy and trusted-writer rules.
   2. Snapshot-based member and weight editing.
   3. Index constituents and no-look-ahead as-of history.

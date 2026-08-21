@@ -1,6 +1,6 @@
 # Community Feature Parity Matrix V2
 
-Current Community feature parity status after Phase 33. Each
+Current Community feature parity status after Phase 34. Each
 surface is marked `PASS`, `REDESIGNED_PASS`, `PARTIAL`, `MISSING`,
 `INTENTIONAL_DROP`, or `FAIL`. Browser observations are recorded in
 [`COMMUNITY_FEATURE_PARITY_CHROME_MCP_REVIEW.md`](COMMUNITY_FEATURE_PARITY_CHROME_MCP_REVIEW.md).
@@ -15,7 +15,7 @@ Detailed gaps are in
 | Research | PARTIAL | Entity/approval lookup exists; lineage DAG and full research workspace are missing. |
 | Strategy | REDESIGNED_PASS | Editor with templates/snippets, durable draft save/delete (soft-superseded immutable artifacts), static validation, immutable version creation, version-history list, per-strategy backtest counts, export, and approval banner are real. |
 | Backtest | PARTIAL | Result workspace and immutable signal_snapshot wizard are real; a newly authored strategy still cannot produce that snapshot (D-0002), so the product journey is incomplete. |
-| Stock Pool | PARTIAL | Create/list, catalog types, description, initial weights, membership detail, filters, and mobile cards exist; persisted editing, lifecycle actions, and snapshot history are Phase 34. |
+| Stock Pool | REDESIGNED_PASS | Owner-scoped catalog and five persisted projections, immutable member/weight snapshots, trusted index as-of history, lifecycle/tombstone semantics, frozen downstream references, MCP tools, and desktop/mobile Product API flows are real. |
 | Paper Trading | PARTIAL | Accounts, orders, positions, fills, and derived ledger are real; snapshots/settlement/import-export remain Phase 35 scope. |
 | Profile | REDESIGNED_PASS | Durable profile form and owner-scoped save work through Product API. |
 | Models | PARTIAL | Masked configured status exists; credential/profile/Agent binding management is DEFERRED. |

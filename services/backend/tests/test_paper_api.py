@@ -57,3 +57,29 @@ def test_paper_ledger_endpoint_derives_cash_flow(monkeypatch) -> None:
     )
     assert denied.status_code == 403
     store.close()
+
+
+def test_stock_pool_snapshot_and_lifecycle_api(monkeypatch) -> None:
+    store = PaperTradingStore()
+    monkeypatch.setattr(main, "paper_store", store)
+    client = TestClient(main.app)
+    headers = {
+        "x-byq-owner-principal": "product-user", "x-byq-actor-principal": "product-user",
+        "x-byq-trace-id": "trace-pool", "x-byq-session-id": "session-pool", "x-byq-dsh-run-id": "browser",
+    }
+    created = client.post("/v1/paper/pools", headers=headers, json={"name": "核心池", "symbols": ["000001.SZ"]})
+    assert created.status_code == 201
+    pool = created.json()["pool"]
+    replaced = client.put(f"/v1/paper/pools/{pool['pool_id']}/snapshot", headers=headers, json={
+        "expected_current_snapshot_id": pool["current_snapshot_id"], "idempotency_key": "api-edit-1",
+        "symbols": ["600000.SH"],
+    })
+    assert replaced.status_code == 200
+    assert replaced.json()["snapshot"]["version_number"] == 2
+    history = client.get(f"/v1/paper/pools/{pool['pool_id']}/snapshots", headers=headers)
+    assert [item["version_number"] for item in history.json()["snapshots"]] == [2, 1]
+    inactive = client.patch(f"/v1/paper/pools/{pool['pool_id']}/lifecycle", headers=headers, json={
+        "status": "inactive", "reason": "api pause", "idempotency_key": "api-life-1",
+    })
+    assert inactive.json()["pool"]["status"] == "inactive"
+    store.close()

@@ -79,18 +79,17 @@ document supplies the parity-batch overview and dependency map.
 - Estimate: 10 person-days (L).
 
 ### Phase 34 — Stock Pool depth
-- Status: **NEXT — IMPLEMENTATION** under Accepted ADR-0020.
+- Status: **COMPLETE** under Accepted ADR-0020 (2026-08-21).
 - Community: `StockPoolView.vue` (925 lines) catalog, member editing, index
   constituents, filters, weights, snapshots, activation/delete, mobile.
-- Current: owner-scoped create/list, type/search filters, initial member/
-  weight display, and responsive cards on a mutable `v1` row contract.
-- Gap: persisted typed catalog/detail, snapshot-based member/weight editing,
-  index constituents/as-of history, filter/provenance/reference projections,
-  snapshot history, and lifecycle actions.
+- Delivered: persisted typed catalog/detail, immutable member/weight snapshots,
+  trusted index as-of history, filter/provenance/reference projections,
+  lifecycle/tombstone semantics, and responsive Product API views.
 - Dependency: ADR-0020 (Accepted).
 - Estimate: 14 person-days (XL).
 
 ### Phase 35 — Paper Trading depth
+- Status: **NEXT — IMPLEMENTATION**.
 - Community: `PaperTradingView.vue` (597 lines) 5 tabs + order detail +
   create/import + settlement + risk controls.
 - Current: accounts/overview/positions/orders + order submit; ledger exists
