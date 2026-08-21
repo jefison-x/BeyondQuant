@@ -23,6 +23,7 @@ Codex session does not infer project state from commit history.
 - Accepted PostgreSQL single-domain-store ADR: **ADR-0016**
 - Accepted signal-snapshot ADR: **ADR-0017**
 - Accepted Stock Pool snapshot/lifecycle ADR: **ADR-0020**
+- Accepted Paper Trading account/lifecycle ADR: **ADR-0021**
 - Open architecture decisions: ADR-0018 and ADR-0019 remain Proposed and
   block their dependent future phases; they do not block Phase 35.
 
@@ -49,6 +50,8 @@ Codex session does not infer project state from commit history.
   [ADR-0017](../architecture/adr/ADR-0017-signal-snapshot-artifact.md)
   is Accepted.
   [ADR-0020](../architecture/adr/ADR-0020-stock-pool-snapshot-lifecycle.md)
+  is Accepted.
+  [ADR-0021](../architecture/adr/ADR-0021-paper-trading-account-lifecycle.md)
   is Accepted.
 - Phase 23 acceptance evidence established a Product Skeleton browser and
   parity baseline. Its mocked Playwright navigation smoke is not evidence of
@@ -114,8 +117,9 @@ Codex session does not infer project state from commit history.
   Registry, and Phases 34–40. They must close before the RC review gate.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active architecture blockers: **none for Phase 35.** ADR-0018 and ADR-0019
-  remain later-phase blockers.
+- Active architecture blockers: **none for Phase 35.** ADR-0021 supplies the
+  required Paper Trading decision; ADR-0018 and ADR-0019 remain later-phase
+  blockers.
 
 Git SHA is not phase state. The current clean baseline must always be derived
 from `git fetch origin` followed by `git rev-parse origin/main`; this file must

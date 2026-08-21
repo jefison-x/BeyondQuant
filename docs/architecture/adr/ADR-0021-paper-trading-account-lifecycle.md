@@ -1,0 +1,206 @@
+# ADR-0021: Paper Trading Account, Settlement, Risk, and Transfer Contract
+
+- Status: Accepted
+- Date: 2026-08-22
+- Accepted: 2026-08-22
+- Decision scope: Phase 35 Paper Trading depth
+- Related: ADR-0007, ADR-0009, ADR-0012, ADR-0014, ADR-0015,
+  ADR-0016, ADR-0020
+
+## Context
+
+Phase 35 deepens the existing BYQ simulation-only Paper Trading capability.
+The current implementation persists owner-scoped accounts, positions, orders,
+and fills, and derives a ledger from fills. It does not persist daily account
+snapshots, settlement, risk controls, order detail events, or a safe portable
+account bundle. Positions retain only aggregate quantity and last buy date, so
+a same-day buy can incorrectly make older holdings unsellable.
+
+The read-only Community implementation is useful evidence for account
+selection, six detail views, T+1 sellable quantity, append-only settlement,
+order lifecycle display, kill switch/max-notional controls, and account
+transfer UX. Its runtime and transfer boundary cannot be copied. Community
+uses the old broker/Agent architecture and imports externally supplied account
+IDs and nested records with insufficient canonical validation.
+
+## Decision
+
+### 1. BYQ owns a simulation state machine
+
+Paper Trading is a PostgreSQL-backed BYQ domain and is not Backtest or a live
+broker. Backend is the only authority for account, order, fill, position,
+ledger, settlement, risk, and transfer state. No broker credential, external
+execution call, Community runtime, VectorBT, BaoStock, or AKShare path is
+introduced.
+
+Every mutation is owner scoped, transactional, audited, and idempotent. The
+browser supplies durable user identity through Gateway/Product API only. DSH
+may propose or invoke only bounded MCP capabilities with trusted owner/actor
+context and cannot access PostgreSQL or raw Backend routes.
+
+### 2. Account and frozen universe identity
+
+An account has a Backend-generated global ID, owner, name, CNY currency,
+initial cash, current cash/equity, realized P&L, active status, monotonic
+version, last settlement date, and timestamps. Numeric money and quantity
+fields use exact decimal/integer contracts, never binary-float identity.
+
+Before its first accepted order, an account is explicitly bound to an active,
+owner-equal Stock Pool snapshot. Each order also stores that immutable
+`stock_pool_snapshot_id`. Pool edits never alter the account binding. Rebinding
+requires no open position, a compare-and-set account version, an idempotency
+key, and an audit record; automatic rebalance is outside Phase 35. Existing
+orders remain replayable after pool inactivation or deletion.
+
+### 3. Orders, fills, and approval boundary
+
+The Phase 35 engine remains deterministic immediate simulation: an order is
+either `filled` once or `blocked` with a stable reason code. Partial fills,
+asynchronous broker states, cancel/replace, and live execution are not
+fabricated. Order detail exposes the normalized request, frozen pool snapshot,
+decision provenance, risk evaluation, fill, fees/tax, and immutable events.
+
+A human owner acting in the Product UI may submit a simulation order directly.
+An Agent-originated mutation must carry an accepted ADR-0009 approval/action
+reference and retain trace/session/run correlation. Approval authorizes an
+attempt, not a fill, and does not bypass risk or market rules.
+
+The authoritative A-share checks remain: canonical symbol, frozen-universe
+membership, positive whole-lot quantity, suspension, price limit, sufficient
+cash/position, T+1, fees, and sell-side stamp tax. Caller-supplied market-rule
+facts are labelled simulation inputs; they are not represented as trusted
+market-data provenance.
+
+### 4. Positions and T+1 settlement
+
+Positions persist total quantity, sellable quantity, same-day locked
+quantity, average cost, last mark, and mark provenance. A buy increases total
+and locked quantity without reducing already sellable holdings. A sell may
+consume only sellable quantity. This replaces the aggregate `last_buy_date`
+shortcut through an additive, verified migration.
+
+Manual settlement accepts a canonical trading date and one positive finite
+mark for every open position. It must be strictly later than the account's
+last settlement date and not earlier than any recorded trade. It atomically:
+
+1. promotes eligible locked quantities to sellable;
+2. applies the submitted marks with explicit `manual` provenance;
+3. computes cash, market value, equity, realized/unrealized and daily P&L;
+4. appends one immutable account snapshot and one settlement audit/ledger
+   event; and
+5. advances the account version and settlement date.
+
+The first identical replay is idempotent. A second request for the same account
+and date with different marks or semantics conflicts; historical snapshots are
+never updated. Missing/extra marks, non-positive/non-finite marks, backward
+dates, and stale account versions fail closed.
+
+### 5. Append-only ledger and projections
+
+The ledger is persisted, append-only, and generated by Backend. It includes
+initial funding, each fill cash movement, settlement audit events with zero
+cash movement, and transfer-import provenance. Entries have stable IDs,
+idempotency references, event type, trade date, order/fill/snapshot references,
+amount components, and an account-state summary. Valuation changes do not
+pretend to be cash flow.
+
+The six real Product views are Overview, Positions, Orders & Fills, Ledger,
+Snapshots, and Risk & Transfer. Order detail is a persisted projection rather
+than raw database or DSH event JSON. All collection endpoints are bounded and
+owner scoped.
+
+### 6. Explicit risk controls
+
+Each account persists a versioned control record with:
+
+- a kill switch and bounded reason/audit metadata; and
+- an optional maximum order notional expressed as an exact CNY decimal.
+
+The controls are evaluated before market/execution checks and recorded in
+order detail. Kill switch and max-notional violations produce stable blocked
+orders. Control updates require expected version and idempotency key. The
+Community failure circuit breaker is not ported: the synchronous BYQ engine
+has no external broker failure stream, so implementing it would be a false
+control. A future asynchronous execution contract may add one through ADR.
+
+### 7. BYQ paper-account asset bundle
+
+Export produces a bounded canonical JSON bundle with a versioned schema,
+manifest, per-section counts and SHA-256 digests, account semantics,
+positions, orders/fills/events, ledger, snapshots, risk controls, frozen
+universe references, and export provenance. It excludes owner identity,
+credentials, tokens, runtime settings, raw DSH events, market datasets, and
+application/strategy source.
+
+Import validates schema, size/count bounds, canonical values, referential
+integrity, digests, arithmetic/account invariants, chronology, snapshot
+immutability, and permitted local Stock Pool snapshot references before any
+write. It always creates a new Backend-generated account ID, binds the current
+authenticated owner, remaps internal IDs, records source bundle SHA-256 and
+import audit, and never overwrites an account. Imported kill switch state may
+remain engaged, but actor/owner/approval authority is never trusted from the
+bundle. Invalid bundles are rejected atomically and reported without partial
+state.
+
+### 8. Migration
+
+Current BYQ accounts are migrated logically and idempotently. Existing cash,
+orders, fills, and positions are validated; initial cash is reconstructed only
+when the persisted history proves it, otherwise the account is quarantined for
+operator review. Existing position quantity becomes sellable except quantity
+proven by a latest unsettled buy date, which remains locked. Fill-derived
+ledger entries are backfilled deterministically with a migration manifest.
+Ambiguous chronology, invalid arithmetic, cross-owner pool references, and
+unprovable state are quarantined rather than silently repaired.
+
+Community accounts and PostgreSQL rows are not migration input for this phase.
+Community code, UI, schemas, and tests remain read-only evidence.
+
+## Consequences
+
+- Phase 35 requires additive account/position columns and new binding, control,
+  event, ledger, snapshot, settlement-audit, transfer-audit, idempotency, and
+  migration-manifest records.
+- Existing immediate-fill UX remains honest while gaining auditable detail,
+  exact T+1 behavior, reproducible valuation snapshots, and useful controls.
+- Portable accounts become BYQ-owned artifacts without importing authority or
+  trusting external identifiers.
+- A future live/paper broker adapter, asynchronous lifecycle, cancellation,
+  circuit breaker, or automatic rebalance requires a separate Accepted ADR.
+
+## Rejected alternatives
+
+- Copying Community broker/ORM/Agent code: violates BYQ domain, runtime, and
+  PostgreSQL ownership boundaries.
+- Continuing to derive ledger only from fills: loses funding, settlement, and
+  import provenance and cannot provide a stable audit trail.
+- Treating `last_buy_date` as all-or-nothing T+1 state: incorrectly locks older
+  holdings after a same-day purchase.
+- Updating a daily snapshot: destroys replay and performance lineage.
+- Keeping Community account IDs during import: permits collisions and imports
+  external identity/authority.
+- Adding the Community circuit breaker: there is no external failure signal in
+  the synchronous engine, so the control would be cosmetic.
+
+## Rollback
+
+Before Phase 35 writes exist, additive records may be removed and the prior
+read model restored. After orders, ledger entries, settlements, snapshots, or
+imports use the new contract, rollback means disabling new writes while
+retaining a read-only resolver and audit/export path. Immutable history must
+not be deleted or rewritten.
+
+## Acceptance review (2026-08-22)
+
+Accepted by the repository maintainer through the instruction to continue the
+recommended remediation sequence with all required authorizations. Acceptance
+followed read-only inspection and classification of Community
+`PaperTradingView.vue`, models, execution/read/repository/tracking/transfer
+services, migrations, and tests; audit of current BYQ PostgreSQL storage,
+Product API, frontend, order rules, stock-pool references, and derived ledger;
+and review against the related Accepted ADRs.
+
+Acceptance is conditional on the contract tests and Chrome evidence in
+`docs/contracts/paper-trading.md`. It authorizes Phase 35 implementation in a
+new isolated worktree only after this ADR is merged; it does not mark Phase 35
+complete or authorize Phase 36.

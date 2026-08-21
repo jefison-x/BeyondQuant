@@ -462,3 +462,23 @@ or other point-in-time inputs are added, the as-of rule is mandatory.
 - `DROP`: BaoStock, AKShare, VectorBT, and their dependencies/fallbacks.
 - No Phase 8 source file, architecture decision, dependency, or API was
   changed by this retrospective.
+
+## Phase 35 Paper Trading migration audit
+
+The mandatory sequence was completed before implementation: inspect the
+read-only Community page, models, execution/read/repository/tracking/transfer
+services, migrations, and tests; classify each capability; extract domain
+invariants and test intent; then accept ADR-0021. Community is evidence only
+and is not a data or source-code migration input.
+
+| Community capability | Reusable invariant/test intent | Decision | Phase 35 target |
+|---|---|---|---|
+| Account, position, order, ledger, and snapshot persistence | Owner isolation; one account aggregate; immutable settlement date; deterministic read order. | `REFACTOR` / `PORT_TESTS` | BYQ PostgreSQL records and Product projections under ADR-0021. |
+| T+1 ledger settlement | Total and sellable quantity are distinct; settlement promotes locked quantity; duplicate settlement cannot rewrite history. | `PORT_LOGIC` / `PORT_TESTS` | Exact quantity state plus atomic monotonic BYQ settlement. |
+| Paper order state machine and broker trace | Stable lifecycle/audit is useful, but broker attempts, cancel, partial fill, and async failure are not real in current BYQ. | `REFERENCE_ONLY` | Honest immediate `filled`/`blocked` detail and immutable BYQ events. |
+| Kill switch and maximum order notional | Controls are persisted, evaluated before execution, and visible with account state. | `REFACTOR` / `PORT_UX` | Versioned, audited controls with optimistic concurrency. |
+| Broker failure circuit breaker | Requires an external asynchronous failure stream that Phase 35 does not have. | `DROP` | No cosmetic control or compatibility field. |
+| Manual settlement dialog and snapshot history | Complete mark input, daily performance projection, explicit manual action. | `PORT_UX` | Product API settlement with manual mark provenance and immutable history. |
+| Account JSON export/import | Portability is useful; external owner/ID and permissive nested row reconstruction are unsafe. | `REPLACE` | Manifested/digested BYQ bundle, new ID, owner rebinding, validation, atomic import. |
+| SQLAlchemy repository, old Agent API/runtime, and PaperBroker integration | Coupled to Community ownership and deprecated runtime boundaries. | `REFERENCE_ONLY` | No source, schema, runtime, or API copied. |
+| BaoStock, AKShare, and VectorBT paths | None. | `DROP` | No dependency, adapter, fallback, row, or compatibility layer. |
