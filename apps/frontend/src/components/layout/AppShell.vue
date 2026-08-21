@@ -4,6 +4,8 @@ import { useRoute } from "vue-router";
 import AppBottomNav from "./AppBottomNav.vue";
 import AppHeader from "./AppHeader.vue";
 import AppSidebar from "./AppSidebar.vue";
+import GlobalApprovalCenter from "@/components/agent/GlobalApprovalCenter.vue";
+import XiaobaAssistantDrawer from "@/components/agent/XiaobaAssistantDrawer.vue";
 
 const route = useRoute();
 const isPublicRoute = computed(() => Boolean(route.meta.public));
@@ -49,6 +51,8 @@ onUnmounted(() => {
         </section>
       </div>
       <AppBottomNav v-if="isMobile" />
+      <GlobalApprovalCenter />
+      <XiaobaAssistantDrawer />
     </template>
   </div>
 </template>

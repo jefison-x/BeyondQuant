@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 from typing import Iterator
 
-from .contracts import WorkflowTraceEvent, validate_workflow_trace_event
+from .contracts import CARD_KINDS, WorkflowTraceEvent, validate_workflow_trace_event
 
 
 class TraceConflict(RuntimeError):
@@ -40,6 +40,7 @@ class TraceStore:
                     return False
                 if event["sequence"] != previous["sequence"] + 1:
                     raise TraceConflict("workflow trace sequence contains a gap")
+            self._validate_card_revision(event, existing)
             self._root.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(event, separators=(",", ":"), sort_keys=True) + "\n")
@@ -47,6 +48,17 @@ class TraceStore:
                 os.fsync(stream.fileno())
             self._condition.notify_all()
             return True
+
+    def next_card_revision(self, session_id: str, card_id: str) -> int:
+        with self._condition:
+            revisions = [
+                event["payload"]["revision"]
+                for event in self._read(self._path(session_id))
+                if event["kind"] in CARD_KINDS
+                and event["payload"].get("card_id") == card_id
+                and isinstance(event["payload"].get("revision"), int)
+            ]
+            return max(revisions, default=0) + 1
 
     def read(self, session_id: str, *, after_sequence: int = 0) -> list[WorkflowTraceEvent]:
         with self._condition:
@@ -83,6 +95,23 @@ class TraceStore:
         if not session_id or any(character not in allowed for character in session_id):
             raise ValueError("invalid session_id for trace storage")
         return self._root / f"{session_id}.ndjson"
+
+    @staticmethod
+    def _validate_card_revision(
+        event: WorkflowTraceEvent,
+        existing: list[WorkflowTraceEvent],
+    ) -> None:
+        if event["kind"] not in CARD_KINDS:
+            return
+        card_id = event["payload"]["card_id"]
+        revision = event["payload"]["revision"]
+        previous = [
+            item["payload"]["revision"]
+            for item in existing
+            if item["kind"] in CARD_KINDS and item["payload"].get("card_id") == card_id
+        ]
+        if previous and revision <= max(previous):
+            raise TraceConflict("workflow card revision did not increase")
 
     @staticmethod
     def _read(path: Path) -> list[WorkflowTraceEvent]:

@@ -96,8 +96,10 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   `XiaobaAssistantDrawer` (285) — conversation, streaming, thinking steps,
   strategy/stock/optimization cards, approval cards, backtest context,
   assistant drawer, tool visualization, starters.
-- Current BYQ: `AgentView.vue` (357 lines) — sessions/turn/resume/cancel,
-  WorkflowTrace, approval decisions.
+- Delivered BYQ: sessions/turn/resume/cancel, the closed WorkflowTrace
+  card/activity contract, actionable cards, bounded public progress, local and
+  global approval management, conversation starters, and a responsive Xiaoba
+  assistant drawer.
 - Gaps:
   1. Xiaoba assistant drawer.
   2. AgentThinking component.
@@ -116,7 +118,8 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   WorkflowTrace projection); tool viz=`REFACTOR`.
 - Estimate: 14 person-days (XL).
 - Exit criteria: strategy/stock/optimization cards appear in conversation and
-  are actionable; assistant drawer works; Chrome evidence.
+  are actionable; assistant drawer works; Chrome evidence. **Satisfied
+  2026-08-22; evidence under `docs/evidence/phase-36/`.**
 
 ---
 
@@ -209,7 +212,8 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
 
 - Phase 40 shared components → later generalization and prerequisite only
   where a later phase explicitly depends on them.
-- Phase 36 → ADR-0018 accepted; Agent-specific components are in phase scope.
+- Phase 36 → complete under ADR-0018; Phase 40 may generalize its proven
+  Agent-specific components.
 - Phase 37/39 → need ADR-0019.
 - Phase 38 → needs ADR-0019 + Phase 40.
 - Phase 32 wizard → ADR-0017 (separate from this table; slice already

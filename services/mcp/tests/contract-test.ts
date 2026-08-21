@@ -20,6 +20,7 @@ try {
   assert.ok(listed.tools.some((tool) => tool.name === "byq_health"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_market_daily"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_factor_compute"));
+  assert.ok(listed.tools.some((tool) => tool.name === "byq_workflow_card_propose"));
   for (const name of [
     "byq_strategy_validate",
     "byq_strategy_version_create",

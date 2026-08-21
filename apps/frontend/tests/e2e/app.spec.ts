@@ -139,18 +139,19 @@ test("authenticated dashboard shows resource cards", async ({ page }) => {
 });
 
 test("agent workbench renders a normalized BYQ workflow surface", async ({ page }) => {
-  await page.route("**/v1/agent/sessions", (route) =>
-    route.fulfill({
-      status: 201,
+  await page.route("**/v1/agent/sessions", (route) => {
+    const session = { session_id: "session-1", trace_id: "trace-1", status: "ready" };
+    return route.fulfill({
+      status: route.request().method() === "POST" ? 201 : 200,
       contentType: "application/json",
-      body: JSON.stringify({ session_id: "session-1", trace_id: "trace-1", status: "ready" }),
-    }),
-  );
+      body: JSON.stringify(route.request().method() === "POST" ? session : { sessions: [session] }),
+    });
+  });
   await page.route("**/v1/workflows/session-1/events", (route) =>
     route.fulfill({
       status: 200,
       contentType: "text/event-stream",
-      body: 'data: {"kind":"session.ready","source":"runtime-adapter"}\n\n',
+      body: 'data: {"trace_id":"trace-1","session_id":"session-1","sequence":1,"timestamp":"2026-08-22T00:00:00Z","kind":"agent.activity","source":"runtime-adapter","payload":{"schema_version":"workflow-activity.v1","activity_id":"activity_11111111111111111111111111111111","phase":"understand","state":"started","label":"理解请求"}}\n\n',
     }),
   );
   await page.route("**/api/product/approvals", (route) =>
@@ -171,7 +172,8 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
   await openNav(page, "小巴投研");
   await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
   await expect(page.getByText("研究对话")).toBeVisible();
-  await expect(page.getByText("session.ready")).toBeVisible();
+  await expect(page.getByText("BYQ 规范化工作流")).toBeVisible();
+  await expect(page.getByText("理解请求")).toBeVisible();
   await expect(page.getByRole("button", { name: "通过" })).toBeVisible();
 });
 

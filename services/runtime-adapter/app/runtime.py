@@ -13,7 +13,7 @@ from deepseek_harness import DeepSeekHarness, DeepSeekHarnessConfig, Notificatio
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
 from .identifiers import contained_session_path, validate_identifier
-from .normalization import normalize_dsh_notification
+from .normalization import NormalizationState, normalize_dsh_notification
 
 
 class SessionConflict(RuntimeError):
@@ -55,6 +55,7 @@ class RuntimeSession:
     active_run: ActiveRun | None = None
     interrupted_run_id: str | None = None
     sequence: int = 0
+    normalization: NormalizationState = field(default_factory=NormalizationState)
     history: list[WorkflowTraceEvent] = field(default_factory=list)
     subscribers: list[queue.Queue[WorkflowTraceEvent | None]] = field(default_factory=list)
     lock: threading.RLock = field(default_factory=threading.RLock)
@@ -370,7 +371,10 @@ class RuntimeAdapter:
             "BYQ_MCP_URL": os.environ.get("BYQ_MCP_URL", "http://mcp:8300/mcp/v1"),
             "BYQ_MCP_TOKEN": os.environ.get("BYQ_MCP_TOKEN", ""),
             "BYQ_OWNER_PRINCIPAL": owner_principal or "",
-            "BYQ_ACTOR_PRINCIPAL": owner_principal or "",
+            # The authenticated user owns the session, while the Product DSH
+            # service is the initiating actor. Keeping these identities
+            # distinct preserves the human-review anti-self-approval rule.
+            "BYQ_ACTOR_PRINCIPAL": f"byq-product-agent-{session_id}" if owner_principal else "",
             "BYQ_TRACE_ID": trace_id,
             "BYQ_SESSION_ID": session_id,
             # The adapter uses the durable session as the stable DSH
@@ -395,18 +399,18 @@ class RuntimeAdapter:
         return DeepSeekHarness(config=config)
 
     def _on_notification(self, record: RuntimeSession, notification: Notification) -> None:
-        event = normalize_dsh_notification(
-            notification,
-            trace_id=record.trace_id,
-            session_id=record.session_id,
-            sequence=0,
-        )
-        if event is None:
-            return
         with record.lock:
             if record.status in {SessionStatus.INTERRUPTED, SessionStatus.CLOSED}:
                 return
-            self._publish(record, event)
+            events = normalize_dsh_notification(
+                notification,
+                trace_id=record.trace_id,
+                session_id=record.session_id,
+                sequence=record.sequence + 1,
+                state=record.normalization,
+            )
+            for event in events:
+                self._publish(record, event)
 
     def _emit(self, record: RuntimeSession, kind: str, source: str, payload: dict[str, Any]) -> None:
         event = make_workflow_trace_event(

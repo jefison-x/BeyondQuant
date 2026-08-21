@@ -1,8 +1,8 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-completed project stage is **Phase 35**; the next phase is
-**Phase 36 — Agent workbench depth**, enabled by Accepted ADR-0018. The v1.0
+completed project stage is **Phase 36**; the next phase is
+**Phase 37 — My Space depth**, blocked until ADR-0019 is Accepted. The v1.0
 release-candidate gate is not yet satisfied. See
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
 authoritative current state.
@@ -35,10 +35,10 @@ BYQ does not fork DSH. The DSH version is pinned through an explicit dependency 
 
 - A BYQ-owned strategy-source → `signal_snapshot` producer is not yet defined;
   the browser cannot complete a newly authored strategy-to-backtest journey.
-- Agent, My Space, Operations, Data Center, and shared-component depth remain
-  in Phases 36–40.
-- ADR-0019 remains Proposed and blocks its dependent phases; ADR-0018 is
-  Accepted and Phase 36 is ready for implementation.
+- My Space, Operations, Data Center, and shared-component depth remain in
+  Phases 37–40.
+- ADR-0019 remains Proposed and blocks Phases 37–39; Phase 36 is complete
+  under Accepted ADR-0018.
 - The project is not yet eligible for the BeyondQuant Next v1.0 RC gate.
 
 The base Compose topology requires internal service secrets such as

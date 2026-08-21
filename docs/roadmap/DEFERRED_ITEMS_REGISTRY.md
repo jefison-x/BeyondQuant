@@ -145,14 +145,16 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 
 ### D-0005 — Phase 36 Agent workbench structured cards
 - Phase: 36
-- Status: `READY`
+- Status: `CLOSED` (2026-08-22)
 - Precondition: ADR-0018 (WorkflowTrace card contract) accepted. **Satisfied
   2026-08-22.** Phase 36 owns its required Agent-specific components; Phase
   40 may generalize them later.
 - Content: strategy-draft / stock-candidates / optimization / backtest-context
   / approval cards in the conversation; assistant drawer; thinking panel.
 - Acceptance: cards appear and are actionable; raw DSH payloads never cross
-  the Gateway; Chrome evidence.
+  the Gateway; Chrome evidence. **Satisfied:** the ADR-0018 contract is
+  enforced end to end and real Product API desktop/mobile evidence is stored
+  under `docs/evidence/phase-36/`.
 
 ### D-0006 — Phase 37 My Space model/asset/agent-policy depth
 - Phase: 37
@@ -189,7 +191,7 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 |---|---|---|
 | ADR-0017 (`signal_snapshot`) | Accepted (2026-08-18) | D-0001 |
 | Signal-producer ADR (future) | not written | D-0002 |
-| ADR-0018 (WorkflowTrace cards) | Accepted (2026-08-22) | D-0005 (`READY`) |
+| ADR-0018 (WorkflowTrace cards) | Accepted (2026-08-22) | D-0005 (`CLOSED`) |
 | ADR-0019 (encrypted credentials) | Proposed | D-0006, D-0007, D-0008 |
 | Phase 40 shared components | planned | D-0006, D-0007; later generalization for D-0005 |
 

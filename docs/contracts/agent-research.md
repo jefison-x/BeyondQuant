@@ -35,6 +35,11 @@ owner_principal, actor_principal, role_id/version,
 trace_id, session_id, dsh_run_id, parent_run_id
 ```
 
+For Product sessions, `owner_principal` is the authenticated durable user and
+`actor_principal` is the session-scoped `byq-product-agent-<session_id>`
+service identity. They must remain distinct so the owner can perform a real
+human review without allowing the initiating DSH actor to self-approve.
+
 Run identity and audit detail are bounded. DSH event types, prompts, raw
 session logs, credentials, and storage paths are never stored as business
 records. `byq_agent_audit` records action, outcome, resource identity, and a

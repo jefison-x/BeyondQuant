@@ -156,7 +156,7 @@ def test_product_context_is_scoped_to_the_owned_sdk_environment(adapter: Runtime
     adapter.create_session("s-1", "t-1", "alice")
     sdk_environment = FakeHarness.instances[0].config.env
     assert sdk_environment["BYQ_OWNER_PRINCIPAL"] == "alice"
-    assert sdk_environment["BYQ_ACTOR_PRINCIPAL"] == "alice"
+    assert sdk_environment["BYQ_ACTOR_PRINCIPAL"] == "byq-product-agent-s-1"
     assert sdk_environment["BYQ_TRACE_ID"] == "t-1"
     assert sdk_environment["BYQ_SESSION_ID"] == "s-1"
     assert sdk_environment["BYQ_DSH_RUN_ID"] == "s-1"

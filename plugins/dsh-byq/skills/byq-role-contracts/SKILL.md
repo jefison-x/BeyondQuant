@@ -19,3 +19,10 @@ raw DSH events are not business evidence.
 Consequential actions return `approval_required`. Create a pending approval and
 wait for a trusted human decision. Approval is not execution success: record
 the later domain outcome separately, including failures.
+
+When a user-facing result is naturally a strategy draft, stock-candidate
+list, or optimization proposal, call `byq_workflow_card_propose` once with a
+bounded summary after the supporting domain work. The card is presentation
+only: never put credentials, source code, tool arguments, URLs, approval
+claims, execution claims, or raw results in it. Do not call the tool merely to
+decorate ordinary prose.

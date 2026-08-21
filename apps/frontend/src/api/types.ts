@@ -40,13 +40,95 @@ export interface AgentSession {
 }
 
 export interface WorkflowTraceEvent {
-  trace_id?: string;
-  session_id?: string;
-  sequence?: number;
-  timestamp?: string;
-  kind?: string;
-  source?: string;
-  payload?: Record<string, unknown>;
+  trace_id: string;
+  session_id: string;
+  sequence: number;
+  timestamp: string;
+  kind: string;
+  source: "dsh" | "runtime-adapter" | "byq-domain";
+  payload: Record<string, unknown>;
+}
+
+export type WorkflowCardKind =
+  | "agent.card.strategy_draft"
+  | "agent.card.stock_candidates"
+  | "agent.card.optimization"
+  | "agent.card.backtest_context"
+  | "agent.card.approval";
+
+export interface WorkflowCardCommon {
+  [key: string]: unknown;
+  schema_version: "workflow-card.v1";
+  card_id: string;
+  revision: number;
+  authority: "proposal" | "domain";
+  title: string;
+  summary?: string;
+  truncated: boolean;
+}
+
+export interface StrategyDraftCard extends WorkflowCardCommon {
+  name: string;
+  artifact_id?: string;
+  strategy_id?: string;
+  validation_status?: "unknown" | "draft" | "valid" | "invalid" | "superseded";
+}
+
+export interface StockCandidatesCard extends WorkflowCardCommon {
+  items: Array<{ symbol: string; name?: string; reason?: string }>;
+  as_of?: string;
+  pool_id?: string;
+}
+
+export interface OptimizationCard extends WorkflowCardCommon {
+  objective: string;
+  changes: Array<{ area: string; before?: string; after: string; reason: string }>;
+  strategy_artifact_id?: string;
+  baseline_job_id?: string;
+  metrics?: Record<string, number>;
+}
+
+export interface BacktestContextCard extends WorkflowCardCommon {
+  authority: "domain";
+  job_id: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  metrics?: Record<string, number>;
+  strategy_artifact_id?: string;
+  result_artifact_id?: string;
+}
+
+export interface ApprovalCard extends WorkflowCardCommon {
+  authority: "domain";
+  approval_id: string;
+  action: string;
+  status: "pending" | "approved" | "rejected";
+  execution_outcome: "not_started" | "authorized" | "not_authorized";
+  risk_level?: "low" | "medium" | "high" | "critical";
+  decided_by_display?: string;
+}
+
+export type WorkflowCardPayload =
+  | StrategyDraftCard
+  | StockCandidatesCard
+  | OptimizationCard
+  | BacktestContextCard
+  | ApprovalCard;
+
+type WorkflowCardEnvelope = Omit<WorkflowTraceEvent, "kind" | "payload">;
+export type WorkflowCardEvent =
+  | (WorkflowCardEnvelope & { kind: "agent.card.strategy_draft"; payload: StrategyDraftCard })
+  | (WorkflowCardEnvelope & { kind: "agent.card.stock_candidates"; payload: StockCandidatesCard })
+  | (WorkflowCardEnvelope & { kind: "agent.card.optimization"; payload: OptimizationCard })
+  | (WorkflowCardEnvelope & { kind: "agent.card.backtest_context"; payload: BacktestContextCard })
+  | (WorkflowCardEnvelope & { kind: "agent.card.approval"; payload: ApprovalCard });
+
+export interface WorkflowActivityPayload {
+  schema_version: "workflow-activity.v1";
+  activity_id: string;
+  phase: "understand" | "select" | "strategy" | "backtest" | "review" | "tool";
+  state: "started" | "progress" | "completed" | "failed" | "waiting_approval";
+  label: string;
+  capability?: string;
 }
 
 export interface BacktestJob {

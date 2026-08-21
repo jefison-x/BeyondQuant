@@ -75,6 +75,7 @@ import {
   type ResearchTaskCreateRequest,
   type ResearchTransitionRequest,
 } from "./research.js";
+import { proposeWorkflowCard, workflowCardProposalSchema } from "./workflow-card.js";
 
 const SERVICE = "beyondquant-mcp";
 const VERSION = "0.1.0";
@@ -356,6 +357,14 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       inputSchema: {},
     },
     byqHealth,
+  );
+  server.registerTool(
+    "byq_workflow_card_propose",
+    {
+      description: "Propose one bounded BYQ strategy, stock-candidate, or optimization presentation card. This never mutates Domain state or grants approval.",
+      inputSchema: workflowCardProposalSchema,
+    },
+    proposeWorkflowCard,
   );
   const poolContext = () => completeAgentContext(trustedContext);
   server.registerTool(
