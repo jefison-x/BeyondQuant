@@ -18,3 +18,5 @@ Each ADR should describe context, the decision, consequences, alternatives when 
 Current phase-specific accepted decisions are also listed in
 `docs/roadmap/STATUS.md`. ADR-0020 defines the Stock Pool identity, immutable
 snapshot, lifecycle, and cross-domain reference boundary for Phase 34.
+ADR-0021 defines the Paper Trading account, settlement, risk, ledger, and
+portable bundle boundary for Phase 35.
