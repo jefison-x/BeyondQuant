@@ -1197,14 +1197,14 @@ version history, backtest counts, read-only version detail, Product API/MCP
 contracts, and browser evidence. D-0009–D-0012 are explicitly assigned to
 Phase 40 and do not remain attached to the completed phase.
 
-### Phase 34 — Stock Pool depth (`NEXT — DECISION GATE`)
+### Phase 34 — Stock Pool depth (`NEXT — IMPLEMENTATION`)
 
-Before implementation, propose and accept the BYQ Stock Pool contract for
+ADR-0020 accepts the BYQ Stock Pool contract for
 mutable pool identity, immutable membership snapshots, version/fingerprint,
 custom/index/dynamic provenance, weight validation, activation/deactivation,
 delete semantics, and references from Paper Trading/research/backtest.
 
-After acceptance, implement owner-scoped catalog/detail, member and weight
+Implement owner-scoped catalog/detail, member and weight
 editing through new snapshots, index constituents, filter conditions,
 historical snapshots, lifecycle actions, mobile cards, Product API routes,
 and MCP `byq_pool_*` capabilities. All five detail tabs must use persisted
