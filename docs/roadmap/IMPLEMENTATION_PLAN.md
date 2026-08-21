@@ -1211,11 +1211,16 @@ capabilities. All five detail tabs use persisted data. Real Product API Chrome
 MCP evidence and the Community checklist are recorded under
 `docs/evidence/phase-34/`.
 
-### Phase 35 — Paper Trading depth (`NEXT — IMPLEMENTATION`)
+### Phase 35 — Paper Trading depth (`COMPLETE`)
 
 Add persisted snapshots, manual settlement, order detail, BYQ asset-bundle
 import/export, explicit risk controls, and complete ledger wiring without live
 broker integration or conflating Paper Trading with Backtest.
+
+Delivered all six persisted tabs, exact T+1 and cash/ledger semantics,
+immutable manual settlement, frozen Stock Pool binding, versioned controls,
+auditable immediate order results, portable digested bundles, Product API and
+bounded read-only MCP projections, real-browser E2E, and Chrome MCP evidence.
 
 ### Phase 36 — Agent workbench depth (`BLOCKED`)
 

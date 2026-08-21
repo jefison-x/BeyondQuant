@@ -333,3 +333,34 @@ editor/templates/snippets map to `PORT_UX`; version history is `REFACTOR`
 immutable `strategy_draft` artifacts instead of Community row deletion);
 domain validation remains `REPLACE` (BYQ static validator, execution deferred
 to a future worker).
+
+## Phase 35 Paper Trading depth review (2026-08-22)
+
+- Browser method: Chrome DevTools MCP with desktop and 390x844 mobile
+  viewports, isolated browser context.
+- Topology: isolated Compose stack built from the Phase 35 worktree; all six
+  services healthy.
+- Authenticated principal: durable `ci-admin` username/password session.
+- Evidence index:
+  [`../evidence/phase-35/byq-paper-trading/README.md`](../evidence/phase-35/byq-paper-trading/README.md).
+
+Observed at `/paper-trading`:
+
+- A real Product API golden flow created a Stock Pool and Paper account,
+  executed a buy, settled the position, saved a notional risk limit, inspected
+  the order audit, exported the account, and imported the file as a new account
+  with a new ID.
+- Six persisted tabs expose overview, T+1 position partitions, order/fill
+  result, cash ledger, immutable settlement snapshots, and risk/migration.
+- The selected settled account showed cash ¥98,995, equity ¥100,045, position
+  market value ¥1,050, 100 total/100 sellable/0 locked, and a 20240103
+  settlement at ¥10.50.
+- The order dialog showed frozen Stock Pool snapshot, `filled` result, passed
+  risk evaluation, decision provenance, and submitted/filled events.
+- Desktop and mobile layouts retained account/order/action reachability.
+- Chrome reported no console messages. All 23 XHR/fetch requests were
+  same-origin `/api/auth/*` or `/api/product/*`; no Backend, MCP, DSH, storage,
+  Redis, or provider endpoint was called by the browser.
+
+The Community-derived feature checklist and classification are recorded at
+[`../evidence/phase-35/COMMUNITY_FEATURE_CHECKLIST.md`](../evidence/phase-35/COMMUNITY_FEATURE_CHECKLIST.md).

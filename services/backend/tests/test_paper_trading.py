@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -115,6 +116,101 @@ def test_paper_trading_blocks_suspension_and_t_plus_one() -> None:
         trusted_owner="alice",
     )
     assert same_day_sell["blocked_reason"] == "t_plus_one"
+    store.close()
+
+
+def test_paper_settlement_preserves_partial_t_plus_one_and_snapshot_immutability() -> None:
+    store = PaperTradingStore()
+    account = store.create_account({"name": "partial-t1", "cash": 100000}, trusted_owner="alice")
+    pool = store.create_pool({"name": "t1-pool", "symbols": ["000001.SZ"]}, trusted_owner="alice")
+    store.submit_order({"account_id": account["account_id"], "pool_id": pool["pool_id"],
+                        "symbol": "000001.SZ", "side": "buy", "quantity": 100,
+                        "price": 10, "trade_date": "20240102", "idempotency_key": "t1-old"}, trusted_owner="alice")
+    version = int(store.get_account(account["account_id"], trusted_owner="alice")["version"])
+    snapshot = store.settle_account(account["account_id"], {
+        "trade_date": "20240103", "expected_version": version,
+        "idempotency_key": "settle-1", "marks": {"000001.SZ": 10.5},
+    }, trusted_owner="alice", trusted_actor="alice")
+    replay = store.settle_account(account["account_id"], {
+        "trade_date": "20240103", "expected_version": version,
+        "idempotency_key": "settle-1", "marks": {"000001.SZ": 10.5},
+    }, trusted_owner="alice", trusted_actor="alice")
+    assert replay["snapshot_id"] == snapshot["snapshot_id"]
+    with pytest.raises(PaperTradingConflict):
+        store.settle_account(account["account_id"], {
+            "trade_date": "20240103", "expected_version": version,
+            "idempotency_key": "settle-other", "marks": {"000001.SZ": 11},
+        }, trusted_owner="alice", trusted_actor="alice")
+    store.submit_order({"account_id": account["account_id"], "pool_id": pool["pool_id"],
+                        "symbol": "000001.SZ", "side": "buy", "quantity": 100,
+                        "price": 11, "trade_date": "20240103", "idempotency_key": "t1-new"}, trusted_owner="alice")
+    position = store.list_positions(account["account_id"], trusted_owner="alice")["positions"][0]
+    assert position["quantity"] == 200
+    assert position["sellable_quantity"] == 100
+    assert position["locked_quantity"] == 100
+    sold = store.submit_order({"account_id": account["account_id"], "pool_id": pool["pool_id"],
+                               "symbol": "000001.SZ", "side": "sell", "quantity": 100,
+                               "price": 11, "trade_date": "20240103", "idempotency_key": "t1-sell-old"}, trusted_owner="alice")
+    assert sold["status"] == "filled"
+    blocked = store.submit_order({"account_id": account["account_id"], "pool_id": pool["pool_id"],
+                                  "symbol": "000001.SZ", "side": "sell", "quantity": 100,
+                                  "price": 11, "trade_date": "20240103", "idempotency_key": "t1-sell-new"}, trusted_owner="alice")
+    assert blocked["blocked_reason"] == "t_plus_one"
+    store.close()
+
+
+def test_paper_controls_order_detail_and_bundle_round_trip() -> None:
+    store = PaperTradingStore()
+    account = store.create_account({"name": "bundle-source", "cash": 100000}, trusted_owner="alice")
+    pool = store.create_pool({"name": "bundle-pool", "symbols": ["000001.SZ"]}, trusted_owner="alice")
+    controls = store.get_controls(account["account_id"], trusted_owner="alice")
+    updated = store.update_controls(account["account_id"], {
+        "kill_switch_engaged": False, "kill_switch_reason": "limit",
+        "max_order_notional": 500, "expected_version": controls["version"],
+        "idempotency_key": "risk-1",
+    }, trusted_owner="alice", trusted_actor="alice")
+    assert updated["version"] == 2
+    blocked = store.submit_order({"account_id": account["account_id"], "pool_id": pool["pool_id"],
+                                  "symbol": "000001.SZ", "side": "buy", "quantity": 100,
+                                  "price": 10, "trade_date": "20240102", "idempotency_key": "risk-order"}, trusted_owner="alice")
+    assert blocked["blocked_reason"] == "risk_max_order_notional"
+    detail = store.get_order(account["account_id"], blocked["order_id"], trusted_owner="alice")
+    assert detail["risk_evaluation_json"]["result"] == "blocked"
+    bundle = store.export_bundle(account["account_id"], trusted_owner="alice")
+    def contains_float(value: object) -> bool:
+        if isinstance(value, float):
+            return True
+        if isinstance(value, dict):
+            return any(contains_float(item) for item in value.values())
+        if isinstance(value, list):
+            return any(contains_float(item) for item in value)
+        return False
+    assert not contains_float(bundle)
+    portable_bundle = json.loads(json.dumps(bundle))
+    imported = store.import_bundle(portable_bundle, trusted_owner="alice", trusted_actor="alice")
+    assert imported["account"]["account_id"] != account["account_id"]
+    assert imported["account"]["owner_principal"] == "alice"
+    tampered = json.loads(json.dumps(bundle, default=str))
+    tampered["sections"]["account"]["cash"] = "999999.0000"
+    with pytest.raises(ValueError, match="digest"):
+        store.import_bundle(tampered, trusted_owner="alice", trusted_actor="alice")
+    store.close()
+
+
+def test_paper_v2_migration_manifest_is_repeatable() -> None:
+    store = PaperTradingStore()
+    account = store.create_account({"name": "migration-current", "cash": 50000}, trusted_owner="alice")
+    store.bootstrap_schema()
+    store.bootstrap_schema()
+    entries = store.list_ledger(account["account_id"], trusted_owner="alice")["ledger"]
+    assert [item["entry_type"] for item in entries] == ["initial_funding"]
+    run = store._fetch_one(
+        "SELECT * FROM paper_domain_migration_runs WHERE migration_id = 'paper-execution-v2'"
+    )
+    assert run is not None
+    assert run["source_count"] >= 1
+    assert run["migrated_count"] >= 1
+    assert len(run["manifest_sha256"]) == 64
     store.close()
 
 

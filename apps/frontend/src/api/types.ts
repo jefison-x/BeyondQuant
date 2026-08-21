@@ -157,7 +157,15 @@ export interface PaperAccount {
   account_id?: string;
   name?: string;
   cash?: number;
+  initial_cash?: number;
+  equity?: number;
+  realized_pnl?: number;
+  currency?: string;
   status?: string;
+  version?: number;
+  last_settlement_date?: string | null;
+  bound_pool_id?: string | null;
+  bound_snapshot_id?: string | null;
 }
 
 export interface StockPool {
@@ -202,9 +210,21 @@ export interface PaperOrder {
   price?: number;
   status?: "filled" | "blocked";
   blocked_reason?: string;
+  trade_date?: string;
+  fees?: number;
+  tax?: number;
+  cash_delta?: number;
+  pool_id?: string;
+  stock_pool_snapshot_id?: string;
+  risk_evaluation_json?: Record<string, unknown>;
+  decision_provenance_json?: Record<string, unknown>;
+  events_json?: Array<Record<string, unknown>>;
+  fill?: Record<string, unknown> | null;
 }
 
 export interface PaperLedgerEntry {
+  entry_id?: string;
+  entry_type?: string;
   fill_id?: string;
   trade_date?: string;
   symbol?: string;
@@ -216,6 +236,28 @@ export interface PaperLedgerEntry {
   cash_delta?: number;
   realized_pnl?: number;
   created_at?: string;
+}
+
+export interface PaperSnapshot {
+  snapshot_id: string;
+  trade_date: string;
+  cash: number;
+  market_value: number;
+  equity: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  daily_pnl: number;
+  daily_return?: number | null;
+  positions_json: Array<Record<string, unknown>>;
+  snapshot_fingerprint: string;
+}
+
+export interface PaperControls {
+  kill_switch_engaged: boolean;
+  kill_switch_reason?: string | null;
+  max_order_notional?: number | null;
+  version: number;
+  updated_at?: string;
 }
 
 export interface OperationsStatus {

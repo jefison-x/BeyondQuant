@@ -330,7 +330,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         implementation = (ROOT / "docs/roadmap/IMPLEMENTATION_PLAN.md").read_text()
         self.assertIn("Phase 34 — Stock Pool depth (`COMPLETE`)", implementation)
-        self.assertIn("Phase 35 — Paper Trading depth (`NEXT — IMPLEMENTATION`)", implementation)
+        self.assertIn("Phase 35 — Paper Trading depth (`COMPLETE`)", implementation)
+        self.assertIn("Phase 36 — Agent workbench depth (`BLOCKED`)", implementation)
 
         stock_pool_adr = (
             ROOT / "docs/architecture/adr/ADR-0020-stock-pool-snapshot-lifecycle.md"
@@ -342,6 +343,13 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("Chrome MCP evidence", stock_pool_contract)
         self.assertTrue(
             (ROOT / "docs/evidence/phase-34/byq-stock-pool/README.md").exists()
+        )
+        paper_adr = (
+            ROOT / "docs/architecture/adr/ADR-0021-paper-trading-account-lifecycle.md"
+        ).read_text()
+        self.assertIn("- Status: Accepted", paper_adr)
+        self.assertTrue(
+            (ROOT / "docs/evidence/phase-35/byq-paper-trading/README.md").exists()
         )
 
         parity_plan = (ROOT / "docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md").read_text()

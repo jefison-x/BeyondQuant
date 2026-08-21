@@ -341,6 +341,13 @@ test("my space pages render profile, models, assets, and agent policy", async ({
 
 test("paper trading and stock pool pages render", async ({ page }) => {
   await login(page);
+  await page.route("**/api/product/paper/pools", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ pools: [{
+      pool_id: "stock_pool_1", name: "沪深300", pool_type: "index", description: "指数池",
+      symbols: ["000001.SZ", "600000.SH"], weights: { "000001.SZ": 0.6 }, version: "v1",
+      status: "active", created_at: "2026-08-16T00:00:00+00:00",
+    }] }) }),
+  );
   await page.route("**/api/product/paper/accounts", (route) =>
     route.fulfill({
       status: 200,
@@ -360,30 +367,21 @@ test("paper trading and stock pool pages render", async ({ page }) => {
   await page.route("**/api/product/paper/accounts/paper_account_1/ledger", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ledger: [] }) }),
   );
+  await page.route("**/api/product/paper/accounts/paper_account_1/snapshots", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ snapshots: [] }) }),
+  );
+  await page.route("**/api/product/paper/accounts/paper_account_1/controls", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ controls: { kill_switch_engaged: false, max_order_notional: null, version: 1 } }) }),
+  );
+  await page.route("**/api/product/paper/accounts/paper_account_1", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ account: { account_id: "paper_account_1", name: "sim", cash: 100000, equity: 100000, version: 1, status: "active" } }) }),
+  );
   await openNav(page, "模拟操盘");
-  await expect(page.getByRole("heading", { name: "模拟操盘" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "模拟操盘" }).last()).toBeVisible();
   await expect(page.getByText("sim", { exact: true })).toBeVisible();
   await expect(page.getByRole("tab", { name: "资金流水" })).toBeVisible();
-  await page.route("**/api/product/paper/pools", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        pools: [
-          {
-            pool_id: "stock_pool_1",
-            name: "沪深300",
-            pool_type: "index",
-            description: "指数池",
-            symbols: ["000001.SZ", "600000.SH"],
-            weights: { "000001.SZ": 0.6 },
-            version: "v1",
-            created_at: "2026-08-16T00:00:00+00:00",
-          },
-        ],
-      }),
-    }),
-  );
+  await expect(page.getByRole("tab", { name: "结算快照" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "风险与迁移" })).toBeVisible();
   await openNav(page, "股票管理");
   await expect(page.getByRole("heading", { name: "股票管理" })).toBeVisible();
   await expect(page.getByRole("radio", { name: "指数" }).first()).toBeVisible();

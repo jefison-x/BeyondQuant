@@ -74,22 +74,18 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
 - Community: `PaperTradingView.vue` (597 lines) — account select, 5 tabs
   (overview/positions/orders/ledger/snapshots), order detail dialog, create/
   import account, manual settlement, risk controls, import/export.
-- Current BYQ: `PaperTradingView.vue` (308 lines) — account create/select,
-  overview/positions/orders, order submit; backend already has `ledger`.
-- Gaps:
-  1. Snapshot tab.
-  2. Manual settlement.
-  3. Order detail dialog.
-  4. Import/export.
-  5. Risk controls.
-  6. Ledger tab wiring to existing endpoint.
+- Delivered BYQ: six persisted tabs, exact T+1 position partition and cash
+  ledger, immutable manual settlement, order audit, versioned risk controls,
+  frozen Stock Pool binding, and canonical new-ID asset-bundle transfer.
+- Gaps: none within the accepted Phase 35 contract. Live brokerage remains
+  explicitly out of scope.
 - Dependencies: Backend snapshot + settlement + risk + import/export;
   Product API routes.
 - Classification: account/order=`REFACTOR`; settlement/snapshot/risk=
   `PORT_UX`; import/export=`REPLACE` (BYQ asset bundle).
 - Estimate: 9 person-days (M).
 - Exit criteria: 6 tabs real; settlement/import-export/risk work; Chrome
-  evidence.
+  evidence. **Satisfied.**
 
 ---
 

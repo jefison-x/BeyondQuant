@@ -46,10 +46,11 @@ def test_paper_ledger_endpoint_derives_cash_flow(monkeypatch) -> None:
     response = client.get(f"/v1/paper/accounts/{account['account_id']}/ledger", headers=headers)
     assert response.status_code == 200
     ledger = response.json()["ledger"]
-    assert len(ledger) == 1
-    assert ledger[0]["symbol"] == "000001.SZ"
-    assert ledger[0]["cash_delta"] == -1005.0
-    assert ledger[0]["fees"] == 5.0
+    assert len(ledger) == 2
+    fill_entry = next(item for item in ledger if item["entry_type"] == "fill")
+    assert fill_entry["symbol"] == "000001.SZ"
+    assert float(fill_entry["cash_delta"]) == -1005.0
+    assert float(fill_entry["fees"]) == 5.0
 
     denied = client.get(
         f"/v1/paper/accounts/{account['account_id']}/ledger",

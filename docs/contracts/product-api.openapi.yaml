@@ -175,6 +175,9 @@ paths:
   /api/product/paper/accounts/{account_id}/orders:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
     get: {summary: List owner-scoped paper orders., responses: *okResponses}
+  /api/product/paper/accounts/{account_id}/orders/{order_id}:
+    parameters: [{$ref: "#/components/parameters/AccountId"}, {$ref: "#/components/parameters/OrderId"}]
+    get: {summary: Get one persisted owner-scoped paper order audit projection., responses: *okResponses}
   /api/product/paper/accounts/{account_id}/positions:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
     get: {summary: List owner-scoped paper positions., responses: *okResponses}
@@ -184,6 +187,24 @@ paths:
   /api/product/paper/accounts/{account_id}/ledger:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
     get: {summary: List the owner-scoped paper ledger., responses: *okResponses}
+  /api/product/paper/accounts/{account_id}/snapshots:
+    parameters: [{$ref: "#/components/parameters/AccountId"}]
+    get: {summary: List immutable owner-scoped daily paper account snapshots., responses: *okResponses}
+  /api/product/paper/accounts/{account_id}/settlements:
+    parameters: [{$ref: "#/components/parameters/AccountId"}]
+    post: {summary: Perform an idempotent manual paper-account settlement., responses: *createdResponses}
+  /api/product/paper/accounts/{account_id}/controls:
+    parameters: [{$ref: "#/components/parameters/AccountId"}]
+    get: {summary: Get versioned paper-account risk controls., responses: *okResponses}
+    put: {summary: Update versioned paper-account risk controls., responses: *okResponses}
+  /api/product/paper/accounts/{account_id}/binding:
+    parameters: [{$ref: "#/components/parameters/AccountId"}]
+    put: {summary: Rebind an empty paper account to a frozen stock-pool snapshot., responses: *okResponses}
+  /api/product/paper/accounts/{account_id}/export:
+    parameters: [{$ref: "#/components/parameters/AccountId"}]
+    get: {summary: Export a manifested owner-safe paper-account bundle., responses: *okResponses}
+  /api/product/paper/accounts/import:
+    post: {summary: Validate and import a paper-account bundle under a new owner-scoped ID., responses: *createdResponses}
 
   /v1/agent/sessions:
     get: {summary: List owner-scoped Product Agent sessions., responses: *okResponses}
@@ -232,6 +253,7 @@ components:
     ApprovalId: {name: approval_id, in: path, required: true, schema: {type: string}}
     UserId: {name: user_id, in: path, required: true, schema: {type: string}}
     AccountId: {name: account_id, in: path, required: true, schema: {type: string}}
+    OrderId: {name: order_id, in: path, required: true, schema: {type: string}}
     PoolId: {name: pool_id, in: path, required: true, schema: {type: string}}
     SnapshotId: {name: snapshot_id, in: path, required: true, schema: {type: string}}
     TradeDate: {name: trade_date, in: path, required: true, schema: {type: string, pattern: "^[0-9]{8}$"}}
