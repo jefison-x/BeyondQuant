@@ -49,3 +49,93 @@ test("real Product API login and Stock Pool create flow", async ({ page, baseURL
   expect([...unexpectedOrigins]).toEqual([]);
   expect(serverErrors).toEqual([]);
 });
+
+test("real Product API Paper Trading settlement, risk, detail, and bundle flow", async ({ page, baseURL }) => {
+  const adminUsername = process.env.BYQ_E2E_ADMIN_USERNAME;
+  const adminPassword = process.env.BYQ_E2E_ADMIN_PASSWORD;
+  if (!adminUsername || !adminPassword) throw new Error("BYQ_E2E admin credentials are required");
+  const origin = new URL(baseURL ?? "http://127.0.0.1:18080").origin;
+  const unexpectedOrigins = new Set<string>();
+  const serverErrors: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if ((url.protocol === "http:" || url.protocol === "https:") && url.origin !== origin) unexpectedOrigins.add(url.origin);
+  });
+  page.on("response", (response) => { if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`); });
+
+  await page.goto("/login");
+  await page.getByLabel("用户名").fill(adminUsername);
+  await page.getByLabel("密码").fill(adminPassword);
+  await page.getByRole("button", { name: "进入" }).click();
+  await expect(page).toHaveURL(`${origin}/`);
+
+  const suffix = Date.now();
+  const pool = await page.evaluate(async (name) => {
+    const response = await fetch("/api/product/paper/pools", {
+      method: "POST", credentials: "include", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, symbols: ["000001.SZ"], pool_type: "custom" }),
+    });
+    if (!response.ok) throw new Error(`pool create failed: ${response.status}`);
+    return (await response.json()).pool;
+  }, `纸面交易池-${suffix}`) as { pool_id: string; name: string };
+
+  await page.goto("/paper-trading");
+  await expect(page.getByRole("heading", { name: "模拟操盘" }).last()).toBeVisible();
+  await page.getByPlaceholder("账户名称").fill(`纸面账户-${suffix}`);
+  const createdAccount = page.waitForResponse((response) => response.url().endsWith("/api/product/paper/accounts") && response.request().method() === "POST");
+  await page.getByRole("button", { name: "新建账户" }).click();
+  expect((await createdAccount).status()).toBe(201);
+  await expect(page.getByText(`纸面账户-${suffix}`, { exact: true })).toBeVisible();
+
+  const accountId = await page.getByText(`纸面账户-${suffix}`, { exact: true }).locator("..").locator("small").textContent();
+  if (!accountId) throw new Error("created paper account id missing");
+  const firstOrderStatus = await page.evaluate(async ({ accountId: id, poolId: selectedPool }) => {
+    const response = await fetch("/api/product/paper/orders", {
+      method: "POST", credentials: "include", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ account_id: id, pool_id: selectedPool, symbol: "000001.SZ",
+        side: "buy", quantity: 100, price: 10, trade_date: "20240102", idempotency_key: crypto.randomUUID() }),
+    });
+    return response.status;
+  }, { accountId, poolId: pool.pool_id });
+  expect(firstOrderStatus).toBe(201);
+  await page.reload();
+
+  await page.getByRole("tab", { name: "持仓" }).click();
+  await expect(page.getByText("000001.SZ", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "日终结算" }).click();
+  const dialog = page.getByRole("dialog", { name: "手动日终结算" });
+  await dialog.getByPlaceholder("YYYYMMDD").fill("20240103");
+  await dialog.locator(".el-input-number input").fill("10.5");
+  const settled = page.waitForResponse((response) => response.url().includes("/settlements") && response.request().method() === "POST");
+  await dialog.getByRole("button", { name: "确认结算" }).click();
+  expect((await settled).status()).toBe(201);
+  await expect(page.getByRole("tab", { name: "结算快照" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tabpanel", { name: "结算快照" }).getByText("20240103", { exact: true })).toBeVisible();
+
+  await page.getByRole("tab", { name: "订单与成交" }).click();
+  await page.getByText("已成交", { exact: true }).first().click();
+  await expect(page.getByRole("dialog", { name: "订单审计详情" })).toBeVisible();
+  await expect(page.getByText("paper-execution-v2", { exact: false })).toBeVisible();
+  await page.getByRole("dialog", { name: "订单审计详情" }).locator(".el-dialog__headerbtn").click();
+
+  await page.getByRole("tab", { name: "风险与迁移" }).click();
+  const riskPanel = page.locator(".risk-panel").first();
+  await riskPanel.locator(".el-input-number input").fill("500");
+  const controlsSaved = page.waitForResponse((response) => response.url().endsWith("/controls") && response.request().method() === "PUT");
+  await riskPanel.getByRole("button", { name: "保存风险控制" }).click();
+  expect((await controlsSaved).status()).toBe(200);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "导出 JSON" }).click();
+  const download = await downloadPromise;
+  const downloadPath = await download.path();
+  if (!downloadPath) throw new Error("paper account bundle download path missing");
+  const imported = page.waitForResponse((response) => response.url().endsWith("/api/product/paper/accounts/import") && response.request().method() === "POST");
+  await page.getByTestId("paper-import-input").setInputFiles(downloadPath);
+  const importedResponse = await imported;
+  expect(importedResponse.status(), await importedResponse.text()).toBe(201);
+  await expect(page.getByText(new RegExp(`纸面账户-${suffix} · 导入`)).first()).toBeVisible();
+
+  expect([...unexpectedOrigins]).toEqual([]);
+  expect(serverErrors).toEqual([]);
+});

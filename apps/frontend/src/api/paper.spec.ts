@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPaperAccount, createStockPool, listPaperLedger, listPaperOrders, replaceStockPoolSnapshot, submitPaperOrder } from "./paper";
+import { createPaperAccount, createStockPool, exportPaperAccount, getPaperOrder, listPaperLedger, listPaperOrders, listPaperSnapshots, replaceStockPoolSnapshot, settlePaperAccount, submitPaperOrder, updatePaperControls } from "./paper";
 
 describe("paper trading api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -66,7 +66,7 @@ describe("paper trading api client", () => {
     );
   });
 
-  it("lists the derived paper ledger", async () => {
+  it("lists the persisted paper ledger", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ ledger: [{ fill_id: "f1", cash_delta: -1000 }] }), { status: 200 }),
     );
@@ -77,5 +77,24 @@ describe("paper trading api client", () => {
       "/api/product/paper/accounts/a1/ledger",
       expect.objectContaining({ credentials: "include" }),
     );
+  });
+
+  it("uses bounded product paths for order detail, settlement, controls, snapshots, and bundle", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
+      new Response(JSON.stringify({ order: {}, snapshot: {}, snapshots: [], controls: { version: 2 }, bundle: {} }), { status: 200 }),
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+    await getPaperOrder("a1", "o1", "test-token");
+    await listPaperSnapshots("a1", "test-token");
+    await settlePaperAccount("a1", { trade_date: "20240103", expected_version: 2, idempotency_key: "s1", marks: { "000001.SZ": 11 } }, "test-token");
+    await updatePaperControls("a1", { kill_switch_engaged: true, expected_version: 1, idempotency_key: "r1" }, "test-token");
+    await exportPaperAccount("a1", "test-token");
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/product/paper/accounts/a1/orders/o1",
+      "/api/product/paper/accounts/a1/snapshots",
+      "/api/product/paper/accounts/a1/settlements",
+      "/api/product/paper/accounts/a1/controls",
+      "/api/product/paper/accounts/a1/export",
+    ]);
   });
 });

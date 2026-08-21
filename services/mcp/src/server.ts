@@ -58,6 +58,12 @@ import {
   fetchByqPoolSnapshotReplace,
 } from "./stock-pool.js";
 import {
+  fetchByqPaperAccount,
+  fetchByqPaperAccounts,
+  fetchByqPaperOrder,
+  fetchByqPaperSnapshots,
+} from "./paper-trading.js";
+import {
   fetchByqArtifactCreate,
   fetchByqExperimentCreate,
   fetchByqResearchGet,
@@ -391,6 +397,26 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       pool_id: z.string(), status: z.enum(["active", "inactive", "deleted"]), reason: z.string(), idempotency_key: z.string(),
     } },
     (args) => { const context = poolContext(); const { pool_id, ...body } = args; return context ? fetchByqPoolLifecycle(BACKEND_URL, pool_id, body, context) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_paper_account_list",
+    { description: "List owner-scoped BYQ simulation-only Paper Trading accounts.", inputSchema: {} },
+    () => { const context = poolContext(); return context ? fetchByqPaperAccounts(BACKEND_URL, context) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_paper_account_get",
+    { description: "Read one owner-scoped Paper Trading account projection.", inputSchema: { account_id: z.string() } },
+    (args) => { const context = poolContext(); return context ? fetchByqPaperAccount(BACKEND_URL, args.account_id, context) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_paper_order_get",
+    { description: "Read one persisted owner-scoped paper order audit projection.", inputSchema: { account_id: z.string(), order_id: z.string() } },
+    (args) => { const context = poolContext(); return context ? fetchByqPaperOrder(BACKEND_URL, args.account_id, args.order_id, context) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_paper_snapshot_list",
+    { description: "List immutable settlement snapshots for one owner-scoped paper account.", inputSchema: { account_id: z.string() } },
+    (args) => { const context = poolContext(); return context ? fetchByqPaperSnapshots(BACKEND_URL, args.account_id, context) : agentContextUnavailable(); },
   );
   server.registerTool(
     "byq_agent_context",

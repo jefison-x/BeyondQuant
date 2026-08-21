@@ -36,10 +36,10 @@ workflows. The largest gaps are:
    40 hardening/profile-field decisions (D-0009–D-0012).
 3. Backtest result/wizard depth is delivered, but the strategy-source →
    `signal_snapshot` producer is blocked on a dedicated ADR (D-0002).
-4. Stock Pool has create/list/catalog basics but lacks persisted member edits,
-   lifecycle actions, index/filter semantics, and historical snapshots.
-5. Paper Trading has accounts/orders/positions/fills/ledger but lacks order
-   detail, import/export, snapshots, settlement, and explicit risk controls.
+4. Stock Pool depth is delivered with immutable membership snapshots,
+   lifecycle, index/filter semantics, weights, and historical projections.
+5. Paper Trading depth is delivered with settlement, order audit, risk
+   controls, persisted ledger, and validated asset-bundle transfer.
 6. Models/Assets/Agent Policy remain reduced compared with Community model
    management, re-import, preset, and rule workflows.
 7. Operations pages are mostly status/admin-user views; database, source,
@@ -107,9 +107,10 @@ semantics, and snapshot history.
 Community: account selection, overview/positions/orders/ledger/snapshots/
 strategy tracking/risk controls, and create/import/order/settlement dialogs.
 
-Current BYQ: `PARTIAL` create account, submit order, and list accounts/orders/
-positions/fills/derived ledger; missing snapshots, settlement, risk controls,
-import/export, and order detail dialog.
+Current BYQ: `COMPLETE` for Phase 35: owner-scoped accounts, orders, fills,
+positions, persisted ledger, immutable settlement snapshots, order detail,
+versioned risk controls, frozen Stock Pool binding, and validated new-ID asset
+bundle transfer are real Product API workflows with desktop/mobile evidence.
 
 ### Profile
 

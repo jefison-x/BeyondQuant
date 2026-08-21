@@ -1,4 +1,4 @@
-import type { PaperAccount, PaperLedgerEntry, PaperOrder, StockPool, StockPoolSnapshot } from "./types";
+import type { PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot, StockPool, StockPoolSnapshot } from "./types";
 
 const ROOT = "/api/product/paper";
 
@@ -128,4 +128,48 @@ export function listPaperLedger(accountId: string, token: string): Promise<{ led
 
 export function listPaperOrders(accountId: string, token: string): Promise<{ orders: PaperOrder[] }> {
   return request(`/accounts/${encodeURIComponent(accountId)}/orders`, token);
+}
+
+export function getPaperOrder(accountId: string, orderId: string, token: string): Promise<{ order: PaperOrder }> {
+  return request(`/accounts/${encodeURIComponent(accountId)}/orders/${encodeURIComponent(orderId)}`, token);
+}
+
+export function listPaperSnapshots(accountId: string, token: string): Promise<{ snapshots: PaperSnapshot[] }> {
+  return request(`/accounts/${encodeURIComponent(accountId)}/snapshots`, token);
+}
+
+export function settlePaperAccount(
+  accountId: string,
+  payload: { trade_date: string; expected_version: number; idempotency_key: string; marks: Record<string, number> },
+  token: string,
+): Promise<{ snapshot: PaperSnapshot }> {
+  return request(`/accounts/${encodeURIComponent(accountId)}/settlements`, token, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function getPaperControls(accountId: string, token: string): Promise<{ controls: PaperControls }> {
+  return request(`/accounts/${encodeURIComponent(accountId)}/controls`, token);
+}
+
+export function updatePaperControls(
+  accountId: string,
+  payload: { kill_switch_engaged: boolean; kill_switch_reason?: string; max_order_notional?: number | null; expected_version: number; idempotency_key: string },
+  token: string,
+): Promise<{ controls: PaperControls }> {
+  return request(`/accounts/${encodeURIComponent(accountId)}/controls`, token, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function rebindPaperAccount(
+  accountId: string,
+  payload: { pool_id: string; expected_version: number; idempotency_key: string },
+  token: string,
+): Promise<{ account: PaperAccount }> {
+  return request(`/accounts/${encodeURIComponent(accountId)}/binding`, token, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function exportPaperAccount(accountId: string, token: string): Promise<{ bundle: Record<string, unknown> }> {
+  return request(`/accounts/${encodeURIComponent(accountId)}/export`, token);
+}
+
+export function importPaperAccount(bundle: Record<string, unknown>, token: string): Promise<{ imported: boolean; account: PaperAccount }> {
+  return request("/accounts/import", token, { method: "POST", body: JSON.stringify({ bundle }) });
 }

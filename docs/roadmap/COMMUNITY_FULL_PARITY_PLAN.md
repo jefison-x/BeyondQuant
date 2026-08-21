@@ -89,13 +89,15 @@ document supplies the parity-batch overview and dependency map.
 - Estimate: 14 person-days (XL).
 
 ### Phase 35 — Paper Trading depth
-- Status: **NEXT — IMPLEMENTATION**.
+- Status: **COMPLETE**.
 - Community: `PaperTradingView.vue` (597 lines) 5 tabs + order detail +
   create/import + settlement + risk controls.
 - Current: accounts/overview/positions/orders + order submit; ledger exists
   on backend.
 - Gap: snapshots, settlement, order detail dialog, import/export, risk
   controls, ledger tab wiring.
+- Delivered: six persisted tabs, immutable settlement snapshots, order audit,
+  versioned risk controls, complete ledger, and validated BYQ asset bundles.
 - Estimate: 9 person-days (M).
 
 ### Phase 36 — Agent workbench depth

@@ -3,8 +3,9 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 34**
-- Next phase: **Phase 35 — Paper Trading depth implementation** (see
+- Current completed phase: **Phase 35**
+- Next phase: **Phase 36 — Agent workbench depth**, currently **BLOCKED** on
+  acceptance of ADR-0018 (see
   `docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md` and
   `docs/roadmap/COMMUNITY_FULL_PARITY_PHASE_DETAILS.md`)
 - Accepted runtime ADR: **ADR-0003**
@@ -102,6 +103,14 @@ Codex session does not infer project state from commit history.
   Trading/research/backtest references are auditable. Backend, Product API,
   MCP `byq_pool_*`, frontend, desktop/mobile Chrome MCP evidence, and the
   Community-derived checklist are complete.
+- Phase 35 (Paper Trading depth) completed: owner-scoped accounts now provide
+  persisted ledger and settlement snapshots, manual immutable settlement,
+  exact T+1 quantity partitions, order audit detail, versioned risk controls,
+  frozen Stock Pool binding, and canonical digested asset-bundle transfer with
+  new IDs and trusted-owner rebinding. Six real Product UI tabs, bounded
+  read-only MCP projections, real Product API E2E, and desktop/mobile Chrome
+  MCP evidence are complete. No live broker or Community runtime/storage path
+  was introduced.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence, but
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` records substantial remaining
@@ -112,14 +121,13 @@ Codex session does not infer project state from commit history.
   Center. These surfaces are not all parity-complete. Remaining items (signal
   producer for end-to-end
   strategy-to-backtest, model credential CRUD, asset re-import, agent policy
-  presets/rule CRUD, operations workbenches, data sync jobs, paper
-  snapshots/settlement) are recorded in the V2 parity matrix, Deferred Items
+  presets/rule CRUD, operations workbenches, and data sync jobs) are recorded
+  in the V2 parity matrix, Deferred Items
   Registry, and Phases 34–40. They must close before the RC review gate.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active architecture blockers: **none for Phase 35.** ADR-0021 supplies the
-  required Paper Trading decision; ADR-0018 and ADR-0019 remain later-phase
-  blockers.
+- Active architecture blocker: **ADR-0018 is Proposed and blocks Phase 36.**
+  ADR-0019 remains Proposed and blocks Phases 37–39.
 
 Git SHA is not phase state. The current clean baseline must always be derived
 from `git fetch origin` followed by `git rev-parse origin/main`; this file must

@@ -412,6 +412,38 @@ def test_product_paper_order_create_forwards_owner_headers(monkeypatch) -> None:
     assert captured["headers"]["x-byq-owner-principal"] == "product-user"
 
 
+def test_product_paper_depth_routes_forward_methods_and_owner(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    captured: list[tuple[str, str, dict[str, str]]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured.append((method, url, kwargs.get("headers", {})))
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    auth = {"Authorization": "Bearer product-test-token"}
+    base = "/api/product/paper/accounts/paper_account_1"
+    assert client.get(f"{base}/orders/paper_order_1", headers=auth).status_code == 200
+    assert client.get(f"{base}/snapshots", headers=auth).status_code == 200
+    assert client.post(f"{base}/settlements", headers=auth, json={}).status_code == 201
+    assert client.get(f"{base}/controls", headers=auth).status_code == 200
+    assert client.put(f"{base}/controls", headers=auth, json={}).status_code == 200
+    assert client.put(f"{base}/binding", headers=auth, json={}).status_code == 200
+    assert client.get(f"{base}/export", headers=auth).status_code == 200
+    assert client.post("/api/product/paper/accounts/import", headers=auth, json={}).status_code == 201
+    assert [item[0] for item in captured] == ["GET", "GET", "POST", "GET", "PUT", "PUT", "GET", "POST"]
+    assert all(item[2]["x-byq-owner-principal"] == "product-user" for item in captured)
+
+
 def test_product_approval_decision_forwards_owner_headers(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")

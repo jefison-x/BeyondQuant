@@ -1555,6 +1555,14 @@ def list_paper_orders(account_id: str, request: Request) -> dict[str, object]:
     ))
 
 
+@app.get("/v1/paper/accounts/{account_id}/orders/{order_id}")
+def get_paper_order(account_id: str, order_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: {"order": paper_store.get_order(
+        account_id, order_id, trusted_owner=context["owner_principal"]
+    )})
+
+
 @app.get("/v1/paper/accounts/{account_id}/positions")
 def list_paper_positions(account_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
@@ -1576,33 +1584,70 @@ def list_paper_fills(account_id: str, request: Request) -> dict[str, object]:
 @app.get("/v1/paper/accounts/{account_id}/ledger")
 def list_paper_ledger(account_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
-    fills = _paper_call(lambda: paper_store.list_fills(
-        account_id,
-        trusted_owner=context["owner_principal"],
-    ))["fills"]
-    ledger: list[dict[str, object]] = []
-    for fill in fills:
-        side = str(fill["side"])
-        quantity = int(fill["quantity"])
-        price = float(fill["price"])
-        amount = quantity * price
-        fees = float(fill["fees"]) + float(fill["tax"])
-        cash_delta = (-amount - fees) if side == "buy" else (amount - fees)
-        ledger.append({
-            "fill_id": fill["fill_id"],
-            "trade_date": fill["trade_date"],
-            "symbol": fill["symbol"],
-            "side": side,
-            "quantity": quantity,
-            "price": price,
-            "amount": round(amount, 10),
-            "fees": round(fees, 10),
-            "cash_delta": round(cash_delta, 10),
-            "realized_pnl": fill.get("realized_pnl", 0.0),
-            "created_at": fill["created_at"],
-        })
-    ledger.sort(key=lambda row: str(row["created_at"]), reverse=True)
-    return {"ledger": ledger}
+    return _paper_call(lambda: paper_store.list_ledger(
+        account_id, trusted_owner=context["owner_principal"]
+    ))
+
+
+@app.get("/v1/paper/accounts/{account_id}/snapshots")
+def list_paper_account_snapshots(account_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: paper_store.list_snapshots(
+        account_id, trusted_owner=context["owner_principal"]
+    ))
+
+
+@app.post("/v1/paper/accounts/{account_id}/settlements", status_code=201)
+def settle_paper_account(account_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    return _paper_call(lambda: {"snapshot": paper_store.settle_account(
+        account_id, payload, trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.get("/v1/paper/accounts/{account_id}/controls")
+def get_paper_account_controls(account_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: {"controls": paper_store.get_controls(
+        account_id, trusted_owner=context["owner_principal"]
+    )})
+
+
+@app.put("/v1/paper/accounts/{account_id}/controls")
+def update_paper_account_controls(account_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    return _paper_call(lambda: {"controls": paper_store.update_controls(
+        account_id, payload, trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.put("/v1/paper/accounts/{account_id}/binding")
+def rebind_paper_account(account_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    return _paper_call(lambda: {"account": paper_store.rebind_account(
+        account_id, payload, trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.get("/v1/paper/accounts/{account_id}/export")
+def export_paper_account(account_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: {"bundle": paper_store.export_bundle(
+        account_id, trusted_owner=context["owner_principal"]
+    )})
+
+
+@app.post("/v1/paper/accounts/import", status_code=201)
+def import_paper_account(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    bundle = payload.get("bundle", payload)
+    return _paper_call(lambda: paper_store.import_bundle(
+        bundle, trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    ))
 
 
 @app.post("/v1/auth/login")

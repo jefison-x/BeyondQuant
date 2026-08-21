@@ -28,7 +28,7 @@ try {
   ]) {
     assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);
   }
-  for (const name of ["byq_pool_list", "byq_pool_get", "byq_pool_create", "byq_pool_snapshot_replace", "byq_pool_history", "byq_pool_lifecycle"]) {
+  for (const name of ["byq_pool_list", "byq_pool_get", "byq_pool_create", "byq_pool_snapshot_replace", "byq_pool_history", "byq_pool_lifecycle", "byq_paper_account_list", "byq_paper_account_get", "byq_paper_order_get", "byq_paper_snapshot_list"]) {
     assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);
   }
   for (const name of [

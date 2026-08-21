@@ -851,6 +851,15 @@ def product_paper_orders(account_id: str, request: Request) -> dict[str, object]
     )
 
 
+@router.get("/paper/accounts/{account_id}/orders/{order_id}")
+def product_paper_order_get(account_id: str, order_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET", f"/v1/paper/accounts/{account_id}/orders/{order_id}",
+        headers=_trusted_agent_headers(request),
+    )
+
+
 @router.get("/paper/accounts/{account_id}/positions")
 def product_paper_positions(account_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
@@ -879,6 +888,48 @@ def product_paper_ledger(account_id: str, request: Request) -> dict[str, object]
         f"/v1/paper/accounts/{account_id}/ledger",
         headers=_trusted_agent_headers(request),
     )
+
+
+@router.get("/paper/accounts/{account_id}/snapshots")
+def product_paper_snapshots(account_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/paper/accounts/{account_id}/snapshots", headers=_trusted_agent_headers(request))
+
+
+@router.post("/paper/accounts/{account_id}/settlements", status_code=201)
+def product_paper_settlement(account_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("POST", f"/v1/paper/accounts/{account_id}/settlements", payload, headers=_trusted_agent_headers(request))
+
+
+@router.get("/paper/accounts/{account_id}/controls")
+def product_paper_controls(account_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/paper/accounts/{account_id}/controls", headers=_trusted_agent_headers(request))
+
+
+@router.put("/paper/accounts/{account_id}/controls")
+def product_paper_controls_update(account_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("PUT", f"/v1/paper/accounts/{account_id}/controls", payload, headers=_trusted_agent_headers(request))
+
+
+@router.put("/paper/accounts/{account_id}/binding")
+def product_paper_binding_update(account_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("PUT", f"/v1/paper/accounts/{account_id}/binding", payload, headers=_trusted_agent_headers(request))
+
+
+@router.get("/paper/accounts/{account_id}/export")
+def product_paper_export(account_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/paper/accounts/{account_id}/export", headers=_trusted_agent_headers(request))
+
+
+@router.post("/paper/accounts/import", status_code=201)
+def product_paper_import(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("POST", "/v1/paper/accounts/import", payload, headers=_trusted_agent_headers(request))
 
 
 @router.get("/operations/status")
