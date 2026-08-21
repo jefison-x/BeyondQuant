@@ -168,6 +168,30 @@ export interface StockPool {
   symbols?: string[];
   weights?: Record<string, number>;
   version?: string;
+  status?: "active" | "inactive" | "deleted";
+  current_snapshot_id?: string;
+  metadata_version?: number;
+  member_count?: number;
+  snapshot?: StockPoolSnapshot;
+  provenance?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface StockPoolSnapshot {
+  snapshot_id: string;
+  pool_id: string;
+  version_number: number;
+  membership_fingerprint: string;
+  snapshot_fingerprint: string;
+  definition: Record<string, unknown>;
+  provenance: Record<string, unknown>;
+  effective_trade_date?: string | null;
+  weight_mode: "weighted" | "unweighted";
+  weight_sum?: string | null;
+  member_count: number;
+  members?: Array<{ symbol: string; weight: string | null }>;
+  created_at: string;
 }
 
 export interface PaperOrder {

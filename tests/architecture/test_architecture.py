@@ -329,7 +329,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn(f"completed project stage is **Phase {completed_phase}**", readme)
 
         implementation = (ROOT / "docs/roadmap/IMPLEMENTATION_PLAN.md").read_text()
-        self.assertIn("Phase 34 — Stock Pool depth (`NEXT — IMPLEMENTATION`)", implementation)
+        self.assertIn("Phase 34 — Stock Pool depth (`COMPLETE`)", implementation)
+        self.assertIn("Phase 35 — Paper Trading depth (`NEXT — IMPLEMENTATION`)", implementation)
 
         stock_pool_adr = (
             ROOT / "docs/architecture/adr/ADR-0020-stock-pool-snapshot-lifecycle.md"
@@ -339,6 +340,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         stock_pool_contract = (ROOT / "docs/contracts/stock-pool.md").read_text()
         self.assertIn("expected_current_snapshot_id", stock_pool_contract)
         self.assertIn("Chrome MCP evidence", stock_pool_contract)
+        self.assertTrue(
+            (ROOT / "docs/evidence/phase-34/byq-stock-pool/README.md").exists()
+        )
 
         parity_plan = (ROOT / "docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md").read_text()
         self.assertIn("Status: `ACTIVE`", parity_plan)

@@ -1,6 +1,6 @@
 # Community Feature Parity Gap Audit
 
-Status: current after Phase 33. This document compares the BeyondQuant
+Status: current after Phase 34. This document compares the BeyondQuant
 frontend with the read-only Community reference and tracks the product-depth
 work that remains. It exists because the original V2 matrix overstated release
 parity. The current state is a working contract-first product with incomplete
@@ -170,7 +170,6 @@ and navigation; missing the deeper Community component set.
 
 Do not treat the current branch as v1.0 RC. Continue the active product-depth
 sequence one worktree/branch/PR at a time, each with Chrome MCP evidence and a
-Community feature checklist. ADR-0020 has passed the Phase 34 Stock Pool
-domain decision gate; the next work is its persisted Product API workflow.
-Phase 35 then
-deepens Paper Trading; ADR/shared-component gates control Phases 36–40.
+Community feature checklist. Phase 34 closed the Stock Pool persisted Product
+API workflow under ADR-0020. Phase 35 next deepens Paper Trading;
+ADR/shared-component gates control Phases 36–40.

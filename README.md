@@ -1,8 +1,8 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-completed project stage is **Phase 33**; the next implementation phase is
-**Phase 34 — Stock Pool depth**. The v1.0 release-candidate gate is not yet
+completed project stage is **Phase 34**; the next implementation phase is
+**Phase 35 — Paper Trading depth**. The v1.0 release-candidate gate is not yet
 satisfied. See [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
 authoritative current state.
 
@@ -34,8 +34,8 @@ BYQ does not fork DSH. The DSH version is pinned through an explicit dependency 
 
 - A BYQ-owned strategy-source → `signal_snapshot` producer is not yet defined;
   the browser cannot complete a newly authored strategy-to-backtest journey.
-- Stock Pool, Paper Trading, Agent, My Space, Operations, Data Center, and
-  shared-component depth remain in Phases 34–40.
+- Paper Trading, Agent, My Space, Operations, Data Center, and shared-component
+  depth remain in Phases 35–40.
 - ADR-0018 and ADR-0019 remain Proposed and block their dependent phases.
 - The project is not yet eligible for the BeyondQuant Next v1.0 RC gate.
 

@@ -142,11 +142,34 @@ paths:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
     get: {summary: Get one owner-scoped paper account., responses: *okResponses}
   /api/product/paper/pools:
+    parameters: [{$ref: "#/components/parameters/Limit"}, {$ref: "#/components/parameters/Offset"}]
     get: {summary: List owner-scoped stock pools., responses: *okResponses}
     post: {summary: Create an owner-scoped stock pool., responses: *createdResponses}
   /api/product/paper/pools/{pool_id}:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
     get: {summary: Get one owner-scoped stock pool., responses: *okResponses}
+    delete: {summary: Tombstone-delete an owner-scoped stock pool while retaining snapshots., responses: *okResponses}
+  /api/product/paper/pools/{pool_id}/metadata:
+    parameters: [{$ref: "#/components/parameters/PoolId"}]
+    patch: {summary: Update mutable stock-pool catalog metadata without creating a snapshot., responses: *okResponses}
+  /api/product/paper/pools/{pool_id}/snapshot:
+    parameters: [{$ref: "#/components/parameters/PoolId"}]
+    put: {summary: Append or idempotently reuse an immutable membership snapshot., responses: *okResponses}
+  /api/product/paper/pools/{pool_id}/snapshots:
+    parameters: [{$ref: "#/components/parameters/PoolId"}, {$ref: "#/components/parameters/Limit"}, {$ref: "#/components/parameters/Offset"}]
+    get: {summary: List immutable stock-pool snapshot history., responses: *okResponses}
+  /api/product/paper/pools/{pool_id}/snapshots/{snapshot_id}:
+    parameters: [{$ref: "#/components/parameters/PoolId"}, {$ref: "#/components/parameters/SnapshotId"}]
+    get: {summary: Get one immutable stock-pool snapshot., responses: *okResponses}
+  /api/product/paper/pools/{pool_id}/lifecycle:
+    parameters: [{$ref: "#/components/parameters/PoolId"}]
+    patch: {summary: Activate, deactivate, or tombstone a stock pool., responses: *okResponses}
+  /api/product/paper/pools/{pool_id}/as-of/{trade_date}:
+    parameters: [{$ref: "#/components/parameters/PoolId"}, {$ref: "#/components/parameters/TradeDate"}]
+    get: {summary: Resolve the latest persisted index snapshot at or before a trade date., responses: *okResponses}
+  /api/product/paper/pools/{pool_id}/references:
+    parameters: [{$ref: "#/components/parameters/PoolId"}]
+    get: {summary: List bounded owner-safe downstream stock-pool references., responses: *okResponses}
   /api/product/paper/orders:
     post: {summary: Submit an owner-scoped paper order., responses: *createdResponses}
   /api/product/paper/accounts/{account_id}/orders:
@@ -210,6 +233,10 @@ components:
     UserId: {name: user_id, in: path, required: true, schema: {type: string}}
     AccountId: {name: account_id, in: path, required: true, schema: {type: string}}
     PoolId: {name: pool_id, in: path, required: true, schema: {type: string}}
+    SnapshotId: {name: snapshot_id, in: path, required: true, schema: {type: string}}
+    TradeDate: {name: trade_date, in: path, required: true, schema: {type: string, pattern: "^[0-9]{8}$"}}
+    Limit: {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+    Offset: {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
     SessionId: {name: session_id, in: path, required: true, schema: {type: string}}
     LastEventId: {name: Last-Event-ID, in: header, required: false, schema: {type: string}}
   schemas:

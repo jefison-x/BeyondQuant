@@ -43,6 +43,7 @@ test("real Product API login and Stock Pool create flow", async ({ page, baseURL
   await page.getByRole("button", { name: "创建股票池" }).click();
   expect((await createdResponse).status()).toBe(201);
   await expect(page.getByText(poolName, { exact: true }).first()).toBeVisible();
+  await page.getByRole("tab", { name: "成员与权重" }).click();
   await expect(page.getByText("000001.SZ", { exact: true }).first()).toBeVisible();
 
   expect([...unexpectedOrigins]).toEqual([]);

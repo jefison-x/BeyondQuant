@@ -153,6 +153,17 @@ def _backend_get(path: str) -> dict[str, object]:
     try:
         response = httpx.get(f"{BACKEND_URL}{path}", timeout=3.0)
         response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        try:
+            error_body = exc.response.json()
+        except ValueError:
+            error_body = {}
+        detail = error_body.get("detail") if isinstance(error_body, dict) else None
+        message = detail if isinstance(detail, str) else "backend rejected the request"
+        if status not in {400, 401, 403, 404, 409, 422}:
+            raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
+        raise ProductError(status, "product_domain_rejected", message) from exc
     except httpx.HTTPError as exc:
         raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
     body = response.json()
@@ -176,6 +187,17 @@ def _backend_request(
             timeout=8.0,
         )
         response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        try:
+            error_body = exc.response.json()
+        except ValueError:
+            error_body = {}
+        detail = error_body.get("detail") if isinstance(error_body, dict) else None
+        message = detail if isinstance(detail, str) else "backend rejected the request"
+        if status not in {400, 401, 403, 404, 409, 422}:
+            raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
+        raise ProductError(status, "product_domain_rejected", message) from exc
     except httpx.HTTPError as exc:
         raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
     body = response.json()
@@ -753,9 +775,59 @@ def product_stock_pool_get(pool_id: str, request: Request) -> dict[str, object]:
 
 
 @router.get("/paper/pools")
-def product_stock_pools(request: Request) -> dict[str, object]:
+def product_stock_pools(request: Request, limit: int = 50, offset: int = 0) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", "/v1/paper/pools", headers=_trusted_agent_headers(request))
+    return _backend_request("GET", f"/v1/paper/pools?limit={limit}&offset={offset}", headers=_trusted_agent_headers(request))
+
+
+@router.patch("/paper/pools/{pool_id}/metadata")
+def product_stock_pool_metadata(pool_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("PATCH", f"/v1/paper/pools/{pool_id}/metadata", payload, headers=_trusted_agent_headers(request))
+
+
+@router.put("/paper/pools/{pool_id}/snapshot")
+def product_stock_pool_snapshot_replace(pool_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("PUT", f"/v1/paper/pools/{pool_id}/snapshot", payload, headers=_trusted_agent_headers(request))
+
+
+@router.get("/paper/pools/{pool_id}/snapshots")
+def product_stock_pool_snapshots(pool_id: str, request: Request, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/paper/pools/{pool_id}/snapshots?limit={limit}&offset={offset}", headers=_trusted_agent_headers(request))
+
+
+@router.get("/paper/pools/{pool_id}/snapshots/{snapshot_id}")
+def product_stock_pool_snapshot_get(pool_id: str, snapshot_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/paper/pools/{pool_id}/snapshots/{snapshot_id}", headers=_trusted_agent_headers(request))
+
+
+@router.get("/paper/pools/{pool_id}/as-of/{trade_date}")
+def product_stock_pool_as_of(pool_id: str, trade_date: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/paper/pools/{pool_id}/as-of/{trade_date}", headers=_trusted_agent_headers(request))
+
+
+@router.patch("/paper/pools/{pool_id}/lifecycle")
+def product_stock_pool_lifecycle(pool_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("PATCH", f"/v1/paper/pools/{pool_id}/lifecycle", payload, headers=_trusted_agent_headers(request))
+
+
+@router.delete("/paper/pools/{pool_id}")
+def product_stock_pool_delete(pool_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    headers = _trusted_agent_headers(request)
+    headers["x-idempotency-key"] = request.headers.get("x-idempotency-key") or f"delete-{pool_id}"
+    return _backend_request("DELETE", f"/v1/paper/pools/{pool_id}", headers=headers)
+
+
+@router.get("/paper/pools/{pool_id}/references")
+def product_stock_pool_references(pool_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/paper/pools/{pool_id}/references", headers=_trusted_agent_headers(request))
 
 
 @router.post("/paper/orders", status_code=201)

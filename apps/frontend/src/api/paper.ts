@@ -1,4 +1,4 @@
-import type { PaperAccount, PaperLedgerEntry, PaperOrder, StockPool } from "./types";
+import type { PaperAccount, PaperLedgerEntry, PaperOrder, StockPool, StockPoolSnapshot } from "./types";
 
 const ROOT = "/api/product/paper";
 
@@ -41,7 +41,6 @@ export function createStockPool(
     body: JSON.stringify({
       name,
       symbols,
-      provenance: { source: "frontend" },
       pool_type: options.poolType ?? "custom",
       description: options.description ?? null,
       weights: options.weights ?? {},
@@ -51,6 +50,61 @@ export function createStockPool(
 
 export function listStockPools(token: string): Promise<{ pools: Array<Record<string, unknown>> }> {
   return request(`/pools`, token);
+}
+
+export function getStockPool(poolId: string, token: string): Promise<{ pool: StockPool }> {
+  return request(`/pools/${encodeURIComponent(poolId)}`, token);
+}
+
+export function updateStockPoolMetadata(
+  poolId: string,
+  payload: { name: string; description?: string; expected_metadata_version: number },
+  token: string,
+): Promise<{ pool: StockPool }> {
+  return request(`/pools/${encodeURIComponent(poolId)}/metadata`, token, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function replaceStockPoolSnapshot(
+  poolId: string,
+  payload: Record<string, unknown>,
+  token: string,
+): Promise<{ snapshot: StockPoolSnapshot }> {
+  return request(`/pools/${encodeURIComponent(poolId)}/snapshot`, token, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function listStockPoolSnapshots(poolId: string, token: string): Promise<{ snapshots: StockPoolSnapshot[] }> {
+  return request(`/pools/${encodeURIComponent(poolId)}/snapshots`, token);
+}
+
+export function getStockPoolSnapshot(poolId: string, snapshotId: string, token: string): Promise<{ snapshot: StockPoolSnapshot }> {
+  return request(`/pools/${encodeURIComponent(poolId)}/snapshots/${encodeURIComponent(snapshotId)}`, token);
+}
+
+export function getStockPoolAsOf(poolId: string, tradeDate: string, token: string): Promise<{ snapshot: StockPoolSnapshot }> {
+  return request(`/pools/${encodeURIComponent(poolId)}/as-of/${encodeURIComponent(tradeDate)}`, token);
+}
+
+export function listStockPoolReferences(poolId: string, token: string): Promise<{ references: Array<Record<string, unknown>> }> {
+  return request(`/pools/${encodeURIComponent(poolId)}/references`, token);
+}
+
+export function setStockPoolLifecycle(
+  poolId: string,
+  status: "active" | "inactive",
+  reason: string,
+  token: string,
+): Promise<{ pool: StockPool }> {
+  return request(`/pools/${encodeURIComponent(poolId)}/lifecycle`, token, {
+    method: "PATCH",
+    body: JSON.stringify({ status, reason, idempotency_key: crypto.randomUUID() }),
+  });
+}
+
+export function deleteStockPool(poolId: string, token: string): Promise<{ pool: StockPool }> {
+  return request(`/pools/${encodeURIComponent(poolId)}`, token, {
+    method: "DELETE",
+    headers: { "x-idempotency-key": crypto.randomUUID() },
+  });
 }
 
 export function submitPaperOrder(

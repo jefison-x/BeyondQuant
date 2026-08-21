@@ -302,6 +302,57 @@ def test_product_stock_pool_create_forwards_owner_headers(monkeypatch) -> None:
     assert captured["headers"]["x-byq-owner-principal"] == "product-user"
 
 
+def test_product_stock_pool_depth_routes_forward_methods_and_owner(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    captured: list[tuple[str, str, dict[str, str]]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured.append((method, url, kwargs.get("headers", {})))
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    auth = {"Authorization": "Bearer product-test-token"}
+    assert client.patch("/api/product/paper/pools/stock_pool_1/metadata", headers=auth, json={}).status_code == 200
+    assert client.put("/api/product/paper/pools/stock_pool_1/snapshot", headers=auth, json={}).status_code == 200
+    assert client.get("/api/product/paper/pools/stock_pool_1/snapshots", headers=auth).status_code == 200
+    assert client.get("/api/product/paper/pools/stock_pool_1/as-of/20240131", headers=auth).status_code == 200
+    assert client.patch("/api/product/paper/pools/stock_pool_1/lifecycle", headers=auth, json={}).status_code == 200
+    assert client.get("/api/product/paper/pools/stock_pool_1/references", headers=auth).status_code == 200
+    assert [item[0] for item in captured] == ["PATCH", "PUT", "GET", "GET", "PATCH", "GET"]
+    assert all(item[2]["x-byq-owner-principal"] == "product-user" for item in captured)
+
+
+def test_product_stock_pool_mutation_preserves_domain_validation(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    request = product_api.httpx.Request("PUT", "http://backend/v1/paper/pools/pool_1/snapshot")
+    response = product_api.httpx.Response(
+        422,
+        request=request,
+        json={"detail": "weights must sum to 1"},
+    )
+    monkeypatch.setattr(product_api.httpx, "request", lambda *args, **kwargs: response)
+
+    client = TestClient(main.app)
+    result = client.put(
+        "/api/product/paper/pools/pool_1/snapshot",
+        headers={"Authorization": "Bearer product-test-token"},
+        json={},
+    )
+
+    assert result.status_code == 422
+    assert result.json()["error"]["code"] == "product_domain_rejected"
+    assert result.json()["error"]["message"] == "weights must sum to 1"
+
+
 def test_product_paper_ledger_forwards_owner_headers(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")

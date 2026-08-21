@@ -3,8 +3,8 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 33**
-- Next phase: **Phase 34 — Stock Pool depth implementation** (see
+- Current completed phase: **Phase 34**
+- Next phase: **Phase 35 — Paper Trading depth implementation** (see
   `docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md` and
   `docs/roadmap/COMMUNITY_FULL_PARITY_PHASE_DETAILS.md`)
 - Accepted runtime ADR: **ADR-0003**
@@ -24,7 +24,7 @@ Codex session does not infer project state from commit history.
 - Accepted signal-snapshot ADR: **ADR-0017**
 - Accepted Stock Pool snapshot/lifecycle ADR: **ADR-0020**
 - Open architecture decisions: ADR-0018 and ADR-0019 remain Proposed and
-  block their dependent future phases; they do not block Phase 34.
+  block their dependent future phases; they do not block Phase 35.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -91,6 +91,14 @@ Codex session does not infer project state from commit history.
   profile fields) in the Deferred Items Registry; all four are assigned to
   Phase 40 rather than the completed Phase 33. The end-to-end
   strategy-to-backtest journey remains D-0002 (signal producer).
+- Phase 34 (Stock Pool depth) completed: owner-scoped catalog/detail and five
+  persisted projections now use immutable membership snapshots with stable
+  version/fingerprint identity; weights are validated; custom edits create new
+  snapshots; index pools use trusted Tushare provenance and no-look-ahead
+  effective-date lookup; lifecycle/tombstone behavior and frozen Paper
+  Trading/research/backtest references are auditable. Backend, Product API,
+  MCP `byq_pool_*`, frontend, desktop/mobile Chrome MCP evidence, and the
+  Community-derived checklist are complete.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence, but
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` records substantial remaining
@@ -106,8 +114,8 @@ Codex session does not infer project state from commit history.
   Registry, and Phases 34–40. They must close before the RC review gate.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active architecture blockers: **none for Phase 34.** ADR-0020 is the
-  implementation authority. ADR-0018 and ADR-0019 remain later-phase blockers.
+- Active architecture blockers: **none for Phase 35.** ADR-0018 and ADR-0019
+  remain later-phase blockers.
 
 Git SHA is not phase state. The current clean baseline must always be derived
 from `git fetch origin` followed by `git rev-parse origin/main`; this file must

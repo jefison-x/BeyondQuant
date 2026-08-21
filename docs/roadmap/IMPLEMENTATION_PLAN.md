@@ -1197,20 +1197,21 @@ version history, backtest counts, read-only version detail, Product API/MCP
 contracts, and browser evidence. D-0009–D-0012 are explicitly assigned to
 Phase 40 and do not remain attached to the completed phase.
 
-### Phase 34 — Stock Pool depth (`NEXT — IMPLEMENTATION`)
+### Phase 34 — Stock Pool depth (`COMPLETE`)
 
 ADR-0020 accepts the BYQ Stock Pool contract for
 mutable pool identity, immutable membership snapshots, version/fingerprint,
 custom/index/dynamic provenance, weight validation, activation/deactivation,
 delete semantics, and references from Paper Trading/research/backtest.
 
-Implement owner-scoped catalog/detail, member and weight
-editing through new snapshots, index constituents, filter conditions,
-historical snapshots, lifecycle actions, mobile cards, Product API routes,
-and MCP `byq_pool_*` capabilities. All five detail tabs must use persisted
-data; no browser-generated snapshot or direct Backend/MCP call is permitted.
+Delivered owner-scoped catalog/detail, member and weight editing through new
+snapshots, index constituents, filter conditions, historical snapshots,
+lifecycle actions, mobile cards, Product API routes, and MCP `byq_pool_*`
+capabilities. All five detail tabs use persisted data. Real Product API Chrome
+MCP evidence and the Community checklist are recorded under
+`docs/evidence/phase-34/`.
 
-### Phase 35 — Paper Trading depth (`PLANNED`)
+### Phase 35 — Paper Trading depth (`NEXT — IMPLEMENTATION`)
 
 Add persisted snapshots, manual settlement, order detail, BYQ asset-bundle
 import/export, explicit risk controls, and complete ledger wiring without live

@@ -169,31 +169,35 @@ orders/fills proxies did not forward trusted owner headers, so browser writes
 and reads failed owner-scoped backend checks. The proxies now forward the
 headers and the flow is verified end-to-end.
 
-## Stock Pool workspace review (2026-08-17)
+## Stock Pool Phase 34 review (2026-08-21)
 
-- Browser method: Chrome DevTools MCP (headed, viewport 1440x900)
-- Topology: local `beyondquant` compose with the Stock Pool product-depth
-  branch images
-- Browser origin: `http://127.0.0.1`
-- Authenticated principal: `chromeuser` / role `admin`
+- Browser method: Chrome DevTools MCP with system Google Chrome; desktop
+  1440x900 and mobile 390x844.
+- Topology: isolated Compose stack built from the Phase 34 worktree.
+- Browser origin: ephemeral loopback frontend; authenticated durable principal
+  `ci-admin`.
+- Evidence index: [`../evidence/phase-34/byq-stock-pool/README.md`](../evidence/phase-34/byq-stock-pool/README.md).
 
-Observed at `/stock-pool`:
+Observed at `/stock-pool` through the real Product API:
 
-- Create form renders 股票池名称, 类型 radios (自建/指数/动态), 说明,
-  成分股, and optional 权重 JSON.
-- A pool was created through the real browser form and the fixed Product API
-  proxy: 沪深300增强 / 指数 / 2 只成分 / v1 / 浏览器审查指数池.
-- List pane renders name/type/count/version/description/updated-time with
-  全部/自建/指数/动态 filters, search, and refresh.
-- Detail pane renders the immutable snapshot: symbols 000001.SZ + 600000.SH
-  and weights {"000001.SZ": 0.6, "600000.SH": 0.4}.
-- No raw MCP/DSH/Backend/storage/provider URL or secret appeared in the
-  rendered page; the page consumed Product API routes only.
+- Created a weighted custom pool, rejected an invalid 0.8 total with HTTP 422,
+  then persisted a three-member v2 snapshot.
+- Read v1 from the immutable history dialog with stable fingerprint while v2
+  remained current.
+- Persisted active/inactive/active lifecycle transitions.
+- Resolved a 2024-01-15 index request to the 2024-01-02 snapshot, not the later
+  2024-02-01 snapshot, and displayed complete Tushare/unit/normalization
+  provenance.
+- Desktop table and mobile cards rendered the same persisted catalog. After a
+  clean authenticated reload, Chrome reported no console warnings/errors.
+- Every browser request was same-origin and used `/api/auth/*` or
+  `/api/product/*`; no Backend, MCP, DSH, PostgreSQL, or provider call escaped
+  the Gateway boundary.
 
-This review also exposed and fixed a real defect: the Product API wraps
-backtest jobs in `{"job": ...}` and the frontend client did not unwrap it,
-so job detail never loaded. The fix unwraps `job` in the quant API client and
-adds unit/e2e coverage.
+The review exposed and fixed two integration defects: the real E2E assertion
+had not followed the new Members tab, and Gateway mutations collapsed Backend
+422 validation into 503. The test now opens the tab and the Gateway preserves
+bounded domain errors with regression coverage.
 
 ## Strategy workspace review (2026-08-17)
 
