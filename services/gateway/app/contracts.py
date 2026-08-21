@@ -17,8 +17,17 @@ for _candidate in _PACKAGE_ROOT_CANDIDATES:
         break
 
 from contracts.workflow_trace import (  # noqa: E402
+    CARD_KINDS,
+    WORKFLOW_CARD_VERSION,
     WorkflowTraceEvent,
+    make_workflow_trace_event,
     validate_workflow_trace_event,
 )
 
-__all__ = ["WorkflowTraceEvent", "validate_workflow_trace_event"]
+__all__ = [
+    "CARD_KINDS",
+    "WORKFLOW_CARD_VERSION",
+    "WorkflowTraceEvent",
+    "make_workflow_trace_event",
+    "validate_workflow_trace_event",
+]

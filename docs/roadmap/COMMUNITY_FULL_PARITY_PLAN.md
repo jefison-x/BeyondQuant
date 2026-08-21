@@ -101,7 +101,7 @@ document supplies the parity-batch overview and dependency map.
 - Estimate: 9 person-days (M).
 
 ### Phase 36 — Agent workbench depth
-- Status: **NEXT — IMPLEMENTATION** under Accepted ADR-0018.
+- Status: **COMPLETE (2026-08-22)** under Accepted ADR-0018.
 - Community: `AgentView.vue` (2057 lines) + AgentThinking /
   ApprovalManagementPanel / GlobalApprovalCenter / XiaobaAssistantDrawer.
 - Current: sessions/turn/resume/cancel + WorkflowTrace + approval decisions.
@@ -109,6 +109,10 @@ document supplies the parity-batch overview and dependency map.
   management, tool visualization depth.
 - Dependency: ADR-0018 (Accepted). Phase 36 owns its Agent-specific
   components; Phase 40 may generalize them after they are proven.
+- Delivered: normalized actionable cards, bounded public activity/answer
+  projections, local/global approvals, conversation starters, and the Xiaoba
+  assistant drawer; real Product API desktop/mobile Chrome MCP evidence and
+  the Community checklist are under `docs/evidence/phase-36/`.
 - Estimate: 14 person-days (XL).
 
 ### Phase 37 — My Space depth (Models / Assets / Agent Policy)
@@ -157,7 +161,7 @@ Phase 32 (backtest)  ── split: result depth (no blocker) → wizard (ADR-001
 Phase 33 (strategy)  ── independent
 Phase 34 (stock pool) ── independent
 Phase 35 (paper trading) ── independent
-Phase 36 (agent)     ── ADR-0018 accepted; ready
+Phase 36 (agent)     ── complete under ADR-0018
 Phase 37 (my space)  ── needs ADR-0019 + Phase 40
 Phase 38 (operations) ── needs ADR-0019 + Phase 40
 Phase 39 (data center) ── needs ADR-0019

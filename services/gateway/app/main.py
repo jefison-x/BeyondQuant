@@ -17,6 +17,7 @@ from .auth_api import router as auth_router
 from .product_api import ProductError, router as product_router
 from .user_session import ProductAuthError, resolve_principal
 from .trace_store import TraceStore
+from .workflow_projection import project_workflow_event
 
 
 SERVICE = "byq-gateway"
@@ -25,6 +26,7 @@ app = FastAPI(title="BeyondQuant Gateway", version=VERSION)
 app.include_router(product_router)
 app.include_router(auth_router)
 RUNTIME_ADAPTER_URL = os.environ.get("BYQ_RUNTIME_ADAPTER_URL", "http://runtime-adapter:8400")
+BACKEND_URL = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
 PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
 trace_store = TraceStore(os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"))
@@ -207,7 +209,15 @@ def _collect_trace(session: ProductSession) -> None:
                     continue
                 try:
                     event = json.loads(line[6:])
-                    trace_store.append(event)
+                    projected = project_workflow_event(
+                        event,
+                        backend_get=lambda path: _domain_get(path, session),
+                        revision_for=lambda card_id: trace_store.next_card_revision(
+                            session.session_id,
+                            card_id,
+                        ),
+                    )
+                    trace_store.append(projected)
                 except (ValueError, TypeError, json.JSONDecodeError):
                     # The adapter is the only producer. Invalid data is not
                     # persisted or reflected to the product client.
@@ -217,6 +227,25 @@ def _collect_trace(session: ProductSession) -> None:
     finally:
         if session.released:
             trace_store.close(session.session_id)
+
+
+def _domain_get(path: str, session: ProductSession) -> dict[str, object]:
+    headers = {
+        "x-byq-owner-principal": session.principal.subject,
+        "x-byq-actor-principal": session.principal.subject,
+        "x-byq-trace-id": session.trace_id,
+        "x-byq-session-id": session.session_id,
+        "x-byq-dsh-run-id": session.session_id,
+    }
+    try:
+        response = httpx.get(f"{BACKEND_URL}{path}", headers=headers, timeout=5.0)
+        response.raise_for_status()
+        body = response.json()
+    except (httpx.HTTPError, json.JSONDecodeError) as exc:
+        raise RuntimeError("owner-scoped card hydration failed") from exc
+    if not isinstance(body, dict):
+        raise RuntimeError("owner-scoped card hydration returned an invalid response")
+    return body
 
 
 def _product_session(request: Request, session_id: str) -> ProductSession:

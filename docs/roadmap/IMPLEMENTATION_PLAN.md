@@ -1222,13 +1222,20 @@ immutable manual settlement, frozen Stock Pool binding, versioned controls,
 auditable immediate order results, portable digested bundles, Product API and
 bounded read-only MCP projections, real-browser E2E, and Chrome MCP evidence.
 
-### Phase 36 — Agent workbench depth (`NEXT — IMPLEMENTATION`)
+### Phase 36 — Agent workbench depth (`COMPLETE`)
 
 Implement curated WorkflowTrace cards, assistant drawer, thinking and
 approval panels, and actionable strategy/stock/optimization projections under
 Accepted ADR-0018. Phase 36 owns the Agent-specific components required for
 its exit criteria; Phase 40 may generalize proven components later and is not
 a prerequisite.
+
+Delivered the closed ADR-0018 card/activity contract end to end, owner-scoped
+Gateway hydration for domain-backed cards, bounded public activity and answer
+projections, actionable workbench cards, local/global approval surfaces,
+conversation starters, and a responsive Xiaoba assistant drawer. Real Product
+API Chrome MCP evidence and the Community-derived checklist are stored under
+`docs/evidence/phase-36/`.
 
 ### Phase 37 — My Space depth (`BLOCKED`)
 

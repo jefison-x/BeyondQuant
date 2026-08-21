@@ -17,8 +17,25 @@ for _candidate in _PACKAGE_ROOT_CANDIDATES:
         break
 
 from contracts.workflow_trace import (  # noqa: E402
+    MAX_ACTIVITIES_PER_TURN,
+    MAX_ANSWER_FRAGMENT_BYTES,
+    MAX_CARDS_PER_TURN,
+    WORKFLOW_ACTIVITY_VERSION,
+    WORKFLOW_ANSWER_VERSION,
+    WORKFLOW_CARD_VERSION,
     WorkflowTraceEvent,
     make_workflow_trace_event,
+    validate_workflow_trace_event,
 )
 
-__all__ = ["WorkflowTraceEvent", "make_workflow_trace_event"]
+__all__ = [
+    "MAX_ACTIVITIES_PER_TURN",
+    "MAX_ANSWER_FRAGMENT_BYTES",
+    "MAX_CARDS_PER_TURN",
+    "WORKFLOW_ACTIVITY_VERSION",
+    "WORKFLOW_ANSWER_VERSION",
+    "WORKFLOW_CARD_VERSION",
+    "WorkflowTraceEvent",
+    "make_workflow_trace_event",
+    "validate_workflow_trace_event",
+]
