@@ -134,8 +134,9 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   1. Model credential CRUD + Agent binding.
   2. Asset strategy/backtest re-import.
   3. Agent policy presets/rule CRUD.
-- Dependencies: ADR-0019 (encrypted credential store); Backend model
-  credential CRUD + asset re-import + policy presets/rule CRUD.
+- Dependencies: ADR-0019 (Accepted); Backend model credential CRUD + asset
+  re-import + policy presets/rule CRUD. Phase 37 owns its required
+  model-settings component; Phase 40 may generalize it later.
 - Classification: credential CRUD=`REPLACE` (BYQ masked/audit); asset bundle=
   `REFACTOR`; policy rules=`PORT_UX`.
 - Estimate: 14 person-days (XL).
@@ -214,7 +215,8 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   where a later phase explicitly depends on them.
 - Phase 36 → complete under ADR-0018; Phase 40 may generalize its proven
   Agent-specific components.
-- Phase 37/39 → need ADR-0019.
+- Phase 37 → ADR-0019 accepted; owns its required component and is ready.
+- Phase 39 → reuses Accepted ADR-0019 after preceding phase gates.
 - Phase 38 → needs ADR-0019 + Phase 40.
 - Phase 32 wizard → ADR-0017 (separate from this table; slice already
   tracked in PR #76).

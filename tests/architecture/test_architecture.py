@@ -24,6 +24,22 @@ def dsh_service_block() -> str:
 
 
 class ArchitectureBoundaryTests(unittest.TestCase):
+    def test_adr_0019_accepts_a_closed_secret_resolution_boundary(self) -> None:
+        adr = (ROOT / "docs/architecture/adr/ADR-0019-encrypted-credential-store.md").read_text()
+        contract = (ROOT / "docs/contracts/credential-store.md").read_text()
+        status = (ROOT / "docs/roadmap/STATUS.md").read_text()
+
+        self.assertIn("- Status: Accepted", adr)
+        self.assertIn("AES-256-GCM", adr)
+        self.assertIn("dedicated resolver service token", adr)
+        self.assertIn("Phase 40 may extract or generalize", adr)
+        self.assertIn("BYQ_CREDENTIAL_KEYRING", contract)
+        self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
+        self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
+        self.assertIn("A user binding never", contract)
+        self.assertIn("READY FOR IMPLEMENTATION", status)
+        self.assertNotIn("ADR-0019 remains Proposed", status)
+
     def test_base_compose_uses_runtime_adapter_as_the_only_product_dsh_path(self) -> None:
         compose = (ROOT / "compose.yml").read_text()
         self.assertNotRegex(compose, r"(?m)^  dsh:")
@@ -335,7 +351,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "Phase 36 — Agent workbench depth (`COMPLETE`)",
             implementation,
         )
-        self.assertIn("Phase 37 — My Space depth (`BLOCKED`)", implementation)
+        self.assertIn("Phase 37 — My Space depth (`READY`)", implementation)
 
         workflow_card_adr = (
             ROOT
@@ -348,6 +364,13 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         ).read_text()
         self.assertIn("workflow-card.v1", workflow_card_contract)
         self.assertIn("owner-scoped Product API", workflow_card_contract)
+
+        credential_adr = (
+            ROOT
+            / "docs/architecture/adr/ADR-0019-encrypted-credential-store.md"
+        ).read_text()
+        self.assertIn("- Status: Accepted", credential_adr)
+        self.assertIn("private Backend-to-Adapter seam", credential_adr)
 
         stock_pool_adr = (
             ROOT / "docs/architecture/adr/ADR-0020-stock-pool-snapshot-lifecycle.md"
