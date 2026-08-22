@@ -26,4 +26,5 @@ Inspection date: 2026-08-22. Community repository was read-only.
 - [x] Real Product API desktop/mobile Chrome MCP review recorded.
 - [x] Full local CI recorded: all 13 checks passed, including Compose smoke
   and three real Product API E2E journeys.
-- [ ] PR CI green before merge.
+- [x] PR CI green before merge: GitHub Actions run `32547803282` passed the
+  complete self-hosted local-CI job in 3m44s.

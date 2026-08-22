@@ -75,3 +75,8 @@ passed all 13 checks after the browser-found fixes. This included the complete
 Backend/Gateway/Runtime Adapter/MCP suites, frontend production build, 43
 Vitest tests, dependency audit, 10 mocked browser tests, isolated Compose
 smoke, and three no-mock real Product API browser journeys.
+
+The same full gate passed remotely in GitHub Actions run
+[`32547803282`](https://github.com/jefison-x/BeyondQuant/actions/runs/32547803282)
+before merge. The remaining `actions/checkout@v4` Node 20 deprecation message
+is a non-failing runner annotation and is outside the Phase 38 product scope.
