@@ -4,11 +4,10 @@ This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
 - Current completed phase: **Phase 37**
-- Next phase: **Phase 38 — Operations workbenches**, **BLOCKED** on its
-  explicitly recorded Phase 40 shared-component gate (see
-  `docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md` and
-  `docs/roadmap/COMMUNITY_FULL_PARITY_PHASE_DETAILS.md`). Do not implement
-  Phase 38 until that gate is satisfied or an Accepted ADR changes it.
+- Next phase: **Phase 38 — Operations workbenches**, **READY** under Accepted
+  ADR-0022. Phase 38 owns the operations-specific components required for its
+  acceptance; Phase 40 may generalize proven components later and is not a
+  prerequisite.
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -28,9 +27,9 @@ Codex session does not infer project state from commit history.
 - Accepted encrypted credential-store ADR: **ADR-0019**
 - Accepted Stock Pool snapshot/lifecycle ADR: **ADR-0020**
 - Accepted Paper Trading account/lifecycle ADR: **ADR-0021**
-- Open architecture decisions: **none from Phase 37**. ADR-0019 is Accepted.
-  Phase 38 remains blocked on its separately recorded Phase 40
-  shared-component gate.
+- Accepted Phase 38 component-ownership ADR: **ADR-0022**
+- Open architecture decisions: **none from Phase 37 or the Phase 38 entry
+  gate**. ADR-0019 and ADR-0022 are Accepted.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -61,6 +60,8 @@ Codex session does not infer project state from commit history.
   [ADR-0020](../architecture/adr/ADR-0020-stock-pool-snapshot-lifecycle.md)
   is Accepted.
   [ADR-0021](../architecture/adr/ADR-0021-paper-trading-account-lifecycle.md)
+  is Accepted.
+  [ADR-0022](../architecture/adr/ADR-0022-phase38-component-ownership.md)
   is Accepted.
 - Phase 23 acceptance evidence established a Product Skeleton browser and
   parity baseline. Its mocked Playwright navigation smoke is not evidence of
@@ -154,8 +155,9 @@ Codex session does not infer project state from commit history.
   Registry, and Phases 34–40. They must close before the RC review gate.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active phase blocker: **Phase 38 requires its Phase 40 shared-component
-  gate.** ADR-0019 itself is Accepted and no Phase 37 blocker remains.
+- Active phase blocker: **none**. D-0007 is READY under Accepted ADR-0019 and
+  ADR-0022. The post-Phase 40 DSH Upgrade Lane is scheduled separately in
+  `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.
 
 Git SHA is not phase state. The current clean baseline must always be derived
 from `git fetch origin` followed by `git rev-parse origin/main`; this file must

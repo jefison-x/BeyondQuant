@@ -1252,11 +1252,13 @@ archives; and effective Agent Policy presets/rule CRUD with audit and platform
 approval precedence. Real Product API Chrome MCP evidence and the
 Community-derived checklist are stored under `docs/evidence/phase-37/`.
 
-### Phase 38 — Operations workbenches (`BLOCKED`)
+### Phase 38 — Operations workbenches (`READY`)
 
 Replace placeholder operations routes with real RBAC/audit-protected
-projections and bounded actions after ADR-0019 and shared-component gates.
-PostgreSQL market-cache status replaces Community Redis assumptions.
+projections and bounded actions under Accepted ADR-0019 and ADR-0022.
+Phase 38 owns its operations-specific components; Phase 40 may generalize
+proven components later and is not a prerequisite. PostgreSQL market-cache
+status replaces Community Redis assumptions.
 
 ### Phase 39 — Data Center / Data Sync depth (`BLOCKED`)
 
@@ -1269,3 +1271,10 @@ Finish reusable product components and resolve every transferred D-item,
 including the signal producer decision. Re-run the parity matrix with no
 unexplained PARTIAL/MISSING item and execute a real-Product-API, no-mock,
 multi-user golden journey before reopening the v1.0 RC gate.
+
+### Post-Phase 40 maintenance — DSH Upgrade Lane (`SCHEDULED`)
+
+Build the repeatable compatibility, dependency-evidence, and isolated upgrade
+workflow defined in `DSH_UPGRADE_LANE.md`. This task does not block Product
+Completion phases. A critical upstream security advisory may promote it into a
+dedicated earlier maintenance change under ADR-0003.
