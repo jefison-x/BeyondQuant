@@ -24,6 +24,16 @@ def dsh_service_block() -> str:
 
 
 class ArchitectureBoundaryTests(unittest.TestCase):
+    def test_self_hosted_ci_uses_the_immutable_event_base(self) -> None:
+        workflow = (ROOT / ".github/workflows/ci-selfhosted.yml").read_text()
+        local_ci = (ROOT / "scripts/ci/local-ci.sh").read_text()
+
+        self.assertIn("BYQ_CI_BASE_SHA:", workflow)
+        self.assertIn('--base="$BYQ_CI_BASE_SHA"', workflow)
+        self.assertNotIn("--depth=1 origin main", workflow)
+        self.assertIn('git diff --check "$DIFF_BASE" HEAD', local_ci)
+        self.assertNotIn('git diff --check "$BASE_SHA"...HEAD', local_ci)
+
     def test_adr_0019_accepts_a_closed_secret_resolution_boundary(self) -> None:
         adr = (ROOT / "docs/architecture/adr/ADR-0019-encrypted-credential-store.md").read_text()
         contract = (ROOT / "docs/contracts/credential-store.md").read_text()
@@ -434,7 +444,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         workflow = (ROOT / ".github/workflows/ci-selfhosted.yml").read_text()
         self.assertIn(
-            "./scripts/ci/local-ci.sh --all --with-e2e --with-smoke",
+            './scripts/ci/local-ci.sh --base="$BYQ_CI_BASE_SHA" --all --with-e2e --with-smoke',
             workflow,
         )
         self.assertIn("head.repo.full_name == github.repository", workflow)
