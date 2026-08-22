@@ -187,7 +187,7 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 
 ### D-0008 — Phase 39 Data Center / Data Sync depth
 - Phase: 39
-- Status: `READY AFTER PHASE 38 MERGE`
+- Status: `READY`
 - Precondition: ADR-0019. **Satisfied 2026-08-22; ordered phase merge gate
   remains.**
 - Content: Tushare-only data-source CRUD, test connection, sync jobs, coverage
@@ -202,7 +202,7 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 | ADR-0017 (`signal_snapshot`) | Accepted (2026-08-18) | D-0001 |
 | Signal-producer ADR (future) | not written | D-0002 |
 | ADR-0018 (WorkflowTrace cards) | Accepted (2026-08-22) | D-0005 (`CLOSED`) |
-| ADR-0019 (encrypted credentials) | Accepted (2026-08-22) | D-0006/D-0007 (`CLOSED`), D-0008 (`READY AFTER PHASE 38 MERGE`) |
+| ADR-0019 (encrypted credentials) | Accepted (2026-08-22) | D-0006/D-0007 (`CLOSED`), D-0008 (`READY` after Phase 38 merge) |
 | ADR-0022 (Phase 38 component ownership) | Accepted (2026-08-22) | D-0007 (`CLOSED`) |
 | Phase 40 shared components | planned | Later generalization for D-0005/D-0006/D-0007; not a prerequisite |
 

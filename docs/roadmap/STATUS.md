@@ -27,8 +27,8 @@ Codex session does not infer project state from commit history.
 - Accepted Stock Pool snapshot/lifecycle ADR: **ADR-0020**
 - Accepted Paper Trading account/lifecycle ADR: **ADR-0021**
 - Accepted Phase 38 component-ownership ADR: **ADR-0022**
-- Open architecture decisions: **none from Phase 37 or the Phase 38 entry
-  gate**. ADR-0019 and ADR-0022 are Accepted.
+- Open architecture decisions: **none from the Phase 39 entry gate**.
+  ADR-0019 is Accepted; Phase 39 still waits for the Phase 38 merge gate.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -154,10 +154,10 @@ Codex session does not infer project state from commit history.
   `PARTIAL`/`MISSING` product-depth workflows. The v1.0 RC review gate is not
   yet satisfied.
 - Product-depth foundations delivered: Backtest result workspace, Strategy,
-  Stock Pool, Paper Trading, Agent workbench, personal Agent Policy, and Data
-  Center. These surfaces are not all parity-complete. Remaining items (signal
-  producer for end-to-end
-  strategy-to-backtest, operations workbenches, and data sync jobs) are recorded
+  Stock Pool, Paper Trading, Agent workbench, personal Agent Policy,
+  Operations, and Data Center. These surfaces are not all parity-complete.
+  Remaining items (signal producer for end-to-end strategy-to-backtest and
+  data sync jobs) are recorded
   in the V2 parity matrix, Deferred Items
   Registry, and Phases 34–40. They must close before the RC review gate.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
