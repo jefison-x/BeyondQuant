@@ -2,8 +2,8 @@
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
 completed project stage is **Phase 38**; the next phase is
-**Phase 39 — Data Center / Data Sync depth**, ready after the Phase 38 merge
-gate under Accepted ADR-0019. The v1.0
+**Phase 39 — Data Center / Data Sync depth**, ready under Accepted ADR-0019.
+The v1.0
 release-candidate gate is not yet satisfied. See
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
 authoritative current state.
@@ -44,7 +44,7 @@ BYQ does not fork DSH. The DSH version is pinned through an explicit dependency 
   the browser cannot complete a newly authored strategy-to-backtest journey.
 - Data Center sync depth and final shared-component/parity closure remain in
   Phases 39–40.
-- Phase 39 must wait for the Phase 38 PR merge gate; ADR-0019 is Accepted.
+- Phase 39 is the next ordered product-depth phase; ADR-0019 is Accepted.
 - The project is not yet eligible for the BeyondQuant Next v1.0 RC gate.
 
 The base Compose topology requires internal service secrets such as

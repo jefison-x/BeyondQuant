@@ -172,7 +172,7 @@ Phase 35 (paper trading) ── independent
 Phase 36 (agent)     ── complete under ADR-0018
 Phase 37 (my space)  ── complete under ADR-0019
 Phase 38 (operations) ── complete under ADR-0019 + ADR-0022
-Phase 39 (data center) ── ready after Phase 38 merge under ADR-0019
+Phase 39 (data center) ── ready under ADR-0019
 ```
 
 “Independent” means independent of ADR-0018/0019 and Phase 40 components. It

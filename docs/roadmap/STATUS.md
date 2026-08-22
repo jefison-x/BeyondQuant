@@ -4,9 +4,8 @@ This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
 - Current completed phase: **Phase 38**
-- Next phase: **Phase 39 — Data Center / Data Sync depth**, **READY after the
-  Phase 38 PR merge gate** under Accepted ADR-0019. Do not begin Phase 39 in
-  the Phase 38 worktree.
+- Next phase: **Phase 39 — Data Center / Data Sync depth**, **READY** under
+  Accepted ADR-0019.
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -28,7 +27,7 @@ Codex session does not infer project state from commit history.
 - Accepted Paper Trading account/lifecycle ADR: **ADR-0021**
 - Accepted Phase 38 component-ownership ADR: **ADR-0022**
 - Open architecture decisions: **none from the Phase 39 entry gate**.
-  ADR-0019 is Accepted; Phase 39 still waits for the Phase 38 merge gate.
+  ADR-0019 is Accepted.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -162,10 +161,9 @@ Codex session does not infer project state from commit history.
   Registry, and Phases 34–40. They must close before the RC review gate.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active phase blocker: **the Phase 38 PR merge gate only**. D-0008 becomes
-  executable after that merge under Accepted ADR-0019. The post-Phase 40 DSH
-  Upgrade Lane is scheduled separately in `DSH_UPGRADE_LANE.md` and does not
-  alter the current DSH pin.
+- Active phase blocker: **none**. D-0008 is READY under Accepted ADR-0019. The
+  post-Phase 40 DSH Upgrade Lane is scheduled separately in
+  `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.
 
 Git SHA is not phase state. The current clean baseline must always be derived
 from `git fetch origin` followed by `git rev-parse origin/main`; this file must
