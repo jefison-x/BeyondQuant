@@ -142,7 +142,9 @@ document supplies the parity-batch overview and dependency map.
   benches and data-source/sync surfaces.
 - Decisions: cache=PostgreSQL market-data cache status only (no Redis);
   budget=DSH model-call token accounting.
-- Dependency: ADR-0019 for data-source credentials; backend projections.
+- Dependency: ADR-0019 for data-source credentials; ADR-0022 for phase-owned
+  operations components; backend projections. Phase 40 may generalize proven
+  components later and is not a prerequisite.
 - Estimate: 27 person-days (XL, largest).
 
 ### Phase 39 — Data Center / Data Sync depth
@@ -170,7 +172,7 @@ Phase 34 (stock pool) ── independent
 Phase 35 (paper trading) ── independent
 Phase 36 (agent)     ── complete under ADR-0018
 Phase 37 (my space)  ── complete under ADR-0019
-Phase 38 (operations) ── needs ADR-0019 + Phase 40
+Phase 38 (operations) ── ready under ADR-0019 + ADR-0022
 Phase 39 (data center) ── needs ADR-0019
 ```
 

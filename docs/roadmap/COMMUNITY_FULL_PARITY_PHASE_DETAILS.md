@@ -163,8 +163,10 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   workbenches + data-source/sync surfaces are nearly all missing.
 - Decisions: cache = PostgreSQL market-data cache status only (no Redis);
   budget = DSH model-call token accounting.
-- Dependencies: ADR-0019 for data-source credentials; Backend read-only
-  projections + RBAC-gated write operations; shared components (Phase 40).
+- Dependencies: ADR-0019 for data-source credentials; Accepted ADR-0022 for
+  phase-owned operations components; Backend read-only projections +
+  RBAC-gated write operations. Phase 40 may generalize proven components later
+  and is not a prerequisite.
 - Classification: layout=`PORT_LAYOUT`; each workbench=`REFACTOR` (BYQ
   topology) + `PORT_UX`; access audit=`REPLACE` (BYQ RBAC).
 - Estimate: 27 person-days (XL).
@@ -219,7 +221,7 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
 - Phase 37 → complete under ADR-0019; Phase 40 may generalize its proven
   component later.
 - Phase 39 → reuses Accepted ADR-0019 after preceding phase gates.
-- Phase 38 → needs ADR-0019 + Phase 40.
+- Phase 38 → ready under ADR-0019 + ADR-0022; Phase 40 generalizes later.
 - Phase 32 wizard → ADR-0017 (separate from this table; slice already
   tracked in PR #76).
 

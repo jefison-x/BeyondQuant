@@ -172,11 +172,13 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 
 ### D-0007 — Phase 38 Operations workbenches
 - Phase: 38
-- Status: `BLOCKED`
-- Precondition: ADR-0019 + Phase 40 shared components; cache = PostgreSQL
-  market-data cache status only (no Redis); budget = DSH model-call token
+- Status: `READY`
+- Precondition: ADR-0019 + ADR-0022 accepted. **Satisfied 2026-08-22.** Phase
+  38 owns the operations-specific components required for acceptance; Phase
+  40 may generalize proven components later. Cache = PostgreSQL market-data
+  cache status only (no Redis); budget = normalized DSH model-call token
   accounting.
-- Content: database/Redis/cache/model/agent/budget/runtime/graph/access
+- Content: database/PostgreSQL-cache/model/agent/budget/runtime/graph/access
   workbenches + data-source/sync surfaces; no placeholders.
 - Acceptance: read-only projections real; write ops RBAC + audit; Chrome
   evidence.
@@ -197,8 +199,9 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 | ADR-0017 (`signal_snapshot`) | Accepted (2026-08-18) | D-0001 |
 | Signal-producer ADR (future) | not written | D-0002 |
 | ADR-0018 (WorkflowTrace cards) | Accepted (2026-08-22) | D-0005 (`CLOSED`) |
-| ADR-0019 (encrypted credentials) | Accepted (2026-08-22) | D-0006 (`CLOSED`), D-0007, D-0008 |
-| Phase 40 shared components | planned | D-0007; later generalization for D-0005/D-0006 |
+| ADR-0019 (encrypted credentials) | Accepted (2026-08-22) | D-0006 (`CLOSED`), D-0007 (`READY`), D-0008 |
+| ADR-0022 (Phase 38 component ownership) | Accepted (2026-08-22) | D-0007 (`READY`) |
+| Phase 40 shared components | planned | Later generalization for D-0005/D-0006/D-0007; not a prerequisite |
 
 ## Maintenance rules
 
