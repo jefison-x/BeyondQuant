@@ -3,11 +3,10 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 37**
-- Next phase: **Phase 38 — Operations workbenches**, **READY** under Accepted
-  ADR-0022. Phase 38 owns the operations-specific components required for its
-  acceptance; Phase 40 may generalize proven components later and is not a
-  prerequisite.
+- Current completed phase: **Phase 38**
+- Next phase: **Phase 39 — Data Center / Data Sync depth**, **READY after the
+  Phase 38 PR merge gate** under Accepted ADR-0019. Do not begin Phase 39 in
+  the Phase 38 worktree.
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -141,6 +140,14 @@ Codex session does not infer project state from commit history.
   approval gates remain authoritative. Real Product API Chrome MCP evidence
   and the Community checklist are under `docs/evidence/phase-37/`. D-0006 is
   CLOSED.
+- Phase 38 (Operations workbenches) completed: nine admin routes now use a
+  real, bounded `operations.v1` Product API projection for PostgreSQL/cache,
+  source/model readiness, Agent runs, normalized DSH runtime/usage, Graph,
+  durable access groups and append-only audit. Monitoring-threshold writes are
+  admin-only, versioned, idempotent and audited; secrets, raw DSH events,
+  Redis controls, arbitrary SQL and direct runtime control do not cross the
+  browser boundary. Desktop/mobile Chrome MCP evidence and the Community
+  checklist are under `docs/evidence/phase-38/`. D-0007 is CLOSED.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence, but
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` records substantial remaining
@@ -155,9 +162,10 @@ Codex session does not infer project state from commit history.
   Registry, and Phases 34–40. They must close before the RC review gate.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active phase blocker: **none**. D-0007 is READY under Accepted ADR-0019 and
-  ADR-0022. The post-Phase 40 DSH Upgrade Lane is scheduled separately in
-  `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.
+- Active phase blocker: **the Phase 38 PR merge gate only**. D-0008 becomes
+  executable after that merge under Accepted ADR-0019. The post-Phase 40 DSH
+  Upgrade Lane is scheduled separately in `DSH_UPGRADE_LANE.md` and does not
+  alter the current DSH pin.
 
 Git SHA is not phase state. The current clean baseline must always be derived
 from `git fetch origin` followed by `git rev-parse origin/main`; this file must

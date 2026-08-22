@@ -132,6 +132,69 @@ def test_product_turn_requires_a_model_credential_without_exposing_it(adapter: R
     adapter.release_session("s-1")
 
 
+def test_operations_snapshot_normalizes_and_deduplicates_dsh_usage(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-1", "t-1")
+    record = adapter._get("s-1")
+    notification = Notification(
+        method="session.event",
+        payload={
+            "sessionId": "s-1",
+            "event": {
+                "type": "assistant/message",
+                "data": {
+                    "message": {"id": "message-usage-1", "content": []},
+                    "usage": {
+                        "inputTokens": 100,
+                        "outputTokens": 20,
+                        "cacheReadTokens": 30,
+                        "cacheWriteTokens": 5,
+                        "reasoningTokens": 10,
+                    },
+                    "private": {"apiKey": "must-not-escape"},
+                },
+            },
+        },
+    )
+    adapter._on_notification(record, notification)
+    adapter._on_notification(record, notification)
+
+    snapshot = adapter.operations_snapshot()
+    assert snapshot["usage"] == {
+        "input_tokens": 100,
+        "output_tokens": 20,
+        "cache_read_tokens": 30,
+        "cache_write_tokens": 5,
+        "reasoning_tokens": 10,
+        "model_calls": 1,
+        "total_tokens": 155,
+        "scope": "adapter_process_lifetime",
+        "source": "normalized_dsh_token_usage",
+    }
+    assert snapshot["raw_dsh_events"] is False
+    assert "must-not-escape" not in str(snapshot)
+    adapter.release_session("s-1")
+
+
+def test_invalid_usage_is_dropped_atomically(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-1", "t-1")
+    record = adapter._get("s-1")
+    adapter._on_notification(record, Notification(
+        method="session.event",
+        payload={
+            "sessionId": "s-1",
+            "event": {
+                "type": "assistant/message",
+                "data": {
+                    "message": {"id": "message-usage-invalid", "content": []},
+                    "usage": {"inputTokens": -1, "outputTokens": 2},
+                },
+            },
+        },
+    ))
+    assert adapter.operations_snapshot()["usage"]["model_calls"] == 0
+    adapter.release_session("s-1")
+
+
 def test_configured_model_credential_is_scoped_to_the_owned_sdk_environment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

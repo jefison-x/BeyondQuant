@@ -1252,7 +1252,7 @@ archives; and effective Agent Policy presets/rule CRUD with audit and platform
 approval precedence. Real Product API Chrome MCP evidence and the
 Community-derived checklist are stored under `docs/evidence/phase-37/`.
 
-### Phase 38 — Operations workbenches (`READY`)
+### Phase 38 — Operations workbenches (`COMPLETE`)
 
 Replace placeholder operations routes with real RBAC/audit-protected
 projections and bounded actions under Accepted ADR-0019 and ADR-0022.
@@ -1260,7 +1260,15 @@ Phase 38 owns its operations-specific components; Phase 40 may generalize
 proven components later and is not a prerequisite. PostgreSQL market-cache
 status replaces Community Redis assumptions.
 
-### Phase 39 — Data Center / Data Sync depth (`BLOCKED`)
+Delivered nine responsive administrator workbenches backed by a bounded
+`operations.v1` Product API projection, normalized Runtime Adapter session and
+DSH usage accounting, and an admin-only versioned/idempotent/audited monitoring
+threshold write. The browser sees no secrets, raw DSH events, SQL/runtime
+control surface, Redis assumption, or direct internal-service endpoint. Real
+Product API desktop/mobile Chrome evidence and the Community checklist are
+stored under `docs/evidence/phase-38/`.
+
+### Phase 39 — Data Center / Data Sync depth (`READY AFTER PHASE 38 MERGE`)
 
 Implement Tushare-only source configuration, connection test, sync jobs, and
 coverage audit after ADR-0019. BaoStock and AKShare remain DROP.

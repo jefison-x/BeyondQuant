@@ -105,6 +105,12 @@ from .strategy_artifact import (
     strategy_version_content,
     validate_version_content,
 )
+from .operations import (
+    OperationsConflict,
+    OperationsForbidden,
+    OperationsPersistenceError,
+    OperationsStore,
+)
 
 
 SERVICE = "byq-backend"
@@ -120,6 +126,7 @@ paper_store = PaperTradingStore.from_env()
 user_store = UserAuthStore.from_env()
 user_policy_store = UserPolicyStore.from_env()
 credential_store = CredentialStore.from_env()
+operations_store = OperationsStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
     user_store.ensure_bootstrap_admin(
@@ -128,6 +135,19 @@ if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTST
     )
 backtest_store = BacktestJobStore.from_env()
 backtest_objects = LocalObjectStore.from_env()
+
+
+def _operations_call(call: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return call()
+    except OperationsForbidden as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except OperationsConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OperationsPersistenceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def _health_payload() -> dict[str, str]:
@@ -146,6 +166,26 @@ def healthz() -> dict[str, str]:
 @app.get("/readyz")
 def readyz() -> dict[str, str]:
     return _health_payload()
+
+
+@app.get("/v1/operations/overview")
+def operations_overview(request: Request) -> dict[str, object]:
+    """Return bounded aggregate state to the admin Product BFF only."""
+
+    return _operations_call(lambda: operations_store.overview(
+        actor_role=request.headers.get("x-byq-actor-role"),
+    ))
+
+
+@app.put("/v1/operations/budget")
+def operations_budget_update(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    """Update monitoring thresholds; this grants no DSH execution authority."""
+
+    return _operations_call(lambda: operations_store.update_budget(
+        payload,
+        actor_principal=request.headers.get("x-byq-actor-principal"),
+        actor_role=request.headers.get("x-byq-actor-role"),
+    ))
 
 
 @app.get("/v1/data/daily")

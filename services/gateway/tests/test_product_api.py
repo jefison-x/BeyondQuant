@@ -26,6 +26,90 @@ def test_product_api_uses_error_envelope_and_auth_boundary(monkeypatch) -> None:
     assert healthy.json()["status"] == "ok"
 
 
+def test_operations_projection_is_admin_only_and_aggregates_normalized_runtime(monkeypatch) -> None:
+    class FakeResponse:
+        def __init__(self, body: dict[str, object]) -> None:
+            self.body = body
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self.body
+
+    monkeypatch.setattr(product_api, "resolve_user", lambda _request: {
+        "user_id": "user_admin", "username": "admin", "role": "admin",
+    })
+    monkeypatch.setattr(product_api.httpx, "request", lambda *args, **kwargs: FakeResponse({
+        "schema_version": "operations.v1",
+        "database": {"status": "ready", "engine": "postgresql"},
+        "cache": {"kind": "postgresql_market_data", "redis": "not_used"},
+        "models": {"secrets_exposed": False},
+        "agents": {"recent_runs": []},
+        "graphs": {"raw_dsh_events": False},
+        "access": {"operations_audit": []},
+        "budget": {"version": 1},
+    }))
+    monkeypatch.setattr(product_api.httpx, "get", lambda *args, **kwargs: FakeResponse({
+        "schema_version": "runtime-operations.v1",
+        "runtime": {"status": "ready", "sdk": "deepseek-harness-sdk==0.1.0rc6"},
+        "sessions": {"active": 1, "active_prompts": 0, "status_counts": {"idle": 1}},
+        "usage": {"total_tokens": 125, "model_calls": 1},
+        "raw_dsh_events": False,
+    }))
+    client = TestClient(main.app)
+    response = client.get("/api/product/operations/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["services"]["runtime_adapter"] == "ready"
+    assert body["runtime"]["usage"]["total_tokens"] == 125
+    assert body["cache"]["redis"] == "not_used"
+    assert "api_key" not in response.text.lower()
+
+    monkeypatch.setattr(product_api, "resolve_user", lambda _request: {
+        "user_id": "user_regular", "username": "regular", "role": "user",
+    })
+    denied = client.get("/api/product/operations/status")
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "product_forbidden"
+
+
+def test_operations_budget_update_forwards_only_admin_actor_context(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"budget": {"version": 2, "enabled": True}}
+
+    monkeypatch.setattr(product_api, "resolve_user", lambda _request: {
+        "user_id": "user_admin", "username": "admin", "role": "admin",
+    })
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured.update({"method": method, "url": url, **kwargs})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    response = client.put("/api/product/operations/budget", json={
+        "enabled": True,
+        "alert_total_tokens": 500000,
+        "alert_requests": 60,
+        "expected_version": 1,
+        "idempotency_key": "gateway-budget-1",
+    })
+    assert response.status_code == 200
+    assert captured["method"] == "PUT"
+    assert str(captured["url"]).endswith("/v1/operations/budget")
+    assert captured["headers"] == {
+        "x-byq-actor-role": "admin",
+        "x-byq-actor-principal": "admin",
+    }
+
+
 def test_product_dashboard_is_safe_and_normalized(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")

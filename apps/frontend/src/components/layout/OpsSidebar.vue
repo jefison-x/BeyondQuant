@@ -18,7 +18,10 @@ const route = useRoute();
 const router = useRouter();
 
 defineProps<{ isCollapsed: boolean }>();
-const emit = defineEmits<{ (event: "toggle-collapse"): void }>();
+const emit = defineEmits<{
+  (event: "toggle-collapse"): void;
+  (event: "navigate"): void;
+}>();
 
 const groups = [
   {
@@ -65,6 +68,7 @@ const activeIndex = computed(() => {
 
 function handleSelect(index: string) {
   if (route.path !== index) void router.push(index);
+  emit("navigate");
 }
 </script>
 

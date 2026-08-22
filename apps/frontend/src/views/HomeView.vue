@@ -26,7 +26,7 @@ const summaryCards = computed(() => [
   { label: "Experiments", value: String(dashboard.value?.resources.counts?.experiments ?? "-") },
   { label: "策略/资产", value: String(dashboard.value?.resources.counts?.artifacts ?? artifacts.value.length) },
   { label: "回测任务", value: String(dashboard.value?.resources.counts?.backtests ?? "-") },
-  { label: "运行时", value: String(operations.value?.runtime ?? "runtime-adapter") },
+  { label: "运行时", value: String(operations.value?.runtime.runtime.status ?? "runtime-adapter") },
 ]);
 
 onMounted(async () => {
@@ -37,7 +37,7 @@ onMounted(async () => {
         fetchDashboard(token),
         fetchHealth(token),
         fetchDataStatus(token),
-        getOperationsStatus(token),
+        auth.isAdmin ? getOperationsStatus(token) : Promise.resolve(null),
         getSettingsStatus(token),
         listArtifacts(),
         listBacktests(token),
@@ -45,7 +45,7 @@ onMounted(async () => {
     if (dashboardResult.status === "fulfilled") dashboard.value = dashboardResult.value;
     if (healthResult.status === "fulfilled") health.value = healthResult.value;
     if (dataResult.status === "fulfilled") dataStatus.value = dataResult.value;
-    if (operationsResult.status === "fulfilled") operations.value = operationsResult.value;
+    if (operationsResult.status === "fulfilled" && operationsResult.value) operations.value = operationsResult.value;
     if (settingsResult.status === "fulfilled") settings.value = settingsResult.value;
     if (artifactResult.status === "fulfilled") artifacts.value = artifactResult.value.artifacts;
     if (backtestResult.status === "fulfilled") backtests.value = backtestResult.value.backtests;
@@ -53,7 +53,9 @@ onMounted(async () => {
       ["dashboard", dashboardResult as PromiseSettledResult<unknown>],
       ["health", healthResult as PromiseSettledResult<unknown>],
       ["data", dataResult as PromiseSettledResult<unknown>],
-      ["operations", operationsResult as PromiseSettledResult<unknown>],
+      ...(auth.isAdmin
+        ? [["operations", operationsResult as PromiseSettledResult<unknown>] as [string, PromiseSettledResult<unknown>]]
+        : []),
       ["settings", settingsResult as PromiseSettledResult<unknown>],
       ["artifacts", artifactResult as PromiseSettledResult<unknown>],
       ["backtests", backtestResult as PromiseSettledResult<unknown>],
@@ -112,7 +114,7 @@ function kindLabel(kind: unknown): string {
           </div>
           <div>
             <span>存储</span>
-            <el-progress :percentage="operations?.storage === 'ready' ? 100 : 0" />
+            <el-progress :percentage="operations ? (operations.database.status === 'ready' ? 100 : 0) : (health?.status === 'ok' ? 100 : 0)" />
           </div>
         </div>
       </el-card>

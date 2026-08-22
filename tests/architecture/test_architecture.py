@@ -599,6 +599,24 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 missing_headers.append(node.lineno)
         self.assertEqual(missing_headers, [])
 
+    def test_phase38_operations_stays_admin_only_and_normalized(self) -> None:
+        gateway = (ROOT / "services/gateway/app/product_api.py").read_text()
+        runtime = (ROOT / "services/runtime-adapter/app/runtime.py").read_text()
+        frontend_api = (ROOT / "apps/frontend/src/api/operations.ts").read_text()
+        contract = (ROOT / "docs/contracts/operations-api.md").read_text()
+
+        self.assertIn('user.get("role") != "admin"', gateway)
+        self.assertIn('/v1/operations/overview', gateway)
+        self.assertIn('/internal/runtime/operations', gateway)
+        self.assertIn('"raw_dsh_events": False', runtime)
+        self.assertIn('"source": "normalized_dsh_token_usage"', runtime)
+        self.assertNotIn("notification.payload", frontend_api)
+        self.assertNotIn("/v1/operations", frontend_api)
+        self.assertNotIn("/internal/runtime", frontend_api)
+        self.assertIn("/api/product/operations", frontend_api)
+        self.assertIn("Redis", contract)
+        self.assertIn("raw DSH", contract)
+
 
 if __name__ == "__main__":
     unittest.main()

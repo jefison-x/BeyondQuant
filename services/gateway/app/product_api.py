@@ -24,6 +24,7 @@ SERVICE = "byq-gateway"
 PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
 BACKEND_URL = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
+RUNTIME_ADAPTER_URL = os.environ.get("BYQ_RUNTIME_ADAPTER_URL", "http://runtime-adapter:8400")
 _SECRET_KEY_FRAGMENTS = (
     "token",
     "password",
@@ -267,6 +268,34 @@ def _backend_request(
     body = response.json()
     if not isinstance(body, dict):
         raise ProductError(502, "backend_invalid_response", "backend returned an invalid response")
+    return body
+
+
+def _runtime_operations() -> dict[str, object]:
+    try:
+        response = httpx.get(f"{RUNTIME_ADAPTER_URL}/internal/runtime/operations", timeout=3.0)
+        response.raise_for_status()
+        body = response.json()
+    except (httpx.HTTPError, ValueError):
+        return {
+            "schema_version": "runtime-operations.v1",
+            "runtime": {"status": "unavailable"},
+            "sessions": {"active": 0, "active_prompts": 0, "status_counts": {}},
+            "usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+                "reasoning_tokens": 0,
+                "model_calls": 0,
+                "total_tokens": 0,
+                "scope": "adapter_process_lifetime",
+                "source": "unavailable",
+            },
+            "raw_dsh_events": False,
+        }
+    if not isinstance(body, dict):
+        raise ProductError(502, "runtime_invalid_response", "runtime adapter returned an invalid response")
     return body
 
 
@@ -1283,15 +1312,47 @@ def product_paper_import(request: Request, payload: dict[str, object]) -> dict[s
 
 @router.get("/operations/status")
 def product_operations_status(request: Request) -> dict[str, object]:
-    _product_principal(request)
-    backend = _backend_get("/readyz")
+    user = resolve_user(request)
+    if user.get("role") != "admin":
+        raise ProductError(403, "product_forbidden", "admin role required")
+    actor = str(user.get("username") or user.get("user_id") or "admin")
+    backend = _backend_request(
+        "GET",
+        "/v1/operations/overview",
+        headers={"x-byq-actor-role": "admin", "x-byq-actor-principal": actor},
+    )
+    runtime = _runtime_operations()
     return {
-        "backend": str(backend.get("status", "unknown")),
-        "runtime": "runtime-adapter",
-        "storage": "ready",
-        "migration": "not_started",
+        "schema_version": "operations.v1",
+        "services": {
+            "gateway": "ready",
+            "backend": str((backend.get("database") or {}).get("status", "unknown"))
+                if isinstance(backend.get("database"), dict) else "unknown",
+            "runtime_adapter": str((runtime.get("runtime") or {}).get("status", "unknown"))
+                if isinstance(runtime.get("runtime"), dict) else "unknown",
+        },
+        **backend,
+        "runtime": runtime,
         "observability": {
-            "workflow_trace": "configured",
-            "audit": "configured",
+            "workflow_trace": "normalized",
+            "audit": "append_only",
+            "raw_dsh_events": False,
         },
     }
+
+
+@router.put("/operations/budget")
+def product_operations_budget_update(
+    request: Request,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    user = resolve_user(request)
+    if user.get("role") != "admin":
+        raise ProductError(403, "product_forbidden", "admin role required")
+    actor = str(user.get("username") or user.get("user_id") or "admin")
+    return _backend_request(
+        "PUT",
+        "/v1/operations/budget",
+        payload,
+        headers={"x-byq-actor-role": "admin", "x-byq-actor-principal": actor},
+    )

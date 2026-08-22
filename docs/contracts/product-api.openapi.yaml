@@ -45,7 +45,9 @@ paths:
   /api/product/data-center/status:
     get: {summary: Return the browser-safe data-center capability projection., responses: *okResponses}
   /api/product/operations/status:
-    get: {summary: Return the browser-safe operations projection., responses: *okResponses}
+    get: {summary: Return the admin-only browser-safe operations projection., responses: *okResponses}
+  /api/product/operations/budget:
+    put: {summary: Update audited Product Agent usage-monitoring thresholds., responses: *okResponses}
 
   /api/product/research/{entity_type}/{entity_id}:
     parameters:
