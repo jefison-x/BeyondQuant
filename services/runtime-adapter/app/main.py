@@ -37,6 +37,11 @@ def readyz() -> dict[str, object]:
     return {"service": "byq-dsh-runtime-adapter", "status": "ok", **adapter.readiness()}
 
 
+@app.get("/internal/runtime/operations")
+def runtime_operations() -> dict[str, object]:
+    return adapter.operations_snapshot()
+
+
 @app.post("/internal/runtime/sessions", status_code=201)
 def create_session(request: CreateSessionRequest) -> dict[str, object]:
     try:

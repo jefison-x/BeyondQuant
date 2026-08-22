@@ -9,7 +9,6 @@ import {
   HomeFilled,
   Management,
   Monitor,
-  Operation,
   SetUp,
   Tools,
 } from "@element-plus/icons-vue";
@@ -74,8 +73,6 @@ export const businessNavGroups: NavGroup[] = [
     items: [
       { to: "/data-center", label: "数据中心", icon: Coin },
       { to: "/system-status", label: "系统状态", icon: Monitor },
-      { to: "/operations", label: "系统运维", icon: Operation },
-      { to: "/admin", label: "管理", icon: Tools },
     ],
   },
 ];

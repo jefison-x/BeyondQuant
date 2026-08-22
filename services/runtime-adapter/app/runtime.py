@@ -58,6 +58,7 @@ class RuntimeSession:
     interrupted_run_id: str | None = None
     sequence: int = 0
     normalization: NormalizationState = field(default_factory=NormalizationState)
+    usage_message_ids: set[str] = field(default_factory=set)
     history: list[WorkflowTraceEvent] = field(default_factory=list)
     subscribers: list[queue.Queue[WorkflowTraceEvent | None]] = field(default_factory=list)
     lock: threading.RLock = field(default_factory=threading.RLock)
@@ -90,6 +91,14 @@ class RuntimeAdapter:
         self._model_api_key = os.environ.get("DEEPSEEK_API_KEY")
         self._backend_url = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
         self._resolver_token = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
+        self._usage_totals = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "reasoning_tokens": 0,
+            "model_calls": 0,
+        }
 
     @property
     def runtime_command(self) -> tuple[str, ...]:
@@ -123,6 +132,47 @@ class RuntimeAdapter:
                 SessionStatus.FAILED,
                 SessionStatus.CLOSED,
             ],
+        }
+
+    def operations_snapshot(self) -> dict[str, Any]:
+        """Return process-local, normalized runtime accounting only."""
+
+        with self._lock:
+            records = list(self._sessions.values())
+            usage = dict(self._usage_totals)
+        status_counts = {status: 0 for status in self.readiness()["session_states"]}
+        active_prompts = 0
+        for record in records:
+            with record.lock:
+                status_counts[record.status] = status_counts.get(record.status, 0) + 1
+                active_prompts += int(record.active_run is not None)
+        return {
+            "schema_version": "runtime-operations.v1",
+            "runtime": {
+                "status": "ready",
+                "sdk": "deepseek-harness-sdk==0.1.0rc6",
+                "runtime_bin": "deepseek-harness-runtime-bin==0.1.0rc6",
+                "process_ownership": "one-per-active-session",
+                "provider": self._provider,
+                "model": self._model,
+            },
+            "sessions": {
+                "active": len(records),
+                "active_prompts": active_prompts,
+                "status_counts": status_counts,
+            },
+            "usage": {
+                **usage,
+                "total_tokens": (
+                    usage["input_tokens"]
+                    + usage["output_tokens"]
+                    + usage["cache_read_tokens"]
+                    + usage["cache_write_tokens"]
+                ),
+                "scope": "adapter_process_lifetime",
+                "source": "normalized_dsh_token_usage",
+            },
+            "raw_dsh_events": False,
         }
 
     def create_session(self, session_id: str, trace_id: str, owner_principal: str | None = None) -> dict[str, Any]:
@@ -473,6 +523,7 @@ class RuntimeAdapter:
         with record.lock:
             if record.status in {SessionStatus.INTERRUPTED, SessionStatus.CLOSED}:
                 return
+            self._record_usage(record, notification)
             events = normalize_dsh_notification(
                 notification,
                 trace_id=record.trace_id,
@@ -482,6 +533,44 @@ class RuntimeAdapter:
             )
             for event in events:
                 self._publish(record, event)
+
+    def _record_usage(self, record: RuntimeSession, notification: Notification) -> None:
+        """Extract the documented TokenUsage shape without retaining DSH data."""
+
+        if notification.method != "session.event" or not isinstance(notification.payload, dict):
+            return
+        if notification.payload.get("sessionId") != record.session_id:
+            return
+        raw_event = notification.payload.get("event")
+        if not isinstance(raw_event, dict) or raw_event.get("type") != "assistant/message":
+            return
+        data = raw_event.get("data")
+        if not isinstance(data, dict) or not isinstance(data.get("message"), dict):
+            return
+        message_id = data["message"].get("id")
+        usage = data.get("usage")
+        if not isinstance(message_id, str) or not message_id or not isinstance(usage, dict):
+            return
+        if message_id in record.usage_message_ids:
+            return
+        mapping = {
+            "inputTokens": "input_tokens",
+            "outputTokens": "output_tokens",
+            "cacheReadTokens": "cache_read_tokens",
+            "cacheWriteTokens": "cache_write_tokens",
+            "reasoningTokens": "reasoning_tokens",
+        }
+        normalized: dict[str, int] = {}
+        for source, target in mapping.items():
+            value = usage.get(source, 0)
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 1_000_000_000:
+                return
+            normalized[target] = value
+        record.usage_message_ids.add(message_id)
+        with self._lock:
+            for key, value in normalized.items():
+                self._usage_totals[key] += value
+            self._usage_totals["model_calls"] += 1
 
     def _emit(self, record: RuntimeSession, kind: str, source: str, payload: dict[str, Any]) -> None:
         event = make_workflow_trace_event(

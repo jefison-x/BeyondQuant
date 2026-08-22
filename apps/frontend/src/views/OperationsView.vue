@@ -26,10 +26,10 @@ onMounted(async () => {
 
     <template v-else>
       <div class="stats-strip">
-        <div class="stat-item"><span>Backend</span><strong>{{ status?.backend }}</strong></div>
-        <div class="stat-item"><span>Runtime</span><strong>{{ status?.runtime }}</strong></div>
-        <div class="stat-item"><span>Storage</span><strong>{{ status?.storage }}</strong></div>
-        <div class="stat-item"><span>Migration</span><strong>{{ status?.migration }}</strong></div>
+        <div class="stat-item"><span>Backend</span><strong>{{ status?.services.backend }}</strong></div>
+        <div class="stat-item"><span>Runtime</span><strong>{{ status?.runtime.runtime.status }}</strong></div>
+        <div class="stat-item"><span>Storage</span><strong>{{ status?.database.status }}</strong></div>
+        <div class="stat-item"><span>Migration</span><strong>{{ status?.database.migration.single_domain_store }}</strong></div>
       </div>
 
       <el-card shadow="never" class="top-band">

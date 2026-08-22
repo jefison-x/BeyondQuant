@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Bell } from "@element-plus/icons-vue";
+import { Bell, Menu } from "@element-plus/icons-vue";
 import { getSettingsStatus } from "@/api/settings";
 import { useAuthStore } from "@/stores/auth";
 
@@ -9,6 +9,8 @@ const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const pendingApprovals = ref(0);
+defineProps<{ showMenu?: boolean }>();
+const emit = defineEmits<{ (event: "toggle-menu"): void }>();
 
 const meta = computed(() => {
   const value = route.meta as Record<string, unknown>;
@@ -31,10 +33,21 @@ onMounted(async () => {
 
 <template>
   <header class="app-header">
-    <div class="header-intro">
-      <div class="header-kicker">{{ meta.kicker }}</div>
-      <h1 class="header-title">{{ meta.title }}</h1>
-      <p v-if="meta.subtitle" class="header-subtitle">{{ meta.subtitle }}</p>
+    <div class="header-leading">
+      <button
+        v-if="showMenu"
+        type="button"
+        class="mobile-menu-trigger"
+        aria-label="打开运维菜单"
+        @click="emit('toggle-menu')"
+      >
+        <el-icon><Menu /></el-icon>
+      </button>
+      <div class="header-intro">
+        <div class="header-kicker">{{ meta.kicker }}</div>
+        <h1 class="header-title">{{ meta.title }}</h1>
+        <p v-if="meta.subtitle" class="header-subtitle">{{ meta.subtitle }}</p>
+      </div>
     </div>
     <div class="header-right">
       <el-tooltip content="审批收件箱" placement="bottom">
@@ -63,6 +76,27 @@ onMounted(async () => {
 
 .header-intro {
   min-width: 0;
+}
+
+.header-leading {
+  align-items: center;
+  display: flex;
+  min-width: 0;
+}
+
+.mobile-menu-trigger {
+  align-items: center;
+  background: var(--byq-surface);
+  border: 1px solid var(--byq-border);
+  border-radius: var(--byq-radius-sm);
+  color: var(--byq-text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 34px;
+  justify-content: center;
+  margin-right: 0.65rem;
+  width: 34px;
 }
 
 .header-kicker {

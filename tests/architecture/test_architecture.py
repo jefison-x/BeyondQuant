@@ -47,8 +47,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("A user binding never", contract)
-        self.assertIn("Current completed phase: **Phase 37**", status)
-        self.assertIn("Phase 38 — Operations workbenches", status)
+        self.assertIn("Current completed phase: **Phase 38**", status)
+        self.assertIn("Phase 39 — Data Center / Data Sync depth", status)
         self.assertNotIn("ADR-0019 remains Proposed", status)
 
     def test_base_compose_uses_runtime_adapter_as_the_only_product_dsh_path(self) -> None:
@@ -363,6 +363,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             implementation,
         )
         self.assertIn("Phase 37 — My Space depth (`COMPLETE`)", implementation)
+        self.assertIn(
+            "Phase 38 — Operations workbenches (`COMPLETE`)",
+            implementation,
+        )
 
         workflow_card_adr = (
             ROOT
@@ -598,6 +602,24 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             if not any(keyword.arg == "headers" for keyword in node.keywords):
                 missing_headers.append(node.lineno)
         self.assertEqual(missing_headers, [])
+
+    def test_phase38_operations_stays_admin_only_and_normalized(self) -> None:
+        gateway = (ROOT / "services/gateway/app/product_api.py").read_text()
+        runtime = (ROOT / "services/runtime-adapter/app/runtime.py").read_text()
+        frontend_api = (ROOT / "apps/frontend/src/api/operations.ts").read_text()
+        contract = (ROOT / "docs/contracts/operations-api.md").read_text()
+
+        self.assertIn('user.get("role") != "admin"', gateway)
+        self.assertIn('/v1/operations/overview', gateway)
+        self.assertIn('/internal/runtime/operations', gateway)
+        self.assertIn('"raw_dsh_events": False', runtime)
+        self.assertIn('"source": "normalized_dsh_token_usage"', runtime)
+        self.assertNotIn("notification.payload", frontend_api)
+        self.assertNotIn("/v1/operations", frontend_api)
+        self.assertNotIn("/internal/runtime", frontend_api)
+        self.assertIn("/api/product/operations", frontend_api)
+        self.assertIn("Redis", contract)
+        self.assertIn("raw DSH", contract)
 
 
 if __name__ == "__main__":

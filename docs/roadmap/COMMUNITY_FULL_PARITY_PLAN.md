@@ -136,16 +136,15 @@ document supplies the parity-batch overview and dependency map.
 - Community: SystemMaintenanceWorkbench (4402) + ModelOperations (540) +
   GraphOperations (185) + RuntimeOperations (129) + AccessControlOperations
   (114) + DataSourceConfig (236) + DataSync (165).
-- Current: 9 routes share one 134-line AdminOpsView; budget/graph are
-  explicit placeholders.
-- Gap: database/Redis/cache/model/agent/budget/runtime/graph/access work-
-  benches and data-source/sync surfaces.
+- Delivered: nine real Product API workbenches for bounded database/cache,
+  model/Agent, budget/runtime/Graph, source readiness, access and audit state.
+  Data-source credential/sync execution remains Phase 39.
 - Decisions: cache=PostgreSQL market-data cache status only (no Redis);
   budget=DSH model-call token accounting.
 - Dependency: ADR-0019 for data-source credentials; ADR-0022 for phase-owned
   operations components; backend projections. Phase 40 may generalize proven
   components later and is not a prerequisite.
-- Estimate: 27 person-days (XL, largest).
+- Status: complete 2026-08-22 with desktop/mobile Chrome evidence.
 
 ### Phase 39 — Data Center / Data Sync depth
 - Community: DataSourceConfig + DataSync.
@@ -172,8 +171,8 @@ Phase 34 (stock pool) ── independent
 Phase 35 (paper trading) ── independent
 Phase 36 (agent)     ── complete under ADR-0018
 Phase 37 (my space)  ── complete under ADR-0019
-Phase 38 (operations) ── ready under ADR-0019 + ADR-0022
-Phase 39 (data center) ── needs ADR-0019
+Phase 38 (operations) ── complete under ADR-0019 + ADR-0022
+Phase 39 (data center) ── ready after Phase 38 merge under ADR-0019
 ```
 
 “Independent” means independent of ADR-0018/0019 and Phase 40 components. It

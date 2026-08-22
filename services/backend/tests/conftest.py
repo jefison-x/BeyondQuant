@@ -26,6 +26,7 @@ from app.credentials import CredentialStore
 from app.engineering import EngineeringTaskStore
 from app.learning_loop import LearningLoopStore
 from app.market_data import MarketDataStore
+from app.operations import OperationsStore
 from app.paper_trading import PaperTradingStore
 from app.research import ResearchStore
 from app.user_auth import UserAuthStore
@@ -46,6 +47,7 @@ REGISTERED_SCHEMA_DDL: list[str] = [
     *LearningLoopStore.SCHEMA_DDL,
     *ResearchStore.SCHEMA_DDL,
     *MarketDataStore.SCHEMA_DDL,
+    *OperationsStore.SCHEMA_DDL,
 ]
 
 

@@ -156,11 +156,11 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   - `AccessControlOperationsView` (114) — role permissions + access audit.
   - `DataSourceConfig` (236) — data-source configuration.
   - `DataSync` (165) — sync jobs.
-- Current BYQ: 9 routes share one `AdminOpsView` (134 lines); budget/graph
-  are explicit placeholders (`尚未接入 BYQ Product API`); rest are status
-  tables.
-- Gaps: database/Redis/cache/model/agent/budget/runtime/graph/access
-  workbenches + data-source/sync surfaces are nearly all missing.
+- Delivered BYQ: nine phase-owned, responsive operations workbenches use a
+  bounded Product API projection; budget writes and audit are real, and
+  graph/runtime views use normalized BYQ contracts.
+- Phase 39 boundary: Tushare credential CRUD/test and sync jobs remain in the
+  next phase; Phase 38 exposes readiness only.
 - Decisions: cache = PostgreSQL market-data cache status only (no Redis);
   budget = DSH model-call token accounting.
 - Dependencies: ADR-0019 for data-source credentials; Accepted ADR-0022 for
@@ -171,7 +171,8 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   topology) + `PORT_UX`; access audit=`REPLACE` (BYQ RBAC).
 - Estimate: 27 person-days (XL).
 - Exit criteria: no placeholders; read-only projections real; write ops carry
-  RBAC + audit; Chrome evidence.
+  RBAC + audit; Chrome evidence. **Satisfied 2026-08-22; evidence under
+  `docs/evidence/phase-38/`.**
 
 ---
 
@@ -221,7 +222,7 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
 - Phase 37 → complete under ADR-0019; Phase 40 may generalize its proven
   component later.
 - Phase 39 → reuses Accepted ADR-0019 after preceding phase gates.
-- Phase 38 → ready under ADR-0019 + ADR-0022; Phase 40 generalizes later.
+- Phase 38 → complete under ADR-0019 + ADR-0022; Phase 40 generalizes later.
 - Phase 32 wizard → ADR-0017 (separate from this table; slice already
   tracked in PR #76).
 

@@ -1,0 +1,5 @@
+<script setup lang="ts">
+import type { OperationsStatus } from "@/api/types";
+defineProps<{ data: OperationsStatus }>();
+</script>
+<template><div class="ops-workbench"><el-alert title="模型运维只展示系统级元数据和绑定数量。密钥仍为 write-only，不支持任意 Base URL。" type="info" show-icon :closable="false" /><div class="ops-metrics"><el-card shadow="never"><span>模型档案</span><strong>{{ data.models.profiles }}</strong><small>allow-listed profiles</small></el-card><el-card shadow="never"><span>Agent 绑定</span><strong>{{ data.models.bindings }}</strong><small>失效凭据自动不可用</small></el-card><el-card shadow="never"><span>秘密暴露</span><strong>否</strong><small>metadata-only</small></el-card></div><el-card shadow="never"><template #header><strong>凭据健康分组</strong></template><el-table :data="data.models.credential_metadata" empty-text="没有模型凭据元数据"><el-table-column prop="provider_key" label="提供商" min-width="180" /><el-table-column prop="scope" label="范围" width="120" /><el-table-column prop="status" label="状态" width="120" /><el-table-column prop="count" label="数量" width="100" /></el-table></el-card></div></template>

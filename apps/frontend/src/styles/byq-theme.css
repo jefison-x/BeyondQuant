@@ -665,6 +665,32 @@ body {
   border-bottom: 1px solid var(--byq-border);
 }
 
+.ops-workbench {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.ops-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.ops-metrics .el-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ops-metrics span,
+.ops-metrics small { color: var(--byq-text-muted); }
+
+.ops-metrics strong {
+  font-size: 22px;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 900px) {
   .agent-workbench {
     grid-template-columns: 1fr;

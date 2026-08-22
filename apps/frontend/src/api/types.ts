@@ -409,11 +409,119 @@ export interface PaperControls {
 }
 
 export interface OperationsStatus {
-  backend: string;
-  runtime: string;
-  storage: string;
-  migration: string;
-  observability: { workflow_trace: string; audit: string };
+  schema_version: "operations.v1";
+  services: Record<string, string>;
+  database: {
+    engine: "postgresql";
+    status: string;
+    name: string;
+    server_version: string;
+    size_bytes: number;
+    table_count: number;
+    estimated_rows: number;
+    domain_counts: Array<{ resource: string; count: number }>;
+    migration: { single_domain_store: string; legacy_sqlite_runtime: boolean };
+  };
+  cache: {
+    kind: "postgresql_market_data";
+    status: string;
+    row_count: number;
+    redis: "not_used";
+    groups: Array<Record<string, string | number | null>>;
+  };
+  sources: {
+    provider: "tushare";
+    credential_metadata: Array<Record<string, string | number>>;
+    configuration_scope: "phase_39";
+    legacy_providers: [];
+    secrets_exposed: false;
+  };
+  models: {
+    credential_metadata: Array<Record<string, string | number>>;
+    profiles: number;
+    bindings: number;
+    secrets_exposed: false;
+  };
+  agents: {
+    status_groups: Array<Record<string, string | number>>;
+    recent_runs: OperationsRun[];
+  };
+  graphs: {
+    projection: "normalized_agent_runs";
+    recent_runs: OperationsRun[];
+    raw_dsh_events: false;
+  };
+  access: {
+    principal_groups: Array<Record<string, string | number>>;
+    agent_audit: OperationsAudit[];
+    operations_audit: OperationsAudit[];
+  };
+  budget: OperationsBudget;
+  runtime: {
+    schema_version: "runtime-operations.v1";
+    runtime: Record<string, string>;
+    sessions: {
+      active: number;
+      active_prompts: number;
+      status_counts: Record<string, number>;
+    };
+    usage: OperationsUsage;
+    raw_dsh_events: false;
+  };
+  observability: { workflow_trace: string; audit: string; raw_dsh_events: false };
+}
+
+export interface OperationsRun {
+  run_id: string;
+  role_id: string;
+  role_version: string;
+  status: string;
+  trace_id: string;
+  session_id: string;
+  parent_run_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OperationsAudit {
+  audit_id: string;
+  actor_principal: string;
+  action: string;
+  outcome: string;
+  resource_type?: string | null;
+  resource_id?: string | null;
+  detail_json?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface OperationsUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  reasoning_tokens: number;
+  model_calls: number;
+  total_tokens: number;
+  scope: "adapter_process_lifetime";
+  source: string;
+}
+
+export interface OperationsBudget {
+  policy_id: "product-agent";
+  enabled: boolean;
+  alert_total_tokens: number;
+  alert_requests: number;
+  version: number;
+  updated_by: string;
+  updated_at: string;
+}
+
+export interface OperationsBudgetUpdate {
+  enabled: boolean;
+  alert_total_tokens: number;
+  alert_requests: number;
+  expected_version: number;
+  idempotency_key: string;
 }
 
 export interface DataCenterStatus {

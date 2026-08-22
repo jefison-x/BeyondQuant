@@ -1,0 +1,5 @@
+<script setup lang="ts">
+import type { OperationsStatus } from "@/api/types";
+defineProps<{ data: OperationsStatus }>();
+</script>
+<template><div class="ops-workbench"><div class="ops-metrics"><el-card shadow="never"><span>Runtime</span><strong>{{ data.runtime.runtime.status }}</strong><small>{{ data.runtime.runtime.sdk }}</small></el-card><el-card shadow="never"><span>进程模型</span><strong>{{ data.runtime.runtime.process_ownership }}</strong><small>每个活跃会话独立拥有</small></el-card><el-card shadow="never"><span>活跃会话</span><strong>{{ data.runtime.sessions.active }}</strong><small>{{ data.runtime.sessions.active_prompts }} 个 prompt</small></el-card><el-card shadow="never"><span>原始 DSH 事件</span><strong>不可见</strong><small>仅规范化统计</small></el-card></div><el-card shadow="never"><template #header><strong>会话状态分布</strong></template><el-table :data="Object.entries(data.runtime.sessions.status_counts).map(([status, count]) => ({ status, count }))"><el-table-column prop="status" label="状态" min-width="180" /><el-table-column prop="count" label="数量" width="120" /></el-table></el-card></div></template>
