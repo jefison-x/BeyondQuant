@@ -1268,7 +1268,7 @@ control surface, Redis assumption, or direct internal-service endpoint. Real
 Product API desktop/mobile Chrome evidence and the Community checklist are
 stored under `docs/evidence/phase-38/`.
 
-### Phase 39 — Data Center / Data Sync depth (`READY AFTER PHASE 38 MERGE`)
+### Phase 39 — Data Center / Data Sync depth (`READY`)
 
 Implement Tushare-only source configuration, connection test, sync jobs, and
 coverage audit after ADR-0019. BaoStock and AKShare remain DROP.
