@@ -332,9 +332,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("Phase 34 — Stock Pool depth (`COMPLETE`)", implementation)
         self.assertIn("Phase 35 — Paper Trading depth (`COMPLETE`)", implementation)
         self.assertIn(
-            "Phase 36 — Agent workbench depth (`NEXT — IMPLEMENTATION`)",
+            "Phase 36 — Agent workbench depth (`COMPLETE`)",
             implementation,
         )
+        self.assertIn("Phase 37 — My Space depth (`BLOCKED`)", implementation)
 
         workflow_card_adr = (
             ROOT

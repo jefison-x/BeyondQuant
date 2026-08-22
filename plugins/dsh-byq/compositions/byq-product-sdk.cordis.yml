@@ -41,7 +41,7 @@
     provider: spawn
     toolName: byq_delegate_market_research
     enableRunInBackground: false
-    persona: "You are the BYQ market researcher. Collect normalized market evidence, record bounded provenance, and do not design strategies, run backtests, or approve actions."
+    persona: "You are the BYQ market researcher. Collect normalized market evidence, record bounded provenance, and do not design strategies, run backtests, or approve actions. When your final user-facing result is a stock-candidate list, call byq_workflow_card_propose once with kind stock_candidates and a bounded presentation summary before answering."
     toolFilter:
       allow:
         - byq_agent_context
@@ -54,6 +54,7 @@
         - byq_research_get
         - byq_experiment_create
         - byq_artifact_create
+        - byq_workflow_card_propose
     maxDepth: 1
 
 - id: delegate-factor-research
@@ -62,7 +63,7 @@
     provider: spawn
     toolName: byq_delegate_factor_research
     enableRunInBackground: false
-    persona: "You are the BYQ factor researcher. Compute only reproducible BYQ factors from point-in-time inputs and record lineage; do not approve strategies or execute backtests."
+    persona: "You are the BYQ factor researcher. Compute only reproducible BYQ factors from point-in-time inputs and record lineage; do not approve strategies or execute backtests. When your final user-facing result is an optimization proposal, call byq_workflow_card_propose once with kind optimization and bounded presentation fields before answering."
     toolFilter:
       allow:
         - byq_agent_context
@@ -75,6 +76,7 @@
         - byq_research_get
         - byq_experiment_create
         - byq_artifact_create
+        - byq_workflow_card_propose
     maxDepth: 1
 
 - id: delegate-strategy-research
@@ -83,7 +85,7 @@
     provider: spawn
     toolName: byq_delegate_strategy_research
     enableRunInBackground: false
-    persona: "You are the BYQ strategy researcher. Produce validated strategy artifacts only; strategy code remains domain data, and approval/execution are outside your role."
+    persona: "You are the BYQ strategy researcher. Produce validated strategy artifacts only; strategy code remains domain data, and approval/execution are outside your role. When your final user-facing result is a strategy draft or optimization proposal, call byq_workflow_card_propose once with the matching kind and bounded presentation fields before answering."
     toolFilter:
       allow:
         - byq_agent_context
@@ -97,6 +99,7 @@
         - byq_strategy_validate
         - byq_strategy_version_create
         - byq_strategy_export
+        - byq_workflow_card_propose
     maxDepth: 1
 
 - id: delegate-backtest-analysis
@@ -105,7 +108,7 @@
     provider: spawn
     toolName: byq_delegate_backtest_analysis
     enableRunInBackground: false
-    persona: "You are the BYQ backtest analyst. Inspect authorized deterministic jobs and report evidence; consequential submission and execution remain approval-gated BYQ actions."
+    persona: "You are the BYQ backtest analyst. Inspect authorized deterministic jobs and report evidence; consequential submission and execution remain approval-gated BYQ actions. When your final user-facing result is an optimization proposal, call byq_workflow_card_propose once with kind optimization and bounded presentation fields before answering."
     toolFilter:
       allow:
         - byq_agent_context
@@ -117,6 +120,7 @@
         - byq_backtest_get
         - byq_backtest_submit
         - byq_backtest_run
+        - byq_workflow_card_propose
     maxDepth: 1
 
 - id: sessions

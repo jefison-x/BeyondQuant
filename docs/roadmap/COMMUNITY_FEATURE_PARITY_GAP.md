@@ -29,9 +29,9 @@ The current BYQ frontend restores the main information architecture and basic
 list/status projections, but it does not yet restore most Community product
 workflows. The largest gaps are:
 
-1. Agent workbench has real sessions, WorkflowTrace, approvals and context,
-   but structured cards, assistant drawer, and deeper tool visualization are
-   missing.
+1. Agent workbench depth is delivered: normalized actionable cards, bounded
+   public progress, approval management, conversation starters, and the
+   responsive assistant drawer are verified through real Product API.
 2. Strategy workspace depth is delivered; remaining items are bounded Phase
    40 hardening/profile-field decisions (D-0009–D-0012).
 3. Backtest result/wizard depth is delivered, but the strategy-source →
@@ -62,9 +62,11 @@ Community: session history, streaming messages, thinking steps, strategy/
 stock-candidate/optimization cards, approval cards, backtest context, assistant
 drawer, and multi-step tool visualization.
 
-Current BYQ: `PARTIAL` sessions, conversation composer, normalized
-WorkflowTrace/approval/context panels; no assistant drawer or generated
-strategy/stock/optimization card flows.
+Current BYQ: `REDESIGNED_PASS` sessions, conversation composer, normalized
+WorkflowTrace card/activity/approval/context projections, generated actionable
+strategy/stock/optimization flows, local/global approval management, and the
+responsive assistant drawer. Raw DSH schemas remain behind the Runtime Adapter
+and Gateway boundary.
 
 ### Strategy
 

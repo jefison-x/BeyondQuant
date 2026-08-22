@@ -14,8 +14,11 @@ export const useAgentStore = defineStore("agent", {
     events: [] as WorkflowTraceEvent[],
   }),
   actions: {
+    replaceSessions(sessions: AgentSession[]) {
+      this.sessions = [...sessions];
+    },
     addSession(session: AgentSession) {
-      this.sessions.unshift(session);
+      this.sessions = [session, ...this.sessions.filter((current) => current.session_id !== session.session_id)];
       this.activeSessionId = session.session_id;
       this.messages = [];
       this.events = [];

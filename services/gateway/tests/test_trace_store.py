@@ -40,3 +40,28 @@ def test_trace_store_rejects_gaps_and_reused_sequences(tmp_path: Path) -> None:
         store.append(event(3))
     with pytest.raises(TraceConflict):
         store.append({**event(1), "payload": {"different": True}})
+
+
+def card(sequence: int, revision: int) -> dict[str, object]:
+    return {
+        **event(sequence, kind="agent.card.strategy_draft"),
+        "payload": {
+            "schema_version": "workflow-card.v1",
+            "card_id": "card_" + "a" * 64,
+            "revision": revision,
+            "authority": "proposal",
+            "title": "策略草稿",
+            "name": "双均线",
+            "summary": "趋势策略",
+            "truncated": False,
+        },
+    }
+
+
+def test_trace_store_requires_monotonic_card_revisions(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path)
+    store.append(card(1, 1))
+    assert store.next_card_revision("session-1", "card_" + "a" * 64) == 2
+    store.append(card(2, 2))
+    with pytest.raises(TraceConflict, match="revision"):
+        store.append(card(3, 2))

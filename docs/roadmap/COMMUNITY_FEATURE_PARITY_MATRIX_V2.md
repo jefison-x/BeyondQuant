@@ -11,7 +11,7 @@ Detailed gaps are in
 |---|---|---|
 | Login | REDESIGNED_PASS | Durable username/password session replaces Product Token browser login. |
 | Home/Dashboard | PARTIAL | Resource status and recent lists exist; Community card/quick-action depth is reduced. |
-| Agent | PARTIAL | Sessions, conversation composer, WorkflowTrace, thinking panel, approval decisions, backtest context, and artifacts are real; structured cards and assistant drawer remain incomplete. |
+| Agent | REDESIGNED_PASS | Sessions, conversation composer, closed normalized WorkflowTrace cards/activities, actionable strategy/stock/optimization projections, local/global approvals, backtest context, conversation starters, and responsive assistant drawer are real and verified through Product API. |
 | Research | PARTIAL | Entity/approval lookup exists; lineage DAG and full research workspace are missing. |
 | Strategy | REDESIGNED_PASS | Editor with templates/snippets, durable draft save/delete (soft-superseded immutable artifacts), static validation, immutable version creation, version-history list, per-strategy backtest counts, export, and approval banner are real. |
 | Backtest | PARTIAL | Result workspace and immutable signal_snapshot wizard are real; a newly authored strategy still cannot produce that snapshot (D-0002), so the product journey is incomplete. |

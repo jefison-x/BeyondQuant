@@ -3,10 +3,9 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 35**
-- Next phase: **Phase 36 — Agent workbench depth**, **READY FOR IMPLEMENTATION**
-  under Accepted ADR-0018 (see
-  `docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md` and
+- Current completed phase: **Phase 36**
+- Next phase: **Phase 37 — My Space depth**, **BLOCKED** until ADR-0019 is
+  Accepted (see `docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md` and
   `docs/roadmap/COMMUNITY_FULL_PARITY_PHASE_DETAILS.md`)
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
@@ -27,7 +26,7 @@ Codex session does not infer project state from commit history.
 - Accepted Stock Pool snapshot/lifecycle ADR: **ADR-0020**
 - Accepted Paper Trading account/lifecycle ADR: **ADR-0021**
 - Open architecture decision: ADR-0019 remains Proposed and blocks Phases
-  37–39. No open architecture decision blocks Phase 36.
+  37–39. Phase 37 must not start until it is Accepted.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -114,6 +113,16 @@ Codex session does not infer project state from commit history.
   read-only MCP projections, real Product API E2E, and desktop/mobile Chrome
   MCP evidence are complete. No live broker or Community runtime/storage path
   was introduced.
+- Phase 36 (Agent workbench depth) completed: ADR-0018's closed WorkflowTrace
+  card/activity vocabulary is enforced at the MCP, Runtime Adapter, Gateway,
+  Product API, and frontend boundaries. Strategy-draft, stock-candidate,
+  optimization, backtest-context, and approval cards use normalized public
+  projections; answer text and curated activities exclude raw DSH schemas,
+  hidden reasoning, tool arguments, and secrets. The Agent workbench now has
+  actionable cards, bounded public execution progress, local/global approval
+  panels, conversation starters, and the Xiaoba assistant drawer. Real Product
+  API desktop/mobile Chrome MCP evidence and the Community-derived checklist
+  are recorded under `docs/evidence/phase-36/`. D-0005 is CLOSED.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence, but
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` records substantial remaining
@@ -129,8 +138,8 @@ Codex session does not infer project state from commit history.
   Registry, and Phases 34–40. They must close before the RC review gate.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active architecture blocker: **none for Phase 36.** ADR-0019 remains
-  Proposed and blocks Phases 37–39.
+- Active architecture blocker: **ADR-0019 remains Proposed and blocks Phase
+  37 (and Phases 38–39).**
 
 Git SHA is not phase state. The current clean baseline must always be derived
 from `git fetch origin` followed by `git rev-parse origin/main`; this file must

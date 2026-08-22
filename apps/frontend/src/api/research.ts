@@ -45,7 +45,7 @@ export function listApprovals(): Promise<{ approvals: Array<Record<string, unkno
 
 export function decideApproval(
   approvalId: string,
-  decision: "approved" | "denied",
+  decision: "approved" | "rejected",
   rationale: string,
 ): Promise<{ approval: Record<string, unknown> }> {
   return getJson(`/approvals/${encodeURIComponent(approvalId)}/decision`, {
