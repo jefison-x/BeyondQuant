@@ -73,6 +73,7 @@ explicitly reverses them:
 | Phase 23 | Community feature parity matrix, golden journey, release candidate, and explicit DROP/DEFER decisions. |
 | Phase 31 | PostgreSQL single domain store: SQLite -> PostgreSQL logical migration, backup/restore, then ADR-0013 durable market-data import. |
 | Phase 34 | Stock Pool identity/snapshot/lifecycle contract, historical membership, typed provenance, trusted index as-of behavior, and frozen consumer references. |
+| Phase 37 | My Space model credentials/profiles/bindings, asset re-import, and Agent policy preset/rule UX under BYQ ownership and secret boundaries. |
 
 ## Productization frontend audit
 
@@ -503,3 +504,21 @@ persistence remain reference-only and were not modified or copied.
 | Page-aware assistant drawer | Preserve compact open/close UX and bounded page context that helps the user continue work. | `PORT_COMPONENT` / `PORT_UX` | Context uses allow-listed BYQ route/resource identifiers; never raw page state, credentials, or runtime internals. |
 | Community Agent API, SSE/message schema, runtime state, PydanticAI/Hermes coupling | Evidence of desired behavior only. | `REFERENCE_ONLY` / `REPLACE` | Runtime Adapter curates DSH candidates; Gateway persists/streams BYQ envelopes; frontend imports only BYQ types. |
 | Model-described actions and approval/execution conflation | None; this is an unsafe authority shortcut. | `DROP` / `REPLACE` | Cards are view models, never commands. Consequential actions use fixed BYQ Product routes, validation, idempotency, concurrency, and approval contracts. |
+
+## Phase 37 My Space pre-implementation audit
+
+The read-only Community `UserModelsView.vue`,
+`UserModelSettingsPanel.vue`, `UserAssetsView.vue`, and
+`UserAgentPolicyView.vue` were inspected before accepting ADR-0019. Their UX
+is evidence only; Community APIs, secret persistence, provider catalogue,
+PydanticAI/Hermes runtime, and SQL models are not migration inputs.
+
+| Community capability | Reusable invariant / UX | Decision | ADR-0019 / Phase 37 boundary |
+|---|---|---|---|
+| Credential create/edit/status cards | A user can name, replace, disable, and understand whether a credential is configured without rereading it. | `PORT_LAYOUT` / `PORT_UX` / `REPLACE` | BYQ write-only secret mutations, metadata-only masked reads, AES-256-GCM envelopes, optimistic versioning, revoke, and append-only audit. |
+| Model profiles separate from provider credentials | Reusable model choices and generation options should not duplicate secrets. | `PORT_LOGIC` / `REFACTOR` | Owner-scoped profile references an active credential plus a reviewed provider/model catalogue entry. Arbitrary base URLs are rejected. |
+| Per-Agent model binding | Users need an explicit effective model choice and system-default state for each BYQ Agent preset. | `PORT_UX` / `REFACTOR` | Owner-scoped binding is authorized by Backend and resolved privately by Runtime Adapter; Gateway/MCP/WorkflowTrace never receive the secret. |
+| Strategy/backtest asset import/export | Portable assets need validation, provenance, new owner-safe identity, and honest import results. | `REFACTOR` / `PORT_UX` | Reuse BYQ canonical artifact/bundle contracts; do not reconstruct Community rows or identifiers. |
+| Agent policy settings, presets, rule table/dialog, and history | Settings and ordered rule CRUD should be understandable, bounded, and visibly effective. | `PORT_UX` / `REFACTOR` | Extend BYQ owner-scoped policy state and audit; Community action/engine values are not implicitly accepted. VectorBT remains `DROP`. |
+| Community credential endpoints, provider URLs, database schema, and Agent runtime | None as an implementation boundary. | `REFERENCE_ONLY` / `REPLACE` | Product API → Backend and private Backend → Runtime Adapter resolution under ADR-0019. No Community code or data is copied. |
+| BaoStock, AKShare, VectorBT, PydanticAI, and Hermes paths | None. | `DROP` / `REPLACE` | Excluded technologies and compatibility paths remain absent. |

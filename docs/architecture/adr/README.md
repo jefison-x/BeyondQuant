@@ -23,3 +23,6 @@ portable bundle boundary for Phase 35.
 ADR-0018 defines the structured WorkflowTrace card, public activity,
 normalization, authority, replay, and fixed Product-action boundary for Phase
 36.
+ADR-0019 defines encrypted credential storage, key rotation, public masking,
+model binding/runtime resolution, Tushare resolution, audit, and bootstrap
+fallback boundaries for Phases 37 and 39.

@@ -158,8 +158,10 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 
 ### D-0006 — Phase 37 My Space model/asset/agent-policy depth
 - Phase: 37
-- Status: `BLOCKED`
-- Precondition: ADR-0019 (encrypted credential store) accepted + Phase 40.
+- Status: `READY`
+- Precondition: ADR-0019 (encrypted credential store) accepted. **Satisfied
+  2026-08-22.** Phase 37 owns its required model-settings component; Phase 40
+  may generalize it later.
 - Content: model credential CRUD + Agent binding (never echoed), strategy /
   backtest re-import, agent policy presets/rule CRUD.
 - Acceptance: credentials writable and masked; re-import real; rules CRUD
@@ -192,8 +194,8 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 | ADR-0017 (`signal_snapshot`) | Accepted (2026-08-18) | D-0001 |
 | Signal-producer ADR (future) | not written | D-0002 |
 | ADR-0018 (WorkflowTrace cards) | Accepted (2026-08-22) | D-0005 (`CLOSED`) |
-| ADR-0019 (encrypted credentials) | Proposed | D-0006, D-0007, D-0008 |
-| Phase 40 shared components | planned | D-0006, D-0007; later generalization for D-0005 |
+| ADR-0019 (encrypted credentials) | Accepted (2026-08-22) | D-0006 (`READY`), D-0007, D-0008 |
+| Phase 40 shared components | planned | D-0007; later generalization for D-0005/D-0006 |
 
 ## Maintenance rules
 

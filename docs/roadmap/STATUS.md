@@ -4,8 +4,8 @@ This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
 - Current completed phase: **Phase 36**
-- Next phase: **Phase 37 — My Space depth**, **BLOCKED** until ADR-0019 is
-  Accepted (see `docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md` and
+- Next phase: **Phase 37 — My Space depth**, **READY FOR IMPLEMENTATION**
+  under Accepted ADR-0019 (see `docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md` and
   `docs/roadmap/COMMUNITY_FULL_PARITY_PHASE_DETAILS.md`)
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
@@ -23,10 +23,12 @@ Codex session does not infer project state from commit history.
 - Accepted PostgreSQL single-domain-store ADR: **ADR-0016**
 - Accepted signal-snapshot ADR: **ADR-0017**
 - Accepted WorkflowTrace structured-card ADR: **ADR-0018**
+- Accepted encrypted credential-store ADR: **ADR-0019**
 - Accepted Stock Pool snapshot/lifecycle ADR: **ADR-0020**
 - Accepted Paper Trading account/lifecycle ADR: **ADR-0021**
-- Open architecture decision: ADR-0019 remains Proposed and blocks Phases
-  37–39. Phase 37 must not start until it is Accepted.
+- Open architecture decisions: **none blocking Phase 37**. ADR-0019 is
+  Accepted; Phase 37 owns its required model-settings component and Phase 40
+  may generalize it later.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -51,6 +53,8 @@ Codex session does not infer project state from commit history.
   [ADR-0017](../architecture/adr/ADR-0017-signal-snapshot-artifact.md)
   is Accepted.
   [ADR-0018](../architecture/adr/ADR-0018-workflow-trace-card-contract.md)
+  is Accepted.
+  [ADR-0019](../architecture/adr/ADR-0019-encrypted-credential-store.md)
   is Accepted.
   [ADR-0020](../architecture/adr/ADR-0020-stock-pool-snapshot-lifecycle.md)
   is Accepted.
@@ -138,8 +142,7 @@ Codex session does not infer project state from commit history.
   Registry, and Phases 34–40. They must close before the RC review gate.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active architecture blocker: **ADR-0019 remains Proposed and blocks Phase
-  37 (and Phases 38–39).**
+- Active architecture blocker: **none for Phase 37.**
 
 Git SHA is not phase state. The current clean baseline must always be derived
 from `git fetch origin` followed by `git rev-parse origin/main`; this file must

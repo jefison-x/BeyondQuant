@@ -1,6 +1,6 @@
 # Community Full Parity Plan (Phase 32–40)
 
-Status: `ACTIVE` (ADR-0017/0018/0020/0021 Accepted; ADR-0019 remains Proposed)
+Status: `ACTIVE` (ADR-0017/0018/0019/0020/0021 Accepted)
 
 This plan describes the remaining Community product-depth workflows that the
 Phase 17–31 contract-first skeleton deferred. `IMPLEMENTATION_PLAN.md` is the
@@ -23,9 +23,9 @@ document supplies the parity-batch overview and dependency map.
 2. Accepted: Agent workbench cards = **versioned BYQ card contract + curated
    extraction and owner-scoped Domain hydration** (ADR-0018). Raw DSH
    payloads never cross the Gateway and cards never carry executable actions.
-3. Proposed: Credentials = **PostgreSQL encrypted store** (ADR-0019). This is
-   not implementation authority until the ADR is Accepted; planned semantics
-   are system/user scopes, masked read, and write audit.
+3. Accepted: Credentials = **PostgreSQL AES-256-GCM envelope store with a
+   private Runtime Adapter resolution seam** (ADR-0019). Public reads are
+   masked, writes are audited, and user/system scopes fail closed.
 4. Cache management = **PostgreSQL market-data cache status only**; Redis is
    not added in this batch.
 5. Execution budget = **DSH model-call token accounting**.
@@ -116,13 +116,15 @@ document supplies the parity-batch overview and dependency map.
 - Estimate: 14 person-days (XL).
 
 ### Phase 37 — My Space depth (Models / Assets / Agent Policy)
+- Status: **NEXT — IMPLEMENTATION** under Accepted ADR-0019.
 - Community: UserModelsView + UserModelSettingsPanel, UserAssetsView,
   UserAgentPolicyView.
 - Current: profile complete; models masked-only; assets config import/export;
   agent policy personal only.
 - Gap: model credential CRUD + agent binding, strategy/backtest re-import,
   agent policy presets/rule CRUD.
-- Dependency: ADR-0019.
+- Dependency: ADR-0019 (Accepted). Phase 37 owns its required model-settings
+  component; Phase 40 may generalize it later.
 - Estimate: 14 person-days (XL).
 
 ### Phase 38 — Operations workbenches
@@ -162,7 +164,7 @@ Phase 33 (strategy)  ── independent
 Phase 34 (stock pool) ── independent
 Phase 35 (paper trading) ── independent
 Phase 36 (agent)     ── complete under ADR-0018
-Phase 37 (my space)  ── needs ADR-0019 + Phase 40
+Phase 37 (my space)  ── ADR-0019 accepted; ready
 Phase 38 (operations) ── needs ADR-0019 + Phase 40
 Phase 39 (data center) ── needs ADR-0019
 ```
