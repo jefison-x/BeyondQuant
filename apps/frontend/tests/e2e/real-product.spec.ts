@@ -139,3 +139,71 @@ test("real Product API Paper Trading settlement, risk, detail, and bundle flow",
   expect([...unexpectedOrigins]).toEqual([]);
   expect(serverErrors).toEqual([]);
 });
+
+test("real Product API My Space credential, binding, policy, and asset import flow", async ({ page, baseURL }) => {
+  const username = process.env.BYQ_E2E_ADMIN_USERNAME;
+  const password = process.env.BYQ_E2E_ADMIN_PASSWORD;
+  if (!username || !password) throw new Error("BYQ_E2E admin credentials are required");
+  const origin = new URL(baseURL ?? "http://127.0.0.1:18080").origin;
+  const unexpectedOrigins = new Set<string>();
+  const serverErrors: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if ((url.protocol === "http:" || url.protocol === "https:") && url.origin !== origin) unexpectedOrigins.add(url.origin);
+  });
+  page.on("response", (response) => { if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`); });
+
+  await page.goto("/login");
+  await page.getByLabel("用户名").fill(username);
+  await page.getByLabel("密码").fill(password);
+  await page.getByRole("button", { name: "进入" }).click();
+  await expect(page).toHaveURL(`${origin}/`);
+
+  const suffix = Date.now();
+  const result = await page.evaluate(async (id) => {
+    async function request(path: string, init: RequestInit = {}) {
+      const response = await fetch(`/api/product${path}`, {
+        ...init, credentials: "include",
+        headers: { ...(init.body ? { "content-type": "application/json" } : {}), ...(init.headers ?? {}) },
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(`${path} failed: ${response.status} ${text}`);
+      return { body: JSON.parse(text), text };
+    }
+    const secret = `sk-phase37-browser-${id}`;
+    const created = await request("/settings/models/credentials", { method: "POST", body: JSON.stringify({ provider: "deepseek", label: `E2E凭据-${id}`, secret, idempotency_key: `e2e-credential-${id}` }) });
+    if (created.text.includes(secret) || created.text.includes("ciphertext")) throw new Error("credential response leaked secret material");
+    const credential = created.body.credential;
+    const profile = (await request("/settings/models/profiles", { method: "POST", body: JSON.stringify({ credential_id: credential.credential_id, key_name: `e2e-${id}`, display_name: `E2E档案-${id}`, provider: "deepseek", model: "deepseek-v4-flash", temperature: 0.2, reasoning_enabled: false }) })).body.profile;
+    const settings = (await request("/settings/models")).body;
+    const binding = settings.bindings.find((item: { agent_id: string }) => item.agent_id === "byq-product");
+    await request("/settings/models/bindings/byq-product", { method: "PUT", body: JSON.stringify({ profile_id: profile.profile_id, expected_version: binding?.version ?? 0 }) });
+    await request("/settings/agent-policy/rules", { method: "POST", body: JSON.stringify({ name: `E2E拒绝回测-${id}`, description: "real browser evidence", action: "byq_backtest_run", agent_id: "*", decision_mode: "auto_deny", risk_level: "high", priority: 10, enabled: true }) });
+    await request("/paper/pools", { method: "POST", body: JSON.stringify({ name: `E2E资产池-${id}`, symbols: ["000001.SZ"], pool_type: "custom" }) });
+    const bundle = (await request("/settings/assets/export")).body;
+    const imported = (await request("/settings/assets/import", { method: "POST", body: JSON.stringify(bundle) })).body;
+    return { bundleVersion: bundle.schema_version, imported, credentialLabel: credential.label };
+  }, suffix) as { bundleVersion: string; imported: { imported: { pools: number }; source_owner_reused: boolean }; credentialLabel: string };
+
+  expect(result.bundleVersion).toBe("byq-workspace-assets-v2");
+  expect(result.imported.imported.pools).toBeGreaterThanOrEqual(1);
+  expect(result.imported.source_owner_reused).toBe(false);
+
+  await page.getByRole("menuitem", { name: "个人模型" }).click();
+  await expect(page).toHaveURL(`${origin}/models`);
+  await expect(page.getByText(result.credentialLabel, { exact: true })).toBeVisible();
+  await expect(page.getByText(`E2E档案-${suffix}`, { exact: true })).toBeVisible();
+  const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
+  if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/01-model-settings.png`, fullPage: true });
+  await page.getByRole("menuitem", { name: "智能体策略" }).click();
+  await expect(page).toHaveURL(`${origin}/agent-settings`);
+  await expect(page.getByText(`E2E拒绝回测-${suffix}`, { exact: true })).toBeVisible();
+  if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/02-agent-policy.png`, fullPage: true });
+  await page.getByRole("menuitem", { name: "用户资产" }).click();
+  await expect(page).toHaveURL(`${origin}/assets`);
+  await expect(page.getByText(`E2E资产池-${suffix}`, { exact: true }).first()).toBeVisible();
+  if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/03-assets-import.png`, fullPage: true });
+
+  expect([...unexpectedOrigins]).toEqual([]);
+  expect(serverErrors).toEqual([]);
+});

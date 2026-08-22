@@ -47,7 +47,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("A user binding never", contract)
-        self.assertIn("READY FOR IMPLEMENTATION", status)
+        self.assertIn("Current completed phase: **Phase 37**", status)
+        self.assertIn("Phase 38 — Operations workbenches", status)
         self.assertNotIn("ADR-0019 remains Proposed", status)
 
     def test_base_compose_uses_runtime_adapter_as_the_only_product_dsh_path(self) -> None:
@@ -361,7 +362,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "Phase 36 — Agent workbench depth (`COMPLETE`)",
             implementation,
         )
-        self.assertIn("Phase 37 — My Space depth (`READY`)", implementation)
+        self.assertIn("Phase 37 — My Space depth (`COMPLETE`)", implementation)
 
         workflow_card_adr = (
             ROOT

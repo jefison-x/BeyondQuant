@@ -79,6 +79,8 @@ services:
     environment:
       BYQ_MCP_TOKEN: ${BYQ_MCP_TOKEN:?BYQ_MCP_TOKEN must be set}
       BYQ_MCP_URL: http://mcp:8300/mcp/v1
+      BYQ_BACKEND_URL: http://backend:8000
+      BYQ_CREDENTIAL_RESOLVER_TOKEN: ${BYQ_CREDENTIAL_RESOLVER_TOKEN:-dev-credential-resolver-change-me}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       BYQ_DSH_RUNTIME_ROOT: /opt/dsh-runtime
       BYQ_DSH_COMPOSITION: /opt/byq/compositions/byq-product-sdk.cordis.yml
@@ -89,6 +91,8 @@ services:
       - byq_product
     depends_on:
       mcp:
+        condition: service_healthy
+      backend:
         condition: service_healthy
     healthcheck:
       test:
@@ -140,6 +144,9 @@ services:
       BYQ_BACKTEST_OBJECT_ROOT: /var/lib/byq/domain/backtest-objects
       BYQ_BOOTSTRAP_ADMIN_USERNAME: ${BYQ_BOOTSTRAP_ADMIN_USERNAME:-admin}
       BYQ_BOOTSTRAP_ADMIN_PASSWORD: ${BYQ_BOOTSTRAP_ADMIN_PASSWORD:-UIop7890}
+      BYQ_CREDENTIAL_KEYRING: ${BYQ_CREDENTIAL_KEYRING:-}
+      BYQ_CREDENTIAL_ACTIVE_KEY_ID: ${BYQ_CREDENTIAL_ACTIVE_KEY_ID:-}
+      BYQ_CREDENTIAL_RESOLVER_TOKEN: ${BYQ_CREDENTIAL_RESOLVER_TOKEN:-dev-credential-resolver-change-me}
       TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
       TUSHARE_API_URL: ${TUSHARE_API_URL:-http://api.tushare.pro}
     depends_on:

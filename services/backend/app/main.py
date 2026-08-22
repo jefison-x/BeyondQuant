@@ -14,6 +14,16 @@ from .data_provider import (
     ProviderRateLimited,
     TushareProvider,
 )
+from .credentials import (
+    MODEL_CATALOG,
+    CredentialConflict,
+    CredentialForbidden,
+    CredentialNotFound,
+    CredentialPersistenceError,
+    CredentialStore,
+    CredentialUnavailable,
+    authorize_resolver,
+)
 from .factor_research import compute_factor
 from .backtest import (
     BacktestConflict,
@@ -71,7 +81,14 @@ from .user_auth import (
     UserForbidden,
     UserNotFound,
 )
-from .user_policy import UserPolicyStore, UserPolicyError, UserPolicyPersistenceError, public_policy
+from .user_policy import (
+    UserPolicyConflict,
+    UserPolicyNotFound,
+    UserPolicyStore,
+    UserPolicyError,
+    UserPolicyPersistenceError,
+    public_policy,
+)
 from .research import (
     IdempotencyConflict,
     InvalidTransition,
@@ -102,6 +119,8 @@ engineering_store = EngineeringTaskStore.from_env()
 paper_store = PaperTradingStore.from_env()
 user_store = UserAuthStore.from_env()
 user_policy_store = UserPolicyStore.from_env()
+credential_store = CredentialStore.from_env()
+CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
     user_store.ensure_bootstrap_admin(
         os.environ["BYQ_BOOTSTRAP_ADMIN_USERNAME"],
@@ -1130,11 +1149,37 @@ def start_agent_run(payload: dict[str, Any], request: Request) -> dict[str, obje
 @app.post("/v1/agents/authorize")
 def authorize_agent_action(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, payload)
-    return _agent_call(lambda: {"authorization": agent_store.authorize(
-        {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
-        trusted_owner=context["owner_principal"],
-        trusted_actor=context["actor_principal"],
-    )})
+    clean_payload = {
+        key: value for key, value in payload.items()
+        if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}
+    }
+
+    def operation() -> dict[str, object]:
+        base = agent_store.authorize(
+            clean_payload,
+            trusted_owner=context["owner_principal"],
+            trusted_actor=context["actor_principal"],
+        )
+        effective = user_policy_store.evaluate_authorization(context["owner_principal"], base)
+        if effective.get("decision") == "policy_denied":
+            agent_store.record_audit(
+                {
+                    "run_id": clean_payload.get("run_id"),
+                    "action": "policy.enforce",
+                    "outcome": "denied",
+                    "resource_type": clean_payload.get("resource_type"),
+                    "resource_id": clean_payload.get("resource_id"),
+                    "detail": {
+                        "domain_action": clean_payload.get("action"),
+                        "policy_rule_id": effective.get("policy_rule_id"),
+                    },
+                },
+                trusted_owner=context["owner_principal"],
+                trusted_actor=context["actor_principal"],
+            )
+        return {"authorization": effective}
+
+    return _agent_call(operation)
 
 
 @app.post("/v1/agents/audit")
@@ -1699,17 +1744,243 @@ def _policy_call(operation: Callable[[], dict[str, object]]) -> dict[str, object
         return operation()
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    except UserPolicyNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except UserPolicyConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     except UserPolicyPersistenceError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+def _credential_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except CredentialNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except CredentialForbidden as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except CredentialConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except (CredentialUnavailable, CredentialPersistenceError) as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.get("/v1/users/model-catalog")
+def get_model_catalog(request: Request) -> dict[str, object]:
+    _required_agent_context(request)
+    return {"models": [dict(item) for item in MODEL_CATALOG], "agents": [
+        {"agent_id": "byq-product", "name": "小霸 Product Agent"},
+    ]}
+
+
+@app.get("/v1/users/model-credentials")
+def list_model_credentials(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _credential_call(lambda: {
+        "credentials": credential_store.list_credentials(context["owner_principal"]),
+        "encryption": credential_store.encryption_status(),
+    })
+
+
+@app.post("/v1/users/model-credentials", status_code=201)
+def create_model_credential(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _credential_call(lambda: {"credential": credential_store.create_credential(
+        context["owner_principal"],
+        {**payload, "purpose": "model_api_key", "scope": "user"},
+        actor=context["actor_principal"],
+    )})
+
+
+@app.put("/v1/users/model-credentials/{credential_id}")
+def update_model_credential(
+    credential_id: str,
+    payload: dict[str, Any],
+    request: Request,
+) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _credential_call(lambda: {"credential": credential_store.update_credential(
+        credential_id,
+        context["owner_principal"],
+        payload,
+        actor=context["actor_principal"],
+    )})
+
+
+@app.post("/v1/users/model-credentials/{credential_id}/revoke")
+def revoke_model_credential(
+    credential_id: str,
+    payload: dict[str, Any],
+    request: Request,
+) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _credential_call(lambda: {"credential": credential_store.revoke_credential(
+        credential_id,
+        context["owner_principal"],
+        actor=context["actor_principal"],
+        expected_version=payload.get("expected_version"),
+        request_id=payload.get("request_id"),
+    )})
+
+
+@app.get("/v1/users/model-profiles")
+def list_model_profiles(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _credential_call(lambda: {"profiles": credential_store.list_profiles(
+        context["owner_principal"],
+    )})
+
+
+@app.post("/v1/users/model-profiles", status_code=201)
+def create_model_profile(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _credential_call(lambda: {"profile": credential_store.create_profile(
+        context["owner_principal"],
+        payload,
+    )})
+
+
+@app.post("/v1/users/model-profiles/{profile_id}/delete")
+def delete_model_profile(
+    profile_id: str,
+    payload: dict[str, Any],
+    request: Request,
+) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _credential_call(lambda: {"profile": credential_store.delete_profile(
+        profile_id,
+        context["owner_principal"],
+        expected_version=payload.get("expected_version"),
+    )})
+
+
+@app.get("/v1/users/model-bindings")
+def list_model_bindings(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _credential_call(lambda: {"bindings": credential_store.list_bindings(
+        context["owner_principal"],
+    )})
+
+
+@app.put("/v1/users/model-bindings/{agent_id}")
+def put_model_binding(
+    agent_id: str,
+    payload: dict[str, Any],
+    request: Request,
+) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _credential_call(lambda: {"binding": credential_store.bind(
+        context["owner_principal"],
+        agent_id,
+        payload.get("profile_id"),
+        expected_version=payload.get("expected_version"),
+    )})
+
+
+@app.get("/v1/users/model-credential-audit")
+def list_model_credential_audit(request: Request, limit: int = 100) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _credential_call(lambda: {"events": credential_store.list_audit(
+        context["owner_principal"],
+        limit=limit,
+    )})
+
+
+@app.post("/internal/credentials/model-resolution")
+def resolve_model_credential(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    try:
+        authorize_resolver(
+            request.headers.get("x-byq-credential-resolver-token"),
+            CREDENTIAL_RESOLVER_TOKEN,
+        )
+        owner = payload.get("owner_principal")
+        agent_id = payload.get("agent_id")
+        # Validate correlation fields even though they are never persisted.
+        _required = {
+            "session_id": payload.get("session_id"),
+            "trace_id": payload.get("trace_id"),
+        }
+        for field, value in _required.items():
+            if not isinstance(value, str) or not value or len(value) > 128:
+                raise ValueError(f"{field} is not valid")
+        resolution = credential_store.resolve_model(owner, agent_id)
+        if resolution is None:
+            raise CredentialNotFound("personal model binding not found")
+        return {"resolution": resolution}
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except CredentialNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except CredentialForbidden as error:
+        raise HTTPException(status_code=403, detail="credential resolver denied") from error
+    except CredentialUnavailable as error:
+        raise HTTPException(status_code=409, detail="selected model binding is unavailable") from error
 
 
 @app.get("/v1/users/agent-policy")
 def get_user_agent_policy(request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
-    return _policy_call(lambda: {"policy": public_policy(user_policy_store.get(context["owner_principal"]))})
+    return _policy_call(lambda: {
+        "policy": public_policy(user_policy_store.get(context["owner_principal"])),
+        "rules": user_policy_store.list_rules(context["owner_principal"]),
+        "presets": user_policy_store.list_presets(),
+        "audit": user_policy_store.list_audit(context["owner_principal"]),
+    })
 
 
 @app.put("/v1/users/agent-policy")
 def update_user_agent_policy(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
     return _policy_call(lambda: {"policy": public_policy(user_policy_store.update(context["owner_principal"], payload))})
+
+
+@app.post("/v1/users/agent-policy/rules", status_code=201)
+def create_user_agent_policy_rule(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _policy_call(lambda: {"rule": user_policy_store.create_rule(
+        context["owner_principal"],
+        payload,
+        actor=context["actor_principal"],
+    )})
+
+
+@app.put("/v1/users/agent-policy/rules/{rule_id}")
+def update_user_agent_policy_rule(
+    rule_id: str,
+    payload: dict[str, Any],
+    request: Request,
+) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _policy_call(lambda: {"rule": user_policy_store.update_rule(
+        rule_id,
+        context["owner_principal"],
+        payload,
+        actor=context["actor_principal"],
+    )})
+
+
+@app.post("/v1/users/agent-policy/rules/{rule_id}/delete")
+def delete_user_agent_policy_rule(
+    rule_id: str,
+    payload: dict[str, Any],
+    request: Request,
+) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _policy_call(lambda: user_policy_store.delete_rule(
+        rule_id,
+        context["owner_principal"],
+        actor=context["actor_principal"],
+        expected_version=payload.get("expected_version"),
+    ))
+
+
+@app.post("/v1/users/agent-policy/presets/{preset_id}/apply")
+def apply_user_agent_policy_preset(preset_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _policy_call(lambda: user_policy_store.apply_preset(
+        context["owner_principal"],
+        preset_id,
+        actor=context["actor_principal"],
+    ))

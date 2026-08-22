@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
+import httpx
 from deepseek_harness import DeepSeekHarness, DeepSeekHarnessConfig, Notification
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
@@ -51,6 +52,7 @@ class RuntimeSession:
     trace_id: str
     harness: DeepSeekHarness
     owner_principal: str | None = None
+    model_resolution: dict[str, object] = field(default_factory=dict, repr=False)
     status: str = SessionStatus.STARTING
     active_run: ActiveRun | None = None
     interrupted_run_id: str | None = None
@@ -86,6 +88,8 @@ class RuntimeAdapter:
         self._provider = os.environ.get("BYQ_DSH_PROVIDER", "deepseek-official")
         self._model = os.environ.get("BYQ_DSH_MODEL", "deepseek-v4-flash")
         self._model_api_key = os.environ.get("DEEPSEEK_API_KEY")
+        self._backend_url = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
+        self._resolver_token = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 
     @property
     def runtime_command(self) -> tuple[str, ...]:
@@ -101,7 +105,11 @@ class RuntimeAdapter:
             "explicit_runtime": self.runtime_command[1],
             "composition": str(self._composition),
             "composition_exists": self._composition.is_file(),
-            "model_credentials": "configured" if self._model_api_key else "missing",
+            "model_credentials": (
+                "configured" if self._model_api_key
+                else "resolver" if self._resolver_token
+                else "missing"
+            ),
             "model_provider": self._provider,
             "model": self._model,
             "process_ownership": "one-per-active-session",
@@ -121,6 +129,11 @@ class RuntimeAdapter:
         validate_identifier(session_id, field="session_id")
         validate_identifier(trace_id, field="trace_id")
         session_root = contained_session_path(self._session_root, session_id)
+        model_resolution = self._resolve_model(
+            owner_principal=owner_principal,
+            session_id=session_id,
+            trace_id=trace_id,
+        )
 
         with self._lock:
             if session_id in self._sessions:
@@ -130,12 +143,14 @@ class RuntimeAdapter:
                 session_root,
                 trace_id=trace_id,
                 owner_principal=owner_principal,
+                model_resolution=model_resolution,
             )
             record = RuntimeSession(
                 session_id=session_id,
                 trace_id=trace_id,
                 harness=harness,
                 owner_principal=owner_principal,
+                model_resolution=model_resolution,
             )
             self._sessions[session_id] = record
 
@@ -152,9 +167,9 @@ class RuntimeAdapter:
             raise
 
     def submit_prompt(self, session_id: str, content: str, *, require_model_key: bool = False) -> str:
-        if require_model_key and not self._model_api_key:
-            raise ModelCredentialUnavailable("the configured model provider has no credential")
         record = self._get(session_id)
+        if require_model_key and not record.model_resolution.get("api_key"):
+            raise ModelCredentialUnavailable("the configured model provider has no credential")
         with record.lock:
             if record.status not in SessionStatus.PROMPTABLE or record.active_run is not None:
                 raise SessionConflict(
@@ -268,6 +283,7 @@ class RuntimeAdapter:
             contained_session_path(self._session_root, record.session_id),
             trace_id=record.trace_id,
             owner_principal=record.owner_principal,
+            model_resolution=record.model_resolution,
         )
         try:
             harness.start()
@@ -366,6 +382,7 @@ class RuntimeAdapter:
         *,
         trace_id: str,
         owner_principal: str | None,
+        model_resolution: dict[str, object],
     ) -> DeepSeekHarness:
         environment = {
             "BYQ_MCP_URL": os.environ.get("BYQ_MCP_URL", "http://mcp:8300/mcp/v1"),
@@ -384,11 +401,12 @@ class RuntimeAdapter:
         # The provider credential enters only the adapter-owned SDK child
         # environment. It is never returned in readiness, lifecycle responses,
         # trace payloads, or exception details.
-        if self._model_api_key:
-            environment["DEEPSEEK_API_KEY"] = self._model_api_key
+        model_api_key = model_resolution.get("api_key")
+        if isinstance(model_api_key, str) and model_api_key:
+            environment["DEEPSEEK_API_KEY"] = model_api_key
         config = DeepSeekHarnessConfig(
-            provider=self._provider,
-            model=self._model,
+            provider=str(model_resolution.get("provider") or self._provider),
+            model=str(model_resolution.get("model") or self._model),
             cordis=str(self._composition),
             session_root=str(session_root),
             launch_args_override=self.runtime_command,
@@ -397,6 +415,59 @@ class RuntimeAdapter:
             shutdown_timeout_seconds=2.0,
         )
         return DeepSeekHarness(config=config)
+
+    def _resolve_model(
+        self,
+        *,
+        owner_principal: str | None,
+        session_id: str,
+        trace_id: str,
+    ) -> dict[str, object]:
+        fallback: dict[str, object] = {
+            "source": "environment",
+            "provider": self._provider,
+            "model": self._model,
+        }
+        if self._model_api_key:
+            fallback["api_key"] = self._model_api_key
+        if not owner_principal or not self._resolver_token:
+            return fallback
+        try:
+            response = httpx.post(
+                f"{self._backend_url}/internal/credentials/model-resolution",
+                headers={"x-byq-credential-resolver-token": self._resolver_token},
+                json={
+                    "owner_principal": owner_principal,
+                    "agent_id": "byq-product",
+                    "session_id": session_id,
+                    "trace_id": trace_id,
+                },
+                timeout=3.0,
+            )
+            if response.status_code == 404:
+                return fallback
+            response.raise_for_status()
+            body = response.json()
+            resolution = body.get("resolution") if isinstance(body, dict) else None
+            if not isinstance(resolution, dict):
+                raise ModelCredentialUnavailable("credential resolver returned an invalid response")
+            provider = resolution.get("provider")
+            model = resolution.get("model")
+            api_key = resolution.get("api_key")
+            if not all(isinstance(value, str) and value for value in (provider, model, api_key)):
+                raise ModelCredentialUnavailable("credential resolver returned an invalid response")
+            return {
+                "source": "user_binding",
+                "provider": provider,
+                "model": model,
+                "api_key": api_key,
+            }
+        except ModelCredentialUnavailable:
+            raise
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            # A configured resolver is authoritative. Only an explicit 404
+            # means no personal selection and permits bootstrap fallback.
+            raise ModelCredentialUnavailable("selected model binding is unavailable") from exc
 
     def _on_notification(self, record: RuntimeSession, notification: Notification) -> None:
         with record.lock:

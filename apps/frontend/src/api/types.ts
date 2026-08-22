@@ -193,8 +193,50 @@ export interface UserProfile {
 export interface ModelSettings {
   provider: string;
   configured: boolean;
-  models: Array<Record<string, unknown>>;
+  models: Array<{ provider: string; model: string; display_name: string; reasoning_supported: boolean }>;
+  agents: Array<{ agent_id: string; name: string }>;
+  credential_items: ModelCredential[];
+  profiles: ModelProfile[];
+  bindings: ModelBinding[];
+  audit: Array<Record<string, unknown>>;
+  encryption: { configured: boolean; status: string; envelope_version?: string };
   credentials: { masked: boolean; write_only: boolean };
+}
+
+export interface ModelCredential {
+  credential_id: string;
+  provider: string;
+  label: string;
+  status: "active" | "disabled" | "revoked";
+  configured: boolean;
+  masked: string;
+  version: number;
+  updated_at: string;
+}
+
+export interface ModelProfile {
+  profile_id: string;
+  credential_id: string;
+  key_name: string;
+  display_name: string;
+  provider: string;
+  model: string;
+  temperature: number;
+  reasoning_enabled: boolean;
+  status: string;
+  available: boolean;
+  version: number;
+}
+
+export interface ModelBinding {
+  agent_id: string;
+  agent_name: string;
+  profile_id: string | null;
+  profile_name?: string | null;
+  model?: string | null;
+  effective_source: "personal" | "system_default";
+  available: boolean;
+  version: number;
 }
 
 export interface AssetSummary {
@@ -226,12 +268,36 @@ export interface AgentPolicyStatus {
     max_auto_executions_per_hour: number;
     max_auto_failures_per_hour: number;
   };
+  rules: AgentPolicyRule[];
+  presets: AgentPolicyPreset[];
+  audit: Array<Record<string, unknown>>;
   approval_inbox: { pending: number };
 }
 
+export interface AgentPolicyRule {
+  rule_id: string;
+  name: string;
+  description: string;
+  action: string;
+  agent_id: string;
+  decision_mode: string;
+  risk_level: string;
+  priority: number;
+  enabled: boolean;
+  version: number;
+}
+
+export interface AgentPolicyPreset {
+  preset_id: string;
+  name: string;
+  description: string;
+  rules: Array<Record<string, unknown>>;
+}
+
 export interface AssetImportReport {
-  imported: { pools: number; paper_accounts: number };
-  skipped: { strategies: number; backtests: number; reason: string };
+  imported: { strategies: number; backtests: number; pools: number; paper_accounts: number };
+  source_owner_reused: false;
+  identity_policy: string;
   errors: Array<{ kind: string; message: string }>;
 }
 
