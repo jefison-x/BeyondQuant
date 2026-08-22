@@ -529,3 +529,22 @@ contracts, persistence, identities, Product API, and Runtime Adapter
 boundaries. The Community repository remained read-only. The completed
 checklist, real Product API flow, and Chrome DevTools MCP evidence are under
 `docs/evidence/phase-37/`.
+
+## Phase 39 Data Center / Data Sync pre-implementation audit
+
+The read-only Community `DataSourceConfig.vue`, `DataSync.vue`, data-source
+schemas/models/routes, sync-task model, coverage service, scheduler tests, and
+sync-job state-machine tests were inspected before implementation. Community
+is interaction and invariant evidence only; no old provider registry, ORM,
+scheduler, cache, database, or source code is copied.
+
+| Community capability | Reusable invariant / UX | Decision | ADR-0019 / Phase 39 boundary |
+|---|---|---|---|
+| Data-source list, masked configured state, replace/disable/revoke, connection test | Operators need an understandable source lifecycle without rereading the secret. | `REFACTOR` / `PORT_UX` | Tushare-only system credential in the ADR-0019 encrypted store; metadata-only Product projection and admin RBAC. |
+| Generic provider selector, arbitrary endpoint and provider registry | None under the accepted provider/security boundary. | `DROP` / `REPLACE` | Fixed BYQ Tushare contract and deployment-owned endpoint; BaoStock, AKShare, Yahoo and arbitrary URLs are absent. |
+| Sync form and per-symbol progress/result table | Bounded symbol/date scope, explicit job status, per-symbol outcome, and durable history are useful. | `REFACTOR` / `PORT_UX` / `PORT_TESTS` | Idempotent BYQ PostgreSQL jobs execute through the Backend-owned adapter and import normalized daily bars into `MarketDataStore`. |
+| Community static stock pools and fake 50% progress | None; they are placeholder behavior. | `DROP` | Product UI uses only real Product API job and persisted result projections. |
+| Scheduler leases/retries and broad multi-dataset jobs | Useful future worker evidence, but outside the Phase 39 bounded daily-bar job. | `REFERENCE_ONLY` | No old scheduler/runtime is copied; Phase 39 keeps a bounded Backend execution seam and durable job state. |
+| Market coverage table and audit UX | Report observed row/symbol/date bounds and quality issues; do not infer complete history without calendar/lifecycle evidence. | `PORT_LOGIC` / `PORT_UX` | PostgreSQL aggregate audit explicitly sets `completeness_claimed=false`; source and OHLC issues are counted. |
+| Community PostgreSQL/Redis cache and physical migration paths | None as an authoritative store. | `REFERENCE_ONLY` / `DROP` | BYQ PostgreSQL is authoritative; Redis assumptions and physical Community storage reuse remain prohibited. |
+| BaoStock and AKShare rows/adapters/fallbacks | None. | `DROP` | No dependency, adapter, configuration, row, fallback, or compatibility path. |

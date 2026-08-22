@@ -525,12 +525,74 @@ export interface OperationsBudgetUpdate {
 }
 
 export interface DataCenterStatus {
+  schema_version: "data-center.v1";
   migration: string;
-  datasets: Array<Record<string, unknown>>;
-  provider: string;
+  provider: "tushare";
+  legacy_providers: [];
   quality: string;
-  provider_status: {
+  source: {
     configured: boolean;
-    sync: string;
+    effective_source: "credential_store" | "environment" | "ambiguous" | "none";
+    credentials: DataSourceCredential[];
+    encryption: { configured: boolean; status: string; envelope_version?: string };
+    secrets_exposed: false;
+    can_manage: boolean;
   };
+  jobs: DataSyncJob[];
+  coverage: DataCoverageAudit;
+}
+
+export interface DataSourceCredential extends ModelCredential {
+  purpose: "tushare_token";
+  scope: "system";
+}
+
+export interface DataSyncSymbolResult {
+  symbol: string;
+  status: "completed" | "failed";
+  rows_received?: number;
+  rows_inserted?: number;
+  rows_kept?: number;
+  date_min?: string | null;
+  date_max?: string | null;
+  error_code?: string;
+  message?: string;
+}
+
+export interface DataSyncJob {
+  job_id: string;
+  provider: "tushare";
+  mode: "range" | "incremental";
+  symbols: string[];
+  start_date: string;
+  end_date: string;
+  status: "queued" | "running" | "completed" | "partial" | "failed";
+  progress: number;
+  rows_received: number;
+  rows_inserted: number;
+  rows_kept: number;
+  symbol_results: DataSyncSymbolResult[];
+  error_code?: string | null;
+  error_message?: string | null;
+  requested_by: string;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  updated_at: string;
+}
+
+export interface DataCoverageAudit {
+  checked_at: string;
+  provider: "tushare";
+  scope: "persisted_observations";
+  quality: "empty" | "observed" | "issues";
+  completeness_claimed: false;
+  row_count: number;
+  symbol_count: number;
+  date_min?: string | null;
+  date_max?: string | null;
+  source_issues: number;
+  ohlc_issues: number;
+  groups: Array<Record<string, string | number | null>>;
+  symbols: Array<{ symbol: string; row_count: number; date_min: string; date_max: string }>;
 }

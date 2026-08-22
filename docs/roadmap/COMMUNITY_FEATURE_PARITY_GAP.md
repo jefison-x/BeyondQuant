@@ -161,8 +161,10 @@ workbenches are placeholders or missing.
 Community: data-source configuration, test connection, cache status, sync jobs,
 and coverage.
 
-Current BYQ: `PARTIAL` provider/migration/quality status; missing source
-configuration, sync job, and coverage detail.
+Current BYQ: `REDESIGNED_PASS` for Phase 39: administrator-only encrypted
+Tushare credential lifecycle and test, bounded durable sync jobs with
+per-symbol outcomes, canonical PostgreSQL writes, and honest observed coverage
+and quality detail are verified through Product API and Chrome MCP.
 
 ### Shared components
 

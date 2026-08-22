@@ -22,7 +22,7 @@ Detailed gaps are in
 | Assets | PARTIAL | Asset index and config-asset import/export exist; strategy/backtest re-import is not implemented. |
 | Agent Policy | PARTIAL | Personal approval preferences persist through Product API; presets and rule CRUD remain incomplete. |
 | Operations | PARTIAL | Safe status and admin user/approval projections exist; most operations workbenches are placeholders or missing. |
-| Data Center | PARTIAL | Provider capability (masked) and sync status are real; data-source config and sync jobs remain incomplete. |
+| Data Center | REDESIGNED_PASS | Tushare-only encrypted credential lifecycle, bounded test/sync, durable per-symbol jobs and honest PostgreSQL coverage audit are real and Chrome-verified. |
 | Shared components | PARTIAL | Shell/chart/metric/loading/empty/error exist; deeper Community components are missing. |
 
 ## Release conclusion
@@ -33,7 +33,7 @@ explicitly bounded: the
 strategy-to-backtest signal producer (D-0002, needs a producer ADR), model
 credential CRUD, asset strategy/backtest re-import, agent policy presets/rule
 CRUD, operations
-workbenches, and data sync jobs. The v1.0 RC gate
+workbenches. The v1.0 RC gate
 is **not eligible for review** until Phases 36–40 close these items (or record
 an accepted intentional DROP), the parity matrix has no unexplained PARTIAL,
 and a real-Product-API, no-mock, multi-user golden journey passes.

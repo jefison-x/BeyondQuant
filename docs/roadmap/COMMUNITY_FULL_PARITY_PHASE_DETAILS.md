@@ -192,7 +192,9 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   single store); coverage=`PORT_UX`.
 - Estimate: 11 person-days (L).
 - Exit criteria: configure Tushare source, trigger sync, view coverage and
-  job status; Chrome evidence.
+  job status; Chrome evidence. **Satisfied 2026-08-22:** durable Product API,
+  PostgreSQL persistence, desktop/mobile Chrome evidence and Community
+  checklist are recorded under `docs/evidence/phase-39/`.
 
 ---
 
@@ -221,7 +223,7 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   Agent-specific components.
 - Phase 37 → complete under ADR-0019; Phase 40 may generalize its proven
   component later.
-- Phase 39 → reuses Accepted ADR-0019 after preceding phase gates.
+- Phase 39 → complete under Accepted ADR-0019.
 - Phase 38 → complete under ADR-0019 + ADR-0022; Phase 40 generalizes later.
 - Phase 32 wizard → ADR-0017 (separate from this table; slice already
   tracked in PR #76).

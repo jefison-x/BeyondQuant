@@ -43,7 +43,24 @@ paths:
   /api/product/data/status:
     get: {summary: Return provider and migration status without credentials., responses: *okResponses}
   /api/product/data-center/status:
-    get: {summary: Return the browser-safe data-center capability projection., responses: *okResponses}
+    get: {summary: Return Tushare source metadata, sync history, and observed PostgreSQL coverage without secrets., responses: *okResponses}
+  /api/product/data-center/source/credentials:
+    post: {summary: Create the admin-only write-only Tushare system credential., responses: *createdResponses}
+  /api/product/data-center/source/credentials/{credential_id}:
+    parameters: [{$ref: "#/components/parameters/CredentialId"}]
+    put: {summary: Replace or enable/disable the admin-only Tushare credential with optimistic concurrency., responses: *okResponses}
+  /api/product/data-center/source/credentials/{credential_id}/revoke:
+    parameters: [{$ref: "#/components/parameters/CredentialId"}]
+    post: {summary: Revoke the Tushare credential and erase its encrypted envelope., responses: *okResponses}
+  /api/product/data-center/source/test:
+    post: {summary: Test the effective Tushare credential through one bounded daily request., responses: *okResponses}
+  /api/product/data-center/sync-jobs:
+    post: {summary: Create and execute an admin-only bounded durable Tushare sync job., responses: *createdResponses}
+  /api/product/data-center/sync-jobs/{job_id}:
+    parameters: [{$ref: "#/components/parameters/JobId"}]
+    get: {summary: Get one durable Tushare sync job and its normalized symbol results., responses: *okResponses}
+  /api/product/data-center/coverage:
+    get: {summary: Return an honest audit of persisted observed market-data coverage and quality., responses: *okResponses}
   /api/product/operations/status:
     get: {summary: Return the admin-only browser-safe operations projection., responses: *okResponses}
   /api/product/operations/budget:
@@ -270,6 +287,7 @@ components:
     EntityType: {name: entity_type, in: path, required: true, schema: {type: string, enum: [tasks, experiments, artifacts]}}
     EntityId: {name: entity_id, in: path, required: true, schema: {type: string}}
     JobId: {name: job_id, in: path, required: true, schema: {type: string}}
+    CredentialId: {name: credential_id, in: path, required: true, schema: {type: string}}
     ArtifactId: {name: artifact_id, in: path, required: true, schema: {type: string}}
     StrategyId: {name: strategy_id, in: path, required: true, schema: {type: string}}
     ApprovalId: {name: approval_id, in: path, required: true, schema: {type: string}}

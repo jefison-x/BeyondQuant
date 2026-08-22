@@ -935,6 +935,58 @@ class CredentialStore(PgStoreMixin):
             "api_key": secret,
         }
 
+    def resolve_tushare(self) -> dict[str, object] | None:
+        """Resolve the one active system Tushare credential inside Backend.
+
+        This method is deliberately not exposed through an HTTP resolver.  It
+        is consumed only by the Backend-owned provider adapter (ADR-0019).
+        Multiple active credentials fail closed instead of selecting one by
+        recency and silently charging an unexpected Tushare account.
+        """
+        rows = self._execute(
+            """SELECT * FROM credentials
+               WHERE purpose = 'tushare_token' AND provider = 'tushare'
+                 AND scope = 'system' AND status = 'active'
+               ORDER BY updated_at DESC, credential_id DESC LIMIT 2"""
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise CredentialUnavailable("multiple active Tushare credentials are configured")
+        row = rows[0]
+        secret = self.cipher.decrypt(
+            {
+                "envelope_version": row["envelope_version"],
+                "key_id": row["envelope_key_id"],
+                "nonce": row["envelope_nonce"],
+                "ciphertext": row["envelope_ciphertext"],
+            },
+            aad=_aad(
+                str(row["credential_id"]),
+                "tushare_token",
+                "tushare",
+                "system",
+                None,
+            ),
+        )
+        return {
+            "source": "credential_store",
+            "credential_id": row["credential_id"],
+            "version": row["version"],
+            "token": secret,
+        }
+
+    def assert_tushare_create_allowed(self, idempotency_key: object) -> None:
+        """Allow a create replay, but reject a second live system token."""
+        key = _text(idempotency_key, field="idempotency_key", maximum=128)
+        rows = self._execute(
+            """SELECT idempotency_key FROM credentials
+               WHERE purpose = 'tushare_token' AND provider = 'tushare'
+                 AND scope = 'system' AND status <> 'revoked' LIMIT 2"""
+        )
+        if any(row["idempotency_key"] != key for row in rows):
+            raise CredentialConflict("replace or revoke the existing Tushare credential")
+
     def rewrap_active(self, *, actor: object, request_id: object) -> dict[str, int]:
         actor_principal = _principal(actor, field="actor_principal")
         request_id = _text(request_id, field="request_id", maximum=128)

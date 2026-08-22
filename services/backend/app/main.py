@@ -1,7 +1,9 @@
 import os
 import re
+import time
+from dataclasses import replace
 
-from fastapi import FastAPI
+from fastapi import BackgroundTasks, FastAPI
 from fastapi import HTTPException, Request
 from collections.abc import Callable
 from typing import Any
@@ -12,8 +14,16 @@ from .data_provider import (
     ProviderCredentialsMissing,
     ProviderError,
     ProviderRateLimited,
+    TushareConfig,
     TushareProvider,
 )
+from .data_sync import (
+    DataSyncConflict,
+    DataSyncNotFound,
+    DataSyncPersistenceError,
+    DataSyncStore,
+)
+from .market_data import MarketDataStore
 from .credentials import (
     MODEL_CATALOG,
     CredentialConflict,
@@ -117,7 +127,9 @@ SERVICE = "byq-backend"
 VERSION = "0.1.0"
 
 app = FastAPI(title="BeyondQuant Backend", version=VERSION)
-data_provider = TushareProvider.from_env()
+# Tests may install an explicit provider at this seam. Production resolves the
+# active database credential at call time so rotation takes effect immediately.
+data_provider: TushareProvider | None = None
 research_store = ResearchStore.from_env()
 agent_store = AgentResearchStore.from_env()
 learning_store = LearningLoopStore.from_env(research_store)
@@ -127,6 +139,8 @@ user_store = UserAuthStore.from_env()
 user_policy_store = UserPolicyStore.from_env()
 credential_store = CredentialStore.from_env()
 operations_store = OperationsStore.from_env()
+market_data_store = MarketDataStore.from_env()
+data_sync_store = DataSyncStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
     user_store.ensure_bootstrap_admin(
@@ -135,6 +149,28 @@ if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTST
     )
 backtest_store = BacktestJobStore.from_env()
 backtest_objects = LocalObjectStore.from_env()
+
+
+def _resolved_tushare_provider() -> tuple[TushareProvider, dict[str, object]]:
+    if data_provider is not None:
+        return data_provider, {"source": "test_override", "credential_id": None, "version": None}
+    try:
+        resolved = credential_store.resolve_tushare()
+    except CredentialUnavailable as error:
+        raise ProviderCredentialsMissing("Tushare credential resolution is unavailable") from error
+    if resolved is not None:
+        token = str(resolved["token"])
+        metadata = {
+            "source": "credential_store",
+            "credential_id": resolved["credential_id"],
+            "version": resolved["version"],
+        }
+    else:
+        token = os.environ.get("TUSHARE_TOKEN", "").strip()
+        if not token:
+            raise ProviderCredentialsMissing("Tushare credentials are not configured")
+        metadata = {"source": "environment", "credential_id": None, "version": None}
+    return TushareProvider(replace(TushareConfig.from_env(), token=token)), metadata
 
 
 def _operations_call(call: Callable[[], dict[str, object]]) -> dict[str, object]:
@@ -202,9 +238,8 @@ def daily_data(
             start_date=start_date,
             end_date=end_date,
         ).normalized()
-        result = data_provider.fetch_daily(
-            request
-        )
+        provider, _metadata = _resolved_tushare_provider()
+        result = provider.fetch_daily(request)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except ProviderCredentialsMissing as error:
@@ -220,6 +255,205 @@ def daily_data(
         "data": [bar.as_dict() for bar in result.bars],
         "provenance": result.provenance.as_dict(),
     }
+
+
+def _require_data_admin(request: Request) -> tuple[str, str]:
+    actor = request.headers.get("x-byq-actor-principal", "").strip()
+    role = request.headers.get("x-byq-actor-role", "").strip()
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="admin role required")
+    if not actor:
+        raise HTTPException(status_code=401, detail="actor principal is required")
+    return actor, role
+
+
+def _data_sync_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except DataSyncNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except DataSyncConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except (DataSyncPersistenceError, CredentialUnavailable, CredentialPersistenceError) as error:
+        raise HTTPException(status_code=503, detail="data synchronization is unavailable") from error
+
+
+def _source_credentials(actor: str, role: str) -> list[dict[str, object]]:
+    return [
+        item
+        for item in credential_store.list_credentials(actor, actor_role=role)
+        if item.get("purpose") == "tushare_token" and item.get("provider") == "tushare"
+    ]
+
+
+@app.get("/v1/data-center/status")
+def data_center_status(request: Request) -> dict[str, object]:
+    actor = request.headers.get("x-byq-actor-principal", "").strip()
+    role = request.headers.get("x-byq-actor-role", "user").strip()
+    if not actor:
+        raise HTTPException(status_code=401, detail="actor principal is required")
+    credentials = _source_credentials(actor, role) if role == "admin" else []
+    active = [item for item in credentials if item.get("status") == "active"]
+    jobs = data_sync_store.list_jobs(limit=50) if role == "admin" else []
+    coverage = data_sync_store.coverage_audit(limit=100)
+    environment_configured = bool(os.environ.get("TUSHARE_TOKEN", "").strip())
+    return {
+        "schema_version": "data-center.v1",
+        "provider": "tushare",
+        "legacy_providers": [],
+        "source": {
+            "configured": len(active) == 1 or (not active and environment_configured),
+            "effective_source": "credential_store" if len(active) == 1 else "ambiguous" if len(active) > 1 else "environment" if environment_configured else "none",
+            "credentials": credentials,
+            "encryption": credential_store.encryption_status(),
+            "secrets_exposed": False,
+            "can_manage": role == "admin",
+        },
+        "jobs": jobs,
+        "coverage": coverage,
+        "migration": "ready" if coverage["row_count"] else "not_started",
+        "quality": coverage["quality"],
+    }
+
+
+@app.post("/v1/data-sources/tushare/credentials", status_code=201)
+def create_tushare_credential(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    actor, role = _require_data_admin(request)
+
+    def operation() -> dict[str, object]:
+        credential_store.assert_tushare_create_allowed(payload.get("idempotency_key"))
+        return {"credential": credential_store.create_credential(
+            actor,
+            {**payload, "purpose": "tushare_token", "provider": "tushare", "scope": "system"},
+            actor=actor,
+            actor_role=role,
+        )}
+
+    return _credential_call(operation)
+
+
+@app.put("/v1/data-sources/tushare/credentials/{credential_id}")
+def update_tushare_credential(
+    credential_id: str,
+    payload: dict[str, Any],
+    request: Request,
+) -> dict[str, object]:
+    actor, role = _require_data_admin(request)
+
+    def operation() -> dict[str, object]:
+        existing = credential_store.get_credential(credential_id, owner=actor, actor_role=role)
+        if existing.get("purpose") != "tushare_token" or existing.get("provider") != "tushare":
+            raise CredentialNotFound("Tushare credential not found")
+        return {"credential": credential_store.update_credential(
+            credential_id, actor, payload, actor=actor, actor_role=role,
+        )}
+
+    return _credential_call(operation)
+
+
+@app.post("/v1/data-sources/tushare/credentials/{credential_id}/revoke")
+def revoke_tushare_credential(
+    credential_id: str,
+    payload: dict[str, Any],
+    request: Request,
+) -> dict[str, object]:
+    actor, role = _require_data_admin(request)
+
+    def operation() -> dict[str, object]:
+        existing = credential_store.get_credential(credential_id, owner=actor, actor_role=role)
+        if existing.get("purpose") != "tushare_token" or existing.get("provider") != "tushare":
+            raise CredentialNotFound("Tushare credential not found")
+        return {"credential": credential_store.revoke_credential(
+            credential_id, actor, actor=actor,
+            expected_version=payload.get("expected_version"),
+            request_id=payload.get("request_id"), actor_role=role,
+        )}
+
+    return _credential_call(operation)
+
+
+@app.post("/v1/data-sources/tushare/test")
+def test_tushare_connection(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_data_admin(request)
+    allowed = {"symbol", "trade_date"}
+    unknown = sorted(set(payload) - allowed)
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"connection test has unknown fields: {', '.join(unknown)}")
+    try:
+        provider, metadata = _resolved_tushare_provider()
+        check = DailyRequest(
+            ts_code=str(payload.get("symbol", "000001.SZ")),
+            trade_date=str(payload.get("trade_date", "20240102")),
+        ).normalized()
+        started = time.monotonic()
+        result = provider.fetch_daily(check)
+        latency_ms = round((time.monotonic() - started) * 1000)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except ProviderCredentialsMissing as error:
+        raise HTTPException(status_code=409, detail="Tushare credentials are not configured") from error
+    except ProviderAuthorizationError as error:
+        raise HTTPException(status_code=422, detail="Tushare rejected the configured credentials") from error
+    except ProviderRateLimited as error:
+        raise HTTPException(status_code=429, detail="Tushare request was rate limited") from error
+    except ProviderError as error:
+        raise HTTPException(status_code=502, detail="Tushare connection test failed") from error
+    return {
+        "test": {
+            "status": "passed",
+            "provider": "tushare",
+            "endpoint": "daily",
+            "credential_source": metadata["source"],
+            "credential_id": metadata["credential_id"],
+            "credential_version": metadata["version"],
+            "row_count": len(result.bars),
+            "latency_ms": latency_ms,
+            "checked_at": result.provenance.retrieved_at,
+        }
+    }
+
+
+@app.post("/v1/data-sync/jobs", status_code=201)
+def create_data_sync_job(
+    payload: dict[str, Any],
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> dict[str, object]:
+    actor, _role = _require_data_admin(request)
+
+    def operation() -> dict[str, object]:
+        job, created = data_sync_store.create_job(payload, actor=actor)
+        if created or job["status"] == "queued":
+            background_tasks.add_task(
+                data_sync_store.run_job,
+                job["job_id"],
+                provider_factory=lambda: _resolved_tushare_provider()[0],
+                market_store=market_data_store,
+            )
+        return {"job": job, "created": created}
+
+    return _data_sync_call(operation)
+
+
+@app.get("/v1/data-sync/jobs")
+def list_data_sync_jobs(request: Request, limit: int = 50) -> dict[str, object]:
+    _require_data_admin(request)
+    return _data_sync_call(lambda: {"jobs": data_sync_store.list_jobs(limit=limit)})
+
+
+@app.get("/v1/data-sync/jobs/{job_id}")
+def get_data_sync_job(job_id: str, request: Request) -> dict[str, object]:
+    _require_data_admin(request)
+    return _data_sync_call(lambda: {"job": data_sync_store.get_job(job_id)})
+
+
+@app.get("/v1/data-center/coverage")
+def get_data_coverage(request: Request, limit: int = 100) -> dict[str, object]:
+    if not request.headers.get("x-byq-actor-principal", "").strip():
+        raise HTTPException(status_code=401, detail="actor principal is required")
+    return _data_sync_call(lambda: {"coverage": data_sync_store.coverage_audit(limit=limit)})
 
 
 def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
