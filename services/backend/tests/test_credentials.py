@@ -186,6 +186,47 @@ def test_profile_binding_resolution_and_rotation_fail_closed() -> None:
     store.close()
 
 
+def test_system_tushare_resolution_is_backend_only_and_fails_closed_when_ambiguous() -> None:
+    store = _store()
+    first = store.create_credential(
+        "admin",
+        {
+            "purpose": "tushare_token",
+            "provider": "tushare",
+            "scope": "system",
+            "label": "系统行情",
+            "secret": "tushare-system-token-abcd",
+            "idempotency_key": "tushare-create-1",
+        },
+        actor="admin",
+        actor_role="admin",
+    )
+    assert store.resolve_tushare() == {
+        "source": "credential_store",
+        "credential_id": first["credential_id"],
+        "version": 1,
+        "token": "tushare-system-token-abcd",
+    }
+    assert "tushare-system-token" not in json.dumps(store.list_credentials("admin", actor_role="admin"))
+
+    store.create_credential(
+        "admin",
+        {
+            "purpose": "tushare_token",
+            "provider": "tushare",
+            "scope": "system",
+            "label": "冲突凭据",
+            "secret": "tushare-other-token-wxyz",
+            "idempotency_key": "tushare-create-2",
+        },
+        actor="admin",
+        actor_role="admin",
+    )
+    with pytest.raises(CredentialUnavailable, match="multiple active"):
+        store.resolve_tushare()
+    store.close()
+
+
 def test_backend_model_routes_never_echo_secret_and_resolver_is_private(monkeypatch) -> None:
     store = _store()
     monkeypatch.setattr(main, "credential_store", store)

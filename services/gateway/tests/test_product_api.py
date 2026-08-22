@@ -694,15 +694,62 @@ def test_product_agent_policy_get_and_update(monkeypatch) -> None:
 def test_product_data_center_status_exposes_masked_provider_capability(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
-    monkeypatch.setattr(product_api.os, "environ", {**product_api.os.environ, "TUSHARE_TOKEN": "ci-test"})
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "schema_version": "data-center.v1", "provider": "tushare", "legacy_providers": [],
+                "migration": "not_started", "quality": "empty",
+                "source": {"configured": True, "effective_source": "credential_store", "credentials": [{"masked": "configured"}], "secrets_exposed": False, "can_manage": False},
+                "jobs": [], "coverage": {"quality": "empty", "row_count": 0, "symbol_count": 0, "groups": [], "symbols": []},
+            }
+
+    monkeypatch.setattr(product_api.httpx, "request", lambda *args, **kwargs: FakeResponse())
     client = TestClient(main.app)
     response = client.get(
         "/api/product/data-center/status",
         headers={"Authorization": "Bearer product-test-token"},
     )
     assert response.status_code == 200
-    assert response.json()["provider_status"] == {"configured": True, "sync": "not_started"}
-    assert "ci-test" not in response.text
+    assert response.json()["source"]["configured"] is True
+    assert response.json()["source"]["effective_source"] == "credential_store"
+    assert "token" not in response.text.lower()
+    assert "ciphertext" not in response.text.lower()
+
+
+def test_product_data_center_writes_are_admin_only_and_use_backend_boundary(monkeypatch) -> None:
+    captured: list[dict[str, object]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"job": {"job_id": "sync_1", "status": "completed"}, "created": True}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured.append({"method": method, "url": url, **kwargs})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api, "resolve_user", lambda _request: {"username": "admin", "role": "admin"})
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    client.cookies.set(product_api.SESSION_COOKIE, "session_admin")
+    response = client.post("/api/product/data-center/sync-jobs", json={
+        "mode": "range", "symbols": ["000001.SZ"], "start_date": "20240102",
+        "end_date": "20240112", "idempotency_key": "gateway-sync-1",
+    })
+    assert response.status_code == 201
+    assert str(captured[0]["url"]).endswith("/v1/data-sync/jobs")
+    assert captured[0]["headers"] == {"x-byq-actor-principal": "admin", "x-byq-actor-role": "admin"}
+
+    monkeypatch.setattr(product_api, "resolve_user", lambda _request: {"username": "alice", "role": "user"})
+    denied = client.post("/api/product/data-center/source/test", json={"symbol": "000001.SZ", "trade_date": "20240102"})
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "product_forbidden"
 
 
 def test_product_asset_import_rejects_secret_fields(monkeypatch) -> None:

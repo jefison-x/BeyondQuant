@@ -1,8 +1,9 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-completed project stage is **Phase 38**; the next phase is
-**Phase 39 — Data Center / Data Sync depth**, ready under Accepted ADR-0019.
+completed project stage is **Phase 39**; the next phase is
+**Phase 40 — Shared components and final parity closure**, blocked until the
+signal-producer boundary has an Accepted ADR.
 The v1.0
 release-candidate gate is not yet satisfied. See
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
@@ -37,14 +38,16 @@ BYQ does not fork DSH. The DSH version is pinned through an explicit dependency 
 - Nine responsive administrator operations workbenches backed by bounded
   Product API projections, normalized DSH runtime/usage accounting, and
   audited monitoring thresholds.
+- Tushare-only Data Center with encrypted write-only credentials, bounded
+  durable sync jobs and honest PostgreSQL coverage/quality audit.
 
 ## Current limitations
 
 - A BYQ-owned strategy-source → `signal_snapshot` producer is not yet defined;
   the browser cannot complete a newly authored strategy-to-backtest journey.
-- Data Center sync depth and final shared-component/parity closure remain in
-  Phases 39–40.
-- Phase 39 is the next ordered product-depth phase; ADR-0019 is Accepted.
+- Final shared-component/parity closure remains in Phase 40.
+- Phase 40 cannot implement D-0002 until the signal-producer boundary has a
+  dedicated Accepted ADR.
 - The project is not yet eligible for the BeyondQuant Next v1.0 RC gate.
 
 The base Compose topology requires internal service secrets such as

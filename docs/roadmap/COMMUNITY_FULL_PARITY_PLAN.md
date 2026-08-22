@@ -152,6 +152,8 @@ document supplies the parity-batch overview and dependency map.
 - Gap: Tushare-only data-source CRUD, test connection, sync jobs, coverage.
 - Dependency: ADR-0019.
 - Estimate: 11 person-days (L).
+- Status: complete 2026-08-22 with real Product API desktop/mobile Chrome
+  evidence and the Community checklist.
 
 ### Phase 40 — Shared components + final parity closure
 - Community: AppStateBlock, EntityPagination, GlobalApprovalCenter,
@@ -172,7 +174,7 @@ Phase 35 (paper trading) ── independent
 Phase 36 (agent)     ── complete under ADR-0018
 Phase 37 (my space)  ── complete under ADR-0019
 Phase 38 (operations) ── complete under ADR-0019 + ADR-0022
-Phase 39 (data center) ── ready under ADR-0019
+Phase 39 (data center) ── complete under ADR-0019
 ```
 
 “Independent” means independent of ADR-0018/0019 and Phase 40 components. It

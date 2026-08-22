@@ -3,9 +3,9 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 38**
-- Next phase: **Phase 39 — Data Center / Data Sync depth**, **READY** under
-  Accepted ADR-0019.
+- Current completed phase: **Phase 39**
+- Next phase: **Phase 40 — Shared components and final parity closure**,
+  **BLOCKED** until the signal-producer boundary has an Accepted ADR.
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -26,8 +26,8 @@ Codex session does not infer project state from commit history.
 - Accepted Stock Pool snapshot/lifecycle ADR: **ADR-0020**
 - Accepted Paper Trading account/lifecycle ADR: **ADR-0021**
 - Accepted Phase 38 component-ownership ADR: **ADR-0022**
-- Open architecture decisions: **none from the Phase 39 entry gate**.
-  ADR-0019 is Accepted.
+- Open architecture decisions: the Phase 40 signal-producer boundary for
+  D-0002 requires a dedicated Accepted ADR. ADR-0019 remains Accepted.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -147,6 +147,14 @@ Codex session does not infer project state from commit history.
   Redis controls, arbitrary SQL and direct runtime control do not cross the
   browser boundary. Desktop/mobile Chrome MCP evidence and the Community
   checklist are under `docs/evidence/phase-38/`. D-0007 is CLOSED.
+- Phase 39 (Data Center / Data Sync depth) completed: Tushare-only write-only
+  credential lifecycle and bounded connection testing use ADR-0019; durable
+  asynchronous jobs persist per-symbol outcomes and import canonical daily
+  bars into PostgreSQL with deterministic keep-existing semantics; coverage
+  reports observed bounds and validation issues without claiming calendar
+  completeness. Browser traffic stays on Product API, and desktop/mobile
+  Chrome MCP evidence plus the Community checklist are under
+  `docs/evidence/phase-39/`. D-0008 is CLOSED.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence, but
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` records substantial remaining
@@ -155,14 +163,15 @@ Codex session does not infer project state from commit history.
 - Product-depth foundations delivered: Backtest result workspace, Strategy,
   Stock Pool, Paper Trading, Agent workbench, personal Agent Policy,
   Operations, and Data Center. These surfaces are not all parity-complete.
-  Remaining items (signal producer for end-to-end strategy-to-backtest and
-  data sync jobs) are recorded
+  Remaining items (including the signal producer for end-to-end
+  strategy-to-backtest) are recorded
   in the V2 parity matrix, Deferred Items
   Registry, and Phases 34–40. They must close before the RC review gate.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active phase blocker: **none**. D-0008 is READY under Accepted ADR-0019. The
-  post-Phase 40 DSH Upgrade Lane is scheduled separately in
+- Active phase blocker: **Phase 40 requires an Accepted signal-producer ADR
+  before D-0002 implementation.** D-0008 is CLOSED. The post-Phase 40 DSH
+  Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.
 
 Git SHA is not phase state. The current clean baseline must always be derived

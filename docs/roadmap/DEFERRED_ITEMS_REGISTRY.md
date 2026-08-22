@@ -187,12 +187,14 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 
 ### D-0008 — Phase 39 Data Center / Data Sync depth
 - Phase: 39
-- Status: `READY`
+- Status: `CLOSED` (2026-08-22)
 - Precondition: ADR-0019. **Satisfied 2026-08-22.**
 - Content: Tushare-only data-source CRUD, test connection, sync jobs, coverage
   audit.
 - Acceptance: configure Tushare source, trigger sync, view coverage/job status;
-  Chrome evidence.
+  Chrome evidence. **Satisfied:** durable Product API flow, Backend credential
+  resolution, PostgreSQL job/data persistence, desktop/mobile Chrome evidence
+  and the Community checklist are recorded under `docs/evidence/phase-39/`.
 
 ## Dependency quick-reference (ADR → blocked entries)
 
@@ -201,7 +203,7 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 | ADR-0017 (`signal_snapshot`) | Accepted (2026-08-18) | D-0001 |
 | Signal-producer ADR (future) | not written | D-0002 |
 | ADR-0018 (WorkflowTrace cards) | Accepted (2026-08-22) | D-0005 (`CLOSED`) |
-| ADR-0019 (encrypted credentials) | Accepted (2026-08-22) | D-0006/D-0007 (`CLOSED`), D-0008 (`READY`) |
+| ADR-0019 (encrypted credentials) | Accepted (2026-08-22) | D-0006/D-0007/D-0008 (`CLOSED`) |
 | ADR-0022 (Phase 38 component ownership) | Accepted (2026-08-22) | D-0007 (`CLOSED`) |
 | Phase 40 shared components | planned | Later generalization for D-0005/D-0006/D-0007; not a prerequisite |
 

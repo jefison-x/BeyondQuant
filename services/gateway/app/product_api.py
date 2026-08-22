@@ -82,6 +82,20 @@ def _trusted_agent_headers(request: Request) -> dict[str, str]:
     }
 
 
+def _data_actor_headers(request: Request, *, require_admin: bool = False) -> dict[str, str]:
+    if SESSION_COOKIE in request.cookies:
+        user = resolve_user(request)
+        actor = str(user.get("username") or user.get("user_id") or "")
+        role = str(user.get("role") or "user")
+    else:
+        principal = _product_principal(request)
+        actor = principal.subject
+        role = "user"
+    if require_admin and role != "admin":
+        raise ProductError(403, "product_forbidden", "admin role required")
+    return {"x-byq-actor-principal": actor, "x-byq-actor-role": role}
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -626,17 +640,87 @@ def product_approval_decision(approval_id: str, request: Request, payload: dict[
 
 @router.get("/data-center/status")
 def product_data_center_status(request: Request) -> dict[str, object]:
-    _product_principal(request)
-    return {
-        "migration": "not_started",
-        "datasets": [],
-        "provider": "tushare",
-        "quality": "not_audited",
-        "provider_status": {
-            "configured": bool(os.environ.get("TUSHARE_TOKEN")),
-            "sync": "not_started",
-        },
-    }
+    return _backend_request(
+        "GET",
+        "/v1/data-center/status",
+        headers=_data_actor_headers(request),
+    )
+
+
+@router.post("/data-center/source/credentials", status_code=201)
+def product_tushare_credential_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    return _backend_request(
+        "POST",
+        "/v1/data-sources/tushare/credentials",
+        payload,
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.put("/data-center/source/credentials/{credential_id}")
+def product_tushare_credential_update(
+    credential_id: str,
+    request: Request,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    return _backend_request(
+        "PUT",
+        f"/v1/data-sources/tushare/credentials/{credential_id}",
+        payload,
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.post("/data-center/source/credentials/{credential_id}/revoke")
+def product_tushare_credential_revoke(
+    credential_id: str,
+    request: Request,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    return _backend_request(
+        "POST",
+        f"/v1/data-sources/tushare/credentials/{credential_id}/revoke",
+        payload,
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.post("/data-center/source/test")
+def product_tushare_connection_test(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    return _backend_request(
+        "POST",
+        "/v1/data-sources/tushare/test",
+        payload,
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.post("/data-center/sync-jobs", status_code=201)
+def product_data_sync_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    return _backend_request(
+        "POST",
+        "/v1/data-sync/jobs",
+        payload,
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.get("/data-center/sync-jobs/{job_id}")
+def product_data_sync_get(job_id: str, request: Request) -> dict[str, object]:
+    return _backend_request(
+        "GET",
+        f"/v1/data-sync/jobs/{job_id}",
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.get("/data-center/coverage")
+def product_data_coverage(request: Request) -> dict[str, object]:
+    return _backend_request(
+        "GET",
+        "/v1/data-center/coverage",
+        headers=_data_actor_headers(request),
+    )
 
 
 @router.get("/admin/users")

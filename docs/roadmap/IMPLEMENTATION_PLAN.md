@@ -1268,17 +1268,26 @@ control surface, Redis assumption, or direct internal-service endpoint. Real
 Product API desktop/mobile Chrome evidence and the Community checklist are
 stored under `docs/evidence/phase-38/`.
 
-### Phase 39 — Data Center / Data Sync depth (`READY`)
+### Phase 39 — Data Center / Data Sync depth (`COMPLETE`)
 
 Implement Tushare-only source configuration, connection test, sync jobs, and
 coverage audit after ADR-0019. BaoStock and AKShare remain DROP.
 
-### Phase 40 — Shared components and final parity closure (`PLANNED`)
+Delivered admin-only write-only Tushare credential lifecycle, bounded
+connection testing, durable/idempotent asynchronous daily-bar jobs with
+per-symbol outcomes, canonical PostgreSQL import, and honest observed coverage
+and quality audit. All browser calls use Product API; real desktop/mobile Chrome
+MCP evidence and the Community checklist are stored under
+`docs/evidence/phase-39/`.
+
+### Phase 40 — Shared components and final parity closure (`BLOCKED`)
 
 Finish reusable product components and resolve every transferred D-item,
 including the signal producer decision. Re-run the parity matrix with no
 unexplained PARTIAL/MISSING item and execute a real-Product-API, no-mock,
 multi-user golden journey before reopening the v1.0 RC gate.
+
+Entry blocker: accept a dedicated ADR for the D-0002 signal-producer boundary.
 
 ### Post-Phase 40 maintenance — DSH Upgrade Lane (`SCHEDULED`)
 

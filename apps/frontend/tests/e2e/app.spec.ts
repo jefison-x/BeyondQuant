@@ -464,7 +464,9 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   await openNav(page, "系统状态");
   await expect(page.getByRole("heading", { name: "系统状态" })).toBeVisible();
   await openNav(page, "数据中心");
-  await expect(page.getByRole("heading", { name: "数据中心" })).toBeVisible();
+  await expect(
+    page.getByRole("main").getByRole("heading", { name: "数据中心" }),
+  ).toBeVisible();
   await openNav(page, "研究/审批");
   await expect(page.getByRole("heading", { name: "研究/审批" })).toBeVisible();
 });
