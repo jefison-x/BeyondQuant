@@ -58,11 +58,11 @@ describe("settings api client", () => {
 
   it("exports and imports asset bundles", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ schema_version: "byq-workspace-assets-v1", assets: {} }), { status: 200 }),
+      new Response(JSON.stringify({ schema_version: "byq-workspace-assets-v2", assets: {}, manifest_sha256: "abc" }), { status: 200 }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const bundle = await exportAssets();
-    expect(bundle.schema_version).toBe("byq-workspace-assets-v1");
+    expect(bundle.schema_version).toBe("byq-workspace-assets-v2");
 
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ imported: { pools: 1, paper_accounts: 0 }, skipped: { strategies: 0, backtests: 0, reason: "research artifacts require validation or recomputation" }, errors: [] }), { status: 200 }),

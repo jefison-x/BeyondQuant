@@ -152,6 +152,86 @@ def test_configured_model_credential_is_scoped_to_the_owned_sdk_environment(
     adapter.release_session("s-1")
 
 
+def test_personal_model_binding_is_resolved_directly_without_public_exposure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    FakeHarness.reset()
+    monkeypatch.setattr(runtime_module, "DeepSeekHarness", FakeHarness)
+    monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
+    monkeypatch.setenv("BYQ_BACKEND_URL", "http://backend.test")
+    monkeypatch.setenv("BYQ_CREDENTIAL_RESOLVER_TOKEN", "resolver-test-only")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "system-fallback-must-not-win")
+    captured: dict[str, object] = {}
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "resolution": {
+                    "source": "user_binding",
+                    "provider": "deepseek-official",
+                    "model": "deepseek-reasoner",
+                    "api_key": "personal-provider-secret",
+                }
+            }
+
+    def post(url: str, **kwargs: object) -> Response:
+        captured["url"] = url
+        captured.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr(runtime_module.httpx, "post", post)
+    adapter = RuntimeAdapter()
+    adapter.create_session("s-1", "t-1", "alice")
+
+    assert captured["url"] == "http://backend.test/internal/credentials/model-resolution"
+    assert captured["headers"] == {"x-byq-credential-resolver-token": "resolver-test-only"}
+    assert captured["json"]["owner_principal"] == "alice"
+    config = FakeHarness.instances[0].config
+    assert config.provider == "deepseek-official"
+    assert config.model == "deepseek-reasoner"
+    assert config.env["DEEPSEEK_API_KEY"] == "personal-provider-secret"
+    assert "personal-provider-secret" not in str(adapter.readiness())
+    assert "personal-provider-secret" not in str(adapter.describe_session(adapter._get("s-1")))
+    adapter.release_session("s-1")
+
+
+def test_broken_personal_resolution_never_falls_back_to_system_key(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    FakeHarness.reset()
+    monkeypatch.setattr(runtime_module, "DeepSeekHarness", FakeHarness)
+    monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
+    monkeypatch.setenv("BYQ_CREDENTIAL_RESOLVER_TOKEN", "resolver-test-only")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "system-fallback-must-not-win")
+
+    class Response:
+        status_code = 409
+
+        def raise_for_status(self) -> None:
+            raise runtime_module.httpx.HTTPStatusError(
+                "conflict",
+                request=runtime_module.httpx.Request("POST", "http://backend"),
+                response=runtime_module.httpx.Response(409),
+            )
+
+    monkeypatch.setattr(runtime_module.httpx, "post", lambda *args, **kwargs: Response())
+    adapter = RuntimeAdapter()
+    with pytest.raises(ModelCredentialUnavailable):
+        adapter.create_session("s-1", "t-1", "alice")
+    assert FakeHarness.instances == []
+
+
 def test_product_context_is_scoped_to_the_owned_sdk_environment(adapter: RuntimeAdapter) -> None:
     adapter.create_session("s-1", "t-1", "alice")
     sdk_environment = FakeHarness.instances[0].config.env

@@ -298,7 +298,7 @@ test("my space pages render profile, models, assets, and agent policy", async ({
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ provider: "deepseek", configured: false, models: [], credentials: { masked: true, write_only: true } }),
+      body: JSON.stringify({ provider: "deepseek", configured: false, models: [], agents: [], credential_items: [], profiles: [], bindings: [], audit: [], encryption: { configured: true, status: "ready" }, credentials: { masked: true, write_only: true } }),
     }),
   );
   await page.route("**/api/product/settings/assets", (route) =>
@@ -315,6 +315,7 @@ test("my space pages render profile, models, assets, and agent policy", async ({
       body: JSON.stringify({
         platform_policy: { automation_enabled: false, paused: false, default_decision_mode: "manual", max_auto_executions_per_hour: 20, max_auto_failures_per_hour: 3 },
         personal_policy: { automation_enabled: false, paused: false, default_decision_mode: "manual", max_auto_executions_per_hour: 20, max_auto_failures_per_hour: 3 },
+        rules: [], presets: [{ preset_id: "manual_safe", name: "全部人工确认", description: "安全默认", rules: [] }], audit: [],
         approval_inbox: { pending: 0 },
       }),
     }),
@@ -330,11 +331,12 @@ test("my space pages render profile, models, assets, and agent policy", async ({
 
   await openNav(page, "个人模型");
   await expect(page.getByRole("heading", { name: "模型设置" })).toBeVisible();
-  await expect(page.getByText("已掩码，仅可写入")).toBeVisible();
+  await expect(page.getByRole("button", { name: "添加凭据" })).toBeVisible();
 
   await openNav(page, "智能体策略");
   await expect(page.getByRole("heading", { name: "智能体策略" })).toBeVisible();
   await expect(page.getByRole("button", { name: "保存" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "新建规则" })).toBeVisible();
 
   await openNav(page, "个人设置");
   await expect(page.getByRole("heading", { name: "个人设置" })).toBeVisible();

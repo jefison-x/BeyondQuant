@@ -11,6 +11,7 @@ const loading = ref(true);
 const error = ref("");
 const summary = ref<AssetSummary | null>(null);
 const busy = ref(false);
+const importReport = ref("");
 
 const assetStats = computed(() => ({
   strategies: summary.value?.summary.strategies ?? 0,
@@ -72,13 +73,15 @@ async function handleImport(event: Event) {
   busy.value = true;
   try {
     const bundle = JSON.parse(await file.text()) as Record<string, unknown>;
-    await ElMessageBox.confirm("将按当前所有者导入股票池和模拟账户；策略与回测资产需要重新验证或重算，将被跳过。", "确认导入资产包", {
+    await ElMessageBox.confirm("策略将重新校验并生成新版本；回测将作为只读归档导入；股票池和模拟账户均生成当前用户的新标识。不会复用来源所有者或来源 ID。", "确认导入资产包", {
       confirmButtonText: "继续导入",
       cancelButtonText: "取消",
       type: "warning",
     });
     const report = await importAssets(bundle);
-    ElMessage.success(`已导入 ${report.imported.pools} 个股票池、${report.imported.paper_accounts} 个模拟账户`);
+    importReport.value = `策略 ${report.imported.strategies} · 回测归档 ${report.imported.backtests} · 股票池 ${report.imported.pools} · 模拟账户 ${report.imported.paper_accounts}`;
+    if (report.errors.length) ElMessage.warning(`导入完成，${report.errors.length} 项未通过校验`);
+    else ElMessage.success("资产包已完成校验并导入");
     await loadAssets();
   } catch (exc) {
     if (exc !== "cancel" && exc !== "close") {
@@ -93,6 +96,8 @@ async function handleImport(event: Event) {
 <template>
   <section class="my-space-page">
     <input ref="importInput" type="file" accept="application/json,.json" hidden @change="handleImport" />
+
+    <el-alert v-if="importReport" :title="`最近导入：${importReport}`" type="success" show-icon closable @close="importReport = ''" />
 
     <section class="stats-strip">
       <el-card shadow="never"><div class="stat-label">策略</div><strong>{{ assetStats.strategies }}</strong></el-card>
@@ -141,9 +146,10 @@ async function handleImport(event: Event) {
       <el-card shadow="never">
         <template #header><div class="panel-heading"><div><strong>我的回测</strong></div><el-button link type="primary" @click="go('/backtest')">前往回测管理</el-button></div></template>
         <el-table :data="summary?.backtests ?? []" size="small">
-          <el-table-column prop="job_id" label="任务" min-width="220" show-overflow-tooltip />
-          <el-table-column prop="status" label="状态" width="120" />
-          <el-table-column prop="created_at" label="创建时间" width="170" />
+          <el-table-column label="任务 / 归档" min-width="220" show-overflow-tooltip><template #default="scope">{{ scope.row.job_id ?? scope.row.artifact_id }}</template></el-table-column>
+          <el-table-column label="类型" width="120"><template #default="scope">{{ scope.row.kind === "backtest_archive" ? "只读归档" : "回测任务" }}</template></el-table-column>
+          <el-table-column label="状态" width="120"><template #default="scope">{{ scope.row.status ?? scope.row.content?.archive?.status }}</template></el-table-column>
+          <el-table-column label="创建时间" width="190"><template #default="scope">{{ scope.row.created_at ?? scope.row.content?.imported_at }}</template></el-table-column>
         </el-table>
         <el-empty v-if="!summary?.backtests.length" description="暂无回测任务" :image-size="60" />
       </el-card>

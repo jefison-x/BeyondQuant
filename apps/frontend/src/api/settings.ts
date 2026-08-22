@@ -30,6 +30,30 @@ export function getModelSettings(): Promise<ModelSettings> {
   return request("/settings/models");
 }
 
+export function createModelCredential(payload: Record<string, unknown>): Promise<{ credential: Record<string, unknown> }> {
+  return request("/settings/models/credentials", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateModelCredential(credentialId: string, payload: Record<string, unknown>): Promise<{ credential: Record<string, unknown> }> {
+  return request(`/settings/models/credentials/${credentialId}`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function revokeModelCredential(credentialId: string, payload: Record<string, unknown>): Promise<{ credential: Record<string, unknown> }> {
+  return request(`/settings/models/credentials/${credentialId}/revoke`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function createModelProfile(payload: Record<string, unknown>): Promise<{ profile: Record<string, unknown> }> {
+  return request("/settings/models/profiles", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function deleteModelProfile(profileId: string, expectedVersion: number): Promise<{ profile: Record<string, unknown> }> {
+  return request(`/settings/models/profiles/${profileId}/delete`, { method: "POST", body: JSON.stringify({ expected_version: expectedVersion }) });
+}
+
+export function updateModelBinding(agentId: string, profileId: string | null, expectedVersion: number): Promise<{ binding: Record<string, unknown> }> {
+  return request(`/settings/models/bindings/${agentId}`, { method: "PUT", body: JSON.stringify({ profile_id: profileId, expected_version: expectedVersion }) });
+}
+
 export function getAssetSummary(): Promise<AssetSummary> {
   return request("/settings/assets");
 }
@@ -48,6 +72,22 @@ export function getAgentPolicyStatus(): Promise<AgentPolicyStatus> {
 
 export function updateAgentPolicy(payload: Record<string, unknown>): Promise<{ personal_policy: AgentPolicyStatus["personal_policy"] }> {
   return request("/settings/agent-policy", { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function createAgentPolicyRule(payload: Record<string, unknown>): Promise<{ rule: Record<string, unknown> }> {
+  return request("/settings/agent-policy/rules", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateAgentPolicyRule(ruleId: string, payload: Record<string, unknown>): Promise<{ rule: Record<string, unknown> }> {
+  return request(`/settings/agent-policy/rules/${ruleId}`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function deleteAgentPolicyRule(ruleId: string, expectedVersion: number): Promise<{ deleted: boolean }> {
+  return request(`/settings/agent-policy/rules/${ruleId}/delete`, { method: "POST", body: JSON.stringify({ expected_version: expectedVersion }) });
+}
+
+export function applyAgentPolicyPreset(presetId: string): Promise<Record<string, unknown>> {
+  return request(`/settings/agent-policy/presets/${presetId}/apply`, { method: "POST", body: "{}" });
 }
 
 export async function getSettingsStatus(token: string): Promise<SettingsStatus> {

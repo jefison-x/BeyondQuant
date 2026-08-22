@@ -1237,13 +1237,20 @@ conversation starters, and a responsive Xiaoba assistant drawer. Real Product
 API Chrome MCP evidence and the Community-derived checklist are stored under
 `docs/evidence/phase-36/`.
 
-### Phase 37 — My Space depth (`READY`)
+### Phase 37 — My Space depth (`COMPLETE`)
 
 Implement audited model credential CRUD/binding, asset re-import, and Agent
 Policy preset/rule CRUD under Accepted ADR-0019. Secrets remain write-only/
 masked and never enter browser responses or traces. Phase 37 owns the specific
 model-settings component required for acceptance; Phase 40 may generalize it
 later and is not a prerequisite.
+
+Delivered owner-scoped encrypted credential lifecycle, model profiles and
+Product Agent binding with private runtime resolution; canonical digested
+workspace asset re-import with new owner-safe identities and honest backtest
+archives; and effective Agent Policy presets/rule CRUD with audit and platform
+approval precedence. Real Product API Chrome MCP evidence and the
+Community-derived checklist are stored under `docs/evidence/phase-37/`.
 
 ### Phase 38 — Operations workbenches (`BLOCKED`)
 

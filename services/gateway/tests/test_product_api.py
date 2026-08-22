@@ -92,6 +92,42 @@ def test_product_profile_loads_and_updates_owner_profile(monkeypatch) -> None:
 def test_product_model_settings_are_secret_free(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    class FakeResponse:
+        def __init__(self, body: dict[str, object]) -> None:
+            self.body = body
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self.body
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        if url.endswith("/v1/users/model-catalog"):
+            return FakeResponse({
+                "models": [{"provider": "deepseek", "model": "deepseek-v4-flash"}],
+                "agents": [{"agent_id": "byq-product", "name": "小霸 Product Agent"}],
+            })
+        if url.endswith("/v1/users/model-credentials"):
+            return FakeResponse({
+                "credentials": [{
+                    "credential_id": "cred_0123456789abcdef0123456789abcdef",
+                    "provider": "deepseek",
+                    "status": "active",
+                    "configured": True,
+                    "masked": "sk-…abcd",
+                }],
+                "encryption": {"configured": True, "status": "ready"},
+            })
+        if url.endswith("/v1/users/model-profiles"):
+            return FakeResponse({"profiles": []})
+        if url.endswith("/v1/users/model-bindings"):
+            return FakeResponse({"bindings": []})
+        if "/v1/users/model-credential-audit" in url:
+            return FakeResponse({"events": []})
+        raise AssertionError(url)
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
     client = TestClient(main.app)
     response = client.get(
         "/api/product/settings/models",
@@ -99,8 +135,54 @@ def test_product_model_settings_are_secret_free(monkeypatch) -> None:
     )
     assert response.status_code == 200
     assert response.json()["credentials"]["masked"] is True
+    assert response.json()["credential_items"][0]["masked"] == "sk-…abcd"
     assert "token" not in response.text.lower()
     assert "secret" not in response.text.lower()
+
+
+def test_product_model_mutations_keep_secret_write_only(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "credential": {
+                    "credential_id": "cred_0123456789abcdef0123456789abcdef",
+                    "provider": "deepseek",
+                    "status": "active",
+                    "configured": True,
+                    "masked": "sk-…abcd",
+                    "version": 1,
+                }
+            }
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured.update({"method": method, "url": url, **kwargs})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/product/settings/models/credentials",
+        headers={"Authorization": "Bearer product-test-token"},
+        json={
+            "provider": "deepseek",
+            "label": "个人 API",
+            "secret": "sk-browser-write-only-abcd",
+            "idempotency_key": "browser-create-1",
+        },
+    )
+    assert response.status_code == 201
+    assert captured["method"] == "POST"
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+    assert captured["json"]["secret"] == "sk-browser-write-only-abcd"
+    assert "sk-browser-write-only-abcd" not in response.text
+    assert "ciphertext" not in response.text
 
 
 def test_product_assets_export_and_import_are_owner_scoped(monkeypatch) -> None:
@@ -118,14 +200,28 @@ def test_product_assets_export_and_import_are_owner_scoped(monkeypatch) -> None:
             return self.body
 
     def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
-        if url.endswith("/v1/research/artifacts"):
-            return FakeResponse({"artifacts": [{"artifact_id": "artifact_1", "kind": "strategy_version", "status": "validated"}]})
+        if method == "GET" and url.endswith("/v1/research/artifacts"):
+            return FakeResponse({"artifacts": [{
+                "artifact_id": "artifact_1", "kind": "strategy_version", "status": "validated",
+                "content_sha256": "a" * 64,
+                "content": {"export": {"schema_version": "strategy-version-v1", "version_id": "version-portable-1", "snapshot": {"strategy_id": "portable_one"}}},
+            }]})
         if url.endswith("/v1/research/backtests"):
-            return FakeResponse({"backtests": []})
-        if url.endswith("/v1/paper/pools"):
+            return FakeResponse({"backtests": [{"job_id": "backtest_1", "status": "succeeded", "input_manifest": {"schema_version": "backtest-input-manifest-v1"}, "summary": {"total_return": 0.1}}]})
+        if method == "GET" and url.endswith("/v1/paper/pools"):
             return FakeResponse({"pools": [{"pool_id": "stock_pool_1", "name": "沪深300", "symbols": ["000001.SZ"]}]})
-        if url.endswith("/v1/paper/accounts"):
+        if method == "GET" and url.endswith("/v1/paper/accounts"):
             return FakeResponse({"accounts": []})
+        if method == "POST" and url.endswith("/v1/research/tasks"):
+            assert kwargs["json"]["owner_principal"] == "product-user"
+            return FakeResponse({"task_id": "task_import_1"})
+        if method == "POST" and url.endswith("/v1/research/strategies/validate"):
+            return FakeResponse({"artifact": {"artifact_id": "artifact_draft_1"}})
+        if method == "POST" and url.endswith("/v1/research/strategies/versions"):
+            return FakeResponse({"artifact": {"artifact_id": "artifact_version_2"}, "strategy_version": {"version_id": "version-portable-1"}})
+        if method == "POST" and url.endswith("/v1/research/artifacts"):
+            assert kwargs["json"]["kind"] == "backtest_archive"
+            return FakeResponse({"artifact_id": "artifact_archive_1"})
         return FakeResponse({})
 
     monkeypatch.setattr(product_api.httpx, "request", fake_request)
@@ -133,24 +229,22 @@ def test_product_assets_export_and_import_are_owner_scoped(monkeypatch) -> None:
     auth = {"Authorization": "Bearer product-test-token"}
     exported = client.get("/api/product/settings/assets/export", headers=auth)
     assert exported.status_code == 200
-    assert exported.json()["schema_version"] == "byq-workspace-assets-v1"
-    assert exported.json()["assets"]["strategies"][0]["artifact_id"] == "artifact_1"
+    bundle = exported.json()
+    assert bundle["schema_version"] == "byq-workspace-assets-v2"
+    assert bundle["assets"]["strategies"][0]["kind"] == "strategy_version"
+    assert bundle["assets"]["backtests"][0]["kind"] == "backtest_archive"
+    assert bundle["manifest_sha256"]
 
     imported = client.post(
         "/api/product/settings/assets/import",
         headers=auth,
-        json={
-            "schema_version": "byq-workspace-assets-v1",
-            "assets": {
-                "pools": [{"name": "新池", "symbols": ["000002.SZ"], "provenance": {"source": "export"}}],
-                "paper_accounts": [],
-                "strategies": [],
-                "backtests": [],
-            },
-        },
+        json=bundle,
     )
     assert imported.status_code == 200
     assert imported.json()["imported"]["pools"] == 1
+    assert imported.json()["imported"]["strategies"] == 1
+    assert imported.json()["imported"]["backtests"] == 1
+    assert imported.json()["source_owner_reused"] is False
 
 
 def test_product_backtest_result_is_owner_scoped(monkeypatch) -> None:
@@ -531,16 +625,37 @@ def test_product_asset_import_rejects_secret_fields(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
     client = TestClient(main.app)
+    unsigned = {
+        "schema_version": "byq-workspace-assets-v2",
+        "exported_at": "2026-08-22T00:00:00+00:00",
+        "owner_principal": "product-user",
+        "assets": {"pools": [{"name": "bad", "api_token": "secret"}]},
+    }
+    response = client.post(
+        "/api/product/settings/assets/import",
+        headers={"Authorization": "Bearer product-test-token"},
+        json={**unsigned, "manifest_sha256": product_api._canonical_digest(unsigned)},
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "product_asset_bundle_invalid"
+
+
+def test_product_asset_import_rejects_tampered_manifest(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    client = TestClient(main.app)
     response = client.post(
         "/api/product/settings/assets/import",
         headers={"Authorization": "Bearer product-test-token"},
         json={
-            "schema_version": "byq-workspace-assets-v1",
-            "assets": {"pools": [{"name": "bad", "api_token": "secret"}]},
+            "schema_version": "byq-workspace-assets-v2",
+            "exported_at": "2026-08-22T00:00:00+00:00",
+            "owner_principal": "alice",
+            "assets": {"strategies": []},
+            "manifest_sha256": "0" * 64,
         },
     )
     assert response.status_code == 422
-    assert response.json()["error"]["code"] == "product_asset_bundle_invalid"
+    assert "digest" in response.json()["error"]["message"]
 
 
 @pytest.mark.parametrize(

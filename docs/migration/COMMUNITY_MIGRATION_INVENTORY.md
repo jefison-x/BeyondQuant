@@ -522,3 +522,10 @@ PydanticAI/Hermes runtime, and SQL models are not migration inputs.
 | Agent policy settings, presets, rule table/dialog, and history | Settings and ordered rule CRUD should be understandable, bounded, and visibly effective. | `PORT_UX` / `REFACTOR` | Extend BYQ owner-scoped policy state and audit; Community action/engine values are not implicitly accepted. VectorBT remains `DROP`. |
 | Community credential endpoints, provider URLs, database schema, and Agent runtime | None as an implementation boundary. | `REFERENCE_ONLY` / `REPLACE` | Product API → Backend and private Backend → Runtime Adapter resolution under ADR-0019. No Community code or data is copied. |
 | BaoStock, AKShare, VectorBT, PydanticAI, and Hermes paths | None. | `DROP` / `REPLACE` | Excluded technologies and compatibility paths remain absent. |
+
+Phase 37 completed this classification on 2026-08-22. The implementation
+preserves only the classified visual/interaction invariants and uses BYQ-owned
+contracts, persistence, identities, Product API, and Runtime Adapter
+boundaries. The Community repository remained read-only. The completed
+checklist, real Product API flow, and Chrome DevTools MCP evidence are under
+`docs/evidence/phase-37/`.

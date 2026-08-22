@@ -119,9 +119,29 @@ paths:
     get: {summary: Return user settings capability status., responses: *okResponses}
   /api/product/settings/models:
     get: {summary: Return a secret-free model capability projection., responses: *okResponses}
+  /api/product/settings/models/credentials:
+    post: {summary: Create an owner-scoped write-only model credential., responses: *createdResponses}
+  /api/product/settings/models/credentials/{credential_id}:
+    put: {summary: Replace metadata or the write-only secret with optimistic concurrency., responses: *okResponses}
+  /api/product/settings/models/credentials/{credential_id}/revoke:
+    post: {summary: Revoke an owner-scoped credential and disable dependent bindings., responses: *okResponses}
+  /api/product/settings/models/profiles:
+    post: {summary: Create an owner-scoped model profile from the reviewed catalogue., responses: *createdResponses}
+  /api/product/settings/models/profiles/{profile_id}/delete:
+    post: {summary: Soft-delete a model profile and unbind it., responses: *okResponses}
+  /api/product/settings/models/bindings/{agent_id}:
+    put: {summary: Bind or unbind one BYQ Agent preset to an owner-scoped model profile., responses: *okResponses}
   /api/product/settings/agent-policy:
     get: {summary: Return platform and personal agent policy., responses: *okResponses}
     put: {summary: Update personal agent policy., responses: *okResponses}
+  /api/product/settings/agent-policy/rules:
+    post: {summary: Create an owner-scoped Agent authorization rule., responses: *createdResponses}
+  /api/product/settings/agent-policy/rules/{rule_id}:
+    put: {summary: Update an owner-scoped Agent authorization rule with optimistic concurrency., responses: *okResponses}
+  /api/product/settings/agent-policy/rules/{rule_id}/delete:
+    post: {summary: Delete an owner-scoped Agent authorization rule., responses: *okResponses}
+  /api/product/settings/agent-policy/presets/{preset_id}/apply:
+    post: {summary: Replace personal policy settings and rules from a BYQ preset., responses: *okResponses}
   /api/product/settings/assets:
     get: {summary: Return owner-scoped workspace assets., responses: *okResponses}
   /api/product/settings/assets/export:

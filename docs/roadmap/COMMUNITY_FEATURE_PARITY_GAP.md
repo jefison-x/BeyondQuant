@@ -125,24 +125,28 @@ Current BYQ: `PRESENT` for the core profile form and owner-scoped save.
 
 Community: user model credentials, provider/model profiles, and Agent bindings.
 
-Current BYQ: `PARTIAL` masked provider/configured status only; missing
-credential/profile/binding management.
+Current BYQ: `COMPLETE` for Phase 37: owner-scoped encrypted credential
+lifecycle, separate model profiles, explicit Agent binding, private runtime
+resolution, masked reads, and metadata-only audit.
 
 ### Assets
 
 Community: strategy/stock-pool/backtest asset panels, import/export workspace
 bundle, and asset summaries.
 
-Current BYQ: `PARTIAL` asset index and export/import config assets; strategies
-and backtests are export-only and not re-importable.
+Current BYQ: `COMPLETE` for Phase 37: canonical digested workspace export and
+validated new-owner import for strategies, Stock Pools and Paper accounts;
+backtests import as honest durable research archives rather than executable
+jobs.
 
 ### Agent Policy
 
 Community: personal approval preferences, presets, rule CRUD, and approval
 history.
 
-Current BYQ: `PARTIAL` platform policy, durable personal approval preferences,
-and approval history; missing presets and rule CRUD.
+Current BYQ: `COMPLETE` for Phase 37: platform policy, durable personal
+preferences, atomic presets, effective ordered rule CRUD, rule audit, and
+approval history with platform gates remaining authoritative.
 
 ### Operations and Administration
 

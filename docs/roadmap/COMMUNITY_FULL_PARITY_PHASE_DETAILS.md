@@ -141,7 +141,8 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   `REFACTOR`; policy rules=`PORT_UX`.
 - Estimate: 14 person-days (XL).
 - Exit criteria: credentials writable and never echoed; strategy/backtest
-  re-importable; rules CRUD effective; Chrome evidence.
+  re-importable; rules CRUD effective; Chrome evidence. **Satisfied
+  2026-08-22; evidence under `docs/evidence/phase-37/`.**
 
 ---
 
@@ -215,7 +216,8 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   where a later phase explicitly depends on them.
 - Phase 36 → complete under ADR-0018; Phase 40 may generalize its proven
   Agent-specific components.
-- Phase 37 → ADR-0019 accepted; owns its required component and is ready.
+- Phase 37 → complete under ADR-0019; Phase 40 may generalize its proven
+  component later.
 - Phase 39 → reuses Accepted ADR-0019 after preceding phase gates.
 - Phase 38 → needs ADR-0019 + Phase 40.
 - Phase 32 wizard → ADR-0017 (separate from this table; slice already

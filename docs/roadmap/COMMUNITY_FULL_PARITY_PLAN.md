@@ -116,7 +116,7 @@ document supplies the parity-batch overview and dependency map.
 - Estimate: 14 person-days (XL).
 
 ### Phase 37 — My Space depth (Models / Assets / Agent Policy)
-- Status: **NEXT — IMPLEMENTATION** under Accepted ADR-0019.
+- Status: **COMPLETE (2026-08-22)** under Accepted ADR-0019.
 - Community: UserModelsView + UserModelSettingsPanel, UserAssetsView,
   UserAgentPolicyView.
 - Current: profile complete; models masked-only; assets config import/export;
@@ -125,6 +125,11 @@ document supplies the parity-batch overview and dependency map.
   agent policy presets/rule CRUD.
 - Dependency: ADR-0019 (Accepted). Phase 37 owns its required model-settings
   component; Phase 40 may generalize it later.
+- Delivered: audited write-only encrypted credentials, profiles and private
+  Agent binding; canonical digested asset re-import with new owner-safe
+  identities; and effective policy presets/rule CRUD. Real Product API Chrome
+  MCP evidence and the Community checklist are under
+  `docs/evidence/phase-37/`.
 - Estimate: 14 person-days (XL).
 
 ### Phase 38 — Operations workbenches
@@ -164,7 +169,7 @@ Phase 33 (strategy)  ── independent
 Phase 34 (stock pool) ── independent
 Phase 35 (paper trading) ── independent
 Phase 36 (agent)     ── complete under ADR-0018
-Phase 37 (my space)  ── ADR-0019 accepted; ready
+Phase 37 (my space)  ── complete under ADR-0019
 Phase 38 (operations) ── needs ADR-0019 + Phase 40
 Phase 39 (data center) ── needs ADR-0019
 ```

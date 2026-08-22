@@ -1,8 +1,9 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-completed project stage is **Phase 36**; the next phase is
-**Phase 37 — My Space depth**, blocked until ADR-0019 is Accepted. The v1.0
+completed project stage is **Phase 37**; the next phase is
+**Phase 38 — Operations workbenches**, blocked on its explicitly recorded
+Phase 40 shared-component gate. The v1.0
 release-candidate gate is not yet satisfied. See
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
 authoritative current state.
@@ -30,15 +31,17 @@ BYQ does not fork DSH. The DSH version is pinned through an explicit dependency 
   simulation-only Paper Trading domains.
 - Vue product workspaces for research, strategy, backtest, Stock Pool, Paper
   Trading, assets/settings, Data Center, and protected operations surfaces.
+- Owner-scoped encrypted model credentials, profiles and Product Agent
+  binding; canonical workspace asset transfer; and effective personal Agent
+  Policy presets/rules under platform approval precedence.
 
 ## Current limitations
 
 - A BYQ-owned strategy-source → `signal_snapshot` producer is not yet defined;
   the browser cannot complete a newly authored strategy-to-backtest journey.
-- My Space, Operations, Data Center, and shared-component depth remain in
-  Phases 37–40.
-- ADR-0019 remains Proposed and blocks Phases 37–39; Phase 36 is complete
-  under Accepted ADR-0018.
+- Operations, Data Center, and shared-component depth remain in Phases 38–40.
+- Phase 38 is blocked on its recorded Phase 40 shared-component gate;
+  ADR-0019 is Accepted and Phase 37 is complete.
 - The project is not yet eligible for the BeyondQuant Next v1.0 RC gate.
 
 The base Compose topology requires internal service secrets such as
