@@ -6,16 +6,40 @@ compose=(docker compose)
 echo "== base compose status =="
 "${compose[@]}" ps
 
-echo "== base services healthy =="
-while IFS= read -r health; do
-  test "$health" = "healthy"
-done < <("${compose[@]}" ps --format '{{.Health}}')
+echo "== base services running and healthchecked services healthy =="
+while IFS= read -r service; do
+  container_id=$("${compose[@]}" ps -q "$service")
+  test -n "$container_id"
+  test "$(docker inspect "$container_id" --format '{{.State.Status}}')" = "running"
+  health=$(docker inspect "$container_id" --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}')
+  test -z "$health" || test "$health" = "healthy"
+done < <("${compose[@]}" config --services)
 
 echo "== non-root runtime users =="
-for service in gateway backend mcp runtime-adapter; do
+for service in gateway backend mcp runtime-adapter signal-worker signal-sandbox; do
   uid=$("${compose[@]}" exec -T "$service" id -u | tr -d '\r')
   test "$uid" != "0"
 done
+
+echo "== Signal producer privilege and network boundary =="
+worker_id=$("${compose[@]}" ps -q signal-worker)
+sandbox_id=$("${compose[@]}" ps -q signal-sandbox)
+product_network=${BYQ_PRODUCT_NETWORK_NAME:-byq_product}
+sandbox_network=${BYQ_SIGNAL_SANDBOX_NETWORK_NAME:-byq_signal_sandbox}
+sandbox_networks=$(docker inspect "$sandbox_id" --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}')
+worker_networks=$(docker inspect "$worker_id" --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}')
+test "$(printf '%s\n' "$sandbox_networks" | sed '/^$/d')" = "$sandbox_network"
+printf '%s\n' "$worker_networks" | grep -Fx "$product_network" >/dev/null
+printf '%s\n' "$worker_networks" | grep -Fx "$sandbox_network" >/dev/null
+backend_id=$("${compose[@]}" ps -q backend)
+if docker inspect "$backend_id" --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}' | grep -Fx "$sandbox_network"; then
+  echo "Backend unexpectedly joined the signal sandbox network" >&2
+  exit 1
+fi
+if docker inspect "$sandbox_id" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -Ei '(BYQ_DATABASE_URL|TOKEN|PASSWORD|CREDENTIAL|TUSHARE|DSH|MCP)'; then
+  echo "Signal sandbox unexpectedly received a credential-bearing environment variable" >&2
+  exit 1
+fi
 
 echo "== Runtime Adapter has only the session persistence mount =="
 runtime_id=$("${compose[@]}" ps -q runtime-adapter)

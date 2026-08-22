@@ -1,6 +1,6 @@
 # Community Full Parity Plan (Phase 32–40)
 
-Status: `ACTIVE` (ADR-0017/0018/0019/0020/0021 Accepted)
+Status: `COMPLETE` (2026-08-22; ADR-0017–ADR-0023 Accepted as applicable)
 
 This plan describes the remaining Community product-depth workflows that the
 Phase 17–31 contract-first skeleton deferred. `IMPLEMENTATION_PLAN.md` is the
@@ -159,14 +159,19 @@ document supplies the parity-batch overview and dependency map.
 - Community: AppStateBlock, EntityPagination, GlobalApprovalCenter,
   ApprovalManagementPanel, XiaobaAssistantDrawer, AgentThinking,
   StockPoolDialog, UserModelSettingsPanel, SystemAnalytics, ChartWrapper.
-- Current: ChartWrapper/MetricCard/Base UI present; others missing.
-- Gap: 8 components; extract early to serve Phases 36–38.
+- Delivered: shared `AppStateBlock` and `EntityPagination`; proven
+  phase-specific approval, assistant, model and operations components; deep
+  strategy fields/projections; and the ADR-0023 isolated signal producer.
+- Closure: D-0002 and D-0009–D-0012 are closed; observation-triggered D-0003
+  is dropped with a zero-orphan audit.
 - Estimate: 8 person-days (M).
+- Status: complete 2026-08-22 with a no-mock two-user golden journey,
+  desktop/mobile Chrome evidence and the final Community checklist.
 
 ## Critical path
 
 ```
-Phase 40 (shared components) ──► later generalization/final closure
+Phase 40 (shared components) ── complete under ADR-0023
 Phase 32 (backtest)  ── split: result depth (no blocker) → wizard (ADR-0017)
 Phase 33 (strategy)  ── independent
 Phase 34 (stock pool) ── independent

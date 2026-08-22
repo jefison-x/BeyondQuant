@@ -122,8 +122,12 @@ async function mockResearchLists(page: Page) {
       body: JSON.stringify({ approvals: [] }),
     }),
   );
-  await page.route("**/api/product/strategies", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ strategies: [] }) }),
+  await page.route("**/api/product/strategies?*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ strategies: [], total: 0, limit: 50, offset: 0 }),
+    }),
   );
   await page.route("**/api/product/backtests", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ backtests: [] }) }),
@@ -193,7 +197,7 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
   await page.route("**/api/product/research/tasks", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ tasks: [{ task_id: "task_1" }] }) }),
   );
-  await page.route("**/api/product/strategies", (route) =>
+  await page.route("**/api/product/strategies?*", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -221,11 +225,28 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
             created_at: "2026-08-16T00:00:00+00:00",
           },
         ],
+        total: 3,
+        limit: 50,
+        offset: 0,
       }),
     }),
   );
   await page.route("**/api/product/research/artifacts/artifact_version_1", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ artifact_id: "artifact_version_1", kind: "strategy_version" }) }),
+  );
+  await page.route("**/api/product/strategies/MomentumStrategy/versions", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ versions: [], total: 0 }),
+    }),
+  );
+  await page.route("**/api/product/strategies/MomentumStrategy/backtest-count", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ backtest_count: 0, version_count: 1 }),
+    }),
   );
   await page.route("**/api/product/research/artifacts", (route) =>
     route.fulfill({
@@ -250,7 +271,7 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
   await expect(page.getByText("策略编辑器", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "插入模板" })).toBeVisible();
   await expect(page.getByRole("button", { name: "创建不可变版本" })).toBeVisible();
-  await expect(page.getByText("已批准")).toBeVisible();
+  await expect(page.getByRole("button", { name: "已批准" })).toBeVisible();
 });
 
 test("backtest workspace renders backtest result list", async ({ page }) => {

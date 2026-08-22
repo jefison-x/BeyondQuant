@@ -50,7 +50,7 @@ async function send(value = prompt.value) {
 </script>
 
 <template>
-  <button class="xiaoba-trigger" type="button" aria-label="打开小巴助手" @click="open = true"><span>小巴</span><small>问一下</small></button>
+  <button class="xiaoba-trigger" type="button" title="打开小巴助手" @click="open = true"><span>小巴</span><small>问一下</small></button>
   <el-drawer v-model="open" title="小巴助手" size="min(92vw, 420px)">
     <div class="assistant-body">
       <p class="context-chip">当前：{{ pageContext }}</p>
@@ -64,8 +64,8 @@ async function send(value = prompt.value) {
 </template>
 
 <style scoped>
-.xiaoba-trigger { background: var(--byq-brand); border: 0; border-radius: 16px; bottom: 22px; box-shadow: 0 12px 28px color-mix(in srgb, var(--byq-brand) 30%, transparent); color: white; cursor: pointer; display: grid; line-height: 1.1; padding: .7rem .9rem; position: fixed; right: 24px; text-align: left; z-index: 30; }
-.xiaoba-trigger span { font-size: 14px; font-weight: 800; } .xiaoba-trigger small { font-size: 10px; opacity: .8; }
+.xiaoba-trigger { background: var(--byq-brand-contrast); border: 0; border-radius: 16px; bottom: 22px; box-shadow: 0 12px 28px color-mix(in srgb, var(--byq-brand) 30%, transparent); color: white; cursor: pointer; display: grid; line-height: 1.1; padding: .7rem .9rem; position: fixed; right: 24px; text-align: left; z-index: 30; }
+.xiaoba-trigger span { font-size: 14px; font-weight: 800; } .xiaoba-trigger small { font-size: 10px; opacity: 1; }
 .assistant-body { display: grid; gap: .85rem; } .context-chip { background: var(--byq-brand-soft); border-radius: 999px; color: var(--byq-brand); font-size: 12px; margin: 0; padding: .45rem .7rem; width: fit-content; }
 .starter-list { display: flex; flex-wrap: wrap; gap: .4rem; } .starter-list button { background: var(--byq-surface-subtle); border: 1px solid var(--byq-border); border-radius: 999px; color: var(--byq-text-muted); cursor: pointer; font-size: 11px; padding: .4rem .6rem; }
 .assistant-answer { background: var(--byq-surface-subtle); border-radius: 12px; color: var(--byq-text); line-height: 1.7; min-height: 120px; padding: .8rem; white-space: pre-wrap; }

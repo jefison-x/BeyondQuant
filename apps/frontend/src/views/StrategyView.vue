@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import {
+  approveStrategyVersion,
   createStrategyVersion,
   deleteStrategyDraft,
   exportStrategyVersion,
@@ -15,6 +16,8 @@ import {
 import { listArtifacts, listTasks } from "@/api/research";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
+import EntityPagination from "@/components/ui/EntityPagination.vue";
+import AppStateBlock from "@/components/ui/AppStateBlock.vue";
 
 const auth = useAuthStore();
 const loading = ref(true);
@@ -27,8 +30,17 @@ const selected = ref<Record<string, unknown> | null>(null);
 const detail = ref<Record<string, unknown> | null>(null);
 const taskId = ref("");
 const filter = ref<"all" | "draft" | "version">("all");
+const lifecycle = ref<"active" | "superseded">("active");
+const page = ref(1);
+const total = ref(0);
+const PAGE_SIZE = 50;
 const search = ref("");
 const script = ref("");
+const strategyId = ref("CustomStrategy");
+const strategyName = ref("自定义策略");
+const description = ref("用户自定义策略");
+const parametersJson = ref("{}");
+const parameterSchemaJson = ref("{}");
 const templateId = ref("");
 const lastDraftId = ref("");
 const saving = ref(false);
@@ -58,11 +70,21 @@ const STRATEGY_TEMPLATES = [
 ];
 
 function strategyPayload() {
+  const parameters = JSON.parse(parametersJson.value || "{}") as unknown;
+  const parameterSchema = JSON.parse(parameterSchemaJson.value || "{}") as unknown;
+  if (!parameters || Array.isArray(parameters) || typeof parameters !== "object") {
+    throw new Error("参数默认值必须是 JSON 对象");
+  }
+  if (!parameterSchema || Array.isArray(parameterSchema) || typeof parameterSchema !== "object") {
+    throw new Error("参数规范必须是 JSON 对象");
+  }
   return {
-    strategy_id: "CustomStrategy",
-    name: "自定义策略",
+    strategy_id: strategyId.value,
+    name: strategyName.value,
     category: "custom",
-    description: "用户自定义策略",
+    description: description.value,
+    parameters,
+    parameter_schema: parameterSchema,
     source_type: "python_script",
     script: script.value,
   };
@@ -103,6 +125,11 @@ const isReadonly = computed(() => selected.value?.kind === "strategy_version");
 const selectedStrategyId = computed(() => {
   const content = selected.value?.content as Record<string, unknown> | undefined;
   const snapshot = content?.snapshot as Record<string, unknown> | undefined;
+  strategyId.value = String(snapshot?.strategy_id ?? "CustomStrategy");
+  strategyName.value = String(snapshot?.name ?? "自定义策略");
+  description.value = String(snapshot?.description ?? "");
+  parametersJson.value = JSON.stringify(snapshot?.parameters ?? {}, null, 2);
+  parameterSchemaJson.value = JSON.stringify(snapshot?.parameter_schema ?? {}, null, 2);
   return String(snapshot?.strategy_id ?? "");
 });
 
@@ -111,11 +138,16 @@ async function loadList() {
   error.value = "";
   try {
     const [strategyBody, taskBody, artifactBody] = await Promise.all([
-      listStrategies(auth.token),
+      listStrategies(auth.token, {
+        lifecycle: lifecycle.value,
+        limit: PAGE_SIZE,
+        offset: (page.value - 1) * PAGE_SIZE,
+      }),
       listTasks(),
       listArtifacts(),
     ]);
     artifacts.value = strategyBody.strategies;
+    total.value = strategyBody.total ?? artifacts.value.length;
     approvals.value = artifactBody.artifacts.filter((row) => row.kind === "strategy_approval");
     tasks.value = taskBody.tasks ?? [];
     if (tasks.value.length) {
@@ -130,6 +162,21 @@ async function loadList() {
   } finally {
     loading.value = false;
   }
+}
+
+async function changeLifecycle(value: "active" | "superseded") {
+  lifecycle.value = value;
+  page.value = 1;
+  selected.value = null;
+  detail.value = null;
+  await loadList();
+}
+
+async function changePage(value: number) {
+  page.value = value;
+  selected.value = null;
+  detail.value = null;
+  await loadList();
 }
 
 async function select(row: Record<string, unknown>) {
@@ -336,15 +383,39 @@ async function exportVersion() {
   }
 }
 
+async function approveVersion() {
+  if (!selected.value || selected.value.kind !== "strategy_version") return;
+  busy.value = "approval";
+  error.value = "";
+  try {
+    await approveStrategyVersion(
+      {
+        task_id: selected.value.task_id,
+        strategy_version_artifact_id: selected.value.artifact_id,
+        decision: "approved",
+        rationale: "策略所有者已在产品界面确认该不可变版本用于信号生成与回测。",
+        trace_id: `strategy-approval-${crypto.randomUUID()}`,
+        idempotency_key: crypto.randomUUID(),
+      },
+      auth.token,
+    );
+    ElMessage.success("策略版本已批准，可进入信号生成与回测");
+    await loadList();
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "批准失败";
+    ElMessage.error(error.value);
+  } finally {
+    busy.value = "";
+  }
+}
+
 onMounted(loadList);
 </script>
 
 <template>
   <section class="strategy-page">
-    <div v-if="loading" class="base-loading">加载中...</div>
-    <div v-else-if="error && !selected" class="base-error">{{ error }}</div>
-
-    <div v-else class="strategy-workbench">
+    <AppStateBlock :loading="loading" :error="!selected ? error : ''">
+      <div class="strategy-workbench">
       <el-card shadow="never" class="strategy-list-pane">
         <template #header>
           <div class="card-heading">
@@ -354,6 +425,10 @@ onMounted(loadList);
         </template>
         <div class="list-toolbar">
           <el-input v-model="search" placeholder="搜索 Artifact ID / 策略 ID" clearable />
+          <el-radio-group :model-value="lifecycle" size="small" @update:model-value="changeLifecycle">
+            <el-radio-button label="active">当前</el-radio-button>
+            <el-radio-button label="superseded">已归档</el-radio-button>
+          </el-radio-group>
           <el-radio-group v-model="filter" size="small">
             <el-radio-button label="all">全部</el-radio-button>
             <el-radio-button label="draft">草稿</el-radio-button>
@@ -393,6 +468,13 @@ onMounted(loadList);
             </div>
           </el-card>
         </div>
+        <EntityPagination
+          :total="total"
+          :page="page"
+          :page-size="PAGE_SIZE"
+          label="策略分页"
+          @update:page="changePage"
+        />
       </el-card>
 
       <div class="strategy-detail-column">
@@ -415,6 +497,29 @@ onMounted(loadList);
           <el-select v-model="taskId" placeholder="研究任务" class="task-select" :disabled="isReadonly">
             <el-option v-for="task in tasks" :key="String(task.task_id)" :label="String(task.task_id)" :value="String(task.task_id)" />
           </el-select>
+          <div class="strategy-meta-grid">
+            <el-input v-model="strategyId" placeholder="策略 ID" :disabled="isReadonly" />
+            <el-input v-model="strategyName" placeholder="策略名称" :disabled="isReadonly" />
+          </div>
+          <el-input v-model="description" placeholder="策略说明" :disabled="isReadonly" class="strategy-description" />
+          <div class="strategy-meta-grid">
+            <el-input
+              v-model="parametersJson"
+              type="textarea"
+              :rows="4"
+              :disabled="isReadonly"
+              spellcheck="false"
+              placeholder="参数默认值 JSON，例如 {&quot;lookback&quot;: 20}"
+            />
+            <el-input
+              v-model="parameterSchemaJson"
+              type="textarea"
+              :rows="4"
+              :disabled="isReadonly"
+              spellcheck="false"
+              placeholder="参数规范 JSON"
+            />
+          </div>
           <el-input
             v-model="script"
             type="textarea"
@@ -449,6 +554,14 @@ onMounted(loadList);
               <el-button type="primary" :loading="busy === 'export'" :disabled="!selected || selected.kind !== 'strategy_version'" @click="exportVersion">
                 导出版本
               </el-button>
+              <el-button
+                type="success"
+                :loading="busy === 'approval'"
+                :disabled="!selected || selected.kind !== 'strategy_version' || Boolean(approval)"
+                @click="approveVersion"
+              >
+                {{ approval ? "已批准" : "批准此版本" }}
+              </el-button>
             </div>
           </template>
           <div v-if="approval" class="approval-banner">
@@ -479,7 +592,8 @@ onMounted(loadList);
           <pre v-else class="quant-result">{{ JSON.stringify(detail, null, 2) }}</pre>
         </el-card>
       </div>
-    </div>
+      </div>
+    </AppStateBlock>
   </section>
 </template>
 
@@ -534,6 +648,17 @@ onMounted(loadList);
   width: 100%;
 }
 
+.strategy-meta-grid {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 0.6rem;
+}
+
+.strategy-description {
+  margin-bottom: 0.6rem;
+}
+
 .strategy-stats {
   margin-bottom: 0.75rem;
 }
@@ -569,6 +694,10 @@ onMounted(loadList);
 
 @media (max-width: 900px) {
   .strategy-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-meta-grid {
     grid-template-columns: 1fr;
   }
 

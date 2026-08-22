@@ -4,15 +4,18 @@ import { ElMessage } from "element-plus";
 import type { EChartsOption } from "echarts";
 import {
   cancelBacktest,
+  createSignalProducerJob,
   deleteBacktest,
   getBacktest,
   getBacktestResult,
+  getSignalProducerJob,
   listBacktests,
   listBacktestOptions,
   listSignalSnapshots,
   runBacktest,
   submitBacktest,
 } from "@/api/quant";
+import { listStockPools } from "@/api/paper";
 import type { BacktestJob, BacktestResult } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import ChartWrapper from "@/components/charts/ChartWrapper.vue";
@@ -245,6 +248,13 @@ const options = ref<Array<Record<string, unknown>>>([]);
 const snapshots = ref<Array<Record<string, unknown>>>([]);
 const selectedOption = ref<Record<string, unknown> | null>(null);
 const selectedSnapshot = ref<Record<string, unknown> | null>(null);
+const pools = ref<Array<Record<string, unknown>>>([]);
+const selectedPool = ref<Record<string, unknown> | null>(null);
+const signalStartDate = ref("");
+const signalEndDate = ref("");
+const signalQuantity = ref(100);
+const producingSignals = ref(false);
+const producerJob = ref<Record<string, unknown> | null>(null);
 
 const matchingSnapshots = computed(() => {
   const versionId = selectedOption.value?.strategy_version_artifact_id;
@@ -272,12 +282,78 @@ async function openCreate() {
   showCreate.value = true;
   selectedOption.value = null;
   selectedSnapshot.value = null;
+  selectedPool.value = null;
+  producerJob.value = null;
   try {
-    const [o, s] = await Promise.all([listBacktestOptions(auth.token), listSignalSnapshots(auth.token)]);
+    const [o, s, p] = await Promise.all([
+      listBacktestOptions(auth.token), listSignalSnapshots(auth.token), listStockPools(auth.token),
+    ]);
     options.value = o.options ?? [];
     snapshots.value = s.snapshots ?? [];
+    pools.value = (p.pools ?? []).filter((item) => item.status === "active" && item.current_snapshot_id);
   } catch (exc) {
     ElMessage.error(exc instanceof Error ? exc.message : "加载回测选项失败");
+  }
+}
+
+async function produceSignals() {
+  const opt = selectedOption.value;
+  const pool = selectedPool.value;
+  if (!opt || !pool || !signalStartDate.value || !signalEndDate.value) {
+    ElMessage.warning("请选择策略、股票池和信号日期范围");
+    return;
+  }
+  producingSignals.value = true;
+  producerJob.value = null;
+  try {
+    const created = await createSignalProducerJob(
+      {
+        task_id: opt.task_id,
+        strategy_version_artifact_id: opt.strategy_version_artifact_id,
+        stock_pool_snapshot_id: pool.current_snapshot_id,
+        start_date: signalStartDate.value,
+        end_date: signalEndDate.value,
+        execution: {
+          initial_capital: 100000,
+          commission_rate: 0.0003,
+          stamp_tax_rate: 0.001,
+          slippage_rate: 0,
+          lot_size: 100,
+          max_positions: 10,
+          a_share_rules: true,
+          max_runtime_seconds: 10,
+          max_attempts: 2,
+        },
+        order_quantity: signalQuantity.value,
+        trace_id: `signal-${crypto.randomUUID()}`,
+        idempotency_key: crypto.randomUUID(),
+      },
+      auth.token,
+    );
+    producerJob.value = created.job;
+    const jobId = String(created.job.job_id ?? "");
+    for (let attempt = 0; attempt < 45; attempt += 1) {
+      if (attempt) await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      const response = await getSignalProducerJob(jobId, auth.token);
+      producerJob.value = response.job;
+      if (response.job.status === "completed") {
+        const body = await listSignalSnapshots(auth.token);
+        snapshots.value = body.snapshots ?? [];
+        selectedSnapshot.value = snapshots.value.find(
+          (item) => item.artifact_id === response.job.result_artifact_id,
+        ) ?? null;
+        ElMessage.success("信号快照已生成并冻结");
+        return;
+      }
+      if (response.job.status === "failed") {
+        throw new Error(String(response.job.error_detail ?? "信号生成失败"));
+      }
+    }
+    throw new Error("信号任务仍在运行，请稍后重新打开向导查看");
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "信号生成失败");
+  } finally {
+    producingSignals.value = false;
   }
 }
 
@@ -327,7 +403,7 @@ onMounted(loadList);
         </template>
         <div class="list-toolbar">
           <el-input v-model="search" placeholder="搜索 Job ID" clearable />
-          <el-select v-model="statusFilter" placeholder="状态筛选" clearable>
+          <el-select v-model="statusFilter" aria-label="回测状态筛选" placeholder="状态筛选" clearable>
             <el-option label="queued" value="queued" />
             <el-option label="running" value="running" />
             <el-option label="completed" value="completed" />
@@ -431,7 +507,7 @@ onMounted(loadList);
         <template #header>
           <div class="card-heading">
             <span class="card-title">回测详情</span>
-            <small class="card-sub">{{ selected?.artifact_id ?? "未选择回测结果" }}</small>
+            <small class="card-sub">{{ selected?.job_id ?? "未选择回测结果" }}</small>
           </div>
         </template>
         <p v-if="error" class="page-error">{{ error }}</p>
@@ -571,7 +647,7 @@ onMounted(loadList);
         </el-tab-pane>
       </el-tabs>
     </el-dialog>
-    <el-dialog v-model="showCreate" title="新建回测（Phase 32）" width="min(640px, 94vw)">
+    <el-dialog v-model="showCreate" title="生成信号并新建回测" width="min(700px, 94vw)">
       <el-form label-position="top">
         <el-form-item label="已批准策略版本">
           <el-select v-model="selectedOption" filterable placeholder="选择已批准的策略版本" style="width: 100%">
@@ -598,8 +674,46 @@ onMounted(loadList);
               :label="`${String(snap.artifact_id).slice(0, 18)} · ${snapshotProducer(snap)}`"
             />
           </el-select>
-          <div class="wizard-hint">信号快照来自已导入的冻结输入；提交边界会校验快照与所选策略匹配（ADR-0017）。</div>
+          <div class="wizard-hint">可选择已有快照，或在下方用 ADR-0023 隔离运行时生成。</div>
         </el-form-item>
+        <el-divider content-position="left">隔离生成信号</el-divider>
+        <el-form-item label="不可变股票池快照">
+          <el-select v-model="selectedPool" filterable placeholder="选择活动股票池" style="width: 100%">
+            <el-option
+              v-for="pool in pools"
+              :key="String(pool.pool_id)"
+              :value="pool"
+              :label="`${String(pool.name)} · ${String(pool.member_count ?? 0)} 只`"
+            />
+          </el-select>
+        </el-form-item>
+        <div class="signal-range-grid">
+          <el-form-item label="开始日期">
+            <el-date-picker v-model="signalStartDate" type="date" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" />
+          </el-form-item>
+          <el-form-item label="结束日期">
+            <el-date-picker v-model="signalEndDate" type="date" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" />
+          </el-form-item>
+          <el-form-item label="每次信号数量">
+            <el-input-number v-model="signalQuantity" :min="100" :step="100" />
+          </el-form-item>
+        </div>
+        <el-button
+          type="success"
+          plain
+          :loading="producingSignals"
+          :disabled="!selectedOption || !selectedPool || !signalStartDate || !signalEndDate"
+          @click="produceSignals"
+        >
+          隔离执行并冻结信号快照
+        </el-button>
+        <el-alert
+          v-if="producerJob"
+          :title="`信号任务 ${String(producerJob.status)} · ${String(producerJob.job_id)}`"
+          :type="producerJob.status === 'failed' ? 'error' : producerJob.status === 'completed' ? 'success' : 'info'"
+          :closable="false"
+          class="producer-status"
+        />
         <template v-if="selectedSnapshot">
           <el-divider content-position="left">冻结执行参数</el-divider>
           <el-descriptions :column="2" size="small" border>
@@ -670,6 +784,20 @@ onMounted(loadList);
   margin-top: 0.35rem;
 }
 
+.signal-range-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.signal-range-grid :deep(.el-date-editor) {
+  width: 100%;
+}
+
+.producer-status {
+  margin-top: 0.75rem;
+}
+
 .mobile-list {
   display: none;
 }
@@ -681,6 +809,10 @@ onMounted(loadList);
 
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .signal-range-grid {
+    grid-template-columns: 1fr;
   }
 
   .mobile-list {

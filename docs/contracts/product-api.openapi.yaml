@@ -73,6 +73,7 @@ paths:
     get: {summary: Get one owner-scoped research entity., responses: *okResponses}
   /api/product/research/tasks:
     get: {summary: List owner-scoped research tasks., responses: *okResponses}
+    post: {summary: Create an owner-scoped research task with server-owned identity fields., responses: *createdResponses}
   /api/product/research/experiments:
     get: {summary: List owner-scoped experiments., responses: *okResponses}
   /api/product/research/artifacts:
@@ -81,6 +82,12 @@ paths:
     get: {summary: List owner-scoped factor results., responses: *okResponses}
   /api/product/signal-snapshots:
     get: {summary: List owner-scoped signal snapshots., responses: *okResponses}
+  /api/product/signal-producer/jobs:
+    get: {summary: List owner-scoped isolated signal-production jobs., responses: *okResponses}
+    post: {summary: Freeze canonical inputs and enqueue isolated signal production., responses: *acceptedResponses}
+  /api/product/signal-producer/jobs/{job_id}:
+    parameters: [{$ref: "#/components/parameters/JobId"}]
+    get: {summary: Get one owner-scoped signal-production job status., responses: *okResponses}
 
   /api/product/backtests:
     get: {summary: List owner-scoped backtest jobs., responses: *okResponses}
@@ -112,6 +119,8 @@ paths:
     post: {summary: Validate an owner-scoped strategy draft., responses: *createdResponses}
   /api/product/strategies/versions:
     post: {summary: Create an immutable owner-scoped strategy version., responses: *createdResponses}
+  /api/product/strategies/approvals:
+    post: {summary: Record the owner's explicit human approval for a validated strategy version., responses: *createdResponses}
   /api/product/strategies/versions/{artifact_id}/export:
     parameters: [{$ref: "#/components/parameters/ArtifactId"}]
     get: {summary: Export one owner-scoped strategy version., responses: *okResponses}

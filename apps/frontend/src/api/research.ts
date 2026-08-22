@@ -35,6 +35,16 @@ export function listTasks(): Promise<{ tasks: Array<Record<string, unknown>> }> 
   return getJson("/research/tasks");
 }
 
+export function createTask(
+  title: string,
+  objective: string,
+): Promise<Record<string, unknown>> {
+  return getJson("/research/tasks", {
+    method: "POST",
+    body: JSON.stringify({ title, objective }),
+  });
+}
+
 export function listExperiments(): Promise<{ experiments: Array<Record<string, unknown>> }> {
   return getJson("/research/experiments");
 }

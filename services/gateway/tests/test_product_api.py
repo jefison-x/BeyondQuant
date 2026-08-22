@@ -796,8 +796,11 @@ def test_product_asset_import_rejects_tampered_manifest(monkeypatch) -> None:
         ("get", "/api/product/backtests/backtest_1", None),
         ("post", "/api/product/backtests/backtest_1/run", None),
         ("post", "/api/product/backtests/backtest_1/cancel", None),
+        ("post", "/api/product/signal-producer/jobs", {}),
+        ("get", "/api/product/signal-producer/jobs/signaljob_1", None),
         ("get", "/api/product/strategies/versions/artifact_1/export", None),
         ("post", "/api/product/strategies/drafts", {}),
+        ("post", "/api/product/strategies/approvals", {}),
         ("post", "/api/product/strategies/validate", {}),
         ("get", "/api/product/paper/accounts/paper_account_1", None),
         ("get", "/api/product/paper/pools/stock_pool_1", None),
@@ -839,3 +842,44 @@ def test_product_business_proxy_routes_forward_owner_context(
     assert response.status_code < 400, response.text
     assert captured["headers"]["x-byq-owner-principal"] == "product-user"
     assert captured["headers"]["x-byq-actor-principal"] == "product-user"
+
+
+def test_product_research_task_creation_owns_identity_fields(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"task_id": "task_1", "owner_principal": "product-user"}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured.update({"method": method, "url": url, **kwargs})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/product/research/tasks",
+        headers={"Authorization": "Bearer product-test-token"},
+        json={"title": "Momentum research", "objective": "Evaluate the signal"},
+    )
+
+    assert response.status_code == 201
+    assert captured["method"] == "POST"
+    assert str(captured["url"]).endswith("/v1/research/tasks")
+    assert captured["json"]["owner_principal"] == "product-user"
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+    assert set(captured["json"]) == {
+        "owner_principal", "title", "objective", "trace_id", "idempotency_key",
+    }
+
+    invalid = client.post(
+        "/api/product/research/tasks",
+        headers={"Authorization": "Bearer product-test-token"},
+        json={"title": "bad", "objective": "bad", "owner_principal": "other-user"},
+    )
+    assert invalid.status_code == 422

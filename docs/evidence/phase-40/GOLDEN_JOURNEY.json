@@ -1,0 +1,25 @@
+{
+  "schema_version": "phase-40-product-golden-v1",
+  "status": "passed",
+  "executed_at": "2026-08-22",
+  "environment": "fresh isolated compose project byq-p40-golden",
+  "owner_flow": {
+    "task_id": "task_1c32d653b8f64d9b96234f2a6c221200",
+    "pool_id": "stock_pool_a371b5c375cd411fb532c045051f894a",
+    "strategy_version_artifact_id": "artifact_bc73f24d63b04dceb839db55a13fea95",
+    "approval_artifact_id": "artifact_3833b94814ed4de287ea2fb65ecdfeee",
+    "signal_job_id": "signaljob_0e48c3409b0e4c1690865064fe02889a",
+    "signal_snapshot_artifact_id": "artifact_da4e23d5d6bf4203b4a13c4db70d112f",
+    "backtest_job_id": "backtest_e37e7c8412ac4b1782eaa617b6e35de7",
+    "backtest_status": "completed",
+    "trade_count": 1
+  },
+  "secondary_user": {
+    "task_get": 404,
+    "pool_get": 404,
+    "signal_job_get": 404,
+    "strategy_total": 0,
+    "backtest_total": 0
+  },
+  "secret_material_recorded": false
+}

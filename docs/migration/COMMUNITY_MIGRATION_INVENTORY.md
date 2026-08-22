@@ -548,3 +548,28 @@ scheduler, cache, database, or source code is copied.
 | Market coverage table and audit UX | Report observed row/symbol/date bounds and quality issues; do not infer complete history without calendar/lifecycle evidence. | `PORT_LOGIC` / `PORT_UX` | PostgreSQL aggregate audit explicitly sets `completeness_claimed=false`; source and OHLC issues are counted. |
 | Community PostgreSQL/Redis cache and physical migration paths | None as an authoritative store. | `REFERENCE_ONLY` / `DROP` | BYQ PostgreSQL is authoritative; Redis assumptions and physical Community storage reuse remain prohibited. |
 | BaoStock and AKShare rows/adapters/fallbacks | None. | `DROP` | No dependency, adapter, configuration, row, fallback, or compatibility path. |
+
+## Phase 40 final-parity pre-implementation audit
+
+The read-only Community strategy executor/security/validation/backtest path
+and all ten shared components named by the Phase 40 plan were inspected before
+ADR-0023 and implementation. Community source, runtime, ORM, APIs and storage
+remain evidence only and were not modified or copied.
+
+| Community capability | Reusable invariant / UX | Decision | ADR-0023 / Phase 40 boundary |
+|---|---|---|---|
+| `CustomStrategy.generate_signals(data, parameters)` and `-1/0/1` outputs | A stable synchronous signal contract over a frozen universe/date index is useful. | `PORT_LOGIC` / `PORT_TESTS` | Closed `byq-signal-python-v1` profile; BYQ revalidates and content-addresses normalized output. |
+| In-process Python `exec`, restricted builtins/import hook and backtest-service execution | Static checks help diagnostics but are not a sandbox; process credentials and storage must remain unreachable. | `REFERENCE_ONLY` / `REPLACE` | Trusted coordinator plus separate no-credential, bounded, non-root signal sandbox under ADR-0023. |
+| Pandas/NumPy strategy input and deterministic parameter defaults | Frozen, ordered data and explicit finite parameters support reproducibility. | `REFACTOR` | Exact sandbox dependency lock and input fingerprint; no provider access or mutable Community cache. |
+| Stateful target-weight strategies and broad ML imports | They require a distinct portfolio-state/output contract and much larger execution surface. | `REFERENCE_ONLY` | Fail closed as unsupported by v1; no silent fallback or Community compatibility layer. |
+| `AppStateBlock` and `EntityPagination` | Consistent loading/error/empty actions and bounded responsive paging reduce repeated view logic. | `PORT_COMPONENT` / `REFACTOR` | BYQ-owned typed components; only Product projection state. |
+| `GlobalApprovalCenter`, `ApprovalManagementPanel`, `XiaobaAssistantDrawer`, `AgentThinking` | Global access, explicit approval outcome, contextual assistant and public progress are useful. | `REUSE_AS_IS` / `REFACTOR` | Phase 36 already delivered BYQ-owned normalized equivalents; hidden reasoning and Community actions stay `DROP`. |
+| `StockPoolDialog` | Guided pool creation and responsive candidate/final-list UX are useful. | `PORT_UX` / `REFACTOR` | Reuse proven Phase 34 Product API workflow; extract only where it reduces duplication without reviving Community filters. |
+| `UserModelSettingsPanel` | Credential/profile/binding grouping and masked-secret UX are useful. | `REUSE_AS_IS` / `REFACTOR` | Phase 37 equivalent remains authoritative under ADR-0019; arbitrary Base URLs stay `DROP`. |
+| `SystemAnalytics` | Compact health metrics and responsive cards are useful. | `REUSE_AS_IS` / `REFACTOR` | Phase 38 operations projections/MetricCard remain authoritative; no Redis or raw host diagnostics. |
+| `ChartWrapper` | Resize, loading and empty behavior are reusable. | `REUSE_AS_IS` | Existing BYQ component already implements the accepted visual contract. |
+
+Phase 40 closure result: every item above is implemented, reused, explicitly
+replaced, or dropped at its stated BYQ boundary. The no-mock two-user Product
+journey and Chrome evidence are under `docs/evidence/phase-40/`; no Community
+source, runtime, database, cache or Git history was modified or imported.

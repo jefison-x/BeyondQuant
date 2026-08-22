@@ -152,6 +152,7 @@ cleanup_ci_services() {
 prepare_ci_compose_env() {
   export COMPOSE_PROJECT_NAME="byq-ci-stack-$BYQ_CI_SCOPE"
   export BYQ_PRODUCT_NETWORK_NAME="byq-ci-product-$BYQ_CI_SCOPE"
+  export BYQ_SIGNAL_SANDBOX_NETWORK_NAME="byq-ci-signal-sandbox-$BYQ_CI_SCOPE"
   export BYQ_POSTGRES_VOLUME_NAME="byq-ci-postgres-$BYQ_CI_SCOPE"
   export BYQ_DOMAIN_VOLUME_NAME="byq-ci-domain-$BYQ_CI_SCOPE"
   export BYQ_DSH_SESSIONS_VOLUME_NAME="byq-ci-dsh-sessions-$BYQ_CI_SCOPE"

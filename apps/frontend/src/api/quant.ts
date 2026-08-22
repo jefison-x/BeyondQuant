@@ -50,8 +50,16 @@ export function exportStrategyVersion(artifactId: string, token: string): Promis
   return request(`/strategies/versions/${encodeURIComponent(artifactId)}/export`, token);
 }
 
-export function listStrategies(token: string): Promise<{ strategies: Array<Record<string, unknown>> }> {
-  return request(`/strategies`, token);
+export function listStrategies(
+  token: string,
+  options: { lifecycle?: "active" | "superseded" | "all"; limit?: number; offset?: number } = {},
+): Promise<{ strategies: Array<Record<string, unknown>>; total: number; limit: number; offset: number }> {
+  const params = new URLSearchParams({
+    lifecycle: options.lifecycle ?? "active",
+    limit: String(options.limit ?? 50),
+    offset: String(options.offset ?? 0),
+  });
+  return request(`/strategies?${params.toString()}`, token);
 }
 
 export function listFactors(token: string): Promise<{ factors: Array<Record<string, unknown>> }> {
@@ -68,6 +76,30 @@ export function listBacktestOptions(token: string): Promise<{ options: Array<Rec
 
 export function listSignalSnapshots(token: string): Promise<{ snapshots: Array<Record<string, unknown>> }> {
   return request(`/signal-snapshots`, token);
+}
+
+export function createSignalProducerJob(
+  payload: Record<string, unknown>,
+  token: string,
+): Promise<{ job: Record<string, unknown> }> {
+  return request(`/signal-producer/jobs`, token, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getSignalProducerJob(
+  jobId: string,
+  token: string,
+): Promise<{ job: Record<string, unknown> }> {
+  return request(`/signal-producer/jobs/${encodeURIComponent(jobId)}`, token);
+}
+
+export function listSignalProducerJobs(
+  token: string,
+): Promise<{ jobs: Array<Record<string, unknown>> }> {
+  return request(`/signal-producer/jobs`, token);
 }
 
 export function submitBacktest(
@@ -111,6 +143,17 @@ export function getStrategyBacktestCount(strategyId: string, token: string): Pro
 
 export function createStrategyVersion(payload: Record<string, unknown>, token: string): Promise<Record<string, unknown>> {
   return request(`/strategies/versions`, token, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function approveStrategyVersion(
+  payload: Record<string, unknown>,
+  token: string,
+): Promise<Record<string, unknown>> {
+  return request(`/strategies/approvals`, token, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),

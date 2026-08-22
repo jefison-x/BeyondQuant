@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { getApproval, getResearchEntity, listApprovals, listArtifacts } from "@/api/research";
+import { createTask, getApproval, getResearchEntity, listApprovals, listArtifacts, listTasks } from "@/api/research";
 import { formatChinaTime } from "@/time";
 
-const tab = ref<"research" | "approval" | "assets" | "inbox">("assets");
+const tab = ref<"tasks" | "research" | "approval" | "assets" | "inbox">("tasks");
 const entityType = ref<"tasks" | "experiments" | "artifacts">("artifacts");
 const entityId = ref("");
 const approvalId = ref("");
@@ -12,6 +12,40 @@ const error = ref("");
 const busy = ref(false);
 const artifacts = ref<Array<Record<string, unknown>>>([]);
 const approvals = ref<Array<Record<string, unknown>>>([]);
+const tasks = ref<Array<Record<string, unknown>>>([]);
+const taskTitle = ref("");
+const taskObjective = ref("");
+
+async function loadTasks() {
+  busy.value = true;
+  error.value = "";
+  try {
+    tasks.value = (await listTasks()).tasks;
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "加载失败";
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function submitTask() {
+  if (!taskTitle.value.trim() || !taskObjective.value.trim()) {
+    error.value = "请填写任务名称和研究目标";
+    return;
+  }
+  busy.value = true;
+  error.value = "";
+  try {
+    await createTask(taskTitle.value.trim(), taskObjective.value.trim());
+    taskTitle.value = "";
+    taskObjective.value = "";
+    await loadTasks();
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "创建失败";
+  } finally {
+    busy.value = false;
+  }
+}
 
 async function loadAssets() {
   busy.value = true;
@@ -62,7 +96,7 @@ async function loadApproval() {
 }
 
 onMounted(async () => {
-  await Promise.allSettled([loadAssets(), loadInbox()]);
+  await Promise.allSettled([loadTasks(), loadAssets(), loadInbox()]);
 });
 </script>
 
@@ -70,6 +104,21 @@ onMounted(async () => {
   <section class="research-page">
     <el-card shadow="never" class="top-band">
       <el-tabs v-model="tab">
+        <el-tab-pane label="研究任务" name="tasks">
+          <div class="quant-panel">
+            <el-input v-model="taskTitle" placeholder="任务名称" maxlength="200" style="width: 240px" />
+            <el-input v-model="taskObjective" placeholder="研究目标" maxlength="4000" style="width: 420px" />
+            <el-button type="primary" :loading="busy" @click="submitTask">创建任务</el-button>
+          </div>
+          <el-table :data="tasks" v-loading="busy">
+            <el-table-column prop="title" label="任务名称" min-width="180" />
+            <el-table-column prop="objective" label="研究目标" min-width="300" show-overflow-tooltip />
+            <el-table-column prop="status" label="状态" width="120" />
+            <el-table-column prop="task_id" label="Task ID" min-width="260" show-overflow-tooltip />
+          </el-table>
+          <el-empty v-if="!tasks.length && !busy" description="暂无研究任务，请先创建一个任务" />
+        </el-tab-pane>
+
         <el-tab-pane label="研究资产" name="assets">
           <el-table :data="artifacts" v-loading="busy">
             <el-table-column label="类型" width="150">

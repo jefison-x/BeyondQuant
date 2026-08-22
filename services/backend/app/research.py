@@ -15,6 +15,7 @@ from .db import PgStoreMixin, ensure_column, execute, fetch_one
 
 
 MAX_JSON_BYTES = 64 * 1024
+MAX_ARTIFACT_JSON_BYTES = 32 * 1024 * 1024
 MAX_SOURCES = 64
 MAX_LINEAGE = 64
 _ID_PATTERN = re.compile(r"^(?:task|experiment|artifact)_[0-9a-f]{32}$")
@@ -117,7 +118,9 @@ def _reject_secret_keys(value: object) -> None:
             _reject_secret_keys(nested)
 
 
-def _canonical_json(value: object, *, field: str) -> tuple[object, str]:
+def _canonical_json(
+    value: object, *, field: str, max_bytes: int = MAX_JSON_BYTES
+) -> tuple[object, str]:
     _reject_secret_keys(value)
     try:
         encoded = json.dumps(
@@ -129,8 +132,8 @@ def _canonical_json(value: object, *, field: str) -> tuple[object, str]:
         ).encode("utf-8")
     except (TypeError, ValueError) as error:
         raise ValueError(f"{field} must be JSON-serializable") from error
-    if len(encoded) > MAX_JSON_BYTES:
-        raise ValueError(f"{field} exceeds {MAX_JSON_BYTES} bytes")
+    if len(encoded) > max_bytes:
+        raise ValueError(f"{field} exceeds {max_bytes} bytes")
     return value, encoded.decode("utf-8")
 
 
@@ -480,6 +483,79 @@ class ResearchStore(PgStoreMixin):
             rows = self._execute("SELECT * FROM artifacts ORDER BY created_at DESC, artifact_id DESC LIMIT 200")
         return {"artifacts": [self._artifact_row(row) for row in rows]}
 
+    def list_strategy_artifacts(
+        self,
+        *,
+        owner_principal: str,
+        lifecycle: str = "active",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        """Direct paginated strategy query; never truncates via generic artifact lists."""
+        if lifecycle not in {"active", "superseded", "all"}:
+            raise ValueError("lifecycle must be active, superseded, or all")
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > 100:
+            raise ValueError("limit must be between 1 and 100")
+        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+            raise ValueError("offset must be non-negative")
+        status_sql = "AND status <> 'superseded'" if lifecycle == "active" else (
+            "AND status = 'superseded'" if lifecycle == "superseded" else ""
+        )
+        params = {"owner": owner_principal, "limit": limit, "offset": offset}
+        rows = self._execute(
+            f"""SELECT * FROM artifacts WHERE owner_principal = :owner
+                 AND kind IN ('strategy_draft', 'strategy_version') {status_sql}
+                 ORDER BY created_at DESC, artifact_id DESC LIMIT :limit OFFSET :offset""",
+            params,
+        )
+        total = self._fetch_one(
+            f"""SELECT COUNT(*) AS total FROM artifacts WHERE owner_principal = :owner
+                 AND kind IN ('strategy_draft', 'strategy_version') {status_sql}""",
+            {"owner": owner_principal},
+        )
+        return {
+            "strategies": [self._artifact_row(row) for row in rows],
+            "total": int(total["total"] if total else 0),
+            "limit": limit,
+            "offset": offset,
+            "lifecycle": lifecycle,
+        }
+
+    def list_strategy_versions(
+        self, *, owner_principal: str, strategy_id: str, limit: int = 1_000
+    ) -> list[dict[str, object]]:
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > 10_000:
+            raise ValueError("limit must be between 1 and 10000")
+        rows = self._execute(
+            """SELECT * FROM artifacts WHERE owner_principal = :owner
+                 AND kind = 'strategy_version' AND content ->> 'strategy_id' = :strategy_id
+                 ORDER BY created_at DESC, artifact_id DESC LIMIT :limit""",
+            {"owner": owner_principal, "strategy_id": strategy_id, "limit": limit},
+        )
+        return [self._artifact_row(row) for row in rows]
+
+    def list_strategy_approvals(
+        self, *, owner_principal: str, limit: int = 10_000
+    ) -> list[dict[str, object]]:
+        rows = self._execute(
+            """SELECT * FROM artifacts WHERE owner_principal = :owner
+                 AND kind = 'strategy_approval' ORDER BY created_at DESC, artifact_id DESC
+                 LIMIT :limit""",
+            {"owner": owner_principal, "limit": limit},
+        )
+        return [self._artifact_row(row) for row in rows]
+
+    def list_validated_strategy_versions(
+        self, *, owner_principal: str, limit: int = 10_000
+    ) -> list[dict[str, object]]:
+        rows = self._execute(
+            """SELECT * FROM artifacts WHERE owner_principal = :owner
+                 AND kind = 'strategy_version' AND status = 'validated'
+                 ORDER BY created_at DESC, artifact_id DESC LIMIT :limit""",
+            {"owner": owner_principal, "limit": limit},
+        )
+        return [self._artifact_row(row) for row in rows]
+
     def transition(
         self,
         entity_type: object,
@@ -609,8 +685,11 @@ class ResearchStore(PgStoreMixin):
             payload,
             {"task_id", "experiment_id", "kind", "content", "lineage", "trace_id", "idempotency_key"},
         )
+        raw_content = payload.get("content")
+        if not isinstance(raw_content, dict):
+            raise ValueError("content must be an object")
         content, content_json = _canonical_json(
-            _object(payload.get("content"), field="content"), field="content"
+            raw_content, field="content", max_bytes=MAX_ARTIFACT_JSON_BYTES
         )
         lineage, _ = _lineage(payload.get("lineage", []))
         return {

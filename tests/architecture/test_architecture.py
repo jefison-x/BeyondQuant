@@ -47,8 +47,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("A user binding never", contract)
-        self.assertIn("Current completed phase: **Phase 39**", status)
-        self.assertIn("Phase 40 — Shared components and final parity closure", status)
+        self.assertIn("Current completed phase: **Phase 40**", status)
+        self.assertIn("Phase 40 (Shared components and final parity closure) completed", status)
         self.assertIn("D-0008 is CLOSED", status)
         self.assertNotIn("ADR-0019 remains Proposed", status)
 
@@ -92,6 +92,27 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         compose = (ROOT / "compose.yml").read_text()
         self.assertNotIn("docker.sock", compose)
         self.assertNotIn("privileged:", dsh_service_block())
+
+    def test_signal_sandbox_is_credential_free_and_privilege_separated(self) -> None:
+        sandbox = service_block("signal-sandbox")
+        worker = service_block("signal-worker")
+        compose = (ROOT / "compose.yml").read_text()
+        dockerfile = (ROOT / "services/signal-sandbox/Dockerfile").read_text()
+
+        self.assertIn("read_only: true", sandbox)
+        self.assertIn("cap_drop:", sandbox)
+        self.assertIn("- ALL", sandbox)
+        self.assertIn("no-new-privileges:true", sandbox)
+        self.assertIn("pids_limit:", sandbox)
+        self.assertIn("mem_limit:", sandbox)
+        self.assertNotRegex(sandbox, r"(?i)(database_url|token|password|credential|tushare|dsh|mcp)")
+        self.assertNotIn("byq_product", sandbox)
+        self.assertIn("byq_signal_sandbox", sandbox)
+        self.assertIn("internal: true", compose)
+        self.assertIn("BYQ_DATABASE_URL", worker)
+        self.assertNotIn("ports:", sandbox)
+        self.assertNotIn("COPY services/backend", dockerfile)
+        self.assertNotIn("COPY .", dockerfile)
 
     def test_dsh_is_container_local_and_not_host_published(self) -> None:
         compose = (ROOT / "compose.yml").read_text()
@@ -372,6 +393,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "Phase 39 — Data Center / Data Sync depth (`COMPLETE`)",
             implementation,
         )
+        self.assertIn(
+            "Phase 40 — Shared components and final parity closure (`COMPLETE`)",
+            implementation,
+        )
 
         workflow_card_adr = (
             ROOT
@@ -412,12 +437,17 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
 
         parity_plan = (ROOT / "docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md").read_text()
-        self.assertIn("Status: `ACTIVE`", parity_plan)
+        self.assertIn("Status: `COMPLETE`", parity_plan)
         self.assertNotIn("ADR-0017/0018/0019 awaiting review", parity_plan)
 
         parity_matrix = (ROOT / "docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX_V2.md").read_text()
-        self.assertIn("not eligible for review", parity_matrix)
-        self.assertNotIn("The next step is\nthe human v1.0 RC review", parity_matrix)
+        self.assertIn("The next\nstep is the human v1.0 RC review", parity_matrix)
+        self.assertNotIn("not eligible for review", parity_matrix)
+        self.assertTrue((ROOT / "docs/evidence/phase-40/GOLDEN_JOURNEY.json").exists())
+        signal_adr = (
+            ROOT / "docs/architecture/adr/ADR-0023-isolated-signal-producer.md"
+        ).read_text()
+        self.assertIn("- Status: Accepted", signal_adr)
 
     def test_completed_phases_have_no_open_deferred_items(self) -> None:
         status = (ROOT / "docs/roadmap/STATUS.md").read_text()
@@ -438,6 +468,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_local_ci_isolated_mcp_contract_dependency(self) -> None:
         local_ci = (ROOT / "scripts/ci/local-ci.sh").read_text()
         self.assertIn('CI_PG_NET="byq-ci-network-$BYQ_CI_SCOPE"', local_ci)
+        self.assertIn(
+            'BYQ_SIGNAL_SANDBOX_NETWORK_NAME="byq-ci-signal-sandbox-$BYQ_CI_SCOPE"',
+            local_ci,
+        )
         self.assertIn("--network-alias backend", local_ci)
         self.assertIn("ensure_ci_backend", local_ci)
         self.assertNotIn("CI_PG_NET=byq_product", local_ci)

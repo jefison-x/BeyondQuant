@@ -46,6 +46,8 @@ def test_market_data_import_get_and_coverage() -> None:
     coverage = store.coverage()
     assert coverage["groups"][0]["row_count"] == 1
     assert coverage["groups"][0]["data_source"] == "tushare"
+    bars = store.list_bars(["000001.SZ"], "2024-01-01", "2024-01-31")
+    assert [(item["symbol"], item["trade_date"]) for item in bars] == [("000001.SZ", "20240102")]
     store.close()
 
 

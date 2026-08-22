@@ -69,10 +69,10 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 ### D-0002 — Signal producer (strategy source → signal_snapshot)
 - Phase: 40 (transferred from Phase 32 during Phase 32 closeout; deliberately
   out of scope of ADR-0017 decision 3)
-- Status: `BLOCKED`
+- Status: `CLOSED` (2026-08-22)
 - Precondition: a dedicated signal-producer ADR (sandbox + determinism +
-  provider access) is planned and accepted. Until then only the keyless
-  fixture/import path can create snapshots.
+  provider access) is planned and accepted. **Satisfied by ADR-0023 on
+  2026-08-22.**
 - Content: BYQ-owned computation boundary that executes a validated strategy
   over the frozen universe/bars to derive the `signal_snapshot`. Without it,
   a newly written strategy cannot reach a backtest in one flow.
@@ -81,10 +81,13 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
   source.
 - Rationale: this is the reason Phase 32 wizard alone does NOT deliver the
   user end-to-end strategy→backtest journey.
+- Evidence: ADR-0023; isolated coordinator/sandbox contracts and adversarial
+  execution tests; `docs/evidence/phase-40/GOLDEN_JOURNEY.json` records a real
+  Product API strategy→signal snapshot→completed backtest flow.
 
 ### D-0003 — Backtest result-object GC periodic sweep (optional hardening)
 - Phase: 40 (transferred from Phase 32 as optional hardening)
-- Status: `BLOCKED`
+- Status: `DROPPED` (2026-08-22)
 - Precondition: measured orphan accumulation in `BYQ_BACKTEST_OBJECT_ROOT`
   demonstrates that the Phase 32 best-effort delete (PR #77) is insufficient.
 - Content: a periodic sweep that removes result objects not referenced by any
@@ -92,10 +95,16 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
   after concurrent deletes or GC failures).
 - Acceptance: sweep deletes only unreferenced objects; never deletes a
   referenced/tampered object; runs idempotently; covered by tests.
+- Rationale: the Phase 40 production-like object-root audit measured
+  `live_reference_count=0`, `object_file_count=0`, `orphan_count=0`, and
+  `missing_count=0`; the stated precondition (measured orphan accumulation)
+  is false. Existing best-effort orphan deletion and its failure/shared-object
+  tests remain. A future non-zero measurement must open a new observed issue
+  rather than shipping an unneeded periodic sweeper.
 
 ### D-0009 — Phase 33 strategy draft supersede visibility (optional hardening)
 - Phase: 40 (transferred from Phase 33 during Phase 33 closeout)
-- Status: `READY`
+- Status: `CLOSED` (2026-08-22)
 - Precondition: none (follow-up hardening recorded in PR #85).
 - Content: the strategy list still renders soft-superseded (deleted) drafts
   with status `superseded`; there is no filter or hide-by-default for them.
@@ -106,10 +115,13 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
   Chrome evidence if UI is touched.
 - Evidence of origin: Phase 33 Chrome MCP review observed the deleted draft
   row remaining in the list after 删除草稿; PR #85 Known limitations.
+- Closure: Product API defaults to the active lifecycle; StrategyView hides
+  superseded drafts and provides an explicit `已归档` view, with component and
+  projection tests plus Phase 40 Chrome evidence.
 
 ### D-0010 — Phase 33 version-history projection bound (hardening)
 - Phase: 40 (transferred from Phase 33 during Phase 33 closeout)
-- Status: `READY`
+- Status: `CLOSED` (2026-08-22)
 - Precondition: none (follow-up hardening recorded in PR #85).
 - Content: `/v1/research/strategies/{id}/versions` and
   `/v1/research/strategies/{id}/backtest-count` reuse the 200-newest artifact
@@ -119,10 +131,13 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 - Acceptance: projections query PostgreSQL directly for the owner scope,
   are complete beyond 200 artifacts, and keep the same response contract;
   contract tests cover the projection boundary.
+- Closure: direct owner/kind/strategy queries and grouped backtest counts are
+  independent of the generic 200-row list; a 205-version scale test verifies
+  exact totals, pages, history and counts.
 
 ### D-0011 — Phase 33 StrategyView component-level tests (quality follow-up)
 - Phase: 40 (transferred from Phase 33 during Phase 33 closeout)
-- Status: `READY`
+- Status: `CLOSED` (2026-08-22)
 - Precondition: none (quality gap recorded in PR #85).
 - Content: StrategyView has API-client, backend, Gateway, and MCP tests plus
   Chrome browser evidence, but no Vitest component-level tests for the view
@@ -130,10 +145,12 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
   stats projection).
 - Acceptance: view-level tests cover save/delete, version history, read-only
   mode, and backtest-count stats; they run in the standard frontend CI check.
+- Closure: `StrategyView.spec.ts` covers archive visibility, exact pagination,
+  immutable history/read-only state, stats, save and soft delete.
 
 ### D-0012 — Phase 33 Community deep strategy profile fields (future depth)
 - Phase: 40 (final parity closure candidate; out of Phase 33 scope)
-- Status: `READY`
+- Status: `CLOSED` (2026-08-22)
 - Precondition: Phase 40 shared-component/parity closure planning.
 - Content: Community `StrategyView.vue` profile depth — description,
   parameters, parameter_schema, and status enable/disable fields, plus the
@@ -142,6 +159,10 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 - Acceptance: decision recorded for each field (REUSE/REFACTOR/REPLACE/DROP);
   any replicated field works through Product API with validation/approval
   semantics preserved.
+- Closure: description, parameters and parameter schema are editable draft
+  fields frozen into immutable versions and signal inputs. Mutable
+  enable/disable and non-artifact CRUD are `DROP`/`REPLACE` in the parity
+  matrix; explicit owner approval authorizes execution.
 
 ### D-0005 — Phase 36 Agent workbench structured cards
 - Phase: 36
@@ -201,11 +222,11 @@ BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PR
 | Decision | Status | Unblocks |
 |---|---|---|
 | ADR-0017 (`signal_snapshot`) | Accepted (2026-08-18) | D-0001 |
-| Signal-producer ADR (future) | not written | D-0002 |
+| ADR-0023 (isolated signal producer) | Accepted (2026-08-22) | D-0002 (`CLOSED`) |
 | ADR-0018 (WorkflowTrace cards) | Accepted (2026-08-22) | D-0005 (`CLOSED`) |
 | ADR-0019 (encrypted credentials) | Accepted (2026-08-22) | D-0006/D-0007/D-0008 (`CLOSED`) |
 | ADR-0022 (Phase 38 component ownership) | Accepted (2026-08-22) | D-0007 (`CLOSED`) |
-| Phase 40 shared components | planned | Later generalization for D-0005/D-0006/D-0007; not a prerequisite |
+| Phase 40 shared components | complete (2026-08-22) | D-0009/D-0010/D-0011/D-0012 (`CLOSED`) |
 
 ## Maintenance rules
 

@@ -285,6 +285,24 @@ def validate_strategy_source(script: str) -> dict[str, Any]:
     return {"success": not visitor.errors, "errors": visitor.errors}
 
 
+def strategy_output_method(script: str) -> str:
+    """Return the statically validated CustomStrategy output entry point."""
+    result = validate_strategy_source(script)
+    if not result["success"]:
+        raise StrategyValidationError(
+            "strategy failed BYQ static validation: " + "; ".join(result["errors"])
+        )
+    tree = ast.parse(script)
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "CustomStrategy":
+            for member in node.body:
+                if isinstance(member, ast.FunctionDef) and member.name in {
+                    "generate_signals", "generate_target_weights"
+                }:
+                    return member.name
+    raise StrategyValidationError("strategy output method is unavailable")
+
+
 def _strategy_snapshot(value: object) -> dict[str, Any]:
     strategy = _object(value, "strategy")
     _reject_unknown(

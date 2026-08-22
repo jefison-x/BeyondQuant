@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  approveStrategyVersion,
   cancelBacktest,
+  createSignalProducerJob,
   createStrategyVersion,
   deleteBacktest,
   deleteStrategyDraft,
   getBacktest,
   getBacktestResult,
   getResearchEntity,
+  getSignalProducerJob,
   getStrategyBacktestCount,
   getStrategyVersions,
   runBacktest,
@@ -96,6 +99,21 @@ describe("quant api client", () => {
     );
   });
 
+  it("records a human strategy approval through the product path", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ artifact: { artifact_id: "artifact_approval_1" } }), { status: 201 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await approveStrategyVersion(
+      { task_id: "task_1", strategy_version_artifact_id: "artifact_version_1", decision: "approved" },
+      "test-token",
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/strategies/approvals",
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+  });
+
   it("saves and deletes a strategy draft through the product path", async () => {
     const fetchMock = vi.fn().mockImplementation((url: string, init: RequestInit) => {
       const body =
@@ -142,6 +160,24 @@ describe("quant api client", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/strategies/CustomStrategy/backtest-count",
       expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
+  it("creates and polls an isolated signal job through Product API", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      const status = url.endsWith("/signaljob_1") ? "completed" : "queued";
+      return Promise.resolve(
+        new Response(JSON.stringify({ job: { job_id: "signaljob_1", status } }), { status: 200 }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const created = await createSignalProducerJob({ task_id: "task_1" }, "test-token");
+    expect(created.job.status).toBe("queued");
+    const fetched = await getSignalProducerJob("signaljob_1", "test-token");
+    expect(fetched.job.status).toBe("completed");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/signal-producer/jobs",
+      expect.objectContaining({ method: "POST", credentials: "include" }),
     );
   });
 });

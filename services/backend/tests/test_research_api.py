@@ -95,3 +95,19 @@ def test_research_api_maps_idempotency_and_transition_conflicts(monkeypatch) -> 
     )
     assert invalid_transition.status_code == 409
     store.close()
+
+
+def test_research_task_creation_rejects_owner_spoofing(monkeypatch) -> None:
+    store = ResearchStore()
+    monkeypatch.setattr(main, "research_store", store)
+    client = TestClient(main.app)
+
+    response = client.post(
+        "/v1/research/tasks",
+        headers=_owner_headers("other-user"),
+        json=task_body(),
+    )
+
+    assert response.status_code == 422
+    assert store.list_tasks(owner_principal="product-user")["tasks"] == []
+    store.close()

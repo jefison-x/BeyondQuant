@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { decideApproval, getApproval, getResearchEntity, listApprovals, listArtifacts } from "./research";
+import { createTask, decideApproval, getApproval, getResearchEntity, listApprovals, listArtifacts } from "./research";
 
 describe("research api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -20,6 +20,23 @@ describe("research api client", () => {
     );
     const approval = await getApproval("agent_approval_1");
     expect(approval).toMatchObject({ approval_id: "agent_approval_1" });
+  });
+
+  it("creates a research task through the product boundary", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ task_id: "task_1", owner_principal: "alice" }), { status: 201 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const task = await createTask("Momentum research", "Evaluate a bounded signal strategy");
+    expect(task.task_id).toBe("task_1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/research/tasks",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        body: JSON.stringify({ title: "Momentum research", objective: "Evaluate a bounded signal strategy" }),
+      }),
+    );
   });
 
   it("lists artifacts and approvals", async () => {
