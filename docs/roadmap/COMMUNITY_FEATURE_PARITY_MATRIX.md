@@ -1,8 +1,9 @@
 # Community Feature Parity Matrix
 
-Status: Release-candidate evidence for Phase 23. Every Community page,
-capability, and component is classified as `PORTED`, `REDESIGNED`,
-`REPLACED`, `DROP`, or `DEFERRED`.
+Status: **Phase 40 final audit complete (2026-08-22)**. The original Phase 23
+baseline is retained below and resolved by the Phase 40 closure addendum.
+Every Community surface is classified; there is no unexplained `PARTIAL` or
+`MISSING` item.
 
 ## Product pages
 
@@ -18,20 +19,35 @@ capability, and component is classified as `PORTED`, `REDESIGNED`,
 | Paper Trading | `PaperTradingView.vue` + BYQ paper domain | `PORTED` UX, `REDESIGNED` domain | 21 |
 | Profile | `SettingsView.vue` Profile tab | `PORTED` / `REDESIGNED` API | 20 |
 | Models | `SettingsView.vue` Models tab | `PORTED` UX, secret-safe rewrite | 20 |
-| Assets | Settings Assets tab (placeholder) | `DEFERRED` full asset index | 20 |
-| Agent policy/approvals | Settings Approvals tab (masked status) | `DEFERRED` full inbox | 20 |
+| Assets | `AssetsView.vue` + manifested export/re-import | `REDESIGNED` owner-safe artifacts | 37 |
+| Agent policy/approvals | `AgentPolicyView.vue` + global/local approvals | `PORTED` UX / `REDESIGNED` audit | 36–37 |
 | Operations | `OperationsView.vue` + operations BFF | `PORTED` IA, `REDESIGNED` topology | 22 |
-| Data source/sync | Settings Data tab | `REDESIGNED` Tushare/migration status | 20 |
+| Data source/sync | `DataCenterView.vue` + durable sync | `REDESIGNED` Tushare-only data plane | 39 |
 
 ## Shared components
 
 | Community component | BYQ target | Decision |
 |---|---|---|
 | App shell/sidebar/header/bottom nav | `AppShell.vue`, `AppHeader.vue`, `AppSidebar.vue`, `AppBottomNav.vue` | `PORTED` layout/style, `REFACTOR` state/API |
-| State/error/empty blocks | page states and error envelopes | `PORTED` UX |
-| Pagination | Product API pagination contract | `REFACTOR` |
-| Chart wrapper | not yet charted in Quant Workspace | `DEFERRED` chart parity |
+| State/error/empty blocks | `AppStateBlock.vue` + Base state components | `PORT_COMPONENT` / `REFACTOR` |
+| Pagination | `EntityPagination.vue` + paginated strategy Product API | `PORT_COMPONENT` / `REFACTOR` |
+| Chart wrapper | `ChartWrapper.vue` in real backtest results | `REUSE_AS_IS` BYQ implementation |
 | Dialogs/forms | simple forms/views | `PORTED` UX pattern |
+
+## Phase 40 closure addendum
+
+| Community component/capability | BYQ closure | Final decision |
+|---|---|---|
+| `GlobalApprovalCenter` / `ApprovalManagementPanel` | Phase 36 normalized components | `REUSE_AS_IS` BYQ equivalent |
+| `XiaobaAssistantDrawer` | Phase 36 Product Agent drawer | `REUSE_AS_IS` BYQ equivalent |
+| `AgentThinking` | `AgentActivityPanel` + public WorkflowTrace cards | `REFACTOR`; hidden reasoning `DROP` |
+| `StockPoolDialog` | Phase 34 integrated create/edit/snapshot workflow | `PORT_UX`; duplicate dialog `DROP` |
+| `UserModelSettingsPanel` | Phase 37 encrypted credential/profile/binding workbench | `REFACTOR` under ADR-0019 |
+| `SystemAnalytics` | Phase 38 operations workbenches + `MetricCard` | `REFACTOR`; Redis/raw host state `DROP` |
+| Strategy description | Editable immutable draft/version snapshot field | `REUSE_AS_IS` |
+| Strategy parameters / parameter schema | Finite JSON Product fields, frozen into StrategyVersion and signal job | `REUSE_AS_IS` / `REFACTOR` |
+| Mutable strategy enable/disable and non-artifact CRUD | Artifact lifecycle + explicit human approval | `DROP` / `REPLACE` |
+| Strategy source execution | ADR-0023 coordinator + credential-free signal sandbox | Community in-process `exec` is `REPLACE` |
 
 ## Explicit replacements and drops
 
@@ -46,8 +62,10 @@ capability, and component is classified as `PORTED`, `REDESIGNED`,
 
 ## Release-candidate conclusion
 
-The browser journey Login -> Dashboard -> Agent -> Quant Workspace -> Stock
-Pool -> Paper Trading -> Settings -> Operations is represented by BYQ Product
-API/BFF and WorkflowTrace projections. Full artifact/approval asset indexing,
-chart parity, and production backup/restore runbooks remain explicit
-`DEFERRED` items for post-Phase-23 hardening.
+The browser journey Login -> Dashboard -> Agent -> Research/Strategy -> Stock
+Pool -> isolated signal production -> Backtest -> Paper Trading -> Settings ->
+Operations is represented by durable BYQ Product API and WorkflowTrace flows.
+Phase 40 closes the remaining signal producer, strategy visibility/projection,
+shared-state/pagination, chart and deep-field decisions. The no-mock multi-user
+golden journey and Chrome desktop/mobile review are recorded under
+`docs/evidence/phase-40/`; release-candidate review may now reopen.

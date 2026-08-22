@@ -951,16 +951,21 @@ class BacktestJobStore(PgStoreMixin):
     def count_by_strategy_versions(self, version_artifact_ids: Sequence[str]) -> dict[str, int]:
         """Return backtest job counts per strategy_version_artifact_id.
 
-        Used by the Phase 33 strategy backtest-count projection; version lists
-        are small, so a per-version count is fine.
+        Uses one grouped query so counts stay exact beyond the historical
+        generic-artifact 200-row projection limit.
         """
-        counts: dict[str, int] = {}
-        for version_id in version_artifact_ids:
-            row = self._fetch_one(
-                "SELECT COUNT(*) AS n FROM backtest_jobs WHERE strategy_version_artifact_id = :version_id",
-                {"version_id": version_id},
-            )
-            counts[str(version_id)] = int(row["n"]) if row else 0
+        identities = [str(value) for value in dict.fromkeys(version_artifact_ids)]
+        if not identities:
+            return {}
+        rows = self._execute(
+            """SELECT strategy_version_artifact_id, COUNT(*) AS n FROM backtest_jobs
+               WHERE strategy_version_artifact_id IN (
+                   SELECT jsonb_array_elements_text(:version_ids)
+               ) GROUP BY strategy_version_artifact_id""",
+            {"version_ids": identities},
+        )
+        observed = {str(row["strategy_version_artifact_id"]): int(row["n"]) for row in rows}
+        counts = {identity: observed.get(identity, 0) for identity in identities}
         return counts
 
     def all_result_references(self) -> list[dict[str, object]]:

@@ -427,6 +427,26 @@ def product_research_tasks(request: Request) -> dict[str, object]:
     return _backend_request("GET", "/v1/research/tasks", headers=_trusted_agent_headers(request))
 
 
+@router.post("/research/tasks", status_code=201)
+def product_create_research_task(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    principal = _product_principal(request)
+    if set(payload) != {"title", "objective"}:
+        raise ProductError(422, "product_request_invalid", "research task request has invalid fields")
+    nonce = uuid.uuid4().hex
+    return _backend_request(
+        "POST",
+        "/v1/research/tasks",
+        {
+            "owner_principal": principal.subject,
+            "title": payload.get("title"),
+            "objective": payload.get("objective"),
+            "trace_id": f"product-task-{nonce}",
+            "idempotency_key": f"product-task-{nonce}",
+        },
+        headers=_trusted_agent_headers(request),
+    )
+
+
 @router.get("/research/experiments")
 def product_research_experiments(request: Request) -> dict[str, object]:
     _product_principal(request)
@@ -515,13 +535,17 @@ def product_strategy_export(artifact_id: str, request: Request) -> dict[str, obj
 
 
 @router.get("/strategies")
-def product_strategies(request: Request) -> dict[str, object]:
+def product_strategies(
+    request: Request, lifecycle: str = "active", limit: int = 50, offset: int = 0
+) -> dict[str, object]:
     _product_principal(request)
-    body = _backend_request("GET", "/v1/research/artifacts", headers=_trusted_agent_headers(request))
-    artifacts = body.get("artifacts", [])
-    if isinstance(artifacts, list):
-        return {"strategies": [a for a in artifacts if isinstance(a, dict) and a.get("kind") in {"strategy_version", "strategy_draft"}]}
-    return {"strategies": []}
+    if lifecycle not in {"active", "superseded", "all"}:
+        raise ProductError(422, "product_strategy_view_invalid", "strategy lifecycle view is invalid")
+    return _backend_request(
+        "GET",
+        f"/v1/research/strategies?lifecycle={lifecycle}&limit={limit}&offset={offset}",
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/signal-snapshots")
@@ -536,6 +560,37 @@ def product_signal_snapshots(request: Request) -> dict[str, object]:
             ]
         }
     return {"snapshots": []}
+
+
+@router.post("/signal-producer/jobs", status_code=202)
+def product_signal_producer_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "POST",
+        "/v1/research/signal-producer/jobs",
+        payload,
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/signal-producer/jobs")
+def product_signal_producer_list(request: Request, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET",
+        f"/v1/research/signal-producer/jobs?limit={limit}&offset={offset}",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/signal-producer/jobs/{job_id}")
+def product_signal_producer_get(job_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET",
+        f"/v1/research/signal-producer/jobs/{job_id}",
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.post("/strategies/drafts", status_code=201)
@@ -597,6 +652,19 @@ def product_strategy_version_create(request: Request, payload: dict[str, object]
         "POST",
         "/v1/research/strategies/versions",
         payload,
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.post("/strategies/approvals", status_code=201)
+def product_strategy_approval_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    principal = _product_principal(request)
+    normalized = dict(payload)
+    normalized["reviewer_principal"] = principal.subject
+    return _backend_request(
+        "POST",
+        "/v1/research/strategies/approvals",
+        normalized,
         headers=_trusted_agent_headers(request),
     )
 

@@ -1144,7 +1144,7 @@ class PaperTradingStore(PgStoreMixin):
         self, snapshot_id: object, *, domain: str, reference_id: str, trusted_owner: str
     ) -> dict[str, object]:
         snapshot = self.get_pool_snapshot(snapshot_id, trusted_owner=trusted_owner, include_members=False)
-        if domain not in {"paper_order", "backtest", "research"}:
+        if domain not in {"paper_order", "backtest", "research", "signal_producer"}:
             raise ValueError("stock pool reference domain is invalid")
         pool = self.get_pool(snapshot["pool_id"], trusted_owner=trusted_owner)
         if pool["status"] != "active":

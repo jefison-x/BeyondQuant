@@ -11,6 +11,8 @@
   --byq-border-subtle: #edf0f3;
   --byq-brand: #f6821f;
   --byq-brand-hover: #d96f16;
+  --byq-brand-contrast: #b84f00;
+  --byq-brand-contrast-hover: #963f00;
   --byq-brand-soft: #fff4e8;
   --byq-blue: #2563eb;
   --byq-green: #168a4a;
@@ -67,13 +69,18 @@ select {
 }
 
 .el-button--primary {
-  --el-button-bg-color: var(--byq-brand);
-  --el-button-border-color: var(--byq-brand);
-  --el-button-hover-bg-color: var(--byq-brand-hover);
-  --el-button-hover-border-color: var(--byq-brand-hover);
-  --el-button-active-bg-color: var(--byq-brand-hover);
-  --el-button-active-border-color: var(--byq-brand-hover);
+  --el-button-bg-color: var(--byq-brand-contrast);
+  --el-button-border-color: var(--byq-brand-contrast);
+  --el-button-hover-bg-color: var(--byq-brand-contrast-hover);
+  --el-button-hover-border-color: var(--byq-brand-contrast-hover);
+  --el-button-active-bg-color: var(--byq-brand-contrast-hover);
+  --el-button-active-border-color: var(--byq-brand-contrast-hover);
   box-shadow: none;
+}
+
+.el-button--danger.is-link {
+  --el-button-text-color: var(--byq-red);
+  --el-button-hover-link-text-color: #9f241f;
 }
 
 .el-card {

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.backtest import BacktestJobStore, LocalObjectStore, membership_fingerprint
+from app.db import execute
 from app.research import ResearchStore
 from test_strategy_artifact import strategy_payload
 
@@ -31,6 +32,53 @@ def _task(client: TestClient) -> dict[str, object]:
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def test_strategy_queries_remain_exact_beyond_generic_200_row_limit(monkeypatch) -> None:
+    store = ResearchStore()
+    backtests = BacktestJobStore()
+    monkeypatch.setattr(main, "research_store", store)
+    monkeypatch.setattr(main, "backtest_store", backtests)
+    client = TestClient(main.app)
+    client.headers.update(_owner_headers("scale-owner"))
+    task = client.post(
+        "/v1/research/tasks",
+        json={
+            "owner_principal": "scale-owner", "title": "Scale strategy query",
+            "objective": "Prove direct strategy counts", "trace_id": "scale-trace",
+            "idempotency_key": "scale-task",
+        },
+    ).json()
+    with store._transaction() as connection:
+        execute(
+            connection,
+            """INSERT INTO artifacts
+               (artifact_id, task_id, experiment_id, owner_principal, kind, status, content,
+                content_sha256, lineage, trace_id, idempotency_key, request_hash,
+                created_at, updated_at, version)
+               SELECT 'artifact_' || lpad(to_hex(n), 32, '0'), :task_id, NULL, 'scale-owner',
+                      'strategy_version', 'validated',
+                      jsonb_build_object('strategy_id', 'ScaleStrategy', 'version_id', 'v-' || n),
+                      repeat('a', 64), '[]'::jsonb, 'scale-trace', 'scale-version-' || n,
+                      repeat('b', 64), now(), now(), 1
+               FROM generate_series(1, 205) AS n""",
+            {"task_id": task["task_id"]},
+        )
+
+    first = client.get("/v1/research/strategies?lifecycle=active&limit=50&offset=0")
+    assert first.status_code == 200
+    assert first.json()["total"] == 205
+    assert len(first.json()["strategies"]) == 50
+    last = client.get("/v1/research/strategies?lifecycle=active&limit=50&offset=200")
+    assert len(last.json()["strategies"]) == 5
+    history = client.get("/v1/research/strategies/ScaleStrategy/versions")
+    assert len(history.json()["versions"]) == 205
+    counts = client.get("/v1/research/strategies/ScaleStrategy/backtest-count")
+    assert counts.json()["version_count"] == 205
+    assert counts.json()["backtest_count"] == 0
+    assert len(counts.json()["by_version"]) == 205
+    backtests.close()
+    store.close()
 
 
 def test_strategy_draft_version_export_and_approval_flow(monkeypatch) -> None:

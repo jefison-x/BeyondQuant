@@ -156,6 +156,57 @@ class MarketDataStore(PgStoreMixin):
         result["provenance"] = result.pop("provenance_json") or {}
         return result
 
+    def list_bars(
+        self,
+        symbols: list[str],
+        start_date: str,
+        end_date: str,
+        *,
+        limit: int = 50_000,
+    ) -> list[dict[str, Any]]:
+        """Read a bounded canonical bar window for an already-frozen universe.
+
+        This is intentionally a direct Data Plane query, not a provider fallback:
+        signal jobs must freeze durable BYQ rows before any strategy source runs.
+        """
+        normalized_symbols = sorted({str(value).strip().upper() for value in symbols if str(value).strip()})
+        if not normalized_symbols:
+            raise ValueError("symbols must be a non-empty list")
+        if len(normalized_symbols) > 2_000:
+            raise ValueError("symbols exceeds 2000 entries")
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > 50_000:
+            raise ValueError("limit must be between 1 and 50000")
+        if not isinstance(start_date, str) or not isinstance(end_date, str):
+            raise ValueError("start_date and end_date must be strings")
+        start = start_date.replace("-", "")
+        end = end_date.replace("-", "")
+        if len(start) != 8 or not start.isdigit() or len(end) != 8 or not end.isdigit() or start > end:
+            raise ValueError("date range must be valid YYYY-MM-DD or YYYYMMDD values")
+        rows = self._execute(
+            """SELECT symbol, trade_date, open, high, low, close, volume, amount,
+                      adjust, asset_type, data_source, volume_unit, amount_unit,
+                      content_sha256, provenance_json
+               FROM market_daily_bars
+               WHERE symbol IN (SELECT jsonb_array_elements_text(:symbols_json))
+                 AND trade_date >= :start_date AND trade_date <= :end_date
+               ORDER BY trade_date, symbol
+               LIMIT :query_limit""",
+            {
+                "symbols_json": normalized_symbols,
+                "start_date": start,
+                "end_date": end,
+                "query_limit": limit + 1,
+            },
+        )
+        if len(rows) > limit:
+            raise ValueError(f"market bar window exceeds {limit} rows")
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["provenance"] = item.pop("provenance_json") or {}
+            result.append(item)
+        return result
+
     def coverage(self) -> dict[str, Any]:
         rows = self._execute(
             """SELECT data_source, asset_type, COUNT(*) AS row_count, MIN(trade_date) AS date_min,

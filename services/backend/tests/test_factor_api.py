@@ -21,6 +21,13 @@ def test_factor_endpoint_persists_factor_result_artifact(monkeypatch) -> None:
     store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
+    client.headers.update({
+        "x-byq-owner-principal": "product-user",
+        "x-byq-actor-principal": "product-user",
+        "x-byq-trace-id": "byq-trace-factor-api",
+        "x-byq-session-id": "byq-session-factor-api",
+        "x-byq-dsh-run-id": "byq-run-factor-api",
+    })
     task = client.post(
         "/v1/research/tasks",
         json={

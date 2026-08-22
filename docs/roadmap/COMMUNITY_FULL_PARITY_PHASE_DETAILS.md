@@ -1,6 +1,6 @@
 # Community Full Parity — Phase 33–40 Detailed Task Table
 
-Status: `ACTIVE` — complements `IMPLEMENTATION_PLAN.md` and
+Status: `COMPLETE` (2026-08-22) — complements `IMPLEMENTATION_PLAN.md` and
 `COMMUNITY_FULL_PARITY_PLAN.md` with
 per-phase Community comparison, current state, gaps, dependencies,
 classification, and estimates.
@@ -205,13 +205,16 @@ Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
   `XiaobaAssistantDrawer` (285), `AgentThinking` (155), `StockPoolDialog`
   (293), `UserModelSettingsPanel` (454), `SystemAnalytics` (103),
   `ChartWrapper` (197).
-- Current BYQ: `ChartWrapper`, `MetricCard`, `Base*` UI present; others
-  missing or inlined.
-- Gaps: 8 shared components missing; several phases depend on them.
-- Recommendation: extract early as a prerequisite for Phases 36–38.
+- Delivered BYQ: shared `AppStateBlock` and `EntityPagination`; proven
+  phase-specific approval, assistant, model and operations components; deep
+  strategy projections; and ADR-0023 isolated signal production.
+- Closure: all transferred Phase 40 items are closed or explicitly dropped;
+  the no-mock two-user golden journey and Chrome evidence are recorded under
+  `docs/evidence/phase-40/`.
 - Classification: all=`PORT_COMPONENT` (layout/style reuse) + `REFACTOR`
   (wire to BYQ Product API).
 - Estimate: 8 person-days (M).
+- Status: `COMPLETE` (2026-08-22).
 
 ---
 

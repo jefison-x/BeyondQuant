@@ -32,7 +32,7 @@ async function handleCommand(command: string) {
 <template>
   <div class="user-settings-menu" :class="`is-${props.variant}`">
     <el-dropdown trigger="click" placement="top-start" @command="handleCommand">
-      <button type="button" class="user-trigger" :aria-label="`用户设置：${displayName}`">
+      <button type="button" class="user-trigger" :title="`用户设置：${displayName}`">
         <span class="user-avatar">{{ avatarText }}</span>
         <span v-if="props.variant === 'mobile' && props.mobileLabel" class="mobile-label">
           {{ props.mobileLabel }}

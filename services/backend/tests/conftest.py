@@ -30,6 +30,7 @@ from app.market_data import MarketDataStore
 from app.operations import OperationsStore
 from app.paper_trading import PaperTradingStore
 from app.research import ResearchStore
+from app.signal_producer import SignalJobStore
 from app.user_auth import UserAuthStore
 from app.user_policy import UserPolicyStore
 
@@ -49,6 +50,7 @@ REGISTERED_SCHEMA_DDL: list[str] = [
     *LearningLoopStore.SCHEMA_DDL,
     *ResearchStore.SCHEMA_DDL,
     *MarketDataStore.SCHEMA_DDL,
+    *SignalJobStore.SCHEMA_DDL,
     *OperationsStore.SCHEMA_DDL,
 ]
 

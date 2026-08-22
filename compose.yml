@@ -168,10 +168,64 @@ services:
       retries: 12
       start_period: 5s
 
+  signal-worker:
+    build:
+      context: .
+      dockerfile: workers/signal/Dockerfile
+    environment:
+      BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
+      BYQ_SIGNAL_SANDBOX_URL: http://signal-sandbox:8500
+      BYQ_SIGNAL_POLL_SECONDS: 1
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      signal-sandbox:
+        condition: service_healthy
+    networks:
+      - byq_product
+      - byq_signal_sandbox
+    security_opt:
+      - no-new-privileges:true
+
+  signal-sandbox:
+    build:
+      context: .
+      dockerfile: services/signal-sandbox/Dockerfile
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    mem_limit: 896m
+    cpus: 1.0
+    networks:
+      - byq_signal_sandbox
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          response = urllib.request.urlopen('http://127.0.0.1:8500/healthz', timeout=3);
+          raise SystemExit(0 if response.status == 200 else 1)
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
 networks:
   byq_product:
     name: ${BYQ_PRODUCT_NETWORK_NAME:-byq_product}
     driver: bridge
+  byq_signal_sandbox:
+    name: ${BYQ_SIGNAL_SANDBOX_NETWORK_NAME:-byq_signal_sandbox}
+    driver: bridge
+    internal: true
 
 volumes:
   byq_postgres_data:

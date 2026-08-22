@@ -1280,14 +1280,20 @@ and quality audit. All browser calls use Product API; real desktop/mobile Chrome
 MCP evidence and the Community checklist are stored under
 `docs/evidence/phase-39/`.
 
-### Phase 40 — Shared components and final parity closure (`BLOCKED`)
+### Phase 40 — Shared components and final parity closure (`COMPLETE`)
 
 Finish reusable product components and resolve every transferred D-item,
 including the signal producer decision. Re-run the parity matrix with no
 unexplained PARTIAL/MISSING item and execute a real-Product-API, no-mock,
 multi-user golden journey before reopening the v1.0 RC gate.
 
-Entry blocker: accept a dedicated ADR for the D-0002 signal-producer boundary.
+Delivered the ADR-0023 two-tier isolated signal producer, closed D-0002 and
+D-0009–D-0012, and explicitly dropped observation-triggered D-0003 after a
+zero-orphan audit. Direct paginated strategy projections, shared state and
+pagination components, deep immutable strategy fields and owner approval are
+covered by scale/component/contract tests. A fresh Compose deployment passed
+the no-mock two-user Product API journey and Chrome desktop/mobile review under
+`docs/evidence/phase-40/`; the v1.0 RC review gate is reopened.
 
 ### Post-Phase 40 maintenance — DSH Upgrade Lane (`SCHEDULED`)
 

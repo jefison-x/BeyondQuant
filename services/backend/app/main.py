@@ -2,6 +2,7 @@ import os
 import re
 import time
 from dataclasses import replace
+from datetime import datetime
 
 from fastapi import BackgroundTasks, FastAPI
 from fastapi import HTTPException, Request
@@ -24,6 +25,13 @@ from .data_sync import (
     DataSyncStore,
 )
 from .market_data import MarketDataStore
+from .signal_producer import (
+    SignalJobStore,
+    SignalProducerConflict,
+    SignalProducerNotFound,
+    SignalProducerPersistenceError,
+    prepare_signal_job_input,
+)
 from .credentials import (
     MODEL_CATALOG,
     CredentialConflict,
@@ -113,6 +121,7 @@ from .strategy_artifact import (
     prepare_strategy_draft,
     strategy_draft_content,
     strategy_version_content,
+    strategy_output_method,
     validate_version_content,
 )
 from .operations import (
@@ -140,6 +149,7 @@ user_policy_store = UserPolicyStore.from_env()
 credential_store = CredentialStore.from_env()
 operations_store = OperationsStore.from_env()
 market_data_store = MarketDataStore.from_env()
+signal_job_store = SignalJobStore.from_env()
 data_sync_store = DataSyncStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
@@ -484,6 +494,19 @@ def _backtest_call(operation: Callable[[], dict[str, object]]) -> dict[str, obje
         raise HTTPException(status_code=503, detail="backtest storage is unavailable") from error
 
 
+def _signal_producer_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except (ResearchNotFound, PaperTradingNotFound, SignalProducerNotFound) as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except SignalProducerConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except SignalProducerPersistenceError as error:
+        raise HTTPException(status_code=503, detail="signal producer storage is unavailable") from error
+
+
 def _agent_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return operation()
@@ -625,8 +648,15 @@ def _research_transition(
 
 
 @app.post("/v1/research/tasks", status_code=201)
-def create_research_task(payload: dict[str, Any]) -> dict[str, object]:
-    return _research_call(lambda: research_store.create_task(payload))
+def create_research_task(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        if payload.get("owner_principal") != context["owner_principal"]:
+            raise ValueError("research task owner must match trusted context")
+        return research_store.create_task(payload)
+
+    return _research_call(operation)
 
 
 @app.get("/v1/research/tasks/{task_id}")
@@ -837,7 +867,9 @@ def create_strategy_version(payload: dict[str, Any], http_request: Request) -> d
 
 
 @app.post("/v1/research/strategies/approvals", status_code=201)
-def create_strategy_approval(payload: dict[str, Any]) -> dict[str, object]:
+def create_strategy_approval(payload: dict[str, Any], http_request: Request) -> dict[str, object]:
+    context = _required_agent_context(http_request)
+
     def operation() -> dict[str, object]:
         request = _strategy_payload(
             payload,
@@ -847,6 +879,8 @@ def create_strategy_approval(payload: dict[str, Any]) -> dict[str, object]:
             },
         )
         version_artifact = research_store.get_artifact(request.get("strategy_version_artifact_id"))
+        if version_artifact["owner_principal"] != context["owner_principal"]:
+            raise ResearchNotFound("strategy version not found")
         if version_artifact["kind"] != "strategy_version":
             raise ValueError("strategy_version_artifact_id must reference a strategy_version artifact")
         if version_artifact["task_id"] != request.get("task_id"):
@@ -919,6 +953,21 @@ def export_strategy_version_artifact(artifact_id: str, request: Request) -> dict
 _STRATEGY_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{2,63}$")
 
 
+@app.get("/v1/research/strategies")
+def list_strategy_artifacts(
+    request: Request, lifecycle: str = "active", limit: int = 50, offset: int = 0
+) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _research_call(
+        lambda: research_store.list_strategy_artifacts(
+            owner_principal=context["owner_principal"],
+            lifecycle=lifecycle,
+            limit=limit,
+            offset=offset,
+        )
+    )
+
+
 @app.post("/v1/research/strategies/drafts", status_code=201)
 def save_strategy_draft(payload: dict[str, Any], http_request: Request) -> dict[str, object]:
     """Durably save a strategy draft (Phase 33).
@@ -988,7 +1037,9 @@ def strategy_version_history(strategy_id: str, request: Request) -> dict[str, ob
     context = _required_agent_context(request)
     if _STRATEGY_ID_RE.fullmatch(strategy_id) is None:
         raise ValueError("strategy_id has invalid format")
-    artifacts = research_store.list_artifacts(owner_principal=context["owner_principal"])["artifacts"]
+    artifacts = research_store.list_strategy_versions(
+        owner_principal=context["owner_principal"], strategy_id=strategy_id
+    )
     versions: list[dict[str, object]] = []
     for item in artifacts:
         if item["kind"] != "strategy_version":
@@ -1015,7 +1066,9 @@ def strategy_backtest_count(strategy_id: str, request: Request) -> dict[str, obj
     context = _required_agent_context(request)
     if _STRATEGY_ID_RE.fullmatch(strategy_id) is None:
         raise ValueError("strategy_id has invalid format")
-    artifacts = research_store.list_artifacts(owner_principal=context["owner_principal"])["artifacts"]
+    artifacts = research_store.list_strategy_versions(
+        owner_principal=context["owner_principal"], strategy_id=strategy_id
+    )
     version_ids: list[str] = []
     for item in artifacts:
         if item["kind"] != "strategy_version":
@@ -1205,6 +1258,169 @@ def list_signal_snapshots(request: Request) -> dict[str, object]:
     return {"snapshots": snapshots}
 
 
+def _signal_date(value: object, field: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be YYYY-MM-DD")
+    normalized = value.strip()
+    try:
+        parsed = datetime.strptime(normalized, "%Y-%m-%d")
+    except ValueError as error:
+        raise ValueError(f"{field} must be YYYY-MM-DD") from error
+    return parsed.strftime("%Y-%m-%d")
+
+
+@app.post("/v1/research/signal-producer/jobs", status_code=202)
+def create_signal_producer_job(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    """Freeze owner-scoped BYQ inputs before isolated strategy execution."""
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        data = _strategy_payload(
+            payload,
+            {
+                "task_id", "experiment_id", "strategy_version_artifact_id",
+                "stock_pool_snapshot_id", "start_date", "end_date", "parameters",
+                "execution", "order_quantity", "trace_id", "idempotency_key",
+            },
+        )
+        task = research_store.get_task(data.get("task_id"))
+        if task["owner_principal"] != context["owner_principal"]:
+            raise ResearchNotFound("research task not found")
+        version = research_store.get_artifact(data.get("strategy_version_artifact_id"))
+        if version["owner_principal"] != context["owner_principal"]:
+            raise ResearchNotFound("strategy version not found")
+        if version["kind"] != "strategy_version" or version["status"] != "validated":
+            raise ValueError("strategy_version_artifact_id must reference a validated strategy version")
+        if version["task_id"] != task["task_id"]:
+            raise ValueError("strategy version does not belong to task_id")
+        version_content = validate_version_content(version["content"])
+        strategy_snapshot = version_content.get("snapshot")
+        if not isinstance(strategy_snapshot, dict):
+            raise ValueError("strategy version snapshot is invalid")
+        script = strategy_snapshot.get("script")
+        if not isinstance(script, str):
+            raise ValueError("strategy source is unavailable")
+        if strategy_output_method(script) != "generate_signals":
+            raise ValueError("execution_profile_unsupported: generate_target_weights is not supported")
+
+        pool_snapshot = paper_store.get_pool_snapshot(
+            data.get("stock_pool_snapshot_id"),
+            trusted_owner=context["owner_principal"],
+        )
+        pool = paper_store.get_pool(
+            pool_snapshot["pool_id"], trusted_owner=context["owner_principal"]
+        )
+        if pool["status"] != "active":
+            raise ValueError("stock pool must be active for signal production")
+        symbols = sorted(
+            str(item["symbol"])
+            for item in pool_snapshot.get("members", [])
+            if isinstance(item, dict) and isinstance(item.get("symbol"), str)
+        )
+        if not symbols:
+            raise ValueError("stock pool snapshot has no members")
+        start_date = _signal_date(data.get("start_date"), "start_date")
+        end_date = _signal_date(data.get("end_date"), "end_date")
+        if start_date > end_date:
+            raise ValueError("start_date must not be after end_date")
+        market_rows = market_data_store.list_bars(symbols, start_date, end_date)
+        covered = {str(item["symbol"]) for item in market_rows}
+        missing = sorted(set(symbols) - covered)
+        if missing:
+            raise ValueError("canonical bars are missing for pool members: " + ", ".join(missing[:10]))
+        bars = [
+            {
+                "symbol": row["symbol"],
+                "trade_date": f"{str(row['trade_date'])[:4]}-{str(row['trade_date'])[4:6]}-{str(row['trade_date'])[6:8]}",
+                "open": row["open"], "high": row["high"], "low": row["low"], "close": row["close"],
+                "volume": 0 if row.get("volume") is None else row["volume"],
+            }
+            for row in market_rows
+        ]
+        parameters = data.get("parameters", strategy_snapshot.get("parameters", {}))
+        if not isinstance(parameters, dict):
+            raise ValueError("parameters must be an object")
+        execution = data.get("execution", {})
+        if not isinstance(execution, dict):
+            raise ValueError("execution must be an object")
+        order_quantity = data.get("order_quantity")
+        if not isinstance(order_quantity, int) or isinstance(order_quantity, bool) or order_quantity < 1:
+            raise ValueError("order_quantity must be a positive integer")
+        lot_size = execution.get("lot_size", 100)
+        if not isinstance(lot_size, int) or isinstance(lot_size, bool) or lot_size < 1:
+            raise ValueError("execution.lot_size must be a positive integer")
+        if order_quantity % lot_size:
+            raise ValueError("order_quantity must be aligned to execution.lot_size")
+
+        # Reuse ADR-0017 normalization now, before the job can become runnable.
+        normalized = normalize_signal_snapshot(
+            {
+                "universe": {
+                    "universe_id": pool_snapshot["pool_id"],
+                    "version_id": pool_snapshot["snapshot_id"],
+                    "membership_fingerprint": membership_fingerprint(symbols),
+                    "symbols": symbols,
+                },
+                "bars": bars,
+                "signals": [],
+                "execution": execution,
+                "corporate_actions": [],
+                "source": {"producer": "byq-signal-python-v1"},
+            },
+            strategy_version_artifact_id=version["artifact_id"],
+            strategy_version_id=version_content["version_id"],
+        )
+        input_document = prepare_signal_job_input(
+            strategy_version_artifact_id=str(version["artifact_id"]),
+            strategy_version_id=str(version_content["version_id"]),
+            source_fingerprint=str(version_content["source_fingerprint"]),
+            script=script,
+            stock_pool_snapshot_id=str(pool_snapshot["snapshot_id"]),
+            stock_pool_id=str(pool_snapshot["pool_id"]),
+            membership_fingerprint=str(normalized["universe"]["membership_fingerprint"]),
+            symbols=list(normalized["universe"]["symbols"]),
+            bars=list(normalized["bars"]),
+            parameters=parameters,
+            execution=dict(normalized["execution"]),
+            order_quantity=order_quantity,
+        )
+        job = signal_job_store.create(
+            owner_principal=context["owner_principal"],
+            task_id=task["task_id"],
+            experiment_id=data.get("experiment_id"),
+            strategy_version_artifact_id=version["artifact_id"],
+            stock_pool_snapshot_id=pool_snapshot["snapshot_id"],
+            input_document=input_document,
+            trace_id=data.get("trace_id"),
+            idempotency_key=data.get("idempotency_key"),
+        )
+        paper_store.record_pool_reference(
+            pool_snapshot["snapshot_id"], domain="signal_producer", reference_id=job["job_id"],
+            trusted_owner=context["owner_principal"],
+        )
+        return {"job": job}
+
+    return _signal_producer_call(operation)
+
+
+@app.get("/v1/research/signal-producer/jobs")
+def list_signal_producer_jobs(request: Request, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _signal_producer_call(
+        lambda: signal_job_store.list_jobs(
+            trusted_owner=context["owner_principal"], limit=limit, offset=offset
+        )
+    )
+
+
+@app.get("/v1/research/signal-producer/jobs/{job_id}")
+def get_signal_producer_job(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _signal_producer_call(
+        lambda: {"job": signal_job_store.get(job_id, trusted_owner=context["owner_principal"])}
+    )
+
+
 @app.post("/v1/research/backtests", status_code=202)
 def create_backtest_job(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
@@ -1268,7 +1484,12 @@ def backtest_options(request: Request) -> dict[str, object]:
     wizard needs to submit a backtest referencing a signal_snapshot.
     """
     context = _required_agent_context(request)
-    artifacts = research_store.list_artifacts(owner_principal=context["owner_principal"])["artifacts"]
+    versions_list = research_store.list_validated_strategy_versions(
+        owner_principal=context["owner_principal"]
+    )
+    artifacts = versions_list + research_store.list_strategy_approvals(
+        owner_principal=context["owner_principal"]
+    )
     versions = {
         item["artifact_id"]: item
         for item in artifacts

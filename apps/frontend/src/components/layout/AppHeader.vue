@@ -100,7 +100,7 @@ onMounted(async () => {
 }
 
 .header-kicker {
-  color: var(--byq-brand);
+  color: var(--byq-brand-contrast);
   font-size: 11px;
   font-weight: 850;
   letter-spacing: 0.05em;
