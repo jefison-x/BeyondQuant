@@ -30,6 +30,9 @@ jobs:
       # Guard against any future opt-in compose usage colliding with the
       # developer's local stack project name.
       COMPOSE_PROJECT_NAME: byq-ci-runner
+      # A pull request's base SHA is immutable even if main advances or the PR
+      # is squash-merged while this self-hosted job is queued/running.
+      BYQ_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -37,7 +40,7 @@ jobs:
           fetch-depth: 0
 
       - name: Fetch main baseline for path filtering
-        run: git fetch --quiet --depth=1 origin main || true
+        run: git fetch --quiet origin "$BYQ_CI_BASE_SHA"
 
       - name: Run local CI (core, mocked UI, compose, and real browser checks)
-        run: ./scripts/ci/local-ci.sh --all --with-e2e --with-smoke
+        run: ./scripts/ci/local-ci.sh --base="$BYQ_CI_BASE_SHA" --all --with-e2e --with-smoke

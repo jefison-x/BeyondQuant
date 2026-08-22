@@ -24,6 +24,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 BASE_SHA="origin/main"
+DIFF_BASE=""
 ONLY=""
 ALL=0
 DO_BUILD=0
@@ -61,11 +62,18 @@ compute_changed() {
   step "changes: diff baseline $BASE_SHA"
   git fetch --quiet origin 2>/dev/null || true
   if ! git rev-parse --verify --quiet "$BASE_SHA" >/dev/null; then
-    echo "    [WARN] baseline '$BASE_SHA' not found locally; using HEAD^" >&2
-    BASE_SHA="HEAD^"
+    echo "    [FAIL] baseline '$BASE_SHA' not found locally" >&2
+    return 1
   fi
-  CHANGED="$(git diff --name-only "$BASE_SHA"...HEAD || true)"
-  [ -n "$CHANGED" ] || CHANGED="$(git diff --name-only "$BASE_SHA" HEAD || true)"
+  DIFF_BASE="$(git merge-base "$BASE_SHA" HEAD 2>/dev/null || true)"
+  if [ -z "$DIFF_BASE" ]; then
+    echo "    [WARN] no merge base; comparing the exact baseline tree" >&2
+    DIFF_BASE="$BASE_SHA"
+  fi
+  if ! CHANGED="$(git diff --name-only "$DIFF_BASE" HEAD)"; then
+    echo "    [FAIL] unable to compute changed files from '$DIFF_BASE'" >&2
+    return 1
+  fi
   if [ -z "$CHANGED" ]; then echo "    (no changed files)"; fi
   echo "$CHANGED" | grep -qE '^services/backend/' && backend=yes
   echo "$CHANGED" | grep -qE '^services/gateway/|^packages/' && gateway=yes
@@ -174,7 +182,7 @@ resolve_ci_compose_urls() {
 # ------------------------------------------------------------------- checks
 check_architecture() {
   step "architecture: git diff --check + unittest"
-  if git diff --check "$BASE_SHA"...HEAD; then ok "git diff --check"; else bad "git diff --check"; fi
+  if git diff --check "$DIFF_BASE" HEAD; then ok "git diff --check"; else bad "git diff --check"; fi
   if python3 -m unittest discover -s tests -p 'test_*.py' >/dev/null 2>&1; then
     ok "architecture tests"; else bad "architecture tests"; fi
 }
