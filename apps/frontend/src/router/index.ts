@@ -31,8 +31,9 @@ const router = createRouter({
       path: "/",
       component: () => import("@/components/layout/AppShell.vue"),
       children: [
+        { path: "", redirect: "/agent" },
         {
-          path: "",
+          path: "dashboard",
           name: "dashboard",
           component: () => import("@/views/HomeView.vue"),
           meta: {
@@ -186,10 +187,10 @@ router.beforeEach((to) => {
     return { name: "login", query: { redirect: to.fullPath } };
   }
   if (to.matched.some((record) => Boolean(record.meta.requiresAdmin)) && !auth.isAdmin) {
-    return { name: "dashboard" };
+    return { name: "agent" };
   }
   if (to.name === "login" && auth.isAuthenticated) {
-    return { name: "dashboard" };
+    return { name: "agent" };
   }
   return true;
 });

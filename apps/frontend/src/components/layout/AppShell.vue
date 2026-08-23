@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
-import AppBottomNav from "./AppBottomNav.vue";
 import AppHeader from "./AppHeader.vue";
 import AppSidebar from "./AppSidebar.vue";
 import GlobalApprovalCenter from "@/components/agent/GlobalApprovalCenter.vue";
@@ -11,6 +10,7 @@ const route = useRoute();
 const isPublicRoute = computed(() => Boolean(route.meta.public));
 const isMobile = ref(false);
 const sidebarCollapsed = ref(false);
+const mobileDrawerOpen = ref(false);
 
 function updateViewport() {
   isMobile.value = window.innerWidth <= 767;
@@ -44,13 +44,24 @@ onUnmounted(() => {
           @toggle-collapse="toggleSidebarCollapse"
         />
         <section class="workspace-shell">
-          <AppHeader />
+          <AppHeader :show-menu="isMobile" @toggle-menu="mobileDrawerOpen = true" />
           <main class="content-area">
             <RouterView />
           </main>
         </section>
       </div>
-      <AppBottomNav v-if="isMobile" />
+      <el-drawer
+        v-if="isMobile"
+        v-model="mobileDrawerOpen"
+        direction="ltr"
+        :show-close="false"
+        :with-header="false"
+        size="min(86vw, 320px)"
+        class="product-navigation-drawer"
+        aria-label="产品导航"
+      >
+        <AppSidebar :is-collapsed="false" mobile @navigate="mobileDrawerOpen = false" />
+      </el-drawer>
       <GlobalApprovalCenter />
       <XiaobaAssistantDrawer />
     </template>
@@ -96,10 +107,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 767px) {
-  .main-content {
-    padding-bottom: 56px;
-  }
-
   .content-area {
     padding: 0.75rem;
   }
@@ -116,4 +123,8 @@ onUnmounted(() => {
     padding: 1.25rem;
   }
 }
+</style>
+
+<style>
+.product-navigation-drawer .el-drawer__body { padding: 0; }
 </style>

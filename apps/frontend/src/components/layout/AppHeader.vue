@@ -15,9 +15,7 @@ const emit = defineEmits<{ (event: "toggle-menu"): void }>();
 const meta = computed(() => {
   const value = route.meta as Record<string, unknown>;
   return {
-    kicker: typeof value.kicker === "string" ? value.kicker : "BeyondQuant",
     title: typeof value.title === "string" ? value.title : "BeyondQuant",
-    subtitle: typeof value.subtitle === "string" ? value.subtitle : "",
   };
 });
 
@@ -38,15 +36,13 @@ onMounted(async () => {
         v-if="showMenu"
         type="button"
         class="mobile-menu-trigger"
-        aria-label="打开运维菜单"
+        aria-label="打开产品导航"
         @click="emit('toggle-menu')"
       >
         <el-icon><Menu /></el-icon>
       </button>
       <div class="header-intro">
-        <div class="header-kicker">{{ meta.kicker }}</div>
         <h1 class="header-title">{{ meta.title }}</h1>
-        <p v-if="meta.subtitle" class="header-subtitle">{{ meta.subtitle }}</p>
       </div>
     </div>
     <div class="header-right">
@@ -68,10 +64,10 @@ onMounted(async () => {
   border-bottom: 1px solid var(--byq-border);
   display: flex;
   flex: 0 0 auto;
-  height: 64px;
+  height: 52px;
   justify-content: space-between;
-  min-height: 64px;
-  padding: 0.55rem 1.25rem;
+  min-height: 52px;
+  padding: 0.4rem 1rem;
 }
 
 .header-intro {
@@ -99,31 +95,12 @@ onMounted(async () => {
   width: 34px;
 }
 
-.header-kicker {
-  color: var(--byq-brand-contrast);
-  font-size: 11px;
-  font-weight: 850;
-  letter-spacing: 0.05em;
-  line-height: 1.3;
-  text-transform: uppercase;
-}
-
 .header-title {
   color: var(--byq-text);
-  font-size: 19px;
+  font-size: 16px;
   font-weight: 850;
   line-height: 1.2;
-  margin: 0.05rem 0 0;
-}
-
-.header-subtitle {
-  color: var(--byq-text-muted);
-  font-size: 12px;
-  line-height: 1.4;
-  margin: 0.15rem 0 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin: 0;
 }
 
 .header-right {
@@ -156,7 +133,7 @@ onMounted(async () => {
 
 @media (max-width: 767px) {
   .app-header {
-    min-height: 56px;
+    min-height: 52px;
     padding: 0.45rem 0.9rem;
   }
 
@@ -164,8 +141,5 @@ onMounted(async () => {
     font-size: 16px;
   }
 
-  .header-subtitle {
-    display: none;
-  }
 }
 </style>

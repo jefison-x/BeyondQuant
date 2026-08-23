@@ -1,279 +1,162 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Menu, Tools } from "@element-plus/icons-vue";
-import { businessNavGroups, findActiveNavItem } from "@/router/navigation";
+import { ChatLineRound, Menu, Plus } from "@element-plus/icons-vue";
+import { findActiveNavItem, historyNavItem, primaryNavItems } from "@/router/navigation";
 import { useAgentStore } from "@/stores/agent";
-import { useAuthStore } from "@/stores/auth";
 import UserSettingsMenu from "./UserSettingsMenu.vue";
 
-defineProps<{ isCollapsed: boolean }>();
-const emit = defineEmits<{ (event: "toggle-collapse"): void }>();
+const props = withDefaults(defineProps<{ isCollapsed: boolean; mobile?: boolean }>(), { mobile: false });
+const emit = defineEmits<{
+  (event: "toggle-collapse"): void;
+  (event: "navigate"): void;
+}>();
 
 const route = useRoute();
 const router = useRouter();
 const agent = useAgentStore();
-const auth = useAuthStore();
-
 const activeIndex = computed(() => findActiveNavItem(route.path));
-const openGroups = businessNavGroups.map((group) => group.index);
-const navGroups = computed(() =>
-  auth.isAdmin
-    ? [
-        ...businessNavGroups,
-        {
-          index: "admin-ops",
-          label: "系统运维",
-          icon: Tools,
-          items: [{ to: "/admin/database", label: "运维管理", icon: Tools }],
-        },
-      ]
-    : businessNavGroups,
-);
+const recentSessions = computed(() => agent.sessions.slice(0, 8));
+const recentHeading = ref<HTMLElement | null>(null);
 
-function handleMenuSelect(index: string) {
-  if (route.path !== index) {
-    void router.push(index);
-  }
+function navigate(path: string) {
+  emit("navigate");
+  if (route.path !== path) void router.push(path);
+}
+
+function newConversation() {
+  emit("navigate");
+  void router.push({ path: "/agent", query: { new: String(Date.now()) } });
+}
+
+function showHistory() {
+  void router.push({ path: "/agent", query: { history: "recent" } });
+  void nextTick(() => recentHeading.value?.focus());
 }
 
 function openSession(sessionId: string) {
   agent.setActiveSession(sessionId);
-  if (route.path !== "/agent") {
-    void router.push({ path: "/agent", query: { ...route.query, session: sessionId } });
-  }
+  emit("navigate");
+  void router.push({ path: "/agent", query: { session: sessionId } });
 }
 </script>
 
 <template>
-  <aside class="app-sidebar" :class="{ collapsed: isCollapsed }">
+  <aside class="app-sidebar" :class="{ collapsed: props.isCollapsed, mobile: props.mobile }">
     <div class="sidebar-header">
-      <div class="brand-mark">B</div>
-      <div v-if="!isCollapsed" class="brand-copy">
+      <div class="brand-mark" aria-hidden="true">B</div>
+      <div v-if="!props.isCollapsed" class="brand-copy">
         <span class="logo-text">BeyondQuant</span>
         <span class="logo-subtitle">Research OS</span>
       </div>
       <el-button
+        v-if="!props.mobile"
         class="collapse-toggle"
         size="small"
-        aria-label="折叠菜单"
+        :aria-label="props.isCollapsed ? '展开菜单' : '折叠菜单'"
         @click="emit('toggle-collapse')"
       >
         <el-icon><Menu /></el-icon>
       </el-button>
     </div>
 
-    <el-menu
-      :default-active="activeIndex"
-      :default-openeds="openGroups"
-      :collapse="isCollapsed"
-      :collapse-transition="false"
-      class="sidebar-menu"
-      @select="handleMenuSelect"
-    >
-      <el-sub-menu v-for="group in navGroups" :key="group.index" :index="group.index">
-        <template #title>
-          <el-icon><component :is="group.icon" /></el-icon>
-          <span>{{ group.label }}</span>
-        </template>
-        <el-menu-item v-for="item in group.items" :key="item.to" :index="item.to">
-          {{ item.label }}
-        </el-menu-item>
-      </el-sub-menu>
-    </el-menu>
+    <div class="sidebar-scroll">
+      <nav class="primary-navigation" aria-label="产品主导航">
+        <el-tooltip content="新投研对话" placement="right" :disabled="!props.isCollapsed">
+          <button type="button" class="new-conversation" @click="newConversation">
+            <el-icon><Plus /></el-icon>
+            <span v-if="!props.isCollapsed">新投研对话</span>
+          </button>
+        </el-tooltip>
 
-    <section v-if="!isCollapsed && agent.sessions.length" class="sidebar-history">
-      <div class="history-heading">历史会话</div>
-      <div class="history-list">
-        <button
-          v-for="session in agent.sessions"
-          :key="session.session_id"
-          type="button"
-          class="history-row"
-          :class="{ active: agent.activeSessionId === session.session_id }"
-          @click="openSession(session.session_id)"
+        <el-tooltip
+          v-for="item in primaryNavItems"
+          :key="item.to"
+          :content="item.label"
+          placement="right"
+          :disabled="!props.isCollapsed"
         >
-          {{ session.session_id.slice(-8) }}
-        </button>
-      </div>
-    </section>
+          <button
+            type="button"
+            class="nav-row"
+            :class="{ active: activeIndex === item.to }"
+            :aria-current="activeIndex === item.to ? 'page' : undefined"
+            @click="navigate(item.to)"
+          >
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span v-if="!props.isCollapsed">{{ item.label }}</span>
+          </button>
+        </el-tooltip>
+
+        <el-tooltip :content="historyNavItem.label" placement="right" :disabled="!props.isCollapsed">
+          <button
+            type="button"
+            class="nav-row"
+            :class="{ active: activeIndex === historyNavItem.to }"
+            :aria-current="activeIndex === historyNavItem.to ? 'page' : undefined"
+            @click="showHistory"
+          >
+            <el-icon><component :is="historyNavItem.icon" /></el-icon>
+            <span v-if="!props.isCollapsed">{{ historyNavItem.label }}</span>
+          </button>
+        </el-tooltip>
+      </nav>
+
+      <section v-if="!props.isCollapsed" class="sidebar-history" aria-labelledby="recent-session-heading">
+        <div id="recent-session-heading" ref="recentHeading" class="history-heading" tabindex="-1">最近会话</div>
+        <p v-if="!recentSessions.length" class="history-empty">开始一次投研后，会话会显示在这里</p>
+        <div v-else class="history-list">
+          <button
+            v-for="session in recentSessions"
+            :key="session.session_id"
+            type="button"
+            class="history-row"
+            :class="{ active: agent.activeSessionId === session.session_id && route.path === '/agent' }"
+            :aria-current="agent.activeSessionId === session.session_id && route.path === '/agent' ? 'page' : undefined"
+            @click="openSession(session.session_id)"
+          >
+            <el-icon><ChatLineRound /></el-icon>
+            <span>研究会话 · {{ session.session_id.slice(-8) }}</span>
+          </button>
+        </div>
+      </section>
+    </div>
 
     <div class="sidebar-user-bar">
-      <UserSettingsMenu class="sidebar-user-menu" />
+      <UserSettingsMenu class="sidebar-user-menu" :compact="props.isCollapsed" @navigate="emit('navigate')" />
     </div>
   </aside>
 </template>
 
 <style scoped>
-.app-sidebar {
-  background: var(--byq-surface);
-  border-right: 1px solid var(--byq-border);
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  transition: all 0.3s ease;
-  width: 260px;
-  z-index: 50;
-}
-
-.app-sidebar.collapsed {
-  width: 68px;
-}
-
-.sidebar-header {
-  align-items: center;
-  border-bottom: 1px solid var(--byq-border);
-  display: flex;
-  gap: 0.7rem;
-  height: 64px;
-  min-height: 64px;
-  padding: 0 0.85rem;
-}
-
-.brand-mark {
-  align-items: center;
-  background: var(--byq-brand);
-  border-radius: 7px;
-  color: #ffffff;
-  display: inline-flex;
-  flex: 0 0 auto;
-  font-size: 15px;
-  font-weight: 900;
-  height: 32px;
-  justify-content: center;
-  width: 32px;
-}
-
-.brand-copy {
-  display: grid;
-  line-height: 1.2;
-  min-width: 0;
-}
-
-.logo-text {
-  color: var(--byq-text);
-  font-size: 14px;
-  font-weight: 850;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.logo-subtitle {
-  color: var(--byq-text-soft);
-  font-size: 11px;
-  font-weight: 700;
-  margin-top: 1px;
-}
-
-.collapse-toggle {
-  border: 1px solid var(--byq-border);
-  height: 32px;
-  margin-left: auto;
-  padding: 0;
-  width: 32px;
-}
-
-.sidebar-menu {
-  --el-menu-active-color: var(--byq-brand);
-  --el-menu-bg-color: transparent;
-  --el-menu-hover-bg-color: var(--byq-brand-soft);
-  --el-menu-text-color: #374151;
-  border-right: none;
-  flex-shrink: 0;
-  padding: 0.75rem 0.55rem;
-}
-
-.sidebar-menu :deep(.el-menu-item) {
-  border-radius: 7px;
-  height: 38px;
-  line-height: 38px;
-  margin: 2px 0;
-  padding: 0 0.75rem !important;
-}
-
-.sidebar-menu :deep(.el-sub-menu > .el-menu > .el-menu-item) {
-  padding-left: 2.25rem !important;
-}
-
-.sidebar-menu :deep(.el-menu-item.is-active) {
-  background: var(--byq-brand-soft);
-  color: var(--byq-brand);
-  font-weight: 800;
-}
-
-.sidebar-menu :deep(.el-menu-item .el-icon) {
-  color: inherit;
-  font-size: 17px;
-}
-
-.app-sidebar.collapsed .sidebar-menu .el-sub-menu__title,
-.app-sidebar.collapsed .sidebar-menu .el-menu-item {
-  justify-content: center;
-}
-
-.app-sidebar.collapsed .sidebar-menu :deep(.el-sub-menu > .el-menu > .el-menu-item) {
-  padding-left: 0 !important;
-}
-
-.app-sidebar.collapsed .sidebar-menu .el-menu-item span {
-  height: 0;
-  opacity: 0;
-  transition: all 0.3s ease;
-}
-
-.sidebar-user-bar {
-  align-items: center;
-  border-top: 1px solid var(--byq-border);
-  display: flex;
-  gap: 0.25rem;
-  margin-top: auto;
-  padding: 0.55rem 0.6rem;
-}
-
-.sidebar-user-menu {
-  flex: 1;
-  min-width: 0;
-}
-
-.sidebar-history {
-  border-top: 1px solid var(--byq-border-subtle);
-  margin-top: 0.75rem;
-  padding: 0.75rem 0.75rem 0;
-}
-
-.history-heading {
-  color: var(--byq-text-soft);
-  font-size: 11px;
-  font-weight: 850;
-  letter-spacing: 0.04em;
-  padding: 0 0.45rem 0.4rem;
-  text-transform: uppercase;
-}
-
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.history-row {
-  background: transparent;
-  border: 0;
-  border-radius: var(--byq-radius-sm);
-  color: var(--byq-text);
-  cursor: pointer;
-  font-size: 12px;
-  overflow: hidden;
-  padding: 0.45rem;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.history-row:hover,
-.history-row.active {
-  background: var(--byq-brand-soft);
-  color: var(--byq-brand);
-}
+.app-sidebar { background: var(--byq-surface); border-right: 1px solid var(--byq-border); display: flex; flex: 0 0 auto; flex-direction: column; height: 100vh; transition: width .2s ease; width: 260px; z-index: 50; }
+.app-sidebar.collapsed { width: 68px; }
+.app-sidebar.mobile { border-right: 0; height: 100%; width: 100%; }
+.sidebar-header { align-items: center; border-bottom: 1px solid var(--byq-border-subtle); display: flex; gap: .7rem; height: 56px; min-height: 56px; padding: 0 .75rem; }
+.brand-mark { align-items: center; background: var(--byq-brand-contrast); border-radius: 8px; color: #fff; display: inline-flex; flex: 0 0 auto; font-size: 15px; font-weight: 900; height: 32px; justify-content: center; width: 32px; }
+.brand-copy { display: grid; line-height: 1.15; min-width: 0; }
+.logo-text { color: var(--byq-text); font-size: 14px; font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logo-subtitle { color: var(--byq-text-soft); font-size: 10px; font-weight: 700; margin-top: 2px; }
+.collapse-toggle { height: 32px; margin-left: auto; padding: 0; width: 32px; }
+.sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: .7rem .55rem; }
+.primary-navigation, .history-list { display: grid; gap: 3px; }
+.new-conversation, .nav-row, .history-row { align-items: center; border: 0; border-radius: var(--byq-radius-sm); cursor: pointer; display: flex; font: inherit; text-align: left; width: 100%; }
+.new-conversation { background: var(--byq-brand-contrast); color: #fff; font-size: 13px; font-weight: 800; gap: .65rem; height: 40px; margin-bottom: .55rem; padding: 0 .75rem; }
+.new-conversation:hover { background: var(--byq-brand-contrast-hover); }
+.nav-row { background: transparent; color: var(--byq-text-muted); font-size: 13px; font-weight: 650; gap: .65rem; height: 40px; padding: 0 .75rem; }
+.nav-row:hover, .nav-row.active { background: var(--byq-brand-soft); color: var(--byq-brand-contrast); }
+.nav-row:focus-visible, .new-conversation:focus-visible, .history-row:focus-visible { outline: 2px solid var(--byq-brand-contrast); outline-offset: 2px; }
+.new-conversation .el-icon, .nav-row .el-icon { flex: 0 0 auto; font-size: 17px; }
+.collapsed .new-conversation, .collapsed .nav-row { justify-content: center; padding: 0; }
+.sidebar-history { border-top: 1px solid var(--byq-border-subtle); margin-top: .75rem; padding: .75rem .2rem 0; }
+.history-heading { color: var(--byq-text-soft); font-size: 11px; font-weight: 850; letter-spacing: .04em; padding: 0 .55rem .35rem; text-transform: uppercase; }
+.history-heading:focus-visible { outline: 2px solid var(--byq-brand-contrast); outline-offset: 2px; }
+.history-empty { color: var(--byq-text-soft); font-size: 11px; line-height: 1.45; margin: .2rem .55rem; }
+.history-row { background: transparent; color: var(--byq-text-muted); font-size: 12px; gap: .5rem; overflow: hidden; padding: .5rem .55rem; }
+.history-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-row .el-icon { flex: 0 0 auto; }
+.history-row:hover, .history-row.active { background: var(--byq-surface-muted); color: var(--byq-text); }
+.sidebar-user-bar { border-top: 1px solid var(--byq-border-subtle); margin-top: auto; padding: .55rem; }
+.sidebar-user-menu { min-width: 0; }
+@media (prefers-reduced-motion: reduce) { .app-sidebar { transition: none; } }
 </style>
