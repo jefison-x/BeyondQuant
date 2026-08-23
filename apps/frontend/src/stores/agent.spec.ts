@@ -35,4 +35,17 @@ describe("agent session store", () => {
 
     expect(store.sessions).toEqual([session]);
   });
+
+  it("hydrates one selected replay atomically without conversation crossover", () => {
+    const store = useAgentStore();
+    store.hydrateSession("conversation-a", [{ role: "user", text: "A" }], []);
+    store.hydrateSession("conversation-b", [{ role: "agent", text: "B" }], [{
+      trace_id: "trace-b", session_id: "conversation-b", sequence: 1,
+      timestamp: "2026-08-24T00:00:00Z", kind: "agent.output.delta",
+      source: "runtime-adapter", payload: { delta: "B" },
+    }]);
+    expect(store.activeSessionId).toBe("conversation-b");
+    expect(store.messages).toEqual([{ role: "agent", text: "B" }]);
+    expect(store.events.every((event) => event.session_id === "conversation-b")).toBe(true);
+  });
 });

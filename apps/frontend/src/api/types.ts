@@ -37,6 +37,26 @@ export interface AgentSession {
   session_id: string;
   trace_id: string;
   status?: string;
+  title?: string;
+  pinned?: boolean;
+  message_count?: number;
+  last_message_preview?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AgentReplayMessage {
+  message_id: string;
+  sequence: number;
+  role: "user";
+  content: string;
+  created_at: string;
+}
+
+export interface AgentSessionReplay {
+  conversation: AgentSession;
+  messages: AgentReplayMessage[];
+  events: WorkflowTraceEvent[];
 }
 
 export interface WorkflowTraceEvent {

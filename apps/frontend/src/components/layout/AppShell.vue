@@ -8,6 +8,7 @@ import XiaobaAssistantDrawer from "@/components/agent/XiaobaAssistantDrawer.vue"
 
 const route = useRoute();
 const isPublicRoute = computed(() => Boolean(route.meta.public));
+const isConversationRoute = computed(() => route.path === "/agent");
 const isMobile = ref(false);
 const sidebarCollapsed = ref(false);
 const mobileDrawerOpen = ref(false);
@@ -63,7 +64,7 @@ onUnmounted(() => {
         <AppSidebar :is-collapsed="false" mobile @navigate="mobileDrawerOpen = false" />
       </el-drawer>
       <GlobalApprovalCenter />
-      <XiaobaAssistantDrawer />
+      <XiaobaAssistantDrawer v-if="!isConversationRoute" />
     </template>
   </div>
 </template>

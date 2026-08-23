@@ -161,7 +161,7 @@ test("authenticated dashboard shows resource cards", async ({ page }) => {
 });
 
 test("agent workbench renders a normalized BYQ workflow surface", async ({ page }) => {
-  await page.route("**/v1/agent/sessions", (route) => {
+  await page.route(/\/v1\/agent\/sessions(?:\?.*)?$/, (route) => {
     const session = { session_id: "session-1", trace_id: "trace-1", status: "ready" };
     return route.fulfill({
       status: route.request().method() === "POST" ? 201 : 200,
@@ -174,6 +174,17 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
       status: 200,
       contentType: "text/event-stream",
       body: 'data: {"trace_id":"trace-1","session_id":"session-1","sequence":1,"timestamp":"2026-08-22T00:00:00Z","kind":"agent.activity","source":"runtime-adapter","payload":{"schema_version":"workflow-activity.v1","activity_id":"activity_11111111111111111111111111111111","phase":"understand","state":"started","label":"理解请求"}}\n\n',
+    }),
+  );
+  await page.route("**/v1/agent/sessions/session-1", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        conversation: { session_id: "session-1", trace_id: "trace-1", title: "动量研究", status: "active" },
+        messages: [{ message_id: "m1", sequence: 1, role: "user", content: "研究动量", created_at: "2026-08-21T23:59:00Z" }],
+        events: [{ trace_id: "trace-1", session_id: "session-1", sequence: 1, timestamp: "2026-08-22T00:00:00Z", kind: "agent.activity", source: "runtime-adapter", payload: { schema_version: "workflow-activity.v1", activity_id: "activity_11111111111111111111111111111111", phase: "understand", state: "started", label: "理解请求" } }],
+      }),
     }),
   );
   await page.route("**/api/product/approvals", (route) =>
@@ -192,8 +203,9 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
   );
   await login(page);
   await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
-  await expect(page.getByText("研究对话")).toBeVisible();
-  await expect(page.getByText("BYQ 规范化工作流")).toBeVisible();
+  await expect(page.getByText("BYQ 规范化工作流 · 持久会话")).toBeVisible();
+  await expect(page.getByText("研究动量")).toBeVisible();
+  await page.getByRole("button", { name: /活动与审批/ }).click();
   await expect(page.getByText("理解请求")).toBeVisible();
   await expect(page.getByRole("button", { name: "通过" })).toBeVisible();
 });
@@ -506,8 +518,10 @@ test("mobile shell uses a drawer and keeps account destinations reachable", asyn
   await page.getByRole("button", { name: "打开产品导航" }).click();
   await expect(page.getByRole("navigation", { name: "产品主导航" })).toBeVisible();
   await page.getByRole("button", { name: "历史会话", exact: true }).click();
-  await expect(page.getByRole("navigation", { name: "产品主导航" })).toBeVisible();
   await expect(page).toHaveURL(/\/agent\?history=recent$/);
+  await expect(page.getByRole("heading", { name: "历史会话" })).toBeVisible();
+  await page.getByRole("heading", { name: "历史会话" }).locator("..").getByRole("button").click();
+  await page.getByRole("button", { name: "打开产品导航" }).click();
   await page.getByRole("button", { name: "策略管理", exact: true }).click();
   await expect(page).toHaveURL(/\/strategy$/);
 

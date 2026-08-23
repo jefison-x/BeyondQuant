@@ -2,8 +2,11 @@
 import { computed, nextTick, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ChatLineRound, Menu, Plus } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { updateAgentSession } from "@/api/agent";
 import { findActiveNavItem, historyNavItem, primaryNavItems } from "@/router/navigation";
 import { useAgentStore } from "@/stores/agent";
+import { useAuthStore } from "@/stores/auth";
 import UserSettingsMenu from "./UserSettingsMenu.vue";
 
 const props = withDefaults(defineProps<{ isCollapsed: boolean; mobile?: boolean }>(), { mobile: false });
@@ -15,6 +18,7 @@ const emit = defineEmits<{
 const route = useRoute();
 const router = useRouter();
 const agent = useAgentStore();
+const auth = useAuthStore();
 const activeIndex = computed(() => findActiveNavItem(route.path));
 const recentSessions = computed(() => agent.sessions.slice(0, 8));
 const recentHeading = ref<HTMLElement | null>(null);
@@ -30,6 +34,7 @@ function newConversation() {
 }
 
 function showHistory() {
+  emit("navigate");
   void router.push({ path: "/agent", query: { history: "recent" } });
   void nextTick(() => recentHeading.value?.focus());
 }
@@ -38,6 +43,28 @@ function openSession(sessionId: string) {
   agent.setActiveSession(sessionId);
   emit("navigate");
   void router.push({ path: "/agent", query: { session: sessionId } });
+}
+
+async function sessionCommand(command: string, session: typeof agent.sessions[number]) {
+  if (command === "rename") {
+    const result = await ElMessageBox.prompt("输入新的会话标题", "重命名会话", {
+      inputValue: session.title ?? "", inputPattern: /\S+/, inputErrorMessage: "标题不能为空",
+    });
+    const response = await updateAgentSession(session.session_id, { title: result.value.trim() }, auth.token);
+    agent.replaceSession(response.session);
+    ElMessage.success("会话已重命名");
+    return;
+  }
+  const payload = command === "pin"
+    ? { pinned: !session.pinned }
+    : { status: "archived" as const };
+  if (command === "archive") {
+    await ElMessageBox.confirm(`归档会话“${session.title ?? "新投研对话"}”？`, "归档会话");
+  }
+  const response = await updateAgentSession(session.session_id, payload, auth.token);
+  if (command === "archive") agent.replaceSessions(agent.sessions.filter((item) => item.session_id !== session.session_id));
+  else agent.replaceSession(response.session);
+  ElMessage.success(command === "pin" ? (session.pinned ? "已取消置顶" : "已置顶") : "会话已归档");
 }
 </script>
 
@@ -106,7 +133,7 @@ function openSession(sessionId: string) {
         <div id="recent-session-heading" ref="recentHeading" class="history-heading" tabindex="-1">最近会话</div>
         <p v-if="!recentSessions.length" class="history-empty">开始一次投研后，会话会显示在这里</p>
         <div v-else class="history-list">
-          <button
+          <div
             v-for="session in recentSessions"
             :key="session.session_id"
             type="button"
@@ -116,8 +143,16 @@ function openSession(sessionId: string) {
             @click="openSession(session.session_id)"
           >
             <el-icon><ChatLineRound /></el-icon>
-            <span>研究会话 · {{ session.session_id.slice(-8) }}</span>
-          </button>
+            <span>{{ session.title || `研究会话 · ${session.session_id.slice(-8)}` }}</span>
+            <el-dropdown trigger="click" @command="(command: string) => sessionCommand(command, session)">
+              <button class="history-more" type="button" aria-label="会话操作" @click.stop>···</button>
+              <template #dropdown><el-dropdown-menu>
+                <el-dropdown-item command="pin">{{ session.pinned ? "取消置顶" : "置顶" }}</el-dropdown-item>
+                <el-dropdown-item command="rename">重命名</el-dropdown-item>
+                <el-dropdown-item command="archive" divided>归档</el-dropdown-item>
+              </el-dropdown-menu></template>
+            </el-dropdown>
+          </div>
         </div>
       </section>
     </div>
@@ -152,10 +187,12 @@ function openSession(sessionId: string) {
 .history-heading { color: var(--byq-text-soft); font-size: 11px; font-weight: 850; letter-spacing: .04em; padding: 0 .55rem .35rem; text-transform: uppercase; }
 .history-heading:focus-visible { outline: 2px solid var(--byq-brand-contrast); outline-offset: 2px; }
 .history-empty { color: var(--byq-text-soft); font-size: 11px; line-height: 1.45; margin: .2rem .55rem; }
-.history-row { background: transparent; color: var(--byq-text-muted); font-size: 12px; gap: .5rem; overflow: hidden; padding: .5rem .55rem; }
-.history-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-row { align-items: center; background: transparent; border-radius: var(--byq-radius-sm); color: var(--byq-text-muted); cursor: pointer; display: flex; font-size: 12px; gap: .5rem; overflow: hidden; padding: .5rem .55rem; }
+.history-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-row .el-icon { flex: 0 0 auto; }
 .history-row:hover, .history-row.active { background: var(--byq-surface-muted); color: var(--byq-text); }
+.history-more { background: transparent; border: 0; color: inherit; cursor: pointer; font-weight: 800; opacity: 0; padding: 0 .2rem; }
+.history-row:hover .history-more, .history-more:focus-visible { opacity: 1; }
 .sidebar-user-bar { border-top: 1px solid var(--byq-border-subtle); margin-top: auto; padding: .55rem; }
 .sidebar-user-menu { min-width: 0; }
 @media (prefers-reduced-motion: reduce) { .app-sidebar { transition: none; } }

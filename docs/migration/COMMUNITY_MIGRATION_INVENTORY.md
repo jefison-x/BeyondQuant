@@ -530,6 +530,21 @@ boundaries. The Community repository remained read-only. The completed
 checklist, real Product API flow, and Chrome DevTools MCP evidence are under
 `docs/evidence/phase-37/`.
 
+## Phase 43 durable-conversation pre-implementation audit
+
+The read-only Community `AppSidebar.vue`, `AgentView.vue`, and `api/agent.js`
+were inspected before Phase 43 implementation. The useful evidence is the
+conversation lifecycle and switching UX; Community persistence, API paths,
+message/run shapes, polling, and runtime coupling remain reference-only.
+
+| Community capability | Reusable invariant / UX | Decision | Phase 43 disposition |
+|---|---|---|---|
+| Titled recent sessions with pin, rename and delete controls | Stable human-readable identity, pin ordering and explicit lifecycle actions make long-running research recoverable. | `PORT_UX` / `REFACTOR` | BYQ Backend owns owner-scoped title, pin and archive metadata; archive replaces destructive delete. |
+| Session list, message restoration and active-run polling | Switching must restore one coherent timeline and stale async responses must not cross into the selected conversation. | `PORT_LOGIC` / `PORT_TESTS` | Generation guards plus abortable Product streams; replay combines durable user turns with normalized WorkflowTrace only. |
+| Conversation pane and context pane | The conversation remains primary while operational context stays accessible without permanent three-column density. | `PORT_LAYOUT` / `PORT_UX` | Centered Xiaoba canvas with inline cards and bounded activity/approval drawers. |
+| Community Agent endpoints, stored messages/artifacts and run schemas | None as an integration boundary. | `REFERENCE_ONLY` / `REPLACE` | Browser uses Gateway Product routes; Backend catalog and Gateway projection replace old APIs and storage. |
+| Community runtime/session identity | None as a Product identity. | `DROP` / `REPLACE` | Product conversation identity is public; DSH session persistence is private correlation and never returned by replay. |
+
 ## Phase 39 Data Center / Data Sync pre-implementation audit
 
 The read-only Community `DataSourceConfig.vue`, `DataSync.vue`, data-source

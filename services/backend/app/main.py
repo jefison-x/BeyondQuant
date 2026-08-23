@@ -24,6 +24,12 @@ from .data_sync import (
     DataSyncPersistenceError,
     DataSyncStore,
 )
+from .conversation_catalog import (
+    ConversationCatalogStore,
+    ConversationConflict,
+    ConversationNotFound,
+    ConversationPersistenceError,
+)
 from .market_data import MarketDataStore
 from .signal_producer import (
     SignalJobStore,
@@ -151,6 +157,7 @@ operations_store = OperationsStore.from_env()
 market_data_store = MarketDataStore.from_env()
 signal_job_store = SignalJobStore.from_env()
 data_sync_store = DataSyncStore.from_env()
+conversation_store = ConversationCatalogStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
     user_store.ensure_bootstrap_admin(
@@ -212,6 +219,76 @@ def healthz() -> dict[str, str]:
 @app.get("/readyz")
 def readyz() -> dict[str, str]:
     return _health_payload()
+
+
+def _conversation_owner(request: Request) -> str:
+    owner = request.headers.get("x-byq-owner-principal")
+    if not owner:
+        raise HTTPException(status_code=401, detail="trusted owner context required")
+    return owner
+
+
+def _conversation_call(call: Callable[[], dict[str, object] | list[dict[str, object]]]) -> Any:
+    try:
+        return call()
+    except ConversationNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ConversationConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ConversationPersistenceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/v1/product/conversations", status_code=201)
+def create_conversation(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    return _conversation_call(lambda: {"conversation": conversation_store.create(
+        _conversation_owner(request), payload.get("runtime_session_id"), payload.get("trace_id")
+    )})
+
+
+@app.get("/v1/product/conversations")
+def list_conversations(
+    request: Request,
+    status: str = "active",
+    search: str = "",
+    limit: int = 20,
+    offset: int = 0,
+) -> dict[str, object]:
+    return _conversation_call(lambda: conversation_store.list(
+        _conversation_owner(request), status=status, search=search, limit=limit, offset=offset
+    ))
+
+
+@app.get("/v1/product/conversations/by-runtime/{session_id}")
+def conversation_by_runtime(session_id: str, request: Request) -> dict[str, object]:
+    return _conversation_call(lambda: {"conversation": conversation_store.get_by_runtime_session(
+        _conversation_owner(request), session_id
+    )})
+
+
+@app.get("/v1/product/conversations/{conversation_id}")
+def get_conversation(conversation_id: str, request: Request) -> dict[str, object]:
+    owner = _conversation_owner(request)
+    return _conversation_call(lambda: {
+        "conversation": conversation_store.get(owner, conversation_id),
+        "messages": conversation_store.messages(owner, conversation_id),
+    })
+
+
+@app.post("/v1/product/conversations/{conversation_id}/messages", status_code=201)
+def append_conversation_message(conversation_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    return _conversation_call(lambda: {"message": conversation_store.append_user_message(
+        _conversation_owner(request), conversation_id, payload.get("content")
+    )})
+
+
+@app.patch("/v1/product/conversations/{conversation_id}")
+def update_conversation(conversation_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    return _conversation_call(lambda: {"conversation": conversation_store.update(
+        _conversation_owner(request), conversation_id, payload
+    )})
 
 
 @app.get("/v1/operations/overview")

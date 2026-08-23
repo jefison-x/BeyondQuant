@@ -255,11 +255,13 @@ paths:
     post: {summary: Validate and import a paper-account bundle under a new owner-scoped ID., responses: *createdResponses}
 
   /v1/agent/sessions:
-    get: {summary: List owner-scoped Product Agent sessions., responses: *okResponses}
-    post: {summary: Create an owner-scoped Product Agent session., responses: *createdResponses}
+    get: {summary: Search and page the owner-scoped durable conversation catalog., responses: *okResponses}
+    post: {summary: Create an owner-scoped durable conversation with private runtime correlation., responses: *createdResponses}
   /v1/agent/sessions/{session_id}:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
-    delete: {summary: Release an owner-scoped Product Agent session., responses: *noContentResponses}
+    get: {summary: Replay owner-scoped user messages and normalized WorkflowTrace events., responses: *okResponses}
+    patch: {summary: Rename, pin, archive or restore an owner-scoped conversation., responses: *okResponses}
+    delete: {summary: Archive and release an owner-scoped Product Agent session., responses: *noContentResponses}
   /v1/agent/sessions/{session_id}/turns:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
     post: {summary: Submit a turn to an owner-scoped Product Agent session., responses: *acceptedResponses}

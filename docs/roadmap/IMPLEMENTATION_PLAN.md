@@ -1330,13 +1330,13 @@ mobile drawer. Existing capability routes and administrator visibility remain
 preserved. Durable titles, lifecycle, search, and replay remain explicitly in
 Phase 43.
 
-### Phase 43 — Durable conversations and Xiaoba workspace (`NEXT`)
+### Phase 43 — Durable conversations and Xiaoba workspace (`COMPLETE`)
 
 Implement the owner-scoped BYQ conversation catalog, titles/lifecycle/search,
 restart-safe normalized replay, and centered chat workspace with bounded
 activity/context disclosures.
 
-### Phase 44 — User center and durable appearance (`PLANNED`)
+### Phase 44 — User center and durable appearance (`NEXT`)
 
 Consolidate Profile, Assets, Models, Agent Policy and Paper Trading access.
 Implement `ui-preferences.v1`, system/light/dark modes, the closed accent

@@ -107,7 +107,7 @@ with request("/v1/agent/sessions", method="POST", payload={}) as response:
     assert response.status == 201
     created = json.load(response)
 session_id = created["session_id"]
-assert session_id.startswith("byq-session-")
+assert session_id.startswith("conversation_")
 
 with request(f"/v1/workflows/{session_id}/events") as response:
     assert response.status == 200

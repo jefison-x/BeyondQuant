@@ -1,7 +1,7 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-completed project stage is **Phase 42** — Conversation-first Product shell
+completed project stage is **Phase 43** — Durable conversations and Xiaoba workspace
 under Accepted ADR-0024. The v1.0 release-candidate review
 is postponed while Phases 42-48 implement and verify the new Product
 experience. See
