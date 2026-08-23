@@ -25,10 +25,13 @@ Detailed gaps are in
 | Data Center | REDESIGNED_PASS | Tushare-only encrypted credential lifecycle, bounded test/sync, durable per-symbol jobs and honest PostgreSQL coverage audit are real and Chrome-verified. |
 | Shared components | REDESIGNED_PASS | Shared state/pagination plus the proven phase-specific approval, assistant, model and operations components cover the classified Community set. |
 
-## Release conclusion
+## Historical parity conclusion
 
 Phases 32–40 close every explained product-depth gap or record an explicit
 replacement/drop. The matrix has no unexplained `PARTIAL`/`MISSING` entry,
 and the real-Product-API, no-mock, multi-user golden journey plus desktop and
-mobile Chrome review are recorded under `docs/evidence/phase-40/`. The next
-step is the human v1.0 RC review.
+mobile Chrome review are recorded under `docs/evidence/phase-40/`. Phase 40
+therefore completed its parity gate. The immediate v1.0 RC review described by
+the original conclusion was superseded on 2026-08-23 by Accepted ADR-0024 and
+the Phases 41-48 Product experience program; parity completion remains valid
+evidence but is not a current release declaration.
