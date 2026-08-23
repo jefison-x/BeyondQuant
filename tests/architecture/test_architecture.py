@@ -47,8 +47,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("A user binding never", contract)
-        self.assertIn("Current completed phase: **Phase 40**", status)
+        self.assertIn("Current completed phase: **Phase 41**", status)
         self.assertIn("Phase 40 (Shared components and final parity closure) completed", status)
+        self.assertIn(
+            "Accepted conversation-first Product experience ADR: **ADR-0024**",
+            status,
+        )
         self.assertIn("D-0008 is CLOSED", status)
         self.assertNotIn("ADR-0019 remains Proposed", status)
 
@@ -397,6 +401,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "Phase 40 — Shared components and final parity closure (`COMPLETE`)",
             implementation,
         )
+        self.assertIn(
+            "Phase 41 — Product experience baseline (`COMPLETE`)",
+            implementation,
+        )
+        self.assertIn(
+            "Phase 42 — Conversation-first Product shell (`NEXT`)",
+            implementation,
+        )
 
         workflow_card_adr = (
             ROOT
@@ -441,13 +453,29 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("ADR-0017/0018/0019 awaiting review", parity_plan)
 
         parity_matrix = (ROOT / "docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX_V2.md").read_text()
-        self.assertIn("The next\nstep is the human v1.0 RC review", parity_matrix)
+        self.assertIn("superseded on 2026-08-23 by Accepted ADR-0024", parity_matrix)
         self.assertNotIn("not eligible for review", parity_matrix)
         self.assertTrue((ROOT / "docs/evidence/phase-40/GOLDEN_JOURNEY.json").exists())
         signal_adr = (
             ROOT / "docs/architecture/adr/ADR-0023-isolated-signal-producer.md"
         ).read_text()
         self.assertIn("- Status: Accepted", signal_adr)
+        experience_adr = (
+            ROOT
+            / "docs/architecture/adr/ADR-0024-conversation-first-product-experience.md"
+        ).read_text()
+        self.assertIn("- Status: Accepted", experience_adr)
+        self.assertIn(
+            "BYQ Backend owns a durable, owner-scoped Product conversation catalog",
+            experience_adr,
+        )
+        self.assertIn(
+            "Appearance is a durable, user-scoped BYQ preference",
+            experience_adr,
+        )
+        self.assertTrue(
+            (ROOT / "docs/evidence/phase-41/COMMUNITY_FEATURE_CHECKLIST.md").exists()
+        )
 
     def test_completed_phases_have_no_open_deferred_items(self) -> None:
         status = (ROOT / "docs/roadmap/STATUS.md").read_text()

@@ -3,11 +3,12 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 40** — Shared components and final parity
-  closure under Accepted ADR-0023.
-- Next gate: **BeyondQuant Next v1.0 release-candidate review**. This is a
-  release review, not authorization to start an unrelated implementation
-  phase. The post-Phase 40 DSH Upgrade Lane remains separately scheduled.
+- Current completed phase: **Phase 41** — Conversation-first Product experience
+  baseline and durable conversation/theme boundary under Accepted ADR-0024.
+- Next phase: **Phase 42 — Conversation-first Product shell** as defined in
+  `FRONTEND_EXPERIENCE_PLAN.md`. The v1.0 release-candidate review is postponed
+  until the Phases 42-48 experience program is complete. The post-Phase 40 DSH
+  Upgrade Lane remains separately scheduled.
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -29,7 +30,8 @@ Codex session does not infer project state from commit history.
 - Accepted Paper Trading account/lifecycle ADR: **ADR-0021**
 - Accepted Phase 38 component-ownership ADR: **ADR-0022**
 - Accepted Phase 40 isolated signal-producer ADR: **ADR-0023**
-- Open architecture decisions: **none from the Phase 40 entry gate**.
+- Accepted conversation-first Product experience ADR: **ADR-0024**
+- Open architecture decisions: **none from the Phase 42 entry gate**.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -64,6 +66,8 @@ Codex session does not infer project state from commit history.
   [ADR-0022](../architecture/adr/ADR-0022-phase38-component-ownership.md)
   is Accepted.
   [ADR-0023](../architecture/adr/ADR-0023-isolated-signal-producer.md)
+  is Accepted.
+  [ADR-0024](../architecture/adr/ADR-0024-conversation-first-product-experience.md)
   is Accepted.
 - Phase 23 acceptance evidence established a Product Skeleton browser and
   parity baseline. Its mocked Playwright navigation smoke is not evidence of
@@ -171,10 +175,17 @@ Codex session does not infer project state from commit history.
   the measured orphan trigger was false. A fresh Compose two-user golden flow,
   desktop/mobile Chrome MCP evidence, 100 Lighthouse accessibility score and
   the Community checklist are under `docs/evidence/phase-40/`.
+- Phase 41 accepted the conversation-first Product direction after the
+  maintainer postponed v1.0 RC review. It records the durable BYQ conversation
+  catalog versus private DSH Session boundary, single-level navigation,
+  user/settings consolidation, semantic global theme contract, Community
+  read-only classification, Phases 42-48 delivery sequence, and post-merge
+  `0.0.0.0:80` preview requirement. No Product runtime changed in Phase 41.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence. The historical gaps recorded in
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` were then classified and
-  resolved by Phases 32–40; the v1.0 RC review gate is now open.
+  resolved by Phases 32–40. That parity-only RC conclusion is historical and
+  was superseded when Phase 41 opened the Product experience program.
 - Product-depth foundations and final parity closure are delivered: Backtest,
   Strategy and isolated signal production, Stock Pool, Paper Trading, Agent
   workbench, personal Agent Policy, Operations and Data Center. The final V2
@@ -182,8 +193,9 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active phase blocker: **none**. The v1.0 RC review gate is open. The
-  post-Phase 40 DSH Upgrade Lane is scheduled separately in
+- Active phase blocker: **none**. Phase 42 is authorized by Accepted ADR-0024.
+  The v1.0 RC gate is closed until Phase 48 reopens a separate human review.
+  The post-Phase 40 DSH Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.
 
 Git SHA is not phase state. The current clean baseline must always be derived

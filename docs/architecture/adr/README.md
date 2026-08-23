@@ -26,3 +26,6 @@ normalization, authority, replay, and fixed Product-action boundary for Phase
 ADR-0019 defines encrypted credential storage, key rotation, public masking,
 model binding/runtime resolution, Tushare resolution, audit, and bootstrap
 fallback boundaries for Phases 37 and 39.
+ADR-0024 defines the conversation-first Product shell, durable BYQ conversation
+catalog versus DSH Session boundary, route-backed settings consolidation, and
+durable semantic appearance/theme contract for Phases 42-48.

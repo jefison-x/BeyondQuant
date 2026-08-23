@@ -1301,3 +1301,62 @@ Build the repeatable compatibility, dependency-evidence, and isolated upgrade
 workflow defined in `DSH_UPGRADE_LANE.md`. This task does not block Product
 Completion phases. A critical upstream security advisory may promote it into a
 dedicated earlier maintenance change under ADR-0003.
+
+## Post-parity Product Experience Program
+
+The maintainer postponed the v1.0 RC review on 2026-08-23 and selected the
+conversation-first direction recorded in ADR-0024. The detailed source of
+truth is `FRONTEND_EXPERIENCE_PLAN.md`; every phase remains independently
+reviewable, testable, rollback-capable, and previewed from merged `main`.
+
+### Phase 41 — Product experience baseline (`COMPLETE`)
+
+Accept ADR-0024; inspect and classify the current BYQ and read-only Community
+shell/session/theme/settings evidence; fix the single-level information
+architecture, durable conversation ownership, semantic appearance contract,
+Phases 42-48 acceptance sequence, and post-merge preview requirement. No
+runtime or UI implementation is claimed in this decision phase.
+
+### Phase 42 — Conversation-first Product shell (`NEXT`)
+
+Implement the single-level sidebar, compact toolbar, default Xiaoba route,
+recent-conversation section, bottom user entry and mobile drawer while
+preserving every existing capability through routes or explicit relocation.
+Use global semantic tokens and current Product API only.
+
+### Phase 43 — Durable conversations and Xiaoba workspace (`PLANNED`)
+
+Implement the owner-scoped BYQ conversation catalog, titles/lifecycle/search,
+restart-safe normalized replay, and centered chat workspace with bounded
+activity/context disclosures.
+
+### Phase 44 — User center and durable appearance (`PLANNED`)
+
+Consolidate Profile, Assets, Models, Agent Policy and Paper Trading access.
+Implement `ui-preferences.v1`, system/light/dark modes, the closed accent
+palette, global theme application and cross-device persistence.
+
+### Phase 45 — System Settings dialog (`PLANNED`)
+
+Embed the existing bounded administrator operations and Data Center surfaces
+in a route-backed two-column large dialog/full-screen mobile surface without
+weakening Product API RBAC or audit.
+
+### Phase 46 — Core management workspace redesign (`PLANNED`)
+
+Unify Stock Pool, Strategy and Backtest catalog/detail interactions, visual
+hierarchy, Workflow-card deep links, charts and responsive behavior while
+preserving every completed domain invariant and deep result surface.
+
+### Phase 47 — Interaction, responsive and accessibility closure (`PLANNED`)
+
+Standardize global states and controls, unsaved-change behavior, keyboard/focus,
+responsive content and the complete theme/chart accessibility matrix.
+
+### Phase 48 — Product coherence golden journey (`PLANNED`)
+
+Run a fresh no-mock, two-user desktop/tablet/mobile Product journey across
+conversation, pool, strategy, approval, signal, backtest, history, assets,
+models, appearance and administrator settings. Reconcile relocated Community
+capabilities and reopen, but do not automatically pass, the human v1.0 RC
+review.
