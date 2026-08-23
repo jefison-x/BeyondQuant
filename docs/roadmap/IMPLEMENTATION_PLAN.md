@@ -1317,14 +1317,20 @@ architecture, durable conversation ownership, semantic appearance contract,
 Phases 42-48 acceptance sequence, and post-merge preview requirement. No
 runtime or UI implementation is claimed in this decision phase.
 
-### Phase 42 — Conversation-first Product shell (`NEXT`)
+### Phase 42 — Conversation-first Product shell (`COMPLETE`)
 
 Implement the single-level sidebar, compact toolbar, default Xiaoba route,
 recent-conversation section, bottom user entry and mobile drawer while
 preserving every existing capability through routes or explicit relocation.
 Use global semantic tokens and current Product API only.
 
-### Phase 43 — Durable conversations and Xiaoba workspace (`PLANNED`)
+Delivered the single-level desktop sidebar, compact header, Xiaoba default
+route, current-session list, expanded bottom account menu, and accessible
+mobile drawer. Existing capability routes and administrator visibility remain
+preserved. Durable titles, lifecycle, search, and replay remain explicitly in
+Phase 43.
+
+### Phase 43 — Durable conversations and Xiaoba workspace (`NEXT`)
 
 Implement the owner-scoped BYQ conversation catalog, titles/lifecycle/search,
 restart-safe normalized replay, and centered chat workspace with bounded

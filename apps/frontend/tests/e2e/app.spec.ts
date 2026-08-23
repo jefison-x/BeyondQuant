@@ -19,7 +19,7 @@ async function login(page: Page) {
   await page.getByLabel("用户名").fill("testuser");
   await page.getByLabel("密码").fill("password123");
   await page.getByRole("button", { name: "进入" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/agent$/);
 }
 
 async function loginAsAdmin(page: Page) {
@@ -41,7 +41,7 @@ async function loginAsAdmin(page: Page) {
   await page.getByLabel("用户名").fill("admin");
   await page.getByLabel("密码").fill("adminpass123");
   await page.getByRole("button", { name: "进入" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/agent$/);
 }
 
 function operationsPayload() {
@@ -104,6 +104,12 @@ async function mockAdminOps(page: Page) {
 }
 
 async function openNav(page: Page, label: string) {
+  const primary = page.getByRole("button", { name: label, exact: true });
+  if (await primary.count()) {
+    await primary.first().click();
+    return;
+  }
+  await page.getByTitle(/用户设置/).click();
   await page.getByRole("menuitem", { name: label }).click();
 }
 
@@ -150,6 +156,7 @@ test("authenticated dashboard shows resource cards", async ({ page }) => {
     }),
   );
   await login(page);
+  await page.goto("/dashboard");
   await expect(page.getByText("Backend", { exact: true }).first()).toBeVisible();
 });
 
@@ -184,7 +191,6 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
     }),
   );
   await login(page);
-  await openNav(page, "小巴投研");
   await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
   await expect(page.getByText("研究对话")).toBeVisible();
   await expect(page.getByText("BYQ 规范化工作流")).toBeVisible();
@@ -357,11 +363,11 @@ test("my space pages render profile, models, assets, and agent policy", async ({
   );
 
   await login(page);
-  await openNav(page, "用户资产");
+  await openNav(page, "资产管理");
   await expect(page.getByRole("heading", { name: "用户资产" })).toBeVisible();
   await expect(page.getByText("导出资产包")).toBeVisible();
 
-  await openNav(page, "个人模型");
+  await openNav(page, "模型配置");
   await expect(page.getByRole("heading", { name: "模型设置" })).toBeVisible();
   await expect(page.getByRole("button", { name: "添加凭据" })).toBeVisible();
 
@@ -370,7 +376,7 @@ test("my space pages render profile, models, assets, and agent policy", async ({
   await expect(page.getByRole("button", { name: "保存" })).toBeVisible();
   await expect(page.getByRole("button", { name: "新建规则" })).toBeVisible();
 
-  await openNav(page, "个人设置");
+  await openNav(page, "个性化");
   await expect(page.getByRole("heading", { name: "个人设置" })).toBeVisible();
   await expect(page.getByLabel("昵称")).toHaveValue("老李");
 });
@@ -418,7 +424,7 @@ test("paper trading and stock pool pages render", async ({ page }) => {
   await expect(page.getByRole("tab", { name: "资金流水" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "结算快照" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "风险与迁移" })).toBeVisible();
-  await openNav(page, "股票管理");
+  await openNav(page, "股票池管理");
   await expect(page.getByRole("heading", { name: "股票管理" })).toBeVisible();
   await expect(page.getByRole("radio", { name: "指数" }).first()).toBeVisible();
   await expect(page.getByText("沪深300", { exact: true }).first()).toBeVisible();
@@ -474,13 +480,14 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   );
   await mockResearchLists(page);
 
-  await login(page);
+  await loginAsAdmin(page);
+  await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "工作台" })).toBeVisible();
-  await openNav(page, "小巴投研");
+  await page.goto("/agent");
   await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
   await openNav(page, "策略管理");
   await expect(page.getByRole("heading", { name: "策略管理" })).toBeVisible();
-  await openNav(page, "个人设置");
+  await openNav(page, "个性化");
   await expect(page.getByRole("heading", { name: "个人设置" })).toBeVisible();
   await openNav(page, "系统状态");
   await expect(page.getByRole("heading", { name: "系统状态" })).toBeVisible();
@@ -488,6 +495,30 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   await expect(
     page.getByRole("main").getByRole("heading", { name: "数据中心" }),
   ).toBeVisible();
-  await openNav(page, "研究/审批");
+  await openNav(page, "研究与审批");
   await expect(page.getByRole("heading", { name: "研究/审批" })).toBeVisible();
+});
+
+test("mobile shell uses a drawer and keeps account destinations reachable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page);
+
+  await page.getByRole("button", { name: "打开产品导航" }).click();
+  await expect(page.getByRole("navigation", { name: "产品主导航" })).toBeVisible();
+  await page.getByRole("button", { name: "历史会话", exact: true }).click();
+  await expect(page.getByRole("navigation", { name: "产品主导航" })).toBeVisible();
+  await expect(page).toHaveURL(/\/agent\?history=recent$/);
+  await page.getByRole("button", { name: "策略管理", exact: true }).click();
+  await expect(page).toHaveURL(/\/strategy$/);
+
+  await page.getByRole("button", { name: "打开产品导航" }).click();
+  await page.getByTitle(/用户设置/).click();
+  await expect(page.getByRole("menuitem", { name: "资产管理" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "系统设置" })).toHaveCount(0);
+});
+
+test("system settings entry is visible only to administrators", async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.getByTitle(/用户设置/).click();
+  await expect(page.getByRole("menuitem", { name: "系统设置" })).toBeVisible();
 });

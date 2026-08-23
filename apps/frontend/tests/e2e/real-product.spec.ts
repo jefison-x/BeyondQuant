@@ -24,8 +24,8 @@ test("real Product API login and Stock Pool create flow", async ({ page, baseURL
   await page.getByLabel("用户名").fill(adminUsername);
   await page.getByLabel("密码").fill(adminPassword);
   await page.getByRole("button", { name: "进入" }).click();
-  await expect(page).toHaveURL(`${origin}/`);
-  await expect(page.getByRole("heading", { name: "工作台" })).toBeVisible();
+  await expect(page).toHaveURL(`${origin}/agent`);
+  await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
 
   await page.goto("/stock-pool");
   await expect(page.getByRole("heading", { name: "股票管理" })).toBeVisible();
@@ -67,7 +67,7 @@ test("real Product API Paper Trading settlement, risk, detail, and bundle flow",
   await page.getByLabel("用户名").fill(adminUsername);
   await page.getByLabel("密码").fill(adminPassword);
   await page.getByRole("button", { name: "进入" }).click();
-  await expect(page).toHaveURL(`${origin}/`);
+  await expect(page).toHaveURL(`${origin}/agent`);
 
   const suffix = Date.now();
   const pool = await page.evaluate(async (name) => {
@@ -157,7 +157,7 @@ test("real Product API My Space credential, binding, policy, and asset import fl
   await page.getByLabel("用户名").fill(username);
   await page.getByLabel("密码").fill(password);
   await page.getByRole("button", { name: "进入" }).click();
-  await expect(page).toHaveURL(`${origin}/`);
+  await expect(page).toHaveURL(`${origin}/agent`);
 
   const suffix = Date.now();
   const result = await page.evaluate(async (id) => {

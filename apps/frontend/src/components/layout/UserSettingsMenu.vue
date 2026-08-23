@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { CaretBottom, SwitchButton } from "@element-plus/icons-vue";
+import { Bell, CaretBottom, Coin, FolderOpened, Monitor, SetUp, SwitchButton, Tools, User } from "@element-plus/icons-vue";
 import { useAuthStore } from "@/stores/auth";
 
 const props = withDefaults(
   defineProps<{
     variant?: "sidebar" | "mobile";
     mobileLabel?: string;
+    compact?: boolean;
   }>(),
   {
     variant: "sidebar",
     mobileLabel: "我的",
   },
 );
+const emit = defineEmits<{ (event: "navigate"): void }>();
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -25,7 +27,10 @@ async function handleCommand(command: string) {
   if (command === "logout") {
     await auth.logout();
     await router.push({ name: "login" });
+    return;
   }
+  emit("navigate");
+  await router.push(command);
 }
 </script>
 
@@ -37,14 +42,25 @@ async function handleCommand(command: string) {
         <span v-if="props.variant === 'mobile' && props.mobileLabel" class="mobile-label">
           {{ props.mobileLabel }}
         </span>
-        <span v-else class="user-copy">
+        <span v-else-if="!props.compact" class="user-copy">
           <strong>{{ displayName }}</strong>
           <small>BeyondQuant 产品账户</small>
         </span>
-        <el-icon v-if="props.variant !== 'mobile'" class="user-caret"><CaretBottom /></el-icon>
+        <el-icon v-if="props.variant !== 'mobile' && !props.compact" class="user-caret"><CaretBottom /></el-icon>
       </button>
       <template #dropdown>
         <el-dropdown-menu>
+          <el-dropdown-item command="/profile"><el-icon><User /></el-icon>个性化</el-dropdown-item>
+          <el-dropdown-item command="/assets"><el-icon><FolderOpened /></el-icon>资产管理</el-dropdown-item>
+          <el-dropdown-item command="/paper-trading"><el-icon><Coin /></el-icon>模拟操盘</el-dropdown-item>
+          <el-dropdown-item command="/models"><el-icon><SetUp /></el-icon>模型配置</el-dropdown-item>
+          <el-dropdown-item command="/agent-settings"><el-icon><SetUp /></el-icon>智能体策略</el-dropdown-item>
+          <el-dropdown-item command="/research-center"><el-icon><Bell /></el-icon>研究与审批</el-dropdown-item>
+          <template v-if="auth.isAdmin">
+            <el-dropdown-item command="/data-center" divided><el-icon><Tools /></el-icon>数据中心</el-dropdown-item>
+            <el-dropdown-item command="/system-status"><el-icon><Monitor /></el-icon>系统状态</el-dropdown-item>
+            <el-dropdown-item command="/admin/database"><el-icon><Tools /></el-icon>系统设置</el-dropdown-item>
+          </template>
           <el-dropdown-item command="logout" divided>
             <el-icon><SwitchButton /></el-icon>
             退出登录

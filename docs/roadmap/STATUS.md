@@ -3,9 +3,10 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 41** — Conversation-first Product experience
-  baseline and durable conversation/theme boundary under Accepted ADR-0024.
-- Next phase: **Phase 42 — Conversation-first Product shell** as defined in
+- Current completed phase: **Phase 42** — Conversation-first Product shell with
+  flat primary navigation, Xiaoba default route, recent live sessions, compact
+  toolbar, bottom user destinations, and an accessible mobile drawer.
+- Next phase: **Phase 43 — Durable conversations and Xiaoba workspace** as defined in
   `FRONTEND_EXPERIENCE_PLAN.md`. The v1.0 release-candidate review is postponed
   until the Phases 42-48 experience program is complete. The post-Phase 40 DSH
   Upgrade Lane remains separately scheduled.
@@ -31,7 +32,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 38 component-ownership ADR: **ADR-0022**
 - Accepted Phase 40 isolated signal-producer ADR: **ADR-0023**
 - Accepted conversation-first Product experience ADR: **ADR-0024**
-- Open architecture decisions: **none from the Phase 42 entry gate**.
+- Open architecture decisions: **none from the Phase 43 entry gate**.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -181,6 +182,16 @@ Codex session does not infer project state from commit history.
   user/settings consolidation, semantic global theme contract, Community
   read-only classification, Phases 42-48 delivery sequence, and post-merge
   `0.0.0.0:80` preview requirement. No Product runtime changed in Phase 41.
+- Phase 42 implemented ADR-0024's conversation-first shell. `/` now resolves
+  to Xiaoba; desktop uses one collapsible, single-level primary sidebar and a
+  compact route toolbar; mobile uses a modal navigation drawer with keyboard
+  focus; recent live Product sessions remain honestly identifier-labelled
+  until Phase 43 adds the durable catalog. Profile, Assets, Paper Trading,
+  personal Models/Agent Policy, research/approval, Data Center, status, and
+  admin-only Operations remain reachable through the bottom user menu or
+  preserved deep links. Chrome DevTools MCP verified desktop/mobile layout,
+  same-origin Product API traffic, and a clean console under
+  `docs/evidence/phase-42/`.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence. The historical gaps recorded in
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` were then classified and
@@ -193,7 +204,7 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active phase blocker: **none**. Phase 42 is authorized by Accepted ADR-0024.
+- Active phase blocker: **none**. Phase 43 is authorized by Accepted ADR-0024.
   The v1.0 RC gate is closed until Phase 48 reopens a separate human review.
   The post-Phase 40 DSH Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.

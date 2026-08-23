@@ -47,7 +47,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("A user binding never", contract)
-        self.assertIn("Current completed phase: **Phase 41**", status)
+        self.assertIn("Current completed phase: **Phase 42**", status)
         self.assertIn("Phase 40 (Shared components and final parity closure) completed", status)
         self.assertIn(
             "Accepted conversation-first Product experience ADR: **ADR-0024**",
@@ -406,7 +406,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             implementation,
         )
         self.assertIn(
-            "Phase 42 — Conversation-first Product shell (`NEXT`)",
+            "Phase 42 — Conversation-first Product shell (`COMPLETE`)",
+            implementation,
+        )
+        self.assertIn(
+            "Phase 43 — Durable conversations and Xiaoba workspace (`NEXT`)",
             implementation,
         )
 

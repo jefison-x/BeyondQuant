@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { cancelSession, createAgentSession, listAgentSessions, resumeSession, streamWorkflowEvents, submitTurn } from "@/api/agent";
 import { foldWorkflowCards, workflowActivities } from "@/api/workflow";
@@ -21,6 +21,7 @@ const busy = ref(false);
 const approvalBusy = ref("");
 const approvals = ref<Array<Record<string, unknown>>>([]);
 const approvalStates = ref<Record<string, Record<string, unknown>>>({});
+const initialized = ref(false);
 const starters = ["筛选一组可研究的股票候选", "起草一个可验证的量化策略", "根据最近回测提出优化建议"];
 const activities = computed(() => workflowActivities(agent.events));
 const cards = computed(() => foldWorkflowCards(agent.events).map((event) => {
@@ -122,11 +123,25 @@ onMounted(async () => {
     const response = await listAgentSessions(auth.token);
     agent.replaceSessions(response.sessions);
     const requested = typeof route.query.session === "string" ? route.query.session : "";
-    if (requested && agent.sessions.some((session) => session.session_id === requested)) selectSession(requested);
+    if (typeof route.query.new === "string") await createNewSession();
+    else if (requested && agent.sessions.some((session) => session.session_id === requested)) selectSession(requested);
     else if (agent.activeSessionId && agent.sessions.some((session) => session.session_id === agent.activeSessionId)) selectSession(agent.activeSessionId);
     else if (agent.sessions[0]) selectSession(agent.sessions[0].session_id);
     else await createNewSession();
   } catch (exc) { error.value = exc instanceof Error ? exc.message : "初始化失败"; }
+  finally { initialized.value = true; }
+});
+
+watch(() => route.query.new, async (value, previous) => {
+  if (!initialized.value || typeof value !== "string" || value === previous) return;
+  error.value = "";
+  try { await createNewSession(); }
+  catch (exc) { error.value = exc instanceof Error ? exc.message : "新建会话失败"; }
+});
+
+watch(() => route.query.session, (value, previous) => {
+  if (!initialized.value || typeof value !== "string" || value === previous) return;
+  if (agent.sessions.some((session) => session.session_id === value)) selectSession(value);
 });
 </script>
 
