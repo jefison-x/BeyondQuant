@@ -1,4 +1,9 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function openUserDestination(page: Page, label: string) {
+  await page.getByTitle(/用户设置/).click();
+  await page.getByRole("menuitem", { name: label }).click();
+}
 
 test("real Product API login and Stock Pool create flow", async ({ page, baseURL }) => {
   const adminUsername = process.env.BYQ_E2E_ADMIN_USERNAME;
@@ -189,17 +194,17 @@ test("real Product API My Space credential, binding, policy, and asset import fl
   expect(result.imported.imported.pools).toBeGreaterThanOrEqual(1);
   expect(result.imported.source_owner_reused).toBe(false);
 
-  await page.getByRole("menuitem", { name: "个人模型" }).click();
+  await openUserDestination(page, "模型配置");
   await expect(page).toHaveURL(`${origin}/models`);
   await expect(page.getByText(result.credentialLabel, { exact: true })).toBeVisible();
   await expect(page.getByText(`E2E档案-${suffix}`, { exact: true })).toBeVisible();
   const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
   if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/01-model-settings.png`, fullPage: true });
-  await page.getByRole("menuitem", { name: "智能体策略" }).click();
+  await openUserDestination(page, "智能体策略");
   await expect(page).toHaveURL(`${origin}/agent-settings`);
   await expect(page.getByText(`E2E拒绝回测-${suffix}`, { exact: true })).toBeVisible();
   if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/02-agent-policy.png`, fullPage: true });
-  await page.getByRole("menuitem", { name: "用户资产" }).click();
+  await openUserDestination(page, "资产管理");
   await expect(page).toHaveURL(`${origin}/assets`);
   await expect(page.getByText(`E2E资产池-${suffix}`, { exact: true }).first()).toBeVisible();
   if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/03-assets-import.png`, fullPage: true });
