@@ -24,6 +24,17 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
     monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
     monkeypatch.setattr(main, "_start_trace_collector", lambda _session: None)
+    messages: list[str] = []
+
+    def fake_catalog(method, path, principal, *, payload=None, params=None):
+        if method == "POST" and path == "/v1/product/conversations":
+            return {"conversation": {"conversation_id": "conversation_1", "title": "新投研对话", "status": "active"}}
+        if path.endswith("/messages"):
+            messages.append(str(payload["content"]))
+            return {"message": {"sequence": 1}}
+        raise AssertionError((method, path, params))
+
+    monkeypatch.setattr(main, "_catalog_request", fake_catalog)
     calls: list[tuple[str, dict[str, object] | None]] = []
 
     class FakeResponse:
@@ -58,6 +69,7 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
         "require_model_key": True,
     }
     assert calls[0][1]["owner_principal"] == main.PRODUCT_PRINCIPAL
+    assert messages == ["summarize the health contract"]
     assert TOKEN not in str(calls)
 
 
@@ -67,6 +79,7 @@ def test_product_trace_stream_replays_ordered_byq_events(monkeypatch, tmp_path: 
     store = TraceStore(tmp_path)
     monkeypatch.setattr(main, "trace_store", store)
     session = main.ProductSession(
+        conversation_id="conversation_1",
         session_id="session-1",
         trace_id="trace-1",
         principal=main.Principal(subject=main.PRODUCT_PRINCIPAL),
@@ -86,10 +99,43 @@ def test_product_trace_stream_replays_ordered_byq_events(monkeypatch, tmp_path: 
     store.close("session-1")
 
     response = TestClient(main.app).get(
-        "/v1/workflows/session-1/events",
+        "/v1/workflows/conversation_1/events",
         headers={"Authorization": f"Bearer {TOKEN}"},
     )
     assert response.status_code == 200
     assert "id: 1" in response.text
     assert '"kind":"session.ready"' in response.text
     assert ("session." + "event") not in response.text
+    assert '"session_id":"conversation_1"' in response.text
+
+
+def test_durable_replay_hides_runtime_session_and_is_owner_scoped(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    store.append({
+        "trace_id": "trace-1", "session_id": "runtime-private", "sequence": 1,
+        "timestamp": "2026-08-24T00:00:00+00:00", "kind": "agent.output.delta",
+        "source": "runtime-adapter", "payload": {
+            "schema_version": "workflow-answer.v1", "channel": "answer",
+            "delta": "公开回答", "truncated": False,
+        },
+    })
+
+    def fake_catalog(method, path, principal, *, payload=None, params=None):
+        assert principal.subject == main.PRODUCT_PRINCIPAL
+        return {
+            "conversation": {
+                "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
+                "trace_id": "trace-1", "title": "研究", "status": "active",
+            },
+            "messages": [{"sequence": 1, "role": "user", "content": "问题"}],
+        }
+
+    monkeypatch.setattr(main, "_catalog_request", fake_catalog)
+    response = TestClient(main.app).get(
+        "/v1/agent/sessions/conversation_1", headers={"Authorization": f"Bearer {TOKEN}"}
+    )
+    assert response.status_code == 200
+    assert "runtime-private" not in response.text
+    assert response.json()["events"][0]["session_id"] == "conversation_1"

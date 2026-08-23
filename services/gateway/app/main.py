@@ -63,8 +63,15 @@ class ProductCancelRequest(BaseModel):
     mode: str = Field(default="hard", pattern="^(soft|hard)$")
 
 
+class ProductSessionUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=80)
+    pinned: bool | None = None
+    status: str | None = Field(default=None, pattern="^(active|archived)$")
+
+
 @dataclass(slots=True)
 class ProductSession:
+    conversation_id: str
     session_id: str
     trace_id: str
     principal: Principal
@@ -78,13 +85,13 @@ class ProductSessionRegistry:
 
     def add(self, session: ProductSession) -> None:
         with self._lock:
-            if session.session_id in self._sessions:
+            if session.conversation_id in self._sessions:
                 raise RuntimeError("generated session identifier collision")
-            self._sessions[session.session_id] = session
+            self._sessions[session.conversation_id] = session
 
-    def get_owned(self, session_id: str, principal: Principal) -> ProductSession:
+    def get_owned(self, conversation_id: str, principal: Principal) -> ProductSession:
         with self._lock:
-            session = self._sessions.get(session_id)
+            session = self._sessions.get(conversation_id)
         # Do not reveal whether another principal owns a session.
         if session is None or session.principal.subject != principal.subject:
             raise HTTPException(status_code=404, detail="product session not found")
@@ -92,8 +99,8 @@ class ProductSessionRegistry:
             raise HTTPException(status_code=409, detail="product session is closed")
         return session
 
-    def mark_released(self, session_id: str, principal: Principal) -> ProductSession:
-        session = self.get_owned(session_id, principal)
+    def mark_released(self, conversation_id: str, principal: Principal) -> ProductSession:
+        session = self.get_owned(conversation_id, principal)
         with self._lock:
             session.released = True
         return session
@@ -248,9 +255,62 @@ def _domain_get(path: str, session: ProductSession) -> dict[str, object]:
     return body
 
 
+def _catalog_request(
+    method: str,
+    path: str,
+    principal: Principal,
+    *,
+    payload: dict[str, object] | None = None,
+    params: dict[str, object] | None = None,
+) -> dict[str, object]:
+    headers = {
+        "x-byq-owner-principal": principal.subject,
+        "x-byq-actor-principal": principal.subject,
+    }
+    try:
+        response = httpx.request(
+            method, f"{BACKEND_URL}{path}", json=payload, params=params, headers=headers, timeout=8.0
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        if status in {400, 404, 409, 422}:
+            raise HTTPException(status_code=status, detail="conversation request was rejected") from exc
+        raise HTTPException(status_code=503, detail="conversation catalog unavailable") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="conversation catalog unavailable") from exc
+    body = response.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    return body
+
+
+def _restore_product_session(conversation_id: str, principal: Principal) -> ProductSession:
+    body = _catalog_request("GET", f"/v1/product/conversations/{conversation_id}", principal)
+    conversation = body.get("conversation")
+    if not isinstance(conversation, dict) or conversation.get("status") != "active":
+        raise HTTPException(status_code=404, detail="product session not found")
+    session = ProductSession(
+        conversation_id=str(conversation["conversation_id"]),
+        session_id=str(conversation["runtime_session_id"]),
+        trace_id=str(conversation["trace_id"]),
+        principal=principal,
+    )
+    try:
+        product_sessions.add(session)
+    except RuntimeError:
+        return product_sessions.get_owned(conversation_id, principal)
+    return session
+
+
 def _product_session(request: Request, session_id: str) -> ProductSession:
     principal = _authenticate_request(request)
-    return product_sessions.get_owned(session_id, principal)
+    try:
+        return product_sessions.get_owned(session_id, principal)
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        return _restore_product_session(session_id, principal)
 
 
 @app.post("/v1/agent/sessions", status_code=201)
@@ -262,26 +322,103 @@ def create_product_session(request: Request) -> dict[str, object]:
         "/internal/runtime/sessions",
         payload={"session_id": session_id, "trace_id": trace_id, "owner_principal": principal.subject},
     )
-    session = ProductSession(session_id=session_id, trace_id=trace_id, principal=principal)
+    catalog = _catalog_request(
+        "POST", "/v1/product/conversations", principal,
+        payload={"runtime_session_id": session_id, "trace_id": trace_id},
+    )
+    conversation = catalog.get("conversation")
+    if not isinstance(conversation, dict):
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    session = ProductSession(
+        conversation_id=str(conversation["conversation_id"]),
+        session_id=session_id,
+        trace_id=trace_id,
+        principal=principal,
+    )
     product_sessions.add(session)
     _start_trace_collector(session)
     return {
-        "session_id": session_id,
+        "session_id": session.conversation_id,
         "trace_id": trace_id,
-        "status": body.get("status", "ready"),
+        "title": conversation.get("title"),
+        "status": conversation.get("status", body.get("status", "ready")),
     }
 
 
 @app.get("/v1/agent/sessions")
-def list_product_sessions(request: Request) -> dict[str, object]:
+def list_product_sessions(
+    request: Request,
+    status: str = "active",
+    search: str = "",
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, object]:
     principal = _authenticate_request(request)
-    sessions = product_sessions.list_owned(principal)
-    return {
-        "sessions": [
-            {"session_id": session.session_id, "trace_id": session.trace_id}
-            for session in sessions
-        ]
+    catalog = _catalog_request(
+        "GET", "/v1/product/conversations", principal,
+        params={"status": status, "search": search, "limit": limit, "offset": offset},
+    )
+    conversations = catalog.get("conversations", [])
+    return {"sessions": [
+        {
+            "session_id": item["conversation_id"],
+            "trace_id": item["trace_id"],
+            "title": item["title"],
+            "status": item["status"],
+            "pinned": item["pinned"],
+            "message_count": item["message_count"],
+            "last_message_preview": item["last_message_preview"],
+            "created_at": item["created_at"],
+            "updated_at": item["updated_at"],
+        }
+        for item in conversations if isinstance(item, dict)
+    ], "total": catalog.get("total", 0), "limit": catalog.get("limit", limit), "offset": catalog.get("offset", offset)}
+
+
+@app.get("/v1/agent/sessions/{session_id}")
+def get_product_session(session_id: str, request: Request) -> dict[str, object]:
+    principal = _authenticate_request(request)
+    body = _catalog_request("GET", f"/v1/product/conversations/{session_id}", principal)
+    conversation = body.get("conversation")
+    if not isinstance(conversation, dict):
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    runtime_session_id = str(conversation.get("runtime_session_id", ""))
+    events = [
+        {**event, "session_id": session_id}
+        for event in trace_store.read(runtime_session_id)
+    ]
+    public = {
+        "session_id": session_id,
+        "trace_id": conversation.get("trace_id"),
+        "title": conversation.get("title"),
+        "status": conversation.get("status"),
+        "pinned": conversation.get("pinned"),
+        "message_count": conversation.get("message_count"),
+        "last_message_preview": conversation.get("last_message_preview"),
+        "created_at": conversation.get("created_at"),
+        "updated_at": conversation.get("updated_at"),
     }
+    return {"conversation": public, "messages": body.get("messages", []), "events": events}
+
+
+@app.patch("/v1/agent/sessions/{session_id}")
+def update_product_session(
+    session_id: str,
+    update: ProductSessionUpdateRequest,
+    request: Request,
+) -> dict[str, object]:
+    principal = _authenticate_request(request)
+    payload = update.model_dump(exclude_none=True)
+    body = _catalog_request(
+        "PATCH", f"/v1/product/conversations/{session_id}", principal, payload=payload
+    )
+    conversation = body.get("conversation")
+    if not isinstance(conversation, dict):
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    return {"session": {
+        "session_id": conversation["conversation_id"],
+        **{key: value for key, value in conversation.items() if key not in {"conversation_id", "runtime_session_id"}},
+    }}
 
 
 @app.post("/v1/agent/sessions/{session_id}/turns", status_code=202)
@@ -291,6 +428,10 @@ def submit_product_turn(
     http_request: Request,
 ) -> dict[str, object]:
     session = _product_session(http_request, session_id)
+    _catalog_request(
+        "POST", f"/v1/product/conversations/{session.conversation_id}/messages",
+        session.principal, payload={"content": request.content},
+    )
     body = _adapter_post(
         f"/internal/runtime/sessions/{session.session_id}/prompt",
         payload={"content": request.content, "require_model_key": True},
@@ -298,7 +439,7 @@ def submit_product_turn(
     )
     return {
         "accepted": True,
-        "session_id": session.session_id,
+        "session_id": session.conversation_id,
         "trace_id": session.trace_id,
         "run_id": body.get("run_id"),
     }
@@ -309,7 +450,7 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
     session = _product_session(request, session_id)
     body = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/resume")
     return {
-        "session_id": session.session_id,
+        "session_id": session.conversation_id,
         "trace_id": session.trace_id,
         "status": body.get("status"),
         "resumed_from_run_id": body.get("resumed_from_run_id"),
@@ -332,7 +473,7 @@ def cancel_product_session(
         timeout=5.0,
     )
     return {
-        "session_id": session.session_id,
+        "session_id": session.conversation_id,
         "trace_id": session.trace_id,
         "status": body.get("status"),
         "active_prompt": body.get("active_prompt"),
@@ -342,11 +483,15 @@ def cancel_product_session(
 @app.delete("/v1/agent/sessions/{session_id}")
 def release_product_session(session_id: str, request: Request) -> dict[str, object]:
     principal = _authenticate_request(request)
-    session = product_sessions.get_owned(session_id, principal)
+    session = _product_session(request, session_id)
     body = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/release", timeout=5.0)
-    product_sessions.mark_released(session.session_id, principal)
+    _catalog_request(
+        "PATCH", f"/v1/product/conversations/{session.conversation_id}",
+        principal, payload={"status": "archived"},
+    )
+    product_sessions.mark_released(session.conversation_id, principal)
     return {
-        "session_id": session.session_id,
+        "session_id": session.conversation_id,
         "trace_id": session.trace_id,
         "status": body.get("status"),
     }
@@ -369,10 +514,11 @@ def product_workflow_events(
             if event is None:
                 yield b": heartbeat\n\n"
                 continue
+            public_event = {**event, "session_id": session.conversation_id}
             yield (
-                f"id: {event['sequence']}\n"
+                f"id: {public_event['sequence']}\n"
                 f"event: workflow-trace\n"
-                f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
+                f"data: {json.dumps(public_event, separators=(',', ':'))}\n\n"
             ).encode()
 
     return StreamingResponse(stream(), media_type="text/event-stream")

@@ -23,6 +23,7 @@ from app.agent_research import AgentResearchStore
 from app.backtest import BacktestJobStore
 from app.db import create_db_engine, run_ddl
 from app.credentials import CredentialStore
+from app.conversation_catalog import ConversationCatalogStore
 from app.data_sync import DataSyncStore
 from app.engineering import EngineeringTaskStore
 from app.learning_loop import LearningLoopStore
@@ -39,6 +40,7 @@ TEST_DB_NAME = "byq_domain_test"
 
 # Registered store DDL; grows as stores migrate (ADR-0016 stages).
 REGISTERED_SCHEMA_DDL: list[str] = [
+    *ConversationCatalogStore.SCHEMA_DDL,
     *UserAuthStore.SCHEMA_DDL,
     *CredentialStore.SCHEMA_DDL,
     *DataSyncStore.SCHEMA_DDL,

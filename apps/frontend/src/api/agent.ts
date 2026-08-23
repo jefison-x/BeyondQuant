@@ -1,4 +1,4 @@
-import type { AgentSession, WorkflowTraceEvent } from "./types";
+import type { AgentSession, AgentSessionReplay, WorkflowTraceEvent } from "./types";
 
 const AGENT_ROOT = "/v1/agent";
 const WORKFLOW_ROOT = "/v1/workflows";
@@ -23,8 +23,31 @@ export function createAgentSession(token: string): Promise<AgentSession> {
   return jsonRequest<AgentSession>(`${AGENT_ROOT}/sessions`, token, { method: "POST" });
 }
 
-export function listAgentSessions(token: string): Promise<{ sessions: AgentSession[] }> {
-  return jsonRequest<{ sessions: AgentSession[] }>(`${AGENT_ROOT}/sessions`, token);
+export function listAgentSessions(
+  token: string,
+  options: { status?: "active" | "archived"; search?: string; limit?: number; offset?: number } = {},
+): Promise<{ sessions: AgentSession[]; total: number; limit: number; offset: number }> {
+  const params = new URLSearchParams();
+  if (options.status) params.set("status", options.status);
+  if (options.search) params.set("search", options.search);
+  if (options.limit) params.set("limit", String(options.limit));
+  if (options.offset) params.set("offset", String(options.offset));
+  const query = params.size ? `?${params}` : "";
+  return jsonRequest(`${AGENT_ROOT}/sessions${query}`, token);
+}
+
+export function getAgentSession(sessionId: string, token: string): Promise<AgentSessionReplay> {
+  return jsonRequest(`${AGENT_ROOT}/sessions/${encodeURIComponent(sessionId)}`, token);
+}
+
+export function updateAgentSession(
+  sessionId: string,
+  payload: { title?: string; pinned?: boolean; status?: "active" | "archived" },
+  token: string,
+): Promise<{ session: AgentSession }> {
+  return jsonRequest(`${AGENT_ROOT}/sessions/${encodeURIComponent(sessionId)}`, token, {
+    method: "PATCH", body: JSON.stringify(payload),
+  });
 }
 
 export function submitTurn(
@@ -58,6 +81,7 @@ export async function streamWorkflowEvents(
   token: string,
   onEvent: (event: WorkflowTraceEvent) => void,
   lastEventId = "0",
+  signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(`${WORKFLOW_ROOT}/${encodeURIComponent(sessionId)}/events`, {
     credentials: "include",
@@ -65,6 +89,7 @@ export async function streamWorkflowEvents(
       "Last-Event-ID": lastEventId,
       Accept: "text/event-stream",
     },
+    signal,
   });
   if (!response.ok || !response.body) {
     throw new Error("workflow stream failed");

@@ -70,7 +70,7 @@ Acceptance: desktop/mobile navigation, keyboard/focus behavior, route
 preservation, auth/admin visibility, and current Product API flows pass real
 browser review.
 
-## Phase 43 — Durable conversation catalog and Xiaoba workspace
+## Phase 43 — Durable conversation catalog and Xiaoba workspace (`COMPLETE`)
 
 Implement ADR-0024's owner-scoped Backend catalog and Product API projections;
 deterministic first-turn titles; rename, pin, archive, bounded pagination and
@@ -82,7 +82,7 @@ Acceptance: Compose restart recovery, two-user isolation, title lifecycle,
 history switching without message/trace crossover, normalized-only replay,
 and desktop/mobile real-browser journeys pass.
 
-## Phase 44 — User center and durable appearance
+## Phase 44 — User center and durable appearance (`NEXT`)
 
 Move Profile, Assets, Models, Agent Policy, and Paper Trading entry points into
 the user menu and user-center surfaces. Add the versioned durable appearance
