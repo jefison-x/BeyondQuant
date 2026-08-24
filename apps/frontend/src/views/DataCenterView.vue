@@ -334,6 +334,13 @@ function securityStatusLabel(value: string) {
               <el-descriptions-item label="快照" :span="4">{{ status.security_master.latest_snapshot?.snapshot_id ?? "尚未同步" }}</el-descriptions-item>
             </el-descriptions>
             <el-progress v-if="selectedSecurityJob" class="job-progress" :percentage="selectedSecurityJob.progress" :status="selectedSecurityJob.status === 'failed' ? 'exception' : selectedSecurityJob.status === 'completed' ? 'success' : undefined" />
+            <el-alert
+              v-if="selectedSecurityJob?.status === 'completed' && selectedSecurityJob.records_quarantined > 0"
+              :title="`同步完成：已隔离 ${selectedSecurityJob.records_quarantined} 条非规范 Tushare 历史别名，未写入权威股票清单。`"
+              type="warning"
+              show-icon
+              :closable="false"
+            />
           </el-card>
           <el-card shadow="never">
             <template #header><div><strong>规范证券目录</strong><p>可搜索、筛选和选择股票，选择结果绑定当前不可变目录快照。</p></div></template>

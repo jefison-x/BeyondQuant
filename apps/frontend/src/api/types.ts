@@ -593,6 +593,7 @@ export interface SecurityMasterSnapshot {
   request_fingerprint: string;
   statuses: Array<"L" | "P" | "D">;
   row_count: number;
+  quarantined_count: number;
   retrieved_at: string;
   created_at: string;
 }
@@ -614,6 +615,7 @@ export interface SecurityMasterSyncJob {
   progress: number;
   records_received: number;
   records_imported: number;
+  records_quarantined: number;
   snapshot_id?: string | null;
   dataset_id?: string | null;
   error_code?: string | null;
