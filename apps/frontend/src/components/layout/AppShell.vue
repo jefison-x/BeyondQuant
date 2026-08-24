@@ -9,6 +9,7 @@ import XiaobaAssistantDrawer from "@/components/agent/XiaobaAssistantDrawer.vue"
 const route = useRoute();
 const isPublicRoute = computed(() => Boolean(route.meta.public));
 const isConversationRoute = computed(() => route.path === "/agent");
+const isSystemSettingsRoute = computed(() => route.path.startsWith("/settings/system"));
 const isMobile = ref(false);
 const sidebarCollapsed = ref(false);
 const mobileDrawerOpen = ref(false);
@@ -38,7 +39,11 @@ onUnmounted(() => {
     </main>
 
     <template v-else>
-      <div class="main-content">
+      <div
+        class="main-content"
+        :inert="isSystemSettingsRoute"
+        :aria-hidden="isSystemSettingsRoute ? 'true' : undefined"
+      >
         <AppSidebar
           v-if="!isMobile"
           :is-collapsed="sidebarCollapsed"
@@ -63,8 +68,8 @@ onUnmounted(() => {
       >
         <AppSidebar :is-collapsed="false" mobile @navigate="mobileDrawerOpen = false" />
       </el-drawer>
-      <GlobalApprovalCenter />
-      <XiaobaAssistantDrawer v-if="!isConversationRoute" />
+      <GlobalApprovalCenter v-if="!isSystemSettingsRoute" />
+      <XiaobaAssistantDrawer v-if="!isConversationRoute && !isSystemSettingsRoute" />
     </template>
   </div>
 </template>

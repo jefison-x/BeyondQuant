@@ -14,5 +14,6 @@ describe("conversation-first navigation", () => {
     expect(findActiveNavItem("/agent")).toBe("/agent");
     expect(findActiveNavItem("/assets")).toBe("");
     expect(findActiveNavItem("/admin/database")).toBe("");
+    expect(findActiveNavItem("/settings/system/overview")).toBe("");
   });
 });

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import { legacySystemSettingsRouteName } from "./systemSettingsNavigation";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -11,21 +12,9 @@ const router = createRouter({
       meta: { public: true },
     },
     {
-      path: "/admin",
-      component: () => import("@/components/layout/OpsLayout.vue"),
+      path: "/admin/:section?",
+      redirect: (to) => ({ name: legacySystemSettingsRouteName(to.params.section), query: to.query }),
       meta: { requiresAdmin: true },
-      children: [
-        { path: "", redirect: "/admin/database" },
-        { path: "database", name: "admin-database", component: () => import("@/views/AdminOpsView.vue"), props: { section: "database" }, meta: { title: "数据库管理", kicker: "系统运维", subtitle: "数据库连接、迁移与底层结构状态" } },
-        { path: "sources", name: "admin-sources", component: () => import("@/views/AdminOpsView.vue"), props: { section: "sources" }, meta: { title: "数据源管理", kicker: "系统运维", subtitle: "Tushare 配置就绪度与秘密安全状态" } },
-        { path: "cache", name: "admin-cache", component: () => import("@/views/AdminOpsView.vue"), props: { section: "cache" }, meta: { title: "缓存管理", kicker: "系统运维", subtitle: "行情缓存覆盖、健康与重建" } },
-        { path: "models", name: "admin-models", component: () => import("@/views/AdminOpsView.vue"), props: { section: "models" }, meta: { title: "模型运维", kicker: "系统运维", subtitle: "提供商、逻辑模型、密钥状态和 Agent 绑定" } },
-        { path: "agents", name: "admin-agents", component: () => import("@/views/AdminOpsView.vue"), props: { section: "agents" }, meta: { title: "智能体运维", kicker: "系统运维", subtitle: "Agent 架构、技能配置与运行质量" } },
-        { path: "budget", name: "admin-budget", component: () => import("@/views/AdminOpsView.vue"), props: { section: "budget" }, meta: { title: "执行预算", kicker: "系统运维", subtitle: "DSH 模型调用 token 记账与审计阈值" } },
-        { path: "runtime", name: "admin-runtime", component: () => import("@/views/AdminOpsView.vue"), props: { section: "runtime" }, meta: { title: "运行诊断", kicker: "系统运维", subtitle: "runtime 健康、限制、使用量与错误分类" } },
-        { path: "graphs", name: "admin-graphs", component: () => import("@/views/AdminOpsView.vue"), props: { section: "graphs" }, meta: { title: "Graph 工作流", kicker: "系统运维", subtitle: "BYQ AgentRun 与 WorkflowTrace 关联投影" } },
-        { path: "access", name: "admin-access", component: () => import("@/views/AdminOpsView.vue"), props: { section: "access" }, meta: { title: "权限与审计", kicker: "系统运维", subtitle: "角色权限、审批策略和系统访问审计" } },
-      ],
     },
     {
       path: "/",
@@ -43,15 +32,26 @@ const router = createRouter({
           },
         },
         {
-          path: "system-status",
-          name: "system-status",
-          component: () => import("@/views/SystemStatusView.vue"),
-          meta: {
-            title: "系统状态",
-            kicker: "系统运维",
-            subtitle: "核心服务健康状态与可观测性",
-          },
+          path: "settings/system",
+          component: () => import("@/components/layout/SystemSettingsLayout.vue"),
+          meta: { requiresAdmin: true, title: "系统设置", kicker: "管理员工作区", subtitle: "系统状态、数据、Agent 平台与审计" },
+          children: [
+            { path: "", redirect: "/settings/system/overview" },
+            { path: "overview", name: "system-settings-overview", component: () => import("@/views/SystemOverviewView.vue") },
+            { path: "data", name: "system-settings-data", component: () => import("@/views/DataCenterView.vue") },
+            { path: "sources", name: "system-settings-sources", component: () => import("@/views/AdminOpsView.vue"), props: { section: "sources" } },
+            { path: "cache", name: "system-settings-cache", component: () => import("@/views/AdminOpsView.vue"), props: { section: "cache" } },
+            { path: "database", name: "system-settings-database", component: () => import("@/views/AdminOpsView.vue"), props: { section: "database" } },
+            { path: "models", name: "system-settings-models", component: () => import("@/views/AdminOpsView.vue"), props: { section: "models" } },
+            { path: "agents", name: "system-settings-agents", component: () => import("@/views/AdminOpsView.vue"), props: { section: "agents" } },
+            { path: "budget", name: "system-settings-budget", component: () => import("@/views/AdminOpsView.vue"), props: { section: "budget" } },
+            { path: "runtime", name: "system-settings-runtime", component: () => import("@/views/AdminOpsView.vue"), props: { section: "runtime" } },
+            { path: "workflow", name: "system-settings-workflow", component: () => import("@/views/AdminOpsView.vue"), props: { section: "graphs" } },
+            { path: "access", name: "system-settings-access", component: () => import("@/views/AdminOpsView.vue"), props: { section: "access" } },
+            { path: "audit", name: "system-settings-audit", component: () => import("@/views/AdminOpsView.vue"), props: { section: "audit" } },
+          ],
         },
+        { path: "system-status", redirect: "/settings/system/overview", meta: { requiresAdmin: true } },
         {
           path: "agent",
           name: "agent",
@@ -112,26 +112,8 @@ const router = createRouter({
         { path: "models", redirect: "/user/models" },
         { path: "agent-settings", redirect: "/user/agent-policy" },
         { path: "research-center", redirect: "/user/research" },
-        {
-          path: "data-center",
-          name: "data-center",
-          component: () => import("@/views/DataCenterView.vue"),
-          meta: {
-            title: "数据中心",
-            kicker: "系统运维",
-            subtitle: "行情数据迁移、提供方与质量状态",
-          },
-        },
-        {
-          path: "operations",
-          redirect: "/admin/database",
-          meta: {
-            requiresAdmin: true,
-            title: "系统运维",
-            kicker: "系统运维",
-            subtitle: "运行时、存储与可观测性状态",
-          },
-        },
+        { path: "data-center", redirect: "/settings/system/data", meta: { requiresAdmin: true } },
+        { path: "operations", redirect: "/settings/system/overview", meta: { requiresAdmin: true } },
         {
           path: "quant",
           redirect: "/backtest",

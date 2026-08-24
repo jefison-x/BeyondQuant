@@ -76,7 +76,12 @@ async function mockAdminOps(page: Page) {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ migration: "not_started", datasets: [], provider: "tushare", quality: "not_audited", provider_status: { configured: true, sync: "not_started" } }),
+      body: JSON.stringify({
+        schema_version: "data-center.v1", migration: "not_started", provider: "tushare", legacy_providers: [], quality: "empty",
+        source: { configured: false, effective_source: "none", credentials: [], encryption: { configured: true, status: "ready" }, secrets_exposed: false, can_manage: true },
+        jobs: [],
+        coverage: { checked_at: "2026-08-24T00:00:00Z", provider: "tushare", scope: "persisted_observations", quality: "empty", completeness_claimed: false, row_count: 0, symbol_count: 0, source_issues: 0, ohlc_issues: 0, groups: [], symbols: [] },
+      }),
     }),
   );
   await page.route("**/api/product/settings/status", (route) =>
@@ -473,21 +478,25 @@ test("operations page renders safe status projection", async ({ page }) => {
     }),
   );
   await loginAsAdmin(page);
-  await page.goto("/admin/runtime");
-  await expect(page.getByRole("heading", { name: "运行诊断" })).toBeVisible();
+  await page.goto("/settings/system/runtime");
+  await expect(page.getByRole("heading", { name: "运行时" })).toBeVisible();
   await expect(page.getByText("deepseek-harness-sdk==0.1.0rc6")).toBeVisible();
 });
 
 test("admin operations workspace renders database and access sections", async ({ page }) => {
   await mockAdminOps(page);
   await loginAsAdmin(page);
-  await page.goto("/admin/database");
-  await expect(page.getByRole("heading", { name: "数据库管理" })).toBeVisible();
+  await page.goto("/settings/system/database");
+  await expect(page.getByRole("heading", { name: "数据库" })).toBeVisible();
   await expect(page.getByText("byq_domain")).toBeVisible();
 
-  await page.goto("/admin/access");
-  await expect(page.getByRole("heading", { name: "权限与审计" })).toBeVisible();
+  await page.goto("/settings/system/access");
+  await expect(page.getByRole("heading", { name: "访问控制" })).toBeVisible();
   await expect(page.getByText("admin · active")).toBeVisible();
+
+  await page.goto("/admin/graphs");
+  await expect(page).toHaveURL(/\/settings\/system\/workflow$/);
+  await expect(page.getByRole("heading", { name: "工作流诊断" })).toBeVisible();
 });
 
 test("mocked UI navigation covers core product routes", async ({ page }) => {
@@ -523,12 +532,17 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "策略管理" })).toBeVisible();
   await openNav(page, "个性化");
   await expect(page.getByRole("heading", { name: "外观与主题" }).first()).toBeVisible();
-  await openNav(page, "系统状态");
-  await expect(page.getByRole("heading", { name: "系统状态" })).toBeVisible();
-  await openNav(page, "数据中心");
+  await openNav(page, "系统设置");
+  await expect(page).toHaveURL(/\/settings\/system\/overview\?returnTo=/);
+  expect(new URL(page.url()).searchParams.get("returnTo")).toBe("/user/appearance");
+  await expect(page.getByRole("dialog").getByRole("heading", { name: "系统概览" })).toBeVisible();
+  const settingsNavigation = page.getByRole("navigation", { name: "系统设置导航" });
+  await settingsNavigation.getByRole("button", { name: /数据管理/ }).click();
   await expect(
-    page.getByRole("main").getByRole("heading", { name: "数据中心" }),
+    page.getByRole("dialog").getByRole("heading", { name: "数据中心" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "关闭系统设置" }).click();
+  await expect(page).toHaveURL(/\/user\/appearance$/);
   await openNav(page, "研究与审批");
   await expect(page.getByRole("heading", { name: "研究与审批" })).toBeVisible();
 });
@@ -557,4 +571,13 @@ test("system settings entry is visible only to administrators", async ({ page })
   await loginAsAdmin(page);
   await page.getByTitle(/用户设置/).click();
   await expect(page.getByRole("menuitem", { name: "系统设置" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "数据中心" })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "系统状态" })).toHaveCount(0);
+});
+
+test("normal users cannot open a direct system settings route", async ({ page }) => {
+  await login(page);
+  await page.goto("/settings/system/overview");
+  await expect(page).toHaveURL(/\/agent$/);
+  await expect(page.getByRole("dialog", { name: /系统设置/ })).toHaveCount(0);
 });

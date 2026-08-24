@@ -247,7 +247,7 @@ function qualityLabel(value: string | undefined) {
 .page-heading, .card-header { align-items: center; display: flex; gap: 1rem; justify-content: space-between; }
 .page-heading h1 { font-size: clamp(24px, 3vw, 34px); margin: 0; }
 .page-heading p, .card-header p { color: var(--byq-text-muted); margin: .35rem 0 0; }
-.eyebrow { color: var(--byq-primary) !important; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.eyebrow { color: var(--byq-brand) !important; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 .stat-item small { color: var(--byq-text-muted); display: block; font-size: 11px; margin-top: .25rem; }
 .workspace-tabs :deep(.el-tabs__content) { overflow: visible; }
 .workspace-tabs :deep(.el-tab-pane) { display: grid; gap: 1rem; }
