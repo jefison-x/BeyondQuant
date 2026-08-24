@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app import main
 from app.research import ResearchStore
 from test_factor_research import factor_payload
+from tests.workspace_helpers import trusted_agent_context
 
 
 
@@ -18,16 +19,14 @@ pytestmark = pytest.mark.skipif(
 )
 
 def test_factor_endpoint_persists_factor_result_artifact(monkeypatch) -> None:
+    context = trusted_agent_context(
+        "product-user", trace_id="byq-trace-factor-api", session_id="byq-session-factor-api",
+        dsh_run_id="byq-run-factor-api",
+    )
     store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
-    client.headers.update({
-        "x-byq-owner-principal": "product-user",
-        "x-byq-actor-principal": "product-user",
-        "x-byq-trace-id": "byq-trace-factor-api",
-        "x-byq-session-id": "byq-session-factor-api",
-        "x-byq-dsh-run-id": "byq-run-factor-api",
-    })
+    client.headers.update(context)
     task = client.post(
         "/v1/research/tasks",
         json={

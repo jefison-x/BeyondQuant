@@ -125,6 +125,7 @@ function agentContext(extra: unknown): AgentContext {
   if (extra && typeof extra === "object" && "owner_principal" in extra) {
     const value = extra as AgentContext;
     return {
+      workspace_id: value.workspace_id,
       owner_principal: value.owner_principal,
       actor_principal: value.actor_principal,
       trace_id: value.trace_id,
@@ -135,6 +136,7 @@ function agentContext(extra: unknown): AgentContext {
   const request = (extra as { request?: { headers?: unknown }; requestInfo?: { headers?: unknown } } | undefined);
   const headers = request?.request?.headers ?? request?.requestInfo?.headers;
   return {
+    workspace_id: headerValue(headers, "x-byq-workspace-id"),
     owner_principal: headerValue(headers, "x-byq-owner-principal"),
     actor_principal: headerValue(headers, "x-byq-actor-principal"),
     trace_id: headerValue(headers, "x-byq-trace-id"),
@@ -152,10 +154,23 @@ function agentContextUnavailable(): AgentResult {
 
 function completeAgentContext(extra: unknown): Required<AgentContext> | undefined {
   const context = agentContext(extra);
-  if (!context.owner_principal || !context.actor_principal || !context.trace_id || !context.session_id || !context.dsh_run_id) {
+  if (!context.workspace_id || !context.owner_principal || !context.actor_principal || !context.trace_id || !context.session_id || !context.dsh_run_id) {
     return undefined;
   }
   return context as Required<AgentContext>;
+}
+
+function trustedBackendFetcher(context: Required<AgentContext>): typeof fetch {
+  return (input, init) => {
+    const headers = new Headers(init?.headers);
+    headers.set("x-byq-workspace-id", context.workspace_id);
+    headers.set("x-byq-owner-principal", context.owner_principal);
+    headers.set("x-byq-actor-principal", context.actor_principal);
+    headers.set("x-byq-trace-id", context.trace_id);
+    headers.set("x-byq-session-id", context.session_id);
+    headers.set("x-byq-dsh-run-id", context.dsh_run_id);
+    return fetch(input, { ...init, headers });
+  };
 }
 
 async function byqAgentContext(_args: Record<string, never>, extra: unknown) {
@@ -269,52 +284,64 @@ async function byqLessonReview(args: { lesson_id: string; decision: string; rati
   return fetchByqLessonReview(BACKEND_URL, lesson_id, request, context);
 }
 
-async function byqBacktestSubmit(args: BacktestRequest) {
-  return fetchByqBacktestSubmit(BACKEND_URL, args ?? {});
+async function byqBacktestSubmit(args: BacktestRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqBacktestSubmit(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqBacktestGet(args: { job_id: string }) {
-  return fetchByqBacktestGet(BACKEND_URL, args.job_id);
+async function byqBacktestGet(args: { job_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqBacktestGet(BACKEND_URL, args.job_id, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqBacktestRun(args: { job_id: string }) {
-  return fetchByqBacktestRun(BACKEND_URL, args.job_id);
+async function byqBacktestRun(args: { job_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqBacktestRun(BACKEND_URL, args.job_id, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqBacktestCancel(args: { job_id: string }) {
-  return fetchByqBacktestCancel(BACKEND_URL, args.job_id);
+async function byqBacktestCancel(args: { job_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqBacktestCancel(BACKEND_URL, args.job_id, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqMarketDaily(args: MarketDailyRequest) {
-  return fetchByqMarketDaily(BACKEND_URL, args ?? {});
+async function byqMarketDaily(args: MarketDailyRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMarketDaily(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqFactorCompute(args: FactorComputeRequest) {
-  return fetchByqFactorCompute(BACKEND_URL, args ?? {});
+async function byqFactorCompute(args: FactorComputeRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqFactorCompute(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqStrategyDraftSave(args: StrategyRequest) {
-  return fetchByqStrategyDraftSave(BACKEND_URL, args);
+async function byqStrategyDraftSave(args: StrategyRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqStrategyDraftSave(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqStrategyDraftDelete(args: { artifact_id: string }) {
-  return fetchByqStrategyDraftDelete(BACKEND_URL, args.artifact_id);
+async function byqStrategyDraftDelete(args: { artifact_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqStrategyDraftDelete(BACKEND_URL, args.artifact_id, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqStrategyValidate(args: StrategyRequest) {
-  return fetchByqStrategyValidate(BACKEND_URL, args ?? {});
+async function byqStrategyValidate(args: StrategyRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqStrategyValidate(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqStrategyVersionCreate(args: StrategyRequest) {
-  return fetchByqStrategyVersionCreate(BACKEND_URL, args ?? {});
+async function byqStrategyVersionCreate(args: StrategyRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqStrategyVersionCreate(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqStrategyApprove(args: StrategyRequest) {
-  return fetchByqStrategyApprove(BACKEND_URL, args ?? {});
+async function byqStrategyApprove(args: StrategyRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqStrategyApprove(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqStrategyExport(args: { artifact_id: string }) {
-  return fetchByqStrategyExport(BACKEND_URL, args.artifact_id);
+async function byqStrategyExport(args: { artifact_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqStrategyExport(BACKEND_URL, args.artifact_id, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
 async function byqResearchTaskCreate(args: ResearchTaskCreateRequest, extra: unknown) {
@@ -324,27 +351,32 @@ async function byqResearchTaskCreate(args: ResearchTaskCreateRequest, extra: unk
     ...args,
     owner_principal: context.owner_principal,
     trace_id: context.trace_id,
-  });
+  }, trustedBackendFetcher(context));
 }
 
-async function byqResearchGet(args: { entity_type: ResearchEntityType; entity_id: string }) {
-  return fetchByqResearchGet(BACKEND_URL, args.entity_type, args.entity_id);
+async function byqResearchGet(args: { entity_type: ResearchEntityType; entity_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqResearchGet(BACKEND_URL, args.entity_type, args.entity_id, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqSignalSnapshotGet(args: { artifact_id: string }) {
-  return fetchByqSignalSnapshotGet(BACKEND_URL, args.artifact_id);
+async function byqSignalSnapshotGet(args: { artifact_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqSignalSnapshotGet(BACKEND_URL, args.artifact_id, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqResearchTransition(args: ResearchTransitionRequest) {
-  return fetchByqResearchTransition(BACKEND_URL, args);
+async function byqResearchTransition(args: ResearchTransitionRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqResearchTransition(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqExperimentCreate(args: ExperimentCreateRequest) {
-  return fetchByqExperimentCreate(BACKEND_URL, args);
+async function byqExperimentCreate(args: ExperimentCreateRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqExperimentCreate(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqArtifactCreate(args: ArtifactCreateRequest) {
-  return fetchByqArtifactCreate(BACKEND_URL, args);
+async function byqArtifactCreate(args: ArtifactCreateRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqArtifactCreate(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
 function buildServer(factoryContext: unknown = undefined): McpServer {
@@ -535,7 +567,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         end_date: z.string().optional().describe("Inclusive YYYYMMDD end date."),
       },
     },
-    byqMarketDaily,
+    (args) => byqMarketDaily(args, trustedContext),
   );
   server.registerTool(
     "byq_backtest_submit",
@@ -566,12 +598,12 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         corporate_actions: z.array(z.record(z.string(), z.unknown())).optional(),
       },
     },
-    byqBacktestSubmit,
+    (args) => byqBacktestSubmit(args, trustedContext),
   );
   server.registerTool(
     "byq_backtest_get",
     { description: "Read durable BYQ backtest job state and immutable result reference.", inputSchema: { job_id: z.string() } },
-    byqBacktestGet,
+    (args) => byqBacktestGet(args, trustedContext),
   );
   server.registerTool(
     "byq_signal_snapshot_get",
@@ -579,17 +611,17 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       description: "Read an immutable, validated BYQ signal_snapshot artifact (frozen backtest input, ADR-0017). Read-only.",
       inputSchema: { artifact_id: z.string() },
     },
-    byqSignalSnapshotGet,
+    (args) => byqSignalSnapshotGet(args, trustedContext),
   );
   server.registerTool(
     "byq_backtest_run",
     { description: "Run one queued deterministic BYQ backtest job through the worker boundary.", inputSchema: { job_id: z.string() } },
-    byqBacktestRun,
+    (args) => byqBacktestRun(args, trustedContext),
   );
   server.registerTool(
     "byq_backtest_cancel",
     { description: "Cancel a queued or running BYQ backtest job.", inputSchema: { job_id: z.string() } },
-    byqBacktestCancel,
+    (args) => byqBacktestCancel(args, trustedContext),
   );
   server.registerTool(
     "byq_factor_compute",
@@ -639,7 +671,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         })),
       },
     },
-    byqFactorCompute,
+    (args) => byqFactorCompute(args, trustedContext),
   );
   server.registerTool(
     "byq_strategy_draft_save",
@@ -653,7 +685,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         strategy: z.record(z.string(), z.unknown()),
       },
     },
-    byqStrategyDraftSave,
+    (args) => byqStrategyDraftSave(args, trustedContext),
   );
   server.registerTool(
     "byq_strategy_draft_delete",
@@ -661,7 +693,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       description: "Delete (soft-supersede) an owner-scoped strategy draft (Phase 33).",
       inputSchema: { artifact_id: z.string() },
     },
-    byqStrategyDraftDelete,
+    (args) => byqStrategyDraftDelete(args, trustedContext),
   );
   server.registerTool(
     "byq_strategy_validate",
@@ -684,7 +716,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         }),
       },
     },
-    byqStrategyValidate,
+    (args) => byqStrategyValidate(args, trustedContext),
   );
   server.registerTool(
     "byq_strategy_version_create",
@@ -698,7 +730,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         idempotency_key: z.string(),
       },
     },
-    byqStrategyVersionCreate,
+    (args) => byqStrategyVersionCreate(args, trustedContext),
   );
   server.registerTool(
     "byq_strategy_approve",
@@ -715,7 +747,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         idempotency_key: z.string(),
       },
     },
-    byqStrategyApprove,
+    (args) => byqStrategyApprove(args, trustedContext),
   );
   server.registerTool(
     "byq_strategy_export",
@@ -723,7 +755,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       description: "Return a deterministic, secret-free StrategyVersion export.",
       inputSchema: { artifact_id: z.string() },
     },
-    byqStrategyExport,
+    (args) => byqStrategyExport(args, trustedContext),
   );
   server.registerTool(
     "byq_research_task_create",
@@ -748,7 +780,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         entity_id: z.string(),
       },
     },
-    byqResearchGet,
+    (args) => byqResearchGet(args, trustedContext),
   );
   server.registerTool(
     "byq_research_transition",
@@ -761,7 +793,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         idempotency_key: z.string(),
       },
     },
-    byqResearchTransition,
+    (args) => byqResearchTransition(args, trustedContext),
   );
   server.registerTool(
     "byq_experiment_create",
@@ -775,7 +807,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         idempotency_key: z.string(),
       },
     },
-    byqExperimentCreate,
+    (args) => byqExperimentCreate(args, trustedContext),
   );
   server.registerTool(
     "byq_artifact_create",
@@ -791,7 +823,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         idempotency_key: z.string(),
       },
     },
-    byqArtifactCreate,
+    (args) => byqArtifactCreate(args, trustedContext),
   );
   server.registerTool(
     "byq_learning_run_start",

@@ -52,7 +52,8 @@ def logout(session_id: str) -> None:
 
 
 def resolve_principal(request: Request) -> Principal:
-    return Principal(subject=str(resolve_user(request).get("username") or resolve_user(request).get("user_id")))
+    user = resolve_user(request)
+    return Principal(subject=str(user.get("username") or user.get("user_id")))
 
 
 def resolve_user(request: Request) -> dict[str, object]:
@@ -71,7 +72,13 @@ def resolve_user(request: Request) -> dict[str, object]:
     except httpx.HTTPError as exc:
         raise ProductAuthError(503, "backend_unavailable", "backend is unavailable") from exc
     body = response.json()
-    if not isinstance(body, dict) or not isinstance(body.get("user"), dict):
+    if (
+        not isinstance(body, dict)
+        or not isinstance(body.get("user"), dict)
+        or not isinstance(body.get("workspace"), dict)
+        or not isinstance(body["workspace"].get("workspace_id"), str)
+    ):
         raise ProductAuthError(502, "backend_invalid_response", "backend returned an invalid response")
-    user = body["user"]
+    user = dict(body["user"])
+    user["_workspace"] = body["workspace"]
     return user

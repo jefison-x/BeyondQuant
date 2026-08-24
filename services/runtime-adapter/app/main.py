@@ -15,6 +15,7 @@ from .runtime import ModelCredentialUnavailable, RuntimeAdapter, SessionConflict
 class CreateSessionRequest(BaseModel):
     session_id: str
     trace_id: str
+    workspace_id: str | None = None
     owner_principal: str | None = None
 
 
@@ -45,7 +46,9 @@ def runtime_operations() -> dict[str, object]:
 @app.post("/internal/runtime/sessions", status_code=201)
 def create_session(request: CreateSessionRequest) -> dict[str, object]:
     try:
-        return adapter.create_session(request.session_id, request.trace_id, request.owner_principal)
+        return adapter.create_session(
+            request.session_id, request.trace_id, request.owner_principal, request.workspace_id
+        )
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:

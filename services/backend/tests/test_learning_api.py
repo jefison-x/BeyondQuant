@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from app import main
 from app.learning_loop import LearningLoopStore
 from app.research import ResearchStore
+from tests.workspace_helpers import trusted_agent_context
 
 
 
@@ -19,16 +20,11 @@ pytestmark = pytest.mark.skipif(
     reason="BYQ_DATABASE_URL is not set",
 )
 
-CONTEXT = {
-    "x-byq-owner-principal": "alice",
-    "x-byq-actor-principal": "alice",
-    "x-byq-trace-id": "trace-learning-api",
-    "x-byq-session-id": "session-learning-api",
-    "x-byq-dsh-run-id": "dsh-run-learning-api",
-}
-
-
 def test_learning_api_requires_context_and_stops_at_human_gate(monkeypatch, tmp_path) -> None:
+    context = trusted_agent_context(
+        "alice", trace_id="trace-learning-api", session_id="session-learning-api",
+        dsh_run_id="dsh-run-learning-api",
+    )
     research = ResearchStore()
     task = research.create_task(
         {
@@ -52,7 +48,7 @@ def test_learning_api_requires_context_and_stops_at_human_gate(monkeypatch, tmp_
 
     started = client.post(
         "/v1/learning/runs",
-        headers=CONTEXT,
+        headers=context,
         json={"task_id": task["task_id"], "budget": {"max_iterations": 1, "max_repairs": 0}, "idempotency_key": "run-api-1"},
     )
     assert started.status_code == 201, started.text
@@ -62,7 +58,7 @@ def test_learning_api_requires_context_and_stops_at_human_gate(monkeypatch, tmp_
 
     iterated = client.post(
         f"/v1/learning/runs/{run['learning_run_id']}/iterations",
-        headers=CONTEXT,
+        headers=context,
         json={
             "iteration_index": 1,
             "attempt": 1,
@@ -76,12 +72,12 @@ def test_learning_api_requires_context_and_stops_at_human_gate(monkeypatch, tmp_
 
     self_review = client.post(
         f"/v1/learning/runs/{run['learning_run_id']}/review",
-        headers=CONTEXT,
+        headers=context,
         json={"decision": "approved"},
     )
     assert self_review.status_code == 403
 
-    human_context = {**CONTEXT, "x-byq-actor-principal": "human-reviewer"}
+    human_context = {**context, "x-byq-actor-principal": "human-reviewer"}
     reviewed = client.post(
         f"/v1/learning/runs/{run['learning_run_id']}/review",
         headers=human_context,

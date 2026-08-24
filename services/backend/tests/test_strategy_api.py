@@ -10,6 +10,7 @@ from app.backtest import BacktestJobStore, LocalObjectStore, membership_fingerpr
 from app.db import execute
 from app.research import ResearchStore
 from test_strategy_artifact import strategy_payload
+from tests.workspace_helpers import trusted_agent_context
 
 
 
@@ -186,13 +187,10 @@ def test_strategy_api_rejects_invalid_source_without_creating_artifact(monkeypat
     store.close()
 
 def _owner_headers(principal: str = "product-user") -> dict[str, str]:
-    return {
-        "x-byq-owner-principal": principal,
-        "x-byq-actor-principal": principal,
-        "x-byq-trace-id": f"byq-trace-{principal}",
-        "x-byq-session-id": f"byq-session-{principal}",
-        "x-byq-dsh-run-id": f"byq-run-{principal}",
-    }
+    return trusted_agent_context(
+        principal, trace_id=f"byq-trace-{principal}", session_id=f"byq-session-{principal}",
+        dsh_run_id=f"byq-run-{principal}",
+    )
 
 
 def test_strategy_draft_save_tolerates_invalid_and_delete(monkeypatch) -> None:

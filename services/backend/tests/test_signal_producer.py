@@ -10,6 +10,7 @@ from app.market_data import MarketDataStore
 from app.paper_trading import PaperTradingStore
 from app.research import ResearchStore
 from app.signal_producer import CallableSandboxExecutor, SignalJobStore, SignalProducerCoordinator
+from tests.workspace_helpers import trusted_agent_context
 
 
 pytestmark = pytest.mark.skipif(
@@ -20,13 +21,10 @@ SYMBOL = "000001.SZ"
 
 
 def _headers(owner: str) -> dict[str, str]:
-    return {
-        "x-byq-owner-principal": owner,
-        "x-byq-actor-principal": owner,
-        "x-byq-trace-id": f"trace-{owner}",
-        "x-byq-session-id": f"session-{owner}",
-        "x-byq-dsh-run-id": f"run-{owner}",
-    }
+    return trusted_agent_context(
+        owner, trace_id=f"trace-{owner}", session_id=f"session-{owner}",
+        dsh_run_id=f"run-{owner}",
+    )
 
 
 def _strategy() -> dict[str, object]:

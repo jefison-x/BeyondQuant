@@ -225,8 +225,12 @@ def readyz() -> dict[str, str]:
 
 def _conversation_owner(request: Request) -> str:
     owner = request.headers.get("x-byq-owner-principal")
-    if not owner:
-        raise HTTPException(status_code=401, detail="trusted owner context required")
+    workspace_id = request.headers.get("x-byq-workspace-id")
+    try:
+        workspace_tenancy_store.resolve_context(owner, workspace_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="trusted workspace context required") from exc
+    assert owner is not None
     return owner
 
 
@@ -669,10 +673,24 @@ def _user_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
         raise HTTPException(status_code=503, detail="user storage is unavailable") from error
 
 
+def _authenticated_user_payload(user: dict[str, object], *, session_id: object | None = None) -> dict[str, object]:
+    workspace = workspace_tenancy_store.public_workspace(str(user["user_id"]))
+    result: dict[str, object] = {"user": user, "workspace": workspace}
+    if session_id is not None:
+        result["session_id"] = session_id
+    return result
+
+
+def _login_user(username: object, password: object) -> dict[str, object]:
+    result = user_store.login(username, password)
+    return _authenticated_user_payload(result["user"], session_id=result["session_id"])
+
+
 def _agent_context(request: Request, payload: dict[str, Any]) -> dict[str, str | None]:
     """Resolve trusted runtime context without forwarding credentials."""
 
     header_values = {
+        "workspace_id": request.headers.get("x-byq-workspace-id"),
         "owner_principal": request.headers.get("x-byq-owner-principal"),
         "actor_principal": request.headers.get("x-byq-actor-principal"),
         "trace_id": request.headers.get("x-byq-trace-id"),
@@ -694,7 +712,15 @@ def _required_agent_context(request: Request, payload: dict[str, Any] | None = N
     missing = sorted(field for field, value in context.items() if value is None)
     if missing:
         raise HTTPException(status_code=401, detail="trusted agent context is required")
-    return {field: value for field, value in context.items() if value is not None}
+    complete = {field: value for field, value in context.items() if value is not None}
+    try:
+        workspace_tenancy_store.resolve_context(complete["owner_principal"], complete["workspace_id"])
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="trusted workspace context is invalid") from exc
+    # workspace_id is an authorization-boundary value, not a domain command
+    # field. Persistence stamps it from the validated owner via database
+    # triggers, keeping existing framework-neutral domain contracts stable.
+    return {field: value for field, value in complete.items() if field != "workspace_id"}
 
 
 def _strategy_payload(payload: object, allowed: set[str]) -> dict[str, Any]:
@@ -2271,7 +2297,7 @@ def import_paper_account(payload: dict[str, Any], request: Request) -> dict[str,
 
 @app.post("/v1/auth/login")
 def login(payload: dict[str, Any]) -> dict[str, object]:
-    return _user_call(lambda: user_store.login(payload.get("username"), payload.get("password")))
+    return _user_call(lambda: _login_user(payload.get("username"), payload.get("password")))
 
 
 @app.post("/v1/auth/logout")
@@ -2284,7 +2310,7 @@ def get_session(request: Request) -> dict[str, object]:
     session_id = request.headers.get("x-byq-session-id")
     if not session_id:
         raise HTTPException(status_code=401, detail="session required")
-    return _user_call(lambda: {"user": user_store.get_session_user(session_id)})
+    return _user_call(lambda: _authenticated_user_payload(user_store.get_session_user(session_id)))
 
 
 @app.post("/v1/users", status_code=201)

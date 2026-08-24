@@ -1,10 +1,9 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-completed project stage is **Phase 50** — durable personal-workspace identity,
-automatic provisioning, and verified additive ownership backfill under
-Accepted ADR-0025. Runtime authorization remains on the proven owner-scoped
-path until Phase 51 performs the trusted-context cutover. See
+completed project stage is **Phase 51** — trusted personal-workspace context,
+fail-closed membership authorization, workspace-stamped domain writes, and a
+verified 31-table non-null contract migration under Accepted ADR-0025. See
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
 authoritative current state.
 
@@ -49,7 +48,7 @@ BYQ does not fork DSH. The DSH version is pinned through an explicit dependency 
   it does not change the currently qualified runtime pin.
 - The conversation-first frontend program is complete under ADR-0024; human
   v1.0 RC review is postponed while the ADR-0025 personal-workspace program
-  proceeds through Phases 51-52. Team workspaces, invitations, sharing and
+  proceeds through Phase 52. Team workspaces, invitations, sharing and
   commercial control-plane capabilities remain outside this program. The
   official release boundary restores the normal human merge gate under
   ADR-0015.

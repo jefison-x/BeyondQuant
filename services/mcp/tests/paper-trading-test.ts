@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { fetchByqPaperAccount, fetchByqPaperOrder, fetchByqPaperSnapshots, type PaperContext } from "../src/paper-trading.js";
 
 const context: PaperContext = {
+  workspace_id: "workspace_alice",
   owner_principal: "alice", actor_principal: "agent-1", trace_id: "trace-1",
   session_id: "session-1", dsh_run_id: "run-1",
 };
@@ -20,6 +21,7 @@ assert.ok(calls[1].input.endsWith("/v1/paper/accounts/paper_account_123/orders/p
 assert.ok(calls[2].input.endsWith("/v1/paper/accounts/paper_account_123/snapshots"));
 const headers = calls[0].init?.headers as Record<string, string>;
 assert.equal(headers["x-byq-owner-principal"], "alice");
+assert.equal(headers["x-byq-workspace-id"], "workspace_alice");
 assert.equal(headers["x-byq-actor-principal"], "agent-1");
 assert.equal(headers["x-byq-dsh-run-id"], "run-1");
 console.log("Paper Trading MCP translation PASS: trusted context and bounded read projections");

@@ -26,7 +26,8 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
     monkeypatch.setattr(main, "_start_trace_collector", lambda _session: None)
     messages: list[str] = []
 
-    def fake_catalog(method, path, principal, *, payload=None, params=None):
+    def fake_catalog(method, path, principal, workspace_id, *, payload=None, params=None):
+        assert workspace_id == "workspace_bootstrap_unresolved"
         if method == "POST" and path == "/v1/product/conversations":
             return {"conversation": {"conversation_id": "conversation_1", "title": "新投研对话", "status": "active"}}
         if path.endswith("/messages"):
@@ -122,8 +123,9 @@ def test_durable_replay_hides_runtime_session_and_is_owner_scoped(monkeypatch, t
         },
     })
 
-    def fake_catalog(method, path, principal, *, payload=None, params=None):
+    def fake_catalog(method, path, principal, workspace_id, *, payload=None, params=None):
         assert principal.subject == main.PRODUCT_PRINCIPAL
+        assert workspace_id == "workspace_bootstrap_unresolved"
         return {
             "conversation": {
                 "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",

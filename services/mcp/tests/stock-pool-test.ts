@@ -9,6 +9,7 @@ import {
 } from "../src/stock-pool.js";
 
 const context: PoolContext = {
+  workspace_id: "workspace_alice",
   owner_principal: "alice", actor_principal: "agent-1", trace_id: "trace-1",
   session_id: "session-1", dsh_run_id: "run-1",
 };

@@ -122,7 +122,23 @@ INHERITED_TABLES: dict[str, tuple[tuple[str, ...], str, str]] = {
     "paper_account_snapshots": (("snapshot_id",), "LEFT JOIN paper_accounts p ON p.account_id = c.account_id", "p.workspace_id"),
     "learning_iterations": (("iteration_id",), "LEFT JOIN learning_runs p ON p.learning_run_id = c.learning_run_id", "p.workspace_id"),
     "evaluation_signals": (("signal_id",), "LEFT JOIN research_tasks p ON p.task_id = c.task_id", "p.workspace_id"),
-    "learning_history": (("history_id",), "LEFT JOIN lessons p ON c.entity_type = 'lesson' AND p.lesson_id = c.entity_id", "p.workspace_id"),
+    "learning_history": (
+        ("history_id",),
+        "LEFT JOIN learning_runs lr ON c.entity_type = 'learning_run' AND lr.learning_run_id = c.entity_id "
+        "LEFT JOIN lessons le ON c.entity_type = 'lesson' AND le.lesson_id = c.entity_id",
+        "COALESCE(lr.workspace_id, le.workspace_id)",
+    ),
+}
+
+WORKSPACE_UNIQUE_INDEXES = {
+    "research_tasks_workspace_idempotency": ("research_tasks", "workspace_id, idempotency_key"),
+    "agent_runs_workspace_idempotency": ("agent_runs", "workspace_id, idempotency_key"),
+    "signal_jobs_workspace_idempotency": ("signal_producer_jobs", "workspace_id, idempotency_key"),
+    "learning_runs_workspace_idempotency": ("learning_runs", "workspace_id, idempotency_key"),
+    "paper_accounts_workspace_name": ("paper_accounts", "workspace_id, name"),
+    "stock_pool_writes_workspace_idempotency": (
+        "stock_pool_write_idempotency", "workspace_id, idempotency_key"
+    ),
 }
 
 RELATION_CHECKS = {
@@ -141,6 +157,13 @@ RELATION_CHECKS = {
     "paper_ledger": "SELECT COUNT(*) AS count FROM paper_ledger_entries c JOIN paper_accounts p ON p.account_id=c.account_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "learning_iteration": "SELECT COUNT(*) AS count FROM learning_iterations c JOIN learning_runs p ON p.learning_run_id=c.learning_run_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "evaluation_task": "SELECT COUNT(*) AS count FROM evaluation_signals c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
+    "pool_lifecycle": "SELECT COUNT(*) AS count FROM stock_pool_lifecycle_audit c JOIN stock_pools p ON p.pool_id=c.pool_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
+    "pool_domain_reference": "SELECT COUNT(*) AS count FROM stock_pool_domain_references c JOIN stock_pools p ON p.pool_id=c.pool_id JOIN stock_pool_snapshots s ON s.snapshot_id=c.snapshot_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id OR c.workspace_id IS DISTINCT FROM s.workspace_id",
+    "paper_audit": "SELECT COUNT(*) AS count FROM paper_account_audit c JOIN paper_accounts p ON p.account_id=c.account_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
+    "paper_transfer": "SELECT COUNT(*) AS count FROM paper_transfer_audit c JOIN paper_accounts p ON p.account_id=c.account_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
+    "lesson_task": "SELECT COUNT(*) AS count FROM lessons c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
+    "learning_history_run": "SELECT COUNT(*) AS count FROM learning_history c JOIN learning_runs p ON c.entity_type='learning_run' AND p.learning_run_id=c.entity_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
+    "learning_history_lesson": "SELECT COUNT(*) AS count FROM learning_history c JOIN lessons p ON c.entity_type='lesson' AND p.lesson_id=c.entity_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
 }
 
 
@@ -197,6 +220,7 @@ class WorkspaceTenancyStore(PgStoreMixin):
                 connection.execute(text(
                     f"CREATE INDEX IF NOT EXISTS {table_name}_workspace ON {table_name}(workspace_id)"
                 ))
+            self._install_write_triggers(connection)
 
     def provision_all_users(self) -> dict[str, int]:
         created = 0
@@ -213,6 +237,161 @@ class WorkspaceTenancyStore(PgStoreMixin):
             m.status AS membership_status FROM workspaces w JOIN workspace_memberships m
               ON m.workspace_id = w.workspace_id AND m.user_id = w.owner_user_id
             WHERE w.owner_user_id = :user_id AND w.kind = 'personal'""", {"user_id": user_id})
+
+    def public_workspace(self, user_id: str) -> dict[str, str]:
+        row = self.get_personal_workspace(user_id)
+        if row is None or row["status"] != "active" or row["membership_status"] != "active":
+            raise ValueError("active personal workspace membership is required")
+        return {
+            "contract": CONTRACT_VERSION,
+            "workspace_id": str(row["workspace_id"]),
+            "kind": "personal",
+            "display_name": str(row["display_name"]),
+            "role": "owner",
+        }
+
+    def resolve_context(self, owner_principal: str | None, workspace_id: str | None) -> dict[str, str]:
+        if not owner_principal or not workspace_id:
+            raise ValueError("trusted workspace context is required")
+        row = self._fetch_one("""SELECT w.workspace_id, w.kind, w.owner_user_id,
+                m.role, u.username AS actor_principal
+            FROM workspaces w
+            JOIN workspace_memberships m ON m.workspace_id = w.workspace_id
+            JOIN users u ON u.user_id = m.user_id
+            WHERE w.workspace_id = :workspace_id AND u.username = :owner
+              AND w.status = 'active' AND m.status = 'active' AND u.status = 'active'
+              AND w.kind = 'personal' AND m.role = 'owner'""",
+            {"workspace_id": workspace_id, "owner": owner_principal})
+        if row is None:
+            raise ValueError("trusted workspace context is invalid")
+        return {
+            "contract": CONTRACT_VERSION,
+            "workspace_id": str(row["workspace_id"]),
+            "workspace_kind": str(row["kind"]),
+            "membership_role": str(row["role"]),
+            "owner_user_id": str(row["owner_user_id"]),
+            "actor_principal": str(row["actor_principal"]),
+        }
+
+    @staticmethod
+    def _install_write_triggers(connection: Connection) -> None:
+        connection.execute(text("""CREATE OR REPLACE FUNCTION byq_workspace_from_owner()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            DECLARE resolved TEXT;
+            BEGIN
+              SELECT w.workspace_id INTO resolved FROM users u JOIN workspaces w
+                ON w.owner_user_id = u.user_id JOIN workspace_memberships m
+                ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
+                WHERE u.username = NEW.owner_principal AND u.status = 'active'
+                  AND w.status = 'active' AND m.status = 'active';
+              IF resolved IS NULL THEN RAISE EXCEPTION 'trusted workspace owner is unresolved'; END IF;
+              IF NEW.workspace_id IS NOT NULL AND NEW.workspace_id <> resolved THEN
+                RAISE EXCEPTION 'workspace owner mismatch';
+              END IF;
+              NEW.workspace_id := resolved;
+              RETURN NEW;
+            END $$"""))
+        for table_name in DIRECT_OWNER_TABLES:
+            trigger_name = f"{table_name}_workspace_write"
+            connection.execute(text(f"DROP TRIGGER IF EXISTS {trigger_name} ON {table_name}"))
+            connection.execute(text(f"""CREATE TRIGGER {trigger_name} BEFORE INSERT OR UPDATE
+                ON {table_name} FOR EACH ROW EXECUTE FUNCTION byq_workspace_from_owner()"""))
+
+        connection.execute(text("""CREATE OR REPLACE FUNCTION byq_workspace_from_parent()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            DECLARE resolved TEXT; owner_resolved TEXT; parent_key TEXT;
+            BEGIN
+              parent_key := to_jsonb(NEW) ->> TG_ARGV[2];
+              EXECUTE format('SELECT workspace_id FROM %I WHERE %I = $1', TG_ARGV[0], TG_ARGV[1])
+                INTO resolved USING parent_key;
+              IF resolved IS NULL THEN RAISE EXCEPTION 'trusted parent workspace is unresolved'; END IF;
+              IF to_jsonb(NEW) ? 'owner_principal' THEN
+                SELECT w.workspace_id INTO owner_resolved FROM users u JOIN workspaces w
+                  ON w.owner_user_id = u.user_id JOIN workspace_memberships m
+                  ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
+                  WHERE u.username = to_jsonb(NEW) ->> 'owner_principal'
+                    AND u.status = 'active' AND w.status = 'active' AND m.status = 'active';
+                IF owner_resolved IS NULL OR owner_resolved <> resolved THEN
+                  RAISE EXCEPTION 'parent workspace owner mismatch';
+                END IF;
+              END IF;
+              IF NEW.workspace_id IS NOT NULL AND NEW.workspace_id <> resolved THEN
+                RAISE EXCEPTION 'parent workspace mismatch';
+              END IF;
+              NEW.workspace_id := resolved;
+              RETURN NEW;
+            END $$"""))
+        parent_triggers = {
+            "product_conversation_messages": ("product_conversations", "conversation_id", "conversation_id"),
+            "experiments": ("research_tasks", "task_id", "task_id"),
+            "artifacts": ("research_tasks", "task_id", "task_id"),
+            "agent_audit": ("agent_runs", "run_id", "run_id"),
+            "agent_approvals": ("agent_runs", "run_id", "run_id"),
+            "signal_producer_jobs": ("research_tasks", "task_id", "task_id"),
+            "backtest_jobs": ("research_tasks", "task_id", "task_id"),
+            "stock_pool_snapshots": ("stock_pools", "pool_id", "pool_id"),
+            "stock_pool_snapshot_members": ("stock_pool_snapshots", "snapshot_id", "snapshot_id"),
+            "stock_pool_lifecycle_audit": ("stock_pools", "pool_id", "pool_id"),
+            "stock_pool_domain_references": ("stock_pools", "pool_id", "pool_id"),
+            "paper_positions": ("paper_accounts", "account_id", "account_id"),
+            "paper_orders": ("paper_accounts", "account_id", "account_id"),
+            "paper_fills": ("paper_accounts", "account_id", "account_id"),
+            "paper_account_controls": ("paper_accounts", "account_id", "account_id"),
+            "paper_ledger_entries": ("paper_accounts", "account_id", "account_id"),
+            "paper_account_snapshots": ("paper_accounts", "account_id", "account_id"),
+            "paper_account_audit": ("paper_accounts", "account_id", "account_id"),
+            "paper_transfer_audit": ("paper_accounts", "account_id", "account_id"),
+            "learning_iterations": ("learning_runs", "learning_run_id", "learning_run_id"),
+            "evaluation_signals": ("research_tasks", "task_id", "task_id"),
+            "lessons": ("research_tasks", "task_id", "task_id"),
+        }
+        for table_name, arguments in parent_triggers.items():
+            trigger_name = f"{table_name}_workspace_write"
+            connection.execute(text(f"DROP TRIGGER IF EXISTS {trigger_name} ON {table_name}"))
+            connection.execute(text(f"""CREATE TRIGGER {trigger_name} BEFORE INSERT OR UPDATE
+                ON {table_name} FOR EACH ROW EXECUTE FUNCTION byq_workspace_from_parent(
+                '{arguments[0]}', '{arguments[1]}', '{arguments[2]}')"""))
+        connection.execute(text("""CREATE OR REPLACE FUNCTION byq_workspace_from_research_entity()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            DECLARE resolved TEXT;
+            BEGIN
+              IF NEW.entity_type = 'research_task' THEN
+                SELECT workspace_id INTO resolved FROM research_tasks WHERE task_id = NEW.entity_id;
+              ELSIF NEW.entity_type = 'experiment' THEN
+                SELECT workspace_id INTO resolved FROM experiments WHERE experiment_id = NEW.entity_id;
+              ELSIF NEW.entity_type = 'artifact' THEN
+                SELECT workspace_id INTO resolved FROM artifacts WHERE artifact_id = NEW.entity_id;
+              END IF;
+              IF resolved IS NULL THEN RAISE EXCEPTION 'research entity workspace is unresolved'; END IF;
+              IF NEW.workspace_id IS NOT NULL AND NEW.workspace_id <> resolved THEN
+                RAISE EXCEPTION 'research entity workspace mismatch';
+              END IF;
+              NEW.workspace_id := resolved;
+              RETURN NEW;
+            END $$"""))
+        connection.execute(text("DROP TRIGGER IF EXISTS research_transitions_workspace_write ON research_transitions"))
+        connection.execute(text("""CREATE TRIGGER research_transitions_workspace_write BEFORE INSERT OR UPDATE
+            ON research_transitions FOR EACH ROW EXECUTE FUNCTION byq_workspace_from_research_entity()"""))
+        connection.execute(text("""CREATE OR REPLACE FUNCTION byq_workspace_from_learning_entity()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            DECLARE resolved TEXT;
+            BEGIN
+              IF NEW.entity_type = 'learning_run' THEN
+                SELECT workspace_id INTO resolved FROM learning_runs
+                  WHERE learning_run_id = NEW.entity_id;
+              ELSIF NEW.entity_type = 'lesson' THEN
+                SELECT workspace_id INTO resolved FROM lessons WHERE lesson_id = NEW.entity_id;
+              END IF;
+              IF resolved IS NULL THEN RAISE EXCEPTION 'learning entity workspace is unresolved'; END IF;
+              IF NEW.workspace_id IS NOT NULL AND NEW.workspace_id <> resolved THEN
+                RAISE EXCEPTION 'learning entity workspace mismatch';
+              END IF;
+              NEW.workspace_id := resolved;
+              RETURN NEW;
+            END $$"""))
+        connection.execute(text("DROP TRIGGER IF EXISTS learning_history_workspace_write ON learning_history"))
+        connection.execute(text("""CREATE TRIGGER learning_history_workspace_write BEFORE INSERT OR UPDATE
+            ON learning_history FOR EACH ROW EXECUTE FUNCTION byq_workspace_from_learning_entity()"""))
 
     def backfill(self, *, dry_run: bool = False) -> dict[str, Any]:
         """Map exact username owners to workspaces; never guess unmatched rows."""
@@ -253,6 +432,38 @@ class WorkspaceTenancyStore(PgStoreMixin):
                 transaction.rollback()
         report["run_id"] = None if dry_run else run_id
         return report
+
+    def enforce_contract(self) -> dict[str, Any]:
+        """Verify, then make every classified workspace key mandatory."""
+
+        verification = self.backfill(dry_run=True)
+        if not verification["verified"]:
+            raise ValueError("workspace contract verification failed")
+        with self._transaction() as connection:
+            for table_name in WORKSPACE_TABLES:
+                if connection.execute(text("SELECT to_regclass(:table)"), {"table": table_name}).scalar() is None:
+                    continue
+                pending = int(connection.execute(text(
+                    f"SELECT COUNT(*) FROM {table_name} WHERE workspace_id IS NULL"
+                )).scalar_one())
+                if pending:
+                    raise ValueError(f"{table_name} still has unassigned workspace rows")
+                connection.execute(text(
+                    f"ALTER TABLE {table_name} ALTER COLUMN workspace_id SET NOT NULL"
+                ))
+            for index_name, (table_name, columns) in WORKSPACE_UNIQUE_INDEXES.items():
+                if connection.execute(text("SELECT to_regclass(:table)"), {"table": table_name}).scalar() is None:
+                    continue
+                connection.execute(text(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table_name}({columns})"
+                ))
+        return {
+            "contract": CONTRACT_VERSION,
+            "status": "enforced",
+            "tables": len(verification["tables"]),
+            "manifest_sha256": verification["manifest_sha256"],
+            "relation_checks": verification["relation_checks"],
+        }
 
     def _backfill_direct(self, connection: Connection, report: dict[str, Any], *, dry_run: bool) -> None:
         for table_name, keys in DIRECT_OWNER_TABLES.items():

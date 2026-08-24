@@ -296,8 +296,9 @@ def test_broken_personal_resolution_never_falls_back_to_system_key(
 
 
 def test_product_context_is_scoped_to_the_owned_sdk_environment(adapter: RuntimeAdapter) -> None:
-    adapter.create_session("s-1", "t-1", "alice")
+    adapter.create_session("s-1", "t-1", "alice", "workspace_alice")
     sdk_environment = FakeHarness.instances[0].config.env
+    assert sdk_environment["BYQ_WORKSPACE_ID"] == "workspace_alice"
     assert sdk_environment["BYQ_OWNER_PRINCIPAL"] == "alice"
     assert sdk_environment["BYQ_ACTOR_PRINCIPAL"] == "byq-product-agent-s-1"
     assert sdk_environment["BYQ_TRACE_ID"] == "t-1"

@@ -140,6 +140,7 @@
     headers:
       Authorization: !!js '`Bearer ${process.env.BYQ_MCP_TOKEN}`'
       X-BYQ-Owner-Principal: !!js process.env.BYQ_OWNER_PRINCIPAL
+      X-BYQ-Workspace-Id: !!js process.env.BYQ_WORKSPACE_ID
       X-BYQ-Actor-Principal: !!js process.env.BYQ_ACTOR_PRINCIPAL
       X-BYQ-Trace-ID: !!js process.env.BYQ_TRACE_ID
       X-BYQ-Session-ID: !!js process.env.BYQ_SESSION_ID

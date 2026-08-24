@@ -2,6 +2,7 @@ const BACKEND_TIMEOUT_MS = 8000;
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
 export type PaperContext = {
+  workspace_id: string;
   owner_principal: string;
   actor_principal: string;
   trace_id: string;
@@ -22,6 +23,7 @@ async function requestPaper(
       method: "GET",
       headers: {
         "content-type": "application/json",
+        "x-byq-workspace-id": context.workspace_id,
         "x-byq-owner-principal": context.owner_principal,
         "x-byq-actor-principal": context.actor_principal,
         "x-byq-trace-id": context.trace_id,
