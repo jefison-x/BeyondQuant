@@ -1,9 +1,9 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-completed project stage is **Phase 51** — trusted personal-workspace context,
-fail-closed membership authorization, workspace-stamped domain writes, and a
-verified 31-table non-null contract migration under Accepted ADR-0025. See
+completed project stage is **Phase 52** — bounded personal-workspace Product
+orientation, recovery validation, and two-workspace isolation closure under
+Accepted ADR-0025. See
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
 authoritative current state.
 

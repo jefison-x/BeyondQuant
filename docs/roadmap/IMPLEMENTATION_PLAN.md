@@ -1426,10 +1426,20 @@ non-null contract migration. Full Compose, real Product API, and no-mock
 two-user coherence remained green; evidence is under
 `docs/evidence/phase-51/`.
 
-### Phase 52 — Product orientation and isolation closure
+### Phase 52 — Product orientation and isolation closure (`COMPLETE`)
 
 Expose only the bounded current personal-workspace identity, then execute
 fresh-provision, migration, restart, backup/restore and two-user no-mock Product
 journeys across all durable surfaces. Complete desktop/mobile Chrome evidence,
 Community checklist reconciliation, and a report of any quarantined legacy
 rows. Do not add workspace switching, invitations, sharing or team roles.
+
+Delivered bounded personal-workspace login/session projection, explicit shell
+and asset-transfer orientation, source/destination-safe bundle diagnostics,
+and metadata-safe Paper-account denial. Fresh provisioning, backup/restore,
+PostgreSQL restart and legacy forward-repair drills preserve the workspace
+identity with 31 enforced tables, 22 zero relationship checks and no
+quarantine. The extended no-mock journey covers both personal workspaces and
+all required Product surfaces, including Paper Trading and browser-header
+spoof denial. Desktop/mobile Chrome MCP and Community classification evidence
+is stored under `docs/evidence/phase-52/`. No team affordance was added.

@@ -707,7 +707,7 @@ class PaperTradingStore(PgStoreMixin):
         if row is None:
             raise PaperTradingNotFound("paper account not found")
         if trusted_owner and row["owner_principal"] != trusted_owner:
-            raise PaperTradingForbidden("paper account is not owned by this principal")
+            raise PaperTradingNotFound("paper account not found")
         return dict(row)
 
     def list_accounts(self, *, trusted_owner: str | None = None) -> dict[str, object]:
@@ -1195,7 +1195,7 @@ class PaperTradingStore(PgStoreMixin):
         with self._transaction() as connection:
             account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
             if account is None or account["owner_principal"] != owner:
-                raise PaperTradingForbidden("paper account is not owned by this principal")
+                raise PaperTradingNotFound("paper account not found")
             pool = fetch_one(connection, "SELECT * FROM stock_pools WHERE pool_id = :pool_id", {"pool_id": pool_id})
             if pool is None or pool["owner_principal"] != owner:
                 raise PaperTradingForbidden("stock pool is not owned by this principal")
@@ -1333,7 +1333,7 @@ class PaperTradingStore(PgStoreMixin):
         account_id = _id(account_id, prefix="paper_account")
         account = self._fetch_one("SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
         if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
-            raise PaperTradingForbidden("paper account is not owned by this principal")
+            raise PaperTradingNotFound("paper account not found")
         rows = self._execute(
             "SELECT * FROM paper_orders WHERE account_id = :account_id ORDER BY created_at DESC, order_id DESC",
             {"account_id": account_id},
@@ -1344,7 +1344,7 @@ class PaperTradingStore(PgStoreMixin):
         account_id = _id(account_id, prefix="paper_account")
         account = self._fetch_one("SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
         if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
-            raise PaperTradingForbidden("paper account is not owned by this principal")
+            raise PaperTradingNotFound("paper account not found")
         rows = self._execute(
             "SELECT * FROM paper_positions WHERE account_id = :account_id ORDER BY symbol ASC",
             {"account_id": account_id},
@@ -1355,7 +1355,7 @@ class PaperTradingStore(PgStoreMixin):
         account_id = _id(account_id, prefix="paper_account")
         account = self._fetch_one("SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
         if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
-            raise PaperTradingForbidden("paper account is not owned by this principal")
+            raise PaperTradingNotFound("paper account not found")
         rows = self._execute(
             "SELECT * FROM paper_fills WHERE account_id = :account_id ORDER BY created_at DESC, fill_id DESC",
             {"account_id": account_id},
@@ -1412,7 +1412,7 @@ class PaperTradingStore(PgStoreMixin):
         with self._transaction() as connection:
             account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
             if account is None or account["owner_principal"] != owner:
-                raise PaperTradingForbidden("paper account is not owned by this principal")
+                raise PaperTradingNotFound("paper account not found")
             audit = fetch_one(connection, "SELECT * FROM paper_account_audit WHERE owner_principal = :owner AND idempotency_key = :key",
                               {"owner": owner, "key": key})
             if audit is not None:
@@ -1457,7 +1457,7 @@ class PaperTradingStore(PgStoreMixin):
         with self._transaction() as connection:
             account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
             if account is None or account["owner_principal"] != owner:
-                raise PaperTradingForbidden("paper account is not owned by this principal")
+                raise PaperTradingNotFound("paper account not found")
             if int(account["version"]) != expected:
                 raise PaperTradingConflict("paper account version is stale")
             position_count = fetch_one(connection, "SELECT COUNT(*) AS count FROM paper_positions WHERE account_id = :account_id",
@@ -1532,7 +1532,7 @@ class PaperTradingStore(PgStoreMixin):
         with self._transaction() as connection:
             account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
             if account is None or account["owner_principal"] != owner:
-                raise PaperTradingForbidden("paper account is not owned by this principal")
+                raise PaperTradingNotFound("paper account not found")
             existing = fetch_one(connection, "SELECT * FROM paper_account_snapshots WHERE account_id = :account_id AND trade_date = :trade_date",
                                  {"account_id": account_id, "trade_date": trade_date})
             if existing is not None:

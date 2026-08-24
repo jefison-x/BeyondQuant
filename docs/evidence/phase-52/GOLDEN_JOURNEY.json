@@ -1,0 +1,53 @@
+{
+  "administration": {
+    "operations": "operations.v1",
+    "raw_dsh_events": false,
+    "users": 4
+  },
+  "assets": {
+    "imported": {
+      "backtests": 3,
+      "paper_accounts": 2,
+      "pools": 3,
+      "strategies": 3
+    },
+    "schema_version": "byq-workspace-assets-v2"
+  },
+  "conversation": {
+    "restored": true,
+    "session_id": "conversation_21c53d8421a344de9b86188b7c1935d9",
+    "title": "Phase 48 golden conversation 2c1a86340b",
+    "turn_accepted": true
+  },
+  "owner_flow": {
+    "approval_artifact_id": "artifact_a6b8489ab2884884abcd2d49035ca1d6",
+    "backtest_job_id": "backtest_452e9ec899334a048627f9ef2b53c772",
+    "backtest_status": "completed",
+    "pool_id": "stock_pool_949c61dbbde24ec5b963cbbeb0e0cb87",
+    "signal_job_id": "signaljob_723758ba25414ccb817ff6cef46c3516",
+    "signal_snapshot_artifact_id": "artifact_a5d2dc6bc2104f9da61967a1a48af5c8",
+    "strategy_version_artifact_id": "artifact_2390a26fb97549ec823b979e260c2e94",
+    "task_id": "task_fa556a5b3bb54d9c9e1fe9701728207e",
+    "trade_count": 1
+  },
+  "personal_workspaces": {
+    "browser_header_ignored": true,
+    "distinct": true,
+    "login_projection_stable": true,
+    "other_workspace_id": "workspace_afaa24bf89124d0e8d256f9c782fbb4b",
+    "owner_workspace_id": "workspace_e72b04aac1324f848fcd12ff7f2987d8"
+  },
+  "personalization": {
+    "appearance": "indigo",
+    "model_binding": true,
+    "profile": true
+  },
+  "product_origin": "http://127.0.0.1",
+  "schema_version": "phase-52-personal-workspace-closure-v1",
+  "secondary_user": {
+    "admin_status": 403,
+    "appearance_version": 0,
+    "owner_resources_hidden": true
+  },
+  "status": "passed"
+}

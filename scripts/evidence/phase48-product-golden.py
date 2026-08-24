@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the Phase 48 no-mock, two-user Product coherence journey."""
+"""Run the Phase 48 Product journey with the Phase 52 workspace closure."""
 
 from __future__ import annotations
 
@@ -23,8 +23,16 @@ class ProductClient:
         )
         body = self.product("POST", "/auth/login", {"username": username, "password": password})
         self.user = body.get("user", {})
+        self.workspace = body.get("workspace", {})
         if self.user.get("username") != username:
             raise AssertionError("login returned the wrong user")
+        if (
+            self.workspace.get("contract") != "personal-workspace.v1"
+            or self.workspace.get("kind") != "personal"
+            or self.workspace.get("role") != "owner"
+            or not self.workspace.get("workspace_id")
+        ):
+            raise AssertionError("login did not return a bounded personal workspace")
 
     def request(
         self,
@@ -32,9 +40,11 @@ class ProductClient:
         path: str,
         payload: dict[str, object] | None = None,
         expected_status: int | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict[str, object]:
         data = None if payload is None else json.dumps(payload).encode("utf-8")
         headers = {} if data is None else {"content-type": "application/json"}
+        headers.update(extra_headers or {})
         request = urllib.request.Request(ORIGIN + path, data=data, headers=headers, method=method)
         try:
             with self.opener.open(request, timeout=30) as response:
@@ -55,8 +65,9 @@ class ProductClient:
         path: str,
         payload: dict[str, object] | None = None,
         expected_status: int | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict[str, object]:
-        return self.request(method, f"/api/product{path}", payload, expected_status)
+        return self.request(method, f"/api/product{path}", payload, expected_status, extra_headers)
 
 
 def identity(prefix: str) -> str:
@@ -78,6 +89,17 @@ def main() -> None:
         os.environ.get("BYQ_GOLDEN_OTHER_PASSWORD", "P48UserPass123"),
     )
     suffix = uuid.uuid4().hex[:10]
+
+    require(owner.workspace["workspace_id"] != other.workspace["workspace_id"], "users share a personal workspace")
+    session_projection = owner.request("GET", "/api/auth/me")
+    require(session_projection.get("workspace") == owner.workspace, "session workspace differs from login")
+    original_workspace = dict(owner.workspace)
+    owner.request("POST", "/api/auth/logout")
+    owner = ProductClient(
+        os.environ.get("BYQ_GOLDEN_OWNER_USERNAME", "p48-admin"),
+        os.environ.get("BYQ_GOLDEN_OWNER_PASSWORD", "P48AdminPass123"),
+    )
+    require(owner.workspace == original_workspace, "workspace changed across logout/login")
 
     profile = owner.product(
         "PUT",
@@ -172,6 +194,12 @@ def main() -> None:
     )["pool"]
     pool_id = str(pool["pool_id"])
     snapshot_id = str(pool["snapshot"]["snapshot_id"])
+    paper = owner.product(
+        "POST",
+        "/paper/accounts",
+        {"name": f"Phase 52 isolated account {suffix}", "cash": 100000},
+    )["account"]
+    paper_account_id = str(paper["account_id"])
 
     source = (
         "class CustomStrategy:\n"
@@ -287,15 +315,25 @@ def main() -> None:
     other.product("GET", "/admin/users", expected_status=403)
     other.product("GET", f"/research/tasks/{task_id}", expected_status=404)
     other.product("GET", f"/paper/pools/{pool_id}", expected_status=404)
+    other.product("GET", f"/paper/accounts/{paper_account_id}", expected_status=404)
     other.product("GET", f"/signal-producer/jobs/{signal_job_id}", expected_status=404)
     require(other.product("GET", "/strategies").get("total") == 0, "secondary user observed owner strategies")
     require(other.product("GET", "/backtests").get("backtests") == [], "secondary user observed owner backtests")
     require(other.product("GET", "/settings/assets")["summary"] == {"strategies": 0, "backtests": 0, "pools": 0, "paper_accounts": 0}, "secondary user observed owner assets")
+    spoofed = other.product(
+        "GET",
+        "/settings/assets",
+        extra_headers={"x-byq-workspace-id": str(owner.workspace["workspace_id"])},
+    )
+    require(
+        spoofed["summary"] == {"strategies": 0, "backtests": 0, "pools": 0, "paper_accounts": 0},
+        "browser workspace header changed the trusted workspace",
+    )
 
     print(
         json.dumps(
             {
-                "schema_version": "phase-48-product-coherence-v1",
+                "schema_version": "phase-52-personal-workspace-closure-v1",
                 "status": "passed",
                 "product_origin": ORIGIN,
                 "conversation": {"session_id": session_id, "title": title, "turn_accepted": True, "restored": True},
@@ -313,6 +351,13 @@ def main() -> None:
                 "personalization": {"profile": True, "appearance": appearance["accent_theme"], "model_binding": True},
                 "assets": {"schema_version": bundle["schema_version"], "imported": imported.get("imported")},
                 "administration": {"operations": "operations.v1", "users": len(users.get("users", [])), "raw_dsh_events": False},
+                "personal_workspaces": {
+                    "distinct": True,
+                    "login_projection_stable": True,
+                    "browser_header_ignored": True,
+                    "owner_workspace_id": owner.workspace["workspace_id"],
+                    "other_workspace_id": other.workspace["workspace_id"],
+                },
                 "secondary_user": {"owner_resources_hidden": True, "admin_status": 403, "appearance_version": 0},
             },
             ensure_ascii=False,

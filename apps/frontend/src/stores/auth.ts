@@ -1,8 +1,10 @@
 import { defineStore } from "pinia";
+import type { PersonalWorkspace } from "@/api/types";
 
 interface CurrentUser {
   subject: string;
   role?: string;
+  workspace: PersonalWorkspace;
 }
 
 export const useAuthStore = defineStore("auth", {

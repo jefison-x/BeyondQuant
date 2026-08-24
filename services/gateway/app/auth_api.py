@@ -19,6 +19,15 @@ class AuthApiError(Exception):
         self.message = message
 
 
+def _public_workspace(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        raise ProductAuthError(502, "backend_invalid_response", "backend returned an invalid workspace")
+    required = ("contract", "workspace_id", "kind", "display_name", "role")
+    if any(not isinstance(value.get(field), str) for field in required):
+        raise ProductAuthError(502, "backend_invalid_response", "backend returned an invalid workspace")
+    return {field: str(value[field]) for field in required}
+
+
 @router.post("/login")
 def login(request: Request, payload: dict[str, object]) -> JSONResponse:
     username = payload.get("username")
@@ -29,7 +38,11 @@ def login(request: Request, payload: dict[str, object]) -> JSONResponse:
         result = login_user(username, password)
     except ProductAuthError as exc:
         return JSONResponse(status_code=exc.status_code, content={"error": {"code": exc.code, "message": exc.message}})
-    response = JSONResponse(content={"user": result.get("user", {})})
+    try:
+        workspace = _public_workspace(result.get("workspace"))
+    except ProductAuthError as exc:
+        return JSONResponse(status_code=exc.status_code, content={"error": {"code": exc.code, "message": exc.message}})
+    response = JSONResponse(content={"user": result.get("user", {}), "workspace": workspace})
     session_id = result.get("session_id")
     if isinstance(session_id, str):
         response.set_cookie(SESSION_COOKIE, session_id, httponly=True, samesite="lax", path="/")
@@ -55,9 +68,12 @@ def me(request: Request) -> JSONResponse:
         user = resolve_user(request)
     except ProductAuthError as exc:
         return JSONResponse(status_code=exc.status_code, content={"error": {"code": exc.code, "message": exc.message}})
-    return JSONResponse(
-        content={
-            "subject": str(user.get("username") or user.get("user_id")),
-            "role": str(user.get("role") or "user"),
-        }
-    )
+    try:
+        workspace = _public_workspace(user.get("_workspace"))
+    except ProductAuthError as exc:
+        return JSONResponse(status_code=exc.status_code, content={"error": {"code": exc.code, "message": exc.message}})
+    return JSONResponse(content={
+        "subject": str(user.get("username") or user.get("user_id")),
+        "role": str(user.get("role") or "user"),
+        "workspace": workspace,
+    })
