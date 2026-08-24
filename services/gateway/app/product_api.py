@@ -842,6 +842,41 @@ def product_profile_update(request: Request, payload: dict[str, object]) -> dict
     return {"profile": _public_profile(updated)}
 
 
+@router.get("/settings/appearance")
+def product_appearance_get(request: Request) -> dict[str, object]:
+    user = resolve_user(request)
+    user_id = user.get("user_id")
+    if not isinstance(user_id, str):
+        raise ProductError(502, "backend_invalid_response", "backend returned an invalid user")
+    body = _backend_request(
+        "GET",
+        f"/v1/users/{user_id}/ui-preferences",
+        headers={"x-byq-owner-user-id": user_id},
+    )
+    preferences = body.get("preferences")
+    if not isinstance(preferences, dict):
+        raise ProductError(502, "backend_invalid_response", "backend returned invalid UI preferences")
+    return {"preferences": preferences}
+
+
+@router.put("/settings/appearance")
+def product_appearance_update(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    user = resolve_user(request)
+    user_id = user.get("user_id")
+    if not isinstance(user_id, str):
+        raise ProductError(502, "backend_invalid_response", "backend returned an invalid user")
+    body = _backend_request(
+        "PUT",
+        f"/v1/users/{user_id}/ui-preferences",
+        payload,
+        headers={"x-byq-owner-user-id": user_id},
+    )
+    preferences = body.get("preferences")
+    if not isinstance(preferences, dict):
+        raise ProductError(502, "backend_invalid_response", "backend returned invalid UI preferences")
+    return {"preferences": preferences}
+
+
 @router.get("/settings/models")
 def product_model_settings(request: Request) -> dict[str, object]:
     _product_principal(request)

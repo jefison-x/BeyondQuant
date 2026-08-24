@@ -64,7 +64,7 @@ async function send(value = prompt.value) {
 </template>
 
 <style scoped>
-.xiaoba-trigger { background: var(--byq-brand-contrast); border: 0; border-radius: 16px; bottom: 22px; box-shadow: 0 12px 28px color-mix(in srgb, var(--byq-brand) 30%, transparent); color: white; cursor: pointer; display: grid; line-height: 1.1; padding: .7rem .9rem; position: fixed; right: 24px; text-align: left; z-index: 30; }
+.xiaoba-trigger { background: var(--byq-brand-contrast); border: 0; border-radius: 16px; bottom: 22px; box-shadow: 0 12px 28px color-mix(in srgb, var(--byq-brand) 30%, transparent); color: var(--byq-on-brand); cursor: pointer; display: grid; line-height: 1.1; padding: .7rem .9rem; position: fixed; right: 24px; text-align: left; z-index: 30; }
 .xiaoba-trigger span { font-size: 14px; font-weight: 800; } .xiaoba-trigger small { font-size: 10px; opacity: 1; }
 .assistant-body { display: grid; gap: .85rem; } .context-chip { background: var(--byq-brand-soft); border-radius: 999px; color: var(--byq-brand); font-size: 12px; margin: 0; padding: .45rem .7rem; width: fit-content; }
 .starter-list { display: flex; flex-wrap: wrap; gap: .4rem; } .starter-list button { background: var(--byq-surface-subtle); border: 1px solid var(--byq-border); border-radius: 999px; color: var(--byq-text-muted); cursor: pointer; font-size: 11px; padding: .4rem .6rem; }

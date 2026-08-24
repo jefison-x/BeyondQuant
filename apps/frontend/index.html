@@ -5,6 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="BeyondQuant Next 投研、策略、信号与回测工作台" />
     <title>BeyondQuant Next</title>
+    <script>
+      (() => {
+        const fallback = { schema_version: "ui-preferences.v1", color_mode: "system", accent_theme: "emerald" };
+        const modes = ["system", "light", "dark"];
+        const accents = ["emerald", "ocean", "indigo", "amber", "graphite"];
+        let value = fallback;
+        try {
+          const cached = JSON.parse(localStorage.getItem("byq-ui-preferences.v1") || "null");
+          if (cached?.schema_version === fallback.schema_version && modes.includes(cached.color_mode) && accents.includes(cached.accent_theme)) value = cached;
+        } catch { /* malformed cache never blocks the Product shell */ }
+        const dark = value.color_mode === "dark" || (value.color_mode === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.colorMode = value.color_mode;
+        document.documentElement.dataset.resolvedMode = dark ? "dark" : "light";
+        document.documentElement.dataset.accent = value.accent_theme;
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

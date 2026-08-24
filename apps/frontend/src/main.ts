@@ -5,12 +5,15 @@ import "element-plus/dist/index.css";
 import App from "./App.vue";
 import router from "./router";
 import { useAuthStore } from "./stores/auth";
+import { applyUiPreferences, readCachedUiPreferences, useAppearanceStore } from "./stores/appearance";
 import "./styles/byq-theme.css";
 
 async function bootstrap() {
   const app = createApp(App);
-  app.use(createPinia());
+  const pinia = createPinia();
+  app.use(pinia);
   const auth = useAuthStore();
+  const appearance = useAppearanceStore();
   app.use(ElementPlus);
 
   // Resolve the durable session before installing the router so the auth
@@ -20,6 +23,17 @@ async function bootstrap() {
     await auth.fetchMe();
   } catch {
     auth.user = null;
+  }
+  if (auth.isAuthenticated) {
+    try {
+      await appearance.load();
+    } catch {
+      const cached = readCachedUiPreferences();
+      if (cached) applyUiPreferences(cached);
+    }
+  } else {
+    const cached = readCachedUiPreferences();
+    if (cached) applyUiPreferences(cached);
   }
 
   app.use(router);

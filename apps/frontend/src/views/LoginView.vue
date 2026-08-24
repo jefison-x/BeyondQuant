@@ -2,8 +2,10 @@
 import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import { useAppearanceStore } from "@/stores/appearance";
 
 const auth = useAuthStore();
+const appearance = useAppearanceStore();
 const route = useRoute();
 const router = useRouter();
 const username = ref("");
@@ -17,6 +19,7 @@ async function submit() {
   }
   try {
     await auth.login(username.value, password.value);
+    await appearance.load().catch(() => undefined);
     router.push((route.query.redirect as string) || "/");
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "登录失败";

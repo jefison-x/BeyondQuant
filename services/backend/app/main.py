@@ -2311,6 +2311,26 @@ def update_user_profile(user_id: str, payload: dict[str, Any], request: Request)
     return _user_call(lambda: {"user": user_store.update_profile(user_id, payload)})
 
 
+@app.get("/v1/users/{user_id}/ui-preferences")
+def get_user_ui_preferences(user_id: str, request: Request) -> dict[str, object]:
+    owner_user_id = request.headers.get("x-byq-owner-user-id")
+    if owner_user_id != user_id:
+        raise HTTPException(status_code=403, detail="UI preferences read is owner-scoped")
+    return _user_call(lambda: {"preferences": user_store.get_ui_preferences(user_id)})
+
+
+@app.put("/v1/users/{user_id}/ui-preferences")
+def update_user_ui_preferences(
+    user_id: str,
+    payload: dict[str, Any],
+    request: Request,
+) -> dict[str, object]:
+    owner_user_id = request.headers.get("x-byq-owner-user-id")
+    if owner_user_id != user_id:
+        raise HTTPException(status_code=403, detail="UI preferences update is owner-scoped")
+    return _user_call(lambda: {"preferences": user_store.update_ui_preferences(user_id, payload)})
+
+
 def _policy_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return operation()

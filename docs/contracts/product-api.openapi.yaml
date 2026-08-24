@@ -143,6 +143,9 @@ paths:
   /api/product/profile:
     get: {summary: Return the authenticated user profile., responses: *okResponses}
     put: {summary: Update the authenticated user profile., responses: *okResponses}
+  /api/product/settings/appearance:
+    get: {summary: Return the authenticated owner's ui-preferences.v1 appearance settings., responses: *okResponses}
+    put: {summary: Persist closed color-mode and accent values with optimistic concurrency., responses: *okResponses}
   /api/product/settings/status:
     get: {summary: Return user settings capability status., responses: *okResponses}
   /api/product/settings/models:

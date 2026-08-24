@@ -337,6 +337,14 @@ test("backtest workspace renders backtest result list", async ({ page }) => {
 });
 
 test("my space pages render profile, models, assets, and agent policy", async ({ page }) => {
+  let appearance = { schema_version: "ui-preferences.v1", color_mode: "system", accent_theme: "emerald", version: 0, updated_at: null as string | null };
+  await page.route("**/api/product/settings/appearance", async (route) => {
+    if (route.request().method() === "PUT") {
+      const payload = route.request().postDataJSON();
+      appearance = { ...appearance, color_mode: payload.color_mode, accent_theme: payload.accent_theme, version: appearance.version + 1, updated_at: "2026-08-24T00:00:00Z" };
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ preferences: appearance }) });
+  });
   await page.route("**/api/product/profile", (route) =>
     route.fulfill({
       status: 200,
@@ -376,20 +384,33 @@ test("my space pages render profile, models, assets, and agent policy", async ({
 
   await login(page);
   await openNav(page, "资产管理");
-  await expect(page.getByRole("heading", { name: "用户资产" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "资产管理" })).toBeVisible();
   await expect(page.getByText("导出资产包")).toBeVisible();
 
+  await page.getByRole("link", { name: /模拟操盘/ }).click();
+  await expect(page).toHaveURL(/\/user\/paper-trading$/);
+  await expect(page.getByRole("heading", { name: "模拟操盘" }).first()).toBeVisible();
+
   await openNav(page, "模型配置");
-  await expect(page.getByRole("heading", { name: "模型设置" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "模型配置" })).toBeVisible();
   await expect(page.getByRole("button", { name: "添加凭据" })).toBeVisible();
 
-  await openNav(page, "智能体策略");
-  await expect(page.getByRole("heading", { name: "智能体策略" })).toBeVisible();
+  await openNav(page, "Agent 策略");
+  await expect(page.getByRole("heading", { name: "Agent 策略" })).toBeVisible();
   await expect(page.getByRole("button", { name: "保存" })).toBeVisible();
   await expect(page.getByRole("button", { name: "新建规则" })).toBeVisible();
 
   await openNav(page, "个性化");
-  await expect(page.getByRole("heading", { name: "个人设置" })).toBeVisible();
+  await page.getByRole("button", { name: /^深色/ }).click();
+  await page.getByRole("button", { name: "靛青" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-resolved-mode", "dark");
+  await expect(page.locator("html")).toHaveAttribute("data-accent", "indigo");
+  await page.getByRole("button", { name: "保存外观" }).click();
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-resolved-mode", "dark");
+  await expect(page.locator("html")).toHaveAttribute("data-accent", "indigo");
+
+  await page.getByRole("link", { name: /个人资料/ }).click();
   await expect(page.getByLabel("昵称")).toHaveValue("老李");
 });
 
@@ -430,7 +451,8 @@ test("paper trading and stock pool pages render", async ({ page }) => {
   await page.route("**/api/product/paper/accounts/paper_account_1", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ account: { account_id: "paper_account_1", name: "sim", cash: 100000, equity: 100000, version: 1, status: "active" } }) }),
   );
-  await openNav(page, "模拟操盘");
+  await openNav(page, "资产管理");
+  await page.getByRole("link", { name: /模拟操盘/ }).click();
   await expect(page.getByRole("heading", { name: "模拟操盘" }).last()).toBeVisible();
   await expect(page.getByText("sim", { exact: true })).toBeVisible();
   await expect(page.getByRole("tab", { name: "资金流水" })).toBeVisible();
@@ -500,7 +522,7 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   await openNav(page, "策略管理");
   await expect(page.getByRole("heading", { name: "策略管理" })).toBeVisible();
   await openNav(page, "个性化");
-  await expect(page.getByRole("heading", { name: "个人设置" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "外观与主题" }).first()).toBeVisible();
   await openNav(page, "系统状态");
   await expect(page.getByRole("heading", { name: "系统状态" })).toBeVisible();
   await openNav(page, "数据中心");
@@ -508,7 +530,7 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
     page.getByRole("main").getByRole("heading", { name: "数据中心" }),
   ).toBeVisible();
   await openNav(page, "研究与审批");
-  await expect(page.getByRole("heading", { name: "研究/审批" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "研究与审批" })).toBeVisible();
 });
 
 test("mobile shell uses a drawer and keeps account destinations reachable", async ({ page }) => {

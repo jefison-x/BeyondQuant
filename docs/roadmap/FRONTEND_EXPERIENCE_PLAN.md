@@ -82,7 +82,7 @@ Acceptance: Compose restart recovery, two-user isolation, title lifecycle,
 history switching without message/trace crossover, normalized-only replay,
 and desktop/mobile real-browser journeys pass.
 
-## Phase 44 — User center and durable appearance (`NEXT`)
+## Phase 44 — User center and durable appearance (`COMPLETE`)
 
 Move Profile, Assets, Models, Agent Policy, and Paper Trading entry points into
 the user menu and user-center surfaces. Add the versioned durable appearance
@@ -93,7 +93,7 @@ Acceptance: write-only credential behavior, asset transfer, policy precedence,
 Paper Trading reachability, theme persistence, contrast, and owner isolation
 remain real through Product API.
 
-## Phase 45 — Route-backed System Settings dialog
+## Phase 45 — Route-backed System Settings dialog (`NEXT`)
 
 Embed System Overview, Data, Sources, Cache, Database, platform Models, Agents,
 Budget, Runtime, Workflow diagnostics, Access and Audit in a large two-column
