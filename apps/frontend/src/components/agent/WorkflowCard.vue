@@ -5,7 +5,6 @@ import type { WorkflowCardEvent } from "@/api/types";
 const props = defineProps<{ event: WorkflowCardEvent }>();
 const emit = defineEmits<{
   navigate: [event: WorkflowCardEvent];
-  decide: [event: WorkflowCardEvent, decision: "approved" | "rejected"];
 }>();
 const card = computed(() => props.event.payload);
 const strategy = computed(() => props.event.kind === "agent.card.strategy_draft" ? props.event.payload : null);
@@ -25,7 +24,7 @@ const actionLabel = computed(() => ({
   "agent.card.stock_candidates": "打开股票池",
   "agent.card.optimization": "审阅策略",
   "agent.card.backtest_context": "查看回测",
-  "agent.card.approval": "打开审批中心",
+  "agent.card.approval": "",
 }[props.event.kind]));
 </script>
 
@@ -53,18 +52,18 @@ const actionLabel = computed(() => ({
     </template>
     <template v-else-if="approval">
       <dl><dt>动作</dt><dd>{{ approval.action }}</dd><dt>审批状态</dt><dd>{{ approval.status }}</dd><dt>执行结果</dt><dd>{{ approval.execution_outcome }}</dd></dl>
-      <div v-if="approval.status === 'pending'" class="decision-actions">
-        <el-button size="small" type="primary" @click="emit('decide', event, 'approved')">通过</el-button>
-        <el-button size="small" type="danger" plain @click="emit('decide', event, 'rejected')">拒绝</el-button>
-      </div>
     </template>
-    <footer><small>修订 {{ card.revision }}</small><el-button size="small" text type="primary" @click="emit('navigate', event)">{{ actionLabel }}</el-button></footer>
+    <footer>
+      <small>修订 {{ card.revision }}</small>
+      <span v-if="approval" class="approval-hint">{{ approval.status === "pending" ? "请在右上角铃铛处理" : "审批状态已更新" }}</span>
+      <el-button v-else size="small" text type="primary" @click="emit('navigate', event)">{{ actionLabel }}</el-button>
+    </footer>
   </article>
 </template>
 
 <style scoped>
 .workflow-card { background: linear-gradient(145deg, var(--byq-surface), var(--byq-surface-subtle)); border: 1px solid var(--byq-border); border-radius: 12px; display: grid; gap: .7rem; padding: .9rem; }
-header, footer, .decision-actions { align-items: center; display: flex; gap: .75rem; justify-content: space-between; }
+header, footer { align-items: center; display: flex; gap: .75rem; justify-content: space-between; }
 h3 { color: var(--byq-text); font-size: 15px; margin: .15rem 0 0; }
 .card-kind, footer small { color: var(--byq-text-soft); font-size: 11px; letter-spacing: .04em; }
 .card-summary, .objective { color: var(--byq-text-muted); font-size: 13px; line-height: 1.6; margin: 0; }
@@ -74,4 +73,5 @@ dt { color: var(--byq-text-soft); } dd { color: var(--byq-text); margin: 0; over
 .candidate-list li, .change-list li { background: var(--byq-surface); border-radius: 8px; display: grid; gap: .15rem; padding: .5rem .6rem; }
 li strong { color: var(--byq-text); font-size: 12px; } li span, li small { color: var(--byq-text-muted); font-size: 11px; }
 footer { border-top: 1px solid var(--byq-border-subtle); padding-top: .55rem; }
+.approval-hint { color: var(--byq-text-muted); font-size: 11px; }
 </style>

@@ -210,8 +210,11 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
   await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
   await expect(page.getByText("BYQ 规范化工作流 · 持久会话")).toBeVisible();
   await expect(page.getByText("研究动量")).toBeVisible();
-  await page.getByRole("button", { name: /活动与审批/ }).click();
+  await page.getByRole("button", { name: /^活动/ }).click();
   await expect(page.getByText("理解请求")).toBeVisible();
+  await expect(page.getByRole("button", { name: "通过" })).not.toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /待人工审批，1 项/ }).click();
   await expect(page.getByRole("button", { name: "通过" })).toBeVisible();
 });
 

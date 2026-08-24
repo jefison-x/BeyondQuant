@@ -3,12 +3,9 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import AppHeader from "./AppHeader.vue";
 import AppSidebar from "./AppSidebar.vue";
-import GlobalApprovalCenter from "@/components/agent/GlobalApprovalCenter.vue";
-import XiaobaAssistantDrawer from "@/components/agent/XiaobaAssistantDrawer.vue";
 
 const route = useRoute();
 const isPublicRoute = computed(() => Boolean(route.meta.public));
-const isConversationRoute = computed(() => route.path === "/agent");
 const isSystemSettingsRoute = computed(() => route.path.startsWith("/settings/system"));
 const isMobile = ref(false);
 const sidebarCollapsed = ref(false);
@@ -84,8 +81,6 @@ watch(() => route.fullPath, async () => {
       >
         <AppSidebar :is-collapsed="false" mobile @navigate="mobileDrawerOpen = false" />
       </el-drawer>
-      <GlobalApprovalCenter v-if="!isSystemSettingsRoute" />
-      <XiaobaAssistantDrawer v-if="!isConversationRoute && !isSystemSettingsRoute" />
     </template>
   </div>
 </template>
