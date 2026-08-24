@@ -208,6 +208,7 @@ def test_security_master_fetches_all_lifecycle_states_and_is_content_addressed()
         ])),
         TransportResponse(200, security_envelope([
             ["430001.BJ", "430001", "历史样本", "北京", None, "北交所", "BSE", "D", "20120101", "20200101", "N"],
+            ["T600018.SH", "T600018", "上港集箱(退)", None, None, None, "SSE", "D", "20000719", "20061020", "N"],
         ])),
     ])
 
@@ -215,9 +216,11 @@ def test_security_master_fetches_all_lifecycle_states_and_is_content_addressed()
 
     assert [item.symbol for item in result.records] == ["000001.SZ", "430001.BJ", "600000.SH"]
     assert result.statuses == ("L", "P", "D")
+    assert [item.provider_symbol for item in result.quarantined] == ["T600018.SH"]
+    assert result.quarantined[0].reason == "tushare_historical_alias"
     assert len(result.dataset_id) == 64
     assert result.provenance.endpoint == "stock_basic"
-    assert result.provenance.row_count == 3
+    assert result.provenance.row_count == 4
     assert [call[1]["params"]["list_status"] for call in transport.calls] == ["L", "P", "D"]
     assert "fixture-token" not in json.dumps({
         "records": [item.as_dict() for item in result.records],
@@ -244,6 +247,14 @@ def test_security_master_request_and_rows_fail_closed() -> None:
     ])
     with pytest.raises(ProviderProtocolError, match="mismatched security exchange"):
         provider(wrong_exchange).fetch_security_master(SecurityMasterRequest(("L",)))
+
+    unknown_identity = FakeTransport([
+        TransportResponse(200, security_envelope([
+            ["X600000.SH", "X600000", "未知别名", "上海", None, None, "SSE", "L", "19991110", None, "N"],
+        ])),
+    ])
+    with pytest.raises(ProviderProtocolError, match="non-canonical security symbol"):
+        provider(unknown_identity).fetch_security_master(SecurityMasterRequest(("L",)))
 
 
 def test_security_master_rejects_duplicate_identity_across_statuses() -> None:

@@ -83,6 +83,7 @@ class SecurityMasterStore(PgStoreMixin):
             request_fingerprint TEXT NOT NULL,
             statuses_json JSONB NOT NULL,
             row_count BIGINT NOT NULL,
+            quarantined_count BIGINT NOT NULL DEFAULT 0,
             retrieved_at TIMESTAMPTZ NOT NULL,
             requested_by TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -91,6 +92,10 @@ class SecurityMasterStore(PgStoreMixin):
         """
         CREATE INDEX IF NOT EXISTS security_master_snapshots_latest_idx
             ON security_master_snapshots(retrieved_at DESC, created_at DESC, snapshot_id DESC)
+        """,
+        """
+        ALTER TABLE security_master_snapshots
+            ADD COLUMN IF NOT EXISTS quarantined_count BIGINT NOT NULL DEFAULT 0
         """,
         """
         CREATE TABLE IF NOT EXISTS market_securities (
@@ -145,6 +150,21 @@ class SecurityMasterStore(PgStoreMixin):
             ON security_master_snapshot_members(snapshot_id, list_status, exchange, symbol)
         """,
         """
+        CREATE TABLE IF NOT EXISTS security_master_snapshot_quarantine (
+            snapshot_id TEXT NOT NULL REFERENCES security_master_snapshots(snapshot_id),
+            provider_symbol TEXT NOT NULL,
+            local_symbol TEXT NOT NULL,
+            name TEXT NOT NULL,
+            exchange TEXT NOT NULL,
+            list_status TEXT NOT NULL,
+            list_date TEXT NOT NULL,
+            delist_date TEXT,
+            reason TEXT NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            PRIMARY KEY (snapshot_id, provider_symbol)
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS security_master_sync_jobs (
             job_id TEXT PRIMARY KEY,
             provider TEXT NOT NULL,
@@ -153,6 +173,7 @@ class SecurityMasterStore(PgStoreMixin):
             progress INTEGER NOT NULL,
             records_received BIGINT NOT NULL DEFAULT 0,
             records_imported BIGINT NOT NULL DEFAULT 0,
+            records_quarantined BIGINT NOT NULL DEFAULT 0,
             snapshot_id TEXT REFERENCES security_master_snapshots(snapshot_id),
             dataset_id TEXT,
             error_code TEXT,
@@ -169,6 +190,10 @@ class SecurityMasterStore(PgStoreMixin):
         """
         CREATE INDEX IF NOT EXISTS security_master_sync_jobs_created_idx
             ON security_master_sync_jobs(created_at DESC, job_id DESC)
+        """,
+        """
+        ALTER TABLE security_master_sync_jobs
+            ADD COLUMN IF NOT EXISTS records_quarantined BIGINT NOT NULL DEFAULT 0
         """,
         """
         CREATE TABLE IF NOT EXISTS security_master_sync_audit (
@@ -270,9 +295,13 @@ class SecurityMasterStore(PgStoreMixin):
         if tuple(result.statuses) != _STATUSES:
             raise ValueError("a complete security-master snapshot requires L, P, and D")
         canonical_records = [record.as_dict() for record in result.records]
+        quarantined_records = [record.as_dict() for record in result.quarantined]
         if not canonical_records:
             raise ValueError("security-master snapshot must not be empty")
-        dataset_id = _canonical_hash(canonical_records)
+        dataset_payload: object = canonical_records
+        if quarantined_records:
+            dataset_payload = {"records": canonical_records, "quarantined": quarantined_records}
+        dataset_id = _canonical_hash(dataset_payload)
         if dataset_id != result.dataset_id:
             raise ValueError("security-master dataset fingerprint does not match records")
         snapshot_id = f"securitysnapshot_{dataset_id[:32]}"
@@ -286,14 +315,16 @@ class SecurityMasterStore(PgStoreMixin):
                 return self._public_snapshot(existing), False
             execute(connection, """INSERT INTO security_master_snapshots
                 (snapshot_id, provider, endpoint, dataset_id, request_fingerprint,
-                 statuses_json, row_count, retrieved_at, requested_by)
+                 statuses_json, row_count, quarantined_count, retrieved_at, requested_by)
                 VALUES (:snapshot_id, 'tushare', 'stock_basic', :dataset_id,
-                        :request_fingerprint, :statuses, :row_count, :retrieved_at, :actor)""", {
+                        :request_fingerprint, :statuses, :row_count, :quarantined_count,
+                        :retrieved_at, :actor)""", {
                 "snapshot_id": snapshot_id,
                 "dataset_id": dataset_id,
                 "request_fingerprint": result.provenance.request_fingerprint,
                 "statuses": list(result.statuses),
                 "row_count": len(canonical_records),
+                "quarantined_count": len(quarantined_records),
                 "retrieved_at": result.provenance.retrieved_at,
                 "actor": actor,
             })
@@ -331,6 +362,17 @@ class SecurityMasterStore(PgStoreMixin):
                         content_sha256 = EXCLUDED.content_sha256,
                         latest_seen_snapshot_id = EXCLUDED.latest_seen_snapshot_id,
                         updated_at = now()""", params)
+            for record in quarantined_records:
+                execute(connection, """INSERT INTO security_master_snapshot_quarantine
+                    (snapshot_id, provider_symbol, local_symbol, name, exchange,
+                     list_status, list_date, delist_date, reason, content_sha256)
+                    VALUES (:snapshot_id, :provider_symbol, :local_symbol, :name,
+                            :exchange, :list_status, :list_date, :delist_date,
+                            :reason, :content_sha256)""", {
+                    **record,
+                    "snapshot_id": snapshot_id,
+                    "content_sha256": _canonical_hash(record),
+                })
             execute(
                 connection,
                 "DELETE FROM market_securities WHERE latest_seen_snapshot_id <> :snapshot_id",
@@ -546,22 +588,25 @@ class SecurityMasterStore(PgStoreMixin):
                 raise SecurityMasterNotFound("security-master sync job not found")
             execute(connection, """UPDATE security_master_sync_jobs SET
                 status = :status, progress = 100, records_received = :received,
-                records_imported = :imported, snapshot_id = :snapshot_id,
+                records_imported = :imported, records_quarantined = :quarantined,
+                snapshot_id = :snapshot_id,
                 dataset_id = :dataset_id, error_code = :error_code,
                 error_message = :error_message, completed_at = now(), updated_at = now()
                 WHERE job_id = :job_id""", {
                 "job_id": job_id,
                 "status": status,
-                "received": len(result.records) if result else 0,
+                "received": result.provenance.row_count if result else 0,
                 "imported": records_imported,
+                "quarantined": len(result.quarantined) if result else 0,
                 "snapshot_id": snapshot.get("snapshot_id") if snapshot else None,
                 "dataset_id": result.dataset_id if result else None,
                 "error_code": error_code,
                 "error_message": error_message,
             })
             self._audit(connection, job_id, str(row["requested_by"]), "finished", status, {
-                "records_received": len(result.records) if result else 0,
+                "records_received": result.provenance.row_count if result else 0,
                 "records_imported": records_imported,
+                "records_quarantined": len(result.quarantined) if result else 0,
                 "snapshot_id": snapshot.get("snapshot_id") if snapshot else None,
             })
         return self.get_sync_job(job_id)
@@ -589,6 +634,7 @@ class SecurityMasterStore(PgStoreMixin):
             "request_fingerprint": row["request_fingerprint"],
             "statuses": row["statuses_json"],
             "row_count": row["row_count"],
+            "quarantined_count": row["quarantined_count"],
             "retrieved_at": row["retrieved_at"],
             "created_at": row["created_at"],
         }
@@ -603,6 +649,7 @@ class SecurityMasterStore(PgStoreMixin):
             "progress": row["progress"],
             "records_received": row["records_received"],
             "records_imported": row["records_imported"],
+            "records_quarantined": row["records_quarantined"],
             "snapshot_id": row["snapshot_id"],
             "dataset_id": row["dataset_id"],
             "error_code": row["error_code"],

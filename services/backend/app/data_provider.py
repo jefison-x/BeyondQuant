@@ -42,7 +42,9 @@ SECURITY_MASTER_FIELDS = (
 )
 MAX_DAILY_ROWS = 6000
 MAX_SECURITY_MASTER_ROWS = 10_000
+MAX_QUARANTINED_SECURITY_MASTER_ROWS = 100
 _SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
+_TUSHARE_HISTORICAL_ALIAS_PATTERN = re.compile(r"^T[0-9]{6}\.(?:SH|SZ|BJ)$")
 _DATE_PATTERN = re.compile(r"^[0-9]{8}$")
 _SECURITY_STATUSES = ("L", "P", "D")
 _EXCHANGE_BY_SUFFIX = {"SH": "SSE", "SZ": "SZSE", "BJ": "BSE"}
@@ -361,11 +363,75 @@ class SecurityRecord:
 
 
 @dataclass(frozen=True)
+class QuarantinedSecurityRecord:
+    """Bounded evidence for a provider identity outside BYQ's canonical universe."""
+
+    provider_symbol: str
+    local_symbol: str
+    name: str
+    exchange: str
+    list_status: str
+    list_date: str
+    delist_date: str | None
+    reason: str = "tushare_historical_alias"
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any], *, expected_status: str) -> "QuarantinedSecurityRecord":
+        try:
+            values = dict(zip(fields, row, strict=True))
+        except ValueError as error:
+            raise ProviderProtocolError("provider security row does not match its fields") from error
+        missing = [field for field in SECURITY_MASTER_FIELDS if field not in values]
+        if missing:
+            raise ProviderProtocolError("provider response omitted security-master fields")
+        symbol = str(values["ts_code"] or "").strip().upper()
+        if not _TUSHARE_HISTORICAL_ALIAS_PATTERN.fullmatch(symbol):
+            raise ProviderProtocolError("provider returned a non-canonical security symbol")
+        local_symbol = str(values["symbol"] or "").strip().upper()
+        if local_symbol != symbol.rsplit(".", 1)[0]:
+            raise ProviderProtocolError("provider returned a mismatched local security symbol")
+        exchange = str(values["exchange"] or "").strip().upper()
+        if exchange != _EXCHANGE_BY_SUFFIX[symbol[-2:]]:
+            raise ProviderProtocolError("provider returned a mismatched security exchange")
+        list_status = str(values["list_status"] or "").strip().upper()
+        if list_status != expected_status:
+            raise ProviderProtocolError("provider returned a security outside the requested status")
+        list_date = _optional_provider_date(values["list_date"], "list_date")
+        if list_date is None:
+            raise ProviderProtocolError("provider returned an empty list_date")
+        delist_date = _optional_provider_date(values["delist_date"], "delist_date")
+        if delist_date is not None and list_date > delist_date:
+            raise ProviderProtocolError("provider returned an invalid security lifecycle")
+        return cls(
+            provider_symbol=symbol,
+            local_symbol=local_symbol,
+            name=_bounded_provider_text(values["name"], "name", required=True) or "",
+            exchange=exchange,
+            list_status=list_status,
+            list_date=list_date,
+            delist_date=delist_date,
+        )
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "provider_symbol": self.provider_symbol,
+            "local_symbol": self.local_symbol,
+            "name": self.name,
+            "exchange": self.exchange,
+            "list_status": self.list_status,
+            "list_date": self.list_date,
+            "delist_date": self.delist_date,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
 class SecurityMasterResult:
     records: tuple[SecurityRecord, ...]
     provenance: Provenance
     dataset_id: str
     statuses: tuple[str, ...]
+    quarantined: tuple[QuarantinedSecurityRecord, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -469,7 +535,9 @@ class TushareProvider:
             separators=(",", ":"),
         ).encode("utf-8")).hexdigest()
         records: list[SecurityRecord] = []
+        quarantined: list[QuarantinedSecurityRecord] = []
         seen: set[str] = set()
+        rows_seen = 0
         for status in normalized.statuses:
             payload = {
                 "api_name": "stock_basic",
@@ -478,17 +546,35 @@ class TushareProvider:
                 "fields": ",".join(SECURITY_MASTER_FIELDS),
             }
             fields, rows = self._request(payload)
-            if len(records) + len(rows) > MAX_SECURITY_MASTER_ROWS:
+            rows_seen += len(rows)
+            if rows_seen > MAX_SECURITY_MASTER_ROWS:
                 raise ProviderProtocolError("provider returned too many security-master rows")
             for row in rows:
-                record = SecurityRecord.from_row(fields, row, expected_status=status)
-                if record.symbol in seen:
+                try:
+                    values = dict(zip(fields, row, strict=True))
+                except ValueError as error:
+                    raise ProviderProtocolError("provider security row does not match its fields") from error
+                provider_symbol = str(values.get("ts_code") or "").strip().upper()
+                if provider_symbol in seen:
                     raise ProviderProtocolError("provider returned duplicate security-master identities")
-                seen.add(record.symbol)
+                seen.add(provider_symbol)
+                if not _SYMBOL_PATTERN.fullmatch(provider_symbol):
+                    quarantined.append(QuarantinedSecurityRecord.from_row(fields, row, expected_status=status))
+                    if len(quarantined) > MAX_QUARANTINED_SECURITY_MASTER_ROWS:
+                        raise ProviderProtocolError("provider returned too many quarantined security identities")
+                    continue
+                record = SecurityRecord.from_row(fields, row, expected_status=status)
                 records.append(record)
         ordered = tuple(sorted(records, key=lambda item: item.symbol))
+        ordered_quarantine = tuple(sorted(quarantined, key=lambda item: item.provider_symbol))
+        dataset_payload: object = [record.as_dict() for record in ordered]
+        if ordered_quarantine:
+            dataset_payload = {
+                "records": dataset_payload,
+                "quarantined": [record.as_dict() for record in ordered_quarantine],
+            }
         dataset_id = sha256(json.dumps(
-            [record.as_dict() for record in ordered],
+            dataset_payload,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
@@ -499,9 +585,9 @@ class TushareProvider:
             request_fingerprint=fingerprint,
             retrieved_at=datetime.now(timezone.utc).isoformat(),
             cache_hit=False,
-            row_count=len(ordered),
+            row_count=len(ordered) + len(ordered_quarantine),
         )
-        return SecurityMasterResult(ordered, provenance, dataset_id, normalized.statuses)
+        return SecurityMasterResult(ordered, provenance, dataset_id, normalized.statuses, ordered_quarantine)
 
     def _request(self, payload: dict[str, object]) -> tuple[list[str], list[list[Any]]]:
         last_status: int | None = None

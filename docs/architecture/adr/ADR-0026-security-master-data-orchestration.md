@@ -37,7 +37,11 @@ release, a new provider, or arbitrary Tushare access.
    capability. It requests the closed status set `L`, `P`, and `D` with an
    explicit field list, translates raw envelopes inside Backend, rejects
    duplicate/conflicting identities, and never exposes arbitrary endpoint or
-   parameter passthrough.
+   parameter passthrough. Tushare's `T`-prefixed historical aliases (for
+   example `T600018.SH`) are not canonical A-share identities and cannot be
+   normalized without colliding with a different six-digit security. A
+   bounded set of otherwise valid aliases is therefore persisted as
+   quarantine evidence and excluded from the authoritative catalogue.
 3. PostgreSQL owns platform-scoped current security records plus immutable,
    content-addressed security-master snapshots. Each successful full sync is
    atomic and records provider, request fingerprint, dataset fingerprint,
@@ -76,9 +80,12 @@ release, a new provider, or arbitrary Tushare access.
 ## Security and domain invariants
 
 - Tushare plaintext remains inside Backend and is resolved under ADR-0019.
-- `stock_basic` results must match the requested status and canonical
+- Canonical `stock_basic` results must match the requested status and
   symbol/exchange relationship; malformed dates, empty names, conflicts, and
-  out-of-contract asset identities fail the whole snapshot.
+  unknown out-of-contract identities fail the whole snapshot. Only bounded,
+  fully validated `T`-prefixed historical aliases may be quarantined; their
+  count and identity evidence are stored with the immutable snapshot and they
+  never enter `market_securities` or a daily-bar selection.
 - A successful security-master sync is atomic. Partial provider status results
   never replace the latest catalogue.
 - Dataset identity excludes mutable timestamps and actor metadata.
@@ -104,7 +111,8 @@ release, a new provider, or arbitrary Tushare access.
 ## Required evidence
 
 - provider translation/retry/duplicate/status/date tests with secret-free
-  fixtures;
+  fixtures, including bounded historical-alias quarantine and fail-closed
+  unknown identities;
 - atomic snapshot, idempotency, latest-catalogue, search/filter/pagination, and
   historical-retention tests against PostgreSQL;
 - daily selection freezing, bounds, incremental semantics, Stock Pool
