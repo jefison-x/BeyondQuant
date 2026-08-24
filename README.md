@@ -1,10 +1,10 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-completed project stage is **Phase 47** — Interaction, responsive and
-accessibility closure under Accepted ADR-0024. The v1.0 release-candidate review
-is postponed while Phases 42-48 implement and verify the new Product
-experience. See
+completed project stage is **Phase 48** — Product coherence and golden-journey
+closure under Accepted ADR-0024. The conversation-first Product experience
+program is complete and the separate human v1.0 release-candidate review is
+open but not yet accepted. See
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
 authoritative current state.
 
@@ -47,10 +47,10 @@ BYQ does not fork DSH. The DSH version is pinned through an explicit dependency 
 
 - The DSH Upgrade Lane is scheduled as a post-Phase 40 maintenance initiative;
   it does not change the currently qualified runtime pin.
-- The conversation-first frontend program is active under ADR-0024; v1.0 RC
-  review/release checks remain distinct from feature parity and experience
-  completion. The official release boundary restores the normal human merge
-  gate under ADR-0015.
+- The conversation-first frontend program is complete under ADR-0024; human
+  v1.0 RC review/release checks remain distinct from feature parity and
+  experience completion. The official release boundary restores the normal
+  human merge gate under ADR-0015.
 
 The base Compose topology requires internal service secrets such as
 `BYQ_MCP_TOKEN` and bootstrap compatibility configuration. Provider secrets

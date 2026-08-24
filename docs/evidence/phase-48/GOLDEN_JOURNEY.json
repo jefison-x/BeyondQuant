@@ -1,0 +1,47 @@
+{
+  "administration": {
+    "operations": "operations.v1",
+    "raw_dsh_events": false,
+    "users": 2
+  },
+  "assets": {
+    "imported": {
+      "backtests": 1,
+      "paper_accounts": 1,
+      "pools": 7,
+      "strategies": 1
+    },
+    "schema_version": "byq-workspace-assets-v2"
+  },
+  "conversation": {
+    "restored": true,
+    "session_id": "conversation_d6cf271bdd33479d9476afd7c710b6fc",
+    "title": "Phase 48 golden conversation aa2fd0dbd2",
+    "turn_accepted": true
+  },
+  "environment": "fresh isolated Compose project byq-ci-stack-local-2542111",
+  "executed_at": "2026-08-24T12:23:00+08:00",
+  "owner_flow": {
+    "approval_artifact_id": "artifact_86958c9ce5b54c63aa15b9ac0bd2f455",
+    "backtest_job_id": "backtest_cfda49d06e1d4c9d928e46c1d073e8d9",
+    "backtest_status": "completed",
+    "pool_id": "stock_pool_00c88eb0c79f42dba3e0e2264e80b6f9",
+    "signal_job_id": "signaljob_22e02bc0c83a440492e88d6cf196e0e4",
+    "signal_snapshot_artifact_id": "artifact_28e5b602da0c4033870aa42ec83e33ce",
+    "strategy_version_artifact_id": "artifact_5f4c65b3556042b585992ece62997f4e",
+    "task_id": "task_a1d2ee9cccaa4219956b9a2820c4cd3b",
+    "trade_count": 1
+  },
+  "personalization": {
+    "appearance": "indigo",
+    "model_binding": true,
+    "profile": true
+  },
+  "schema_version": "phase-48-product-coherence-v1",
+  "secondary_user": {
+    "admin_status": 403,
+    "appearance_version": 0,
+    "owner_resources_hidden": true
+  },
+  "status": "passed"
+}

@@ -170,6 +170,10 @@ prepare_ci_compose_env() {
   export BYQ_BOOTSTRAP_ADMIN_PASSWORD="${BYQ_CI_BOOTSTRAP_ADMIN_PASSWORD:-ci-bootstrap-test-only}"
   export BYQ_E2E_ADMIN_USERNAME="$BYQ_BOOTSTRAP_ADMIN_USERNAME"
   export BYQ_E2E_ADMIN_PASSWORD="$BYQ_BOOTSTRAP_ADMIN_PASSWORD"
+  export BYQ_GOLDEN_OWNER_USERNAME="$BYQ_BOOTSTRAP_ADMIN_USERNAME"
+  export BYQ_GOLDEN_OWNER_PASSWORD="$BYQ_BOOTSTRAP_ADMIN_PASSWORD"
+  export BYQ_GOLDEN_OTHER_USERNAME="${BYQ_CI_GOLDEN_OTHER_USERNAME:-ci-user}"
+  export BYQ_GOLDEN_OTHER_PASSWORD="${BYQ_CI_GOLDEN_OTHER_PASSWORD:-ci-user-test-only}"
 }
 resolve_ci_compose_urls() {
   local frontend_address gateway_address
@@ -284,6 +288,13 @@ check_smoke() {
     npm run test:e2e:real
   ); then
     ok "real Product API browser smoke"; else bad "real Product API browser smoke"; fi
+  if docker compose cp scripts/evidence/phase48-seed.py backend:/tmp/phase48-seed.py >/dev/null \
+    && docker compose exec -T \
+      -e BYQ_GOLDEN_OTHER_USERNAME="$BYQ_GOLDEN_OTHER_USERNAME" \
+      -e BYQ_GOLDEN_OTHER_PASSWORD="$BYQ_GOLDEN_OTHER_PASSWORD" \
+      backend python /tmp/phase48-seed.py \
+    && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" scripts/evidence/phase48-product-golden.py; then
+    ok "Phase 48 no-mock two-user Product coherence"; else bad "Phase 48 no-mock two-user Product coherence"; fi
   if [ "$NO_CLEANUP" -eq 0 ]; then
     docker compose down --rmi local -v >/dev/null 2>&1 || true
     cleanup_ci_services
