@@ -577,7 +577,9 @@ test("mobile shell uses a drawer and keeps account destinations reachable", asyn
 
   await page.getByRole("button", { name: "打开产品导航" }).click();
   await expect(page.getByRole("navigation", { name: "产品主导航" })).toBeVisible();
-  await page.getByRole("button", { name: "历史会话", exact: true }).click();
+  await expect(page.getByText("投研对话", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "历史会话", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "查看全部", exact: true }).click();
   await expect(page).toHaveURL(/\/agent\?history=recent$/);
   await expect(page.getByRole("heading", { name: "历史会话" })).toBeVisible();
   await page.getByRole("heading", { name: "历史会话" }).locator("..").getByRole("button").click();
