@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from "vue";
+import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ChatLineRound, Menu, Plus } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { updateAgentSession } from "@/api/agent";
-import { findActiveNavItem, historyNavItem, primaryNavItems } from "@/router/navigation";
+import { findActiveNavItem, primaryNavItems } from "@/router/navigation";
 import { useAgentStore } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
 import UserSettingsMenu from "./UserSettingsMenu.vue";
@@ -21,7 +21,6 @@ const agent = useAgentStore();
 const auth = useAuthStore();
 const activeIndex = computed(() => findActiveNavItem(route.path));
 const recentSessions = computed(() => agent.sessions.slice(0, 8));
-const recentHeading = ref<HTMLElement | null>(null);
 
 function navigate(path: string) {
   emit("navigate");
@@ -36,7 +35,6 @@ function newConversation() {
 function showHistory() {
   emit("navigate");
   void router.push({ path: "/agent", query: { history: "recent" } });
-  void nextTick(() => recentHeading.value?.focus());
 }
 
 function openSession(sessionId: string) {
@@ -115,22 +113,10 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
           </button>
         </el-tooltip>
 
-        <el-tooltip :content="historyNavItem.label" placement="right" :disabled="!props.isCollapsed">
-          <button
-            type="button"
-            class="nav-row"
-            :class="{ active: activeIndex === historyNavItem.to }"
-            :aria-current="activeIndex === historyNavItem.to ? 'page' : undefined"
-            @click="showHistory"
-          >
-            <el-icon><component :is="historyNavItem.icon" /></el-icon>
-            <span v-if="!props.isCollapsed">{{ historyNavItem.label }}</span>
-          </button>
-        </el-tooltip>
       </nav>
 
-      <section v-if="!props.isCollapsed" class="sidebar-history" aria-labelledby="recent-session-heading">
-        <div id="recent-session-heading" ref="recentHeading" class="history-heading" tabindex="-1">最近会话</div>
+      <section v-if="!props.isCollapsed" class="sidebar-history" aria-labelledby="conversation-heading">
+        <div id="conversation-heading" class="history-heading">投研对话</div>
         <p v-if="!recentSessions.length" class="history-empty">开始一次投研后，会话会显示在这里</p>
         <div v-else class="history-list">
           <div
@@ -154,6 +140,9 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
             </el-dropdown>
           </div>
         </div>
+        <button type="button" class="view-all-conversations" @click="showHistory">
+          查看全部
+        </button>
       </section>
     </div>
 
@@ -185,7 +174,6 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
 .collapsed .new-conversation, .collapsed .nav-row { justify-content: center; padding: 0; }
 .sidebar-history { border-top: 1px solid var(--byq-border-subtle); margin-top: .75rem; padding: .75rem .2rem 0; }
 .history-heading { color: var(--byq-text-soft); font-size: 11px; font-weight: 850; letter-spacing: .04em; padding: 0 .55rem .35rem; text-transform: uppercase; }
-.history-heading:focus-visible { outline: 2px solid var(--byq-brand-contrast); outline-offset: 2px; }
 .history-empty { color: var(--byq-text-soft); font-size: 11px; line-height: 1.45; margin: .2rem .55rem; }
 .history-row { align-items: center; background: transparent; border-radius: var(--byq-radius-sm); color: var(--byq-text-muted); cursor: pointer; display: flex; font-size: 12px; gap: .5rem; overflow: hidden; padding: .5rem .55rem; }
 .history-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -193,6 +181,9 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
 .history-row:hover, .history-row.active { background: var(--byq-surface-muted); color: var(--byq-text); }
 .history-more { background: transparent; border: 0; color: inherit; cursor: pointer; font-weight: 800; opacity: 0; padding: 0 .2rem; }
 .history-row:hover .history-more, .history-more:focus-visible { opacity: 1; }
+.view-all-conversations { background: transparent; border: 0; border-radius: var(--byq-radius-sm); color: var(--byq-text-soft); cursor: pointer; font-size: 11px; margin-top: .35rem; padding: .45rem .55rem; text-align: left; width: 100%; }
+.view-all-conversations:hover { background: var(--byq-surface-muted); color: var(--byq-text); }
+.view-all-conversations:focus-visible { outline: 2px solid var(--byq-brand-contrast); outline-offset: 2px; }
 .sidebar-user-bar { border-top: 1px solid var(--byq-border-subtle); margin-top: auto; padding: .55rem; }
 .sidebar-user-menu { min-width: 0; }
 @media (prefers-reduced-motion: reduce) { .app-sidebar { transition: none; } }
