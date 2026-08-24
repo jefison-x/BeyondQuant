@@ -114,6 +114,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("byq_signal_sandbox", sandbox)
         self.assertIn("internal: true", compose)
         self.assertIn("BYQ_DATABASE_URL", worker)
+        self.assertIn("backend:\n        condition: service_healthy", worker)
         self.assertNotIn("ports:", sandbox)
         self.assertNotIn("COPY services/backend", dockerfile)
         self.assertNotIn("COPY .", dockerfile)
