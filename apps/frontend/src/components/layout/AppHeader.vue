@@ -1,14 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import { Bell, Menu } from "@element-plus/icons-vue";
-import { getSettingsStatus } from "@/api/settings";
-import { useAuthStore } from "@/stores/auth";
+import { computed } from "vue";
+import { useRoute } from "vue-router";
+import { Menu } from "@element-plus/icons-vue";
+import GlobalApprovalCenter from "@/components/agent/GlobalApprovalCenter.vue";
 
 const route = useRoute();
-const router = useRouter();
-const auth = useAuthStore();
-const pendingApprovals = ref(0);
 defineProps<{ showMenu?: boolean }>();
 const emit = defineEmits<{ (event: "toggle-menu"): void }>();
 
@@ -17,15 +13,6 @@ const meta = computed(() => {
   return {
     title: typeof value.title === "string" ? value.title : "BeyondQuant",
   };
-});
-
-onMounted(async () => {
-  try {
-    const status = await getSettingsStatus(auth.token);
-    pendingApprovals.value = status.approval_inbox.pending;
-  } catch {
-    pendingApprovals.value = 0;
-  }
 });
 </script>
 
@@ -46,13 +33,7 @@ onMounted(async () => {
       </div>
     </div>
     <div class="header-right">
-      <el-tooltip content="审批收件箱" placement="bottom">
-        <button type="button" class="approval-trigger" aria-label="审批收件箱" @click="router.push('/research-center')">
-          <el-badge :value="pendingApprovals" :hidden="pendingApprovals === 0">
-            <el-icon><Bell /></el-icon>
-          </el-badge>
-        </button>
-      </el-tooltip>
+      <GlobalApprovalCenter />
     </div>
   </header>
 </template>
@@ -107,28 +88,6 @@ onMounted(async () => {
   display: flex;
   gap: 0.6rem;
   margin-left: 1rem;
-}
-
-.approval-trigger {
-  align-items: center;
-  background: var(--byq-surface);
-  border: 1px solid var(--byq-border);
-  border-radius: var(--byq-radius-sm);
-  color: var(--byq-text-muted);
-  cursor: pointer;
-  display: inline-flex;
-  height: 34px;
-  justify-content: center;
-  width: 34px;
-}
-
-.approval-trigger:hover {
-  background: var(--byq-brand-soft);
-  border-color: var(--byq-border);
-}
-
-.approval-trigger .el-icon {
-  font-size: 18px;
 }
 
 @media (max-width: 767px) {

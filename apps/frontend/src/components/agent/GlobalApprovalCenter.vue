@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { Bell } from "@element-plus/icons-vue";
 import { decideApproval, getApproval, listApprovals } from "@/api/research";
 import ApprovalManagementPanel from "./ApprovalManagementPanel.vue";
 
@@ -7,7 +8,8 @@ const open = ref(false);
 const approvals = ref<Array<Record<string, unknown>>>([]);
 const error = ref("");
 const busyId = ref("");
-const pending = computed(() => approvals.value.filter((item) => item.status === "pending").length);
+const manualApprovals = computed(() => approvals.value.filter((item) => item.status === "pending"));
+const pending = computed(() => manualApprovals.value.length);
 
 async function refresh() {
   const response = await listApprovals();
@@ -39,17 +41,43 @@ onMounted(() => void refresh().catch(() => undefined));
 </script>
 
 <template>
-  <button class="approval-trigger" type="button" aria-label="打开全局审批中心" @click="open = true">
-    <span>审批</span><b v-if="pending">{{ pending }}</b>
-  </button>
-  <el-drawer v-model="open" title="全局审批中心" size="min(92vw, 430px)" @open="refresh">
+  <el-tooltip content="待人工审批" placement="bottom">
+    <button
+      class="approval-trigger"
+      type="button"
+      :aria-label="pending ? `待人工审批，${pending} 项` : '待人工审批，无待办'"
+      @click="open = true"
+    >
+      <el-badge :value="pending" :hidden="pending === 0">
+        <el-icon><Bell /></el-icon>
+      </el-badge>
+    </button>
+  </el-tooltip>
+  <el-drawer v-model="open" title="待人工审批" size="min(92vw, 430px)" @open="refresh">
     <p v-if="error" class="page-error">{{ error }}</p>
-    <ApprovalManagementPanel :approvals="approvals" :busy-id="busyId" @decide="decide" />
+    <ApprovalManagementPanel :approvals="manualApprovals" :busy-id="busyId" @decide="decide" />
   </el-drawer>
 </template>
 
 <style scoped>
-.approval-trigger { align-items: center; background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: 999px; bottom: 84px; box-shadow: var(--byq-shadow); color: var(--byq-text); cursor: pointer; display: flex; font-size: 12px; gap: .4rem; padding: .55rem .75rem; position: fixed; right: 24px; z-index: 30; }
-.approval-trigger b { align-items: center; background: var(--el-color-danger); border-radius: 50%; color: white; display: flex; font-size: 10px; height: 18px; justify-content: center; min-width: 18px; }
-@media (max-width: 767px) { .approval-trigger { bottom: 128px; right: 14px; } }
+.approval-trigger {
+  align-items: center;
+  background: var(--byq-surface);
+  border: 1px solid var(--byq-border);
+  border-radius: var(--byq-radius-sm);
+  color: var(--byq-text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.approval-trigger:hover {
+  background: var(--byq-brand-soft);
+}
+
+.approval-trigger .el-icon {
+  font-size: 18px;
+}
 </style>

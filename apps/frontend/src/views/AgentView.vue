@@ -8,9 +8,7 @@ import {
 } from "@/api/agent";
 import { foldWorkflowCards, workflowActivities } from "@/api/workflow";
 import type { AgentReplayMessage, AgentSession, WorkflowCardEvent, WorkflowTraceEvent } from "@/api/types";
-import { decideApproval, getApproval, listApprovals } from "@/api/research";
 import AgentActivityPanel from "@/components/agent/AgentActivityPanel.vue";
-import ApprovalManagementPanel from "@/components/agent/ApprovalManagementPanel.vue";
 import WorkflowCard from "@/components/agent/WorkflowCard.vue";
 import { useAgentStore, type AgentMessage } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
@@ -24,9 +22,6 @@ const prompt = ref("");
 const error = ref("");
 const busy = ref(false);
 const loading = ref(false);
-const approvalBusy = ref("");
-const approvals = ref<Array<Record<string, unknown>>>([]);
-const approvalStates = ref<Record<string, Record<string, unknown>>>({});
 const initialized = ref(false);
 const activityOpen = ref(false);
 const historyOpen = ref(false);
@@ -41,11 +36,7 @@ let streamController: AbortController | null = null;
 
 const activeSession = computed(() => agent.sessions.find((item) => item.session_id === agent.activeSessionId));
 const activities = computed(() => workflowActivities(agent.events));
-const cards = computed(() => foldWorkflowCards(agent.events).map((event) => {
-  if (event.kind !== "agent.card.approval") return event;
-  const latest = approvalStates.value[event.payload.approval_id];
-  return latest ? { ...event, payload: { ...event.payload, ...latest } } as WorkflowCardEvent : event;
-}));
+const cards = computed(() => foldWorkflowCards(agent.events));
 const timeline = computed(() => [
   ...agent.messages.map((message, index) => ({ type: "message" as const, at: message.createdAt ?? "", key: `message-${index}`, message })),
   ...cards.value.map((card) => ({ type: "card" as const, at: card.timestamp, key: `card-${card.payload.card_id}`, card })),
@@ -143,22 +134,6 @@ async function historyAction(session: AgentSession, action: "pin" | "rename" | "
   ElMessage.success(action === "restore" ? "会话已恢复" : action === "archive" ? "会话已归档" : "会话已更新");
 }
 
-async function refreshApprovals() { approvals.value = (await listApprovals()).approvals; }
-
-async function decide(approval: Record<string, unknown>, decision: "approved" | "rejected") {
-  const approvalId = String(approval.approval_id ?? "");
-  if (!approvalId) return;
-  approvalBusy.value = approvalId;
-  try {
-    const freshBody = await getApproval(approvalId);
-    const fresh = (freshBody.approval ?? freshBody) as Record<string, unknown>;
-    approvalStates.value[approvalId] = fresh.status === "pending"
-      ? (await decideApproval(approvalId, decision, `BYQ Product decision by ${auth.user?.subject ?? "user"}`)).approval : fresh;
-    await refreshApprovals();
-  } catch (exc) { error.value = exc instanceof Error ? exc.message : "审批决策失败"; }
-  finally { approvalBusy.value = ""; }
-}
-
 function navigateCard(event: WorkflowCardEvent) {
   void router.push(workflowCardDestination(event, agent.activeSessionId));
 }
@@ -177,7 +152,6 @@ async function send(value = prompt.value) {
 }
 
 onMounted(async () => {
-  void refreshApprovals().catch(() => undefined);
   try {
     await refreshCatalog();
     const requested = typeof route.query.session === "string" ? route.query.session : "";
@@ -207,7 +181,7 @@ onBeforeUnmount(stopStream);
       <div><strong>{{ activeSession?.title || "小巴投研对话" }}</strong><small>BYQ 规范化工作流 · 持久会话</small></div>
       <div class="header-actions">
         <el-button text @click="showHistory">历史</el-button>
-        <el-button text @click="activityOpen = true">活动与审批 <el-badge v-if="activities.length" :value="activities.length" /></el-button>
+        <el-button text @click="activityOpen = true">活动 <el-badge v-if="activities.length" :value="activities.length" /></el-button>
         <el-dropdown><el-button text>会话操作</el-button><template #dropdown><el-dropdown-menu>
           <el-dropdown-item @click="resumeSession(agent.activeSessionId, auth.token)">恢复运行</el-dropdown-item>
           <el-dropdown-item @click="cancelSession(agent.activeSessionId, 'soft', auth.token)">取消运行</el-dropdown-item>
@@ -227,7 +201,7 @@ onBeforeUnmount(stopStream);
           <article v-if="item.type === 'message'" :class="['conversation-message', item.message.role]">
             <span class="message-author">{{ item.message.role === "user" ? "我" : "小巴" }}</span><div class="message-body">{{ item.message.text }}</div>
           </article>
-          <WorkflowCard v-else :event="item.card" @navigate="navigateCard" @decide="(event, decision) => decide(event.payload, decision)" />
+          <WorkflowCard v-else :event="item.card" @navigate="navigateCard" />
         </template>
       </div>
     </main>
@@ -235,9 +209,8 @@ onBeforeUnmount(stopStream);
       <el-input v-model="prompt" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" placeholder="向小巴描述你的投研问题…" />
       <div class="composer-footer"><span>关键执行仍需 BYQ 审批</span><el-button type="primary" :loading="busy" @click="send()">发送</el-button></div>
     </form></footer>
-    <el-drawer v-model="activityOpen" title="活动、上下文与审批" size="min(440px, 92vw)">
-      <AgentActivityPanel :activities="activities" /><el-divider />
-      <ApprovalManagementPanel :approvals="approvals" :busy-id="approvalBusy" @decide="decide" />
+    <el-drawer v-model="activityOpen" title="活动与执行上下文" size="min(440px, 92vw)">
+      <AgentActivityPanel :activities="activities" />
     </el-drawer>
     <el-drawer v-model="historyOpen" title="历史会话" size="min(520px, 94vw)">
       <div class="history-tools"><el-input v-model="historySearch" clearable placeholder="搜索标题或最近消息" />
