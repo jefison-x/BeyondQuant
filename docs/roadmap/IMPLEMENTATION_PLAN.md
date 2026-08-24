@@ -1342,13 +1342,13 @@ Consolidate Profile, Assets, Models, Agent Policy and Paper Trading access.
 Implement `ui-preferences.v1`, system/light/dark modes, the closed accent
 palette, global theme application and cross-device persistence.
 
-### Phase 45 — System Settings dialog (`NEXT`)
+### Phase 45 — System Settings dialog (`COMPLETE`)
 
 Embed the existing bounded administrator operations and Data Center surfaces
 in a route-backed two-column large dialog/full-screen mobile surface without
 weakening Product API RBAC or audit.
 
-### Phase 46 — Core management workspace redesign (`PLANNED`)
+### Phase 46 — Core management workspace redesign (`NEXT`)
 
 Unify Stock Pool, Strategy and Backtest catalog/detail interactions, visual
 hierarchy, Workflow-card deep links, charts and responsive behavior while

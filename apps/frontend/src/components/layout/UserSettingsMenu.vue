@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { useRouter } from "vue-router";
-import { Bell, CaretBottom, FolderOpened, Monitor, SetUp, SwitchButton, Tools, User } from "@element-plus/icons-vue";
+import { useRoute, useRouter } from "vue-router";
+import { Bell, CaretBottom, FolderOpened, SetUp, SwitchButton, Tools, User } from "@element-plus/icons-vue";
 import { useAuthStore } from "@/stores/auth";
 
 const props = withDefaults(
@@ -18,6 +18,7 @@ const props = withDefaults(
 const emit = defineEmits<{ (event: "navigate"): void }>();
 
 const auth = useAuthStore();
+const route = useRoute();
 const router = useRouter();
 
 const displayName = computed(() => auth.user?.subject ?? "未登录");
@@ -27,6 +28,11 @@ async function handleCommand(command: string) {
   if (command === "logout") {
     await auth.logout();
     await router.push({ name: "login" });
+    return;
+  }
+  if (command === "system-settings") {
+    emit("navigate");
+    await router.push({ path: "/settings/system/overview", query: { returnTo: route.fullPath } });
     return;
   }
   emit("navigate");
@@ -56,9 +62,7 @@ async function handleCommand(command: string) {
           <el-dropdown-item command="/user/agent-policy"><el-icon><SetUp /></el-icon>Agent 策略</el-dropdown-item>
           <el-dropdown-item command="/user/research"><el-icon><Bell /></el-icon>研究与审批</el-dropdown-item>
           <template v-if="auth.isAdmin">
-            <el-dropdown-item command="/data-center" divided><el-icon><Tools /></el-icon>数据中心</el-dropdown-item>
-            <el-dropdown-item command="/system-status"><el-icon><Monitor /></el-icon>系统状态</el-dropdown-item>
-            <el-dropdown-item command="/admin/database"><el-icon><Tools /></el-icon>系统设置</el-dropdown-item>
+            <el-dropdown-item command="system-settings" divided><el-icon><Tools /></el-icon>系统设置</el-dropdown-item>
           </template>
           <el-dropdown-item command="logout" divided>
             <el-icon><SwitchButton /></el-icon>

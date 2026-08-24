@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import AppHeader from "./AppHeader.vue";
 import AppShell from "./AppShell.vue";
 
-vi.mock("vue-router", () => ({ useRoute: () => ({ meta: {} }) }));
+vi.mock("vue-router", () => ({ useRoute: () => ({ meta: {}, path: "/agent" }) }));
 
 const originalWidth = window.innerWidth;
 

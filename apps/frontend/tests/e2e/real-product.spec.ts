@@ -209,6 +209,15 @@ test("real Product API My Space credential, binding, policy, and asset import fl
   await expect(page.getByText(`E2E资产池-${suffix}`, { exact: true }).first()).toBeVisible();
   if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/03-assets-import.png`, fullPage: true });
 
+  await openUserDestination(page, "系统设置");
+  await expect(page).toHaveURL(new RegExp(`${origin}/settings/system/overview`));
+  await expect(page.getByRole("dialog").getByRole("heading", { name: "系统概览" })).toBeVisible();
+  const settingsNavigation = page.getByRole("navigation", { name: "系统设置导航" });
+  await settingsNavigation.getByRole("button", { name: /数据库/ }).click();
+  await expect(page.getByRole("dialog").getByText("byq_domain", { exact: true })).toBeVisible();
+  await settingsNavigation.getByRole("button", { name: /运行时/ }).click();
+  await expect(page.getByText("deepseek-harness-sdk==0.1.0rc6", { exact: true })).toBeVisible();
+
   expect([...unexpectedOrigins]).toEqual([]);
   expect(serverErrors).toEqual([]);
 });

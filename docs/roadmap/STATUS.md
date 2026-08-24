@@ -3,10 +3,10 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 44** — Route-backed user center and
-  owner-scoped durable `ui-preferences.v1`, including system/light/dark modes,
-  five closed accent themes, live preview and pre-mount restoration.
-- Next phase: **Phase 45 — Route-backed System Settings dialog** as defined in
+- Current completed phase: **Phase 45** — Route-backed administrator System
+  Settings dialog with twelve bounded Product API sections, preserved deep
+  links, desktop/mobile navigation, RBAC and audit boundaries.
+- Next phase: **Phase 46 — Core management workspace redesign** as defined in
   `FRONTEND_EXPERIENCE_PLAN.md`. The v1.0 release-candidate review is postponed
   until the Phases 42-48 experience program is complete. The post-Phase 40 DSH
   Upgrade Lane remains separately scheduled.
@@ -32,7 +32,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 38 component-ownership ADR: **ADR-0022**
 - Accepted Phase 40 isolated signal-producer ADR: **ADR-0023**
 - Accepted conversation-first Product experience ADR: **ADR-0024**
-- Open architecture decisions: **none from the Phase 45 entry gate**.
+- Open architecture decisions: **none from the Phase 46 entry gate**.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -210,6 +210,17 @@ Codex session does not infer project state from commit history.
   themes now follow system/light/dark plus the closed accent palette. Compose
   restart persistence, exact-owner isolation, desktop/mobile Chrome review and
   Lighthouse accessibility evidence are under `docs/evidence/phase-44/`.
+- Phase 45 consolidated System Overview, Data, Sources, Cache, Database,
+  platform Models, Agents, Budget, normalized Runtime and Workflow
+  diagnostics, Access and Audit into one route-backed administrator dialog.
+  Desktop uses grouped two-column navigation; mobile uses a full-screen,
+  keyboard-operable section selector. Legacy administrator deep links remain
+  explicit redirects, closing restores a validated local source route, and
+  non-admin users cannot see or directly enter the surface. Browser requests
+  remain same-origin Gateway/Product API only; ADR-0022 RBAC, append-only audit
+  and destructive-action limits are unchanged. Desktop/mobile Chrome review
+  and Lighthouse Accessibility 100 evidence are under
+  `docs/evidence/phase-45/`.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence. The historical gaps recorded in
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` were then classified and
@@ -222,7 +233,7 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active phase blocker: **none**. Phase 45 is authorized by Accepted ADR-0024.
+- Active phase blocker: **none**. Phase 46 is authorized by Accepted ADR-0024.
   The v1.0 RC gate is closed until Phase 48 reopens a separate human review.
   The post-Phase 40 DSH Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.

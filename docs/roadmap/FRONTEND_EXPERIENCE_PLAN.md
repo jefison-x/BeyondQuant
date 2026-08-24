@@ -93,7 +93,7 @@ Acceptance: write-only credential behavior, asset transfer, policy precedence,
 Paper Trading reachability, theme persistence, contrast, and owner isolation
 remain real through Product API.
 
-## Phase 45 — Route-backed System Settings dialog (`NEXT`)
+## Phase 45 — Route-backed System Settings dialog (`COMPLETE`)
 
 Embed System Overview, Data, Sources, Cache, Database, platform Models, Agents,
 Budget, Runtime, Workflow diagnostics, Access and Audit in a large two-column
@@ -103,7 +103,7 @@ ADR-0022 RBAC/audit/destructive-action limits.
 Acceptance: every existing operations surface remains reachable, admin-only,
 bounded, refreshable and browser-verified without direct internal APIs.
 
-## Phase 46 — Core management workspace redesign
+## Phase 46 — Core management workspace redesign (`NEXT`)
 
 Unify Stock Pool, Strategy and Backtest into consistent catalog/detail
 workspaces. Preserve immutable snapshots, version/approval/signal lineage,

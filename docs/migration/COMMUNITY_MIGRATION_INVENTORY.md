@@ -564,6 +564,28 @@ Community state or APIs.
 | Arbitrary provider URLs, old credential API and local-only preference authority | None under ADR-0019/ADR-0024. | `DROP` / `REPLACE` | BYQ write-only encrypted credentials and Backend-authoritative preferences remain the only Product boundary. |
 | Community Paper/Agent runtime, VectorBT option, PydanticAI/Hermes assumptions | None as an integration boundary. | `REFERENCE_ONLY` / `DROP` | No runtime, schema, Provider, Agent API, engine, or storage code is copied. |
 
+## Phase 45 System Settings pre-implementation audit
+
+The read-only Community `OpsLayout.vue`, `SystemMaintenanceWorkbench.vue`,
+`ModelOperationsView.vue`, `RuntimeOperationsView.vue`,
+`GraphOperationsView.vue`, `AccessControlOperationsView.vue`,
+`DataSourceConfig.vue`, and `DataSync.vue` were inspected before
+implementation. Existing BYQ Phase 38/39 operations and Data Center Product
+projections remain authoritative; this phase changes their navigation and
+composition, not their security or integration boundaries.
+
+| Community capability | Reusable invariant / UX | Decision | Phase 45 disposition |
+|---|---|---|---|
+| Grouped operations navigation and compact status cards | Administrators need a clear hierarchy across system, data, Agent platform, access and audit capabilities. | `PORT_LAYOUT` / `PORT_UX` | One route-backed two-column System Settings dialog embeds existing BYQ Product surfaces and becomes full-screen on mobile. |
+| Data-source configuration, synchronization progress and coverage status | Secret state, refresh progress, coverage and failures must be understandable without exposing credentials. | `PORT_UX` / `REFACTOR` | Reuse Phase 39 Tushare-only Product API contracts and durable jobs; no Community endpoint or state is reused. |
+| Database, runtime, graph and access diagnostics | Bounded health, version, correlation and audit projections help operators diagnose Product behavior. | `PORT_UX` / `REPLACE` | Existing `operations.v1`, normalized WorkflowTrace, persistent identity and append-only audit projections remain the only browser-visible contracts. |
+| Database switching, arbitrary SQL, Redis controls, deployment controls and arbitrary provider/Base URL editing | None under the accepted Product/Runtime/Data Plane boundaries. | `DROP` / `REPLACE` | System Settings is deliberately diagnostic and contract-bounded; it cannot mutate infrastructure or bypass Backend policy. |
+| Raw DSH event, graph/checkpoint/runtime state and direct Backend/MCP/storage access | None as a frontend integration boundary. | `REFERENCE_ONLY` / `DROP` | Browser traffic remains same-origin Gateway/Product API only; DSH internals stay behind BYQ normalization. |
+
+Phase 45 reuses only the classified visual and interaction evidence. The
+Community repository remains read-only, and no Community component, API,
+database, runtime, cache, or deployment control is copied.
+
 ## Phase 39 Data Center / Data Sync pre-implementation audit
 
 The read-only Community `DataSourceConfig.vue`, `DataSync.vue`, data-source

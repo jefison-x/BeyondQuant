@@ -29,8 +29,14 @@ const views: Record<string, unknown> = {
   runtime: RuntimeOperations,
   graphs: GraphOperations,
   access: AccessOperations,
+  audit: AccessOperations,
 };
 const activeView = computed(() => views[props.section] ?? DatabaseOperations);
+const activeViewProps = computed(() => {
+  if (props.section === "access") return { mode: "access" };
+  if (props.section === "audit") return { mode: "audit" };
+  return {};
+});
 
 async function load() {
   loading.value = true;
@@ -64,7 +70,7 @@ onMounted(load);
     </div>
     <template v-else-if="data">
       <el-alert v-if="error" :title="error" type="warning" show-icon :closable="false" />
-      <component :is="activeView" :data="data" @changed="load" />
+      <component :is="activeView" :data="data" v-bind="activeViewProps" @changed="load" />
     </template>
   </section>
 </template>
