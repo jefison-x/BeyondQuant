@@ -123,6 +123,21 @@ def _public_profile(user: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _public_workspace(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        raise ProductError(502, "backend_invalid_response", "backend returned an invalid workspace")
+    required = ("contract", "workspace_id", "kind", "display_name", "role")
+    if any(not isinstance(value.get(field), str) for field in required):
+        raise ProductError(502, "backend_invalid_response", "backend returned an invalid workspace")
+    return {field: str(value[field]) for field in required}
+
+
+def _session_workspace(request: Request) -> dict[str, str] | None:
+    if SESSION_COOKIE not in request.cookies:
+        return None
+    return _public_workspace(resolve_user(request).get("_workspace"))
+
+
 def _reject_secret_fields(value: object) -> None:
     if isinstance(value, dict):
         for key, nested in value.items():
@@ -341,9 +356,10 @@ def product_login(request: Request, payload: dict[str, object]) -> dict[str, obj
         result = login_user(username, password)
     except ProductAuthError as exc:
         raise ProductError(exc.status_code, exc.code, exc.message) from exc
-    response = JSONResponse(
-        content={"user": result.get("user", {})},
-    )
+    response = JSONResponse(content={
+        "user": result.get("user", {}),
+        "workspace": _public_workspace(result.get("workspace")),
+    })
     session_id = result.get("session_id")
     if isinstance(session_id, str):
         response.set_cookie(
@@ -371,8 +387,12 @@ def product_logout(request: Request) -> dict[str, object]:
 
 @router.get("/auth/me")
 def product_me(request: Request) -> dict[str, object]:
-    principal = _product_principal(request)
-    return {"subject": principal.subject}
+    user = resolve_user(request)
+    return {
+        "subject": str(user.get("username") or user.get("user_id")),
+        "role": str(user.get("role") or "user"),
+        "workspace": _public_workspace(user.get("_workspace")),
+    }
 
 
 @router.get("/dashboard")
@@ -1102,7 +1122,7 @@ def product_agent_policy_preset_apply(preset_id: str, request: Request) -> dict[
 def product_assets(request: Request) -> dict[str, object]:
     _product_principal(request)
     strategies, backtests, pools, accounts = _asset_lists(request)
-    return {
+    result: dict[str, object] = {
         "strategies": strategies,
         "backtests": backtests,
         "pools": pools,
@@ -1114,6 +1134,10 @@ def product_assets(request: Request) -> dict[str, object]:
             "paper_accounts": len(accounts),
         },
     }
+    workspace = _session_workspace(request)
+    if workspace is not None:
+        result["workspace"] = workspace
+    return result
 
 
 @router.get("/settings/assets/export")
@@ -1144,6 +1168,9 @@ def product_assets_export(request: Request) -> dict[str, object]:
         "owner_principal": principal.subject,
         "assets": assets,
     }
+    workspace = _session_workspace(request)
+    if workspace is not None:
+        document["source_workspace"] = workspace
     return {**document, "manifest_sha256": _canonical_digest(document)}
 
 
@@ -1290,7 +1317,7 @@ def product_assets_import(request: Request, payload: dict[str, object]) -> dict[
         except (ProductError, ValueError) as exc:
             errors.append({"kind": "paper_account", "message": str(exc)})
 
-    return {
+    result: dict[str, object] = {
         "imported": {
             "strategies": imported_strategies,
             "backtests": imported_backtests,
@@ -1301,6 +1328,10 @@ def product_assets_import(request: Request, payload: dict[str, object]) -> dict[
         "identity_policy": "new-owner-scoped-identities",
         "errors": errors,
     }
+    workspace = _session_workspace(request)
+    if workspace is not None:
+        result["destination_workspace"] = workspace
+    return result
 
 
 @router.post("/paper/accounts", status_code=201)

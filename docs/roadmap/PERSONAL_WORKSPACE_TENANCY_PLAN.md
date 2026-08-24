@@ -1,6 +1,6 @@
 # Personal Workspace Tenancy Plan
 
-- Status: Phases 49-51 complete; Phase 52 pending
+- Status: Phases 49-52 complete
 - Decision: [ADR-0025](../architecture/adr/ADR-0025-personal-workspace-tenancy.md)
 - Contract: [`personal-workspace.v1`](../contracts/personal-workspace.md)
 
@@ -162,6 +162,20 @@ propagation, full Compose, real Product API, and two-user golden evidence is in
 - UI is explicit about personal scope but contains no fake team affordance.
 - The final report lists any quarantined legacy rows and confirms that no
   compatibility read fallback remains an authorization path.
+
+### Delivered
+
+Durable browser bootstrap exposes the same bounded personal-workspace summary
+at login and session restoration. The shell and bundle UI identify the current
+scope without a selector or membership controls; bundle source identity is
+evidence only and the durable session remains the destination authority. The
+two-workspace no-mock journey spans every required surface and ignores a
+forged browser workspace header. Cross-workspace Paper-account access now uses
+metadata-safe not-found behavior. Fresh provisioning, backup/restore,
+PostgreSQL restart and Phase 51 pre-contract forward repair preserve workspace
+identity, enforce all 31 classified tables, produce zero relationship failures,
+and leave zero quarantined rows. Chrome and Community evidence is under
+`docs/evidence/phase-52/`.
 
 ## Later team extension
 

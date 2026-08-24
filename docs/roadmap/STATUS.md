@@ -3,13 +3,13 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 51** — Durable-session workspace resolution,
-  trusted Gateway/Runtime/DSH/MCP/Backend context, fail-closed membership
-  validation, workspace-stamped writes, parent/child mismatch rejection, and
-  the verified 31-table non-null contract migration.
-- Next phase: **Phase 52 — Product orientation and isolation closure**. The
-  human v1.0 release-candidate review remains postponed until Phases 51-52
-  close. The post-Phase 40 DSH Upgrade Lane remains separately scheduled.
+- Current completed phase: **Phase 52** — Bounded personal-workspace Product
+  orientation, source/destination-safe asset diagnostics, metadata-safe
+  cross-workspace denial, fresh/restore/restart/forward-repair recovery, and
+  real two-workspace Product/browser closure.
+- Next phase: **Human BeyondQuant Next v1.0 release-candidate review**. No
+  Phase 53 implementation is authorized. The separately scheduled post-Phase
+  40 DSH Upgrade Lane remains a maintenance task, not an implicit next phase.
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -33,7 +33,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 40 isolated signal-producer ADR: **ADR-0023**
 - Accepted conversation-first Product experience ADR: **ADR-0024**
 - Accepted personal-workspace tenancy ADR: **ADR-0025**
-- Open architecture decisions: **none from the completed Phase 51 scope**.
+- Open architecture decisions: **none from the completed Phase 52 scope**.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -287,6 +287,19 @@ Codex session does not infer project state from commit history.
   quarantine, 22-check contract migration. Full Compose, real Product API and
   the two-user no-mock coherence journey passed. Evidence is under
   `docs/evidence/phase-51/`.
+- Phase 52 exposed only the bounded personal-workspace summary through durable
+  login/session bootstrap and made the current personal scope explicit in the
+  shell and asset transfer UX without adding team affordances. Asset bundles
+  report their source and trusted destination scope without granting authority
+  from imported identity. A real two-workspace journey now covers conversation,
+  pool, strategy, approval, signal, Backtest, Paper Trading, models,
+  preferences, bundles and administrator settings; browser workspace spoofing
+  is ignored. The journey found and removed a Paper-account existence oracle,
+  so cross-workspace guessed IDs are indistinguishable from missing resources.
+  Fresh provisioning, backup/restore, PostgreSQL restart and Phase 51
+  pre-contract forward repair all preserve workspace identity with zero
+  quarantine and 22 zero relationship checks. Desktop/mobile Chrome evidence
+  and the Community classification are under `docs/evidence/phase-52/`.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence. The historical gaps recorded in
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` were then classified and
@@ -299,10 +312,10 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active implementation-phase blocker: **none**. Phase 51 is complete under
-  Accepted ADR-0025. Phase 52 is next; the human v1.0 RC review remains
-  postponed until the personal-workspace program closes. The post-Phase 40 DSH
-  Upgrade Lane is scheduled separately in
+- Active implementation-phase blocker: **none**. Phases 49-52 and the
+  ADR-0025 personal-workspace program are complete. The next gate is the human
+  v1.0 RC review; it is not an automatically accepted implementation phase.
+  The post-Phase 40 DSH Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.
 
 Git SHA is not phase state. The current clean baseline must always be derived

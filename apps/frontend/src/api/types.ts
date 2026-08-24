@@ -6,6 +6,14 @@ export interface ProductError {
   };
 }
 
+export interface PersonalWorkspace {
+  contract: "personal-workspace.v1";
+  workspace_id: string;
+  kind: "personal";
+  display_name: string;
+  role: "owner";
+}
+
 export interface ProductHealth {
   status: string;
   service: string;
@@ -271,6 +279,7 @@ export interface ModelBinding {
 }
 
 export interface AssetSummary {
+  workspace?: PersonalWorkspace;
   strategies: Array<Record<string, unknown>>;
   backtests: Array<Record<string, unknown>>;
   pools: Array<Record<string, unknown>>;
@@ -330,6 +339,7 @@ export interface AssetImportReport {
   source_owner_reused: false;
   identity_policy: string;
   errors: Array<{ kind: string; message: string }>;
+  destination_workspace?: PersonalWorkspace;
 }
 
 export interface PaperAccount {

@@ -54,7 +54,8 @@ def test_paper_ledger_endpoint_derives_cash_flow(monkeypatch) -> None:
         f"/v1/paper/accounts/{account['account_id']}/ledger",
         headers=trusted_agent_context("other-user"),
     )
-    assert denied.status_code == 403
+    assert denied.status_code == 404
+    assert denied.json() == {"detail": "paper account not found"}
     store.close()
 
 

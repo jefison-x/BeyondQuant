@@ -8,6 +8,23 @@ import pytest
 from app.paper_trading import PaperTradingConflict, PaperTradingForbidden, PaperTradingNotFound, PaperTradingStore
 
 
+def test_cross_owner_account_lookup_does_not_reveal_existence() -> None:
+    store = PaperTradingStore()
+    account = store.create_account({"name": "Alice private", "cash": 100000}, trusted_owner="alice")
+    account_id = account["account_id"]
+
+    for lookup in (
+        lambda: store.get_account(account_id, trusted_owner="bob"),
+        lambda: store.list_orders(account_id, trusted_owner="bob"),
+        lambda: store.list_positions(account_id, trusted_owner="bob"),
+        lambda: store.list_fills(account_id, trusted_owner="bob"),
+        lambda: store.export_bundle(account_id, trusted_owner="bob"),
+    ):
+        with pytest.raises(PaperTradingNotFound, match="paper account not found"):
+            lookup()
+    store.close()
+
+
 pytestmark = pytest.mark.skipif(
     not os.environ.get("BYQ_DATABASE_URL"),
     reason="BYQ_DATABASE_URL is not set",

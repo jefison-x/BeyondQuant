@@ -22,6 +22,7 @@ const route = useRoute();
 const router = useRouter();
 
 const displayName = computed(() => auth.user?.subject ?? "未登录");
+const workspaceName = computed(() => auth.user?.workspace?.display_name ?? "个人工作区");
 const avatarText = computed(() => displayName.value.slice(0, 1).toUpperCase() || "B");
 
 async function handleCommand(command: string) {
@@ -50,12 +51,17 @@ async function handleCommand(command: string) {
         </span>
         <span v-else-if="!props.compact" class="user-copy">
           <strong>{{ displayName }}</strong>
-          <small>BeyondQuant 产品账户</small>
+          <small>{{ workspaceName }}</small>
         </span>
         <el-icon v-if="props.variant !== 'mobile' && !props.compact" class="user-caret"><CaretBottom /></el-icon>
       </button>
       <template #dropdown>
         <el-dropdown-menu>
+          <li v-if="auth.user" class="workspace-orientation" aria-label="当前个人工作区">
+            <span>当前个人工作区</span>
+            <strong>{{ workspaceName }}</strong>
+            <small>仅你本人可访问 · 无需切换</small>
+          </li>
           <el-dropdown-item command="/user/appearance"><el-icon><User /></el-icon>个性化</el-dropdown-item>
           <el-dropdown-item command="/user/assets"><el-icon><FolderOpened /></el-icon>资产管理</el-dropdown-item>
           <el-dropdown-item command="/user/models"><el-icon><SetUp /></el-icon>模型配置</el-dropdown-item>
@@ -157,6 +163,26 @@ async function handleCommand(command: string) {
 .user-caret {
   color: var(--byq-text-muted);
   margin-left: auto;
+}
+
+.workspace-orientation {
+  border-bottom: 1px solid var(--byq-border-subtle);
+  display: grid;
+  gap: 2px;
+  list-style: none;
+  margin: 0 8px 6px;
+  padding: 8px 12px 10px;
+}
+
+.workspace-orientation span,
+.workspace-orientation small {
+  color: var(--byq-text-muted);
+  font-size: 11px;
+}
+
+.workspace-orientation strong {
+  color: var(--byq-text);
+  font-size: 13px;
 }
 
 .is-mobile .user-trigger {

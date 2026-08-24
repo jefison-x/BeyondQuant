@@ -26,6 +26,38 @@ def test_product_api_uses_error_envelope_and_auth_boundary(monkeypatch) -> None:
     assert healthy.json()["status"] == "ok"
 
 
+def test_asset_diagnostics_name_destination_workspace_without_trust_metadata(monkeypatch) -> None:
+    workspace = {
+        "contract": "personal-workspace.v1",
+        "workspace_id": "workspace_alice",
+        "kind": "personal",
+        "display_name": "Alice 的个人工作区",
+        "role": "owner",
+        "membership_id": "must-not-leak",
+    }
+    monkeypatch.setattr(product_api, "resolve_user", lambda _request: {
+        "user_id": "user_alice", "username": "alice", "role": "user", "_workspace": workspace,
+    })
+    monkeypatch.setattr(product_api, "resolve_principal", lambda _request: product_api.Principal(subject="alice"))
+    monkeypatch.setattr(product_api, "_asset_lists", lambda _request: ([], [], [], []))
+    browser = TestClient(main.app)
+    browser.cookies.set(product_api.SESSION_COOKIE, "session_alice")
+
+    summary = browser.get("/api/product/settings/assets")
+    assert summary.status_code == 200
+    assert summary.json()["workspace"]["display_name"] == "Alice 的个人工作区"
+    assert "membership_id" not in summary.text
+
+    exported = browser.get("/api/product/settings/assets/export")
+    assert exported.status_code == 200
+    bundle = exported.json()
+    assert bundle["source_workspace"]["workspace_id"] == "workspace_alice"
+    imported = browser.post("/api/product/settings/assets/import", json=bundle)
+    assert imported.status_code == 200
+    assert imported.json()["destination_workspace"]["workspace_id"] == "workspace_alice"
+    assert imported.json()["source_owner_reused"] is False
+
+
 def test_operations_projection_is_admin_only_and_aggregates_normalized_runtime(monkeypatch) -> None:
     class FakeResponse:
         def __init__(self, body: dict[str, object]) -> None:

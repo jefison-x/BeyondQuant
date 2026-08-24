@@ -4,14 +4,17 @@ import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { exportAssets, getAssetSummary, importAssets } from "@/api/settings";
 import type { AssetSummary } from "@/api/types";
+import { useAuthStore } from "@/stores/auth";
 
 const router = useRouter();
+const auth = useAuthStore();
 const importInput = ref<HTMLInputElement | null>(null);
 const loading = ref(true);
 const error = ref("");
 const summary = ref<AssetSummary | null>(null);
 const busy = ref(false);
 const importReport = ref("");
+const workspaceName = computed(() => summary.value?.workspace?.display_name ?? auth.user?.workspace?.display_name ?? "个人工作区");
 
 const assetStats = computed(() => ({
   strategies: summary.value?.summary.strategies ?? 0,
@@ -53,7 +56,7 @@ async function downloadBundle() {
     link.download = `beyondquant-assets-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
-    ElMessage.success("资产包已导出");
+    ElMessage.success(`已导出“${workspaceName.value}”资产包`);
   } catch (exc) {
     ElMessage.error(exc instanceof Error ? exc.message : "资产包导出失败");
   } finally {
@@ -73,15 +76,16 @@ async function handleImport(event: Event) {
   busy.value = true;
   try {
     const bundle = JSON.parse(await file.text()) as Record<string, unknown>;
-    await ElMessageBox.confirm("策略将重新校验并生成新版本；回测将作为只读归档导入；股票池和模拟账户均生成当前用户的新标识。不会复用来源所有者或来源 ID。", "确认导入资产包", {
+    await ElMessageBox.confirm(`资产将导入“${workspaceName.value}”。策略会重新校验并生成新版本；回测作为只读归档导入；股票池和模拟账户生成新标识。来源工作区、所有者和资源 ID 均不会授予访问权。`, "确认导入个人工作区资产包", {
       confirmButtonText: "继续导入",
       cancelButtonText: "取消",
       type: "warning",
     });
     const report = await importAssets(bundle);
     importReport.value = `策略 ${report.imported.strategies} · 回测归档 ${report.imported.backtests} · 股票池 ${report.imported.pools} · 模拟账户 ${report.imported.paper_accounts}`;
-    if (report.errors.length) ElMessage.warning(`导入完成，${report.errors.length} 项未通过校验`);
-    else ElMessage.success("资产包已完成校验并导入");
+    const destination = report.destination_workspace?.display_name ?? workspaceName.value;
+    if (report.errors.length) ElMessage.warning(`已导入“${destination}”，${report.errors.length} 项未通过校验`);
+    else ElMessage.success(`资产包已完成校验并导入“${destination}”`);
     await loadAssets();
   } catch (exc) {
     if (exc !== "cancel" && exc !== "close") {
@@ -99,6 +103,14 @@ async function handleImport(event: Event) {
 
     <el-alert v-if="importReport" :title="`最近导入：${importReport}`" type="success" show-icon closable @close="importReport = ''" />
 
+    <el-alert
+      :title="`当前范围：${workspaceName}`"
+      description="本页只展示当前个人工作区的研究资产。导入会创建属于本工作区的新资源，不会转移来源所有权。"
+      type="info"
+      show-icon
+      :closable="false"
+    />
+
     <section class="stats-strip">
       <el-card shadow="never"><div class="stat-label">策略</div><strong>{{ assetStats.strategies }}</strong></el-card>
       <el-card shadow="never"><div class="stat-label">股票池</div><strong>{{ assetStats.pools }}</strong><small>{{ assetStats.poolSymbols }} 只成分</small></el-card>
@@ -108,7 +120,7 @@ async function handleImport(event: Event) {
 
     <section class="asset-toolbar">
       <div class="toolbar-title">
-        <div class="page-card-title">用户资产</div>
+        <div class="page-card-title">个人工作区资产</div>
         <div class="page-card-sub">策略、股票池、回测与模拟账户</div>
       </div>
       <div class="toolbar-actions">
