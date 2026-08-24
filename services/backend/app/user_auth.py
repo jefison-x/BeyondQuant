@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 
 from .db import PgStoreMixin, ensure_column, execute, fetch_one
+from .workspace_tenancy import IDENTITY_SCHEMA_DDL, provision_personal_workspace
 
 
 _USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{2,63}$")
@@ -129,6 +130,7 @@ class UserAuthStore(PgStoreMixin):
             preferences_version INTEGER NOT NULL DEFAULT 1
         )
         """,
+        *IDENTITY_SCHEMA_DDL,
         """
         CREATE TABLE IF NOT EXISTS auth_sessions (
             session_id TEXT PRIMARY KEY,
@@ -165,6 +167,9 @@ class UserAuthStore(PgStoreMixin):
         with self.engine.begin() as connection:
             ensure_column(connection, "users", "preferences", "TEXT")
             ensure_column(connection, "users", "default_prompt", "TEXT")
+            users = execute(connection, "SELECT user_id, display_name FROM users ORDER BY user_id")
+            for user in users:
+                provision_personal_workspace(connection, user)
 
     @classmethod
     def from_env(cls) -> "UserAuthStore":
@@ -186,8 +191,8 @@ class UserAuthStore(PgStoreMixin):
             raise ValueError("role must be admin or user")
         now = _now().isoformat()
         user_id = _new_id("user")
-        self._execute(
-            """INSERT INTO users
+        with self._transaction() as connection:
+            execute(connection, """INSERT INTO users
             (user_id, username, email, display_name, password_hash, status, role,
              created_at, updated_at, last_login_at, password_changed_at, preferences_version)
             VALUES (:user_id, :username, :email, :display_name, :password_hash, 'active',
@@ -202,8 +207,8 @@ class UserAuthStore(PgStoreMixin):
                 "created_at": now,
                 "updated_at": now,
                 "password_changed_at": now,
-            },
-        )
+            })
+            provision_personal_workspace(connection, {"user_id": user_id, "display_name": display_name})
         return self.get_user(user_id)
 
     def ensure_bootstrap_admin(self, username: str, password: str) -> dict[str, object]:

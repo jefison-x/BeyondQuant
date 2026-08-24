@@ -34,6 +34,7 @@ from app.research import ResearchStore
 from app.signal_producer import SignalJobStore
 from app.user_auth import UserAuthStore
 from app.user_policy import UserPolicyStore
+from app.workspace_tenancy import WorkspaceTenancyStore
 
 
 TEST_DB_NAME = "byq_domain_test"
@@ -54,6 +55,7 @@ REGISTERED_SCHEMA_DDL: list[str] = [
     *MarketDataStore.SCHEMA_DDL,
     *SignalJobStore.SCHEMA_DDL,
     *OperationsStore.SCHEMA_DDL,
+    *WorkspaceTenancyStore.SCHEMA_DDL,
 ]
 
 

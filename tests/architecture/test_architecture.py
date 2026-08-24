@@ -47,7 +47,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("A user binding never", contract)
-        self.assertIn("Current completed phase: **Phase 49**", status)
+        self.assertIn("Current completed phase: **Phase 50**", status)
         self.assertIn("Phase 40 (Shared components and final parity closure) completed", status)
         self.assertIn(
             "Accepted conversation-first Product experience ADR: **ADR-0024**",
@@ -442,6 +442,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "Phase 49 — Personal workspace boundary (`COMPLETE`)",
             implementation,
         )
+        self.assertIn(
+            "Phase 50 — Workspace foundation and verified backfill (`COMPLETE`)",
+            implementation,
+        )
 
         workspace_adr = (
             ROOT
@@ -456,6 +460,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("personal-workspace.v1", workspace_contract)
         self.assertIn("Browser bodies", workspace_contract)
         self.assertIn("Gateway/Product API", workspace_contract)
+
+        workspace_source = (
+            ROOT / "services/backend/app/workspace_tenancy.py"
+        ).read_text()
+        self.assertIn("workspace_migration_quarantine", workspace_source)
+        self.assertIn("owner_has_no_exact_durable_user_workspace", workspace_source)
+        workspace_table_block = workspace_source.split("WORKSPACE_TABLES", 1)[1].split(")", 1)[0]
+        self.assertNotIn('"credentials"', workspace_table_block)
 
         workflow_card_adr = (
             ROOT

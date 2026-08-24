@@ -1,6 +1,6 @@
 # Personal Workspace Tenancy Plan
 
-- Status: Phase 49 decision complete; Phases 50-52 pending
+- Status: Phases 49-50 complete; Phases 51-52 pending
 - Decision: [ADR-0025](../architecture/adr/ADR-0025-personal-workspace-tenancy.md)
 - Contract: [`personal-workspace.v1`](../contracts/personal-workspace.md)
 
@@ -58,7 +58,7 @@ Excluded:
 - Team features and platform data are explicitly excluded.
 - Phase 50 has exact prerequisites and fail-closed migration rules.
 
-## Phase 50 — Workspace foundation and verified backfill
+## Phase 50 — Workspace foundation and verified backfill (`COMPLETE`)
 
 ### Scope
 
