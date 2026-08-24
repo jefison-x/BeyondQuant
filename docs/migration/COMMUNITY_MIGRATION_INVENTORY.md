@@ -673,3 +673,27 @@ APIs or hard-coded visual themes.
 
 The Community repository is evidence only and remains read-only. No Community
 component, API, runtime, theme store, persistence or Git history is copied.
+
+## Phase 48 Product coherence pre-implementation audit
+
+The final audit re-inspected the read-only Community `AgentView.vue`,
+`AppSidebar.vue`, `UserSettingsMenu.vue`, `StockPoolView.vue`,
+`StrategyView.vue`, `BacktestView.vue`, `UserProfileView.vue`,
+`UserAssetsView.vue`, `UserModelsView.vue`, operations routes and access
+workbench. Phase 48 adds no alternate Product architecture: it verifies that
+the capabilities already classified and delivered by Phases 34–47 remain
+coherent when used together.
+
+| Community capability | Reusable invariant / evidence | Decision | Phase 48 disposition |
+|---|---|---|---|
+| Agent timeline and historical sessions | One understandable conversation can be restored and used to reach research resources. | `PORT_UX` / `REUSE_AS_IS` | Reuse the Phase 43 durable BYQ catalog and normalized WorkflowTrace; verify rename, pin, archive/restore and owner isolation. |
+| Stock Pool, Strategy and Backtest workspaces | Catalog/detail context and complete resource evidence must survive the redesigned shell. | `PORT_LAYOUT` / `REUSE_AS_IS` | Reuse Phase 34/40/46 Product APIs and domain invariants; run the approved version → signal → backtest journey. |
+| Profile, appearance, models and assets | Personal state is durable, portable where safe, and never crosses owners. | `PORT_UX` / `REUSE_AS_IS` | Reuse Phase 37/44 contracts; verify encrypted write-only credential responses, binding, theme persistence and bundle validation. |
+| Grouped administrator operations | Operators need bounded diagnostics without raw infrastructure or runtime authority. | `PORT_LAYOUT` / `REUSE_AS_IS` | Reuse Phase 38/39/45 `operations.v1` and Data Center projections; verify admin RBAC and raw-DSH exclusion. |
+| Desktop, tablet and mobile composition | Relocated capabilities must remain reachable, readable and theme-consistent. | `PORT_TESTS` / `REFACTOR` | Add a repeatable no-mock two-user CI journey and Chrome MCP/Lighthouse evidence; fix the discovered mobile dark-select contrast defect. |
+| Community API/runtime/storage schemas and direct service access | None as a BYQ browser or domain boundary. | `REFERENCE_ONLY` / `DROP` / `REPLACE` | Browser remains same-origin Gateway/Product API only; Community stays read-only evidence. |
+| BaoStock, AKShare, VectorBT, PydanticAI and Hermes | None. | `DROP` | No dependency, adapter, fallback or compatibility path is introduced. |
+
+The inspection → classification → invariant extraction → disposition →
+implementation sequence is complete. No Community source, database, cache,
+runtime, credential or Git history was changed or imported.

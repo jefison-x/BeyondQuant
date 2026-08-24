@@ -1,6 +1,6 @@
 # Conversation-First Frontend Experience Plan
 
-Status: **ACTIVE — Phase 41 baseline accepted**
+Status: **IMPLEMENTATION COMPLETE — human v1.0 RC review open**
 
 This plan replaces the immediate v1.0 release-candidate review with a bounded
 Product experience program. It does not reopen completed domain semantics and
@@ -124,7 +124,7 @@ Acceptance: the full color-mode/accent matrix passes contrast and responsive
 review; Lighthouse accessibility target is 100 unless a documented external
 blocker is accepted.
 
-## Phase 48 — Product coherence and golden journey (`NEXT`)
+## Phase 48 — Product coherence and golden journey (`COMPLETE`)
 
 Run a fresh no-mock, two-user Compose journey across login, conversation,
 candidate pool, strategy, approval, signal, backtest, history restore, assets,
@@ -135,6 +135,14 @@ publish remaining Product gaps.
 Acceptance: no unexplained missing capability, raw internal-browser boundary,
 fake state, owner crossover, or theme inconsistency. Completion reopens but
 does not automatically pass the human v1.0 release-candidate review.
+
+Delivered a repeatable no-mock, two-user Compose gate spanning the complete
+Product journey and personal/admin settings, final Community relocation
+reconciliation, and desktop/tablet/mobile Chrome evidence. A mobile dark-mode
+selector contrast defect discovered by the final review was fixed; desktop
+and mobile authenticated Lighthouse Accessibility and Best Practices both
+score 100. The implementation program is complete. Human RC review remains a
+separate pending decision.
 
 ## Post-merge preview contract
 

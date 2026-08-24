@@ -137,11 +137,11 @@ onUnmounted(() => window.removeEventListener("resize", updateViewport));
 @media (max-width: 767px) {
   .settings-header h1 { font-size: 20px; }
   .settings-header p { max-width: 250px; }
-  .settings-mobile-nav { --settings-select-text: #000; background: var(--byq-surface-subtle); border-bottom: 1px solid var(--byq-border); display: grid; gap: 5px; padding: 10px 14px; }
+  .settings-mobile-nav { background: var(--byq-surface-subtle); border-bottom: 1px solid var(--byq-border); display: grid; gap: 5px; padding: 10px 14px; }
   .settings-mobile-nav label { color: var(--byq-text-muted); font-size: 11px; font-weight: 750; }
   .settings-mobile-nav :deep(.el-select) { width: 100%; }
   .settings-mobile-nav :deep(.el-select__wrapper) { background: var(--byq-surface); }
-  .settings-mobile-nav :deep(.el-select__selected-item) { color: var(--settings-select-text); }
+  .settings-mobile-nav :deep(.el-select__selected-item) { color: var(--byq-text); }
   .settings-grid { display: block; height: auto; min-height: 0; }
   .settings-nav { display: none; }
   .settings-content { height: calc(100vh - 174px); }
@@ -150,7 +150,6 @@ onUnmounted(() => window.removeEventListener("resize", updateViewport));
   .section-heading .el-tag { display: none; }
   .section-body { padding: 14px; }
 }
-:global(:root[data-resolved-mode="dark"]) .settings-mobile-nav { --settings-select-text: #fff; }
 </style>
 
 <style>

@@ -3,13 +3,12 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 47** — Interaction, responsive and
-  accessibility closure with standardized semantic states, unsaved-edit
-  protection, stable route focus, responsive content, accessible theme-aware
-  charts and a complete light/dark accent contrast matrix.
-- Next phase: **Phase 48 — Product coherence golden journey** as defined in
-  `FRONTEND_EXPERIENCE_PLAN.md`. The v1.0 release-candidate review is postponed
-  until the Phases 42-48 experience program is complete. The post-Phase 40 DSH
+- Current completed phase: **Phase 48** — Product coherence closure with a
+  repeatable no-mock two-user golden journey, reconciled Community capability
+  relocation, desktop/tablet/mobile Chrome evidence and a resolved mobile
+  dark-theme contrast defect.
+- Next milestone: **human v1.0 release-candidate review**. Phase 48 reopens but
+  does not pass or automate this separate decision. The post-Phase 40 DSH
   Upgrade Lane remains separately scheduled.
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
@@ -33,7 +32,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 38 component-ownership ADR: **ADR-0022**
 - Accepted Phase 40 isolated signal-producer ADR: **ADR-0023**
 - Accepted conversation-first Product experience ADR: **ADR-0024**
-- Open architecture decisions: **none from the Phase 48 entry gate**.
+- Open architecture decisions: **none from the completed Phase 48 scope**.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -243,6 +242,19 @@ Codex session does not infer project state from commit history.
   contrast matrix, and authenticated desktop/mobile Lighthouse Accessibility
   both score 100. Real Product API Chrome evidence is under
   `docs/evidence/phase-47/`.
+- Phase 48 added a repeatable fresh-Compose CI journey spanning durable login,
+  conversation/history restore, Stock Pool, strategy validation/version/
+  approval, isolated signal production, deterministic Backtest, profile,
+  appearance, encrypted model binding, asset transfer and administrator
+  settings. A second durable user sees none of the owner's resources and is
+  denied admin projections. Final Community relocation reconciliation has no
+  unexplained missing/partial item. Desktop/tablet/mobile Chrome MCP review
+  observed same-origin Product requests and a clean console; it found and
+  fixed one mobile dark-selector contrast defect. Final authenticated desktop
+  and mobile Lighthouse Accessibility and Best Practices both score 100.
+  Evidence and the remaining non-parity release/optimization register are
+  under `docs/evidence/phase-48/`. Human v1.0 RC review is open and pending,
+  not automatically accepted.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence. The historical gaps recorded in
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` were then classified and
@@ -255,8 +267,8 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active phase blocker: **none**. Phase 48 is authorized by Accepted ADR-0024.
-  The v1.0 RC gate is closed until Phase 48 reopens a separate human review.
+- Active implementation-phase blocker: **none**. Phase 48 is complete under
+  Accepted ADR-0024. The separate human v1.0 RC review is now open and pending.
   The post-Phase 40 DSH Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.
 

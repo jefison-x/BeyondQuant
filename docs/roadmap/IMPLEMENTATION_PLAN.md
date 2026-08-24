@@ -1359,10 +1359,21 @@ preserving every completed domain invariant and deep result surface.
 Standardize global states and controls, unsaved-change behavior, keyboard/focus,
 responsive content and the complete theme/chart accessibility matrix.
 
-### Phase 48 — Product coherence golden journey (`NEXT`)
+### Phase 48 — Product coherence golden journey (`COMPLETE`)
 
 Run a fresh no-mock, two-user desktop/tablet/mobile Product journey across
 conversation, pool, strategy, approval, signal, backtest, history, assets,
 models, appearance and administrator settings. Reconcile relocated Community
 capabilities and reopen, but do not automatically pass, the human v1.0 RC
 review.
+
+Delivered a repeatable fresh-stack CI gate that seeds only a secondary user
+and explicit canonical test bars, then drives the complete two-user journey
+through real Product endpoints. Conversation restore, Stock Pool, immutable
+strategy approval, isolated signal production, deterministic Backtest,
+profile, appearance, encrypted model binding, asset transfer and admin RBAC
+all pass without owner crossover. Community relocation was reconciled with no
+unexplained gap. Desktop/tablet/mobile Chrome review found and fixed one dark
+mobile selector contrast defect; final authenticated Lighthouse Accessibility
+and Best Practices both score 100. The human v1.0 RC review is open and
+pending, not automatically accepted.
