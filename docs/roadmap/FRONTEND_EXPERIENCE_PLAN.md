@@ -103,7 +103,7 @@ ADR-0022 RBAC/audit/destructive-action limits.
 Acceptance: every existing operations surface remains reachable, admin-only,
 bounded, refreshable and browser-verified without direct internal APIs.
 
-## Phase 46 — Core management workspace redesign (`NEXT`)
+## Phase 46 — Core management workspace redesign (`COMPLETE`)
 
 Unify Stock Pool, Strategy and Backtest into consistent catalog/detail
 workspaces. Preserve immutable snapshots, version/approval/signal lineage,

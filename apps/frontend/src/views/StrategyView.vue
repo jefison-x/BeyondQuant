@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import {
   approveStrategyVersion,
@@ -18,8 +19,11 @@ import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import EntityPagination from "@/components/ui/EntityPagination.vue";
 import AppStateBlock from "@/components/ui/AppStateBlock.vue";
+import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 
 const auth = useAuthStore();
+const route = useRoute();
+const router = useRouter();
 const loading = ref(true);
 const error = ref("");
 const busy = ref("");
@@ -153,10 +157,14 @@ async function loadList() {
     if (tasks.value.length) {
       taskId.value = String(tasks.value[0].task_id ?? "");
     }
-    const versions = artifacts.value.filter((row) => row.kind === "strategy_version");
-    if (versions.length) {
-      await select(versions[0]);
-    }
+    const requested = typeof route.query.artifact === "string" ? route.query.artifact : "";
+    const target = requested
+      ? artifacts.value.find((row) => String(row.artifact_id) === requested)
+      : selected.value
+        ? artifacts.value.find((row) => row.artifact_id === selected.value?.artifact_id)
+        : artifacts.value.find((row) => row.kind === "strategy_version") ?? artifacts.value[0];
+    if (target) await select(target, false);
+    else if (requested) await viewHistoryVersion({ artifact_id: requested });
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "加载失败";
   } finally {
@@ -179,7 +187,7 @@ async function changePage(value: number) {
   await loadList();
 }
 
-async function select(row: Record<string, unknown>) {
+async function select(row: Record<string, unknown>, updateRoute = true) {
   selected.value = row;
   detail.value = null;
   error.value = "";
@@ -195,6 +203,9 @@ async function select(row: Record<string, unknown>) {
     const id = String(row.artifact_id);
     detail.value = await getResearchEntity("artifacts", id, auth.token);
     await refreshStrategyMeta();
+    if (updateRoute && route.query.artifact !== id) {
+      await router.replace({ path: route.path, query: { ...route.query, artifact: id } });
+    }
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "读取失败";
   }
@@ -409,13 +420,29 @@ async function approveVersion() {
   }
 }
 
+function returnToConversation() {
+  const session = typeof route.query.session === "string" ? route.query.session : "";
+  void router.push({ path: "/agent", query: session ? { session } : {} });
+}
+
 onMounted(loadList);
 </script>
 
 <template>
   <section class="strategy-page">
     <AppStateBlock :loading="loading" :error="!selected ? error : ''">
-      <div class="strategy-workbench">
+      <ManagementWorkspace
+        eyebrow="核心研究资产"
+        title="策略目录与版本谱系"
+        description="从可编辑草稿推进到不可变版本、人工审批、信号快照与回测。"
+        catalog-label="策略资产"
+        :count="total"
+        @return="returnToConversation"
+      >
+      <template #return>返回投研对话</template>
+      <template #actions><el-button @click="loadList">刷新目录</el-button></template>
+      <template #summary>审批只授权精确的不可变版本</template>
+      <template #catalog>
       <el-card shadow="never" class="strategy-list-pane">
         <template #header>
           <div class="card-heading">
@@ -426,18 +453,19 @@ onMounted(loadList);
         <div class="list-toolbar">
           <el-input v-model="search" placeholder="搜索 Artifact ID / 策略 ID" clearable />
           <el-radio-group :model-value="lifecycle" size="small" @update:model-value="changeLifecycle">
-            <el-radio-button label="active">当前</el-radio-button>
-            <el-radio-button label="superseded">已归档</el-radio-button>
+            <el-radio-button value="active">当前</el-radio-button>
+            <el-radio-button value="superseded">已归档</el-radio-button>
           </el-radio-group>
           <el-radio-group v-model="filter" size="small">
-            <el-radio-button label="all">全部</el-radio-button>
-            <el-radio-button label="draft">草稿</el-radio-button>
-            <el-radio-button label="version">版本</el-radio-button>
+            <el-radio-button value="all">全部</el-radio-button>
+            <el-radio-button value="draft">草稿</el-radio-button>
+            <el-radio-button value="version">版本</el-radio-button>
           </el-radio-group>
         </div>
         <el-empty v-if="!filteredArtifacts.length" description="暂无策略" />
         <el-table
           v-else
+          class="desktop-catalog-table"
           :data="filteredArtifacts"
           highlight-current-row
           @current-change="select"
@@ -476,7 +504,9 @@ onMounted(loadList);
           @update:page="changePage"
         />
       </el-card>
+      </template>
 
+      <template #detail>
       <div class="strategy-detail-column">
         <el-card shadow="never" class="strategy-editor-pane">
           <template #header>
@@ -592,18 +622,13 @@ onMounted(loadList);
           <pre v-else class="quant-result">{{ JSON.stringify(detail, null, 2) }}</pre>
         </el-card>
       </div>
-      </div>
+      </template>
+      </ManagementWorkspace>
     </AppStateBlock>
   </section>
 </template>
 
 <style scoped>
-.strategy-workbench {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.1fr);
-}
-
 .list-toolbar {
   display: grid;
   gap: 0.6rem;
@@ -693,8 +718,8 @@ onMounted(loadList);
 }
 
 @media (max-width: 900px) {
-  .strategy-workbench {
-    grid-template-columns: 1fr;
+  .desktop-catalog-table {
+    display: none;
   }
 
   .strategy-meta-grid {
@@ -716,7 +741,10 @@ onMounted(loadList);
     display: flex;
     gap: 0.5rem;
     justify-content: space-between;
+    min-width: 0;
   }
+
+  .mobile-card-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .mobile-card-meta {
     color: var(--byq-text-muted);

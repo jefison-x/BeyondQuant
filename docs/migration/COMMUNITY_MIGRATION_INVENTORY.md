@@ -629,3 +629,25 @@ Phase 40 closure result: every item above is implemented, reused, explicitly
 replaced, or dropped at its stated BYQ boundary. The no-mock two-user Product
 journey and Chrome evidence are under `docs/evidence/phase-40/`; no Community
 source, runtime, database, cache or Git history was modified or imported.
+
+## Phase 46 core-management workspace pre-implementation audit
+
+The read-only Community `StockPoolView.vue`, `StockPoolDialog.vue`,
+`StrategyView.vue`, `BacktestView.vue`, and `ChartWrapper.vue` were inspected
+before implementation. Phase 34 Stock Pool, Phase 40 Strategy/signal and the
+existing deterministic Backtest Product capabilities remain authoritative.
+This phase re-composes those capabilities and repairs normalized Workflow-card
+navigation; it does not copy Community state, APIs, execution code or storage.
+
+| Community capability | Reusable invariant / UX | Decision | Phase 46 disposition |
+|---|---|---|---|
+| Searchable catalog beside persistent detail context | Users can compare resources without losing the selected detail surface. | `PORT_LAYOUT` / `PORT_UX` / `REFACTOR` | One BYQ-owned responsive workspace shell composes the three existing Product views and semantic theme tokens. |
+| Guided Stock Pool creation and catalog/detail tabs | Creation should be bounded while identity, members, provenance, references and history stay legible. | `PORT_UX` / `REFACTOR` | Move the proven Phase 34 write flow into a dialog; preserve mutable catalog identity and all five immutable-snapshot projections. |
+| Strategy editor, version history and operational status | Draft editing must remain visibly separate from read-only versions and approval authority. | `PORT_LAYOUT` / `REUSE_AS_IS` | Preserve Phase 40 draft/version/approval/signal lineage and Product API behavior inside the shared catalog/detail hierarchy. |
+| Backtest task list, comparison, charts and deep result tabs | Result review must expose performance and execution evidence, not only a summary card. | `PORT_LAYOUT` / `PORT_STYLE` / `REUSE_AS_IS` | Preserve BYQ's complete result, comparison, manifest and ChartWrapper surfaces; apply the global theme through existing semantic tokens. |
+| Route query selection and return-to-research affordance | A conversation result should open its exact current Product resource and return to the originating durable conversation. | `PORT_UX` / `REFACTOR` / `PORT_TESTS` | Fixed frontend mapping consumes normalized card kinds and validated identifiers only; destination pages rehydrate owner-scoped Product state. Cards remain data, never commands or URLs. |
+| Community Agent endpoints, ORM/cache state, VectorBT engine and browser-side source execution | None under ADR-0017/0018/0020/0023/0024. | `REFERENCE_ONLY` / `DROP` / `REPLACE` | Gateway/Product API, immutable signal snapshots, isolated producer and BYQ deterministic engine remain the only accepted boundaries. |
+
+The Community repository remained read-only throughout inspection. No
+Community component, endpoint, database, cache, runtime or Git history was
+modified or copied.

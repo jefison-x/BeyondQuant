@@ -289,8 +289,10 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
     }),
   );
   await login(page);
-  await openNav(page, "策略管理");
+  await page.goto("/strategy?artifact=artifact_version_1&from=agent&session=session-1");
   await expect(page.getByRole("heading", { name: "策略管理" })).toBeVisible();
+  await expect(page.getByText("策略目录与版本谱系", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "返回投研对话" })).toBeVisible();
   await expect(page.getByText("策略编辑器", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "插入模板" })).toBeVisible();
   await expect(page.getByRole("button", { name: "创建不可变版本" })).toBeVisible();
@@ -334,8 +336,10 @@ test("backtest workspace renders backtest result list", async ({ page }) => {
     }),
   );
   await login(page);
-  await openNav(page, "回测管理");
+  await page.goto("/backtest?job=backtest_1&from=agent&session=session-1");
   await expect(page.getByRole("heading", { name: "回测管理" })).toBeVisible();
+  await expect(page.getByText("回测任务与完整结果", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "返回投研对话" })).toBeVisible();
   await expect(page.getByText("回测结果", { exact: true })).toBeVisible();
   await expect(page.getByRole("tab", { name: "权益曲线" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "交易明细" })).toBeVisible();
@@ -428,6 +432,21 @@ test("paper trading and stock pool pages render", async ({ page }) => {
       status: "active", created_at: "2026-08-16T00:00:00+00:00",
     }] }) }),
   );
+  await page.route(/\/api\/product\/paper\/pools\/stock_pool_1$/, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ pool: {
+      pool_id: "stock_pool_1", name: "沪深300", pool_type: "index", description: "指数池",
+      symbols: ["000001.SZ", "600000.SH"], weights: { "000001.SZ": 0.6 }, version: "v1",
+      status: "active", current_snapshot_id: "snapshot_1", metadata_version: 1, member_count: 2,
+      snapshot: { snapshot_id: "snapshot_1", pool_id: "stock_pool_1", version_number: 1, membership_fingerprint: "sha256:pool", snapshot_fingerprint: "sha256:snapshot", definition: {}, provenance: { source: "tushare" }, weight_mode: "weighted", member_count: 2, members: [{ symbol: "000001.SZ", weight: "0.6" }, { symbol: "600000.SH", weight: "0.4" }], created_at: "2026-08-16T00:00:00+00:00" },
+      created_at: "2026-08-16T00:00:00+00:00",
+    } }) }),
+  );
+  await page.route("**/api/product/paper/pools/stock_pool_1/snapshots", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ snapshots: [] }) }),
+  );
+  await page.route("**/api/product/paper/pools/stock_pool_1/references", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ references: [] }) }),
+  );
   await page.route("**/api/product/paper/accounts", (route) =>
     route.fulfill({
       status: 200,
@@ -463,8 +482,10 @@ test("paper trading and stock pool pages render", async ({ page }) => {
   await expect(page.getByRole("tab", { name: "资金流水" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "结算快照" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "风险与迁移" })).toBeVisible();
-  await openNav(page, "股票池管理");
+  await page.goto("/stock-pool?pool=stock_pool_1&from=agent&session=session-1");
   await expect(page.getByRole("heading", { name: "股票管理" })).toBeVisible();
+  await expect(page.getByText("股票池目录与快照", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "返回投研对话" })).toBeVisible();
   await expect(page.getByRole("radio", { name: "指数" }).first()).toBeVisible();
   await expect(page.getByText("沪深300", { exact: true }).first()).toBeVisible();
 });
