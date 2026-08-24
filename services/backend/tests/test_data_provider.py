@@ -8,8 +8,10 @@ from app.data_provider import (
     DailyRequest,
     ProviderAuthorizationError,
     ProviderCredentialsMissing,
+    ProviderProtocolError,
     ProviderRateLimited,
     ProviderUnavailable,
+    SecurityMasterRequest,
     TransportResponse,
     TushareConfig,
     TushareProvider,
@@ -187,3 +189,71 @@ def test_provider_code_rate_limit_is_retried() -> None:
 
     assert result.bars == ()
     assert len(transport.calls) == 2
+
+
+def security_envelope(items: list[list[object]]) -> bytes:
+    return envelope(items, fields=[
+        "ts_code", "symbol", "name", "area", "industry", "market",
+        "exchange", "list_status", "list_date", "delist_date", "is_hs",
+    ])
+
+
+def test_security_master_fetches_all_lifecycle_states_and_is_content_addressed() -> None:
+    transport = FakeTransport([
+        TransportResponse(200, security_envelope([
+            ["600000.SH", "600000", "浦发银行", "上海", "银行", "主板", "SSE", "L", "19991110", None, "H"],
+        ])),
+        TransportResponse(200, security_envelope([
+            ["000001.SZ", "000001", "平安银行", "深圳", "银行", "主板", "SZSE", "P", "19910403", None, "S"],
+        ])),
+        TransportResponse(200, security_envelope([
+            ["430001.BJ", "430001", "历史样本", "北京", None, "北交所", "BSE", "D", "20120101", "20200101", "N"],
+        ])),
+    ])
+
+    result = provider(transport).fetch_security_master()
+
+    assert [item.symbol for item in result.records] == ["000001.SZ", "430001.BJ", "600000.SH"]
+    assert result.statuses == ("L", "P", "D")
+    assert len(result.dataset_id) == 64
+    assert result.provenance.endpoint == "stock_basic"
+    assert result.provenance.row_count == 3
+    assert [call[1]["params"]["list_status"] for call in transport.calls] == ["L", "P", "D"]
+    assert "fixture-token" not in json.dumps({
+        "records": [item.as_dict() for item in result.records],
+        "provenance": result.provenance.as_dict(),
+    }, ensure_ascii=False)
+
+
+def test_security_master_request_and_rows_fail_closed() -> None:
+    with pytest.raises(ValueError, match="unique L, P, or D"):
+        SecurityMasterRequest(("L", "L")).normalized()
+
+    wrong_status = FakeTransport([
+        TransportResponse(200, security_envelope([
+            ["600000.SH", "600000", "浦发银行", "上海", "银行", "主板", "SSE", "D", "19991110", None, "H"],
+        ])),
+    ])
+    with pytest.raises(ProviderProtocolError, match="outside the requested status"):
+        provider(wrong_status).fetch_security_master(SecurityMasterRequest(("L",)))
+
+    wrong_exchange = FakeTransport([
+        TransportResponse(200, security_envelope([
+            ["600000.SH", "600000", "浦发银行", "上海", "银行", "主板", "SZSE", "L", "19991110", None, "H"],
+        ])),
+    ])
+    with pytest.raises(ProviderProtocolError, match="mismatched security exchange"):
+        provider(wrong_exchange).fetch_security_master(SecurityMasterRequest(("L",)))
+
+
+def test_security_master_rejects_duplicate_identity_across_statuses() -> None:
+    row = ["600000.SH", "600000", "浦发银行", "上海", "银行", "主板", "SSE", "L", "19991110", None, "H"]
+    duplicate = row.copy()
+    duplicate[7] = "D"
+    transport = FakeTransport([
+        TransportResponse(200, security_envelope([row])),
+        TransportResponse(200, security_envelope([duplicate])),
+    ])
+
+    with pytest.raises(ProviderProtocolError, match="duplicate security-master identities"):
+        provider(transport).fetch_security_master(SecurityMasterRequest(("L", "D")))

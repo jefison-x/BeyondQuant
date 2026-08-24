@@ -1443,3 +1443,32 @@ quarantine. The extended no-mock journey covers both personal workspaces and
 all required Product surfaces, including Paper Trading and browser-header
 spoof denial. Desktop/mobile Chrome MCP and Community classification evidence
 is stored under `docs/evidence/phase-52/`. No team affordance was added.
+
+### Phase 53 — Security master and bounded market-data synchronization (`COMPLETE`)
+
+Close the Beta Data Center bootstrap gap under ADR-0026. Add one explicit
+Tushare `stock_basic` adapter capability for the complete `L/P/D` stock
+lifecycle, atomically persist content-addressed immutable snapshots and a
+searchable current catalogue, and expose only normalized bounded projections
+through Gateway/Product API. Daily-bar jobs freeze their symbols from an
+explicit list, selected catalogue rows, filtered latest security master, or an
+owner-authorized Stock Pool snapshot. Incremental mode begins after each
+symbol's latest persisted bar; public job projections return bounded previews
+and results.
+
+Acceptance requires PostgreSQL snapshot/idempotency/history tests, provider
+translation and fail-closed tests, selection authorization and response-bound
+tests, Product API RBAC/contracts, frontend tests, Community classification,
+and desktop/mobile Chrome DevTools MCP review against a real Product API. The
+phase does not add ETFs, indices, fundamentals, a trading calendar, alternate
+providers, arbitrary provider proxying, or any formal-release action. Stop at
+a Draft PR for human review; do not merge, mark ready, tag, deploy, or publish.
+
+Delivered the closed `security-master.v1` provider contract, PostgreSQL current
+catalogue plus immutable content-addressed snapshots, admin sync jobs, bounded
+Product API search and job projections, four frozen daily-selection modes, and
+per-symbol incremental start semantics. Clean-PostgreSQL Backend, Gateway,
+frontend and architecture CI passed. A real Product API desktop/mobile Chrome
+flow completed write-only credential storage, an atomic `L/P/D` catalogue
+sync, catalogue search, and a two-symbol incremental daily job using only an
+isolated protocol fixture. Evidence is under `docs/evidence/phase-53/`.

@@ -566,7 +566,7 @@ export interface OperationsBudgetUpdate {
 }
 
 export interface DataCenterStatus {
-  schema_version: "data-center.v1";
+  schema_version: "data-center.v2";
   migration: string;
   provider: "tushare";
   legacy_providers: [];
@@ -580,7 +580,72 @@ export interface DataCenterStatus {
     can_manage: boolean;
   };
   jobs: DataSyncJob[];
+  security_master_jobs: SecurityMasterSyncJob[];
+  security_master: SecurityMasterStatus;
   coverage: DataCoverageAudit;
+}
+
+export interface SecurityMasterSnapshot {
+  snapshot_id: string;
+  provider: "tushare";
+  endpoint: "stock_basic";
+  dataset_id: string;
+  request_fingerprint: string;
+  statuses: Array<"L" | "P" | "D">;
+  row_count: number;
+  retrieved_at: string;
+  created_at: string;
+}
+
+export interface SecurityMasterStatus {
+  schema_version: "security-master.v1";
+  quality: "empty" | "ready";
+  latest_snapshot: SecurityMasterSnapshot | null;
+  total: number;
+  status_counts: Record<"L" | "P" | "D", number>;
+  exchange_counts: Record<"SSE" | "SZSE" | "BSE", number>;
+}
+
+export interface SecurityMasterSyncJob {
+  job_id: string;
+  provider: "tushare";
+  statuses: Array<"L" | "P" | "D">;
+  status: "queued" | "running" | "completed" | "failed";
+  progress: number;
+  records_received: number;
+  records_imported: number;
+  snapshot_id?: string | null;
+  dataset_id?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
+  requested_by: string;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  updated_at: string;
+}
+
+export interface SecurityRecord {
+  symbol: string;
+  local_symbol: string;
+  name: string;
+  area?: string | null;
+  industry?: string | null;
+  market?: string | null;
+  exchange: "SSE" | "SZSE" | "BSE";
+  list_status: "L" | "P" | "D";
+  list_date: string;
+  delist_date?: string | null;
+  is_hs?: string | null;
+  asset_type: "stock";
+}
+
+export interface SecurityCataloguePage {
+  securities: SecurityRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+  snapshot: SecurityMasterSnapshot | null;
 }
 
 export interface DataSourceCredential extends ModelCredential {
@@ -605,6 +670,9 @@ export interface DataSyncJob {
   provider: "tushare";
   mode: "range" | "incremental";
   symbols: string[];
+  symbol_count: number;
+  symbols_truncated: boolean;
+  selection: Record<string, unknown>;
   start_date: string;
   end_date: string;
   status: "queued" | "running" | "completed" | "partial" | "failed";
@@ -613,6 +681,8 @@ export interface DataSyncJob {
   rows_inserted: number;
   rows_kept: number;
   symbol_results: DataSyncSymbolResult[];
+  result_count: number;
+  results_truncated: boolean;
   error_code?: string | null;
   error_message?: string | null;
   requested_by: string;

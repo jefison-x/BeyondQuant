@@ -7,9 +7,11 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.credentials import CredentialCipher, CredentialStore
-from app.data_provider import DailyBar, DailyResult, Provenance
+from app.data_provider import DailyBar, DailyResult, Provenance, SecurityMasterResult, SecurityRecord
 from app.data_sync import DataSyncConflict, DataSyncStore
 from app.market_data import MarketDataStore
+from app.paper_trading import PaperTradingNotFound, PaperTradingStore
+from app.security_master import SecurityMasterStore
 
 
 pytestmark = pytest.mark.skipif(
@@ -36,6 +38,29 @@ class FakeProvider:
                 provider="tushare", endpoint="daily", request_fingerprint="safe-fixture",
                 retrieved_at="2026-08-22T00:00:00+00:00", cache_hit=False, row_count=1,
             ),
+        )
+
+    def fetch_security_master(self, request):
+        request.normalized()
+        records = (SecurityRecord(
+            symbol="000001.SZ", local_symbol="000001", name="平安银行",
+            area="深圳", industry="银行", market="主板", exchange="SZSE",
+            list_status="L", list_date="19910403", delist_date=None, is_hs="S",
+        ),)
+        import hashlib
+        import json
+        dataset_id = hashlib.sha256(json.dumps(
+            [item.as_dict() for item in records], ensure_ascii=False,
+            sort_keys=True, separators=(",", ":"),
+        ).encode()).hexdigest()
+        return SecurityMasterResult(
+            records=records,
+            provenance=Provenance(
+                provider="tushare", endpoint="stock_basic", request_fingerprint="security-fixture",
+                retrieved_at="2026-08-24T00:00:00+00:00", cache_hit=False, row_count=1,
+            ),
+            dataset_id=dataset_id,
+            statuses=("L", "P", "D"),
         )
 
 
@@ -117,13 +142,90 @@ def test_sync_rejects_provider_rows_outside_requested_range() -> None:
     market.close()
 
 
+def test_incremental_sync_starts_after_latest_persisted_bar() -> None:
+    jobs = DataSyncStore()
+    market = MarketDataStore()
+    provider = FakeProvider()
+    market.import_bars([{
+        "symbol": "000001.SZ", "trade_date": "20240102", "open": 10.0,
+        "high": 11.0, "low": 9.5, "close": 10.5, "volume": 1000.0,
+        "amount": 10500.0, "adjust": "none", "asset_type": "stock",
+        "data_source": "tushare", "volume_unit": "lots",
+        "amount_unit": "thousand_cny", "provenance": {"fixture": True},
+    }])
+    created, _ = jobs.create_job(_payload(
+        mode="incremental", start_date="20240101", end_date="20240102",
+        idempotency_key="incremental-current",
+    ), actor="admin")
+
+    completed = jobs.run_job(created["job_id"], provider_factory=lambda: provider, market_store=market)
+
+    assert completed["status"] == "completed"
+    assert completed["symbol_results"][0]["message"] == "already_current"
+    assert provider.requests == []
+    jobs.close()
+    market.close()
+
+
+def test_orchestrated_job_public_projection_is_bounded() -> None:
+    jobs = DataSyncStore()
+    symbols = [f"{index:06d}.SZ" for index in range(501)]
+    created, _ = jobs.create_job(_payload(
+        symbols=symbols,
+        selection={"type": "security_master", "snapshot_id": "snapshot_fixture"},
+        idempotency_key="orchestrated-bounds",
+    ), actor="admin")
+
+    assert created["symbol_count"] == 501
+    assert len(created["symbols"]) == 100
+    assert created["symbols_truncated"] is True
+    jobs.close()
+
+
+def test_stock_pool_selection_uses_trusted_owner_and_freezes_snapshot(monkeypatch) -> None:
+    paper = PaperTradingStore()
+    pool = paper.create_pool(
+        {"name": "Alice catalogue", "symbols": ["600000.SH", "000001.SZ"]},
+        trusted_owner="alice",
+    )
+    snapshot = paper.get_pool_snapshot(pool["current_snapshot_id"], trusted_owner="alice")
+    monkeypatch.setattr(main, "paper_store", paper)
+    monkeypatch.setattr(
+        main, "_required_agent_context",
+        lambda _request: {"owner_principal": "bob", "workspace_id": "workspace_bob"},
+    )
+    payload = _payload(
+        symbols=[],
+        selection={"type": "stock_pool", "snapshot_id": pool["current_snapshot_id"]},
+    )
+
+    with pytest.raises(PaperTradingNotFound):
+        main._resolved_daily_sync_payload(payload, object())
+
+    monkeypatch.setattr(
+        main, "_required_agent_context",
+        lambda _request: {"owner_principal": "alice", "workspace_id": "workspace_alice"},
+    )
+    resolved = main._resolved_daily_sync_payload(payload, object())
+    assert resolved["symbols"] == ["000001.SZ", "600000.SH"]
+    assert resolved["selection"] == {
+        "type": "stock_pool",
+        "pool_id": pool["pool_id"],
+        "snapshot_id": pool["current_snapshot_id"],
+        "membership_fingerprint": snapshot["membership_fingerprint"],
+    }
+    paper.close()
+
+
 def test_backend_data_center_routes_are_admin_scoped_and_secret_free(monkeypatch) -> None:
     credentials = CredentialStore(cipher=CredentialCipher.for_test({"test": bytes(range(32))}, "test"))
     jobs = DataSyncStore()
+    securities = SecurityMasterStore()
     market = MarketDataStore()
     provider = FakeProvider()
     monkeypatch.setattr(main, "credential_store", credentials)
     monkeypatch.setattr(main, "data_sync_store", jobs)
+    monkeypatch.setattr(main, "security_master_store", securities)
     monkeypatch.setattr(main, "market_data_store", market)
     monkeypatch.setattr(main, "data_provider", provider)
     client = TestClient(main.app)
@@ -150,6 +252,30 @@ def test_backend_data_center_routes_are_admin_scoped_and_secret_free(monkeypatch
     assert tested.status_code == 200
     assert tested.json()["test"]["status"] == "passed"
 
+    master = client.post(
+        "/v1/data-sync/security-master/jobs",
+        headers=admin,
+        json={"idempotency_key": "security-http-1"},
+    )
+    assert master.status_code == 201
+    assert master.json()["job"]["status"] == "queued"
+    master_job = client.get(f"/v1/data-sync/security-master/jobs/{master.json()['job']['job_id']}", headers=admin)
+    assert master_job.json()["job"]["status"] == "completed"
+    catalogue = client.get("/v1/data-center/securities?query=平安&statuses=L", headers=admin)
+    assert catalogue.status_code == 200
+    assert catalogue.json()["securities"][0]["symbol"] == "000001.SZ"
+
+    orchestrated = client.post("/v1/data-sync/jobs", headers=admin, json={
+        "mode": "range",
+        "selection": {"type": "security_master", "statuses": ["L"], "exchanges": ["SZSE"]},
+        "start_date": "20240102",
+        "end_date": "20240102",
+        "idempotency_key": "security-selection-sync-1",
+    })
+    assert orchestrated.status_code == 201
+    assert orchestrated.json()["job"]["symbol_count"] == 1
+    assert orchestrated.json()["job"]["selection"]["snapshot_id"] == master_job.json()["job"]["snapshot_id"]
+
     synced = client.post("/v1/data-sync/jobs", headers=admin, json=_payload(idempotency_key="source-http-sync-1"))
     assert synced.status_code == 201
     assert synced.json()["job"]["status"] == "queued"
@@ -160,7 +286,10 @@ def test_backend_data_center_routes_are_admin_scoped_and_secret_free(monkeypatch
     assert status.status_code == 200
     assert status.json()["source"]["credentials"][0]["masked"].endswith("oken")
     assert status.json()["coverage"]["row_count"] == 1
+    assert status.json()["schema_version"] == "data-center.v2"
+    assert status.json()["security_master"]["total"] == 1
     assert "phase39-secret-token" not in status.text
     credentials.close()
     jobs.close()
+    securities.close()
     market.close()

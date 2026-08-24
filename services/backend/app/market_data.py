@@ -156,6 +156,14 @@ class MarketDataStore(PgStoreMixin):
         result["provenance"] = result.pop("provenance_json") or {}
         return result
 
+    def latest_trade_date(self, symbol: object) -> str | None:
+        normalized = str(symbol).strip().upper()
+        row = self._fetch_one(
+            "SELECT MAX(trade_date) AS trade_date FROM market_daily_bars WHERE symbol = :symbol",
+            {"symbol": normalized},
+        )
+        return None if row is None or row.get("trade_date") is None else str(row["trade_date"])
+
     def list_bars(
         self,
         symbols: list[str],

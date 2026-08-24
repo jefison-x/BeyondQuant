@@ -3,13 +3,15 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 52** — Bounded personal-workspace Product
-  orientation, source/destination-safe asset diagnostics, metadata-safe
-  cross-workspace denial, fresh/restore/restart/forward-repair recovery, and
-  real two-workspace Product/browser closure.
-- Next phase: **Human BeyondQuant Next v1.0 release-candidate review**. No
-  Phase 53 implementation is authorized. The separately scheduled post-Phase
-  40 DSH Upgrade Lane remains a maintenance task, not an implicit next phase.
+- Current completed phase: **Phase 53** — Beta security-master bootstrap,
+  atomic immutable `L/P/D` stock snapshots, bounded searchable catalogue,
+  frozen explicit/catalogue/Stock Pool daily selections, and true incremental
+  daily-bar synchronization through real Product API browser flows.
+- Release state: **Beta**. No release-candidate review, ready-for-review
+  transition, merge, tag, deployment, or formal release is authorized until
+  the maintainer gives an explicit formal release task. The separately
+  scheduled post-Phase 40 DSH Upgrade Lane remains a maintenance task, not an
+  implicit next phase.
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -33,7 +35,8 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 40 isolated signal-producer ADR: **ADR-0023**
 - Accepted conversation-first Product experience ADR: **ADR-0024**
 - Accepted personal-workspace tenancy ADR: **ADR-0025**
-- Open architecture decisions: **none from the completed Phase 52 scope**.
+- Accepted security-master synchronization ADR: **ADR-0026**
+- Open architecture decisions: **none from the completed Phase 53 scope**.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -73,6 +76,8 @@ Codex session does not infer project state from commit history.
   is Accepted.
   [ADR-0025](../architecture/adr/ADR-0025-personal-workspace-tenancy.md)
   is Accepted.
+  [ADR-0026](../architecture/adr/ADR-0026-security-master-data-orchestration.md)
+  is Accepted for the Beta Phase 53 scope.
 - Phase 23 acceptance evidence established a Product Skeleton browser and
   parity baseline. Its mocked Playwright navigation smoke is not evidence of
   a real Product API golden journey and is not a v1.0 RC gate.
@@ -300,6 +305,16 @@ Codex session does not infer project state from commit history.
   pre-contract forward repair all preserve workspace identity with zero
   quarantine and 22 zero relationship checks. Desktop/mobile Chrome evidence
   and the Community classification are under `docs/evidence/phase-52/`.
+- Phase 53 closed the fresh-install Data Center bootstrap gap under ADR-0026.
+  Tushare `stock_basic` now produces atomic immutable `L/P/D` snapshots and a
+  bounded searchable catalogue; daily jobs freeze explicit, selected,
+  filtered-master, or owner-authorized Stock Pool symbols and incremental mode
+  starts after each symbol's latest stored bar. Clean-PostgreSQL Backend,
+  Gateway, frontend and architecture tests passed. A real Product API
+  desktop/mobile Chrome flow completed masked credential storage, basic-data
+  synchronization, catalogue search and a two-symbol incremental job through
+  an isolated provider-protocol fixture. Evidence is under
+  `docs/evidence/phase-53/`. This is Beta completion, not release authority.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence. The historical gaps recorded in
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` were then classified and
@@ -312,10 +327,10 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active implementation-phase blocker: **none**. Phases 49-52 and the
-  ADR-0025 personal-workspace program are complete. The next gate is the human
-  v1.0 RC review; it is not an automatically accepted implementation phase.
-  The post-Phase 40 DSH Upgrade Lane is scheduled separately in
+- Active implementation-phase blocker: **none**. Phases 49-53, the ADR-0025
+  personal-workspace program and ADR-0026 Beta data-sync repair are complete.
+  No next implementation or formal-release phase is authorized without an
+  explicit maintainer task. The post-Phase 40 DSH Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.
 
 Git SHA is not phase state. The current clean baseline must always be derived

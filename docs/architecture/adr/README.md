@@ -33,3 +33,5 @@ ADR-0025 defines the personal workspace as BYQ's tenancy/authorization
 boundary, separates resource ownership from actor identity, fixes trusted
 context propagation and the verified compatibility migration, and deliberately
 defers team-product capabilities to a later ADR.
+ADR-0026 defines the Beta security-master snapshot, bounded catalogue Product
+API, frozen daily-bar selection, and true incremental synchronization boundary.

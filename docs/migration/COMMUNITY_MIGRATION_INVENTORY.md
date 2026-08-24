@@ -736,3 +736,23 @@ The mandatory sequence produced these decisions:
 
 No Community file, database, runtime, credential, Git history, or source
 component was modified or copied.
+
+## Phase 53 security-master and data-sync pre-implementation audit
+
+The read-only Community `backend/app/core/data/providers/tushare.py`, its
+market-data synchronization service/tests, and the Data Center maintenance
+workbench were inspected before Phase 53 implementation. The mandatory
+inspect → classify → extract invariants/tests → decide → implement sequence
+produced the following disposition.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 53 disposition |
+|---|---|---|---|
+| `fetch_security_master` requests Tushare `stock_basic` for `L`, `D`, and `P` | A usable A-share catalogue includes listed, delisted, and paused lifecycle states with canonical identity and dates. | `PORT_TESTS` / `REFACTOR` | Add a closed BYQ `security-master.v1` adapter and reject incomplete/conflicting results atomically. |
+| Mutable universe table and synchronization service | Basic data must be synchronized before a fresh installation can select daily-bar targets. | `REFERENCE_ONLY` / `REPLACE` | PostgreSQL stores immutable content-addressed snapshots plus a current catalogue; no Community ORM, registry, scheduler, cache, or physical database is copied. |
+| System maintenance Data Center catalogue and sync controls | Operators need visible basic-data status, search/filter/selection and durable progress. | `PORT_UX` / `PORT_LAYOUT` / `REFACTOR` | Build a BYQ-owned responsive Data Center over same-origin Gateway/Product API and normalized job/catalogue projections. |
+| Daily-basic, ETF, index and broad provider orchestration | These require separate contracts, lifecycle and quality semantics. | `REFERENCE_ONLY` / `DROP` | Phase 53 synchronizes stock basic identity and stock daily bars only. No arbitrary Tushare endpoint, BaoStock, AKShare, ETF/index/fundamental compatibility path is introduced. |
+| Community frontend internal APIs, Tushare SDK/Pandas, SQLAlchemy, threads and direct cache/database assumptions | None at current BYQ boundaries. | `REPLACE` / `DROP` | Keep raw provider translation in Backend, browser traffic on Product API, and BYQ PostgreSQL domain stores; DSH receives no database or provider access. |
+
+No Community source, database, cache, runtime, credential, or Git history is
+modified or imported. Community data remains eligible only for a future
+read-only logical migration after ADR-0013 provenance validation.

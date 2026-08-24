@@ -1,9 +1,9 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-completed project stage is **Phase 52** — bounded personal-workspace Product
-orientation, recovery validation, and two-workspace isolation closure under
-Accepted ADR-0025. See
+completed project stage is **Phase 53** — Beta security-master bootstrap and
+bounded catalogue-driven market-data synchronization under Accepted ADR-0026.
+See
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
 authoritative current state.
 
@@ -36,8 +36,9 @@ BYQ does not fork DSH. The DSH version is pinned through an explicit dependency 
 - Nine responsive administrator operations workbenches backed by bounded
   Product API projections, normalized DSH runtime/usage accounting, and
   audited monitoring thresholds.
-- Tushare-only Data Center with encrypted write-only credentials, bounded
-  durable sync jobs and honest PostgreSQL coverage/quality audit.
+- Tushare-only Data Center with encrypted write-only credentials, immutable
+  `L/P/D` stock-master snapshots, catalogue/Stock Pool-driven durable daily
+  sync jobs, true incremental refresh and honest PostgreSQL coverage audit.
 - Isolated, credential-free Pandas signal execution that freezes canonical
   bars and produces immutable normalized `signal_snapshot` artifacts for
   approved strategy versions and backtests.
@@ -46,12 +47,12 @@ BYQ does not fork DSH. The DSH version is pinned through an explicit dependency 
 
 - The DSH Upgrade Lane is scheduled as a post-Phase 40 maintenance initiative;
   it does not change the currently qualified runtime pin.
-- The conversation-first frontend program is complete under ADR-0024; human
-  v1.0 RC review is postponed while the ADR-0025 personal-workspace program
-  proceeds through Phase 52. Team workspaces, invitations, sharing and
-  commercial control-plane capabilities remain outside this program. The
-  official release boundary restores the normal human merge gate under
-  ADR-0015.
+- The conversation-first frontend, personal-workspace and Beta Data Center
+  programs are complete through Phase 53. The project remains Beta: no
+  release-candidate review, tag, deployment or formal release is authorized
+  until the maintainer gives an explicit formal release task. Team workspaces,
+  invitations, sharing and commercial control-plane capabilities remain out
+  of scope.
 
 The base Compose topology requires internal service secrets such as
 `BYQ_MCP_TOKEN` and bootstrap compatibility configuration. Provider secrets

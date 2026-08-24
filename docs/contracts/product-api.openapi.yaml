@@ -59,6 +59,13 @@ paths:
   /api/product/data-center/sync-jobs/{job_id}:
     parameters: [{$ref: "#/components/parameters/JobId"}]
     get: {summary: Get one durable Tushare sync job and its normalized symbol results., responses: *okResponses}
+  /api/product/data-center/security-master/sync-jobs:
+    post: {summary: Atomically synchronize the complete admin-only A-share security master., responses: *createdResponses}
+  /api/product/data-center/security-master/sync-jobs/{job_id}:
+    parameters: [{$ref: "#/components/parameters/JobId"}]
+    get: {summary: Get one security-master synchronization job without provider secrets., responses: *okResponses}
+  /api/product/data-center/securities:
+    get: {summary: Search and page the normalized A-share security catalogue bound to its immutable snapshot., responses: *okResponses}
   /api/product/data-center/coverage:
     get: {summary: Return an honest audit of persisted observed market-data coverage and quality., responses: *okResponses}
   /api/product/operations/status:

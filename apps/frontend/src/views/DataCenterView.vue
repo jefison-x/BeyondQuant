@@ -4,13 +4,24 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import {
   createDataSourceCredential,
   createDataSyncJob,
+  createSecurityMasterSyncJob,
   getDataSyncJob,
   getDataCenterStatus,
+  getSecurityMasterSyncJob,
+  listSecurities,
   revokeDataSourceCredential,
   testDataSource,
   updateDataSourceCredential,
 } from "@/api/dataCenter";
-import type { DataCenterStatus, DataSourceCredential, DataSyncJob } from "@/api/types";
+import { listStockPools } from "@/api/paper";
+import type {
+  DataCenterStatus,
+  DataSourceCredential,
+  DataSyncJob,
+  SecurityCataloguePage,
+  SecurityMasterSyncJob,
+  SecurityRecord,
+} from "@/api/types";
 
 const loading = ref(true);
 const busy = ref(false);
@@ -22,11 +33,46 @@ const editingCredential = ref<DataSourceCredential | null>(null);
 const credentialForm = reactive({ label: "Tushare 系统数据源", secret: "" });
 const testForm = reactive({ symbol: "000001.SZ", trade_date: "20240102" });
 const testResult = ref<Record<string, unknown> | null>(null);
-const syncForm = reactive({ mode: "range", symbols: "000001.SZ", start_date: "20240102", end_date: "20240112" });
+const syncForm = reactive({
+  mode: "incremental",
+  target: "security_master",
+  symbols: "000001.SZ",
+  statuses: ["L"],
+  exchanges: [] as string[],
+  poolSnapshotId: "",
+  start_date: "20240102",
+  end_date: "20240112",
+});
 const selectedJob = ref<DataSyncJob | null>(null);
+const selectedSecurityJob = ref<SecurityMasterSyncJob | null>(null);
+const catalogue = ref<SecurityCataloguePage>({ securities: [], total: 0, limit: 50, offset: 0, snapshot: null });
+const catalogueLoading = ref(false);
+const catalogueFilters = reactive({ query: "", statuses: ["L"], exchanges: [] as string[] });
+const cataloguePage = ref(1);
+const cataloguePageSize = 50;
+const selectedSymbols = ref<string[]>([]);
+const pools = ref<Array<Record<string, unknown>>>([]);
 
 const credentials = computed(() => status.value?.source.credentials ?? []);
 const canAddCredential = computed(() => !credentials.value.some((item) => item.status !== "revoked"));
+const latestSnapshotId = computed(() => status.value?.security_master.latest_snapshot?.snapshot_id ?? "");
+const poolOptions = computed(() => pools.value.filter((pool) => typeof pool.current_snapshot_id === "string"));
+
+async function loadCatalogue() {
+  catalogueLoading.value = true;
+  try {
+    catalogue.value = await listSecurities({
+      query: catalogueFilters.query.trim(),
+      statuses: catalogueFilters.statuses,
+      exchanges: catalogueFilters.exchanges,
+      limit: cataloguePageSize,
+      offset: (cataloguePage.value - 1) * cataloguePageSize,
+    });
+    selectedSymbols.value = [];
+  } finally {
+    catalogueLoading.value = false;
+  }
+}
 
 async function load() {
   loading.value = true;
@@ -36,6 +82,11 @@ async function load() {
     if (selectedJob.value) {
       selectedJob.value = status.value.jobs.find((item) => item.job_id === selectedJob.value?.job_id) ?? selectedJob.value;
     }
+    if (selectedSecurityJob.value) {
+      selectedSecurityJob.value = status.value.security_master_jobs.find((item) => item.job_id === selectedSecurityJob.value?.job_id) ?? selectedSecurityJob.value;
+    }
+    if (status.value.security_master.latest_snapshot) await loadCatalogue();
+    pools.value = (await listStockPools("")).pools;
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "数据中心加载失败";
   } finally {
@@ -126,20 +177,68 @@ async function runConnectionTest() {
   }
 }
 
-async function submitSync() {
-  const symbols = syncForm.symbols.split(/[\s,，]+/).map((item) => item.trim().toUpperCase()).filter(Boolean);
-  if (!symbols.length) return ElMessage.warning("请输入至少一个股票代码");
+async function syncSecurityMaster() {
   busy.value = true;
   try {
-    const response = await createDataSyncJob({
-      mode: syncForm.mode,
-      symbols,
-      start_date: syncForm.start_date,
-      end_date: syncForm.end_date,
-      idempotency_key: `browser-sync-${Date.now()}`,
-    });
+    const response = await createSecurityMasterSyncJob();
+    selectedSecurityJob.value = response.job;
+    ElMessage.success("股票基本资料同步已创建");
+    if (!["completed", "failed"].includes(response.job.status)) void pollSecurityJob(response.job.job_id);
+    else await load();
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "股票基本资料同步失败");
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function pollSecurityJob(jobId: string) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const job = (await getSecurityMasterSyncJob(jobId)).job;
+    selectedSecurityJob.value = job;
+    if (["completed", "failed"].includes(job.status)) {
+      await load();
+      return;
+    }
+  }
+}
+
+function handleSecuritySelection(rows: SecurityRecord[]) {
+  selectedSymbols.value = rows.map((row) => row.symbol);
+}
+
+async function submitSync() {
+  const payload: Record<string, unknown> = {
+    mode: syncForm.mode,
+    start_date: syncForm.start_date,
+    end_date: syncForm.end_date,
+    idempotency_key: `browser-sync-${Date.now()}`,
+  };
+  if (syncForm.target === "manual") {
+    const symbols = syncForm.symbols.split(/[\s,，]+/).map((item) => item.trim().toUpperCase()).filter(Boolean);
+    if (!symbols.length) return ElMessage.warning("请输入至少一个股票代码");
+    payload.symbols = symbols;
+    payload.selection = { type: "explicit" };
+  } else if (syncForm.target === "selected") {
+    if (!selectedSymbols.value.length) return ElMessage.warning("请先在股票清单中选择标的");
+    payload.symbols = selectedSymbols.value;
+    payload.selection = { type: "selected", snapshot_id: latestSnapshotId.value };
+  } else if (syncForm.target === "stock_pool") {
+    if (!syncForm.poolSnapshotId) return ElMessage.warning("请选择一个股票池快照");
+    payload.selection = { type: "stock_pool", snapshot_id: syncForm.poolSnapshotId };
+  } else {
+    payload.selection = {
+      type: "security_master",
+      statuses: syncForm.statuses,
+      exchanges: syncForm.exchanges,
+    };
+  }
+  busy.value = true;
+  try {
+    const response = await createDataSyncJob(payload);
     selectedJob.value = response.job;
-    ElMessage.success("同步任务已创建");
+    ElMessage.success(`日线同步任务已冻结 ${response.job.symbol_count} 个标的`);
     await load();
     if (!["completed", "partial", "failed"].includes(response.job.status)) void pollJob(response.job.job_id);
   } catch (exc) {
@@ -150,37 +249,44 @@ async function submitSync() {
 }
 
 async function pollJob(jobId: string) {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    await new Promise((resolve) => window.setTimeout(resolve, 1000));
-    try {
-      const response = await getDataSyncJob(jobId);
-      selectedJob.value = response.job;
-      const index = status.value?.jobs.findIndex((item) => item.job_id === jobId) ?? -1;
-      if (status.value && index >= 0) status.value.jobs[index] = response.job;
-      if (["completed", "partial", "failed"].includes(response.job.status)) {
-        await load();
-        ElMessage.success(response.job.status === "completed" ? "同步完成" : "同步任务已结束，请查看明细");
-        return;
-      }
-    } catch {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const job = (await getDataSyncJob(jobId)).job;
+    selectedJob.value = job;
+    if (["completed", "partial", "failed"].includes(job.status)) {
+      await load();
       return;
     }
   }
 }
 
-function sourceLabel(value: string | undefined) {
-  return ({ credential_store: "加密凭据库", environment: "环境引导配置", ambiguous: "配置冲突", none: "未配置" } as Record<string, string>)[value ?? "none"];
+async function changeCataloguePage(page: number) {
+  cataloguePage.value = page;
+  await loadCatalogue();
 }
 
-function qualityLabel(value: string | undefined) {
-  return ({ empty: "暂无数据", observed: "已审计", issues: "发现问题" } as Record<string, string>)[value ?? "empty"] ?? value;
+async function applyCatalogueFilters() {
+  cataloguePage.value = 1;
+  await loadCatalogue();
+}
+
+function qualityLabel(value: string) {
+  return ({ empty: "暂无数据", observed: "已观察", issues: "需检查" } as Record<string, string>)[value] ?? value;
+}
+
+function sourceLabel(value: string) {
+  return ({ credential_store: "数据库加密凭据", environment: "环境引导配置", ambiguous: "配置冲突", none: "未配置" } as Record<string, string>)[value] ?? value;
+}
+
+function securityStatusLabel(value: string) {
+  return ({ L: "上市", P: "暂停上市", D: "退市" } as Record<string, string>)[value] ?? value;
 }
 </script>
 
 <template>
   <section class="data-center-page">
     <div class="page-heading">
-      <div><p class="eyebrow">Data Plane</p><h1>数据中心</h1><p>管理 Tushare 数据源、执行有界同步，并审计 PostgreSQL 中的真实覆盖范围。</p></div>
+      <div><p class="eyebrow">Data Plane · Beta</p><h1>数据中心</h1><p>同步股票基本资料，按真实证券目录编排行情，并审计 PostgreSQL 覆盖范围。</p></div>
       <el-button :loading="loading" @click="load">刷新状态</el-button>
     </div>
 
@@ -190,12 +296,12 @@ function qualityLabel(value: string | undefined) {
     <template v-else-if="status">
       <div class="stats-strip">
         <div class="stat-item"><span>数据源</span><strong>Tushare</strong><small>唯一支持的 Provider</small></div>
-        <div class="stat-item"><span>凭据</span><strong>{{ status.source.configured ? "已配置" : "未配置" }}</strong><small>{{ sourceLabel(status.source.effective_source) }}</small></div>
-        <div class="stat-item"><span>数据行</span><strong>{{ status.coverage.row_count.toLocaleString() }}</strong><small>{{ status.coverage.symbol_count }} 个标的</small></div>
+        <div class="stat-item"><span>证券目录</span><strong>{{ status.security_master.total.toLocaleString() }}</strong><small>{{ status.security_master.status_counts.L }} 只上市</small></div>
+        <div class="stat-item"><span>日线数据</span><strong>{{ status.coverage.row_count.toLocaleString() }}</strong><small>{{ status.coverage.symbol_count }} 个标的</small></div>
         <div class="stat-item"><span>质量</span><strong>{{ qualityLabel(status.quality) }}</strong><small>{{ status.coverage.checked_at.slice(0, 19).replace("T", " ") }}</small></div>
       </div>
 
-      <el-alert title="BaoStock、AKShare 与任意自定义 Provider 已按架构决策移除；Token 仅写入 Backend 加密凭据库，不会返回浏览器。" type="info" show-icon :closable="false" />
+      <el-alert title="BaoStock、AKShare 与任意自定义 Provider 已移除；Token 只在 Backend 解密，股票目录和日线数据均为平台级数据。" type="info" show-icon :closable="false" />
 
       <el-tabs v-model="activeTab" class="workspace-tabs">
         <el-tab-pane label="数据源配置" name="source">
@@ -210,7 +316,6 @@ function qualityLabel(value: string | undefined) {
               <el-table-column v-if="status.source.can_manage" label="操作" min-width="250"><template #default="scope"><el-button link type="primary" :disabled="scope.row.status === 'revoked'" @click="openCredential(scope.row)">替换</el-button><el-button v-if="scope.row.status === 'active'" link @click="setCredentialStatus(scope.row, 'disabled')">停用</el-button><el-button v-else-if="scope.row.status === 'disabled'" link @click="setCredentialStatus(scope.row, 'active')">启用</el-button><el-button link type="danger" :disabled="scope.row.status === 'revoked'" @click="revoke(scope.row)">撤销</el-button></template></el-table-column>
             </el-table>
           </el-card>
-
           <el-card v-if="status.source.can_manage" shadow="never">
             <template #header><div><strong>连接测试</strong><p>使用一个标的、一个交易日执行有界 daily 请求；响应只显示结果元数据。</p></div></template>
             <el-form inline class="inline-form"><el-form-item label="股票代码"><el-input v-model="testForm.symbol" maxlength="9" /></el-form-item><el-form-item label="交易日"><el-input v-model="testForm.trade_date" maxlength="8" /></el-form-item><el-form-item><el-button type="primary" :loading="busy" :disabled="!status.source.configured" @click="runConnectionTest">测试连接</el-button></el-form-item></el-form>
@@ -218,22 +323,65 @@ function qualityLabel(value: string | undefined) {
           </el-card>
         </el-tab-pane>
 
-        <el-tab-pane label="同步任务" name="sync">
-          <el-card v-if="status.source.can_manage" shadow="never">
-            <template #header><div><strong>创建有界同步</strong><p>每次最多 20 个规范 A 股代码、366 个自然日；重复写入保持现有 BYQ 数据。</p></div></template>
-            <el-form label-position="top" class="sync-form"><el-form-item label="股票代码"><el-input v-model="syncForm.symbols" type="textarea" :rows="2" placeholder="000001.SZ, 600000.SH" /></el-form-item><div class="form-grid"><el-form-item label="模式"><el-select v-model="syncForm.mode"><el-option label="区间同步" value="range" /><el-option label="增量补齐" value="incremental" /></el-select></el-form-item><el-form-item label="开始日期"><el-input v-model="syncForm.start_date" maxlength="8" /></el-form-item><el-form-item label="结束日期"><el-input v-model="syncForm.end_date" maxlength="8" /></el-form-item></div><el-button type="primary" :loading="busy" :disabled="!status.source.configured" @click="submitSync">立即同步</el-button></el-form>
+        <el-tab-pane label="股票清单" name="securities">
+          <el-card shadow="never">
+            <template #header><div class="card-header"><div><strong>股票基本资料</strong><p>一次原子同步上市、暂停上市和退市证券；失败不会替换当前目录。</p></div><el-button type="primary" :loading="busy" :disabled="!status.source.configured" @click="syncSecurityMaster">同步基本资料</el-button></div></template>
+            <el-descriptions :column="4" border>
+              <el-descriptions-item label="总计">{{ status.security_master.total }}</el-descriptions-item>
+              <el-descriptions-item label="上市">{{ status.security_master.status_counts.L }}</el-descriptions-item>
+              <el-descriptions-item label="暂停上市">{{ status.security_master.status_counts.P }}</el-descriptions-item>
+              <el-descriptions-item label="退市">{{ status.security_master.status_counts.D }}</el-descriptions-item>
+              <el-descriptions-item label="快照" :span="4">{{ status.security_master.latest_snapshot?.snapshot_id ?? "尚未同步" }}</el-descriptions-item>
+            </el-descriptions>
+            <el-progress v-if="selectedSecurityJob" class="job-progress" :percentage="selectedSecurityJob.progress" :status="selectedSecurityJob.status === 'failed' ? 'exception' : selectedSecurityJob.status === 'completed' ? 'success' : undefined" />
           </el-card>
           <el-card shadow="never">
-            <template #header><div><strong>同步历史</strong><p>任务与逐标的结果持久化在 BYQ PostgreSQL，页面刷新后仍可追踪。</p></div></template>
-            <el-table :data="status.jobs" empty-text="暂无同步任务" @row-click="selectedJob = $event"><el-table-column prop="job_id" label="任务" min-width="220" show-overflow-tooltip /><el-table-column prop="mode" label="模式" width="110" /><el-table-column label="标的" width="90"><template #default="scope">{{ scope.row.symbols.length }}</template></el-table-column><el-table-column prop="status" label="状态" width="110" /><el-table-column prop="rows_inserted" label="新增行" width="100" /><el-table-column prop="rows_kept" label="保留行" width="100" /><el-table-column prop="created_at" label="创建时间" min-width="180" /></el-table>
+            <template #header><div><strong>规范证券目录</strong><p>可搜索、筛选和选择股票，选择结果绑定当前不可变目录快照。</p></div></template>
+            <div class="catalogue-toolbar">
+              <el-input v-model="catalogueFilters.query" clearable placeholder="代码 / 名称" @keyup.enter="applyCatalogueFilters" />
+              <el-select v-model="catalogueFilters.statuses" multiple collapse-tags placeholder="上市状态"><el-option label="上市" value="L" /><el-option label="暂停上市" value="P" /><el-option label="退市" value="D" /></el-select>
+              <el-select v-model="catalogueFilters.exchanges" multiple collapse-tags placeholder="交易所"><el-option label="上交所" value="SSE" /><el-option label="深交所" value="SZSE" /><el-option label="北交所" value="BSE" /></el-select>
+              <el-button :loading="catalogueLoading" @click="applyCatalogueFilters">查询</el-button>
+            </div>
+            <el-table v-loading="catalogueLoading" :data="catalogue.securities" empty-text="请先同步股票基本资料" @selection-change="handleSecuritySelection">
+              <el-table-column type="selection" width="48" />
+              <el-table-column prop="symbol" label="代码" width="120" />
+              <el-table-column prop="name" label="名称" min-width="140" />
+              <el-table-column prop="exchange" label="交易所" width="90" />
+              <el-table-column prop="market" label="板块" width="100" />
+              <el-table-column prop="industry" label="行业" min-width="120" />
+              <el-table-column label="状态" width="100"><template #default="scope"><el-tag :type="scope.row.list_status === 'L' ? 'success' : scope.row.list_status === 'D' ? 'info' : 'warning'">{{ securityStatusLabel(scope.row.list_status) }}</el-tag></template></el-table-column>
+              <el-table-column prop="list_date" label="上市日期" width="110" />
+              <el-table-column prop="delist_date" label="退市日期" width="110" />
+            </el-table>
+            <div class="catalogue-footer"><span>已选择 {{ selectedSymbols.length }} 只，本页结果绑定快照 {{ catalogue.snapshot?.snapshot_id ?? "-" }}</span><el-pagination background layout="prev, pager, next, total" :page-size="cataloguePageSize" :total="catalogue.total" :current-page="cataloguePage" @current-change="changeCataloguePage" /></div>
           </el-card>
-          <el-card v-if="selectedJob" shadow="never"><template #header><strong>任务明细 · {{ selectedJob.job_id }}</strong></template><el-progress :percentage="selectedJob.progress" :status="selectedJob.status === 'failed' ? 'exception' : selectedJob.status === 'completed' ? 'success' : undefined" /><el-table :data="selectedJob.symbol_results" size="small"><el-table-column prop="symbol" label="标的" width="120" /><el-table-column prop="status" label="状态" width="100" /><el-table-column prop="rows_received" label="获取" width="90" /><el-table-column prop="rows_inserted" label="新增" width="90" /><el-table-column prop="date_min" label="起始" width="110" /><el-table-column prop="date_max" label="结束" width="110" /><el-table-column prop="message" label="说明" min-width="180" /></el-table></el-card>
+        </el-tab-pane>
+
+        <el-tab-pane label="行情同步" name="sync">
+          <el-card v-if="status.source.can_manage" shadow="never">
+            <template #header><div><strong>创建日线同步</strong><p>任务创建时冻结精确标的；全市场/股票池最多 6,000 只，公开响应保持有界。</p></div></template>
+            <el-form label-position="top" class="sync-form">
+              <div class="form-grid"><el-form-item label="标的来源"><el-select v-model="syncForm.target"><el-option label="全部上市股票" value="security_master" /><el-option label="清单中已选择" value="selected" /><el-option label="股票池快照" value="stock_pool" /><el-option label="手工代码" value="manual" /></el-select></el-form-item><el-form-item label="模式"><el-select v-model="syncForm.mode"><el-option label="增量补齐" value="incremental" /><el-option label="区间同步" value="range" /></el-select></el-form-item></div>
+              <el-form-item v-if="syncForm.target === 'manual'" label="股票代码"><el-input v-model="syncForm.symbols" type="textarea" :rows="2" placeholder="000001.SZ, 600000.SH" /></el-form-item>
+              <div v-else-if="syncForm.target === 'security_master'" class="form-grid"><el-form-item label="上市状态"><el-select v-model="syncForm.statuses" multiple><el-option label="上市" value="L" /><el-option label="暂停上市" value="P" /><el-option label="退市" value="D" /></el-select></el-form-item><el-form-item label="交易所（空为全部）"><el-select v-model="syncForm.exchanges" multiple clearable><el-option label="上交所" value="SSE" /><el-option label="深交所" value="SZSE" /><el-option label="北交所" value="BSE" /></el-select></el-form-item></div>
+              <el-form-item v-else-if="syncForm.target === 'selected'" label="已选择证券"><el-input :model-value="selectedSymbols.join(', ')" readonly type="textarea" :rows="2" placeholder="请先在股票清单中勾选" /></el-form-item>
+              <el-form-item v-else label="股票池快照"><el-select v-model="syncForm.poolSnapshotId" filterable placeholder="选择当前不可变快照"><el-option v-for="pool in poolOptions" :key="String(pool.pool_id)" :label="`${String(pool.name)} · ${Number(pool.member_count ?? 0)} 只`" :value="String(pool.current_snapshot_id)" /></el-select></el-form-item>
+              <div class="form-grid"><el-form-item label="开始日期"><el-input v-model="syncForm.start_date" maxlength="8" /></el-form-item><el-form-item label="结束日期"><el-input v-model="syncForm.end_date" maxlength="8" /></el-form-item></div>
+              <el-button type="primary" :loading="busy" :disabled="!status.source.configured || ((syncForm.target === 'security_master' || syncForm.target === 'selected') && !status.security_master.latest_snapshot)" @click="submitSync">冻结标的并同步</el-button>
+            </el-form>
+          </el-card>
+          <el-card shadow="never">
+            <template #header><div><strong>同步历史</strong><p>任务与逐标的结果持久化；增量模式从每只股票最后一个已存日期之后继续。</p></div></template>
+            <el-table :data="status.jobs" empty-text="暂无同步任务" @row-click="selectedJob = $event"><el-table-column prop="job_id" label="任务" min-width="220" show-overflow-tooltip /><el-table-column prop="mode" label="模式" width="110" /><el-table-column prop="symbol_count" label="标的" width="90" /><el-table-column prop="status" label="状态" width="110" /><el-table-column prop="rows_inserted" label="新增行" width="100" /><el-table-column prop="rows_kept" label="保留行" width="100" /><el-table-column prop="created_at" label="创建时间" min-width="180" /></el-table>
+          </el-card>
+          <el-card v-if="selectedJob" shadow="never"><template #header><strong>任务明细 · {{ selectedJob.job_id }}</strong></template><el-progress :percentage="selectedJob.progress" :status="selectedJob.status === 'failed' ? 'exception' : selectedJob.status === 'completed' ? 'success' : undefined" /><p v-if="selectedJob.results_truncated" class="bounded-note">逐标的结果已按公开合同截断：显示 {{ selectedJob.symbol_results.length }} / {{ selectedJob.result_count }}</p><el-table :data="selectedJob.symbol_results" size="small"><el-table-column prop="symbol" label="标的" width="120" /><el-table-column prop="status" label="状态" width="100" /><el-table-column prop="rows_received" label="获取" width="90" /><el-table-column prop="rows_inserted" label="新增" width="90" /><el-table-column prop="date_min" label="起始" width="110" /><el-table-column prop="date_max" label="结束" width="110" /><el-table-column prop="message" label="说明" min-width="180" /></el-table></el-card>
         </el-tab-pane>
 
         <el-tab-pane label="覆盖审计" name="coverage">
-          <el-alert title="覆盖范围只陈述 PostgreSQL 中已观察到的数据，不在缺少交易日历证据时宣称历史数据完整。" type="warning" show-icon :closable="false" />
-          <div class="coverage-grid"><el-card shadow="never"><strong>总体覆盖</strong><el-descriptions :column="1" border><el-descriptions-item label="数据行">{{ status.coverage.row_count.toLocaleString() }}</el-descriptions-item><el-descriptions-item label="标的数">{{ status.coverage.symbol_count }}</el-descriptions-item><el-descriptions-item label="日期范围">{{ status.coverage.date_min ?? "-" }} — {{ status.coverage.date_max ?? "-" }}</el-descriptions-item><el-descriptions-item label="来源问题">{{ status.coverage.source_issues }}</el-descriptions-item><el-descriptions-item label="OHLC 问题">{{ status.coverage.ohlc_issues }}</el-descriptions-item></el-descriptions></el-card><el-card shadow="never"><strong>数据集分组</strong><el-table :data="status.coverage.groups" empty-text="暂无数据"><el-table-column prop="data_source" label="来源" /><el-table-column prop="asset_type" label="资产" /><el-table-column prop="row_count" label="行数" /><el-table-column prop="symbol_count" label="标的" /></el-table></el-card></div>
-          <el-card shadow="never"><template #header><strong>标的覆盖</strong></template><el-table :data="status.coverage.symbols" empty-text="暂无覆盖记录"><el-table-column prop="symbol" label="股票代码" /><el-table-column prop="row_count" label="数据行" /><el-table-column prop="date_min" label="最早日期" /><el-table-column prop="date_max" label="最晚日期" /></el-table></el-card>
+          <el-alert title="覆盖范围只陈述 PostgreSQL 中已观察到的数据，不在缺少完整交易日历证据时宣称历史数据完整。" type="warning" show-icon :closable="false" />
+          <div class="coverage-grid"><el-card shadow="never"><strong>总体覆盖</strong><el-descriptions :column="1" border><el-descriptions-item label="数据行">{{ status.coverage.row_count.toLocaleString() }}</el-descriptions-item><el-descriptions-item label="标的数">{{ status.coverage.symbol_count }}</el-descriptions-item><el-descriptions-item label="日期范围">{{ status.coverage.date_min ?? "-" }} — {{ status.coverage.date_max ?? "-" }}</el-descriptions-item><el-descriptions-item label="来源问题">{{ status.coverage.source_issues }}</el-descriptions-item><el-descriptions-item label="OHLC 问题">{{ status.coverage.ohlc_issues }}</el-descriptions-item></el-descriptions></el-card><el-card shadow="never"><strong>数据集分组</strong><el-table :data="status.coverage.groups" empty-text="暂无数据"><el-table-column prop="data_source" label="来源" /><el-table-column prop="asset_type" label="资产" /><el-table-column prop="row_count" label="数据行" /><el-table-column prop="symbol_count" label="标的" /></el-table></el-card></div>
+          <el-card shadow="never"><template #header><strong>已同步标的覆盖</strong></template><el-table :data="status.coverage.symbols" empty-text="暂无覆盖记录"><el-table-column prop="symbol" label="股票代码" /><el-table-column prop="row_count" label="数据行" /><el-table-column prop="date_min" label="最早日期" /><el-table-column prop="date_max" label="最晚日期" /></el-table></el-card>
         </el-tab-pane>
       </el-tabs>
     </template>
@@ -248,14 +396,24 @@ function qualityLabel(value: string | undefined) {
 .page-heading h1 { font-size: clamp(24px, 3vw, 34px); margin: 0; }
 .page-heading p, .card-header p { color: var(--byq-text-muted); margin: .35rem 0 0; }
 .eyebrow { color: var(--byq-brand) !important; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
-.stat-item small { color: var(--byq-text-muted); display: block; font-size: 11px; margin-top: .25rem; }
+.stat-item small, .bounded-note, .catalogue-footer { color: var(--byq-text-muted); }
+.stat-item small { display: block; font-size: 11px; margin-top: .25rem; }
 .workspace-tabs :deep(.el-tabs__content) { overflow: visible; }
 .workspace-tabs :deep(.el-tab-pane) { display: grid; gap: 1rem; }
 .inline-form { align-items: end; }
-.sync-form { max-width: 900px; }
-.form-grid { display: grid; gap: 1rem; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.form-grid .el-select { width: 100%; }
+.sync-form { max-width: 960px; }
+.form-grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.form-grid .el-select, .catalogue-toolbar .el-select { width: 100%; }
 .coverage-grid { display: grid; gap: 1rem; grid-template-columns: minmax(260px, .7fr) minmax(0, 1.3fr); }
 .coverage-grid :deep(.el-descriptions) { margin-top: 1rem; }
-@media (max-width: 760px) { .page-heading, .card-header { align-items: flex-start; flex-direction: column; } .form-grid, .coverage-grid { grid-template-columns: 1fr; } .stats-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.catalogue-toolbar { display: grid; gap: .75rem; grid-template-columns: minmax(180px, 1fr) minmax(160px, .7fr) minmax(160px, .7fr) auto; margin-bottom: 1rem; }
+.catalogue-footer { align-items: center; display: flex; font-size: 12px; gap: 1rem; justify-content: space-between; margin-top: 1rem; }
+.job-progress { margin-top: 1rem; }
+.bounded-note { font-size: 12px; }
+@media (max-width: 760px) {
+  .page-heading, .card-header, .catalogue-footer { align-items: flex-start; flex-direction: column; }
+  .form-grid, .coverage-grid, .catalogue-toolbar { grid-template-columns: 1fr; }
+  .stats-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .catalogue-footer :deep(.el-pagination) { flex-wrap: wrap; }
+}
 </style>

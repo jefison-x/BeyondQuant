@@ -1,4 +1,4 @@
-import type { DataCenterStatus, DataSyncJob } from "./types";
+import type { DataCenterStatus, DataSyncJob, SecurityCataloguePage, SecurityMasterSyncJob } from "./types";
 
 const ROOT = "/api/product/data-center";
 
@@ -44,4 +44,31 @@ export function createDataSyncJob(payload: Record<string, unknown>): Promise<{ j
 
 export function getDataSyncJob(jobId: string): Promise<{ job: DataSyncJob }> {
   return request(`/sync-jobs/${jobId}`);
+}
+
+export function createSecurityMasterSyncJob(): Promise<{ job: SecurityMasterSyncJob; created: boolean }> {
+  return request("/security-master/sync-jobs", {
+    method: "POST",
+    body: JSON.stringify({ idempotency_key: `browser-security-master-${Date.now()}` }),
+  });
+}
+
+export function getSecurityMasterSyncJob(jobId: string): Promise<{ job: SecurityMasterSyncJob }> {
+  return request(`/security-master/sync-jobs/${encodeURIComponent(jobId)}`);
+}
+
+export function listSecurities(params: {
+  query?: string;
+  statuses?: string[];
+  exchanges?: string[];
+  limit?: number;
+  offset?: number;
+} = {}): Promise<SecurityCataloguePage> {
+  const query = new URLSearchParams();
+  if (params.query) query.set("query", params.query);
+  if (params.statuses?.length) query.set("statuses", params.statuses.join(","));
+  if (params.exchanges?.length) query.set("exchanges", params.exchanges.join(","));
+  query.set("limit", String(params.limit ?? 50));
+  query.set("offset", String(params.offset ?? 0));
+  return request(`/securities?${query.toString()}`);
 }

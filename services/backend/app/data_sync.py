@@ -12,7 +12,7 @@ import json
 import math
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -52,8 +52,11 @@ _SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 _IDEMPOTENCY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _MODES = {"range", "incremental"}
 _TERMINAL = {"completed", "partial", "failed"}
-MAX_SYMBOLS = 20
+MAX_EXPLICIT_SYMBOLS = 500
+MAX_ORCHESTRATED_SYMBOLS = 6_000
 MAX_RANGE_DAYS = 366
+MAX_PUBLIC_SYMBOLS = 100
+MAX_PUBLIC_RESULTS = 200
 
 
 def _now() -> str:
@@ -98,6 +101,7 @@ class DataSyncStore(PgStoreMixin):
             provider TEXT NOT NULL,
             mode TEXT NOT NULL,
             symbols_json JSONB NOT NULL,
+            selection_json JSONB NOT NULL DEFAULT '{"type":"explicit"}'::jsonb,
             start_date TEXT NOT NULL,
             end_date TEXT NOT NULL,
             status TEXT NOT NULL,
@@ -116,6 +120,10 @@ class DataSyncStore(PgStoreMixin):
             completed_at TIMESTAMPTZ,
             updated_at TIMESTAMPTZ NOT NULL
         )
+        """,
+        """
+        ALTER TABLE data_sync_jobs
+            ADD COLUMN IF NOT EXISTS selection_json JSONB NOT NULL DEFAULT '{"type":"explicit"}'::jsonb
         """,
         """
         CREATE INDEX IF NOT EXISTS data_sync_jobs_created_idx
@@ -147,7 +155,7 @@ class DataSyncStore(PgStoreMixin):
     def create_job(self, payload: object, *, actor: object) -> tuple[dict[str, object], bool]:
         if not isinstance(payload, dict):
             raise ValueError("sync job request must be an object")
-        allowed = {"mode", "symbols", "start_date", "end_date", "idempotency_key"}
+        allowed = {"mode", "symbols", "selection", "start_date", "end_date", "idempotency_key"}
         unknown = sorted(set(payload) - allowed)
         if unknown:
             raise ValueError(f"sync job request has unknown fields: {', '.join(unknown)}")
@@ -158,8 +166,15 @@ class DataSyncStore(PgStoreMixin):
         if mode not in _MODES:
             raise ValueError("sync mode must be range or incremental")
         raw_symbols = payload.get("symbols")
-        if not isinstance(raw_symbols, list) or not raw_symbols or len(raw_symbols) > MAX_SYMBOLS:
-            raise ValueError(f"symbols must contain 1 to {MAX_SYMBOLS} items")
+        selection = payload.get("selection") or {"type": "explicit"}
+        if not isinstance(selection, dict):
+            raise ValueError("selection must be an object")
+        selection_type = selection.get("type")
+        if selection_type not in {"explicit", "selected", "security_master", "stock_pool"}:
+            raise ValueError("selection.type is invalid")
+        max_symbols = MAX_ORCHESTRATED_SYMBOLS if selection_type in {"security_master", "stock_pool"} else MAX_EXPLICIT_SYMBOLS
+        if not isinstance(raw_symbols, list) or not raw_symbols or len(raw_symbols) > max_symbols:
+            raise ValueError(f"symbols must contain 1 to {max_symbols} items")
         symbols = sorted({str(item).upper() for item in raw_symbols})
         if len(symbols) != len(raw_symbols) or any(not _SYMBOL.fullmatch(item) for item in symbols):
             raise ValueError("symbols must be unique canonical A-share symbols")
@@ -178,6 +193,7 @@ class DataSyncStore(PgStoreMixin):
             "provider": "tushare",
             "mode": mode,
             "symbols": symbols,
+            "selection": selection,
             "start_date": start_date,
             "end_date": end_date,
         }
@@ -198,16 +214,17 @@ class DataSyncStore(PgStoreMixin):
                 execute(
                     connection,
                     """INSERT INTO data_sync_jobs
-                    (job_id, provider, mode, symbols_json, start_date, end_date,
+                    (job_id, provider, mode, symbols_json, selection_json, start_date, end_date,
                      status, progress, requested_by, idempotency_key,
                      request_sha256, created_at, updated_at)
-                    VALUES (:job_id, 'tushare', :mode, :symbols, :start_date,
+                    VALUES (:job_id, 'tushare', :mode, :symbols, :selection, :start_date,
                             :end_date, 'queued', 0, :actor, :idempotency_key,
                             :request_sha256, :now, :now)""",
                     {
                         "job_id": job_id,
                         "mode": mode,
                         "symbols": symbols,
+                        "selection": selection,
                         "start_date": start_date,
                         "end_date": end_date,
                         "actor": actor_text,
@@ -216,7 +233,9 @@ class DataSyncStore(PgStoreMixin):
                         "now": now,
                     },
                 )
-                self._audit(connection, job_id, actor_text, "created", "queued", {"mode": mode, "symbol_count": len(symbols)})
+                self._audit(connection, job_id, actor_text, "created", "queued", {
+                    "mode": mode, "symbol_count": len(symbols), "selection_type": selection_type,
+                })
         except IntegrityError as error:
             raise DataSyncConflict("sync job conflicts with existing state") from error
         return self.get_job(job_id), True
@@ -259,16 +278,35 @@ class DataSyncStore(PgStoreMixin):
         symbols = list(row["symbols_json"])
         for index, symbol in enumerate(symbols, start=1):
             try:
+                effective_start = str(row["start_date"])
+                if row["mode"] == "incremental":
+                    latest = market_store.latest_trade_date(symbol)
+                    if latest is not None:
+                        next_date = (datetime.strptime(latest, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
+                        effective_start = max(effective_start, next_date)
+                    if effective_start > str(row["end_date"]):
+                        results.append({
+                            "symbol": symbol,
+                            "status": "completed",
+                            "rows_received": 0,
+                            "rows_inserted": 0,
+                            "rows_kept": 0,
+                            "date_min": None,
+                            "date_max": None,
+                            "message": "already_current",
+                        })
+                        self._set_progress(job_id, round(index * 100 / len(symbols)), results, received, inserted, kept)
+                        continue
                 request = DailyRequest(
                     ts_code=symbol,
-                    start_date=str(row["start_date"]),
+                    start_date=effective_start,
                     end_date=str(row["end_date"]),
                 )
                 result = provider.fetch_daily(request)
                 normalized = self._normalize_bars(
                     symbol,
                     result,
-                    start_date=str(row["start_date"]),
+                    start_date=effective_start,
                     end_date=str(row["end_date"]),
                 )
                 report = market_store.import_bars(normalized, conflict_policy=KEEP_NEW)
@@ -498,11 +536,16 @@ class DataSyncStore(PgStoreMixin):
 
     @staticmethod
     def _public_job(row: dict[str, object]) -> dict[str, object]:
+        symbols = list(row["symbols_json"])
+        results = list(row["symbol_results_json"])
         return {
             "job_id": row["job_id"],
             "provider": row["provider"],
             "mode": row["mode"],
-            "symbols": row["symbols_json"],
+            "symbols": symbols[:MAX_PUBLIC_SYMBOLS],
+            "symbol_count": len(symbols),
+            "symbols_truncated": len(symbols) > MAX_PUBLIC_SYMBOLS,
+            "selection": row.get("selection_json") or {"type": "explicit"},
             "start_date": row["start_date"],
             "end_date": row["end_date"],
             "status": row["status"],
@@ -510,7 +553,9 @@ class DataSyncStore(PgStoreMixin):
             "rows_received": row["rows_received"],
             "rows_inserted": row["rows_inserted"],
             "rows_kept": row["rows_kept"],
-            "symbol_results": row["symbol_results_json"],
+            "symbol_results": results[:MAX_PUBLIC_RESULTS],
+            "result_count": len(results),
+            "results_truncated": len(results) > MAX_PUBLIC_RESULTS,
             "error_code": row["error_code"],
             "error_message": row["error_message"],
             "requested_by": row["requested_by"],
