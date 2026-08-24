@@ -81,8 +81,8 @@ function kindLabel(kind: unknown): string {
 
 <template>
   <section class="home-page">
-    <div v-if="loading" class="base-loading">加载中...</div>
-    <div v-else-if="error" class="base-error">{{ error }}</div>
+    <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
+    <div v-else-if="error" class="base-error" role="alert">{{ error }}</div>
 
     <template v-else>
       <el-alert

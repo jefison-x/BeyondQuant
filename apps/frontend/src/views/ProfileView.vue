@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { getProfile, updateProfile } from "@/api/settings";
 import type { UserProfile } from "@/api/types";
+import { useUnsavedChanges } from "@/composables/useUnsavedChanges";
 
 const loading = ref(true);
 const saving = ref(false);
 const error = ref("");
 const profile = ref<UserProfile | null>(null);
 const form = ref({ display_name: "", preferences: "", default_prompt: "" });
+const savedForm = ref("");
+const dirty = computed(() => !loading.value && JSON.stringify(form.value) !== savedForm.value);
+useUnsavedChanges(dirty);
 
 onMounted(async () => {
   try {
@@ -19,6 +23,7 @@ onMounted(async () => {
       preferences: body.profile.preferences ?? "",
       default_prompt: body.profile.default_prompt ?? "",
     };
+    savedForm.value = JSON.stringify(form.value);
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "加载个人设置失败";
   } finally {
@@ -31,6 +36,12 @@ async function save() {
   try {
     const body = await updateProfile(form.value);
     profile.value = body.profile;
+    form.value = {
+      display_name: body.profile.display_name ?? "",
+      preferences: body.profile.preferences ?? "",
+      default_prompt: body.profile.default_prompt ?? "",
+    };
+    savedForm.value = JSON.stringify(form.value);
     ElMessage.success("个人设置已保存");
   } catch (exc) {
     ElMessage.error(exc instanceof Error ? exc.message : "保存个人设置失败");
@@ -59,8 +70,8 @@ async function save() {
         </div>
       </template>
 
-      <div v-if="loading" class="base-loading">加载中...</div>
-      <div v-else-if="error" class="base-error">{{ error }}</div>
+      <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
+      <div v-else-if="error" class="base-error" role="alert">{{ error }}</div>
       <el-form v-else label-position="top" class="profile-form">
         <el-form-item label="昵称">
           <el-input v-model="form.display_name" maxlength="80" show-word-limit placeholder="例如：老李 / 量化小周" />
@@ -88,7 +99,8 @@ async function save() {
           <div class="form-hint">小巴每次回答都会先遵循该提示词。</div>
         </el-form-item>
         <div class="form-actions">
-          <el-button type="primary" :loading="saving" @click="save">保存设置</el-button>
+          <span class="save-state" aria-live="polite">{{ dirty ? "有未保存更改" : "已保存" }}</span>
+          <el-button type="primary" :loading="saving" :disabled="!dirty" @click="save">保存设置</el-button>
         </div>
       </el-form>
     </el-card>
@@ -132,7 +144,11 @@ async function save() {
 }
 
 .form-actions {
+  align-items: center;
   display: flex;
+  gap: 10px;
   justify-content: flex-end;
 }
+
+.save-state { color: var(--byq-text-muted); font-size: 12px; }
 </style>

@@ -117,8 +117,8 @@ async function handleImport(event: Event) {
       </div>
     </section>
 
-    <div v-if="loading" class="base-loading">加载中...</div>
-    <div v-else-if="error" class="base-error">{{ error }}</div>
+    <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
+    <div v-else-if="error" class="base-error" role="alert">{{ error }}</div>
     <template v-else>
       <el-card shadow="never">
         <template #header><div class="panel-heading"><div><strong>我的策略</strong></div><el-button link type="primary" @click="go('/strategy')">前往策略管理</el-button></div></template>

@@ -63,8 +63,8 @@ onMounted(load);
       </div>
       <el-button :loading="loading" @click="load">刷新</el-button>
     </div>
-    <div v-if="loading && !data" class="base-loading">正在读取真实运维投影...</div>
-    <div v-else-if="error && !data" class="base-error">
+    <div v-if="loading && !data" class="base-loading" role="status" aria-live="polite">正在读取真实运维投影...</div>
+    <div v-else-if="error && !data" class="base-error" role="alert">
       {{ error }}
       <el-button link type="primary" @click="load">重试</el-button>
     </div>

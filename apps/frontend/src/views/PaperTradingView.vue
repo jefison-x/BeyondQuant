@@ -227,7 +227,7 @@ onMounted(loadAccounts);
       <div><p class="eyebrow">SIMULATION · CNY · A-SHARE</p><h1>模拟操盘</h1><p>独立于回测的持仓、成交、结算与风险工作台；所有状态均由 BYQ Product API 持久化。</p></div>
       <div class="hero-actions"><el-button :loading="busy === 'import'" @click="importInput?.click()">导入账户资产包</el-button><input ref="importInput" data-testid="paper-import-input" class="hidden-input" type="file" accept="application/json,.json" @change="onImportFile" /><el-button @click="loadAccounts()">刷新</el-button></div>
     </header>
-    <div v-if="loading" class="base-loading">加载中...</div>
+    <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="top-band" />
 
     <div class="account-layout">

@@ -651,3 +651,25 @@ navigation; it does not copy Community state, APIs, execution code or storage.
 The Community repository remained read-only throughout inspection. No
 Community component, endpoint, database, cache, runtime or Git history was
 modified or copied.
+
+## Phase 47 interaction and accessibility pre-implementation audit
+
+The read-only Community `AppStateBlock.vue`, `EntityPagination.vue`,
+`useDisplay.js`, `usePagination.js`, `ChartWrapper.vue`, global theme styles,
+and the form/dialog interactions in Stock Pool, Strategy, Profile and settings
+were inspected before Phase 47 implementation. Existing BYQ Product routes,
+durable preferences, domain resources and semantic tokens remain authoritative;
+this phase standardizes interaction behavior without copying Community state,
+APIs or hard-coded visual themes.
+
+| Community capability | Reusable invariant / UX | Decision | Phase 47 disposition |
+|---|---|---|---|
+| Shared loading, empty and error blocks with actions | Async surfaces need one understandable state hierarchy and a reachable recovery action. | `PORT_COMPONENT` / `REFACTOR` | Extend BYQ typed state primitives with live-region semantics, retry actions and reduced-motion-safe feedback. |
+| Responsive entity pagination and display breakpoints | Counts, page controls and catalog/detail content must remain operable on narrow screens. | `PORT_UX` / `REFACTOR` | Keep BYQ server-bounded pagination and CSS breakpoints; add compact mobile controls without importing Community stores. |
+| Chart loading, empty and resize behavior | Charts must resize, explain empty/loading state and follow the active visual theme. | `REUSE_AS_IS` / `REFACTOR` | BYQ ChartWrapper gains semantic chart palettes, accessible names/summaries, ResizeObserver and reduced-motion behavior. |
+| Form success/error feedback and disabled pending actions | Writes must disclose progress and outcome and prevent duplicate submission. | `PORT_UX` / `REFACTOR` | Use existing Product mutations with shared status semantics and explicit disabled/loading states. |
+| Editable settings and catalog/detail forms | Navigating, switching resources or refreshing must not silently discard unsaved durable edits. | `PORT_UX` / `PORT_TESTS` | Add a BYQ route/browser leave guard and explicit resource-switch confirmation; no local-only persistence is introduced. |
+| Community theme store, hard-coded state colors, legacy APIs and runtime-aware UI | None under ADR-0014/0018/0024. | `REFERENCE_ONLY` / `DROP` / `REPLACE` | Durable `ui-preferences.v1`, semantic tokens, Gateway/Product API and normalized WorkflowTrace remain the only accepted boundaries. |
+
+The Community repository is evidence only and remains read-only. No Community
+component, API, runtime, theme store, persistence or Git history is copied.

@@ -602,3 +602,32 @@ test("normal users cannot open a direct system settings route", async ({ page })
   await expect(page).toHaveURL(/\/agent$/);
   await expect(page.getByRole("dialog", { name: /系统设置/ })).toHaveCount(0);
 });
+
+test("unknown routes render a recoverable Product state instead of a blank shell", async ({ page }) => {
+  await login(page);
+  await page.goto("/route-that-does-not-exist");
+  await expect(page.getByText("没有找到这个页面")).toBeVisible();
+  await expect(page.getByRole("button", { name: "返回小巴" })).toBeVisible();
+  await expect(page.locator("main")).toHaveCount(1);
+});
+
+test("durable profile edits require confirmation before navigation", async ({ page }) => {
+  await page.route("**/api/product/profile", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ profile: { subject: "testuser", display_name: "研究员", preferences: "", default_prompt: "", role: "user", status: "active" } }),
+  }));
+  await mockResearchLists(page);
+  await login(page);
+  await page.goto("/user/profile");
+  await page.getByLabel("昵称").fill("尚未保存的昵称");
+  await expect(page.getByText("有未保存更改")).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "策略管理", exact: true }).click();
+  await expect(page).toHaveURL(/\/user\/profile$/);
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "策略管理", exact: true }).click();
+  await expect(page).toHaveURL(/\/strategy$/);
+});

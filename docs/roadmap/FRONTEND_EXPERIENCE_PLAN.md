@@ -113,7 +113,7 @@ global theme to every table, editor, chart, dialog and mobile card.
 Acceptance: no domain feature regression; the conversation-to-pool/strategy/
 backtest journey and return links pass with real Product data.
 
-## Phase 47 — Interaction, responsive and accessibility closure
+## Phase 47 — Interaction, responsive and accessibility closure (`COMPLETE`)
 
 Standardize loading/empty/error/success/disabled states, search/filter/
 pagination, unsaved-change protection, dates/numbers/status labels, responsive
@@ -124,7 +124,7 @@ Acceptance: the full color-mode/accent matrix passes contrast and responsive
 review; Lighthouse accessibility target is 100 unless a documented external
 blocker is accepted.
 
-## Phase 48 — Product coherence and golden journey
+## Phase 48 — Product coherence and golden journey (`NEXT`)
 
 Run a fresh no-mock, two-user Compose journey across login, conversation,
 candidate pool, strategy, approval, signal, backtest, history restore, assets,

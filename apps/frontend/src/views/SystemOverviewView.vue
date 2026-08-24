@@ -45,8 +45,8 @@ onMounted(load);
       <el-alert title="这里只显示有界、去敏的 Product API 状态；不提供数据库切换、任意 SQL、原始 DSH 事件或部署控制。" type="info" show-icon :closable="false" />
       <el-button :loading="loading" @click="load">刷新全部</el-button>
     </div>
-    <div v-if="loading && !operations" class="base-loading">正在读取系统概览...</div>
-    <div v-else-if="error && !operations" class="base-error">{{ error }} <el-button link type="primary" @click="load">重试</el-button></div>
+    <div v-if="loading && !operations" class="base-loading" role="status" aria-live="polite">正在读取系统概览...</div>
+    <div v-else-if="error && !operations" class="base-error" role="alert">{{ error }} <el-button link type="primary" @click="load">重试</el-button></div>
     <template v-else-if="operations">
       <el-alert v-if="error" :title="error" type="warning" show-icon :closable="false" />
       <div class="ops-metrics">

@@ -13,9 +13,10 @@ defineEmits<{
 
 <template>
   <nav v-if="total > (pageSize ?? 50)" class="entity-pagination" :aria-label="label ?? '实体分页'">
-    <span class="entity-pagination__total">共 {{ total }} 项</span>
+    <span class="entity-pagination__total" aria-live="polite">共 {{ total.toLocaleString("zh-CN") }} 项，第 {{ page }} 页</span>
     <el-pagination
       background
+      :pager-count="5"
       layout="prev, pager, next"
       :current-page="page"
       :page-size="pageSize ?? 50"
@@ -37,5 +38,22 @@ defineEmits<{
 .entity-pagination__total {
   color: var(--byq-text-muted);
   font-size: 12px;
+}
+
+@media (max-width: 520px) {
+  .entity-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .entity-pagination__total {
+    text-align: center;
+  }
+
+  .entity-pagination :deep(.el-pagination) {
+    justify-content: center;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
 }
 </style>

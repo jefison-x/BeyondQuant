@@ -1354,12 +1354,12 @@ Unify Stock Pool, Strategy and Backtest catalog/detail interactions, visual
 hierarchy, Workflow-card deep links, charts and responsive behavior while
 preserving every completed domain invariant and deep result surface.
 
-### Phase 47 — Interaction, responsive and accessibility closure (`NEXT`)
+### Phase 47 — Interaction, responsive and accessibility closure (`COMPLETE`)
 
 Standardize global states and controls, unsaved-change behavior, keyboard/focus,
 responsive content and the complete theme/chart accessibility matrix.
 
-### Phase 48 — Product coherence golden journey (`PLANNED`)
+### Phase 48 — Product coherence golden journey (`NEXT`)
 
 Run a fresh no-mock, two-user desktop/tablet/mobile Product journey across
 conversation, pool, strategy, approval, signal, backtest, history, assets,

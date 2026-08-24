@@ -3,6 +3,7 @@ import { computed, onMounted } from "vue";
 import { ElMessage } from "element-plus";
 import type { AccentTheme, ColorMode } from "@/api/types";
 import { ACCENT_THEMES, COLOR_MODES, useAppearanceStore } from "@/stores/appearance";
+import { useUnsavedChanges } from "@/composables/useUnsavedChanges";
 
 const appearance = useAppearanceStore();
 const modeLabels: Record<ColorMode, { name: string; description: string }> = {
@@ -17,6 +18,7 @@ const dirty = computed(() =>
   appearance.preferences.color_mode !== appearance.savedPreferences.color_mode
   || appearance.preferences.accent_theme !== appearance.savedPreferences.accent_theme,
 );
+useUnsavedChanges(dirty, { onDiscard: () => appearance.revert() });
 
 async function save() {
   try {
