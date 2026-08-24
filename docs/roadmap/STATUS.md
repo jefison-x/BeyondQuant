@@ -3,13 +3,12 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 48** — Product coherence closure with a
-  repeatable no-mock two-user golden journey, reconciled Community capability
-  relocation, desktop/tablet/mobile Chrome evidence and a resolved mobile
-  dark-theme contrast defect.
-- Next milestone: **human v1.0 release-candidate review**. Phase 48 reopens but
-  does not pass or automate this separate decision. The post-Phase 40 DSH
-  Upgrade Lane remains separately scheduled.
+- Current completed phase: **Phase 49** — Accepted personal-workspace tenancy
+  boundary, trusted-context contract, complete resource classification,
+  Community evidence disposition, and verified migration/rollback plan.
+- Next phase: **Phase 50 — Workspace foundation and verified backfill**. The
+  human v1.0 release-candidate review remains postponed until Phases 50-52
+  close. The post-Phase 40 DSH Upgrade Lane remains separately scheduled.
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -32,7 +31,8 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 38 component-ownership ADR: **ADR-0022**
 - Accepted Phase 40 isolated signal-producer ADR: **ADR-0023**
 - Accepted conversation-first Product experience ADR: **ADR-0024**
-- Open architecture decisions: **none from the completed Phase 48 scope**.
+- Accepted personal-workspace tenancy ADR: **ADR-0025**
+- Open architecture decisions: **none from the completed Phase 49 scope**.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -69,6 +69,8 @@ Codex session does not infer project state from commit history.
   [ADR-0023](../architecture/adr/ADR-0023-isolated-signal-producer.md)
   is Accepted.
   [ADR-0024](../architecture/adr/ADR-0024-conversation-first-product-experience.md)
+  is Accepted.
+  [ADR-0025](../architecture/adr/ADR-0025-personal-workspace-tenancy.md)
   is Accepted.
 - Phase 23 acceptance evidence established a Product Skeleton browser and
   parity baseline. Its mocked Playwright navigation smoke is not evidence of
@@ -255,6 +257,16 @@ Codex session does not infer project state from commit history.
   Evidence and the remaining non-parity release/optimization register are
   under `docs/evidence/phase-48/`. Human v1.0 RC review is open and pending,
   not automatically accepted.
+- Phase 49 accepted ADR-0025 after inspecting and classifying the read-only
+  Community tenant/context/ownership planning evidence. BYQ now has a fixed
+  `personal-workspace.v1` target: every durable user receives one private
+  workspace and sole owner membership; workspace resources authorize by
+  trusted `workspace_id`, while profile, preferences, personal model secrets
+  and Agent policy stay user-scoped and canonical market/system resources stay
+  platform-scoped. The expand/backfill/verify/contract migration never assigns
+  unverifiable legacy rows, retains creator/actor audit identity, and preserves
+  the current Gateway → Backend → MCP → DSH boundary. Phase 49 changes no
+  runtime or schema behavior; Phase 50 is the authorized next implementation.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence. The historical gaps recorded in
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` were then classified and
@@ -267,9 +279,10 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active implementation-phase blocker: **none**. Phase 48 is complete under
-  Accepted ADR-0024. The separate human v1.0 RC review is now open and pending.
-  The post-Phase 40 DSH Upgrade Lane is scheduled separately in
+- Active implementation-phase blocker: **none**. Phase 49 is complete under
+  Accepted ADR-0025. Phase 50 is next; the human v1.0 RC review remains
+  postponed until the personal-workspace program closes. The post-Phase 40 DSH
+  Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.
 
 Git SHA is not phase state. The current clean baseline must always be derived

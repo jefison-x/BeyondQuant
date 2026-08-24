@@ -1377,3 +1377,44 @@ unexplained gap. Desktop/tablet/mobile Chrome review found and fixed one dark
 mobile selector contrast defect; final authenticated Lighthouse Accessibility
 and Best Practices both score 100. The human v1.0 RC review is open and
 pending, not automatically accepted.
+
+## Personal Workspace Tenancy Program
+
+The maintainer postponed the v1.0 RC decision again on 2026-08-24 to establish
+an explicit personal-workspace boundary before release. ADR-0025 and
+`PERSONAL_WORKSPACE_TENANCY_PLAN.md` are the detailed sources of truth. Each
+phase remains isolated, migration-safe, CI-gated, and previewed from merged
+`main`.
+
+### Phase 49 — Personal workspace boundary (`COMPLETE`)
+
+Inspect and classify the read-only Community tenancy/context evidence; accept
+ADR-0025 and `personal-workspace.v1`; separate user, workspace, platform and
+Engineering resources; and fix the trusted-context, migration, verification,
+rollback and future-team boundaries. No runtime or schema completion is
+claimed by this decision phase.
+
+### Phase 50 — Workspace foundation and verified backfill
+
+Create durable personal workspaces and owner memberships, provision them with
+users, add nullable workspace keys, and run an idempotent manifested backfill.
+Quarantine/report any row whose historical owner cannot map exactly to one
+durable user. Verify all parent, reference, uniqueness and count invariants
+before imposing constraints or changing authorization.
+
+### Phase 51 — Trusted context and domain authorization cutover
+
+Resolve the personal workspace from durable authentication, propagate it only
+through trusted Gateway/Backend/MCP/runtime paths, cut workspace resources from
+principal authorization to `workspace_id`, and enforce verified constraints.
+Complete cross-workspace, guessed-ID, idempotency, lineage, approval, object,
+bundle and Agent-to-Domain denial tests without exposing DSH internals or
+allowing DSH database access.
+
+### Phase 52 — Product orientation and isolation closure
+
+Expose only the bounded current personal-workspace identity, then execute
+fresh-provision, migration, restart, backup/restore and two-user no-mock Product
+journeys across all durable surfaces. Complete desktop/mobile Chrome evidence,
+Community checklist reconciliation, and a report of any quarantined legacy
+rows. Do not add workspace switching, invitations, sharing or team roles.

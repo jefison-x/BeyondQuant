@@ -74,6 +74,7 @@ explicitly reverses them:
 | Phase 31 | PostgreSQL single domain store: SQLite -> PostgreSQL logical migration, backup/restore, then ADR-0013 durable market-data import. |
 | Phase 34 | Stock Pool identity/snapshot/lifecycle contract, historical membership, typed provenance, trusted index as-of behavior, and frozen consumer references. |
 | Phase 37 | My Space model credentials/profiles/bindings, asset re-import, and Agent policy preset/rule UX under BYQ ownership and secret boundaries. |
+| Phase 49 | Personal-workspace tenancy principles, trusted context, resource classification, owner-to-workspace migration and future team seam. |
 
 ## Productization frontend audit
 
@@ -697,3 +698,41 @@ coherent when used together.
 The inspection → classification → invariant extraction → disposition →
 implementation sequence is complete. No Community source, database, cache,
 runtime, credential or Git history was changed or imported.
+
+## Phase 49 personal-workspace pre-implementation audit
+
+Before accepting ADR-0025, the read-only Community
+`docs/future_architecture_plan.md`, `docs/workspace_ownership_migration.md`,
+`docs/model_gateway_cloud_contract.md`, and
+`docs/open_source_architecture_plan.md` were inspected. Those documents are
+planning and historical migration evidence, not proof of an implemented or
+compatible tenant runtime.
+
+The mandatory sequence produced these decisions:
+
+1. **Inspect**: reviewed the proposed tenant objects, trusted context,
+   owner/actor split, public market-data boundary, legacy ownership rules, and
+   Community-to-Cloud seams.
+2. **Classify**: retained only architecture-neutral security and migration
+   invariants. Old runtime, ORM, API, database layout, roles, Cloud topology,
+   and technology assumptions remain reference-only, replaced, or dropped.
+3. **Extract invariants/tests**: personal users need a stable resource
+   boundary; client/model identity is untrusted; shared data is not user-owned;
+   historical rows require exact mapping and mismatch reporting; cross-scope
+   access and parent-child references fail closed.
+4. **Decide**: ADR-0025 uses one BYQ personal `workspace` plus an owner
+   membership, keeps personal secrets/preferences user-scoped, and preserves a
+   later team seam without implementing a commercial control plane.
+5. **Implement**: Phase 49 changes documents only. Schema/backfill begins in an
+   isolated Phase 50 worktree after this phase is merged.
+
+| Community evidence | Classification | Phase 49 disposition |
+|---|---|---|
+| `future_architecture_plan.md` personal tenant, `TenantContext`, public-data and migration principles | `REFERENCE_ONLY` / `REFACTOR` | Keep the personal boundary, server-derived context, resource classification, and no-silent-assignment invariants. Replace the old `tenant_id`-everywhere shape with ADR-0025's user/workspace/platform split. |
+| `workspace_ownership_migration.md` owner inventory, legacy handling and workspace asset rules | `PORT_TESTS` / `REFACTOR` | Adapt exact-owner, cross-user denial, parent propagation, bundle rebinding and migration-report test intent. Do not copy old nullable-owner compatibility or storage code. |
+| `model_gateway_cloud_contract.md` null-tenant seam and server-provided actor | `REFERENCE_ONLY` / `REPLACE` | Preserve server-derived actor/workspace and write-only secret rules through current Gateway → Backend → Runtime Adapter/Model Gateway boundaries. Do not restore its Community runtime chain. |
+| `open_source_architecture_plan.md` local tenant-provider abstraction and future commercial split | `REFERENCE_ONLY` | Retain modular future extension only. No parallel tenant harness, Cloud service topology, billing, entitlement, or team control plane is added. |
+| Community PydanticAI/Hermes runtime, direct service APIs, ORM schemas, Redis/cache and VectorBT references | `REPLACE` / `DROP` | Current DSH Runtime Adapter, BeyondQuant MCP, Product API, PostgreSQL domain store and deterministic BYQ engine remain authoritative. BaoStock, AKShare, VectorBT, PydanticAI-as-main-runtime and Hermes remain excluded. |
+
+No Community file, database, runtime, credential, Git history, or source
+component was modified or copied.

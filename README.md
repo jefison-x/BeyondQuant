@@ -1,10 +1,10 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-completed project stage is **Phase 48** — Product coherence and golden-journey
-closure under Accepted ADR-0024. The conversation-first Product experience
-program is complete and the separate human v1.0 release-candidate review is
-open but not yet accepted. See
+completed project stage is **Phase 49** — personal-workspace tenancy boundary
+and migration plan under Accepted ADR-0025. Runtime data remains on the proven
+owner-scoped Phase 48 path until Phases 50-52 implement and verify workspace
+provisioning, backfill, trusted context, and authorization cutover. See
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
 authoritative current state.
 
@@ -48,9 +48,11 @@ BYQ does not fork DSH. The DSH version is pinned through an explicit dependency 
 - The DSH Upgrade Lane is scheduled as a post-Phase 40 maintenance initiative;
   it does not change the currently qualified runtime pin.
 - The conversation-first frontend program is complete under ADR-0024; human
-  v1.0 RC review/release checks remain distinct from feature parity and
-  experience completion. The official release boundary restores the normal
-  human merge gate under ADR-0015.
+  v1.0 RC review is postponed while the ADR-0025 personal-workspace program
+  proceeds through Phases 50-52. Team workspaces, invitations, sharing and
+  commercial control-plane capabilities remain outside this program. The
+  official release boundary restores the normal human merge gate under
+  ADR-0015.
 
 The base Compose topology requires internal service secrets such as
 `BYQ_MCP_TOKEN` and bootstrap compatibility configuration. Provider secrets

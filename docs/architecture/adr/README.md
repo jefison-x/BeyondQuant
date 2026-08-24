@@ -29,3 +29,7 @@ fallback boundaries for Phases 37 and 39.
 ADR-0024 defines the conversation-first Product shell, durable BYQ conversation
 catalog versus DSH Session boundary, route-backed settings consolidation, and
 durable semantic appearance/theme contract for Phases 42-48.
+ADR-0025 defines the personal workspace as BYQ's tenancy/authorization
+boundary, separates resource ownership from actor identity, fixes trusted
+context propagation and the verified compatibility migration, and deliberately
+defers team-product capabilities to a later ADR.
