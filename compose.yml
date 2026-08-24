@@ -180,6 +180,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      backend:
+        condition: service_healthy
       signal-sandbox:
         condition: service_healthy
     networks:
