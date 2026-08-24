@@ -105,6 +105,7 @@ from .user_auth import (
     UserForbidden,
     UserNotFound,
 )
+from .workspace_tenancy import WorkspaceTenancyStore
 from .user_policy import (
     UserPolicyConflict,
     UserPolicyNotFound,
@@ -158,13 +159,14 @@ market_data_store = MarketDataStore.from_env()
 signal_job_store = SignalJobStore.from_env()
 data_sync_store = DataSyncStore.from_env()
 conversation_store = ConversationCatalogStore.from_env()
+backtest_store = BacktestJobStore.from_env()
+workspace_tenancy_store = WorkspaceTenancyStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
     user_store.ensure_bootstrap_admin(
         os.environ["BYQ_BOOTSTRAP_ADMIN_USERNAME"],
         os.environ["BYQ_BOOTSTRAP_ADMIN_PASSWORD"],
     )
-backtest_store = BacktestJobStore.from_env()
 backtest_objects = LocalObjectStore.from_env()
 
 

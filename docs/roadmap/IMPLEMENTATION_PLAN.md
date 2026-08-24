@@ -1394,13 +1394,20 @@ Engineering resources; and fix the trusted-context, migration, verification,
 rollback and future-team boundaries. No runtime or schema completion is
 claimed by this decision phase.
 
-### Phase 50 — Workspace foundation and verified backfill
+### Phase 50 — Workspace foundation and verified backfill (`COMPLETE`)
 
 Create durable personal workspaces and owner memberships, provision them with
 users, add nullable workspace keys, and run an idempotent manifested backfill.
 Quarantine/report any row whose historical owner cannot map exactly to one
 durable user. Verify all parent, reference, uniqueness and count invariants
 before imposing constraints or changing authorization.
+
+Delivered additive personal workspace/membership tables, atomic provisioning
+for new and existing users, nullable indexed workspace keys across all
+classified domain tables, and a transactional dry-run/execute backfill. Exact
+historical owners are mapped; unmatched/conflicting records are preserved in
+manifested quarantine reports; inherited children and relationship equality
+are verified. Owner-based authorization intentionally remains until Phase 51.
 
 ### Phase 51 — Trusted context and domain authorization cutover
 
