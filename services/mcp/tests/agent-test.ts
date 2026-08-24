@@ -7,6 +7,7 @@ import {
 } from "../src/agent.js";
 
 const context = {
+  workspace_id: "workspace_alice",
   owner_principal: "alice",
   actor_principal: "alice",
   trace_id: "trace-agent-mcp-1",
@@ -21,6 +22,7 @@ const start = await fetchByqAgentRunStart(
   async (url, init) => {
     assert.equal(url, "http://backend:8000/v1/agents/runs");
     assert.equal(init?.headers && (init.headers as Record<string, string>)["x-byq-owner-principal"], "alice");
+    assert.equal((init?.headers as Record<string, string>)["x-byq-workspace-id"], "workspace_alice");
     assert.equal((init?.headers as Record<string, string>)["x-byq-session-id"], "session-agent-mcp-1");
     assert.doesNotMatch(String(init?.body), /password|secret|token/i);
     return new Response(JSON.stringify({ run: { run_id: "agent_run_0123456789abcdef0123456789abcdef" } }), { status: 201 });

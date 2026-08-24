@@ -156,7 +156,8 @@ def test_product_profile_loads_and_updates_owner_profile(monkeypatch) -> None:
                     "default_prompt": "先给结论",
                     "role": "user",
                     "status": "active",
-                }
+                },
+                "workspace": {"workspace_id": "workspace_test", "kind": "personal", "role": "owner"},
             }
 
     monkeypatch.setattr(user_session.httpx, "get", lambda *args, **kwargs: FakeResponse())
@@ -196,7 +197,8 @@ def test_product_appearance_is_owner_scoped_and_versioned(monkeypatch) -> None:
                 "display_name": "Alice",
                 "role": "user",
                 "status": "active",
-            }
+            },
+            "workspace": {"workspace_id": "workspace_test", "kind": "personal", "role": "owner"},
         }),
     )
 
@@ -328,6 +330,43 @@ def test_product_model_mutations_keep_secret_write_only(monkeypatch) -> None:
     assert captured["json"]["secret"] == "sk-browser-write-only-abcd"
     assert "sk-browser-write-only-abcd" not in response.text
     assert "ciphertext" not in response.text
+
+
+def test_browser_cannot_override_session_workspace_context(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(product_api, "resolve_user", lambda _request: {
+        "user_id": "user_alice", "username": "alice", "role": "user",
+        "_workspace": {"workspace_id": "workspace_alice", "kind": "personal", "role": "owner"},
+    })
+    monkeypatch.setattr(
+        product_api, "resolve_principal", lambda _request: product_api.Principal(subject="alice")
+    )
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"credential": {"credential_id": "credential_test"}}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured.update({"method": method, "url": url, **kwargs})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    client.cookies.set(product_api.SESSION_COOKIE, "session_alice")
+    response = client.post(
+        "/api/product/settings/models/credentials",
+        headers={"x-byq-workspace-id": "workspace_forged"},
+        json={
+            "provider": "deepseek", "label": "test", "secret": "write-only-test",
+            "idempotency_key": "workspace-spoof-test",
+        },
+    )
+    assert response.status_code == 201
+    assert captured["headers"]["x-byq-workspace-id"] == "workspace_alice"
+    assert captured["headers"]["x-byq-owner-principal"] == "alice"
 
 
 def test_product_assets_export_and_import_are_owner_scoped(monkeypatch) -> None:

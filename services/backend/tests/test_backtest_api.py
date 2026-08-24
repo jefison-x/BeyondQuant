@@ -16,6 +16,7 @@ from app.backtest import (
     membership_fingerprint,
 )
 from app.research import ResearchStore
+from tests.workspace_helpers import trusted_agent_context
 
 
 pytestmark = pytest.mark.skipif(
@@ -111,13 +112,7 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     assert fetched.json()["job"]["result_artifact_id"].startswith("artifact_")
     result = client.get(
         f"/v1/research/backtests/{job['job_id']}/result",
-        headers={
-            "x-byq-owner-principal": "product-user",
-            "x-byq-actor-principal": "product-user",
-            "x-byq-trace-id": "byq-trace-backtest-api",
-            "x-byq-session-id": "byq-session-backtest-api",
-            "x-byq-dsh-run-id": "byq-run-backtest-api",
-        },
+        headers=_owner_headers("product-user"),
     )
     assert result.status_code == 200
     result_body = result.json()
@@ -133,24 +128,12 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
 
     denied = client.get(
         f"/v1/research/backtests/{job['job_id']}/result",
-        headers={
-            "x-byq-owner-principal": "other-user",
-            "x-byq-actor-principal": "other-user",
-            "x-byq-trace-id": "byq-trace-other",
-            "x-byq-session-id": "byq-session-other",
-            "x-byq-dsh-run-id": "byq-run-other",
-        },
+        headers=_owner_headers("other-user"),
     )
     assert denied.status_code == 404
     listed = client.get(
         "/v1/research/backtests",
-        headers={
-            "x-byq-owner-principal": "product-user",
-            "x-byq-actor-principal": "product-user",
-            "x-byq-trace-id": "byq-trace-backtest-api",
-            "x-byq-session-id": "byq-session-backtest-api",
-            "x-byq-dsh-run-id": "byq-run-backtest-api",
-        },
+        headers=_owner_headers("product-user"),
     )
     assert listed.status_code == 200
     assert listed.json()["backtests"][0]["job_id"] == job["job_id"]
@@ -168,24 +151,12 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     assert retry.json()["job"]["job_id"] == job["job_id"]
     denied_delete = client.delete(
         f"/v1/research/backtests/{job['job_id']}",
-        headers={
-            "x-byq-owner-principal": "other-user",
-            "x-byq-actor-principal": "other-user",
-            "x-byq-trace-id": "byq-trace-other",
-            "x-byq-session-id": "byq-session-other",
-            "x-byq-dsh-run-id": "byq-run-other",
-        },
+        headers=_owner_headers("other-user"),
     )
     assert denied_delete.status_code == 409
     deleted = client.delete(
         f"/v1/research/backtests/{job['job_id']}",
-        headers={
-            "x-byq-owner-principal": "product-user",
-            "x-byq-actor-principal": "product-user",
-            "x-byq-trace-id": "byq-trace-backtest-api",
-            "x-byq-session-id": "byq-session-backtest-api",
-            "x-byq-dsh-run-id": "byq-run-backtest-api",
-        },
+        headers=_owner_headers("product-user"),
     )
     assert deleted.status_code == 200
     assert client.get(f"/v1/research/backtests/{job['job_id']}").status_code == 404
@@ -195,13 +166,10 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
 
 
 def _owner_headers(principal: str) -> dict[str, str]:
-    return {
-        "x-byq-owner-principal": principal,
-        "x-byq-actor-principal": principal,
-        "x-byq-trace-id": f"byq-trace-{principal}",
-        "x-byq-session-id": f"byq-session-{principal}",
-        "x-byq-dsh-run-id": f"byq-run-{principal}",
-    }
+    return trusted_agent_context(
+        principal, trace_id=f"byq-trace-{principal}", session_id=f"byq-session-{principal}",
+        dsh_run_id=f"byq-run-{principal}",
+    )
 
 
 def _create_completed_backtest(client: TestClient, *, key: str) -> dict[str, object]:

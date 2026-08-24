@@ -71,9 +71,21 @@ def _product_principal(request: Request) -> Principal:
 
 def _trusted_agent_headers(request: Request) -> dict[str, str]:
     """Build backend-owned agent context headers for browser Product API calls."""
-    principal = _product_principal(request)
+    if SESSION_COOKIE in request.cookies:
+        user = resolve_user(request)
+        principal = Principal(subject=str(user.get("username") or user.get("user_id")))
+        workspace = user.get("_workspace")
+        if not isinstance(workspace, dict) or not isinstance(workspace.get("workspace_id"), str):
+            raise ProductError(401, "workspace_context_required", "personal workspace context required")
+        workspace_id = workspace["workspace_id"]
+    else:
+        principal = _product_principal(request)
+        # Product Token is bootstrap/internal compatibility only. Backend still
+        # validates this deployment-provided value and fails closed.
+        workspace_id = os.environ.get("BYQ_PRODUCT_WORKSPACE_ID", "workspace_bootstrap_unresolved")
     session_id = request.cookies.get(SESSION_COOKIE, "browser")
     return {
+        "x-byq-workspace-id": workspace_id,
         "x-byq-owner-principal": principal.subject,
         "x-byq-actor-principal": principal.subject,
         "x-byq-trace-id": f"product-{uuid.uuid4().hex}",

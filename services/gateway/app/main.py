@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
 from .auth_api import router as auth_router
 from .product_api import ProductError, router as product_router
-from .user_session import ProductAuthError, resolve_principal
+from .user_session import ProductAuthError, resolve_principal, resolve_user
 from .trace_store import TraceStore
 from .workflow_projection import project_workflow_event
 
@@ -75,6 +75,7 @@ class ProductSession:
     session_id: str
     trace_id: str
     principal: Principal
+    workspace_id: str = "workspace_bootstrap_unresolved"
     released: bool = False
 
 
@@ -163,6 +164,22 @@ def _authenticate_request(request: Request) -> Principal:
     return _authenticate(request.headers.get("authorization"))
 
 
+def _trusted_request_identity(request: Request) -> tuple[Principal, str]:
+    if "byq_session" in request.cookies:
+        try:
+            user = resolve_user(request)
+        except ProductAuthError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        workspace = user.get("_workspace")
+        if not isinstance(workspace, dict) or not isinstance(workspace.get("workspace_id"), str):
+            raise HTTPException(status_code=401, detail="personal workspace context required")
+        principal = Principal(subject=str(user.get("username") or user.get("user_id")))
+        return principal, workspace["workspace_id"]
+    return _authenticate_request(request), os.environ.get(
+        "BYQ_PRODUCT_WORKSPACE_ID", "workspace_bootstrap_unresolved"
+    )
+
+
 def _adapter_post(path: str, *, payload: dict[str, object] | None = None, timeout: float = 20.0) -> dict[str, object]:
     try:
         response = httpx.post(
@@ -238,6 +255,7 @@ def _collect_trace(session: ProductSession) -> None:
 
 def _domain_get(path: str, session: ProductSession) -> dict[str, object]:
     headers = {
+        "x-byq-workspace-id": session.workspace_id,
         "x-byq-owner-principal": session.principal.subject,
         "x-byq-actor-principal": session.principal.subject,
         "x-byq-trace-id": session.trace_id,
@@ -259,11 +277,13 @@ def _catalog_request(
     method: str,
     path: str,
     principal: Principal,
+    workspace_id: str,
     *,
     payload: dict[str, object] | None = None,
     params: dict[str, object] | None = None,
 ) -> dict[str, object]:
     headers = {
+        "x-byq-workspace-id": workspace_id,
         "x-byq-owner-principal": principal.subject,
         "x-byq-actor-principal": principal.subject,
     }
@@ -285,8 +305,8 @@ def _catalog_request(
     return body
 
 
-def _restore_product_session(conversation_id: str, principal: Principal) -> ProductSession:
-    body = _catalog_request("GET", f"/v1/product/conversations/{conversation_id}", principal)
+def _restore_product_session(conversation_id: str, principal: Principal, workspace_id: str) -> ProductSession:
+    body = _catalog_request("GET", f"/v1/product/conversations/{conversation_id}", principal, workspace_id)
     conversation = body.get("conversation")
     if not isinstance(conversation, dict) or conversation.get("status") != "active":
         raise HTTPException(status_code=404, detail="product session not found")
@@ -295,6 +315,7 @@ def _restore_product_session(conversation_id: str, principal: Principal) -> Prod
         session_id=str(conversation["runtime_session_id"]),
         trace_id=str(conversation["trace_id"]),
         principal=principal,
+        workspace_id=workspace_id,
     )
     try:
         product_sessions.add(session)
@@ -304,26 +325,27 @@ def _restore_product_session(conversation_id: str, principal: Principal) -> Prod
 
 
 def _product_session(request: Request, session_id: str) -> ProductSession:
-    principal = _authenticate_request(request)
+    principal, workspace_id = _trusted_request_identity(request)
     try:
         return product_sessions.get_owned(session_id, principal)
     except HTTPException as exc:
         if exc.status_code != 404:
             raise
-        return _restore_product_session(session_id, principal)
+        return _restore_product_session(session_id, principal, workspace_id)
 
 
 @app.post("/v1/agent/sessions", status_code=201)
 def create_product_session(request: Request) -> dict[str, object]:
-    principal = _authenticate_request(request)
+    principal, workspace_id = _trusted_request_identity(request)
     session_id = f"byq-session-{uuid.uuid4().hex}"
     trace_id = f"byq-trace-{uuid.uuid4().hex}"
     body = _adapter_post(
         "/internal/runtime/sessions",
-        payload={"session_id": session_id, "trace_id": trace_id, "owner_principal": principal.subject},
+        payload={"session_id": session_id, "trace_id": trace_id,
+                 "workspace_id": workspace_id, "owner_principal": principal.subject},
     )
     catalog = _catalog_request(
-        "POST", "/v1/product/conversations", principal,
+        "POST", "/v1/product/conversations", principal, workspace_id,
         payload={"runtime_session_id": session_id, "trace_id": trace_id},
     )
     conversation = catalog.get("conversation")
@@ -334,6 +356,7 @@ def create_product_session(request: Request) -> dict[str, object]:
         session_id=session_id,
         trace_id=trace_id,
         principal=principal,
+        workspace_id=workspace_id,
     )
     product_sessions.add(session)
     _start_trace_collector(session)
@@ -353,9 +376,9 @@ def list_product_sessions(
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, object]:
-    principal = _authenticate_request(request)
+    principal, workspace_id = _trusted_request_identity(request)
     catalog = _catalog_request(
-        "GET", "/v1/product/conversations", principal,
+        "GET", "/v1/product/conversations", principal, workspace_id,
         params={"status": status, "search": search, "limit": limit, "offset": offset},
     )
     conversations = catalog.get("conversations", [])
@@ -377,8 +400,8 @@ def list_product_sessions(
 
 @app.get("/v1/agent/sessions/{session_id}")
 def get_product_session(session_id: str, request: Request) -> dict[str, object]:
-    principal = _authenticate_request(request)
-    body = _catalog_request("GET", f"/v1/product/conversations/{session_id}", principal)
+    principal, workspace_id = _trusted_request_identity(request)
+    body = _catalog_request("GET", f"/v1/product/conversations/{session_id}", principal, workspace_id)
     conversation = body.get("conversation")
     if not isinstance(conversation, dict):
         raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
@@ -407,10 +430,10 @@ def update_product_session(
     update: ProductSessionUpdateRequest,
     request: Request,
 ) -> dict[str, object]:
-    principal = _authenticate_request(request)
+    principal, workspace_id = _trusted_request_identity(request)
     payload = update.model_dump(exclude_none=True)
     body = _catalog_request(
-        "PATCH", f"/v1/product/conversations/{session_id}", principal, payload=payload
+        "PATCH", f"/v1/product/conversations/{session_id}", principal, workspace_id, payload=payload
     )
     conversation = body.get("conversation")
     if not isinstance(conversation, dict):
@@ -430,7 +453,7 @@ def submit_product_turn(
     session = _product_session(http_request, session_id)
     _catalog_request(
         "POST", f"/v1/product/conversations/{session.conversation_id}/messages",
-        session.principal, payload={"content": request.content},
+        session.principal, session.workspace_id, payload={"content": request.content},
     )
     body = _adapter_post(
         f"/internal/runtime/sessions/{session.session_id}/prompt",
@@ -482,12 +505,12 @@ def cancel_product_session(
 
 @app.delete("/v1/agent/sessions/{session_id}")
 def release_product_session(session_id: str, request: Request) -> dict[str, object]:
-    principal = _authenticate_request(request)
     session = _product_session(request, session_id)
+    principal = session.principal
     body = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/release", timeout=5.0)
     _catalog_request(
         "PATCH", f"/v1/product/conversations/{session.conversation_id}",
-        principal, payload={"status": "archived"},
+        principal, session.workspace_id, payload={"status": "archived"},
     )
     product_sessions.mark_released(session.conversation_id, principal)
     return {

@@ -82,19 +82,22 @@ echo "== Authenticated Product Agent session and BYQ trace replay =="
 python3 - <<'PY'
 import json
 import os
+import http.cookiejar
+import urllib.request
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 gateway = os.environ.get("BYQ_SMOKE_GATEWAY_URL", "http://127.0.0.1:8100")
-token = os.environ.get("BYQ_PRODUCT_TOKEN", "ci-phase7-product-test-only")
+username = os.environ["BYQ_E2E_ADMIN_USERNAME"]
+password = os.environ["BYQ_E2E_ADMIN_PASSWORD"]
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
 def request(path, *, method="GET", payload=None, auth=True):
     body = None if payload is None else json.dumps(payload).encode()
     headers = {"content-type": "application/json"} if body else {}
-    if auth:
-        headers["authorization"] = f"Bearer {token}"
-    request = Request(gateway + path, data=body, headers=headers, method=method)
-    return urlopen(request, timeout=20)
+    target = gateway + path
+    outgoing = Request(target, data=body, headers=headers, method=method)
+    return opener.open(outgoing, timeout=20) if auth else urlopen(outgoing, timeout=20)
 
 try:
     request("/v1/agent/sessions", method="POST", payload={}, auth=False)
@@ -102,6 +105,12 @@ except HTTPError as exc:
     assert exc.code == 401
 else:
     raise AssertionError("Product Agent accepted an unauthenticated request")
+
+with request(
+    "/api/product/auth/login", method="POST",
+    payload={"username": username, "password": password}, auth=True,
+) as response:
+    assert response.status == 200
 
 with request("/v1/agent/sessions", method="POST", payload={}) as response:
     assert response.status == 201

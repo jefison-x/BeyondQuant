@@ -2,6 +2,7 @@ const BACKEND_TIMEOUT_MS = 8000;
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
 export type PoolContext = {
+  workspace_id: string;
   owner_principal: string;
   actor_principal: string;
   trace_id: string;
@@ -16,6 +17,7 @@ function result(payload: unknown, isError: boolean): PoolResult {
 
 function contextHeaders(context: PoolContext): Record<string, string> {
   return {
+    "x-byq-workspace-id": context.workspace_id,
     "x-byq-owner-principal": context.owner_principal,
     "x-byq-actor-principal": context.actor_principal,
     "x-byq-trace-id": context.trace_id,

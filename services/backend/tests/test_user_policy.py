@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.user_policy import UserPolicyConflict, UserPolicyNotFound, UserPolicyStore
+from tests.workspace_helpers import trusted_agent_context
 
 
 pytestmark = pytest.mark.skipif(
@@ -42,16 +43,13 @@ def test_user_policy_defaults_and_update() -> None:
 
 
 def test_user_policy_endpoints_are_owner_scoped(monkeypatch) -> None:
+    headers = trusted_agent_context(
+        "product-user", trace_id="byq-trace-policy-api", session_id="byq-session-policy-api",
+        dsh_run_id="byq-run-policy-api",
+    )
     store = UserPolicyStore()
     monkeypatch.setattr(main, "user_policy_store", store)
     client = TestClient(main.app)
-    headers = {
-        "x-byq-owner-principal": "product-user",
-        "x-byq-actor-principal": "product-user",
-        "x-byq-trace-id": "byq-trace-policy-api",
-        "x-byq-session-id": "byq-session-policy-api",
-        "x-byq-dsh-run-id": "byq-run-policy-api",
-    }
     response = client.get("/v1/users/agent-policy", headers=headers)
     assert response.status_code == 200
     assert response.json()["policy"]["owner_principal"] == "product-user"
@@ -152,16 +150,13 @@ def test_policy_preset_replaces_rules_and_rejects_vectorbt_semantics() -> None:
 
 
 def test_policy_rule_product_endpoints(monkeypatch) -> None:
+    headers = trusted_agent_context(
+        "alice", trace_id="trace-policy-rules", session_id="session-policy-rules",
+        dsh_run_id="run-policy-rules",
+    )
     store = UserPolicyStore()
     monkeypatch.setattr(main, "user_policy_store", store)
     client = TestClient(main.app)
-    headers = {
-        "x-byq-owner-principal": "alice",
-        "x-byq-actor-principal": "alice",
-        "x-byq-trace-id": "trace-policy-rules",
-        "x-byq-session-id": "session-policy-rules",
-        "x-byq-dsh-run-id": "run-policy-rules",
-    }
     created = client.post(
         "/v1/users/agent-policy/rules",
         headers=headers,

@@ -7,6 +7,7 @@ import {
 } from "../src/learning.js";
 
 const context = {
+  workspace_id: "workspace_alice",
   owner_principal: "alice",
   actor_principal: "alice",
   trace_id: "trace-learning-mcp-1",

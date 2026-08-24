@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.user_auth import UserAuthStore, UserConflict, UserForbidden
+from app.workspace_tenancy import WorkspaceTenancyStore
 
 
 pytestmark = pytest.mark.skipif(
@@ -158,4 +159,28 @@ def test_ui_preferences_http_boundary_requires_exact_owner() -> None:
     assert response.status_code == 200
     assert response.json()["preferences"]["accent_theme"] == "graphite"
     assert client.get(path, headers={"x-byq-owner-user-id": alice["user_id"]}).json()["preferences"]["version"] == 1
+    store.close()
+
+
+def test_login_and_session_expose_same_bounded_personal_workspace(monkeypatch) -> None:
+    store = UserAuthStore()
+    store.create_user(
+        {"username": "alice", "password": "password123", "display_name": "Alice"},
+        actor_role="admin",
+    )
+    monkeypatch.setattr(main, "user_store", store)
+    monkeypatch.setattr(main, "workspace_tenancy_store", WorkspaceTenancyStore())
+    client = TestClient(main.app)
+    logged_in = client.post("/v1/auth/login", json={"username": "alice", "password": "password123"})
+    assert logged_in.status_code == 200
+    workspace = logged_in.json()["workspace"]
+    assert workspace["kind"] == "personal"
+    assert workspace["role"] == "owner"
+    assert "owner_user_id" not in workspace
+    session = client.get(
+        "/v1/auth/session", headers={"x-byq-session-id": logged_in.json()["session_id"]}
+    )
+    assert session.status_code == 200
+    assert session.json()["workspace"] == workspace
+    main.workspace_tenancy_store.close()
     store.close()

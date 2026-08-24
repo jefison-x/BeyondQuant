@@ -14,6 +14,7 @@ from app.credentials import (
     CredentialStore,
     CredentialUnavailable,
 )
+from tests.workspace_helpers import trusted_agent_context
 
 
 pytestmark = pytest.mark.skipif(
@@ -23,15 +24,6 @@ pytestmark = pytest.mark.skipif(
 
 KEY_OLD = bytes(range(32))
 KEY_NEW = bytes(reversed(range(32)))
-CONTEXT = {
-    "x-byq-owner-principal": "alice",
-    "x-byq-actor-principal": "alice",
-    "x-byq-trace-id": "trace-credential-test",
-    "x-byq-session-id": "session-credential-test",
-    "x-byq-dsh-run-id": "run-credential-test",
-}
-
-
 def _store(*, active: str = "old", include_old: bool = True) -> CredentialStore:
     keys = {"new": KEY_NEW}
     if include_old:
@@ -228,6 +220,10 @@ def test_system_tushare_resolution_is_backend_only_and_fails_closed_when_ambiguo
 
 
 def test_backend_model_routes_never_echo_secret_and_resolver_is_private(monkeypatch) -> None:
+    context = trusted_agent_context(
+        "alice", trace_id="trace-credential-test", session_id="session-credential-test",
+        dsh_run_id="run-credential-test",
+    )
     store = _store()
     monkeypatch.setattr(main, "credential_store", store)
     monkeypatch.setattr(main, "CREDENTIAL_RESOLVER_TOKEN", "resolver-test-only")
@@ -235,7 +231,7 @@ def test_backend_model_routes_never_echo_secret_and_resolver_is_private(monkeypa
 
     created = client.post(
         "/v1/users/model-credentials",
-        headers=CONTEXT,
+        headers=context,
         json={
             "provider": "deepseek",
             "label": "API",
@@ -250,7 +246,7 @@ def test_backend_model_routes_never_echo_secret_and_resolver_is_private(monkeypa
 
     profile = client.post(
         "/v1/users/model-profiles",
-        headers=CONTEXT,
+        headers=context,
         json={
             "credential_id": credential["credential_id"],
             "key_name": "http-profile",
@@ -263,7 +259,7 @@ def test_backend_model_routes_never_echo_secret_and_resolver_is_private(monkeypa
     profile_id = profile.json()["profile"]["profile_id"]
     bound = client.put(
         "/v1/users/model-bindings/byq-product",
-        headers=CONTEXT,
+        headers=context,
         json={"profile_id": profile_id, "expected_version": 0},
     )
     assert bound.status_code == 200
@@ -285,7 +281,7 @@ def test_backend_model_routes_never_echo_secret_and_resolver_is_private(monkeypa
     assert resolved.status_code == 200
     assert resolved.json()["resolution"]["api_key"] == "sk-http-secret-abcd"
 
-    other_headers = {**CONTEXT, "x-byq-owner-principal": "bob", "x-byq-actor-principal": "bob"}
+    other_headers = trusted_agent_context("bob")
     hidden = client.get("/v1/users/model-credentials", headers=other_headers)
     assert hidden.status_code == 200
     assert hidden.json()["credentials"] == []

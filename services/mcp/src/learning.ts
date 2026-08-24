@@ -3,6 +3,7 @@ const BACKEND_TIMEOUT_MS = 8000;
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
 
 export type LearningContext = {
+  workspace_id?: string;
   owner_principal?: string;
   actor_principal?: string;
   trace_id?: string;
@@ -32,6 +33,7 @@ function contextHeaders(context: LearningContext | undefined): Record<string, st
   if (!context) return {};
   const headers: Record<string, string> = {};
   const mapping: Array<[keyof LearningContext, string]> = [
+    ["workspace_id", "x-byq-workspace-id"],
     ["owner_principal", "x-byq-owner-principal"],
     ["actor_principal", "x-byq-actor-principal"],
     ["trace_id", "x-byq-trace-id"],

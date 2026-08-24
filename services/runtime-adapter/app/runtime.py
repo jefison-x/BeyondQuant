@@ -52,6 +52,7 @@ class RuntimeSession:
     trace_id: str
     harness: DeepSeekHarness
     owner_principal: str | None = None
+    workspace_id: str | None = None
     model_resolution: dict[str, object] = field(default_factory=dict, repr=False)
     status: str = SessionStatus.STARTING
     active_run: ActiveRun | None = None
@@ -175,7 +176,10 @@ class RuntimeAdapter:
             "raw_dsh_events": False,
         }
 
-    def create_session(self, session_id: str, trace_id: str, owner_principal: str | None = None) -> dict[str, Any]:
+    def create_session(
+        self, session_id: str, trace_id: str, owner_principal: str | None = None,
+        workspace_id: str | None = None,
+    ) -> dict[str, Any]:
         validate_identifier(session_id, field="session_id")
         validate_identifier(trace_id, field="trace_id")
         session_root = contained_session_path(self._session_root, session_id)
@@ -193,6 +197,7 @@ class RuntimeAdapter:
                 session_root,
                 trace_id=trace_id,
                 owner_principal=owner_principal,
+                workspace_id=workspace_id,
                 model_resolution=model_resolution,
             )
             record = RuntimeSession(
@@ -200,6 +205,7 @@ class RuntimeAdapter:
                 trace_id=trace_id,
                 harness=harness,
                 owner_principal=owner_principal,
+                workspace_id=workspace_id,
                 model_resolution=model_resolution,
             )
             self._sessions[session_id] = record
@@ -333,6 +339,7 @@ class RuntimeAdapter:
             contained_session_path(self._session_root, record.session_id),
             trace_id=record.trace_id,
             owner_principal=record.owner_principal,
+            workspace_id=record.workspace_id,
             model_resolution=record.model_resolution,
         )
         try:
@@ -432,12 +439,14 @@ class RuntimeAdapter:
         *,
         trace_id: str,
         owner_principal: str | None,
+        workspace_id: str | None,
         model_resolution: dict[str, object],
     ) -> DeepSeekHarness:
         environment = {
             "BYQ_MCP_URL": os.environ.get("BYQ_MCP_URL", "http://mcp:8300/mcp/v1"),
             "BYQ_MCP_TOKEN": os.environ.get("BYQ_MCP_TOKEN", ""),
             "BYQ_OWNER_PRINCIPAL": owner_principal or "",
+            "BYQ_WORKSPACE_ID": workspace_id or "",
             # The authenticated user owns the session, while the Product DSH
             # service is the initiating actor. Keeping these identities
             # distinct preserves the human-review anti-self-approval rule.

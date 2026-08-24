@@ -4,6 +4,7 @@ import os
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from app.research import ResearchStore
 from app.user_auth import UserAuthStore
@@ -114,5 +115,51 @@ def test_user_platform_and_engineering_tables_do_not_gain_workspace_column() -> 
     assert "user_agent_policy" not in columns
     assert "market_daily_bars" not in columns
     assert "engineering_tasks" not in columns
+    tenancy.close()
+    users.close()
+
+
+def test_new_domain_writes_are_stamped_and_mismatched_workspace_is_rejected() -> None:
+    users = UserAuthStore()
+    alice = _create_user(users, "alice")
+    bob = _create_user(users, "bob")
+    tenancy = WorkspaceTenancyStore()
+    research = ResearchStore()
+
+    task = research.create_task({
+        "owner_principal": "alice", "title": "owned", "objective": "boundary",
+        "trace_id": "trace-owned", "idempotency_key": "owned-key",
+    })
+    alice_workspace = tenancy.public_workspace(str(alice["user_id"]))["workspace_id"]
+    bob_workspace = tenancy.public_workspace(str(bob["user_id"]))["workspace_id"]
+    with tenancy.engine.begin() as connection:
+        assert connection.execute(
+            text("SELECT workspace_id FROM research_tasks WHERE task_id = :task_id"),
+            {"task_id": task["task_id"]},
+        ).scalar_one() == alice_workspace
+
+    with pytest.raises(DBAPIError, match="workspace owner mismatch"):
+        with tenancy.engine.begin() as connection:
+            connection.execute(
+                text("UPDATE research_tasks SET workspace_id = :workspace_id WHERE task_id = :task_id"),
+                {"workspace_id": bob_workspace, "task_id": task["task_id"]},
+            )
+    research.close()
+    tenancy.close()
+    users.close()
+
+
+def test_verified_contract_makes_workspace_keys_mandatory() -> None:
+    users = UserAuthStore()
+    _create_user(users, "alice")
+    tenancy = WorkspaceTenancyStore()
+    report = tenancy.enforce_contract()
+    assert report["status"] == "enforced"
+    assert all(value == 0 for value in report["relation_checks"].values())
+    with tenancy.engine.begin() as connection:
+        nullable = connection.execute(text("""SELECT is_nullable
+            FROM information_schema.columns
+            WHERE table_name = 'research_tasks' AND column_name = 'workspace_id'""")).scalar_one()
+    assert nullable == "NO"
     tenancy.close()
     users.close()

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.paper_trading import PaperTradingStore
+from tests.workspace_helpers import trusted_agent_context
 
 
 pytestmark = pytest.mark.skipif(
@@ -17,6 +18,10 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_paper_ledger_endpoint_derives_cash_flow(monkeypatch) -> None:
+    headers = trusted_agent_context(
+        "product-user", trace_id="byq-trace-paper-api", session_id="byq-session-paper-api",
+        dsh_run_id="byq-run-paper-api",
+    )
     store = PaperTradingStore()
     monkeypatch.setattr(main, "paper_store", store)
     client = TestClient(main.app)
@@ -36,13 +41,6 @@ def test_paper_ledger_endpoint_derives_cash_flow(monkeypatch) -> None:
         },
         trusted_owner="product-user",
     )
-    headers = {
-        "x-byq-owner-principal": "product-user",
-        "x-byq-actor-principal": "product-user",
-        "x-byq-trace-id": "byq-trace-paper-api",
-        "x-byq-session-id": "byq-session-paper-api",
-        "x-byq-dsh-run-id": "byq-run-paper-api",
-    }
     response = client.get(f"/v1/paper/accounts/{account['account_id']}/ledger", headers=headers)
     assert response.status_code == 200
     ledger = response.json()["ledger"]
@@ -54,20 +52,19 @@ def test_paper_ledger_endpoint_derives_cash_flow(monkeypatch) -> None:
 
     denied = client.get(
         f"/v1/paper/accounts/{account['account_id']}/ledger",
-        headers={**headers, "x-byq-owner-principal": "other-user"},
+        headers=trusted_agent_context("other-user"),
     )
     assert denied.status_code == 403
     store.close()
 
 
 def test_stock_pool_snapshot_and_lifecycle_api(monkeypatch) -> None:
+    headers = trusted_agent_context(
+        "product-user", trace_id="trace-pool", session_id="session-pool", dsh_run_id="browser"
+    )
     store = PaperTradingStore()
     monkeypatch.setattr(main, "paper_store", store)
     client = TestClient(main.app)
-    headers = {
-        "x-byq-owner-principal": "product-user", "x-byq-actor-principal": "product-user",
-        "x-byq-trace-id": "trace-pool", "x-byq-session-id": "session-pool", "x-byq-dsh-run-id": "browser",
-    }
     created = client.post("/v1/paper/pools", headers=headers, json={"name": "核心池", "symbols": ["000001.SZ"]})
     assert created.status_code == 201
     pool = created.json()["pool"]

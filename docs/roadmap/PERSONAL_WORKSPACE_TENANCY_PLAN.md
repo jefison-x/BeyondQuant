@@ -1,6 +1,6 @@
 # Personal Workspace Tenancy Plan
 
-- Status: Phases 49-50 complete; Phases 51-52 pending
+- Status: Phases 49-51 complete; Phase 52 pending
 - Decision: [ADR-0025](../architecture/adr/ADR-0025-personal-workspace-tenancy.md)
 - Contract: [`personal-workspace.v1`](../contracts/personal-workspace.md)
 
@@ -89,7 +89,7 @@ Stop rather than contract if a resource lacks a provable owner, a parent/child
 pair resolves to different workspaces, or counts/references differ from the
 manifest.
 
-## Phase 51 — Trusted context and domain authorization cutover
+## Phase 51 — Trusted context and domain authorization cutover (`COMPLETE`)
 
 ### Scope
 
@@ -122,6 +122,19 @@ manifest.
 Stop the contract migration if any root remains authorized only by
 `owner_principal`, any child/reference can cross workspaces, or any runtime or
 MCP path accepts model/client-selected scope.
+
+### Delivered
+
+Durable sessions now resolve one active personal workspace; Gateway ignores
+browser identity/workspace headers and propagates the trusted context through
+Runtime Adapter, Product DSH, MCP, and Backend. Backend membership validation
+is mandatory before the retained creator/owner selector reaches domain stores.
+Database triggers stamp root/child workspace ownership and reject mismatches.
+The verified development migration contracted all 31 classified columns to
+`NOT NULL`, with 22 relationship checks at zero and no quarantined rows.
+Cross-workspace, browser-spoof, session projection, runtime environment, MCP
+propagation, full Compose, real Product API, and two-user golden evidence is in
+`docs/evidence/phase-51/`.
 
 ## Phase 52 — Product orientation, recovery, and isolation closure
 

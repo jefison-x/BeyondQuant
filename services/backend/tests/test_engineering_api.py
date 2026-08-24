@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.engineering import EngineeringTaskStore
+from tests.workspace_helpers import trusted_agent_context
 
 
 
@@ -16,16 +17,11 @@ pytestmark = pytest.mark.skipif(
     reason="BYQ_DATABASE_URL is not set",
 )
 
-CONTEXT = {
-    "x-byq-owner-principal": "alice",
-    "x-byq-actor-principal": "alice",
-    "x-byq-trace-id": "trace-engineering-api",
-    "x-byq-session-id": "session-engineering-api",
-    "x-byq-dsh-run-id": "dsh-run-engineering-api",
-}
-
-
 def test_engineering_api_requires_context_and_evidence_gate(monkeypatch, tmp_path) -> None:
+    context = trusted_agent_context(
+        "alice", trace_id="trace-engineering-api", session_id="session-engineering-api",
+        dsh_run_id="dsh-run-engineering-api",
+    )
     store = EngineeringTaskStore()
     monkeypatch.setattr(main, "engineering_store", store)
     client = TestClient(main.app)
@@ -38,7 +34,7 @@ def test_engineering_api_requires_context_and_evidence_gate(monkeypatch, tmp_pat
 
     created = client.post(
         "/v1/engineering/tasks",
-        headers=CONTEXT,
+        headers=context,
         json={"title": "fix", "description": "fix", "scope": "services/backend", "idempotency_key": "eng-api-1"},
     )
     assert created.status_code == 201, created.text
@@ -48,21 +44,21 @@ def test_engineering_api_requires_context_and_evidence_gate(monkeypatch, tmp_pat
 
     approved = client.post(
         f"/v1/engineering/tasks/{task['task_id']}/transitions",
-        headers={**CONTEXT, "x-byq-actor-principal": "human-reviewer"},
+        headers={**context, "x-byq-actor-principal": "human-reviewer"},
         json={"target_status": "approved", "idempotency_key": "approve-api"},
     )
     assert approved.status_code == 201, approved.text
 
     started = client.post(
         f"/v1/engineering/tasks/{task['task_id']}/transitions",
-        headers=CONTEXT,
+        headers=context,
         json={"target_status": "in_progress", "idempotency_key": "start-api"},
     )
     assert started.status_code == 201, started.text
 
     evidence = client.post(
         f"/v1/engineering/tasks/{task['task_id']}/evidence",
-        headers=CONTEXT,
+        headers=context,
         json={
             "worktree_path": "/home/jefison/projects/.byq-worktrees/phase-15-engineering-plane",
             "branch_name": "codex/phase-15-engineering-plane",
@@ -77,14 +73,14 @@ def test_engineering_api_requires_context_and_evidence_gate(monkeypatch, tmp_pat
 
     reviewed = client.post(
         f"/v1/engineering/tasks/{task['task_id']}/transitions",
-        headers=CONTEXT,
+        headers=context,
         json={"target_status": "review_required", "idempotency_key": "review-api"},
     )
     assert reviewed.status_code == 201, reviewed.text
 
     completed = client.post(
         f"/v1/engineering/tasks/{task['task_id']}/transitions",
-        headers=CONTEXT,
+        headers=context,
         json={"target_status": "completed", "idempotency_key": "complete-api"},
     )
     assert completed.status_code == 201, completed.text

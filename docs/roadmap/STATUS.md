@@ -3,10 +3,11 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 50** — Durable personal workspaces and owner
-  memberships, automatic provisioning, additive indexed ownership columns,
-  transactional manifested backfill, quarantine, and relationship checks.
-- Next phase: **Phase 51 — Trusted context and domain authorization cutover**. The
+- Current completed phase: **Phase 51** — Durable-session workspace resolution,
+  trusted Gateway/Runtime/DSH/MCP/Backend context, fail-closed membership
+  validation, workspace-stamped writes, parent/child mismatch rejection, and
+  the verified 31-table non-null contract migration.
+- Next phase: **Phase 52 — Product orientation and isolation closure**. The
   human v1.0 release-candidate review remains postponed until Phases 51-52
   close. The post-Phase 40 DSH Upgrade Lane remains separately scheduled.
 - Accepted runtime ADR: **ADR-0003**
@@ -32,7 +33,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 40 isolated signal-producer ADR: **ADR-0023**
 - Accepted conversation-first Product experience ADR: **ADR-0024**
 - Accepted personal-workspace tenancy ADR: **ADR-0025**
-- Open architecture decisions: **none from the completed Phase 50 scope**.
+- Open architecture decisions: **none from the completed Phase 51 scope**.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -277,6 +278,15 @@ Codex session does not infer project state from commit history.
   preferences and policy, platform data/operations, and Engineering Plane
   tables remain outside workspace ownership. Authorization still uses the
   proven owner path until Phase 51; no premature cutover is claimed.
+- Phase 51 made the durable session's active personal workspace mandatory at
+  the Product/Agent authorization boundary. Gateway ignores browser identity
+  headers; Runtime Adapter, Product DSH and every MCP domain tool propagate
+  only trusted context; Backend validates active owner membership before
+  domain access. PostgreSQL stamps root/child ownership, rejects mismatches,
+  and now enforces `NOT NULL` across all 31 classified tables after a zero-
+  quarantine, 22-check contract migration. Full Compose, real Product API and
+  the two-user no-mock coherence journey passed. Evidence is under
+  `docs/evidence/phase-51/`.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence. The historical gaps recorded in
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` were then classified and
@@ -289,8 +299,8 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active implementation-phase blocker: **none**. Phase 50 is complete under
-  Accepted ADR-0025. Phase 51 is next; the human v1.0 RC review remains
+- Active implementation-phase blocker: **none**. Phase 51 is complete under
+  Accepted ADR-0025. Phase 52 is next; the human v1.0 RC review remains
   postponed until the personal-workspace program closes. The post-Phase 40 DSH
   Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.

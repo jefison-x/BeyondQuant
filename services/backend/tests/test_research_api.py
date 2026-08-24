@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.research import ResearchStore
+from tests.workspace_helpers import trusted_agent_context
 
 
 
@@ -27,20 +28,18 @@ def task_body() -> dict[str, object]:
 
 
 def _owner_headers(principal: str = "product-user") -> dict[str, str]:
-    return {
-        "x-byq-owner-principal": principal,
-        "x-byq-actor-principal": principal,
-        "x-byq-trace-id": f"byq-trace-{principal}",
-        "x-byq-session-id": f"byq-session-{principal}",
-        "x-byq-dsh-run-id": f"byq-run-{principal}",
-    }
+    return trusted_agent_context(
+        principal, trace_id=f"byq-trace-{principal}", session_id=f"byq-session-{principal}",
+        dsh_run_id=f"byq-run-{principal}",
+    )
 
 
 def test_research_api_exposes_normalized_persistent_entity_flow(monkeypatch) -> None:
+    owner_headers = _owner_headers("product-user")
     store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
-    client.headers.update(_owner_headers("product-user"))
+    client.headers.update(owner_headers)
 
     created = client.post("/v1/research/tasks", json=task_body())
     assert created.status_code == 201
@@ -74,10 +73,11 @@ def test_research_api_exposes_normalized_persistent_entity_flow(monkeypatch) -> 
 
 
 def test_research_api_maps_idempotency_and_transition_conflicts(monkeypatch) -> None:
+    owner_headers = _owner_headers("product-user")
     store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
-    client.headers.update(_owner_headers("product-user"))
+    client.headers.update(owner_headers)
 
     created = client.post("/v1/research/tasks", json=task_body()).json()
     conflict = client.post(
@@ -98,13 +98,14 @@ def test_research_api_maps_idempotency_and_transition_conflicts(monkeypatch) -> 
 
 
 def test_research_task_creation_rejects_owner_spoofing(monkeypatch) -> None:
+    other_headers = _owner_headers("other-user")
     store = ResearchStore()
     monkeypatch.setattr(main, "research_store", store)
     client = TestClient(main.app)
 
     response = client.post(
         "/v1/research/tasks",
-        headers=_owner_headers("other-user"),
+        headers=other_headers,
         json=task_body(),
     )
 

@@ -1409,7 +1409,7 @@ historical owners are mapped; unmatched/conflicting records are preserved in
 manifested quarantine reports; inherited children and relationship equality
 are verified. Owner-based authorization intentionally remains until Phase 51.
 
-### Phase 51 — Trusted context and domain authorization cutover
+### Phase 51 — Trusted context and domain authorization cutover (`COMPLETE`)
 
 Resolve the personal workspace from durable authentication, propagate it only
 through trusted Gateway/Backend/MCP/runtime paths, cut workspace resources from
@@ -1417,6 +1417,14 @@ principal authorization to `workspace_id`, and enforce verified constraints.
 Complete cross-workspace, guessed-ID, idempotency, lineage, approval, object,
 bundle and Agent-to-Domain denial tests without exposing DSH internals or
 allowing DSH database access.
+
+Delivered durable session workspace resolution; browser-header stripping;
+trusted Gateway → Runtime Adapter → Product DSH → MCP → Backend propagation;
+fail-closed membership validation; root/child write stamping and mismatch
+rejection; workspace-scoped idempotency indexes; and the verified 31-table
+non-null contract migration. Full Compose, real Product API, and no-mock
+two-user coherence remained green; evidence is under
+`docs/evidence/phase-51/`.
 
 ### Phase 52 — Product orientation and isolation closure
 
