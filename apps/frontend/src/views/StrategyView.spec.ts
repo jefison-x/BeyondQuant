@@ -5,6 +5,12 @@ import ElementPlus from "element-plus";
 import StrategyView from "./StrategyView.vue";
 import { useAuthStore } from "@/stores/auth";
 
+const replaceRoute = vi.fn();
+vi.mock("vue-router", () => ({
+  useRoute: () => ({ path: "/strategy", query: {} }),
+  useRouter: () => ({ replace: replaceRoute, push: vi.fn() }),
+}));
+
 function mountView() {
   return shallowMount(StrategyView, {
     global: {
@@ -70,6 +76,7 @@ describe("StrategyView", () => {
     saveStrategyDraft.mockReset();
     deleteStrategyDraft.mockReset();
     approveStrategyVersion.mockReset();
+    replaceRoute.mockReset();
   });
 
   it("hides superseded drafts by default and can open the explicit archive view", async () => {

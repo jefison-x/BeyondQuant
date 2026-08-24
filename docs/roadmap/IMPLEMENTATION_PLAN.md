@@ -1348,13 +1348,13 @@ Embed the existing bounded administrator operations and Data Center surfaces
 in a route-backed two-column large dialog/full-screen mobile surface without
 weakening Product API RBAC or audit.
 
-### Phase 46 — Core management workspace redesign (`NEXT`)
+### Phase 46 — Core management workspace redesign (`COMPLETE`)
 
 Unify Stock Pool, Strategy and Backtest catalog/detail interactions, visual
 hierarchy, Workflow-card deep links, charts and responsive behavior while
 preserving every completed domain invariant and deep result surface.
 
-### Phase 47 — Interaction, responsive and accessibility closure (`PLANNED`)
+### Phase 47 — Interaction, responsive and accessibility closure (`NEXT`)
 
 Standardize global states and controls, unsaved-change behavior, keyboard/focus,
 responsive content and the complete theme/chart accessibility matrix.

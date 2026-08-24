@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import type { EChartsOption } from "echarts";
 import {
@@ -21,8 +22,11 @@ import { useAuthStore } from "@/stores/auth";
 import ChartWrapper from "@/components/charts/ChartWrapper.vue";
 import MetricCard from "@/components/ui/MetricCard.vue";
 import { formatChinaTime } from "@/time";
+import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 
 const auth = useAuthStore();
+const route = useRoute();
+const router = useRouter();
 const loading = ref(true);
 const error = ref("");
 const backtests = ref<Array<Record<string, unknown>>>([]);
@@ -117,10 +121,13 @@ async function loadList() {
     const response = await listBacktests(auth.token);
     backtests.value = response.backtests;
     if (backtests.value.length) {
-      const first = backtests.value[0];
-      if (!selected.value || backtests.value.some((row) => row.job_id === selected.value?.job_id)) {
-        await select(first);
-      }
+      const requested = typeof route.query.job === "string" ? route.query.job : "";
+      const target = requested
+        ? backtests.value.find((row) => String(row.job_id) === requested) ?? { job_id: requested }
+        : selected.value
+          ? backtests.value.find((row) => row.job_id === selected.value?.job_id)
+          : backtests.value[0];
+      if (target) await select(target, false);
     } else {
       selected.value = null;
       job.value = null;
@@ -133,7 +140,7 @@ async function loadList() {
   }
 }
 
-async function select(row: Record<string, unknown>) {
+async function select(row: Record<string, unknown>, updateRoute = true) {
   selected.value = row;
   job.value = null;
   result.value = null;
@@ -148,6 +155,9 @@ async function select(row: Record<string, unknown>) {
     if (job.value.status === "completed") {
       const body = await getBacktestResult(jobId, auth.token);
       result.value = body.result;
+    }
+    if (updateRoute && route.query.job !== jobId) {
+      await router.replace({ path: route.path, query: { ...route.query, job: jobId } });
     }
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "读取回测任务失败";
@@ -385,6 +395,11 @@ async function submitCreate() {
   }
 }
 
+function returnToConversation() {
+  const session = typeof route.query.session === "string" ? route.query.session : "";
+  void router.push({ path: "/agent", query: session ? { session } : {} });
+}
+
 onMounted(loadList);
 </script>
 
@@ -393,7 +408,22 @@ onMounted(loadList);
     <div v-if="loading" class="base-loading">加载中...</div>
     <div v-else-if="error && !selected" class="base-error">{{ error }}</div>
 
-    <div v-else class="backtest-workbench">
+    <ManagementWorkspace
+      v-else
+      eyebrow="核心研究资产"
+      title="回测任务与完整结果"
+      description="沿不可变策略版本、审批与信号快照谱系复核收益、成交和执行假设。"
+      catalog-label="回测任务"
+      :count="filteredBacktests.length"
+      @return="returnToConversation"
+    >
+      <template #return>返回投研对话</template>
+      <template #actions>
+        <el-button @click="loadList">刷新</el-button>
+        <el-button type="primary" @click="openCreate">新建回测</el-button>
+      </template>
+      <template #summary>结果来自不可变输入和 BYQ 确定性引擎</template>
+      <template #catalog>
       <el-card shadow="never" class="backtest-list-pane">
         <template #header>
           <div class="card-heading">
@@ -410,11 +440,11 @@ onMounted(loadList);
             <el-option label="cancelled" value="cancelled" />
             <el-option label="failed" value="failed" />
           </el-select>
-          <el-button type="primary" size="small" @click="openCreate">新建回测</el-button>
         </div>
         <el-empty v-if="!filteredBacktests.length" description="暂无回测结果" />
         <el-table
           v-else
+          class="desktop-catalog-table"
           :data="filteredBacktests"
           highlight-current-row
           @current-change="select"
@@ -502,7 +532,9 @@ onMounted(loadList);
           <el-button @click="loadList">刷新</el-button>
         </div>
       </el-card>
+      </template>
 
+      <template #detail>
       <el-card shadow="never" class="backtest-detail-pane">
         <template #header>
           <div class="card-heading">
@@ -618,7 +650,8 @@ onMounted(loadList);
           </el-dialog>
         </template>
       </el-card>
-    </div>
+      </template>
+    </ManagementWorkspace>
 
     <el-dialog v-model="showCompare" title="回测对比" width="min(960px, 94vw)">
       <el-tabs>
@@ -736,12 +769,6 @@ onMounted(loadList);
 </template>
 
 <style scoped>
-.backtest-workbench {
-  display: grid;
-  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.1fr);
-  gap: 1rem;
-}
-
 .list-toolbar {
   display: grid;
   gap: 0.5rem;
@@ -803,8 +830,8 @@ onMounted(loadList);
 }
 
 @media (max-width: 900px) {
-  .backtest-workbench {
-    grid-template-columns: 1fr;
+  .desktop-catalog-table {
+    display: none;
   }
 
   .metric-grid {
@@ -830,7 +857,10 @@ onMounted(loadList);
     display: flex;
     gap: 0.5rem;
     justify-content: space-between;
+    min-width: 0;
   }
+
+  .mobile-card-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .mobile-card-meta {
     color: var(--byq-text-muted);

@@ -34,6 +34,7 @@ test("real Product API login and Stock Pool create flow", async ({ page, baseURL
 
   await page.goto("/stock-pool");
   await expect(page.getByRole("heading", { name: "股票管理" })).toBeVisible();
+  await page.getByRole("button", { name: "新建股票池" }).click();
 
   const poolName = `CI股票池-${Date.now()}`;
   await page.getByPlaceholder("Pool name").fill(poolName);

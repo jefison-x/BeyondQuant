@@ -14,6 +14,7 @@ import ApprovalManagementPanel from "@/components/agent/ApprovalManagementPanel.
 import WorkflowCard from "@/components/agent/WorkflowCard.vue";
 import { useAgentStore, type AgentMessage } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
+import { workflowCardDestination } from "@/router/workflowCardNavigation";
 
 const auth = useAuthStore();
 const route = useRoute();
@@ -159,10 +160,7 @@ async function decide(approval: Record<string, unknown>, decision: "approved" | 
 }
 
 function navigateCard(event: WorkflowCardEvent) {
-  if (event.kind === "agent.card.stock_candidates") void router.push({ path: "/stock-pool", query: event.payload.pool_id ? { pool: event.payload.pool_id } : {} });
-  else if (event.kind === "agent.card.backtest_context") void router.push({ path: "/backtest", query: { job: event.payload.job_id } });
-  else if (event.kind === "agent.card.approval") void router.push("/research-center");
-  else void router.push({ path: "/strategy", query: "artifact_id" in event.payload && event.payload.artifact_id ? { artifact: String(event.payload.artifact_id) } : {} });
+  void router.push(workflowCardDestination(event, agent.activeSessionId));
 }
 
 async function send(value = prompt.value) {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   createStockPool,
@@ -17,8 +18,11 @@ import {
 import type { StockPool, StockPoolSnapshot } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
+import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 
 const auth = useAuthStore();
+const route = useRoute();
+const router = useRouter();
 const loading = ref(true);
 const error = ref("");
 const busy = ref(false);
@@ -41,6 +45,7 @@ const editDescription = ref("");
 const editSymbols = ref("");
 const editWeights = ref("");
 const editDefinition = ref("{}");
+const showCreate = ref(false);
 
 const POOL_TYPE_LABELS: Record<string, string> = {
   custom: "自建",
@@ -64,6 +69,13 @@ async function loadPools() {
   error.value = "";
   try {
     pools.value = (await listStockPools(auth.token)).pools;
+    const requested = typeof route.query.pool === "string" ? route.query.pool : "";
+    const target = requested
+      ? pools.value.find((row) => String(row.pool_id) === requested) ?? { pool_id: requested }
+      : selected.value
+        ? pools.value.find((row) => String(row.pool_id) === selected.value?.pool_id)
+        : pools.value[0];
+    if (target) await select(target, false);
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "加载股票池失败";
   } finally {
@@ -105,6 +117,7 @@ async function submit() {
       weights,
     });
     selected.value = created.pool;
+    showCreate.value = false;
     ElMessage.success("股票池已创建");
     name.value = "";
     description.value = "";
@@ -118,7 +131,7 @@ async function submit() {
   }
 }
 
-async function select(row: Record<string, unknown>) {
+async function select(row: Record<string, unknown>, updateRoute = true) {
   const poolId = String(row.pool_id ?? "");
   if (!poolId) return;
   busy.value = true;
@@ -136,6 +149,9 @@ async function select(row: Record<string, unknown>) {
     editSymbols.value = (detail.pool.snapshot?.members ?? []).map((item) => item.symbol).join(",");
     editWeights.value = JSON.stringify(detail.pool.weights ?? {}, null, 2);
     editDefinition.value = JSON.stringify(detail.pool.snapshot?.definition ?? {}, null, 2);
+    if (updateRoute && route.query.pool !== poolId) {
+      await router.replace({ path: route.path, query: { ...route.query, pool: poolId } });
+    }
   } catch (exc) {
     ElMessage.error(exc instanceof Error ? exc.message : "加载股票池详情失败");
   } finally {
@@ -204,18 +220,18 @@ function toggleHistorical(open: boolean) {
   if (!open) historicalSnapshot.value = null;
 }
 
+function returnToConversation() {
+  const session = typeof route.query.session === "string" ? route.query.session : "";
+  void router.push({ path: "/agent", query: session ? { session } : {} });
+}
+
 onMounted(loadPools);
 </script>
 
 <template>
   <section class="stock-page">
-    <el-card shadow="never" class="top-band">
-      <template #header>
-        <div class="card-heading">
-          <span class="card-title">创建版本化股票池</span>
-          <small class="card-sub">Symbol 以逗号分隔，例如 000001.SZ,600000.SH</small>
-        </div>
-      </template>
+    <el-dialog v-model="showCreate" title="创建版本化股票池" width="min(680px, 94vw)">
+      <p class="dialog-intro">创建自建股票池；指数与动态池只能由可信 BYQ 数据或计算边界生成。</p>
       <el-form label-position="top">
         <el-row :gutter="14">
           <el-col :xs="24" :sm="12">
@@ -239,13 +255,31 @@ onMounted(loadPools);
         <el-form-item label="权重（可选 JSON）">
           <el-input v-model="weightsText" type="textarea" :rows="3" placeholder='{"000001.SZ": 0.6, "600000.SH": 0.4}' />
         </el-form-item>
-        <el-button type="primary" :loading="busy" @click="submit">创建股票池</el-button>
       </el-form>
-    </el-card>
+      <template #footer>
+        <el-button @click="showCreate = false">取消</el-button>
+        <el-button type="primary" :loading="busy" @click="submit">创建股票池</el-button>
+      </template>
+    </el-dialog>
 
     <p v-if="error" class="page-error">{{ error }}</p>
 
-    <el-card shadow="never" class="top-band">
+    <ManagementWorkspace
+      eyebrow="核心研究资产"
+      title="股票池目录与快照"
+      description="管理可变目录身份、不可变成员快照以及下游冻结引用。"
+      catalog-label="股票池"
+      :count="filteredPools.length"
+      @return="returnToConversation"
+    >
+      <template #return>返回投研对话</template>
+      <template #actions>
+        <el-button @click="loadPools">刷新</el-button>
+        <el-button type="primary" @click="showCreate = true">新建股票池</el-button>
+      </template>
+      <template #summary>目录变化不改写历史成员快照</template>
+      <template #catalog>
+      <el-card shadow="never" class="stock-list-pane">
       <template #header>
         <div class="panel-heading">
           <span class="card-title">股票池列表</span>
@@ -257,13 +291,12 @@ onMounted(loadPools);
               <el-radio-button value="index">指数</el-radio-button>
               <el-radio-button value="dynamic">动态</el-radio-button>
             </el-radio-group>
-            <el-button size="small" @click="loadPools">刷新</el-button>
           </div>
         </div>
       </template>
       <div v-if="loading" class="base-loading">加载中...</div>
       <el-empty v-else-if="!filteredPools.length" description="暂无股票池" />
-      <el-table v-else :data="filteredPools" highlight-current-row @current-change="select">
+      <el-table v-else class="desktop-catalog-table" :data="filteredPools" highlight-current-row @current-change="select">
         <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
         <el-table-column label="类型" width="90">
           <template #default="{ row }">{{ POOL_TYPE_LABELS[String(row.pool_type ?? "custom")] ?? row.pool_type }}</template>
@@ -296,9 +329,11 @@ onMounted(loadPools);
           </div>
         </el-card>
       </div>
-    </el-card>
+      </el-card>
+      </template>
 
-    <el-card v-if="selected" shadow="never" class="top-band" v-loading="busy">
+      <template #detail>
+      <el-card v-if="selected" shadow="never" class="stock-detail-pane" v-loading="busy">
       <template #header>
         <div class="card-heading">
           <span class="card-title">股票池详情</span>
@@ -362,7 +397,12 @@ onMounted(loadPools);
           </el-table>
         </el-tab-pane>
       </el-tabs>
-    </el-card>
+      </el-card>
+      <el-card v-else shadow="never" class="stock-detail-pane detail-empty">
+        <el-empty description="选择一个股票池查看成员、来源与快照历史" />
+      </el-card>
+      </template>
+    </ManagementWorkspace>
 
     <el-dialog :model-value="historicalSnapshot !== null" title="历史快照（只读）" width="min(760px, 92vw)" @update:model-value="toggleHistorical">
       <el-descriptions v-if="historicalSnapshot" :column="2" border>
@@ -386,6 +426,10 @@ onMounted(loadPools);
   gap: 0.75rem;
   justify-content: space-between;
 }
+
+.dialog-intro { color: var(--byq-text-muted); font-size: 12px; margin: 0 0 14px; }
+.stock-list-pane, .stock-detail-pane { min-width: 0; }
+.detail-empty { min-height: 360px; display: grid; place-items: center; }
 
 .list-toolbar {
   align-items: center;
@@ -422,6 +466,10 @@ onMounted(loadPools);
 }
 
 @media (max-width: 900px) {
+  .desktop-catalog-table {
+    display: none;
+  }
+
   .mobile-list {
     display: grid;
     gap: 0.6rem;
@@ -437,7 +485,10 @@ onMounted(loadPools);
     display: flex;
     gap: 0.5rem;
     justify-content: space-between;
+    min-width: 0;
   }
+
+  .mobile-card-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .mobile-card-meta {
     color: var(--byq-text-muted);

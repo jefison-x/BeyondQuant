@@ -3,10 +3,10 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 45** — Route-backed administrator System
-  Settings dialog with twelve bounded Product API sections, preserved deep
-  links, desktop/mobile navigation, RBAC and audit boundaries.
-- Next phase: **Phase 46 — Core management workspace redesign** as defined in
+- Current completed phase: **Phase 46** — Unified Stock Pool, Strategy and
+  Backtest catalog/detail workspaces with fixed normalized Workflow-card deep
+  links, exact Product resource selection and return-to-conversation context.
+- Next phase: **Phase 47 — Interaction, responsive and accessibility closure** as defined in
   `FRONTEND_EXPERIENCE_PLAN.md`. The v1.0 release-candidate review is postponed
   until the Phases 42-48 experience program is complete. The post-Phase 40 DSH
   Upgrade Lane remains separately scheduled.
@@ -32,7 +32,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 38 component-ownership ADR: **ADR-0022**
 - Accepted Phase 40 isolated signal-producer ADR: **ADR-0023**
 - Accepted conversation-first Product experience ADR: **ADR-0024**
-- Open architecture decisions: **none from the Phase 46 entry gate**.
+- Open architecture decisions: **none from the Phase 47 entry gate**.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -221,6 +221,17 @@ Codex session does not infer project state from commit history.
   and destructive-action limits are unchanged. Desktop/mobile Chrome review
   and Lighthouse Accessibility 100 evidence are under
   `docs/evidence/phase-45/`.
+- Phase 46 unified Stock Pool, Strategy and Backtest around one responsive
+  catalog/detail hierarchy while preserving the Phase 34/40 domain surfaces:
+  immutable pool snapshots and references, draft/version/approval/signal
+  lineage, and all eight Backtest result tabs plus comparison and creation.
+  Normalized Workflow cards now map through a closed frontend route table;
+  exact pool/artifact/job identifiers are rehydrated through Product APIs and
+  carry the originating durable conversation for a verified return journey.
+  Desktop/mobile Chrome review used real persisted Product data, found and
+  removed duplicate mobile tables, observed only same-origin Gateway/Product
+  requests, and finished with a clean console. Evidence is under
+  `docs/evidence/phase-46/`.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence. The historical gaps recorded in
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` were then classified and
@@ -233,7 +244,7 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active phase blocker: **none**. Phase 46 is authorized by Accepted ADR-0024.
+- Active phase blocker: **none**. Phase 47 is authorized by Accepted ADR-0024.
   The v1.0 RC gate is closed until Phase 48 reopens a separate human review.
   The post-Phase 40 DSH Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.
