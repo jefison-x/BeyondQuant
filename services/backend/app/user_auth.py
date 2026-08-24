@@ -21,6 +21,9 @@ _SESSION_ID_PATTERN = re.compile(r"^session_[0-9a-f]{32}$")
 _SCRYPT_N = 2**14
 _SCRYPT_R = 8
 _SCRYPT_P = 1
+_UI_PREFERENCES_SCHEMA = "ui-preferences.v1"
+_COLOR_MODES = {"system", "light", "dark"}
+_ACCENT_THEMES = {"emerald", "ocean", "indigo", "amber", "graphite"}
 
 
 class UserAuthError(RuntimeError):
@@ -138,6 +141,16 @@ class UserAuthStore(PgStoreMixin):
         CREATE INDEX IF NOT EXISTS auth_sessions_user
             ON auth_sessions(user_id, expires_at)
         """,
+        """
+        CREATE TABLE IF NOT EXISTS user_ui_preferences (
+            user_id TEXT PRIMARY KEY REFERENCES users(user_id),
+            schema_version TEXT NOT NULL CHECK (schema_version = 'ui-preferences.v1'),
+            color_mode TEXT NOT NULL CHECK (color_mode IN ('system', 'light', 'dark')),
+            accent_theme TEXT NOT NULL CHECK (accent_theme IN ('emerald', 'ocean', 'indigo', 'amber', 'graphite')),
+            version INTEGER NOT NULL CHECK (version > 0),
+            updated_at TIMESTAMPTZ NOT NULL
+        )
+        """,
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -245,6 +258,96 @@ class UserAuthStore(PgStoreMixin):
         assert updated is not None
         return self._user_row(updated)
 
+    def get_ui_preferences(self, user_id: object) -> dict[str, object]:
+        user_id = _user_id(user_id)
+        if self._fetch_one("SELECT user_id FROM users WHERE user_id = :user_id", {"user_id": user_id}) is None:
+            raise UserNotFound("user not found")
+        row = self._fetch_one(
+            "SELECT * FROM user_ui_preferences WHERE user_id = :user_id",
+            {"user_id": user_id},
+        )
+        if row is None:
+            return {
+                "schema_version": _UI_PREFERENCES_SCHEMA,
+                "color_mode": "system",
+                "accent_theme": "emerald",
+                "version": 0,
+                "updated_at": None,
+            }
+        return self._ui_preferences_row(row)
+
+    def update_ui_preferences(self, user_id: object, payload: object) -> dict[str, object]:
+        user_id = _user_id(user_id)
+        if not isinstance(payload, dict):
+            raise ValueError("UI preferences request must be an object")
+        allowed = {"schema_version", "color_mode", "accent_theme", "expected_version"}
+        unknown = sorted(set(payload) - allowed)
+        if unknown:
+            raise ValueError(f"UI preferences request has unknown fields: {', '.join(unknown)}")
+        if payload.get("schema_version") != _UI_PREFERENCES_SCHEMA:
+            raise ValueError(f"schema_version must be {_UI_PREFERENCES_SCHEMA}")
+        color_mode = _text(payload.get("color_mode"), field="color_mode", max_length=16)
+        if color_mode not in _COLOR_MODES:
+            raise ValueError("color_mode must be system, light, or dark")
+        accent_theme = _text(payload.get("accent_theme"), field="accent_theme", max_length=16)
+        if accent_theme not in _ACCENT_THEMES:
+            raise ValueError("accent_theme is not supported")
+        expected_version = payload.get("expected_version")
+        if not isinstance(expected_version, int) or isinstance(expected_version, bool) or expected_version < 0:
+            raise ValueError("expected_version must be a non-negative integer")
+
+        now = _now().isoformat()
+        with self._transaction() as connection:
+            user = fetch_one(connection, "SELECT user_id FROM users WHERE user_id = :user_id", {"user_id": user_id})
+            if user is None:
+                raise UserNotFound("user not found")
+            current = fetch_one(
+                connection,
+                "SELECT * FROM user_ui_preferences WHERE user_id = :user_id FOR UPDATE",
+                {"user_id": user_id},
+            )
+            current_version = int(current["version"]) if current is not None else 0
+            if expected_version != current_version:
+                raise UserConflict("UI preferences version is stale")
+            next_version = current_version + 1
+            if current is None:
+                execute(
+                    connection,
+                    """INSERT INTO user_ui_preferences
+                    (user_id, schema_version, color_mode, accent_theme, version, updated_at)
+                    VALUES (:user_id, :schema_version, :color_mode, :accent_theme, :version, :updated_at)""",
+                    {
+                        "user_id": user_id,
+                        "schema_version": _UI_PREFERENCES_SCHEMA,
+                        "color_mode": color_mode,
+                        "accent_theme": accent_theme,
+                        "version": next_version,
+                        "updated_at": now,
+                    },
+                )
+            else:
+                execute(
+                    connection,
+                    """UPDATE user_ui_preferences
+                    SET color_mode = :color_mode, accent_theme = :accent_theme,
+                        version = :version, updated_at = :updated_at
+                    WHERE user_id = :user_id""",
+                    {
+                        "user_id": user_id,
+                        "color_mode": color_mode,
+                        "accent_theme": accent_theme,
+                        "version": next_version,
+                        "updated_at": now,
+                    },
+                )
+            updated = fetch_one(
+                connection,
+                "SELECT * FROM user_ui_preferences WHERE user_id = :user_id",
+                {"user_id": user_id},
+            )
+        assert updated is not None
+        return self._ui_preferences_row(updated)
+
     def list_users(self, *, actor_role: str | None = None) -> dict[str, object]:
         if actor_role not in {"admin"}:
             raise UserForbidden("only admin may list users")
@@ -321,3 +424,13 @@ class UserAuthStore(PgStoreMixin):
         result = dict(row)
         result.pop("password_hash", None)
         return result
+
+    @staticmethod
+    def _ui_preferences_row(row: dict[str, Any]) -> dict[str, object]:
+        return {
+            "schema_version": row["schema_version"],
+            "color_mode": row["color_mode"],
+            "accent_theme": row["accent_theme"],
+            "version": int(row["version"]),
+            "updated_at": row["updated_at"],
+        }

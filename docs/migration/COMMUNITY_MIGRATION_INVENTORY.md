@@ -545,6 +545,25 @@ message/run shapes, polling, and runtime coupling remain reference-only.
 | Community Agent endpoints, stored messages/artifacts and run schemas | None as an integration boundary. | `REFERENCE_ONLY` / `REPLACE` | Browser uses Gateway Product routes; Backend catalog and Gateway projection replace old APIs and storage. |
 | Community runtime/session identity | None as a Product identity. | `DROP` / `REPLACE` | Product conversation identity is public; DSH session persistence is private correlation and never returned by replay. |
 
+## Phase 44 user-center and appearance pre-implementation audit
+
+The read-only Community `UserSettingsMenu.vue`, `UserProfileView.vue`,
+`UserAssetsView.vue`, `UserModelSettingsPanel.vue`,
+`UserAgentPolicyView.vue`, `PaperTradingView.vue`, `AppLayout.vue`, and
+`store/modules/app.js` were inspected before implementation. Existing BYQ
+Phase 35/37 Product capabilities remain authoritative; this phase relocates
+them and adds a new ADR-0024 preference contract rather than copying
+Community state or APIs.
+
+| Community capability | Reusable invariant / UX | Decision | Phase 44 disposition |
+|---|---|---|---|
+| Bottom account trigger and compact account menu | Personal destinations stay reachable without expanding primary business navigation. | `PORT_UX` / `PORT_LAYOUT` | Existing BYQ user trigger points to one route-backed user center; administrator settings remain separately authorized. |
+| Profile nickname, research preferences and default prompt | Explain that personal settings affect the current user's research experience. | `REUSE_AS_IS` / `PORT_UX` | Existing durable BYQ profile API and view are embedded without changing its owner boundary. |
+| Assets, model credentials/profiles/bindings, Agent policy and Paper Trading surfaces | Preserve complete real workflows while consolidating navigation. | `REUSE_AS_IS` / `PORT_LAYOUT` | Existing Product API views become user-center sections; old deep links explicitly redirect. |
+| Community theme toggle and Pinia app store | Avoid first-paint flash and reflect a user's chosen mode. | `REFERENCE_ONLY` / `REPLACE` | New PostgreSQL-backed `ui-preferences.v1`, closed values, optimistic concurrency, pre-mount non-authoritative cache, and global semantic tokens. |
+| Arbitrary provider URLs, old credential API and local-only preference authority | None under ADR-0019/ADR-0024. | `DROP` / `REPLACE` | BYQ write-only encrypted credentials and Backend-authoritative preferences remain the only Product boundary. |
+| Community Paper/Agent runtime, VectorBT option, PydanticAI/Hermes assumptions | None as an integration boundary. | `REFERENCE_ONLY` / `DROP` | No runtime, schema, Provider, Agent API, engine, or storage code is copied. |
+
 ## Phase 39 Data Center / Data Sync pre-implementation audit
 
 The read-only Community `DataSourceConfig.vue`, `DataSync.vue`, data-source

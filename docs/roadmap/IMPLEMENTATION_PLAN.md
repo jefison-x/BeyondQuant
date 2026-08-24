@@ -1336,13 +1336,13 @@ Implement the owner-scoped BYQ conversation catalog, titles/lifecycle/search,
 restart-safe normalized replay, and centered chat workspace with bounded
 activity/context disclosures.
 
-### Phase 44 — User center and durable appearance (`NEXT`)
+### Phase 44 — User center and durable appearance (`COMPLETE`)
 
 Consolidate Profile, Assets, Models, Agent Policy and Paper Trading access.
 Implement `ui-preferences.v1`, system/light/dark modes, the closed accent
 palette, global theme application and cross-device persistence.
 
-### Phase 45 — System Settings dialog (`PLANNED`)
+### Phase 45 — System Settings dialog (`NEXT`)
 
 Embed the existing bounded administrator operations and Data Center surfaces
 in a route-backed two-column large dialog/full-screen mobile surface without

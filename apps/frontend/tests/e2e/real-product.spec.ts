@@ -84,7 +84,7 @@ test("real Product API Paper Trading settlement, risk, detail, and bundle flow",
     return (await response.json()).pool;
   }, `纸面交易池-${suffix}`) as { pool_id: string; name: string };
 
-  await page.goto("/paper-trading");
+  await page.goto("/user/paper-trading");
   await expect(page.getByRole("heading", { name: "模拟操盘" }).last()).toBeVisible();
   await page.getByPlaceholder("账户名称").fill(`纸面账户-${suffix}`);
   const createdAccount = page.waitForResponse((response) => response.url().endsWith("/api/product/paper/accounts") && response.request().method() === "POST");
@@ -195,17 +195,17 @@ test("real Product API My Space credential, binding, policy, and asset import fl
   expect(result.imported.source_owner_reused).toBe(false);
 
   await openUserDestination(page, "模型配置");
-  await expect(page).toHaveURL(`${origin}/models`);
+  await expect(page).toHaveURL(`${origin}/user/models`);
   await expect(page.getByText(result.credentialLabel, { exact: true })).toBeVisible();
   await expect(page.getByText(`E2E档案-${suffix}`, { exact: true })).toBeVisible();
   const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
   if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/01-model-settings.png`, fullPage: true });
-  await openUserDestination(page, "智能体策略");
-  await expect(page).toHaveURL(`${origin}/agent-settings`);
+  await openUserDestination(page, "Agent 策略");
+  await expect(page).toHaveURL(`${origin}/user/agent-policy`);
   await expect(page.getByText(`E2E拒绝回测-${suffix}`, { exact: true })).toBeVisible();
   if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/02-agent-policy.png`, fullPage: true });
   await openUserDestination(page, "资产管理");
-  await expect(page).toHaveURL(`${origin}/assets`);
+  await expect(page).toHaveURL(`${origin}/user/assets`);
   await expect(page.getByText(`E2E资产池-${suffix}`, { exact: true }).first()).toBeVisible();
   if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/03-assets-import.png`, fullPage: true });
 

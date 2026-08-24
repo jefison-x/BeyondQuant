@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   exportAssets,
+  getAppearance,
   getAgentPolicyStatus,
   getAssetSummary,
   getModelSettings,
   getProfile,
   importAssets,
+  updateAppearance,
   updateAgentPolicy,
   updateProfile,
 } from "./settings";
@@ -27,6 +29,27 @@ describe("settings api client", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/profile",
       expect.objectContaining({ method: "PUT", credentials: "include" }),
+    );
+  });
+
+  it("loads and updates the closed durable appearance contract", async () => {
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => Promise.resolve(new Response(JSON.stringify({ preferences: {
+        schema_version: "ui-preferences.v1", color_mode: "system", accent_theme: "emerald", version: 0, updated_at: null,
+      } }), { status: 200 })))
+      .mockImplementationOnce(() => Promise.resolve(new Response(JSON.stringify({ preferences: {
+        schema_version: "ui-preferences.v1", color_mode: "dark", accent_theme: "indigo", version: 1, updated_at: "2026-08-24T00:00:00Z",
+      } }), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect((await getAppearance()).preferences.accent_theme).toBe("emerald");
+    const updated = await updateAppearance({
+      schema_version: "ui-preferences.v1", color_mode: "dark", accent_theme: "indigo", expected_version: 0,
+    });
+    expect(updated.preferences.version).toBe(1);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/product/settings/appearance",
+      expect.objectContaining({ method: "PUT", body: expect.stringContaining('"expected_version":0') }),
     );
   });
 

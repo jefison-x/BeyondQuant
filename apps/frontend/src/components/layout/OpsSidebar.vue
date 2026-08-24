@@ -136,7 +136,7 @@ function handleSelect(index: string) {
   align-items: center;
   background: var(--byq-brand);
   border-radius: 7px;
-  color: #fff;
+  color: var(--byq-on-brand);
   display: inline-flex;
   flex: 0 0 auto;
   font-size: 15px;
@@ -176,7 +176,7 @@ function handleSelect(index: string) {
   --el-menu-active-color: var(--byq-brand);
   --el-menu-bg-color: transparent;
   --el-menu-hover-bg-color: var(--byq-brand-soft);
-  --el-menu-text-color: #374151;
+  --el-menu-text-color: var(--byq-text-muted);
   border-right: none;
   flex: 1;
   min-height: 0;

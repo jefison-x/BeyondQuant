@@ -167,11 +167,72 @@ def test_product_profile_loads_and_updates_owner_profile(monkeypatch) -> None:
     response = client.get("/api/product/profile")
     assert response.status_code == 200
     assert response.json()["profile"]["display_name"] == "老李"
-
     response = client.put("/api/product/profile", json={"display_name": "量化小周"})
     assert response.status_code == 200
     assert response.json()["profile"]["display_name"] == "老李"
 
+
+def test_product_appearance_is_owner_scoped_and_versioned(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    calls: list[tuple[str, str, dict[str, object]]] = []
+
+    class FakeResponse:
+        def __init__(self, body: dict[str, object]) -> None:
+            self.body = body
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self.body
+
+    monkeypatch.setattr(
+        user_session.httpx,
+        "get",
+        lambda *args, **kwargs: FakeResponse({
+            "user": {
+                "user_id": "user_abc123",
+                "username": "alice",
+                "display_name": "Alice",
+                "role": "user",
+                "status": "active",
+            }
+        }),
+    )
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        calls.append((method, url, kwargs))
+        payload = kwargs.get("json") or {}
+        return FakeResponse({
+            "preferences": {
+                "schema_version": "ui-preferences.v1",
+                "color_mode": payload.get("color_mode", "system"),
+                "accent_theme": payload.get("accent_theme", "emerald"),
+                "version": 1 if method == "PUT" else 0,
+                "updated_at": None,
+            }
+        })
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    client.cookies.set(product_api.SESSION_COOKIE, "session_test")
+
+    response = client.get("/api/product/settings/appearance")
+    assert response.status_code == 200
+    assert response.json()["preferences"]["accent_theme"] == "emerald"
+    response = client.put(
+        "/api/product/settings/appearance",
+        json={
+            "schema_version": "ui-preferences.v1",
+            "color_mode": "dark",
+            "accent_theme": "indigo",
+            "expected_version": 0,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["preferences"]["version"] == 1
+    assert all(call[1].endswith("/v1/users/user_abc123/ui-preferences") for call in calls)
+    assert all(call[2]["headers"]["x-byq-owner-user-id"] == "user_abc123" for call in calls)
 
 def test_product_model_settings_are_secret_free(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")

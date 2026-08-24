@@ -3,10 +3,10 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 43** — Owner-scoped durable conversation
-  catalog, deterministic titles, lifecycle/search/replay, and the centered
-  Xiaoba canvas with bounded activity and approval drawers.
-- Next phase: **Phase 44 — User center and durable appearance** as defined in
+- Current completed phase: **Phase 44** — Route-backed user center and
+  owner-scoped durable `ui-preferences.v1`, including system/light/dark modes,
+  five closed accent themes, live preview and pre-mount restoration.
+- Next phase: **Phase 45 — Route-backed System Settings dialog** as defined in
   `FRONTEND_EXPERIENCE_PLAN.md`. The v1.0 release-candidate review is postponed
   until the Phases 42-48 experience program is complete. The post-Phase 40 DSH
   Upgrade Lane remains separately scheduled.
@@ -32,7 +32,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 38 component-ownership ADR: **ADR-0022**
 - Accepted Phase 40 isolated signal-producer ADR: **ADR-0023**
 - Accepted conversation-first Product experience ADR: **ADR-0024**
-- Open architecture decisions: **none from the Phase 44 entry gate**.
+- Open architecture decisions: **none from the Phase 45 entry gate**.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -202,6 +202,14 @@ Codex session does not infer project state from commit history.
   generation guards and abortable streams prevent cross-conversation replay.
   Compose restart, owner-isolation tests and desktop/mobile Chrome DevTools MCP
   evidence are under `docs/evidence/phase-43/`.
+- Phase 44 consolidated Profile, Appearance, Assets, Paper Trading, Models,
+  personal Agent Policy and research/approval entry points into one responsive
+  route-backed user center. PostgreSQL owns versioned per-user appearance
+  preferences behind the Product API; the browser cache contains only a
+  validated non-authoritative paint hint. Global semantic tokens and chart
+  themes now follow system/light/dark plus the closed accent palette. Compose
+  restart persistence, exact-owner isolation, desktop/mobile Chrome review and
+  Lighthouse accessibility evidence are under `docs/evidence/phase-44/`.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence. The historical gaps recorded in
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` were then classified and
@@ -214,7 +222,7 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active phase blocker: **none**. Phase 44 is authorized by Accepted ADR-0024.
+- Active phase blocker: **none**. Phase 45 is authorized by Accepted ADR-0024.
   The v1.0 RC gate is closed until Phase 48 reopens a separate human review.
   The post-Phase 40 DSH Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.

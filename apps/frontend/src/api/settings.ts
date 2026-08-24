@@ -1,4 +1,4 @@
-import type { AgentPolicyStatus, AssetImportReport, AssetSummary, ModelSettings, SettingsStatus, UserProfile } from "./types";
+import type { AgentPolicyStatus, AssetImportReport, AssetSummary, ModelSettings, SettingsStatus, UiPreferences, UserProfile } from "./types";
 
 const ROOT = "/api/product";
 
@@ -24,6 +24,16 @@ export function getProfile(): Promise<{ profile: UserProfile }> {
 
 export function updateProfile(payload: Partial<Pick<UserProfile, "display_name" | "preferences" | "default_prompt">>): Promise<{ profile: UserProfile }> {
   return request("/profile", { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function getAppearance(): Promise<{ preferences: UiPreferences }> {
+  return request("/settings/appearance");
+}
+
+export function updateAppearance(
+  preferences: Pick<UiPreferences, "schema_version" | "color_mode" | "accent_theme"> & { expected_version: number },
+): Promise<{ preferences: UiPreferences }> {
+  return request("/settings/appearance", { method: "PUT", body: JSON.stringify(preferences) });
 }
 
 export function getModelSettings(): Promise<ModelSettings> {

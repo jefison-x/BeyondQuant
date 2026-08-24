@@ -210,6 +210,17 @@ export interface UserProfile {
   status: string;
 }
 
+export type ColorMode = "system" | "light" | "dark";
+export type AccentTheme = "emerald" | "ocean" | "indigo" | "amber" | "graphite";
+
+export interface UiPreferences {
+  schema_version: "ui-preferences.v1";
+  color_mode: ColorMode;
+  accent_theme: AccentTheme;
+  version: number;
+  updated_at: string | null;
+}
+
 export interface ModelSettings {
   provider: string;
   configured: boolean;

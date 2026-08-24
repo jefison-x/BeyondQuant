@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { Bell, CaretBottom, Coin, FolderOpened, Monitor, SetUp, SwitchButton, Tools, User } from "@element-plus/icons-vue";
+import { Bell, CaretBottom, FolderOpened, Monitor, SetUp, SwitchButton, Tools, User } from "@element-plus/icons-vue";
 import { useAuthStore } from "@/stores/auth";
 
 const props = withDefaults(
@@ -50,12 +50,11 @@ async function handleCommand(command: string) {
       </button>
       <template #dropdown>
         <el-dropdown-menu>
-          <el-dropdown-item command="/profile"><el-icon><User /></el-icon>个性化</el-dropdown-item>
-          <el-dropdown-item command="/assets"><el-icon><FolderOpened /></el-icon>资产管理</el-dropdown-item>
-          <el-dropdown-item command="/paper-trading"><el-icon><Coin /></el-icon>模拟操盘</el-dropdown-item>
-          <el-dropdown-item command="/models"><el-icon><SetUp /></el-icon>模型配置</el-dropdown-item>
-          <el-dropdown-item command="/agent-settings"><el-icon><SetUp /></el-icon>智能体策略</el-dropdown-item>
-          <el-dropdown-item command="/research-center"><el-icon><Bell /></el-icon>研究与审批</el-dropdown-item>
+          <el-dropdown-item command="/user/appearance"><el-icon><User /></el-icon>个性化</el-dropdown-item>
+          <el-dropdown-item command="/user/assets"><el-icon><FolderOpened /></el-icon>资产管理</el-dropdown-item>
+          <el-dropdown-item command="/user/models"><el-icon><SetUp /></el-icon>模型配置</el-dropdown-item>
+          <el-dropdown-item command="/user/agent-policy"><el-icon><SetUp /></el-icon>Agent 策略</el-dropdown-item>
+          <el-dropdown-item command="/user/research"><el-icon><Bell /></el-icon>研究与审批</el-dropdown-item>
           <template v-if="auth.isAdmin">
             <el-dropdown-item command="/data-center" divided><el-icon><Tools /></el-icon>数据中心</el-dropdown-item>
             <el-dropdown-item command="/system-status"><el-icon><Monitor /></el-icon>系统状态</el-dropdown-item>
@@ -114,7 +113,7 @@ async function handleCommand(command: string) {
   align-items: center;
   background: var(--byq-brand);
   border-radius: 999px;
-  color: #fff;
+  color: var(--byq-on-brand);
   display: inline-flex;
   flex: 0 0 auto;
   font-size: 14px;

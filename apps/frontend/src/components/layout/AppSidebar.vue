@@ -168,7 +168,7 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
 .app-sidebar.collapsed { width: 68px; }
 .app-sidebar.mobile { border-right: 0; height: 100%; width: 100%; }
 .sidebar-header { align-items: center; border-bottom: 1px solid var(--byq-border-subtle); display: flex; gap: .7rem; height: 56px; min-height: 56px; padding: 0 .75rem; }
-.brand-mark { align-items: center; background: var(--byq-brand-contrast); border-radius: 8px; color: #fff; display: inline-flex; flex: 0 0 auto; font-size: 15px; font-weight: 900; height: 32px; justify-content: center; width: 32px; }
+.brand-mark { align-items: center; background: var(--byq-brand-contrast); border-radius: 8px; color: var(--byq-on-brand); display: inline-flex; flex: 0 0 auto; font-size: 15px; font-weight: 900; height: 32px; justify-content: center; width: 32px; }
 .brand-copy { display: grid; line-height: 1.15; min-width: 0; }
 .logo-text { color: var(--byq-text); font-size: 14px; font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .logo-subtitle { color: var(--byq-text-soft); font-size: 10px; font-weight: 700; margin-top: 2px; }
@@ -176,7 +176,7 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
 .sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: .7rem .55rem; }
 .primary-navigation, .history-list { display: grid; gap: 3px; }
 .new-conversation, .nav-row, .history-row { align-items: center; border: 0; border-radius: var(--byq-radius-sm); cursor: pointer; display: flex; font: inherit; text-align: left; width: 100%; }
-.new-conversation { background: var(--byq-brand-contrast); color: #fff; font-size: 13px; font-weight: 800; gap: .65rem; height: 40px; margin-bottom: .55rem; padding: 0 .75rem; }
+.new-conversation { background: var(--byq-brand-contrast); color: var(--byq-on-brand); font-size: 13px; font-weight: 800; gap: .65rem; height: 40px; margin-bottom: .55rem; padding: 0 .75rem; }
 .new-conversation:hover { background: var(--byq-brand-contrast-hover); }
 .nav-row { background: transparent; color: var(--byq-text-muted); font-size: 13px; font-weight: 650; gap: .65rem; height: 40px; padding: 0 .75rem; }
 .nav-row:hover, .nav-row.active { background: var(--byq-brand-soft); color: var(--byq-brand-contrast); }
