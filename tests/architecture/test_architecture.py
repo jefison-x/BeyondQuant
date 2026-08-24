@@ -47,10 +47,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("A user binding never", contract)
-        self.assertIn("Current completed phase: **Phase 48**", status)
+        self.assertIn("Current completed phase: **Phase 49**", status)
         self.assertIn("Phase 40 (Shared components and final parity closure) completed", status)
         self.assertIn(
             "Accepted conversation-first Product experience ADR: **ADR-0024**",
+            status,
+        )
+        self.assertIn(
+            "Accepted personal-workspace tenancy ADR: **ADR-0025**",
             status,
         )
         self.assertIn("D-0008 is CLOSED", status)
@@ -434,6 +438,24 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "Phase 48 — Product coherence golden journey (`COMPLETE`)",
             implementation,
         )
+        self.assertIn(
+            "Phase 49 — Personal workspace boundary (`COMPLETE`)",
+            implementation,
+        )
+
+        workspace_adr = (
+            ROOT
+            / "docs/architecture/adr/ADR-0025-personal-workspace-tenancy.md"
+        ).read_text()
+        self.assertIn("- Status: Accepted", workspace_adr)
+        self.assertIn("BYQ's current tenancy and authorization boundary", workspace_adr)
+        self.assertIn("does not implicitly grant membership", workspace_adr)
+        workspace_contract = (
+            ROOT / "docs/contracts/personal-workspace.md"
+        ).read_text()
+        self.assertIn("personal-workspace.v1", workspace_contract)
+        self.assertIn("Browser bodies", workspace_contract)
+        self.assertIn("Gateway/Product API", workspace_contract)
 
         workflow_card_adr = (
             ROOT
