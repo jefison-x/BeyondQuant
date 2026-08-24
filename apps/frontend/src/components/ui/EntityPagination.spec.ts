@@ -12,6 +12,6 @@ describe("EntityPagination", () => {
       global: { stubs: { ElPagination: { template: "<button>next</button>" } } },
     });
     expect(multiple.get("nav").attributes("aria-label")).toBe("策略分页");
-    expect(multiple.text()).toContain("共 120 项");
+    expect(multiple.text()).toContain("共 120 项，第 1 页");
   });
 });

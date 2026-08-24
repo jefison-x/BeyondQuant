@@ -118,6 +118,16 @@ const router = createRouter({
           path: "quant",
           redirect: "/backtest",
         },
+        {
+          path: ":pathMatch(.*)*",
+          name: "not-found",
+          component: () => import("@/views/NotFoundView.vue"),
+          meta: {
+            title: "页面未找到",
+            kicker: "导航提示",
+            subtitle: "检查地址，或返回小巴投研工作台",
+          },
+        },
       ],
     },
   ],

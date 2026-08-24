@@ -128,7 +128,7 @@ async function run(operation: () => Promise<unknown>) {
         <MetricCard label="Total Return" :value="String(totalReturn)" />
         <MetricCard label="Max Drawdown" :value="String(maxDrawdown)" />
       </div>
-      <ChartWrapper :option="equityOption" empty />
+      <ChartWrapper :option="equityOption" empty aria-label="量化结果权益曲线" empty-message="当前结果没有权益曲线数据" />
     </div>
     <pre v-else-if="result" class="quant-result">{{ JSON.stringify(result, null, 2) }}</pre>
   </section>

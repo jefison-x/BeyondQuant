@@ -125,8 +125,8 @@ function actionLabel(value: unknown) {
 <template>
   <section class="my-space-page">
     <el-alert title="密钥仅可写入，不会返回浏览器、日志或 WorkflowTrace；运行时通过 Backend 私有边界按当前用户解析。" type="info" show-icon :closable="false" />
-    <div v-if="loading" class="base-loading">加载中...</div>
-    <div v-else-if="error" class="base-error">{{ error }}</div>
+    <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
+    <div v-else-if="error" class="base-error" role="alert">{{ error }}</div>
     <template v-else>
       <el-card shadow="never">
         <template #header><div class="card-header"><div><strong>模型凭据</strong><p class="muted">AES-256-GCM 信封加密 · {{ settings?.encryption.configured ? "密钥环就绪" : "加密不可用" }}</p></div><el-button type="primary" :disabled="!settings?.encryption.configured" @click="openCredential()">添加凭据</el-button></div></template>

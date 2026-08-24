@@ -3,10 +3,11 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 46** — Unified Stock Pool, Strategy and
-  Backtest catalog/detail workspaces with fixed normalized Workflow-card deep
-  links, exact Product resource selection and return-to-conversation context.
-- Next phase: **Phase 47 — Interaction, responsive and accessibility closure** as defined in
+- Current completed phase: **Phase 47** — Interaction, responsive and
+  accessibility closure with standardized semantic states, unsaved-edit
+  protection, stable route focus, responsive content, accessible theme-aware
+  charts and a complete light/dark accent contrast matrix.
+- Next phase: **Phase 48 — Product coherence golden journey** as defined in
   `FRONTEND_EXPERIENCE_PLAN.md`. The v1.0 release-candidate review is postponed
   until the Phases 42-48 experience program is complete. The post-Phase 40 DSH
   Upgrade Lane remains separately scheduled.
@@ -32,7 +33,7 @@ Codex session does not infer project state from commit history.
 - Accepted Phase 38 component-ownership ADR: **ADR-0022**
 - Accepted Phase 40 isolated signal-producer ADR: **ADR-0023**
 - Accepted conversation-first Product experience ADR: **ADR-0024**
-- Open architecture decisions: **none from the Phase 47 entry gate**.
+- Open architecture decisions: **none from the Phase 48 entry gate**.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -232,6 +233,16 @@ Codex session does not infer project state from commit history.
   removed duplicate mobile tables, observed only same-origin Gateway/Product
   requests, and finished with a clean console. Evidence is under
   `docs/evidence/phase-46/`.
+- Phase 47 standardized semantic loading/empty/retry states, responsive
+  pagination, localized display labels, dirty/busy/saved form behavior and
+  unsaved-change protection across Profile, Appearance, Stock Pool and
+  Strategy. Lazy route transitions now settle keyboard focus on the new
+  content heading; unknown authenticated routes are recoverable. ECharts uses
+  live semantic light/dark palettes, accessible names/summaries and reduced
+  motion. All ten mode/accent combinations pass the measured text/chart
+  contrast matrix, and authenticated desktop/mobile Lighthouse Accessibility
+  both score 100. Real Product API Chrome evidence is under
+  `docs/evidence/phase-47/`.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence. The historical gaps recorded in
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` were then classified and
@@ -244,7 +255,7 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active phase blocker: **none**. Phase 47 is authorized by Accepted ADR-0024.
+- Active phase blocker: **none**. Phase 48 is authorized by Accepted ADR-0024.
   The v1.0 RC gate is closed until Phase 48 reopens a separate human review.
   The post-Phase 40 DSH Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.

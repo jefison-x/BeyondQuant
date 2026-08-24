@@ -9,6 +9,7 @@ const replaceRoute = vi.fn();
 vi.mock("vue-router", () => ({
   useRoute: () => ({ path: "/strategy", query: {} }),
   useRouter: () => ({ replace: replaceRoute, push: vi.fn() }),
+  onBeforeRouteLeave: vi.fn(),
 }));
 
 function mountView() {

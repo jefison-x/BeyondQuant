@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import AppHeader from "./AppHeader.vue";
 import AppSidebar from "./AppSidebar.vue";
@@ -13,6 +13,7 @@ const isSystemSettingsRoute = computed(() => route.path.startsWith("/settings/sy
 const isMobile = ref(false);
 const sidebarCollapsed = ref(false);
 const mobileDrawerOpen = ref(false);
+const contentArea = ref<HTMLElement | null>(null);
 
 function updateViewport() {
   isMobile.value = window.innerWidth <= 767;
@@ -30,6 +31,21 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener("resize", updateViewport);
 });
+
+watch(() => route.fullPath, async () => {
+  await nextTick();
+  // Lazy route chunks and data-backed views do not always mount in the first
+  // post-navigation frame. Keep the focus target aligned with the latest
+  // heading while the transition settles instead of leaving focus in the
+  // sidebar button that initiated navigation.
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    const heading = contentArea.value?.querySelector<HTMLElement>("h1, h2");
+    if (!heading) continue;
+    heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
+  }
+}, { flush: "post", immediate: true });
 </script>
 
 <template>
@@ -51,7 +67,7 @@ onUnmounted(() => {
         />
         <section class="workspace-shell">
           <AppHeader :show-menu="isMobile" @toggle-menu="mobileDrawerOpen = true" />
-          <main class="content-area">
+          <main ref="contentArea" class="content-area" tabindex="-1">
             <RouterView />
           </main>
         </section>

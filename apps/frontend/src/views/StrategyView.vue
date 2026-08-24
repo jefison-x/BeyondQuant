@@ -17,9 +17,11 @@ import {
 import { listArtifacts, listTasks } from "@/api/research";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
+import { statusLabel } from "@/display";
 import EntityPagination from "@/components/ui/EntityPagination.vue";
 import AppStateBlock from "@/components/ui/AppStateBlock.vue";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
+import { useUnsavedChanges } from "@/composables/useUnsavedChanges";
 
 const auth = useAuthStore();
 const route = useRoute();
@@ -51,6 +53,30 @@ const saving = ref(false);
 const versionHistory = ref<Array<Record<string, unknown>>>([]);
 const backtestCount = ref(0);
 const versionCount = ref(0);
+const editorBaseline = ref("");
+
+function editorState() {
+  return JSON.stringify({
+    taskId: taskId.value,
+    strategyId: strategyId.value,
+    strategyName: strategyName.value,
+    description: description.value,
+    parametersJson: parametersJson.value,
+    parameterSchemaJson: parameterSchemaJson.value,
+    script: script.value,
+  });
+}
+
+function syncEditorBaseline() {
+  editorBaseline.value = editorState();
+}
+
+const editorDirty = computed(() =>
+  Boolean(editorBaseline.value)
+  && selected.value?.kind !== "strategy_version"
+  && editorState() !== editorBaseline.value,
+);
+const { confirmDiscard } = useUnsavedChanges(editorDirty);
 
 const STRATEGY_TEMPLATES = [
   {
@@ -173,6 +199,7 @@ async function loadList() {
 }
 
 async function changeLifecycle(value: "active" | "superseded") {
+  if (!confirmDiscard()) return;
   lifecycle.value = value;
   page.value = 1;
   selected.value = null;
@@ -181,6 +208,7 @@ async function changeLifecycle(value: "active" | "superseded") {
 }
 
 async function changePage(value: number) {
+  if (!confirmDiscard()) return;
   page.value = value;
   selected.value = null;
   detail.value = null;
@@ -188,6 +216,7 @@ async function changePage(value: number) {
 }
 
 async function select(row: Record<string, unknown>, updateRoute = true) {
+  if (updateRoute && !confirmDiscard()) return;
   selected.value = row;
   detail.value = null;
   error.value = "";
@@ -203,6 +232,7 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
     const id = String(row.artifact_id);
     detail.value = await getResearchEntity("artifacts", id, auth.token);
     await refreshStrategyMeta();
+    syncEditorBaseline();
     if (updateRoute && route.query.artifact !== id) {
       await router.replace({ path: route.path, query: { ...route.query, artifact: id } });
     }
@@ -238,6 +268,7 @@ async function viewHistoryVersion(row: Record<string, unknown>) {
     await select(found);
     return;
   }
+  if (!confirmDiscard()) return;
   try {
     const id = String(row.artifact_id);
     const entity = await getResearchEntity("artifacts", id, auth.token);
@@ -248,6 +279,7 @@ async function viewHistoryVersion(row: Record<string, unknown>) {
     script.value = String(snapshot?.script ?? "");
     lastDraftId.value = "";
     await refreshStrategyMeta();
+    syncEditorBaseline();
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "读取版本失败";
   }
@@ -275,6 +307,7 @@ async function saveDraft() {
       auth.token,
     );
     lastDraftId.value = String((result as { artifact?: { artifact_id?: string } }).artifact?.artifact_id ?? "");
+    syncEditorBaseline();
     ElMessage.success("草稿已保存");
     await loadList();
     const savedId = String((result as { artifact?: { artifact_id?: string } }).artifact?.artifact_id ?? "");
@@ -338,6 +371,7 @@ async function validateDraft() {
     );
     detail.value = result as Record<string, unknown>;
     lastDraftId.value = String((result as { artifact?: { artifact_id?: string } }).artifact?.artifact_id ?? "");
+    syncEditorBaseline();
     ElMessage.success("草稿验证通过，已保存为策略草稿");
     await loadList();
   } catch (exc) {
@@ -425,12 +459,16 @@ function returnToConversation() {
   void router.push({ path: "/agent", query: session ? { session } : {} });
 }
 
+async function refreshList() {
+  if (confirmDiscard()) await loadList();
+}
+
 onMounted(loadList);
 </script>
 
 <template>
   <section class="strategy-page">
-    <AppStateBlock :loading="loading" :error="!selected ? error : ''">
+    <AppStateBlock :loading="loading" :error="!selected ? error : ''" @retry="loadList">
       <ManagementWorkspace
         eyebrow="核心研究资产"
         title="策略目录与版本谱系"
@@ -440,7 +478,7 @@ onMounted(loadList);
         @return="returnToConversation"
       >
       <template #return>返回投研对话</template>
-      <template #actions><el-button @click="loadList">刷新目录</el-button></template>
+      <template #actions><el-button @click="refreshList">刷新目录</el-button></template>
       <template #summary>审批只授权精确的不可变版本</template>
       <template #catalog>
       <el-card shadow="never" class="strategy-list-pane">
@@ -472,7 +510,7 @@ onMounted(loadList);
         >
           <el-table-column prop="artifact_id" label="Artifact ID" min-width="220" show-overflow-tooltip />
           <el-table-column prop="kind" label="类型" width="140" />
-          <el-table-column prop="status" label="状态" width="100" />
+          <el-table-column label="状态" width="100"><template #default="{ row }">{{ statusLabel(row.status) }}</template></el-table-column>
           <el-table-column label="创建时间" min-width="170">
             <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
           </el-table-column>
@@ -491,7 +529,7 @@ onMounted(loadList);
               <el-tag size="small">{{ row.kind === "strategy_version" ? "版本" : "草稿" }}</el-tag>
             </div>
             <div class="mobile-card-meta">
-              <span>{{ row.status }}</span>
+              <span>{{ statusLabel(row.status) }}</span>
               <span>{{ formatChinaTime(row.created_at) }}</span>
             </div>
           </el-card>
@@ -572,6 +610,7 @@ onMounted(loadList);
               创建不可变版本
             </el-button>
           </div>
+          <p v-if="!isReadonly" class="editor-save-state" aria-live="polite">{{ editorDirty ? "有未保存更改" : "编辑内容已保存" }}</p>
         </el-card>
 
         <el-card shadow="never" class="strategy-detail-pane">
@@ -612,7 +651,7 @@ onMounted(loadList);
           <el-table v-if="versionHistory.length" :data="versionHistory" size="small" highlight-current-row @current-change="viewHistoryVersion">
             <el-table-column prop="artifact_id" label="版本 Artifact" min-width="200" show-overflow-tooltip />
             <el-table-column prop="version_id" label="Version ID" min-width="160" show-overflow-tooltip />
-            <el-table-column prop="status" label="状态" width="100" />
+            <el-table-column label="状态" width="100"><template #default="{ row }">{{ statusLabel(row.status) }}</template></el-table-column>
             <el-table-column label="创建时间" min-width="150">
               <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
             </el-table-column>
@@ -660,6 +699,8 @@ onMounted(loadList);
   font-size: 12px;
   margin-top: 0.2rem;
 }
+
+.editor-save-state { color: var(--byq-text-muted); font-size: 12px; margin: 10px 0 0; text-align: right; }
 
 .editor-actions {
   display: flex;

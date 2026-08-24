@@ -22,6 +22,7 @@ import { useAuthStore } from "@/stores/auth";
 import ChartWrapper from "@/components/charts/ChartWrapper.vue";
 import MetricCard from "@/components/ui/MetricCard.vue";
 import { formatChinaTime } from "@/time";
+import { statusLabel } from "@/display";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 
 const auth = useAuthStore();
@@ -405,8 +406,8 @@ onMounted(loadList);
 
 <template>
   <section class="backtest-page">
-    <div v-if="loading" class="base-loading">加载中...</div>
-    <div v-else-if="error && !selected" class="base-error">{{ error }}</div>
+    <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
+    <div v-else-if="error && !selected" class="base-error" role="alert">{{ error }}</div>
 
     <ManagementWorkspace
       v-else
@@ -434,11 +435,11 @@ onMounted(loadList);
         <div class="list-toolbar">
           <el-input v-model="search" placeholder="搜索 Job ID" clearable />
           <el-select v-model="statusFilter" aria-label="回测状态筛选" placeholder="状态筛选" clearable>
-            <el-option label="queued" value="queued" />
-            <el-option label="running" value="running" />
-            <el-option label="completed" value="completed" />
-            <el-option label="cancelled" value="cancelled" />
-            <el-option label="failed" value="failed" />
+            <el-option label="排队中" value="queued" />
+            <el-option label="运行中" value="running" />
+            <el-option label="已完成" value="completed" />
+            <el-option label="已取消" value="cancelled" />
+            <el-option label="失败" value="failed" />
           </el-select>
         </div>
         <el-empty v-if="!filteredBacktests.length" description="暂无回测结果" />
@@ -452,7 +453,7 @@ onMounted(loadList);
         >
           <el-table-column type="selection" width="42" />
           <el-table-column prop="job_id" label="Job ID" min-width="220" show-overflow-tooltip />
-          <el-table-column prop="status" label="状态" width="100" />
+          <el-table-column label="状态" width="100"><template #default="{ row }">{{ statusLabel(row.status) }}</template></el-table-column>
           <el-table-column label="收益" width="90" align="right">
             <template #default="{ row }">{{ formatPercent(summaryValue(row, "total_return")) }}</template>
           </el-table-column>
@@ -507,7 +508,7 @@ onMounted(loadList);
           >
             <div class="mobile-card-head">
               <strong>{{ row.job_id }}</strong>
-              <el-tag size="small">{{ row.status }}</el-tag>
+              <el-tag size="small">{{ statusLabel(row.status) }}</el-tag>
             </div>
             <div class="mobile-card-meta">
               <span>收益 {{ formatPercent(summaryValue(row, "total_return")) }}</span>
@@ -551,12 +552,18 @@ onMounted(loadList);
             <MetricCard label="Trade Count" :value="String(summary.trade_count ?? '-')" />
             <MetricCard label="Blocked Trades" :value="String(summary.blocked_trade_count ?? '-')" />
             <MetricCard label="Final Value" :value="formatMoney(summary.final_value)" />
-            <MetricCard label="Status" :value="String(job.status ?? 'unknown')" />
+            <MetricCard label="状态" :value="statusLabel(job.status)" />
           </div>
 
           <el-tabs v-model="activeTab" class="result-tabs">
             <el-tab-pane label="权益曲线" name="equity">
-              <ChartWrapper :option="equityOption" :empty="!equityCurve.length" />
+              <ChartWrapper
+                :option="equityOption"
+                :empty="!equityCurve.length"
+                aria-label="回测权益曲线"
+                :summary="`展示 ${equityCurve.length} 个交易日的组合权益变化。`"
+                empty-message="暂无权益曲线数据"
+              />
             </el-tab-pane>
             <el-tab-pane label="交易明细" name="trades">
               <el-table :data="trades" size="small" empty-text="暂无交易">
