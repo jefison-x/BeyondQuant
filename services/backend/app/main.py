@@ -24,6 +24,12 @@ from .data_sync import (
     DataSyncPersistenceError,
     DataSyncStore,
 )
+from .security_master import (
+    SecurityMasterConflict,
+    SecurityMasterNotFound,
+    SecurityMasterPersistenceError,
+    SecurityMasterStore,
+)
 from .conversation_catalog import (
     ConversationCatalogStore,
     ConversationConflict,
@@ -158,6 +164,7 @@ operations_store = OperationsStore.from_env()
 market_data_store = MarketDataStore.from_env()
 signal_job_store = SignalJobStore.from_env()
 data_sync_store = DataSyncStore.from_env()
+security_master_store = SecurityMasterStore.from_env()
 conversation_store = ConversationCatalogStore.from_env()
 backtest_store = BacktestJobStore.from_env()
 workspace_tenancy_store = WorkspaceTenancyStore.from_env()
@@ -365,12 +372,81 @@ def _data_sync_call(operation: Callable[[], dict[str, object]]) -> dict[str, obj
         return operation()
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    except DataSyncNotFound as error:
+    except (DataSyncNotFound, SecurityMasterNotFound, PaperTradingNotFound, PaperTradingForbidden) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    except DataSyncConflict as error:
+    except (DataSyncConflict, SecurityMasterConflict) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
-    except (DataSyncPersistenceError, CredentialUnavailable, CredentialPersistenceError) as error:
+    except (DataSyncPersistenceError, SecurityMasterPersistenceError, CredentialUnavailable, CredentialPersistenceError) as error:
         raise HTTPException(status_code=503, detail="data synchronization is unavailable") from error
+
+
+def _resolved_daily_sync_payload(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("sync job request must be an object")
+    selection = payload.get("selection") or {"type": "explicit"}
+    if not isinstance(selection, dict):
+        raise ValueError("selection must be an object")
+    selection_type = selection.get("type", "explicit")
+    result = dict(payload)
+    if selection_type == "explicit":
+        if set(selection) != {"type"}:
+            raise ValueError("explicit selection has unknown fields")
+        result["selection"] = {"type": "explicit"}
+    elif selection_type == "selected":
+        if set(selection) - {"type", "snapshot_id"}:
+            raise ValueError("selected security selection has unknown fields")
+        symbols, evidence = security_master_store.resolve_selected_symbols(
+            payload.get("symbols"), snapshot_id=selection.get("snapshot_id"),
+        )
+        result["symbols"] = symbols
+        result["selection"] = evidence
+    elif selection_type == "security_master":
+        if set(selection) - {"type", "statuses", "exchanges", "query"}:
+            raise ValueError("security-master selection has unknown fields")
+        statuses = selection.get("statuses", ["L"])
+        exchanges = selection.get("exchanges", [])
+        if not isinstance(statuses, list) or not isinstance(exchanges, list):
+            raise ValueError("security-master statuses and exchanges must be lists")
+        symbols, evidence = security_master_store.resolve_symbols(
+            statuses=tuple(str(item) for item in statuses),
+            exchanges=tuple(str(item) for item in exchanges),
+            query=str(selection.get("query") or ""),
+        )
+        result["symbols"] = symbols
+        result["selection"] = evidence
+    elif selection_type == "stock_pool":
+        if set(selection) != {"type", "snapshot_id"}:
+            raise ValueError("stock-pool selection must name exactly one snapshot_id")
+        context = _required_agent_context(request)
+        snapshot = paper_store.get_pool_snapshot(
+            selection.get("snapshot_id"), trusted_owner=context["owner_principal"],
+        )
+        symbols = sorted(str(item["symbol"]) for item in snapshot.get("members", []))
+        if not symbols:
+            raise ValueError("stock-pool snapshot has no members")
+        result["symbols"] = symbols
+        result["selection"] = {
+            "type": "stock_pool",
+            "pool_id": snapshot["pool_id"],
+            "snapshot_id": snapshot["snapshot_id"],
+            "membership_fingerprint": snapshot["membership_fingerprint"],
+        }
+    else:
+        raise ValueError("selection.type is invalid")
+    return result
+
+
+def _security_master_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except SecurityMasterNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except SecurityMasterConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except SecurityMasterPersistenceError as error:
+        raise HTTPException(status_code=503, detail="security master is unavailable") from error
 
 
 def _source_credentials(actor: str, role: str) -> list[dict[str, object]]:
@@ -390,10 +466,12 @@ def data_center_status(request: Request) -> dict[str, object]:
     credentials = _source_credentials(actor, role) if role == "admin" else []
     active = [item for item in credentials if item.get("status") == "active"]
     jobs = data_sync_store.list_jobs(limit=50) if role == "admin" else []
+    security_jobs = security_master_store.list_sync_jobs(limit=20) if role == "admin" else []
+    security_master = security_master_store.catalogue_status()
     coverage = data_sync_store.coverage_audit(limit=100)
     environment_configured = bool(os.environ.get("TUSHARE_TOKEN", "").strip())
     return {
-        "schema_version": "data-center.v1",
+        "schema_version": "data-center.v2",
         "provider": "tushare",
         "legacy_providers": [],
         "source": {
@@ -405,6 +483,8 @@ def data_center_status(request: Request) -> dict[str, object]:
             "can_manage": role == "admin",
         },
         "jobs": jobs,
+        "security_master_jobs": security_jobs,
+        "security_master": security_master,
         "coverage": coverage,
         "migration": "ready" if coverage["row_count"] else "not_started",
         "quality": coverage["quality"],
@@ -517,7 +597,8 @@ def create_data_sync_job(
     actor, _role = _require_data_admin(request)
 
     def operation() -> dict[str, object]:
-        job, created = data_sync_store.create_job(payload, actor=actor)
+        resolved_payload = _resolved_daily_sync_payload(payload, request)
+        job, created = data_sync_store.create_job(resolved_payload, actor=actor)
         if created or job["status"] == "queued":
             background_tasks.add_task(
                 data_sync_store.run_job,
@@ -547,6 +628,53 @@ def get_data_coverage(request: Request, limit: int = 100) -> dict[str, object]:
     if not request.headers.get("x-byq-actor-principal", "").strip():
         raise HTTPException(status_code=401, detail="actor principal is required")
     return _data_sync_call(lambda: {"coverage": data_sync_store.coverage_audit(limit=limit)})
+
+
+@app.post("/v1/data-sync/security-master/jobs", status_code=201)
+def create_security_master_sync_job(
+    payload: dict[str, Any],
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> dict[str, object]:
+    actor, _role = _require_data_admin(request)
+
+    def operation() -> dict[str, object]:
+        job, created = security_master_store.create_sync_job(payload, actor=actor)
+        if created or job["status"] == "queued":
+            background_tasks.add_task(
+                security_master_store.run_sync_job,
+                job["job_id"],
+                provider_factory=lambda: _resolved_tushare_provider()[0],
+            )
+        return {"job": job, "created": created}
+
+    return _security_master_call(operation)
+
+
+@app.get("/v1/data-sync/security-master/jobs/{job_id}")
+def get_security_master_sync_job(job_id: str, request: Request) -> dict[str, object]:
+    _require_data_admin(request)
+    return _security_master_call(lambda: {"job": security_master_store.get_sync_job(job_id)})
+
+
+@app.get("/v1/data-center/securities")
+def list_security_master(
+    request: Request,
+    query: str = "",
+    statuses: str = "",
+    exchanges: str = "",
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, object]:
+    if not request.headers.get("x-byq-actor-principal", "").strip():
+        raise HTTPException(status_code=401, detail="actor principal is required")
+    return _security_master_call(lambda: security_master_store.list_securities(
+        query=query,
+        statuses=tuple(item for item in statuses.split(",") if item),
+        exchanges=tuple(item for item in exchanges.split(",") if item),
+        limit=limit,
+        offset=offset,
+    ))
 
 
 def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:

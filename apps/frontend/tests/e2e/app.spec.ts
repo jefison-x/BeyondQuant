@@ -77,9 +77,9 @@ async function mockAdminOps(page: Page) {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        schema_version: "data-center.v1", migration: "not_started", provider: "tushare", legacy_providers: [], quality: "empty",
+        schema_version: "data-center.v2", migration: "not_started", provider: "tushare", legacy_providers: [], quality: "empty",
         source: { configured: false, effective_source: "none", credentials: [], encryption: { configured: true, status: "ready" }, secrets_exposed: false, can_manage: true },
-        jobs: [],
+        jobs: [], security_master_jobs: [], security_master: { schema_version: "security-master.v1", quality: "empty", latest_snapshot: null, total: 0, status_counts: { L: 0, P: 0, D: 0 }, exchange_counts: { SSE: 0, SZSE: 0, BSE: 0 } },
         coverage: { checked_at: "2026-08-24T00:00:00Z", provider: "tushare", scope: "persisted_observations", quality: "empty", completeness_claimed: false, row_count: 0, symbol_count: 0, source_issues: 0, ohlc_issues: 0, groups: [], symbols: [] },
       }),
     }),

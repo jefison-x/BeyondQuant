@@ -1,8 +1,13 @@
-# Data Center v1 Contract
+# Data Center v1 Contract (daily-bar compatibility subset)
 
 Phase 39 implements the Accepted ADR-0019 Tushare boundary through the
 browser-facing Product API. The browser never calls Backend, PostgreSQL, or
 Tushare directly.
+
+Phase 53 extends the Product projection to `data-center.v2` under ADR-0026.
+The original daily-bar semantics below remain compatible; the security master,
+catalogue selection, response bounds, and true incremental behavior are
+normative in [`security-master-v1.md`](security-master-v1.md).
 
 ## Source configuration
 
@@ -28,9 +33,10 @@ secret-free errors.
 
 ## Sync jobs
 
-- A request contains 1–20 unique canonical symbols, a `range` or
-  `incremental` mode, an inclusive date range of at most 366 natural days, and
-  an idempotency key.
+- A legacy explicit request contains 1–500 unique canonical symbols. Catalogue
+  and Stock Pool orchestration may freeze at most 6,000 symbols. Every request
+  contains a `range` or `incremental` mode, an inclusive date range of at most
+  366 natural days, and an idempotency key.
 - Jobs persist as `queued → running → completed|partial|failed`; progress and
   per-symbol normalized results remain readable after page refresh.
 - Provider rows must match the requested symbol, have unique symbol/date keys,

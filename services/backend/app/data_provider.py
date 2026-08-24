@@ -27,9 +27,25 @@ DAILY_FIELDS = (
     "vol",
     "amount",
 )
+SECURITY_MASTER_FIELDS = (
+    "ts_code",
+    "symbol",
+    "name",
+    "area",
+    "industry",
+    "market",
+    "exchange",
+    "list_status",
+    "list_date",
+    "delist_date",
+    "is_hs",
+)
 MAX_DAILY_ROWS = 6000
+MAX_SECURITY_MASTER_ROWS = 10_000
 _SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 _DATE_PATTERN = re.compile(r"^[0-9]{8}$")
+_SECURITY_STATUSES = ("L", "P", "D")
+_EXCHANGE_BY_SUFFIX = {"SH": "SSE", "SZ": "SZSE", "BJ": "BSE"}
 
 
 class ProviderError(RuntimeError):
@@ -236,6 +252,123 @@ class DailyResult:
 
 
 @dataclass(frozen=True)
+class SecurityMasterRequest:
+    """Closed, provider-neutral request for the complete A-share stock master."""
+
+    statuses: tuple[str, ...] = _SECURITY_STATUSES
+
+    def normalized(self) -> "SecurityMasterRequest":
+        if not isinstance(self.statuses, tuple) or not self.statuses:
+            raise ValueError("security master statuses must be a non-empty tuple")
+        normalized = tuple(status.upper() for status in self.statuses)
+        if len(set(normalized)) != len(normalized) or any(status not in _SECURITY_STATUSES for status in normalized):
+            raise ValueError("security master statuses must be unique L, P, or D values")
+        return SecurityMasterRequest(tuple(status for status in _SECURITY_STATUSES if status in normalized))
+
+
+def _bounded_provider_text(value: object, field: str, *, required: bool = False) -> str | None:
+    if value is None or str(value).strip() == "":
+        if required:
+            raise ProviderProtocolError(f"provider returned an empty {field}")
+        return None
+    text = str(value).strip()
+    if len(text) > 128:
+        raise ProviderProtocolError(f"provider returned an oversized {field}")
+    return text
+
+
+def _optional_provider_date(value: object, field: str) -> str | None:
+    text = _bounded_provider_text(value, field)
+    if text is None:
+        return None
+    try:
+        return _validate_date(text, field)
+    except ValueError as error:
+        raise ProviderProtocolError(f"provider returned an invalid {field}") from error
+
+
+@dataclass(frozen=True)
+class SecurityRecord:
+    symbol: str
+    local_symbol: str
+    name: str
+    area: str | None
+    industry: str | None
+    market: str | None
+    exchange: str
+    list_status: str
+    list_date: str
+    delist_date: str | None
+    is_hs: str | None
+    asset_type: str = "stock"
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any], *, expected_status: str) -> "SecurityRecord":
+        try:
+            values = dict(zip(fields, row, strict=True))
+        except ValueError as error:
+            raise ProviderProtocolError("provider security row does not match its fields") from error
+        missing = [field for field in SECURITY_MASTER_FIELDS if field not in values]
+        if missing:
+            raise ProviderProtocolError("provider response omitted security-master fields")
+        symbol = str(values["ts_code"] or "").strip().upper()
+        if not _SYMBOL_PATTERN.fullmatch(symbol):
+            raise ProviderProtocolError("provider returned a non-canonical security symbol")
+        local_symbol = str(values["symbol"] or "").strip()
+        if local_symbol != symbol[:6]:
+            raise ProviderProtocolError("provider returned a mismatched local security symbol")
+        exchange = str(values["exchange"] or "").strip().upper()
+        if exchange != _EXCHANGE_BY_SUFFIX[symbol[-2:]]:
+            raise ProviderProtocolError("provider returned a mismatched security exchange")
+        list_status = str(values["list_status"] or "").strip().upper()
+        if list_status != expected_status:
+            raise ProviderProtocolError("provider returned a security outside the requested status")
+        list_date = _optional_provider_date(values["list_date"], "list_date")
+        if list_date is None:
+            raise ProviderProtocolError("provider returned an empty list_date")
+        delist_date = _optional_provider_date(values["delist_date"], "delist_date")
+        if delist_date is not None and list_date > delist_date:
+            raise ProviderProtocolError("provider returned an invalid security lifecycle")
+        return cls(
+            symbol=symbol,
+            local_symbol=local_symbol,
+            name=_bounded_provider_text(values["name"], "name", required=True) or "",
+            area=_bounded_provider_text(values["area"], "area"),
+            industry=_bounded_provider_text(values["industry"], "industry"),
+            market=_bounded_provider_text(values["market"], "market"),
+            exchange=exchange,
+            list_status=list_status,
+            list_date=list_date,
+            delist_date=delist_date,
+            is_hs=_bounded_provider_text(values["is_hs"], "is_hs"),
+        )
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "symbol": self.symbol,
+            "local_symbol": self.local_symbol,
+            "name": self.name,
+            "area": self.area,
+            "industry": self.industry,
+            "market": self.market,
+            "exchange": self.exchange,
+            "list_status": self.list_status,
+            "list_date": self.list_date,
+            "delist_date": self.delist_date,
+            "is_hs": self.is_hs,
+            "asset_type": self.asset_type,
+        }
+
+
+@dataclass(frozen=True)
+class SecurityMasterResult:
+    records: tuple[SecurityRecord, ...]
+    provenance: Provenance
+    dataset_id: str
+    statuses: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class TushareConfig:
     token: str
     api_url: str = "http://api.tushare.pro"
@@ -325,6 +458,50 @@ class TushareProvider:
         )
         self._set_cached(fingerprint, bars, provenance)
         return DailyResult(bars, provenance)
+
+    def fetch_security_master(self, request: SecurityMasterRequest | None = None) -> SecurityMasterResult:
+        normalized = (request or SecurityMasterRequest()).normalized()
+        if not self._config.token:
+            raise ProviderCredentialsMissing("Tushare credentials are not configured")
+        fingerprint = sha256(json.dumps(
+            {"api_name": "stock_basic", "statuses": normalized.statuses, "fields": SECURITY_MASTER_FIELDS},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        records: list[SecurityRecord] = []
+        seen: set[str] = set()
+        for status in normalized.statuses:
+            payload = {
+                "api_name": "stock_basic",
+                "token": self._config.token,
+                "params": {"exchange": "", "list_status": status},
+                "fields": ",".join(SECURITY_MASTER_FIELDS),
+            }
+            fields, rows = self._request(payload)
+            if len(records) + len(rows) > MAX_SECURITY_MASTER_ROWS:
+                raise ProviderProtocolError("provider returned too many security-master rows")
+            for row in rows:
+                record = SecurityRecord.from_row(fields, row, expected_status=status)
+                if record.symbol in seen:
+                    raise ProviderProtocolError("provider returned duplicate security-master identities")
+                seen.add(record.symbol)
+                records.append(record)
+        ordered = tuple(sorted(records, key=lambda item: item.symbol))
+        dataset_id = sha256(json.dumps(
+            [record.as_dict() for record in ordered],
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        provenance = Provenance(
+            provider="tushare",
+            endpoint="stock_basic",
+            request_fingerprint=fingerprint,
+            retrieved_at=datetime.now(timezone.utc).isoformat(),
+            cache_hit=False,
+            row_count=len(ordered),
+        )
+        return SecurityMasterResult(ordered, provenance, dataset_id, normalized.statuses)
 
     def _request(self, payload: dict[str, object]) -> tuple[list[str], list[list[Any]]]:
         last_status: int | None = None

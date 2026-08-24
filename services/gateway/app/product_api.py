@@ -105,7 +105,11 @@ def _data_actor_headers(request: Request, *, require_admin: bool = False) -> dic
         role = "user"
     if require_admin and role != "admin":
         raise ProductError(403, "product_forbidden", "admin role required")
-    return {"x-byq-actor-principal": actor, "x-byq-actor-role": role}
+    headers = {"x-byq-actor-principal": actor, "x-byq-actor-role": role}
+    if SESSION_COOKIE in request.cookies:
+        headers.update(_trusted_agent_headers(request))
+        headers["x-byq-actor-role"] = role
+    return headers
 
 
 def _now() -> str:
@@ -283,6 +287,7 @@ def _backend_request(
     path: str,
     payload: object | None = None,
     headers: dict[str, str] | None = None,
+    params: dict[str, str] | None = None,
 ) -> dict[str, object]:
     try:
         response = httpx.request(
@@ -290,6 +295,7 @@ def _backend_request(
             f"{BACKEND_URL}{path}",
             json=payload,
             headers=headers,
+            params=params,
             timeout=8.0,
         )
         response.raise_for_status()
@@ -820,6 +826,36 @@ def product_data_coverage(request: Request) -> dict[str, object]:
         "GET",
         "/v1/data-center/coverage",
         headers=_data_actor_headers(request),
+    )
+
+
+@router.post("/data-center/security-master/sync-jobs", status_code=201)
+def product_security_master_sync_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    return _backend_request(
+        "POST",
+        "/v1/data-sync/security-master/jobs",
+        payload,
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.get("/data-center/security-master/sync-jobs/{job_id}")
+def product_security_master_sync_get(job_id: str, request: Request) -> dict[str, object]:
+    return _backend_request(
+        "GET",
+        f"/v1/data-sync/security-master/jobs/{job_id}",
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.get("/data-center/securities")
+def product_security_master_list(request: Request) -> dict[str, object]:
+    params = {key: value for key, value in request.query_params.items()}
+    return _backend_request(
+        "GET",
+        "/v1/data-center/securities",
+        headers=_data_actor_headers(request),
+        params=params,
     )
 
 
