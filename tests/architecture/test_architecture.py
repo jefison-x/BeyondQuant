@@ -661,8 +661,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("DeepSeekHarness()", adapter)
 
         pyproject = (ROOT / "services/runtime-adapter/pyproject.toml").read_text()
-        self.assertIn('"deepseek-harness-sdk==0.1.0rc6"', pyproject)
-        self.assertIn('"deepseek-harness-runtime-bin==0.1.0rc6"', pyproject)
+        self.assertIn('"deepseek-harness-sdk==0.1.1rc1"', pyproject)
+        self.assertIn('"deepseek-harness-runtime-bin==0.1.1rc1"', pyproject)
 
         composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
         self.assertIn("@deepseek-ai/dsh-sdk-jsonrpc-server", composition)
@@ -686,7 +686,29 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "@deepseek-ai/dsh-sdk-jsonrpc-demo",
             "@deepseek-ai/dsh-sdk-jsonrpc-server",
         ):
-            self.assertEqual(runtime_package["dependencies"][dependency], "0.1.0-rc.6")
+            self.assertEqual(runtime_package["dependencies"][dependency], "0.1.1-rc.1")
+
+        runtime_lock = json.loads(
+            (ROOT / "services/runtime-adapter/runtime/package-lock.json").read_text()
+        )
+        deepseek_lock_packages = {
+            path.removeprefix("node_modules/"): metadata["version"]
+            for path, metadata in runtime_lock["packages"].items()
+            if path.startswith("node_modules/@deepseek-ai/")
+        }
+        self.assertEqual(deepseek_lock_packages, runtime_package["dependencies"])
+        dsh_versions = {
+            version
+            for name, version in deepseek_lock_packages.items()
+            if name.startswith("@deepseek-ai/dsh-")
+        }
+        self.assertEqual(dsh_versions, {"0.1.1-rc.1"})
+        self.assertTrue(
+            all(
+                not value.startswith(("^", "~"))
+                for value in runtime_package["dependencies"].values()
+            )
+        )
 
     def test_runtime_adapter_does_not_mount_application_source(self) -> None:
         dockerfile = (ROOT / "services/runtime-adapter/Dockerfile").read_text()

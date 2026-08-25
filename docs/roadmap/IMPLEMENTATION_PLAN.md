@@ -1295,12 +1295,13 @@ covered by scale/component/contract tests. A fresh Compose deployment passed
 the no-mock two-user Product API journey and Chrome desktop/mobile review under
 `docs/evidence/phase-40/`; the v1.0 RC review gate is reopened.
 
-### Post-Phase 40 maintenance — DSH Upgrade Lane (`SCHEDULED`)
+### Post-Phase 40 maintenance — DSH Upgrade Lane (`COMPLETE`)
 
-Build the repeatable compatibility, dependency-evidence, and isolated upgrade
-workflow defined in `DSH_UPGRADE_LANE.md`. This task does not block Product
-Completion phases. A critical upstream security advisory may promote it into a
-dedicated earlier maintenance change under ADR-0003.
+Delivered the repeatable compatibility, dependency-evidence, and isolated
+upgrade workflow defined in `DSH_UPGRADE_LANE.md`. The Product Runtime is
+qualified at Python `0.1.1rc1` plus a complete exact npm `0.1.1-rc.1` closure;
+rc.6 remains the rollback baseline. This maintenance task did not change a
+Product phase or widen Product Agent capabilities.
 
 ## Post-parity Product Experience Program
 

@@ -10,8 +10,9 @@ Codex session does not infer project state from commit history.
   phase development and ADR-0015 CI-green auto-merge on 2026-08-25; this does
   not authorize a release candidate, tag, production publication, or formal
   release. The separately
-  scheduled post-Phase 40 DSH Upgrade Lane remains a maintenance task, not an
-  implicit next phase.
+  post-Phase 40 DSH Upgrade Lane qualified the Product Runtime at Python
+  `0.1.1rc1` / npm `0.1.1-rc.1`; it remains maintenance history, not an
+  implicit product phase.
 - Accepted runtime ADR: **ADR-0003**
 - Accepted Phase 7 authentication ADR: **ADR-0004**
 - Accepted Phase 8 data-provider ADR: **ADR-0005**
@@ -368,13 +369,19 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
+- DSH Upgrade Lane completed: the Product Runtime now exact-pins Python
+  `deepseek-harness-sdk` and runtime-bin `0.1.1rc1` plus a coherent 61-package
+  `@deepseek-ai/*` npm closure, including 54 DSH packages at `0.1.1-rc.1`.
+  GitHub/npm rc.2 is rejected until matching Python
+  artifacts exist; rc.6 remains the rollback baseline. Product capabilities
+  and Gateway -> Runtime Adapter -> DSH -> MCP boundaries are unchanged.
 - Active implementation-phase blocker: **none**. Phases 49-57, the ADR-0025
   personal-workspace program, ADR-0026 data bootstrap, ADR-0027 daily
   automation, ADR-0028 readiness gate, ADR-0029 adjusted research input and
   ADR-0030 declared point-in-time inputs are complete. **No subsequent product
   phase is currently defined or authorized; further work awaits the maintainer's
-  next scoped instruction.** The post-Phase 40 DSH Upgrade Lane is scheduled
-  separately in `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.
+  next scoped instruction.** The completed post-Phase 40 DSH Upgrade Lane is
+  recorded separately in `DSH_UPGRADE_LANE.md`.
 
 Git SHA is not phase state. The current clean baseline must always be derived
 from `git fetch origin` followed by `git rev-parse origin/main`; this file must

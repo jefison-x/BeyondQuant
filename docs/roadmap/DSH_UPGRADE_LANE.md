@@ -1,6 +1,6 @@
 # DSH Upgrade Lane
 
-Status: **SCHEDULED — post-Phase 40 maintenance initiative**
+Status: **QUALIFIED — `0.1.1rc1` / `0.1.1-rc.1` maintenance upgrade**
 
 This task establishes a repeatable, evidence-driven path for following
 official DeepSeek Harness releases without coupling BYQ product contracts to
@@ -8,10 +8,48 @@ DSH internals. It is intentionally scheduled after the current product-depth
 sequence. A critical DSH security advisory may trigger it earlier through a
 dedicated maintenance worktree and ADR-0003 compatibility review.
 
-## Research baseline (2026-08-22)
+## Qualified stack (2026-08-25)
 
-BYQ currently pins the Python SDK/runtime and the explicit npm runtime closure
-to DSH `0.1.0-rc.6`. The Runtime Adapter launches the npm
+The Product Runtime qualified by this lane is:
+
+- Python `deepseek-harness-sdk==0.1.1rc1`;
+- Python `deepseek-harness-runtime-bin==0.1.1rc1`;
+- all 54 `@deepseek-ai/dsh-*` packages in the BYQ JSON-RPC runtime closure
+  exact-pinned to npm `0.1.1-rc.1`;
+- all seven supporting `@deepseek-ai/*` Cordis packages exact-pinned to their
+  current official stable versions;
+- public `@deepseek-ai/dsh-sdk-jsonrpc-demo` `lib/bin.js` carrier; and
+- the unchanged BYQ Cordis composition with JSONL persistence and
+  `@deepseek-ai/dsh-mcp-client` as the only Agent-to-Domain path.
+
+GitHub/npm `0.1.1-rc.2` is newer but has no matching Python SDK/runtime-bin
+release. It is therefore rejected. A normal top-level npm rc.1 install also
+fails closed because upstream caret peer ranges select rc.2 transitive
+packages. BYQ prevents that mixed prerelease tree by listing the complete DSH
+closure as exact direct pins; a clean npm resolution then contains 61
+`@deepseek-ai/*` packages, including 54 DSH packages at one version only,
+`0.1.1-rc.1`, without overrides, `--force`, or `--legacy-peer-deps`.
+
+The evidence and compatibility results are recorded in
+[`dsh-compatibility-matrix.md`](../architecture/research/dsh-compatibility-matrix.md).
+Prepare any future candidate without changing the qualified pin with:
+
+```bash
+python3 scripts/dsh/prepare_candidate.py \
+  --python-version 0.1.1rc1 \
+  --npm-version 0.1.1-rc.1 \
+  --output /tmp/byq-dsh-candidate-0.1.1rc1
+```
+
+The command downloads the platform SDK/runtime wheels, verifies their PyPI
+SHA-256 metadata, creates and verifies a clean npm lock, runs `npm ci` and
+high-level audit, and emits a CycloneDX SBOM plus a dependency report. It
+refuses mixed Python/npm prereleases and existing output directories.
+
+## Rollback baseline (2026-08-22)
+
+BYQ previously pinned the Python SDK/runtime and the explicit npm runtime closure
+to DSH `0.1.0-rc.6`. The Runtime Adapter launched the npm
 `@deepseek-ai/dsh-sdk-jsonrpc-demo` closure; changing only the Python packages
 does not change the runtime that serves Product Agent sessions.
 
@@ -50,23 +88,23 @@ Turn ADR-0003's manual upgrade review into a reproducible compatibility lane
 that can qualify routine DSH releases within one working day when no protocol,
 persistence, or security boundary changes.
 
-## Planned scope
+## Delivered scope
 
-1. Produce an exact BYQ/DSH compatibility matrix covering Python SDK,
+1. Produced an exact BYQ/DSH compatibility matrix covering Python SDK,
    runtime-bin, npm closure, hashes, protocol behavior, and known limitations.
-2. Add a candidate-version preparation command that downloads artifacts,
+2. Added a candidate-version preparation command that downloads artifacts,
    verifies hashes/metadata, materializes a lockfile, and emits an SBOM/diff
    without modifying the accepted runtime pin.
-3. Prefer one coherent runtime source. Evaluate whether the paired Python
-   runtime executable can replace the duplicate npm closure while preserving
-   the custom Cordis composition, MCP configuration, and lifecycle ownership.
-4. Automate compatibility tests for initialization, MCP authorization,
+3. Retained the explicit npm runtime because BYQ's custom Cordis composition
+   requires the MCP client and bounded Product capability roster. The bundled
+   Python runtime remains an exact paired dependency, not the selected carrier.
+4. Automated compatibility tests for initialization, MCP authorization,
    subagents, long-session resume/replay, normalized notifications, secret
    filtering, timeouts, cancellation, process reaping, and credential
    resolution.
-5. Add an isolated upgrade worktree/Draft-PR workflow. Versions remain exact;
+5. Used an isolated upgrade worktree/Draft-PR workflow. Versions remain exact;
    no `latest`, caret, or automatic production adoption is allowed.
-6. Define two policies: expedited qualification for security fixes and normal
+6. Retained two policies: expedited qualification for security fixes and normal
    batching for feature releases. New DSH capabilities stay disabled until a
    BYQ contract or Accepted ADR explicitly adopts them.
 
