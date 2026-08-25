@@ -544,18 +544,29 @@ class MarketAutomationStore(PgStoreMixin):
             WHERE request_id=:id""", {"id": request_id, "status": "failed" if error else "completed",
                                       "now": _now(), "error": error})
 
-    def claim_next_job(self, *, worker_id: str) -> dict[str, object] | None:
-        now = datetime.now(timezone.utc)
-        lease = now + timedelta(seconds=LEASE_SECONDS)
+    def claim_next_job(
+        self, *, worker_id: str, now: datetime | None = None,
+    ) -> dict[str, object] | None:
+        claimed_at = now or datetime.now(timezone.utc)
+        if claimed_at.tzinfo is None:
+            raise ValueError("now must be timezone-aware")
+        local = claimed_at.astimezone(ZoneInfo("Asia/Shanghai"))
+        config = self.get_config()
+        eligible_date = local.date()
+        if local.strftime("%H:%M") < str(config["schedule_time"]):
+            eligible_date -= timedelta(days=1)
+        eligible_through = eligible_date.strftime("%Y%m%d")
+        lease = claimed_at + timedelta(seconds=LEASE_SECONDS)
         with self._transaction() as connection:
             row = fetch_one(
                 connection,
                 """SELECT * FROM market_session_sync_jobs
                    WHERE status = 'queued'
                      AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
+                     AND trade_date <= :eligible_through
                    ORDER BY trade_date, created_at
                    FOR UPDATE SKIP LOCKED LIMIT 1""",
-                {"now": now.isoformat()},
+                {"now": claimed_at.isoformat(), "eligible_through": eligible_through},
             )
             if row is None:
                 return None
@@ -565,7 +576,7 @@ class MarketAutomationStore(PgStoreMixin):
                    attempts = attempts + 1, started_at = COALESCE(started_at, :now),
                    lease_until = :lease, error_code = NULL, error_message = NULL,
                    updated_at = :now WHERE job_id = :job_id""",
-                {"job_id": row["job_id"], "now": now.isoformat(), "lease": lease.isoformat()},
+                {"job_id": row["job_id"], "now": claimed_at.isoformat(), "lease": lease.isoformat()},
             )
         self.heartbeat(worker_id, last_job_id=str(row["job_id"]))
         return self.get_job(row["job_id"])

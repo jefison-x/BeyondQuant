@@ -397,7 +397,10 @@ def test_daily_automation_uses_open_sessions_and_full_market_snapshots() -> None
     assert len(provider.calendar_requests) == 1
 
     for expected_date in ("20260824", "20260825"):
-        job = automation.claim_next_job(worker_id="test-worker")
+        job = automation.claim_next_job(
+            worker_id="test-worker",
+            now=datetime(2026, 8, 25, 18, 31, tzinfo=ZoneInfo("Asia/Shanghai")),
+        )
         assert job is not None and job["trade_date"] == expected_date
         completed = automation.execute_job(job, provider=provider, market_store=market)
         assert completed["status"] == "completed"
@@ -408,6 +411,37 @@ def test_daily_automation_uses_open_sessions_and_full_market_snapshots() -> None
     assert status["latest_complete_session"]["row_count"] == 2
     automation.close()
     market.close()
+
+
+def test_daily_worker_defers_current_session_until_configured_close_time() -> None:
+    automation = MarketAutomationStore()
+    provider = FakeAutomationProvider()
+    config = automation.get_config()
+    automation.update_config({
+        "enabled": True,
+        "schedule_time": "18:30",
+        "catchup_days": 1,
+        "security_master_enabled": True,
+        "expected_version": config["version"],
+        "idempotency_key": "automation-current-session-cutoff",
+    }, actor="admin")
+    noon = datetime(2026, 8, 25, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    created = run_scheduler_cycle(
+        automation, provider_factory=lambda: provider, worker_id="test-worker",
+        now=noon, force=True,
+    )
+
+    assert [item["trade_date"] for item in created] == ["20260825"]
+    assert automation.claim_next_job(worker_id="test-worker", now=noon) is None
+    claimed = automation.claim_next_job(
+        worker_id="test-worker",
+        now=datetime(2026, 8, 25, 18, 30, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    assert claimed is not None
+    assert claimed["trade_date"] == "20260825"
+    assert claimed["attempts"] == 1
+    automation.close()
 
 
 def test_automation_config_is_versioned_and_idempotent() -> None:
