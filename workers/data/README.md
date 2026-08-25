@@ -1,4 +1,6 @@
 # Data Worker
 
-Reserved for a future Data Plane worker. Phase 5 does not implement market
-data ingestion, Tushare integration, or a data worker runtime.
+Trusted Data Plane worker for ADR-0027. It owns the durable schedule loop,
+trading-calendar refresh, full-market daily snapshots, retries and restart
+recovery. It has PostgreSQL and Tushare credential access but no DSH, MCP,
+Gateway, browser, model, repository-write or Docker authority.

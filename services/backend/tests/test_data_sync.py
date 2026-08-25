@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app import main
 from app.credentials import CredentialCipher, CredentialStore
-from app.data_provider import DailyBar, DailyResult, Provenance, SecurityMasterResult, SecurityRecord
+from app.data_provider import (
+    DailyBar,
+    DailyResult,
+    Provenance,
+    SecurityMasterResult,
+    SecurityRecord,
+    TradingCalendarResult,
+    TradingSession,
+)
 from app.data_sync import DataSyncConflict, DataSyncStore
+from app.market_automation import MarketAutomationConflict, MarketAutomationStore, run_scheduler_cycle
 from app.market_data import MarketDataStore
 from app.paper_trading import PaperTradingNotFound, PaperTradingStore
 from app.security_master import SecurityMasterStore
@@ -222,11 +233,13 @@ def test_backend_data_center_routes_are_admin_scoped_and_secret_free(monkeypatch
     jobs = DataSyncStore()
     securities = SecurityMasterStore()
     market = MarketDataStore()
+    automation = MarketAutomationStore()
     provider = FakeProvider()
     monkeypatch.setattr(main, "credential_store", credentials)
     monkeypatch.setattr(main, "data_sync_store", jobs)
     monkeypatch.setattr(main, "security_master_store", securities)
     monkeypatch.setattr(main, "market_data_store", market)
+    monkeypatch.setattr(main, "market_automation_store", automation)
     monkeypatch.setattr(main, "data_provider", provider)
     client = TestClient(main.app)
     admin = {"x-byq-actor-principal": "admin", "x-byq-actor-role": "admin"}
@@ -286,10 +299,126 @@ def test_backend_data_center_routes_are_admin_scoped_and_secret_free(monkeypatch
     assert status.status_code == 200
     assert status.json()["source"]["credentials"][0]["masked"].endswith("oken")
     assert status.json()["coverage"]["row_count"] == 1
-    assert status.json()["schema_version"] == "data-center.v2"
+    assert status.json()["schema_version"] == "data-center.v3"
     assert status.json()["security_master"]["total"] == 1
     assert "phase39-secret-token" not in status.text
+    config = client.put("/v1/data-sync/automation/config", headers=admin, json={
+        "enabled": True, "schedule_time": "18:30", "catchup_days": 7,
+        "security_master_enabled": True, "expected_version": 1,
+        "idempotency_key": "automation-http-config-1",
+    })
+    assert config.status_code == 200
+    assert config.json()["config"]["enabled"] is True
+    run_now = client.post(
+        "/v1/data-sync/automation/run-now", headers=admin,
+        json={"idempotency_key": "automation-http-run-1"},
+    )
+    assert run_now.status_code == 202
+    assert run_now.json()["run_request"]["status"] == "queued"
+    denied_automation = client.put(
+        "/v1/data-sync/automation/config",
+        headers={"x-byq-actor-principal": "alice", "x-byq-actor-role": "user"},
+        json={},
+    )
+    assert denied_automation.status_code == 403
     credentials.close()
     jobs.close()
     securities.close()
     market.close()
+    automation.close()
+
+
+class FakeAutomationProvider:
+    def __init__(self) -> None:
+        self.calendar_requests = []
+        self.daily_requests = []
+
+    def fetch_trading_calendar(self, request):
+        normalized = request.normalized()
+        self.calendar_requests.append(normalized)
+        return TradingCalendarResult(
+            sessions=(
+                TradingSession("20260823", False, "20260821"),
+                TradingSession("20260824", True, "20260821"),
+                TradingSession("20260825", True, "20260824"),
+            ),
+            provenance=Provenance(
+                provider="tushare", endpoint="trade_cal", request_fingerprint="calendar-fixture",
+                retrieved_at="2026-08-25T10:31:00+00:00", cache_hit=False, row_count=3,
+            ),
+        )
+
+    def fetch_daily(self, request):
+        normalized = request.normalized()
+        self.daily_requests.append(normalized)
+        trade_date = str(normalized.trade_date)
+        return DailyResult(
+            bars=(
+                DailyBar("000001.SZ", trade_date, 10, 11, 9, 10.5, 10, .5, 5, 100, 2000),
+                DailyBar("600000.SH", trade_date, 8, 8.5, 7.8, 8.2, 8, .2, 2.5, 80, 1200),
+            ),
+            provenance=Provenance(
+                provider="tushare", endpoint="daily", request_fingerprint=f"daily-{trade_date}",
+                retrieved_at="2026-08-25T10:32:00+00:00", cache_hit=False, row_count=2,
+            ),
+        )
+
+
+def test_daily_automation_uses_open_sessions_and_full_market_snapshots() -> None:
+    automation = MarketAutomationStore()
+    market = MarketDataStore()
+    provider = FakeAutomationProvider()
+    config = automation.get_config()
+    updated = automation.update_config({
+        "enabled": True,
+        "schedule_time": "18:30",
+        "catchup_days": 3,
+        "security_master_enabled": True,
+        "expected_version": config["version"],
+        "idempotency_key": "automation-config-1",
+    }, actor="admin")
+    assert updated["timezone"] == "Asia/Shanghai"
+
+    created = run_scheduler_cycle(
+        automation,
+        provider_factory=lambda: provider,
+        worker_id="test-worker",
+        now=datetime(2026, 8, 25, 18, 31, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    assert [item["trade_date"] for item in created] == ["20260824", "20260825"]
+    assert len(provider.calendar_requests) == 1
+    assert run_scheduler_cycle(
+        automation,
+        provider_factory=lambda: provider,
+        worker_id="test-worker",
+        now=datetime(2026, 8, 25, 19, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    ) == []
+    assert len(provider.calendar_requests) == 1
+
+    for expected_date in ("20260824", "20260825"):
+        job = automation.claim_next_job(worker_id="test-worker")
+        assert job is not None and job["trade_date"] == expected_date
+        completed = automation.execute_job(job, provider=provider, market_store=market)
+        assert completed["status"] == "completed"
+        assert completed["rows_received"] == 2
+    assert market.get_bar("000001.SZ", "20260825")["pre_close"] == 10
+    status = automation.status()
+    assert status["latest_complete_session"]["trade_date"] == "20260825"
+    assert status["latest_complete_session"]["row_count"] == 2
+    automation.close()
+    market.close()
+
+
+def test_automation_config_is_versioned_and_idempotent() -> None:
+    automation = MarketAutomationStore()
+    payload = {
+        "enabled": True, "schedule_time": "18:30", "catchup_days": 7,
+        "security_master_enabled": True, "expected_version": 1,
+        "idempotency_key": "automation-config-replay",
+    }
+    first = automation.update_config(payload, actor="admin")
+    assert automation.update_config(payload, actor="admin") == first
+    with pytest.raises(MarketAutomationConflict, match="version conflict"):
+        automation.update_config({**payload, "idempotency_key": "automation-config-stale"}, actor="admin")
+    automation.close()

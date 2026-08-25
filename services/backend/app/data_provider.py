@@ -27,6 +27,12 @@ DAILY_FIELDS = (
     "vol",
     "amount",
 )
+TRADE_CALENDAR_FIELDS = (
+    "exchange",
+    "cal_date",
+    "is_open",
+    "pretrade_date",
+)
 SECURITY_MASTER_FIELDS = (
     "ts_code",
     "symbol",
@@ -41,6 +47,7 @@ SECURITY_MASTER_FIELDS = (
     "is_hs",
 )
 MAX_DAILY_ROWS = 6000
+MAX_TRADE_CALENDAR_ROWS = 800
 MAX_SECURITY_MASTER_ROWS = 10_000
 MAX_QUARANTINED_SECURITY_MASTER_ROWS = 100
 _SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
@@ -250,6 +257,69 @@ class Provenance:
 @dataclass(frozen=True)
 class DailyResult:
     bars: tuple[DailyBar, ...]
+    provenance: Provenance
+
+
+@dataclass(frozen=True)
+class TradingCalendarRequest:
+    """Bounded SSE session calendar used as the canonical A-share calendar."""
+
+    start_date: str
+    end_date: str
+
+    def normalized(self) -> "TradingCalendarRequest":
+        start_date = _validate_date(self.start_date, "start_date")
+        end_date = _validate_date(self.end_date, "end_date")
+        assert start_date is not None and end_date is not None
+        if start_date > end_date:
+            raise ValueError("start_date must not be after end_date")
+        if (datetime.strptime(end_date, "%Y%m%d") - datetime.strptime(start_date, "%Y%m%d")).days > 400:
+            raise ValueError("trading calendar range must not exceed 401 days")
+        return TradingCalendarRequest(start_date, end_date)
+
+
+@dataclass(frozen=True)
+class TradingSession:
+    trade_date: str
+    is_open: bool
+    previous_open_date: str | None
+    exchange: str = "SSE"
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "TradingSession":
+        try:
+            values = dict(zip(fields, row, strict=True))
+        except ValueError as error:
+            raise ProviderProtocolError("provider calendar row does not match its fields") from error
+        missing = [field for field in TRADE_CALENDAR_FIELDS if field not in values]
+        if missing:
+            raise ProviderProtocolError("provider response omitted trading-calendar fields")
+        exchange = str(values["exchange"] or "").strip().upper()
+        if exchange != "SSE":
+            raise ProviderProtocolError("provider returned an unexpected trading-calendar exchange")
+        try:
+            trade_date = _validate_date(str(values["cal_date"]), "cal_date")
+            previous = _validate_date(str(values["pretrade_date"]), "pretrade_date") if values["pretrade_date"] else None
+        except ValueError as error:
+            raise ProviderProtocolError("provider returned an invalid trading-calendar date") from error
+        raw_open = values["is_open"]
+        if raw_open not in {0, 1, "0", "1"}:
+            raise ProviderProtocolError("provider returned an invalid trading-calendar state")
+        assert trade_date is not None
+        return cls(trade_date, str(raw_open) == "1", previous, exchange)
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "trade_date": self.trade_date,
+            "is_open": self.is_open,
+            "previous_open_date": self.previous_open_date,
+            "exchange": self.exchange,
+        }
+
+
+@dataclass(frozen=True)
+class TradingCalendarResult:
+    sessions: tuple[TradingSession, ...]
     provenance: Provenance
 
 
@@ -524,6 +594,53 @@ class TushareProvider:
         )
         self._set_cached(fingerprint, bars, provenance)
         return DailyResult(bars, provenance)
+
+    def fetch_trading_calendar(self, request: TradingCalendarRequest) -> TradingCalendarResult:
+        normalized = request.normalized()
+        if not self._config.token:
+            raise ProviderCredentialsMissing("Tushare credentials are not configured")
+        fingerprint = sha256(json.dumps(
+            {
+                "api_name": "trade_cal",
+                "exchange": "SSE",
+                "start_date": normalized.start_date,
+                "end_date": normalized.end_date,
+                "fields": TRADE_CALENDAR_FIELDS,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        fields, rows = self._request({
+            "api_name": "trade_cal",
+            "token": self._config.token,
+            "params": {
+                "exchange": "SSE",
+                "start_date": normalized.start_date,
+                "end_date": normalized.end_date,
+            },
+            "fields": ",".join(TRADE_CALENDAR_FIELDS),
+        })
+        if len(rows) > MAX_TRADE_CALENDAR_ROWS:
+            raise ProviderProtocolError("provider returned too many trading-calendar rows")
+        sessions = tuple(sorted(
+            (TradingSession.from_row(fields, row) for row in rows),
+            key=lambda item: item.trade_date,
+        ))
+        if len({item.trade_date for item in sessions}) != len(sessions):
+            raise ProviderProtocolError("provider returned duplicate trading-calendar dates")
+        if any(not normalized.start_date <= item.trade_date <= normalized.end_date for item in sessions):
+            raise ProviderProtocolError("provider returned a trading-calendar date outside the request")
+        return TradingCalendarResult(
+            sessions,
+            Provenance(
+                provider="tushare",
+                endpoint="trade_cal",
+                request_fingerprint=fingerprint,
+                retrieved_at=datetime.now(timezone.utc).isoformat(),
+                cache_hit=False,
+                row_count=len(sessions),
+            ),
+        )
 
     def fetch_security_master(self, request: SecurityMasterRequest | None = None) -> SecurityMasterResult:
         normalized = (request or SecurityMasterRequest()).normalized()

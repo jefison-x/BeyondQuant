@@ -44,6 +44,15 @@ paths:
     get: {summary: Return provider and migration status without credentials., responses: *okResponses}
   /api/product/data-center/status:
     get: {summary: Return Tushare source metadata, sync history, and observed PostgreSQL coverage without secrets., responses: *okResponses}
+  /api/product/data-center/automation:
+    get: {summary: Return administrator-visible daily market synchronization configuration, worker health, completeness, and job state., responses: *okResponses}
+  /api/product/data-center/automation/config:
+    put: {summary: Update the versioned daily market synchronization schedule and catch-up policy., responses: *okResponses}
+  /api/product/data-center/automation/run-now:
+    post: {summary: Enqueue an administrator-requested daily market synchronization scheduler run., responses: *acceptedResponses}
+  /api/product/data-center/automation/run-now/{request_id}:
+    parameters: [{$ref: "#/components/parameters/RequestId"}]
+    get: {summary: Get one administrator-requested daily market synchronization run., responses: *okResponses}
   /api/product/data-center/source/credentials:
     post: {summary: Create the admin-only write-only Tushare system credential., responses: *createdResponses}
   /api/product/data-center/source/credentials/{credential_id}:
@@ -308,6 +317,7 @@ components:
     EntityType: {name: entity_type, in: path, required: true, schema: {type: string, enum: [tasks, experiments, artifacts]}}
     EntityId: {name: entity_id, in: path, required: true, schema: {type: string}}
     JobId: {name: job_id, in: path, required: true, schema: {type: string}}
+    RequestId: {name: request_id, in: path, required: true, schema: {type: string}}
     CredentialId: {name: credential_id, in: path, required: true, schema: {type: string}}
     ArtifactId: {name: artifact_id, in: path, required: true, schema: {type: string}}
     StrategyId: {name: strategy_id, in: path, required: true, schema: {type: string}}

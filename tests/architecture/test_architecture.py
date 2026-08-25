@@ -47,7 +47,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("A user binding never", contract)
-        self.assertIn("Current completed phase: **Phase 53**", status)
+        self.assertIn("Current completed phase: **Phase 54**", status)
         self.assertIn("Phase 40 (Shared components and final parity closure) completed", status)
         self.assertIn(
             "Accepted conversation-first Product experience ADR: **ADR-0024**",
@@ -59,6 +59,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
         self.assertIn(
             "Accepted security-master synchronization ADR: **ADR-0026**",
+            status,
+        )
+        self.assertIn(
+            "Accepted daily market automation ADR: **ADR-0027**",
             status,
         )
         self.assertIn("D-0008 is CLOSED", status)
@@ -126,6 +130,20 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("ports:", sandbox)
         self.assertNotIn("COPY services/backend", dockerfile)
         self.assertNotIn("COPY .", dockerfile)
+
+    def test_data_worker_is_trusted_but_not_an_agent_or_browser_boundary(self) -> None:
+        worker = service_block("data-worker")
+        dockerfile = (ROOT / "workers/data/Dockerfile").read_text()
+        source = (ROOT / "workers/data/worker.py").read_text()
+
+        self.assertIn("BYQ_DATABASE_URL", worker)
+        self.assertIn("TUSHARE_TOKEN", worker)
+        self.assertIn("no-new-privileges:true", worker)
+        self.assertNotIn("ports:", worker)
+        self.assertNotRegex(worker + source, r"(?i)(BYQ_MCP|DSH_|MODEL_API|docker\.sock)")
+        self.assertIn("COPY services/backend/app", dockerfile)
+        self.assertNotIn("COPY .", dockerfile)
+        self.assertRegex(dockerfile, r"(?m)^USER byq$")
 
     def test_dsh_is_container_local_and_not_host_published(self) -> None:
         compose = (ROOT / "compose.yml").read_text()

@@ -43,6 +43,7 @@ class MarketDataStore(PgStoreMixin):
             high DOUBLE PRECISION NOT NULL,
             low DOUBLE PRECISION NOT NULL,
             close DOUBLE PRECISION NOT NULL,
+            pre_close DOUBLE PRECISION,
             volume DOUBLE PRECISION,
             amount DOUBLE PRECISION,
             adjust TEXT NOT NULL DEFAULT 'none',
@@ -55,6 +56,10 @@ class MarketDataStore(PgStoreMixin):
             imported_at TIMESTAMPTZ NOT NULL,
             PRIMARY KEY (symbol, trade_date)
         )
+        """,
+        """
+        ALTER TABLE market_daily_bars
+            ADD COLUMN IF NOT EXISTS pre_close DOUBLE PRECISION
         """,
         """
         CREATE INDEX IF NOT EXISTS market_daily_bars_date_idx
@@ -119,9 +124,11 @@ class MarketDataStore(PgStoreMixin):
                     connection,
                     """INSERT INTO market_daily_bars
                     (symbol, trade_date, open, high, low, close, volume, amount,
+                     pre_close,
                      adjust, asset_type, data_source, volume_unit, amount_unit,
                      content_sha256, provenance_json, imported_at)
                     VALUES (:symbol, :trade_date, :open, :high, :low, :close, :volume, :amount,
+                            :pre_close,
                             :adjust, :asset_type, :data_source, :volume_unit, :amount_unit,
                             :content_sha256, :provenance_json, now())""",
                     {
@@ -133,6 +140,7 @@ class MarketDataStore(PgStoreMixin):
                         "close": row["close"],
                         "volume": row.get("volume"),
                         "amount": row.get("amount"),
+                        "pre_close": row.get("pre_close"),
                         "adjust": row.get("adjust", "none"),
                         "asset_type": row["asset_type"],
                         "data_source": row["data_source"],
@@ -191,7 +199,7 @@ class MarketDataStore(PgStoreMixin):
         if len(start) != 8 or not start.isdigit() or len(end) != 8 or not end.isdigit() or start > end:
             raise ValueError("date range must be valid YYYY-MM-DD or YYYYMMDD values")
         rows = self._execute(
-            """SELECT symbol, trade_date, open, high, low, close, volume, amount,
+            """SELECT symbol, trade_date, open, high, low, close, pre_close, volume, amount,
                       adjust, asset_type, data_source, volume_unit, amount_unit,
                       content_sha256, provenance_json
                FROM market_daily_bars

@@ -9,6 +9,9 @@ The original daily-bar semantics below remain compatible; the security master,
 catalogue selection, response bounds, and true incremental behavior are
 normative in [`security-master-v1.md`](security-master-v1.md).
 
+Phase 54 extends the projection to `data-center.v3` under ADR-0027. It adds the
+`market-sync-automation.v1` member while retaining all v1/v2 manual operations.
+
 ## Source configuration
 
 - The only provider key is `tushare`; no browser-provided URL or provider name
@@ -53,3 +56,24 @@ provider/asset groups, per-symbol bounds, non-Tushare source issues, and OHLC
 relationship issues. It sets `completeness_claimed=false`; without a complete
 trading-calendar/lifecycle proof, a date span is not presented as full
 historical coverage.
+
+## Daily automation
+
+- Configuration is admin-only, versioned and idempotent: `enabled`, `HH:MM`
+  schedule, fixed `Asia/Shanghai` timezone, 1-30 catch-up calendar days and an
+  optional atomic security-master refresh.
+- The Browser creates only Product API configuration or run-now commands. A
+  trusted `data-worker` refreshes the calendar and executes provider requests.
+- Each open session has at most one durable job. Jobs are leased and transition
+  through `queued → running → completed|failed`, with up to four attempts and
+  bounded backoff/recovery.
+- A session uses one exact-date unscoped `daily` request and imports the complete
+  normalized response with `KEEP_NEW`. `pre_close` is retained alongside raw
+  unadjusted OHLCV/amount.
+- `provider_snapshot_complete` means one non-empty exact-date provider snapshot
+  passed normalization and was fully imported. It does not mean every catalogue
+  member traded, and it does not replace the broader lifecycle-aware readiness
+  assessment planned for Phase 55.
+- Public status includes worker heartbeat/health, latest calendar open date,
+  latest complete session, next configured run and bounded recent job/command
+  projections. No credential or raw provider envelope is exposed.

@@ -756,3 +756,22 @@ produced the following disposition.
 No Community source, database, cache, runtime, credential, or Git history is
 modified or imported. Community data remains eligible only for a future
 read-only logical migration after ADR-0013 provenance validation.
+
+## Phase 54 daily market automation pre-implementation audit
+
+The read-only Community `backend/app/ops/sync_jobs.py`, scheduler/state-machine
+tests, Tushare `trade_cal`/exact-date `daily` mappings, and
+`SystemMaintenanceWorkbench.vue` were inspected before Phase 54. The mandatory
+inspect → classify → extract invariants/tests → decide → implement sequence
+produced this disposition.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 54 disposition |
+|---|---|---|---|
+| DB-backed scheduler and worker | One job per scheduled date, atomic claim, lease, heartbeat, restart recovery and bounded retry | `PORT_TESTS` / `REFACTOR` | Reimplement as BYQ PostgreSQL contracts and an independently deployable trusted Data Plane worker. No SQLAlchemy model or thread runtime is copied. |
+| `trade_cal` plus exact-date `daily` | Resolve open sessions before fetching one complete market snapshot | `PORT_LOGIC` / `REFACTOR` | Add closed provider-neutral calendar and full-market daily mappings with strict bounds, validation and provenance. |
+| Automatic-sync controls at 18:30 | Operators need enable/time/catch-up/content, worker health and last/next-run visibility | `PORT_UX` / `PORT_LAYOUT` | Add a responsive Data Center card over Gateway/Product API; timezone is fixed and settings are explicit-save/versioned. |
+| Broad contents, index weights, adjusted bars, fundamentals and corporate research | These need independent point-in-time and quality contracts | `REFERENCE_ONLY` | Keep them out of Phase 54 and assign them to Phases 55-57. |
+| Community ORM, provider registry, cache, internal APIs, threads, BaoStock/AKShare/VectorBT paths | No reusable architecture boundary | `REPLACE` / `DROP` | BYQ Backend/Data Plane/PostgreSQL contracts remain authoritative; excluded dependencies and fallbacks do not return. |
+
+No Community source, database, runtime, cache, credential or Git history was
+modified or copied.

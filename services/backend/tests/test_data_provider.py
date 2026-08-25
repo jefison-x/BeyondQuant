@@ -12,6 +12,7 @@ from app.data_provider import (
     ProviderRateLimited,
     ProviderUnavailable,
     SecurityMasterRequest,
+    TradingCalendarRequest,
     TransportResponse,
     TushareConfig,
     TushareProvider,
@@ -189,6 +190,41 @@ def test_provider_code_rate_limit_is_retried() -> None:
 
     assert result.bars == ()
     assert len(transport.calls) == 2
+
+
+def test_trading_calendar_is_bounded_normalized_and_secret_free() -> None:
+    transport = FakeTransport([TransportResponse(200, envelope(
+        [
+            ["SSE", "20240831", 0, "20240830"],
+            ["SSE", "20240830", 1, "20240829"],
+        ],
+        fields=["exchange", "cal_date", "is_open", "pretrade_date"],
+    ))])
+
+    result = provider(transport).fetch_trading_calendar(
+        TradingCalendarRequest("20240830", "20240831"),
+    )
+
+    assert [item.trade_date for item in result.sessions] == ["20240830", "20240831"]
+    assert result.sessions[0].is_open is True
+    assert result.sessions[1].is_open is False
+    assert result.provenance.endpoint == "trade_cal"
+    assert transport.calls[0][1]["params"] == {
+        "exchange": "SSE", "start_date": "20240830", "end_date": "20240831",
+    }
+    assert "fixture-token" not in json.dumps(result.provenance.as_dict())
+
+
+def test_trading_calendar_rejects_duplicate_and_invalid_rows() -> None:
+    duplicate = ["SSE", "20240830", 1, "20240829"]
+    transport = FakeTransport([TransportResponse(200, envelope(
+        [duplicate, duplicate], fields=["exchange", "cal_date", "is_open", "pretrade_date"],
+    ))])
+    with pytest.raises(ProviderProtocolError, match="duplicate"):
+        provider(transport).fetch_trading_calendar(TradingCalendarRequest("20240830", "20240831"))
+
+    with pytest.raises(ValueError, match="401 days"):
+        TradingCalendarRequest("20240101", "20250205").normalized()
 
 
 def security_envelope(items: list[list[object]]) -> bytes:

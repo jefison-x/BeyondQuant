@@ -1,8 +1,8 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-completed project stage is **Phase 53** — Beta security-master bootstrap and
-bounded catalogue-driven market-data synchronization under Accepted ADR-0026.
+completed project stage is **Phase 54** — calendar-driven daily market-data
+automation under Accepted ADR-0027.
 See
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
 authoritative current state.
@@ -38,7 +38,8 @@ BYQ does not fork DSH. The DSH version is pinned through an explicit dependency 
   audited monitoring thresholds.
 - Tushare-only Data Center with encrypted write-only credentials, immutable
   `L/P/D` stock-master snapshots, catalogue/Stock Pool-driven durable daily
-  sync jobs, true incremental refresh and honest PostgreSQL coverage audit.
+  sync jobs, true incremental refresh, honest PostgreSQL coverage audit, and
+  a trusted calendar-driven full-market daily synchronization worker.
 - Isolated, credential-free Pandas signal execution that freezes canonical
   bars and produces immutable normalized `signal_snapshot` artifacts for
   approved strategy versions and backtests.
@@ -48,7 +49,8 @@ BYQ does not fork DSH. The DSH version is pinned through an explicit dependency 
 - The DSH Upgrade Lane is scheduled as a post-Phase 40 maintenance initiative;
   it does not change the currently qualified runtime pin.
 - The conversation-first frontend, personal-workspace and Beta Data Center
-  programs are complete through Phase 53. The project remains Beta: no
+  programs are complete through Phase 54. The project remains Beta: CI-green
+  phase PR auto-merge is authorized by ADR-0015, but no
   release-candidate review, tag, deployment or formal release is authorized
   until the maintainer gives an explicit formal release task. Team workspaces,
   invitations, sharing and commercial control-plane capabilities remain out

@@ -1,7 +1,6 @@
 import os
 import re
 import time
-from dataclasses import replace
 from datetime import datetime
 
 from fastapi import BackgroundTasks, FastAPI
@@ -15,7 +14,6 @@ from .data_provider import (
     ProviderCredentialsMissing,
     ProviderError,
     ProviderRateLimited,
-    TushareConfig,
     TushareProvider,
 )
 from .data_sync import (
@@ -24,6 +22,13 @@ from .data_sync import (
     DataSyncPersistenceError,
     DataSyncStore,
 )
+from .market_automation import (
+    MarketAutomationConflict,
+    MarketAutomationNotFound,
+    MarketAutomationPersistenceError,
+    MarketAutomationStore,
+)
+from .provider_runtime import resolved_tushare_provider
 from .security_master import (
     SecurityMasterConflict,
     SecurityMasterNotFound,
@@ -164,6 +169,7 @@ operations_store = OperationsStore.from_env()
 market_data_store = MarketDataStore.from_env()
 signal_job_store = SignalJobStore.from_env()
 data_sync_store = DataSyncStore.from_env()
+market_automation_store = MarketAutomationStore.from_env()
 security_master_store = SecurityMasterStore.from_env()
 conversation_store = ConversationCatalogStore.from_env()
 backtest_store = BacktestJobStore.from_env()
@@ -180,23 +186,7 @@ backtest_objects = LocalObjectStore.from_env()
 def _resolved_tushare_provider() -> tuple[TushareProvider, dict[str, object]]:
     if data_provider is not None:
         return data_provider, {"source": "test_override", "credential_id": None, "version": None}
-    try:
-        resolved = credential_store.resolve_tushare()
-    except CredentialUnavailable as error:
-        raise ProviderCredentialsMissing("Tushare credential resolution is unavailable") from error
-    if resolved is not None:
-        token = str(resolved["token"])
-        metadata = {
-            "source": "credential_store",
-            "credential_id": resolved["credential_id"],
-            "version": resolved["version"],
-        }
-    else:
-        token = os.environ.get("TUSHARE_TOKEN", "").strip()
-        if not token:
-            raise ProviderCredentialsMissing("Tushare credentials are not configured")
-        metadata = {"source": "environment", "credential_id": None, "version": None}
-    return TushareProvider(replace(TushareConfig.from_env(), token=token)), metadata
+    return resolved_tushare_provider(credential_store)
 
 
 def _operations_call(call: Callable[[], dict[str, object]]) -> dict[str, object]:
@@ -380,6 +370,19 @@ def _data_sync_call(operation: Callable[[], dict[str, object]]) -> dict[str, obj
         raise HTTPException(status_code=503, detail="data synchronization is unavailable") from error
 
 
+def _market_automation_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except MarketAutomationNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except MarketAutomationConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except MarketAutomationPersistenceError as error:
+        raise HTTPException(status_code=503, detail="market synchronization automation is unavailable") from error
+
+
 def _resolved_daily_sync_payload(payload: dict[str, Any], request: Request) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("sync job request must be an object")
@@ -471,7 +474,7 @@ def data_center_status(request: Request) -> dict[str, object]:
     coverage = data_sync_store.coverage_audit(limit=100)
     environment_configured = bool(os.environ.get("TUSHARE_TOKEN", "").strip())
     return {
-        "schema_version": "data-center.v2",
+        "schema_version": "data-center.v3",
         "provider": "tushare",
         "legacy_providers": [],
         "source": {
@@ -486,9 +489,43 @@ def data_center_status(request: Request) -> dict[str, object]:
         "security_master_jobs": security_jobs,
         "security_master": security_master,
         "coverage": coverage,
+        "automation": market_automation_store.status(),
         "migration": "ready" if coverage["row_count"] else "not_started",
         "quality": coverage["quality"],
     }
+
+
+@app.get("/v1/data-sync/automation")
+def get_market_sync_automation(request: Request) -> dict[str, object]:
+    _require_data_admin(request)
+    return _market_automation_call(lambda: {"automation": market_automation_store.status()})
+
+
+@app.put("/v1/data-sync/automation/config")
+def update_market_sync_automation(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    actor, _role = _require_data_admin(request)
+    return _market_automation_call(lambda: {
+        "config": market_automation_store.update_config(payload, actor=actor),
+    })
+
+
+@app.post("/v1/data-sync/automation/run-now", status_code=202)
+def run_market_sync_automation_now(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    actor, _role = _require_data_admin(request)
+
+    def operation() -> dict[str, object]:
+        run_request, created = market_automation_store.request_run_now(payload, actor=actor)
+        return {"run_request": run_request, "created": created}
+
+    return _market_automation_call(operation)
+
+
+@app.get("/v1/data-sync/automation/run-now/{request_id}")
+def get_market_sync_automation_run(request_id: str, request: Request) -> dict[str, object]:
+    _require_data_admin(request)
+    return _market_automation_call(lambda: {
+        "run_request": market_automation_store.get_run_request(request_id),
+    })
 
 
 @app.post("/v1/data-sources/tushare/credentials", status_code=201)

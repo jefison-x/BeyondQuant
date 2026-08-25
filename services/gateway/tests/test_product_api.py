@@ -833,7 +833,7 @@ def test_product_data_center_status_exposes_masked_provider_capability(monkeypat
 
         def json(self) -> dict[str, object]:
             return {
-                "schema_version": "data-center.v2", "provider": "tushare", "legacy_providers": [],
+                "schema_version": "data-center.v3", "provider": "tushare", "legacy_providers": [],
                 "migration": "not_started", "quality": "empty",
                 "source": {"configured": True, "effective_source": "credential_store", "credentials": [{"masked": "configured"}], "secrets_exposed": False, "can_manage": False},
                 "jobs": [], "security_master_jobs": [], "security_master": {"quality": "empty", "total": 0},
@@ -892,6 +892,20 @@ def test_product_data_center_writes_are_admin_only_and_use_backend_boundary(monk
     assert catalogue.status_code == 200
     assert str(captured[2]["url"]).endswith("/v1/data-center/securities")
     assert captured[2]["params"] == {"statuses": "L", "limit": "25"}
+
+    automation = client.put("/api/product/data-center/automation/config", json={
+        "enabled": True, "schedule_time": "18:30", "catchup_days": 7,
+        "security_master_enabled": True, "expected_version": 1,
+        "idempotency_key": "automation-config-1",
+    })
+    assert automation.status_code == 200
+    assert str(captured[3]["url"]).endswith("/v1/data-sync/automation/config")
+    run_now = client.post(
+        "/api/product/data-center/automation/run-now",
+        json={"idempotency_key": "automation-run-1"},
+    )
+    assert run_now.status_code == 202
+    assert str(captured[4]["url"]).endswith("/v1/data-sync/automation/run-now")
 
     monkeypatch.setattr(product_api, "resolve_user", lambda _request: {"username": "alice", "role": "user"})
     denied = client.post("/api/product/data-center/source/test", json={"symbol": "000001.SZ", "trade_date": "20240102"})

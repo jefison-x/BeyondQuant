@@ -811,6 +811,47 @@ def product_data_sync_create(request: Request, payload: dict[str, object]) -> di
     )
 
 
+@router.get("/data-center/automation")
+def product_market_sync_automation(request: Request) -> dict[str, object]:
+    return _backend_request(
+        "GET",
+        "/v1/data-sync/automation",
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.put("/data-center/automation/config")
+def product_market_sync_automation_update(
+    request: Request,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    return _backend_request(
+        "PUT",
+        "/v1/data-sync/automation/config",
+        payload,
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.post("/data-center/automation/run-now", status_code=202)
+def product_market_sync_run_now(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    return _backend_request(
+        "POST",
+        "/v1/data-sync/automation/run-now",
+        payload,
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.get("/data-center/automation/run-now/{request_id}")
+def product_market_sync_run_get(request_id: str, request: Request) -> dict[str, object]:
+    return _backend_request(
+        "GET",
+        f"/v1/data-sync/automation/run-now/{request_id}",
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
 @router.get("/data-center/sync-jobs/{job_id}")
 def product_data_sync_get(job_id: str, request: Request) -> dict[str, object]:
     return _backend_request(
