@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDataSourceCredential, createDataSyncJob, createSecurityMasterSyncJob, getDataCenterStatus, listSecurities, testDataSource } from "./dataCenter";
+import { createDataSourceCredential, createDataSyncJob, createSecurityMasterSyncJob, getDataCenterStatus, listSecurities, runMarketSyncNow, testDataSource, updateMarketSyncAutomation } from "./dataCenter";
 
 describe("data center api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -10,9 +10,10 @@ describe("data center api client", () => {
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
-            schema_version: "data-center.v2", migration: "not_started", provider: "tushare", legacy_providers: [], quality: "empty",
+            schema_version: "data-center.v3", migration: "not_started", provider: "tushare", legacy_providers: [], quality: "empty",
             source: { configured: true, effective_source: "credential_store", credentials: [], encryption: { configured: true, status: "ready" }, secrets_exposed: false, can_manage: true },
             jobs: [], security_master_jobs: [], security_master: { schema_version: "security-master.v1", quality: "empty", latest_snapshot: null, total: 0, status_counts: { L: 0, P: 0, D: 0 }, exchange_counts: { SSE: 0, SZSE: 0, BSE: 0 } }, coverage: { checked_at: "2026-08-22T00:00:00Z", provider: "tushare", scope: "persisted_observations", quality: "empty", completeness_claimed: false, row_count: 0, symbol_count: 0, source_issues: 0, ohlc_issues: 0, groups: [], symbols: [] },
+            automation: { schema_version: "market-sync-automation.v1", config: { enabled: false, schedule_time: "18:30", timezone: "Asia/Shanghai", catchup_days: 7, security_master_enabled: true, datasets: ["trade_calendar", "stock_daily"], version: 1, updated_by: "system", updated_at: "2026-08-25T00:00:00Z" }, worker: { healthy: false }, latest_calendar_open_date: null, latest_complete_session: null, next_run_at: "2026-08-25T18:30:00+08:00", jobs: [], run_requests: [] },
           }),
           { status: 200 },
         ),
@@ -34,12 +35,16 @@ describe("data center api client", () => {
     await createSecurityMasterSyncJob();
     await listSecurities({ query: "平安", statuses: ["L"], exchanges: ["SZSE"] });
     await createDataSyncJob({ mode: "range", symbols: ["000001.SZ"], start_date: "20240102", end_date: "20240103", idempotency_key: "sync-1" });
+    await updateMarketSyncAutomation({ enabled: true, schedule_time: "18:30", catchup_days: 7, security_master_enabled: true, expected_version: 1, idempotency_key: "automation-1" });
+    await runMarketSyncNow();
     expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
       "/api/product/data-center/source/credentials",
       "/api/product/data-center/source/test",
       "/api/product/data-center/security-master/sync-jobs",
       "/api/product/data-center/securities?query=%E5%B9%B3%E5%AE%89&statuses=L&exchanges=SZSE&limit=50&offset=0",
       "/api/product/data-center/sync-jobs",
+      "/api/product/data-center/automation/config",
+      "/api/product/data-center/automation/run-now",
     ]);
     expect(fetchMock.mock.calls.every((call) => call[1]?.credentials === "include")).toBe(true);
   });

@@ -1472,3 +1472,42 @@ frontend and architecture CI passed. A real Product API desktop/mobile Chrome
 flow completed write-only credential storage, an atomic `L/P/D` catalogue
 sync, catalogue search, and a two-symbol incremental daily job using only an
 isolated protocol fixture. Evidence is under `docs/evidence/phase-53/`.
+
+### Phase 54 — Daily market synchronization automation (`COMPLETE`)
+
+Accept ADR-0027; add a durable Asia/Shanghai schedule, closed Tushare trading
+calendar contract, one exact-date full-market daily snapshot per open session,
+bounded catch-up/retry/lease recovery, optional atomic security-master refresh,
+and an independently deployable trusted Data Plane worker. Expose versioned
+configuration, run-now command, worker health, latest calendar/open-session
+coverage and bounded job history through Gateway/Product API and the responsive
+Data Center. Preserve manual Phase 53 jobs and ADR-0013 `KEEP_NEW` semantics.
+
+Acceptance requires provider/DB/API/architecture tests, clean Compose worker
+startup, real Product API desktop/mobile browser review, same-origin requests,
+and a Community-derived checklist. No suspension, exact limit, adjustment,
+corporate-action, benchmark, index-membership or fundamental contract is added.
+
+### Phase 55 — Backtest data readiness and execution status (`AUTHORIZED NEXT`)
+
+Add a typed backtest/signal data-requirement manifest, trading-session and
+security-lifecycle-aware coverage classification, bounded missing-range repair,
+`waiting_for_data` orchestration, immutable ready-input identity, exact daily
+suspension/trading status and price-limit contracts. Signal and backtest workers
+remain provider-free and cannot start until required inputs are complete.
+
+### Phase 56 — Adjusted research prices and corporate actions (`PLANNED`)
+
+Add durable adjustment factors and implemented corporate actions with explicit
+effective/ex-date semantics. Preserve raw unadjusted execution prices while
+constructing a content-addressed adjusted research/signal view. Freeze real
+corporate actions into signal/backtest manifests and regression-test dividends,
+share ratios and false ex-right signal prevention.
+
+### Phase 57 — Benchmark, point-in-time universe and declared factor data (`PLANNED`)
+
+Add benchmark index daily data and optional point-in-time index membership for
+relative performance and historical dynamic universes. Introduce strategy-
+declared optional data dependencies for valuation/fundamental/factor inputs with
+announcement/effective-date no-lookahead rules. ETF/fund scope remains excluded
+unless a later Accepted ADR explicitly authorizes it.

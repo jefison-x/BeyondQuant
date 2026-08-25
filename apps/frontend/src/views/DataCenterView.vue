@@ -9,9 +9,11 @@ import {
   getDataCenterStatus,
   getSecurityMasterSyncJob,
   listSecurities,
+  runMarketSyncNow,
   revokeDataSourceCredential,
   testDataSource,
   updateDataSourceCredential,
+  updateMarketSyncAutomation,
 } from "@/api/dataCenter";
 import { listStockPools } from "@/api/paper";
 import type {
@@ -42,6 +44,13 @@ const syncForm = reactive({
   poolSnapshotId: "",
   start_date: "20240102",
   end_date: "20240112",
+});
+const automationForm = reactive({
+  enabled: false,
+  schedule_time: "18:30",
+  catchup_days: 7,
+  security_master_enabled: true,
+  version: 1,
 });
 const selectedJob = ref<DataSyncJob | null>(null);
 const selectedSecurityJob = ref<SecurityMasterSyncJob | null>(null);
@@ -79,6 +88,13 @@ async function load() {
   error.value = "";
   try {
     status.value = await getDataCenterStatus();
+    Object.assign(automationForm, {
+      enabled: status.value.automation.config.enabled,
+      schedule_time: status.value.automation.config.schedule_time,
+      catchup_days: status.value.automation.config.catchup_days,
+      security_master_enabled: status.value.automation.config.security_master_enabled,
+      version: status.value.automation.config.version,
+    });
     if (selectedJob.value) {
       selectedJob.value = status.value.jobs.find((item) => item.job_id === selectedJob.value?.job_id) ?? selectedJob.value;
     }
@@ -248,6 +264,40 @@ async function submitSync() {
   }
 }
 
+async function saveAutomation() {
+  busy.value = true;
+  try {
+    const response = await updateMarketSyncAutomation({
+      enabled: automationForm.enabled,
+      schedule_time: automationForm.schedule_time,
+      catchup_days: automationForm.catchup_days,
+      security_master_enabled: automationForm.security_master_enabled,
+      expected_version: automationForm.version,
+      idempotency_key: `browser-market-config-${Date.now()}`,
+    });
+    automationForm.version = response.config.version;
+    ElMessage.success("每日自动同步设置已保存");
+    await load();
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "保存自动同步设置失败");
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function triggerAutomation() {
+  busy.value = true;
+  try {
+    await runMarketSyncNow();
+    ElMessage.success("已提交立即同步请求，数据 Worker 将按交易日执行");
+    await load();
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "提交立即同步失败");
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function pollJob(jobId: string) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -367,6 +417,35 @@ function securityStatusLabel(value: string) {
 
         <el-tab-pane label="行情同步" name="sync">
           <el-card v-if="status.source.can_manage" shadow="never">
+            <template #header><div class="card-header"><div><strong>每日自动同步</strong><p>按 Asia/Shanghai 交易日历，在盘后一次获取全市场日线并追赶遗漏交易日。</p></div><el-button type="primary" plain :loading="busy" :disabled="!status.source.configured" @click="triggerAutomation">立即检查并同步</el-button></div></template>
+            <el-alert
+              :title="status.automation.worker.healthy ? '数据 Worker 运行正常' : '数据 Worker 未运行或心跳已过期'"
+              :type="status.automation.worker.healthy ? 'success' : 'warning'"
+              show-icon
+              :closable="false"
+            />
+            <el-form label-position="top" class="automation-form">
+              <div class="automation-grid">
+                <el-form-item label="自动同步"><el-switch v-model="automationForm.enabled" active-text="启用" inactive-text="关闭" /></el-form-item>
+                <el-form-item label="盘后执行时间"><el-time-picker v-model="automationForm.schedule_time" format="HH:mm" value-format="HH:mm" placeholder="18:30" /></el-form-item>
+                <el-form-item label="重启追赶天数"><el-input-number v-model="automationForm.catchup_days" :min="1" :max="30" /></el-form-item>
+                <el-form-item label="同步前刷新股票清单"><el-switch v-model="automationForm.security_master_enabled" active-text="启用" inactive-text="关闭" /></el-form-item>
+              </div>
+              <div class="automation-actions"><div><el-tag effect="plain">交易日历</el-tag><el-tag effect="plain">未复权全市场日线</el-tag><span>固定时区：Asia/Shanghai</span></div><el-button type="primary" :loading="busy" @click="saveAutomation">保存设置</el-button></div>
+            </el-form>
+            <el-descriptions :column="3" border class="automation-status">
+              <el-descriptions-item label="最新开市日">{{ status.automation.latest_calendar_open_date ?? "尚未获取" }}</el-descriptions-item>
+              <el-descriptions-item label="最新完整行情">{{ status.automation.latest_complete_session?.trade_date ?? "尚未完成" }}</el-descriptions-item>
+              <el-descriptions-item label="下次检查">{{ status.automation.next_run_at }}</el-descriptions-item>
+              <el-descriptions-item label="完整快照行数">{{ status.automation.latest_complete_session?.row_count?.toLocaleString() ?? "-" }}</el-descriptions-item>
+              <el-descriptions-item label="最近心跳">{{ status.automation.worker.heartbeat_at ?? "-" }}</el-descriptions-item>
+              <el-descriptions-item label="最近错误">{{ status.automation.worker.last_error ?? "无" }}</el-descriptions-item>
+            </el-descriptions>
+            <el-table :data="status.automation.jobs" empty-text="暂无自动同步任务" size="small">
+              <el-table-column prop="trade_date" label="交易日" width="110" /><el-table-column prop="status" label="状态" width="100" /><el-table-column prop="attempts" label="尝试" width="80" /><el-table-column prop="rows_received" label="获取" width="100" /><el-table-column prop="rows_inserted" label="新增" width="100" /><el-table-column prop="rows_kept" label="保留" width="100" /><el-table-column prop="error_message" label="说明" min-width="180" />
+            </el-table>
+          </el-card>
+          <el-card v-if="status.source.can_manage" shadow="never">
             <template #header><div><strong>创建日线同步</strong><p>任务创建时冻结精确标的；全市场/股票池最多 6,000 只，公开响应保持有界。</p></div></template>
             <el-form label-position="top" class="sync-form">
               <div class="form-grid"><el-form-item label="标的来源"><el-select v-model="syncForm.target"><el-option label="全部上市股票" value="security_master" /><el-option label="清单中已选择" value="selected" /><el-option label="股票池快照" value="stock_pool" /><el-option label="手工代码" value="manual" /></el-select></el-form-item><el-form-item label="模式"><el-select v-model="syncForm.mode"><el-option label="增量补齐" value="incremental" /><el-option label="区间同步" value="range" /></el-select></el-form-item></div>
@@ -409,6 +488,11 @@ function securityStatusLabel(value: string) {
 .workspace-tabs :deep(.el-tab-pane) { display: grid; gap: 1rem; }
 .inline-form { align-items: end; }
 .sync-form { max-width: 960px; }
+.automation-form { margin-top: 1rem; }
+.automation-grid { display: grid; gap: 1rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.automation-actions { align-items: center; display: flex; gap: 1rem; justify-content: space-between; }
+.automation-actions > div { align-items: center; color: var(--byq-text-muted); display: flex; flex-wrap: wrap; gap: .5rem; }
+.automation-status { margin: 1rem 0; }
 .form-grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .form-grid .el-select, .catalogue-toolbar .el-select { width: 100%; }
 .coverage-grid { display: grid; gap: 1rem; grid-template-columns: minmax(260px, .7fr) minmax(0, 1.3fr); }
@@ -419,7 +503,8 @@ function securityStatusLabel(value: string) {
 .bounded-note { font-size: 12px; }
 @media (max-width: 760px) {
   .page-heading, .card-header, .catalogue-footer { align-items: flex-start; flex-direction: column; }
-  .form-grid, .coverage-grid, .catalogue-toolbar { grid-template-columns: 1fr; }
+  .form-grid, .automation-grid, .coverage-grid, .catalogue-toolbar { grid-template-columns: 1fr; }
+  .automation-actions { align-items: stretch; flex-direction: column; }
   .stats-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .catalogue-footer :deep(.el-pagination) { flex-wrap: wrap; }
 }

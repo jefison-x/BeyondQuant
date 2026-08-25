@@ -566,7 +566,7 @@ export interface OperationsBudgetUpdate {
 }
 
 export interface DataCenterStatus {
-  schema_version: "data-center.v2";
+  schema_version: "data-center.v3";
   migration: string;
   provider: "tushare";
   legacy_providers: [];
@@ -583,6 +583,59 @@ export interface DataCenterStatus {
   security_master_jobs: SecurityMasterSyncJob[];
   security_master: SecurityMasterStatus;
   coverage: DataCoverageAudit;
+  automation: MarketSyncAutomation;
+}
+
+export interface MarketSyncAutomationConfig {
+  enabled: boolean;
+  schedule_time: string;
+  timezone: "Asia/Shanghai";
+  catchup_days: number;
+  security_master_enabled: boolean;
+  datasets: Array<"trade_calendar" | "stock_daily">;
+  version: number;
+  updated_by: string;
+  updated_at: string;
+}
+
+export interface MarketSessionSyncJob {
+  job_id: string;
+  trade_date: string;
+  status: "queued" | "running" | "completed" | "failed";
+  attempts: number;
+  max_attempts: number;
+  rows_received: number;
+  rows_inserted: number;
+  rows_kept: number;
+  error_code?: string | null;
+  error_message?: string | null;
+  scheduled_by: string;
+  created_at: string;
+  completed_at?: string | null;
+}
+
+export interface MarketSyncAutomation {
+  schema_version: "market-sync-automation.v1";
+  config: MarketSyncAutomationConfig;
+  worker: {
+    healthy: boolean;
+    heartbeat_at?: string | null;
+    last_scheduler_check_at?: string | null;
+    last_calendar_refresh_at?: string | null;
+    last_job_id?: string | null;
+    last_scheduled_date?: string | null;
+    last_error?: string | null;
+  };
+  latest_calendar_open_date?: string | null;
+  latest_complete_session?: {
+    trade_date: string;
+    row_count: number;
+    dataset_sha256: string;
+    verified_at: string;
+  } | null;
+  next_run_at: string;
+  jobs: MarketSessionSyncJob[];
+  run_requests: Array<Record<string, unknown>>;
 }
 
 export interface SecurityMasterSnapshot {

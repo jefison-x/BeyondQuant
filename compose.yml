@@ -168,6 +168,28 @@ services:
       retries: 12
       start_period: 5s
 
+  data-worker:
+    build:
+      context: .
+      dockerfile: workers/data/Dockerfile
+    environment:
+      BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
+      BYQ_CREDENTIAL_KEYRING: ${BYQ_CREDENTIAL_KEYRING:-}
+      BYQ_CREDENTIAL_ACTIVE_KEY_ID: ${BYQ_CREDENTIAL_ACTIVE_KEY_ID:-}
+      TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
+      TUSHARE_API_URL: ${TUSHARE_API_URL:-http://api.tushare.pro}
+      BYQ_DATA_POLL_SECONDS: ${BYQ_DATA_POLL_SECONDS:-10}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - byq_product
+    security_opt:
+      - no-new-privileges:true
+
   signal-worker:
     build:
       context: .

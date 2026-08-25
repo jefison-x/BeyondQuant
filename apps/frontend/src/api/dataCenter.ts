@@ -1,4 +1,4 @@
-import type { DataCenterStatus, DataSyncJob, SecurityCataloguePage, SecurityMasterSyncJob } from "./types";
+import type { DataCenterStatus, DataSyncJob, MarketSyncAutomationConfig, SecurityCataloguePage, SecurityMasterSyncJob } from "./types";
 
 const ROOT = "/api/product/data-center";
 
@@ -44,6 +44,24 @@ export function createDataSyncJob(payload: Record<string, unknown>): Promise<{ j
 
 export function getDataSyncJob(jobId: string): Promise<{ job: DataSyncJob }> {
   return request(`/sync-jobs/${jobId}`);
+}
+
+export function updateMarketSyncAutomation(payload: {
+  enabled: boolean;
+  schedule_time: string;
+  catchup_days: number;
+  security_master_enabled: boolean;
+  expected_version: number;
+  idempotency_key: string;
+}): Promise<{ config: MarketSyncAutomationConfig }> {
+  return request("/automation/config", { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function runMarketSyncNow(): Promise<{ run_request: Record<string, unknown>; created: boolean }> {
+  return request("/automation/run-now", {
+    method: "POST",
+    body: JSON.stringify({ idempotency_key: `browser-market-run-${Date.now()}` }),
+  });
 }
 
 export function createSecurityMasterSyncJob(): Promise<{ job: SecurityMasterSyncJob; created: boolean }> {

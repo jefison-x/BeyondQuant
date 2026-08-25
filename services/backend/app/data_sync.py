@@ -401,7 +401,7 @@ class DataSyncStore(PgStoreMixin):
 
     @staticmethod
     def _normalize_bars(
-        symbol: str,
+        symbol: str | None,
         result,
         *,
         start_date: str,
@@ -410,7 +410,7 @@ class DataSyncStore(PgStoreMixin):
         rows: list[dict[str, object]] = []
         seen: set[tuple[str, str]] = set()
         for bar in result.bars:
-            if bar.ts_code != symbol or not _SYMBOL.fullmatch(bar.ts_code):
+            if (symbol is not None and bar.ts_code != symbol) or not _SYMBOL.fullmatch(bar.ts_code):
                 raise ProviderProtocolError("provider returned an unexpected symbol")
             trade_date = _date(bar.trade_date, field="trade_date")
             if not start_date <= trade_date <= end_date:
@@ -429,8 +429,11 @@ class DataSyncStore(PgStoreMixin):
                 raise ProviderProtocolError("provider returned invalid OHLC relationships")
             volume = None if bar.vol is None else float(bar.vol)
             amount = None if bar.amount is None else float(bar.amount)
+            pre_close = None if bar.pre_close is None else float(bar.pre_close)
             if any(value is not None and (not math.isfinite(value) or value < 0) for value in (volume, amount)):
                 raise ProviderProtocolError("provider returned invalid volume or amount")
+            if pre_close is not None and (not math.isfinite(pre_close) or pre_close < 0):
+                raise ProviderProtocolError("provider returned invalid previous close")
             rows.append({
                 "symbol": bar.ts_code,
                 "trade_date": bar.trade_date,
@@ -438,6 +441,7 @@ class DataSyncStore(PgStoreMixin):
                 "high": high,
                 "low": low,
                 "close": close,
+                "pre_close": pre_close,
                 "volume": volume,
                 "amount": amount,
                 "adjust": "none",
