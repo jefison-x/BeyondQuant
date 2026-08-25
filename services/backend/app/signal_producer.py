@@ -107,6 +107,8 @@ def prepare_signal_job_input(
     execution: dict[str, object],
     order_quantity: int,
     data_readiness: dict[str, object] | None = None,
+    research_bars: list[dict[str, object]] | None = None,
+    corporate_actions: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     """Build the secret-free immutable document handed to the coordinator."""
     document: dict[str, object] = {
@@ -126,6 +128,8 @@ def prepare_signal_job_input(
             "symbols": sorted(symbols),
         },
         "bars": bars,
+        "research_bars": research_bars if research_bars is not None else bars,
+        "corporate_actions": corporate_actions or [],
         "parameters": parameters,
         "execution": execution,
         "order_quantity": order_quantity,
@@ -477,15 +481,8 @@ def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object) -
         jobs.update_readiness(str(row["job_id"]), assessment)
         if assessment.get("state") != "ready":
             continue
-        rows = readiness_store.list_ready_bars(requirement)
-        bars = [{
-            "symbol": item["symbol"],
-            "trade_date": f"{str(item['trade_date'])[:4]}-{str(item['trade_date'])[4:6]}-{str(item['trade_date'])[6:8]}",
-            "open": item["open"], "high": item["high"], "low": item["low"], "close": item["close"],
-            "prev_close": item.get("pre_close"), "volume": item.get("volume") or 0,
-            "is_suspended": bool(item.get("is_suspended")),
-            "up_limit": item.get("up_limit"), "down_limit": item.get("down_limit"),
-        } for item in rows]
+        ready_input = readiness_store.build_ready_input(requirement)
+        bars = list(ready_input["bars"])
         document = prepare_signal_job_input(
             strategy_version_artifact_id=str(preparation["strategy_version_artifact_id"]),
             strategy_version_id=str(preparation["strategy_version_id"]),
@@ -500,7 +497,10 @@ def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object) -
             data_readiness={
                 "requirement_sha256": requirement["requirement_sha256"],
                 "ready_input_sha256": assessment["ready_input_sha256"],
+                "research_view_sha256": ready_input["research_view_sha256"],
             },
+            research_bars=list(ready_input["research_bars"]),
+            corporate_actions=list(ready_input["corporate_actions"]),
         )
         jobs.promote_ready(str(row["job_id"]), document, str(assessment["ready_input_sha256"]))
         promoted += 1
@@ -567,7 +567,7 @@ class SignalProducerCoordinator:
             "profile": input_document["profile"],
             "runtime_lock": input_document["runtime_lock"],
             "strategy": input_document["strategy"],
-            "bars": input_document["bars"],
+            "bars": input_document.get("research_bars", input_document["bars"]),
             "parameters": input_document["parameters"],
         }
         response = self.executor.execute(sandbox_payload, timeout_seconds=timeout)
@@ -599,8 +599,11 @@ class SignalProducerCoordinator:
                 "bars": input_document["bars"],
                 "signals": signals,
                 "execution": input_document["execution"],
-                "corporate_actions": [],
-                "source": {"producer": EXECUTION_PROFILE},
+                "corporate_actions": input_document.get("corporate_actions", []),
+                "source": {
+                    "producer": EXECUTION_PROFILE,
+                    "data_readiness": input_document.get("data_readiness", {}),
+                },
             },
             strategy_version_artifact_id=strategy["strategy_version_artifact_id"],
             strategy_version_id=strategy["strategy_version_id"],

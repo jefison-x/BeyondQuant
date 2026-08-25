@@ -362,9 +362,13 @@ def _normalize_actions(value: object, universe_symbols: set[str]) -> list[dict[s
         raise ValueError("corporate_actions must be a list")
     if len(value) > MAX_ACTIONS:
         raise BacktestResourceExceeded(f"corporate_actions exceeds {MAX_ACTIONS} rows")
-    allowed = {"symbol", "ex_date", "cash_dividend_per_share", "share_ratio"}
+    allowed = {
+        "symbol", "end_date", "announcement_date", "implementation_announcement_date",
+        "record_date", "ex_date", "pay_date", "share_listing_date",
+        "cash_dividend_per_share", "cash_dividend_gross", "share_ratio", "content_sha256",
+    }
     normalized: list[dict[str, object]] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     for index, item in enumerate(value):
         if not isinstance(item, dict):
             raise ValueError(f"corporate_actions[{index}] must be an object")
@@ -373,15 +377,36 @@ def _normalize_actions(value: object, universe_symbols: set[str]) -> list[dict[s
         if symbol not in universe_symbols:
             raise ValueError(f"corporate action symbol {symbol} is outside frozen universe")
         ex_date = _date(item.get("ex_date"), field=f"corporate_actions[{index}].ex_date")
-        key = (symbol, ex_date)
+        end_date = (
+            _date(item["end_date"], field=f"corporate_actions[{index}].end_date")
+            if item.get("end_date") else ""
+        )
+        key = (symbol, end_date, ex_date)
         if key in seen:
-            raise ValueError(f"duplicate corporate action for {symbol} on {ex_date}")
+            raise ValueError(f"duplicate corporate action for {symbol} on {ex_date} and period {end_date or 'unspecified'}")
         seen.add(key)
         cash = _number(item.get("cash_dividend_per_share", 0), field=f"corporate_actions[{index}].cash_dividend_per_share")
         ratio = _number(item.get("share_ratio", 0), field=f"corporate_actions[{index}].share_ratio")
         if cash < 0 or ratio < 0 or ratio > 100:
             raise ValueError(f"corporate_actions[{index}] contains invalid non-negative values")
-        normalized.append({"symbol": symbol, "ex_date": ex_date, "cash_dividend_per_share": cash, "share_ratio": ratio})
+        normalized_row: dict[str, object] = {
+            "symbol": symbol, "ex_date": ex_date,
+            "cash_dividend_per_share": cash, "share_ratio": ratio,
+        }
+        if end_date:
+            normalized_row["end_date"] = end_date
+        for field in ("announcement_date", "implementation_announcement_date", "record_date", "pay_date", "share_listing_date"):
+            if item.get(field):
+                normalized_row[field] = _date(item[field], field=f"corporate_actions[{index}].{field}")
+        if item.get("cash_dividend_gross") is not None:
+            normalized_row["cash_dividend_gross"] = _number(
+                item["cash_dividend_gross"], field=f"corporate_actions[{index}].cash_dividend_gross"
+            )
+        if item.get("content_sha256") is not None:
+            normalized_row["content_sha256"] = _text(
+                item["content_sha256"], field=f"corporate_actions[{index}].content_sha256", max_length=64
+            )
+        normalized.append(normalized_row)
     return sorted(normalized, key=lambda row: (str(row["ex_date"]), str(row["symbol"])))
 
 
@@ -524,8 +549,17 @@ def normalize_signal_snapshot(
         source = {}
     if not isinstance(source, dict):
         raise ValueError("signal snapshot source must be an object")
-    _reject_unknown(source, {"producer", "note"}, field="signal snapshot source")
+    _reject_unknown(source, {"producer", "note", "data_readiness"}, field="signal snapshot source")
     producer = _text(source.get("producer", "keyless-import"), field="source.producer", max_length=64)
+    data_readiness = source.get("data_readiness", {})
+    if not isinstance(data_readiness, dict):
+        raise ValueError("source.data_readiness must be an object")
+    _reject_unknown(data_readiness, {
+        "requirement_sha256", "ready_input_sha256", "research_view_sha256",
+    }, field="source.data_readiness")
+    normalized_readiness = {}
+    for key, value in data_readiness.items():
+        normalized_readiness[key] = _text(value, field=f"source.data_readiness.{key}", max_length=64)
     document = {
         "schema_version": SIGNAL_SNAPSHOT_SCHEMA_VERSION,
         "strategy": {
@@ -537,7 +571,7 @@ def normalize_signal_snapshot(
         "signals": signals,
         "corporate_actions": actions,
         "execution": execution,
-        "source": {"producer": producer},
+        "source": {"producer": producer, **({"data_readiness": normalized_readiness} if normalized_readiness else {})},
     }
     encoded = _canonical(document)
     if len(encoded.encode("utf-8")) > MAX_SNAPSHOT_BYTES:
@@ -611,6 +645,7 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
     trades: list[dict[str, object]] = []
     blocked: list[dict[str, object]] = []
     corporate_events: list[dict[str, object]] = []
+    pending_entitlements: list[dict[str, object]] = []
     equity_curve: list[dict[str, object]] = []
     daily_positions: list[dict[str, object]] = []
     daily_returns: list[dict[str, object]] = []
@@ -648,21 +683,53 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
             lots = positions.get(symbol, [])
             if not lots:
                 continue
-            factor = 1.0 + float(action["share_ratio"])
             old_quantity = sum(int(lot["quantity"]) for lot in lots)
-            for lot in lots:
-                lot["quantity"] = int(round(int(lot["quantity"]) * factor))
-                lot["cost_per_share"] = float(lot["cost_per_share"]) / factor
             cash_dividend = old_quantity * float(action["cash_dividend_per_share"])
-            cash_nonlocal[0] += cash_dividend
-            corporate_events.append({
+            share_quantity = int(round(old_quantity * float(action["share_ratio"])))
+            entitlement = {
                 "symbol": symbol,
                 "ex_date": current_date,
                 "old_quantity": old_quantity,
-                "new_quantity": sum(int(lot["quantity"]) for lot in lots),
+                "new_quantity": old_quantity + share_quantity,
                 "cash_dividend": _money(cash_dividend),
-            })
-            log("info", "corporate_action_applied", symbol=symbol, ex_date=current_date, new_quantity=sum(int(lot["quantity"]) for lot in lots))
+                "share_quantity": share_quantity,
+                "pay_date": str(action.get("pay_date") or current_date),
+                "share_listing_date": str(action.get("share_listing_date") or current_date),
+                "cash_settled": cash_dividend <= 0,
+                "shares_settled": share_quantity <= 0,
+            }
+            pending_entitlements.append(entitlement)
+            corporate_events.append(entitlement)
+            log("info", "corporate_action_entitlement", symbol=symbol, ex_date=current_date,
+                cash_dividend=_money(cash_dividend), share_quantity=share_quantity)
+
+    def settle_actions(current_date: str) -> None:
+        for entitlement in pending_entitlements:
+            symbol = str(entitlement["symbol"])
+            if not entitlement["cash_settled"] and current_date >= str(entitlement["pay_date"]):
+                cash_nonlocal[0] += float(entitlement["cash_dividend"])
+                entitlement["cash_settled"] = True
+                log("info", "cash_dividend_settled", symbol=symbol, trade_date=current_date,
+                    cash_dividend=entitlement["cash_dividend"])
+            if not entitlement["shares_settled"] and current_date >= str(entitlement["share_listing_date"]):
+                quantity = int(entitlement["share_quantity"])
+                lots = positions.get(symbol, [])
+                current_quantity = sum(int(lot["quantity"]) for lot in lots)
+                if lots and current_quantity > 0:
+                    remaining = quantity
+                    for position_index, lot in enumerate(lots):
+                        if position_index == len(lots) - 1:
+                            addition = remaining
+                        else:
+                            addition = int(round(quantity * int(lot["quantity"]) / current_quantity))
+                            remaining -= addition
+                        old_lot_quantity = int(lot["quantity"])
+                        lot["quantity"] = old_lot_quantity + addition
+                        if int(lot["quantity"]) > 0:
+                            lot["cost_per_share"] = float(lot["cost_per_share"]) * old_lot_quantity / int(lot["quantity"])
+                entitlement["shares_settled"] = True
+                log("info", "stock_dividend_settled", symbol=symbol, trade_date=current_date,
+                    share_quantity=quantity)
 
     # A mutable cell keeps the nested corporate-action function explicit and
     # avoids hidden global state in the worker.
@@ -673,6 +740,7 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
             raise BacktestResourceExceeded("backtest exceeded its wall-clock limit")
         cash = cash_nonlocal[0]
         apply_actions(current_date)
+        settle_actions(current_date)
         cash = cash_nonlocal[0]
         orders = signal_by_date.get(dates[index - 1], []) if index > 0 else []
         for side_direction in (-1, 1):
@@ -775,6 +843,16 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
             valuation_bar = by_date[current_date].get(symbol)
             if valuation_bar is not None:
                 equity += quantity * float(valuation_bar["close"])
+        # Rights already established on the ex-date remain economic assets even
+        # before the provider-declared payment/listing date. This avoids a false
+        # drawdown while keeping settlement cash and shares out of tradable lots.
+        for entitlement in pending_entitlements:
+            if not entitlement["cash_settled"]:
+                equity += float(entitlement["cash_dividend"])
+            if not entitlement["shares_settled"]:
+                valuation_bar = by_date[current_date].get(str(entitlement["symbol"]))
+                if valuation_bar is not None:
+                    equity += int(entitlement["share_quantity"]) * float(valuation_bar["close"])
         equity_curve.append({"trade_date": current_date, "equity": _money(equity), "cash": _money(cash), "positions_count": position_count})
         daily_positions.append({
             "trade_date": current_date,

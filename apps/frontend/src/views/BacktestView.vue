@@ -603,6 +603,8 @@ onMounted(loadList);
               <el-table :data="corporateEvents" size="small" empty-text="暂无公司行动">
                 <el-table-column prop="symbol" label="证券" width="110" />
                 <el-table-column prop="ex_date" label="除权日" width="120" />
+                <el-table-column prop="pay_date" label="派息日" width="120" />
+                <el-table-column prop="share_listing_date" label="红股上市日" width="120" />
                 <el-table-column label="原数量" width="100" align="right">
                   <template #default="{ row }">{{ row.old_quantity }}</template>
                 </el-table-column>
@@ -611,6 +613,9 @@ onMounted(loadList);
                 </el-table-column>
                 <el-table-column label="现金分红" width="120" align="right">
                   <template #default="{ row }">{{ formatMoney(row.cash_dividend) }}</template>
+                </el-table-column>
+                <el-table-column label="结算" min-width="150">
+                  <template #default="{ row }">现金{{ row.cash_settled ? '已到账' : '待到账' }} · 股份{{ row.shares_settled ? '已入账' : '待入账' }}</template>
                 </el-table-column>
               </el-table>
             </el-tab-pane>
@@ -755,7 +760,7 @@ onMounted(loadList);
         <el-alert
           v-if="producerJob"
           :title="producerJob.status === 'waiting_for_data'
-            ? `正在自动补全回测数据 · 尚缺 ${String(producerMissing(producerJob))} 项`
+            ? `正在自动补全回测数据（含复权与公司行动） · 尚缺 ${String(producerMissing(producerJob))} 项`
             : `信号任务 ${String(producerJob.status)} · ${String(producerJob.job_id)}`"
           :type="producerJob.status === 'failed' ? 'error' : producerJob.status === 'completed' ? 'success' : 'info'"
           :closable="false"

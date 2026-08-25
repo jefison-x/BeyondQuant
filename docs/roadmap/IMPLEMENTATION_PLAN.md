@@ -1502,7 +1502,7 @@ assessment, exact suspension/limit persistence, bounded durable repair,
 frontend, full Compose, no-mock Product and desktop/mobile Chrome evidence is
 under `docs/evidence/phase-55/`.
 
-### Phase 56 — Adjusted research prices and corporate actions (`AUTHORIZED NEXT`)
+### Phase 56 — Adjusted research prices and corporate actions (`COMPLETE`)
 
 Add durable adjustment factors and implemented corporate actions with explicit
 effective/ex-date semantics. Preserve raw unadjusted execution prices while
@@ -1510,7 +1510,13 @@ constructing a content-addressed adjusted research/signal view. Freeze real
 corporate actions into signal/backtest manifests and regression-test dividends,
 share ratios and false ex-right signal prevention.
 
-### Phase 57 — Benchmark, point-in-time universe and declared factor data (`PLANNED`)
+Accepted ADR-0029 and implemented exact-date adjustment-factor and implemented
+corporate-action synchronization, content-addressed forward-adjusted research
+inputs, immutable raw execution bars, and declared-date dividend/share
+settlement. Backend, frontend, full Compose, no-mock Product and desktop/mobile
+Chrome evidence is under `docs/evidence/phase-56/`.
+
+### Phase 57 — Benchmark, point-in-time universe and declared factor data (`AUTHORIZED NEXT`)
 
 Add benchmark index daily data and optional point-in-time index membership for
 relative performance and historical dynamic universes. Introduce strategy-

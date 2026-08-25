@@ -792,3 +792,20 @@ routes, Tushare suspension/limit mappings, coverage/integrity tests and
 
 No Community file, database, cache, runtime, credential or Git history was
 modified, imported or copied.
+
+## Phase 56 adjusted-price and corporate-action pre-implementation audit
+
+The read-only Community Tushare adjustment/dividend mappings,
+`market_data_repository.py`, BYQ Core simulator, golden regressions and Backtest
+workspace were inspected before accepting ADR-0029.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 56 disposition |
+|---|---|---|---|
+| Raw bars plus independent `adj_factor` | Research returns need an explicit factor/anchor while execution keeps raw prices. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Build a content-addressed forward-adjusted research view in the trusted coordinator; never persist adjusted execution bars. |
+| Implemented dividend mapping | `实施`, ex date, pay date, share listing date, net/gross cash and share ratios have distinct meanings. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Add a closed exact-ex-date contract, strict validation and immutable BYQ rows. |
+| Simulator entitlement and settlement | Entitlement precedes cash/share settlement; missing dates need an explicit fallback. | `PORT_TESTS` / `REFACTOR` | Native BYQ engine records ex-date entitlement, then settles cash and shares on their declared dates. |
+| Adjustment-factor share conversion plus corporate actions | Applying both can double count an economic event. | `REFERENCE_ONLY` / `DROP` | Factors affect research prices only; portfolio accounting uses frozen implemented actions only. |
+| Community ORM, SDK, provider registry, mutable replacement cache and VectorBT | No compatible architecture boundary. | `REPLACE` / `DROP` | Keep the Backend adapter, PostgreSQL evidence, Data Worker and deterministic native engine. VectorBT/BaoStock/AKShare remain absent. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified or copied.
