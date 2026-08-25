@@ -539,13 +539,7 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
       body: JSON.stringify({ profile: { subject: "testuser", display_name: "老李", preferences: "低波动", default_prompt: "先给结论", role: "user", status: "active" } }),
     }),
   );
-  await page.route("**/api/product/operations/status", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(operationsPayload()),
-    }),
-  );
+  await mockAdminOps(page);
   await mockResearchLists(page);
 
   await loginAsAdmin(page);
@@ -566,6 +560,9 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   await expect(
     page.getByRole("dialog").getByRole("heading", { name: "数据中心" }),
   ).toBeVisible();
+  await page.getByRole("dialog").getByRole("tab", { name: "行情同步" }).click();
+  await expect(page.getByText("未复权全市场日线", { exact: true })).toBeVisible();
+  await expect(page.getByText("创建日线同步", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "关闭系统设置" }).click();
   await expect(page).toHaveURL(/\/user\/appearance$/);
   await openNav(page, "研究与审批");

@@ -41,6 +41,16 @@ console warning, error or issue. All observed requests were same-origin static,
 `/api/auth/*` or `/api/product/*`; the browser did not access Backend, MCP, DSH,
 PostgreSQL or Tushare directly.
 
+## Post-acceptance UI simplification
+
+The daily automatic synchronization contract already includes full-market,
+unadjusted daily bars. The redundant Product UI card for creating a separate
+daily-bar synchronization job was therefore removed, together with catalogue
+selection controls that existed only for that card. Data Center still exposes
+the automatic schedule, run-now action, canonical security catalogue and sync
+history. The bounded Backend API remains available for historical repair and
+backtest readiness workflows as required by ADR-0027.
+
 ## Boundary result
 
 The trusted Data Worker alone accesses Tushare. Signal and backtest workers stay
