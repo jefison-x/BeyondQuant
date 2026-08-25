@@ -35,3 +35,7 @@ context propagation and the verified compatibility migration, and deliberately
 defers team-product capabilities to a later ADR.
 ADR-0026 defines the Beta security-master snapshot, bounded catalogue Product
 API, frozen daily-bar selection, and true incremental synchronization boundary.
+ADR-0027 defines calendar-driven full-market daily automation and the trusted
+Data Worker boundary. ADR-0028 defines lifecycle-aware readiness, bounded
+repair and immutable ready inputs. ADR-0029 defines adjusted research views,
+raw execution prices and implemented corporate-action settlement semantics.

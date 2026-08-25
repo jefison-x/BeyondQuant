@@ -120,6 +120,15 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
             VALUES (:symbol,:date,FALSE,:close,:up,:down,'tushare','{}',:sha,now())""",
             {"symbol": SYMBOL, "date": date, "close": previous, "up": close * 1.1,
              "down": close * .9, "sha": f"status-{date}"})
+        readiness._execute("""INSERT INTO market_adjustment_factors
+            (symbol,trade_date,adj_factor,data_source,provenance_json,content_sha256,updated_at)
+            VALUES (:symbol,:date,1,'tushare','{}',:sha,now())""",
+            {"symbol": SYMBOL, "date": date, "sha": f"factor-{date}"})
+        readiness._execute("""INSERT INTO market_session_supplement_completeness
+            (trade_date,adjustment_complete,corporate_actions_complete,factor_row_count,
+             corporate_action_row_count,content_sha256,provenance_json,verified_at)
+            VALUES (:date,TRUE,TRUE,1,0,:sha,'{}',now())""",
+            {"date": date, "sha": f"supplement-{date}"})
     request = {
         "task_id": task["task_id"],
         "strategy_version_artifact_id": version["artifact"]["artifact_id"],
@@ -151,6 +160,10 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
     def fake_sandbox(payload: dict[str, object], timeout: float) -> dict[str, object]:
         assert timeout == 5.0
         assert "database" not in str(payload).lower()
+        assert set(payload["bars"][0]) <= {
+            "symbol", "trade_date", "open", "high", "low", "close", "prev_close",
+            "volume", "is_suspended", "up_limit", "down_limit",
+        }
         return {
             "schema_version": "byq-signal-sandbox-response-v1",
             "signals": [{"symbol": SYMBOL, "trade_date": "2026-01-06", "signal": 1}],

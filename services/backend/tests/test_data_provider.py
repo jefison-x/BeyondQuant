@@ -325,3 +325,52 @@ def test_exact_session_status_contracts_are_closed_and_validated() -> None:
     assert suspensions.suspensions[0].suspend_type == "S"
     assert [call[1]["api_name"] for call in transport.calls] == ["stk_limit", "suspend_d"]
     assert all(call[1]["params"] == {"trade_date": "20240102"} for call in transport.calls)
+
+
+def test_adjustment_and_implemented_action_contracts_are_exact_and_secret_free() -> None:
+    transport = FakeTransport([
+        TransportResponse(200, envelope(
+            [["000001.SZ", "20240103", 2.0]],
+            fields=["ts_code", "trade_date", "adj_factor"],
+        )),
+        TransportResponse(200, envelope(
+            [["000001.SZ", "20231231", "20230301", "实施", 1.0, 0.4, 0.6,
+              0.2, 0.25, "20240102", "20240103", "20240104", "20240105", "20231220"]],
+            fields=["ts_code", "end_date", "ann_date", "div_proc", "stk_div",
+                    "stk_bo_rate", "stk_co_rate", "cash_div", "cash_div_tax",
+                    "record_date", "ex_date", "pay_date", "div_listdate", "imp_ann_date"],
+        )),
+    ])
+    instance = provider(transport)
+
+    factors = instance.fetch_adjustment_factors("20240103")
+    actions = instance.fetch_corporate_actions("20240103")
+
+    assert factors.factors[0].adj_factor == 2
+    assert actions.actions[0].cash_dividend_net == 0.2
+    assert actions.actions[0].cash_dividend_gross == 0.25
+    assert actions.actions[0].as_dict()["share_ratio"] == 1
+    assert [call[1]["api_name"] for call in transport.calls] == ["adj_factor", "dividend"]
+    assert transport.calls[0][1]["params"] == {"trade_date": "20240103"}
+    assert transport.calls[1][1]["params"] == {"ex_date": "20240103"}
+    assert "fixture-token" not in json.dumps([
+        factors.provenance.as_dict(), actions.provenance.as_dict(), actions.actions[0].as_dict(),
+    ], ensure_ascii=False)
+
+
+def test_adjustment_and_corporate_actions_fail_closed() -> None:
+    bad_factor = FakeTransport([TransportResponse(200, envelope(
+        [["000001.SZ", "20240103", 0]], fields=["ts_code", "trade_date", "adj_factor"],
+    ))])
+    with pytest.raises(ProviderProtocolError, match="invalid adjustment factor"):
+        provider(bad_factor).fetch_adjustment_factors("20240103")
+
+    proposal = FakeTransport([TransportResponse(200, envelope(
+        [["000001.SZ", "20231231", "20230301", "预案", 0, 0, 0, 0.2, 0.25,
+          "20240102", "20240103", "20240104", None, None]],
+        fields=["ts_code", "end_date", "ann_date", "div_proc", "stk_div",
+                "stk_bo_rate", "stk_co_rate", "cash_div", "cash_div_tax",
+                "record_date", "ex_date", "pay_date", "div_listdate", "imp_ann_date"],
+    ))])
+    with pytest.raises(ProviderProtocolError, match="non-implemented"):
+        provider(proposal).fetch_corporate_actions("20240103")

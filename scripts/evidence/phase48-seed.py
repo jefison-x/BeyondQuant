@@ -87,6 +87,17 @@ def main() -> None:
             {"date": trade_date, "previous": previous[trade_date],
              "up": round(previous[trade_date] * 1.1, 2), "down": round(previous[trade_date] * .9, 2),
              "sha": f"phase48-status-{trade_date}"})
+        readiness._execute("""INSERT INTO market_adjustment_factors
+            (symbol,trade_date,adj_factor,data_source,provenance_json,content_sha256,updated_at)
+            VALUES ('000001.SZ',:date,1,'fixture','{\"purpose\":\"phase48_golden\"}',:sha,now())
+            ON CONFLICT (symbol,trade_date) DO NOTHING""",
+            {"date": trade_date, "sha": f"phase48-factor-{trade_date}"})
+        readiness._execute("""INSERT INTO market_session_supplement_completeness
+            (trade_date,adjustment_complete,corporate_actions_complete,factor_row_count,
+             corporate_action_row_count,content_sha256,provenance_json,verified_at)
+            VALUES (:date,TRUE,TRUE,1,0,:sha,'{\"purpose\":\"phase48_golden\"}',now())
+            ON CONFLICT (trade_date) DO NOTHING""",
+            {"date": trade_date, "sha": f"phase48-supplement-{trade_date}"})
     print(f"Phase 48 prerequisites ready: user={username}, bars={len(rows)}")
 
 

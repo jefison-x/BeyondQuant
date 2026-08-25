@@ -3,9 +3,9 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 55** — lifecycle/session-aware signal and
-  backtest data readiness, exact daily suspension/limit contracts, bounded
-  repair, `waiting_for_data` orchestration and immutable ready-input identity.
+- Current completed phase: **Phase 56** — content-addressed forward-adjusted
+  research prices, immutable raw execution bars, durable adjustment factors,
+  and declared-date implemented corporate-action settlement.
 - Release state: **Beta**. The maintainer explicitly authorized sequential
   phase development and ADR-0015 CI-green auto-merge on 2026-08-25; this does
   not authorize a release candidate, tag, production publication, or formal
@@ -38,7 +38,8 @@ Codex session does not infer project state from commit history.
 - Accepted security-master synchronization ADR: **ADR-0026**
 - Accepted daily market automation ADR: **ADR-0027**
 - Accepted backtest data readiness ADR: **ADR-0028**
-- Open architecture decisions: **none from the completed Phase 54 scope**.
+- Accepted adjusted research/corporate-action ADR: **ADR-0029**
+- Open architecture decisions: **none from the completed Phase 56 scope**.
 
   Accepted decisions currently in force:
   [ADR-0003](../architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)
@@ -82,6 +83,10 @@ Codex session does not infer project state from commit history.
   is Accepted for the Beta Phase 53 scope.
   [ADR-0027](../architecture/adr/ADR-0027-daily-market-sync-automation.md)
   is Accepted for the Beta Phase 54 scope.
+  [ADR-0028](../architecture/adr/ADR-0028-backtest-data-readiness.md)
+  is Accepted for the Beta Phase 55 scope.
+  [ADR-0029](../architecture/adr/ADR-0029-adjusted-research-prices-corporate-actions.md)
+  is Accepted for the Beta Phase 56 scope.
 - Phase 23 acceptance evidence established a Product Skeleton browser and
   parity baseline. Its mocked Playwright navigation smoke is not evidence of
   a real Product API golden journey and is not a v1.0 RC gate.
@@ -336,6 +341,12 @@ Codex session does not infer project state from commit history.
   its ready identity; backtests still consume only validated immutable signal
   snapshots. Backend, frontend, full Compose, no-mock Product and desktop/mobile
   Chrome evidence is under `docs/evidence/phase-55/`. This remains Beta.
+- Phase 56 accepted ADR-0029 and now synchronizes exact-date adjustment factors
+  and implemented corporate actions, builds a content-addressed adjusted view
+  for research signals while preserving raw execution prices, freezes actions
+  into immutable inputs, and settles entitlement, cash and shares on explicit
+  dates. Backend, frontend, full Compose, no-mock Product and desktop/mobile
+  Chrome evidence is under `docs/evidence/phase-56/`. This remains Beta.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence. The historical gaps recorded in
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` were then classified and
@@ -348,10 +359,11 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active implementation-phase blocker: **none**. Phases 49-55, the ADR-0025
+- Active implementation-phase blocker: **none**. Phases 49-56, the ADR-0025
   personal-workspace program, ADR-0026 data bootstrap, ADR-0027 daily
-  automation and ADR-0028 readiness gate are complete. **Phase 56 — Adjusted
-  research prices and corporate actions is the authorized next phase** under the maintainer's 2026-08-25
+  automation, ADR-0028 readiness gate and ADR-0029 adjusted research input are
+  complete. **Phase 57 — Benchmark, point-in-time universe and declared factor
+  data is the authorized next phase** under the maintainer's 2026-08-25
   sequential-development instruction. The post-Phase 40 DSH Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.
 

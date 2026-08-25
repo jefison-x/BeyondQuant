@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import threading
@@ -48,6 +49,12 @@ SECURITY_MASTER_FIELDS = (
 )
 PRICE_LIMIT_FIELDS = ("trade_date", "ts_code", "pre_close", "up_limit", "down_limit")
 SUSPENSION_FIELDS = ("ts_code", "trade_date", "suspend_timing", "suspend_type")
+ADJUSTMENT_FACTOR_FIELDS = ("ts_code", "trade_date", "adj_factor")
+CORPORATE_ACTION_FIELDS = (
+    "ts_code", "end_date", "ann_date", "div_proc", "stk_div", "stk_bo_rate",
+    "stk_co_rate", "cash_div", "cash_div_tax", "record_date", "ex_date",
+    "pay_date", "div_listdate", "imp_ann_date",
+)
 MAX_DAILY_ROWS = 6000
 MAX_TRADE_CALENDAR_ROWS = 800
 MAX_SECURITY_MASTER_ROWS = 10_000
@@ -322,6 +329,104 @@ class PriceLimitResult:
 @dataclass(frozen=True)
 class SuspensionResult:
     suspensions: tuple[Suspension, ...]
+    provenance: Provenance
+
+
+@dataclass(frozen=True)
+class AdjustmentFactor:
+    ts_code: str
+    trade_date: str
+    adj_factor: float
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "AdjustmentFactor":
+        try:
+            values = dict(zip(fields, row, strict=True))
+        except ValueError as error:
+            raise ProviderProtocolError("provider adjustment-factor row does not match its fields") from error
+        if any(field not in values for field in ADJUSTMENT_FACTOR_FIELDS):
+            raise ProviderProtocolError("provider response omitted adjustment-factor fields")
+        symbol = str(values["ts_code"] or "").strip().upper()
+        trade_date = _validate_date(str(values["trade_date"]), "trade_date")
+        factor = _number(values["adj_factor"])
+        if (
+            not _SYMBOL_PATTERN.fullmatch(symbol) or trade_date is None or factor is None
+            or not math.isfinite(factor) or factor <= 0
+        ):
+            raise ProviderProtocolError("provider returned an invalid adjustment factor")
+        return cls(symbol, trade_date, factor)
+
+
+@dataclass(frozen=True)
+class CorporateAction:
+    ts_code: str
+    end_date: str
+    announcement_date: str | None
+    implementation_announcement_date: str | None
+    record_date: str | None
+    ex_date: str
+    pay_date: str | None
+    share_listing_date: str | None
+    stock_dividend_per_share: float
+    bonus_share_ratio: float
+    transfer_share_ratio: float
+    cash_dividend_net: float
+    cash_dividend_gross: float
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "CorporateAction":
+        try:
+            values = dict(zip(fields, row, strict=True))
+        except ValueError as error:
+            raise ProviderProtocolError("provider corporate-action row does not match its fields") from error
+        if any(field not in values for field in CORPORATE_ACTION_FIELDS):
+            raise ProviderProtocolError("provider response omitted corporate-action fields")
+        symbol = str(values["ts_code"] or "").strip().upper()
+        if not _SYMBOL_PATTERN.fullmatch(symbol) or str(values["div_proc"] or "").strip() != "实施":
+            raise ProviderProtocolError("provider returned a non-implemented corporate action")
+        try:
+            end_date = _validate_date(str(values["end_date"]), "end_date")
+            ex_date = _validate_date(str(values["ex_date"]), "ex_date")
+            optional_dates = [
+                _validate_date(str(values[name]), name) if values[name] not in {None, ""} else None
+                for name in ("ann_date", "imp_ann_date", "record_date", "pay_date", "div_listdate")
+            ]
+        except ValueError as error:
+            raise ProviderProtocolError("provider returned an invalid corporate-action date") from error
+        amounts = [_number(values[name]) or 0.0 for name in (
+            "stk_div", "stk_bo_rate", "stk_co_rate", "cash_div", "cash_div_tax",
+        )]
+        if end_date is None or ex_date is None or any(not math.isfinite(item) or item < 0 for item in amounts):
+            raise ProviderProtocolError("provider returned invalid corporate-action values")
+        if not any(item > 0 for item in amounts):
+            raise ProviderProtocolError("provider returned an empty corporate action")
+        return cls(symbol, end_date, optional_dates[0], optional_dates[1], optional_dates[2], ex_date,
+                   optional_dates[3], optional_dates[4], *amounts)
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "symbol": self.ts_code, "end_date": self.end_date,
+            "announcement_date": self.announcement_date,
+            "implementation_announcement_date": self.implementation_announcement_date,
+            "record_date": self.record_date, "ex_date": self.ex_date,
+            "pay_date": self.pay_date, "share_listing_date": self.share_listing_date,
+            "cash_dividend_per_share": self.cash_dividend_net or self.cash_dividend_gross,
+            "cash_dividend_gross": self.cash_dividend_gross,
+            "share_ratio": self.stock_dividend_per_share or (
+                self.bonus_share_ratio + self.transfer_share_ratio
+            ),
+        }
+
+
+@dataclass(frozen=True)
+class AdjustmentFactorResult:
+    factors: tuple[AdjustmentFactor, ...]
+    provenance: Provenance
+
+
+@dataclass(frozen=True)
+class CorporateActionResult:
+    actions: tuple[CorporateAction, ...]
     provenance: Provenance
 
 
@@ -733,19 +838,46 @@ class TushareProvider:
             raise ProviderProtocolError("provider returned duplicate suspension rows")
         return SuspensionResult(suspensions, provenance)
 
+    def fetch_adjustment_factors(self, trade_date: str) -> AdjustmentFactorResult:
+        normalized = _validate_date(trade_date, "trade_date")
+        assert normalized is not None
+        fields, rows, provenance = self._fetch_exact_session_dataset(
+            "adj_factor", normalized, ADJUSTMENT_FACTOR_FIELDS,
+        )
+        factors = tuple(AdjustmentFactor.from_row(fields, row) for row in rows)
+        if any(item.trade_date != normalized for item in factors):
+            raise ProviderProtocolError("provider returned an adjustment-factor date outside the request")
+        if len({(item.ts_code, item.trade_date) for item in factors}) != len(factors):
+            raise ProviderProtocolError("provider returned duplicate adjustment-factor rows")
+        return AdjustmentFactorResult(factors, provenance)
+
+    def fetch_corporate_actions(self, ex_date: str) -> CorporateActionResult:
+        normalized = _validate_date(ex_date, "ex_date")
+        assert normalized is not None
+        fields, rows, provenance = self._fetch_exact_session_dataset(
+            "dividend", normalized, CORPORATE_ACTION_FIELDS, parameter="ex_date",
+        )
+        actions = tuple(CorporateAction.from_row(fields, row) for row in rows)
+        if any(item.ex_date != normalized for item in actions):
+            raise ProviderProtocolError("provider returned a corporate-action date outside the request")
+        if len({(item.ts_code, item.end_date, item.ex_date) for item in actions}) != len(actions):
+            raise ProviderProtocolError("provider returned duplicate corporate-action rows")
+        return CorporateActionResult(actions, provenance)
+
     def _fetch_exact_session_dataset(
         self, endpoint: str, trade_date: str, fields_contract: tuple[str, ...],
+        *, parameter: str = "trade_date",
     ) -> tuple[list[str], list[list[Any]], Provenance]:
         if not self._config.token:
             raise ProviderCredentialsMissing("Tushare credentials are not configured")
         fingerprint = sha256(json.dumps(
-            {"api_name": endpoint, "trade_date": trade_date, "fields": fields_contract},
+            {"api_name": endpoint, parameter: trade_date, "fields": fields_contract},
             sort_keys=True, separators=(",", ":"),
         ).encode("utf-8")).hexdigest()
         fields, rows = self._request({
             "api_name": endpoint,
             "token": self._config.token,
-            "params": {"trade_date": trade_date},
+            "params": {parameter: trade_date},
             "fields": ",".join(fields_contract),
         })
         if len(rows) > MAX_SESSION_STATUS_ROWS:

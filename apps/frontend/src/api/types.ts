@@ -592,7 +592,10 @@ export interface MarketSyncAutomationConfig {
   timezone: "Asia/Shanghai";
   catchup_days: number;
   security_master_enabled: boolean;
-  datasets: Array<"trade_calendar" | "stock_daily">;
+  datasets: Array<
+    "trade_calendar" | "stock_daily" | "trading_status" | "price_limits"
+    | "adjustment_factors" | "corporate_actions"
+  >;
   version: number;
   updated_by: string;
   updated_at: string;

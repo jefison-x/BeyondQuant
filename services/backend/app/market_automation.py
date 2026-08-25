@@ -497,7 +497,7 @@ class MarketAutomationStore(PgStoreMixin):
                 elif existing["status"] == "failed" or (
                     existing["status"] == "completed" and (
                         self._fetch_one("""SELECT state FROM market_session_completeness
-                            WHERE trade_date=:date AND state='provider_snapshot_with_status_complete'""",
+                            WHERE trade_date=:date AND state='provider_snapshot_with_research_complete'""",
                             {"date": trade_date}) is None
                     )
                 ):
@@ -581,6 +581,8 @@ class MarketAutomationStore(PgStoreMixin):
             result = provider.fetch_daily(DailyRequest(trade_date=trade_date))
             limits = provider.fetch_price_limits(trade_date) if readiness_store is not None else None
             suspensions = provider.fetch_suspensions(trade_date) if readiness_store is not None else None
+            factors = provider.fetch_adjustment_factors(trade_date) if readiness_store is not None else None
+            actions = provider.fetch_corporate_actions(trade_date) if readiness_store is not None else None
             rows = DataSyncStore._normalize_bars(
                 None, result, start_date=trade_date, end_date=trade_date,
             )
@@ -591,8 +593,9 @@ class MarketAutomationStore(PgStoreMixin):
                 for row in rows
             ])
             report = market_store.import_bars(rows, conflict_policy=KEEP_NEW)
+            completeness_state = "provider_snapshot_complete"
             if readiness_store is not None:
-                assert limits is not None and suspensions is not None
+                assert limits is not None and suspensions is not None and factors is not None and actions is not None
                 readiness_store.import_session_status(
                     trade_date,
                     daily_symbols={str(row["symbol"]) for row in rows},
@@ -604,6 +607,15 @@ class MarketAutomationStore(PgStoreMixin):
                         "suspensions": suspensions.provenance.as_dict(),
                     },
                 )
+                readiness_store.import_session_supplements(
+                    trade_date,
+                    factors=list(factors.factors), actions=list(actions.actions),
+                    provenance={
+                        "adjustment_factors": factors.provenance.as_dict(),
+                        "corporate_actions": actions.provenance.as_dict(),
+                    },
+                )
+                completeness_state = "provider_snapshot_with_research_complete"
             now = _now()
             with self._transaction() as connection:
                 execute(
@@ -611,7 +623,7 @@ class MarketAutomationStore(PgStoreMixin):
                     """INSERT INTO market_session_completeness
                        (trade_date, state, row_count, dataset_sha256,
                         request_fingerprint, verified_at, job_id)
-                       VALUES (:trade_date, 'provider_snapshot_with_status_complete', :row_count,
+                       VALUES (:trade_date, :state, :row_count,
                                :dataset_sha, :fingerprint, :now, :job_id)
                        ON CONFLICT (trade_date) DO UPDATE SET
                          state = excluded.state, row_count = excluded.row_count,
@@ -620,6 +632,7 @@ class MarketAutomationStore(PgStoreMixin):
                          verified_at = excluded.verified_at, job_id = excluded.job_id""",
                     {
                         "trade_date": trade_date,
+                        "state": completeness_state,
                         "row_count": len(rows),
                         "dataset_sha": dataset_sha,
                         "fingerprint": result.provenance.request_fingerprint,
@@ -758,7 +771,8 @@ class MarketAutomationStore(PgStoreMixin):
         latest_complete = self._fetch_one(
             """SELECT trade_date, row_count, dataset_sha256, verified_at
                FROM market_session_completeness
-               WHERE state IN ('provider_snapshot_complete', 'provider_snapshot_with_status_complete')
+               WHERE state IN ('provider_snapshot_complete', 'provider_snapshot_with_status_complete',
+                               'provider_snapshot_with_research_complete')
                ORDER BY trade_date DESC LIMIT 1""",
         )
         worker = self._fetch_one(
@@ -808,7 +822,8 @@ class MarketAutomationStore(PgStoreMixin):
             "timezone": TIMEZONE,
             "catchup_days": int(row["catchup_days"]),
             "security_master_enabled": bool(row["security_master_enabled"]),
-            "datasets": ["trade_calendar", "stock_daily", "trading_status", "price_limits"],
+            "datasets": ["trade_calendar", "stock_daily", "trading_status", "price_limits",
+                         "adjustment_factors", "corporate_actions"],
             "version": int(row["version"]),
             "updated_by": row["updated_by"],
             "updated_at": row["updated_at"],

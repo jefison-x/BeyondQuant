@@ -122,6 +122,44 @@ def test_native_engine_blocks_limit_up_and_suspension_with_stable_codes() -> Non
     assert suspended_result["blocked_trades"][0]["reason_code"] == "suspended"
 
 
+def test_corporate_action_entitlement_settles_on_declared_dates() -> None:
+    action_bars = [
+        {"symbol": SYMBOL, "trade_date": f"2026-01-0{day}", "open": 10.0,
+         "high": 10.0, "low": 10.0, "close": 10.0}
+        for day in range(5, 10)
+    ]
+    payload = normalized(
+        bars=action_bars,
+        corporate_actions=[{
+            "symbol": SYMBOL, "end_date": "2025-12-31", "record_date": "2026-01-06",
+            "ex_date": "2026-01-07", "pay_date": "2026-01-08",
+            "share_listing_date": "2026-01-09", "cash_dividend_per_share": 0.2,
+            "cash_dividend_gross": 0.25, "share_ratio": 1.0,
+        }],
+    )
+
+    result = run_native_backtest(payload["manifest"])
+
+    positions = {row["trade_date"]: row["positions"] for row in result["daily_positions"]}
+    assert positions["2026-01-08"][0]["quantity"] == 100
+    assert positions["2026-01-09"][0]["quantity"] == 200
+    messages = [row["message"] for row in result["logs"]]
+    assert messages.index("corporate_action_entitlement") < messages.index("cash_dividend_settled")
+    assert messages.index("cash_dividend_settled") < messages.index("stock_dividend_settled")
+    assert result["equity_curve"][3]["cash"] == 1020.0
+
+
+def test_corporate_actions_distinguish_reporting_periods_on_same_ex_date() -> None:
+    payload = normalized(corporate_actions=[
+        {"symbol": SYMBOL, "end_date": "2025-06-30", "ex_date": "2026-01-07"},
+        {"symbol": SYMBOL, "end_date": "2025-12-31", "ex_date": "2026-01-07"},
+    ])
+
+    assert [row["end_date"] for row in payload["manifest"]["corporate_actions"]] == [
+        "2025-06-30", "2025-12-31",
+    ]
+
+
 @pytest.mark.skipif(
     not os.environ.get("BYQ_DATABASE_URL"),
     reason="BYQ_DATABASE_URL is not set",
