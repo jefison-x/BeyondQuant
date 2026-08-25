@@ -10,7 +10,8 @@ import urllib.error
 import urllib.request
 
 from app.research import ResearchStore
-from app.signal_producer import SignalJobStore, SignalProducerCoordinator
+from app.market_readiness import MarketReadinessStore
+from app.signal_producer import SignalJobStore, SignalProducerCoordinator, promote_waiting_signal_jobs
 
 
 class SandboxFailure(RuntimeError):
@@ -52,6 +53,7 @@ class HttpSandboxExecutor:
 def main() -> int:
     jobs = SignalJobStore.from_env()
     research = ResearchStore.from_env()
+    readiness = MarketReadinessStore.from_env()
     coordinator = SignalProducerCoordinator(
         jobs,
         research,
@@ -68,9 +70,11 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     try:
         while running:
+            promote_waiting_signal_jobs(jobs, readiness)
             if coordinator.run_next() is None:
                 time.sleep(poll)
     finally:
+        readiness.close()
         research.close()
         jobs.close()
     return 0

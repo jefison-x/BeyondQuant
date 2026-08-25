@@ -304,3 +304,24 @@ def test_security_master_rejects_duplicate_identity_across_statuses() -> None:
 
     with pytest.raises(ProviderProtocolError, match="duplicate security-master identities"):
         provider(transport).fetch_security_master(SecurityMasterRequest(("L", "D")))
+
+
+def test_exact_session_status_contracts_are_closed_and_validated() -> None:
+    transport = FakeTransport([
+        TransportResponse(200, envelope(
+            [["20240102", "000001.SZ", 10, 11, 9]],
+            fields=["trade_date", "ts_code", "pre_close", "up_limit", "down_limit"],
+        )),
+        TransportResponse(200, envelope(
+            [["000002.SZ", "20240102", "全天", "S"]],
+            fields=["ts_code", "trade_date", "suspend_timing", "suspend_type"],
+        )),
+    ])
+    instance = provider(transport)
+    limits = instance.fetch_price_limits("20240102")
+    suspensions = instance.fetch_suspensions("20240102")
+
+    assert limits.limits[0].up_limit == 11
+    assert suspensions.suspensions[0].suspend_type == "S"
+    assert [call[1]["api_name"] for call in transport.calls] == ["stk_limit", "suspend_d"]
+    assert all(call[1]["params"] == {"trade_date": "20240102"} for call in transport.calls)

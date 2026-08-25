@@ -1488,7 +1488,7 @@ startup, real Product API desktop/mobile browser review, same-origin requests,
 and a Community-derived checklist. No suspension, exact limit, adjustment,
 corporate-action, benchmark, index-membership or fundamental contract is added.
 
-### Phase 55 — Backtest data readiness and execution status (`AUTHORIZED NEXT`)
+### Phase 55 — Backtest data readiness and execution status (`COMPLETE`)
 
 Add a typed backtest/signal data-requirement manifest, trading-session and
 security-lifecycle-aware coverage classification, bounded missing-range repair,
@@ -1496,7 +1496,13 @@ security-lifecycle-aware coverage classification, bounded missing-range repair,
 suspension/trading status and price-limit contracts. Signal and backtest workers
 remain provider-free and cannot start until required inputs are complete.
 
-### Phase 56 — Adjusted research prices and corporate actions (`PLANNED`)
+Accepted ADR-0028 and implemented the typed manifest, lifecycle/session-aware
+assessment, exact suspension/limit persistence, bounded durable repair,
+`waiting_for_data` promotion and immutable ready-input identity. Backend,
+frontend, full Compose, no-mock Product and desktop/mobile Chrome evidence is
+under `docs/evidence/phase-55/`.
+
+### Phase 56 — Adjusted research prices and corporate actions (`AUTHORIZED NEXT`)
 
 Add durable adjustment factors and implemented corporate actions with explicit
 effective/ex-date semantics. Preserve raw unadjusted execution prices while

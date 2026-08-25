@@ -46,9 +46,12 @@ SECURITY_MASTER_FIELDS = (
     "delist_date",
     "is_hs",
 )
+PRICE_LIMIT_FIELDS = ("trade_date", "ts_code", "pre_close", "up_limit", "down_limit")
+SUSPENSION_FIELDS = ("ts_code", "trade_date", "suspend_timing", "suspend_type")
 MAX_DAILY_ROWS = 6000
 MAX_TRADE_CALENDAR_ROWS = 800
 MAX_SECURITY_MASTER_ROWS = 10_000
+MAX_SESSION_STATUS_ROWS = 6_000
 MAX_QUARANTINED_SECURITY_MASTER_ROWS = 100
 _SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 _TUSHARE_HISTORICAL_ALIAS_PATTERN = re.compile(r"^T[0-9]{6}\.(?:SH|SZ|BJ)$")
@@ -257,6 +260,68 @@ class Provenance:
 @dataclass(frozen=True)
 class DailyResult:
     bars: tuple[DailyBar, ...]
+    provenance: Provenance
+
+
+@dataclass(frozen=True)
+class PriceLimit:
+    trade_date: str
+    ts_code: str
+    pre_close: float | None
+    up_limit: float
+    down_limit: float
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "PriceLimit":
+        try:
+            values = dict(zip(fields, row, strict=True))
+        except ValueError as error:
+            raise ProviderProtocolError("provider price-limit row does not match its fields") from error
+        if any(field not in values for field in PRICE_LIMIT_FIELDS):
+            raise ProviderProtocolError("provider response omitted price-limit fields")
+        symbol = str(values["ts_code"] or "").strip().upper()
+        if not _SYMBOL_PATTERN.fullmatch(symbol):
+            raise ProviderProtocolError("provider returned a non-canonical price-limit symbol")
+        trade_date = _validate_date(str(values["trade_date"]), "trade_date")
+        up_limit, down_limit = _number(values["up_limit"]), _number(values["down_limit"])
+        if trade_date is None or up_limit is None or down_limit is None or up_limit < down_limit:
+            raise ProviderProtocolError("provider returned invalid exact price limits")
+        return cls(trade_date, symbol, _number(values["pre_close"]), up_limit, down_limit)
+
+
+@dataclass(frozen=True)
+class Suspension:
+    ts_code: str
+    trade_date: str
+    suspend_timing: str | None
+    suspend_type: str
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "Suspension":
+        try:
+            values = dict(zip(fields, row, strict=True))
+        except ValueError as error:
+            raise ProviderProtocolError("provider suspension row does not match its fields") from error
+        if any(field not in values for field in SUSPENSION_FIELDS):
+            raise ProviderProtocolError("provider response omitted suspension fields")
+        symbol = str(values["ts_code"] or "").strip().upper()
+        trade_date = _validate_date(str(values["trade_date"]), "trade_date")
+        suspend_type = str(values["suspend_type"] or "").strip().upper()
+        if not _SYMBOL_PATTERN.fullmatch(symbol) or trade_date is None or suspend_type not in {"S", "R"}:
+            raise ProviderProtocolError("provider returned invalid suspension status")
+        timing = str(values["suspend_timing"] or "").strip() or None
+        return cls(symbol, trade_date, timing, suspend_type)
+
+
+@dataclass(frozen=True)
+class PriceLimitResult:
+    limits: tuple[PriceLimit, ...]
+    provenance: Provenance
+
+
+@dataclass(frozen=True)
+class SuspensionResult:
+    suspensions: tuple[Suspension, ...]
     provenance: Provenance
 
 
@@ -641,6 +706,55 @@ class TushareProvider:
                 row_count=len(sessions),
             ),
         )
+
+    def fetch_price_limits(self, trade_date: str) -> PriceLimitResult:
+        normalized = _validate_date(trade_date, "trade_date")
+        assert normalized is not None
+        fields, rows, provenance = self._fetch_exact_session_dataset(
+            "stk_limit", normalized, PRICE_LIMIT_FIELDS,
+        )
+        limits = tuple(PriceLimit.from_row(fields, row) for row in rows)
+        if any(item.trade_date != normalized for item in limits):
+            raise ProviderProtocolError("provider returned a price-limit date outside the request")
+        if len({(item.ts_code, item.trade_date) for item in limits}) != len(limits):
+            raise ProviderProtocolError("provider returned duplicate price-limit rows")
+        return PriceLimitResult(limits, provenance)
+
+    def fetch_suspensions(self, trade_date: str) -> SuspensionResult:
+        normalized = _validate_date(trade_date, "trade_date")
+        assert normalized is not None
+        fields, rows, provenance = self._fetch_exact_session_dataset(
+            "suspend_d", normalized, SUSPENSION_FIELDS,
+        )
+        suspensions = tuple(Suspension.from_row(fields, row) for row in rows)
+        if any(item.trade_date != normalized for item in suspensions):
+            raise ProviderProtocolError("provider returned a suspension date outside the request")
+        if len({(item.ts_code, item.trade_date) for item in suspensions}) != len(suspensions):
+            raise ProviderProtocolError("provider returned duplicate suspension rows")
+        return SuspensionResult(suspensions, provenance)
+
+    def _fetch_exact_session_dataset(
+        self, endpoint: str, trade_date: str, fields_contract: tuple[str, ...],
+    ) -> tuple[list[str], list[list[Any]], Provenance]:
+        if not self._config.token:
+            raise ProviderCredentialsMissing("Tushare credentials are not configured")
+        fingerprint = sha256(json.dumps(
+            {"api_name": endpoint, "trade_date": trade_date, "fields": fields_contract},
+            sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        fields, rows = self._request({
+            "api_name": endpoint,
+            "token": self._config.token,
+            "params": {"trade_date": trade_date},
+            "fields": ",".join(fields_contract),
+        })
+        if len(rows) > MAX_SESSION_STATUS_ROWS:
+            raise ProviderProtocolError("provider returned too many session-status rows")
+        provenance = Provenance(
+            provider="tushare", endpoint=endpoint, request_fingerprint=fingerprint,
+            retrieved_at=datetime.now(timezone.utc).isoformat(), cache_hit=False, row_count=len(rows),
+        )
+        return fields, rows, provenance
 
     def fetch_security_master(self, request: SecurityMasterRequest | None = None) -> SecurityMasterResult:
         normalized = (request or SecurityMasterRequest()).normalized()

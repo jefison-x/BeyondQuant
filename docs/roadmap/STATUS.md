@@ -3,10 +3,9 @@
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
-- Current completed phase: **Phase 54** — durable Asia/Shanghai daily market
-  automation, validated trading calendar, exact-date full-market snapshots,
-  bounded catch-up/retry/lease recovery, independent trusted Data Plane worker,
-  and real Product API configuration/status flows.
+- Current completed phase: **Phase 55** — lifecycle/session-aware signal and
+  backtest data readiness, exact daily suspension/limit contracts, bounded
+  repair, `waiting_for_data` orchestration and immutable ready-input identity.
 - Release state: **Beta**. The maintainer explicitly authorized sequential
   phase development and ADR-0015 CI-green auto-merge on 2026-08-25; this does
   not authorize a release candidate, tag, production publication, or formal
@@ -38,6 +37,7 @@ Codex session does not infer project state from commit history.
 - Accepted personal-workspace tenancy ADR: **ADR-0025**
 - Accepted security-master synchronization ADR: **ADR-0026**
 - Accepted daily market automation ADR: **ADR-0027**
+- Accepted backtest data readiness ADR: **ADR-0028**
 - Open architecture decisions: **none from the completed Phase 54 scope**.
 
   Accepted decisions currently in force:
@@ -328,6 +328,14 @@ Codex session does not infer project state from commit history.
   latest complete session and bounded job history through Product API. Backend,
   Gateway, frontend, architecture, Compose and desktop/mobile browser evidence
   are under `docs/evidence/phase-54/`. This remains Beta.
+- Phase 55 accepted ADR-0028 and now freezes typed market-data requirements,
+  classifies coverage by SSE sessions and security lifecycle, persists exact
+  daily suspension/trading status and limits, and sends bounded missing ranges
+  only to the trusted Data Worker. Signal jobs remain `waiting_for_data` and
+  unclaimable until a provider-free coordinator freezes the complete input and
+  its ready identity; backtests still consume only validated immutable signal
+  snapshots. Backend, frontend, full Compose, no-mock Product and desktop/mobile
+  Chrome evidence is under `docs/evidence/phase-55/`. This remains Beta.
 - Community Parity Delivery Plan Phases 1-8 restored the product shell and
   Chrome MCP browser evidence. The historical gaps recorded in
   `docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` were then classified and
@@ -340,10 +348,10 @@ Codex session does not infer project state from commit history.
   are closed or explicitly dropped with evidence.
 - Release reminder (ADR-0015): at the BeyondQuant Next v1.0 official release,
   disable GitHub auto-merge and restore the single-maintainer human merge gate.
-- Active implementation-phase blocker: **none**. Phases 49-54, the ADR-0025
-  personal-workspace program, ADR-0026 data bootstrap and ADR-0027 daily
-  automation are complete. **Phase 55 — Backtest data readiness and execution
-  status is the authorized next phase** under the maintainer's 2026-08-25
+- Active implementation-phase blocker: **none**. Phases 49-55, the ADR-0025
+  personal-workspace program, ADR-0026 data bootstrap, ADR-0027 daily
+  automation and ADR-0028 readiness gate are complete. **Phase 56 — Adjusted
+  research prices and corporate actions is the authorized next phase** under the maintainer's 2026-08-25
   sequential-development instruction. The post-Phase 40 DSH Upgrade Lane is scheduled separately in
   `DSH_UPGRADE_LANE.md` and does not alter the current DSH pin.
 

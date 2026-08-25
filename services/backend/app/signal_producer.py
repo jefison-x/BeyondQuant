@@ -106,6 +106,7 @@ def prepare_signal_job_input(
     parameters: dict[str, object],
     execution: dict[str, object],
     order_quantity: int,
+    data_readiness: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build the secret-free immutable document handed to the coordinator."""
     document: dict[str, object] = {
@@ -129,6 +130,8 @@ def prepare_signal_job_input(
         "execution": execution,
         "order_quantity": order_quantity,
     }
+    if data_readiness is not None:
+        document["data_readiness"] = data_readiness
     _reject_secrets(document)
     encoded = _canonical(document)
     if len(encoded) > MAX_JOB_BYTES:
@@ -171,6 +174,12 @@ class SignalJobStore(PgStoreMixin):
         CREATE INDEX IF NOT EXISTS signal_producer_jobs_queue
             ON signal_producer_jobs(status, created_at)
         """,
+        """ALTER TABLE signal_producer_jobs ALTER COLUMN input_json DROP NOT NULL""",
+        """ALTER TABLE signal_producer_jobs ALTER COLUMN input_sha256 DROP NOT NULL""",
+        """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS preparation_json JSONB""",
+        """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS requirement_json JSONB""",
+        """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS readiness_json JSONB""",
+        """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS ready_input_sha256 TEXT""",
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -255,6 +264,77 @@ class SignalJobStore(PgStoreMixin):
                 },
             )
         return self.get(job_id, trusted_owner=owner)
+
+    def create_waiting(
+        self, *, owner_principal: object, task_id: object, experiment_id: object | None,
+        strategy_version_artifact_id: object, stock_pool_snapshot_id: object,
+        preparation: dict[str, object], requirement: dict[str, object],
+        readiness: dict[str, object], trace_id: object, idempotency_key: object,
+    ) -> dict[str, object]:
+        owner = _text(owner_principal, "owner_principal", 128)
+        task = _identifier(task_id, "task_id")
+        experiment = None if experiment_id is None else _identifier(experiment_id, "experiment_id")
+        strategy = _identifier(strategy_version_artifact_id, "strategy_version_artifact_id")
+        snapshot = _identifier(stock_pool_snapshot_id, "stock_pool_snapshot_id")
+        trace = _text(trace_id, "trace_id", 128)
+        idempotency = _text(idempotency_key, "idempotency_key", 128)
+        _reject_secrets(preparation)
+        request_hash = hashlib.sha256(_canonical({
+            "owner_principal": owner, "task_id": task, "experiment_id": experiment,
+            "strategy_version_artifact_id": strategy, "stock_pool_snapshot_id": snapshot,
+            "preparation": preparation, "requirement": requirement, "trace_id": trace,
+        })).hexdigest()
+        with self._transaction() as connection:
+            existing = fetch_one(connection, """SELECT * FROM signal_producer_jobs
+                WHERE owner_principal=:owner AND idempotency_key=:key""",
+                {"owner": owner, "key": idempotency})
+            if existing is not None:
+                if existing["request_hash"] != request_hash:
+                    raise SignalProducerConflict("signal job idempotency key was reused")
+                return self._public_row(existing)
+            now, job_id = _now(), f"signaljob_{uuid.uuid4().hex}"
+            execute(connection, """INSERT INTO signal_producer_jobs
+                (job_id, owner_principal, task_id, experiment_id,
+                 strategy_version_artifact_id, stock_pool_snapshot_id, status,
+                 preparation_json, requirement_json, readiness_json, trace_id,
+                 idempotency_key, request_hash, created_at, updated_at)
+                VALUES (:job_id,:owner,:task,:experiment,:strategy,:snapshot,'waiting_for_data',
+                        :preparation,:requirement,:readiness,:trace,:key,:request_hash,:now,:now)""",
+                {"job_id": job_id, "owner": owner, "task": task, "experiment": experiment,
+                 "strategy": strategy, "snapshot": snapshot, "preparation": preparation,
+                 "requirement": requirement, "readiness": readiness, "trace": trace,
+                 "key": idempotency, "request_hash": request_hash, "now": now})
+        return self.get(job_id, trusted_owner=owner)
+
+    def list_waiting(self, *, limit: int = 20) -> list[dict[str, object]]:
+        rows = self._execute("""SELECT * FROM signal_producer_jobs
+            WHERE status='waiting_for_data' ORDER BY created_at, job_id LIMIT :limit""", {"limit": limit})
+        return [dict(row) for row in rows]
+
+    def update_readiness(self, job_id: str, readiness: dict[str, object]) -> None:
+        self._execute("""UPDATE signal_producer_jobs SET readiness_json=:readiness, updated_at=:now
+            WHERE job_id=:job_id AND status='waiting_for_data'""",
+            {"job_id": job_id, "readiness": readiness, "now": _now()})
+
+    def promote_ready(self, job_id: str, input_document: dict[str, object], ready_input_sha256: str) -> dict[str, object]:
+        input_sha256 = str(input_document.get("input_sha256") or "")
+        without_identity = dict(input_document)
+        without_identity.pop("input_sha256", None)
+        if input_sha256 != hashlib.sha256(_canonical(without_identity)).hexdigest():
+            raise ValueError("signal producer input identity does not match content")
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT status FROM signal_producer_jobs WHERE job_id=:job_id FOR UPDATE",
+                            {"job_id": job_id})
+            if row is None:
+                raise SignalProducerNotFound("signal producer job not found")
+            if row["status"] != "waiting_for_data":
+                return self.get(job_id)
+            execute(connection, """UPDATE signal_producer_jobs SET status='queued', input_json=:input,
+                input_sha256=:input_sha, ready_input_sha256=:ready_sha, updated_at=:now
+                WHERE job_id=:job_id""",
+                {"job_id": job_id, "input": input_document, "input_sha": input_sha256,
+                 "ready_sha": ready_input_sha256, "now": _now()})
+        return self.get(job_id)
 
     def get(self, job_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         identity = _identifier(job_id, "job_id")
@@ -361,10 +441,13 @@ class SignalJobStore(PgStoreMixin):
     @staticmethod
     def _public_row(row: dict[str, Any]) -> dict[str, object]:
         value = dict(row)
-        input_document = value.pop("input_json", {})
+        input_document = value.pop("input_json", None) or {}
         universe = input_document.get("universe", {}) if isinstance(input_document, dict) else {}
         bars = input_document.get("bars", []) if isinstance(input_document, dict) else []
         value.pop("request_hash", None)
+        value.pop("preparation_json", None)
+        value["requirement"] = value.pop("requirement_json", None)
+        value["readiness"] = value.pop("readiness_json", None)
         value["input"] = {
             "schema_version": input_document.get("schema_version") if isinstance(input_document, dict) else None,
             "profile": input_document.get("profile") if isinstance(input_document, dict) else None,
@@ -380,6 +463,48 @@ class SignalJobStore(PgStoreMixin):
         value.pop("request_hash", None)
         value["input"] = value.pop("input_json")
         return value
+
+
+def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object) -> int:
+    """Provider-free coordinator gate: only complete durable inputs become runnable."""
+    promoted = 0
+    for row in jobs.list_waiting():
+        requirement = row.get("requirement_json")
+        preparation = row.get("preparation_json")
+        if not isinstance(requirement, dict) or not isinstance(preparation, dict):
+            continue
+        assessment = readiness_store.assess(requirement)
+        jobs.update_readiness(str(row["job_id"]), assessment)
+        if assessment.get("state") != "ready":
+            continue
+        rows = readiness_store.list_ready_bars(requirement)
+        bars = [{
+            "symbol": item["symbol"],
+            "trade_date": f"{str(item['trade_date'])[:4]}-{str(item['trade_date'])[4:6]}-{str(item['trade_date'])[6:8]}",
+            "open": item["open"], "high": item["high"], "low": item["low"], "close": item["close"],
+            "prev_close": item.get("pre_close"), "volume": item.get("volume") or 0,
+            "is_suspended": bool(item.get("is_suspended")),
+            "up_limit": item.get("up_limit"), "down_limit": item.get("down_limit"),
+        } for item in rows]
+        document = prepare_signal_job_input(
+            strategy_version_artifact_id=str(preparation["strategy_version_artifact_id"]),
+            strategy_version_id=str(preparation["strategy_version_id"]),
+            source_fingerprint=str(preparation["source_fingerprint"]),
+            script=str(preparation["script"]),
+            stock_pool_snapshot_id=str(preparation["stock_pool_snapshot_id"]),
+            stock_pool_id=str(preparation["stock_pool_id"]),
+            membership_fingerprint=str(preparation["membership_fingerprint"]),
+            symbols=list(preparation["symbols"]), bars=bars,
+            parameters=dict(preparation["parameters"]), execution=dict(preparation["execution"]),
+            order_quantity=int(preparation["order_quantity"]),
+            data_readiness={
+                "requirement_sha256": requirement["requirement_sha256"],
+                "ready_input_sha256": assessment["ready_input_sha256"],
+            },
+        )
+        jobs.promote_ready(str(row["job_id"]), document, str(assessment["ready_input_sha256"]))
+        promoted += 1
+    return promoted
 
 
 class SignalProducerCoordinator:

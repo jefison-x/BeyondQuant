@@ -775,3 +775,20 @@ produced this disposition.
 
 No Community source, database, runtime, cache, credential or Git history was
 modified or copied.
+
+## Phase 55 backtest-readiness pre-implementation audit
+
+The read-only Community `market_coverage_service.py`, backtest preflight/repair
+routes, Tushare suspension/limit mappings, coverage/integrity tests and
+`BacktestView.vue` were inspected before accepting ADR-0028.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 55 disposition |
+|---|---|---|---|
+| Lifecycle-aware coverage | Required dates intersect exchange sessions and listing/delisting dates. | `PORT_TESTS` / `REFACTOR` | Freeze the master snapshot and classify each symbol-session in a typed BYQ manifest. |
+| Suspension ledger | A missing bar is complete only when exact status proves suspension. | `PORT_TESTS` / `REFACTOR` | Persist closed `suspend_d` evidence; never infer suspension from absence. |
+| Preflight, repair and polling | Users need visible incomplete/ready state and automatic resume. | `PORT_UX` / `REFACTOR` | Return `waiting_for_data`; bounded Data Plane repair promotes the same immutable job. |
+| Exact limit columns | Exact daily limits are execution inputs. | `PORT_LOGIC` / `REPLACE` | Closed `stk_limit` is mandatory for active cells and frozen in new signal inputs. |
+| Community ORM, threads, internal APIs, VectorBT/BaoStock/AKShare | No compatible boundary. | `REPLACE` / `DROP` | BYQ PostgreSQL, Product API, workers and deterministic engine stay authoritative. |
+
+No Community file, database, cache, runtime, credential or Git history was
+modified, imported or copied.

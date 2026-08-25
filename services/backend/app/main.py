@@ -42,6 +42,7 @@ from .conversation_catalog import (
     ConversationPersistenceError,
 )
 from .market_data import MarketDataStore
+from .market_readiness import MarketReadinessStore
 from .signal_producer import (
     SignalJobStore,
     SignalProducerConflict,
@@ -167,6 +168,7 @@ user_policy_store = UserPolicyStore.from_env()
 credential_store = CredentialStore.from_env()
 operations_store = OperationsStore.from_env()
 market_data_store = MarketDataStore.from_env()
+market_readiness_store = MarketReadinessStore.from_env()
 signal_job_store = SignalJobStore.from_env()
 data_sync_store = DataSyncStore.from_env()
 market_automation_store = MarketAutomationStore.from_env()
@@ -1593,20 +1595,6 @@ def create_signal_producer_job(payload: dict[str, Any], request: Request) -> dic
         end_date = _signal_date(data.get("end_date"), "end_date")
         if start_date > end_date:
             raise ValueError("start_date must not be after end_date")
-        market_rows = market_data_store.list_bars(symbols, start_date, end_date)
-        covered = {str(item["symbol"]) for item in market_rows}
-        missing = sorted(set(symbols) - covered)
-        if missing:
-            raise ValueError("canonical bars are missing for pool members: " + ", ".join(missing[:10]))
-        bars = [
-            {
-                "symbol": row["symbol"],
-                "trade_date": f"{str(row['trade_date'])[:4]}-{str(row['trade_date'])[4:6]}-{str(row['trade_date'])[6:8]}",
-                "open": row["open"], "high": row["high"], "low": row["low"], "close": row["close"],
-                "volume": 0 if row.get("volume") is None else row["volume"],
-            }
-            for row in market_rows
-        ]
         parameters = data.get("parameters", strategy_snapshot.get("parameters", {}))
         if not isinstance(parameters, dict):
             raise ValueError("parameters must be an object")
@@ -1622,45 +1610,41 @@ def create_signal_producer_job(payload: dict[str, Any], request: Request) -> dic
         if order_quantity % lot_size:
             raise ValueError("order_quantity must be aligned to execution.lot_size")
 
-        # Reuse ADR-0017 normalization now, before the job can become runnable.
-        normalized = normalize_signal_snapshot(
-            {
-                "universe": {
-                    "universe_id": pool_snapshot["pool_id"],
-                    "version_id": pool_snapshot["snapshot_id"],
-                    "membership_fingerprint": membership_fingerprint(symbols),
-                    "symbols": symbols,
-                },
-                "bars": bars,
-                "signals": [],
-                "execution": execution,
-                "corporate_actions": [],
-                "source": {"producer": "byq-signal-python-v1"},
-            },
-            strategy_version_artifact_id=version["artifact_id"],
-            strategy_version_id=version_content["version_id"],
+        master_snapshot = security_master_store.latest_snapshot()
+        if master_snapshot is None:
+            raise ValueError("security master must be synchronized before backtest data preparation")
+        fingerprint = membership_fingerprint(symbols)
+        requirement = market_readiness_store.requirement(
+            symbols=symbols, start_date=start_date, end_date=end_date,
+            membership_fingerprint=fingerprint,
+            security_master_snapshot_id=str(master_snapshot["snapshot_id"]),
         )
-        input_document = prepare_signal_job_input(
-            strategy_version_artifact_id=str(version["artifact_id"]),
-            strategy_version_id=str(version_content["version_id"]),
-            source_fingerprint=str(version_content["source_fingerprint"]),
-            script=script,
-            stock_pool_snapshot_id=str(pool_snapshot["snapshot_id"]),
-            stock_pool_id=str(pool_snapshot["pool_id"]),
-            membership_fingerprint=str(normalized["universe"]["membership_fingerprint"]),
-            symbols=list(normalized["universe"]["symbols"]),
-            bars=list(normalized["bars"]),
-            parameters=parameters,
-            execution=dict(normalized["execution"]),
-            order_quantity=order_quantity,
-        )
-        job = signal_job_store.create(
+        readiness = market_readiness_store.assess(requirement)
+        if readiness["state"] != "ready":
+            if any(item.get("dataset") == "security_lifecycle" for item in readiness["missing"]):
+                raise ValueError("stock pool contains symbols absent from the frozen security master")
+            market_automation_store.request_data_repair(
+                requirement=requirement,
+                requested_by=f"signal:{context['owner_principal']}",
+            )
+        preparation = {
+            "strategy_version_artifact_id": str(version["artifact_id"]),
+            "strategy_version_id": str(version_content["version_id"]),
+            "source_fingerprint": str(version_content["source_fingerprint"]),
+            "script": script,
+            "stock_pool_snapshot_id": str(pool_snapshot["snapshot_id"]),
+            "stock_pool_id": str(pool_snapshot["pool_id"]),
+            "membership_fingerprint": fingerprint,
+            "symbols": symbols, "parameters": parameters, "execution": execution,
+            "order_quantity": order_quantity,
+        }
+        job = signal_job_store.create_waiting(
             owner_principal=context["owner_principal"],
             task_id=task["task_id"],
             experiment_id=data.get("experiment_id"),
             strategy_version_artifact_id=version["artifact_id"],
             stock_pool_snapshot_id=pool_snapshot["snapshot_id"],
-            input_document=input_document,
+            preparation=preparation, requirement=requirement, readiness=readiness,
             trace_id=data.get("trace_id"),
             idempotency_key=data.get("idempotency_key"),
         )

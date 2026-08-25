@@ -7,9 +7,14 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.market_data import MarketDataStore
+from app.market_automation import MarketAutomationStore
+from app.market_readiness import MarketReadinessStore
 from app.paper_trading import PaperTradingStore
 from app.research import ResearchStore
-from app.signal_producer import CallableSandboxExecutor, SignalJobStore, SignalProducerCoordinator
+from app.security_master import SecurityMasterStore
+from app.signal_producer import (
+    CallableSandboxExecutor, SignalJobStore, SignalProducerCoordinator, promote_waiting_signal_jobs,
+)
 from tests.workspace_helpers import trusted_agent_context
 
 
@@ -57,10 +62,16 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
     paper = PaperTradingStore()
     market = MarketDataStore()
     jobs = SignalJobStore()
+    readiness = MarketReadinessStore()
+    automation = MarketAutomationStore()
+    securities = SecurityMasterStore()
     monkeypatch.setattr(main, "research_store", research)
     monkeypatch.setattr(main, "paper_store", paper)
     monkeypatch.setattr(main, "market_data_store", market)
     monkeypatch.setattr(main, "signal_job_store", jobs)
+    monkeypatch.setattr(main, "market_readiness_store", readiness)
+    monkeypatch.setattr(main, "market_automation_store", automation)
+    monkeypatch.setattr(main, "security_master_store", securities)
     client = TestClient(main.app)
     client.headers.update(_headers("signal-owner"))
 
@@ -90,6 +101,25 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
         json={"name": "Signal pool", "pool_type": "custom", "symbols": [SYMBOL]},
     ).json()["pool"]
     market.import_bars([_bar("20260105", 10.0), _bar("20260106", 11.0)])
+    securities._execute("""INSERT INTO security_master_snapshots
+        (snapshot_id,provider,endpoint,dataset_id,request_fingerprint,statuses_json,row_count,
+         retrieved_at,requested_by) VALUES ('sms_fixture','tushare','stock_basic','dataset_fixture',
+         'request_fixture','[\"L\"]',1,now(),'test')""")
+    securities._execute("""INSERT INTO security_master_snapshot_members
+        (snapshot_id,symbol,local_symbol,name,exchange,list_status,list_date,asset_type,content_sha256)
+        VALUES ('sms_fixture',:symbol,'000001','Fixture','SZSE','L','19910101','stock','member_sha')""",
+        {"symbol": SYMBOL})
+    automation._execute("""INSERT INTO market_trading_sessions
+        (trade_date,exchange,is_open,data_source,request_fingerprint,retrieved_at,content_sha256,updated_at)
+        VALUES ('20260105','SSE',TRUE,'tushare','cal',now(),'cal1',now()),
+               ('20260106','SSE',TRUE,'tushare','cal',now(),'cal2',now())""")
+    for date, close, previous in (("20260105", 10.0, 9.5), ("20260106", 11.0, 10.0)):
+        readiness._execute("""INSERT INTO market_daily_status
+            (symbol,trade_date,is_suspended,pre_close,up_limit,down_limit,data_source,
+             provenance_json,content_sha256,updated_at)
+            VALUES (:symbol,:date,FALSE,:close,:up,:down,'tushare','{}',:sha,now())""",
+            {"symbol": SYMBOL, "date": date, "close": previous, "up": close * 1.1,
+             "down": close * .9, "sha": f"status-{date}"})
     request = {
         "task_id": task["task_id"],
         "strategy_version_artifact_id": version["artifact"]["artifact_id"],
@@ -101,6 +131,11 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
     created = client.post("/v1/research/signal-producer/jobs", json=request)
     assert created.status_code == 202, created.text
     job = created.json()["job"]
+    assert job["status"] == "waiting_for_data"
+    assert job["readiness"]["state"] == "ready"
+    assert jobs.claim_next() is None
+    assert promote_waiting_signal_jobs(jobs, readiness) == 1
+    job = jobs.get(job["job_id"], trusted_owner="signal-owner")
     assert job["status"] == "queued"
     assert job["input"] == {
         "schema_version": "signal-producer-job-v1", "profile": "byq-signal-python-v1",

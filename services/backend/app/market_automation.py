@@ -27,6 +27,7 @@ from .data_provider import (
 from .data_sync import DataSyncStore, _safe_provider_error
 from .db import PgStoreMixin, execute, fetch_one
 from .market_data import MarketDataStore
+from .market_readiness import MarketReadinessStore
 from .pg_import import KEEP_NEW
 
 
@@ -183,6 +184,21 @@ class MarketAutomationStore(PgStoreMixin):
             claimed_at TIMESTAMPTZ,
             completed_at TIMESTAMPTZ,
             result_json JSONB,
+            error_message TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS market_data_repair_requests (
+            request_id TEXT PRIMARY KEY,
+            requirement_sha256 TEXT NOT NULL UNIQUE,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            requirement_json JSONB NOT NULL,
+            status TEXT NOT NULL,
+            requested_by TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            claimed_at TIMESTAMPTZ,
+            completed_at TIMESTAMPTZ,
             error_message TEXT
         )
         """,
@@ -455,6 +471,77 @@ class MarketAutomationStore(PgStoreMixin):
             created.append(self.get_job(job_id))
         return created
 
+    def enqueue_dates(self, trade_dates: list[str], *, scheduled_by: str) -> list[dict[str, object]]:
+        """Queue a bounded, calendar-verified repair without broad provider access."""
+        dates = sorted(set(str(value) for value in trade_dates))
+        if len(dates) > 250:
+            raise ValueError("data repair exceeds 250 trading sessions")
+        created: list[dict[str, object]] = []
+        for trade_date in dates:
+            session = self._fetch_one(
+                "SELECT is_open FROM market_trading_sessions WHERE trade_date=:date", {"date": trade_date},
+            )
+            if session is None or not session["is_open"]:
+                raise ValueError("data repair date is not a known open trading session")
+            with self._transaction() as connection:
+                existing = fetch_one(connection,
+                    "SELECT * FROM market_session_sync_jobs WHERE trade_date=:date FOR UPDATE",
+                    {"date": trade_date})
+                if existing is None:
+                    job_id, now = f"market_session_{uuid.uuid4().hex}", _now()
+                    execute(connection, """INSERT INTO market_session_sync_jobs
+                        (job_id,trade_date,status,scheduled_by,created_at,updated_at)
+                        VALUES (:job_id,:date,'queued',:by,:now,:now)""",
+                        {"job_id": job_id, "date": trade_date, "by": scheduled_by, "now": now})
+                    created.append(self.get_job(job_id))
+                elif existing["status"] == "failed" or (
+                    existing["status"] == "completed" and (
+                        self._fetch_one("""SELECT state FROM market_session_completeness
+                            WHERE trade_date=:date AND state='provider_snapshot_with_status_complete'""",
+                            {"date": trade_date}) is None
+                    )
+                ):
+                    job_id, now = str(existing["job_id"]), _now()
+                    execute(connection, """UPDATE market_session_sync_jobs SET status='queued',attempts=0,
+                        next_attempt_at=NULL,lease_until=NULL,error_code=NULL,error_message=NULL,
+                        completed_at=NULL,updated_at=:now WHERE job_id=:job_id""",
+                        {"job_id": job_id, "now": now})
+                    created.append(self.get_job(job_id))
+        return created
+
+    def request_data_repair(
+        self, *, requirement: dict[str, object], requested_by: str,
+    ) -> dict[str, object]:
+        requirement_sha256 = str(requirement["requirement_sha256"])
+        start_date, end_date = str(requirement["start_date"]), str(requirement["end_date"])
+        existing = self._fetch_one("SELECT * FROM market_data_repair_requests WHERE requirement_sha256=:sha",
+                                   {"sha": requirement_sha256})
+        if existing is not None:
+            return dict(existing)
+        request_id, now = f"datarepair_{uuid.uuid4().hex}", _now()
+        self._execute("""INSERT INTO market_data_repair_requests
+            (request_id,requirement_sha256,start_date,end_date,requirement_json,status,requested_by,created_at)
+            VALUES (:id,:sha,:start,:end,:requirement,'queued',:by,:now)""",
+            {"id": request_id, "sha": requirement_sha256, "start": start_date,
+             "end": end_date, "requirement": requirement, "by": requested_by, "now": now})
+        return dict(self._fetch_one("SELECT * FROM market_data_repair_requests WHERE request_id=:id",
+                                    {"id": request_id}) or {})
+
+    def claim_data_repair(self) -> dict[str, object] | None:
+        with self._transaction() as connection:
+            row = fetch_one(connection, """SELECT * FROM market_data_repair_requests
+                WHERE status='queued' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1""")
+            if row is None:
+                return None
+            execute(connection, """UPDATE market_data_repair_requests SET status='running',claimed_at=:now
+                WHERE request_id=:id""", {"id": row["request_id"], "now": _now()})
+        return dict(row)
+
+    def complete_data_repair(self, request_id: str, *, error: str | None = None) -> None:
+        self._execute("""UPDATE market_data_repair_requests SET status=:status,completed_at=:now,error_message=:error
+            WHERE request_id=:id""", {"id": request_id, "status": "failed" if error else "completed",
+                                      "now": _now(), "error": error})
+
     def claim_next_job(self, *, worker_id: str) -> dict[str, object] | None:
         now = datetime.now(timezone.utc)
         lease = now + timedelta(seconds=LEASE_SECONDS)
@@ -487,10 +574,13 @@ class MarketAutomationStore(PgStoreMixin):
         *,
         provider: TushareProvider,
         market_store: MarketDataStore,
+        readiness_store: MarketReadinessStore | None = None,
     ) -> dict[str, object]:
         trade_date = str(job["trade_date"])
         try:
             result = provider.fetch_daily(DailyRequest(trade_date=trade_date))
+            limits = provider.fetch_price_limits(trade_date) if readiness_store is not None else None
+            suspensions = provider.fetch_suspensions(trade_date) if readiness_store is not None else None
             rows = DataSyncStore._normalize_bars(
                 None, result, start_date=trade_date, end_date=trade_date,
             )
@@ -501,6 +591,19 @@ class MarketAutomationStore(PgStoreMixin):
                 for row in rows
             ])
             report = market_store.import_bars(rows, conflict_policy=KEEP_NEW)
+            if readiness_store is not None:
+                assert limits is not None and suspensions is not None
+                readiness_store.import_session_status(
+                    trade_date,
+                    daily_symbols={str(row["symbol"]) for row in rows},
+                    limits=list(limits.limits),
+                    suspensions=list(suspensions.suspensions),
+                    provenance={
+                        "daily": result.provenance.as_dict(),
+                        "price_limits": limits.provenance.as_dict(),
+                        "suspensions": suspensions.provenance.as_dict(),
+                    },
+                )
             now = _now()
             with self._transaction() as connection:
                 execute(
@@ -508,7 +611,7 @@ class MarketAutomationStore(PgStoreMixin):
                     """INSERT INTO market_session_completeness
                        (trade_date, state, row_count, dataset_sha256,
                         request_fingerprint, verified_at, job_id)
-                       VALUES (:trade_date, 'provider_snapshot_complete', :row_count,
+                       VALUES (:trade_date, 'provider_snapshot_with_status_complete', :row_count,
                                :dataset_sha, :fingerprint, :now, :job_id)
                        ON CONFLICT (trade_date) DO UPDATE SET
                          state = excluded.state, row_count = excluded.row_count,
@@ -655,7 +758,7 @@ class MarketAutomationStore(PgStoreMixin):
         latest_complete = self._fetch_one(
             """SELECT trade_date, row_count, dataset_sha256, verified_at
                FROM market_session_completeness
-               WHERE state = 'provider_snapshot_complete'
+               WHERE state IN ('provider_snapshot_complete', 'provider_snapshot_with_status_complete')
                ORDER BY trade_date DESC LIMIT 1""",
         )
         worker = self._fetch_one(
@@ -705,7 +808,7 @@ class MarketAutomationStore(PgStoreMixin):
             "timezone": TIMEZONE,
             "catchup_days": int(row["catchup_days"]),
             "security_master_enabled": bool(row["security_master_enabled"]),
-            "datasets": ["trade_calendar", "stock_daily"],
+            "datasets": ["trade_calendar", "stock_daily", "trading_status", "price_limits"],
             "version": int(row["version"]),
             "updated_by": row["updated_by"],
             "updated_at": row["updated_at"],
