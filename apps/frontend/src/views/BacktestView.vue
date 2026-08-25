@@ -100,6 +100,7 @@ const strategySnapshot = computed(() => ({
 }));
 
 function formatPercent(value: unknown) {
+  if (value === null || value === undefined || value === "") return "-";
   const number = Number(value);
   return Number.isFinite(number) ? `${(number * 100).toFixed(2)}%` : "-";
 }

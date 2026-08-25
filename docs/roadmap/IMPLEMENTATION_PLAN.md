@@ -1516,10 +1516,17 @@ inputs, immutable raw execution bars, and declared-date dividend/share
 settlement. Backend, frontend, full Compose, no-mock Product and desktop/mobile
 Chrome evidence is under `docs/evidence/phase-56/`.
 
-### Phase 57 — Benchmark, point-in-time universe and declared factor data (`AUTHORIZED NEXT`)
+### Phase 57 — Benchmark, point-in-time universe and declared factor data (`COMPLETE`)
 
 Add benchmark index daily data and optional point-in-time index membership for
 relative performance and historical dynamic universes. Introduce strategy-
 declared optional data dependencies for valuation/fundamental/factor inputs with
 announcement/effective-date no-lookahead rules. ETF/fund scope remains excluded
 unless a later Accepted ADR explicitly authorizes it.
+
+Accepted ADR-0030 and implemented closed benchmark/index-weight/daily-basic/
+financial-indicator contracts, core daily automation, bounded declared-input
+repair, immutable v3 readiness, historical membership and announcement-aware
+research columns, sandbox membership enforcement, and frozen benchmark/excess
+performance. Backend, frontend, full Compose, no-mock Product and desktop/mobile
+Chrome evidence is under `docs/evidence/phase-57/`.
