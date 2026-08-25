@@ -78,3 +78,20 @@ def test_export_rejects_credential_keys_without_copying_runtime_fields() -> None
     assert "trace_id" not in exported
     with pytest.raises(StrategyValidationError, match="credential"):
         prepare_strategy({**strategy_payload(), "parameters": {"runtime_token": "never"}})
+
+
+def test_strategy_version_freezes_only_closed_declared_data_dependencies() -> None:
+    prepared = prepare_strategy(strategy_payload(data_requirements={
+        "benchmark": "000300.SH",
+        "index_universe": "000300.SH",
+        "daily_basic": ["pb", "pe_ttm", "pb"],
+        "fundamentals": ["roe", "netprofit_yoy"],
+    }))
+
+    assert prepared["snapshot"]["data_requirements"] == {
+        "benchmark": "000300.SH", "index_universe": "000300.SH",
+        "daily_basic": ["pb", "pe_ttm"],
+        "fundamentals": ["netprofit_yoy", "roe"],
+    }
+    with pytest.raises(StrategyValidationError, match="unsupported fields"):
+        prepare_strategy(strategy_payload(data_requirements={"daily_basic": ["future_magic"]}))

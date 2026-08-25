@@ -1428,6 +1428,7 @@ def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
             bars=snapshot_content["bars"],
             signals=snapshot_content["signals"],
             corporate_actions=snapshot_content["corporate_actions"],
+            benchmark=snapshot_content.get("benchmark", []),
             execution=snapshot_content["execution"],
         )
         return {
@@ -1618,6 +1619,10 @@ def create_signal_producer_job(payload: dict[str, Any], request: Request) -> dic
             symbols=symbols, start_date=start_date, end_date=end_date,
             membership_fingerprint=fingerprint,
             security_master_snapshot_id=str(master_snapshot["snapshot_id"]),
+            data_requirements=(
+                strategy_snapshot.get("data_requirements")
+                if isinstance(strategy_snapshot.get("data_requirements"), dict) else {}
+            ),
         )
         readiness = market_readiness_store.assess(requirement)
         if readiness["state"] != "ready":
@@ -1711,7 +1716,8 @@ def create_backtest_job(payload: dict[str, Any], request: Request) -> dict[str, 
                 approval_artifact_id=backtest_request["approval_artifact_id"],
                 universe=frozen_universe,
                 bars=manifest["bars"], signals=manifest["signals"],
-                corporate_actions=manifest["corporate_actions"], execution=manifest["execution"],
+                corporate_actions=manifest["corporate_actions"],
+                benchmark=manifest.get("benchmark", []), execution=manifest["execution"],
             )
             backtest_request["manifest"] = rebuilt
             backtest_request["input_manifest_id"] = manifest_id

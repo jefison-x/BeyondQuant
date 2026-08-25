@@ -109,6 +109,8 @@ def prepare_signal_job_input(
     data_readiness: dict[str, object] | None = None,
     research_bars: list[dict[str, object]] | None = None,
     corporate_actions: list[dict[str, object]] | None = None,
+    benchmark: list[dict[str, object]] | None = None,
+    declared: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build the secret-free immutable document handed to the coordinator."""
     document: dict[str, object] = {
@@ -130,6 +132,8 @@ def prepare_signal_job_input(
         "bars": bars,
         "research_bars": research_bars if research_bars is not None else bars,
         "corporate_actions": corporate_actions or [],
+        "benchmark": benchmark or [],
+        "declared": declared or {},
         "parameters": parameters,
         "execution": execution,
         "order_quantity": order_quantity,
@@ -501,6 +505,8 @@ def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object) -
             },
             research_bars=list(ready_input["research_bars"]),
             corporate_actions=list(ready_input["corporate_actions"]),
+            benchmark=list(ready_input.get("benchmark", [])),
+            declared=dict(ready_input.get("declared", {})),
         )
         jobs.promote_ready(str(row["job_id"]), document, str(assessment["ready_input_sha256"]))
         promoted += 1
@@ -568,6 +574,7 @@ class SignalProducerCoordinator:
             "runtime_lock": input_document["runtime_lock"],
             "strategy": input_document["strategy"],
             "bars": input_document.get("research_bars", input_document["bars"]),
+            "declared": input_document.get("declared", {}),
             "parameters": input_document["parameters"],
         }
         response = self.executor.execute(sandbox_payload, timeout_seconds=timeout)
@@ -600,6 +607,7 @@ class SignalProducerCoordinator:
                 "signals": signals,
                 "execution": input_document["execution"],
                 "corporate_actions": input_document.get("corporate_actions", []),
+                "benchmark": input_document.get("benchmark", []),
                 "source": {
                     "producer": EXECUTION_PROFILE,
                     "data_readiness": input_document.get("data_readiness", {}),

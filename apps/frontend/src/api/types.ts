@@ -185,6 +185,10 @@ export interface BacktestResult {
   engine?: string;
   final_value?: number;
   total_return?: number;
+  benchmark_symbol?: string | null;
+  benchmark_return?: number | null;
+  excess_return?: number | null;
+  benchmark_curve?: Array<{ trade_date: string; value: number; close: number }>;
   max_drawdown?: number;
   trade_count?: number;
   blocked_trade_count?: number;
@@ -594,7 +598,8 @@ export interface MarketSyncAutomationConfig {
   security_master_enabled: boolean;
   datasets: Array<
     "trade_calendar" | "stock_daily" | "trading_status" | "price_limits"
-    | "adjustment_factors" | "corporate_actions"
+    | "adjustment_factors" | "corporate_actions" | "daily_basic"
+    | "index_daily" | "index_weights" | "declared_financial_indicators"
   >;
   version: number;
   updated_by: string;

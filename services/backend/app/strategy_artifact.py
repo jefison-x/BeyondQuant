@@ -20,6 +20,15 @@ STRATEGY_VALIDATOR_VERSION = "byq-strategy-static-v1"
 MAX_SCRIPT_BYTES = 48 * 1024
 MAX_JSON_BYTES = 48 * 1024
 _ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{2,63}$")
+_INDEX_SYMBOL_PATTERN = re.compile(r"^[0-9A-Z]{6,12}\.(?:SH|SZ|CSI)$")
+_DAILY_BASIC_FIELDS = {
+    "turnover_rate", "turnover_rate_f", "volume_ratio", "pe", "pe_ttm", "pb",
+    "ps", "ps_ttm", "dv_ratio", "dv_ttm", "total_share", "float_share",
+    "free_share", "total_mv", "circ_mv",
+}
+_FUNDAMENTAL_FIELDS = {
+    "eps", "roe", "roa", "grossprofit_margin", "debt_to_assets", "or_yoy", "netprofit_yoy",
+}
 _CATEGORIES = {
     "trend_following",
     "mean_reversion",
@@ -307,7 +316,7 @@ def _strategy_snapshot(value: object) -> dict[str, Any]:
     strategy = _object(value, "strategy")
     _reject_unknown(
         strategy,
-        {"strategy_id", "name", "category", "description", "parameters", "parameter_schema", "source_type", "script"},
+        {"strategy_id", "name", "category", "description", "parameters", "parameter_schema", "data_requirements", "source_type", "script"},
         "strategy",
     )
     strategy_id = _text(strategy.get("strategy_id"), "strategy.strategy_id", 64)
@@ -326,7 +335,7 @@ def _strategy_snapshot(value: object) -> dict[str, Any]:
     script = _text(strategy.get("script"), "strategy.script", MAX_SCRIPT_BYTES)
     if len(script.encode("utf-8")) > MAX_SCRIPT_BYTES:
         raise StrategyValidationError(f"strategy.script exceeds {MAX_SCRIPT_BYTES} bytes")
-    return {
+    snapshot = {
         "strategy_id": strategy_id,
         "name": name,
         "category": category,
@@ -336,6 +345,33 @@ def _strategy_snapshot(value: object) -> dict[str, Any]:
         "source_type": source_type,
         "script": script,
     }
+    if "data_requirements" in strategy:
+        requirements = _object(strategy.get("data_requirements"), "strategy.data_requirements")
+        _reject_unknown(
+            requirements, {"benchmark", "index_universe", "daily_basic", "fundamentals"},
+            "strategy.data_requirements",
+        )
+        normalized_requirements: dict[str, object] = {}
+        for key in ("benchmark", "index_universe"):
+            if requirements.get(key) is not None:
+                symbol = _text(requirements[key], f"strategy.data_requirements.{key}", 24).upper()
+                if _INDEX_SYMBOL_PATTERN.fullmatch(symbol) is None:
+                    raise StrategyValidationError(f"strategy.data_requirements.{key} has invalid index symbol")
+                normalized_requirements[key] = symbol
+        for key, allowed in (("daily_basic", _DAILY_BASIC_FIELDS), ("fundamentals", _FUNDAMENTAL_FIELDS)):
+            raw = requirements.get(key, [])
+            if not isinstance(raw, list) or len(raw) > 12 or any(not isinstance(item, str) for item in raw):
+                raise StrategyValidationError(f"strategy.data_requirements.{key} must be a bounded field list")
+            fields = sorted(set(raw))
+            unknown = sorted(set(fields) - allowed)
+            if unknown:
+                raise StrategyValidationError(
+                    f"strategy.data_requirements.{key} has unsupported fields: {', '.join(unknown)}"
+                )
+            if fields:
+                normalized_requirements[key] = fields
+        snapshot["data_requirements"] = normalized_requirements
+    return snapshot
 
 
 def prepare_strategy(value: object) -> dict[str, Any]:

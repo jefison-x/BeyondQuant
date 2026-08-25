@@ -108,3 +108,53 @@ def test_adjusted_research_view_preserves_raw_execution_and_freezes_actions() ->
     assert [row["close"] for row in ready["research_bars"]] == [5, 5]
     assert ready["corporate_actions"][0]["pay_date"] == "2024-01-04"
     assert ready["research_view_sha256"]
+
+
+def test_declared_inputs_use_point_in_time_membership_and_announcement_effective_dates() -> None:
+    store = MarketReadinessStore()
+    store._execute("""INSERT INTO market_daily_bars
+        (symbol,trade_date,open,high,low,close,adjust,asset_type,data_source,
+         content_sha256,provenance_json,imported_at)
+        VALUES ('000001.SZ','20240201',10,10,10,10,'none','stock','tushare','db1','{}',now()),
+               ('000001.SZ','20240205',11,11,11,11,'none','stock','tushare','db2','{}',now())""")
+    store._execute("""INSERT INTO market_daily_status
+        (symbol,trade_date,is_suspended,pre_close,up_limit,down_limit,data_source,
+         provenance_json,content_sha256,updated_at)
+        VALUES ('000001.SZ','20240201',FALSE,10,11,9,'tushare','{}','ds1',now()),
+               ('000001.SZ','20240205',FALSE,10,12,10,'tushare','{}','ds2',now())""")
+    store._execute("""INSERT INTO market_adjustment_factors
+        (symbol,trade_date,adj_factor,data_source,provenance_json,content_sha256,updated_at)
+        VALUES ('000001.SZ','20240201',1,'tushare','{}','df1',now()),
+               ('000001.SZ','20240205',1,'tushare','{}','df2',now())""")
+    store._execute("""INSERT INTO market_daily_basic
+        (symbol,trade_date,values_json,data_source,provenance_json,content_sha256,updated_at)
+        VALUES ('000001.SZ','20240201',:basic1,'tushare','{}','basic1',now()),
+               ('000001.SZ','20240205',:basic2,'tushare','{}','basic2',now())""",
+        {"basic1": '{"pe_ttm":9,"pb":1}', "basic2": '{"pe_ttm":10,"pb":1.1}'})
+    store._execute("""INSERT INTO market_index_weights
+        (index_symbol,constituent_symbol,snapshot_date,weight,data_source,provenance_json,content_sha256,updated_at)
+        VALUES ('000300.SH','000001.SZ','20240131',1.5,'tushare','{}','w1',now()),
+               ('000300.SH','600000.SH','20240205',1.5,'tushare','{}','w2',now())""")
+    store._execute("""INSERT INTO market_financial_indicators
+        (symbol,end_date,announcement_date,effective_date,values_json,update_flag,data_source,
+         provenance_json,content_sha256,updated_at)
+        VALUES ('000001.SZ','20231231','20240201','20240202',:fin1,'1','tushare','{}','fin1',now()),
+               ('000001.SZ','20240331','20240205','20240206',:fin2,'1','tushare','{}','fin2',now())""",
+        {"fin1": '{"roe":10}', "fin2": '{"roe":20}'})
+    store._execute("""INSERT INTO market_index_daily
+        (index_symbol,trade_date,open,high,low,close,data_source,provenance_json,content_sha256,updated_at)
+        VALUES ('000300.SH','20240201',100,100,100,100,'tushare','{}','idx1',now()),
+               ('000300.SH','20240205',101,101,101,101,'tushare','{}','idx2',now())""")
+    requirement = {
+        "schema_version": "market-data-requirement.v3", "symbols": ["000001.SZ"],
+        "start_date": "20240201", "end_date": "20240205",
+        "declared": {"benchmark": "000300.SH", "index_universe": "000300.SH",
+                     "daily_basic": ["pe_ttm"], "fundamentals": ["roe"]},
+    }
+
+    ready = store.build_ready_input(requirement)
+
+    assert [row["daily_basic__pe_ttm"] for row in ready["research_bars"]] == [9, 10]
+    assert [row["is_universe_member"] for row in ready["research_bars"]] == [True, False]
+    assert [row["fina_indicator__roe"] for row in ready["research_bars"]] == [None, 10]
+    assert [row["close"] for row in ready["benchmark"]] == [100, 101]

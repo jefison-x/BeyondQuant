@@ -56,6 +56,7 @@ const summary = computed<Record<string, unknown>>(() => {
 });
 
 const equityCurve = computed(() => result.value?.equity_curve ?? []);
+const benchmarkCurve = computed(() => result.value?.benchmark_curve ?? []);
 
 const equityOption = computed<EChartsOption>(() => ({
   title: { text: "权益曲线" },
@@ -74,6 +75,15 @@ const equityOption = computed<EChartsOption>(() => ({
       showSymbol: false,
       smooth: true,
     },
+    ...(benchmarkCurve.value.length
+      ? [{
+          name: `Benchmark ${result.value?.benchmark_symbol ?? ""}`,
+          type: "line" as const,
+          data: benchmarkCurve.value.map((point) => point.value),
+          showSymbol: false,
+          smooth: true,
+        }]
+      : []),
   ],
 }));
 
@@ -90,6 +100,7 @@ const strategySnapshot = computed(() => ({
 }));
 
 function formatPercent(value: unknown) {
+  if (value === null || value === undefined || value === "") return "-";
   const number = Number(value);
   return Number.isFinite(number) ? `${(number * 100).toFixed(2)}%` : "-";
 }
@@ -553,6 +564,8 @@ onMounted(loadList);
         <template v-else>
           <div class="metric-grid">
             <MetricCard label="Total Return" :value="formatPercent(summary.total_return)" />
+            <MetricCard label="Benchmark Return" :value="formatPercent(summary.benchmark_return)" />
+            <MetricCard label="Excess Return" :value="formatPercent(summary.excess_return)" />
             <MetricCard label="Max Drawdown" :value="formatPercent(summary.max_drawdown)" />
             <MetricCard label="Trade Count" :value="String(summary.trade_count ?? '-')" />
             <MetricCard label="Blocked Trades" :value="String(summary.blocked_trade_count ?? '-')" />

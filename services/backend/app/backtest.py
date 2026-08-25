@@ -32,12 +32,14 @@ RESULT_SCHEMA_VERSION = "backtest-result-v1"
 MAX_BARS = 50_000
 MAX_SIGNALS = 50_000
 MAX_ACTIONS = 10_000
+MAX_BENCHMARK_BARS = 5_000
 MAX_RESULT_BYTES = 32 * 1024 * 1024
 SIGNAL_SNAPSHOT_SCHEMA_VERSION = "signal-snapshot-v1"
 MAX_SNAPSHOT_BYTES = MAX_RESULT_BYTES
 MAX_LOG_ENTRIES = 500
 JOB_ID_PATTERN = re.compile(r"^backtest_[0-9a-f]{32}$")
 SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
+INDEX_SYMBOL_PATTERN = re.compile(r"^[0-9A-Z]{6,12}\.(?:SH|SZ|CSI)$")
 DATE_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 TRACE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
@@ -410,12 +412,54 @@ def _normalize_actions(value: object, universe_symbols: set[str]) -> list[dict[s
     return sorted(normalized, key=lambda row: (str(row["ex_date"]), str(row["symbol"])))
 
 
+def _normalize_benchmark(value: object) -> list[dict[str, object]]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > MAX_BENCHMARK_BARS:
+        raise ValueError("benchmark must be a bounded list")
+    normalized: list[dict[str, object]] = []
+    seen: set[str] = set()
+    symbol_seen: str | None = None
+    allowed = {"symbol", "trade_date", "open", "high", "low", "close", "prev_close", "volume", "amount"}
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(f"benchmark[{index}] must be an object")
+        _reject_unknown(item, allowed, field=f"benchmark[{index}]")
+        symbol = _text(item.get("symbol"), field=f"benchmark[{index}].symbol", max_length=24).upper()
+        if INDEX_SYMBOL_PATTERN.fullmatch(symbol) is None:
+            raise ValueError("benchmark symbol has invalid format")
+        if symbol_seen is not None and symbol != symbol_seen:
+            raise ValueError("benchmark must contain exactly one index symbol")
+        symbol_seen = symbol
+        trade_date = _date(item.get("trade_date"), field=f"benchmark[{index}].trade_date")
+        if trade_date in seen:
+            raise ValueError("benchmark contains a duplicate date")
+        seen.add(trade_date)
+        prices = {
+            field: _number(item.get(field), field=f"benchmark[{index}].{field}", positive=True)
+            for field in ("open", "high", "low", "close")
+        }
+        if prices["high"] < max(prices.values()) or prices["low"] > min(prices.values()):
+            raise ValueError("benchmark OHLC envelope is invalid")
+        row: dict[str, object] = {
+            "symbol": symbol, "trade_date": trade_date, **prices,
+            "volume": _number(item.get("volume", 0), field=f"benchmark[{index}].volume"),
+            "amount": _number(item.get("amount", 0), field=f"benchmark[{index}].amount"),
+        }
+        if item.get("prev_close") is not None:
+            row["prev_close"] = _number(
+                item["prev_close"], field=f"benchmark[{index}].prev_close", positive=True,
+            )
+        normalized.append(row)
+    return sorted(normalized, key=lambda row: str(row["trade_date"]))
+
+
 def normalize_backtest_request(payload: object, *, strategy_version_artifact_id: object, approval_artifact_id: object) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValueError("backtest request must be an object")
     allowed = {
         "task_id", "experiment_id", "strategy_version_artifact_id", "approval_artifact_id",
-        "trace_id", "idempotency_key", "universe", "bars", "signals", "execution", "corporate_actions",
+        "trace_id", "idempotency_key", "universe", "bars", "signals", "execution", "corporate_actions", "benchmark",
     }
     _reject_unknown(payload, allowed, field="backtest request")
     task_id = _entity_id(payload.get("task_id"), field="task_id", prefix="task")
@@ -433,7 +477,8 @@ def normalize_backtest_request(payload: object, *, strategy_version_artifact_id:
     signals = _normalize_signals(payload.get("signals", []), symbols, bar_dates)
     execution = _normalize_execution(payload.get("execution"))
     actions = _normalize_actions(payload.get("corporate_actions"), symbols)
-    _reject_secret_keys({"universe": universe, "bars": bars, "signals": signals, "execution": execution, "corporate_actions": actions})
+    benchmark = _normalize_benchmark(payload.get("benchmark"))
+    _reject_secret_keys({"universe": universe, "bars": bars, "signals": signals, "execution": execution, "corporate_actions": actions, "benchmark": benchmark})
     manifest = {
         "schema_version": BACKTEST_SCHEMA_VERSION,
         "strategy": {"strategy_version_artifact_id": version_id},
@@ -442,6 +487,7 @@ def normalize_backtest_request(payload: object, *, strategy_version_artifact_id:
         "bars": bars,
         "signals": signals,
         "corporate_actions": actions,
+        "benchmark": benchmark,
         "execution": execution,
         "environment": {
             "engine": "native",
@@ -456,6 +502,7 @@ def normalize_backtest_request(payload: object, *, strategy_version_artifact_id:
         bars=bars,
         signals=signals,
         corporate_actions=actions,
+        benchmark=benchmark,
         execution=execution,
     )
     return {
@@ -479,6 +526,7 @@ def build_manifest(
     signals: list[dict[str, object]],
     corporate_actions: list[dict[str, object]],
     execution: dict[str, object],
+    benchmark: list[dict[str, object]] | None = None,
 ) -> tuple[dict[str, object], str]:
     """Build a backtest input manifest from already-normalized inputs.
 
@@ -495,6 +543,7 @@ def build_manifest(
         "bars": bars,
         "signals": signals,
         "corporate_actions": corporate_actions,
+        "benchmark": benchmark or [],
         "execution": execution,
         "environment": {
             "engine": "native",
@@ -522,7 +571,7 @@ def normalize_signal_snapshot(
     """
     if not isinstance(payload, dict):
         raise ValueError("signal snapshot must be an object")
-    allowed = {"universe", "bars", "signals", "execution", "corporate_actions", "source"}
+    allowed = {"universe", "bars", "signals", "execution", "corporate_actions", "benchmark", "source"}
     _reject_unknown(payload, allowed, field="signal snapshot")
     version_artifact = _entity_id(
         strategy_version_artifact_id, field="strategy_version_artifact_id", prefix="artifact"
@@ -535,6 +584,7 @@ def normalize_signal_snapshot(
     signals = _normalize_signals(payload.get("signals", []), symbols, bar_dates)
     execution = _normalize_execution(payload.get("execution"))
     actions = _normalize_actions(payload.get("corporate_actions"), symbols)
+    benchmark = _normalize_benchmark(payload.get("benchmark"))
     _reject_secret_keys(
         {
             "universe": universe,
@@ -542,6 +592,7 @@ def normalize_signal_snapshot(
             "signals": signals,
             "execution": execution,
             "corporate_actions": actions,
+            "benchmark": benchmark,
         }
     )
     source = payload.get("source")
@@ -570,6 +621,7 @@ def normalize_signal_snapshot(
         "bars": bars,
         "signals": signals,
         "corporate_actions": actions,
+        "benchmark": benchmark,
         "execution": execution,
         "source": {"producer": producer, **({"data_readiness": normalized_readiness} if normalized_readiness else {})},
     }
@@ -621,7 +673,11 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
     bars = manifest.get("bars")
     signals = manifest.get("signals")
     actions = manifest.get("corporate_actions")
-    if not isinstance(bars, list) or not isinstance(signals, list) or not isinstance(actions, list):
+    benchmark = manifest.get("benchmark", [])
+    if (
+        not isinstance(bars, list) or not isinstance(signals, list)
+        or not isinstance(actions, list) or not isinstance(benchmark, list)
+    ):
         raise ValueError("backtest input manifest is incomplete")
     by_date: dict[str, dict[str, dict[str, object]]] = {}
     for row in bars:
@@ -881,13 +937,34 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
         peak = max(peak, value)
         max_drawdown = max(max_drawdown, (peak - value) / peak if peak else 0.0)
     final_value = values[-1] if values else initial
+    benchmark_symbol = str(benchmark[0]["symbol"]) if benchmark else None
+    benchmark_by_date = {str(row["trade_date"]): float(row["close"]) for row in benchmark}
+    benchmark_curve: list[dict[str, object]] = []
+    benchmark_base = next((benchmark_by_date[date] for date in dates if date in benchmark_by_date), None)
+    if benchmark_base is not None:
+        for date in dates:
+            if date in benchmark_by_date:
+                benchmark_curve.append({
+                    "trade_date": date,
+                    "value": _money(initial * benchmark_by_date[date] / benchmark_base),
+                    "close": _money(benchmark_by_date[date]),
+                })
+    benchmark_return = (
+        _money(benchmark_curve[-1]["value"] / initial - 1) if benchmark_curve else None
+    )
+    total_return = _money(final_value / initial - 1)
+    excess_return = _money(total_return - benchmark_return) if benchmark_return is not None else None
     log("info", "backtest_completed", final_value=_money(final_value), total_return=_money(final_value / initial - 1), max_drawdown=_money(max_drawdown), trade_count=len(trades))
     return {
         "schema_version": RESULT_SCHEMA_VERSION,
         "engine": "native",
         "engine_contract_version": ENGINE_CONTRACT_VERSION,
         "final_value": _money(final_value),
-        "total_return": _money(final_value / initial - 1),
+        "total_return": total_return,
+        "benchmark_symbol": benchmark_symbol,
+        "benchmark_return": benchmark_return,
+        "excess_return": excess_return,
+        "benchmark_curve": benchmark_curve,
         "max_drawdown": _money(max_drawdown),
         "trade_count": len(trades),
         "blocked_trade_count": len(blocked),
@@ -1299,6 +1376,9 @@ class BacktestWorker:
                 "final_value": result["final_value"], "total_return": result["total_return"],
                 "max_drawdown": result["max_drawdown"], "trade_count": result["trade_count"],
                 "blocked_trade_count": result["blocked_trade_count"], "reproducibility": result["reproducibility"],
+                "benchmark_symbol": result["benchmark_symbol"],
+                "benchmark_return": result["benchmark_return"],
+                "excess_return": result["excess_return"],
             }
             artifact_content = {
                 "schema_version": "backtest-result-artifact-v1",

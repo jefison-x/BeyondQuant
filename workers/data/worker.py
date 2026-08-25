@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.credentials import CredentialStore
-from app.market_automation import MarketAutomationStore, run_scheduler_cycle
+from app.market_automation import MarketAutomationStore, run_scheduler_cycle, sync_declared_inputs
 from app.market_data import MarketDataStore
 from app.market_readiness import MarketReadinessStore
 from app.provider_runtime import resolved_tushare_provider
@@ -54,6 +54,10 @@ def main() -> int:
                             end_date=chunk_end.strftime("%Y%m%d"),
                         )
                         cursor = chunk_end + timedelta(days=1)
+                    sync_declared_inputs(
+                        dict(repair["requirement_json"]), provider=provider,
+                        readiness_store=readiness,
+                    )
                     assessment = readiness.assess(dict(repair["requirement_json"]))
                     automation.enqueue_dates(
                         list(assessment["missing_trade_dates"]), scheduled_by=str(repair["requested_by"]),

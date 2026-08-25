@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -12,7 +12,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from .db import PgStoreMixin, execute
 
 
-SCHEMA_VERSION = "market-data-requirement.v2"
+SCHEMA_VERSION = "market-data-requirement.v3"
+RESEARCH_SCHEMA_VERSION = "market-data-requirement.v2"
 LEGACY_SCHEMA_VERSION = "market-data-requirement.v1"
 REQUIRED_DATASETS = (
     "stock_daily", "trading_status", "price_limits", "adjustment_factors",
@@ -101,6 +102,96 @@ class MarketReadinessStore(PgStoreMixin):
             verified_at TIMESTAMPTZ NOT NULL
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS market_index_daily (
+            index_symbol TEXT NOT NULL,
+            trade_date TEXT NOT NULL,
+            open DOUBLE PRECISION NOT NULL,
+            high DOUBLE PRECISION NOT NULL,
+            low DOUBLE PRECISION NOT NULL,
+            close DOUBLE PRECISION NOT NULL,
+            pre_close DOUBLE PRECISION,
+            volume DOUBLE PRECISION,
+            amount DOUBLE PRECISION,
+            data_source TEXT NOT NULL,
+            provenance_json JSONB NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (index_symbol, trade_date)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS market_index_weights (
+            index_symbol TEXT NOT NULL,
+            constituent_symbol TEXT NOT NULL,
+            snapshot_date TEXT NOT NULL,
+            weight DOUBLE PRECISION NOT NULL,
+            data_source TEXT NOT NULL,
+            provenance_json JSONB NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (index_symbol, constituent_symbol, snapshot_date)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS market_index_weight_completeness (
+            index_symbol TEXT NOT NULL,
+            period TEXT NOT NULL,
+            row_count INTEGER NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            provenance_json JSONB NOT NULL,
+            verified_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (index_symbol, period)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS market_daily_basic (
+            symbol TEXT NOT NULL,
+            trade_date TEXT NOT NULL,
+            values_json JSONB NOT NULL,
+            data_source TEXT NOT NULL,
+            provenance_json JSONB NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (symbol, trade_date)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS market_daily_basic_completeness (
+            trade_date TEXT PRIMARY KEY,
+            row_count INTEGER NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            provenance_json JSONB NOT NULL,
+            verified_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS market_financial_indicators (
+            symbol TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            announcement_date TEXT NOT NULL,
+            effective_date TEXT NOT NULL,
+            values_json JSONB NOT NULL,
+            update_flag TEXT,
+            data_source TEXT NOT NULL,
+            provenance_json JSONB NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (symbol, end_date, announcement_date)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS market_financial_indicator_completeness (
+            symbol TEXT NOT NULL,
+            report_start_date TEXT NOT NULL,
+            report_end_date TEXT NOT NULL,
+            row_count INTEGER NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            provenance_json JSONB NOT NULL,
+            verified_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (symbol, report_start_date, report_end_date)
+        )
+        """,
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -117,6 +208,7 @@ class MarketReadinessStore(PgStoreMixin):
     def requirement(
         *, symbols: list[str], start_date: str, end_date: str,
         membership_fingerprint: str, security_master_snapshot_id: str,
+        data_requirements: dict[str, object] | None = None,
     ) -> dict[str, object]:
         normalized = sorted({str(item).strip().upper() for item in symbols if str(item).strip()})
         if not normalized or len(normalized) > 2_000:
@@ -127,6 +219,9 @@ class MarketReadinessStore(PgStoreMixin):
                 raise ValueError
         except ValueError as error:
             raise ValueError("data requirement date range is invalid") from error
+        declared = data_requirements or {}
+        if not isinstance(declared, dict):
+            raise ValueError("data_requirements must be an object")
         document: dict[str, object] = {
             "schema_version": SCHEMA_VERSION,
             "symbols": normalized,
@@ -136,7 +231,22 @@ class MarketReadinessStore(PgStoreMixin):
             "calendar": "SSE",
             "membership_fingerprint": membership_fingerprint,
             "security_master_snapshot_id": security_master_snapshot_id,
+            "declared": declared,
         }
+        if declared.get("index_universe"):
+            cursor = datetime.strptime(start, "%Y%m%d").replace(day=1) - timedelta(days=1)
+            final = datetime.strptime(end, "%Y%m%d").replace(day=1)
+            periods: list[str] = []
+            cursor = cursor.replace(day=1)
+            while cursor <= final:
+                periods.append(cursor.strftime("%Y%m"))
+                cursor = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+            document["index_weight_periods"] = periods
+        if declared.get("fundamentals"):
+            document["financial_report_start_date"] = (
+                datetime.strptime(start, "%Y%m%d") - timedelta(days=550)
+            ).strftime("%Y%m%d")
+            document["financial_report_end_date"] = end
         document["requirement_sha256"] = _hash(document)
         return document
 
@@ -258,10 +368,137 @@ class MarketReadinessStore(PgStoreMixin):
         return {"factor_count": len(factor_rows), "corporate_action_count": len(action_rows),
                 "content_sha256": identity}
 
+    def import_index_daily(self, index_symbol: str, bars: list[object], provenance: dict[str, object]) -> int:
+        with self._transaction() as connection:
+            for item in bars:
+                row = {
+                    "index_symbol": index_symbol, "trade_date": str(getattr(item, "trade_date")),
+                    "open": float(getattr(item, "open")), "high": float(getattr(item, "high")),
+                    "low": float(getattr(item, "low")), "close": float(getattr(item, "close")),
+                    "pre_close": getattr(item, "pre_close"), "volume": getattr(item, "vol"),
+                    "amount": getattr(item, "amount"), "data_source": "tushare",
+                    "provenance": provenance,
+                }
+                row["content_sha256"] = _hash(row)
+                execute(connection, """INSERT INTO market_index_daily
+                    (index_symbol,trade_date,open,high,low,close,pre_close,volume,amount,
+                     data_source,provenance_json,content_sha256,updated_at)
+                    VALUES (:index_symbol,:trade_date,:open,:high,:low,:close,:pre_close,:volume,:amount,
+                            :data_source,:provenance,:content_sha256,now())
+                    ON CONFLICT (index_symbol,trade_date) DO UPDATE SET open=excluded.open,
+                      high=excluded.high,low=excluded.low,close=excluded.close,
+                      pre_close=excluded.pre_close,volume=excluded.volume,amount=excluded.amount,
+                      data_source=excluded.data_source,provenance_json=excluded.provenance_json,
+                      content_sha256=excluded.content_sha256,updated_at=excluded.updated_at""", row)
+        return len(bars)
+
+    def import_index_weights(
+        self, index_symbol: str, period: str, weights: list[object], provenance: dict[str, object],
+    ) -> int:
+        rows = []
+        for item in weights:
+            row = {
+                "index_symbol": index_symbol,
+                "constituent_symbol": str(getattr(item, "constituent_symbol")),
+                "snapshot_date": str(getattr(item, "trade_date")),
+                "weight": float(getattr(item, "weight")), "data_source": "tushare",
+                "provenance": provenance,
+            }
+            row["content_sha256"] = _hash(row)
+            rows.append(row)
+        identity = _hash([row["content_sha256"] for row in rows])
+        with self._transaction() as connection:
+            execute(connection, """DELETE FROM market_index_weights
+                WHERE index_symbol=:index_symbol AND substring(snapshot_date,1,6)=:period""",
+                {"index_symbol": index_symbol, "period": period})
+            for row in rows:
+                execute(connection, """INSERT INTO market_index_weights
+                    (index_symbol,constituent_symbol,snapshot_date,weight,data_source,
+                     provenance_json,content_sha256,updated_at)
+                    VALUES (:index_symbol,:constituent_symbol,:snapshot_date,:weight,:data_source,
+                            :provenance,:content_sha256,now())""", row)
+            execute(connection, """INSERT INTO market_index_weight_completeness
+                (index_symbol,period,row_count,content_sha256,provenance_json,verified_at)
+                VALUES (:index_symbol,:period,:count,:identity,:provenance,now())
+                ON CONFLICT (index_symbol,period) DO UPDATE SET row_count=excluded.row_count,
+                  content_sha256=excluded.content_sha256,provenance_json=excluded.provenance_json,
+                  verified_at=excluded.verified_at""",
+                {"index_symbol": index_symbol, "period": period, "count": len(rows),
+                 "identity": identity, "provenance": provenance})
+        return len(rows)
+
+    def import_daily_basic(self, trade_date: str, rows: list[object], provenance: dict[str, object]) -> int:
+        normalized = []
+        for item in rows:
+            row = {
+                "symbol": str(getattr(item, "ts_code")), "trade_date": trade_date,
+                "values": dict(getattr(item, "values")), "data_source": "tushare",
+                "provenance": provenance,
+            }
+            row["content_sha256"] = _hash(row)
+            normalized.append(row)
+        identity = _hash([row["content_sha256"] for row in normalized])
+        with self._transaction() as connection:
+            execute(connection, "DELETE FROM market_daily_basic WHERE trade_date=:trade_date",
+                    {"trade_date": trade_date})
+            for row in normalized:
+                execute(connection, """INSERT INTO market_daily_basic
+                    (symbol,trade_date,values_json,data_source,provenance_json,content_sha256,updated_at)
+                    VALUES (:symbol,:trade_date,:values,:data_source,:provenance,:content_sha256,now())""", row)
+            execute(connection, """INSERT INTO market_daily_basic_completeness
+                (trade_date,row_count,content_sha256,provenance_json,verified_at)
+                VALUES (:trade_date,:count,:identity,:provenance,now())
+                ON CONFLICT (trade_date) DO UPDATE SET row_count=excluded.row_count,
+                  content_sha256=excluded.content_sha256,provenance_json=excluded.provenance_json,
+                  verified_at=excluded.verified_at""",
+                {"trade_date": trade_date, "count": len(normalized), "identity": identity,
+                 "provenance": provenance})
+        return len(normalized)
+
+    def import_financial_indicators(
+        self, symbol: str, report_start_date: str, report_end_date: str,
+        rows: list[object], provenance: dict[str, object],
+    ) -> int:
+        normalized = []
+        for item in rows:
+            announcement_date = str(getattr(item, "announcement_date"))
+            effective_date = (datetime.strptime(announcement_date, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
+            row = {
+                "symbol": symbol, "end_date": str(getattr(item, "end_date")),
+                "announcement_date": announcement_date, "effective_date": effective_date,
+                "values": dict(getattr(item, "values")), "update_flag": getattr(item, "update_flag"),
+                "data_source": "tushare", "provenance": provenance,
+            }
+            row["content_sha256"] = _hash(row)
+            normalized.append(row)
+        identity = _hash([row["content_sha256"] for row in normalized])
+        with self._transaction() as connection:
+            execute(connection, """DELETE FROM market_financial_indicators
+                WHERE symbol=:symbol AND end_date BETWEEN :start AND :end""",
+                {"symbol": symbol, "start": report_start_date, "end": report_end_date})
+            for row in normalized:
+                execute(connection, """INSERT INTO market_financial_indicators
+                    (symbol,end_date,announcement_date,effective_date,values_json,update_flag,
+                     data_source,provenance_json,content_sha256,updated_at)
+                    VALUES (:symbol,:end_date,:announcement_date,:effective_date,:values,:update_flag,
+                            :data_source,:provenance,:content_sha256,now())""", row)
+            execute(connection, """INSERT INTO market_financial_indicator_completeness
+                (symbol,report_start_date,report_end_date,row_count,content_sha256,provenance_json,verified_at)
+                VALUES (:symbol,:start,:end,:count,:identity,:provenance,now())
+                ON CONFLICT (symbol,report_start_date,report_end_date) DO UPDATE SET
+                  row_count=excluded.row_count,content_sha256=excluded.content_sha256,
+                  provenance_json=excluded.provenance_json,verified_at=excluded.verified_at""",
+                {"symbol": symbol, "start": report_start_date, "end": report_end_date,
+                 "count": len(normalized), "identity": identity, "provenance": provenance})
+        return len(normalized)
+
     def assess(self, requirement: dict[str, object]) -> dict[str, object]:
-        if requirement.get("schema_version") not in {SCHEMA_VERSION, LEGACY_SCHEMA_VERSION}:
+        if requirement.get("schema_version") not in {SCHEMA_VERSION, RESEARCH_SCHEMA_VERSION, LEGACY_SCHEMA_VERSION}:
             raise ValueError("unsupported market data requirement")
-        requires_research_inputs = requirement.get("schema_version") == SCHEMA_VERSION
+        requires_research_inputs = requirement.get("schema_version") in {SCHEMA_VERSION, RESEARCH_SCHEMA_VERSION}
+        declared = requirement.get("declared", {}) if requirement.get("schema_version") == SCHEMA_VERSION else {}
+        if not isinstance(declared, dict):
+            raise ValueError("declared data requirement is invalid")
         symbols = list(requirement["symbols"])
         sessions = self._execute(
             """SELECT trade_date FROM market_trading_sessions
@@ -333,6 +570,53 @@ class MarketReadinessStore(PgStoreMixin):
                AND ex_date BETWEEN :start AND :end ORDER BY ex_date, symbol, end_date""",
             {"symbols": symbols, "start": requirement["start_date"], "end": requirement["end_date"]},
         )
+        benchmark_symbol = declared.get("benchmark")
+        benchmark_rows = self._execute(
+            """SELECT trade_date,content_sha256 FROM market_index_daily
+               WHERE index_symbol=:symbol AND trade_date BETWEEN :start AND :end""",
+            {"symbol": benchmark_symbol, "start": requirement["start_date"], "end": requirement["end_date"]},
+        ) if benchmark_symbol else []
+        benchmark_map = {str(row["trade_date"]): row for row in benchmark_rows}
+        daily_basic_fields = list(declared.get("daily_basic", []))
+        daily_basic_rows = self._execute(
+            """SELECT symbol,trade_date,content_sha256 FROM market_daily_basic
+               WHERE symbol IN (SELECT jsonb_array_elements_text(:symbols))
+                 AND trade_date BETWEEN :start AND :end""",
+            {"symbols": symbols, "start": requirement["start_date"], "end": requirement["end_date"]},
+        ) if daily_basic_fields else []
+        daily_basic_map = {(str(row["symbol"]), str(row["trade_date"])): row for row in daily_basic_rows}
+        basic_complete = {
+            str(row["trade_date"]): row for row in self._execute(
+                """SELECT trade_date,content_sha256 FROM market_daily_basic_completeness
+                   WHERE trade_date BETWEEN :start AND :end""",
+                {"start": requirement["start_date"], "end": requirement["end_date"]},
+            )
+        } if daily_basic_fields else {}
+        index_universe = declared.get("index_universe")
+        weight_periods = list(requirement.get("index_weight_periods", []))
+        weight_completeness = {
+            str(row["period"]): row for row in self._execute(
+                """SELECT period,content_sha256 FROM market_index_weight_completeness
+                   WHERE index_symbol=:symbol AND period IN
+                     (SELECT jsonb_array_elements_text(:periods))""",
+                {"symbol": index_universe, "periods": weight_periods},
+            )
+        } if index_universe else {}
+        weight_rows = self._execute(
+            """SELECT constituent_symbol,snapshot_date,content_sha256 FROM market_index_weights
+               WHERE index_symbol=:symbol AND snapshot_date<=:end ORDER BY snapshot_date,constituent_symbol""",
+            {"symbol": index_universe, "end": requirement["end_date"]},
+        ) if index_universe else []
+        fundamental_fields = list(declared.get("fundamentals", []))
+        financial_complete = {
+            str(row["symbol"]): row for row in self._execute(
+                """SELECT symbol,content_sha256 FROM market_financial_indicator_completeness
+                   WHERE symbol IN (SELECT jsonb_array_elements_text(:symbols))
+                     AND report_start_date=:start AND report_end_date=:end""",
+                {"symbols": symbols, "start": requirement.get("financial_report_start_date"),
+                 "end": requirement.get("financial_report_end_date")},
+            )
+        } if fundamental_fields else {}
         missing_dates: set[str] = set()
         missing: list[dict[str, str]] = []
         ready_cells: list[dict[str, object]] = []
@@ -344,6 +628,24 @@ class MarketReadinessStore(PgStoreMixin):
         for trade_date in sorted(incomplete_action_dates):
             missing.append({"symbol": "*", "trade_date": trade_date, "dataset": "corporate_actions"})
             missing_dates.add(trade_date)
+        if benchmark_symbol:
+            for trade_date in dates:
+                if trade_date not in benchmark_map:
+                    missing.append({"symbol": str(benchmark_symbol), "trade_date": trade_date, "dataset": "index_daily"})
+                    missing_dates.add(trade_date)
+        if index_universe:
+            for period in weight_periods:
+                if period not in weight_completeness:
+                    missing.append({"symbol": str(index_universe), "trade_date": period, "dataset": "index_weights"})
+            snapshots = sorted({str(row["snapshot_date"]) for row in weight_rows})
+            for trade_date in dates:
+                if not any(snapshot <= trade_date for snapshot in snapshots):
+                    missing.append({"symbol": str(index_universe), "trade_date": trade_date, "dataset": "index_membership"})
+                    missing_dates.add(trade_date)
+        if fundamental_fields:
+            for symbol in symbols:
+                if symbol not in financial_complete:
+                    missing.append({"symbol": symbol, "trade_date": "*", "dataset": "financial_indicators"})
         for symbol in symbols:
             life = lifecycle.get(symbol)
             if life is None:
@@ -375,12 +677,22 @@ class MarketReadinessStore(PgStoreMixin):
                     missing.append({"symbol": symbol, "trade_date": trade_date, "dataset": "adjustment_factors"})
                     missing_dates.add(trade_date)
                     continue
+                if daily_basic_fields and not status["is_suspended"] and (
+                    trade_date not in basic_complete or (symbol, trade_date) not in daily_basic_map
+                ):
+                    missing.append({"symbol": symbol, "trade_date": trade_date, "dataset": "daily_basic"})
+                    missing_dates.add(trade_date)
+                    continue
                 ready_cells.append({
                     "symbol": symbol, "trade_date": trade_date,
                     "status_sha256": status["content_sha256"],
                     "bar_sha256": bar_hashes.get((symbol, trade_date)),
                     "factor_sha256": factor.get("content_sha256") if factor else None,
                     "supplement_sha256": supplement.get("content_sha256") if supplement else None,
+                    "daily_basic_sha256": (
+                        daily_basic_map[(symbol, trade_date)]["content_sha256"]
+                        if (symbol, trade_date) in daily_basic_map else None
+                    ),
                 })
         if not calendar_complete:
             missing.insert(0, {"symbol": "*", "trade_date": "*", "dataset": "trading_calendar"})
@@ -388,6 +700,9 @@ class MarketReadinessStore(PgStoreMixin):
         ready_identity = None if missing else _hash({
             "requirement_sha256": requirement["requirement_sha256"], "cells": ready_cells,
             "corporate_actions": [str(row["content_sha256"]) for row in action_rows],
+            "benchmark": [str(row["content_sha256"]) for row in benchmark_rows],
+            "index_weights": [str(row["content_sha256"]) for row in weight_rows],
+            "financial_completeness": [str(row["content_sha256"]) for row in financial_complete.values()],
         })
         return {
             "schema_version": "market-data-readiness.v1", "state": state,
@@ -402,11 +717,14 @@ class MarketReadinessStore(PgStoreMixin):
         return self._execute(
             """SELECT b.symbol, b.trade_date, b.open, b.high, b.low, b.close,
                       COALESCE(b.pre_close, s.pre_close) AS pre_close, b.volume, b.amount,
-                      s.is_suspended, s.up_limit, s.down_limit, f.adj_factor
+                      s.is_suspended, s.up_limit, s.down_limit, f.adj_factor,
+                      db.values_json AS daily_basic_values
                FROM market_daily_bars b JOIN market_daily_status s
                  ON s.symbol=b.symbol AND s.trade_date=b.trade_date
                LEFT JOIN market_adjustment_factors f
                  ON f.symbol=b.symbol AND f.trade_date=b.trade_date
+               LEFT JOIN market_daily_basic db
+                 ON db.symbol=b.symbol AND db.trade_date=b.trade_date
                WHERE b.symbol IN (SELECT jsonb_array_elements_text(:symbols))
                  AND b.trade_date BETWEEN :start AND :end
                ORDER BY b.trade_date, b.symbol LIMIT 50001""",
@@ -416,6 +734,12 @@ class MarketReadinessStore(PgStoreMixin):
     def build_ready_input(self, requirement: dict[str, object]) -> dict[str, object]:
         rows = self.list_ready_bars(requirement)
         legacy = requirement.get("schema_version") == LEGACY_SCHEMA_VERSION
+        declared = requirement.get("declared", {}) if requirement.get("schema_version") == SCHEMA_VERSION else {}
+        if not isinstance(declared, dict):
+            declared = {}
+        daily_basic_fields = list(declared.get("daily_basic", []))
+        fundamental_fields = list(declared.get("fundamentals", []))
+        index_universe = declared.get("index_universe")
         anchors: dict[str, float] = {}
         for row in rows:
             anchors[str(row["symbol"])] = float(row.get("adj_factor") or 1.0)
@@ -438,6 +762,11 @@ class MarketReadinessStore(PgStoreMixin):
             for field in ("open", "high", "low", "close", "prev_close", "up_limit", "down_limit"):
                 if adjusted.get(field) is not None:
                     adjusted[field] = round(float(adjusted[field]) * multiplier, 8)
+            basic_values = row.get("daily_basic_values")
+            if not isinstance(basic_values, dict):
+                basic_values = {}
+            for field in daily_basic_fields:
+                adjusted[f"daily_basic__{field}"] = basic_values.get(field)
             research_bars.append(adjusted)
         actions = self._execute(
             """SELECT symbol, end_date, announcement_date, implementation_announcement_date,
@@ -457,6 +786,66 @@ class MarketReadinessStore(PgStoreMixin):
                     item[field] = f"{str(value)[:4]}-{str(value)[4:6]}-{str(value)[6:8]}"
             if not legacy:
                 normalized_actions.append(item)
+        weight_rows = self._execute(
+            """SELECT constituent_symbol,snapshot_date,weight,content_sha256
+               FROM market_index_weights WHERE index_symbol=:symbol AND snapshot_date<=:end
+               ORDER BY snapshot_date,constituent_symbol""",
+            {"symbol": index_universe, "end": requirement["end_date"]},
+        ) if index_universe else []
+        snapshots: dict[str, set[str]] = {}
+        for row in weight_rows:
+            snapshots.setdefault(str(row["snapshot_date"]), set()).add(str(row["constituent_symbol"]))
+        snapshot_dates = sorted(snapshots)
+        financial_rows = self._execute(
+            """SELECT symbol,end_date,announcement_date,effective_date,values_json,content_sha256
+               FROM market_financial_indicators
+               WHERE symbol IN (SELECT jsonb_array_elements_text(:symbols))
+                 AND effective_date<=:end ORDER BY symbol,effective_date,end_date,announcement_date""",
+            {"symbols": requirement["symbols"], "end": requirement["end_date"]},
+        ) if fundamental_fields else []
+        financial_by_symbol: dict[str, list[dict[str, Any]]] = {}
+        for row in financial_rows:
+            financial_by_symbol.setdefault(str(row["symbol"]), []).append(row)
+        for adjusted in research_bars:
+            compact_date = str(adjusted["trade_date"]).replace("-", "")
+            if index_universe:
+                candidates = [date for date in snapshot_dates if date <= compact_date]
+                snapshot_date = candidates[-1] if candidates else ""
+                adjusted["is_universe_member"] = bool(
+                    snapshot_date and str(adjusted["symbol"]) in snapshots[snapshot_date]
+                )
+            if fundamental_fields:
+                candidates = [
+                    row for row in financial_by_symbol.get(str(adjusted["symbol"]), [])
+                    if str(row["effective_date"]) <= compact_date
+                ]
+                chosen = max(
+                    candidates,
+                    key=lambda row: (str(row["end_date"]), str(row["announcement_date"])),
+                    default=None,
+                )
+                values = chosen.get("values_json", {}) if chosen is not None else {}
+                if not isinstance(values, dict):
+                    values = {}
+                for field in fundamental_fields:
+                    adjusted[f"fina_indicator__{field}"] = values.get(field)
+        benchmark_symbol = declared.get("benchmark")
+        benchmark_rows = self._execute(
+            """SELECT index_symbol,trade_date,open,high,low,close,pre_close,volume,amount,content_sha256
+               FROM market_index_daily WHERE index_symbol=:symbol
+                 AND trade_date BETWEEN :start AND :end ORDER BY trade_date""",
+            {"symbol": benchmark_symbol, "start": requirement["start_date"], "end": requirement["end_date"]},
+        ) if benchmark_symbol else []
+        benchmark = [
+            {
+                "symbol": str(row["index_symbol"]),
+                "trade_date": f"{str(row['trade_date'])[:4]}-{str(row['trade_date'])[4:6]}-{str(row['trade_date'])[6:8]}",
+                "open": row["open"], "high": row["high"], "low": row["low"],
+                "close": row["close"], "prev_close": row.get("pre_close"),
+                "volume": row.get("volume") or 0, "amount": row.get("amount") or 0,
+            }
+            for row in benchmark_rows
+        ]
         identity = _hash({
             "raw_bars": raw_bars, "research_bars": research_bars,
             "adjustment_factors": [
@@ -465,6 +854,11 @@ class MarketReadinessStore(PgStoreMixin):
                 for row in rows
             ],
             "corporate_actions": normalized_actions,
+            "declared": declared, "research_bars_with_declared_inputs": research_bars,
+            "benchmark": benchmark,
+            "index_weight_hashes": [str(row["content_sha256"]) for row in weight_rows],
+            "financial_hashes": [str(row["content_sha256"]) for row in financial_rows],
         })
         return {"bars": raw_bars, "research_bars": research_bars,
-                "corporate_actions": normalized_actions, "research_view_sha256": identity}
+                "corporate_actions": normalized_actions, "benchmark": benchmark,
+                "declared": declared, "research_view_sha256": identity}

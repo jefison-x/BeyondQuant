@@ -431,7 +431,7 @@ function securityStatusLabel(value: string) {
                 <el-form-item label="重启追赶天数"><el-input-number v-model="automationForm.catchup_days" :min="1" :max="30" /></el-form-item>
                 <el-form-item label="同步前刷新股票清单"><el-switch v-model="automationForm.security_master_enabled" active-text="启用" inactive-text="关闭" /></el-form-item>
               </div>
-              <div class="automation-actions"><div><el-tag effect="plain">交易日历</el-tag><el-tag effect="plain">未复权全市场日线</el-tag><el-tag effect="plain">停复牌与涨跌停</el-tag><el-tag effect="plain">复权因子</el-tag><el-tag effect="plain">实施公司行动</el-tag><span>固定时区：Asia/Shanghai</span></div><el-button type="primary" :loading="busy" @click="saveAutomation">保存设置</el-button></div>
+              <div class="automation-actions"><div><el-tag effect="plain">交易日历</el-tag><el-tag effect="plain">未复权全市场日线</el-tag><el-tag effect="plain">停复牌与涨跌停</el-tag><el-tag effect="plain">复权因子</el-tag><el-tag effect="plain">实施公司行动</el-tag><el-tag effect="plain">每日估值因子</el-tag><el-tag effect="plain">沪深300基准/成分</el-tag><el-tag effect="plain">策略声明财务指标</el-tag><span>固定时区：Asia/Shanghai</span></div><el-button type="primary" :loading="busy" @click="saveAutomation">保存设置</el-button></div>
             </el-form>
             <el-descriptions :column="3" border class="automation-status">
               <el-descriptions-item label="最新开市日">{{ status.automation.latest_calendar_open_date ?? "尚未获取" }}</el-descriptions-item>
