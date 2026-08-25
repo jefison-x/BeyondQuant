@@ -64,6 +64,12 @@ cover the observed 7,756-row shape and rejection above the new hard ceiling.
 Community remained read-only; its unfiltered SDK/Pandas mapping was classified
 as reference evidence and was not copied.
 
+Run-now can enqueue the current open session before the configured 18:30 close
+time, but the Data Worker now leaves that job queued and does not consume a
+provider attempt until the cutoff. A timezone-aware PostgreSQL state-machine
+test proves the same-day job is unclaimable at 12:00 and claimable at 18:30.
+This also protects already-queued current-session jobs during a worker restart.
+
 ## Boundary result
 
 The trusted Data Worker alone accesses Tushare. Signal and backtest workers stay
