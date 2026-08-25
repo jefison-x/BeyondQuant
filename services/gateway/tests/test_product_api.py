@@ -84,7 +84,7 @@ def test_operations_projection_is_admin_only_and_aggregates_normalized_runtime(m
     }))
     monkeypatch.setattr(product_api.httpx, "get", lambda *args, **kwargs: FakeResponse({
         "schema_version": "runtime-operations.v1",
-        "runtime": {"status": "ready", "sdk": "deepseek-harness-sdk==0.1.0rc6"},
+        "runtime": {"status": "ready", "sdk": "deepseek-harness-sdk==0.1.1rc1"},
         "sessions": {"active": 1, "active_prompts": 0, "status_counts": {"idle": 1}},
         "usage": {"total_tokens": 125, "model_calls": 1},
         "raw_dsh_events": False,

@@ -8,8 +8,8 @@ version = "0.1.0"
 description = "BeyondQuant Product Plane adapter for the official DSH Python SDK seam"
 requires-python = ">=3.10,<3.15"
 dependencies = [
-  "deepseek-harness-sdk==0.1.0rc6",
-  "deepseek-harness-runtime-bin==0.1.0rc6",
+  "deepseek-harness-sdk==0.1.1rc1",
+  "deepseek-harness-runtime-bin==0.1.1rc1",
   "fastapi==0.116.1",
   "httpx==0.28.1",
   "uvicorn[standard]==0.35.0",

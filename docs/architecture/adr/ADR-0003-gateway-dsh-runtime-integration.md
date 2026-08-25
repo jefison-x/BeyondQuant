@@ -5,6 +5,25 @@
 - Decision scope: Phase 6 Product Plane / Agent Plane runtime seam
 - Supersedes: the Phase 5 `NO DECISION YET` Gateway integration placeholder
 
+## 2026-08-25 qualified-pin amendment
+
+The formal DSH Upgrade Lane qualifies the Product Runtime at Python
+`deepseek-harness-sdk==0.1.1rc1` plus
+`deepseek-harness-runtime-bin==0.1.1rc1`, with all 54 DSH packages in the
+explicit npm runtime closure pinned to `0.1.1-rc.1` and all seven supporting
+`@deepseek-ai/*` packages pinned to current stable versions. This amendment changes dependency
+versions only. The selected Option B topology, public JSON-RPC carrier, custom
+BYQ Cordis composition, process ownership, MCP-only domain boundary,
+WorkflowTrace normalization, and Product capability restrictions are
+unchanged. Python/npm rc.6 remains the rollback baseline.
+
+GitHub/npm `0.1.1-rc.2` is not qualified because no corresponding official
+Python SDK/runtime-bin exists. The rc.1 npm closure is complete only when all
+DSH packages are exact direct pins; an ordinary partial top-level set can pull
+rc.2 through upstream ranges and fails peer resolution. The compatibility
+matrix and artifact evidence are in
+`docs/architecture/research/dsh-compatibility-matrix.md`.
+
 ## Context
 
 Phase 5 deliberately stopped at a container-local DSH Web bootstrap. That Web
@@ -18,7 +37,7 @@ BYQ Gateway
   ↓ internal BYQ API
 DSH Runtime Adapter
   ↓ official SDK over stdio JSON-RPC
-explicit DSH rc.6 runtime composition
+explicit exact-pinned DSH runtime composition
   ↓ official MCP client
 BeyondQuant MCP
 ```
@@ -83,8 +102,8 @@ behavior for this phase.
 
 BYQ adopts Option B with a dedicated Python Runtime Adapter as the only
 Gateway-facing DSH runtime owner. The adapter uses FastAPI for its internal
-HTTP/SSE prototype API and `deepseek-harness-sdk==0.1.0rc6` to launch one
-explicit `@deepseek-ai/dsh-sdk-jsonrpc-demo@0.1.0-rc.6` public
+HTTP/SSE prototype API and `deepseek-harness-sdk==0.1.1rc1` to launch one
+explicit `@deepseek-ai/dsh-sdk-jsonrpc-demo@0.1.1-rc.1` public
 `dsh-jsonrpc-agent` process per active BYQ session.
 
 The adapter is an Agent Plane runtime boundary. It is not an Engineering DSH,
@@ -117,16 +136,16 @@ the `dsh-web` diagnostic profile; it is not in the product request path.
 
 ## Process ownership
 
-The rc.6 initial lifecycle model is one DSH runtime process per active BYQ
+The retained lifecycle model is one DSH runtime process per active BYQ
 session. The adapter owns startup, stdin/stdout/stderr pipes through the
 official SDK, shutdown, termination, and cleanup. Gateway web workers do not
 own subprocesses.
 
 A single shared runtime with multiple `sessionId` values was evaluated. It
-would lower aggregate cold-start and idle overhead, but rc.6 cannot reliably
-hard-cancel one session without affecting other sessions and shares the
-whole-agent result interval across queued work. It is not selected until DSH
-provides reliable prompt cancellation and per-session close.
+would lower aggregate cold-start and idle overhead, but the qualified runtime
+cannot reliably hard-cancel one session without affecting other sessions and
+shares the whole-agent result interval across queued work. It is not selected
+until DSH provides reliable prompt cancellation and per-session close.
 
 The prototype baseline measured fresh Gateway-to-adapter initialize at
 `0.355827s` and hard cancel at `0.039565s` on 2026-08-15. At idle after
@@ -197,10 +216,11 @@ result, and failure paths race.
 ### Soft cancel
 
 Soft cancel is valid only for the current active run. It transitions the
-session to `cancelling`, emits a BYQ cancellation event, and lets rc.6 work
-settle because rc.6 has no prompt-cancel operation. The eventual result is
-discarded and the state returns to `idle`. The cancel request is scoped to the
-active run and cannot permanently contaminate a later prompt.
+session to `cancelling`, emits a BYQ cancellation event, and lets DSH work
+settle because the qualified runtime has no prompt-cancel operation. The
+eventual result is discarded and the state returns to `idle`. The cancel
+request is scoped to the active run and cannot permanently contaminate a later
+prompt.
 
 ### Hard cancel
 
@@ -280,11 +300,12 @@ with explicit shared-storage semantics before horizontal session migration.
 
 ## DSH upgrade compatibility
 
-The compatibility baseline is exact rc.6:
+The qualified Product Runtime baseline is exact rc.1:
 
-- npm `@deepseek-ai/dsh@0.1.0-rc.6` and explicit runtime packages;
-- Python `deepseek-harness-sdk==0.1.0rc6`; and
-- `deepseek-harness-runtime-bin==0.1.0rc6`.
+- all 54 DSH npm runtime packages at `0.1.1-rc.1` plus seven exact-pinned
+  supporting `@deepseek-ai/*` packages;
+- Python `deepseek-harness-sdk==0.1.1rc1`; and
+- `deepseek-harness-runtime-bin==0.1.1rc1`.
 
 Any DSH upgrade is a separate compatibility decision requiring fresh npm/PyPI
 metadata, artifact hashes/closure inspection, carrier validation,
@@ -292,7 +313,7 @@ composition/initialization/MCP tests, notification contract review,
 cancellation review, and an ADR update. A newer npm release does not
 automatically change this baseline.
 
-## Known rc.6 limitations
+## Known qualified-runtime limitations
 
 - no prompt cancel;
 - no per-session close;
@@ -304,8 +325,8 @@ automatically change this baseline.
 - server/client request capabilities for future approval flow are incomplete.
 
 These are current limitations, not available future features. The adapter's
-hard-cancel process close is a BYQ ownership policy, not a claim that DSH rc.6
-supports prompt cancellation.
+hard-cancel process close is a BYQ ownership policy, not a claim that the
+qualified DSH release supports prompt cancellation.
 
 ## Base Web DSH decision
 
@@ -333,11 +354,15 @@ second product request path.
 
 ## Rollback
 
-Rollback is to the Phase 5 topology by removing Gateway runtime routes and the
-Runtime Adapter service while retaining the container-local diagnostic DSH Web
-bootstrap. No BYQ business-data migration is required because Phase 6 stores
-no business state. The rollback must retain the no-proxy/no-host-network Web
-boundary.
+The dependency rollback baseline is Python `0.1.0rc6` and npm
+`0.1.0-rc.6`, using the prior runtime manifest and lockfile from repository
+history. Stop and release owned Runtime Adapter sessions, deploy the prior
+image/revision, and restart the adapter against the same Agent Plane JSONL
+session volume. No BYQ business-data migration is required. If runtime-level
+resume of an interrupted rc.1 session is uncertain, retain the durable log as
+audit evidence and start a new owned runtime session rather than converting or
+patching DSH persistence. The rollback must retain the MCP-only domain path,
+no-proxy/no-host-network Web boundary, and all Product capability restrictions.
 
 ## Exit criteria
 

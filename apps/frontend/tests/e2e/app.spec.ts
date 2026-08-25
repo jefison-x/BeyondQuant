@@ -56,7 +56,7 @@ function operationsPayload() {
     graphs: { projection: "normalized_agent_runs", recent_runs: [], raw_dsh_events: false },
     access: { principal_groups: [{ role: "admin", status: "active", count: 1 }], agent_audit: [], operations_audit: [] },
     budget: { policy_id: "product-agent", enabled: false, alert_total_tokens: 400000, alert_requests: 48, version: 1, updated_by: "system-bootstrap", updated_at: "2026-08-22T00:00:00Z" },
-    runtime: { schema_version: "runtime-operations.v1", runtime: { status: "ready", sdk: "deepseek-harness-sdk==0.1.0rc6", process_ownership: "one-per-active-session" }, sessions: { active: 1, active_prompts: 0, status_counts: { idle: 1 } }, usage: { input_tokens: 100, output_tokens: 20, cache_read_tokens: 30, cache_write_tokens: 0, reasoning_tokens: 10, model_calls: 1, total_tokens: 150, scope: "adapter_process_lifetime", source: "normalized_dsh_token_usage" }, raw_dsh_events: false },
+    runtime: { schema_version: "runtime-operations.v1", runtime: { status: "ready", sdk: "deepseek-harness-sdk==0.1.1rc1", process_ownership: "one-per-active-session" }, sessions: { active: 1, active_prompts: 0, status_counts: { idle: 1 } }, usage: { input_tokens: 100, output_tokens: 20, cache_read_tokens: 30, cache_write_tokens: 0, reasoning_tokens: 10, model_calls: 1, total_tokens: 150, scope: "adapter_process_lifetime", source: "normalized_dsh_token_usage" }, raw_dsh_events: false },
     observability: { workflow_trace: "normalized", audit: "append_only", raw_dsh_events: false },
   };
 }
@@ -505,7 +505,7 @@ test("operations page renders safe status projection", async ({ page }) => {
   await loginAsAdmin(page);
   await page.goto("/settings/system/runtime");
   await expect(page.getByRole("heading", { name: "运行时" })).toBeVisible();
-  await expect(page.getByText("deepseek-harness-sdk==0.1.0rc6")).toBeVisible();
+  await expect(page.getByText("deepseek-harness-sdk==0.1.1rc1")).toBeVisible();
 });
 
 test("admin operations workspace renders database and access sections", async ({ page }) => {

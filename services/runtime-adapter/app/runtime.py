@@ -68,10 +68,10 @@ class RuntimeSession:
 class RuntimeAdapter:
     """Own one official DSH SDK subprocess per active BYQ session.
 
-    rc.6 has no prompt-cancel or per-session close. A dedicated process makes
-    hard cancellation and failure isolation explicit: hard cancel closes the
-    owned process, while soft cancel marks only the current run and resets to
-    idle when that run settles.
+    DSH 0.1.1-rc.1 has no prompt-cancel or per-session close. A dedicated
+    process makes hard cancellation and failure isolation explicit: hard
+    cancel closes the owned process, while soft cancel marks only the current
+    run and resets to idle when that run settles.
     """
 
     def __init__(self) -> None:
@@ -110,8 +110,8 @@ class RuntimeAdapter:
     def readiness(self) -> dict[str, Any]:
         return {
             "runtime_adapter": "ready",
-            "sdk": "deepseek-harness-sdk==0.1.0rc6",
-            "runtime_bin": "deepseek-harness-runtime-bin==0.1.0rc6",
+            "sdk": "deepseek-harness-sdk==0.1.1rc1",
+            "runtime_bin": "deepseek-harness-runtime-bin==0.1.1rc1",
             "explicit_runtime": self.runtime_command[1],
             "composition": str(self._composition),
             "composition_exists": self._composition.is_file(),
@@ -151,8 +151,8 @@ class RuntimeAdapter:
             "schema_version": "runtime-operations.v1",
             "runtime": {
                 "status": "ready",
-                "sdk": "deepseek-harness-sdk==0.1.0rc6",
-                "runtime_bin": "deepseek-harness-runtime-bin==0.1.0rc6",
+                "sdk": "deepseek-harness-sdk==0.1.1rc1",
+                "runtime_bin": "deepseek-harness-runtime-bin==0.1.1rc1",
                 "process_ownership": "one-per-active-session",
                 "provider": self._provider,
                 "model": self._model,
@@ -454,7 +454,7 @@ class RuntimeAdapter:
             "BYQ_TRACE_ID": trace_id,
             "BYQ_SESSION_ID": session_id,
             # The adapter uses the durable session as the stable DSH
-            # correlation when rc.6 does not expose a per-MCP-call header.
+            # correlation when DSH does not expose a per-MCP-call header.
             "BYQ_DSH_RUN_ID": session_id,
         }
         # The provider credential enters only the adapter-owned SDK child
