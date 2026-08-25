@@ -289,6 +289,11 @@ function snapshotExecution(snap: Record<string, unknown>, key: string): unknown 
   return execution?.[key] ?? "-";
 }
 
+function producerMissing(job: Record<string, unknown>): unknown {
+  const readiness = job.readiness as Record<string, unknown> | undefined;
+  return readiness?.missing_count ?? "-";
+}
+
 async function openCreate() {
   showCreate.value = true;
   selectedOption.value = null;
@@ -749,11 +754,16 @@ onMounted(loadList);
         </el-button>
         <el-alert
           v-if="producerJob"
-          :title="`信号任务 ${String(producerJob.status)} · ${String(producerJob.job_id)}`"
+          :title="producerJob.status === 'waiting_for_data'
+            ? `正在自动补全回测数据 · 尚缺 ${String(producerMissing(producerJob))} 项`
+            : `信号任务 ${String(producerJob.status)} · ${String(producerJob.job_id)}`"
           :type="producerJob.status === 'failed' ? 'error' : producerJob.status === 'completed' ? 'success' : 'info'"
           :closable="false"
           class="producer-status"
         />
+        <div v-if="producerJob?.status === 'waiting_for_data'" class="wizard-hint">
+          系统会按交易日历、证券上市/退市周期补齐日线、停牌状态与精确涨跌停价；数据完整后任务自动开始，无需重复提交。
+        </div>
         <template v-if="selectedSnapshot">
           <el-divider content-position="left">冻结执行参数</el-divider>
           <el-descriptions :column="2" size="small" border>

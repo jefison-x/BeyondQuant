@@ -5,12 +5,13 @@ from __future__ import annotations
 import os
 import signal
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.credentials import CredentialStore
 from app.market_automation import MarketAutomationStore, run_scheduler_cycle
 from app.market_data import MarketDataStore
+from app.market_readiness import MarketReadinessStore
 from app.provider_runtime import resolved_tushare_provider
 from app.security_master import SecurityMasterStore
 
@@ -21,6 +22,7 @@ def main() -> int:
     credentials = CredentialStore.from_env()
     automation = MarketAutomationStore.from_env()
     market = MarketDataStore.from_env()
+    readiness = MarketReadinessStore.from_env()
     securities = SecurityMasterStore.from_env()
     running = True
 
@@ -39,6 +41,27 @@ def main() -> int:
 
     try:
         while running:
+            repair = automation.claim_data_repair()
+            if repair is not None:
+                try:
+                    provider = provider_factory()
+                    cursor = datetime.strptime(str(repair["start_date"]), "%Y%m%d")
+                    end = datetime.strptime(str(repair["end_date"]), "%Y%m%d")
+                    while cursor <= end:
+                        chunk_end = min(end, cursor + timedelta(days=400))
+                        automation.refresh_calendar(
+                            provider, start_date=cursor.strftime("%Y%m%d"),
+                            end_date=chunk_end.strftime("%Y%m%d"),
+                        )
+                        cursor = chunk_end + timedelta(days=1)
+                    assessment = readiness.assess(dict(repair["requirement_json"]))
+                    automation.enqueue_dates(
+                        list(assessment["missing_trade_dates"]), scheduled_by=str(repair["requested_by"]),
+                    )
+                    automation.complete_data_repair(str(repair["request_id"]))
+                except Exception as error:
+                    automation.complete_data_repair(str(repair["request_id"]), error=type(error).__name__)
+                continue
             command = automation.claim_run_request()
             force = command is not None
             if force or time.monotonic() >= next_scheduler_at:
@@ -75,7 +98,9 @@ def main() -> int:
                 except Exception as error:
                     result = automation.fail_job(job["job_id"], error)
                 else:
-                    result = automation.execute_job(job, provider=provider, market_store=market)
+                    result = automation.execute_job(
+                        job, provider=provider, market_store=market, readiness_store=readiness,
+                    )
                 automation.heartbeat(
                     worker_id,
                     last_job_id=str(result["job_id"]),
@@ -85,6 +110,7 @@ def main() -> int:
             automation.heartbeat(worker_id)
             time.sleep(poll_seconds)
     finally:
+        readiness.close()
         securities.close()
         market.close()
         automation.close()

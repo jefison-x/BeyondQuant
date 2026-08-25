@@ -1,8 +1,8 @@
 # BeyondQuant
 
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-completed project stage is **Phase 54** — calendar-driven daily market-data
-automation under Accepted ADR-0027.
+completed project stage is **Phase 55** — lifecycle-aware market-data readiness,
+bounded repair, and automatic signal-job resumption under Accepted ADR-0028.
 See
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
 authoritative current state.
@@ -49,7 +49,7 @@ BYQ does not fork DSH. The DSH version is pinned through an explicit dependency 
 - The DSH Upgrade Lane is scheduled as a post-Phase 40 maintenance initiative;
   it does not change the currently qualified runtime pin.
 - The conversation-first frontend, personal-workspace and Beta Data Center
-  programs are complete through Phase 54. The project remains Beta: CI-green
+  programs are complete through Phase 55. The project remains Beta: CI-green
   phase PR auto-merge is authorized by ADR-0015, but no
   release-candidate review, tag, deployment or formal release is authorized
   until the maintainer gives an explicit formal release task. Team workspaces,
