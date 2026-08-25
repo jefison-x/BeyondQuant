@@ -581,7 +581,15 @@ class MarketAutomationStore(PgStoreMixin):
         trade_date = str(job["trade_date"])
         try:
             result = provider.fetch_daily(DailyRequest(trade_date=trade_date))
-            limits = provider.fetch_price_limits(trade_date) if readiness_store is not None else None
+            rows = DataSyncStore._normalize_bars(
+                None, result, start_date=trade_date, end_date=trade_date,
+            )
+            if not rows:
+                raise ProviderProtocolError("provider returned no rows for an open trading session")
+            daily_symbols = {str(row["symbol"]) for row in rows}
+            limits = provider.fetch_price_limits(
+                trade_date, symbols=daily_symbols,
+            ) if readiness_store is not None else None
             suspensions = provider.fetch_suspensions(trade_date) if readiness_store is not None else None
             factors = provider.fetch_adjustment_factors(trade_date) if readiness_store is not None else None
             actions = provider.fetch_corporate_actions(trade_date) if readiness_store is not None else None
@@ -590,11 +598,6 @@ class MarketAutomationStore(PgStoreMixin):
             weights = provider.fetch_index_weights(
                 CORE_BENCHMARK, f"{trade_date[:6]}01", trade_date,
             ) if readiness_store is not None else None
-            rows = DataSyncStore._normalize_bars(
-                None, result, start_date=trade_date, end_date=trade_date,
-            )
-            if not rows:
-                raise ProviderProtocolError("provider returned no rows for an open trading session")
             dataset_sha = _hash([
                 {key: row[key] for key in sorted(row) if key != "provenance"}
                 for row in rows
@@ -607,7 +610,7 @@ class MarketAutomationStore(PgStoreMixin):
                 ))
                 readiness_store.import_session_status(
                     trade_date,
-                    daily_symbols={str(row["symbol"]) for row in rows},
+                    daily_symbols=daily_symbols,
                     limits=list(limits.limits),
                     suspensions=list(suspensions.suspensions),
                     provenance={

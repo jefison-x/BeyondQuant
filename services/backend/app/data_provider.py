@@ -73,6 +73,7 @@ MAX_DAILY_ROWS = 6000
 MAX_TRADE_CALENDAR_ROWS = 800
 MAX_SECURITY_MASTER_ROWS = 10_000
 MAX_SESSION_STATUS_ROWS = 6_000
+MAX_PRICE_LIMIT_ROWS = 10_000
 MAX_INDEX_DAILY_ROWS = 500
 MAX_INDEX_WEIGHT_ROWS = 2_000
 MAX_FINANCIAL_INDICATOR_ROWS = 100
@@ -985,13 +986,30 @@ class TushareProvider:
             ),
         )
 
-    def fetch_price_limits(self, trade_date: str) -> PriceLimitResult:
+    def fetch_price_limits(self, trade_date: str, *, symbols: set[str]) -> PriceLimitResult:
         normalized = _validate_date(trade_date, "trade_date")
         assert normalized is not None
+        normalized_symbols = {str(symbol).strip().upper() for symbol in symbols}
+        if (
+            not normalized_symbols
+            or len(normalized_symbols) > MAX_DAILY_ROWS
+            or any(not _SYMBOL_PATTERN.fullmatch(symbol) for symbol in normalized_symbols)
+        ):
+            raise ValueError("symbols must be a bounded non-empty canonical stock set")
         fields, rows, provenance = self._fetch_exact_session_dataset(
-            "stk_limit", normalized, PRICE_LIMIT_FIELDS,
+            "stk_limit", normalized, PRICE_LIMIT_FIELDS, maximum=MAX_PRICE_LIMIT_ROWS,
         )
-        limits = tuple(PriceLimit.from_row(fields, row) for row in rows)
+        if any(field not in fields for field in PRICE_LIMIT_FIELDS):
+            raise ProviderProtocolError("provider response omitted price-limit fields")
+        selected: list[list[Any]] = []
+        for row in rows:
+            try:
+                values = dict(zip(fields, row, strict=True))
+            except ValueError as error:
+                raise ProviderProtocolError("provider price-limit row does not match its fields") from error
+            if str(values["ts_code"] or "").strip().upper() in normalized_symbols:
+                selected.append(row)
+        limits = tuple(PriceLimit.from_row(fields, row) for row in selected)
         if any(item.trade_date != normalized for item in limits):
             raise ProviderProtocolError("provider returned a price-limit date outside the request")
         if len({(item.ts_code, item.trade_date) for item in limits}) != len(limits):
@@ -1139,7 +1157,7 @@ class TushareProvider:
 
     def _fetch_exact_session_dataset(
         self, endpoint: str, trade_date: str, fields_contract: tuple[str, ...],
-        *, parameter: str = "trade_date",
+        *, parameter: str = "trade_date", maximum: int = MAX_SESSION_STATUS_ROWS,
     ) -> tuple[list[str], list[list[Any]], Provenance]:
         if not self._config.token:
             raise ProviderCredentialsMissing("Tushare credentials are not configured")
@@ -1153,7 +1171,7 @@ class TushareProvider:
             "params": {parameter: trade_date},
             "fields": ",".join(fields_contract),
         })
-        if len(rows) > MAX_SESSION_STATUS_ROWS:
+        if len(rows) > maximum:
             raise ProviderProtocolError("provider returned too many session-status rows")
         provenance = Provenance(
             provider="tushare", endpoint=endpoint, request_fingerprint=fingerprint,

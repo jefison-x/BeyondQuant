@@ -51,6 +51,19 @@ the automatic schedule, run-now action, canonical security catalogue and sync
 history. The bounded Backend API remains available for historical repair and
 backtest readiness workflows as required by ADR-0027.
 
+## Post-acceptance live-provider correction
+
+A live 2026-08-21 diagnostic found that Tushare `daily` returned 5,543 valid
+stock rows while `stk_limit` returned 7,756 mixed stock/fund rows. The shared
+6,000-row session bound therefore rejected the response before BYQ could
+select stock records. The corrected contract keeps a separate 10,000-row raw
+`stk_limit` ceiling, validates the complete provider envelope, and selects only
+the bounded canonical stock identities proven by that session's normalized
+daily snapshot. Provider provenance retains the raw response row count. Tests
+cover the observed 7,756-row shape and rejection above the new hard ceiling.
+Community remained read-only; its unfiltered SDK/Pandas mapping was classified
+as reference evidence and was not copied.
+
 ## Boundary result
 
 The trusted Data Worker alone accesses Tushare. Signal and backtest workers stay

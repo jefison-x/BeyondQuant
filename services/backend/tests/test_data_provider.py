@@ -318,13 +318,46 @@ def test_exact_session_status_contracts_are_closed_and_validated() -> None:
         )),
     ])
     instance = provider(transport)
-    limits = instance.fetch_price_limits("20240102")
+    limits = instance.fetch_price_limits("20240102", symbols={"000001.SZ"})
     suspensions = instance.fetch_suspensions("20240102")
 
     assert limits.limits[0].up_limit == 11
     assert suspensions.suspensions[0].suspend_type == "S"
     assert [call[1]["api_name"] for call in transport.calls] == ["stk_limit", "suspend_d"]
     assert all(call[1]["params"] == {"trade_date": "20240102"} for call in transport.calls)
+
+
+def test_price_limits_filter_bounded_mixed_asset_response_to_daily_stock_set() -> None:
+    rows = [
+        ["20240102", f"{number:06d}.SZ", 1, 1.1, .9]
+        for number in range(100000, 107755)
+    ]
+    rows.append(["20240102", "000001.SZ", 10, 11, 9])
+    transport = FakeTransport([TransportResponse(200, envelope(
+        rows,
+        fields=["trade_date", "ts_code", "pre_close", "up_limit", "down_limit"],
+    ))])
+
+    result = provider(transport).fetch_price_limits(
+        "20240102", symbols={"000001.SZ", "600000.SH"},
+    )
+
+    assert [item.ts_code for item in result.limits] == ["000001.SZ"]
+    assert result.provenance.row_count == 7756
+
+
+def test_price_limits_keep_raw_provider_response_bounded() -> None:
+    rows = [
+        ["20240102", f"{number:06d}.SZ", 1, 1.1, .9]
+        for number in range(100000, 110001)
+    ]
+    transport = FakeTransport([TransportResponse(200, envelope(
+        rows,
+        fields=["trade_date", "ts_code", "pre_close", "up_limit", "down_limit"],
+    ))])
+
+    with pytest.raises(ProviderProtocolError, match="too many session-status rows"):
+        provider(transport).fetch_price_limits("20240102", symbols={"000001.SZ"})
 
 
 def test_adjustment_and_implemented_action_contracts_are_exact_and_secret_free() -> None:
