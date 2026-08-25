@@ -3,9 +3,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   createDataSourceCredential,
-  createDataSyncJob,
   createSecurityMasterSyncJob,
-  getDataSyncJob,
   getDataCenterStatus,
   getSecurityMasterSyncJob,
   listSecurities,
@@ -15,14 +13,12 @@ import {
   updateDataSourceCredential,
   updateMarketSyncAutomation,
 } from "@/api/dataCenter";
-import { listStockPools } from "@/api/paper";
 import type {
   DataCenterStatus,
   DataSourceCredential,
   DataSyncJob,
   SecurityCataloguePage,
   SecurityMasterSyncJob,
-  SecurityRecord,
 } from "@/api/types";
 
 const loading = ref(true);
@@ -35,16 +31,6 @@ const editingCredential = ref<DataSourceCredential | null>(null);
 const credentialForm = reactive({ label: "Tushare 系统数据源", secret: "" });
 const testForm = reactive({ symbol: "000001.SZ", trade_date: "20240102" });
 const testResult = ref<Record<string, unknown> | null>(null);
-const syncForm = reactive({
-  mode: "incremental",
-  target: "security_master",
-  symbols: "000001.SZ",
-  statuses: ["L"],
-  exchanges: [] as string[],
-  poolSnapshotId: "",
-  start_date: "20240102",
-  end_date: "20240112",
-});
 const automationForm = reactive({
   enabled: false,
   schedule_time: "18:30",
@@ -59,13 +45,9 @@ const catalogueLoading = ref(false);
 const catalogueFilters = reactive({ query: "", statuses: ["L"], exchanges: [] as string[] });
 const cataloguePage = ref(1);
 const cataloguePageSize = 50;
-const selectedSymbols = ref<string[]>([]);
-const pools = ref<Array<Record<string, unknown>>>([]);
 
 const credentials = computed(() => status.value?.source.credentials ?? []);
 const canAddCredential = computed(() => !credentials.value.some((item) => item.status !== "revoked"));
-const latestSnapshotId = computed(() => status.value?.security_master.latest_snapshot?.snapshot_id ?? "");
-const poolOptions = computed(() => pools.value.filter((pool) => typeof pool.current_snapshot_id === "string"));
 
 async function loadCatalogue() {
   catalogueLoading.value = true;
@@ -77,7 +59,6 @@ async function loadCatalogue() {
       limit: cataloguePageSize,
       offset: (cataloguePage.value - 1) * cataloguePageSize,
     });
-    selectedSymbols.value = [];
   } finally {
     catalogueLoading.value = false;
   }
@@ -102,7 +83,6 @@ async function load() {
       selectedSecurityJob.value = status.value.security_master_jobs.find((item) => item.job_id === selectedSecurityJob.value?.job_id) ?? selectedSecurityJob.value;
     }
     if (status.value.security_master.latest_snapshot) await loadCatalogue();
-    pools.value = (await listStockPools("")).pools;
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "数据中心加载失败";
   } finally {
@@ -220,50 +200,6 @@ async function pollSecurityJob(jobId: string) {
   }
 }
 
-function handleSecuritySelection(rows: SecurityRecord[]) {
-  selectedSymbols.value = rows.map((row) => row.symbol);
-}
-
-async function submitSync() {
-  const payload: Record<string, unknown> = {
-    mode: syncForm.mode,
-    start_date: syncForm.start_date,
-    end_date: syncForm.end_date,
-    idempotency_key: `browser-sync-${Date.now()}`,
-  };
-  if (syncForm.target === "manual") {
-    const symbols = syncForm.symbols.split(/[\s,，]+/).map((item) => item.trim().toUpperCase()).filter(Boolean);
-    if (!symbols.length) return ElMessage.warning("请输入至少一个股票代码");
-    payload.symbols = symbols;
-    payload.selection = { type: "explicit" };
-  } else if (syncForm.target === "selected") {
-    if (!selectedSymbols.value.length) return ElMessage.warning("请先在股票清单中选择标的");
-    payload.symbols = selectedSymbols.value;
-    payload.selection = { type: "selected", snapshot_id: latestSnapshotId.value };
-  } else if (syncForm.target === "stock_pool") {
-    if (!syncForm.poolSnapshotId) return ElMessage.warning("请选择一个股票池快照");
-    payload.selection = { type: "stock_pool", snapshot_id: syncForm.poolSnapshotId };
-  } else {
-    payload.selection = {
-      type: "security_master",
-      statuses: syncForm.statuses,
-      exchanges: syncForm.exchanges,
-    };
-  }
-  busy.value = true;
-  try {
-    const response = await createDataSyncJob(payload);
-    selectedJob.value = response.job;
-    ElMessage.success(`日线同步任务已冻结 ${response.job.symbol_count} 个标的`);
-    await load();
-    if (!["completed", "partial", "failed"].includes(response.job.status)) void pollJob(response.job.job_id);
-  } catch (exc) {
-    ElMessage.error(exc instanceof Error ? exc.message : "创建同步任务失败");
-  } finally {
-    busy.value = false;
-  }
-}
-
 async function saveAutomation() {
   busy.value = true;
   try {
@@ -295,18 +231,6 @@ async function triggerAutomation() {
     ElMessage.error(exc instanceof Error ? exc.message : "提交立即同步失败");
   } finally {
     busy.value = false;
-  }
-}
-
-async function pollJob(jobId: string) {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    const job = (await getDataSyncJob(jobId)).job;
-    selectedJob.value = job;
-    if (["completed", "partial", "failed"].includes(job.status)) {
-      await load();
-      return;
-    }
   }
 }
 
@@ -393,15 +317,14 @@ function securityStatusLabel(value: string) {
             />
           </el-card>
           <el-card shadow="never">
-            <template #header><div><strong>规范证券目录</strong><p>可搜索、筛选和选择股票，选择结果绑定当前不可变目录快照。</p></div></template>
+            <template #header><div><strong>规范证券目录</strong><p>可搜索和筛选股票；结果来自当前不可变目录快照。</p></div></template>
             <div class="catalogue-toolbar">
               <el-input v-model="catalogueFilters.query" clearable placeholder="代码 / 名称" @keyup.enter="applyCatalogueFilters" />
               <el-select v-model="catalogueFilters.statuses" multiple collapse-tags placeholder="上市状态"><el-option label="上市" value="L" /><el-option label="暂停上市" value="P" /><el-option label="退市" value="D" /></el-select>
               <el-select v-model="catalogueFilters.exchanges" multiple collapse-tags placeholder="交易所"><el-option label="上交所" value="SSE" /><el-option label="深交所" value="SZSE" /><el-option label="北交所" value="BSE" /></el-select>
               <el-button :loading="catalogueLoading" @click="applyCatalogueFilters">查询</el-button>
             </div>
-            <el-table v-loading="catalogueLoading" :data="catalogue.securities" empty-text="请先同步股票基本资料" @selection-change="handleSecuritySelection">
-              <el-table-column type="selection" width="48" />
+            <el-table v-loading="catalogueLoading" :data="catalogue.securities" empty-text="请先同步股票基本资料">
               <el-table-column prop="symbol" label="代码" width="120" />
               <el-table-column prop="name" label="名称" min-width="140" />
               <el-table-column prop="exchange" label="交易所" width="90" />
@@ -411,7 +334,7 @@ function securityStatusLabel(value: string) {
               <el-table-column prop="list_date" label="上市日期" width="110" />
               <el-table-column prop="delist_date" label="退市日期" width="110" />
             </el-table>
-            <div class="catalogue-footer"><span>已选择 {{ selectedSymbols.length }} 只，本页结果绑定快照 {{ catalogue.snapshot?.snapshot_id ?? "-" }}</span><el-pagination background layout="prev, pager, next, total" :page-size="cataloguePageSize" :total="catalogue.total" :current-page="cataloguePage" @current-change="changeCataloguePage" /></div>
+            <div class="catalogue-footer"><span>当前目录快照 {{ catalogue.snapshot?.snapshot_id ?? "-" }}</span><el-pagination background layout="prev, pager, next, total" :page-size="cataloguePageSize" :total="catalogue.total" :current-page="cataloguePage" @current-change="changeCataloguePage" /></div>
           </el-card>
         </el-tab-pane>
 
@@ -445,18 +368,6 @@ function securityStatusLabel(value: string) {
               <el-table-column prop="trade_date" label="交易日" width="110" /><el-table-column prop="status" label="状态" width="100" /><el-table-column prop="attempts" label="尝试" width="80" /><el-table-column prop="rows_received" label="获取" width="100" /><el-table-column prop="rows_inserted" label="新增" width="100" /><el-table-column prop="rows_kept" label="保留" width="100" /><el-table-column prop="error_message" label="说明" min-width="180" />
             </el-table>
           </el-card>
-          <el-card v-if="status.source.can_manage" shadow="never">
-            <template #header><div><strong>创建日线同步</strong><p>任务创建时冻结精确标的；全市场/股票池最多 6,000 只，公开响应保持有界。</p></div></template>
-            <el-form label-position="top" class="sync-form">
-              <div class="form-grid"><el-form-item label="标的来源"><el-select v-model="syncForm.target"><el-option label="全部上市股票" value="security_master" /><el-option label="清单中已选择" value="selected" /><el-option label="股票池快照" value="stock_pool" /><el-option label="手工代码" value="manual" /></el-select></el-form-item><el-form-item label="模式"><el-select v-model="syncForm.mode"><el-option label="增量补齐" value="incremental" /><el-option label="区间同步" value="range" /></el-select></el-form-item></div>
-              <el-form-item v-if="syncForm.target === 'manual'" label="股票代码"><el-input v-model="syncForm.symbols" type="textarea" :rows="2" placeholder="000001.SZ, 600000.SH" /></el-form-item>
-              <div v-else-if="syncForm.target === 'security_master'" class="form-grid"><el-form-item label="上市状态"><el-select v-model="syncForm.statuses" multiple><el-option label="上市" value="L" /><el-option label="暂停上市" value="P" /><el-option label="退市" value="D" /></el-select></el-form-item><el-form-item label="交易所（空为全部）"><el-select v-model="syncForm.exchanges" multiple clearable><el-option label="上交所" value="SSE" /><el-option label="深交所" value="SZSE" /><el-option label="北交所" value="BSE" /></el-select></el-form-item></div>
-              <el-form-item v-else-if="syncForm.target === 'selected'" label="已选择证券"><el-input :model-value="selectedSymbols.join(', ')" readonly type="textarea" :rows="2" placeholder="请先在股票清单中勾选" /></el-form-item>
-              <el-form-item v-else label="股票池快照"><el-select v-model="syncForm.poolSnapshotId" filterable placeholder="选择当前不可变快照"><el-option v-for="pool in poolOptions" :key="String(pool.pool_id)" :label="`${String(pool.name)} · ${Number(pool.member_count ?? 0)} 只`" :value="String(pool.current_snapshot_id)" /></el-select></el-form-item>
-              <div class="form-grid"><el-form-item label="开始日期"><el-input v-model="syncForm.start_date" maxlength="8" /></el-form-item><el-form-item label="结束日期"><el-input v-model="syncForm.end_date" maxlength="8" /></el-form-item></div>
-              <el-button type="primary" :loading="busy" :disabled="!status.source.configured || ((syncForm.target === 'security_master' || syncForm.target === 'selected') && !status.security_master.latest_snapshot)" @click="submitSync">冻结标的并同步</el-button>
-            </el-form>
-          </el-card>
           <el-card shadow="never">
             <template #header><div><strong>同步历史</strong><p>任务与逐标的结果持久化；增量模式从每只股票最后一个已存日期之后继续。</p></div></template>
             <el-table :data="status.jobs" empty-text="暂无同步任务" @row-click="selectedJob = $event"><el-table-column prop="job_id" label="任务" min-width="220" show-overflow-tooltip /><el-table-column prop="mode" label="模式" width="110" /><el-table-column prop="symbol_count" label="标的" width="90" /><el-table-column prop="status" label="状态" width="110" /><el-table-column prop="rows_inserted" label="新增行" width="100" /><el-table-column prop="rows_kept" label="保留行" width="100" /><el-table-column prop="created_at" label="创建时间" min-width="180" /></el-table>
@@ -487,14 +398,12 @@ function securityStatusLabel(value: string) {
 .workspace-tabs :deep(.el-tabs__content) { overflow: visible; }
 .workspace-tabs :deep(.el-tab-pane) { display: grid; gap: 1rem; }
 .inline-form { align-items: end; }
-.sync-form { max-width: 960px; }
 .automation-form { margin-top: 1rem; }
 .automation-grid { display: grid; gap: 1rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .automation-actions { align-items: center; display: flex; gap: 1rem; justify-content: space-between; }
 .automation-actions > div { align-items: center; color: var(--byq-text-muted); display: flex; flex-wrap: wrap; gap: .5rem; }
 .automation-status { margin: 1rem 0; }
-.form-grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.form-grid .el-select, .catalogue-toolbar .el-select { width: 100%; }
+.catalogue-toolbar .el-select { width: 100%; }
 .coverage-grid { display: grid; gap: 1rem; grid-template-columns: minmax(260px, .7fr) minmax(0, 1.3fr); }
 .coverage-grid :deep(.el-descriptions) { margin-top: 1rem; }
 .catalogue-toolbar { display: grid; gap: .75rem; grid-template-columns: minmax(180px, 1fr) minmax(160px, .7fr) minmax(160px, .7fr) auto; margin-bottom: 1rem; }
@@ -503,7 +412,7 @@ function securityStatusLabel(value: string) {
 .bounded-note { font-size: 12px; }
 @media (max-width: 760px) {
   .page-heading, .card-header, .catalogue-footer { align-items: flex-start; flex-direction: column; }
-  .form-grid, .automation-grid, .coverage-grid, .catalogue-toolbar { grid-template-columns: 1fr; }
+  .automation-grid, .coverage-grid, .catalogue-toolbar { grid-template-columns: 1fr; }
   .automation-actions { align-items: stretch; flex-direction: column; }
   .stats-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .catalogue-footer :deep(.el-pagination) { flex-wrap: wrap; }
