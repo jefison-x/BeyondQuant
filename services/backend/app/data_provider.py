@@ -55,12 +55,30 @@ CORPORATE_ACTION_FIELDS = (
     "stk_co_rate", "cash_div", "cash_div_tax", "record_date", "ex_date",
     "pay_date", "div_listdate", "imp_ann_date",
 )
+INDEX_DAILY_FIELDS = (
+    "ts_code", "trade_date", "open", "high", "low", "close", "pre_close",
+    "change", "pct_chg", "vol", "amount",
+)
+INDEX_WEIGHT_FIELDS = ("index_code", "con_code", "trade_date", "weight")
+DAILY_BASIC_FIELDS = (
+    "ts_code", "trade_date", "turnover_rate", "turnover_rate_f", "volume_ratio",
+    "pe", "pe_ttm", "pb", "ps", "ps_ttm", "dv_ratio", "dv_ttm",
+    "total_share", "float_share", "free_share", "total_mv", "circ_mv",
+)
+FINANCIAL_INDICATOR_FIELDS = (
+    "ts_code", "ann_date", "end_date", "eps", "roe", "roa",
+    "grossprofit_margin", "debt_to_assets", "or_yoy", "netprofit_yoy", "update_flag",
+)
 MAX_DAILY_ROWS = 6000
 MAX_TRADE_CALENDAR_ROWS = 800
 MAX_SECURITY_MASTER_ROWS = 10_000
 MAX_SESSION_STATUS_ROWS = 6_000
+MAX_INDEX_DAILY_ROWS = 500
+MAX_INDEX_WEIGHT_ROWS = 2_000
+MAX_FINANCIAL_INDICATOR_ROWS = 100
 MAX_QUARANTINED_SECURITY_MASTER_ROWS = 100
 _SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
+_INDEX_SYMBOL_PATTERN = re.compile(r"^[0-9A-Z]{6,12}\.(?:SH|SZ|CSI)$")
 _TUSHARE_HISTORICAL_ALIAS_PATTERN = re.compile(r"^T[0-9]{6}\.(?:SH|SZ|BJ)$")
 _DATE_PATTERN = re.compile(r"^[0-9]{8}$")
 _SECURITY_STATUSES = ("L", "P", "D")
@@ -427,6 +445,161 @@ class AdjustmentFactorResult:
 @dataclass(frozen=True)
 class CorporateActionResult:
     actions: tuple[CorporateAction, ...]
+    provenance: Provenance
+
+
+def _provider_date(value: Any, field: str) -> str:
+    try:
+        normalized = _validate_date(str(value), field)
+    except ValueError as error:
+        raise ProviderProtocolError(f"provider returned an invalid {field}") from error
+    if normalized is None:
+        raise ProviderProtocolError(f"provider omitted {field}")
+    return normalized
+
+
+def _finite_values(values: dict[str, Any], fields: tuple[str, ...]) -> dict[str, float | None]:
+    rendered: dict[str, float | None] = {}
+    for field in fields:
+        number = _number(values[field])
+        if number is not None and not math.isfinite(number):
+            raise ProviderProtocolError("provider returned a non-finite declared input")
+        rendered[field] = number
+    return rendered
+
+
+@dataclass(frozen=True)
+class IndexDailyBar:
+    ts_code: str
+    trade_date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    pre_close: float | None
+    change: float | None
+    pct_chg: float | None
+    vol: float | None
+    amount: float | None
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "IndexDailyBar":
+        try:
+            values = dict(zip(fields, row, strict=True))
+        except ValueError as error:
+            raise ProviderProtocolError("provider index-daily row does not match its fields") from error
+        if any(field not in values for field in INDEX_DAILY_FIELDS):
+            raise ProviderProtocolError("provider response omitted index-daily fields")
+        symbol = str(values["ts_code"] or "").strip().upper()
+        numbers = _finite_values(values, INDEX_DAILY_FIELDS[2:])
+        required = [numbers[name] for name in ("open", "high", "low", "close")]
+        if not _INDEX_SYMBOL_PATTERN.fullmatch(symbol) or any(value is None or value <= 0 for value in required):
+            raise ProviderProtocolError("provider returned an invalid index-daily row")
+        return cls(symbol, _provider_date(values["trade_date"], "trade_date"), *(
+            numbers[name] for name in INDEX_DAILY_FIELDS[2:]
+        ))
+
+
+@dataclass(frozen=True)
+class IndexWeight:
+    index_code: str
+    constituent_symbol: str
+    trade_date: str
+    weight: float
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "IndexWeight":
+        try:
+            values = dict(zip(fields, row, strict=True))
+        except ValueError as error:
+            raise ProviderProtocolError("provider index-weight row does not match its fields") from error
+        if any(field not in values for field in INDEX_WEIGHT_FIELDS):
+            raise ProviderProtocolError("provider response omitted index-weight fields")
+        index_code = str(values["index_code"] or "").strip().upper()
+        constituent = str(values["con_code"] or "").strip().upper()
+        weight = _number(values["weight"])
+        if (
+            not _INDEX_SYMBOL_PATTERN.fullmatch(index_code)
+            or not _SYMBOL_PATTERN.fullmatch(constituent)
+            or weight is None or not math.isfinite(weight) or weight < 0
+        ):
+            raise ProviderProtocolError("provider returned an invalid index weight")
+        return cls(index_code, constituent, _provider_date(values["trade_date"], "trade_date"), weight)
+
+
+@dataclass(frozen=True)
+class DailyBasic:
+    ts_code: str
+    trade_date: str
+    values: dict[str, float | None]
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "DailyBasic":
+        try:
+            values = dict(zip(fields, row, strict=True))
+        except ValueError as error:
+            raise ProviderProtocolError("provider daily-basic row does not match its fields") from error
+        if any(field not in values for field in DAILY_BASIC_FIELDS):
+            raise ProviderProtocolError("provider response omitted daily-basic fields")
+        symbol = str(values["ts_code"] or "").strip().upper()
+        if not _SYMBOL_PATTERN.fullmatch(symbol):
+            raise ProviderProtocolError("provider returned an invalid daily-basic symbol")
+        return cls(
+            symbol,
+            _provider_date(values["trade_date"], "trade_date"),
+            _finite_values(values, DAILY_BASIC_FIELDS[2:]),
+        )
+
+
+@dataclass(frozen=True)
+class FinancialIndicator:
+    ts_code: str
+    announcement_date: str
+    end_date: str
+    values: dict[str, float | None]
+    update_flag: str | None
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "FinancialIndicator":
+        try:
+            values = dict(zip(fields, row, strict=True))
+        except ValueError as error:
+            raise ProviderProtocolError("provider financial-indicator row does not match its fields") from error
+        if any(field not in values for field in FINANCIAL_INDICATOR_FIELDS):
+            raise ProviderProtocolError("provider response omitted financial-indicator fields")
+        symbol = str(values["ts_code"] or "").strip().upper()
+        if not _SYMBOL_PATTERN.fullmatch(symbol):
+            raise ProviderProtocolError("provider returned an invalid financial-indicator symbol")
+        return cls(
+            symbol,
+            _provider_date(values["ann_date"], "ann_date"),
+            _provider_date(values["end_date"], "end_date"),
+            _finite_values(values, FINANCIAL_INDICATOR_FIELDS[3:-1]),
+            str(values["update_flag"]).strip() if values["update_flag"] not in {None, ""} else None,
+        )
+
+
+@dataclass(frozen=True)
+class IndexDailyResult:
+    bars: tuple[IndexDailyBar, ...]
+    provenance: Provenance
+
+
+@dataclass(frozen=True)
+class IndexWeightResult:
+    weights: tuple[IndexWeight, ...]
+    provenance: Provenance
+
+
+@dataclass(frozen=True)
+class DailyBasicResult:
+    rows: tuple[DailyBasic, ...]
+    provenance: Provenance
+
+
+@dataclass(frozen=True)
+class FinancialIndicatorResult:
+    rows: tuple[FinancialIndicator, ...]
     provenance: Provenance
 
 
@@ -863,6 +1036,106 @@ class TushareProvider:
         if len({(item.ts_code, item.end_date, item.ex_date) for item in actions}) != len(actions):
             raise ProviderProtocolError("provider returned duplicate corporate-action rows")
         return CorporateActionResult(actions, provenance)
+
+    def fetch_index_daily(self, index_symbol: str, start_date: str, end_date: str) -> IndexDailyResult:
+        symbol = str(index_symbol).strip().upper()
+        start = _validate_date(start_date, "start_date")
+        end = _validate_date(end_date, "end_date")
+        if not _INDEX_SYMBOL_PATTERN.fullmatch(symbol):
+            raise ValueError("index_symbol has invalid format")
+        assert start is not None and end is not None
+        if start > end or (datetime.strptime(end, "%Y%m%d") - datetime.strptime(start, "%Y%m%d")).days > 400:
+            raise ValueError("index daily range must be ordered and at most 401 days")
+        fields, rows, provenance = self._fetch_bounded_dataset(
+            "index_daily", {"ts_code": symbol, "start_date": start, "end_date": end},
+            INDEX_DAILY_FIELDS, MAX_INDEX_DAILY_ROWS,
+        )
+        bars = tuple(IndexDailyBar.from_row(fields, row) for row in rows)
+        if any(item.ts_code != symbol or not start <= item.trade_date <= end for item in bars):
+            raise ProviderProtocolError("provider returned index daily data outside the request")
+        if len({item.trade_date for item in bars}) != len(bars):
+            raise ProviderProtocolError("provider returned duplicate index-daily rows")
+        return IndexDailyResult(tuple(sorted(bars, key=lambda item: item.trade_date)), provenance)
+
+    def fetch_index_weights(self, index_symbol: str, start_date: str, end_date: str) -> IndexWeightResult:
+        symbol = str(index_symbol).strip().upper()
+        start = _validate_date(start_date, "start_date")
+        end = _validate_date(end_date, "end_date")
+        if not _INDEX_SYMBOL_PATTERN.fullmatch(symbol):
+            raise ValueError("index_symbol has invalid format")
+        assert start is not None and end is not None
+        if start > end or (datetime.strptime(end, "%Y%m%d") - datetime.strptime(start, "%Y%m%d")).days > 62:
+            raise ValueError("index weight range must be ordered and at most 63 days")
+        fields, rows, provenance = self._fetch_bounded_dataset(
+            "index_weight", {"index_code": symbol, "start_date": start, "end_date": end},
+            INDEX_WEIGHT_FIELDS, MAX_INDEX_WEIGHT_ROWS,
+        )
+        weights = tuple(IndexWeight.from_row(fields, row) for row in rows)
+        if any(item.index_code != symbol or not start <= item.trade_date <= end for item in weights):
+            raise ProviderProtocolError("provider returned index weights outside the request")
+        if len({(item.constituent_symbol, item.trade_date) for item in weights}) != len(weights):
+            raise ProviderProtocolError("provider returned duplicate index-weight rows")
+        return IndexWeightResult(tuple(sorted(weights, key=lambda item: (item.trade_date, item.constituent_symbol))), provenance)
+
+    def fetch_daily_basic(self, trade_date: str) -> DailyBasicResult:
+        normalized = _validate_date(trade_date, "trade_date")
+        assert normalized is not None
+        fields, rows, provenance = self._fetch_bounded_dataset(
+            "daily_basic", {"trade_date": normalized}, DAILY_BASIC_FIELDS, MAX_SESSION_STATUS_ROWS,
+        )
+        values = tuple(DailyBasic.from_row(fields, row) for row in rows)
+        if any(item.trade_date != normalized for item in values):
+            raise ProviderProtocolError("provider returned daily-basic data outside the request")
+        if len({item.ts_code for item in values}) != len(values):
+            raise ProviderProtocolError("provider returned duplicate daily-basic rows")
+        return DailyBasicResult(tuple(sorted(values, key=lambda item: item.ts_code)), provenance)
+
+    def fetch_financial_indicators(
+        self, symbol: str, report_start_date: str, report_end_date: str,
+    ) -> FinancialIndicatorResult:
+        normalized_symbol = str(symbol).strip().upper()
+        start = _validate_date(report_start_date, "report_start_date")
+        end = _validate_date(report_end_date, "report_end_date")
+        if not _SYMBOL_PATTERN.fullmatch(normalized_symbol):
+            raise ValueError("symbol has invalid format")
+        assert start is not None and end is not None
+        if start > end or (datetime.strptime(end, "%Y%m%d") - datetime.strptime(start, "%Y%m%d")).days > 1_100:
+            raise ValueError("financial report range must be ordered and at most 1101 days")
+        fields, rows, provenance = self._fetch_bounded_dataset(
+            "fina_indicator",
+            {"ts_code": normalized_symbol, "start_date": start, "end_date": end},
+            FINANCIAL_INDICATOR_FIELDS, MAX_FINANCIAL_INDICATOR_ROWS,
+        )
+        if len(rows) >= MAX_FINANCIAL_INDICATOR_ROWS:
+            raise ProviderProtocolError("financial-indicator response may be truncated")
+        values = tuple(FinancialIndicator.from_row(fields, row) for row in rows)
+        if any(item.ts_code != normalized_symbol or not start <= item.end_date <= end for item in values):
+            raise ProviderProtocolError("provider returned financial indicators outside the report range")
+        if len({(item.end_date, item.announcement_date) for item in values}) != len(values):
+            raise ProviderProtocolError("provider returned duplicate financial-indicator rows")
+        return FinancialIndicatorResult(
+            tuple(sorted(values, key=lambda item: (item.announcement_date, item.end_date))), provenance,
+        )
+
+    def _fetch_bounded_dataset(
+        self, endpoint: str, params: dict[str, str], fields_contract: tuple[str, ...], maximum: int,
+    ) -> tuple[list[str], list[list[Any]], Provenance]:
+        if not self._config.token:
+            raise ProviderCredentialsMissing("Tushare credentials are not configured")
+        fingerprint = sha256(json.dumps(
+            {"api_name": endpoint, "params": params, "fields": fields_contract},
+            sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        fields, rows = self._request({
+            "api_name": endpoint, "token": self._config.token, "params": params,
+            "fields": ",".join(fields_contract),
+        })
+        if len(rows) > maximum:
+            raise ProviderProtocolError(f"provider returned too many {endpoint} rows")
+        return fields, rows, Provenance(
+            provider="tushare", endpoint=endpoint, request_fingerprint=fingerprint,
+            retrieved_at=datetime.now(timezone.utc).isoformat(), cache_hit=False, row_count=len(rows),
+        )
 
     def _fetch_exact_session_dataset(
         self, endpoint: str, trade_date: str, fields_contract: tuple[str, ...],

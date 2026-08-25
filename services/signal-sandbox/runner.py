@@ -108,12 +108,20 @@ def validate_source(source: object) -> str:
     return source
 
 
-def build_data(bars: object) -> pd.DataFrame:
+def build_data(bars: object, declared: object) -> pd.DataFrame:
     if not isinstance(bars, list) or not bars or len(bars) > 50_000:
         raise ProtocolError("invalid_input", "bars must be a bounded non-empty list")
     frame = pd.DataFrame(bars)
     required = {"symbol", "trade_date", "open", "high", "low", "close", "volume"}
-    if set(frame.columns) - (required | {"prev_close", "is_suspended", "up_limit", "down_limit"}) or not required.issubset(frame.columns):
+    if not isinstance(declared, dict):
+        raise ProtocolError("invalid_input", "declared inputs must be an object")
+    extra = {
+        *(f"daily_basic__{field}" for field in declared.get("daily_basic", [])),
+        *(f"fina_indicator__{field}" for field in declared.get("fundamentals", [])),
+    }
+    if declared.get("index_universe"):
+        extra.add("is_universe_member")
+    if set(frame.columns) - (required | {"prev_close", "is_suspended", "up_limit", "down_limit"} | extra) or not required.issubset(frame.columns):
         raise ProtocolError("invalid_input", "bar columns do not match the signal profile")
     frame["trade_date"] = pd.to_datetime(frame["trade_date"], format="%Y-%m-%d", errors="raise")
     frame = frame.sort_values(["symbol", "trade_date"], kind="stable")
@@ -147,6 +155,9 @@ def normalize_output(value: object, data: pd.DataFrame) -> list[dict[str, object
             numeric = float(raw_signal)
             if not np.isfinite(numeric) or numeric not in {-1.0, 0.0, 1.0}:
                 raise ProtocolError("invalid_output", "signal value must be -1, 0, or 1")
+            if numeric != 0 and "is_universe_member" in data.columns:
+                if not bool(data.loc[(symbol, date), "is_universe_member"]):
+                    raise ProtocolError("invalid_output", "signal output escapes the point-in-time universe")
             key = (symbol, date.strftime("%Y-%m-%d"))
             if key in seen:
                 raise ProtocolError("invalid_output", "signal output contains duplicate rows")
@@ -182,7 +193,7 @@ def main() -> int:
         strategy_class = namespace.get("CustomStrategy")
         if not isinstance(strategy_class, type):
             raise ProtocolError("invalid_source", "CustomStrategy is unavailable")
-        data = build_data(request.get("bars"))
+        data = build_data(request.get("bars"), request.get("declared", {}))
         result = strategy_class().generate_signals(data.copy(deep=True), json.loads(json.dumps(parameters)))
         response = {
             "ok": True,

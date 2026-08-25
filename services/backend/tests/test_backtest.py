@@ -106,6 +106,21 @@ def test_native_engine_executes_next_session_and_applies_sell_tax() -> None:
     assert result["reproducibility"] == "reproducible"
 
 
+def test_native_engine_reports_frozen_benchmark_and_excess_return() -> None:
+    payload = normalized(benchmark=[
+        {"symbol": "000300.SH", "trade_date": "2026-01-05", "open": 100, "high": 100, "low": 100, "close": 100},
+        {"symbol": "000300.SH", "trade_date": "2026-01-06", "open": 101, "high": 101, "low": 101, "close": 101},
+        {"symbol": "000300.SH", "trade_date": "2026-01-07", "open": 102, "high": 102, "low": 102, "close": 102},
+    ])
+
+    result = run_native_backtest(payload["manifest"])
+
+    assert result["benchmark_symbol"] == "000300.SH"
+    assert result["benchmark_return"] == 0.02
+    assert result["excess_return"] == result["total_return"] - 0.02
+    assert [row["value"] for row in result["benchmark_curve"]] == [2000.0, 2020.0, 2040.0]
+
+
 def test_native_engine_blocks_limit_up_and_suspension_with_stable_codes() -> None:
     limit = normalized(
         bars=bars(day_two_open=11.0),

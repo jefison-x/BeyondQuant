@@ -374,3 +374,40 @@ def test_adjustment_and_corporate_actions_fail_closed() -> None:
     ))])
     with pytest.raises(ProviderProtocolError, match="non-implemented"):
         provider(proposal).fetch_corporate_actions("20240103")
+
+
+def test_declared_research_input_contracts_are_bounded_and_point_in_time() -> None:
+    transport = FakeTransport([
+        TransportResponse(200, envelope(
+            [["000300.SH", "20240102", 3500, 3520, 3490, 3510, 3480, 30, .86, 100, 2000]],
+            fields=["ts_code", "trade_date", "open", "high", "low", "close", "pre_close",
+                    "change", "pct_chg", "vol", "amount"],
+        )),
+        TransportResponse(200, envelope(
+            [["000300.SH", "000001.SZ", "20240102", 1.5]],
+            fields=["index_code", "con_code", "trade_date", "weight"],
+        )),
+        TransportResponse(200, envelope(
+            [["000001.SZ", "20240102", 1, 1.1, 1.2, 10, 9, 1, 2, 2.1, .5, .6, 100, 80, 70, 1000, 800]],
+            fields=["ts_code", "trade_date", "turnover_rate", "turnover_rate_f", "volume_ratio",
+                    "pe", "pe_ttm", "pb", "ps", "ps_ttm", "dv_ratio", "dv_ttm",
+                    "total_share", "float_share", "free_share", "total_mv", "circ_mv"],
+        )),
+        TransportResponse(200, envelope(
+            [["000001.SZ", "20240420", "20240331", 1.0, 12.0, 1.1, 30.0, 40.0, 5.0, 6.0, "1"]],
+            fields=["ts_code", "ann_date", "end_date", "eps", "roe", "roa",
+                    "grossprofit_margin", "debt_to_assets", "or_yoy", "netprofit_yoy", "update_flag"],
+        )),
+    ])
+    instance = provider(transport)
+
+    assert instance.fetch_index_daily("000300.SH", "20240102", "20240102").bars[0].close == 3510
+    assert instance.fetch_index_weights("000300.SH", "20240101", "20240131").weights[0].weight == 1.5
+    assert instance.fetch_daily_basic("20240102").rows[0].values["pe_ttm"] == 9
+    assert instance.fetch_financial_indicators("000001.SZ", "20230101", "20241231").rows[0].announcement_date == "20240420"
+    assert [call[1]["api_name"] for call in transport.calls] == [
+        "index_daily", "index_weight", "daily_basic", "fina_indicator",
+    ]
+    assert transport.calls[3][1]["params"] == {
+        "ts_code": "000001.SZ", "start_date": "20230101", "end_date": "20241231",
+    }

@@ -11,6 +11,7 @@ import hashlib
 import json
 import re
 import uuid
+from calendar import monthrange
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 from zoneinfo import ZoneInfo
@@ -37,6 +38,7 @@ DEFAULT_CATCHUP_DAYS = 7
 MAX_CATCHUP_DAYS = 30
 MAX_ATTEMPTS = 4
 LEASE_SECONDS = 900
+CORE_BENCHMARK = "000300.SH"
 _TIME = re.compile(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
 _IDEMPOTENCY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
@@ -497,7 +499,7 @@ class MarketAutomationStore(PgStoreMixin):
                 elif existing["status"] == "failed" or (
                     existing["status"] == "completed" and (
                         self._fetch_one("""SELECT state FROM market_session_completeness
-                            WHERE trade_date=:date AND state='provider_snapshot_with_research_complete'""",
+                            WHERE trade_date=:date AND state='provider_snapshot_with_declared_inputs_complete'""",
                             {"date": trade_date}) is None
                     )
                 ):
@@ -583,6 +585,11 @@ class MarketAutomationStore(PgStoreMixin):
             suspensions = provider.fetch_suspensions(trade_date) if readiness_store is not None else None
             factors = provider.fetch_adjustment_factors(trade_date) if readiness_store is not None else None
             actions = provider.fetch_corporate_actions(trade_date) if readiness_store is not None else None
+            daily_basic = provider.fetch_daily_basic(trade_date) if readiness_store is not None else None
+            benchmark = provider.fetch_index_daily(CORE_BENCHMARK, trade_date, trade_date) if readiness_store is not None else None
+            weights = provider.fetch_index_weights(
+                CORE_BENCHMARK, f"{trade_date[:6]}01", trade_date,
+            ) if readiness_store is not None else None
             rows = DataSyncStore._normalize_bars(
                 None, result, start_date=trade_date, end_date=trade_date,
             )
@@ -595,7 +602,9 @@ class MarketAutomationStore(PgStoreMixin):
             report = market_store.import_bars(rows, conflict_policy=KEEP_NEW)
             completeness_state = "provider_snapshot_complete"
             if readiness_store is not None:
-                assert limits is not None and suspensions is not None and factors is not None and actions is not None
+                assert all(item is not None for item in (
+                    limits, suspensions, factors, actions, daily_basic, benchmark, weights,
+                ))
                 readiness_store.import_session_status(
                     trade_date,
                     daily_symbols={str(row["symbol"]) for row in rows},
@@ -615,7 +624,16 @@ class MarketAutomationStore(PgStoreMixin):
                         "corporate_actions": actions.provenance.as_dict(),
                     },
                 )
-                completeness_state = "provider_snapshot_with_research_complete"
+                readiness_store.import_daily_basic(
+                    trade_date, list(daily_basic.rows), daily_basic.provenance.as_dict(),
+                )
+                readiness_store.import_index_daily(
+                    CORE_BENCHMARK, list(benchmark.bars), benchmark.provenance.as_dict(),
+                )
+                readiness_store.import_index_weights(
+                    CORE_BENCHMARK, trade_date[:6], list(weights.weights), weights.provenance.as_dict(),
+                )
+                completeness_state = "provider_snapshot_with_declared_inputs_complete"
             now = _now()
             with self._transaction() as connection:
                 execute(
@@ -772,7 +790,8 @@ class MarketAutomationStore(PgStoreMixin):
             """SELECT trade_date, row_count, dataset_sha256, verified_at
                FROM market_session_completeness
                WHERE state IN ('provider_snapshot_complete', 'provider_snapshot_with_status_complete',
-                               'provider_snapshot_with_research_complete')
+                               'provider_snapshot_with_research_complete',
+                               'provider_snapshot_with_declared_inputs_complete')
                ORDER BY trade_date DESC LIMIT 1""",
         )
         worker = self._fetch_one(
@@ -823,7 +842,8 @@ class MarketAutomationStore(PgStoreMixin):
             "catchup_days": int(row["catchup_days"]),
             "security_master_enabled": bool(row["security_master_enabled"]),
             "datasets": ["trade_calendar", "stock_daily", "trading_status", "price_limits",
-                         "adjustment_factors", "corporate_actions"],
+                         "adjustment_factors", "corporate_actions", "daily_basic",
+                         "index_daily", "index_weights", "declared_financial_indicators"],
             "version": int(row["version"]),
             "updated_by": row["updated_by"],
             "updated_at": row["updated_at"],
@@ -850,6 +870,72 @@ class MarketAutomationStore(PgStoreMixin):
                 "completed_at", "result_json", "error_message",
             )
         }
+
+
+def sync_declared_inputs(
+    requirement: dict[str, object], *, provider: TushareProvider,
+    readiness_store: MarketReadinessStore,
+) -> dict[str, int]:
+    """Fill only the bounded optional inputs frozen by a strategy version."""
+    declared = requirement.get("declared", {})
+    if not isinstance(declared, dict):
+        raise ValueError("declared data requirement is invalid")
+    counts = {"benchmark": 0, "index_weights": 0, "daily_basic": 0, "financial": 0}
+    benchmark_symbol = declared.get("benchmark")
+    if benchmark_symbol:
+        cursor = datetime.strptime(str(requirement["start_date"]), "%Y%m%d")
+        end = datetime.strptime(str(requirement["end_date"]), "%Y%m%d")
+        while cursor <= end:
+            chunk_end = min(end, cursor + timedelta(days=400))
+            result = provider.fetch_index_daily(
+                str(benchmark_symbol), cursor.strftime("%Y%m%d"), chunk_end.strftime("%Y%m%d"),
+            )
+            counts["benchmark"] += readiness_store.import_index_daily(
+                str(benchmark_symbol), list(result.bars), result.provenance.as_dict(),
+            )
+            cursor = chunk_end + timedelta(days=1)
+    index_universe = declared.get("index_universe")
+    if index_universe:
+        for period in list(requirement.get("index_weight_periods", [])):
+            year, month = int(str(period)[:4]), int(str(period)[4:6])
+            start = f"{period}01"
+            end = f"{period}{monthrange(year, month)[1]:02d}"
+            result = provider.fetch_index_weights(str(index_universe), start, end)
+            counts["index_weights"] += readiness_store.import_index_weights(
+                str(index_universe), str(period), list(result.weights), result.provenance.as_dict(),
+            )
+    if declared.get("daily_basic"):
+        sessions = readiness_store._execute(
+            """SELECT trade_date FROM market_trading_sessions
+               WHERE is_open=TRUE AND trade_date BETWEEN :start AND :end ORDER BY trade_date""",
+            {"start": requirement["start_date"], "end": requirement["end_date"]},
+        )
+        for row in sessions:
+            trade_date = str(row["trade_date"])
+            if readiness_store._fetch_one(
+                "SELECT trade_date FROM market_daily_basic_completeness WHERE trade_date=:date",
+                {"date": trade_date},
+            ) is not None:
+                continue
+            result = provider.fetch_daily_basic(trade_date)
+            counts["daily_basic"] += readiness_store.import_daily_basic(
+                trade_date, list(result.rows), result.provenance.as_dict(),
+            )
+    if declared.get("fundamentals"):
+        report_start = str(requirement["financial_report_start_date"])
+        report_end = str(requirement["financial_report_end_date"])
+        for symbol in list(requirement["symbols"]):
+            if readiness_store._fetch_one(
+                """SELECT symbol FROM market_financial_indicator_completeness
+                   WHERE symbol=:symbol AND report_start_date=:start AND report_end_date=:end""",
+                {"symbol": symbol, "start": report_start, "end": report_end},
+            ) is not None:
+                continue
+            result = provider.fetch_financial_indicators(str(symbol), report_start, report_end)
+            counts["financial"] += readiness_store.import_financial_indicators(
+                str(symbol), report_start, report_end, list(result.rows), result.provenance.as_dict(),
+            )
+    return counts
 
 
 def run_scheduler_cycle(

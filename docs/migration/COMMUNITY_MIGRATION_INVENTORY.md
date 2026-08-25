@@ -809,3 +809,21 @@ workspace were inspected before accepting ADR-0029.
 
 No Community source, database, cache, credential, runtime or Git history was
 modified or copied.
+
+## Phase 57 benchmark and declared-data pre-implementation audit
+
+The read-only Community index master/weight migration, Tushare provider,
+historical stock-universe selection, backtest route/tests and Strategy,
+Backtest and maintenance views were inspected before accepting ADR-0030.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 57 disposition |
+|---|---|---|---|
+| `index_basic`, dated `index_weight` and dynamic backtest universe snapshots | Historical membership must select the latest snapshot no later than the simulated session. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Freeze a bounded Stock Pool superset, attach point-in-time membership in the trusted coordinator and reject non-member signals in the sandbox. |
+| `index_daily` benchmark selection and relative result display | Benchmark identity and curve must be frozen with the run instead of fetched during result rendering. | `PORT_UX` / `PORT_TESTS` / `REFACTOR` | Add content-addressed index bars to ready inputs and compute benchmark/excess return in the native BYQ engine. |
+| Exact-date `daily_basic` valuation fields | Session valuation is point-in-time data, not a current attribute of a security. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Synchronize full-market exact-session snapshots through a closed adapter and expose only strategy-declared columns. |
+| Financial period/announcement fields | Report-period identity and public announcement time must remain distinct to prevent look-ahead. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Preserve report and announcement dates, use conservative next-day visibility, and freeze the selected row/hash per input. |
+| Maintenance dataset visibility and strategy/backtest configuration | Users need to see which research datasets synchronize automatically and which optional data a strategy needs. | `PORT_UX` / `PORT_LAYOUT` / `REFACTOR` | Extend BYQ Strategy, Data Center and Backtest Product views over Gateway/Product API only. |
+| Community Tushare SDK/Pandas, ORM, provider registry, threads, internal APIs, mutable cache and VectorBT/BaoStock/AKShare paths | No compatible architecture boundary. | `REPLACE` / `DROP` | Keep the closed Backend adapter, PostgreSQL evidence, trusted Data Worker, isolated signal producer and native BYQ engine. ETF/fund scope remains excluded. |
+
+No Community source, database, cache, runtime, credential or Git history was
+modified, imported or copied.

@@ -39,3 +39,5 @@ ADR-0027 defines calendar-driven full-market daily automation and the trusted
 Data Worker boundary. ADR-0028 defines lifecycle-aware readiness, bounded
 repair and immutable ready inputs. ADR-0029 defines adjusted research views,
 raw execution prices and implemented corporate-action settlement semantics.
+ADR-0030 defines frozen benchmark performance, point-in-time index membership,
+and closed strategy-declared valuation/fundamental research inputs.

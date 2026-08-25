@@ -47,6 +47,7 @@ const strategyName = ref("自定义策略");
 const description = ref("用户自定义策略");
 const parametersJson = ref("{}");
 const parameterSchemaJson = ref("{}");
+const dataRequirementsJson = ref("{}");
 const templateId = ref("");
 const lastDraftId = ref("");
 const saving = ref(false);
@@ -63,6 +64,7 @@ function editorState() {
     description: description.value,
     parametersJson: parametersJson.value,
     parameterSchemaJson: parameterSchemaJson.value,
+    dataRequirementsJson: dataRequirementsJson.value,
     script: script.value,
   });
 }
@@ -102,11 +104,15 @@ const STRATEGY_TEMPLATES = [
 function strategyPayload() {
   const parameters = JSON.parse(parametersJson.value || "{}") as unknown;
   const parameterSchema = JSON.parse(parameterSchemaJson.value || "{}") as unknown;
+  const dataRequirements = JSON.parse(dataRequirementsJson.value || "{}") as unknown;
   if (!parameters || Array.isArray(parameters) || typeof parameters !== "object") {
     throw new Error("参数默认值必须是 JSON 对象");
   }
   if (!parameterSchema || Array.isArray(parameterSchema) || typeof parameterSchema !== "object") {
     throw new Error("参数规范必须是 JSON 对象");
+  }
+  if (!dataRequirements || Array.isArray(dataRequirements) || typeof dataRequirements !== "object") {
+    throw new Error("数据依赖必须是 JSON 对象");
   }
   return {
     strategy_id: strategyId.value,
@@ -115,6 +121,7 @@ function strategyPayload() {
     description: description.value,
     parameters,
     parameter_schema: parameterSchema,
+    data_requirements: dataRequirements,
     source_type: "python_script",
     script: script.value,
   };
@@ -160,6 +167,7 @@ const selectedStrategyId = computed(() => {
   description.value = String(snapshot?.description ?? "");
   parametersJson.value = JSON.stringify(snapshot?.parameters ?? {}, null, 2);
   parameterSchemaJson.value = JSON.stringify(snapshot?.parameter_schema ?? {}, null, 2);
+  dataRequirementsJson.value = JSON.stringify(snapshot?.data_requirements ?? {}, null, 2);
   return String(snapshot?.strategy_id ?? "");
 });
 
@@ -588,6 +596,15 @@ onMounted(loadList);
               placeholder="参数规范 JSON"
             />
           </div>
+          <el-input
+            v-model="dataRequirementsJson"
+            type="textarea"
+            :rows="4"
+            :disabled="isReadonly"
+            spellcheck="false"
+            class="strategy-description"
+            placeholder='声明数据依赖 JSON，例如 {"benchmark":"000300.SH","daily_basic":["pe_ttm","pb"]}'
+          />
           <el-input
             v-model="script"
             type="textarea"
