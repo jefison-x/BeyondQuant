@@ -1,79 +1,39 @@
-# Data Center v1 Contract (daily-bar compatibility subset)
+# Data Center v1 Contract（daily-bar compatibility subset）
 
-Phase 39 implements the Accepted ADR-0019 Tushare boundary through the
-browser-facing Product API. The browser never calls Backend, PostgreSQL, or
-Tushare directly.
+Phase 39 通过 browser-facing Product API 实现 Accepted ADR-0019 Tushare boundary。Browser 永不直接调用 Backend、PostgreSQL 或 Tushare。
 
-Phase 53 extends the Product projection to `data-center.v2` under ADR-0026.
-The original daily-bar semantics below remain compatible; the security master,
-catalogue selection, response bounds, and true incremental behavior are
-normative in [`security-master-v1.md`](security-master-v1.md).
+Phase 53 按 ADR-0026 将 Product projection 扩展为 `data-center.v2`。下述原始 daily-bar semantics 保持兼容；security master、catalogue selection、response bounds 和真实 incremental behavior 以 [`security-master-v1.md`](security-master-v1.md) 为准。
 
-Phase 54 extends the projection to `data-center.v3` under ADR-0027. It adds the
-`market-sync-automation.v1` member while retaining all v1/v2 manual operations.
+Phase 54 按 ADR-0027 扩展为 `data-center.v3`，加入 `market-sync-automation.v1` member，同时保留所有 v1/v2 manual operations。
 
 ## Source configuration
 
-- The only provider key is `tushare`; no browser-provided URL or provider name
-  is accepted.
-- A system credential is admin-only, write-only, encrypted by the shared
-  ADR-0019 store, optimistic-versioned, masked on reads, and auditable.
-- One non-revoked Tushare system credential is allowed through the Product
-  workflow. If storage ever contains multiple active credentials, runtime
-  resolution fails closed rather than selecting one implicitly.
-- An active database credential takes precedence over the explicit
-  `TUSHARE_TOKEN` bootstrap fallback. Secret and envelope fields never enter a
-  Product response, sync row, audit detail, error, or WorkflowTrace.
+- 唯一 provider key 是 `tushare`；不接受 browser 提供的 URL 或 provider name。
+- System credential 仅 admin 可用、write-only，由共享 ADR-0019 store 加密，使用 optimistic version，读取时 masked，并可审计。
+- Product workflow 只允许一个 non-revoked Tushare system credential。若 storage 中存在多个 active credentials，runtime resolution fail closed，不隐式选择。
+- Active database credential 优先于显式 `TUSHARE_TOKEN` bootstrap fallback。Secret/envelope fields 永不进入 Product response、sync row、audit detail、error 或 WorkflowTrace。
 
 ## Connection test
 
-The test accepts one canonical A-share symbol and one `YYYYMMDD` trade date.
-It executes the BYQ `DailyRequest` through the Backend-owned Tushare adapter.
-The response contains only provider/endpoint, credential source metadata,
-row count, bounded latency, and check time. An empty successful provider
-result is a valid connection; authorization and transport failures use stable,
-secret-free errors.
+Test 接受一个 canonical A-share symbol 和一个 `YYYYMMDD` trade date，通过 Backend-owned Tushare adapter 执行 BYQ `DailyRequest`。Response 只含 provider/endpoint、credential source metadata、row count、有界 latency 和 check time。空的成功 provider result 也是有效连接；authorization/transport failures 使用稳定且不含 secret 的 errors。
 
 ## Sync jobs
 
-- A legacy explicit request contains 1–500 unique canonical symbols. Catalogue
-  and Stock Pool orchestration may freeze at most 6,000 symbols. Every request
-  contains a `range` or `incremental` mode, an inclusive date range of at most
-  366 natural days, and an idempotency key.
-- Jobs persist as `queued → running → completed|partial|failed`; progress and
-  per-symbol normalized results remain readable after page refresh.
-- Provider rows must match the requested symbol, have unique symbol/date keys,
-  complete OHLC values, and valid high/low relationships before import.
-- Imports use `MarketDataStore` with `KEEP_NEW`; a refresh never overwrites an
-  existing authoritative BYQ row by last-write-wins.
-- Tushare daily units are recorded explicitly as unadjusted stock bars,
-  `lots`, and `thousand_cny`, together with BYQ request provenance.
+- Legacy explicit request 包含 1–500 个唯一 canonical symbols。Catalogue 和 Stock Pool orchestration 最多冻结 6,000 symbols。每个 request 包含 `range` 或 `incremental` mode、最多 366 个自然日的闭区间，以及 idempotency key。
+- Jobs 持久化为 `queued → running → completed|partial|failed`；刷新页面后仍可读取 progress 和 per-symbol normalized results。
+- Provider rows 必须匹配 requested symbol，具有唯一 symbol/date keys、完整 OHLC values 和有效 high/low relationships，之后方可 import。
+- Import 使用 `MarketDataStore` 与 `KEEP_NEW`；refresh 不以 last-write-wins 覆盖现有 authoritative BYQ row。
+- Tushare daily units 显式记录为 unadjusted stock bars、`lots` 和 `thousand_cny`，并带 BYQ request provenance。
 
 ## Coverage audit
 
-Coverage is an audit of persisted observations: total rows/symbols/date bounds,
-provider/asset groups, per-symbol bounds, non-Tushare source issues, and OHLC
-relationship issues. It sets `completeness_claimed=false`; without a complete
-trading-calendar/lifecycle proof, a date span is not presented as full
-historical coverage.
+Coverage 审计已持久化 observations：total rows/symbols/date bounds、provider/asset groups、per-symbol bounds、non-Tushare source issues 和 OHLC relationship issues。它设置 `completeness_claimed=false`；没有完整 trading-calendar/lifecycle proof 时，不把 date span 表述为完整历史覆盖。
 
 ## Daily automation
 
-- Configuration is admin-only, versioned and idempotent: `enabled`, `HH:MM`
-  schedule, fixed `Asia/Shanghai` timezone, 1-30 catch-up calendar days and an
-  optional atomic security-master refresh.
-- The Browser creates only Product API configuration or run-now commands. A
-  trusted `data-worker` refreshes the calendar and executes provider requests.
-- Each open session has at most one durable job. Jobs are leased and transition
-  through `queued → running → completed|failed`, with up to four attempts and
-  bounded backoff/recovery.
-- A session uses one exact-date unscoped `daily` request and imports the complete
-  normalized response with `KEEP_NEW`. `pre_close` is retained alongside raw
-  unadjusted OHLCV/amount.
-- `provider_snapshot_complete` means one non-empty exact-date provider snapshot
-  passed normalization and was fully imported. It does not mean every catalogue
-  member traded, and it does not replace the broader lifecycle-aware readiness
-  assessment planned for Phase 55.
-- Public status includes worker heartbeat/health, latest calendar open date,
-  latest complete session, next configured run and bounded recent job/command
-  projections. No credential or raw provider envelope is exposed.
+- Configuration 仅 admin 可用、versioned 且 idempotent：`enabled`、`HH:MM` schedule、固定 `Asia/Shanghai` timezone、1–30 catch-up calendar days，以及可选 atomic security-master refresh。
+- Browser 只创建 Product API configuration 或 run-now commands；trusted `data-worker` 刷新 calendar 并执行 provider requests。
+- 每个 open session 最多一个 durable job。Jobs leased 后经 `queued → running → completed|failed` 转换，最多四次 attempts，并有 bounded backoff/recovery。
+- 每个 session 使用一个 exact-date、unscoped `daily` request，以 `KEEP_NEW` 导入完整 normalized response；`pre_close` 与 raw unadjusted OHLCV/amount 一同保留。
+- `provider_snapshot_complete` 表示一个非空 exact-date provider snapshot 通过 normalization 且完整导入；不表示每个 catalogue member 都交易，也不取代 Phase 55 的 lifecycle-aware readiness assessment。
+- Public status 包含 worker heartbeat/health、latest calendar open date、latest complete session、next configured run 和有界 recent job/command projections；不暴露 credential 或 raw provider envelope。

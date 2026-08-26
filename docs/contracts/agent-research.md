@@ -1,62 +1,40 @@
 # Quant Research Agent Contract — Phase 13
 
-## Ownership
+## 所有权
 
-DSH owns generic role composition, skill loading, subagent lifecycle, and
-delegation transport. BYQ owns the role catalogue, domain authorization,
-human approval state, business audit records, and evidence promotion rules.
+DSH 负责通用 role composition、skill loading、subagent lifecycle 和 delegation transport。BYQ 负责 role catalogue、domain authorization、human approval state、business audit records 和 evidence promotion rules。
 
-The Product DSH receives only a session-scoped context header from the
-authenticated Gateway path. The MCP service forwards that context to Backend;
-the model never supplies or receives a product bearer token. Backend rejects a
-body identity that disagrees with the trusted context.
+Product DSH 仅从经过认证的 Gateway 路径接收 session-scoped context header。MCP service 将该 context 转发给 Backend；model 永远不提供也不接收 product bearer token。Backend 会拒绝与 trusted context 不一致的 body identity。
 
 ## Roles
 
-The versioned catalogue is exposed by `byq_agent_roles` and currently contains:
+版本化 catalogue 由 `byq_agent_roles` 暴露，目前包含：
 
-- `quant_orchestrator`: coordinates hand-offs and consequential decisions;
-- `market_researcher`: normalized market evidence;
-- `factor_researcher`: reproducible point-in-time factors;
-- `strategy_researcher`: validated strategy artifacts, without approval or execution;
-- `backtest_analyst`: authorized deterministic backtest review.
+- `quant_orchestrator`：协调 hand-offs 和 consequential decisions；
+- `market_researcher`：提供 normalized market evidence；
+- `factor_researcher`：提供可复现的 point-in-time factors；
+- `strategy_researcher`：提供 validated strategy artifacts，不负责 approval 或 execution；
+- `backtest_analyst`：执行已授权的 deterministic backtest review。
 
-Each role declares its allowed MCP tools, delegate targets, approval-required
-actions, and evidence kinds. DSH `toolFilter` mirrors the child allowlist for
-visibility; BYQ authorization remains authoritative and is checked through
-`byq_agent_authorize`.
+每个 role 声明允许的 MCP tools、delegate targets、需要 approval 的 actions 和 evidence kinds。DSH `toolFilter` 镜像 child allowlist 以供查看；BYQ authorization 仍是权威，并通过 `byq_agent_authorize` 检查。
 
-## Run and audit contract
+## Run 与审计 contract
 
-`byq_agent_run_start` creates an owner-scoped `agent_run` correlated with:
+`byq_agent_run_start` 创建 owner-scoped `agent_run`，关联：
 
 ```text
 owner_principal, actor_principal, role_id/version,
 trace_id, session_id, dsh_run_id, parent_run_id
 ```
 
-For Product sessions, `owner_principal` is the authenticated durable user and
-`actor_principal` is the session-scoped `byq-product-agent-<session_id>`
-service identity. They must remain distinct so the owner can perform a real
-human review without allowing the initiating DSH actor to self-approve.
+对 Product sessions，`owner_principal` 是已认证的持久用户，`actor_principal` 是 session-scoped `byq-product-agent-<session_id>` service identity。二者必须保持不同，使 owner 能执行真正的人工 review，同时不允许发起请求的 DSH actor 自我批准。
 
-Run identity and audit detail are bounded. DSH event types, prompts, raw
-session logs, credentials, and storage paths are never stored as business
-records. `byq_agent_audit` records action, outcome, resource identity, and a
-bounded JSON detail summary. `byq_agent_audit_get` returns an owner-scoped
-audit view.
+Run identity 与 audit detail 均有界。DSH event types、prompts、raw session logs、credentials 和 storage paths 永不作为 business records 存储。`byq_agent_audit` 记录 action、outcome、resource identity 和有界 JSON detail summary。`byq_agent_audit_get` 返回 owner-scoped audit view。
 
 ## Approval
 
-Actions classified as consequential return `approval_required`. The agent may
-create a pending approval with `byq_agent_approval_request`; a trusted human
-actor decides it through `byq_agent_approval_decide`. The initiating actor
-cannot self-approve. `approved`/`rejected` and the later `execution_outcome`
-are separate fields: approval authorizes an attempt and does not claim that
-the domain action succeeded.
+被归类为 consequential 的 actions 返回 `approval_required`。Agent 可用 `byq_agent_approval_request` 创建 pending approval；trusted human actor 通过 `byq_agent_approval_decide` 决定。发起 actor 不能自我批准。`approved`/`rejected` 与后续 `execution_outcome` 是不同字段：approval 只授权尝试，不表示 domain action 已成功。
 
-## Stability
+## 稳定性
 
-Backend storage remains an implementation detail. Agent-to-domain calls use
-BeyondQuant MCP, and frontend consumers use BYQ audit/trace contracts rather
-than DSH schemas.
+Backend storage 是实现细节。Agent-to-domain 调用使用 BeyondQuant MCP；frontend consumers 使用 BYQ audit/trace contracts，而不是 DSH schemas。

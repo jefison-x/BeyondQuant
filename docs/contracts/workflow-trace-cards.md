@@ -1,170 +1,77 @@
 # WorkflowTrace structured projection contract
 
-This contract is normative for ADR-0018 and Phase 36. It defines BYQ-owned
-browser projections, not DSH notifications, Community message objects, or
-Domain mutation requests.
+本 contract 对 ADR-0018 和 Phase 36 具有规范性。它定义 BYQ-owned browser projections，而非 DSH notifications、Community message objects 或 Domain mutation requests。
 
-## Envelope and sources
+## Envelope 与 sources
 
-Cards use the existing `WorkflowTraceEvent` envelope. Accepted `source` values
-remain `dsh` and `runtime-adapter`, with `byq-domain` added for a Gateway-
-hydrated, owner-scoped Domain projection. A `byq-domain` event MUST NOT contain
-any field taken only from model output.
+Cards 使用现有 `WorkflowTraceEvent` envelope。`source` 接受 `dsh`、`runtime-adapter`，并增加用于 Gateway-hydrated、owner-scoped Domain projection 的 `byq-domain`。`byq-domain` event 不得含只来自 model output 的 field。
 
-Every serialized payload is finite JSON and at most 65,536 bytes. Exact schema
-validation occurs before Gateway persistence and streaming. Unknown fields,
-NaN/infinity, arbitrary URLs, HTTP request descriptors, credentials, raw
-runtime objects, and tool arguments/results are rejected.
+每个 serialized payload 是有限 JSON，最多 65,536 bytes。Gateway persistence/streaming 前执行精确 schema validation；拒绝 unknown fields、NaN/infinity、任意 URLs、HTTP request descriptors、credentials、raw runtime objects 和 tool arguments/results。
 
 ## Common card fields
 
-Every `agent.card.*` payload contains:
+每个 `agent.card.*` payload 包含：
 
 | Field | Rule |
 | --- | --- |
-| `schema_version` | Exact string `workflow-card.v1`. |
-| `card_id` | BYQ allocated; `card_` plus 32–64 lowercase hex characters. Never accepted from model content. |
-| `revision` | Integer 1–2,147,483,647. Same card must increase monotonically. |
-| `authority` | `proposal` or `domain`; only Gateway hydration may produce `domain`. |
-| `title` | 1–160 Unicode characters after trimming. |
-| `summary` | Optional, at most 2,000 characters. |
-| `truncated` | Boolean; true when an allowed display field was safely shortened. |
+| `schema_version` | 精确字符串 `workflow-card.v1`。 |
+| `card_id` | BYQ 分配；`card_` 加 32–64 个小写 hex；绝不从 model content 接受。 |
+| `revision` | Integer 1–2,147,483,647；同一 card 严格单调递增。 |
+| `authority` | `proposal` 或 `domain`；只有 Gateway hydration 可产生 `domain`。 |
+| `title` | trim 后 1–160 Unicode characters。 |
+| `summary` | 可选，最多 2,000 characters。 |
+| `truncated` | Boolean；允许的 display field 被安全截短时为 true。 |
 
-Proposal IDs are derived from `(trace_id, sequence, kind)`. A Domain-backed
-card ID is derived from `(trace_id, kind, canonical_resource_id)`. Clients use
-`card_id + revision`, never array position, as render identity.
+Proposal IDs 从 `(trace_id, sequence, kind)` 导出；Domain-backed card ID 从 `(trace_id, kind, canonical_resource_id)` 导出。Clients 使用 `card_id + revision` 作为 render identity，不使用 array position。
 
-No card carries executable action data. Frontend actions are fixed mappings
-implemented in BYQ source and re-read the current Product resource.
+Card 不携带 executable action data。Frontend actions 是 BYQ source 中固定 mappings，并重新读取 current Product resource。
 
 ## Card schemas
 
 ### `agent.card.strategy_draft`
 
-Additional fields:
-
-- `name`: required, 1–160 characters;
-- `summary`: required;
-- `artifact_id`: optional canonical BYQ artifact reference;
-- `strategy_id`: optional, at most 128 characters;
-- `validation_status`: optional `unknown|draft|valid|invalid|superseded`.
-
-Source code, scripts, credentials, validation evidence, and full artifact
-content are excluded. Detail is fetched through the owner-scoped Product API.
-Only a hydrated Domain card may claim a status other than `unknown|draft`.
+附加 fields：必需 `name`（1–160）和 `summary`；可选 canonical `artifact_id`、最长 128 的 `strategy_id`、`validation_status`（`unknown|draft|valid|invalid|superseded`）。排除 source code、scripts、credentials、validation evidence 和完整 artifact content；detail 经 owner-scoped Product API 获取。只有 hydrated Domain card 可声明 `unknown|draft` 之外的 status。
 
 ### `agent.card.stock_candidates`
 
-Additional fields:
-
-- `items`: 1–50 unique items in stable order;
-- each item has exact fields `symbol`, optional `name`, optional `reason`;
-- `symbol` is canonical `NNNNNN.SH|SZ|BJ`;
-- `name` is at most 80 characters and `reason` at most 500 characters;
-- optional `as_of` is `YYYYMMDD`;
-- optional `pool_id` is a canonical BYQ Stock Pool reference.
-
-A proposal list is research guidance, not a persisted pool. Pool creation uses
-the Product API and its validation/lifecycle contract.
+`items` 为稳定顺序的 1–50 个唯一 items；每项精确包含 `symbol`、可选 `name`/`reason`。`symbol` 为 canonical `NNNNNN.SH|SZ|BJ`；`name` 最多 80、`reason` 最多 500。可选 `as_of` 为 `YYYYMMDD`，可选 `pool_id` 为 canonical BYQ Stock Pool reference。Proposal list 是 research guidance，不是 persisted pool；pool creation 使用 Product API lifecycle contract。
 
 ### `agent.card.optimization`
 
-Additional fields:
-
-- `objective`: required, 1–1,000 characters;
-- `changes`: 1–20 exact objects with `area` (1–80), optional `before`
-  (0–500), `after` (1–500), and `reason` (1–500);
-- optional `strategy_artifact_id` and `baseline_job_id` references;
-- optional `metrics` permits only finite numeric `total_return`,
-  `max_drawdown`, `sharpe_ratio`, `volatility`, and `win_rate`.
-
-An optimization card is a proposal unless every referenced resource is
-owner-resolved. It never claims that a strategy was saved or a comparison
-backtest executed.
+必需 `objective`（1–1,000）；`changes` 为 1–20 个精确 objects，含 `area`（1–80）、可选 `before`（0–500）、`after`（1–500）和 `reason`（1–500）；可选 `strategy_artifact_id`、`baseline_job_id`；可选 `metrics` 只允许有限数值 `total_return`、`max_drawdown`、`sharpe_ratio`、`volatility`、`win_rate`。除非全部 references 均 owner-resolved，否则是 proposal；绝不声称已保存 strategy 或执行 comparison backtest。
 
 ### `agent.card.backtest_context`
 
-This kind requires `authority = domain` and `source = byq-domain`.
-
-Additional fields:
-
-- canonical `job_id`;
-- `status`: `queued|running|completed|failed|cancelled`;
-- optional finite metrics using the optimization metric allow-list plus
-  `trade_count` and `blocked_trade_count` non-negative integers;
-- optional canonical `strategy_artifact_id` and `result_artifact_id`.
-
-All values are replaced from the current owner-scoped Backtest projection.
+要求 `authority = domain`、`source = byq-domain`。附加 canonical `job_id`；`status` 为 `queued|running|completed|failed|cancelled`；可选有限 metrics 使用 optimization allow-list，并允许非负整数 `trade_count`/`blocked_trade_count`；可选 canonical `strategy_artifact_id`、`result_artifact_id`。所有值由 current owner-scoped Backtest projection 替换。
 
 ### `agent.card.approval`
 
-This kind requires `authority = domain` and `source = byq-domain`.
+要求 `authority = domain`、`source = byq-domain`。附加 canonical `approval_id`；最长 128 的 BYQ approval `action`；`status` 为 `pending|approved|rejected`；`execution_outcome` 为 `not_started|authorized|not_authorized`；可选 `risk_level` 为 `low|medium|high|critical`；可选 `decided_by_display` 最多 160。
 
-Additional fields:
+Card 不含 decision endpoint/mutation arguments。Human decision 前 frontend 获取 current approval 并使用现有 Product Approval API。Approval status 与 `execution_outcome` 保持不同；`approved` 表示 authorized，不表示成功执行。扩展 outcomes 需要 reviewed contract update。
 
-- canonical `approval_id`;
-- `action`: a BYQ approval action identifier, at most 128 characters;
-- `status`: `pending|approved|rejected`;
-- `execution_outcome`: `not_started|authorized|not_authorized`;
-- optional `risk_level`: `low|medium|high|critical`;
-- optional `decided_by_display`: safe display label, at most 160 characters.
+## Public answer 与 activity
 
-The card contains no decision endpoint or mutation arguments. Before a human
-decision, the frontend fetches the current approval and uses the existing
-Product Approval API. Approval status and `execution_outcome` remain distinct;
-`approved` means authorized, not successfully executed. Expanding execution
-outcomes requires a reviewed contract update.
-
-## Public answer and activity
-
-`agent.output.delta` payload:
+`agent.output.delta` payload：
 
 ```json
-{
-  "schema_version": "workflow-answer.v1",
-  "channel": "answer",
-  "delta": "public assistant text",
-  "truncated": false
-}
+{"schema_version":"workflow-answer.v1","channel":"answer","delta":"public assistant text","truncated":false}
 ```
 
-Each fragment is at most 8,192 UTF-8 bytes. The adapter emits only public
-assistant answer blocks and deduplicates cumulative DSH updates.
+每个 fragment 最多 8,192 UTF-8 bytes。Adapter 只发 public assistant answer blocks，并 deduplicate cumulative DSH updates。
 
-`agent.activity` payload:
+`agent.activity` payload：
 
 ```json
-{
-  "schema_version": "workflow-activity.v1",
-  "activity_id": "activity_<hex>",
-  "phase": "strategy",
-  "state": "started",
-  "label": "校验策略草稿",
-  "capability": "byq_strategy_validate"
-}
+{"schema_version":"workflow-activity.v1","activity_id":"activity_<hex>","phase":"strategy","state":"started","label":"校验策略草稿","capability":"byq_strategy_validate"}
 ```
 
-`phase` is `understand|select|strategy|backtest|review|tool`; `state` is
-`started|progress|completed|failed|waiting_approval`. `label` is 1–240
-characters. Optional `capability` is a known BYQ MCP capability name, never a
-DSH tool identifier. There are no reasoning, prompt, argument, raw result, or
-stack-trace fields.
+`phase` 为 `understand|select|strategy|backtest|review|tool`；`state` 为 `started|progress|completed|failed|waiting_approval`；`label` 为 1–240 characters。可选 `capability` 是已知 BYQ MCP capability name，绝非 DSH tool identifier。不存在 reasoning、prompt、argument、raw result 或 stack-trace fields。
 
-## Budgets and degradation
+## Budgets、degradation 与 compatibility
 
-One turn may emit at most 32 cards and 256 activity events. Excess activity is
-coalesced into one `session.progress` event with only a semantic reason and
-`truncated: true`. Invalid or unauthorized cards also become bounded
-`session.progress` at their allocated sequence. The projector never falls back
-to stringifying or forwarding the rejected input.
+一个 turn 最多 32 cards 和 256 activity events。超额 activity 合并为一个只含 semantic reason 和 `truncated: true` 的 `session.progress` event。Invalid/unauthorized cards 也在其 allocated sequence 转为有界 `session.progress`；projector 绝不 stringify/forward rejected input。
 
-## Replay and compatibility
+Gateway 保持连续 session sequence。Reconnect replay 相同 accepted snapshots，不重新 hydration。同一 trace 内 `card_id` revisions 严格递增；identical retry 仅按 existing identical-envelope rule 接受。
 
-Gateway keeps contiguous session sequence semantics. A reconnect replays the
-same accepted snapshots; it does not re-run hydration. Within one trace,
-`card_id` revisions are strictly increasing. An identical retry is accepted
-only under the existing identical-envelope rule.
-
-Optional additive fields require a reviewed v1 contract update. Removing or
-renaming a field, changing authority semantics, expanding action capability,
-or accepting a new card kind requires a new schema version and ADR review.
+Optional additive fields 需要 reviewed v1 contract update。删除/重命名 field、改变 authority semantics、扩展 action capability 或接受新 card kind，需要新 schema version 和 ADR review。

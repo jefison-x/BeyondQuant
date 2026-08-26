@@ -1,65 +1,44 @@
 # WorkflowTrace Envelope Contract
 
-## Purpose
+## 目的
 
-Define the framework-neutral BYQ envelope, ordering, persistence, and replay
-contract established by Phase 7. Structured Phase 36 projections are defined
-by [the WorkflowTrace card contract](workflow-trace-cards.md) under ADR-0018;
-they extend this envelope without exposing DSH event schemas.
+定义 Phase 7 建立的 framework-neutral BYQ envelope、ordering、persistence 和 replay contract。Phase 36 structured projections 由 ADR-0018 下的 [WorkflowTrace card contract](workflow-trace-cards.md) 定义；它们扩展此 envelope，但不暴露 DSH event schemas。
 
-## Ownership
+## 所有权
 
-The contract is owned by the BYQ Gateway and Quant Domain Plane. DSH events are an input, not the public contract.
+Contract 由 BYQ Gateway 和 Quant Domain Plane 拥有。DSH events 是 input，不是 public contract。
 
-## Non-goals
+## 非目标
 
-- This document does not duplicate the structured card payload schemas.
-- It does not expose DSH internal event types to the frontend.
-- It does not make DSH session persistence BYQ business state.
+- 不重复 structured card payload schemas。
+- 不向 frontend 暴露 DSH internal event types。
+- 不把 DSH session persistence 视为 BYQ business state。
 
 ## Envelope
 
-The adapter emits the BYQ-owned `WorkflowTraceEvent` from
-`packages/contracts/workflow_trace.py` with:
+Adapter 发出 `packages/contracts/workflow_trace.py` 中 BYQ-owned `WorkflowTraceEvent`：
 
 ```text
 trace_id, session_id, sequence, timestamp, kind, source, payload
 ```
 
-The payload is deliberately semantic. `source` is `dsh` or
-`runtime-adapter`, with `byq-domain` reserved for a Gateway-hydrated,
-owner-scoped Domain projection as specified by ADR-0018. Raw DSH
-notifications, runtime event objects, and DSH-specific persistence records do
-not cross into Gateway or frontend boundaries. Runtime Adapter allocates one
-contiguous sequence per BYQ session.
+Payload 刻意保持 semantic。`source` 为 `dsh` 或 `runtime-adapter`；按 ADR-0018，`byq-domain` 保留给 Gateway-hydrated、owner-scoped Domain projection。Raw DSH notifications、runtime event objects 和 DSH-specific persistence records 不跨入 Gateway/frontend boundaries。Runtime Adapter 为每个 BYQ session 分配连续 sequence。
 
-The first product-turn semantic kinds include:
+首批 product-turn semantic kinds 包括：
 
-- `session.ready`, `session.started`, `session.status`, `session.progress`;
-- `agent.output.delta`, `turn.completed`, `session.result`;
-- `session.cancelled`, `session.resuming`, `session.resumed`;
-- `session.result.discarded`, `session.failed`, and `session.closed`.
+- `session.ready`、`session.started`、`session.status`、`session.progress`；
+- `agent.output.delta`、`turn.completed`、`session.result`；
+- `session.cancelled`、`session.resuming`、`session.resumed`；
+- `session.result.discarded`、`session.failed`、`session.closed`。
 
-ADR-0018 additionally defines five `agent.card.*` projections,
-`agent.activity`, and bounded public `agent.output.delta` fragments. Those
-events remain ordinary envelopes in the same ordered stream. Cards are view
-models, never commands; Domain-backed fields require owner-scoped Gateway
-hydration.
+ADR-0018 另定义五种 `agent.card.*` projections、`agent.activity` 和有界 public `agent.output.delta` fragments；这些仍是同一 ordered stream 中的普通 envelopes。Cards 是 view models，不是 commands；Domain-backed fields 需要 owner-scoped Gateway hydration。
 
-Run correlation belongs in the semantic payload (for example, `run_id`), not
-in DSH-specific fields. Authentication subjects are Gateway session metadata,
-not trace payload data.
+Run correlation 放在 semantic payload（例如 `run_id`），不放在 DSH-specific fields。Authentication subjects 是 Gateway session metadata，不是 trace payload data。
 
-## Persistence and replay
+## Persistence 与 replay
 
-Gateway appends normalized envelopes to a BYQ-owned per-session trace stream.
-An event is accepted only when its sequence is the next contiguous sequence or
-an identical retry of the most recent event. Product SSE clients receive
-`id: <sequence>` and may send `Last-Event-ID` to replay events after a
-disconnect. A BYQ trace remains distinct from DSH's durable session log.
+Gateway 将 normalized envelopes 追加到 BYQ-owned per-session trace stream。只有 sequence 为下一个连续值，或为最近 event 的 identical retry 时才接受。Product SSE clients 接收 `id: <sequence>`，断线后可发送 `Last-Event-ID` replay。BYQ trace 与 DSH durable session log 保持独立。
 
-## Stability guarantee
+## 稳定性保证
 
-The frontend MUST depend on the BYQ WorkflowTrace contracts rather than DSH
-internal schemas. Future DSH replacement or upgrade SHOULD NOT require
-frontend workflow reconstruction.
+Frontend 必须依赖 BYQ WorkflowTrace contracts，而不是 DSH internal schemas。未来替换或升级 DSH 不应要求重建 frontend workflow。

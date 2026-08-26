@@ -3,10 +3,9 @@ info:
   title: BeyondQuant Browser API
   version: 0.2.0
   description: >-
-    Browser-facing Gateway contract. Normal browser authentication uses the
-    HttpOnly byq_session cookie. The bearer scheme is internal/bootstrap
-    compatibility only. No Backend, MCP, DSH, provider, credential, or raw
-    storage contract is exposed.
+    面向 browser 的 Gateway contract。普通 browser authentication 使用 HttpOnly
+    byq_session cookie。bearer scheme 仅用于 internal/bootstrap compatibility。
+    不暴露 Backend、MCP、DSH、provider、credential 或 raw storage contract。
 servers:
   - url: /
 security:
@@ -24,281 +23,281 @@ x-no-content-responses: &noContentResponses
 
 paths:
   /api/auth/login:
-    post: {summary: Create a durable browser session., security: [], responses: *okResponses}
+    post: {summary: 创建 a durable browser session., security: [], responses: *okResponses}
   /api/auth/logout:
-    post: {summary: Revoke the current browser session., responses: *okResponses}
+    post: {summary: 撤销 the current browser session., responses: *okResponses}
   /api/auth/me:
-    get: {summary: Resolve the current browser principal and role., responses: *okResponses}
+    get: {summary: 解析 the current browser principal and role., responses: *okResponses}
 
   /api/product/health:
-    get: {summary: Return Product API health., responses: *okResponses}
+    get: {summary: 返回 Product API health., responses: *okResponses}
   /api/product/auth/login:
-    post: {summary: Compatibility login under the Product API prefix., security: [], responses: *okResponses}
+    post: {summary: 提供 compatibility login under the Product API prefix., security: [], responses: *okResponses}
   /api/product/auth/logout:
-    post: {summary: Compatibility logout under the Product API prefix., responses: *okResponses}
+    post: {summary: 提供 compatibility logout under the Product API prefix., responses: *okResponses}
   /api/product/auth/me:
-    get: {summary: Resolve the current Product API principal., responses: *okResponses}
+    get: {summary: 解析 the current Product API principal., responses: *okResponses}
   /api/product/dashboard:
-    get: {summary: Return the bounded dashboard projection., responses: *okResponses}
+    get: {summary: 返回 the bounded dashboard projection., responses: *okResponses}
   /api/product/data/status:
-    get: {summary: Return provider and migration status without credentials., responses: *okResponses}
+    get: {summary: 返回 provider and migration status without credentials., responses: *okResponses}
   /api/product/data-center/status:
-    get: {summary: Return Tushare source metadata, sync history, and observed PostgreSQL coverage without secrets., responses: *okResponses}
+    get: {summary: 返回 Tushare source metadata, sync history, and observed PostgreSQL coverage without secrets., responses: *okResponses}
   /api/product/data-center/automation:
-    get: {summary: Return administrator-visible daily market synchronization configuration, worker health, completeness, and job state., responses: *okResponses}
+    get: {summary: 返回 administrator-visible daily market synchronization configuration, worker health, completeness, and job state., responses: *okResponses}
   /api/product/data-center/automation/config:
-    put: {summary: Update the versioned daily market synchronization schedule and catch-up policy., responses: *okResponses}
+    put: {summary: 更新 the versioned daily market synchronization schedule and catch-up policy., responses: *okResponses}
   /api/product/data-center/automation/run-now:
-    post: {summary: Enqueue an administrator-requested daily market synchronization scheduler run., responses: *acceptedResponses}
+    post: {summary: 排队 an administrator-requested daily market synchronization scheduler run., responses: *acceptedResponses}
   /api/product/data-center/automation/run-now/{request_id}:
     parameters: [{$ref: "#/components/parameters/RequestId"}]
-    get: {summary: Get one administrator-requested daily market synchronization run., responses: *okResponses}
+    get: {summary: 获取 one administrator-requested daily market synchronization run., responses: *okResponses}
   /api/product/data-center/source/credentials:
-    post: {summary: Create the admin-only write-only Tushare system credential., responses: *createdResponses}
+    post: {summary: 创建 the admin-only write-only Tushare system credential., responses: *createdResponses}
   /api/product/data-center/source/credentials/{credential_id}:
     parameters: [{$ref: "#/components/parameters/CredentialId"}]
-    put: {summary: Replace or enable/disable the admin-only Tushare credential with optimistic concurrency., responses: *okResponses}
+    put: {summary: 替换 or enable/disable the admin-only Tushare credential with optimistic concurrency., responses: *okResponses}
   /api/product/data-center/source/credentials/{credential_id}/revoke:
     parameters: [{$ref: "#/components/parameters/CredentialId"}]
-    post: {summary: Revoke the Tushare credential and erase its encrypted envelope., responses: *okResponses}
+    post: {summary: 撤销 the Tushare credential and erase its encrypted envelope., responses: *okResponses}
   /api/product/data-center/source/test:
-    post: {summary: Test the effective Tushare credential through one bounded daily request., responses: *okResponses}
+    post: {summary: 测试 the effective Tushare credential through one bounded daily request., responses: *okResponses}
   /api/product/data-center/sync-jobs:
-    post: {summary: Create and execute an admin-only bounded durable Tushare sync job., responses: *createdResponses}
+    post: {summary: 创建 and execute an admin-only bounded durable Tushare sync job., responses: *createdResponses}
   /api/product/data-center/sync-jobs/{job_id}:
     parameters: [{$ref: "#/components/parameters/JobId"}]
-    get: {summary: Get one durable Tushare sync job and its normalized symbol results., responses: *okResponses}
+    get: {summary: 获取 one durable Tushare sync job and its normalized symbol results., responses: *okResponses}
   /api/product/data-center/security-master/sync-jobs:
-    post: {summary: Atomically synchronize the complete admin-only A-share security master., responses: *createdResponses}
+    post: {summary: 原子同步 the complete admin-only A-share security master., responses: *createdResponses}
   /api/product/data-center/security-master/sync-jobs/{job_id}:
     parameters: [{$ref: "#/components/parameters/JobId"}]
-    get: {summary: Get one security-master synchronization job without provider secrets., responses: *okResponses}
+    get: {summary: 获取 one security-master synchronization job without provider secrets., responses: *okResponses}
   /api/product/data-center/securities:
-    get: {summary: Search and page the normalized A-share security catalogue bound to its immutable snapshot., responses: *okResponses}
+    get: {summary: 搜索并分页返回 the normalized A-share security catalogue bound to its immutable snapshot., responses: *okResponses}
   /api/product/data-center/coverage:
-    get: {summary: Return an honest audit of persisted observed market-data coverage and quality., responses: *okResponses}
+    get: {summary: 返回 an honest audit of persisted observed market-data coverage and quality., responses: *okResponses}
   /api/product/operations/status:
-    get: {summary: Return the admin-only browser-safe operations projection., responses: *okResponses}
+    get: {summary: 返回 the admin-only browser-safe operations projection., responses: *okResponses}
   /api/product/operations/budget:
-    put: {summary: Update audited Product Agent usage-monitoring thresholds., responses: *okResponses}
+    put: {summary: 更新 audited Product Agent usage-monitoring thresholds., responses: *okResponses}
 
   /api/product/research/{entity_type}/{entity_id}:
     parameters:
       - $ref: "#/components/parameters/EntityType"
       - $ref: "#/components/parameters/EntityId"
-    get: {summary: Get one owner-scoped research entity., responses: *okResponses}
+    get: {summary: 获取 one owner-scoped research entity., responses: *okResponses}
   /api/product/research/tasks:
-    get: {summary: List owner-scoped research tasks., responses: *okResponses}
-    post: {summary: Create an owner-scoped research task with server-owned identity fields., responses: *createdResponses}
+    get: {summary: 列出 owner-scoped research tasks., responses: *okResponses}
+    post: {summary: 创建 an owner-scoped research task with server-owned identity fields., responses: *createdResponses}
   /api/product/research/experiments:
-    get: {summary: List owner-scoped experiments., responses: *okResponses}
+    get: {summary: 列出 owner-scoped experiments., responses: *okResponses}
   /api/product/research/artifacts:
-    get: {summary: List owner-scoped artifacts., responses: *okResponses}
+    get: {summary: 列出 owner-scoped artifacts., responses: *okResponses}
   /api/product/factors:
-    get: {summary: List owner-scoped factor results., responses: *okResponses}
+    get: {summary: 列出 owner-scoped factor results., responses: *okResponses}
   /api/product/signal-snapshots:
-    get: {summary: List owner-scoped signal snapshots., responses: *okResponses}
+    get: {summary: 列出 owner-scoped signal snapshots., responses: *okResponses}
   /api/product/signal-producer/jobs:
-    get: {summary: List owner-scoped isolated signal-production jobs., responses: *okResponses}
-    post: {summary: Freeze canonical inputs and enqueue isolated signal production., responses: *acceptedResponses}
+    get: {summary: 列出 owner-scoped isolated signal-production jobs., responses: *okResponses}
+    post: {summary: 冻结 canonical inputs and enqueue isolated signal production., responses: *acceptedResponses}
   /api/product/signal-producer/jobs/{job_id}:
     parameters: [{$ref: "#/components/parameters/JobId"}]
-    get: {summary: Get one owner-scoped signal-production job status., responses: *okResponses}
+    get: {summary: 获取 one owner-scoped signal-production job status., responses: *okResponses}
 
   /api/product/backtests:
-    get: {summary: List owner-scoped backtest jobs., responses: *okResponses}
-    post: {summary: Submit an owner-scoped backtest job., responses: *acceptedResponses}
+    get: {summary: 列出 owner-scoped backtest jobs., responses: *okResponses}
+    post: {summary: 提交 an owner-scoped backtest job., responses: *acceptedResponses}
   /api/product/backtests/options:
-    get: {summary: List runnable owner-scoped backtest options., responses: *okResponses}
+    get: {summary: 列出 runnable owner-scoped backtest options., responses: *okResponses}
   /api/product/backtests/{job_id}:
     parameters: [{$ref: "#/components/parameters/JobId"}]
-    get: {summary: Get one owner-scoped backtest job., responses: *okResponses}
-    delete: {summary: Delete one owner-scoped backtest job., responses: *noContentResponses}
+    get: {summary: 获取 one owner-scoped backtest job., responses: *okResponses}
+    delete: {summary: 删除 one owner-scoped backtest job., responses: *noContentResponses}
   /api/product/backtests/{job_id}/result:
     parameters: [{$ref: "#/components/parameters/JobId"}]
-    get: {summary: Get an immutable owner-scoped backtest result., responses: *okResponses}
+    get: {summary: 获取 an immutable owner-scoped backtest result., responses: *okResponses}
   /api/product/backtests/{job_id}/run:
     parameters: [{$ref: "#/components/parameters/JobId"}]
-    post: {summary: Run one owner-scoped backtest job., responses: *okResponses}
+    post: {summary: 运行 one owner-scoped backtest job., responses: *okResponses}
   /api/product/backtests/{job_id}/cancel:
     parameters: [{$ref: "#/components/parameters/JobId"}]
-    post: {summary: Cancel one owner-scoped backtest job., responses: *okResponses}
+    post: {summary: 取消 one owner-scoped backtest job., responses: *okResponses}
 
   /api/product/strategies:
-    get: {summary: List owner-scoped strategy artifacts., responses: *okResponses}
+    get: {summary: 列出 owner-scoped strategy artifacts., responses: *okResponses}
   /api/product/strategies/drafts:
-    post: {summary: Save an owner-scoped strategy draft., responses: *createdResponses}
+    post: {summary: 保存 an owner-scoped strategy draft., responses: *createdResponses}
   /api/product/strategies/drafts/{artifact_id}:
     parameters: [{$ref: "#/components/parameters/ArtifactId"}]
-    delete: {summary: Supersede an owner-scoped strategy draft., responses: *noContentResponses}
+    delete: {summary: 将 an owner-scoped strategy draft., responses: *noContentResponses}
   /api/product/strategies/validate:
-    post: {summary: Validate an owner-scoped strategy draft., responses: *createdResponses}
+    post: {summary: 验证 an owner-scoped strategy draft., responses: *createdResponses}
   /api/product/strategies/versions:
-    post: {summary: Create an immutable owner-scoped strategy version., responses: *createdResponses}
+    post: {summary: 创建 an immutable owner-scoped strategy version., responses: *createdResponses}
   /api/product/strategies/approvals:
-    post: {summary: Record the owner's explicit human approval for a validated strategy version., responses: *createdResponses}
+    post: {summary: 记录 the owner's explicit human approval for a validated strategy version., responses: *createdResponses}
   /api/product/strategies/versions/{artifact_id}/export:
     parameters: [{$ref: "#/components/parameters/ArtifactId"}]
-    get: {summary: Export one owner-scoped strategy version., responses: *okResponses}
+    get: {summary: 导出 one owner-scoped strategy version., responses: *okResponses}
   /api/product/strategies/{strategy_id}/versions:
     parameters: [{$ref: "#/components/parameters/StrategyId"}]
-    get: {summary: List owner-scoped strategy version history., responses: *okResponses}
+    get: {summary: 列出 owner-scoped strategy version history., responses: *okResponses}
   /api/product/strategies/{strategy_id}/backtest-count:
     parameters: [{$ref: "#/components/parameters/StrategyId"}]
-    get: {summary: Return owner-scoped strategy backtest counts., responses: *okResponses}
+    get: {summary: 返回 owner-scoped strategy backtest counts., responses: *okResponses}
 
   /api/product/approvals:
-    get: {summary: List owner-scoped approvals., responses: *okResponses}
+    get: {summary: 列出 owner-scoped approvals., responses: *okResponses}
   /api/product/approvals/{approval_id}:
     parameters: [{$ref: "#/components/parameters/ApprovalId"}]
-    get: {summary: Get one owner-scoped approval., responses: *okResponses}
+    get: {summary: 获取 one owner-scoped approval., responses: *okResponses}
   /api/product/approvals/{approval_id}/decision:
     parameters: [{$ref: "#/components/parameters/ApprovalId"}]
-    post: {summary: Record an owner-scoped approval decision., responses: *okResponses}
+    post: {summary: 记录 an owner-scoped approval decision., responses: *okResponses}
 
   /api/product/profile:
-    get: {summary: Return the authenticated user profile., responses: *okResponses}
-    put: {summary: Update the authenticated user profile., responses: *okResponses}
+    get: {summary: 返回 the authenticated user profile., responses: *okResponses}
+    put: {summary: 更新 the authenticated user profile., responses: *okResponses}
   /api/product/settings/appearance:
-    get: {summary: Return the authenticated owner's ui-preferences.v1 appearance settings., responses: *okResponses}
-    put: {summary: Persist closed color-mode and accent values with optimistic concurrency., responses: *okResponses}
+    get: {summary: 返回 the authenticated owner's ui-preferences.v1 appearance settings., responses: *okResponses}
+    put: {summary: 持久化 closed color-mode and accent values with optimistic concurrency., responses: *okResponses}
   /api/product/settings/status:
-    get: {summary: Return user settings capability status., responses: *okResponses}
+    get: {summary: 返回 user settings capability status., responses: *okResponses}
   /api/product/settings/models:
-    get: {summary: Return a secret-free model capability projection., responses: *okResponses}
+    get: {summary: 返回 a secret-free model capability projection., responses: *okResponses}
   /api/product/settings/models/credentials:
-    post: {summary: Create an owner-scoped write-only model credential., responses: *createdResponses}
+    post: {summary: 创建 an owner-scoped write-only model credential., responses: *createdResponses}
   /api/product/settings/models/credentials/{credential_id}:
-    put: {summary: Replace metadata or the write-only secret with optimistic concurrency., responses: *okResponses}
+    put: {summary: 替换 metadata or the write-only secret with optimistic concurrency., responses: *okResponses}
   /api/product/settings/models/credentials/{credential_id}/revoke:
-    post: {summary: Revoke an owner-scoped credential and disable dependent bindings., responses: *okResponses}
+    post: {summary: 撤销 an owner-scoped credential and disable dependent bindings., responses: *okResponses}
   /api/product/settings/models/profiles:
-    post: {summary: Create an owner-scoped model profile from the reviewed catalogue., responses: *createdResponses}
+    post: {summary: 创建 an owner-scoped model profile from the reviewed catalogue., responses: *createdResponses}
   /api/product/settings/models/profiles/{profile_id}/delete:
-    post: {summary: Soft-delete a model profile and unbind it., responses: *okResponses}
+    post: {summary: 软删除 a model profile and unbind it., responses: *okResponses}
   /api/product/settings/models/bindings/{agent_id}:
-    put: {summary: Bind or unbind one BYQ Agent preset to an owner-scoped model profile., responses: *okResponses}
+    put: {summary: 绑定 or unbind one BYQ Agent preset to an owner-scoped model profile., responses: *okResponses}
   /api/product/settings/agent-policy:
-    get: {summary: Return platform and personal agent policy., responses: *okResponses}
-    put: {summary: Update personal agent policy., responses: *okResponses}
+    get: {summary: 返回 platform and personal agent policy., responses: *okResponses}
+    put: {summary: 更新 personal agent policy., responses: *okResponses}
   /api/product/settings/agent-policy/rules:
-    post: {summary: Create an owner-scoped Agent authorization rule., responses: *createdResponses}
+    post: {summary: 创建 an owner-scoped Agent authorization rule., responses: *createdResponses}
   /api/product/settings/agent-policy/rules/{rule_id}:
-    put: {summary: Update an owner-scoped Agent authorization rule with optimistic concurrency., responses: *okResponses}
+    put: {summary: 更新 an owner-scoped Agent authorization rule with optimistic concurrency., responses: *okResponses}
   /api/product/settings/agent-policy/rules/{rule_id}/delete:
-    post: {summary: Delete an owner-scoped Agent authorization rule., responses: *okResponses}
+    post: {summary: 删除 an owner-scoped Agent authorization rule., responses: *okResponses}
   /api/product/settings/agent-policy/presets/{preset_id}/apply:
-    post: {summary: Replace personal policy settings and rules from a BYQ preset., responses: *okResponses}
+    post: {summary: 替换 personal policy settings and rules from a BYQ preset., responses: *okResponses}
   /api/product/settings/assets:
-    get: {summary: Return owner-scoped workspace assets., responses: *okResponses}
+    get: {summary: 返回 owner-scoped workspace assets., responses: *okResponses}
   /api/product/settings/assets/export:
-    get: {summary: Export a secret-free owner-scoped asset bundle., responses: *okResponses}
+    get: {summary: 导出 a secret-free owner-scoped asset bundle., responses: *okResponses}
   /api/product/settings/assets/import:
-    post: {summary: Import a validated owner-scoped asset bundle., responses: *okResponses}
+    post: {summary: 导入 a validated owner-scoped asset bundle., responses: *okResponses}
 
   /api/product/admin/users:
-    get: {summary: List users as an authenticated administrator., responses: *okResponses}
+    get: {summary: 列出 users as an authenticated administrator., responses: *okResponses}
   /api/product/admin/users/{user_id}/disable:
     parameters: [{$ref: "#/components/parameters/UserId"}]
-    post: {summary: Disable one user as an authenticated administrator., responses: *okResponses}
+    post: {summary: 禁用 one user as an authenticated administrator., responses: *okResponses}
 
   /api/product/paper/accounts:
-    get: {summary: List owner-scoped paper accounts., responses: *okResponses}
-    post: {summary: Create an owner-scoped paper account., responses: *createdResponses}
+    get: {summary: 列出 owner-scoped paper accounts., responses: *okResponses}
+    post: {summary: 创建 an owner-scoped paper account., responses: *createdResponses}
   /api/product/paper/accounts/{account_id}:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
-    get: {summary: Get one owner-scoped paper account., responses: *okResponses}
+    get: {summary: 获取 one owner-scoped paper account., responses: *okResponses}
   /api/product/paper/pools:
     parameters: [{$ref: "#/components/parameters/Limit"}, {$ref: "#/components/parameters/Offset"}]
-    get: {summary: List owner-scoped stock pools., responses: *okResponses}
-    post: {summary: Create an owner-scoped stock pool., responses: *createdResponses}
+    get: {summary: 列出 owner-scoped stock pools., responses: *okResponses}
+    post: {summary: 创建 an owner-scoped stock pool., responses: *createdResponses}
   /api/product/paper/pools/{pool_id}:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
-    get: {summary: Get one owner-scoped stock pool., responses: *okResponses}
-    delete: {summary: Tombstone-delete an owner-scoped stock pool while retaining snapshots., responses: *okResponses}
+    get: {summary: 获取 one owner-scoped stock pool., responses: *okResponses}
+    delete: {summary: 以 tombstone 方式删除 an owner-scoped stock pool while retaining snapshots., responses: *okResponses}
   /api/product/paper/pools/{pool_id}/metadata:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
-    patch: {summary: Update mutable stock-pool catalog metadata without creating a snapshot., responses: *okResponses}
+    patch: {summary: 更新 mutable stock-pool catalog metadata without creating a snapshot., responses: *okResponses}
   /api/product/paper/pools/{pool_id}/snapshot:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
-    put: {summary: Append or idempotently reuse an immutable membership snapshot., responses: *okResponses}
+    put: {summary: 追加 or idempotently reuse an immutable membership snapshot., responses: *okResponses}
   /api/product/paper/pools/{pool_id}/snapshots:
     parameters: [{$ref: "#/components/parameters/PoolId"}, {$ref: "#/components/parameters/Limit"}, {$ref: "#/components/parameters/Offset"}]
-    get: {summary: List immutable stock-pool snapshot history., responses: *okResponses}
+    get: {summary: 列出 immutable stock-pool snapshot history., responses: *okResponses}
   /api/product/paper/pools/{pool_id}/snapshots/{snapshot_id}:
     parameters: [{$ref: "#/components/parameters/PoolId"}, {$ref: "#/components/parameters/SnapshotId"}]
-    get: {summary: Get one immutable stock-pool snapshot., responses: *okResponses}
+    get: {summary: 获取 one immutable stock-pool snapshot., responses: *okResponses}
   /api/product/paper/pools/{pool_id}/lifecycle:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
-    patch: {summary: Activate, deactivate, or tombstone a stock pool., responses: *okResponses}
+    patch: {summary: 激活、停用或 tombstone a stock pool., responses: *okResponses}
   /api/product/paper/pools/{pool_id}/as-of/{trade_date}:
     parameters: [{$ref: "#/components/parameters/PoolId"}, {$ref: "#/components/parameters/TradeDate"}]
-    get: {summary: Resolve the latest persisted index snapshot at or before a trade date., responses: *okResponses}
+    get: {summary: 解析 the latest persisted index snapshot at or before a trade date., responses: *okResponses}
   /api/product/paper/pools/{pool_id}/references:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
-    get: {summary: List bounded owner-safe downstream stock-pool references., responses: *okResponses}
+    get: {summary: 列出 bounded owner-safe downstream stock-pool references., responses: *okResponses}
   /api/product/paper/orders:
-    post: {summary: Submit an owner-scoped paper order., responses: *createdResponses}
+    post: {summary: 提交 an owner-scoped paper order., responses: *createdResponses}
   /api/product/paper/accounts/{account_id}/orders:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
-    get: {summary: List owner-scoped paper orders., responses: *okResponses}
+    get: {summary: 列出 owner-scoped paper orders., responses: *okResponses}
   /api/product/paper/accounts/{account_id}/orders/{order_id}:
     parameters: [{$ref: "#/components/parameters/AccountId"}, {$ref: "#/components/parameters/OrderId"}]
-    get: {summary: Get one persisted owner-scoped paper order audit projection., responses: *okResponses}
+    get: {summary: 获取 one persisted owner-scoped paper order audit projection., responses: *okResponses}
   /api/product/paper/accounts/{account_id}/positions:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
-    get: {summary: List owner-scoped paper positions., responses: *okResponses}
+    get: {summary: 列出 owner-scoped paper positions., responses: *okResponses}
   /api/product/paper/accounts/{account_id}/fills:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
-    get: {summary: List owner-scoped paper fills., responses: *okResponses}
+    get: {summary: 列出 owner-scoped paper fills., responses: *okResponses}
   /api/product/paper/accounts/{account_id}/ledger:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
-    get: {summary: List the owner-scoped paper ledger., responses: *okResponses}
+    get: {summary: 列出 the owner-scoped paper ledger., responses: *okResponses}
   /api/product/paper/accounts/{account_id}/snapshots:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
-    get: {summary: List immutable owner-scoped daily paper account snapshots., responses: *okResponses}
+    get: {summary: 列出 immutable owner-scoped daily paper account snapshots., responses: *okResponses}
   /api/product/paper/accounts/{account_id}/settlements:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
-    post: {summary: Perform an idempotent manual paper-account settlement., responses: *createdResponses}
+    post: {summary: 执行 an idempotent manual paper-account settlement., responses: *createdResponses}
   /api/product/paper/accounts/{account_id}/controls:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
-    get: {summary: Get versioned paper-account risk controls., responses: *okResponses}
-    put: {summary: Update versioned paper-account risk controls., responses: *okResponses}
+    get: {summary: 获取 versioned paper-account risk controls., responses: *okResponses}
+    put: {summary: 更新 versioned paper-account risk controls., responses: *okResponses}
   /api/product/paper/accounts/{account_id}/binding:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
-    put: {summary: Rebind an empty paper account to a frozen stock-pool snapshot., responses: *okResponses}
+    put: {summary: 重新绑定 an empty paper account to a frozen stock-pool snapshot., responses: *okResponses}
   /api/product/paper/accounts/{account_id}/export:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
-    get: {summary: Export a manifested owner-safe paper-account bundle., responses: *okResponses}
+    get: {summary: 导出 a manifested owner-safe paper-account bundle., responses: *okResponses}
   /api/product/paper/accounts/import:
-    post: {summary: Validate and import a paper-account bundle under a new owner-scoped ID., responses: *createdResponses}
+    post: {summary: 验证 and import a paper-account bundle under a new owner-scoped ID., responses: *createdResponses}
 
   /v1/agent/sessions:
-    get: {summary: Search and page the owner-scoped durable conversation catalog., responses: *okResponses}
-    post: {summary: Create an owner-scoped durable conversation with private runtime correlation., responses: *createdResponses}
+    get: {summary: 搜索并分页返回 the owner-scoped durable conversation catalog., responses: *okResponses}
+    post: {summary: 创建 an owner-scoped durable conversation with private runtime correlation., responses: *createdResponses}
   /v1/agent/sessions/{session_id}:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
-    get: {summary: Replay owner-scoped user messages and normalized WorkflowTrace events., responses: *okResponses}
-    patch: {summary: Rename, pin, archive or restore an owner-scoped conversation., responses: *okResponses}
-    delete: {summary: Archive and release an owner-scoped Product Agent session., responses: *noContentResponses}
+    get: {summary: 重放 owner-scoped user messages and normalized WorkflowTrace events., responses: *okResponses}
+    patch: {summary: 重命名、置顶、归档或恢复 an owner-scoped conversation., responses: *okResponses}
+    delete: {summary: 归档并释放 an owner-scoped Product Agent session., responses: *noContentResponses}
   /v1/agent/sessions/{session_id}/turns:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
-    post: {summary: Submit a turn to an owner-scoped Product Agent session., responses: *acceptedResponses}
+    post: {summary: 提交 a turn to an owner-scoped Product Agent session., responses: *acceptedResponses}
   /v1/agent/sessions/{session_id}/resume:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
-    post: {summary: Resume an owner-scoped Product Agent session., responses: *okResponses}
+    post: {summary: 恢复 an owner-scoped Product Agent session., responses: *okResponses}
   /v1/agent/sessions/{session_id}/cancel:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
-    post: {summary: Cancel an owner-scoped Product Agent turn., responses: *okResponses}
+    post: {summary: 取消 an owner-scoped Product Agent turn., responses: *okResponses}
   /v1/workflows/{session_id}/events:
     parameters:
       - $ref: "#/components/parameters/SessionId"
       - $ref: "#/components/parameters/LastEventId"
     get:
-      summary: Stream normalized BYQ WorkflowTrace events.
+      summary: 流式传输 normalized BYQ WorkflowTrace events。
       responses:
         "200":
-          description: Server-sent BYQ WorkflowTrace events.
+          description: Server-sent BYQ WorkflowTrace events。
           content: {text/event-stream: {schema: {type: string}}}
 
 components:
@@ -307,12 +306,12 @@ components:
       type: apiKey
       in: cookie
       name: byq_session
-      description: Normal durable browser session from username/password login.
+      description: 由 username/password login 建立的普通 durable browser session。
     bearerBootstrap:
       type: http
       scheme: bearer
       bearerFormat: opaque
-      description: Internal/bootstrap compatibility only; not normal browser login.
+      description: 仅用于 internal/bootstrap compatibility；不是普通 browser login。
   parameters:
     EntityType: {name: entity_type, in: path, required: true, schema: {type: string, enum: [tasks, experiments, artifacts]}}
     EntityId: {name: entity_id, in: path, required: true, schema: {type: string}}

@@ -1,36 +1,30 @@
 # Artifact Contract — Phase 9
 
-## Purpose
+## 目的
 
-Define ownership and lifecycle expectations for auditable research artifacts,
-including evidence and experiment outputs. The complete Phase 9 request and
-response contract is in [research-domain.md](research-domain.md).
+定义可审计 research artifacts（包括 evidence 和 experiment outputs）的所有权与 lifecycle 预期。完整 Phase 9 request/response contract 见 [research-domain.md](research-domain.md)。
 
-## Ownership
+## 所有权
 
-BYQ owns artifact identity, provenance, validation, authorization, lifecycle, and retention semantics.
+BYQ 负责 artifact identity、provenance、validation、authorization、lifecycle 和 retention semantics。
 
 ## Phase 9 contract
 
-An Artifact belongs to a ResearchTask and may belong to an Experiment. It has
-bounded JSON `content`, a BYQ-computed canonical `content_sha256`, typed
-`lineage` references, a WorkflowTrace `trace_id`, and one of these states:
+Artifact 属于一个 ResearchTask，也可属于一个 Experiment。它具有有界 JSON `content`、由 BYQ 计算的 canonical `content_sha256`、带类型的 `lineage` references、一个 WorkflowTrace `trace_id`，并处于以下状态之一：
 
 ```text
 draft → validated → superseded
   └─────────────→ superseded
 ```
 
-Creation and transitions require idempotency keys. Repeated matching requests
-are safe retries; a key reused with different input is rejected.
+创建和转换需要 idempotency keys。重复且匹配的请求是安全重试；同一 key 搭配不同 input 会被拒绝。
 
-## Non-goals
+## 非目标
 
-- It does not treat generated strategy code as application source code.
-- It does not grant Product DSH direct persistence access.
-- It does not define business approval policy; validation is a domain state,
-  not an approval grant.
+- 不把生成的 strategy code 视为 application source code。
+- 不授予 Product DSH 直接 persistence access。
+- 不定义 business approval policy；validation 是 domain state，而非 approval grant。
 
-## Stability guarantee
+## 稳定性保证
 
-Artifact consumers SHOULD rely on BYQ artifact contracts and provenance rather than DSH session internals or storage details.
+Artifact consumers 应依赖 BYQ artifact contracts 和 provenance，而不是 DSH session internals 或 storage details。
