@@ -1,76 +1,69 @@
 # BeyondQuant MCP Boundary Contract
 
-## Purpose
+## 目的
 
-Define the stable capability boundary between Agent Plane and Quant Domain Plane.
+定义 Agent Plane 与 Quant Domain Plane 之间稳定的 capability boundary。
 
 ## Ownership
 
-BYQ owns domain capabilities, invariants, authorization, validation, and business idempotency exposed through BeyondQuant MCP. DSH owns generic MCP client infrastructure.
+BYQ 持有通过 BeyondQuant MCP 暴露的 domain capability、invariant、authorization、
+validation 和 business idempotency。DSH 持有通用 MCP client infrastructure。
 
 ## Phase 8 data capability
 
-The `byq_market_daily` tool is the Agent-to-Domain entry point for the Phase 8
-daily market-data contract. It accepts the normalized request fields described
-in [the data-provider contract](data-provider.md) and returns BYQ daily bars
-plus provenance metadata.
+`byq_market_daily` tool 是 Phase 8 daily market-data Contract 的 Agent-to-Domain
+入口。它接受 [data-provider Contract](data-provider.md) 中描述的 normalized request
+field，并返回 BYQ daily bar 和 provenance metadata。
 
-The MCP service may call the Backend Domain/Data endpoint to fulfill this
-capability. It must not receive or forward `TUSHARE_TOKEN`, and it must not
-pass through arbitrary Tushare endpoint names, raw parameters, or raw provider
-response envelopes.
+MCP service 可以调用 Backend Domain/Data endpoint 来完成该能力。它不得接收或转发
+`TUSHARE_TOKEN`，也不得透传任意 Tushare endpoint name、raw parameter 或 raw
+provider response envelope。
 
-## Phase 9 research capabilities
+## Phase 9 research capability
 
-The Phase 9 tools `byq_research_task_create`, `byq_research_get`,
-`byq_research_transition`, `byq_experiment_create`, and
-`byq_artifact_create` are the Agent-to-Domain entry points for durable
-research state. Backend owns validation, state transitions, idempotency,
-provenance, lineage, and persistence. MCP forwards only the normalized domain
-fields and returns normalized domain records.
+Phase 9 tool `byq_research_task_create`、`byq_research_get`、
+`byq_research_transition`、`byq_experiment_create` 和 `byq_artifact_create` 是持久化
+research state 的 Agent-to-Domain 入口。Backend 持有 validation、state transition、
+idempotency、provenance、lineage 和 persistence。MCP 只转发 normalized domain field，
+并返回 normalized domain record。
 
-MCP must not expose SQL, SQLite paths, database rows, DSH WorkflowTrace
-schemas, or Backend implementation exceptions. DSH may request a domain
-operation through MCP, but it cannot mutate research state by accessing the
-Backend database or filesystem directly.
+MCP 不得暴露 SQL、SQLite path、database row、DSH WorkflowTrace schema 或 Backend
+implementation exception。DSH 可以通过 MCP 请求 domain operation，但不能直接访问
+Backend database 或 filesystem 来修改 research state。
 
-## Phase 13 agent capabilities
+## Phase 13 Agent capability
 
-The `byq_agent_*` tools expose a BYQ-owned role catalogue, trusted runtime
-context, owner-scoped agent runs, action authorization, bounded audit views,
-and human approval state. MCP derives owner/actor/session/trace headers from
-the authenticated Runtime Adapter path; model-supplied identity fields cannot
-override them. DSH may delegate through its native subagent seam, but it
-cannot bypass BYQ authorization or approval with a prompt or a direct storage
-call.
+`byq_agent_*` tool 暴露 BYQ 自有的 role catalogue、trusted runtime context、
+owner-scoped Agent run、action authorization、有界 audit view 和 Human Approval state。
+MCP 从 authenticated Runtime Adapter path 派生 owner/actor/session/trace header；
+model 提供的 identity field 不能覆盖它们。DSH 可以通过 native subagent seam delegate，
+但不能用 prompt 或 direct storage call 绕过 BYQ authorization 或 approval。
 
-## Phase 14 learning capabilities
+## Phase 14 learning capability
 
-The `byq_learning_*`, `byq_evaluation_signal_*`, `byq_experiment_compare`,
-and `byq_lesson_*` tools expose bounded learning runs, ordered iteration
-history, deterministic evaluation-signal comparison, and evidence-backed
-lesson promotion. Backend owns budgets, stopping rules, idempotency,
-validation, human review, and promotion history. MCP forwards only normalized
-domain fields and never exposes SQLite paths, raw rows, DSH event schemas,
-provider credentials, or Backend implementation exceptions.
+`byq_learning_*`、`byq_evaluation_signal_*`、`byq_experiment_compare` 和
+`byq_lesson_*` tool 暴露有界 learning run、ordered iteration history、确定性
+evaluation-signal comparison 和 evidence-backed lesson promotion。Backend 持有 budget、
+stopping rule、idempotency、validation、human review 和 promotion history。MCP 只转发
+normalized domain field，且绝不暴露 SQLite path、raw row、DSH event schema、provider
+credential 或 Backend implementation exception。
 
-## Phase 34 Stock Pool capabilities
+## Phase 34 Stock Pool capability
 
-The `byq_pool_list`, `byq_pool_get`, `byq_pool_create`,
-`byq_pool_snapshot_replace`, `byq_pool_history`, and `byq_pool_lifecycle`
-tools expose bounded owner-scoped Stock Pool operations. MCP derives trusted
-owner/actor/run context, creates only custom pools, and cannot submit an
-authoritative snapshot identity or provider provenance. Backend computes
-fingerprints, validates exact weights and optimistic concurrency, persists
-append-only snapshots, and owns lifecycle transitions. DSH never reads
-PostgreSQL, Tushare, or raw Backend schemas through these tools.
+`byq_pool_list`、`byq_pool_get`、`byq_pool_create`、`byq_pool_snapshot_replace`、
+`byq_pool_history` 和 `byq_pool_lifecycle` tool 暴露有界、owner-scoped Stock Pool
+operation。MCP 派生 trusted owner/actor/run context，只创建 custom pool，不能提交
+authoritative snapshot identity 或 provider provenance。Backend 计算 fingerprint、验证
+准确 weight 和 optimistic concurrency、持久化 append-only snapshot，并持有 lifecycle
+transition。DSH 绝不通过这些 tool 读取 PostgreSQL、Tushare 或 raw Backend schema。
 
-## Non-goals
+## 非目标
 
-- This document does not define a complete tool schema.
-- It does not permit direct DSH access to BYQ PostgreSQL, Redis business state, or backend internals.
-- It does not define a generic second agent harness.
+- 本文档不定义完整 tool schema。
+- 不允许 DSH 直接访问 BYQ PostgreSQL、Redis business state 或 Backend internal。
+- 不定义第二套通用 Agent Harness。
 
-## Stability guarantee
+## 稳定性保证
 
-Agent-to-domain calls MUST use this boundary. Storage and backend implementation changes SHOULD remain invisible to DSH clients when the domain contract remains compatible.
+Agent-to-Domain call MUST 使用本边界。只要 domain Contract 保持兼容，storage 和
+Backend implementation 的变化 SHOULD 对 DSH client 不可见。
