@@ -47,6 +47,16 @@ def test_strategy_version_identity_is_deterministic_and_excludes_runtime_time() 
     assert export_strategy_version(content) == content["export"]
 
 
+def test_optional_description_survives_validated_draft_to_version_round_trip() -> None:
+    without_description = {
+        key: value for key, value in strategy_payload().items() if key != "description"
+    }
+    draft = prepare_strategy(without_description)
+    assert draft["snapshot"]["description"] == ""
+    version = prepare_strategy(draft["snapshot"])
+    assert version["version_id"] == draft["version_id"]
+
+
 @pytest.mark.parametrize(
     ("change", "message"),
     [

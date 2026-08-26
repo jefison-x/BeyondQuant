@@ -329,7 +329,15 @@ def _strategy_snapshot(value: object) -> dict[str, Any]:
     source_type = _text(strategy.get("source_type", "python_script"), "strategy.source_type", 32)
     if source_type not in _SOURCE_TYPES:
         raise StrategyValidationError("strategy.source_type must be python_script")
-    description = "" if strategy.get("description") is None else _text(strategy["description"], "strategy.description", 4000)
+    raw_description = strategy.get("description")
+    if raw_description is None:
+        description = ""
+    elif not isinstance(raw_description, str):
+        raise StrategyValidationError("strategy.description must be a string")
+    else:
+        description = raw_description.strip()
+        if len(description) > 4000:
+            raise StrategyValidationError("strategy.description exceeds 4000 characters")
     parameters, _ = _canonical_json(_object(strategy.get("parameters", {}), "strategy.parameters"), "strategy.parameters")
     parameter_schema, _ = _canonical_json(_object(strategy.get("parameter_schema", {}), "strategy.parameter_schema"), "strategy.parameter_schema")
     script = _text(strategy.get("script"), "strategy.script", MAX_SCRIPT_BYTES)

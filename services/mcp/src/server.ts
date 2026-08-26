@@ -46,6 +46,7 @@ import {
   fetchByqStrategyExport,
   fetchByqStrategyValidate,
   fetchByqStrategyVersionCreate,
+  strategyValidationInputSchema,
   type StrategyRequest,
 } from "./strategy.js";
 import { fetchByqMarketDaily, type MarketDailyRequest } from "./market-data.js";
@@ -698,23 +699,8 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_strategy_validate",
     {
-      description: "Run BYQ-owned static validation and persist a StrategyDraft Artifact.",
-      inputSchema: {
-        task_id: z.string(),
-        experiment_id: z.string().optional(),
-        trace_id: z.string(),
-        idempotency_key: z.string(),
-        strategy: z.object({
-          strategy_id: z.string(),
-          name: z.string(),
-          category: z.enum(["trend_following", "mean_reversion", "momentum", "volatility_based", "arbitrage", "custom"]),
-          description: z.string().optional(),
-          parameters: z.record(z.string(), z.unknown()).optional(),
-          parameter_schema: z.record(z.string(), z.unknown()).optional(),
-          source_type: z.literal("python_script").optional(),
-          script: z.string(),
-        }),
-      },
+      description: "Validate and persist a StrategyDraft. script must define class CustomStrategy with exactly one synchronous generate_signals(self, data, parameters) or generate_target_weights(self, data, portfolio_state, parameters). A planned research task is valid. On 422, use the safe validation message for at most one repair.",
+      inputSchema: strategyValidationInputSchema,
     },
     (args) => byqStrategyValidate(args, trustedContext),
   );

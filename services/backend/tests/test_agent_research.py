@@ -46,6 +46,41 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_strategy_validate" in strategy_tools
     assert "byq_strategy_approve" not in strategy_tools
     assert "byq_backtest_run" not in strategy_tools
+    orchestrator = ROLE_BY_ID["quant_orchestrator"]
+    assert orchestrator.version == "1.1.0"
+    orchestrator_tools = set(orchestrator.allowed_tools)
+    assert {"byq_pool_list", "byq_pool_get", "byq_pool_create"} <= orchestrator_tools
+    assert not {
+        "byq_pool_snapshot_create",
+        "byq_pool_lifecycle_update",
+        "byq_pool_delete",
+    } & orchestrator_tools
+    market_tools = set(ROLE_BY_ID["market_researcher"].allowed_tools)
+    assert not {"byq_pool_list", "byq_pool_get", "byq_pool_create"} & market_tools
+    assert ROLE_BY_ID["market_researcher"].version == "1.1.0"
+    assert ROLE_BY_ID["strategy_researcher"].version == "1.2.0"
+    assert "byq_research_task_create" in strategy_tools
+    assert "byq_research_transition" not in strategy_tools
+    assert "byq_pool_create" not in strategy_tools
+
+
+def test_pool_creation_is_orchestrator_only_and_not_approval_gated() -> None:
+    store = AgentResearchStore()
+    orchestrator = start(store)
+    allowed = store.authorize(
+        {"run_id": orchestrator["run_id"], "action": "byq_pool_create"}
+    )
+    assert allowed["decision"] == "allowed"
+
+    market = start(
+        store,
+        role_id="market_researcher",
+        parent_run_id=orchestrator["run_id"],
+        idempotency_key="agent-run-market-pool-boundary",
+    )
+    with pytest.raises(AgentForbidden, match="not authorized"):
+        store.authorize({"run_id": market["run_id"], "action": "byq_pool_create"})
+    store.close()
 
 
 def test_runs_are_owner_scoped_idempotent_and_delegation_is_allowlisted(tmp_path) -> None:
