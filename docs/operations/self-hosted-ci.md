@@ -1,54 +1,51 @@
-# Self-Hosted CI (GitHub Actions Runner on the local machine)
+# Self-Hosted CI（本地 GitHub Actions Runner）
 
-Status: **Active** — companion to `scripts/ci/local-ci.sh` and
-`.github/workflows/ci-selfhosted.yml`.
+Status: **Active** — `scripts/ci/local-ci.sh` 和
+`.github/workflows/ci-selfhosted.yml` 的 companion。
 
-## Why
+## 原因
 
-GitHub-hosted Actions runners now require paid billing in this account, so PR
-checks (`ci.yml`) fail with "account payments / spending limit" errors. A
-**self-hosted runner** lets the existing GitHub PR workflow keep working —
-GitHub still orchestrates the checks and shows status on PRs — while every
-check **executes on the local machine** for free.
+该账户的 GitHub-hosted Actions runners 需要付费，因此 `ci.yml` 可能因
+payments/spending limit 失败。Self-hosted runner 让 GitHub 继续 orchestration
+并在 PR 显示 status，但 checks 在本地机器免费执行。
 
-The self-hosted workflow runs the project's own local CI script
-(`scripts/ci/local-ci.sh --all --with-e2e --with-smoke`). It runs the locked
-frontend build and unit suite, mocked browser coverage, an isolated full
-Compose stack, and a real Product API browser flow in addition to the service
-checks. High and critical npm advisories fail the frontend gate.
+Workflow 运行项目自身
+`scripts/ci/local-ci.sh --all --with-e2e --with-smoke`，覆盖 locked frontend
+build/unit suite、mocked browser、isolated full Compose、real Product API
+browser flow 和 service checks；high/critical npm advisories 会使 frontend gate
+失败。
 
 ## Architecture
 
-```
-GitHub (orchestration only, free)
+```text
+GitHub（仅 orchestration）
   └─ PR / push ─► .github/workflows/ci-selfhosted.yml
-                     └─ job: local-ci  runs-on: [self-hosted, linux, x64, byq]
-                          └─ local machine: actions-runner (systemd service)
-                               ├─ docker (service tests use clean CI postgres)
-                               ├─ python3 (architecture tests)
-                               ├─ node 22 (frontend build + vitest)
+                     └─ local-ci on [self-hosted, linux, x64, byq]
+                          └─ local actions-runner systemd service
+                               ├─ docker（clean CI PostgreSQL）
+                               ├─ python3（architecture tests）
+                               ├─ node 22（frontend build + Vitest）
                                └─ local-ci.sh --all --with-e2e --with-smoke
 ```
 
-The core service checks use a clean CI-only PostgreSQL dependency. The smoke
-tier also starts Compose, but assigns every run a unique project name,
-network, volumes, image names, Docker-allocated loopback ports, bootstrap
-identity, and Product API URL. Cleanup removes those run-scoped resources and
-does not touch the developer's `beyondquant` stack.
+Core checks 使用 clean CI-only PostgreSQL。Smoke tier 也启动 Compose，但每次
+run 都分配 unique project name、network、volumes、images、Docker loopback
+ports、bootstrap identity 和 Product API URL；cleanup 只删除 run-scoped
+resources，不碰 developer `beyondquant` stack。
 
-## Prerequisites on the runner machine
+## Runner machine prerequisites
 
 | Requirement | Minimum | Notes |
 |---|---|---|
-| OS | Linux x64 (this repo's setup) | macOS/Windows work but use matching runner package |
-| Docker Engine + Compose v2 | recent | runner user must be in the `docker` group (or have socket access) |
-| Python 3 | 3.10+ | used by `python3 -m unittest` (architecture) and services already containerized |
-| Node.js | 22.12+ (before 23) | required by the locked Vite toolchain and used by Vitest/Playwright |
-| Disk | ≥ 50 GB free | service images + node_modules + postgres volumes |
-| RAM | ≥ 8 GB | compose build and parallel service tests |
-| `git`, `bash` | — | runner and local-ci script requirements |
+| OS | Linux x64 | macOS/Windows 要使用 matching runner package |
+| Docker Engine + Compose v2 | recent | runner user 需有 Docker socket access |
+| Python 3 | 3.10+ | architecture tests；services 已 containerized |
+| Node.js | 22.12+、<23 | locked Vite/Vitest/Playwright |
+| Disk | ≥ 50 GB free | images、node_modules、PG volumes |
+| RAM | ≥ 8 GB | Compose build/parallel tests |
+| `git`、`bash` | — | runner/local-ci requirements |
 
-Check quickly:
+快速检查：
 
 ```bash
 docker --version && docker compose version
@@ -58,19 +55,16 @@ git --version
 id -nG | tr ' ' '\n' | grep -q docker && echo "docker group OK"
 ```
 
-## Register the runner (one-time)
+## 一次性注册 runner
 
-1. Open **GitHub → repo (jefison-x/BeyondQuant) → Settings → Actions →
-   Runners → New self-hosted runner → Linux → x64**.
-2. Copy the shown `download` + `configure` snippet (it includes a
-   one-time registration token). On the local machine:
+1. 打开 **GitHub → jefison-x/BeyondQuant → Settings → Actions → Runners →
+   New self-hosted runner → Linux → x64**。
+2. 复制页面上的 download/configure 命令（含一次性 token），在本机执行：
 
 ```bash
 mkdir -p ~/actions-runner && cd ~/actions-runner
-# <download command from GitHub, e.g.>
 curl -sL -o actions-runner-linux-x64.tar.gz <URL-from-GitHub>
 tar xzf actions-runner-linux-x64.tar.gz
-# <configure command from GitHub, plus labels; example:>
 ./config.sh --url https://github.com/jefison-x/BeyondQuant \
             --token <TOKEN> \
             --name byq-local-runner \
@@ -78,88 +72,62 @@ tar xzf actions-runner-linux-x64.tar.gz
             --work _work
 ```
 
-3. Start it in the foreground to confirm it connects (watch for
-   "Listening for Jobs"):
+3. 运行 `./run.sh`，确认出现 `Listening for Jobs`。
+4. GitHub Runners 页面应显示 `Idle`，然后停止 foreground runner 并安装
+   service。
 
-```bash
-./run.sh
-```
+Labels 必须含 `byq`、`linux`、`x64`，因为 workflow 固定
+`runs-on: [self-hosted, linux, x64, byq]`；改 label 时同步改 workflow。
 
-4. Back on GitHub: **Runners → the new runner should show "Idle"**. Cancel the
-   foreground run and install it as a service (next section).
-
-> Labels must include `byq` (plus `linux,x64`) because the workflow pins
-> `runs-on: [self-hosted, linux, x64, byq]`. If you change the label, update
-> the workflow to match.
-
-## Run the runner as a service (systemd)
-
-The bundled `svc.sh` registers a systemd service:
+## 以 systemd service 运行
 
 ```bash
 cd ~/actions-runner
 sudo ./svc.sh install
 sudo ./svc.sh start
 sudo ./svc.sh status
-# logs:
 sudo ./svc.sh check
-# uninstall (if ever needed):
-# sudo ./svc.sh uninstall
 ```
 
-Make sure the service user can talk to Docker (add it to the docker group and
-restart the service):
+确保 service user 可访问 Docker：
 
 ```bash
 sudo usermod -aG docker <runner-user>
 sudo systemctl restart actions.runner.jefison-x-BeyondQuant.byq-local-runner.service
 ```
 
-## The workflow file
+## Workflow 与端到端验证
 
-- `.github/workflows/ci-selfhosted.yml` — new workflow (this repo). It:
-  - triggers on PR and on push to `main` / `bootstrap/**`;
-  - checks out with full history (`fetch-depth: 0`) and fetches `origin/main`
-    so the script's path-filtering baseline is correct;
-  - runs `./scripts/ci/local-ci.sh --all --with-e2e --with-smoke` (six core
-    checks, mocked browser checks, isolated Compose smoke, and a real Product
-    API browser flow);
-  - gives each Compose run unique resources and Docker-allocated loopback
-    ports, so it cannot collide with the developer stack.
-- The original `ci.yml` (GitHub-hosted) remains in the repo for reference /
-  rollback. Once the runner is stable, you can disable it (GitHub → repo →
-  Settings → Actions → General → Actions permissions → Disable workflow, or
-  delete the file in a follow-up PR) so no paid jobs are ever scheduled.
+`.github/workflows/ci-selfhosted.yml` 在 PR 及 push 到 `main` /
+`bootstrap/**` 时触发；使用 `fetch-depth: 0` 并 fetch `origin/main`，运行
+完整 local CI。每次 Compose 资源唯一，不能与 developer stack 冲突。旧
+`ci.yml` 保留供 reference/rollback；runner 稳定后可在 GitHub 禁用或后续 PR
+删除，避免调度付费 jobs。
 
-## Verify end-to-end
-
-1. Runner online: GitHub → Settings → Actions → Runners → **Idle**.
-2. Open or update any PR — the `BeyondQuant Self-Hosted CI / local-ci` check
-   appears. Watch `~/actions-runner/_diag` or `sudo ./svc.sh check` logs.
-3. Expected: the check runs the core, mocked UI, isolated Compose, and real
-   browser tiers and reports all checks PASS.
+验证：runner 在 GitHub 显示 `Idle`；更新 PR 后出现
+`BeyondQuant Self-Hosted CI / local-ci`；可在
+`~/actions-runner/_diag` 或 `sudo ./svc.sh check` 查看 logs；预期 core、
+mocked UI、isolated Compose 和 real browser 全部 PASS。
 
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Job stuck "Queued" / never starts | runner offline or wrong label | runner online in Settings; labels include `byq`; `sudo ./svc.sh status` |
-| "permission denied ... docker.sock" | runner user lacks docker access | add to `docker` group, restart service |
-| `tsc: not found` (mcp) | host node_modules partial | script mounts only `src/tests`; ensure image is current (`docker compose build mcp`) |
-| Backend "no schema has been selected" | shared `byq_postgres_data` volume is bad | script auto-creates clean `byq-ci-postgres`; verify no stale container on the label |
-| OOM during build | RAM too low | build serially (`--build` once), stop local compose during heavy jobs |
-| Playwright cannot launch Chromium | browser missing from runner cache | run `cd apps/frontend && npx playwright install chromium`; CI also performs this install |
-| Need stable debug ports | Docker allocates CI ports dynamically | set `BYQ_CI_FRONTEND_BIND` / `BYQ_CI_GATEWAY_BIND` to explicit unused loopback bindings |
-| Local `docker compose` stack changed after CI | isolation regression | CI resources must start with `byq-ci-*`; inspect Docker containers, networks, and volumes |
+| Job 一直 `Queued` | runner offline/wrong label | 检查 online、`byq` label、`svc.sh status` |
+| `docker.sock` permission denied | user 无 Docker access | 加入 `docker` group 并 restart service |
+| `tsc: not found` | host `node_modules` partial | rebuild current MCP image |
+| Backend `no schema has been selected` | stale shared PG volume | 应使用 clean `byq-ci-postgres`，检查 stale container |
+| Build OOM | RAM 不足 | serial build，heavy job 时停 local Compose |
+| Playwright 无 Chromium | browser cache 缺失 | `cd apps/frontend && npx playwright install chromium` |
+| 需要固定 debug ports | CI 动态分配 | 设置 `BYQ_CI_FRONTEND_BIND` / `BYQ_CI_GATEWAY_BIND` |
+| CI 改变 local stack | isolation regression | CI resources 必须以 `byq-ci-*` 开头 |
 
 ## Security notes
 
-- A self-hosted runner token has write access to the repository it is
-  registered to. Keep `~/actions-runner` on a trusted machine and prefer
-  running on pull_request (contents read only) as configured.
-- Never run untrusted third-party workflows on the self-hosted runner; only
-  same-repository PRs and trusted pushes are scheduled by this workflow.
-- The runner does not require Tushare/DeepSeek secrets; keyless tests are
-  used. The real browser tier uses a run-scoped test bootstrap account passed
-  through environment variables. Keep real secrets out of the runner
-  environment.
+- Self-hosted runner token 对注册 repository 有 write access；只放在 trusted
+  machine，并按配置优先运行 contents-read-only `pull_request`。
+- 不在 runner 上执行 untrusted third-party workflows；只调度 same-repository
+  PRs/trusted pushes。
+- Runner 不需要 Tushare/DeepSeek secrets；使用 keyless tests。Real browser
+  tier 使用 run-scoped bootstrap account/env vars；真实 secrets 不得进入 runner
+  environment。

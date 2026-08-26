@@ -1,5 +1,7 @@
 # Phase 41 Product Experience Baseline Evidence
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 Phase 41 is a decision and planning phase. It changes no Product runtime or
 browser surface. Its evidence is the accepted ownership/design contract,
 read-only Community classification, current BYQ capability map, and executable

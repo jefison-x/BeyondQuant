@@ -1,11 +1,13 @@
 # Phase 34 BYQ Stock Pool browser acceptance
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 Captured on 2026-08-21 with Chrome DevTools MCP against an isolated Compose
 stack and durable `ci-admin` login. The browser used only the same-origin
 Gateway/Product API at `http://127.0.0.1:32798`; it did not call Backend, MCP,
 PostgreSQL, or a provider directly.
 
-## Evidence index
+## 证据索引
 
 - `phase34-01-desktop-overview.png`: persisted custom-pool catalog and detail.
 - `phase34-02-members-v2.png`: v2 member/weight snapshot after a real Product

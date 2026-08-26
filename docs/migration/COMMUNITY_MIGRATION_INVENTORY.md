@@ -1,11 +1,15 @@
 # Community Migration Inventory
 
-This document is the permanent migration source of truth for Phase 9 and
-later domain work. It records what was inspected in
-`BeyondQuant-Community`, what can be harvested, and what must not return to
-the new BeyondQuant architecture.
+本文是 Phase 9 及后续 domain work 的永久 migration source of truth，记录
+`BeyondQuant-Community` 中已检查的内容、可提取内容，以及绝不能回到新
+BeyondQuant architecture 的内容。
 
-## Audit scope and evidence
+> 中文说明用于解释 migration policy 和结论。下方 detailed inventory
+> 保留英文 source paths、classification、contract names、test intent 和审计
+> 记录，以确保与只读 Community evidence 可逐项核对；这些内容不是复制旧实现
+> 的授权。
+
+## Audit scope 与 evidence
 
 - Local reference: `/home/jefison/projects/BeyondQuant-community`.
 - Local reference revision: `58dd99d` on `agent/workspace-community`; the
@@ -40,10 +44,9 @@ the new BeyondQuant architecture.
   point-in-time semantics, quality, conflicts, and manifest evidence must all
   pass before import.
 
-## Global exclusions
+## 全局 exclusions
 
-The following classifications are permanent unless a future Accepted ADR
-explicitly reverses them:
+除非未来 Accepted ADR 明确反转，下列 classifications 永久有效：
 
 | Technology | Classification | Rule |
 |---|---|---|
@@ -128,7 +131,7 @@ Visual interaction evidence is indexed at
 `docs/evidence/phase-34/community-stock-pool/README.md`. It is reference-only
 and does not satisfy the Phase 34 real Product API Chrome MCP exit gate.
 
-## Historical market-cache audit and migration policy
+## Historical market-cache audit 与 migration policy
 
 Community schema/model evidence identifies `market_data_daily`,
 `market_adjustment_factors`, `market_trading_status`,
@@ -156,7 +159,7 @@ The target is a new BYQ Data Plane. Before any formal import, Phase 16 must
 Accepted the Durable Market Data Storage ADR and complete a live read-only
 audit. No data was migrated by the current roadmap change.
 
-## Detailed inventory
+## Detailed inventory（保留英文逐项审计记录）
 
 ### Research entities and lifecycle
 

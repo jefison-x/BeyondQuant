@@ -1,10 +1,12 @@
 # Phase 48 acceptance evidence
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 Phase 48 closes the ADR-0024 Product experience implementation program and
 reopens a separate human v1.0 release-candidate review. It does **not** declare
 an RC accepted and does not release v1.0.
 
-## What was proved
+## 已证明的内容
 
 - A fresh isolated Compose stack used durable username/password login and two
   distinct users.
@@ -29,7 +31,7 @@ CI database. All journey actions use real Gateway/Product APIs, PostgreSQL,
 Runtime Adapter, DSH session handling, Backend workers and signal sandbox; no
 HTTP response, browser state or Product result is mocked.
 
-## Evidence index
+## 证据索引
 
 - [`GOLDEN_JOURNEY.json`](GOLDEN_JOURNEY.json) — sanitized final fresh-stack
   result.
@@ -44,7 +46,7 @@ HTTP response, browser state or Product result is mocked.
   `screenshots/mobile-appearance.png`, and
   `screenshots/mobile-system-settings.png` — real-browser visual evidence.
 
-## Repeatable commands
+## 可重复命令
 
 ```bash
 scripts/ci/local-ci.sh --all --with-smoke
@@ -54,7 +56,7 @@ The smoke stage copies `scripts/evidence/phase48-seed.py` into the isolated
 Backend container, then runs `scripts/evidence/phase48-product-golden.py`
 against the discovered Gateway port before the real Playwright browser suite.
 
-## Gate conclusion
+## Gate 结论
 
 There is no unexplained missing Community capability, raw internal browser
 boundary, fake completion state, owner crossover or unresolved theme

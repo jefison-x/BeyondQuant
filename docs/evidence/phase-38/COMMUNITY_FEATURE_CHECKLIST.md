@@ -1,6 +1,8 @@
 # Phase 38 Community Operations Checklist
 
-Inspection date: 2026-08-22. Community repository was read-only.
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
+检查日期: 2026-08-22. Community repository 全程只读。
 
 | Community evidence | Classification | BYQ decision | Status |
 |---|---|---|---|
@@ -14,7 +16,7 @@ Inspection date: 2026-08-22. Community repository was read-only.
 | `DataSync.vue` sync controls and fixture stock pools | `REFERENCE_ONLY` | Real Tushare sync jobs/coverage belong to Phase 39; no fake data or disabled controls in Phase 38 | Deferred to Phase 39 |
 | `SystemAnalytics.vue` compact metric cards | `PORT_STYLE` + `REFACTOR` | Responsive phase-owned metric cards using real operations projections | Implemented |
 
-## Product acceptance checklist
+## Product 验收清单
 
 - [x] Nine admin routes have real Product API projections and no placeholder.
 - [x] Normal users cannot access the operations workbenches or rich endpoint.

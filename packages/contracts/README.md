@@ -1,8 +1,8 @@
 # Contracts
 
-Reserved for framework-neutral BYQ integration contracts. `WorkflowTraceEvent`
-is the Phase 6 minimum internal envelope. DSH notifications are translated at
-the Runtime Adapter boundary; no DSH internal event schema is promoted into a
-Gateway or frontend contract.
+本目录保留给 framework-neutral BYQ integration contracts。
+`WorkflowTraceEvent` 是 Phase 6 最小 internal envelope。DSH notifications
+在 Runtime Adapter boundary 转换；任何 DSH internal event schema 都不得提升为
+Gateway/frontend contract。
 
-See [`workflow_trace.py`](workflow_trace.py) for the typed envelope factory.
+Typed envelope factory 见 [`workflow_trace.py`](workflow_trace.py)。

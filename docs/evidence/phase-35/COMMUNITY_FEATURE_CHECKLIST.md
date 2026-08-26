@@ -1,5 +1,7 @@
 # Phase 35 Community-derived Paper Trading checklist
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 The read-only Community implementation was inspected before Phase 35 work:
 `PaperTradingView.vue`, account/order/position/snapshot models, execution/read/
 repository/tracking/transfer services, migrations, and tests. Community was

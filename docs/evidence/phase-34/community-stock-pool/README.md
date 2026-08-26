@@ -1,5 +1,7 @@
 # Phase 34 Community Stock Pool visual baseline
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 Captured on 2026-08-21 as visual and interaction reference evidence for the
 Phase 34 decision gate. This baseline is not Phase 34 implementation or
 acceptance evidence.

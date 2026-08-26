@@ -1,5 +1,7 @@
 # Phase 48 Community feature checklist
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 Community source was inspected read-only. Existing BYQ contracts and prior
 phase classifications remain authoritative.
 

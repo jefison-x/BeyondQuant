@@ -1,10 +1,12 @@
 # Phase 54 Beta evidence
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 Phase 54 adds calendar-driven daily market synchronization without authorizing
 a formal release. Browser review used a fresh isolated Compose deployment with
 automatic synchronization initially disabled and no external provider call.
 
-Evidence:
+证据:
 
 - `CHROME_MCP_REVIEW.md` records the real Product API desktop/mobile flow;
 - `COMMUNITY_FEATURE_CHECKLIST.md` records the read-only Community
@@ -13,7 +15,7 @@ Evidence:
   `daily-market-automation-mobile.png` show the responsive automation
   controls and healthy trusted worker.
 
-Validation:
+验证:
 
 - architecture checks: 45 passed;
 - Backend: 143 passed, 1 skipped;

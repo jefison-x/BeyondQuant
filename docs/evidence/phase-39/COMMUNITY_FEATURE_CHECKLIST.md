@@ -1,6 +1,8 @@
 # Phase 39 Community Data Center Checklist
 
-Inspection date: 2026-08-22. The Community repository was read-only.
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
+检查日期: 2026-08-22. The Community repository 全程只读。
 
 | Community evidence | Classification | BYQ decision | Status |
 |---|---|---|---|
@@ -13,7 +15,7 @@ Inspection date: 2026-08-22. The Community repository was read-only.
 | Scheduler leases/retries and broad multi-dataset sync runtime | `REFERENCE_ONLY` | Keep Phase 39 to a bounded daily-bar execution seam; do not copy the old scheduler/runtime | Boundary preserved |
 | Community database/cache connection management | `DROP` | Browser cannot configure or contact PostgreSQL, Redis, Tushare or internal services directly | Implemented |
 
-## Product acceptance checklist
+## Product 验收清单
 
 - [x] Tushare Token create/replace/disable/revoke is administrator-only and
   never returns plaintext or ciphertext.
