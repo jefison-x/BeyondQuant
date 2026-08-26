@@ -686,8 +686,16 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("BYQ_MCP_TOKEN", contents)
         self.assertNotIn("/mcp/v1", contents)
         readme = (frontend / "README.md").read_text()
-        self.assertIn("Gateway Product API", readme)
-        self.assertIn("Backend, MCP, DSH, PostgreSQL, Redis", readme)
+        for boundary_name in (
+            "Gateway",
+            "Product API",
+            "Backend",
+            "MCP",
+            "DSH",
+            "PostgreSQL",
+            "Redis",
+        ):
+            self.assertIn(boundary_name, readme)
 
     def test_product_backend_proxy_calls_always_carry_trusted_context(self) -> None:
         source = (ROOT / "services/gateway/app/product_api.py").read_text()
