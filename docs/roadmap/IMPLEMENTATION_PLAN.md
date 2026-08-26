@@ -217,6 +217,19 @@ Maintainer 于 2026-08-24 再次延后 RC，以 ADR-0025/`PERSONAL_WORKSPACE_TEN
     raw Backend/DSH leakage、无法安全投影错误、需要 direct DB/source access 或需要改动
     Phase 59/60 scope 时停止。
 
+## Point-in-Time Agent Research（Phase 59–60）
+
+- **Phase 59 persisted valuation/fundamentals read path（`COMPLETE`）**：ADR-0032
+  定义最多 20 个 canonical A-share symbols 的 exact-session valuation 和
+  announcement-next-day fundamentals reads；只读 BYQ PostgreSQL evidence，经 Backend
+  与 MCP 返回 completeness/missing/hash，不调用 Provider、不填值。角色、MCP、完整
+  Backend/MCP tests 和真实成功/缺失 Agent journey 均通过；evidence `phase-59/`。
+- **Phase 60 public answer/activity projection（`AUTHORIZED`）**：以 Phase 59 真实旅程中
+  英文内部前言、authorize/audit mechanics、raw coverage/field terminology 泄漏为基线；
+  先接受独立 ADR，再在 Runtime Adapter/Gateway normalized projection 与 DSH skills
+  边界修复。不得隐藏用户有价值的数据时点/失败原因，不得暴露 hidden reasoning、raw
+  MCP/DSH schema，不得修改 Domain result 或引入第二 agent harness。
+
 ## Machine-readable phase status markers
 
 以下稳定 markers 供 CI 校验 Phase ID 与完成状态；说明正文仍以各 program section 为准。
@@ -246,3 +259,5 @@ Maintainer 于 2026-08-24 再次延后 RC，以 ADR-0025/`PERSONAL_WORKSPACE_TEN
 ### Phase 56 — Adjusted research prices and corporate actions(`COMPLETE`)
 ### Phase 57 — Benchmark, point-in-time universe and declared data(`COMPLETE`)
 ### Phase 58 — Agent domain action contract(`COMPLETE`)
+### Phase 59 — Agent point-in-time valuation and fundamentals(`COMPLETE`)
+### Phase 60 — Public answer and activity projection(`AUTHORIZED`)

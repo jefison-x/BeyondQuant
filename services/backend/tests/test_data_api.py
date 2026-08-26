@@ -61,3 +61,35 @@ def test_daily_api_rejects_unbounded_query(monkeypatch) -> None:
 
     assert response.status_code == 422
     assert "exact trade_date" in response.json()["detail"]
+
+
+class FakeResearchStore:
+    def research_valuation(self, **payload):
+        return {"schema_version": "market-valuation-research.v1", "request": payload}
+
+    def research_fundamentals(self, **payload):
+        return {"schema_version": "market-fundamentals-research.v1", "request": payload}
+
+
+def test_persisted_market_research_api_passes_bounded_payload(monkeypatch) -> None:
+    monkeypatch.setattr(main, "market_readiness_store", FakeResearchStore())
+    client = TestClient(main.app)
+
+    valuation = client.post("/v1/data/research/valuation", json={
+        "symbols": ["000001.SZ"], "trade_date": "20260825", "fields": ["pe_ttm", "pb"],
+    })
+    fundamentals = client.post("/v1/data/research/fundamentals", json={
+        "symbols": ["000001.SZ"], "as_of_date": "20260825", "fields": ["roe"],
+    })
+
+    assert valuation.status_code == 200
+    assert valuation.json()["request"]["trade_date"] == "20260825"
+    assert fundamentals.status_code == 200
+    assert fundamentals.json()["request"]["as_of_date"] == "20260825"
+
+    rejected = client.post("/v1/data/research/valuation", json={
+        "symbols": ["000001.SZ"], "trade_date": "20260825", "fields": ["pb"],
+        "provider_endpoint": "arbitrary",
+    })
+    assert rejected.status_code == 422
+    assert "unsupported fields" in rejected.json()["detail"]

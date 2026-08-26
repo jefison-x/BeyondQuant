@@ -158,3 +158,91 @@ def test_declared_inputs_use_point_in_time_membership_and_announcement_effective
     assert [row["is_universe_member"] for row in ready["research_bars"]] == [True, False]
     assert [row["fina_indicator__roe"] for row in ready["research_bars"]] == [None, 10]
     assert [row["close"] for row in ready["benchmark"]] == [100, 101]
+
+
+def test_agent_valuation_read_requires_exact_complete_session_and_preserves_missing() -> None:
+    store = MarketReadinessStore()
+    store._execute("""INSERT INTO market_daily_basic
+        (symbol,trade_date,values_json,data_source,provenance_json,content_sha256,updated_at)
+        VALUES ('000001.SZ','20260825',:values,'tushare','{}','valuation-row',now())""",
+        {"values": '{"pe_ttm":6.5,"pb":0.7}'})
+    store._execute("""INSERT INTO market_daily_basic_completeness
+        (trade_date,row_count,content_sha256,provenance_json,verified_at)
+        VALUES ('20260825',1,'valuation-dataset','{}',now())""")
+
+    result = store.research_valuation(
+        symbols=["600000.SH", "000001.SZ"], trade_date="2026-08-25",
+        fields=["pe_ttm", "pb"],
+    )
+
+    assert result["trade_date"] == "20260825"
+    assert result["rows"] == [{
+        "symbol": "000001.SZ", "trade_date": "20260825",
+        "values": {"pe_ttm": 6.5, "pb": 0.7}, "data_source": "tushare",
+        "content_sha256": "valuation-row",
+    }]
+    assert result["coverage"]["complete"] is True
+    assert result["coverage"]["usable"] is False
+    assert result["coverage"]["missing_symbols"] == ["600000.SH"]
+
+
+def test_agent_fundamental_read_obeys_next_day_visibility_and_completeness() -> None:
+    store = MarketReadinessStore()
+    store._execute("""INSERT INTO market_financial_indicators
+        (symbol,end_date,announcement_date,effective_date,values_json,update_flag,data_source,
+         provenance_json,content_sha256,updated_at)
+        VALUES ('000001.SZ','20250331','20250430','20250501',:old,'1','tushare','{}','fin-old',now()),
+               ('000001.SZ','20250630','20250825','20250826',:new,'1','tushare','{}','fin-new',now())""",
+        {"old": '{"roe":8.0,"netprofit_yoy":3.0}', "new": '{"roe":18.0,"netprofit_yoy":30.0}'})
+    store._execute("""INSERT INTO market_financial_indicator_completeness
+        (symbol,report_start_date,report_end_date,row_count,content_sha256,provenance_json,verified_at)
+        VALUES ('000001.SZ','20250101','20250630',2,'fin-dataset','{}',now())""")
+
+    before = store.research_fundamentals(
+        symbols=["000001.SZ"], as_of_date="20250825", fields=["roe", "netprofit_yoy"],
+    )
+    after = store.research_fundamentals(
+        symbols=["000001.SZ"], as_of_date="20250826", fields=["roe", "netprofit_yoy"],
+    )
+
+    assert before["coverage"]["usable"] is True
+    assert before["rows"][0]["report_period"] == "20250331"
+    assert before["rows"][0]["values"]["roe"] == 8.0
+    assert after["rows"][0]["report_period"] == "20250630"
+    assert after["rows"][0]["announcement_date"] == "20250825"
+    assert after["rows"][0]["effective_date"] == "20250826"
+
+
+def test_agent_research_read_rejects_unbounded_or_unknown_input() -> None:
+    store = MarketReadinessStore()
+    with pytest.raises(ValueError, match="20 entries"):
+        store.research_valuation(
+            symbols=[f"{index:06d}.SZ" for index in range(21)],
+            trade_date="20260825", fields=["pb"],
+        )
+    with pytest.raises(ValueError, match="unsupported"):
+        store.research_fundamentals(
+            symbols=["000001.SZ"], as_of_date="20260825", fields=["future_profit"],
+        )
+    with pytest.raises(ValueError, match="canonical"):
+        store.research_valuation(
+            symbols=["600000.SZ"], trade_date="20260825", fields=["pb"],
+        )
+
+
+def test_agent_research_marks_null_requested_fields_unusable() -> None:
+    store = MarketReadinessStore()
+    store._execute("""INSERT INTO market_daily_basic
+        (symbol,trade_date,values_json,data_source,provenance_json,content_sha256,updated_at)
+        VALUES ('000001.SZ','20260825',:values,'tushare','{}','valuation-null',now())""",
+        {"values": '{"pe_ttm":6.5,"pb":null}'})
+    store._execute("""INSERT INTO market_daily_basic_completeness
+        (trade_date,row_count,content_sha256,provenance_json,verified_at)
+        VALUES ('20260825',1,'valuation-null-dataset','{}',now())""")
+
+    result = store.research_valuation(
+        symbols=["000001.SZ"], trade_date="20260825", fields=["pe_ttm", "pb"],
+    )
+
+    assert result["coverage"]["usable"] is False
+    assert result["coverage"]["missing_fields"] == [{"symbol": "000001.SZ", "fields": ["pb"]}]

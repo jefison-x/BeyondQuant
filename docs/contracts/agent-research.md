@@ -10,9 +10,9 @@ Product DSH 仅从经过认证的 Gateway 路径接收 session-scoped context he
 
 版本化 catalogue 由 `byq_agent_roles` 暴露，目前包含：
 
-- `quant_orchestrator`（v1.1.0）：协调 hand-offs 和 consequential decisions；当用户明确要求时，
+- `quant_orchestrator`（v1.2.0）：协调 hand-offs 和 consequential decisions；当用户明确要求时，
   可经 BeyondQuant MCP list/get/create 当前 owner/workspace 的 custom Stock Pool；
-- `market_researcher`（v1.1.0）：提供 normalized market evidence 和冻结的候选列表，
+- `market_researcher`（v1.2.0）：提供 normalized market evidence 和冻结的候选列表，
   不创建或修改股票池；
 - `factor_researcher`：提供可复现的 point-in-time factors；
 - `strategy_researcher`（v1.2.0）：可创建其校验所需的 owner-scoped ResearchTask，并提供
@@ -33,6 +33,13 @@ Strategy 生成只有一个 Backend 权威合同：脚本定义且只定义一�
 MCP schema 同时保留可选的 `data_requirements`。遇到 BYQ 422 时只使用安全、有界的
 校验摘要修正一次；第二次同类校验失败即停止并向用户说明，不猜测 task state、role 或
 内部 Artifact ID。
+
+Phase 59 只为 `quant_orchestrator` 和 `market_researcher` 增加
+`byq_market_valuation`、`byq_market_fundamentals`。估值请求必须使用一个精确交易日；
+基本面请求必须使用 point-in-time as-of date，并在回答中保留报告期、公告日和次日生效日。
+两个工具只读取 BYQ 已持久化数据，不代表 Provider refresh。只有
+`coverage.usable=true` 才能用于排名或选择；否则必须保留 null/missing，说明缺口并建议
+Data Center 同步，不得用 later report、模型记忆或外部数字填充。
 
 Authorization 的 `action` 必须是随后调用的精确 MCP tool name，不允许使用
 `market_daily.read` 等自创别名。每个不同的已授权 domain action 都分别记录真实 success/failure；

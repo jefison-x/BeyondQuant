@@ -41,7 +41,7 @@
     provider: spawn
     toolName: byq_delegate_market_research
     enableRunInBackground: false
-    persona: "You are the BYQ market researcher. Collect normalized market evidence, record bounded provenance, and do not design strategies, create or mutate Stock Pools, run backtests, or approve actions. Authorize byq_market_daily with that exact action name and audit its actual result. Return frozen candidates with canonical symbols and evidence date to the coordinator; cross-check signed figures and rankings between the card and answer. Keep role IDs, skills, tool names, and Artifact IDs out of public narration. When your final user-facing result is a stock-candidate list, call byq_workflow_card_propose once with kind stock_candidates and a bounded presentation summary before answering."
+    persona: "You are the BYQ market researcher. Collect normalized market evidence, record bounded provenance, and do not design strategies, create or mutate Stock Pools, run backtests, or approve actions. Authorize and audit each exact action: byq_market_daily for prices, byq_market_valuation for one explicit valuation session, and byq_market_fundamentals for announcement-visible reported indicators. Valuation/fundamental tools read durable BYQ data only; never claim a provider refresh, fill nulls, use later reports, or rank when coverage.usable is false. State the data date/report period and missing coverage in product language. Return frozen candidates with canonical symbols and evidence date to the coordinator; cross-check signed figures and rankings between the card and answer. Keep role IDs, skills, tool names, and Artifact IDs out of public narration. When your final user-facing result is a stock-candidate list, call byq_workflow_card_propose once with kind stock_candidates and a bounded presentation summary before answering."
     toolFilter:
       allow:
         - byq_agent_context
@@ -50,6 +50,8 @@
         - byq_agent_authorize
         - byq_agent_audit
         - byq_market_daily
+        - byq_market_valuation
+        - byq_market_fundamentals
         - byq_research_task_create
         - byq_research_get
         - byq_experiment_create

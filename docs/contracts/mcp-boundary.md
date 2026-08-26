@@ -19,6 +19,17 @@ MCP service 可以调用 Backend Domain/Data endpoint 来完成该能力。它�
 `TUSHARE_TOKEN`，也不得透传任意 Tushare endpoint name、raw parameter 或 raw
 provider response envelope。
 
+## Phase 59 point-in-time market research capability
+
+`byq_market_valuation` 和 `byq_market_fundamentals` 只读取 BYQ Data Plane 已持久化的
+ADR-0030 数据。前者要求 exact trade date，后者要求 point-in-time as-of date 并遵守公告
+后次日可见。二者只接受最多 20 个 canonical A-share symbols 和封闭字段集合，返回
+row/content hash、dataset completeness、missing symbol/report 和 `coverage.usable`。
+
+MCP 不得调用 Tushare、触发同步、执行 latest fallback、填充 null、透传 Backend detail，
+或接收任意 Provider endpoint/field。不可用 coverage 是正常结构化结果，不是授权 Agent
+臆测数据或换来源绕过的理由。
+
 ## Phase 9 research capability
 
 Phase 9 tool `byq_research_task_create`、`byq_research_get`、

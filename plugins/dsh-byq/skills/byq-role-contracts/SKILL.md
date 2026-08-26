@@ -31,6 +31,13 @@ never expand the candidate set silently, and audit the actual domain result.
 Pool snapshot, lifecycle, delete, index, and dynamic-pool mutations are not
 Agent capabilities.
 
+Valuation and financial research use only `byq_market_valuation` and
+`byq_market_fundamentals`. Both are bounded, read-only views of durable BYQ data
+and require their own exact authorization and audit. Never use a provider tool,
+strategy input, or a later report to fill a missing research value. A result is
+fit for comparison only when `coverage.usable` is true; otherwise disclose the
+missing date/symbol and direct the user to Data Center synchronization.
+
 Public progress and answers use product language only. Say that data is being
 read, a pool is being saved, or a strategy is being checked. Never narrate role
 IDs, skill loading, policy/contract mechanics, MCP tool names, validator
