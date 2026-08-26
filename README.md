@@ -1,79 +1,67 @@
 # BeyondQuant
 
-BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
-completed project stage is **Phase 57** — frozen benchmark performance,
-point-in-time index membership and declared valuation/fundamental research data
-under Accepted ADR-0030.
-See
-[`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) for the
-authoritative current state.
+<!-- byq:current-completed-phase=57 -->
 
-## Project identity
+BeyondQuant（BYQ）是一个 AI 原生量化研究平台。当前已完成的项目阶段为
+**Phase 57**：在 Accepted ADR-0030 约束下，实现了冻结的基准表现、时点一致的
+指数成分，以及已披露的估值与基本面研究数据。当前状态以
+[`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) 为准。
 
-- Agent foundation: DeepSeek Harness (DSH)
-- Domain: BeyondQuant Quant Platform
+## 项目定位
 
-DSH is the general-purpose Agent Harness. BYQ is the specialized quantitative domain platform built around its own domain invariants, contracts, and product experience.
+- Agent 基础：DeepSeek Harness（DSH）
+- 领域：BeyondQuant Quant Platform
 
-BYQ does not fork DSH. The DSH version is pinned through an explicit dependency policy and compatibility contract. BYQ provides its own product UI, and communication between agents and the quantitative domain goes through BeyondQuant MCP.
+DSH 是通用 Agent Harness。BYQ 是围绕自身领域不变量、Contract 和产品体验构建的
+专业量化领域平台。
 
-## Current capabilities
+BYQ 不 fork DSH。DSH 版本通过明确的依赖策略和兼容性 Contract 固定。BYQ 提供
+自己的产品 UI；Agent 与量化领域之间的通信统一经过 BeyondQuant MCP。
 
-- Browser Product Plane with durable username/password sessions and
-  owner-scoped Product API access.
-- Gateway → Runtime Adapter → pinned DSH JSON-RPC runtime integration with
-  BYQ-owned normalized WorkflowTrace projections.
-- BeyondQuant MCP as the only Agent-to-Domain capability boundary.
-- PostgreSQL as the single BYQ domain store; logical migration and
-  backup/restore tooling are present.
-- ResearchTask, Experiment, Artifact, Approval, factor research, strategy
-  draft/version, deterministic signal-snapshot backtests, Stock Pool, and
-  simulation-only Paper Trading domains.
-- Vue product workspaces for research, strategy, backtest, Stock Pool, Paper
-  Trading, assets/settings, Data Center, and protected operations surfaces.
-- Owner-scoped encrypted model credentials, profiles and Product Agent
-  binding; canonical workspace asset transfer; and effective personal Agent
-  Policy presets/rules under platform approval precedence.
-- Nine responsive administrator operations workbenches backed by bounded
-  Product API projections, normalized DSH runtime/usage accounting, and
-  audited monitoring thresholds.
-- Tushare-only Data Center with encrypted write-only credentials, immutable
-  `L/P/D` stock-master snapshots, catalogue/Stock Pool-driven durable daily
-  sync jobs, true incremental refresh, honest PostgreSQL coverage audit, and
-  a trusted calendar-driven full-market daily synchronization worker.
-- Isolated, credential-free Pandas signal execution that freezes canonical
-  bars and produces immutable normalized `signal_snapshot` artifacts for
-  approved strategy versions and backtests.
-- Content-addressed forward-adjusted research inputs with raw execution bars,
-  durable adjustment factors, and implemented dividend/share actions settled
-  on their declared dates.
-- Closed benchmark, historical index-membership, daily valuation and financial
-  indicator inputs with point-in-time/no-look-ahead readiness and pre-run repair.
+## 当前能力
 
-## Current limitations
+- Browser Product Plane：提供持久化用户名/密码会话和按 owner 隔离的 Product API
+  访问。
+- Gateway → Runtime Adapter → 固定版本的 DSH JSON-RPC runtime 集成，并使用
+  BYQ 自有的规范化 WorkflowTrace projection。
+- BeyondQuant MCP 是唯一的 Agent-to-Domain 能力边界。
+- PostgreSQL 是 BYQ 唯一的 domain store，并提供逻辑迁移及备份/恢复工具。
+- 支持 ResearchTask、Experiment、Artifact、Approval、因子研究、策略草稿/版本、
+  确定性的 signal-snapshot Backtest、Stock Pool，以及仅模拟的 Paper Trading 领域。
+- 提供 Vue 产品工作区，覆盖研究、策略、Backtest、Stock Pool、Paper Trading、
+  资产/设置、Data Center 和受保护的运维界面。
+- 提供按 owner 隔离的加密模型凭证、profile 和 Product Agent binding；规范化的
+  workspace 资产传输；以及受平台 Approval 优先级约束的个人 Agent Policy
+  preset/rule。
+- 九个响应式管理员运维工作台，由有界 Product API projection、规范化 DSH
+  runtime/usage 计量及带审计的监控阈值支撑。
+- 仅使用 Tushare 的 Data Center：提供加密只写凭证、不可变 `L/P/D` 股票主数据
+  snapshot、由 catalogue/Stock Pool 驱动的持久化日线同步任务、真实增量刷新、
+  如实的 PostgreSQL coverage 审计，以及由可信交易日历驱动的全市场日同步 worker。
+- 在隔离、无凭证的 Pandas 环境中执行信号；冻结规范化 bar，并为已批准的策略版本
+  和 Backtest 生成不可变、规范化的 `signal_snapshot` Artifact。
+- 基于内容寻址的前复权研究输入，同时保留原始执行 bar、持久化复权因子，并按声明
+  日期结算已实现的分红和送转行动。
+- 闭合的基准、历史指数成分、日估值和财务指标输入，具备 point-in-time、
+  no-look-ahead readiness 及运行前修复能力。
 
-- The DSH Upgrade Lane is scheduled as a post-Phase 40 maintenance initiative;
-  it does not change the currently qualified runtime pin.
-- The conversation-first frontend, personal-workspace and Beta Data Center
-  programs are complete through Phase 57. The project remains Beta: CI-green
-  phase PR auto-merge is authorized by ADR-0015, but no
-  release-candidate review, tag, deployment or formal release is authorized
-  until the maintainer gives an explicit formal release task. Team workspaces,
-  invitations, sharing and commercial control-plane capabilities remain out
-  of scope.
+## 当前限制
 
-The base Compose topology requires internal service secrets such as
-`BYQ_MCP_TOKEN` and bootstrap compatibility configuration. Provider secrets
-remain Backend/Runtime-Adapter owned and must never be exposed to DSH, MCP,
-Gateway responses, or frontend code. Keyless CI and smoke tests must not embed
-real credentials.
+- DSH Upgrade Lane 是 Phase 40 之后的维护事项；它不改变当前已验证的 runtime pin。
+- conversation-first frontend、personal-workspace 和 Beta Data Center 计划已完成至
+  Phase 57。项目仍处于 Beta：ADR-0015 授权 CI-green 的 phase PR auto-merge，
+  但在维护者明确下达正式发布任务前，不授权 release-candidate 评审、tag、部署或
+  正式发布。team workspace、邀请、共享及商业 control-plane 能力仍不在范围内。
 
-See [ADR-0002](docs/architecture/adr/ADR-0002-initial-runtime-topology.md),
-[ADR-0003](docs/architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md),
-[the DSH integration options](docs/architecture/dsh-runtime-integration-options.md),
-the [implementation plan](docs/roadmap/IMPLEMENTATION_PLAN.md), and the
-[development workflow](docs/DEVELOPMENT_WORKFLOW.md).
+基础 Compose topology 需要 `BYQ_MCP_TOKEN` 等内部服务 secret 和 bootstrap
+兼容配置。Provider secret 仍由 Backend/Runtime Adapter 持有，绝不能暴露给 DSH、
+MCP、Gateway response 或 frontend code。无密钥 CI 和 smoke test 不得嵌入真实凭证。
 
-The architectural rules for this project are normative. Read
-[ARCHITECTURE.md](ARCHITECTURE.md) and [AGENTS.md](AGENTS.md) before making
-changes.
+参见 [ADR-0002](docs/architecture/adr/ADR-0002-initial-runtime-topology.md)、
+[ADR-0003](docs/architecture/adr/ADR-0003-gateway-dsh-runtime-integration.md)、
+[DSH 集成方案](docs/architecture/dsh-runtime-integration-options.md)、
+[实施计划](docs/roadmap/IMPLEMENTATION_PLAN.md)和
+[开发流程](docs/DEVELOPMENT_WORKFLOW.md)。
+
+本项目的架构规则具有规范性。修改前请阅读
+[ARCHITECTURE.md](ARCHITECTURE.md) 和 [AGENTS.md](AGENTS.md)。

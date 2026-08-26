@@ -1,25 +1,25 @@
 # BeyondQuant / DeepSeek Harness compatibility matrix
 
-Qualification date: 2026-08-25
+验证日期：2026-08-25
 
-## Version decision
+## 版本决策
 
-| Surface | Highest official release observed | BYQ decision | Reason |
+| Surface | 观察到的最高 official release | BYQ 决策 | 原因 |
 | --- | --- | --- | --- |
-| GitHub Releases | `dsh-v0.1.1-rc.2` | Not qualified | No matching official Python SDK/runtime-bin |
-| PyPI SDK | `0.1.1rc1` | Qualified | Exact dependency on runtime-bin `0.1.1rc1` |
-| PyPI runtime-bin | `0.1.1rc1` | Qualified | Same Python prerelease as SDK |
-| npm BYQ runtime closure | `0.1.1-rc.2` published | `0.1.1-rc.1` qualified | Matches Python; full exact closure resolves without mixed prereleases |
-| Rollback | `0.1.0rc6` / `0.1.0-rc.6` | Retained | Prior qualified BYQ stack and lockfile |
+| GitHub Releases | `dsh-v0.1.1-rc.2` | Not qualified | 没有匹配的 official Python SDK/runtime-bin |
+| PyPI SDK | `0.1.1rc1` | Qualified | 准确依赖 runtime-bin `0.1.1rc1` |
+| PyPI runtime-bin | `0.1.1rc1` | Qualified | 与 SDK 使用相同 Python prerelease |
+| npm BYQ runtime closure | 已发布 `0.1.1-rc.2` | `0.1.1-rc.1` qualified | 与 Python 匹配；完整准确 closure 可解析且不混合 prerelease |
+| Rollback | `0.1.0rc6` / `0.1.0-rc.6` | Retained | 先前已验证的 BYQ stack 和 lockfile |
 
-Official release evidence:
+Official release 证据：
 
 - <https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.1-rc.1>
 - <https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.1-rc.2>
 - <https://pypi.org/project/deepseek-harness-sdk/0.1.1rc1/>
 - <https://pypi.org/project/deepseek-harness-runtime-bin/0.1.1rc1/>
 
-## Artifact and closure evidence
+## Artifact 与 closure 证据
 
 | Artifact | Qualified version | Integrity |
 | --- | --- | --- |
@@ -31,75 +31,68 @@ Official release evidence:
 | JSON-RPC server | `0.1.1-rc.1` | SHA-512 `C1fHyeVJ4Zc3yJ7mxQfFSO7B2FXcDOTMxkmd2NjC8haSO8j8wOLFf8W58f0fKVbf/bcPhYqbImIjBfNfSPLF3w==` |
 | MCP client | `0.1.1-rc.1` | SHA-512 `GXifDFUgiWcm3dr2Cbnpi9mbQgzP3GtIpGSX+7RlXlCHIHuavXCdgvGHSbq/KGPM5vAwrkZS+xcLwTSqpQL47A==` |
 
-The other official `@deepseek-ai/*` closure packages were rechecked against
-npm and exact-pinned at their current stable versions: `cordis@4.0.1`,
-`cordis-plugin-group@1.0.1`, `cordis-plugin-include@1.0.6`,
-`cordis-plugin-loader@1.0.2`, `cordis-plugin-timer@1.1.3`,
-`cosmokit@1.8.2`, and `schemastery@3.18.1`.
+其余 official `@deepseek-ai/*` closure package 已重新通过 npm 核对，并准确固定在当前
+stable version：`cordis@4.0.1`、`cordis-plugin-group@1.0.1`、
+`cordis-plugin-include@1.0.6`、`cordis-plugin-loader@1.0.2`、
+`cordis-plugin-timer@1.1.3`、`cosmokit@1.8.2` 和 `schemastery@3.18.1`。
 
-The checked-in npm manifest lists every package in the DSH closure as an exact
-direct pin. The clean lock contains 61 `@deepseek-ai/*` packages: 54
-`@deepseek-ai/dsh-*` packages all at `0.1.1-rc.1` plus the seven stable support
-packages above. The manifest and lock package sets are equal. The clean install
-and `npm audit --audit-level=high` reported zero vulnerabilities. No BYQ
-top-level DSH pin uses `latest`, caret, or tilde, and no override, force, or
-legacy peer resolution is used. Upstream-declared ranges remain visible as
-metadata in the lockfile, but every resolved DSH node is constrained by the
-matching exact BYQ direct pin.
+仓库中的 npm manifest 将 DSH closure 的每个 package 列为准确 direct pin。clean lock
+包含 61 个 `@deepseek-ai/*` package：54 个 `@deepseek-ai/dsh-*` 均为
+`0.1.1-rc.1`，另有上述七个 stable support package。manifest 与 lock 的 package set
+相等。clean install 和 `npm audit --audit-level=high` 报告零 vulnerability。BYQ 顶层
+DSH pin 不使用 `latest`、caret 或 tilde，也不使用 override、force 或 legacy peer
+resolution。upstream-declared range 仍以 metadata 形式保留在 lockfile，但每个解析后的
+DSH node 都受到对应 BYQ accurate direct pin 的约束。
 
-A partial rc.1 manifest was deliberately tested and rejected: npm selected
-`@deepseek-ai/dsh-tools@0.1.1-rc.2`, which requires rc.2 peers and produces
-`ERESOLVE`. This is the fail-closed evidence for full closure pinning.
+已故意测试并拒绝 partial rc.1 manifest：npm 选择了
+`@deepseek-ai/dsh-tools@0.1.1-rc.2`，它要求 rc.2 peer 并产生 `ERESOLVE`。这是完整
+closure pinning 的 fail-closed 证据。
 
-## Compatibility qualification
+## Compatibility 验证
 
 | Contract / behavior | Evidence | Result |
 | --- | --- | --- |
-| Python SDK API | `DeepSeekHarnessConfig`, `start`, `start_session`, `close`, notification/request APIs inspected in built image | PASS |
-| JSON-RPC carrier | public `dsh-jsonrpc-agent/lib/bin.js`, keyless initialize and shutdown | PASS |
-| custom BYQ Cordis | unchanged composition initializes with coding flags disabled | PASS |
-| `dsh-mcp-client` | startup uses authenticated Streamable HTTP and `failOnStartupError: true` | PASS |
-| BeyondQuant MCP | MCP contract/auth tests plus real runtime startup | PASS |
-| session lifecycle | create, duplicate conflict, prompt ownership, release | PASS |
-| persistence/resume | same contained session root, hard-cancel replacement runtime, durable volume restart | PASS |
-| subagent delivery | rc.1 SDK session-tree filter and lifecycle ancestry contract; BYQ subagent plugins initialize | PASS (keyless contract) |
-| WorkflowTrace normalization | normalized allowlist, secret/raw-event denial, ordering tests | PASS |
-| cancellation | retained soft-settle and hard process-close policies; no fabricated DSH cancel | PASS |
-| process cleanup | SDK close plus child-process reap smoke | PASS |
-| full vertical path | Gateway -> Runtime Adapter -> DSH -> BeyondQuant MCP | PASS |
+| Python SDK API | 在 built image 中检查 `DeepSeekHarnessConfig`、`start`、`start_session`、`close`、notification/request API | PASS |
+| JSON-RPC carrier | public `dsh-jsonrpc-agent/lib/bin.js`、keyless initialize 和 shutdown | PASS |
+| custom BYQ Cordis | 未改变的 composition 在 coding flag disabled 时完成 initialize | PASS |
+| `dsh-mcp-client` | startup 使用 authenticated Streamable HTTP 和 `failOnStartupError: true` | PASS |
+| BeyondQuant MCP | MCP Contract/auth test 加真实 runtime startup | PASS |
+| session lifecycle | create、duplicate conflict、prompt ownership、release | PASS |
+| persistence/resume | 同一 contained session root、hard-cancel replacement runtime、durable volume restart | PASS |
+| subagent delivery | rc.1 SDK session-tree filter、lifecycle ancestry Contract；BYQ subagent plugin initialize | PASS (keyless contract) |
+| WorkflowTrace normalization | normalized allowlist、secret/raw-event denial、ordering test | PASS |
+| cancellation | 保留 soft-settle 和 hard process-close policy；不伪造 DSH cancel | PASS |
+| process cleanup | SDK close 加 child-process reap smoke | PASS |
+| full vertical path | Gateway → Runtime Adapter → DSH → BeyondQuant MCP | PASS |
 
-The subagent delivery result is a keyless protocol/composition qualification.
-A live delegated model turn remains optional credentialed smoke and no provider
-secret is stored in tests or evidence.
+subagent delivery 结果属于 keyless protocol/composition 验证。live delegated model turn
+仍是可选的 credentialed smoke；测试和证据不保存 provider secret。
 
-## Security and capability decision
+## 安全与 capability 决策
 
-The qualified stack includes upstream's Bubblewrap `/proc/<pid>/root` escape
-fix, max-token continuation fix, large-history stability improvements, and
-subagent report-delivery fix. BYQ treats the sandbox fix as defense in depth.
-The full pins constrain packages already present in the rc.6 transitive
-runtime tree; listing a package for resolution does not load it into Cordis.
-Product DSH still has no shell, terminal, filesystem mutation, source mount,
-Git mutation, database, Redis, or Engineering capability.
+已验证 stack 包含 upstream 对 Bubblewrap `/proc/<pid>/root` escape、max-token
+continuation、large-history stability 和 subagent report-delivery 的修复。BYQ 将 sandbox
+修复视为 defense in depth。完整 pin 约束的 package 在 rc.6 transitive runtime tree
+中已经存在；为 resolution 列出 package 不代表将其加载到 Cordis。Product DSH 仍没有
+shell、terminal、filesystem mutation、source mount、Git mutation、database、Redis 或
+Engineering capability。
 
-Vision, image reuse, broader bundled presets, shell/PTY, filesystem, Web UI,
-and other new upstream capabilities are not enabled. They remain future
-capabilities until a BYQ public contract and, where required, an Accepted ADR
-adopts them.
+Vision、image reuse、更广泛的 bundled preset、shell/PTY、filesystem、Web UI 和其他
+upstream 新能力均未启用。只有在 BYQ public Contract 和必要的 Accepted ADR 采纳后，
+它们才可能成为未来能力。
 
-## Known limitations and rollback
+## 已知限制与回滚
 
-- DSH still exposes no qualified prompt-cancel or per-session close operation;
-  BYQ retains soft settle and adapter-owned hard process close.
-- `0.1.1-rc.2` remains unqualified until official matching Python artifacts
-  exist and the entire stack passes this lane.
-- The separately profiled Phase 5 DSH Web diagnostic image remains the exact
-  rc.6 bootstrap/rollback baseline and is not a Product request path.
-- A real model-keyed subagent turn is optional and was not required for keyless
-  CI; provider credentials are never committed.
+- DSH 仍没有经过验证的 prompt-cancel 或 per-session close operation；BYQ 保留 soft
+  settle 和 Adapter 自有的 hard process close。
+- 在 official matching Python artifact 可用且整个 stack 通过本 Upgrade Lane 前，
+  `0.1.1-rc.2` 保持 unqualified。
+- 单独 profile 的 Phase 5 DSH Web diagnostic image 保持准确 rc.6 bootstrap/rollback
+  baseline，且不是 Product request path。
+- 真实 model-keyed subagent turn 是可选项，不是 keyless CI 的要求；provider credential
+  绝不提交。
 
-Rollback restores the prior rc.6 Python pins, npm manifest, lockfile, version
-reporting, and image from repository history. Stop/release owned processes
-before deployment; preserve the Agent Plane JSONL session volume and start a
-new runtime session if cross-version resume cannot be proven. No BYQ business
-database rollback or migration is involved.
+回滚会从 repository history 恢复此前 rc.6 Python pin、npm manifest、lockfile、version
+reporting 和 image。部署前先 stop/release owned process；保留 Agent Plane JSONL
+session volume，若无法证明 cross-version resume，则启动新 runtime session。无需回滚
+或迁移 BYQ business database。

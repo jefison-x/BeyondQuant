@@ -1,6 +1,7 @@
 # Architecture Decision Records
 
-Architecture Decision Records (ADRs) capture decisions that change or clarify durable system boundaries. An ADR is required for changes to:
+Architecture Decision Record（ADR）记录改变或澄清持久系统边界的决策。以下边界的
+变更必须取得 ADR：
 
 - DSH boundary
 - MCP boundary
@@ -13,31 +14,31 @@ Architecture Decision Records (ADRs) capture decisions that change or clarify du
 - Data-provider abstraction
 - Artifact / Approval semantics
 
-Each ADR should describe context, the decision, consequences, alternatives when relevant, and migration or rollback considerations. An exception to `ARCHITECTURE.md` MUST have an ADR before implementation.
+每份 ADR 应说明背景、决策、后果、相关备选方案，以及迁移或回滚考虑。任何偏离
+`ARCHITECTURE.md` 的例外都 MUST 在实现前取得 ADR。
 
-Current phase-specific accepted decisions are also listed in
-`docs/roadmap/STATUS.md`. ADR-0020 defines the Stock Pool identity, immutable
-snapshot, lifecycle, and cross-domain reference boundary for Phase 34.
-ADR-0021 defines the Paper Trading account, settlement, risk, ledger, and
-portable bundle boundary for Phase 35.
-ADR-0018 defines the structured WorkflowTrace card, public activity,
-normalization, authority, replay, and fixed Product-action boundary for Phase
-36.
-ADR-0019 defines encrypted credential storage, key rotation, public masking,
-model binding/runtime resolution, Tushare resolution, audit, and bootstrap
-fallback boundaries for Phases 37 and 39.
-ADR-0024 defines the conversation-first Product shell, durable BYQ conversation
-catalog versus DSH Session boundary, route-backed settings consolidation, and
-durable semantic appearance/theme contract for Phases 42-48.
-ADR-0025 defines the personal workspace as BYQ's tenancy/authorization
-boundary, separates resource ownership from actor identity, fixes trusted
-context propagation and the verified compatibility migration, and deliberately
-defers team-product capabilities to a later ADR.
-ADR-0026 defines the Beta security-master snapshot, bounded catalogue Product
-API, frozen daily-bar selection, and true incremental synchronization boundary.
-ADR-0027 defines calendar-driven full-market daily automation and the trusted
-Data Worker boundary. ADR-0028 defines lifecycle-aware readiness, bounded
-repair and immutable ready inputs. ADR-0029 defines adjusted research views,
-raw execution prices and implemented corporate-action settlement semantics.
-ADR-0030 defines frozen benchmark performance, point-in-time index membership,
-and closed strategy-declared valuation/fundamental research inputs.
+当前与 Phase 相关的 Accepted 决策也列在 `docs/roadmap/STATUS.md` 中：
+
+- ADR-0020 定义 Phase 34 的 Stock Pool identity、不可变 snapshot、lifecycle 和
+  cross-domain reference 边界。
+- ADR-0021 定义 Phase 35 的 Paper Trading account、settlement、risk、ledger 和
+  portable bundle 边界。
+- ADR-0018 定义 Phase 36 的结构化 WorkflowTrace card、public activity、
+  normalization、authority、replay 和固定 Product action 边界。
+- ADR-0019 定义 Phase 37 和 39 的加密 credential storage、key rotation、public
+  masking、model binding/runtime resolution、Tushare resolution、audit 和
+  bootstrap fallback 边界。
+- ADR-0024 定义 Phase 42-48 的 conversation-first Product shell、持久化 BYQ
+  conversation catalog 与 DSH Session 的边界、route-backed settings 整合，以及
+  持久化 semantic appearance/theme Contract。
+- ADR-0025 将 personal workspace 定义为 BYQ tenancy/authorization 边界，分离
+  resource ownership 与 actor identity，固定 trusted context propagation 和经过验证
+  的 compatibility migration，并明确将 team product 能力延后到后续 ADR。
+- ADR-0026 定义 Beta security-master snapshot、有界 catalogue Product API、冻结的
+  daily-bar selection 和真实增量同步边界。
+- ADR-0027 定义 calendar-driven 全市场日自动化和可信 Data Worker 边界。
+- ADR-0028 定义 lifecycle-aware readiness、有界 repair 和不可变 ready input。
+- ADR-0029 定义 adjusted research view、raw execution price 和已实现 corporate-action
+  settlement semantics。
+- ADR-0030 定义冻结的 benchmark performance、point-in-time index membership，以及
+  封闭的 strategy-declared valuation/fundamental research input。

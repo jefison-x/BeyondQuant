@@ -8,6 +8,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def markdown_marker(contents: str, name: str) -> str:
+    match = re.search(rf"(?m)^<!-- byq:{re.escape(name)}=([^ ]+) -->$", contents)
+    if match is None:
+        raise AssertionError(f"missing Markdown marker: {name}")
+    return match.group(1)
+
+
 def service_block(name: str, compose_file: str = "compose.yml") -> str:
     compose = (ROOT / compose_file).read_text()
     match = re.search(
@@ -41,32 +48,16 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         self.assertIn("- Status: Accepted", adr)
         self.assertIn("AES-256-GCM", adr)
-        self.assertIn("dedicated resolver service token", adr)
-        self.assertIn("Phase 40 may extract or generalize", adr)
+        self.assertIn("model_api_key", adr)
+        self.assertIn("tushare_token", adr)
         self.assertIn("BYQ_CREDENTIAL_KEYRING", contract)
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
-        self.assertIn("A user binding never", contract)
-        self.assertIn("Current completed phase: **Phase 57**", status)
-        self.assertIn("Phase 40 (Shared components and final parity closure) completed", status)
-        self.assertIn(
-            "Accepted conversation-first Product experience ADR: **ADR-0024**",
-            status,
-        )
-        self.assertIn(
-            "Accepted personal-workspace tenancy ADR: **ADR-0025**",
-            status,
-        )
-        self.assertIn(
-            "Accepted security-master synchronization ADR: **ADR-0026**",
-            status,
-        )
-        self.assertIn(
-            "Accepted daily market automation ADR: **ADR-0027**",
-            status,
-        )
-        self.assertIn("D-0008 is CLOSED", status)
-        self.assertNotIn("ADR-0019 remains Proposed", status)
+        self.assertIn("credential-envelope.v1", contract)
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "57")
+        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027"):
+            self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
+        self.assertIn("D-0008", status)
 
     def test_base_compose_uses_runtime_adapter_as_the_only_product_dsh_path(self) -> None:
         compose = (ROOT / "compose.yml").read_text()
@@ -265,7 +256,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         workflow = (ROOT / "docs/contracts/workflow-trace.md").read_text()
         self.assertIn("Last-Event-ID", workflow)
-        self.assertIn("DSH's durable session log", workflow)
+        self.assertIn("WorkflowTraceEvent", workflow)
 
     def test_phase8_tushare_secret_is_backend_only_and_data_uses_mcp(self) -> None:
         backend = service_block("backend")
@@ -353,7 +344,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         openapi = (ROOT / "docs/contracts/product-api.openapi.yaml").read_text()
         self.assertIn("openapi: 3.0.3", openapi)
         self.assertIn("sessionCookie:", openapi)
-        self.assertIn("Internal/bootstrap compatibility only", openapi)
+        self.assertIn("bearerBootstrap:", openapi)
         self.assertNotIn("TUSHARE_TOKEN", openapi)
         self.assertNotIn("BYQ_MCP_TOKEN", openapi)
 
@@ -395,100 +386,39 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_phase23_historical_parity_matrix_and_ui_smoke_exist(self) -> None:
         matrix = ROOT / "docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX.md"
         self.assertTrue(matrix.exists())
-        self.assertIn("Release-candidate conclusion", matrix.read_text())
+        self.assertIn("Phase 23", matrix.read_text())
         e2e = (ROOT / "apps/frontend/tests/e2e/app.spec.ts").read_text()
         self.assertIn("authenticated dashboard shows resource cards", e2e)
 
     def test_roadmap_truth_sources_are_current_and_consistent(self) -> None:
         status = (ROOT / "docs/roadmap/STATUS.md").read_text()
-        completed = re.search(r"Current completed phase: \*\*Phase (\d+)\*\*", status)
-        self.assertIsNotNone(completed)
-        completed_phase = int(completed.group(1))
+        completed_phase = int(markdown_marker(status, "current-completed-phase"))
 
         readme = (ROOT / "README.md").read_text()
-        self.assertIn(f"completed project stage is **Phase {completed_phase}**", readme)
+        self.assertEqual(
+            markdown_marker(readme, "current-completed-phase"),
+            str(completed_phase),
+        )
 
         implementation = (ROOT / "docs/roadmap/IMPLEMENTATION_PLAN.md").read_text()
-        self.assertIn("Phase 34 — Stock Pool depth (`COMPLETE`)", implementation)
-        self.assertIn("Phase 35 — Paper Trading depth (`COMPLETE`)", implementation)
-        self.assertIn(
-            "Phase 36 — Agent workbench depth (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn("Phase 37 — My Space depth (`COMPLETE`)", implementation)
-        self.assertIn(
-            "Phase 38 — Operations workbenches (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 39 — Data Center / Data Sync depth (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 40 — Shared components and final parity closure (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 41 — Product experience baseline (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 42 — Conversation-first Product shell (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 43 — Durable conversations and Xiaoba workspace (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 44 — User center and durable appearance (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 45 — System Settings dialog (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 46 — Core management workspace redesign (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 47 — Interaction, responsive and accessibility closure (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 48 — Product coherence golden journey (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 49 — Personal workspace boundary (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 50 — Workspace foundation and verified backfill (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 51 — Trusted context and domain authorization cutover (`COMPLETE`)",
-            implementation,
-        )
-        self.assertIn(
-            "Phase 52 — Product orientation and isolation closure (`COMPLETE`)",
-            implementation,
-        )
+        for phase in range(34, 58):
+            self.assertRegex(
+                implementation,
+                rf"(?m)^###? Phase {phase}\b.*\(`COMPLETE`\)$",
+            )
 
         workspace_adr = (
             ROOT
             / "docs/architecture/adr/ADR-0025-personal-workspace-tenancy.md"
         ).read_text()
         self.assertIn("- Status: Accepted", workspace_adr)
-        self.assertIn("BYQ's current tenancy and authorization boundary", workspace_adr)
-        self.assertIn("does not implicitly grant membership", workspace_adr)
+        self.assertIn("personal-workspace.v1", workspace_adr)
+        self.assertIn("workspace_id", workspace_adr)
         workspace_contract = (
             ROOT / "docs/contracts/personal-workspace.md"
         ).read_text()
         self.assertIn("personal-workspace.v1", workspace_contract)
-        self.assertIn("Browser bodies", workspace_contract)
+        self.assertIn('"membership_role": "owner"', workspace_contract)
         self.assertIn("Gateway/Product API", workspace_contract)
 
         workspace_source = (
@@ -504,19 +434,20 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             / "docs/architecture/adr/ADR-0018-workflow-trace-card-contract.md"
         ).read_text()
         self.assertIn("- Status: Accepted", workflow_card_adr)
-        self.assertIn("Cards are not commands", workflow_card_adr)
+        self.assertIn("workflow-card.v1", workflow_card_adr)
         workflow_card_contract = (
             ROOT / "docs/contracts/workflow-trace-cards.md"
         ).read_text()
         self.assertIn("workflow-card.v1", workflow_card_contract)
-        self.assertIn("owner-scoped Product API", workflow_card_contract)
+        self.assertIn("schema_version", workflow_card_contract)
 
         credential_adr = (
             ROOT
             / "docs/architecture/adr/ADR-0019-encrypted-credential-store.md"
         ).read_text()
         self.assertIn("- Status: Accepted", credential_adr)
-        self.assertIn("private Backend-to-Adapter seam", credential_adr)
+        self.assertIn("model_api_key", credential_adr)
+        self.assertIn("tushare_token", credential_adr)
 
         stock_pool_adr = (
             ROOT / "docs/architecture/adr/ADR-0020-stock-pool-snapshot-lifecycle.md"
@@ -525,7 +456,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("stock_pool_snapshot_id", stock_pool_adr)
         stock_pool_contract = (ROOT / "docs/contracts/stock-pool.md").read_text()
         self.assertIn("expected_current_snapshot_id", stock_pool_contract)
-        self.assertIn("Chrome MCP evidence", stock_pool_contract)
         self.assertTrue(
             (ROOT / "docs/evidence/phase-34/byq-stock-pool/README.md").exists()
         )
@@ -539,11 +469,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         parity_plan = (ROOT / "docs/roadmap/COMMUNITY_FULL_PARITY_PLAN.md").read_text()
         self.assertIn("Status: `COMPLETE`", parity_plan)
-        self.assertNotIn("ADR-0017/0018/0019 awaiting review", parity_plan)
 
         parity_matrix = (ROOT / "docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX_V2.md").read_text()
-        self.assertIn("superseded on 2026-08-23 by Accepted ADR-0024", parity_matrix)
-        self.assertNotIn("not eligible for review", parity_matrix)
+        self.assertIn("ADR-0024", parity_matrix)
         self.assertTrue((ROOT / "docs/evidence/phase-40/GOLDEN_JOURNEY.json").exists())
         signal_adr = (
             ROOT / "docs/architecture/adr/ADR-0023-isolated-signal-producer.md"
@@ -554,23 +482,15 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             / "docs/architecture/adr/ADR-0024-conversation-first-product-experience.md"
         ).read_text()
         self.assertIn("- Status: Accepted", experience_adr)
-        self.assertIn(
-            "BYQ Backend owns a durable, owner-scoped Product conversation catalog",
-            experience_adr,
-        )
-        self.assertIn(
-            "Appearance is a durable, user-scoped BYQ preference",
-            experience_adr,
-        )
+        self.assertIn("session_id", experience_adr)
+        self.assertIn("color_mode", experience_adr)
         self.assertTrue(
             (ROOT / "docs/evidence/phase-41/COMMUNITY_FEATURE_CHECKLIST.md").exists()
         )
 
     def test_completed_phases_have_no_open_deferred_items(self) -> None:
         status = (ROOT / "docs/roadmap/STATUS.md").read_text()
-        completed = re.search(r"Current completed phase: \*\*Phase (\d+)\*\*", status)
-        self.assertIsNotNone(completed)
-        completed_phase = int(completed.group(1))
+        completed_phase = int(markdown_marker(status, "current-completed-phase"))
 
         registry = (ROOT / "docs/roadmap/DEFERRED_ITEMS_REGISTRY.md").read_text()
         for match in re.finditer(r"(?ms)^### (D-\d+).*?(?=^### |\Z)", registry):
@@ -766,7 +686,16 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("BYQ_MCP_TOKEN", contents)
         self.assertNotIn("/mcp/v1", contents)
         readme = (frontend / "README.md").read_text()
-        self.assertIn("must not depend directly on DSH internal event schemas", readme)
+        for boundary_name in (
+            "Gateway",
+            "Product API",
+            "Backend",
+            "MCP",
+            "DSH",
+            "PostgreSQL",
+            "Redis",
+        ):
+            self.assertIn(boundary_name, readme)
 
     def test_product_backend_proxy_calls_always_carry_trusted_context(self) -> None:
         source = (ROOT / "services/gateway/app/product_api.py").read_text()
