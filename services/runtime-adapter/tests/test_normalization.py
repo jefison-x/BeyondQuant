@@ -47,7 +47,18 @@ def test_turn_does_not_forward_raw_event_data() -> None:
     assert "event" not in events[0]
 
 
-def test_answer_excludes_reasoning_tool_calls_and_duplicate_messages() -> None:
+def test_turn_activity_reaches_a_terminal_public_state() -> None:
+    state = NormalizationState()
+    started = normalize(notify("turn/start", {"turn": 1}), state)
+    completed = normalize(notify("turn/end", {"reason": {"kind": "completed"}}), state)
+
+    assert started[0]["payload"]["activity_id"] == completed[0]["payload"]["activity_id"]
+    assert started[0]["payload"]["state"] == "started"
+    assert completed[0]["payload"]["state"] == "completed"
+    assert completed[1]["kind"] == "turn.completed"
+
+
+def test_answer_excludes_reasoning_and_duplicate_messages() -> None:
     state = NormalizationState()
     message = notify(
         "assistant/message",
@@ -57,7 +68,6 @@ def test_answer_excludes_reasoning_tool_calls_and_duplicate_messages() -> None:
                 "content": [
                     {"type": "reasoning", "text": "private chain"},
                     {"type": "text", "text": "公开答案"},
-                    {"type": "tool-call", "name": "private", "arguments": {"token": "x"}},
                 ],
             }
         },
@@ -67,6 +77,60 @@ def test_answer_excludes_reasoning_tool_calls_and_duplicate_messages() -> None:
     assert [event["kind"] for event in events] == ["agent.output.delta"]
     assert events[0]["payload"]["delta"] == "公开答案"
     assert normalize(message, state) == []
+
+
+def test_tool_bearing_assistant_step_is_not_a_public_answer() -> None:
+    events = normalize(
+        notify(
+            "assistant/message",
+            {
+                "message": {
+                    "id": "m-tool",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Data retrieved. Now I'll authorize and audit the next call.",
+                        },
+                        {"type": "tool-call", "name": "byq_agent_authorize", "arguments": {}},
+                    ],
+                }
+            },
+        ),
+        NormalizationState(),
+    )
+
+    assert events == []
+
+
+def test_final_answer_translates_raw_research_terms_and_preserves_evidence() -> None:
+    events = normalize(
+        notify(
+            "assistant/message",
+            {
+                "message": {
+                    "id": "m-final",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "截至 20260825，coverage.usable=false；600036.SH 的 roe 与 "
+                                "debt_to_assets 缺失，近五日收益为 -2.31%。"
+                            ),
+                        }
+                    ],
+                }
+            },
+        ),
+        NormalizationState(),
+    )
+
+    answer = events[0]["payload"]["delta"]
+    assert "coverage.usable" not in answer
+    assert "debt_to_assets" not in answer
+    assert "当前数据覆盖不足，暂不适合比较" in answer
+    assert "资产负债率" in answer
+    assert "20260825" in answer
+    assert "-2.31%" in answer
 
 
 def test_known_tool_emits_curated_activity_and_proposal_card() -> None:
@@ -105,7 +169,13 @@ def test_known_tool_emits_curated_activity_and_proposal_card() -> None:
         state,
     )
 
-    assert started[0]["payload"]["capability"] == "byq_workflow_card_propose"
+    assert started[0]["payload"] == {
+        "schema_version": "workflow-activity.v1",
+        "activity_id": started[0]["payload"]["activity_id"],
+        "phase": "strategy",
+        "state": "started",
+        "label": "整理工作台建议",
+    }
     assert [event["kind"] for event in completed] == [
         "agent.activity",
         "agent.card.strategy_draft",
@@ -152,14 +222,33 @@ def test_unknown_tool_never_exposes_name_or_arguments() -> None:
         NormalizationState(),
     )
 
-    assert events[0]["kind"] == "agent.activity"
-    assert events[0]["payload"] == {
-        "schema_version": "workflow-activity.v1",
-        "activity_id": events[0]["payload"]["activity_id"],
-        "phase": "tool",
-        "state": "started",
-        "label": "调用受控能力",
-    }
+    assert events == []
+
+
+def test_internal_control_activity_is_hidden_but_domain_research_is_public() -> None:
+    state = NormalizationState()
+    assert normalize(
+        notify("tool/call", {"callId": "auth-1", "name": "byq_agent_authorize"}), state
+    ) == []
+    assert normalize(
+        notify("tool/result", {"message": {"content": [{"type": "tool-result", "toolCallId": "auth-1"}]}}),
+        state,
+    ) == []
+
+    started = normalize(
+        notify("tool/call", {"callId": "value-1", "name": "byq_market_valuation"}), state
+    )
+    completed = normalize(
+        notify(
+            "tool/result",
+            {"message": {"content": [{"type": "tool-result", "toolCallId": "value-1"}]}},
+        ),
+        state,
+    )
+
+    assert started[0]["payload"]["label"] == "读取估值数据"
+    assert completed[0]["payload"]["label"] == "读取估值数据"
+    assert "capability" not in started[0]["payload"]
 
 
 def test_raw_chunks_and_unknown_events_do_not_cross_the_boundary() -> None:

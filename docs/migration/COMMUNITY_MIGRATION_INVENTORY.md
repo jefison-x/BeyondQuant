@@ -864,3 +864,19 @@ documents were inspected before accepting ADR-0032.
 
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
+
+## Phase 60 public answer/activity pre-implementation audit
+
+The read-only Community `AgentThinking.vue`, `AgentView.vue`, Agent SSE client,
+user guide and browser contract plan were inspected before accepting ADR-0033.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 60 disposition |
+|---|---|---|---|
+| Collapsible thinking/progress list beside an answer | Users benefit from compact, optional execution progress. | `PORT_UX` / `REFACTOR` | Keep the BYQ activity drawer, fold domain steps and localize phase/state labels. |
+| Tool names, control-contract, authorization and reasoning labels | None as public investment content. | `REFERENCE_ONLY` / `REPLACE` | Hide control tools and raw capability names; public progress never represents hidden reasoning. |
+| Final answer rendered separately from step records | Investment conclusions and operational progress need separate presentation contracts. | `PORT_LAYOUT` / `PORT_TESTS` / `REFACTOR` | Use DSH text-only completion anchors for answers and WorkflowTrace activities for domain progress. |
+| Community raw Agent SSE/message objects and direct Agent API | No compatible browser or persistence boundary. | `REPLACE` | Gateway/Product API and BYQ-owned normalized WorkflowTrace remain the only Browser contract. |
+| PydanticAI/Hermes runtime and direct domain executor assumptions | Explicitly prohibited architecture. | `DROP` | No code, dependency, fallback, storage or compatibility layer is migrated. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.

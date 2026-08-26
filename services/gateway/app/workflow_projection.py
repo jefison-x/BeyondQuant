@@ -10,6 +10,8 @@ from typing import Any
 from .contracts import (
     WORKFLOW_CARD_VERSION,
     WorkflowTraceEvent,
+    contains_internal_public_token,
+    project_public_answer_text,
     validate_workflow_trace_event,
 )
 
@@ -45,9 +47,21 @@ def project_workflow_event(
         if kind in _DOMAIN_KINDS:
             projected = _hydrate_domain_card(event, backend_get=backend_get, revision_for=revision_for)
             return validate_workflow_trace_event(projected)
+        if kind == "agent.output.delta":
+            return _project_public_answer(event)
         return validate_workflow_trace_event(event)
     except (KeyError, TypeError, ValueError, RuntimeError):
         return validate_workflow_trace_event(_degraded(event))
+
+
+def _project_public_answer(event: dict[str, Any]) -> WorkflowTraceEvent:
+    validated = validate_workflow_trace_event(event)
+    payload = dict(validated["payload"])
+    delta = project_public_answer_text(str(payload["delta"]))
+    if contains_internal_public_token(delta):
+        raise ValueError("public answer contains an internal token")
+    payload["delta"] = delta
+    return validate_workflow_trace_event({**validated, "payload": payload})
 
 
 def _hydrate_domain_card(

@@ -1,10 +1,10 @@
 # BeyondQuant
 
-<!-- byq:current-completed-phase=59 -->
+<!-- byq:current-completed-phase=60 -->
 
 BeyondQuant（BYQ）是一个 AI 原生量化研究平台。当前已完成的项目阶段为
-**Phase 59**：在 Accepted ADR-0032 约束下，为 Agent 增加了只读、持久化、
-point-in-time 的估值与基本面研究能力，并以真实连续对话验证了完整数据与缺失数据行为。
+**Phase 60**：在 Accepted ADR-0033 约束下，将 Agent 的最终回答与公开活动收敛为
+普通投资者可理解的中文投影，同时保留真实数据时点、缺失事实与失败原因。
 当前状态以
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) 为准。
 
@@ -50,7 +50,7 @@ BYQ 不 fork DSH。DSH 版本通过明确的依赖策略和兼容性 Contract �
 
 - DSH Upgrade Lane 是 Phase 40 之后的维护事项；它不改变当前已验证的 runtime pin。
 - conversation-first frontend、personal-workspace 和 Beta Data Center 计划已完成至
-  Phase 59。项目仍处于 Beta：ADR-0015 授权 CI-green 的 phase PR auto-merge，
+  Phase 60。项目仍处于 Beta：ADR-0015 授权 CI-green 的 phase PR auto-merge，
   但在维护者明确下达正式发布任务前，不授权 release-candidate 评审、tag、部署或
   正式发布。team workspace、邀请、共享及商业 control-plane 能力仍不在范围内。
 

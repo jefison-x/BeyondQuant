@@ -110,3 +110,60 @@ def test_invalid_proposal_degrades_without_persistence_of_unknown_fields() -> No
 
     assert event["kind"] == "session.progress"
     assert "raw_event" not in str(event)
+
+
+def test_public_answer_translates_closed_domain_vocabulary() -> None:
+    event = project_workflow_event(
+        candidate(
+            "agent.output.delta",
+            {
+                "schema_version": "workflow-answer.v1",
+                "channel": "answer",
+                "delta": "截至 20260825，coverage_unverified；pe_ttm 为 6.61。",
+                "truncated": False,
+            },
+        ),
+        backend_get=lambda _path: {},
+        revision_for=lambda _card_id: 1,
+    )
+
+    assert event["kind"] == "agent.output.delta"
+    assert event["payload"]["delta"] == "截至 20260825，覆盖完整性尚未验证；市盈率（TTM） 为 6.61。"
+
+
+def test_public_answer_with_internal_runtime_token_fails_closed() -> None:
+    event = project_workflow_event(
+        candidate(
+            "agent.output.delta",
+            {
+                "schema_version": "workflow-answer.v1",
+                "channel": "answer",
+                "delta": "调用 byq_agent_audit 后继续。",
+                "truncated": False,
+            },
+        ),
+        backend_get=lambda _path: {},
+        revision_for=lambda _card_id: 1,
+    )
+
+    assert event["kind"] == "session.progress"
+    assert event["payload"] == {"reason": "projection-rejected", "truncated": False}
+    assert "byq_agent_audit" not in str(event)
+
+
+def test_public_answer_localizes_known_role_language() -> None:
+    event = project_workflow_event(
+        candidate(
+            "agent.output.delta",
+            {
+                "schema_version": "workflow-answer.v1",
+                "channel": "answer",
+                "delta": "market research、factor research、backtest analysis",
+                "truncated": False,
+            },
+        ),
+        backend_get=lambda _path: {},
+        revision_for=lambda _card_id: 1,
+    )
+
+    assert event["payload"]["delta"] == "市场研究、因子研究、回测分析"

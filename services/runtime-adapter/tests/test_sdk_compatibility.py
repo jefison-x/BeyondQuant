@@ -47,3 +47,17 @@ def test_product_composition_contains_jsonrpc_and_byq_mcp_without_coding() -> No
     assert "enabled: false" in contents
     assert "tool-bash" not in contents
     assert "terminal" not in contents
+
+
+def test_product_research_skill_requires_evidence_bound_public_answers() -> None:
+    skill_roots = [Path("/opt/dsh/bundles/dsh-byq/skills")]
+    skill_roots.extend(
+        parent / "plugins/dsh-byq/skills" for parent in Path(__file__).resolve().parents
+    )
+    skill_root = next(path for path in skill_roots if path.is_dir())
+    role_contract = (skill_root / "byq-role-contracts/SKILL.md").read_text()
+    market_contract = (skill_root / "byq-market-researcher/SKILL.md").read_text()
+
+    assert "Do not write a preface" in role_contract
+    assert "unqueried or unavailable profitability" in role_contract
+    assert "cause is not established by the available data" in market_contract

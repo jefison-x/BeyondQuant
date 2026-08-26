@@ -18,6 +18,7 @@ from .contracts import (
     WORKFLOW_CARD_VERSION,
     WorkflowTraceEvent,
     make_workflow_trace_event,
+    project_public_answer_text,
     validate_workflow_trace_event,
 )
 
@@ -36,6 +37,8 @@ _CAPABILITIES: dict[str, tuple[str, str]] = {
     "byq_agent_approval_get": ("review", "读取审批状态"),
     "byq_agent_approval_decide": ("review", "记录审批决定"),
     "byq_market_daily": ("select", "读取市场数据"),
+    "byq_market_valuation": ("select", "读取估值数据"),
+    "byq_market_fundamentals": ("select", "读取基本面数据"),
     "byq_pool_list": ("select", "读取股票池"),
     "byq_pool_get": ("select", "读取股票池详情"),
     "byq_pool_history": ("select", "读取股票池历史"),
@@ -50,10 +53,10 @@ _CAPABILITIES: dict[str, tuple[str, str]] = {
     "byq_strategy_export": ("strategy", "导出策略"),
     "byq_signal_snapshot_get": ("strategy", "读取信号快照"),
     "byq_research_get": ("strategy", "读取研究对象"),
-    "byq_research_task_create": ("strategy", "创建研究任务"),
+    "byq_research_task_create": ("strategy", "保存研究计划"),
     "byq_research_transition": ("strategy", "推进研究状态"),
-    "byq_artifact_create": ("strategy", "创建研究资产"),
-    "byq_experiment_create": ("strategy", "创建实验"),
+    "byq_artifact_create": ("strategy", "保存研究结论"),
+    "byq_experiment_create": ("strategy", "记录研究验证"),
     "byq_factor_compute": ("strategy", "计算因子"),
     "byq_experiment_compare": ("review", "比较实验"),
     "byq_paper_account_get": ("review", "读取模拟账户"),
@@ -76,6 +79,16 @@ _CAPABILITIES: dict[str, tuple[str, str]] = {
     "byq_lesson_get": ("review", "读取研究经验"),
     "byq_lesson_review": ("review", "审阅研究经验"),
 }
+_INTERNAL_CONTROL_CAPABILITIES = frozenset(
+    {
+        "byq_agent_context",
+        "byq_agent_roles",
+        "byq_agent_run_start",
+        "byq_agent_authorize",
+        "byq_agent_audit",
+        "byq_agent_audit_get",
+    }
+)
 _BACKTEST_TOOLS = frozenset(name for name in _CAPABILITIES if name.startswith("byq_backtest_"))
 _APPROVAL_TOOLS = frozenset(name for name in _CAPABILITIES if name.startswith("byq_agent_approval_"))
 _SESSION_STATUSES = frozenset({"starting", "ready", "idle", "running", "cancelling", "interrupted", "failed", "closed"})
@@ -92,6 +105,7 @@ class NormalizationState:
     card_count: int = 0
     activity_truncated: bool = False
     card_truncated: bool = False
+    turn_activity_id: str | None = None
 
     def reset_turn(self) -> None:
         self.tool_names.clear()
@@ -100,6 +114,7 @@ class NormalizationState:
         self.card_count = 0
         self.activity_truncated = False
         self.card_truncated = False
+        self.turn_activity_id = None
 
 
 def normalize_dsh_notification(
@@ -132,12 +147,13 @@ def normalize_dsh_notification(
 
     if event_type == "turn/start":
         current.reset_turn()
+        current.turn_activity_id = _stable_id("activity", trace_id, str(sequence), "turn")
         return _bounded_activity(
             current,
             trace_id,
             session_id,
             sequence,
-            activity_id=_stable_id("activity", trace_id, str(sequence), "turn"),
+            activity_id=current.turn_activity_id,
             phase="understand",
             activity_state="started",
             label="理解请求",
@@ -146,7 +162,31 @@ def normalize_dsh_notification(
         reason = data.get("reason")
         reason_kind = reason.get("kind") if isinstance(reason, dict) else None
         safe_reason = reason_kind if reason_kind in _TURN_REASONS else "completed"
-        return [_event(trace_id, session_id, sequence, "turn.completed", "dsh", {"reason": safe_reason})]
+        events: list[WorkflowTraceEvent] = []
+        if current.turn_activity_id is not None:
+            events.extend(
+                _bounded_activity(
+                    current,
+                    trace_id,
+                    session_id,
+                    sequence,
+                    activity_id=current.turn_activity_id,
+                    phase="understand",
+                    activity_state="completed" if safe_reason == "completed" else "failed",
+                    label="理解请求",
+                )
+            )
+        events.append(
+            _event(
+                trace_id,
+                session_id,
+                sequence + len(events),
+                "turn.completed",
+                "dsh",
+                {"reason": safe_reason},
+            )
+        )
+        return events
     if event_type == "assistant/message":
         return _answer_events(current, data, trace_id, session_id, sequence)
     if event_type == "tool/call":
@@ -176,6 +216,11 @@ def _answer_events(
     content = message.get("content")
     if not isinstance(content, list):
         return []
+    # DSH commits one assistant/message per model step. A step containing a
+    # tool-call is operational narration, not the final investment answer.
+    # The later text-only completion anchor is the public answer boundary.
+    if any(isinstance(block, dict) and block.get("type") == "tool-call" for block in content):
+        return []
     text = "".join(
         block.get("text", "")
         for block in content
@@ -183,6 +228,7 @@ def _answer_events(
     ).strip()
     if not text:
         return []
+    text = project_public_answer_text(text)
     fragments = _split_utf8(text, MAX_ANSWER_FRAGMENT_BYTES)
     return [
         _event(
@@ -216,6 +262,8 @@ def _tool_call_events(
     capability = _canonical_capability(name)
     if capability:
         state.tool_names[call_id] = capability
+    if capability is None or capability in _INTERNAL_CONTROL_CAPABILITIES:
+        return []
     phase, label = _CAPABILITIES.get(capability or "", ("tool", "调用受控能力"))
     return _bounded_activity(
         state,
@@ -226,7 +274,6 @@ def _tool_call_events(
         phase=phase,
         activity_state="started",
         label=label,
-        capability=capability,
     )
 
 
@@ -244,6 +291,8 @@ def _tool_result_events(
     if not isinstance(call_id, str):
         return []
     capability = state.tool_names.pop(call_id, None)
+    if capability is None or capability in _INTERNAL_CONTROL_CAPABILITIES:
+        return []
     phase, label = _CAPABILITIES.get(capability or "", ("tool", "受控能力已返回"))
     failed = block.get("isError") is True
     events = _bounded_activity(
@@ -255,7 +304,6 @@ def _tool_result_events(
         phase=phase,
         activity_state="failed" if failed else "completed",
         label=label,
-        capability=capability,
     )
     if failed or capability is None:
         return events
@@ -336,7 +384,6 @@ def _bounded_activity(
     phase: str,
     activity_state: str,
     label: str,
-    capability: str | None = None,
 ) -> list[WorkflowTraceEvent]:
     if state.activity_count >= MAX_ACTIVITIES_PER_TURN:
         if state.activity_truncated:
@@ -351,8 +398,6 @@ def _bounded_activity(
         "state": activity_state,
         "label": label,
     }
-    if capability:
-        payload["capability"] = capability
     event = _event(trace_id, session_id, sequence, "agent.activity", "runtime-adapter", payload)
     validate_workflow_trace_event(event)
     return [event]
