@@ -1,48 +1,45 @@
-# ADR-0018: Structured WorkflowTrace Cards and Normalization Boundary
+# ADR-0018：Structured WorkflowTrace Card 与 Normalization Boundary
 
 - Status: Accepted
 - Date: 2026-08-22
-- Decision scope: Phase 36 Agent workbench projection and interaction boundary
-- Related: ADR-0003, ADR-0009, ADR-0012, ADR-0014
+- Decision scope: Phase 36 Agent workbench projection 与 interaction boundary
+- Related: ADR-0003、ADR-0009、ADR-0012、ADR-0014
 - Contract: `docs/contracts/workflow-trace-cards.md`
 
-## Context
+## 背景
 
-The Community Agent workbench renders conversation-adjacent strategy drafts,
-stock candidates, optimization plans, backtest context, approval state,
-progress steps, and page-aware assistant affordances. Those surfaces are useful
-product evidence, but Community message objects, Agent APIs, approval runtime,
-and event schemas are not a compatible integration boundary for BYQ.
+Community Agent workbench 会在 conversation 附近呈现 Strategy draft、stock candidate、
+optimization plan、Backtest context、Approval state、progress step 和 page-aware assistant
+affordance。这些 surface 是有用的 Product evidence，但 Community message object、Agent
+API、Approval runtime 和 event schema 不是兼容的 BYQ integration boundary。
 
-The current Runtime Adapter normalization collapses DSH notifications to a
-small `WorkflowTraceEvent` envelope. Public assistant messages retain only a
-byte count, unknown events become `session.progress`, and there is no bounded
-card schema. Passing more of the DSH object through would couple the frontend
-to rc.6 wire types and could let model-produced fields impersonate BYQ
-artifacts, approvals, execution outcomes, or authorized actions.
+当时 Runtime Adapter normalization 将 DSH notification 压缩为小型
+`WorkflowTraceEvent` envelope。Public assistant message 只保留 byte count，unknown event
+变为 `session.progress`，且没有有界 card schema。透传更多 DSH object 会让 frontend
+耦合 rc.6 wire type，并可能让 model-produced field 冒充 BYQ Artifact、Approval、
+execution outcome 或 authorized action。
 
-Phase 36 therefore needs both a structured presentation contract and a firm
-normalization/authority boundary. The contract must preserve ordered replay,
-owner isolation, approval semantics, payload bounds, and DSH replaceability.
+因此 Phase 36 同时需要 structured presentation Contract 和严格 normalization/authority
+boundary。Contract 必须保持 ordered replay、owner isolation、Approval semantics、payload
+bound 和 DSH replaceability。
 
-## Decision
+## 决策
 
-### 1. Preserve the WorkflowTrace envelope
+### 1. 保留 WorkflowTrace envelope
 
-Structured cards remain ordinary append-only `WorkflowTraceEvent` records:
+Structured card 仍是普通 append-only `WorkflowTraceEvent` record：
 
 ```text
 trace_id, session_id, sequence, timestamp, kind, source, payload
 ```
 
-The envelope, contiguous sequence allocation, SSE replay, and identical-retry
-rules remain authoritative. No second event bus or frontend DSH client is
-introduced. `source` may additionally be `byq-domain` only when Gateway has
-replaced candidate fields with an owner-scoped Domain projection.
+Envelope、contiguous sequence allocation、SSE replay 和 identical-retry rule 继续具有
+权威性。不引入第二个 event bus 或 frontend DSH client。只有 Gateway 用 owner-scoped
+Domain projection 替换 candidate field 后，`source` 才可额外取 `byq-domain`。
 
-### 2. Adopt five versioned card kinds
+### 2. 采用五种 versioned card kind
 
-The initial kinds are:
+初始 kind：
 
 - `agent.card.strategy_draft`
 - `agent.card.stock_candidates`
@@ -50,140 +47,122 @@ The initial kinds are:
 - `agent.card.backtest_context`
 - `agent.card.approval`
 
-Every card uses `schema_version = "workflow-card.v1"`, a BYQ-allocated stable
-`card_id`, a positive `revision`, `authority` (`proposal` or `domain`), and an
-exact allow-listed payload for its kind. Unknown fields are rejected rather
-than retained. The normative shapes, enums, identifier rules, and size limits
-are defined in `docs/contracts/workflow-trace-cards.md`.
+每张 card 使用 `schema_version = "workflow-card.v1"`、BYQ 分配的稳定 `card_id`、正数
+`revision`、`authority`（`proposal` 或 `domain`），以及该 kind 的准确 allow-listed
+payload。Unknown field 被拒绝，不予保留。规范 shape、enum、identifier rule 和 size
+limit 定义于 `docs/contracts/workflow-trace-cards.md`。
 
-Cards are immutable snapshots. A later state is a new trace event with the
-same `card_id` and a greater revision. The frontend may fold to the latest
-revision for display, while replay retains the complete ordered history.
-Conflicting or decreasing revisions are rejected.
+Card 是 immutable snapshot。后续 state 使用相同 `card_id` 和更大 revision 产生新的
+trace event。Frontend 可 fold 到 latest revision 显示，replay 则保留完整 ordered
+history。Conflict 或 decreasing revision 被拒绝。
 
-### 3. Separate proposal data from Domain authority
+### 3. 分离 proposal data 与 Domain authority
 
-Runtime Adapter is the only component allowed to inspect DSH notifications.
-It extracts a card candidate through exact field allow-lists, assigns bounded
-BYQ identity, and discards the raw notification, tool call internals, unknown
-keys, arbitrary links, and executable request data.
+Runtime Adapter 是唯一可以 inspect DSH notification 的组件。它通过准确 field allowlist
+提取 card candidate、分配有界 BYQ identity，并丢弃 raw notification、tool call internal、
+unknown key、arbitrary link 和 executable request data。
 
-DSH/model content can produce only `authority = "proposal"`. It cannot assert
-that an artifact is validated, an approval is pending/approved, a backtest
-completed, an operation executed, or an owner has access. Candidate references
-such as `artifact_id`, `job_id`, `pool_id`, and `approval_id` are untrusted
-until resolved.
+DSH/model content 只能产生 `authority = "proposal"`，不能断言 Artifact 已 validated、
+Approval pending/approved、Backtest completed、operation executed 或 owner 有权限。
+`artifact_id`、`job_id`、`pool_id`、`approval_id` 等 candidate reference 在 resolve 前均不
+可信。
 
-Gateway owns the second projection step. Any card that claims Domain state,
-and every `backtest_context` or `approval` card, must be re-read through the
-owner-scoped BYQ Domain/Product boundary using the authenticated session
-principal. Gateway replaces display fields with that projection and emits
-`authority = "domain"`, `source = "byq-domain"`. A missing, cross-owner,
-stale, malformed, or forbidden reference becomes a bounded
-`session.progress` projection at the same sequence; raw rejection details do
-not cross to the browser.
+Gateway 持有第二 projection step。任何声称 Domain state 的 card，以及所有
+`backtest_context`/`approval` card，都必须使用 authenticated session principal 通过
+owner-scoped BYQ Domain/Product boundary 重新读取。Gateway 用该 projection 替换 display
+field，并发出 `authority = "domain"`、`source = "byq-domain"`。Missing、cross-owner、
+stale、malformed 或 forbidden reference 在相同 sequence 降级为有界
+`session.progress`；raw rejection detail 不进入 browser。
 
-Principal, bearer/session token, MCP headers, provider credentials, and DSH
-authorization data never appear in a card.
+Principal、bearer/session token、MCP header、provider credential 和 DSH authorization
+data 绝不出现在 card 中。
 
-### 4. Cards are not commands
+### 4. Card 不是 command
 
-A card contains no URL, HTTP method, headers, arbitrary route, tool name,
-tool arguments, or mutation body. It cannot grant approval or represent
-approval as execution success.
+Card 不含 URL、HTTP method、header、arbitrary route、tool name、tool argument 或
+mutation body。它不能 grant Approval，也不能把 Approval 表示为 execution success。
 
-The frontend maps a validated card kind to a fixed BYQ-owned interaction. It
-must fetch the latest owner-scoped resource before a consequential action and
-then use the existing Product API, validation, idempotency, optimistic
-concurrency, and Approval contracts. Proposal-card actions may open a draft or
-request flow; they never directly mutate business state. An approval decision
-always targets the current BYQ approval resource, and execution outcome remains
-separate.
+Frontend 将 validated card kind 映射到固定 BYQ-owned interaction。Consequential action
+前必须获取 latest owner-scoped resource，再使用现有 Product API、validation、
+idempotency、optimistic concurrency 和 Approval Contract。Proposal-card action 可打开
+draft/request flow，但绝不直接修改 business state。Approval decision 始终针对当前 BYQ
+Approval resource，且 execution outcome 保持独立。
 
-### 5. Normalize public answer and activity, not hidden reasoning
+### 5. 规范化 public answer/activity，不暴露 hidden reasoning
 
-Phase 36 also upgrades two non-card projections needed by the workbench:
+Phase 36 还升级 workbench 所需的两种 non-card projection：
 
-- `agent.output.delta` carries only public assistant answer text in bounded,
-  ordered fragments. The adapter deduplicates cumulative DSH message updates.
-- `agent.activity` carries a curated public phase, state, label, and optional
-  BYQ capability name for progress visualization.
+- `agent.output.delta` 只承载有界、ordered fragment 形式的 public assistant answer text；
+  Adapter 对 cumulative DSH message update 去重。
+- `agent.activity` 为 progress visualization 承载 curated public phase、state、label 和
+  optional BYQ capability name。
 
-Hidden chain-of-thought, system/developer prompts, model provider objects,
-token-level reasoning, tool arguments, raw tool results, stack traces, and DSH
-message objects are never projected. Community `AgentThinking` is therefore
-classified as public operational progress UX, not permission to expose model
-reasoning.
+Hidden chain-of-thought、system/developer prompt、model provider object、token-level
+reasoning、tool argument、raw tool result、stack trace 和 DSH message object 均不 projection。
+因此 Community `AgentThinking` 被分类为 public operational progress UX，而不是暴露
+model reasoning 的许可。
 
-### 6. Enforce bounds and fail closed
+### 6. 强制 bound 并 fail closed
 
-All payloads must be finite JSON and pass exact schemas before persistence.
-The initial limits include a 64 KiB serialized event payload, 8 KiB answer
-fragments, 50 stock candidates, 20 optimization changes, bounded strings and
-metric keys, at most 32 cards and 256 activity events per turn, and no
-credential-shaped fields. Oversized public text is split when safe; excess
-structured activity is coalesced into a bounded progress/truncation event.
-Invalid cards degrade safely and never fall back to raw passthrough.
+所有 payload 必须是 finite JSON，并在 persistence 前通过准确 schema。初始限制包括：
+serialized event payload 64 KiB、answer fragment 8 KiB、50 个 stock candidate、20 个
+optimization change、有界 string/metric key、每 turn 最多 32 张 card 和 256 个 activity
+event，且禁止 credential-shaped field。Oversized public text 在安全时拆分；超量
+structured activity 合并为有界 progress/truncation event。Invalid card 安全降级，绝不
+fallback 到 raw passthrough。
 
-Gateway persists and streams only validated BYQ envelopes. Frontend types are
-discriminated BYQ unions and do not import DSH SDK/wire types.
+Gateway 只 persistence/stream validated BYQ envelope。Frontend type 是 discriminated
+BYQ union，不 import DSH SDK/wire type。
 
 ### 7. Phase ownership
 
-Phase 36 owns the Agent-specific card renderers, `AgentThinking`-equivalent
-public activity component, approval presentation, and assistant drawer needed
-for its exit criteria. Phase 40 may extract/generalize those proven components
-for other pages, but it is not a prerequisite for Phase 36; this removes the
-previous circular roadmap dependency.
+Phase 36 持有其 exit criteria 所需的 Agent-specific card renderer、等价于
+`AgentThinking` 的 public activity component、Approval presentation 和 assistant drawer。
+Phase 40 可在后续 extract/generalize 已验证 component，但不是 Phase 36 prerequisite；
+这消除了此前 circular roadmap dependency。
 
-## Consequences
+## 后果
 
-- Community-level structured interaction is possible without trusting
-  Community or DSH schemas.
-- Runtime Adapter gains a curated candidate extractor; Gateway gains schema
-  validation, owner-scoped hydration, revision checks, and fail-closed
-  degradation.
-- Domain-backed status remains authoritative even when a model emits stale or
-  invented identifiers.
-- The workbench can show public progress without exposing hidden reasoning.
-- DSH upgrades are isolated to the adapter extractor and its compatibility
-  tests. Card consumers remain stable across runtime changes.
-- Richer fields or new kinds require a reviewed contract/ADR update; raw JSON
-  escape hatches are prohibited.
+- 无需信任 Community 或 DSH schema，即可实现 Community-level structured interaction。
+- Runtime Adapter 增加 curated candidate extractor；Gateway 增加 schema validation、
+  owner-scoped hydration、revision check 和 fail-closed degradation。
+- 即使 model 发出 stale/invented identifier，Domain-backed status 仍保持权威。
+- Workbench 可呈现 public progress，而不暴露 hidden reasoning。
+- DSH upgrade 被隔离到 Adapter extractor 及 compatibility test；card consumer 跨 runtime
+  change 保持稳定。
+- 更丰富 field 或新 kind 需要 review 后更新 Contract/ADR；禁止 raw JSON escape hatch。
 
-## Required Phase 36 evidence
+## Phase 36 必需证据
 
-- contract tests for every accepted and rejected card shape, bounds, finite
-  metrics, revision rules, and unknown-field rejection;
-- adapter tests proving raw notification/tool/reasoning fields are discarded;
-- Gateway tests for owner-scoped hydration, cross-owner failure, stale/missing
-  references, safe degradation, ordered replay, and no authority promotion;
-- frontend tests for discriminated rendering, revision folding, fixed Product
-  actions, public activity, reconnect replay, empty/error/truncated states;
-- secret-boundary tests and a real Product API browser journey with Chrome MCP
-  network/console evidence;
-- Community feature checklist and migration classification before code work.
+- 每种 accepted/rejected card shape、bound、finite metric、revision rule 和 unknown-field
+  rejection 的 contract test；
+- 证明 raw notification/tool/reasoning field 被丢弃的 Adapter test；
+- owner-scoped hydration、cross-owner failure、stale/missing reference、安全降级、
+  ordered replay 和 no-authority-promotion 的 Gateway test；
+- discriminated rendering、revision folding、固定 Product action、public activity、
+  reconnect replay、empty/error/truncated state 的 frontend test；
+- secret-boundary test 和带 Chrome MCP network/console evidence 的真实 Product API
+  browser journey；
+- code work 前完成 Community feature checklist 和 migration classification。
 
-## Rejected alternatives
+## 拒绝的替代方案
 
-- Pass raw DSH payloads or Community message objects to the frontend: violates
-  ADR-0003 and `ARCHITECTURE.md` section G.
-- Let DSH emit authoritative approval/artifact/backtest state: crosses the
-  Agent/Domain authority boundary and owner isolation.
-- Put executable actions in cards: creates a model-controlled Product API and
-  approval bypass surface.
-- Render hidden chain-of-thought as “thinking”: exposes runtime internals and
-  creates an unstable, unsafe product contract.
-- Render all structure from plain text: loses deterministic validation,
-  accessibility, and actionable domain references.
-- Build a second event bus: duplicates WorkflowTrace ordering and replay.
-- Block Phase 36 on Phase 40: creates a circular phase dependency; Phase 36
-  must first prove its specific components before later generalization.
+- 向 frontend 透传 raw DSH payload 或 Community message object：违反 ADR-0003 和
+  `ARCHITECTURE.md` section G。
+- 允许 DSH 发出 authoritative Approval/Artifact/Backtest state：越过 Agent/Domain
+  authority boundary 和 owner isolation。
+- 在 card 放 executable action：形成 model-controlled Product API 和 Approval bypass。
+- 将 hidden chain-of-thought 渲染为“thinking”：暴露 runtime internal，并建立不稳定、
+  不安全的 Product Contract。
+- 从 plain text 渲染全部 structure：失去 deterministic validation、accessibility 和可操作
+  domain reference。
+- 创建第二个 event bus：重复 WorkflowTrace ordering 和 replay。
+- 让 Phase 36 阻塞于 Phase 40：造成 circular dependency；必须先由 Phase 36 验证专用
+  component，再在后续 generalize。
 
-## Rollback
+## 回滚
 
-Disable the five card renderers and candidate/hydration projectors. Existing
-card events remain valid append-only evidence and can render as generic trace
-items; no business-data or DSH-session migration is required. Public answer
-and activity events can fall back to the existing coarse progress view without
-exposing raw payloads.
+禁用五种 card renderer 和 candidate/hydration projector。现有 card event 保持有效的
+append-only evidence，可显示为 generic trace item；无需迁移 business data 或 DSH
+session。Public answer/activity event 可 fallback 到现有 coarse progress view，但不能暴露
+raw payload。
