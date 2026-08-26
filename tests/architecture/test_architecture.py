@@ -48,12 +48,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         self.assertIn("- Status: Accepted", adr)
         self.assertIn("AES-256-GCM", adr)
-        self.assertIn("credential-envelope.v1", adr)
-        self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", adr)
+        self.assertIn("model_api_key", adr)
+        self.assertIn("tushare_token", adr)
         self.assertIn("BYQ_CREDENTIAL_KEYRING", contract)
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
-        self.assertIn("model_profile_id", contract)
+        self.assertIn("credential-envelope.v1", contract)
         self.assertEqual(markdown_marker(status, "current-completed-phase"), "57")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
@@ -446,7 +446,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             / "docs/architecture/adr/ADR-0019-encrypted-credential-store.md"
         ).read_text()
         self.assertIn("- Status: Accepted", credential_adr)
-        self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", credential_adr)
+        self.assertIn("model_api_key", credential_adr)
+        self.assertIn("tushare_token", credential_adr)
 
         stock_pool_adr = (
             ROOT / "docs/architecture/adr/ADR-0020-stock-pool-snapshot-lifecycle.md"
@@ -685,8 +686,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("BYQ_MCP_TOKEN", contents)
         self.assertNotIn("/mcp/v1", contents)
         readme = (frontend / "README.md").read_text()
-        self.assertIn("WorkflowTrace", readme)
-        self.assertIn("DSH", readme)
+        self.assertIn("Gateway Product API", readme)
+        self.assertIn("Backend, MCP, DSH, PostgreSQL, Redis", readme)
 
     def test_product_backend_proxy_calls_always_carry_trusted_context(self) -> None:
         source = (ROOT / "services/gateway/app/product_api.py").read_text()
