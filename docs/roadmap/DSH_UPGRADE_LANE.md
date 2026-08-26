@@ -2,37 +2,22 @@
 
 Status: **QUALIFIED — `0.1.1rc1` / `0.1.1-rc.1` maintenance upgrade**
 
-This task establishes a repeatable, evidence-driven path for following
-official DeepSeek Harness releases without coupling BYQ product contracts to
-DSH internals. It is intentionally scheduled after the current product-depth
-sequence. A critical DSH security advisory may trigger it earlier through a
-dedicated maintenance worktree and ADR-0003 compatibility review.
+本任务建立可重复、证据驱动的路径，以跟踪 official DeepSeek Harness releases，同时不把 BYQ product contracts 耦合到 DSH internals。它有意安排在当前 product-depth sequence 之后；重大 DSH security advisory 可通过独立 maintenance worktree 和 ADR-0003 compatibility review 提前触发。
 
-## Qualified stack (2026-08-25)
+## Qualified stack（2026-08-25）
 
-The Product Runtime qualified by this lane is:
+本 lane 认证的 Product Runtime：
 
-- Python `deepseek-harness-sdk==0.1.1rc1`;
-- Python `deepseek-harness-runtime-bin==0.1.1rc1`;
-- all 54 `@deepseek-ai/dsh-*` packages in the BYQ JSON-RPC runtime closure
-  exact-pinned to npm `0.1.1-rc.1`;
-- all seven supporting `@deepseek-ai/*` Cordis packages exact-pinned to their
-  current official stable versions;
-- public `@deepseek-ai/dsh-sdk-jsonrpc-demo` `lib/bin.js` carrier; and
-- the unchanged BYQ Cordis composition with JSONL persistence and
-  `@deepseek-ai/dsh-mcp-client` as the only Agent-to-Domain path.
+- Python `deepseek-harness-sdk==0.1.1rc1`；
+- Python `deepseek-harness-runtime-bin==0.1.1rc1`；
+- BYQ JSON-RPC runtime closure 中全部 54 个 `@deepseek-ai/dsh-*` packages 精确固定为 npm `0.1.1-rc.1`；
+- 七个 supporting `@deepseek-ai/*` Cordis packages 精确固定为当前 official stable versions；
+- public `@deepseek-ai/dsh-sdk-jsonrpc-demo` `lib/bin.js` carrier；
+- 不变的 BYQ Cordis composition、JSONL persistence，以及作为唯一 Agent-to-Domain path 的 `@deepseek-ai/dsh-mcp-client`。
 
-GitHub/npm `0.1.1-rc.2` is newer but has no matching Python SDK/runtime-bin
-release. It is therefore rejected. A normal top-level npm rc.1 install also
-fails closed because upstream caret peer ranges select rc.2 transitive
-packages. BYQ prevents that mixed prerelease tree by listing the complete DSH
-closure as exact direct pins; a clean npm resolution then contains 61
-`@deepseek-ai/*` packages, including 54 DSH packages at one version only,
-`0.1.1-rc.1`, without overrides, `--force`, or `--legacy-peer-deps`.
+GitHub/npm `0.1.1-rc.2` 更新，但没有匹配 Python SDK/runtime-bin release，因此拒绝。普通 top-level npm rc.1 install 也 fail closed，因为 upstream caret peer ranges 会选择 rc.2 transitive packages。BYQ 将完整 DSH closure 列为 exact direct pins，阻止混合 prerelease tree；clean npm resolution 包含 61 个 `@deepseek-ai/*` packages，其中 54 个 DSH packages 只有 `0.1.1-rc.1`，且不使用 overrides、`--force` 或 `--legacy-peer-deps`。
 
-The evidence and compatibility results are recorded in
-[`dsh-compatibility-matrix.md`](../architecture/research/dsh-compatibility-matrix.md).
-Prepare any future candidate without changing the qualified pin with:
+证据与 compatibility results 记录在 [`dsh-compatibility-matrix.md`](../architecture/research/dsh-compatibility-matrix.md)。未来 candidate 在不改变 qualified pin 的情况下运行：
 
 ```bash
 python3 scripts/dsh/prepare_candidate.py \
@@ -41,88 +26,52 @@ python3 scripts/dsh/prepare_candidate.py \
   --output /tmp/byq-dsh-candidate-0.1.1rc1
 ```
 
-The command downloads the platform SDK/runtime wheels, verifies their PyPI
-SHA-256 metadata, creates and verifies a clean npm lock, runs `npm ci` and
-high-level audit, and emits a CycloneDX SBOM plus a dependency report. It
-refuses mixed Python/npm prereleases and existing output directories.
+命令下载 platform SDK/runtime wheels、验证 PyPI SHA-256 metadata、创建并验证 clean npm lock、运行 `npm ci`/high-level audit，并输出 CycloneDX SBOM 和 dependency report。它拒绝混合 Python/npm prereleases 和已存在 output directories。
 
-## Rollback baseline (2026-08-22)
+## Rollback baseline（2026-08-22）
 
-BYQ previously pinned the Python SDK/runtime and the explicit npm runtime closure
-to DSH `0.1.0-rc.6`. The Runtime Adapter launched the npm
-`@deepseek-ai/dsh-sdk-jsonrpc-demo` closure; changing only the Python packages
-does not change the runtime that serves Product Agent sessions.
+BYQ 之前将 Python SDK/runtime 和显式 npm runtime closure 固定为 DSH `0.1.0-rc.6`。Runtime Adapter 启动 npm `@deepseek-ai/dsh-sdk-jsonrpc-demo` closure；只改 Python packages 不会改变为 Product Agent sessions 服务的 runtime。
 
-Recent official releases provide these relevant changes:
+相关官方变化：
 
-- `0.1.0-rc.7`: long-session continuation after max-token truncation,
-  large-history pagination stability, and durable MCP/ACP image attachments;
-- `0.1.0-rc.8`: large-history/fork improvements, reliable subagent result
-  delivery, multimodal support, and a broader Python bundled runtime closure;
-- `0.1.1-rc.1`: a security fix for a Bubblewrap `/proc/<pid>/root` sandbox
-  escape, plus vision-model support;
-- `0.1.1-rc.2`: Files API image reuse and image preprocessing in the DeepSeek
-  adapter.
+- `0.1.0-rc.7`：max-token truncation 后继续长 session、large-history pagination 稳定性、durable MCP/ACP image attachments；
+- `0.1.0-rc.8`：large-history/fork 改进、可靠 subagent result delivery、multimodal support、更广 Python bundled runtime closure；
+- `0.1.1-rc.1`：修复 Bubblewrap `/proc/<pid>/root` sandbox escape，并支持 vision model；
+- `0.1.1-rc.2`：DeepSeek adapter 的 Files API image reuse/image preprocessing。
 
-The security fix, long-session stability, and subagent delivery are relevant
-to BYQ. Upstream Web UI, Job Panel, shell/PTY, and PowerShell changes do not
-justify widening Product DSH privileges. Multimodal features require a future
-BYQ Product API and normalized WorkflowTrace decision before use.
+Security fix、long-session stability 和 subagent delivery 与 BYQ 相关。Upstream Web UI、Job Panel、shell/PTY、PowerShell 变化不足以扩大 Product DSH privileges。Multimodal features 使用前需要未来 BYQ Product API 和 normalized WorkflowTrace 决策。
 
-The compatibility spike found that Python `0.1.1rc1` initializes and closes,
-but an npm top-level `0.1.1-rc.1` set can resolve a mixed rc.1/rc.2 transitive
-closure and fail peer dependency resolution. An exact npm `0.1.1-rc.2` closure
-installs, while the official Python packages were still at `0.1.1rc1`. BYQ
-must not adopt that mixed release set without compatibility evidence.
-
-Official release evidence:
+Compatibility spike 发现 Python `0.1.1rc1` 可 initialize/close，但 npm top-level `0.1.1-rc.1` 可能解析出混合 rc.1/rc.2 closure 并导致 peer dependency failure。Exact npm `0.1.1-rc.2` closure 可安装，但 official Python packages 仍是 `0.1.1rc1`。无 compatibility evidence 时 BYQ 不得采用该混合 release set。Official release evidence 保留原链接：
 
 - <https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.7>
 - <https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8>
 - <https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.1-rc.1>
 - <https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.1-rc.2>
 
-## Delivery objective
+## 交付目标与范围
 
-Turn ADR-0003's manual upgrade review into a reproducible compatibility lane
-that can qualify routine DSH releases within one working day when no protocol,
-persistence, or security boundary changes.
+将 ADR-0003 的人工 upgrade review 转为可复现 compatibility lane，使无 protocol、persistence 或 security boundary 变化的常规 DSH release 能在一个工作日内认证。已交付：
 
-## Delivered scope
-
-1. Produced an exact BYQ/DSH compatibility matrix covering Python SDK,
-   runtime-bin, npm closure, hashes, protocol behavior, and known limitations.
-2. Added a candidate-version preparation command that downloads artifacts,
-   verifies hashes/metadata, materializes a lockfile, and emits an SBOM/diff
-   without modifying the accepted runtime pin.
-3. Retained the explicit npm runtime because BYQ's custom Cordis composition
-   requires the MCP client and bounded Product capability roster. The bundled
-   Python runtime remains an exact paired dependency, not the selected carrier.
-4. Automated compatibility tests for initialization, MCP authorization,
-   subagents, long-session resume/replay, normalized notifications, secret
-   filtering, timeouts, cancellation, process reaping, and credential
-   resolution.
-5. Used an isolated upgrade worktree/Draft-PR workflow. Versions remain exact;
-   no `latest`, caret, or automatic production adoption is allowed.
-6. Retained two policies: expedited qualification for security fixes and normal
-   batching for feature releases. New DSH capabilities stay disabled until a
-   BYQ contract or Accepted ADR explicitly adopts them.
+1. 精确 BYQ/DSH compatibility matrix，覆盖 Python SDK、runtime-bin、npm closure、hashes、protocol behavior 和 known limitations。
+2. Candidate preparation command：下载 artifacts、验证 hashes/metadata、生成 lockfile 和 SBOM/diff，不修改 accepted runtime pin。
+3. 保留显式 npm runtime，因为 BYQ custom Cordis composition 需要 MCP client 和有界 Product capability roster；bundled Python runtime 是精确配对 dependency，不是 selected carrier。
+4. 自动化 compatibility tests，覆盖 initialization、MCP authorization、subagents、long-session resume/replay、normalized notifications、secret filtering、timeouts、cancellation、process reaping 和 credential resolution。
+5. 使用 isolated upgrade worktree/Draft-PR workflow；versions 保持 exact，不允许 `latest`、caret 或 automatic production adoption。
+6. 保留两项 policy：security fixes expedited qualification；feature releases normal batching。新 DSH capabilities 保持 disabled，直到 BYQ contract/Accepted ADR 显式采用。
 
 ## Acceptance criteria
 
-- one command prepares a candidate and produces reviewable dependency evidence;
-- the full DSH compatibility suite runs in local CI without a real model key;
-- an optional credentialed smoke is documented and never stores a test secret;
-- mixed npm/Python release sets fail closed unless explicitly accepted;
-- Product API and WorkflowTrace contracts remain unchanged by a compatible
-  runtime-only upgrade;
-- ADR-0003 and the compatibility matrix identify the qualified production pin,
-  rollback pin, limitations, and evidence location.
+- 一个命令生成可审查 candidate dependency evidence；
+- 完整 DSH compatibility suite 可在无真实 model key 的 local CI 运行；
+- 可选 credentialed smoke 有文档且不存储 test secret；
+- 混合 npm/Python release sets fail closed，除非显式接受；
+- Compatible runtime-only upgrade 不改变 Product API/WorkflowTrace contracts；
+- ADR-0003/compatibility matrix 标识 qualified production pin、rollback pin、limitations 和 evidence location。
 
-## Non-goals
+## 非目标
 
-- automatically merging runtime upgrades;
-- following every DSH prerelease immediately;
-- enabling shell, source-write, deployment, raw-event, or database access;
-- adopting multimodal payloads without a BYQ-owned public contract;
-- forking or patching DeepSeek Harness.
+- 自动 merge runtime upgrades；
+- 立即跟随每个 DSH prerelease；
+- 启用 shell、source-write、deployment、raw-event 或 database access；
+- 在无 BYQ-owned public contract 时采用 multimodal payloads；
+- fork 或 patch DeepSeek Harness。

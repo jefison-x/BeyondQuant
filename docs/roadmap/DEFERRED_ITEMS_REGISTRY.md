@@ -1,243 +1,126 @@
-# BeyondQuant Deferred Items Registry (D-Items)
+# BeyondQuant Deferred Items Registry（D-Items）
 
-Status: **Active** — companion to `IMPLEMENTATION_PLAN.md` and
-`COMMUNITY_FULL_PARITY_PLAN.md` (Phase 32–40).
+Status: **Active** — `IMPLEMENTATION_PLAN.md` 和 `COMMUNITY_FULL_PARITY_PLAN.md`（Phase 32–40）的 companion。
 
-This registry is the single authoritative inventory of work that was **explicitly
-skipped, blocked, or conditionally deferred** during a phase, so it can be
-re-picked-up automatically once its precondition becomes true. It exists because
-"known remaining" notes were previously scattered across parity matrices, gap
-audits, and Chrome evidence files — easy to lose across phase boundaries and
-agent sessions.
+本 registry 是 phase 中**显式跳过、阻塞或有条件延后**工作的唯一权威清单，使其 precondition 成立时可自动重新拾取。普通未来 phase scope 仍在 phase plans，不放这里。某 phase 的 registry entry 仍为 `OPEN` 时不得宣称该 phase complete，否则违反 AGENTS rule 40。
 
-## Scope
+## State machine 与 trigger
 
-- Entries here are **conditional** (blocked on an ADR, a decision, a
-  prerequisite phase, or a signal source) — NOT the normal planned scope of
-  upcoming phases (that lives in `IMPLEMENTATION_PLAN.md` /
-  `COMMUNITY_FULL_PARITY_PLAN.md`).
-- A phase MUST NOT be declared complete while a registry entry with
-  `Phase: <that phase>` is still `OPEN`. Marking completion with an open
-  conditional entry is a fake-completion violation (AGENTS rule 40).
-
-## State machine
-
-```
+```text
 BLOCKED ──(precondition met)──► READY ──(scheduled)──► IN_PROGRESS ──► CLOSED
   │                                                      │
   └──(precondition dropped / intentionally won't do)──► DROPPED
 ```
 
-- `BLOCKED`: precondition not met (e.g. required ADR still Proposed).
-- `READY`: precondition met, no work started (e.g. ADR just Accepted).
-- `IN_PROGRESS`: scheduled into a worktree / Draft PR.
-- `CLOSED`: implemented, tested, merged, with evidence recorded.
-- `DROPPED`: explicitly abandoned with rationale (requires a comment, never silent).
+`BLOCKED` 表示前置条件未满足；`READY` 表示已满足未开工；`IN_PROGRESS` 表示已进入 worktree/Draft PR；`CLOSED` 表示实现、测试、merge、记录 evidence；`DROPPED` 必须带 rationale。
 
-## Trigger checkpoints (how "condition is suitable" gets detected)
+Trigger checkpoints：
 
-1. **ADR status change** — the primary trigger. When any of
-   ADR-0017 / ADR-0018 / ADR-0019 transitions from `Proposed` to `Accepted`,
-   the ADR review MUST run the dependency query below and move every
-   `BLOCKED` entry whose precondition names that ADR to `READY`.
-2. **Phase closeout** — before a phase is marked complete in `STATUS.md`,
-   walk this registry: any entry with `Phase: <this phase>` still `OPEN` blocks
-   completion; any `READY` entry should be scheduled into the next worktree.
-3. **STATUS.md update** — every STATUS update references this registry and
-   lists `OPEN` conditional entries so deferred work stays visible.
-4. **Draft PR body** — a phase PR's "Known limitations" MUST reference the
-   registry IDs it does not cover, so deferred work is not silently absorbed.
+1. ADR-0017/0018/0019 等状态变为 `Accepted` 时，查询依赖并将对应 `BLOCKED` 改为 `READY`。
+2. Phase closeout 前遍历本 registry；本 phase 的 `OPEN` 阻止完成，`READY` 应排入下一 worktree。
+3. 每次 `STATUS.md` 更新引用本 registry 并列出 `OPEN` entries。
+4. Draft PR 的 Known limitations 必须引用未覆盖 registry IDs。
 
 ## Entries
 
 ### D-0001 — Phase 32 Backtest create wizard
+
 - Phase: 32
 - Status: `CLOSED`
-- Precondition: ADR-0017 (`signal_snapshot` artifact) accepted.
-- Triggered: 2026-08-18 (ADR-0017 transitioned to Accepted).
-- Closed: 2026-08-18 (PR #82 merged).
-- Content: browser create-backtest wizard (Community `BacktestView.vue`,
-  classified `PORT_UX`) selecting a validated StrategyVersion + matching
-  `signal_snapshot` + execution parameters, submitting through Product API.
-- Acceptance: wizard creates a backtest job from a validated strategy + signal
-  snapshot; no signal generation in browser or DSH; Chrome DevTools MCP
-  evidence + contract tests.
-- Evidence: `COMMUNITY_FEATURE_PARITY_CHROME_MCP_REVIEW.md` §Phase 32 create
-  wizard review (job `backtest_4f64f70c81c146c296874da762cb5d7a`); six
-  backend contract tests; full local CI green; self-hosted PR CI green.
+- Precondition: ADR-0017 accepted；Triggered/Closed: 2026-08-18（PR #82）。
+- Content：browser wizard（Community `BacktestView.vue`，`PORT_UX`）选择 validated StrategyVersion、matching `signal_snapshot` 和 execution parameters，经 Product API 提交。
+- Acceptance：不在 browser/DSH 生成 signal；Chrome evidence/contract tests。
+- Evidence：本目录 Chrome review 的 Phase 32 wizard（job `backtest_4f64f70c81c146c296874da762cb5d7a`）、六项 backend tests、local/self-hosted CI green。
 
-### D-0002 — Signal producer (strategy source → signal_snapshot)
-- Phase: 40 (transferred from Phase 32 during Phase 32 closeout; deliberately
-  out of scope of ADR-0017 decision 3)
-- Status: `CLOSED` (2026-08-22)
-- Precondition: a dedicated signal-producer ADR (sandbox + determinism +
-  provider access) is planned and accepted. **Satisfied by ADR-0023 on
-  2026-08-22.**
-- Content: BYQ-owned computation boundary that executes a validated strategy
-  over the frozen universe/bars to derive the `signal_snapshot`. Without it,
-  a newly written strategy cannot reach a backtest in one flow.
-- Acceptance: producer ADR accepted; producer worker/import path produces
-  content-addressed, secret-free snapshots; DSH never executes strategy
-  source.
-- Rationale: this is the reason Phase 32 wizard alone does NOT deliver the
-  user end-to-end strategy→backtest journey.
-- Evidence: ADR-0023; isolated coordinator/sandbox contracts and adversarial
-  execution tests; `docs/evidence/phase-40/GOLDEN_JOURNEY.json` records a real
-  Product API strategy→signal snapshot→completed backtest flow.
+### D-0002 — Signal producer（strategy source → signal_snapshot）
 
-### D-0003 — Backtest result-object GC periodic sweep (optional hardening)
-- Phase: 40 (transferred from Phase 32 as optional hardening)
-- Status: `DROPPED` (2026-08-22)
-- Precondition: measured orphan accumulation in `BYQ_BACKTEST_OBJECT_ROOT`
-  demonstrates that the Phase 32 best-effort delete (PR #77) is insufficient.
-- Content: a periodic sweep that removes result objects not referenced by any
-  `backtest_jobs.result_reference_json` (best-effort delete can leave orphans
-  after concurrent deletes or GC failures).
-- Acceptance: sweep deletes only unreferenced objects; never deletes a
-  referenced/tampered object; runs idempotently; covered by tests.
-- Rationale: the Phase 40 production-like object-root audit measured
-  `live_reference_count=0`, `object_file_count=0`, `orphan_count=0`, and
-  `missing_count=0`; the stated precondition (measured orphan accumulation)
-  is false. Existing best-effort orphan deletion and its failure/shared-object
-  tests remain. A future non-zero measurement must open a new observed issue
-  rather than shipping an unneeded periodic sweeper.
+- Phase: 40
+- Status: `CLOSED`
+- Precondition: dedicated producer ADR，已由 ADR-0023 于 2026-08-22 满足。
+- Content：BYQ-owned boundary 在 frozen universe/bars 上执行 validated strategy，生成 `signal_snapshot`；新 strategy 由此可进入 backtest。
+- Acceptance：ADR accepted；worker/import 生成 content-addressed、secret-free snapshots；DSH 不执行 strategy source。
+- Evidence：ADR-0023、coordinator/sandbox/adversarial tests、`docs/evidence/phase-40/GOLDEN_JOURNEY.json` 的真实 strategy→signal→backtest flow。
 
-### D-0009 — Phase 33 strategy draft supersede visibility (optional hardening)
-- Phase: 40 (transferred from Phase 33 during Phase 33 closeout)
-- Status: `CLOSED` (2026-08-22)
-- Precondition: none (follow-up hardening recorded in PR #85).
-- Content: the strategy list still renders soft-superseded (deleted) drafts
-  with status `superseded`; there is no filter or hide-by-default for them.
-  Add a status filter / "已删除" view so deletion is visually distinguishable,
-  while keeping the immutable soft-supersede semantics.
-- Acceptance: superseded drafts are distinguishable and can be hidden/shown;
-  delete remains a soft-supersede transition; list projection contract tests;
-  Chrome evidence if UI is touched.
-- Evidence of origin: Phase 33 Chrome MCP review observed the deleted draft
-  row remaining in the list after 删除草稿; PR #85 Known limitations.
-- Closure: Product API defaults to the active lifecycle; StrategyView hides
-  superseded drafts and provides an explicit `已归档` view, with component and
-  projection tests plus Phase 40 Chrome evidence.
+### D-0003 — Backtest result-object GC periodic sweep
 
-### D-0010 — Phase 33 version-history projection bound (hardening)
-- Phase: 40 (transferred from Phase 33 during Phase 33 closeout)
-- Status: `CLOSED` (2026-08-22)
-- Precondition: none (follow-up hardening recorded in PR #85).
-- Content: `/v1/research/strategies/{id}/versions` and
-  `/v1/research/strategies/{id}/backtest-count` reuse the 200-newest artifact
-  projection (`list_artifacts`), so owners with more than 200 artifacts can
-  miss older versions/counts. Replace with a direct store query filtered by
-  kind + content `strategy_id`.
-- Acceptance: projections query PostgreSQL directly for the owner scope,
-  are complete beyond 200 artifacts, and keep the same response contract;
-  contract tests cover the projection boundary.
-- Closure: direct owner/kind/strategy queries and grouped backtest counts are
-  independent of the generic 200-row list; a 205-version scale test verifies
-  exact totals, pages, history and counts.
+- Phase: 40
+- Status: `DROPPED`
+- Precondition：`BYQ_BACKTEST_OBJECT_ROOT` 测得 orphan accumulation，证明 PR #77 best-effort delete 不足。
+- Content/Acceptance：幂等删除仅 unreferenced objects，绝不删除 referenced/tampered object。
+- Rationale：Phase 40 audit 测得 `live_reference_count=0`、`object_file_count=0`、`orphan_count=0`、`missing_count=0`，前置条件为 false。未来非零 measurement 应开新 observed issue。
 
-### D-0011 — Phase 33 StrategyView component-level tests (quality follow-up)
-- Phase: 40 (transferred from Phase 33 during Phase 33 closeout)
-- Status: `CLOSED` (2026-08-22)
-- Precondition: none (quality gap recorded in PR #85).
-- Content: StrategyView has API-client, backend, Gateway, and MCP tests plus
-  Chrome browser evidence, but no Vitest component-level tests for the view
-  itself (draft save/delete flows, version-history rendering, read-only state,
-  stats projection).
-- Acceptance: view-level tests cover save/delete, version history, read-only
-  mode, and backtest-count stats; they run in the standard frontend CI check.
-- Closure: `StrategyView.spec.ts` covers archive visibility, exact pagination,
-  immutable history/read-only state, stats, save and soft delete.
+### D-0009 — Strategy draft supersede visibility
 
-### D-0012 — Phase 33 Community deep strategy profile fields (future depth)
-- Phase: 40 (final parity closure candidate; out of Phase 33 scope)
-- Status: `CLOSED` (2026-08-22)
-- Precondition: Phase 40 shared-component/parity closure planning.
-- Content: Community `StrategyView.vue` profile depth — description,
-  parameters, parameter_schema, and status enable/disable fields, plus the
-  non-artifact strategy CRUD model — was intentionally not replicated in
-  Phase 33 (BYQ keeps strategy code as auditable artifacts).
-- Acceptance: decision recorded for each field (REUSE/REFACTOR/REPLACE/DROP);
-  any replicated field works through Product API with validation/approval
-  semantics preserved.
-- Closure: description, parameters and parameter schema are editable draft
-  fields frozen into immutable versions and signal inputs. Mutable
-  enable/disable and non-artifact CRUD are `DROP`/`REPLACE` in the parity
-  matrix; explicit owner approval authorizes execution.
+- Phase: 40
+- Status: `CLOSED`
+- Precondition: none；2026-08-22 closed。
+- Origin：Phase 33 软删除后 row 仍显示 `superseded`。要求 filter/“已删除”视图，保持 immutable soft-supersede。
+- Closure：Product API 默认 active lifecycle；StrategyView 隐藏 superseded，并提供显式 `已归档`，含 component/projection tests 和 Chrome evidence。
+
+### D-0010 — Version-history projection bound
+
+- Phase: 40
+- Status: `CLOSED`
+- Origin：versions/backtest-count 曾复用 newest-200 `list_artifacts`，可能漏旧数据。
+- Closure：direct owner/kind/strategy queries 与 grouped counts 独立于 200-row list；205-version scale test 验证 totals/pages/history/counts。
+
+### D-0011 — StrategyView component-level tests
+
+- Phase: 40
+- Status: `CLOSED`
+- Origin：已有 API/backend/Gateway/MCP/Chrome，无 Vitest view tests。
+- Closure：`StrategyView.spec.ts` 覆盖 archive visibility、pagination、immutable history/read-only、stats、save/soft delete，并进入标准 frontend CI。
+
+### D-0012 — Community deep strategy profile fields
+
+- Phase: 40
+- Status: `CLOSED`
+- Content：description、parameters、`parameter_schema`、enable/disable/non-artifact CRUD 的逐项决策。
+- Closure：前三项成为 editable draft fields 并冻结到 versions/signal inputs；mutable enable/disable/non-artifact CRUD 为 `DROP`/`REPLACE`；explicit owner approval 授权 execution。
 
 ### D-0005 — Phase 36 Agent workbench structured cards
-- Phase: 36
-- Status: `CLOSED` (2026-08-22)
-- Precondition: ADR-0018 (WorkflowTrace card contract) accepted. **Satisfied
-  2026-08-22.** Phase 36 owns its required Agent-specific components; Phase
-  40 may generalize them later.
-- Content: strategy-draft / stock-candidates / optimization / backtest-context
-  / approval cards in the conversation; assistant drawer; thinking panel.
-- Acceptance: cards appear and are actionable; raw DSH payloads never cross
-  the Gateway; Chrome evidence. **Satisfied:** the ADR-0018 contract is
-  enforced end to end and real Product API desktop/mobile evidence is stored
-  under `docs/evidence/phase-36/`.
 
-### D-0006 — Phase 37 My Space model/asset/agent-policy depth
+- Phase: 36
+- Status: `CLOSED`
+- Precondition: ADR-0018 已于 2026-08-22 满足。
+- Content：strategy-draft、stock-candidates、optimization、backtest-context、approval cards，以及 drawer/thinking。
+- Acceptance/closure：cards 可见可操作；raw DSH 不跨 Gateway；真实 Product API desktop/mobile evidence 在 `docs/evidence/phase-36/`。
+
+### D-0006 — Phase 37 My Space depth
+
 - Phase: 37
-- Status: `CLOSED` (2026-08-22)
-- Precondition: ADR-0019 (encrypted credential store) accepted. **Satisfied
-  2026-08-22.** Phase 37 owns its required model-settings component; Phase 40
-  may generalize it later.
-- Content: model credential CRUD + Agent binding (never echoed), strategy /
-  backtest re-import, agent policy presets/rule CRUD.
-- Acceptance: credentials writable and masked; re-import real; rules CRUD
-  effective; Chrome evidence. **Satisfied:** audited encrypted credentials and
-  private resolution, canonical owner-safe asset v2 re-import, effective
-  presets/rules and real Product API browser evidence are stored under
-  `docs/evidence/phase-37/`.
+- Status: `CLOSED`
+- Precondition: ADR-0019 已于 2026-08-22 满足。
+- Content：credential CRUD/Agent binding（never echoed）、strategy/backtest re-import、policy presets/rule CRUD。
+- Closure：audited encryption/private resolution、owner-safe asset v2 re-import、effective rules 和 browser evidence 在 `docs/evidence/phase-37/`。
 
 ### D-0007 — Phase 38 Operations workbenches
+
 - Phase: 38
-- Status: `CLOSED` (2026-08-22)
-- Precondition: ADR-0019 + ADR-0022 accepted. **Satisfied 2026-08-22.** Phase
-  38 owns the operations-specific components required for acceptance; Phase
-  40 may generalize proven components later. Cache = PostgreSQL market-data
-  cache status only (no Redis); budget = normalized DSH model-call token
-  accounting.
-- Content: database/PostgreSQL-cache/model/agent/budget/runtime/graph/access
-  workbenches + data-source/sync surfaces; no placeholders.
-- Acceptance: read-only projections real; write ops RBAC + audit; Chrome
-  evidence. **Satisfied:** nine Product API workbenches, normalized DSH usage,
-  audited monitoring thresholds, desktop/mobile Chrome evidence, and full
-  local CI are recorded under `docs/evidence/phase-38/`.
+- Status: `CLOSED`
+- Precondition: ADR-0019/ADR-0022 已于 2026-08-22 满足。
+- Content：database/PostgreSQL-cache/model/agent/budget/runtime/graph/access/data-source/sync，无 placeholder；cache 不用 Redis，budget 为 normalized DSH model-call tokens。
+- Closure：九个 Product API workbenches、normalized usage、audited thresholds、desktop/mobile evidence/full CI 在 `docs/evidence/phase-38/`。
 
-### D-0008 — Phase 39 Data Center / Data Sync depth
+### D-0008 — Phase 39 Data Center / Data Sync
+
 - Phase: 39
-- Status: `CLOSED` (2026-08-22)
-- Precondition: ADR-0019. **Satisfied 2026-08-22.**
-- Content: Tushare-only data-source CRUD, test connection, sync jobs, coverage
-  audit.
-- Acceptance: configure Tushare source, trigger sync, view coverage/job status;
-  Chrome evidence. **Satisfied:** durable Product API flow, Backend credential
-  resolution, PostgreSQL job/data persistence, desktop/mobile Chrome evidence
-  and the Community checklist are recorded under `docs/evidence/phase-39/`.
+- Status: `CLOSED`
+- Precondition: ADR-0019 已于 2026-08-22 满足。
+- Content：Tushare-only source CRUD、test、sync jobs、coverage audit。
+- Closure：durable Product API、credential resolution、PostgreSQL persistence、desktop/mobile evidence/checklist 在 `docs/evidence/phase-39/`。
 
-## Dependency quick-reference (ADR → blocked entries)
+## Dependency quick-reference
 
 | Decision | Status | Unblocks |
 |---|---|---|
-| ADR-0017 (`signal_snapshot`) | Accepted (2026-08-18) | D-0001 |
-| ADR-0023 (isolated signal producer) | Accepted (2026-08-22) | D-0002 (`CLOSED`) |
-| ADR-0018 (WorkflowTrace cards) | Accepted (2026-08-22) | D-0005 (`CLOSED`) |
-| ADR-0019 (encrypted credentials) | Accepted (2026-08-22) | D-0006/D-0007/D-0008 (`CLOSED`) |
-| ADR-0022 (Phase 38 component ownership) | Accepted (2026-08-22) | D-0007 (`CLOSED`) |
-| Phase 40 shared components | complete (2026-08-22) | D-0009/D-0010/D-0011/D-0012 (`CLOSED`) |
+| ADR-0017（`signal_snapshot`） | Accepted 2026-08-18 | D-0001 |
+| ADR-0023（isolated signal producer） | Accepted 2026-08-22 | D-0002 `CLOSED` |
+| ADR-0018（WorkflowTrace cards） | Accepted 2026-08-22 | D-0005 `CLOSED` |
+| ADR-0019（encrypted credentials） | Accepted 2026-08-22 | D-0006/7/8 `CLOSED` |
+| ADR-0022（component ownership） | Accepted 2026-08-22 | D-0007 `CLOSED` |
+| Phase 40 shared components | complete 2026-08-22 | D-0009/10/11/12 `CLOSED` |
 
-## Maintenance rules
+## 维护规则
 
-- New skipped/blocked items found during any phase MUST be added here in the
-  same PR that records the limitation (one entry per conditional work item).
-- During phase closeout, an `OPEN` entry whose precondition is genuinely out
-  of current-phase scope may have its `Phase` advanced to a later phase; the
-  transfer MUST be recorded in the closeout PR and must never silently drop
-  the work. A phase is complete with an `OPEN` entry only if that entry was
-  explicitly transferred (recorded) or is `DROPPED` with rationale.
-- Do NOT use this registry as a general backlog; normal upcoming phase scope
-  stays in the phase plans.
-- Update the `Dependency quick-reference` whenever a relevant ADR is
-  proposed/accepted.
+任何 phase 发现的新 skipped/blocked item 必须在记录 limitation 的同一 PR 加入本 registry，一项 conditional work 对应一个 entry。Closeout 时 genuinely out-of-scope 的 `OPEN` 可显式转移到后续 phase；不得静默丢失。`DROPPED` 必须记录 rationale。本 registry 不是通用 backlog；相关 ADR 状态变化时更新 dependency table。

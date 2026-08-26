@@ -1,236 +1,68 @@
 # Community Full Parity — Phase 33–40 Detailed Task Table
 
-Status: `COMPLETE` (2026-08-22) — complements `IMPLEMENTATION_PLAN.md` and
-`COMMUNITY_FULL_PARITY_PLAN.md` with
-per-phase Community comparison, current state, gaps, dependencies,
-classification, and estimates.
+Status: `COMPLETE`（2026-08-22）。本文补充 `IMPLEMENTATION_PLAN.md` 和 `COMMUNITY_FULL_PARITY_PLAN.md`，记录 per-phase Community comparison、current state、gaps、dependencies、classification 和 estimates。
 
-Legend (classification per AGENTS rule 27): `REUSE_AS_IS`, `PORT_COMPONENT`,
-`PORT_STYLE`, `PORT_LAYOUT`, `PORT_UX`, `REFACTOR`, `REFERENCE_ONLY`,
-`REPLACE`, `DROP`.
-
----
+Legend：`REUSE_AS_IS`、`PORT_COMPONENT`、`PORT_STYLE`、`PORT_LAYOUT`、`PORT_UX`、`REFACTOR`、`REFERENCE_ONLY`、`REPLACE`、`DROP`。
 
 ## Phase 33 — Strategy workspace depth
 
-- Status: `COMPLETE` (2026-08-20, PR #85/#86).
-
-- Community: `StrategyView.vue` (1008 lines) — list/detail split, Python
-  editor, templates/snippets, validate, save, delete, backtest counts,
-  version history, read-only mode.
-- Delivered BYQ: list/detail, editor + template/snippet insertion, validation,
-  durable draft save/soft-supersede, immutable version/export, approval
-  banner, version history, real backtest counts, and read-only version mode.
-- Transferred follow-ups: D-0009–D-0012 in Phase 40.
-- Dependencies: Backend `strategy_draft` CRUD + version-history list +
-  backtest-count projection; Product API routes; MCP
-  `byq_strategy_draft_save`.
-- Classification: editor/templates=`PORT_UX`; version history=`REFACTOR`;
-  domain validation=`REPLACE`.
-- Estimate: 10 person-days (L).
-- Exit criteria: draft save/delete works; version history browsable; backtest
-  counts real; Chrome evidence.
-
----
+- Status: `COMPLETE`（2026-08-20，PR #85/#86）。
+- Community `StrategyView.vue`（1008 lines）：list/detail、Python editor、templates/snippets、validate/save/delete、backtest counts、history/read-only。
+- Delivered：list/detail、editor insertion、validation、durable draft save/soft-supersede、immutable version/export、approval、history、real counts、read-only version。
+- Follow-ups D-0009–D-0012 转 Phase 40；dependencies 为 Backend `strategy_draft` CRUD/history/count、Product routes、MCP `byq_strategy_draft_save`。
+- Classification：editor/templates=`PORT_UX`；history=`REFACTOR`；validation=`REPLACE`。Estimate 10 person-days（L）。Exit criteria 已满足。
 
 ## Phase 34 — Stock Pool depth
 
-- Status: `COMPLETE` (2026-08-21) under Accepted ADR-0020.
-
-- Community visual/interaction baseline: desktop and mobile catalog, custom
-  filters, index constituents/history, create-dialog, and delete-confirmation
-  evidence is indexed in
-  `docs/evidence/phase-34/community-stock-pool/README.md`. This is reference
-  evidence only and does not satisfy the BYQ real-Product-API browser gate.
-
-- Community: `StockPoolView.vue` (925 lines) — catalog, type filters, create
-  dialog with candidate filters, member editing, index constituents, custom/
-  index/dynamic branches, historical snapshots, weights, mobile cards,
-  activate/deactivate/delete.
-- Delivered BYQ: owner-scoped paged catalog and five persisted detail tabs,
-  immutable membership snapshots, weight validation, trusted index
-  provenance/no-look-ahead history, lifecycle/tombstone actions, frozen
-  consumer references, MCP tools, and shared desktop/mobile Product API UX.
-- Closed gaps:
-  1. Persisted catalog / type taxonomy and trusted-writer rules.
-  2. Snapshot-based member and weight editing.
-  3. Index constituents and no-look-ahead as-of history.
-  4. Persisted filter/definition and provenance/reference projections.
-  5. Historical snapshot projection.
-  6. Activate/deactivate/tombstone delete.
-  7. Bind desktop/mobile detail to the same persisted five projections.
-- Dependencies: ADR-0020 (Accepted); Backend pool member CRUD + weights +
-  snapshots + catalog type; Product API routes; MCP `byq_pool_*`.
-- Classification: catalog/member/snapshot=`REFACTOR`; weights/filter=
-  `PORT_UX`; create dialog=`PORT_COMPONENT`.
-- Estimate: 14 person-days (XL).
-- Exit criteria: full catalog; 5 tabs real; weights/snapshots persisted;
-  Chrome evidence.
-
----
+- Status: `COMPLETE`（2026-08-21，ADR-0020）。
+- Community visual baseline 索引于 `docs/evidence/phase-34/community-stock-pool/README.md`，仅 reference evidence，不替代真实 Product API gate。
+- Community `StockPoolView.vue`（925 lines）：catalog、filters、create、members、index history、types、snapshots、weights、mobile、lifecycle。
+- Delivered：owner-scoped paged catalog、五个 persisted detail tabs、immutable snapshots、weight validation、trusted/no-look-ahead index provenance、filter/reference、tombstone、frozen references、MCP、responsive UX。
+- 关闭 persisted taxonomy/writer rules、member/weight editing、index as-of、filter/provenance、history、lifecycle、shared projections 七项 gap。
+- Dependencies：ADR-0020、Backend CRUD/weights/snapshots/types、Product routes、`byq_pool_*`。Classification：catalog/member/snapshot=`REFACTOR`；weights/filter=`PORT_UX`；dialog=`PORT_COMPONENT`。Estimate 14 person-days（XL），exit 已满足。
 
 ## Phase 35 — Paper Trading depth
 
-- Community: `PaperTradingView.vue` (597 lines) — account select, 5 tabs
-  (overview/positions/orders/ledger/snapshots), order detail dialog, create/
-  import account, manual settlement, risk controls, import/export.
-- Delivered BYQ: six persisted tabs, exact T+1 position partition and cash
-  ledger, immutable manual settlement, order audit, versioned risk controls,
-  frozen Stock Pool binding, and canonical new-ID asset-bundle transfer.
-- Gaps: none within the accepted Phase 35 contract. Live brokerage remains
-  explicitly out of scope.
-- Dependencies: Backend snapshot + settlement + risk + import/export;
-  Product API routes.
-- Classification: account/order=`REFACTOR`; settlement/snapshot/risk=
-  `PORT_UX`; import/export=`REPLACE` (BYQ asset bundle).
-- Estimate: 9 person-days (M).
-- Exit criteria: 6 tabs real; settlement/import-export/risk work; Chrome
-  evidence. **Satisfied.**
-
----
+- Community `PaperTradingView.vue`（597 lines）：account、五 tabs、order detail、create/import、settlement、risk、transfer。
+- Delivered：六 tabs、精确 T+1/cash ledger、immutable settlement、order audit、versioned risk、frozen pool binding、canonical new-ID bundle。
+- Accepted contract 内无 gap；live brokerage 明确 out of scope。
+- Dependencies：Backend snapshot/settlement/risk/import-export、Product routes。Classification：account/order=`REFACTOR`；settlement/snapshot/risk=`PORT_UX`；transfer=`REPLACE`。Estimate 9 person-days（M），exit 已满足。
 
 ## Phase 36 — Agent workbench depth
 
-- Community: `AgentView.vue` (2057 lines) + `AgentThinking` (155),
-  `ApprovalManagementPanel` (385), `GlobalApprovalCenter` (300),
-  `XiaobaAssistantDrawer` (285) — conversation, streaming, thinking steps,
-  strategy/stock/optimization cards, approval cards, backtest context,
-  assistant drawer, tool visualization, starters.
-- Delivered BYQ: sessions/turn/resume/cancel, the closed WorkflowTrace
-  card/activity contract, actionable cards, bounded public progress, local and
-  global approval management, conversation starters, and a responsive Xiaoba
-  assistant drawer.
-- Gaps:
-  1. Xiaoba assistant drawer.
-  2. AgentThinking component.
-  3. ApprovalManagementPanel.
-  4. GlobalApprovalCenter.
-  5. Strategy-draft card.
-  6. Stock-candidates card.
-  7. Optimization card.
-  8. Tool visualization depth.
-  9. Conversation starters.
-- Dependencies: ADR-0018 (Accepted) + its WorkflowTrace normalization
-  upgrade (currently only `text_bytes` survives). Phase 36 owns the specific
-  card/activity/approval/drawer components needed for acceptance; Phase 40
-  may generalize them later and is not a prerequisite.
-- Classification: drawer/thinking=`PORT_COMPONENT`; cards=`REFACTOR` (BYQ
-  WorkflowTrace projection); tool viz=`REFACTOR`.
-- Estimate: 14 person-days (XL).
-- Exit criteria: strategy/stock/optimization cards appear in conversation and
-  are actionable; assistant drawer works; Chrome evidence. **Satisfied
-  2026-08-22; evidence under `docs/evidence/phase-36/`.**
+- Community `AgentView.vue`（2057）及 `AgentThinking`（155）、approval panels（385/300）、drawer（285）。
+- Delivered：sessions/turn/resume/cancel、closed WorkflowTrace cards/activity、actionable cards、有界 progress、local/global approvals、starters、responsive drawer。
+- 原九项 gaps 覆盖 drawer、thinking、approval panels、strategy/stock/optimization cards、tool visualization、starters，均已关闭。
+- Dependency：ADR-0018/normalization。Phase 36 拥有 acceptance 所需 specific components，Phase 40 可后续 generalize。
+- Classification：drawer/thinking=`PORT_COMPONENT`；cards/tool viz=`REFACTOR`。Estimate 14 person-days（XL）；2026-08-22 满足，证据 `docs/evidence/phase-36/`。
 
----
+## Phase 37 — My Space depth
 
-## Phase 37 — My Space depth (Models / Assets / Agent Policy)
+- Community：UserModels/SettingsPanel、UserAssets、UserAgentPolicy、UserProfile。
+- 原 gaps：credential CRUD/binding、strategy/backtest re-import、policy presets/rule CRUD，均交付。
+- Dependency：ADR-0019 和 Backend capabilities；Phase 37 拥有 model-settings component。
+- Classification：credentials=`REPLACE`；asset bundle=`REFACTOR`；policy rules=`PORT_UX`。Estimate 14 person-days（XL）；2026-08-22 满足，证据 `docs/evidence/phase-37/`。
 
-- Community: `UserModelsView` (36) + `UserModelSettingsPanel` (454),
-  `UserAssetsView` (258), `UserAgentPolicyView` (142), `UserProfileView` (133).
-- Current BYQ: Profile complete; `ModelsView` (80) masked-only; `AssetsView`
-  (213) index + config import/export; `AgentPolicyView` (173) personal policy
-  + approval history.
-- Gaps:
-  1. Model credential CRUD + Agent binding.
-  2. Asset strategy/backtest re-import.
-  3. Agent policy presets/rule CRUD.
-- Dependencies: ADR-0019 (Accepted); Backend model credential CRUD + asset
-  re-import + policy presets/rule CRUD. Phase 37 owns its required
-  model-settings component; Phase 40 may generalize it later.
-- Classification: credential CRUD=`REPLACE` (BYQ masked/audit); asset bundle=
-  `REFACTOR`; policy rules=`PORT_UX`.
-- Estimate: 14 person-days (XL).
-- Exit criteria: credentials writable and never echoed; strategy/backtest
-  re-importable; rules CRUD effective; Chrome evidence. **Satisfied
-  2026-08-22; evidence under `docs/evidence/phase-37/`.**
+## Phase 38 — Operations workbenches
 
----
-
-## Phase 38 — Operations workbenches (largest)
-
-- Community views (total ~5700 lines):
-  - `SystemMaintenanceWorkbench` (4402) — database/Redis config + migration.
-  - `ModelOperationsView` (540) — provider credentials / models / Agent bind.
-  - `GraphOperationsView` (185) — graph runs / checkpoints.
-  - `RuntimeOperationsView` (129) — runtime diagnostics / usage / limits.
-  - `AccessControlOperationsView` (114) — role permissions + access audit.
-  - `DataSourceConfig` (236) — data-source configuration.
-  - `DataSync` (165) — sync jobs.
-- Delivered BYQ: nine phase-owned, responsive operations workbenches use a
-  bounded Product API projection; budget writes and audit are real, and
-  graph/runtime views use normalized BYQ contracts.
-- Phase 39 boundary: Tushare credential CRUD/test and sync jobs remain in the
-  next phase; Phase 38 exposes readiness only.
-- Decisions: cache = PostgreSQL market-data cache status only (no Redis);
-  budget = DSH model-call token accounting.
-- Dependencies: ADR-0019 for data-source credentials; Accepted ADR-0022 for
-  phase-owned operations components; Backend read-only projections +
-  RBAC-gated write operations. Phase 40 may generalize proven components later
-  and is not a prerequisite.
-- Classification: layout=`PORT_LAYOUT`; each workbench=`REFACTOR` (BYQ
-  topology) + `PORT_UX`; access audit=`REPLACE` (BYQ RBAC).
-- Estimate: 27 person-days (XL).
-- Exit criteria: no placeholders; read-only projections real; write ops carry
-  RBAC + audit; Chrome evidence. **Satisfied 2026-08-22; evidence under
-  `docs/evidence/phase-38/`.**
-
----
+- Community 总计约 5700 lines：SystemMaintenance、Model、Graph、Runtime、Access、DataSource、DataSync。
+- Delivered：九个 responsive workbenches 使用有界 Product API；budget writes/audit 真实，graph/runtime 使用 normalized BYQ contracts。Phase 39 负责 Tushare credential/test/sync。
+- Decisions：cache=PostgreSQL status（无 Redis）；budget=DSH model-call tokens。Dependencies：ADR-0019/ADR-0022、Backend projections/RBAC writes。
+- Classification：layout=`PORT_LAYOUT`；workbenches=`REFACTOR`+`PORT_UX`；access audit=`REPLACE`。Estimate 27 person-days（XL）；2026-08-22 满足，证据 `docs/evidence/phase-38/`。
 
 ## Phase 39 — Data Center / Data Sync depth
 
-- Community: `DataSourceConfig` (236) + `DataSync` (165) — source config,
-  test connection, cache status, sync jobs, coverage.
-- Current BYQ: `DataCenterView` (47) + `/api/product/data-center/status` —
-  provider capability + migration status + dataset list.
-- Gaps:
-  1. Data-source config (Tushare-only; BaoStock/AKShare=DROP).
-  2. Test connection.
-  3. Sync job create/status.
-  4. Coverage audit.
-- Dependencies: ADR-0019; Backend data-source CRUD + sync job + coverage.
-- Classification: config/sync=`REFACTOR`; cache status=`REPLACE` (BYQ PG
-  single store); coverage=`PORT_UX`.
-- Estimate: 11 person-days (L).
-- Exit criteria: configure Tushare source, trigger sync, view coverage and
-  job status; Chrome evidence. **Satisfied 2026-08-22:** durable Product API,
-  PostgreSQL persistence, desktop/mobile Chrome evidence and Community
-  checklist are recorded under `docs/evidence/phase-39/`.
-
----
+- Community DataSourceConfig/DataSync；初始 BYQ 只有 `DataCenterView` 和 status。
+- Gaps：Tushare-only config、test、sync job、coverage，均关闭。
+- Dependency：ADR-0019、Backend source/sync/coverage。Classification：config/sync=`REFACTOR`；cache=`REPLACE`；coverage=`PORT_UX`。Estimate 11 person-days（L）；2026-08-22 满足，证据 `docs/evidence/phase-39/`。
 
 ## Phase 40 — Shared components + final parity closure
 
-- Community components (lines): `AppStateBlock` (113), `EntityPagination`
-  (58), `GlobalApprovalCenter` (300), `ApprovalManagementPanel` (385),
-  `XiaobaAssistantDrawer` (285), `AgentThinking` (155), `StockPoolDialog`
-  (293), `UserModelSettingsPanel` (454), `SystemAnalytics` (103),
-  `ChartWrapper` (197).
-- Delivered BYQ: shared `AppStateBlock` and `EntityPagination`; proven
-  phase-specific approval, assistant, model and operations components; deep
-  strategy projections; and ADR-0023 isolated signal production.
-- Closure: all transferred Phase 40 items are closed or explicitly dropped;
-  the no-mock two-user golden journey and Chrome evidence are recorded under
-  `docs/evidence/phase-40/`.
-- Classification: all=`PORT_COMPONENT` (layout/style reuse) + `REFACTOR`
-  (wire to BYQ Product API).
-- Estimate: 8 person-days (M).
-- Status: `COMPLETE` (2026-08-22).
+- Community components：`AppStateBlock`、`EntityPagination`、approval panels、drawer、thinking、pool dialog、model panel、analytics、chart。
+- Delivered：shared state/pagination、经验证 phase-specific components、deep strategy projections、ADR-0023 isolated signal production。
+- 全部 transferred items 已关闭或明确 drop；no-mock two-user journey/Chrome evidence 在 `docs/evidence/phase-40/`。
+- Classification：全部 `PORT_COMPONENT`（layout/style）+`REFACTOR`（BYQ Product API）。Estimate 8 person-days（M）；Status `COMPLETE`。
 
----
+## Cross-phase dependencies 与总估算
 
-## Cross-phase dependencies
-
-- Phase 40 shared components → later generalization and prerequisite only
-  where a later phase explicitly depends on them.
-- Phase 36 → complete under ADR-0018; Phase 40 may generalize its proven
-  Agent-specific components.
-- Phase 37 → complete under ADR-0019; Phase 40 may generalize its proven
-  component later.
-- Phase 39 → complete under Accepted ADR-0019.
-- Phase 38 → complete under ADR-0019 + ADR-0022; Phase 40 generalizes later.
-- Phase 32 wizard → ADR-0017 (separate from this table; slice already
-  tracked in PR #76).
-
-## Total estimate
-
-Phase 33–40 ≈ 107 person-days (single engineer), parallelizable per module.
+Phase 40 shared components 只在明确声明时作为 prerequisite；Phase 36/37/38/39 分别在 ADR-0018、ADR-0019、ADR-0019+ADR-0022 下完成；Phase 32 wizard 依赖 ADR-0017。Phase 33–40 总估算约 107 person-days（单 engineer），可按 module parallelize。

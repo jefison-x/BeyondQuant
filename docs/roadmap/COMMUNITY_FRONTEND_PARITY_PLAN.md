@@ -2,231 +2,53 @@
 
 Status: `COMPLETE`
 
-This plan restores Community user features in BeyondQuant while preserving the
-new architecture:
+本计划在保留新架构的前提下恢复 Community user features：
 
 ```text
 Browser -> BYQ Product API / Gateway -> BYQ domain or Runtime Adapter
         -> MCP / Backend / DSH behind accepted boundaries
 ```
 
-Every phase must deliver three layers together:
+每个 phase 必须同时交付：与 Community reference 对齐的 frontend page/UX；页面后的 Product API/Backend capability；Community-derived contract/regression tests 和 BYQ Playwright coverage。只有 page shell 或 placeholder business state 不算完成。
 
-1. Frontend page/UX aligned with the Community reference.
-2. Product API and Backend capability behind that page.
-3. Community-derived contract/regression tests plus BYQ Playwright coverage.
+## 指导规则
 
-No phase is complete with a page-only shell or placeholder business state.
+- 每 phase 一个 isolated worktree/branch/Draft PR。
+- 构建一个 business block、测试其 capabilities，然后停在 human merge gate。
+- Community source 只读；仅在 inspect → classify → extract invariants → implement 后 port logic/tests。
+- BaoStock、AKShare、VectorBT、PydanticAI、Hermes 和旧 raw API/event/DB coupling 保持 `DROP`/`REPLACE`。
+- Browser time 使用 `Asia/Shanghai`；durable session 必须跨 refresh。
 
-## Guiding rules
+## Phase 1 — Session reliability 与 timezone
 
-- One phase per isolated worktree/branch/Draft PR.
-- Build one business block, test its business capabilities, then stop at the
-  human merge gate.
-- Community source is read-only reference; port logic/tests only after the
-  inspect -> classify -> extract invariants -> implement sequence.
-- BaoStock, AKShare, VectorBT, PydanticAI, Hermes, and old raw API/event/DB
-  coupling remain `DROP` or `REPLACE`.
-- Browser time values use `Asia/Shanghai`.
-- Durable browser session survives refresh.
+Frontend 修复 auth bootstrap refresh redirect 和 China-time formatting；`/api/auth/me` 返回 durable subject/role；Playwright 验证 reload-after-login，unit test 验证 formatter。Status: PR #34 merged。
 
-## Phase 1 - Session reliability and timezone
+## Phase 2 — Admin operations workspace 与 projections
 
-Frontend:
+交付 role-protected `OpsLayout + OpsSidebar` 和 database、sources、cache、models、agents、budget、runtime、graphs、access 九页。增加 owner-scoped list projections：`GET /api/product/research/tasks`、`experiments`、`backtests`、`strategies`、`factors`；`GET /api/product/dashboard` 返回 BYQ store counts/status。Destructive operations 保持 RBAC 后 read-only。Port research idempotency、backtest retry/resource、owner/actor assertions；添加 Product API tests 和 Playwright admin/list states。Status: PR #35 merged。
 
-- Fix auth bootstrap refresh redirect.
-- China-time formatting.
+## Phase 3 — Home dashboard parity
 
-Backend/Product API:
+Frontend 提供 strategies、backtests、stock pools、cache coverage、health、quick actions、recent results/resource bars。Product API 从 BYQ stores 聚合 counts/recent/data status 和真实 service readiness。测试 partial-failure、counts 和 Playwright journeys。Status: PR #36/#37 merged。
 
-- `/api/auth/me` returns a durable subject and role.
+## Phase 4 — Agent research workbench parity
 
-Tests:
+Frontend 提供 conversation、session history、streaming WorkflowTrace、thinking steps、artifact/approval/backtest cards。Product API 使用已有 session turn/resume/cancel，并补 normalized replay/approval inbox/decision。Port approval/audit 和 recovery invariants；测试 Agent contracts、Playwright stream/history/approval/error。Status: PR #38–#41 merged。
 
-- Playwright reload-after-login.
-- Time formatter unit test.
+## Phase 5 — Strategy 与 Backtest workspaces
 
-Status: merged in PR #34.
+Frontend 提供 strategy list/detail、Python editor、templates、validation、version history，以及 backtest list/filter/compare/preflight/results/charts/trades/positions/logs/metrics。Product API 提供 strategy list/version/export/validation 和 backtest list/submit/run/cancel/result，使用 content-addressed manifests/immutable references。Port version snapshot、input manifest、A-share golden engine、object integrity tests，并覆盖 Product API/Playwright。Status: PR #42–#46 merged。
 
-## Phase 2 - Admin operations workspace and operations projections
+## Phase 6 — Stock Pool 与 Paper Trading
 
-Frontend:
+Frontend 提供 pool catalog/create/membership/snapshots/weights/mobile cards，以及 paper accounts/positions/orders/ledger/snapshots/strategy/risk。Product API 提供 pool list/version/membership 和 paper account/order/position/ledger/snapshot。Port pool version、universe guards、paper risk semantics，并验证 create/list/detail/owner isolation。Status: PR #47 merged。
 
-- Role-protected `OpsLayout + OpsSidebar`.
-- Nine operations pages: database, sources, cache, models, agents, budget,
-  runtime, graphs, access.
+## Phase 7 — My Space pages
 
-Backend/Product API:
+拆分 assets、models、agent policy、profile。提供 durable profile/preferences、masked credential endpoints、owner-scoped asset index/export/import。Port bundle determinism/secret exclusion/object ownership tests；Playwright 验证 masked secrets/owner scope。Status: PR #48 merged。
 
-- Add owner-scoped list projections used by operations and research pages:
-  - `GET /api/product/research/tasks`
-  - `GET /api/product/research/experiments`
-  - `GET /api/product/backtests`
-  - `GET /api/product/strategies`
-  - `GET /api/product/factors`
-- Add a real dashboard aggregation endpoint:
-  - `GET /api/product/dashboard` returns counts/status from BYQ stores.
-- Keep destructive operations read-only behind RBAC.
+## Phase 8 — Release parity 与 browser evidence
 
-Community tests to port/adapt:
+执行完整 Community checklist、每页 Chrome MCP review、真实 Product API Playwright golden journey，并更新 `COMMUNITY_FEATURE_PARITY_MATRIX_V2.md`。Status: PR #49 merged。
 
-- Research transition/idempotency regression ideas.
-- Backtest job/retry/resource regression ideas.
-- Owner/actor authorization assertions.
-
-Tests:
-
-- Product API contract tests for every new list/aggregation endpoint.
-- Playwright admin journey and list/empty/error states.
-
-Status: merged in PR #35.
-
-## Phase 3 - Home dashboard parity
-
-Frontend:
-
-- Community Home cards: strategies, backtests, stock pools, cache coverage,
-  system health, quick actions, recent results, resource bars.
-
-Backend/Product API:
-
-- Dashboard aggregation from BYQ stores (strategy/backtest/pool/artifact
-  counts, recent items, data status).
-- Health/status projections from real service readiness.
-
-Community tests to port/adapt:
-
-- Partial-failure summary semantics.
-- Asset/resource count regression expectations.
-
-Tests:
-
-- Dashboard aggregation contract tests.
-- Playwright dashboard partial-failure journeys.
-
-Status: merged in PR #36 and #37.
-
-## Phase 4 - Agent research workbench parity
-
-Frontend:
-
-- Conversation-first flow, session history, streaming WorkflowTrace, thinking
-  steps, artifact cards, approvals, backtest context.
-
-Backend/Product API:
-
-- Session list/projection, turn/resume/cancel already exists; add normalized
-  event replay where required.
-- Approval inbox/decision projections.
-
-Community tests to port/adapt:
-
-- Approval policy/audit invariants.
-- Session history and recovery expectations.
-
-Tests:
-
-- Agent session/turn contract tests.
-- Playwright stream/history/approval/error states.
-
-Status: merged in PR #38, #39, #40, and #41.
-
-## Phase 5 - Strategy and Backtest workspaces
-
-Frontend:
-
-- Strategy list/detail, Python editor, templates, validation, version history.
-- Backtest task list/filters/compare/preflight/result detail with charts,
-  trades, positions, returns, logs, metrics.
-
-Backend/Product API:
-
-- Strategy list/version/export/validation endpoints.
-- Backtest list/submit/run/cancel/result endpoints.
-- Content-addressed manifests and immutable result references.
-
-Community tests to port/adapt:
-
-- Strategy version snapshot tests.
-- Backtest input manifest tests.
-- Native A-share execution golden regression tests.
-- Backtest result object integrity tests.
-
-Tests:
-
-- Product API contract tests for strategy/backtest.
-- Playwright list/detail/editor/compare journeys.
-
-Status: merged in PR #42, #43, #44, #45, and #46.
-
-## Phase 6 - Stock Pool and Paper Trading
-
-Frontend:
-
-- Pool catalog, create dialog, membership, snapshots, weights, mobile cards.
-- Paper accounts, positions, orders, ledger, snapshots, strategy tracking,
-  risk controls.
-
-Backend/Product API:
-
-- Stock pool list/version/membership endpoints.
-- Paper account list, order, position/ledger/snapshot endpoints.
-
-Community tests to port/adapt:
-
-- Stock pool version snapshot tests.
-- Universe authorization guard tests.
-- Paper trade/risk semantics.
-
-Tests:
-
-- Paper/pool contract tests.
-- Playwright create/list/detail and owner isolation.
-
-Status: merged in PR #47.
-
-## Phase 7 - My Space pages
-
-Frontend:
-
-- Split assets, models, agent policy, profile pages.
-
-Backend/Product API:
-
-- Durable profile/preferences endpoints.
-- Masked model credential endpoints.
-- Owner-scoped asset index/export/import.
-
-Community tests to port/adapt:
-
-- Asset bundle determinism/secret exclusion tests.
-- Object lifecycle ownership tests.
-
-Tests:
-
-- Settings/profile/asset contract tests.
-- Playwright masked secrets and owner scoping.
-
-Status: merged in PR #48.
-
-## Phase 8 - Release parity and browser evidence
-
-Scope:
-
-- Full Community feature checklist.
-- Chrome MCP review of every restored page.
-- Playwright golden journey through real Product API.
-- Update `COMMUNITY_FEATURE_PARITY_MATRIX_V2.md`.
-
-Status: merged in PR #49.
-
-Each phase stops at a Draft PR and the human merge gate.
-
-Phases 1-8 restored the product shell, and the subsequent product-depth
-phases delivered Backtest result workspace, Strategy, Stock Pool, Paper
-Trading, Agent workbench, personal Agent Policy, and Data Center depth.
-Explicitly deferred items (Backtest create wizard pending a strategy
-signal-source ADR, model credential CRUD, asset re-import, agent policy
-presets/rule CRUD, operations workbenches, data sync jobs, paper
-snapshots/settlement) are recorded in
-`docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX_V2.md` for the v1.0 RC review.
+每个 phase 均停在 Draft PR/human merge gate。Phases 1–8 恢复 product shell，后续 product-depth phases 交付 Backtest、Strategy、Stock Pool、Paper Trading、Agent、Agent Policy 和 Data Center 深度。明确 deferred items 记录于 `COMMUNITY_FEATURE_PARITY_MATRIX_V2.md` 供 v1.0 RC review。

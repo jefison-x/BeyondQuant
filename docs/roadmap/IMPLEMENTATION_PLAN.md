@@ -1,1533 +1,230 @@
 # BeyondQuant Implementation Plan
 
-This is the repository roadmap for autonomous development. Only the current
-phase may be implemented in a normal phase branch. Later phases are planning
-constraints, not permission to pre-build product scope.
+这是 autonomous development 的 repository roadmap。普通 phase branch 只能实现当前 phase；后续 phases 是 planning constraints，不授权提前构建 Product scope。
 
-For Phase 9 and later, the permanent migration source of truth is
-`docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`. Before a phase is
-implemented, its Community candidates MUST be inspected and classified there.
-Provider-independent or engine-independent semantics may be reimplemented in
-BYQ-owned contracts; Community runtime, storage, provider, and engine
-architecture MUST NOT be copied. BaoStock, AKShare, VectorBT, PydanticAI, and
-Hermes remain excluded unless a future Accepted ADR explicitly reverses that
-decision.
+从 Phase 9 起，永久 migration source of truth 为 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`。实现 phase 前必须先检查、分类其 Community candidates。可在 BYQ-owned contracts 中重新实现 provider/engine-independent semantics，但不得复制 Community runtime、storage、provider 或 engine architecture。BaoStock、AKShare、VectorBT、PydanticAI 和 Hermes 保持排除，除非未来 Accepted ADR 明确反转。
 
-## Phase 6 — Runtime seam, ADR-0003, and development framework
+所有 phases 遵循 `docs/DEVELOPMENT_WORKFLOW.md`：只执行 `STATUS.md` 指定的 next phase；每 phase 使用 isolated worktree/branch/PR；contract/test 优先；保持 Product/Agent/Quant/Data/Engineering boundaries；CI 与 evidence 完成后才进入 merge gate。
 
-### Goal
+## Phase 6 — Runtime seam、ADR-0003 与 development framework
 
-Establish and verify the formal Gateway → Runtime Adapter → official DSH SDK
-→ explicit DSH runtime seam, and make the Codex development workflow
-repository-readable.
-
-### Scope
-
-- official npm/PyPI rc.6 metadata and artifact/closure research;
-- Options A/B/C evaluation and ADR-0003;
-- Python/FastAPI Runtime Adapter with keyless initialize, MCP startup,
-  lifecycle, normalization, and internal SSE prototype;
-- minimal `WorkflowTraceEvent` envelope;
-- architecture/unit/contract/smoke tests and CI;
-- STATUS, roadmap, workflow, and agent instructions.
-
-### Non-goals
-
-No public chat API, frontend, real model turn, prompt-cancel protocol patch,
-DSH fork/rebuild, Web proxy, domain feature, or Phase 7 implementation.
-
-### Dependencies
-
-Phase 5 Gateway, DSH rc.6, `byq-product` MCP composition, Backend/MCP health
-contracts, and the official DSH Python SDK/npm artifacts.
-
-### Architecture constraints
-
-Use a dedicated Runtime Adapter; keep Gateway free of DSH imports/raw events;
-use BeyondQuant MCP for domain access; keep Product DSH coding capability at
-NONE; keep DSH persistence in the Agent Plane; pin rc.6 exactly.
-
-### Acceptance criteria
-
-ADR-0003 is Accepted; keyless initialize/MCP startup/hard cleanup pass; all
-Phase 5 and Phase 6 tests and CI pass; STATUS says Phase 6 complete and Phase 7
-next; no main merge occurs in the phase branch.
-
-### Stop conditions
-
-Insufficient official SDK evidence, a capability-boundary violation, an
-unreliable cancellation mapping, a required DSH fork, or any workflow stop
-condition in `docs/DEVELOPMENT_WORKFLOW.md`.
+- **目标/范围**：验证 Gateway → Runtime Adapter → official DSH SDK → explicit DSH runtime seam；研究 official npm/PyPI rc.6；评估 Options A/B/C 并接受 ADR-0003；实现 Python/FastAPI Runtime Adapter 的 keyless initialize、MCP startup、lifecycle、normalization、internal SSE prototype 与最小 `WorkflowTraceEvent`；补 architecture/unit/contract/smoke CI 和 workflow docs。
+- **边界**：dedicated Runtime Adapter；Gateway 无 DSH imports/raw events；domain access 走 BeyondQuant MCP；Product DSH coding capability 为 NONE；DSH persistence 留 Agent Plane；rc.6 exact-pin。无 public chat、frontend、real model turn、DSH fork/Web proxy/domain feature。
+- **验收/停止**：ADR-0003 Accepted；initialize/MCP/cleanup 与全部 Phase 5/6 CI 通过，STATUS 指向 Phase 7。缺 official evidence、boundary violation、unreliable cancellation、要求 DSH fork 或 workflow stop 时停止。
 
 ## Phase 7 — First Product Agent Turn + WorkflowTrace
 
-### Goal
-
-Deliver the first authenticated Product Agent turn through the accepted
-runtime seam and a BYQ-owned end-to-end WorkflowTrace stream.
-
-### Scope
-
-Model/provider secret handling, one product prompt flow, resume/interrupted
-semantics, trace persistence/ordering, and Gateway internal streaming contracts.
-
-### Non-goals
-
-No quant domain tools beyond the minimum health/vertical contract, no frontend
-workflow UI, and no multi-agent research workflow.
-
-### Dependencies
-
-Accepted ADR-0003, Phase 6 adapter, BYQ authentication policy, model/provider
-credentials, and a reviewed WorkflowTrace contract.
-
-### Architecture constraints
-
-Gateway sees BYQ envelopes only; domain calls go through MCP; Product DSH has
-no coding/source-write capability; business state remains BYQ-owned.
-
-### Acceptance criteria
-
-A real model-keyed Product Agent turn is traceable from Gateway to adapter to
-MCP and back as normalized events; cancellation/resume tests and secret
-boundary tests pass; CI can run keyless tests without embedding secrets.
-
-### Stop conditions
-
-Model secret leakage, raw DSH schema crossing the Gateway boundary, unclear
-resume ownership, or a need to widen Product DSH capabilities.
+- **目标/范围**：经 accepted seam 交付第一个 authenticated Product Agent turn 和 BYQ-owned end-to-end WorkflowTrace；覆盖 model/provider secret、prompt flow、resume/interrupted、trace persistence/ordering 和 Gateway internal streaming。
+- **边界**：Gateway 只见 BYQ envelopes；domain calls 走 MCP；Product DSH 无 coding/source-write；business state 归 BYQ。无 quant tools 扩展、frontend workflow UI 或 multi-agent research。
+- **验收/停止**：真实 model-keyed turn 可从 Gateway→adapter→MCP→返回追踪；cancel/resume/secret tests 通过；keyless CI 无 secrets。发现 secret leakage、raw DSH 跨 Gateway、resume ownership 不清或需扩大 capability 时停止。
 
 ## Phase 8 — Data Provider Abstraction + Tushare
 
-### Goal
-
-Introduce a BYQ-owned data-provider contract and a safe Tushare integration.
-
-### Scope
-
-Provider interfaces, authentication/configuration, symbol/date semantics,
-rate limits, caching policy, and contract-tested Tushare access.
-
-### Non-goals
-
-No factor engine, strategy validation, backtest worker, or agent autonomy over
-provider credentials.
-
-### Dependencies
-
-Phase 7 product turn, BYQ domain contracts, Tushare account/access, and data
-quality requirements.
-
-### Architecture constraints
-
-Providers belong to the Data/Domain planes; DSH accesses data only through
-MCP; PostgreSQL business data remains inaccessible to DSH directly.
-
-### Acceptance criteria
-
-Provider contract tests, Tushare integration tests with redacted fixtures,
-retry/rate-limit behavior, and provenance/audit metadata pass.
-
-### Stop conditions
-
-Ambiguous A-share semantics, unbounded provider cost, secret exposure, or
-provider behavior that cannot be contract-tested.
+- **目标/范围**：引入 BYQ-owned provider contract 和安全 Tushare integration，定义 authentication/configuration、symbol/date semantics、rate limits、cache 和 provenance。
+- **边界**：provider 属于 Data/Domain planes；DSH 只经 MCP 访问；不得直接访问 PostgreSQL。无 factor、strategy、backtest 或 agent credential autonomy。
+- **验收/停止**：provider/Tushare contract tests、redacted fixtures、retry/rate limit、audit/provenance 通过。A-share semantics 模糊、cost 无界、secret 暴露或 provider 无法 contract-test 时停止。
 
 ## Phase 9 — ResearchTask + Experiment + Artifact
 
-### Goal
-
-Define durable BYQ research entities and lineage for agent-assisted research.
-
-### Scope
-
-ResearchTask, Experiment, Artifact, provenance, state transitions,
-idempotency, validation, and MCP contracts.
-
-### Non-goals
-
-No factor library, strategy runtime, backtest worker, or generic DSH workflow
-state machine replacement.
-
-### Dependencies
-
-Phase 8 data contracts and Phase 7 trace identity/authentication.
-
-### Architecture constraints
-
-Domain invariants and business state belong to BYQ; DSH workflow state and BYQ
-artifact state remain separate; artifacts are auditable domain data.
-
-### Acceptance criteria
-
-State and lineage contracts are versioned, idempotent, persisted by Backend,
-and exercised through MCP and contract tests.
-
-### Stop conditions
-
-Unclear artifact ownership/provenance, conflated DSH and domain state, or
-missing idempotency rules.
+- **目标/范围**：定义 durable BYQ research entities、provenance、lineage、state transitions、idempotency、validation 和 MCP contracts。
+- **边界**：domain invariants/business state 归 BYQ；DSH workflow state 与 artifact state 分离；artifact 是 auditable domain data。无 factor library、strategy runtime、backtest worker 或第二套 DSH state machine。
+- **验收/停止**：versioned state/lineage 由 Backend 持久化，并经 MCP/contract tests 验证。ownership/provenance、DSH/domain state 或 idempotency 不清时停止。
 
 ## Phase 10 — Factor Research
 
-### Goal
-
-Build a reproducible factor research capability on the data/provider and
-artifact foundations.
-
-### Scope
-
-Factor definitions, canonical security identity, lifecycle-aware input
-coverage, trading-session calendars, deterministic input normalization,
-computation metadata, evaluation, results as artifacts, and leakage/look-ahead
-checks.
-
-Phase 10 MUST establish the BYQ-owned input boundary for the provider-neutral
-semantics identified by the Community audit:
-
-- canonical A-share symbol, exchange, and asset-type semantics;
-- listing/delisting and suspension/resumption lifecycle snapshots;
-- a distinction between a missing bar and not-listed, delisted, suspended,
-  boundary, or non-trading coverage states;
-- trading-session windows and lag rules rather than naive calendar-day offsets;
-- one deterministic bar per `(symbol, trade_date)`, an explicit duplicate-key
-  policy, stable ordering, finite-value checks, and OHLC relationship checks;
-- dataset identity, request provenance, reproducibility status, and effective
-  date/announcement date/`as_of` semantics for revised or non-price data; and
-- point-in-time universe or index membership using the latest snapshot visible
-  on the research date.
-
-If duplicate handling, deterministic ordering, or finite/OHLC validation is
-implemented in a small Phase 8 Data Contract hardening PR, it MUST remain
-limited to that contract. Otherwise the Phase 10 input boundary MUST enforce
-the same rules before any factor is accepted. This is not permission to rewrite
-the Phase 8 Tushare adapter.
-
-### Non-goals
-
-No strategy execution or portfolio/backtest job orchestration.
-
-### Dependencies
-
-Phases 8–9, the Community migration inventory, and reviewed quant methodology
-contracts. The Phase 8 retrospective entry gates MUST be satisfied by the
-Phase 10 input contract before factor implementation begins.
-
-### Architecture constraints
-
-Computation runs in BYQ workers/services; DSH proposes or invokes domain
-operations through MCP and cannot bypass validation. Factor inputs and
-provenance are BYQ-owned immutable snapshots. Tushare remains behind the BYQ
-Data Provider Contract; no BaoStock, AKShare, or provider-specific Community
-implementation may be introduced.
-
-### Acceptance criteria
-
-Deterministic fixture runs, canonical security/lifecycle semantics, trading
-calendar and coverage classification, duplicate/order/OHLC validation,
-point-in-time/as-of checks, provenance and reproducibility status, no-lookahead
-checks, and artifact lineage are tested and reproducible. A factor cannot be
-accepted when its input identity, effective visibility, or coverage status is
-ambiguous.
-
-### Stop conditions
-
-Look-ahead leakage, undefined as-of visibility, missing lifecycle/calendar
-semantics, ambiguous coverage, duplicate or malformed bars, non-reproducible
-inputs, or factor invariants enforced only by prompts.
+- **目标/范围**：在 data/artifact 基础上建立 reproducible factor research。BYQ input boundary 必须覆盖 canonical A-share symbol/exchange/asset type；listing/delisting/suspension lifecycle；区分 missing/not-listed/delisted/suspended/boundary/non-trading；trading-session windows/lags；每 `(symbol, trade_date)` 一个 deterministic bar、duplicate policy、stable ordering、finite/OHLC validation；dataset identity/provenance/reproducibility/effective/announcement/`as_of`；point-in-time universe/index membership。
+- **边界**：compute 在 BYQ workers/services；DSH 仅经 MCP propose/invoke；inputs/provenance immutable。Tushare 在 Data Provider Contract 后；不得引入 BaoStock、AKShare 或 Community provider engine。若 Phase 8 hardening 实现 duplicate/order/OHLC，只能限于 contract。
+- **验收/停止**：deterministic fixtures、lifecycle/calendar/coverage、PIT/no-lookahead、provenance/lineage 可复现；input identity/visibility/coverage 模糊时不接受 factor。Look-ahead、undefined as-of、missing lifecycle/calendar、malformed bars 或 prompt-only invariants 时停止。
 
 ## Phase 11 — Strategy Artifact + Validation
 
-### Goal
-
-Represent strategy code/configuration as a validated, auditable domain
-artifact.
-
-### Scope
-
-StrategyDraft/StrategyArtifact schema, immutable content-addressed
-StrategyVersion snapshots, validation evidence, approval gates, provenance,
-versioning, export hygiene, and MCP operations.
-
-Strategy version identity MUST be derived from a deterministic semantic
-snapshot and source/content fingerprint, excluding mutable timestamps. Exported
-artifacts MUST omit credentials, runtime settings, and Agent internals.
-Validation, approval, and execution outcome remain separate state and audit
-concepts: approval authorizes an attempt and does not prove successful business
-mutation.
-
-### Non-goals
-
-No direct Product DSH source writes, unrestricted code execution, or live
-trading.
-
-### Dependencies
-
-Phases 9–10 and the BYQ strategy safety/invariant policy.
-
-### Architecture constraints
-
-Strategy code is domain data, not application source; Product DSH cannot write
-the repository; validation is BYQ-owned and explicit.
-
-### Acceptance criteria
-
-Invalid strategies are rejected with contract errors, approved artifacts are
-immutable/versioned, historical replay resolves the stored version, exports
-are deterministic and secret-free, validation evidence is retained, approval
-records are auditable, and approval is not conflated with execution success.
-
-### Stop conditions
-
-Application-source access, mutable or non-reproducible strategy versions,
-secret-bearing exports, missing approval or execution-failure semantics, or an
-unsafe execution boundary.
+- **目标/范围**：将 strategy code/configuration 表示为 validated、auditable domain artifact；定义 StrategyDraft/Artifact、immutable content-addressed StrategyVersion、validation evidence、approval gates、provenance、version/export 和 MCP。
+- **边界**：version identity 来自 deterministic semantic snapshot/source fingerprint，排除 mutable timestamps；export 不含 credentials/runtime/Agent internals；validation、approval、execution outcome 分离。Strategy code 不是 application source，Product DSH 不写 repository，也不 unrestricted execute。
+- **验收/停止**：invalid strategy 返回 contract error；versions immutable、replay 精确；exports deterministic/secret-free；evidence/approval auditable 且不把 approval 当 execution success。出现 source access、mutable version、secret export 或 unsafe execution 时停止。
 
 ## Phase 12 — Backtest Job + Worker
 
-### Goal
-
-Execute validated strategy artifacts through durable, isolated backtest jobs.
-
-### Scope
-
-BYQ-owned native deterministic backtest execution, A-share execution rules,
-frozen universe and strategy-version authorization, content-addressed input
-and result manifests, job state machine, worker queue, resource/time limits,
-result artifacts, retries/idempotency, object references/lifecycle, and
-audit/observability.
-
-The native engine MUST encode and test T+1, limit-up/limit-down, suspension,
-lot-size, fees, stamp tax, cash, corporate-action, and stable blocked-trade
-reason semantics. Input manifests MUST freeze signal/execution prices, status,
-corporate actions, universe membership, strategy version, environment/engine
-contract version, and reproducibility status. Result objects MUST retain
-namespace/object identity, media type, size, and SHA-256 rather than embedding
-unbounded result data in business rows.
-
-### Non-goals
-
-No live trading, distributed optimization, or Engineering Plane code mutation.
-
-### Dependencies
-
-Phases 8–11, worker deployment design, and artifact storage.
-
-### Architecture constraints
-
-Workers are independently deployable; BYQ owns business job state; DSH cannot
-directly access business storage or worker internals. The engine is BYQ-owned
-and deterministic; VectorBT and Community provider/runtime boundaries are not
-backtest dependencies or compatibility paths. Universe authorization and
-object deletion are enforced by BYQ using owner and live-reference checks.
-
-### Acceptance criteria
-
-Jobs are isolated, restartable, idempotent, resource-bounded, and produce
-traceable result artifacts under contract tests. Golden regression fixtures
-cover the A-share execution rules, authorized frozen universes, deterministic
-input/result manifests, bounded retries, immutable result references, and
-fail-closed deletion of referenced or tampered objects.
-
-### Stop conditions
-
-Unbounded execution, non-idempotent retries, mutable input identity, missing
-A-share execution constraints, universe escape, non-reproducible manifests,
-untrusted artifact execution, or deletion that ignores ownership/live
-references.
+- **目标/范围**：以 durable isolated jobs 执行 validated strategy artifacts。BYQ native deterministic engine、A-share rules、frozen universe/version authorization、content-addressed input/result manifests、queue/state/retry/idempotency、resource bounds、object lifecycle/audit。
+- **规则**：engine 明确测试 T+1、limit-up/down、suspension、lot size、fees、stamp tax、cash、corporate actions 和 stable blocked reasons。Manifest 冻结 signals/prices/status/actions/universe/version/engine/reproducibility。Result rows 仅存 namespace/object ID/media type/size/SHA-256 reference。
+- **边界/验收**：worker independently deployable；DSH 不访问 storage/worker；VectorBT 不作为 dependency；owner/live-reference 决定 universe/deletion。Jobs isolated/restartable/idempotent/bounded；golden tests 覆盖 rules、manifests、retry、references 和 fail-closed deletion。Unbounded execution、mutable input、universe escape 或 unsafe artifact 时停止。
 
 ## Phase 13 — Quant Research Agents
 
-### Goal
-
-Add specialized quant research roles using DSH presets/skills/subagents while
-keeping domain authority in BYQ.
-
-### Scope
-
-Researcher roles, prompt/skill contracts, tool permissions, delegation policy,
-traceable multi-agent orchestration, owner/actor authorization, human approval
-integration, audit views, and DSH-run correlation.
-
-### Non-goals
-
-No second generic agent harness, no direct database tools, and no Engineering
-Plane privileges in Product agents.
-
-### Dependencies
-
-Phases 7–12 and reviewed domain MCP contracts.
-
-### Architecture constraints
-
-Roles are DSH configuration where generic; domain invariants remain BYQ;
-workflow trace and artifact state remain separate. Authorization, approval,
-audit, and evidence-promotion decisions remain BYQ domain capabilities reached
-through MCP; DSH supplies generic role and orchestration capability only.
-
-### Acceptance criteria
-
-Role capabilities are explicit, least-privileged, observable, and covered by
-capability-isolation and end-to-end contract tests. Audit records correlate the
-owner, actor, DSH run/session, domain action, result, and failure; approval
-failures remain distinct from successful execution; and no role can bypass BYQ
-invariants or promote unreviewed evidence.
-
-### Stop conditions
-
-Privilege escalation, role duplication of BYQ invariants, or a new generic
-harness.
+- **目标/范围**：以 DSH presets/skills/subagents 增加 specialized roles，覆盖 tool permission、delegation、multi-agent trace、owner/actor authorization、human approval、audit 和 DSH correlation。
+- **边界**：generic roles/orchestration 归 DSH；domain invariants、authorization、approval、audit、evidence promotion 归 BYQ 并经 MCP。无第二 generic harness、direct DB tools 或 Product Engineering privileges。
+- **验收/停止**：least-privilege capabilities、isolation/E2E tests；audit 关联 owner/actor/DSH run/domain action/result/failure；approval failure 与 execution 分离；不能 bypass invariants/promote unreviewed evidence。Privilege escalation、duplicate BYQ invariants 或新 harness 时停止。
 
 ## Phase 14 — Quant Learning Loop
 
-### Goal
-
-Close the research → experiment → artifact → validation → backtest learning
-loop with measurable feedback.
-
-### Scope
-
-Evaluation signals, experiment comparison, feedback lineage, repair/retry
-policy, evidence promotion, and bounded agent iteration.
-
-### Non-goals
-
-No autonomous production trading, unbounded self-modification, or silent
-strategy deployment.
-
-### Dependencies
-
-Phases 9–13, audit/approval policy, and reliable backtest results.
-
-### Architecture constraints
-
-Every loop step is bounded, reproducible, auditable, and mediated by BYQ
-contracts; approvals cannot be replaced by prompts.
-
-### Acceptance criteria
-
-Learning runs have explicit budgets, lineage, stopping rules, human gates, and
-replayable results. Promoted lessons retain evidence, validation, review,
-provenance, and a controlled promotion history; ordinary chat output cannot
-become trusted Quant knowledge directly.
-
-### Stop conditions
-
-Unbounded autonomy, missing rollback/approval, or feedback that cannot be
-reproduced.
+- **目标/范围**：闭合 research→experiment→artifact→validation→backtest learning loop，覆盖 evaluation signals、comparison、feedback lineage、repair/retry、evidence promotion 和 bounded iteration。
+- **边界/验收**：每步 bounded、reproducible、auditable，经 BYQ contract；prompt 不替代 approval。Runs 有 budgets、stopping rules、human gates 和 replay；promoted lessons 保留 evidence/validation/review/provenance/history，chat 不能直接变 trusted knowledge。Unbounded autonomy、无 rollback/approval 或 feedback 不可复现时停止。
 
 ## Phase 15 — Engineering Plane / Code Improvement
 
-### Goal
+- **目标/范围**：在不削弱 Product isolation 的前提下，支持 EngineeringTask、diagnostics、isolated worktrees、tests、Draft PR、CI evidence 和 human merge workflow。
+- **边界/验收**：Product/Engineering privileges 分离；不 direct main push/merge、production deploy、destructive migration 或赋予 Product DSH source-write。EngineeringTask 可产出 tested Draft PR、architecture evidence、CI/self-review，并停 human gate。缺 isolation、privilege expansion、CI bypass 或要求 direct main 时停止。
 
-Enable controlled Engineering Plane assistance for repository changes without
-weakening Product Plane isolation.
+## BeyondQuant Productization Program（Phase 16–23）
 
-### Scope
-
-EngineeringTask contracts, diagnostics, isolated worktrees, tests, draft PRs,
-CI evidence, and human merge workflow.
-
-### Non-goals
-
-No direct main push/merge, production deploy, destructive migration, or
-Product DSH source-write capability.
-
-### Dependencies
-
-All prior architectural boundaries, the development workflow, and GitHub/CI
-permissions.
-
-### Architecture constraints
-
-Engineering changes use isolated worktrees and branches; Product and
-Engineering privileges remain separate; humans retain the merge gate.
-
-### Acceptance criteria
-
-An EngineeringTask can produce a tested draft PR with architecture evidence,
-CI results, self-review, and no automatic merge.
-
-### Stop conditions
-
-Missing isolation, unreviewed privilege expansion, CI bypass, or a request to
-push/merge directly to `main`.
-
-## BeyondQuant Productization Program
-
-Phase 15 completion is not product completion. Phases 6–15 establish the
-Headless Quant Research Platform Core: BYQ-owned quantitative contracts,
-deterministic research and backtest capabilities, DSH-based quant roles,
-WorkflowTrace, the Quant Learning Loop, and the Engineering Plane. Phases
-16–23 productize that core for ordinary browser users while preserving the
-Product/Agent/Quant/Data/Engineering plane boundaries.
-
-The productization sequence is:
+Phases 6–15 是 Headless Quant Research Platform Core，不等于 product completion。Phases 16–23 按以下顺序 productize：
 
 ```text
-Product API + durable data foundation
-  → browser shell and visual parity
-  → agent research workbench
-  → quant workspace
-  → user/platform settings
-  → stock pool and paper trading
-  → operations/deployment/observability
-  → parity matrix and release candidate
+Product API + durable data → frontend shell → Agent workbench → Quant workspace
+→ user/platform settings → Stock Pool/Paper Trading
+→ operations/deployment → parity matrix/release candidate
 ```
 
-Only the current phase named by `docs/roadmap/STATUS.md` may be implemented.
-Phases 16–23 are future planning constraints and are not implementation
-permission. Phase 16 may start only after Phase 15 is formally accepted. The
-Community repository remains a read-only behavioral and visual reference;
-existing code is evidence, not authorization to copy architecture.
+Community 始终是只读 behavioral/visual evidence；不是复制架构的授权。
 
 ## Phase 16 — Product API / BFF + Durable Data Migration Foundation
 
-### Goal
-
-Establish the browser-facing Product API boundary and the authoritative BYQ
-Data Plane target needed for a safe, logical migration of validated Community
-market cache data.
-
-### Scope
-
-- Gateway Product API / BFF with browser-oriented resource contracts;
-- product authentication and session contract, including owner/actor scope;
-- one product error envelope and safe diagnostic fields;
-- pagination, filtering, sorting, cursor/offset policy, and bounded request
-  cost contracts;
-- versioned OpenAPI source and generated TypeScript client types;
-- dashboard aggregation API;
-- research-task, experiment, artifact, factor, strategy, and backtest APIs;
-- approval, audit, Agent UI, and BYQ WorkflowTrace projection APIs;
-- explicit `/api/product/data/status`-style data health and migration status
-  projection;
-- a BYQ Durable Market Data Storage ADR covering canonical storage, schema
-  ownership, indexes, retention, refresh strategy, provenance, backup, and
-  restore;
-- a logical Community market-cache migration design, mapping, manifest, and
-  validation plan;
-- a complete Community frontend migration inventory.
-
-The eventual resource paths are a design output, not a requirement to copy
-these examples mechanically:
-
-```text
-/api/product/dashboard
-/api/product/agents
-/api/product/agents/{id}
-/api/product/research/tasks
-/api/product/research/tasks/{id}
-/api/product/experiments
-/api/product/artifacts
-/api/product/factors
-/api/product/strategies
-/api/product/strategies/{id}
-/api/product/backtests
-/api/product/backtests/{id}
-/api/product/approvals
-/api/product/audit
-/api/product/data/status
-```
-
-Community PostgreSQL is a read-only source. Migration must use logical
-`SELECT`/`COPY OUT`/data-only export, validation and normalization, a
-manifest, an idempotent import into the new BYQ Data Plane, and post-import
-verification. A PostgreSQL physical data directory must never be copied,
-mounted into BYQ, or used as BYQ authoritative storage. Only `data_source =
-tushare` rows, or rows proven to be provider-independent canonical data, are
-eligible; BaoStock and AKShare rows are excluded.
-
-The migration contract must validate canonical symbols (`NNNNNN.SH`,
-`NNNNNN.SZ`, `NNNNNN.BJ`), `YYYYMMDD` trade dates, units, numeric finiteness,
-OHLC relationships, non-negative volume/amount, adjustment type, asset type,
-source provenance, duplicate keys, stable ordering, lifecycle coverage, and
-point-in-time semantics. Invalid data is quarantined and reported, never
-silently repaired into canonical storage.
-
-### Non-goals
-
-- no complete browser UI;
-- no Product API implementation beyond the contracts required by this phase;
-- no live trading;
-- no bulk or destructive migration;
-- no physical PostgreSQL directory copy or mount;
-- no Community database write, schema change, update, delete, or truncate;
-- no reintroduction of BaoStock, AKShare, VectorBT, PydanticAI, or Hermes.
-
-### Dependencies
-
-Phase 15 acceptance, the current BYQ Gateway/Runtime Adapter/MCP boundary,
-Phases 9–14 domain and learning contracts, ADR-0003 through ADR-0009, the
-Community frontend and market-cache audit, and a reviewed durable-storage
-ADR before any formal bulk import.
-
-### Architecture constraints
-
-Frontend calls Product API only. Product API calls BYQ domain services and the
-Runtime Adapter through explicit contracts; it does not expose MCP, DSH,
-internal Backend APIs, raw DSH events, provider credentials, or database
-schemas. WorkflowTrace remains a framework-neutral BYQ projection. Business
-state remains BYQ-owned; DSH does not access PostgreSQL or Redis directly.
-
-The target data store is a new BYQ-owned authoritative store. Community
-PostgreSQL is an evidence source only. Imports must be repeatable, idempotent,
-auditable, conflict deterministic, and secret-free. Existing BYQ records must
-not be overwritten by last-write-wins; the initial conflict policy is
-`KEEP_NEW`, `VERIFY_EQUAL`, and `REPORT_MISMATCH`.
-
-### Acceptance criteria
-
-- Browser-oriented Product API contracts and auth boundary are complete;
-- no MCP, DSH, raw DSH event, provider-token, or internal-storage exposure is
-  present in the product contract;
-- OpenAPI-generated types are possible from the versioned contract;
-- dashboard, research, factor, strategy, backtest, approval, audit, Agent,
-  and WorkflowTrace product projections are mapped;
-- `COMMUNITY_FRONTEND_MIGRATION.md` and
-  `COMMUNITY_MARKET_DATA_MIGRATION.md` are complete;
-- the Durable Market Data Storage ADR is Accepted;
-- a read-only migration dry-run can produce a manifest and quarantine report;
-- the Community repository and database remain unchanged;
-- no production bulk import is performed as part of this acceptance.
-
-### Stop conditions
-
-Unclear ownership/authentication, raw DSH schema leakage, an unaccepted
-durable-storage decision, inability to prove source/provenance/units,
-non-deterministic conflict behavior, a request to write Community data, or a
-request to widen Product DSH capabilities.
+- **目标/范围**：建立 browser-facing Gateway Product API/BFF、auth/session owner/actor、safe error、bounded pagination/filter/sort、versioned OpenAPI/TS types、dashboard/research/factor/strategy/backtest/approval/audit/Agent/WorkflowTrace/data-status projections；接受 Durable Market Data Storage ADR；设计 Community logical cache migration、manifest/validation 和 frontend inventory。
+- **Migration invariants**：Community PostgreSQL read-only；仅 logical `SELECT`/`COPY OUT`/data-only export→validate/normalize→manifest→idempotent BYQ import→verify。禁止 physical directory copy/mount。只允许 proven `tushare` 或 provider-independent rows；排除 BaoStock/AKShare。验证 canonical symbols、`YYYYMMDD`、units、finite/OHLC、non-negative vol/amount、adjustment/asset/source、duplicates/order、lifecycle/PIT；invalid rows quarantine/report。Conflict policy 为 `KEEP_NEW`、`VERIFY_EQUAL`、`REPORT_MISMATCH`。
+- **边界/验收**：frontend 只用 Product API，不暴露 MCP/DSH/raw events/tokens/storage schema；migration 可 dry-run 出 manifest/quarantine，Community 不变，不在 acceptance 中 bulk import。Ownership/auth、storage ADR、provenance、determinism 或 read-only 被破坏时停止。
 
 ## Phase 17 — Frontend Foundation
 
-### Goal
-
-Deliver the first browser-visible BeyondQuant application with a familiar,
-clean, responsive shell based on the inspected Community UX.
-
-### Scope
-
-Create `apps/frontend` as a formal Vue 3 + Vite + TypeScript application using
-the existing preferred direction: Vue Router, Pinia, Element Plus, ECharts,
-Axios or a typed fetch client, OpenAPI-generated types, and Playwright. Build
-the App Shell, Header, Sidebar, mobile bottom navigation, Router, auth
-bootstrap, Product API client, design tokens/theme, responsive layout, error
-boundary, loading skeletons, empty/error states, toasts, dialogs, and chart
-foundation.
-
-The first pages are Login, Home/Dashboard, System Status, and the user menu.
-Community `App.vue`, router, store, auth flow, layout components, styles,
-HomeView, and LoginView must be inspected first and classified in the frontend
-migration inventory. Reuse visual language, spacing, cards, tables, icons,
-loading states, and interaction patterns where they remain architecture
-neutral. Rewrite auth and API bindings against Product API.
-
-### Non-goals
-
-No complete research workbench, agent workflow UI, paper trading, live
-trading, operations control plane, or direct Community frontend copy.
-
-### Dependencies
-
-Phase 16 Product API/OpenAPI/auth contracts and the Community frontend
-migration inventory.
-
-### Architecture constraints
-
-The frontend has no direct MCP, DSH, raw Backend-internal, Provider, or
-database integration. It consumes only normalized BYQ Product API responses
-and BYQ WorkflowTrace projections. The frontend must not depend on raw DSH
-event schemas. Core frontend stack changes require an ADR.
-
-### Acceptance criteria
-
-- `apps/frontend` boots through the Product API boundary;
-- Login, Dashboard, system status, user menu, loading, error, empty, and
-  responsive states are covered;
-- Playwright smoke tests run in CI;
-- Community visual/UX parity is reviewed at layout and workflow level, not
-  pixel-perfectly cloned;
-- desktop, tablet, and mobile navigation have tested behavior;
-- no Community source tree is copied wholesale.
-
-### Stop conditions
-
-Direct internal API/DSH/MCP coupling, raw DSH events in components, missing
-auth ownership, a need to replace the selected frontend stack without an ADR,
-or a wholesale frontend copy.
+- **目标/范围**：创建 `apps/frontend` Vue 3+Vite+TypeScript，使用 Vue Router、Pinia、Element Plus、ECharts、typed client、OpenAPI types、Playwright。交付 shell/header/sidebar/mobile nav/router/auth bootstrap/design tokens/responsive/errors/loading/empty/toasts/dialog/chart；首批 Login、Dashboard、System Status、user menu。
+- **边界/验收**：先检查分类 Community UI，复用 architecture-neutral visual language，重写 auth/API。Frontend 不直连 MCP/DSH/Backend/provider/database，也不依赖 raw events；core stack change 需 ADR。App boots、responsive states、Playwright CI 和 Community workflow-level review 通过；不得 wholesale copy。Direct coupling、missing auth ownership 或未经 ADR 换 stack 时停止。
 
 ## Phase 18 — Agent Research Workbench
 
-### Goal
-
-Make the DSH-powered quant research experience the central, traceable browser
-workflow while keeping all business authority in BYQ.
-
-### Scope
-
-Reference Community `AgentView.vue`, its session history, thinking/progress
-components, approval cards, and assistant drawer, then redesign them around
-DSH, `WorkflowTrace`, `ResearchTask`, `Experiment`, `Artifact`, and `Approval`.
-Provide session create/resume, conversation, streaming answer, cancellation,
-resume, error recovery, current task, subagent activity, tool/domain-action
-visualization, WorkflowTrace, artifacts, evidence, approvals, and audit trail.
-The layout should preserve the familiar conversation/context/result workbench:
-
-```text
-Research navigation | conversation | WorkflowTrace
-                  artifact / evidence / chart / result
-```
-
-The browser receives normalized BYQ product events only. It must never show
-raw DSH JSON, bearer tokens, provider keys, or internal runtime credentials.
-
-### Non-goals
-
-No second generic agent harness, DSH Web transport, direct database tool,
-Engineering Plane capability, raw event-schema UI, or autonomous approval.
-
-### Dependencies
-
-Phases 13, 16, and 17; ADR-0003/0009; the BYQ WorkflowTrace contract; Product
-API streaming/resume/cancel contracts; and the Quant Learning Loop evidence
-and approval semantics.
-
-### Architecture constraints
-
-Frontend → Product API → Gateway/Runtime Adapter → DSH/MCP remains the only
-product path. BYQ owns ResearchTask, Experiment, Artifact, Approval, audit,
-authorization, and business idempotency. DSH owns generic session,
-subagent, skill, and orchestration behavior.
-
-### Acceptance criteria
-
-- a browser user can create/resume a research session and send a prompt;
-- streaming answers and cancellation/resume states are visible;
-- current ResearchTask, subagents, tools, artifacts, evidence, approvals,
-  errors, and audit are rendered through normalized product contracts;
-- WorkflowTrace replay and ordering are stable;
-- secret-safe and raw-DSH-schema contract tests pass;
-- Playwright covers the core conversation and approval journey.
-
-### Stop conditions
-
-Raw DSH events in the frontend, browser access to MCP/DSH, model-supplied
-identity/approval, unbounded streaming payloads, missing cancellation/replay
-semantics, or Product DSH capability escalation.
+- **目标/范围**：围绕 DSH、WorkflowTrace、ResearchTask、Experiment、Artifact、Approval 重设计 Community Agent UX；支持 session create/resume、conversation/stream/cancel/recovery、task/subagent/tool/domain visualization、trace、artifacts/evidence/approval/audit。
+- **边界/验收**：browser 只收 normalized Product events，不显示 raw DSH/secret；唯一 path 为 Frontend→Product API→Gateway/Runtime Adapter→DSH/MCP。BYQ 拥有 domain state，DSH 拥有 generic session/orchestration。Core conversation/approval Playwright、stable replay/order 和 secret/raw-schema tests 通过。Raw event/browser DSH access、model identity/approval、unbounded stream 或 capability escalation 时停止。
 
 ## Phase 19 — Quant Workspace
 
-### Goal
-
-Expose the completed BYQ quant core as a coherent Research Workspace for
-Factor, Strategy, and Backtest work.
-
-### Scope
-
-Reference Community `BacktestView.vue`, `StrategyView.vue`, `DemoChartView.vue`,
-and related research UI. Build Product API-backed workflows for ResearchTask,
-Experiment, Factor, Strategy, and Backtest.
-
-Factor UI must cover definition, input universe, date range, compute state,
-coverage, distribution, metrics, evaluation, and artifact lineage. Strategy UI
-must cover draft editing, validation, immutable StrategyVersion, approval,
-version history, and provenance. Backtest UI must cover submission,
-progress/state, equity curve, benchmark, drawdown, annual return, Sharpe,
-volatility, win rate, trade list, position history, blocked trade reasons,
-fees/tax, artifacts, input manifest, and reproducibility. ECharts is the
-default chart foundation and Community chart interaction is reference UX.
-
-### Non-goals
-
-No Community Strategy runtime, VectorBT, generated application-source write,
-live trading, or direct provider/API binding from the browser.
-
-### Dependencies
-
-Phases 10–12 and 16–18, Strategy Artifact/Backtest ADRs, Product API contracts,
-and the frontend migration classifications.
-
-### Architecture constraints
-
-Factor, strategy, approval, and backtest invariants remain BYQ-owned. Strategy
-code remains a domain artifact. Backtest results are immutable references with
-manifests; the UI displays normalized summaries and authorized result objects.
-
-### Acceptance criteria
-
-- Factor, Strategy, and Backtest flows are usable from one workspace;
-- immutable versions, approvals, manifests, lineage, and reproducibility are
-  visible and linkable;
-- all requested result charts/tables/blocked reasons are available through
-  Product API contracts;
-- ECharts loading/empty/error/large-result states are tested;
-- a browser flow can move from research to approved backtest without raw
-  internal APIs.
-
-### Stop conditions
-
-Missing input identity, look-ahead/coverage ambiguity, execution-rule leakage
-into the UI, mutable historical strategy state, raw result unboundedness, or
-any attempt to restore excluded engines/providers.
+- **目标/范围**：用真实 Product API 交付 ResearchTask/Experiment/Factor/Strategy/Backtest workspace。Factor 包含 definition/universe/date/compute/coverage/distribution/metrics/evaluation/lineage；Strategy 包含 draft/editor/validation/immutable version/approval/history/provenance；Backtest 包含 submit/state、equity/benchmark/drawdown/annual return/Sharpe/volatility/win rate、trades/positions/blocked reasons/fees/tax/artifacts/manifest/reproducibility。
+- **边界/验收**：invariants 归 BYQ；strategy 是 domain artifact；results 为 immutable authorized references。ECharts states/large results tested；browser 可从 research 到 approved backtest，无 raw APIs/fake charts。Input identity/look-ahead/coverage、mutable history、unbounded results 或 excluded engine/provider 回归时停止。
 
 ## Phase 20 — User & Platform Settings
 
-### Goal
-
-Provide safe user, model, data, approval, artifact, and platform settings
-without exposing credentials or collapsing Product and Operations privileges.
-
-### Scope
-
-Reference Community `UserProfileView.vue`, `UserModelsView.vue`,
-`UserAssetsView.vue`, `UserAgentPolicyView.vue`, model settings components,
-and approval center UX. Build Product API-backed pages for User Profile, Model
-Settings, Data Provider Status, Tushare capability/permission status, Agent
-Preferences, Approval Inbox, Artifacts/Assets, Storage Status, and System
-Preferences.
-
-All secret-bearing fields are write-only or masked. The browser may receive
-only `configured: true/false`, provider status, capability, permission, and
-masked metadata. It must never receive `DEEPSEEK_API_KEY`, `TUSHARE_TOKEN`,
-`BYQ_PRODUCT_TOKEN`, MCP tokens, bearer tokens, or a decrypted credential.
-
-### Non-goals
-
-No browser-side secret management, direct provider credential calls, global
-operations control from a normal user page, or automatic approval bypass.
-
-### Dependencies
-
-Phases 16–19, ADR-0004/0005/0009, Product auth/authorization contracts, and
-the BYQ secret-safe error envelope.
-
-### Architecture constraints
-
-Backend/Gateway owns secret storage and capability evaluation. BYQ owns
-RBAC/approval/audit and user asset ownership. Product settings cannot grant
-Operations or Engineering privileges.
-
-### Acceptance criteria
-
-- users can manage profile, preferences, model profile, approval preferences,
-  and owned assets;
-- Tushare status is capability-based and secret-free;
-- approval inbox and asset/storage status are auditable;
-- unauthorized cross-owner reads/writes fail closed;
-- browser/network/contract tests prove forbidden secret names and values do
-  not appear in responses, traces, logs, or errors.
-
-### Stop conditions
-
-Secret exposure, user/operations privilege confusion, cross-owner access,
-model-supplied approval authority, or frontend dependence on internal storage
-schemas.
+- **目标/范围**：Product API-backed Profile、Model Settings、Data Provider/Tushare capability、Agent Preferences、Approval Inbox、Assets、Storage/System Preferences。
+- **边界/验收**：secret fields write-only/masked；browser 只收 `configured`、status/capability/permission/masked metadata，绝不收 `DEEPSEEK_API_KEY`、`TUSHARE_TOKEN`、`BYQ_PRODUCT_TOKEN`、MCP/bearer/decrypted credential。Settings 不授予 Operations/Engineering privilege。Owner isolation、audit 和 secret-boundary network/log/error tests 通过；secret exposure/privilege confusion/cross-owner/internal schema dependency 时停止。
 
 ## Phase 21 — Stock Pool & Paper Trading
 
-### Goal
-
-Make stock-universe research and deterministic paper trading usable from the
-browser while defining a new BYQ-owned paper-trading domain boundary.
-
-### Scope
-
-Reference Community `StockPoolView.vue`, `StockPoolDialog.vue`, and
-`PaperTradingView.vue`, but inspect and classify their domain semantics before
-implementation. Stock Pool covers user watchlists, research universes,
-candidate pools, tags/groups, factor rankings, Agent recommendations,
-provenance, snapshot versions, and historical membership. Reuse only
-provider-independent semantics such as normalized membership, immutable
-snapshots, and lineage; rewrite storage/API ownership in BYQ.
-
-Paper Trading is simulation only and is not Backtest. Define BYQ-owned
-contracts for portfolio, cash, positions, orders, fills, fees/tax, T+1,
-limit rules, suspension, lot size, audit, strategy version, and decision
-provenance. There is no live broker integration in this phase.
-
-### Non-goals
-
-No live broker, live order, broker credential, Community Agent Service paper
-runtime, direct PostgreSQL access, or VectorBT/legacy provider path.
-
-### Dependencies
-
-Phases 10–12, 16–20, stock-pool/backtest invariants in the migration inventory,
-and a future paper-trading domain ADR before implementation.
-
-### Architecture constraints
-
-Paper trading is a BYQ domain state machine with explicit idempotency,
-approval, ownership, and audit. It cannot reuse Backtest as a hidden order
-engine. Product DSH may propose actions through MCP but cannot mutate paper
-state outside BYQ contracts.
-
-### Acceptance criteria
-
-- users can create and inspect versioned pools/watchlists and provenance;
-- historical membership and snapshot identity are visible;
-- a user can create a simulation account, inspect portfolio/cash/positions,
-  submit approved simulated orders, see fills/fees/blocked reasons, and audit
-  decision provenance;
-- T+1, limit, suspension, lot, and conflict semantics have BYQ contract/golden
-  tests;
-- no live broker or external execution call exists.
-
-### Stop conditions
-
-Paper/Backtest state conflation, missing owner/idempotency/audit semantics,
-unbounded or non-deterministic fills, broker credential exposure, or unclear
-stock-pool domain invariants.
+- **目标/范围**：Stock Pool 支持 watchlists/research/candidates/tags/rankings/Agent recommendations/provenance/snapshot history；只复用 provider-independent semantics。Paper Trading 为独立 BYQ simulation domain，定义 portfolio/cash/positions/orders/fills/fees/tax/T+1/limits/suspension/lots/audit/version/provenance，无 live broker。
+- **边界/验收**：paper 不是隐藏 Backtest engine；Product DSH 只经 MCP propose，mutation 受 BYQ idempotency/approval/owner/audit。Versioned pools、historical identity 和 simulation accounts/orders/fills/blocked reasons 真实；golden tests 覆盖规则，无 broker call。State conflation、missing invariants、non-deterministic fills 或 credential exposure 时停止。
 
 ## Phase 22 — Operations and Deployment
 
-### Goal
-
-Operate BeyondQuant Next safely in production with secret-safe, role-protected
-observability and tested backup/restore/deployment procedures.
-
-### Scope
-
-Reference Community operations pages: `AccessControlOperationsView`,
-`GraphOperationsView`, `ModelOperationsView`, `RuntimeOperationsView`, and
-`SystemMaintenanceWorkbench`. Redesign them for the BYQ topology and Product
-API operations projection, covering Gateway, Runtime Adapter, DSH sessions,
-MCP, Backend, worker, data provider, queues, object store, database, Redis,
-WorkflowTrace, audit, disk/storage, and migration status.
-
-The Operations UI is read-mostly, secret-safe, and role protected. Deployment
-work includes production Compose/topology, persistent-volume strategy,
-database/object-store backup, restore, migration, health/readiness checks,
-resource limits, log rotation, upgrade procedure, and rollback. Community
-market-data migration must be production-safe, backup-tested, and
-restore-tested before release.
-
-### Non-goals
-
-No restoration of the Community old runtime, direct Product DSH operations,
-unprotected destructive controls, live trading, or automatic main/deployment
-mutation.
-
-### Dependencies
-
-Phases 16–21, accepted durable storage and paper-trading decisions, current
-BYQ topology, and the Engineering Plane human gate.
-
-### Architecture constraints
-
-Operations endpoints are separate from normal user Product API permissions.
-Secrets are never rendered or returned. Database and migration controls are
-explicitly authorized, audited, and fail closed. DSH remains unable to access
-business storage directly. Deployments preserve independent service upgrade
-and fault-isolation boundaries.
-
-### Acceptance criteria
-
-- role-protected operations views show all required service/data/trace health;
-- readiness/health, backup, restore, migration, resource, and log procedures
-  are executable and documented;
-- Community cache migration dry-run/import/verification is repeatable and
-  rollback-safe after the Data Storage ADR;
-- observability correlates Product request, BYQ trace, DSH session/run, domain
-  action, job, artifact, and audit without raw DSH leakage;
-- production deployment tests pass with no secret rendered in UI/logs.
-
-### Stop conditions
-
-Unprotected operations, destructive defaults, untested restore, secret-bearing
-diagnostics, topology drift that violates the architecture, or a migration
-that cannot be rolled back or verified.
+- **目标/范围**：role-protected、secret-safe、read-mostly Operations projection，覆盖 Gateway、Runtime Adapter、DSH、MCP、Backend、workers、provider、queues、object store、database、Redis、WorkflowTrace、audit、disk/migration；交付 production topology、volumes、backup/restore/migration、health、limits、logs、upgrade/rollback。
+- **边界/验收**：operations permission 与 normal Product 分离；destructive actions explicit/audited/fail closed；DSH 不访问 business storage；services 独立升级隔离。Health/backup/real restore/migration procedures 可执行；logical Community migration repeatable/rollback-safe；observability 可关联 request/trace/DSH/domain/job/artifact/audit，不泄 raw events/secrets。Untested restore/destructive defaults/topology drift/unverifiable migration 时停止。
 
 ## Phase 23 — Community Feature Parity and BeyondQuant Next Release
 
-### Goal
+- **目标/范围**：维护 `COMMUNITY_FEATURE_PARITY_MATRIX.md`，将每个 page/capability/component/dialog/chart/setting/operations surface 标记 `PORTED`、`REDESIGNED`、`REPLACED`、`DROP` 或 `DEFERRED`，并为每项给理由/target/acceptance。明确 PydanticAI/Hermes、raw Agent coupling、BaoStock/AKShare/VectorBT 被 drop/replace。
+- **Product acceptance**：ordinary user 能完成 Login→Dashboard→小巴→ResearchTask/agents/WorkflowTrace→Tushare/cache→Factor→Strategy Draft/Version→human Approval→Backtest/charts/trades→Artifact/Evidence/Lineage→Stock Pool/Paper Trading→Settings→Operations，且 traceable/reproducible/auditable/secret-safe。
+- **Golden gate**：Playwright 真实路径 `Login → Dashboard → 小巴 → ResearchTask → Factor → Strategy → Approval → Backtest → Result → Artifact → Stock Pool / Paper Trading`；CI 覆盖 API、secret、migration、responsive、architecture，最后停 human review。Missing journey/unresolved classification/failed secret-trace-restore 或 bypass human gate 时停止。
 
-Deliver BeyondQuant Next as a product-level release candidate: familiar to
-Community users, architecturally BYQ/DSH-native, traceable, reproducible,
-auditable, and secret-safe.
+## BeyondQuant Product Completion Program（Phase 24–30）
 
-### Scope
+Phase 23 只形成 Product Skeleton。Phases 24–30 每 phase 一 isolated worktree/branch/Draft PR/human review，UI phase 还需 Chrome MCP。Vue file/endpoint/placeholder 存在不等于完成；必须经真实 Product API/browser/persistence/states/checklist。
 
-Create and maintain `COMMUNITY_FEATURE_PARITY_MATRIX.md`. Every Community page,
-capability, component, dialog, chart, setting, and operations surface must be
-marked `PORTED`, `REDESIGNED`, `REPLACED`, `DROP`, or `DEFERRED`, with a reason
-for every `DROP` and a target/acceptance reference for every non-drop item.
+### Phase 24 — Durable User Identity & Authentication
 
-The matrix must cover Home, Login, Agent, Research, Strategy, Backtest, Stock
-Pool, Paper Trading, Profile, Models, Assets, Agent Policy, Operations, and
-their shared components/dialogs/charts/settings. It must explicitly record
-that Community PydanticAI/Hermes, raw Agent schema/API coupling, BaoStock,
-AKShare, and VectorBT are dropped or replaced.
+以 BYQ-owned User/password hashing、Gateway username/password、secure HttpOnly session（或 ADR-approved equivalent）、logout/revoke/expiry/change-password、bootstrap admin、roles/disabled-user 和全资源 owner isolation 取代 Product Token browser login。Browser 表单不得使用 Product Token；该 token 仅 internal/service bootstrap。
 
-### Product acceptance
+### Phase 25 — Community Frontend Full UX Restoration
 
-An ordinary browser user can log in, view Dashboard, talk to 小巴, create a
-ResearchTask, observe multiple quant agents, view WorkflowTrace, obtain
-Tushare data, use validated Community historical cache data, perform factor
-research, generate and validate a Strategy Draft, inspect Strategy Versions,
-complete human Approval, submit a Backtest, inspect charts/trades/metrics,
-open Artifact/Evidence/Lineage, use Stock Pool and Paper Trading, manage
-Model/Data/User settings, and view Operations status.
+恢复熟悉 shell/navigation、real-data dashboard、shared cards/tables/pagination/dialogs/forms/status/empty/loading/error/charts；使用 BYQ contracts，并记录 Chrome MCP visual comparison。
 
-The complete flow is traceable, reproducible, auditable, and secret-safe.
+### Phase 26 — Full Quant Workspace
 
-### Golden journey and acceptance tests
+交付真实 Factor create/compute/coverage/results/history；Strategy draft/editor/validation/version/history/approval/backtest links；Backtest create/status/retry/metrics/ECharts/trades/positions/blocked/fees/tax/manifest/lineage。禁止 fake metrics/charts。
 
-Add a Playwright golden journey:
+### Phase 27 — Research、Artifact 与 Approval Center
 
-```text
-Login → Dashboard → ask 小巴 → ResearchTask → Factor → Strategy
-  → Approval → Backtest → Result → Artifact → Stock Pool / Paper Trading
-```
+可视化、管理 ResearchTasks、Experiments、Artifacts、Evidence、Lineage、Approvals；artifact browser 展示真实 metadata/hash/lineage/provenance 而不嵌大对象；Approval Inbox 支持 pending/approved/rejected 和 human decisions，并保持 execution outcome 分离。
 
-CI must execute the core smoke journey, API contract checks, secret-boundary
-checks, migration verification checks, responsive smoke coverage, and the
-required architecture tests. The release candidate is not complete until
-these checks pass and the human review gate is reached.
+### Phase 28 — Historical Market Data Migration & Data Center
 
-### Non-goals
+执行 read-only Community audit 的真实 counts/date/symbol/source；完成 validation/normalization/quarantine/manifest/import/verification 且幂等；禁止 physical PG copy，BaoStock/AKShare/VectorBT 保持 DROP；Data Center 显示真实 datasets/coverage/sync/provider/quality/migration/quarantine/refresh，无 secrets。
 
-No direct main merge, no automatic release promotion, no live broker trading,
-no raw Community architecture migration, no excluded provider/engine/runtime,
-and no claim that Phase 15 alone is a product release.
+### Phase 29 — Platform Administration & Operations Completion
 
-### Dependencies
+交付 user/model/data/agent management、runtime operations、真实 backup/restore test，以及不泄 credential 的 logging/WorkflowTrace/audit/job-failure lookup。
 
-Accepted Phase 16–22 contracts/ADRs, completed migration verification,
-production backup/restore evidence, parity matrix, and passing CI golden
-journey.
+### Phase 30 — True Community Feature Parity & BeyondQuant Next v1.0 RC
 
-### Architecture constraints
+`COMMUNITY_FEATURE_PARITY_MATRIX_V2.md` 对每 feature 使用 `PASS`/`REDESIGNED_PASS`/`INTENTIONAL_DROP`/`FAIL`；release conclusion 无 `DEFERRED`；执行 Community Chrome comparison、无 mock/direct internal call 的真实 Product API golden journey 和 multi-user isolation E2E。Required item 缺失时不得完成。
 
-BeyondQuant Next preserves Product Plane, Agent Plane, Quant Domain Plane,
-Data Plane, and Engineering Plane ownership. Frontend depends only on Product
-API and WorkflowTrace projections. Generic agent capabilities remain in DSH;
-domain invariants remain in BYQ; Community is not the new architecture.
+## Phase 31 — PostgreSQL Single Domain Store（ADR-0016）
 
-### Stop conditions
-
-Any missing core product journey, unresolved parity classification, failed
-secret/trace/reproducibility/restore check, raw DSH coupling, live-trading
-scope creep, or an attempt to bypass the human release gate.
-
-## BeyondQuant Product Completion Program
-
-Phases 5-15 established the Core Platform. Phases 16-23 established a Product
-Skeleton, not a final release. Phase 23 produced a baseline parity matrix and
-browser smoke, but did not complete durable user identity, full Community UX
-depth, complete quant workspace workflows, approval/artifact/lineage product
-surfaces, historical market-data migration, or production operations.
-
-Phases 24-30 are the Product Completion Program. Each phase is implemented in
-one isolated worktree/branch, with independent tests, one Draft PR, one human
-review gate, and a Chrome MCP browser gate where UI is affected. A phase must
-not be marked complete merely because a Vue file, endpoint, or page exists.
-Required features must be demonstrably working through Product API, real
-browser flows, persistence where required, error/loading/empty states, and
-feature checklist evidence.
-
-## Phase 24 — Durable User Identity & Authentication
-
-### Goal
-
-Replace Product Token browser login with a durable BYQ-owned user identity,
-password authentication, secure session, and owner isolation.
-
-### Key acceptance
-
-BYQ-owned User domain with password hashing; username/password login through
-Gateway Product API; secure HTTP-only session cookie or equivalent ADR-
-approved session boundary; logout/session revoke/expiration; change password;
-bootstrap admin; admin/user authorization; disabled users cannot login; owner
-isolation across research, strategy, backtest, stock pool, paper account,
-agent session, approval, and audit. Browser login shows username/password, not
-Product Token. Product Token remains internal/service bootstrap only.
-
-## Phase 25 — Community Frontend Full UX Restoration
-
-### Goal
-
-Restore Community core information architecture, responsive shell, shared
-components, and real-data dashboard depth.
-
-### Key acceptance
-
-App shell/sidebar/header/navigation match Community familiarity while using
-BYQ contracts; dashboard uses real BYQ data for market/data status, recent
-research, recent agent runs, recent strategies/backtests, pending approvals,
-stock pools, and paper summary; shared cards/tables/pagination/dialogs/forms/
-status badges/empty/loading/error/chart wrappers are reusable; Chrome MCP
-visual comparison against Community is performed and recorded.
-
-## Phase 26 — Full Quant Workspace
-
-### Goal
-
-Turn the Phase 19 skeleton into a real Factor, Strategy, and Backtest
-workspace.
-
-### Key acceptance
-
-Factor list/create/definition/universe/date range/compute/status/coverage/
-results/history/artifact linkage; strategy list/draft/editor/validation/
-version/history/approval status/backtest linkage; backtest create/status/
-retry where allowed, metrics, ECharts equity/drawdown/trades/positions/blocked
-reasons/fees/tax/manifest/lineage; no fake metrics or fake charts.
-
-## Phase 27 — Research, Artifact and Approval Center
-
-### Goal
-
-Productize the new BYQ Research/Artifact/Lineage/Approval domain capabilities.
-
-### Key acceptance
-
-ResearchTasks, Experiments, Artifacts, Evidence, Lineage, and Approvals are
-visible and manageable; artifact browser shows real metadata/hash/lineage/
-provenance without embedding large objects; lineage view is based on real
-BYQ lineage; Approval Inbox supports pending/approved/rejected and human
-approve/reject while keeping execution outcome separate.
-
-## Phase 28 — Historical Market Data Migration & Data Center
-
-### Goal
-
-Complete logical migration of validated Community Tushare historical cache and
-expose a real Data Center.
-
-### Key acceptance
-
-Read-only Community audit with real table/row/date/symbol/source statistics;
-validation/normalization/quarantine/manifest/import/verification are executed
-and idempotent; no physical PostgreSQL directory copy; BaoStock/AKShare/
-VectorBT remain DROP; deterministic conflict policy; incremental Tushare
-refresh; Data Center shows datasets/coverage/sync/provider/row counts/quality/
-migration/quarantine/refresh status without secrets.
-
-## Phase 29 — Platform Administration & Operations Completion
-
-### Goal
-
-Turn Settings/Operations into an actual administration and operations surface.
-
-### Key acceptance
-
-User administration, model management, data management, agent management,
-runtime operations, backup/restore with a real restore test, safe logging/
-WorkflowTrace/audit/job-failure lookup without leaking credentials.
-
-## Phase 30 — True Community Feature Parity & BeyondQuant Next v1.0 RC
-
-### Goal
-
-Final product release candidate with real Community feature parity and
-multi-user golden journeys.
-
-### Key acceptance
-
-New `COMMUNITY_FEATURE_PARITY_MATRIX_V2.md` with per-feature
-PASS/REDESIGNED_PASS/INTENTIONAL_DROP/FAIL; no DEFERRED items remain in the
-release conclusion; Chrome MCP browser comparison against Community; complete
-golden journey through real Product API with no mocks/direct Backend/MCP/DSH;
-multi-user isolation E2E; Phase 30 cannot complete while required items are
-missing.
-
-## Phase 31 — PostgreSQL Single Domain Store (ADR-0016)
-
-### Goal
-
-Replace SQLite with PostgreSQL as the single BYQ domain-store engine so
-production concurrency, role isolation, backup/restore, and the ADR-0013
-durable market-data target are supported, and later feature phases have one
-connection/dialect path.
-
-### Scope
-
-- Add a PostgreSQL service and bootstrap databases/roles
-  (`byq_domain`, `byq_domain_test`, `byq_bootstrap`).
-- Introduce `services/backend/app/db.py` (SQLAlchemy Core + psycopg) as the
-  single shared SQL layer and migrate ResearchStore as the reference pattern.
-- Migrate remaining stores (UserAuth, UserPolicy, PaperTrading, Backtest,
-  AgentResearch, LearningLoop, Engineering) to the same layer; remove SQLite
-  code paths and `BYQ_DOMAIN_DB_PATH`.
-- Add idempotent logical SQLite -> PostgreSQL data migration with
-  `KEEP_NEW`/`VERIFY_EQUAL`/`REPORT_MISMATCH`, plus verification.
-- Add `pg_dump`/`pg_restore` backup/restore drill as a gate before ADR-0013
-  bulk market-data import.
-- Keep LocalObjectStore (filesystem) unchanged; never store large blobs in
-  PostgreSQL.
-
-### Architecture constraints
-
-DSH/MCP/Gateway/Product boundaries are unchanged; DSH never accesses
-PostgreSQL directly. Community PostgreSQL remains read-only evidence.
-Detailed plan: `docs/architecture/POSTGRESQL_MIGRATION_PLAN.md`.
-
-### Acceptance criteria
-
-All backend tests run against the PostgreSQL test database; no SQLite code
-path remains; public store method shapes are unchanged; data migration is
-idempotent and verified; backup/restore drill passes; compose/docs are
-updated.
+- **目标/范围**：以 PostgreSQL 作为唯一 BYQ domain-store engine。增加 `byq_domain`、`byq_domain_test`、`byq_bootstrap`；引入 `services/backend/app/db.py`（SQLAlchemy Core + psycopg），以 ResearchStore 为 pattern 迁移全部 stores；移除 SQLite/`BYQ_DOMAIN_DB_PATH`；提供 idempotent SQLite→PG logical migration（`KEEP_NEW`/`VERIFY_EQUAL`/`REPORT_MISMATCH`）、verification 和 `pg_dump`/`pg_restore` drill。LocalObjectStore 不变，不把 large blobs 存 PG。
+- **边界/验收**：DSH/MCP/Gateway/Product boundaries 不变；Community PG 只读。全部 backend tests 使用 PG test DB，无 SQLite path，public store methods 不变；migration 幂等验证、restore drill/Compose/docs 通过。详细计划见 `docs/architecture/POSTGRESQL_MIGRATION_PLAN.md`。
 
 ## Phase 32–40 — Community Product-Depth Completion
 
-These phases are the active continuation of the Product Completion Program.
-`STATUS.md` selects exactly one next phase. The per-surface checklist in
-`COMMUNITY_FULL_PARITY_PHASE_DETAILS.md` and the dependencies in
-`COMMUNITY_FULL_PARITY_PLAN.md` refine this normative scope but do not replace
-this plan or authorize work past the current phase.
-
-Every phase uses one isolated worktree/branch/PR, real Product API flows,
-contract and owner-isolation tests, Chrome DevTools MCP evidence, and a
-Community feature checklist. Mock-only Playwright navigation is useful UI
-regression coverage but is not product acceptance evidence.
-
-### Phase 32 — Backtest workspace depth (`COMPLETE`)
-
-Delivered the immutable `signal_snapshot` submit path, create wizard, result
-workspace depth, compare/delete/mobile flows, and browser evidence. The
-strategy-source → `signal_snapshot` producer was deliberately excluded by
-ADR-0017 and transferred to D-0002 / Phase 40 pending a dedicated ADR.
-
-### Phase 33 — Strategy workspace depth (`COMPLETE`)
-
-Delivered durable strategy drafts, soft-supersede delete, immutable versions,
-version history, backtest counts, read-only version detail, Product API/MCP
-contracts, and browser evidence. D-0009–D-0012 are explicitly assigned to
-Phase 40 and do not remain attached to the completed phase.
-
-### Phase 34 — Stock Pool depth (`COMPLETE`)
-
-ADR-0020 accepts the BYQ Stock Pool contract for
-mutable pool identity, immutable membership snapshots, version/fingerprint,
-custom/index/dynamic provenance, weight validation, activation/deactivation,
-delete semantics, and references from Paper Trading/research/backtest.
-
-Delivered owner-scoped catalog/detail, member and weight editing through new
-snapshots, index constituents, filter conditions, historical snapshots,
-lifecycle actions, mobile cards, Product API routes, and MCP `byq_pool_*`
-capabilities. All five detail tabs use persisted data. Real Product API Chrome
-MCP evidence and the Community checklist are recorded under
-`docs/evidence/phase-34/`.
-
-### Phase 35 — Paper Trading depth (`COMPLETE`)
-
-Add persisted snapshots, manual settlement, order detail, BYQ asset-bundle
-import/export, explicit risk controls, and complete ledger wiring without live
-broker integration or conflating Paper Trading with Backtest.
-
-Delivered all six persisted tabs, exact T+1 and cash/ledger semantics,
-immutable manual settlement, frozen Stock Pool binding, versioned controls,
-auditable immediate order results, portable digested bundles, Product API and
-bounded read-only MCP projections, real-browser E2E, and Chrome MCP evidence.
-
-### Phase 36 — Agent workbench depth (`COMPLETE`)
-
-Implement curated WorkflowTrace cards, assistant drawer, thinking and
-approval panels, and actionable strategy/stock/optimization projections under
-Accepted ADR-0018. Phase 36 owns the Agent-specific components required for
-its exit criteria; Phase 40 may generalize proven components later and is not
-a prerequisite.
-
-Delivered the closed ADR-0018 card/activity contract end to end, owner-scoped
-Gateway hydration for domain-backed cards, bounded public activity and answer
-projections, actionable workbench cards, local/global approval surfaces,
-conversation starters, and a responsive Xiaoba assistant drawer. Real Product
-API Chrome MCP evidence and the Community-derived checklist are stored under
-`docs/evidence/phase-36/`.
-
-### Phase 37 — My Space depth (`COMPLETE`)
-
-Implement audited model credential CRUD/binding, asset re-import, and Agent
-Policy preset/rule CRUD under Accepted ADR-0019. Secrets remain write-only/
-masked and never enter browser responses or traces. Phase 37 owns the specific
-model-settings component required for acceptance; Phase 40 may generalize it
-later and is not a prerequisite.
-
-Delivered owner-scoped encrypted credential lifecycle, model profiles and
-Product Agent binding with private runtime resolution; canonical digested
-workspace asset re-import with new owner-safe identities and honest backtest
-archives; and effective Agent Policy presets/rule CRUD with audit and platform
-approval precedence. Real Product API Chrome MCP evidence and the
-Community-derived checklist are stored under `docs/evidence/phase-37/`.
-
-### Phase 38 — Operations workbenches (`COMPLETE`)
-
-Replace placeholder operations routes with real RBAC/audit-protected
-projections and bounded actions under Accepted ADR-0019 and ADR-0022.
-Phase 38 owns its operations-specific components; Phase 40 may generalize
-proven components later and is not a prerequisite. PostgreSQL market-cache
-status replaces Community Redis assumptions.
-
-Delivered nine responsive administrator workbenches backed by a bounded
-`operations.v1` Product API projection, normalized Runtime Adapter session and
-DSH usage accounting, and an admin-only versioned/idempotent/audited monitoring
-threshold write. The browser sees no secrets, raw DSH events, SQL/runtime
-control surface, Redis assumption, or direct internal-service endpoint. Real
-Product API desktop/mobile Chrome evidence and the Community checklist are
-stored under `docs/evidence/phase-38/`.
-
-### Phase 39 — Data Center / Data Sync depth (`COMPLETE`)
-
-Implement Tushare-only source configuration, connection test, sync jobs, and
-coverage audit after ADR-0019. BaoStock and AKShare remain DROP.
-
-Delivered admin-only write-only Tushare credential lifecycle, bounded
-connection testing, durable/idempotent asynchronous daily-bar jobs with
-per-symbol outcomes, canonical PostgreSQL import, and honest observed coverage
-and quality audit. All browser calls use Product API; real desktop/mobile Chrome
-MCP evidence and the Community checklist are stored under
-`docs/evidence/phase-39/`.
-
-### Phase 40 — Shared components and final parity closure (`COMPLETE`)
-
-Finish reusable product components and resolve every transferred D-item,
-including the signal producer decision. Re-run the parity matrix with no
-unexplained PARTIAL/MISSING item and execute a real-Product-API, no-mock,
-multi-user golden journey before reopening the v1.0 RC gate.
-
-Delivered the ADR-0023 two-tier isolated signal producer, closed D-0002 and
-D-0009–D-0012, and explicitly dropped observation-triggered D-0003 after a
-zero-orphan audit. Direct paginated strategy projections, shared state and
-pagination components, deep immutable strategy fields and owner approval are
-covered by scale/component/contract tests. A fresh Compose deployment passed
-the no-mock two-user Product API journey and Chrome desktop/mobile review under
-`docs/evidence/phase-40/`; the v1.0 RC review gate is reopened.
-
-### Post-Phase 40 maintenance — DSH Upgrade Lane (`COMPLETE`)
-
-Delivered the repeatable compatibility, dependency-evidence, and isolated
-upgrade workflow defined in `DSH_UPGRADE_LANE.md`. The Product Runtime is
-qualified at Python `0.1.1rc1` plus a complete exact npm `0.1.1-rc.1` closure;
-rc.6 remains the rollback baseline. This maintenance task did not change a
-Product phase or widen Product Agent capabilities.
-
-## Post-parity Product Experience Program
-
-The maintainer postponed the v1.0 RC review on 2026-08-23 and selected the
-conversation-first direction recorded in ADR-0024. The detailed source of
-truth is `FRONTEND_EXPERIENCE_PLAN.md`; every phase remains independently
-reviewable, testable, rollback-capable, and previewed from merged `main`.
-
-### Phase 41 — Product experience baseline (`COMPLETE`)
-
-Accept ADR-0024; inspect and classify the current BYQ and read-only Community
-shell/session/theme/settings evidence; fix the single-level information
-architecture, durable conversation ownership, semantic appearance contract,
-Phases 42-48 acceptance sequence, and post-merge preview requirement. No
-runtime or UI implementation is claimed in this decision phase.
-
-### Phase 42 — Conversation-first Product shell (`COMPLETE`)
-
-Implement the single-level sidebar, compact toolbar, default Xiaoba route,
-recent-conversation section, bottom user entry and mobile drawer while
-preserving every existing capability through routes or explicit relocation.
-Use global semantic tokens and current Product API only.
-
-Delivered the single-level desktop sidebar, compact header, Xiaoba default
-route, current-session list, expanded bottom account menu, and accessible
-mobile drawer. Existing capability routes and administrator visibility remain
-preserved. Durable titles, lifecycle, search, and replay remain explicitly in
-Phase 43.
-
-### Phase 43 — Durable conversations and Xiaoba workspace (`COMPLETE`)
-
-Implement the owner-scoped BYQ conversation catalog, titles/lifecycle/search,
-restart-safe normalized replay, and centered chat workspace with bounded
-activity/context disclosures.
-
-### Phase 44 — User center and durable appearance (`COMPLETE`)
-
-Consolidate Profile, Assets, Models, Agent Policy and Paper Trading access.
-Implement `ui-preferences.v1`, system/light/dark modes, the closed accent
-palette, global theme application and cross-device persistence.
-
-### Phase 45 — System Settings dialog (`COMPLETE`)
-
-Embed the existing bounded administrator operations and Data Center surfaces
-in a route-backed two-column large dialog/full-screen mobile surface without
-weakening Product API RBAC or audit.
-
-### Phase 46 — Core management workspace redesign (`COMPLETE`)
-
-Unify Stock Pool, Strategy and Backtest catalog/detail interactions, visual
-hierarchy, Workflow-card deep links, charts and responsive behavior while
-preserving every completed domain invariant and deep result surface.
-
-### Phase 47 — Interaction, responsive and accessibility closure (`COMPLETE`)
-
-Standardize global states and controls, unsaved-change behavior, keyboard/focus,
-responsive content and the complete theme/chart accessibility matrix.
-
-### Phase 48 — Product coherence golden journey (`COMPLETE`)
-
-Run a fresh no-mock, two-user desktop/tablet/mobile Product journey across
-conversation, pool, strategy, approval, signal, backtest, history, assets,
-models, appearance and administrator settings. Reconcile relocated Community
-capabilities and reopen, but do not automatically pass, the human v1.0 RC
-review.
-
-Delivered a repeatable fresh-stack CI gate that seeds only a secondary user
-and explicit canonical test bars, then drives the complete two-user journey
-through real Product endpoints. Conversation restore, Stock Pool, immutable
-strategy approval, isolated signal production, deterministic Backtest,
-profile, appearance, encrypted model binding, asset transfer and admin RBAC
-all pass without owner crossover. Community relocation was reconciled with no
-unexplained gap. Desktop/tablet/mobile Chrome review found and fixed one dark
-mobile selector contrast defect; final authenticated Lighthouse Accessibility
-and Best Practices both score 100. The human v1.0 RC review is open and
-pending, not automatically accepted.
-
-## Personal Workspace Tenancy Program
-
-The maintainer postponed the v1.0 RC decision again on 2026-08-24 to establish
-an explicit personal-workspace boundary before release. ADR-0025 and
-`PERSONAL_WORKSPACE_TENANCY_PLAN.md` are the detailed sources of truth. Each
-phase remains isolated, migration-safe, CI-gated, and previewed from merged
-`main`.
-
-### Phase 49 — Personal workspace boundary (`COMPLETE`)
-
-Inspect and classify the read-only Community tenancy/context evidence; accept
-ADR-0025 and `personal-workspace.v1`; separate user, workspace, platform and
-Engineering resources; and fix the trusted-context, migration, verification,
-rollback and future-team boundaries. No runtime or schema completion is
-claimed by this decision phase.
-
-### Phase 50 — Workspace foundation and verified backfill (`COMPLETE`)
-
-Create durable personal workspaces and owner memberships, provision them with
-users, add nullable workspace keys, and run an idempotent manifested backfill.
-Quarantine/report any row whose historical owner cannot map exactly to one
-durable user. Verify all parent, reference, uniqueness and count invariants
-before imposing constraints or changing authorization.
-
-Delivered additive personal workspace/membership tables, atomic provisioning
-for new and existing users, nullable indexed workspace keys across all
-classified domain tables, and a transactional dry-run/execute backfill. Exact
-historical owners are mapped; unmatched/conflicting records are preserved in
-manifested quarantine reports; inherited children and relationship equality
-are verified. Owner-based authorization intentionally remains until Phase 51.
-
-### Phase 51 — Trusted context and domain authorization cutover (`COMPLETE`)
-
-Resolve the personal workspace from durable authentication, propagate it only
-through trusted Gateway/Backend/MCP/runtime paths, cut workspace resources from
-principal authorization to `workspace_id`, and enforce verified constraints.
-Complete cross-workspace, guessed-ID, idempotency, lineage, approval, object,
-bundle and Agent-to-Domain denial tests without exposing DSH internals or
-allowing DSH database access.
-
-Delivered durable session workspace resolution; browser-header stripping;
-trusted Gateway → Runtime Adapter → Product DSH → MCP → Backend propagation;
-fail-closed membership validation; root/child write stamping and mismatch
-rejection; workspace-scoped idempotency indexes; and the verified 31-table
-non-null contract migration. Full Compose, real Product API, and no-mock
-two-user coherence remained green; evidence is under
-`docs/evidence/phase-51/`.
-
-### Phase 52 — Product orientation and isolation closure (`COMPLETE`)
-
-Expose only the bounded current personal-workspace identity, then execute
-fresh-provision, migration, restart, backup/restore and two-user no-mock Product
-journeys across all durable surfaces. Complete desktop/mobile Chrome evidence,
-Community checklist reconciliation, and a report of any quarantined legacy
-rows. Do not add workspace switching, invitations, sharing or team roles.
-
-Delivered bounded personal-workspace login/session projection, explicit shell
-and asset-transfer orientation, source/destination-safe bundle diagnostics,
-and metadata-safe Paper-account denial. Fresh provisioning, backup/restore,
-PostgreSQL restart and legacy forward-repair drills preserve the workspace
-identity with 31 enforced tables, 22 zero relationship checks and no
-quarantine. The extended no-mock journey covers both personal workspaces and
-all required Product surfaces, including Paper Trading and browser-header
-spoof denial. Desktop/mobile Chrome MCP and Community classification evidence
-is stored under `docs/evidence/phase-52/`. No team affordance was added.
-
-### Phase 53 — Security master and bounded market-data synchronization (`COMPLETE`)
-
-Close the Beta Data Center bootstrap gap under ADR-0026. Add one explicit
-Tushare `stock_basic` adapter capability for the complete `L/P/D` stock
-lifecycle, atomically persist content-addressed immutable snapshots and a
-searchable current catalogue, and expose only normalized bounded projections
-through Gateway/Product API. Daily-bar jobs freeze their symbols from an
-explicit list, selected catalogue rows, filtered latest security master, or an
-owner-authorized Stock Pool snapshot. Incremental mode begins after each
-symbol's latest persisted bar; public job projections return bounded previews
-and results.
-
-Acceptance requires PostgreSQL snapshot/idempotency/history tests, provider
-translation and fail-closed tests, selection authorization and response-bound
-tests, Product API RBAC/contracts, frontend tests, Community classification,
-and desktop/mobile Chrome DevTools MCP review against a real Product API. The
-phase does not add ETFs, indices, fundamentals, a trading calendar, alternate
-providers, arbitrary provider proxying, or any formal-release action. Stop at
-a Draft PR for human review; do not merge, mark ready, tag, deploy, or publish.
-
-Delivered the closed `security-master.v1` provider contract, PostgreSQL current
-catalogue plus immutable content-addressed snapshots, admin sync jobs, bounded
-Product API search and job projections, four frozen daily-selection modes, and
-per-symbol incremental start semantics. Clean-PostgreSQL Backend, Gateway,
-frontend and architecture CI passed. A real Product API desktop/mobile Chrome
-flow completed write-only credential storage, an atomic `L/P/D` catalogue
-sync, catalogue search, and a two-symbol incremental daily job using only an
-isolated protocol fixture. Evidence is under `docs/evidence/phase-53/`.
-
-### Phase 54 — Daily market synchronization automation (`COMPLETE`)
-
-Accept ADR-0027; add a durable Asia/Shanghai schedule, closed Tushare trading
-calendar contract, one exact-date full-market daily snapshot per open session,
-bounded catch-up/retry/lease recovery, optional atomic security-master refresh,
-and an independently deployable trusted Data Plane worker. Expose versioned
-configuration, run-now command, worker health, latest calendar/open-session
-coverage and bounded job history through Gateway/Product API and the responsive
-Data Center. Preserve manual Phase 53 jobs and ADR-0013 `KEEP_NEW` semantics.
-
-Acceptance requires provider/DB/API/architecture tests, clean Compose worker
-startup, real Product API desktop/mobile browser review, same-origin requests,
-and a Community-derived checklist. No suspension, exact limit, adjustment,
-corporate-action, benchmark, index-membership or fundamental contract is added.
-
-### Phase 55 — Backtest data readiness and execution status (`COMPLETE`)
-
-Add a typed backtest/signal data-requirement manifest, trading-session and
-security-lifecycle-aware coverage classification, bounded missing-range repair,
-`waiting_for_data` orchestration, immutable ready-input identity, exact daily
-suspension/trading status and price-limit contracts. Signal and backtest workers
-remain provider-free and cannot start until required inputs are complete.
-
-Accepted ADR-0028 and implemented the typed manifest, lifecycle/session-aware
-assessment, exact suspension/limit persistence, bounded durable repair,
-`waiting_for_data` promotion and immutable ready-input identity. Backend,
-frontend, full Compose, no-mock Product and desktop/mobile Chrome evidence is
-under `docs/evidence/phase-55/`.
-
-### Phase 56 — Adjusted research prices and corporate actions (`COMPLETE`)
-
-Add durable adjustment factors and implemented corporate actions with explicit
-effective/ex-date semantics. Preserve raw unadjusted execution prices while
-constructing a content-addressed adjusted research/signal view. Freeze real
-corporate actions into signal/backtest manifests and regression-test dividends,
-share ratios and false ex-right signal prevention.
-
-Accepted ADR-0029 and implemented exact-date adjustment-factor and implemented
-corporate-action synchronization, content-addressed forward-adjusted research
-inputs, immutable raw execution bars, and declared-date dividend/share
-settlement. Backend, frontend, full Compose, no-mock Product and desktop/mobile
-Chrome evidence is under `docs/evidence/phase-56/`.
-
-### Phase 57 — Benchmark, point-in-time universe and declared factor data (`COMPLETE`)
-
-Add benchmark index daily data and optional point-in-time index membership for
-relative performance and historical dynamic universes. Introduce strategy-
-declared optional data dependencies for valuation/fundamental/factor inputs with
-announcement/effective-date no-lookahead rules. ETF/fund scope remains excluded
-unless a later Accepted ADR explicitly authorizes it.
-
-Accepted ADR-0030 and implemented closed benchmark/index-weight/daily-basic/
-financial-indicator contracts, core daily automation, bounded declared-input
-repair, immutable v3 readiness, historical membership and announcement-aware
-research columns, sandbox membership enforcement, and frozen benchmark/excess
-performance. Backend, frontend, full Compose, no-mock Product and desktop/mobile
-Chrome evidence is under `docs/evidence/phase-57/`.
+这些 phases 延续 Product Completion Program；`STATUS.md` 只选择一个 next phase。每 phase 真实 Product API、owner isolation tests、Chrome MCP 和 Community checklist；mock-only Playwright 不是 acceptance evidence。详细清单/依赖见 `COMMUNITY_FULL_PARITY_PHASE_DETAILS.md`、`COMMUNITY_FULL_PARITY_PLAN.md`。
+
+- **Phase 32 Backtest depth（`COMPLETE`）**：交付 `signal_snapshot` submit/wizard、result depth、compare/delete/mobile；producer 由 ADR-0017 排除并转 D-0002。
+- **Phase 33 Strategy depth（`COMPLETE`）**：durable drafts、soft-supersede、immutable versions/history/counts/read-only、Product API/MCP/evidence；D-0009–D-0012 转 Phase 40。
+- **Phase 34 Stock Pool（`COMPLETE`）**：ADR-0020 mutable identity/immutable snapshots/fingerprint/types/provenance/weights/lifecycle/references；五 detail tabs、`byq_pool_*`、evidence 在 `docs/evidence/phase-34/`。
+- **Phase 35 Paper Trading（`COMPLETE`）**：六 tabs、T+1/cash ledger、immutable settlement、frozen pool、controls、order audit、digested bundles、Product API/MCP/E2E；无 live broker。
+- **Phase 36 Agent workbench（`COMPLETE`）**：ADR-0018 curated cards/activity/answer、Gateway hydration、approvals/starters/Xiaoba drawer；evidence `phase-36/`。
+- **Phase 37 My Space（`COMPLETE`）**：ADR-0019 encrypted credential lifecycle/private resolution、model binding、asset re-import/new IDs、policy rules/audit；evidence `phase-37/`。
+- **Phase 38 Operations（`COMPLETE`）**：ADR-0019/0022 下九个 workbenches、`operations.v1`、normalized DSH usage、audited threshold；无 secret/raw events/SQL control/Redis；evidence `phase-38/`。
+- **Phase 39 Data Center（`COMPLETE`）**：Tushare-only credential/test/durable jobs/PG import/coverage；BaoStock/AKShare DROP；evidence `phase-39/`。
+- **Phase 40 parity closure（`COMPLETE`）**：ADR-0023 isolated producer；关闭 D-0002、D-0009–12，zero-orphan 后 drop D-0003；shared state/pagination/deep strategy；no-mock two-user/Chrome evidence `phase-40/`，重新开放 v1.0 RC gate。
+- **Post-Phase 40 DSH Upgrade Lane（`COMPLETE`）**：Python `0.1.1rc1` + exact npm `0.1.1-rc.1` qualified，rc.6 rollback；不改 Product phase/capability。
+
+## Post-parity Product Experience Program（Phase 41–48）
+
+Maintainer 于 2026-08-23 延后 RC，选择 ADR-0024 conversation-first；详细 source 为 `FRONTEND_EXPERIENCE_PLAN.md`。
+
+- **Phase 41 baseline（`COMPLETE`）**：接受 ADR-0024，分类 shell/session/theme/settings，固定 IA、conversation ownership、appearance contract、42–48 sequence/preview；不声称 implementation。
+- **Phase 42 shell（`COMPLETE`）**：single-level sidebar/toolbar、Xiaoba default、current sessions、account menu/mobile drawer，保留 routes/admin；durable title 留 Phase 43。
+- **Phase 43 conversations（`COMPLETE`）**：owner-scoped catalog、titles/lifecycle/search、restart-safe normalized replay、centered workspace。
+- **Phase 44 user center/appearance（`COMPLETE`）**：consolidate Profile/Assets/Models/Policy/Paper；`ui-preferences.v1`、system/light/dark、closed accents/cross-device。
+- **Phase 45 System Settings（`COMPLETE`）**：route-backed desktop dialog/mobile full-screen operations/Data Center，不弱化 RBAC/audit。
+- **Phase 46 management redesign（`COMPLETE`）**：统一 Pool/Strategy/Backtest catalog/detail、deep links/charts/responsive，保留 domain invariants/results。
+- **Phase 47 interaction/accessibility（`COMPLETE`）**：global states、unsaved changes、keyboard/focus/responsive/theme/chart matrix。
+- **Phase 48 golden journey（`COMPLETE`）**：fresh no-mock two-user desktop/tablet/mobile journey 覆盖完整 Product；无 crossover/unexplained gap，修复 dark mobile selector contrast，Lighthouse Accessibility/Best Practices 100；human RC open/pending。
+
+## Personal Workspace Tenancy Program（Phase 49–52）
+
+Maintainer 于 2026-08-24 再次延后 RC，以 ADR-0025/`PERSONAL_WORKSPACE_TENANCY_PLAN.md` 建立 explicit personal workspace boundary。
+
+- **Phase 49 boundary（`COMPLETE`）**：分类 Community tenancy；接受 ADR-0025/`personal-workspace.v1`；区分 user/workspace/platform/Engineering，固定 context/migration/rollback/future-team；不声称 schema runtime 完成。
+- **Phase 50 foundation/backfill（`COMPLETE`）**：durable workspaces/memberships、atomic provisioning、nullable indexed keys、transactional dry-run/execute backfill；ambiguous rows quarantine/report；authorization 暂保持 owner-based。
+- **Phase 51 authorization cutover（`COMPLETE`）**：session workspace resolution、browser-header stripping、Gateway→Runtime Adapter→DSH→MCP→Backend trusted propagation、membership fail closed、write stamping/mismatch rejection、workspace idempotency、31-table non-null；evidence `phase-51/`。
+- **Phase 52 closure（`COMPLETE`）**：bounded workspace projection/orientation、bundle diagnostics/Paper not-found；fresh provisioning/restore/restart/forward repair，31 enforced tables、22 zero checks/no quarantine；two-workspace/Product/Chrome evidence `phase-52/`，无 team affordance。
+
+## Beta Data Plane Completion（Phase 53–57）
+
+- **Phase 53 Security Master（`COMPLETE`）**：ADR-0026 closed Tushare `stock_basic` L/P/D，atomic content-addressed snapshots/current catalog，bounded Product search/admin jobs；daily selection `explicit`/`selected`/`security_master`/`stock_pool`，真实 per-symbol incremental。无 ETF/index/fundamental/calendar/alternate provider。Evidence `phase-53/`。
+- **Phase 54 Daily automation（`COMPLETE`）**：ADR-0027 Asia/Shanghai schedule、closed trading calendar、exact-date full-market daily snapshot、bounded catch-up/retry/lease、optional security refresh、independent `data-worker`、Product config/run-now/health/history；保留 manual/KEEP_NEW。无 suspension/limit/adjustment/action/benchmark/fundamental。
+- **Phase 55 Data readiness（`COMPLETE`）**：ADR-0028 typed requirement manifest、session/lifecycle-aware coverage、bounded repair、`waiting_for_data`、immutable ready identity、exact suspension/status/limits；signal/backtest workers provider-free。Evidence `phase-55/`。
+- **Phase 56 Adjusted research/actions（`COMPLETE`）**：ADR-0029 durable factors/implemented actions/effective dates；raw execution prices 不复权，构造 content-addressed research view；actions 冻结进 manifests，并测试 dividends/share ratios/false ex-right signals。Evidence `phase-56/`。
+- **Phase 57 Benchmark/PIT/declared data（`COMPLETE`）**：ADR-0030 closed benchmark/index-weight/daily-basic/financial-indicator contracts、daily automation、bounded declared-input repair、immutable v3 readiness、historical membership/announcement no-lookahead、sandbox membership、frozen benchmark/excess performance。ETF/fund 排除；evidence `phase-57/`。
+
+## Machine-readable phase status markers
+
+以下稳定 markers 供 CI 校验 Phase ID 与完成状态；说明正文仍以各 program section 为准。
+
+### Phase 34 — Stock Pool depth(`COMPLETE`)
+### Phase 35 — Paper Trading depth(`COMPLETE`)
+### Phase 36 — Agent workbench depth(`COMPLETE`)
+### Phase 37 — My Space depth(`COMPLETE`)
+### Phase 38 — Operations workbenches(`COMPLETE`)
+### Phase 39 — Data Center / Data Sync depth(`COMPLETE`)
+### Phase 40 — Shared components and parity closure(`COMPLETE`)
+### Phase 41 — Product experience baseline(`COMPLETE`)
+### Phase 42 — Conversation-first Product shell(`COMPLETE`)
+### Phase 43 — Durable conversations and Xiaoba workspace(`COMPLETE`)
+### Phase 44 — User center and durable appearance(`COMPLETE`)
+### Phase 45 — System Settings dialog(`COMPLETE`)
+### Phase 46 — Core management workspace redesign(`COMPLETE`)
+### Phase 47 — Interaction, responsive and accessibility closure(`COMPLETE`)
+### Phase 48 — Product coherence golden journey(`COMPLETE`)
+### Phase 49 — Personal workspace boundary(`COMPLETE`)
+### Phase 50 — Workspace foundation and verified backfill(`COMPLETE`)
+### Phase 51 — Trusted context and authorization cutover(`COMPLETE`)
+### Phase 52 — Product orientation and isolation closure(`COMPLETE`)
+### Phase 53 — Security master and bounded synchronization(`COMPLETE`)
+### Phase 54 — Daily market synchronization automation(`COMPLETE`)
+### Phase 55 — Backtest data readiness and execution status(`COMPLETE`)
+### Phase 56 — Adjusted research prices and corporate actions(`COMPLETE`)
+### Phase 57 — Benchmark, point-in-time universe and declared data(`COMPLETE`)

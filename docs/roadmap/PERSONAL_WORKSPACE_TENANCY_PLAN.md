@@ -4,183 +4,56 @@
 - Decision: [ADR-0025](../architecture/adr/ADR-0025-personal-workspace-tenancy.md)
 - Contract: [`personal-workspace.v1`](../contracts/personal-workspace.md)
 
-## Outcome
+## 结果
 
-Move BYQ from principal-keyed personal data to an explicit personal workspace
-boundary without adding team-product complexity. At completion, every durable
-user has one private workspace, every classified domain asset is authorized by
-trusted workspace context, and the current Product journeys remain usable and
-isolated across restart, import/export, Agent actions, and browser navigation.
+在不增加 team-product complexity 的前提下，将 BYQ 从 principal-keyed personal data 迁移到显式 personal workspace boundary。完成后，每个 durable user 都有一个 private workspace；每个已分类 domain asset 都由 trusted workspace context 授权；现有 Product journeys 在 restart、import/export、Agent actions 和 browser navigation 中保持可用、隔离。
 
-Each phase uses one isolated worktree, branch, and PR. It stops at its own
-acceptance gate. Under the pre-release ADR-0015 exception, CI-green auto-merge
-may be enabled; after merge, the latest `main` services and frontend must be
-started on `0.0.0.0:80` for maintainer validation.
+每个 phase 使用独立 worktree、branch、PR，并停在自己的 acceptance gate。Pre-release ADR-0015 exception 下可启用 CI-green auto-merge；merge 后必须从最新 `main` 启动 services/frontend 于 `0.0.0.0:80` 供 maintainer 验证。
 
-## Fixed scope and non-goals
+## 固定 scope 与非目标
 
-Included:
+包含：每用户自动 provision 一个 personal workspace；workspace membership/trusted request context；additive schema、deterministic backfill、quarantine/report、verification、contract migration/rollback evidence；Product、Backend、MCP、Agent orchestration、object references、bundles、lineage、approvals 和 idempotency 的 workspace authorization；Product shell 中有界 personal-workspace identity；two-user no-crossover/recovery evidence。
 
-- automatic one-per-user personal workspace provisioning;
-- workspace membership and trusted request context;
-- additive schema, deterministic backfill, quarantine/report, verification,
-  contract migration, and rollback evidence;
-- workspace authorization for Product, Backend, MCP, Agent orchestration,
-  object references, bundles, lineage, approvals, and idempotency;
-- a bounded personal-workspace identity in the Product shell;
-- two-user no-crossover and recovery evidence.
+不包含：organizations、invitations、sharing、member administration、role editor；multiple workspace create/switch；billing、subscriptions、entitlements、quotas、commercial data products；canonical market data 的 tenant copies；PostgreSQL RLS/service-role redesign；修改 DSH generic runtime 或允许 DSH direct database access。
 
-Excluded:
+## Phase 49 — Boundary decision 与 migration classification（`COMPLETE`）
 
-- organizations, invitations, sharing, member administration, role editor;
-- multiple workspace creation or switching;
-- billing, subscriptions, entitlements, quotas, commercial data products;
-- tenant-specific copies of canonical market data;
-- PostgreSQL RLS or service-role redesign;
-- changes to DSH's generic runtime or direct DSH database access.
+交付：接受 ADR-0025/`personal-workspace.v1`；将全部资源分类为 user/workspace/platform/Engineering；按强制 sequence 检查 Community tenancy evidence；固定 expand/backfill/verify/contract 顺序、ambiguous-row quarantine、compatibility window、rollback rules 和 future team seam。
 
-## Phase 49 — Boundary decision and migration classification (`COMPLETE`)
+Acceptance：不声称 runtime/schema behavior 已改变；区分 actor identity/authorization boundary；显式排除 team features/platform data；Phase 50 具有精确 prerequisites/fail-closed migration rules。
 
-### Deliverables
+## Phase 50 — Workspace foundation 与 verified backfill（`COMPLETE`）
 
-- Accept ADR-0025 and `personal-workspace.v1`.
-- Classify every current resource as user, workspace, platform, or Engineering
-  scope.
-- Inspect and classify Community tenant/context/ownership evidence under the
-  mandatory migration sequence.
-- Fix the expand/backfill/verify/contract order, ambiguous-row quarantine,
-  compatibility window, rollback rules, and future team seam.
+Scope：
 
-### Acceptance
+- 通过 idempotent PostgreSQL bootstrap/migration pattern 添加 `workspaces`/`workspace_memberships`。
+- 在一个 transaction 中为每个 durable user（含新用户）provision 恰好一个 personal workspace/owner membership。
+- 为 workspace-resource roots 和必需 child/audit tables 添加 nullable workspace keys/indexes。
+- 实现 idempotent owner→user→workspace backfill command，输出 versioned manifest、table counts、mismatch details、quarantine/report。
+- 验证 parent-child workspace equality、references、uniqueness、restart idempotency；未验证 table 不强制 non-null。
 
-- No runtime or schema behavior changes are claimed.
-- Actor identity and authorization boundary are distinct.
-- Team features and platform data are explicitly excluded.
-- Phase 50 has exact prerequisites and fail-closed migration rules.
+Acceptance：重复 provisioning/backfill 不创建 duplicate，也不改变已验证 mapping；只填充精确 unique owner mappings，ambiguous/orphan/service identities 报告并保持 unassigned；backup/rollback drill 证明 additive changes 不破坏 Phase 48 Product path；API 暂不将 nullable `workspace_id` 当新 authorization。
 
-## Phase 50 — Workspace foundation and verified backfill (`COMPLETE`)
+Stop：resource 无可证明 owner、parent/child 解析为不同 workspaces，或 counts/references 与 manifest 不符时，不得 contract。
 
-### Scope
+## Phase 51 — Trusted context 与 domain authorization cutover（`COMPLETE`）
 
-- Add `workspaces` and `workspace_memberships` through the repository's
-  idempotent PostgreSQL bootstrap/migration pattern.
-- Provision exactly one personal workspace and owner membership for every
-  durable user, including newly created users, in one transaction.
-- Add nullable workspace keys and indexes to the workspace-resource roots and
-  required child/audit tables.
-- Implement an idempotent owner-to-user-to-workspace backfill command with a
-  versioned manifest, table counts, mismatch details, and quarantine/report.
-- Verify parent-child workspace equality, references, uniqueness, and restart
-  idempotency. Do not enforce non-null on an unverified table.
+Scope：durable session resolution 加 authoritative workspace/membership；Gateway 构造/传播 normalized trusted context 并剥离 browser identity/workspace headers；Backend/Product routes 按 `workspace_id` 授权，actor/creator 只用于 audit；context 经 Runtime Adapter/MCP 传播但不改 raw DSH schemas，不允许 model-selected scope；idempotency、lineage、approval、object retrieval、signal、backtest、paper trading、bundle 全部 workspace-aware；验证后强制 FK/non-null/uniqueness。
 
-### Acceptance
+Acceptance：public headers/body 不能 impersonate workspace；两用户无法 list/get/mutate/approve/replay/import-over/dereference 对方 assets；platform admin 不自动访问他人 workspace；browser 仍只用 Gateway/Product API，DSH 无 database access，Agent domain calls 仍走 MCP；Phase 48 golden behavior 通过。
 
-- Re-running provisioning and backfill creates no duplicate workspace or
-  membership and changes no already-verified mapping.
-- Exact unique owner mappings are filled; ambiguous/orphan/service identities
-  are reported and remain unassigned.
-- Backup and rollback drill prove additive changes do not break the Phase 48
-  Product path.
-- No API treats nullable `workspace_id` as new authorization yet.
+Stop：任何 root 仍只按 `owner_principal` 授权、child/reference 可跨 workspace，或 runtime/MCP 接受 model/client-selected scope 时停止。
 
-### Stop conditions
+Delivered：durable sessions 解析一个 active personal workspace；Gateway 忽略 browser identity/workspace headers，经 Runtime Adapter、Product DSH、MCP、Backend 传播 trusted context。Backend membership validation 在 domain selector 前强制执行。Database triggers 标记 root/child ownership 并拒绝 mismatch。Development migration 将 31 个 classified columns contract 为 `NOT NULL`，22 个 relationship checks 为零且无 quarantine。证据在 `docs/evidence/phase-51/`。
 
-Stop rather than contract if a resource lacks a provable owner, a parent/child
-pair resolves to different workspaces, or counts/references differ from the
-manifest.
+## Phase 52 — Product orientation、recovery 与 isolation closure（`COMPLETE`）
 
-## Phase 51 — Trusted context and domain authorization cutover (`COMPLETE`)
+Scope：在 user shell/session bootstrap 暴露有界 current personal-workspace projection，不加 switcher/membership management；更新 asset export/import language/diagnostics 但不暴露 trust data；运行 fresh provisioning、legacy-compatible migration、backup/restore、restart、downgrade/forward-repair drills；扩展 no-mock journey 至两个 workspace，覆盖 conversation、pool、strategy、approval、signal、backtest、paper、models、preferences、bundle、admin settings；执行 Chrome desktop/mobile review 并记录 Community checklist/network evidence。
 
-### Scope
+Acceptance：新用户自动获得一个可用 workspace；identity 在 logout/login、restart、backup/restore、bundle round-trip 后保持；cross-workspace API/browser 尝试 fail closed 且不泄漏 metadata；正常 personal workflows 完整；UI 明确 personal scope 但无 fake team affordance；最终报告列出 quarantined legacy rows，并确认无 compatibility read fallback 作为 authorization path。
 
-- Extend durable session resolution with the authoritative personal workspace
-  and membership.
-- Make Gateway construct and propagate normalized trusted context while
-  stripping browser-supplied identity/workspace headers.
-- Change Backend repositories and Product routes to authorize workspace-owned
-  resources by `workspace_id`; keep actor/creator fields for audit.
-- Propagate workspace context through Runtime Adapter and MCP without changing
-  raw DSH event schemas or allowing model-selected scope.
-- Make idempotency, lineage, approval, object retrieval, signal production,
-  backtest, paper trading, and bundle import/export workspace-aware.
-- After verification, enforce foreign-key/non-null/uniqueness constraints for
-  migrated workspace tables.
+Delivered：browser bootstrap 在 login/session restoration 暴露同一有界 workspace summary。Shell/bundle UI 标识 current scope，无 selector/member controls；bundle source identity 只作 evidence，durable session 仍是 destination authority。Two-workspace journey 覆盖全部 surface 并忽略 forged browser workspace header。Cross-workspace Paper-account 使用 metadata-safe not-found。Fresh provisioning、backup/restore、PostgreSQL restart 和 Phase 51 pre-contract repair 保持 identity、强制 31 tables、零 relationship failures/zero quarantine。证据在 `docs/evidence/phase-52/`。
 
-### Acceptance
+## 后续 team extension
 
-- Contract tests prove public headers/body cannot impersonate a workspace.
-- Two users cannot list, retrieve, mutate, approve, replay, import over, or
-  dereference each other's assets, including guessed IDs.
-- Platform admin status grants no automatic access to another personal
-  workspace.
-- Browser remains Gateway/Product API only; DSH remains database-free; all
-  Agent domain calls still use MCP.
-- Existing Phase 48 golden behavior passes with workspace authorization.
-
-### Stop conditions
-
-Stop the contract migration if any root remains authorized only by
-`owner_principal`, any child/reference can cross workspaces, or any runtime or
-MCP path accepts model/client-selected scope.
-
-### Delivered
-
-Durable sessions now resolve one active personal workspace; Gateway ignores
-browser identity/workspace headers and propagates the trusted context through
-Runtime Adapter, Product DSH, MCP, and Backend. Backend membership validation
-is mandatory before the retained creator/owner selector reaches domain stores.
-Database triggers stamp root/child workspace ownership and reject mismatches.
-The verified development migration contracted all 31 classified columns to
-`NOT NULL`, with 22 relationship checks at zero and no quarantined rows.
-Cross-workspace, browser-spoof, session projection, runtime environment, MCP
-propagation, full Compose, real Product API, and two-user golden evidence is in
-`docs/evidence/phase-51/`.
-
-## Phase 52 — Product orientation, recovery, and isolation closure
-
-### Scope
-
-- Expose the bounded current personal-workspace projection in the user shell
-  and session bootstrap; do not add a switcher or membership management.
-- Update user-facing asset export/import language and diagnostics to identify
-  the personal workspace without exposing internal trust data.
-- Run fresh database provisioning, legacy-compatible migration, backup/
-  restore, service restart, and downgrade/forward-repair drills.
-- Extend the no-mock Product journey to two personal workspaces across
-  conversation, pool, strategy, approval, signal, backtest, paper trading,
-  models, preferences, bundle transfer, and administrator settings.
-- Perform real Chrome desktop/mobile review and record the Community checklist
-  and network evidence.
-
-### Acceptance
-
-- A new user receives one usable personal workspace automatically.
-- Workspace identity persists across logout/login, restart, backup/restore,
-  and bundle round-trip.
-- Cross-workspace Product API and browser attempts fail closed with no metadata
-  leakage; normal personal workflows remain complete.
-- UI is explicit about personal scope but contains no fake team affordance.
-- The final report lists any quarantined legacy rows and confirms that no
-  compatibility read fallback remains an authorization path.
-
-### Delivered
-
-Durable browser bootstrap exposes the same bounded personal-workspace summary
-at login and session restoration. The shell and bundle UI identify the current
-scope without a selector or membership controls; bundle source identity is
-evidence only and the durable session remains the destination authority. The
-two-workspace no-mock journey spans every required surface and ignores a
-forged browser workspace header. Cross-workspace Paper-account access now uses
-metadata-safe not-found behavior. Fresh provisioning, backup/restore,
-PostgreSQL restart and Phase 51 pre-contract forward repair preserve workspace
-identity, enforce all 31 classified tables, produce zero relationship failures,
-and leave zero quarantined rows. Chrome and Community evidence is under
-`docs/evidence/phase-52/`.
-
-## Later team extension
-
-A later Accepted ADR may introduce team workspaces, multiple memberships,
-roles, invitations, an active-workspace selector, and commercial control-plane
-policy. It must retain workspace-keyed domain assets and separately evaluate
-credential sharing, Agent policy precedence, market-data entitlements, audit
-impersonation, and RLS. None of those decisions is implied by this plan.
+未来 Accepted ADR 可引入 team workspaces、multiple memberships、roles、invitations、active-workspace selector 和 commercial control-plane policy；必须保留 workspace-keyed domain assets，并单独评估 credential sharing、Agent policy precedence、market-data entitlements、audit impersonation 和 RLS。本计划不隐含任何这些决策。
