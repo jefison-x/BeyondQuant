@@ -1,5 +1,7 @@
 # BeyondQuant
 
+<!-- byq:current-completed-phase=57 -->
+
 BeyondQuant (BYQ) is an AI-native quantitative research platform. The current
 completed project stage is **Phase 57** — frozen benchmark performance,
 point-in-time index membership and declared valuation/fundamental research data

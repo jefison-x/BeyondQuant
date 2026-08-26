@@ -1,5 +1,7 @@
 # BeyondQuant Status
 
+<!-- byq:current-completed-phase=57 -->
+
 This file is the phase source of truth. It is intentionally short so a new
 Codex session does not infer project state from commit history.
 
