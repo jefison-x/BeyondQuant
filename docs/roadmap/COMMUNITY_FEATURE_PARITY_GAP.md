@@ -1,53 +1,34 @@
 # Community Feature Parity Gap Audit
 
-Status: **reconciled and closed by Phase 48**. This document was originally
-written after Phase 34 and is retained as the historical gap register. Its
-former `PARTIAL` statements were superseded by Phases 35–40 and the complete
-conversation-first Product experience delivered in Phases 41–48.
+Status: **已由 Phase 48 对账并关闭**。本文最初写于 Phase 34 之后，现作为历史 gap register 保留。先前的 `PARTIAL` 结论已被 Phases 35–40，以及 Phases 41–48 交付的完整 conversation-first Product experience 取代。
 
-## Reconciliation method
+## 对账方法
 
-- The read-only Community frontend under
-  `/home/jefison/projects/BeyondQuant-community/frontend` was inspected by
-  surface; it was never modified or copied.
-- Each capability was classified in
-  `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md` before its corresponding
-  Product phase.
-- The Phase 40 V2 matrix closed domain/workbench parity with no unexplained
-  `PARTIAL` or `MISSING` row.
-- Phases 42–47 deliberately relocated those capabilities into the
-  conversation-first shell, user center, System Settings dialog and unified
-  management workspaces.
-- Phase 48 reran a fresh no-mock, two-user Product journey and desktop,
-  tablet and mobile Chrome review across the composed experience.
+- 按 surface 检查只读 Community frontend `/home/jefison/projects/BeyondQuant-community/frontend`，从未修改或复制。
+- 每项 capability 在对应 Product phase 前，均在 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md` 中分类。
+- Phase 40 V2 matrix 关闭 domain/workbench parity，不留无法解释的 `PARTIAL` 或 `MISSING`。
+- Phases 42–47 有意将能力迁移至 conversation-first shell、user center、System Settings dialog 和统一 management workspaces。
+- Phase 48 在组合体验上重新执行 no-mock、two-user Product journey，以及 desktop/tablet/mobile Chrome review。
 
-## Final disposition
+## 最终处置
 
-| Community surface | BYQ disposition | Final status |
+| Community surface | BYQ 处置 | Final status |
 |---|---|---|
-| Login and durable user identity | Durable username/password Product session; bootstrap token is not normal browser login. | `REDESIGNED_PASS` |
-| Dashboard and quick entry | Xiaoba is the default Product surface; resource summaries/actions remain reachable through Product routes and settings. | `REDESIGNED_PASS` |
-| Agent and conversation history | Owner-scoped durable catalog, turn replay, rename, pin, archive/restore and normalized WorkflowTrace. | `REDESIGNED_PASS` |
-| Research and approvals | BYQ ResearchTask/Artifact/Approval lineage and bounded approval inbox. | `REDESIGNED_PASS` |
-| Stock Pool | Mutable identity plus immutable membership snapshots, lifecycle, weights, history and frozen references. | `REDESIGNED_PASS` |
-| Strategy | Editable drafts, validation, immutable versions, approval, export, history and signal lineage. | `REDESIGNED_PASS` |
-| Backtest | Approved version → isolated signal snapshot → deterministic result with all eight evidence tabs. | `REDESIGNED_PASS` |
-| Paper Trading | Owner-scoped accounts, exact T+1 ledger, settlement, risk controls and safe bundle transfer. | `REDESIGNED_PASS` |
-| Profile and appearance | Durable profile plus versioned system/light/dark and closed accent themes. | `REDESIGNED_PASS` |
-| Models, assets and Agent policy | Encrypted write-only credentials, profiles/binding, validated asset transfer and effective policy rules. | `REDESIGNED_PASS` |
-| Operations and Data Center | Route-backed admin-only bounded projections, Tushare sync and PostgreSQL coverage; no raw infrastructure controls. | `REDESIGNED_PASS` |
-| Shared responsive components | Unified states, pagination, dialogs, charts, focus, unsaved-change and semantic theme behavior. | `REDESIGNED_PASS` |
+| Login 与 durable user identity | 使用 durable username/password Product session；bootstrap token 不是普通 browser login。 | `REDESIGNED_PASS` |
+| Dashboard 与 quick entry | Xiaoba 为默认 Product surface；resource summaries/actions 仍可经 Product routes/settings 访问。 | `REDESIGNED_PASS` |
+| Agent 与 conversation history | Owner-scoped durable catalog、turn replay、rename、pin、archive/restore 和 normalized WorkflowTrace。 | `REDESIGNED_PASS` |
+| Research 与 approvals | BYQ ResearchTask/Artifact/Approval lineage 和有界 approval inbox。 | `REDESIGNED_PASS` |
+| Stock Pool | Mutable identity 加 immutable membership snapshots、lifecycle、weights、history 和 frozen references。 | `REDESIGNED_PASS` |
+| Strategy | Editable drafts、validation、immutable versions、approval、export、history 和 signal lineage。 | `REDESIGNED_PASS` |
+| Backtest | Approved version → isolated signal snapshot → 带全部八个 evidence tabs 的 deterministic result。 | `REDESIGNED_PASS` |
+| Paper Trading | Owner-scoped accounts、精确 T+1 ledger、settlement、risk controls 和安全 bundle transfer。 | `REDESIGNED_PASS` |
+| Profile 与 appearance | Durable profile 加 versioned system/light/dark 和封闭 accent themes。 | `REDESIGNED_PASS` |
+| Models、assets 与 Agent policy | Encrypted write-only credentials、profiles/binding、validated asset transfer 和 effective policy rules。 | `REDESIGNED_PASS` |
+| Operations 与 Data Center | Route-backed、admin-only、有界 projections，Tushare sync 和 PostgreSQL coverage；无 raw infrastructure controls。 | `REDESIGNED_PASS` |
+| Shared responsive components | 统一 states、pagination、dialogs、charts、focus、unsaved-change 和 semantic theme behavior。 | `REDESIGNED_PASS` |
 
-The final detailed comparison remains
-[`COMMUNITY_FEATURE_PARITY_MATRIX_V2.md`](COMMUNITY_FEATURE_PARITY_MATRIX_V2.md).
-The Phase 48 residual Product and release work is recorded separately in
-[`../evidence/phase-48/PRODUCT_GAP_REGISTER.md`](../evidence/phase-48/PRODUCT_GAP_REGISTER.md).
-No historical gap in this file authorizes reintroducing Community APIs,
-runtime, storage, BaoStock, AKShare, VectorBT, PydanticAI or Hermes.
+最终详细比较见 [`COMMUNITY_FEATURE_PARITY_MATRIX_V2.md`](COMMUNITY_FEATURE_PARITY_MATRIX_V2.md)。Phase 48 残余 Product/release 工作另见 [`../evidence/phase-48/PRODUCT_GAP_REGISTER.md`](../evidence/phase-48/PRODUCT_GAP_REGISTER.md)。本文任何历史 gap 都不授权重新引入 Community APIs、runtime、storage、BaoStock、AKShare、VectorBT、PydanticAI 或 Hermes。
 
-## Release meaning
+## Release 含义
 
-Parity and Product-experience implementation are complete, but this is not an
-automatic v1.0 release declaration. Phase 48 only reopens the human release-
-candidate review required by ADR-0024. The maintainer must separately evaluate
-the release evidence and decide whether to accept an RC.
+Parity 和 Product-experience implementation 已完成，但这不自动声明 v1.0 release。Phase 48 只重新开放 ADR-0024 要求的 human release-candidate review；maintainer 必须单独评估 release evidence，决定是否接受 RC。

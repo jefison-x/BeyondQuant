@@ -1,26 +1,16 @@
 # DSH Runtime Integration Options
 
-## Status
+## 状态
 
-Decision recorded in [ADR-0003](adr/ADR-0003-gateway-dsh-runtime-integration.md):
-**Accepted for Phase 6** after the exit criteria passed. The selected seam
-is an independent Python Runtime Adapter using the official Python SDK to
-launch an explicit npm rc.6 JSON-RPC runtime composition.
+决策已记录于 [ADR-0003](adr/ADR-0003-gateway-dsh-runtime-integration.md)：exit criteria 通过后，**Accepted for Phase 6**。选定 seam 是独立 Python Runtime Adapter：使用 official Python SDK 启动显式 npm rc.6 JSON-RPC runtime composition。
 
-The DSH Web surface remains a bootstrap/verification surface only. It is not
-the Gateway transport and no proxy, host networking, `socat`, `nginx`, source
-patch, fork, or Web network exposure is part of this decision.
+DSH Web surface 仅用于 bootstrap/verification，不是 Gateway transport。本决策不包含 proxy、host networking、`socat`、`nginx`、source patch、fork 或 Web network exposure。
 
-## Common evaluation criteria
+## 通用评估标准
 
-Every option was evaluated for stdio/process boundary, lifecycle, notification
-streaming, cancellation, persistence ownership, WorkflowTrace translation,
-MCP composition, Python Gateway cost, failure isolation, authentication,
-observability, horizontal scaling, and DSH upgrade compatibility.
+每个 option 均按 stdio/process boundary、lifecycle、notification streaming、cancellation、persistence ownership、WorkflowTrace translation、MCP composition、Python Gateway cost、failure isolation、authentication、observability、horizontal scaling 和 DSH upgrade compatibility 评估。
 
-## Option A: Python SDK plus bundled runtime
-
-### Shape
+## Option A：Python SDK 加 bundled runtime
 
 ```text
 Gateway
@@ -29,41 +19,26 @@ Gateway
   → deepseek-harness-runtime-bin==0.1.0rc6 executable
 ```
 
-### Verification
+Official runtime wheel 已下载、hash-verified、解包并 introspect。Bundled config 包含 stdio JSON-RPC server/default agent spine，也挂载 local bash/filesystem providers；不含 `@deepseek-ai/dsh-mcp-client`。
 
-The official runtime wheel was downloaded, hash-verified, unpacked, and
-introspected. Its bundled config includes the stdio JSON-RPC server and the
-default agent spine, but also mounts local bash and local filesystem providers.
-It does not include `@deepseek-ai/dsh-mcp-client`.
+SDK API 允许 custom Cordis path，但 custom composition 不能加入 single-file runtime closure 中缺失的 package。为加入 MCP client 重建 upstream runtime wheel 等同 fork/rebuild DSH，属于禁止行为。
 
-The SDK API allows a custom Cordis path, but a custom composition cannot add a
-package that is absent from the single-file runtime closure. Rebuilding the
-upstream runtime wheel to add the MCP client would be a fork/rebuild of DSH,
-which is prohibited.
+结果：**Product runtime 拒绝采用。**
 
-### Result
+1. Zero-config composition 具备 coding capability，违反 BYQ Product capability boundary；
+2. bundled closure 缺少必需 BYQ MCP client；
+3. 添加它要求 rebuild/fork official runtime carrier。
 
-**Rejected for the Product runtime.** Reasons:
+Wheel 仍可作为 official SDK capability reference/upgrade compatibility input，但 BYQ Runtime Adapter 不使用 `DeepSeekHarness()` zero-config。
 
-1. zero-config composition is coding-capable and violates the BYQ Product
-   capability boundary;
-2. the bundled closure lacks the required BYQ MCP client;
-3. adding it would require rebuilding/forking the official runtime carrier.
-
-The wheel remains useful as an official SDK capability reference and as an
-upgrade compatibility input, but `DeepSeekHarness()` zero-config is not used
-by the BYQ Runtime Adapter.
-
-## Option B: Python SDK plus explicit npm rc.6 runtime
-
-### Shape
+## Option B：Python SDK 加显式 npm rc.6 runtime
 
 ```text
 Gateway
   → internal HTTP/SSE BYQ seam
   → Product Plane Runtime Adapter (Python/FastAPI)
   → deepseek-harness-sdk==0.1.0rc6
-  → launch_args_override: node + dsh-sdk-jsonrpc-demo/lib/bin.js (`dsh-jsonrpc-agent`)
+  → launch_args_override: node + dsh-sdk-jsonrpc-demo/lib/bin.js (dsh-jsonrpc-agent)
   → exact npm rc.6 JSON-RPC runtime
       ├── @deepseek-ai/dsh-sdk-jsonrpc-server@0.1.0-rc.6
       ├── @deepseek-ai/dsh-agent-spine-demo@0.1.0-rc.6
@@ -73,77 +48,37 @@ Gateway
        BeyondQuant MCP
 ```
 
-The BYQ composition is `plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml`.
-It disables `toolBash`, `toolJobs`, skills, workspace context, and goals;
-there is no coding executor, source filesystem, Git, or Engineering DSH
-plugin in the composition. It mounts the official JSON-RPC server, DSH-owned
-JSONL persistence/checkpoint policy, and the exact BYQ MCP client with
-`failOnStartupError: true`.
+BYQ composition 为 `plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml`。它禁用 `toolBash`、`toolJobs`、skills、workspace context、goals；不含 coding executor、source filesystem、Git 或 Engineering DSH plugin。它挂载 official JSON-RPC server、DSH-owned JSONL persistence/checkpoint policy，以及带 `failOnStartupError: true` 的 exact BYQ MCP client。
 
-The runtime adapter never calls zero-config `DeepSeekHarness()`. It supplies
-`cordis`, `session_root`, and `launch_args_override`, so the SDK's bundled
-default injection is bypassed. `runtime_bin` is retained as a documented SDK
-option but is not selected for Product operation.
+Runtime Adapter 从不调用 zero-config `DeepSeekHarness()`。它提供 `cordis`、`session_root`、`launch_args_override`，绕过 SDK bundled default injection。`runtime_bin` 作为 documented SDK option 保留，但不用于 Product operation。
 
-The rc.6 `dsh-jsonrpc-agent` public bin was tested against the exact BYQ
-composition and healthy MCP and passed initialize/idle/close. The exported
-`packaged-bin.js` entrypoint was also probed for comparison, but is not the
-selected carrier. Both are exact rc.6 artifacts; neither test promises future
-DSH-version compatibility.
+Rc.6 `dsh-jsonrpc-agent` public bin 已针对 exact BYQ composition/healthy MCP 测试并通过 initialize/idle/close。`packaged-bin.js` 也作对比 probe，但不是 selected carrier。二者均为 exact rc.6 artifacts，不承诺未来 DSH compatibility。
 
-### Prototype result
+### Prototype 结果
 
-The installed npm rc.6 artifact was executed with its public `lib/bin.js`
-(`dsh-jsonrpc-agent`) and its exported `packaged-bin.js`; profile/config
-introspection and JSON-RPC behavior were observed. The initial composition exposed one real
-configuration error (`skills: false` instead of the rc.6 schema's
-`skills.enabled: false`); after correcting it, the runtime returned a valid
-`initialize` response and a clean `shutdown` response without a model key.
+Installed npm rc.6 artifact 使用 public `lib/bin.js` 和 exported `packaged-bin.js` 运行，观察了 profile/config introspection 与 JSON-RPC behavior。初始 composition 暴露真实配置错误（`skills: false` 应为 rc.6 schema 的 `skills.enabled: false`）；修正后 runtime 在无 model key 时返回有效 `initialize`/clean `shutdown`。
 
-The containerized Runtime Adapter then performed:
+Containerized Runtime Adapter 随后完成：
 
-1. `POST /internal/runtime/sessions`;
-2. official Python SDK initialize of an owned explicit npm runtime;
-3. rc.6 MCP client startup against the healthy BeyondQuant MCP with
-   `failOnStartupError: true`;
-4. `POST .../cancel?mode=hard`;
-5. clean status `interrupted`, with `process_ownership: dedicated` and
-   `persistence: dsh-owned`.
+1. `POST /internal/runtime/sessions`；
+2. official Python SDK initialize owned explicit npm runtime；
+3. rc.6 MCP client 以 `failOnStartupError: true` 连接 healthy BeyondQuant MCP；
+4. `POST .../cancel?mode=hard`；
+5. clean status `interrupted`，且 `process_ownership: dedicated`、`persistence: dsh-owned`。
 
-The first exact composition attempt also exposed a real closure issue: the
-published JSON-RPC demo does not transitively install the session persistence
-and checkpoint packages named by the composition. The adapter's npm manifest
-now direct-pins both official rc.6 packages; a rebuilt container passed SDK
-initialize, remained alive after 700ms, and hard-cancelled with no stderr load
-error. This artifact introspection result is part of the compatibility gate,
-not a hidden runtime patch.
+第一次 exact composition 还发现 closure 问题：published JSON-RPC demo 不会 transitively install composition 指定的 session persistence/checkpoint packages。Adapter npm manifest 现 direct-pin 两个 official rc.6 packages；重建 container 通过 SDK initialize、存活超过 700ms，并在无 stderr load error 下 hard-cancel。该 artifact introspection 属于 compatibility gate，不是隐藏 runtime patch。
 
-This is a keyless startup/handshake smoke. It does not claim a real model turn
-or model-generated answer. The `byq_health` MCP contract remains covered by
-the MCP contract tests; rc.6 has no stable non-LLM SDK tool invocation API.
+这是 keyless startup/handshake smoke，不声称真实 model turn 或 model-generated answer。`byq_health` MCP contract 仍由 MCP contract tests 覆盖；rc.6 没有稳定 non-LLM SDK tool invocation API。
 
-### Result
+结果：**Selected。** 这是唯一无需 fork/rebuild DSH、满足 explicit composition gate 且保留 Python Gateway integration 的 option。
 
-**Selected.** It is the only evaluated option that meets the explicit
-composition gate without forking/rebuilding DSH and preserves Python Gateway
-integration.
+## Option C：TypeScript SDK 加显式 npm runtime
 
-## Option C: TypeScript SDK plus explicit npm runtime
+`@deepseek-ai/dsh-sdk-client@0.1.0-rc.6` 是同一 stdio JSON-RPC protocol 的 official TypeScript client。实际 rc.6 artifact 管理 child process，暴露 `DeepSeekHarness`/`HarnessClient`，分发 notifications，并执行 EOF → SIGTERM → SIGKILL cleanup。没有独立 remote protocol/cancellation capability，继承相同 runtime limits。
 
-`@deepseek-ai/dsh-sdk-client@0.1.0-rc.6` is an official TypeScript client for
-the same stdio JSON-RPC protocol. Its actual rc.6 artifact owns a child
-process, exposes `DeepSeekHarness`/`HarnessClient`, fans out notifications,
-and performs EOF → SIGTERM → SIGKILL cleanup. It has no separate remote
-protocol or cancellation capability; it inherits the same runtime limits.
+它要求 Node Gateway、Node adapter service，或 Python adapter 拥有的第二 Node sidecar；都会增加 language/process boundary、dependency alignment 和 observability/lifecycle surface，且 event/process behavior 对当前 Python Gateway 并无优势。因此 **not selected**；若未来 BYQ 采用 Node Gateway boundary，可作为 compatibility option。
 
-It would require either a Node Gateway, a Node adapter service, or a second
-Node sidecar owned by a Python adapter. All three add a language/process
-boundary, dependency alignment work, and another observability/lifecycle
-surface. The event and process behavior is not better than the Python SDK for
-this Python Gateway. It is therefore **not selected**, but remains a valid
-future compatibility option if BYQ adopts a Node Gateway boundary.
-
-## Comparison matrix
+## 比较矩阵
 
 | Criterion | A: bundled Python | B: explicit npm + Python | C: explicit npm + TypeScript |
 | --- | --- | --- | --- |
@@ -153,13 +88,12 @@ future compatibility option if BYQ adopts a Node Gateway boundary.
 | Notifications/events | SDK available | SDK available + adapter normalization | SDK available + Node normalization |
 | Hard cancellation | Close shared runtime is unsafe | Dedicated process close | Dedicated process close |
 | Persistence ownership | DSH runtime | DSH runtime | DSH runtime |
-| CI/prototype | Bundled launch only | Keyless initialize/MCP startup/cleanup pass | No benefit sufficient to offset seam |
+| CI/prototype | Bundled launch only | Keyless initialize/MCP startup/cleanup pass | No sufficient seam benefit |
 
-## Shared boundary decisions
+## 共享 boundary decisions
 
-- Gateway sees only BYQ-owned health and `WorkflowTraceEvent` envelopes.
-- Raw DSH notifications are consumed and normalized in the adapter.
-- Product DSH reaches business data only through BeyondQuant MCP.
-- DSH Web is not a product transport.
-- Gateway stores BYQ session/trace identities only; DSH durable session logs
-  remain in the Agent Plane runtime ownership boundary.
+- Gateway 只看到 BYQ-owned health 和 `WorkflowTraceEvent` envelopes。
+- Raw DSH notifications 在 adapter 中消费并规范化。
+- Product DSH 只经 BeyondQuant MCP 访问 business data。
+- DSH Web 不是 product transport。
+- Gateway 只存 BYQ session/trace identities；DSH durable session logs 留在 Agent Plane runtime ownership boundary。
