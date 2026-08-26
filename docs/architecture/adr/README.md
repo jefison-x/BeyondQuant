@@ -46,3 +46,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   有界校验反馈与单次 repair 约束。
 - ADR-0032 定义 Agent 对已持久化 exact-session 估值和 announcement-visible 基本面的
   封闭只读边界、完整性语义和缺失数据行为。
+- ADR-0033 定义 Product Agent text-only 最终回答、封闭公共研究术语、领域活动与内部
+  control activity 的投影边界。

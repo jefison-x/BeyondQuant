@@ -224,7 +224,7 @@ Maintainer 于 2026-08-24 再次延后 RC，以 ADR-0025/`PERSONAL_WORKSPACE_TEN
   announcement-next-day fundamentals reads；只读 BYQ PostgreSQL evidence，经 Backend
   与 MCP 返回 completeness/missing/hash，不调用 Provider、不填值。角色、MCP、完整
   Backend/MCP tests 和真实成功/缺失 Agent journey 均通过；evidence `phase-59/`。
-- **Phase 60 public answer/activity projection（`AUTHORIZED`）**：以 Phase 59 真实旅程中
+- **Phase 60 public answer/activity projection（`COMPLETE`）**：以 Phase 59 真实旅程中
   英文内部前言、authorize/audit mechanics、raw coverage/field terminology 泄漏为基线；
   先接受独立 ADR，再在 Runtime Adapter/Gateway normalized projection 与 DSH skills
   边界修复。不得隐藏用户有价值的数据时点/失败原因，不得暴露 hidden reasoning、raw
@@ -260,4 +260,4 @@ Maintainer 于 2026-08-24 再次延后 RC，以 ADR-0025/`PERSONAL_WORKSPACE_TEN
 ### Phase 57 — Benchmark, point-in-time universe and declared data(`COMPLETE`)
 ### Phase 58 — Agent domain action contract(`COMPLETE`)
 ### Phase 59 — Agent point-in-time valuation and fundamentals(`COMPLETE`)
-### Phase 60 — Public answer and activity projection(`AUTHORIZED`)
+### Phase 60 — Public answer and activity projection(`COMPLETE`)

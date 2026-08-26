@@ -208,7 +208,7 @@ check_backend() {
 
 check_gateway() {
   step "gateway: pytest (mocked backend)"
-  if docker run --rm --network "$CI_PG_NET" -e PYTHONDONTWRITEBYTECODE=1 \
+  if docker run --rm -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/gateway:/app" \
       -v "$REPO_ROOT/packages:/app/packages" -w /app \
       beyondquant-gateway python -m pytest -q -p no:cacheprovider >/dev/null 2>&1; then
@@ -217,7 +217,7 @@ check_gateway() {
 
 check_runtime() {
   step "runtime-adapter: pytest"
-  if docker run --rm --network "$CI_PG_NET" -e PYTHONDONTWRITEBYTECODE=1 \
+  if docker run --rm -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/runtime-adapter:/app" \
       -v "$REPO_ROOT/packages:/app/packages" -w /app \
       beyondquant-runtime-adapter python3 -m pytest -q -p no:cacheprovider >/dev/null 2>&1; then

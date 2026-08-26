@@ -3,14 +3,16 @@ import type { WorkflowActivityPayload } from "@/api/types";
 
 defineProps<{ activities: Array<{ sequence: number; timestamp: string; payload: WorkflowActivityPayload }> }>();
 const stateType = (state: WorkflowActivityPayload["state"]) => ({ started: "primary", progress: "warning", completed: "success", failed: "danger", waiting_approval: "warning" }[state] as "primary" | "warning" | "success" | "danger");
+const stateLabel = (state: WorkflowActivityPayload["state"]) => ({ started: "进行中", progress: "处理中", completed: "已完成", failed: "未完成", waiting_approval: "等待确认" }[state]);
+const phaseLabel = (phase: WorkflowActivityPayload["phase"]) => ({ understand: "理解需求", select: "研究数据", strategy: "策略研究", backtest: "回测分析", review: "结果确认", tool: "任务处理" }[phase]);
 </script>
 
 <template>
   <section class="activity-panel" aria-label="公开执行进度">
     <div class="panel-heading"><span class="panel-title">执行进度</span><el-tag size="small">{{ activities.length }}</el-tag></div>
     <el-empty v-if="!activities.length" description="尚无公开执行进度" :image-size="52" />
-    <ol v-else><li v-for="activity in activities" :key="`${activity.payload.activity_id}-${activity.sequence}`"><span class="activity-dot" :class="activity.payload.state" /><div><strong>{{ activity.payload.label }}</strong><small>{{ activity.payload.phase }}</small></div><el-tag size="small" :type="stateType(activity.payload.state)">{{ activity.payload.state }}</el-tag></li></ol>
-    <p class="privacy-note">仅展示规范化的公开阶段，不展示模型隐藏推理或工具参数。</p>
+    <ol v-else><li v-for="activity in activities" :key="`${activity.payload.activity_id}-${activity.sequence}`"><span class="activity-dot" :class="activity.payload.state" /><div><strong>{{ activity.payload.label }}</strong><small>{{ phaseLabel(activity.payload.phase) }}</small></div><el-tag size="small" :type="stateType(activity.payload.state)">{{ stateLabel(activity.payload.state) }}</el-tag></li></ol>
+    <p class="privacy-note">这里只显示完成任务所需的公开进度，不展示内部执行细节。</p>
   </section>
 </template>
 

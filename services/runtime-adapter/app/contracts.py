@@ -27,6 +27,10 @@ from contracts.workflow_trace import (  # noqa: E402
     make_workflow_trace_event,
     validate_workflow_trace_event,
 )
+from contracts.public_projection import (  # noqa: E402
+    contains_internal_public_token,
+    project_public_answer_text,
+)
 
 __all__ = [
     "MAX_ACTIVITIES_PER_TURN",
@@ -38,4 +42,6 @@ __all__ = [
     "WorkflowTraceEvent",
     "make_workflow_trace_event",
     "validate_workflow_trace_event",
+    "contains_internal_public_token",
+    "project_public_answer_text",
 ]

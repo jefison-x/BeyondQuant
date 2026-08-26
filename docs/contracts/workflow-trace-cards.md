@@ -58,7 +58,12 @@ Card 不含 decision endpoint/mutation arguments。Human decision 前 frontend �
 {"schema_version":"workflow-answer.v1","channel":"answer","delta":"public assistant text","truncated":false}
 ```
 
-每个 fragment 最多 8,192 UTF-8 bytes。Adapter 只发 public assistant answer blocks，并 deduplicate cumulative DSH updates。
+每个 fragment 最多 8,192 UTF-8 bytes。Adapter 只投影不含 `tool-call` block 的
+text-only DSH completion anchor；带 tool call 的 step text 是内部执行叙述，不进入回答。
+投影在 fragment split 前把封闭的 coverage/provider field keys 转换为普通投资标签，且
+不得改变 symbol、日期、报告期、数值、正负号、null 或缺失原因。Gateway 在持久化前执行
+同一幂等转换；仍含 `byq_*`、`mcp__*`、raw `coverage.*`、DSH/MCP/WorkflowTrace 或
+Artifact ID token 的回答 fail closed，不保留原文。
 
 `agent.activity` payload：
 
@@ -66,7 +71,12 @@ Card 不含 decision endpoint/mutation arguments。Human decision 前 frontend �
 {"schema_version":"workflow-activity.v1","activity_id":"activity_<hex>","phase":"strategy","state":"started","label":"校验策略草稿","capability":"byq_strategy_validate"}
 ```
 
-`phase` 为 `understand|select|strategy|backtest|review|tool`；`state` 为 `started|progress|completed|failed|waiting_approval`；`label` 为 1–240 characters。可选 `capability` 是已知 BYQ MCP capability name，绝非 DSH tool identifier。不存在 reasoning、prompt、argument、raw result 或 stack-trace fields。
+`phase` 为 `understand|select|strategy|backtest|review|tool`；`state` 为
+`started|progress|completed|failed|waiting_approval`；`label` 为 1–240 characters。
+可选 `capability` 只为历史 v1 replay compatibility 保留；Phase 60 Adapter 不再生成该
+field。Agent context、role catalogue、run start、authorize、audit 和 unknown tools 不产生
+公开 activity。Frontend 必须把 phase/state 映射为产品语言，不显示 enum token。不存在
+reasoning、prompt、argument、raw result 或 stack-trace fields。
 
 ## Budgets、degradation 与 compatibility
 
