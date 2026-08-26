@@ -1,20 +1,19 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=58 -->
+<!-- byq:current-completed-phase=59 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 58**——owner-scoped Agent Stock Pool create、闭合的
-  ResearchTask → StrategyDraft → StrategyVersion 合同、安全有界校验修复和真实浏览器
-  连续旅程。
+- 当前已完成阶段：**Phase 59**——Agent 对已持久化 exact-session 估值和
+  announcement-visible 基本面数据的封闭只读合同、完整性/缺失语义和真实浏览器旅程。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
   验证到 Python `0.1.1rc1` / npm `0.1.1-rc.1`；它是维护历史，不是隐含的 Product Phase。
 - 当前完成范围内没有未决架构决策。
-- Phase 58 由维护者于 2026-08-26 明确授权并已完成；规范与证据位于 ADR-0031、
-  `IMPLEMENTATION_PLAN.md` 和 `docs/evidence/phase-58/`。
+- Phase 59 由维护者于 2026-08-26 授权顺序自动执行并已完成；规范与证据位于 ADR-0032、
+  `IMPLEMENTATION_PLAN.md` 和 `docs/evidence/phase-59/`。
 
 ## 生效中的 Accepted ADR
 
@@ -47,6 +46,7 @@ history 推断项目状态。
 - adjusted research/corporate action：**ADR-0029**
 - benchmark/point-in-time declared data：**ADR-0030**
 - Agent domain action completion：**ADR-0031**
+- Agent point-in-time market research：**ADR-0032**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -168,6 +168,9 @@ v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase
 - Phase 58 依据 ADR-0031 为协调角色增加 bounded custom Stock Pool list/get/create，
   为策略研究角色增加 planned ResearchTask create 前置能力；统一 MCP/Backend strategy
   schema、有界 422 单次修复和逐动作授权/审计，并通过真实 Chrome 连续旅程验收。
+- Phase 59 依据 ADR-0032 增加持久化 `daily_basic` exact-session 估值和公告后次日可见的
+  financial-indicator Agent reads；完整性、缺失值、报告/公告/生效日期均显式，且没有
+  Provider call、自动同步或数据填充。
 
 Community Parity Delivery Plan Phase 1-8 恢复 Product shell 和 Chrome MCP browser
 evidence。`docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` 中的历史缺口已由 Phase 32-40
@@ -182,9 +185,10 @@ Product capability 和 Gateway → Runtime Adapter → DSH → MCP 边界不变�
 ## 当前授权边界
 
 - Active implementation-phase blocker：**none**。
-- Phase 49-58 与 ADR-0025 至 ADR-0031 对应计划均已完成。
-- **当前没有已定义或已授权的后续 Product Phase**；不得提前实现 Phase 59 或
-  Phase 60，后续工作等待维护者明确启动。
+- Phase 49-59 与 ADR-0025 至 ADR-0032 对应计划均已完成。
+- 下一阶段：**Phase 60 public answer/activity projection**。维护者已授权顺序自动执行；
+  必须先取得独立 Accepted ADR，并以 Phase 59 真实浏览器发现的内部执行叙述泄漏为
+  acceptance baseline。不得扩大到 release、tag 或 production publication。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 

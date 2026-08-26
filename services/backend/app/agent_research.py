@@ -85,7 +85,7 @@ class AgentRole:
 ROLE_CATALOG: tuple[AgentRole, ...] = (
     AgentRole(
         role_id="quant_orchestrator",
-        version="1.1.0",
+        version="1.2.0",
         description="Coordinates bounded research hand-offs and explicit owner-scoped domain actions.",
         allowed_tools=(
             "byq_agent_context",
@@ -97,6 +97,8 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_agent_approval_decide",
             "byq_agent_roles",
             "byq_market_daily",
+            "byq_market_valuation",
+            "byq_market_fundamentals",
             "byq_pool_list",
             "byq_pool_get",
             "byq_pool_create",
@@ -142,7 +144,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
     ),
     AgentRole(
         role_id="market_researcher",
-        version="1.1.0",
+        version="1.2.0",
         description="Collects normalized market evidence and records bounded research artifacts.",
         allowed_tools=(
             "byq_agent_context",
@@ -151,6 +153,8 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_agent_audit",
             "byq_agent_roles",
             "byq_market_daily",
+            "byq_market_valuation",
+            "byq_market_fundamentals",
             "byq_research_task_create",
             "byq_research_get",
             "byq_experiment_create",

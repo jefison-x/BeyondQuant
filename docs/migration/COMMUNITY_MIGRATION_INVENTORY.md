@@ -847,3 +847,20 @@ idempotency tests were inspected before accepting ADR-0031.
 
 No Community source, database, cache, credential, runtime or Git history was
 modified or copied.
+
+## Phase 59 Agent point-in-time research pre-implementation audit
+
+The read-only Community `fundamental_enrichment.py`, frozen-stock finalizer,
+stock-selection evidence/tests, fundamental persistence tests and data-boundary
+documents were inspected before accepting ADR-0032.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 59 disposition |
+|---|---|---|---|
+| Fundamental snapshots with report/as-of/source/quality fields | A research conclusion needs report identity, public-information date, source and explicit missing/quality state. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Read BYQ ADR-0030 rows with report, announcement, next-day effective date, hashes and completeness. |
+| Frozen-symbol finalizer | Candidate evidence must remain separate from the later Stock Pool write and must disclose the evidence time. | `PORT_UX` / `PORT_TESTS` / `REFACTOR` | Market researcher returns bounded evidence; Phase 58 coordinator remains the only pool writer. |
+| Point-in-time persisted lookup | Historical research must not use a later report. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Select only `effective_date <= as_of_date`; add announcement-day/next-day regression. |
+| Multi-provider online enrichment/cache/threads/ORM and direct Agent executor | No compatible architecture boundary. | `REFERENCE_ONLY` / `REPLACE` | Use persisted PostgreSQL evidence through Backend and MCP; no online enrichment or direct API/SQL. |
+| BaoStock, AKShare, PydanticAI/Hermes and legacy plugin fallbacks | Explicitly prohibited technologies and runtime paths. | `DROP` | Do not add dependencies, adapters, fallback or compatibility layers. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.

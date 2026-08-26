@@ -54,7 +54,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "58")
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "59")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
@@ -695,6 +695,30 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("strategyValidationInputSchema", strategy_mcp)
         self.assertIn("repair_limit: 1", strategy_mcp)
         self.assertIn("byq_pool_create", adr)
+
+    def test_phase59_market_research_is_persisted_bounded_and_point_in_time(self) -> None:
+        backend = (ROOT / "services/backend/app/market_readiness.py").read_text()
+        mcp = (ROOT / "services/mcp/src/server.ts").read_text()
+        translator = (ROOT / "services/mcp/src/market-data.ts").read_text()
+        roles = (ROOT / "services/backend/app/agent_research.py").read_text()
+        skill = (ROOT / "plugins/dsh-byq/skills/byq-market-researcher/SKILL.md").read_text()
+        adr = (ROOT / "docs/architecture/adr/ADR-0032-agent-point-in-time-market-research.md").read_text()
+
+        self.assertIn('"market-valuation-research.v1"', backend)
+        self.assertIn('"market-fundamentals-research.v1"', backend)
+        self.assertIn("effective_date<=:as_of_date", backend)
+        self.assertIn("MAX_AGENT_RESEARCH_SYMBOLS = 20", backend)
+        self.assertIn('"byq_market_valuation"', mcp)
+        self.assertIn('"byq_market_fundamentals"', mcp)
+        self.assertIn("/v1/data/research/valuation", translator)
+        self.assertIn("/v1/data/research/fundamentals", translator)
+        self.assertNotIn("tushare", translator.lower())
+        self.assertIn('role_id="market_researcher"', roles)
+        self.assertIn('version="1.2.0"', roles)
+        self.assertIn("coverage.usable", skill)
+        self.assertIn("Status: Accepted", adr)
+        for prohibited in ("BaoStock", "AKShare", "VectorBT", "PydanticAI", "Hermes"):
+            self.assertIn(prohibited, adr)
 
     def test_frontend_has_no_dsh_event_schema_dependency(self) -> None:
         frontend = ROOT / "apps/frontend"

@@ -49,7 +49,14 @@ import {
   strategyValidationInputSchema,
   type StrategyRequest,
 } from "./strategy.js";
-import { fetchByqMarketDaily, type MarketDailyRequest } from "./market-data.js";
+import {
+  fetchByqMarketDaily,
+  fetchByqMarketFundamentals,
+  fetchByqMarketValuation,
+  type MarketDailyRequest,
+  type MarketFundamentalsRequest,
+  type MarketValuationRequest,
+} from "./market-data.js";
 import {
   fetchByqPoolCreate,
   fetchByqPoolGet,
@@ -308,6 +315,16 @@ async function byqBacktestCancel(args: { job_id: string }, extra: unknown) {
 async function byqMarketDaily(args: MarketDailyRequest, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqMarketDaily(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqMarketValuation(args: MarketValuationRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMarketValuation(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqMarketFundamentals(args: MarketFundamentalsRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMarketFundamentals(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
 async function byqFactorCompute(args: FactorComputeRequest, extra: unknown) {
@@ -569,6 +586,36 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       },
     },
     (args) => byqMarketDaily(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_market_valuation",
+    {
+      description: "Read exact-session BYQ valuation fields from durable data with explicit completeness evidence. This tool never calls a provider or fills missing values.",
+      inputSchema: {
+        symbols: z.array(z.string().regex(/^(?:[03]\d{5}\.SZ|6\d{5}\.SH)$/)).min(1).max(20),
+        trade_date: z.string().regex(/^\d{8}$/).describe("Exact YYYYMMDD trade date."),
+        fields: z.array(z.enum([
+          "turnover_rate", "turnover_rate_f", "volume_ratio", "pe", "pe_ttm", "pb",
+          "ps", "ps_ttm", "dv_ratio", "dv_ttm", "total_share", "float_share",
+          "free_share", "total_mv", "circ_mv",
+        ])).min(1).max(12),
+      },
+    },
+    (args) => byqMarketValuation(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_market_fundamentals",
+    {
+      description: "Read the latest BYQ financial report visible after its conservative next-day announcement boundary. This tool never calls a provider or fills missing values.",
+      inputSchema: {
+        symbols: z.array(z.string().regex(/^(?:[03]\d{5}\.SZ|6\d{5}\.SH)$/)).min(1).max(20),
+        as_of_date: z.string().regex(/^\d{8}$/).describe("Point-in-time YYYYMMDD research date."),
+        fields: z.array(z.enum([
+          "eps", "roe", "roa", "grossprofit_margin", "debt_to_assets", "or_yoy", "netprofit_yoy",
+        ])).min(1).max(12),
+      },
+    },
+    (args) => byqMarketFundamentals(args, trustedContext),
   );
   server.registerTool(
     "byq_backtest_submit",

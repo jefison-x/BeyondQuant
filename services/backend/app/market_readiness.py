@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from .data_provider import DAILY_BASIC_FIELDS, FINANCIAL_INDICATOR_FIELDS
 from .db import PgStoreMixin, execute
 
 
@@ -20,10 +22,47 @@ REQUIRED_DATASETS = (
     "corporate_actions",
 )
 MAX_REQUIRED_CELLS = 50_000
+MAX_AGENT_RESEARCH_SYMBOLS = 20
+_CANONICAL_A_SHARE = re.compile(r"^(?:[03]\d{5}\.SZ|6\d{5}\.SH)$")
 
 
 class MarketReadinessPersistenceError(RuntimeError):
     pass
+
+
+def _research_date(value: object, field: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be YYYYMMDD")
+    normalized = value.replace("-", "")
+    try:
+        parsed = datetime.strptime(normalized, "%Y%m%d")
+    except ValueError as error:
+        raise ValueError(f"{field} must be a valid YYYYMMDD date") from error
+    if parsed.strftime("%Y%m%d") != normalized:
+        raise ValueError(f"{field} must be a valid YYYYMMDD date")
+    return normalized
+
+
+def _research_symbols(values: object) -> list[str]:
+    if not isinstance(values, list) or not values:
+        raise ValueError("symbols must be a non-empty list")
+    symbols = sorted({str(value).strip().upper() for value in values})
+    if len(symbols) > MAX_AGENT_RESEARCH_SYMBOLS:
+        raise ValueError(f"symbols exceeds {MAX_AGENT_RESEARCH_SYMBOLS} entries")
+    if any(not _CANONICAL_A_SHARE.fullmatch(symbol) for symbol in symbols):
+        raise ValueError("symbols must contain canonical A-share codes")
+    return symbols
+
+
+def _research_fields(values: object, allowed: tuple[str, ...], field: str) -> list[str]:
+    if not isinstance(values, list) or not values:
+        raise ValueError(f"{field} must be a non-empty list")
+    if len(values) > 12 or any(not isinstance(value, str) for value in values):
+        raise ValueError(f"{field} must contain at most 12 supported fields")
+    fields = list(dict.fromkeys(values))
+    if any(value not in allowed for value in fields):
+        raise ValueError(f"{field} contains an unsupported field")
+    return fields
 
 
 def _hash(value: object) -> str:
@@ -491,6 +530,143 @@ class MarketReadinessStore(PgStoreMixin):
                 {"symbol": symbol, "start": report_start_date, "end": report_end_date,
                  "count": len(normalized), "identity": identity, "provenance": provenance})
         return len(normalized)
+
+    def research_valuation(
+        self, *, symbols: object, trade_date: object, fields: object,
+    ) -> dict[str, object]:
+        """Return bounded exact-session valuation evidence from durable BYQ data only."""
+
+        normalized_symbols = _research_symbols(symbols)
+        normalized_date = _research_date(trade_date, "trade_date")
+        normalized_fields = _research_fields(fields, DAILY_BASIC_FIELDS, "fields")
+        completeness = self._fetch_one(
+            """SELECT row_count,content_sha256,provenance_json,verified_at
+               FROM market_daily_basic_completeness WHERE trade_date=:trade_date""",
+            {"trade_date": normalized_date},
+        )
+        rows = self._execute(
+            """SELECT symbol,trade_date,values_json,data_source,content_sha256
+               FROM market_daily_basic
+               WHERE trade_date=:trade_date
+                 AND symbol IN (SELECT jsonb_array_elements_text(:symbols))
+               ORDER BY symbol""",
+            {"trade_date": normalized_date, "symbols": normalized_symbols},
+        )
+        by_symbol = {str(row["symbol"]): row for row in rows}
+        missing = [symbol for symbol in normalized_symbols if symbol not in by_symbol]
+        evidence = []
+        missing_fields: list[dict[str, object]] = []
+        for symbol in normalized_symbols:
+            row = by_symbol.get(symbol)
+            if row is None:
+                continue
+            values = row.get("values_json") if isinstance(row.get("values_json"), dict) else {}
+            selected_values = {field: values.get(field) for field in normalized_fields}
+            null_fields = [field for field, value in selected_values.items() if value is None]
+            if null_fields:
+                missing_fields.append({"symbol": symbol, "fields": null_fields})
+            evidence.append({
+                "symbol": symbol,
+                "trade_date": str(row["trade_date"]),
+                "values": selected_values,
+                "data_source": str(row["data_source"]),
+                "content_sha256": str(row["content_sha256"]),
+            })
+        complete = completeness is not None
+        usable = complete and not missing and not missing_fields
+        return {
+            "schema_version": "market-valuation-research.v1",
+            "trade_date": normalized_date,
+            "fields": normalized_fields,
+            "rows": evidence,
+            "coverage": {
+                "complete": complete,
+                "usable": usable,
+                "requested_symbols": len(normalized_symbols),
+                "returned_symbols": len(evidence),
+                "missing_symbols": missing,
+                "missing_fields": missing_fields,
+                "dataset_row_count": int(completeness["row_count"]) if completeness else None,
+                "dataset_sha256": str(completeness["content_sha256"]) if completeness else None,
+                "verified_at": str(completeness["verified_at"]) if completeness else None,
+            },
+        }
+
+    def research_fundamentals(
+        self, *, symbols: object, as_of_date: object, fields: object,
+    ) -> dict[str, object]:
+        """Return the latest announcement-visible report for each requested symbol."""
+
+        normalized_symbols = _research_symbols(symbols)
+        normalized_date = _research_date(as_of_date, "as_of_date")
+        normalized_fields = _research_fields(fields, FINANCIAL_INDICATOR_FIELDS, "fields")
+        evidence: list[dict[str, object]] = []
+        missing: list[dict[str, object]] = []
+        coverage: list[dict[str, object]] = []
+        for symbol in normalized_symbols:
+            completeness = self._fetch_one(
+                """SELECT report_start_date,report_end_date,row_count,content_sha256,verified_at
+                   FROM market_financial_indicator_completeness
+                   WHERE symbol=:symbol AND report_start_date<=:as_of_date
+                   ORDER BY report_end_date DESC,report_start_date ASC LIMIT 1""",
+                {"symbol": symbol, "as_of_date": normalized_date},
+            )
+            coverage.append({
+                "symbol": symbol,
+                "complete": completeness is not None,
+                "report_start_date": str(completeness["report_start_date"]) if completeness else None,
+                "report_end_date": str(completeness["report_end_date"]) if completeness else None,
+                "dataset_row_count": int(completeness["row_count"]) if completeness else None,
+                "dataset_sha256": str(completeness["content_sha256"]) if completeness else None,
+                "verified_at": str(completeness["verified_at"]) if completeness else None,
+            })
+            if completeness is None:
+                missing.append({"symbol": symbol, "reason": "coverage_unverified"})
+                continue
+            row = self._fetch_one(
+                """SELECT symbol,end_date,announcement_date,effective_date,values_json,
+                          data_source,content_sha256
+                   FROM market_financial_indicators
+                   WHERE symbol=:symbol AND effective_date<=:as_of_date
+                     AND end_date BETWEEN :report_start_date AND :report_end_date
+                   ORDER BY end_date DESC,announcement_date DESC LIMIT 1""",
+                {
+                    "symbol": symbol,
+                    "as_of_date": normalized_date,
+                    "report_start_date": str(completeness["report_start_date"]),
+                    "report_end_date": str(completeness["report_end_date"]),
+                },
+            )
+            if row is None:
+                missing.append({"symbol": symbol, "reason": "no_visible_report"})
+                continue
+            values = row.get("values_json") if isinstance(row.get("values_json"), dict) else {}
+            selected_values = {field: values.get(field) for field in normalized_fields}
+            null_fields = [field for field, value in selected_values.items() if value is None]
+            if null_fields:
+                missing.append({"symbol": symbol, "reason": "field_values_missing", "fields": null_fields})
+            evidence.append({
+                "symbol": symbol,
+                "report_period": str(row["end_date"]),
+                "announcement_date": str(row["announcement_date"]),
+                "effective_date": str(row["effective_date"]),
+                "values": selected_values,
+                "data_source": str(row["data_source"]),
+                "content_sha256": str(row["content_sha256"]),
+            })
+        return {
+            "schema_version": "market-fundamentals-research.v1",
+            "as_of_date": normalized_date,
+            "fields": normalized_fields,
+            "rows": evidence,
+            "coverage": {
+                "usable": not missing,
+                "requested_symbols": len(normalized_symbols),
+                "returned_symbols": len(evidence),
+                "missing": missing,
+                "datasets": coverage,
+            },
+        }
 
     def assess(self, requirement: dict[str, object]) -> dict[str, object]:
         if requirement.get("schema_version") not in {SCHEMA_VERSION, RESEARCH_SCHEMA_VERSION, LEGACY_SCHEMA_VERSION}:

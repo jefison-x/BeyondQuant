@@ -42,7 +42,7 @@ from .conversation_catalog import (
     ConversationPersistenceError,
 )
 from .market_data import MarketDataStore
-from .market_readiness import MarketReadinessStore
+from .market_readiness import MarketReadinessPersistenceError, MarketReadinessStore
 from .signal_producer import (
     SignalJobStore,
     SignalProducerConflict,
@@ -347,6 +347,45 @@ def daily_data(
         "data": [bar.as_dict() for bar in result.bars],
         "provenance": result.provenance.as_dict(),
     }
+
+
+def _market_research_read(call: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return call()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except MarketReadinessPersistenceError as error:
+        raise HTTPException(status_code=503, detail="market research data is unavailable") from error
+
+
+def _closed_market_research_payload(payload: dict[str, Any], allowed: set[str]) -> dict[str, Any]:
+    if set(payload) - allowed:
+        raise HTTPException(status_code=422, detail="market research request contains unsupported fields")
+    return payload
+
+
+@app.post("/v1/data/research/valuation")
+def research_valuation(payload: dict[str, Any]) -> dict[str, object]:
+    """Read exact-session valuation evidence already persisted by the Data Plane."""
+
+    request = _closed_market_research_payload(payload, {"symbols", "trade_date", "fields"})
+    return _market_research_read(lambda: market_readiness_store.research_valuation(
+        symbols=request.get("symbols"),
+        trade_date=request.get("trade_date"),
+        fields=request.get("fields"),
+    ))
+
+
+@app.post("/v1/data/research/fundamentals")
+def research_fundamentals(payload: dict[str, Any]) -> dict[str, object]:
+    """Read announcement-visible fundamentals already persisted by the Data Plane."""
+
+    request = _closed_market_research_payload(payload, {"symbols", "as_of_date", "fields"})
+    return _market_research_read(lambda: market_readiness_store.research_fundamentals(
+        symbols=request.get("symbols"),
+        as_of_date=request.get("as_of_date"),
+        fields=request.get("fields"),
+    ))
 
 
 def _require_data_admin(request: Request) -> tuple[str, str]:

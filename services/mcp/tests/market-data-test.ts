@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
-import { fetchByqMarketDaily } from "../src/market-data.js";
+import {
+  fetchByqMarketDaily,
+  fetchByqMarketFundamentals,
+  fetchByqMarketValuation,
+} from "../src/market-data.js";
 
 const success = await fetchByqMarketDaily(
   "http://backend:8000",
@@ -45,4 +49,55 @@ assert.equal(unavailable.isError, true);
 assert.match(unavailable.content[0].text, /data_provider_unavailable/);
 assert.doesNotMatch(unavailable.content[0].text, /provider token/);
 
-console.log("Market data MCP translation PASS: normalized result and safe provider failure");
+const valuation = await fetchByqMarketValuation(
+  "http://backend:8000",
+  { symbols: ["000001.SZ"], trade_date: "20260825", fields: ["pe_ttm", "pb"] },
+  async (url, init) => {
+    assert.equal(url, "http://backend:8000/v1/data/research/valuation");
+    assert.equal(init?.method, "POST");
+    assert.deepEqual(JSON.parse(String(init?.body)), {
+      symbols: ["000001.SZ"], trade_date: "20260825", fields: ["pe_ttm", "pb"],
+    });
+    return new Response(JSON.stringify({
+      schema_version: "market-valuation-research.v1",
+      trade_date: "20260825",
+      rows: [{ symbol: "000001.SZ", values: { pe_ttm: 6.5, pb: 0.7 } }],
+      coverage: { usable: true, missing_symbols: [] },
+    }), { status: 200 });
+  },
+);
+assert.equal(valuation.isError, false);
+assert.match(valuation.content[0].text, /market-valuation-research\.v1/);
+
+const fundamentals = await fetchByqMarketFundamentals(
+  "http://backend:8000",
+  { symbols: ["000001.SZ"], as_of_date: "20260825", fields: ["roe"] },
+  async (url, init) => {
+    assert.equal(url, "http://backend:8000/v1/data/research/fundamentals");
+    assert.deepEqual(JSON.parse(String(init?.body)), {
+      symbols: ["000001.SZ"], as_of_date: "20260825", fields: ["roe"],
+    });
+    return new Response(JSON.stringify({
+      schema_version: "market-fundamentals-research.v1",
+      as_of_date: "20260825",
+      rows: [{
+        symbol: "000001.SZ", report_period: "20250331",
+        announcement_date: "20250430", effective_date: "20250501", values: { roe: 8 },
+      }],
+      coverage: { usable: true, missing: [] },
+    }), { status: 200 });
+  },
+);
+assert.equal(fundamentals.isError, false);
+assert.match(fundamentals.content[0].text, /announcement_date/);
+
+const safeFailure = await fetchByqMarketFundamentals(
+  "http://backend:8000",
+  { symbols: ["000001.SZ"], as_of_date: "20260825", fields: ["roe"] },
+  async () => new Response(JSON.stringify({ detail: "secret=/tmp/provider-token" }), { status: 422 }),
+);
+assert.equal(safeFailure.isError, true);
+assert.match(safeFailure.content[0].text, /research_request_invalid/);
+assert.doesNotMatch(safeFailure.content[0].text, /provider-token|\/tmp/);
+
+console.log("Market data MCP translation PASS: daily, durable valuation/fundamentals, safe failures");
