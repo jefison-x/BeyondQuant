@@ -1,29 +1,26 @@
 # Product DSH Runtime
 
-Phase 5 uses a thin Node 24 image with the exact
-`@deepseek-ai/dsh@0.1.0-rc.6` npm artifact, the `byq` profile, and the
-`dsh-byq` bundle. The image selectively copies only that bundle. It does not
-mount or contain the BeyondQuant source worktree, Git credentials, Codex
-authentication, Docker socket, PostgreSQL access, Redis access, or source-edit
-capability.
+Phase 5 使用 thin Node 24 image，包含 exact
+`@deepseek-ai/dsh@0.1.0-rc.6` npm artifact、`byq` profile 和
+`dsh-byq` bundle。Image 只选择性复制该 bundle；不 mount/包含 BeyondQuant
+source worktree、Git credentials、Codex authentication、Docker socket、
+PostgreSQL/Redis access 或 source-edit capability。
 
-The container starts the verified rc.6 custom-profile command with the
-official container-local default host. In rc.6, `web` is a root command alias
-and cannot be passed as an application argument after `--profile byq`:
+Container 使用 official container-local default host 启动已验证 rc.6
+custom-profile command。Rc.6 中 `web` 是 root command alias，不能在
+`--profile byq` 后作为 application argument：
 
 ```text
 dsh --profile byq --host 127.0.0.1 --port 3080
 ```
 
-The Web/bootstrap surface is used only to start the diagnostic runtime, load
-the profile, and verify MCP composition. It is not a product API and is not
-published to a host port. The actual Product SDK path is the Runtime Adapter;
-its composition owns the Phase 13 role skills, official in-process subagents,
-and trusted BYQ MCP context. The diagnostic Web profile remains deliberately
-free of product role state.
+Web/bootstrap surface 只用于启动 diagnostic runtime、加载 profile、验证 MCP
+composition；它不是 product API，也不 publish host port。实际 Product SDK
+path 是 Runtime Adapter；其 composition 拥有 Phase 13 role skills、official
+in-process subagents 和 trusted BYQ MCP context。Diagnostic Web profile 有意
+不包含 product role state。
 
-The Product preset roster is also bundle-owned: only `byq-product` is scanned,
-it is the default, and the user preset root is disabled. The preset composition
-contains no coding or filesystem mutation tools. The Product SDK composition
-likewise contains no source mount, Git, database, or Engineering Plane
-capability.
+Product preset roster 也归 bundle 所有：只 scan `byq-product`，它是默认值，
+并禁用 user preset root。Preset composition 不含 coding/filesystem mutation
+tools；Product SDK composition 同样不含 source mount、Git、database 或
+Engineering Plane capability。

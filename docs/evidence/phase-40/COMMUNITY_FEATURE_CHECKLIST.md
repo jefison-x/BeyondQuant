@@ -1,5 +1,7 @@
 # Phase 40 Community feature checklist
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 The Community repository was inspected read-only before implementation. The
 classification evidence is in `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`
 and the final decisions are in

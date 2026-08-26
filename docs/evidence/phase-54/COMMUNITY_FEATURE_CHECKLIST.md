@@ -1,5 +1,7 @@
 # Phase 54 Community feature checklist
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 The corresponding Community scheduler, state-machine tests, Tushare calendar
 and exact-date daily mappings, and maintenance workbench were inspected
 read-only before implementation.

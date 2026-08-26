@@ -1,10 +1,12 @@
 # Phase 35 BYQ Paper Trading browser acceptance
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 Captured on 2026-08-22 with Chrome DevTools MCP against an isolated Compose
 stack built from the Phase 35 worktree. The browser used durable `ci-admin`
 identity and the same-origin Gateway at `http://127.0.0.1:32814`.
 
-## Evidence index
+## 证据索引
 
 - `01-desktop-overview.png`: persisted account summary, frozen Stock Pool
   snapshot, order form, and six-tab workspace.

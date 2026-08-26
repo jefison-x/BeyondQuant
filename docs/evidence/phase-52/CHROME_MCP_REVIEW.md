@@ -1,5 +1,7 @@
 # Phase 52 Chrome DevTools MCP review
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 - Origin: `http://127.0.0.1` from the real Compose Product stack.
 - Durable user: dedicated Phase 52 administrator after a real login.
 - Desktop: 1536×1536 review of Xiaoba shell and expanded bottom user menu.

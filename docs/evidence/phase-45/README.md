@@ -1,5 +1,7 @@
 # Phase 45 acceptance evidence
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 Phase 45 implements ADR-0024's route-backed administrator System Settings
 surface without changing ADR-0022's Product/Engineering ownership boundary.
 The relevant Community operations and data pages were inspected read-only and

@@ -1,5 +1,7 @@
 # Phase 43 acceptance evidence
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 Phase 43 implements ADR-0024's durable Product conversation catalog and
 centered Xiaoba workspace. The Community repository was inspected read-only;
 its title/pin/rename/history UX and anti-crossover behavior were classified in

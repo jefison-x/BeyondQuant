@@ -2,11 +2,14 @@
 
 Status: `PLANNED` for Productization Phases 17–23.
 
-This document records the inspect → classify → port/rewrite → test plan for
-the read-only Community frontend reference. It does not authorize copying the
-frontend or implementing a future phase.
+本文记录只读 Community frontend reference 的 inspect → classify →
+port/rewrite → test 计划，不授权复制 frontend，也不授权实现未来 phase。
 
-## Reference and policy
+> 中文说明负责 policy、边界和结论。Page/component inventory 保留英文
+> source paths、classification、API names 和逐项审计描述，便于与 Community
+> reference 核对；所有实现仍必须改用 BYQ Product API。
+
+## Reference 与 policy
 
 - Source: `/home/jefison/projects/BeyondQuant-community/frontend`.
 - Reference revision: `58dd99d` on `agent/workspace-community`.
@@ -34,9 +37,9 @@ Frontend → BYQ Product API / Gateway → BYQ Domain or Runtime Adapter
 The frontend must not call raw Backend-internal APIs, MCP, DSH, provider
 endpoints, PostgreSQL, Redis, or raw DSH event schemas.
 
-## Observed information architecture and interaction patterns
+## 已观察的信息架构与交互模式
 
-### Shell and navigation
+### Shell 与 navigation
 
 `App.vue` applies theme/locale classes and mounts `AppLayout`. `AppLayout`
 switches between public Login and an authenticated workspace. Desktop/tablet
@@ -51,7 +54,7 @@ open, pin, rename, and delete actions. This is a strong Phase 17 layout/UX
 reference, but session history and approval data must come from BYQ Product
 projections.
 
-### Common visual and state language
+### 通用 visual/state language
 
 The theme uses a light neutral surface, orange brand accent, compact cards,
 rounded Element Plus controls, dense tables, status tags, metric strips, and a
@@ -99,7 +102,7 @@ contracts.
   BYQ will keep the information architecture but replace old runtime/API and
   protect destructive actions.
 
-## Page/component migration inventory
+## Page/component migration inventory（保留英文逐项审计记录）
 
 | Community source | Visual reuse | UX reuse | API/state dependency | New BYQ target | Classification | Target phase | Status |
 |---|---|---|---|---|---|---|---|
@@ -144,7 +147,7 @@ contracts.
 | `frontend/src/styles/byq-theme.css` | Tokens, cards, tables, responsive rules | Consistent visual language | None | BYQ design tokens after review | `PORT_STYLE` | 17 | `PLANNED` |
 | `frontend/tests/smoke/app.spec.js` | Browser smoke/test structure | Login/navigation/dashboard checks | Old API mocks and route contracts | Product API/Playwright smoke and golden journey | `PORT_TESTS`, `REFACTOR` | 17, 23 | `PLANNED` |
 
-## Explicit replacements and drops
+## 显式 replacements 与 drops
 
 | Community dependency/assumption | Decision | Reason |
 |---|---|---|

@@ -1,6 +1,6 @@
 # Data Worker
 
-Trusted Data Plane worker for ADR-0027. It owns the durable schedule loop,
-trading-calendar refresh, full-market daily snapshots, retries and restart
-recovery. It has PostgreSQL and Tushare credential access but no DSH, MCP,
-Gateway, browser, model, repository-write or Docker authority.
+ADR-0027 的 trusted Data Plane worker。它负责 durable schedule loop、
+trading-calendar refresh、full-market daily snapshots、retries 和 restart
+recovery。它可访问 PostgreSQL/Tushare credential，但没有 DSH、MCP、
+Gateway、browser、model、repository-write 或 Docker authority。

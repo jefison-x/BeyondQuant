@@ -1,5 +1,7 @@
 # Phase 47 theme contrast matrix
 
+> 本文记录该 Phase 的验收与审计证据。中文负责说明和结论；文件名、路径、命令、字段、状态码、测试计数及原始观察值保持英文原样。
+
 Chrome computed the foreground/background colors from the live Product page
 for every closed appearance combination. Text requires at least 4.5:1 and
 chart strokes against the surface require at least 3:1. Values below are the
