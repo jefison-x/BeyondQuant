@@ -481,7 +481,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             / "docs/architecture/adr/ADR-0024-conversation-first-product-experience.md"
         ).read_text()
         self.assertIn("- Status: Accepted", experience_adr)
-        self.assertIn("conversation_id", experience_adr)
+        self.assertIn("session_id", experience_adr)
         self.assertIn("color_mode", experience_adr)
         self.assertTrue(
             (ROOT / "docs/evidence/phase-41/COMMUNITY_FEATURE_CHECKLIST.md").exists()
