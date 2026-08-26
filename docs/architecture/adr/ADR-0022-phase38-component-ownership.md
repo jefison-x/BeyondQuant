@@ -1,84 +1,75 @@
-# ADR-0022: Phase 38 Operations Component Ownership
+# ADR-0022：Phase 38 Operations Component Ownership
 
 - Status: Accepted
 - Date: 2026-08-22
-- Decision scope: Phase 38 operations workbenches and the Phase 40 shared-component gate
-- Related: ADR-0012, ADR-0015, ADR-0016, ADR-0018, ADR-0019
+- Decision scope: Phase 38 Operations workbench 与 Phase 40 shared-component gate
+- Related: ADR-0012、ADR-0015、ADR-0016、ADR-0018、ADR-0019
 
-## Context
+## 背景
 
-The Community full-parity plan originally described Phase 40 shared components
-as a prerequisite for Phase 38. Phase 40 is also the final parity-closure phase
-and is sequenced after Phases 38 and 39. That creates a circular delivery gate:
-Phase 38 cannot start before Phase 40, while Phase 40 cannot perform final
-closure until Phase 38 is complete.
+Community full-parity plan 原先将 Phase 40 shared component 描述为 Phase 38
+prerequisite；但 Phase 40 同时是排在 Phase 38/39 之后的最终 parity-closure Phase。这会
+形成 circular delivery gate：Phase 38 不能在 Phase 40 前开始，而 Phase 40 又不能在
+Phase 38 完成前进行 final closure。
 
-Phases 36 and 37 already resolved the same ownership problem safely. Each phase
-owned the specific component required for its acceptance criteria, and Phase 40
-retained responsibility only for extracting or generalizing proven reusable
-components. Phase 38 needs the same explicit rule before implementation begins.
+Phase 36/37 已安全解决同类 ownership 问题：每个 Phase 持有其 acceptance criteria 所需
+specific component，Phase 40 只负责 extract/generalize 已验证 reusable component。
+Phase 38 实现前需要相同明确规则。
 
-ADR-0019 is Accepted. The remaining Phase 38 prerequisites are therefore
-Backend projections, Product API authorization, audit contracts, Community
-inspection/classification, and real browser evidence rather than a generic
-component extraction performed by a later phase.
+ADR-0019 已 Accepted。因此，Phase 38 剩余 prerequisite 是 Backend projection、Product
+API authorization、audit Contract、Community inspection/classification 和真实 browser
+evidence，而不是由后续 Phase 执行 generic component extraction。
 
-## Decision
+## 决策
 
-1. Phase 38 owns the operations-specific views and components required to
-   replace its placeholders and satisfy its acceptance criteria.
-2. Phase 40 is not a prerequisite for Phase 38. Phase 40 may extract,
-   consolidate, or generalize components proven by Phase 38, but it must not
-   change the Product API or security boundaries merely to make components
-   generic.
-3. Phase 38 must reuse existing BYQ base components where they fit. It must not
-   create a speculative generic component library or copy Community component
-   architecture.
-4. Every operations browser request remains Gateway/Product API only.
-   Read-only projections must be real and bounded. Every write action must be
-   explicitly RBAC-protected, audited, idempotent where applicable, and fail
-   closed.
-5. Community Redis assumptions are replaced by PostgreSQL market-data cache
-   status. Product DSH receives no database, runtime-control, credential-read,
-   application-source, or deployment authority.
-6. Data-source credential CRUD and data-sync execution remain Phase 39 scope.
-   Phase 38 may show bounded configuration/readiness status but must not absorb
-   Phase 39 or expose secrets.
-7. DSH model-call budget projections must use normalized BYQ accounting. Raw
-   DSH event schemas, hidden reasoning, tool arguments, and provider secrets
-   must not cross the Runtime Adapter/Gateway boundary.
+1. Phase 38 持有替换 placeholder 并满足 acceptance criteria 所需的 Operations-specific
+   view/component。
+2. Phase 40 不是 Phase 38 prerequisite。Phase 40 可 extract/consolidate/generalize Phase
+   38 已验证 component，但不能仅为通用化 component 而改变 Product API 或 security
+   boundary。
+3. Phase 38 必须在适用处复用 existing BYQ base component；不得创建 speculative generic
+   component library 或复制 Community component architecture。
+4. 所有 Operations browser request 仍只使用 Gateway/Product API。Read-only projection
+   必须真实且有界；每个 write action 必须明确由 RBAC 保护、audited、在适用时
+   idempotent，并 fail closed。
+5. Community Redis assumption 替换为 PostgreSQL market-data cache status。Product DSH
+   不获得 database、runtime-control、credential-read、application-source 或 deployment
+   authority。
+6. Data-source credential CRUD 和 data-sync execution 保持 Phase 39 scope。Phase 38 可
+   显示有界 configuration/readiness status，但不得吸收 Phase 39 或暴露 secret。
+7. DSH model-call budget projection 必须使用 normalized BYQ accounting。Raw DSH event
+   schema、hidden reasoning、tool argument 和 provider secret 不得越过 Runtime Adapter/
+   Gateway boundary。
 
-## Consequences
+## 后果
 
-- The circular Phase 38/40 dependency is removed without weakening Phase 38
-  acceptance criteria.
-- Phase 38 can begin after ADR-0019 using phase-owned operations components.
-- Phase 40 remains the final shared-component and parity-closure phase and can
-  generalize only implementations already proven in product flows.
-- Phase 38 remains large and must be delivered in one isolated phase worktree
-  and PR, with contract-first slices and no placeholder completion.
+- 消除 Phase 38/40 circular dependency，且不削弱 Phase 38 acceptance criteria。
+- Phase 38 可在 ADR-0019 后使用 Phase-owned Operations component 开始。
+- Phase 40 保持 final shared-component/parity-closure Phase，只能 generalize 已在 Product
+  flow 验证的 implementation。
+- Phase 38 仍是大型 Phase，必须在一个 isolated Phase worktree/PR 中，以 contract-first
+  slice 交付，不能用 placeholder 冒充完成。
 
-## Required implementation evidence
+## 必需实现证据
 
-- Community operations pages/components inspected and classified before code;
-- admin/role denial, audit, secret-redaction, and bounded-projection tests;
-- Backend and Product API contract tests for each operations projection/action;
-- no direct browser calls to Backend, DSH, MCP, PostgreSQL, Redis, or providers;
-- real Product API desktop/mobile Chrome MCP review and feature checklist;
-- standard architecture, unit, contract, integration, and local CI checks.
+- Code 前 inspect/classify Community Operations page/component；
+- admin/role denial、audit、secret-redaction 和 bounded-projection test；
+- 每项 Operations projection/action 的 Backend/Product API contract test；
+- Browser 不直接调用 Backend、DSH、MCP、PostgreSQL、Redis 或 provider；
+- 真实 Product API desktop/mobile Chrome MCP review 和 feature checklist；
+- 标准 architecture、unit、contract、integration 和 local CI check。
 
-## Rejected alternatives
+## 拒绝的替代方案
 
-- Run Phase 40 before Phase 38: breaks the ordered phase source of truth and
-  asks final closure to generalize components that do not yet exist.
-- Keep Phase 38 blocked until Phase 40: preserves a circular dependency.
-- Waive the shared-component concern without an ADR: contradicts the explicit
-  blocker in `STATUS.md` and the development workflow.
-- Copy Community workbenches: imports obsolete topology, Redis assumptions,
-  unsafe direct control APIs, and incompatible authorization semantics.
+- 在 Phase 38 前执行 Phase 40：破坏 ordered phase source of truth，并要求 final closure
+  generalize 尚不存在的 component。
+- 让 Phase 38 持续阻塞于 Phase 40：保留 circular dependency。
+- 不通过 ADR 就豁免 shared-component concern：与 `STATUS.md` 和开发流程中的明确 blocker
+  冲突。
+- 复制 Community workbench：引入 obsolete topology、Redis assumption、不安全 direct
+  control API 和不兼容 authorization semantics。
 
-## Rollback
+## 回滚
 
-If phase-owned components prove unsuitable, stop Phase 38 and restore the gate
-through a superseding Accepted ADR. Do not silently move operations authority
-into the browser, DSH, or a generic component abstraction.
+如果 Phase-owned component 不合适，停止 Phase 38，并通过 superseding Accepted ADR 恢复
+gate。不得静默将 Operations authority 移入 Browser、DSH 或 generic component abstraction。

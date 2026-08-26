@@ -1,210 +1,175 @@
-# ADR-0020: Stock Pool Identity, Snapshot, and Lifecycle Contract
+# ADR-0020：Stock Pool Identity、Snapshot 与 Lifecycle Contract
 
 - Status: Accepted
 - Date: 2026-08-21
 - Accepted: 2026-08-21
 - Decision scope: Phase 34 Stock Pool depth
-- Related: ADR-0005, ADR-0006, ADR-0008, ADR-0012, ADR-0014,
-  ADR-0016, ADR-0017
+- Related: ADR-0005、ADR-0006、ADR-0008、ADR-0012、ADR-0014、ADR-0016、ADR-0017
 
-## Context
+## 背景
 
-Phase 34 must turn the existing create/list Stock Pool surface into a durable
-domain capability. The current BYQ `stock_pools` row stores mutable symbols,
-weights, provenance, and a constant `v1` label together. Paper orders validate
-against whichever membership is current when the order is submitted, and no
-historical membership can be resolved. The browser can also claim `index` or
-`dynamic` provenance even though it is not a trusted producer.
+Phase 34 必须将现有 create/list Stock Pool surface 转换为 durable domain capability。
+当时 BYQ `stock_pools` row 将 mutable symbol、weight、provenance 和常量 `v1` label 保存
+在一起。Paper order 按 submit 时的 current membership 验证，无法 resolve historical
+membership；Browser 还可以声称 `index`/`dynamic` provenance，尽管它不是 trusted
+producer。
 
-The read-only Community implementation proves useful behaviors: canonicalize,
-deduplicate, and sort symbols; fingerprint membership; reuse identical
-versions; retain historical versions; select an index snapshot without
-look-ahead; and prevent requested symbols or signals from escaping a frozen
-universe. Its storage and lifecycle cannot be copied. Community includes pool
-name, description, strategy, and activation in a version hash, and deleting a
-pool leaves detached version records. Those semantics mix catalog state with
-reproducible domain input.
+Read-only Community implementation 证明了有用 behavior：canonicalize/deduplicate/sort
+symbol、fingerprint membership、复用 identical version、保留 history、无 look-ahead 地
+选择 index snapshot，以及防止 requested symbol/signal 越出 frozen universe。其 storage
+和 lifecycle 不能复制：Community 将 pool name、description、Strategy、activation 纳入
+version hash，删除 pool 后留下 detached version record，混淆 catalog state 与可复现
+domain input。
 
-## Decision
+## 决策
 
-### 1. Separate mutable identity from immutable snapshots
+### 1. 分离 mutable identity 与 immutable snapshot
 
-`stock_pools` is the owner-scoped catalog identity. It contains a globally
-generated `pool_id`, immutable `pool_type`, mutable name and description,
-lifecycle status, and the current snapshot pointer. Name and description are
-not reproducibility inputs.
+`stock_pools` 是 owner-scoped catalog identity，包含 globally generated `pool_id`、
+immutable `pool_type`、mutable name/description、lifecycle status 和 current snapshot
+pointer。Name/description 不是 reproducibility input。
 
-`stock_pool_snapshots` and `stock_pool_snapshot_members` are append-only
-PostgreSQL domain records. A snapshot contains the canonical membership,
-weights, definition, provenance, effective-time semantics, schema version,
-monotonic per-pool version number, and fingerprints. Updating members,
-weights, filters, or trusted source state creates or reuses a snapshot;
-renaming, describing, activating, or deactivating a pool does not.
+`stock_pool_snapshots` 与 `stock_pool_snapshot_members` 是 append-only PostgreSQL domain
+record。Snapshot 包含 canonical membership、weight、definition、provenance、effective-
+time semantics、schema version、monotonic per-pool version number 和 fingerprint。更新
+member、weight、filter 或 trusted source state 会 create/reuse snapshot；rename、describe、
+activate/deactivate pool 不会。
 
-The Backend computes every snapshot identity and fingerprint. Browser, DSH,
-and MCP callers cannot supply an authoritative snapshot ID or fingerprint.
+Backend 计算所有 snapshot identity/fingerprint。Browser、DSH、MCP caller 不能提供
+authoritative snapshot ID 或 fingerprint。
 
-### 2. Canonical identity and idempotency
+### 2. Canonical identity 与 idempotency
 
-Symbols use the canonical `NNNNNN.SH|SZ|BJ` form, are deduplicated, and are
-sorted by symbol. Snapshot identity is SHA-256 over canonical JSON containing
-`schema_version`, `pool_id`, `pool_type`, normalized definition, normalized
-provenance, effective-time fields, and ordered members with canonical decimal
-weights. It excludes version number, timestamps, actor, name, description,
-and lifecycle status. `membership_fingerprint` separately hashes only the
-ordered symbol/weight membership, so equivalent membership can be compared
-across pools without making snapshots share ownership.
+Symbol 使用 canonical `NNNNNN.SH|SZ|BJ`，deduplicate 后按 symbol sort。Snapshot identity
+是以下 canonical JSON 的 SHA-256：`schema_version`、`pool_id`、`pool_type`、normalized
+definition/provenance、effective-time field，以及带 canonical decimal weight 的 ordered
+member；排除 version number、timestamp、actor、name、description 和 lifecycle status。
+`membership_fingerprint` 单独 hash ordered symbol/weight membership，使不同 pool 可比较
+等价 membership，而不共享 ownership。
 
-An identical semantic update is a no-op that returns the existing snapshot.
-A changed update requires an idempotency key and
-`expected_current_snapshot_id`; stale writers fail with conflict. A new
-semantic snapshot receives the next per-pool version number transactionally.
+Identical semantic update 是 no-op，返回现有 snapshot。Changed update 要求 idempotency
+key 和 `expected_current_snapshot_id`；stale writer conflict。新 semantic snapshot 在
+transaction 中取得下一个 per-pool version number。
 
-### 3. Weight contract
+### 3. Weight Contract
 
-Weights are canonical decimal fractions, never binary floats in the persisted
-or wire contract. A snapshot is either unweighted (all member weights null) or
-fully weighted (every member has a weight). Mixed membership is rejected.
-Weighted values must be finite, strictly positive, no greater than one, have
-at most 12 decimal places, and sum to one within `0.00000001`; the Backend
-stores the normalized exact values and the observed sum. Zero-weight members,
-unknown symbols, duplicate symbols, ambiguous percent/fraction units, and
-silent normalization are rejected.
+Weight 是 canonical decimal fraction，persisted/wire Contract 绝不使用 binary float。
+Snapshot 要么 unweighted（全部 member weight 为 null），要么 fully weighted（每个 member
+都有 weight）；mixed membership 被拒绝。Weighted value 必须 finite、strictly positive、
+不大于一、最多 12 位小数，并在 `0.00000001` tolerance 内 sum to one。Backend 保存
+normalized exact value 和 observed sum。Zero-weight member、unknown/duplicate symbol、
+ambiguous percent/fraction unit 和 silent normalization 均被拒绝。
 
-Trusted index ingestion may convert provider percentages to fractions only
-when it records `source_weight_unit`, conversion contract version, provider,
-dataset identity, and effective trade date. Product input cannot perform that
-conversion or assert provider provenance.
+Trusted index ingestion 只有在记录 `source_weight_unit`、conversion Contract version、
+provider、dataset identity 和 effective trade date 时，才可将 provider percentage 转成
+fraction。Product input 不能执行该转换或声称 provider provenance。
 
-### 4. Typed provenance and writers
+### 4. Typed provenance 与 writer
 
-- `custom`: owned and edited by the user. It may store a normalized filter
-  definition as explanation, but the persisted members are authoritative.
-- `index`: produced only by a trusted BYQ domain/data-plane path from validated
-  Tushare or proven provider-independent canonical data. It records index
-  symbol, provider, dataset ID, effective trade date, source unit, and
-  conversion contract. Browser and Product DSH cannot create or mutate it.
-- `dynamic`: produced only by an accepted BYQ computation boundary. It records
-  producer ID/version, rule fingerprint, evaluation time, and immutable input
-  references. Phase 34 defines and renders this provenance but does not create
-  a second generic rule engine or authorize browser/DSH production.
+- `custom`：由 user 持有和编辑。可保存 normalized filter definition 作为解释，但
+  persisted member 具有权威性。
+- `index`：只由 trusted BYQ Domain/Data Plane path 从 validated Tushare 或 proven
+  provider-independent canonical data 生成。记录 index symbol、provider、dataset ID、
+  effective trade date、source unit 和 conversion Contract。Browser/Product DSH 不能
+  create/mutate。
+- `dynamic`：只由 Accepted BYQ computation boundary 生成。记录 producer ID/version、
+  rule fingerprint、evaluation time 和 immutable input reference。Phase 34 定义并显示该
+  provenance，但不创建第二套 generic rule engine，也不授权 Browser/DSH production。
 
-`pool_type` is immutable. BaoStock, AKShare, VectorBT, unproven Community data,
-and `source: frontend` are invalid provenance.
+`pool_type` immutable。BaoStock、AKShare、VectorBT、unproven Community data 和
+`source: frontend` 都是 invalid provenance。
 
-### 5. Lifecycle and deletion
+### 5. Lifecycle 与 deletion
 
-Lifecycle is `active -> inactive -> active` or `active|inactive -> deleted`.
-Only active pools may receive new Paper Trading, research, or backtest
-references. Inactive pools remain readable and their snapshots remain valid
-for replay; they may be edited and reactivated. Deleted pools are tombstones:
-they are hidden from default catalog queries, cannot be edited/reactivated,
-and cannot receive new references.
+Lifecycle 为 `active -> inactive -> active` 或 `active|inactive -> deleted`。只有 active
+pool 可接收新的 Paper Trading、research 或 Backtest reference。Inactive pool 可读，
+snapshot 对 replay 仍有效，且可编辑/reactivate。Deleted pool 是 tombstone：default
+catalog query 不显示，不能 edit/reactivate，也不能接收新 reference。
 
-Delete never removes snapshots or breaks existing references. Hard purge is
-outside Phase 34 and would require a future retention decision plus an
-authoritative, fail-closed live-reference check. Lifecycle changes are
-owner-scoped, idempotent, and audited with actor, reason, previous/new state,
-and timestamp.
+Delete 不移除 snapshot，也不破坏 existing reference。Hard purge 不属于 Phase 34，需要
+未来 retention decision 和 authoritative fail-closed live-reference check。Lifecycle change
+按 owner 隔离、idempotent，并 audit actor、reason、previous/new state 和 timestamp。
 
-### 6. Cross-domain references freeze snapshots
+### 6. Cross-domain reference 冻结 snapshot
 
-Paper Trading, research, and backtest records store
-`stock_pool_snapshot_id` as their authoritative universe reference and may
-also retain `pool_id` for display. They never resolve `current_snapshot_id`
-during replay or execution.
+Paper Trading、research 和 Backtest record 将 `stock_pool_snapshot_id` 保存为
+authoritative universe reference，也可保留 `pool_id` 用于 display；replay/execution 时绝不
+resolve `current_snapshot_id`。
 
-- Backtest requests cannot combine a stock-pool snapshot with a separate
-  index-universe selector. Requested symbols and every signal symbol must be
-  contained by the frozen snapshot. ADR-0008/0017 validation still applies.
-- Research inputs record the snapshot in immutable lineage and enforce owner
-  equality.
-- A Paper account or explicit universe binding freezes a snapshot. Orders are
-  authorized against that binding; a pool edit cannot silently change an
-  existing account's authorized universe. Rebinding/rebalancing is an
-  explicit future or Phase 35 action that records the new snapshot.
+- Backtest request 不能将 Stock Pool snapshot 与独立 index-universe selector 组合；
+  requested symbol 和所有 signal symbol 必须包含在 frozen snapshot 中。ADR-0008/0017
+  validation 继续适用。
+- Research input 在 immutable lineage 中记录 snapshot，并强制 owner equality。
+- Paper account 或明确 universe binding 冻结 snapshot。Order 按 binding 授权；pool edit
+  不能静默改变 existing account authorized universe。Rebinding/rebalancing 是未来或
+  Phase 35 明确 action，并记录新 snapshot。
 
-Existing references remain resolvable after inactivation or deletion. New
-references require owner equality, an active pool, and a current or explicitly
-selected permitted snapshot. Index `as_of` resolution chooses the latest
-effective snapshot at or before the requested date and never looks ahead.
+Inactivation/deletion 后 existing reference 仍可 resolve。New reference 要求 owner
+equality、active pool 和 current 或明确选择的 permitted snapshot。Index `as_of` resolve
+requested date 当日或之前最新 effective snapshot，绝不 look ahead。
 
-### 7. Boundaries and product projections
+### 7. Boundary 与 Product projection
 
-The browser uses Gateway Product API only. Gateway forwards normalized
-owner-scoped requests; Backend owns validation, persistence, fingerprinting,
-and lifecycle. Agent-to-domain access uses bounded `byq_pool_*` MCP tools;
-DSH never accesses PostgreSQL, Tushare, or raw Backend schemas.
+Browser 只使用 Gateway Product API。Gateway 转发 normalized owner-scoped request；
+Backend 持有 validation、persistence、fingerprinting 和 lifecycle。Agent-to-Domain access
+使用有界 `byq_pool_*` MCP tool；DSH 绝不访问 PostgreSQL、Tushare 或 raw Backend schema。
 
-The five persisted detail projections are: Overview, Members & Weights,
-Definition & Filters, Provenance & References, and Snapshot History. Type-
-specific UI may change labels or make trusted-source fields read-only, but it
-does not replace those projections with mock or browser-derived data.
+五种 persisted detail projection 为：Overview、Members & Weights、Definition & Filters、
+Provenance & References、Snapshot History。Type-specific UI 可改变 label 或让 trusted-
+source field read-only，但不能用 mock/browser-derived data 替代这些 projection。
 
-Pagination and response bounds apply to catalog, members, history, and
-references. Unauthorized ownership is not disclosed. All writes require
-durable BYQ user identity or a trusted service identity already permitted by
-the relevant domain boundary.
+Catalog、member、history、reference 均应用 pagination/response bound。不得泄露 unauthorized
+ownership。所有 write 要求 durable BYQ user identity 或相关 domain boundary 已允许的
+trusted service identity。
 
 ### 8. Migration
 
-Existing BYQ rows are migrated logically and idempotently into `custom`
-catalog identities with one immutable snapshot while preserving `pool_id` and
-owner. Canonical valid members and unambiguous valid weights are retained.
-Invalid symbols, mixed/invalid weights, unproven non-custom type claims, or
-ambiguous provenance are quarantined and reported rather than silently
-repaired. The old `version = v1` label is migration input, not snapshot
-identity.
+Existing BYQ row 以 logical/idempotent 方式迁移为 `custom` catalog identity 和一个
+immutable snapshot，保留 `pool_id` 与 owner。Canonical valid member 和 unambiguous valid
+weight 保留。Invalid symbol、mixed/invalid weight、unproven non-custom type claim 或
+ambiguous provenance 被 quarantine/report，而非静默修复。旧 `version = v1` label 是
+migration input，不是 snapshot identity。
 
-Community PostgreSQL is not a Stock Pool migration source for this phase.
-Community code, schema, and data remain read-only evidence and are not copied.
+Community PostgreSQL 不是本 Phase Stock Pool migration source；Community code、schema、
+data 保持 read-only evidence，不复制。
 
-## Consequences
+## 后果
 
-- Catalog edits and lifecycle actions no longer damage reproducibility.
-- Every consumer can replay the precise universe it authorized.
-- Index and dynamic pools require trusted producers; the Product UI cannot
-  manufacture authoritative market provenance.
-- Phase 34 needs additive schema, logical migration/quarantine reporting,
-  Product API and MCP contract expansion, and explicit consumer-reference
-  upgrades before the legacy mutable columns can be retired.
-- Paper Trading must bind to snapshots; full rebalance and settlement depth
-  remains Phase 35.
+- Catalog edit/lifecycle action 不再破坏 reproducibility。
+- 每个 consumer 可 replay 准确 authorized universe。
+- Index/dynamic pool 要求 trusted producer；Product UI 不能制造 authoritative market
+  provenance。
+- Phase 34 在退役 legacy mutable column 前，需要 additive schema、logical migration/
+  quarantine report、Product API/MCP Contract 扩展和明确 consumer-reference upgrade。
+- Paper Trading 必须绑定 snapshot；完整 rebalance/settlement depth 留到 Phase 35。
 
-## Rejected alternatives
+## 拒绝的替代方案
 
-- Versioning the whole mutable pool row: produces false versions for rename or
-  activation and couples replay to presentation metadata.
-- Updating members in place: makes backtest, research, and paper authorization
-  non-reproducible.
-- Content-addressing membership without `pool_id`: risks cross-owner identity
-  sharing and ambiguous lifecycle; cross-pool comparison uses the separate
-  membership fingerprint instead.
-- Hard-deleting the pool while retaining detached versions: loses a stable
-  owner-scoped catalog/audit root.
-- Letting the browser create index/dynamic pools or provenance: violates
-  Product and provider boundaries.
-- Copying Community ORM/routes or adding a compatibility layer: conflicts with
-  the BYQ PostgreSQL, Product API, MCP, and runtime architecture.
+- Version 整个 mutable pool row：rename/activation 产生 false version，并将 replay 耦合
+  presentation metadata。
+- In-place 更新 member：使 Backtest、research、Paper authorization 不可复现。
+- 不含 `pool_id` 的 content-addressed membership：可能共享 cross-owner identity 并使
+  lifecycle ambiguous；cross-pool comparison 应使用独立 membership fingerprint。
+- Hard-delete pool 但保留 detached version：失去稳定 owner-scoped catalog/audit root。
+- 允许 Browser 创建 index/dynamic pool 或 provenance：违反 Product/provider boundary。
+- 复制 Community ORM/route 或增加 compatibility layer：与 BYQ PostgreSQL、Product API、
+  MCP 和 runtime 架构冲突。
 
-## Rollback
+## 回滚
 
-Before any new snapshot is referenced, the additive tables and projections
-can be removed and the legacy row contract restored. After references exist,
-rollback means stopping new writes while retaining snapshot tables and a
-read-only resolver; referenced immutable data must not be deleted. A rollback
-must never rewrite consumer records to a mutable current pool.
+在任何新 snapshot 被 reference 前，可移除 additive table/projection 并恢复 legacy row
+Contract。Reference 已存在后，rollback 表示停止新 write，同时保留 snapshot table 和
+read-only resolver；不得删除 referenced immutable data，也绝不能将 consumer record
+重写到 mutable current pool。
 
-## Acceptance review (2026-08-21)
+## Acceptance review（2026-08-21）
 
-Accepted by the repository maintainer through the explicit instruction to
-execute the recommended remediation sequence with all required authorizations.
-Acceptance followed read-only inspection and classification of Community
-Stock Pool UI, models, routes, versioning, universe guard, migrations, and
-tests; audit of current BYQ storage, Product API, frontend, and Paper Trading
-authorization; and review against ADR-0005/0006/0008/0012/0014/0016/0017.
+维护者明确授权执行 recommended remediation sequence 后接受本 ADR。Acceptance 建立在
+对 Community Stock Pool UI、model、route、versioning、universe guard、migration 和 test
+的 read-only inspection/classification，对当前 BYQ storage、Product API、frontend、Paper
+Trading authorization 的 audit，以及对 ADR-0005/0006/0008/0012/0014/0016/0017 的 review
+之上。
 
-Acceptance is conditional on the contract tests and browser evidence listed
-in `docs/contracts/stock-pool.md`. It authorizes Phase 34 implementation in a
-new isolated worktree only after this ADR is merged; it does not mark Phase 34
-complete and does not authorize Phase 35.
+Acceptance 以 `docs/contracts/stock-pool.md` 所列 contract test 和 browser evidence 为
+条件。它只在本 ADR merge 后授权在新 isolated worktree 中实现 Phase 34；不表示
+Phase 34 已完成，也不授权 Phase 35。

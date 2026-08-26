@@ -1,211 +1,181 @@
-# ADR-0019: Encrypted Credential Store and Runtime Resolution Boundary
+# ADR-0019：Encrypted Credential Store 与 Runtime Resolution Boundary
 
 - Status: Accepted
 - Date: 2026-08-22
-- Decision scope: Phase 37 model credentials and Phase 39 Tushare credentials
-- Related: ADR-0003, ADR-0004, ADR-0005, ADR-0012, ADR-0014, ADR-0016
+- Decision scope: Phase 37 model credential 与 Phase 39 Tushare credential
+- Related: ADR-0003、ADR-0004、ADR-0005、ADR-0012、ADR-0014、ADR-0016
 - Contract: `docs/contracts/credential-store.md`
 
-## Context
+## 背景
 
-Community exposes provider/model credential CRUD, model profiles and Agent
-binding through `UserModelSettingsPanel`, and data-source configuration through
-`DataSourceConfig`. Those workflows are useful product evidence, but the old
-credential APIs, provider catalogue, Agent runtime, and persistence model are
-not a safe migration boundary.
+Community 通过 `UserModelSettingsPanel` 暴露 provider/model credential CRUD、model
+profile 和 Agent binding，并通过 `DataSourceConfig` 暴露 data-source configuration。
+这些 workflow 是有用的 Product evidence，但旧 credential API、provider catalogue、
+Agent runtime 和 persistence model 不是安全 migration boundary。
 
-BYQ currently receives `DEEPSEEK_API_KEY` and `TUSHARE_TOKEN` from the process
-environment. The Gateway's model-settings response is status-only, so a user
-cannot create a personal model credential or make an Agent binding effective.
-Environment-only configuration also cannot provide audited administrator CRUD
-for a Tushare credential. A database-backed store is therefore required, but
-putting recoverable secrets in PostgreSQL introduces encryption, key rotation,
-authorization, runtime delivery, deletion, and observability decisions that
-must be closed before Phase 37 begins.
+BYQ 当时从 process environment 接收 `DEEPSEEK_API_KEY` 和 `TUSHARE_TOKEN`。Gateway
+model-settings response 只有 status，用户无法创建 personal model credential 或使 Agent
+binding 生效；environment-only configuration 也无法提供经过审计的 Tushare credential
+administrator CRUD。因此需要 database-backed store，但将可恢复 secret 放入 PostgreSQL
+会引入 encryption、key rotation、authorization、runtime delivery、deletion 和
+observability 决策，必须在 Phase 37 前闭合。
 
-The browser, Gateway, MCP, DSH event stream, WorkflowTrace, audit records, and
-application logs must never receive a stored plaintext secret. At the same
-time, an adapter-owned model client and the Backend-owned Tushare provider need
-the plaintext briefly to authenticate an outbound provider call.
+Browser、Gateway、MCP、DSH event stream、WorkflowTrace、audit record 和 application
+log 绝不能收到 stored plaintext secret；同时 Adapter-owned model client 和 Backend-
+owned Tushare provider 需要短暂使用 plaintext 认证 outbound provider call。
 
-## Decision
+## 决策
 
-### 1. Backend owns one typed credential store
+### 1. Backend 持有单一 typed credential store
 
-The Backend owns PostgreSQL records for credential metadata and encrypted
-secret envelopes. The initial credential purposes are:
+Backend 持有 PostgreSQL credential metadata 和 encrypted secret envelope record。初始
+purpose 为：
 
-- `model_api_key`, with `user` or `system` scope; and
-- `tushare_token`, with `system` scope only.
+- `model_api_key`，scope 为 `user` 或 `system`；
+- `tushare_token`，scope 只能为 `system`。
 
-Every record has a stable BYQ identifier, purpose, provider key, scope,
-owner identity when user-scoped, display label, status, version, masked
-descriptor, encrypted envelope, and created/updated/revoked audit metadata.
-Exact limits and public projections are defined by
-`docs/contracts/credential-store.md`.
+每条 record 有稳定 BYQ identifier、purpose、provider key、scope、user-scoped owner
+identity、display label、status、version、masked descriptor、encrypted envelope 和
+created/updated/revoked audit metadata。准确 limit 和 public projection 定义于
+`docs/contracts/credential-store.md`。
 
-User-scoped credentials are visible and mutable only to their owning durable
-BYQ user. System-scoped credentials require an authenticated `admin` role.
-The browser reaches them only through Gateway Product API routes. MCP and DSH
-receive no credential CRUD or resolution capability.
+User-scoped credential 只对其 durable BYQ user owner 可见、可修改。System-scoped
+credential 要求 authenticated `admin` role。Browser 只能通过 Gateway Product API route
+访问。MCP 和 DSH 不获得 credential CRUD 或 resolution capability。
 
-### 2. Use a versioned AES-256-GCM envelope
+### 2. 使用 versioned AES-256-GCM envelope
 
-Secret values are encrypted in the Backend application layer with AES-256-GCM.
-Each write uses a fresh 96-bit random nonce and the active 256-bit deployment
-key. Authenticated additional data binds the ciphertext to the envelope
-version, credential id, purpose, provider, scope, and owner, preventing a
-ciphertext from being moved to another record or meaning.
+Secret value 在 Backend application layer 使用 AES-256-GCM 加密。每次 write 使用新的
+96-bit random nonce 和 active 256-bit deployment key。Authenticated additional data 将
+ciphertext 绑定到 envelope version、credential id、purpose、provider、scope 和 owner，
+防止 ciphertext 被移动到其他 record 或语义。
 
-Deployment keys are supplied through a versioned environment key ring and are
-never stored in PostgreSQL or returned by readiness endpoints. The key ring
-identifies one active key for new writes and may retain previous keys for
-decrypt-and-rewrap rotation. Unknown key ids, invalid tags, malformed
-envelopes, or unavailable keys fail closed. Plaintext is never persisted,
-cached to disk, included in an exception, or placed in a queue.
+Deployment key 由 versioned environment key ring 提供，绝不存入 PostgreSQL，也不由
+readiness endpoint 返回。Key ring 标识新 write 使用的 active key，并可保留 previous
+key 进行 decrypt-and-rewrap rotation。Unknown key id、invalid tag、malformed envelope 或
+unavailable key 均 fail closed。Plaintext 绝不 persistence、cache 到 disk、进入 exception
+或 queue。
 
-The normative envelope, key-ring variables, rotation procedure, and startup
-behavior are part of the credential-store contract. A production credential
-write is unavailable until a valid active key exists; env-only bootstrap
-operation remains possible without silently weakening encryption.
+Normative envelope、key-ring variable、rotation procedure 和 startup behavior 属于
+Credential Store Contract。有效 active key 可用前，production credential write 不可用；
+env-only bootstrap 仍可运行，但不能静默降低 encryption。
 
-### 3. Public reads are metadata-only and writes are secret-blind
+### 3. Public read 只含 metadata，write 不回显 secret
 
-Public Product API reads return exact allow-listed metadata, `configured`, and
-a bounded masked descriptor such as `sk-…abcd`. They never return ciphertext,
-nonce, tag, key id, plaintext, environment values, or a reversible derivative.
-The descriptor is calculated at write time and cannot be used to reconstruct
-the value.
+Public Product API read 只返回准确 allow-listed metadata、`configured` 和有界 masked
+descriptor，例如 `sk-…abcd`。绝不返回 ciphertext、nonce、tag、key id、plaintext、
+environment value 或可逆 derivative。Descriptor 在 write 时计算，不能用于重建值。
 
-Create and replacement requests accept the secret only in the request body.
-Responses use the same metadata-only projection. Updating metadata with the
-secret omitted preserves the current encrypted value; replacing a secret
-increments the credential version and writes a new nonce/envelope. Identical
-idempotency keys may replay the prior metadata response but never replay the
-submitted request body.
+Create/replacement request 只在 request body 接受 secret。Response 使用相同 metadata-
+only projection。Secret omitted 的 metadata update 保留现有 encrypted value；替换 secret
+会增加 credential version 并写新 nonce/envelope。相同 idempotency key 可 replay 先前
+metadata response，但绝不 replay submitted request body。
 
-Delete is an auditable revoke: active bindings are disabled atomically and the
-encrypted envelope is removed. It is not possible to read or restore a revoked
-secret. All create, replace, enable/disable, bind/unbind, and revoke operations
-append an audit event containing actor, owner/scope, credential id, action,
-request identity, and timestamp, but no secret or credential-shaped payload.
+Delete 是可审计 revoke：原子 disable active binding 并移除 encrypted envelope。Revoked
+secret 不可读取或恢复。Create、replace、enable/disable、bind/unbind 和 revoke 均 append
+audit event，包含 actor、owner/scope、credential id、action、request identity 和
+timestamp，但不含 secret 或 credential-shaped payload。
 
-### 4. Model profiles and Agent bindings are separate from secrets
+### 4. Model profile、Agent binding 与 secret 分离
 
-A model credential authenticates a provider; it is not itself an executable
-Agent configuration. BYQ stores owner-scoped model profiles that reference an
-active credential and contain only allow-listed provider/model catalogue keys
-and bounded generation options. Arbitrary user-supplied provider URLs are not
-accepted in Phase 37; this avoids turning the runtime into an SSRF proxy.
+Model credential 用于认证 provider，本身不是 executable Agent configuration。BYQ 保存
+owner-scoped model profile，引用 active credential，并只包含 allow-listed provider/model
+catalogue key 和有界 generation option。Phase 37 不接受任意 user-supplied provider URL，
+避免 runtime 变成 SSRF proxy。
 
-An owner-scoped Agent binding maps a BYQ Agent preset id to a model profile.
-Only catalogue-compatible, active profiles may be bound. Revoking or disabling
-the credential makes dependent profiles unavailable and their bindings
-ineffective without falling through to another user's or another system
-credential. The Product API may report the effective source and availability,
-but never the secret.
+Owner-scoped Agent binding 将 BYQ Agent preset id 映射到 model profile。只有 catalogue-
+compatible active profile 可绑定。Revoke/disable credential 会使 dependent profile
+unavailable、binding ineffective，不能 fallback 到其他 user 或 system credential。
+Product API 可报告 effective source 和 availability，但绝不报告 secret。
 
-### 5. Resolve model secrets through a private Backend-to-Adapter seam
+### 5. 通过 private Backend-to-Adapter seam resolve model secret
 
-Gateway starts a turn with authenticated owner and Agent/profile references;
-it never fetches a secret. Runtime Adapter resolves the effective binding from
-a Backend internal endpoint protected by a dedicated resolver service token
-that is present only in Backend and Runtime Adapter. The request is bound to
-the owner, Agent preset, and session/turn identity. Backend authorizes the
-binding and returns one bounded resolution document directly to the adapter.
+Gateway 使用 authenticated owner 和 Agent/profile reference 启动 turn，绝不 fetch secret。
+Runtime Adapter 从 Backend internal endpoint resolve effective binding；该 endpoint 由仅
+Backend 与 Runtime Adapter 持有的 dedicated resolver service token 保护。Request 绑定
+owner、Agent preset 和 session/turn identity。Backend authorizes binding，并将单一有界
+resolution document 直接返回 Adapter。
 
-That internal response is the only API response allowed to contain plaintext.
-It is not part of Product API or OpenAPI, is never available to the browser,
-Gateway, MCP, or DSH tools, and uses no general credential-list/read endpoint.
-Runtime Adapter holds it only in memory and places the model key only in the
-environment of the adapter-owned SDK child for that session. It is excluded
-from session descriptions, WorkflowTrace, errors, command arguments, logs,
-and durable DSH session metadata. Resolution failure fails the requested turn
-closed rather than silently using a different user's key.
+该 internal response 是唯一允许包含 plaintext 的 API response。它不属于 Product API
+或 OpenAPI，Browser、Gateway、MCP、DSH tool 均无法访问，且没有 generic credential-
+list/read endpoint。Runtime Adapter 只在 memory 持有，并只把 model key 放入该 session
+的 Adapter-owned SDK child environment。Session description、WorkflowTrace、error、
+command argument、log 和 durable DSH session metadata 均排除它。Resolution failure 对
+requested turn fail closed，不能静默使用其他 user key。
 
-Phase 37 must prove this seam with secret-boundary, owner-isolation, redaction,
-and child-process-environment tests. A future external secret broker or KMS can
-replace the internal resolution implementation without changing Product API.
+Phase 37 必须用 secret-boundary、owner-isolation、redaction 和 child-process-environment
+test 证明该 seam。未来 external secret broker/KMS 可替换 internal resolution，而不改变
+Product API。
 
-### 6. Tushare resolution stays inside Backend
+### 6. Tushare resolution 留在 Backend 内
 
-The Backend-owned Tushare adapter resolves the active system
-`tushare_token` directly from the credential store at provider call time. It
-does not expose a resolver route to Gateway, MCP, DSH, or Runtime Adapter.
-Data-source configuration remains Tushare-only. BaoStock, AKShare, Yahoo, and
-other Community providers remain `DROP`.
+Backend-owned Tushare Adapter 在 provider call 时直接从 credential store resolve active
+system `tushare_token`，不向 Gateway、MCP、DSH 或 Runtime Adapter 暴露 resolver route。
+Data-source configuration 保持 Tushare-only；BaoStock、AKShare、Yahoo 和其他 Community
+provider 保持 `DROP`。
 
-### 7. Environment credentials are explicit bootstrap fallbacks
+### 7. Environment credential 是明确 bootstrap fallback
 
-`DEEPSEEK_API_KEY` and `TUSHARE_TOKEN` remain bootstrap/system compatibility
-fallbacks. A valid active database credential takes precedence for the same
-purpose/provider. Environment values are never imported automatically into
-PostgreSQL and are represented publicly only as a source/status flag with a
-non-revealing descriptor.
+`DEEPSEEK_API_KEY` 和 `TUSHARE_TOKEN` 仅为 bootstrap/system compatibility fallback。
+同一 purpose/provider 的有效 active database credential 优先。Environment value 不自动
+import PostgreSQL，在 public projection 中只表示为不泄漏内容的 source/status flag。
 
-There is no environment fallback for a missing, disabled, revoked, corrupt, or
-cross-owner user credential. This prevents a personal binding failure from
-unexpectedly consuming a system key. Bootstrap fallback use is observable in
-secret-free audit/health metadata.
+Missing、disabled、revoked、corrupt 或 cross-owner user credential 没有 environment
+fallback，防止 personal binding failure 意外消耗 system key。Bootstrap fallback usage
+可在 secret-free audit/health metadata 中观察。
 
-### 8. Phase ownership removes the Phase 37/40 cycle
+### 8. Phase ownership 消除 Phase 37/40 循环
 
-Phase 37 owns the model credential/profile/binding UI component and API flows
-required by its exit criteria, plus asset re-import and Agent policy depth.
-Phase 40 may extract or generalize proven shared components later; it is not a
-prerequisite for Phase 37. Phase 39 reuses this accepted store for the
-Tushare-only data-source workflow and does not add providers.
+Phase 37 持有 exit criteria 所需 model credential/profile/binding UI component 和 API
+flow，以及 asset re-import 和 Agent Policy depth。Phase 40 可在后续 extract/generalize
+已验证 shared component，但不是 Phase 37 prerequisite。Phase 39 复用该 Accepted store
+处理 Tushare-only data-source workflow，不增加 provider。
 
-## Consequences
+## 后果
 
-- Model and Tushare credentials become durable, scoped, masked, auditable, and
-  rotatable without exposing secrets to browser-facing contracts.
-- The Backend gains credential/profile/binding records and a narrow internal
-  resolver; Runtime Adapter gains per-session resolution and in-memory child
-  environment injection.
-- Deployments must provision and back up the encryption key ring separately
-  from PostgreSQL. A database backup alone cannot decrypt credentials.
-- Key loss makes affected credentials unrecoverable by design; operators must
-  replace them. Invalid encryption state degrades credential-backed operations
-  without taking down unrelated Product reads.
-- Phase 37 can begin without waiting for Phase 40, while preserving the
-  one-phase-per-worktree gate.
+- Model/Tushare credential 持久、scoped、masked、auditable、rotatable，且不向 browser-
+  facing Contract 暴露 secret。
+- Backend 增加 credential/profile/binding record 和 narrow internal resolver；Runtime
+  Adapter 增加 per-session resolution 和 in-memory child environment injection。
+- Deployment 必须独立于 PostgreSQL provision/backup encryption key ring；仅有 database
+  backup 无法 decrypt credential。
+- Key loss 会按设计使受影响 credential 不可恢复，operator 必须替换。Invalid encryption
+  state 只降低 credential-backed operation，不影响无关 Product read。
+- Phase 37 无需等待 Phase 40，同时保持 one-phase-per-worktree gate。
 
-## Required implementation evidence
+## 必需实现证据
 
-- encryption known-answer/round-trip and tamper/AAD/key-id failure tests;
-- key rotation and rewrap tests proving old and active key behavior;
-- owner/admin authorization, idempotency, optimistic-version, revoke, cascade,
-  and append-only audit tests;
-- Product API/OpenAPI tests proving plaintext and envelope fields never occur;
-- Runtime Adapter tests proving exact binding resolution, no cross-owner or
-  fallback substitution, in-memory-only handling, and complete redaction;
-- Tushare precedence/fallback tests without a live secret in fixtures;
-- Community feature checklist and real Product API desktop/mobile Chrome MCP
-  evidence for Phase 37.
+- encryption known-answer/round-trip 与 tamper/AAD/key-id failure test；
+- key rotation/rewrap test，证明 old/active key behavior；
+- owner/admin authorization、idempotency、optimistic-version、revoke、cascade 和
+  append-only audit test；
+- 证明 plaintext/envelope field 绝不出现的 Product API/OpenAPI test；
+- 证明准确 binding resolution、无 cross-owner/fallback substitution、in-memory-only
+  handling 和完整 redaction 的 Runtime Adapter test；
+- 不含 live secret fixture 的 Tushare precedence/fallback test；
+- Phase 37 Community feature checklist 和真实 Product API desktop/mobile Chrome MCP
+  evidence。
 
-## Rejected alternatives
+## 拒绝的替代方案
 
-- Environment-only credentials with a status UI: cannot satisfy durable CRUD,
-  personal bindings, rotation, or audit.
-- Plaintext or database-extension-only storage: exposes secrets to database
-  readers/backups or couples the domain store to an implicit decryption role.
-- Hashing provider credentials: outbound provider authentication requires the
-  original secret.
-- Returning a secret to Gateway and forwarding it to Runtime Adapter: expands
-  the browser-facing process trust boundary and creates logging/error hazards.
-- A generic secret-read endpoint for MCP or DSH: violates the Agent-to-Domain
-  boundary and grants unnecessary secret authority.
-- Arbitrary user provider URLs: creates an SSRF/exfiltration surface.
-- Automatic fallback from a broken personal binding to a system key: hides
-  authorization/configuration failure and can charge the wrong credential.
-- Copying Community credential tables, providers, or Agent runtime: preserves
-  incompatible trust and provider assumptions.
+- Environment-only credential 加 status UI：无法满足 durable CRUD、personal binding、
+  rotation 或 audit。
+- Plaintext 或 database-extension-only storage：向 database reader/backup 暴露 secret，
+  或把 domain store 耦合到隐式 decryption role。
+- Hash provider credential：outbound provider authentication 需要 original secret。
+- 将 secret 返回 Gateway 再转发 Runtime Adapter：扩大 browser-facing process trust
+  boundary，并产生 logging/error hazard。
+- 为 MCP/DSH 提供 generic secret-read endpoint：违反 Agent-to-Domain boundary，并授予
+  不必要 secret authority。
+- 任意 user provider URL：产生 SSRF/exfiltration surface。
+- Broken personal binding 自动 fallback 到 system key：隐藏 authorization/configuration
+  failure，且可能使用错误 credential 计费。
+- 复制 Community credential table、provider 或 Agent runtime：保留不兼容 trust 和
+  provider assumption。
 
-## Rollback
+## 回滚
 
-Disable database-backed resolution and personal bindings, revoke the resolver
-service token, and return supported system providers to explicit environment
-bootstrap configuration. Revoked records remain audit evidence; encrypted
-records may be retained for a bounded rollback window or securely purged after
-operator confirmation. Product metadata endpoints continue to omit secrets.
+禁用 database-backed resolution 和 personal binding，revoke resolver service token，并
+让受支持 system provider 恢复明确 environment bootstrap configuration。Revoked record
+保留为 audit evidence；encrypted record 可保留一个有界 rollback window，或经 operator
+确认后安全 purge。Product metadata endpoint 继续省略 secret。

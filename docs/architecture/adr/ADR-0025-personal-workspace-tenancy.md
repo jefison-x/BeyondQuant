@@ -1,165 +1,136 @@
-# ADR-0025: Personal Workspace Tenancy Boundary
+# ADR-0025：Personal Workspace Tenancy Boundary
 
 - Status: Accepted
 - Date: 2026-08-24
 - Accepted: 2026-08-24
-- Decision scope: Personal workspace identity, resource ownership, trusted
-  request context, compatibility migration, and future team extension
-- Related: ADR-0003, ADR-0012, ADR-0014, ADR-0016, ADR-0018, ADR-0019,
-  ADR-0024
+- Decision scope: personal workspace identity、resource ownership、trusted request context、
+  compatibility migration 与 future team extension
+- Related: ADR-0003、ADR-0012、ADR-0014、ADR-0016、ADR-0018、ADR-0019、ADR-0024
 
-## Context
+## 背景
 
-BeyondQuant currently has durable users and exact-owner isolation. Product
-resources are authorized primarily by `owner_principal`, which is derived from
-the authenticated user. This is safe for the present two-user Product journey,
-but it conflates three different concepts: the user account, the container that
-owns research assets, and the actor that created or changed an asset. That
-conflation would make a later Cloud or team deployment require broad rekeying
-of conversations, strategies, backtests, approvals, and paper accounts.
+BeyondQuant 当时已有 durable user 和 exact-owner isolation。Product resource 主要按从
+authenticated user 派生的 `owner_principal` authorization。对于当时 two-user Product
+journey 这很安全，但混淆了 user account、持有 research asset 的 container 和创建/修改
+asset 的 actor 三个概念。未来 Cloud/team deployment 会因此需要大规模 rekey
+conversation、Strategy、Backtest、Approval 和 Paper account。
 
-The maintainer selected a personal-workspace-first product rather than a team
-edition. The immediate requirement is therefore one automatically provisioned
-private workspace per durable user, with no invitations, sharing, organization
-administration, billing, quotas, or workspace switcher. The storage and request
-contracts must nevertheless avoid another ownership migration when a future
-ADR introduces team workspaces.
+维护者选择 personal-workspace-first product，而不是 team edition。即时需求是每个
+durable user 自动 provision 一个 private workspace，不包含 invitation、sharing、
+organization administration、billing、quota 或 workspace switcher；但 storage/request
+Contract 必须避免未来 ADR 引入 team workspace 时再次进行 ownership migration。
 
-The read-only BeyondQuant-Community repository contains useful planning
-evidence: create a personal boundary before commercial features; never trust a
-client- or model-declared tenant; keep public market data outside user asset
-copies; and migrate ownership without silently assigning unverifiable rows.
-It does not contain an implemented tenant system that is compatible with the
-current BYQ architecture. Its old runtime, ORM, API, and Cloud topology remain
-reference-only or replaced.
+Read-only BeyondQuant-Community repository 提供有用 planning evidence：commercial
+feature 前先建立 personal boundary；绝不信任 client/model 声明的 tenant；public market
+data 不复制进 user asset；迁移 ownership 时不静默分配 unverifiable row。它没有兼容
+当前 BYQ 架构的 implemented tenant system；旧 runtime、ORM、API、Cloud topology 只作
+reference 或被替换。
 
-## Decision
+## 决策
 
-1. A `workspace` is BYQ's current tenancy and authorization boundary. Every
-   durable user receives exactly one workspace of kind `personal`. The user is
-   its sole `owner` membership. The initial Product does not expose workspace
-   creation, invitation, sharing, switching, or team roles.
-2. PostgreSQL owns `workspaces` and `workspace_memberships`. Workspace and
-   membership identifiers are stable opaque IDs. A personal workspace has
-   exactly one owner membership and cannot be transferred or deleted through
-   the Phase 49-52 Product API.
-3. Workspace-owned domain rows gain a non-null `workspace_id` after an
-   expand/backfill/verify/contract migration. `owner_principal` remains as
-   immutable creator or historical audit identity during this program; it is
-   no longer the final authorization key after cutover.
-4. User account data remains user-scoped: profile, appearance, authentication
-   sessions, encrypted personal model credentials/profiles/bindings, and
-   personal Agent policy. Their actions may operate on workspace resources,
-   but membership does not transfer account secrets or personal preferences.
-5. Canonical market data, calendars, provider ingestion state, system
-   operations, monitoring policy, deployment configuration, and platform
-   audit remain platform-scoped. Referencing platform data from a workspace
-   does not copy it into that workspace or make it exportable.
-6. The Gateway derives an active personal workspace from the authenticated
-   durable user. It strips or ignores any browser-supplied workspace/owner
-   identity headers and propagates a normalized trusted context on private
-   service calls. Backend remains authoritative for user and membership
-   validation and fails closed when the workspace or membership is absent,
-   disabled, mismatched, or ambiguous.
-7. Runtime Adapter, DSH-facing orchestration, and BeyondQuant MCP receive only
-   service-derived workspace and actor context. A model, tool argument,
-   WorkflowTrace card, imported bundle, or browser body cannot select its
-   workspace. DSH does not access PostgreSQL, and all Agent-to-Domain calls
-   continue through BeyondQuant MCP.
-8. The browser continues to call only same-origin Gateway/Product API. No raw
-   DSH event or internal workspace header becomes a frontend contract. The
-   Product may expose a bounded personal-workspace summary for orientation,
-   but it does not require a selector while only one workspace is valid.
-9. Authorization is explicit in repositories and service contracts during
-   this program. PostgreSQL row-level security is a possible later
-   defense-in-depth layer, not a substitute for Product API, Backend, MCP, and
-   cross-resource authorization tests and not part of Phases 49-52.
-10. A future Accepted ADR may add workspace kinds and membership roles or put
-    an organization above workspaces. Existing domain rows remain keyed by
-    `workspace_id`, so that extension adds memberships and active-workspace
-    selection instead of reassigning every asset.
+1. `workspace` 是 BYQ 当前 tenancy/authorization boundary。每个 durable user 恰有一个
+   kind 为 `personal` 的 workspace，user 是唯一 `owner` membership。Initial Product 不
+   暴露 workspace create、invitation、sharing、switching 或 team role。
+2. PostgreSQL 持有 `workspaces` 和 `workspace_memberships`。Workspace/membership ID 是
+   stable opaque ID。Personal workspace 恰有一个 owner membership，且不能通过 Phase
+   49-52 Product API transfer/delete。
+3. Workspace-owned domain row 在 expand/backfill/verify/contract migration 后获得 non-null
+   `workspace_id`。本计划期间 `owner_principal` 继续作为 immutable creator/historical
+   audit identity；cutover 后不再是最终 authorization key。
+4. User account data 保持 user-scoped：profile、appearance、authentication session、
+   encrypted personal model credential/profile/binding 和 personal Agent Policy。相关 action
+   可操作 workspace resource，但 membership 不转移 account secret/personal preference。
+5. Canonical market data、calendar、provider ingestion state、system Operations、monitoring
+   policy、deployment configuration 和 platform audit 保持 platform-scoped。从 workspace
+   引用 platform data 不会复制或使其可 export。
+6. Gateway 从 authenticated durable user 派生 active personal workspace，strip/ignore
+   Browser-supplied workspace/owner identity header，并在 private service call 传播
+   normalized trusted context。Backend 对 user/membership validation 具有权威；workspace
+   或 membership absent、disabled、mismatched、ambiguous 时 fail closed。
+7. Runtime Adapter、DSH-facing orchestration 和 BeyondQuant MCP 只接收 service-derived
+   workspace/actor context。Model、tool argument、WorkflowTrace card、imported bundle 或
+   Browser body 不能选择 workspace。DSH 不访问 PostgreSQL；所有 Agent-to-Domain call
+   继续经过 BeyondQuant MCP。
+8. Browser 继续只调用 same-origin Gateway/Product API。Raw DSH event/internal workspace
+   header 不成为 Frontend Contract。Product 可为 orientation 暴露有界 personal-workspace
+   summary；只有一个 valid workspace 时不要求 selector。
+9. 本计划期间 authorization 在 repository/service Contract 中明确执行。PostgreSQL RLS
+   可能作为后续 defense-in-depth layer，但不能替代 Product API、Backend、MCP 和 cross-
+   resource authorization test，也不属于 Phase 49-52。
+10. Future Accepted ADR 可增加 workspace kind/membership role，或在 workspace 上增加
+    organization。Existing domain row 继续以 `workspace_id` 为 key，因此扩展只增加
+    membership/active-workspace selection，无需重新分配全部 asset。
 
-The normative context shape and resource classification are recorded in
-[`personal-workspace.v1`](../../contracts/personal-workspace.md).
+Normative context shape/resource classification 记录在
+[`personal-workspace.v1`](../../contracts/personal-workspace.md)。
 
-## Security and domain invariants
+## Security 与 domain invariant
 
-- The authenticated user is the actor; the workspace is the resource boundary.
-- Platform administrator status does not implicitly grant membership or
-  ordinary Product access to another user's workspace.
-- Workspace-owned parent and child records must have the same `workspace_id`.
-- Idempotency and uniqueness keys for workspace resources include the
-  workspace boundary.
-- Cross-workspace lookup, mutation, approval, import, replay, object retrieval,
-  and lineage traversal fail closed without revealing the target resource.
-- Object storage paths are never treated as ownership evidence. Authoritative
-  PostgreSQL metadata grants access before object retrieval.
-- Imported assets receive the destination workspace from trusted request
-  context. A manifest-supplied workspace or owner is evidence only and cannot
-  grant access.
-- Actor and workspace context are recorded separately in audit and
-  WorkflowTrace correlation. Public projections remain bounded and secret-free.
+- Authenticated user 是 actor；workspace 是 resource boundary。
+- Platform administrator status 不隐含授予另一个 user workspace 的 membership 或普通
+  Product access。
+- Workspace-owned parent/child record 必须具有相同 `workspace_id`。
+- Workspace resource 的 idempotency/uniqueness key 包含 workspace boundary。
+- Cross-workspace lookup、mutation、Approval、import、replay、object retrieval 和 lineage
+  traversal fail closed，且不泄漏 target resource。
+- Object storage path 绝不作为 ownership evidence；object retrieval 前由 authoritative
+  PostgreSQL metadata 授权。
+- Imported asset 从 trusted request context 获取 destination workspace。Manifest-supplied
+  workspace/owner 仅为 evidence，不能授予 access。
+- Actor/workspace context 在 audit 和 WorkflowTrace correlation 中分别记录；public
+  projection 保持有界且 secret-free。
 
-## Migration and compatibility
+## Migration 与 compatibility
 
-The migration is deliberately staged:
+Migration 明确分阶段：
 
-1. Expand with workspace tables and idempotently provision one personal
-   workspace and owner membership for every durable user.
-2. Add nullable `workspace_id` columns and workspace-aware indexes to the
-   classified domain tables without changing current reads.
-3. Backfill only where an exact unique durable-user mapping from the historical
-   owner principal can be proved. Produce counts and a manifest; quarantine or
-   report orphaned, ambiguous, service-token, and otherwise unverifiable rows.
-4. Verify row counts, parent-child equality, reference integrity, uniqueness,
-   and owner-to-workspace mappings before making any column mandatory.
-5. Cut writes and reads to trusted `WorkspaceContext`, retaining
-   `owner_principal` for creator/audit compatibility. Only then add non-null,
-   foreign-key, and uniqueness constraints for verified tables.
-6. Remove compatibility read paths only after the two-user browser and Product
-   API golden journey proves restart persistence, import/export, approvals,
-   lineage, and cross-workspace denial.
+1. Expand workspace table，并为每个 durable user idempotently provision 一个 personal
+   workspace 和 owner membership。
+2. 为 classified domain table 增加 nullable `workspace_id` column 和 workspace-aware
+   index，不改变 current read。
+3. 只在能从 historical owner principal 证明 exact unique durable-user mapping 时 backfill。
+   生成 count/manifest；orphaned、ambiguous、service-token 或其他 unverifiable row 被
+   quarantine/report。
+4. 在 column mandatory 前验证 row count、parent-child equality、reference integrity、
+   uniqueness 和 owner-to-workspace mapping。
+5. 将 read/write cutover 到 trusted `WorkspaceContext`，保留 `owner_principal` 用于
+   creator/audit compatibility；之后才对 verified table 增加 non-null、foreign-key 和
+   uniqueness constraint。
+6. 只有 two-user Browser/Product API golden journey 证明 restart persistence、import/
+   export、Approval、lineage 和 cross-workspace denial 后，才移除 compatibility read path。
 
-No migration assigns all legacy rows to the first user or to an administrator.
-Before the contract step, rollback disables workspace-aware reads/writes while
-leaving additive tables and columns in place. After constraints are enforced,
-rollback is a forward repair or restore from the phase backup; it is never a
-silent return to mixed owner/workspace authorization. `owner_principal` is not
-dropped in Phases 49-52.
+Migration 不把所有 legacy row 分给 first user 或 administrator。Contract step 前 rollback
+会 disable workspace-aware read/write，并保留 additive table/column。Constraint enforced
+后，rollback 是 forward repair 或从 Phase backup restore，绝不静默回到 mixed owner/
+workspace authorization。Phase 49-52 不删除 `owner_principal`。
 
-## Consequences
+## 后果
 
-- The personal product gains an explicit, auditable tenancy boundary with no
-  team-management complexity in its UI.
-- Most domain tables and service methods require a controlled migration, even
-  though the visible Product change is small.
-- User secrets and preferences stay correctly bound to a human account while
-  shareable research artifacts are structurally ready for a later team model.
-- Existing owner isolation provides a safe compatibility source, but it must
-  not be mistaken for completed workspace isolation until Phase 52 closes the
-  migration and golden journey.
+- Personal Product 获得明确、auditable tenancy boundary，UI 不增加 team-management
+  complexity。
+- 即使 visible Product change 很小，大部分 domain table/service method 仍需要受控 migration。
+- User secret/preference 正确绑定 human account；shareable research Artifact 在结构上为
+  future team model 做好准备。
+- Existing owner isolation 是安全 compatibility source，但在 Phase 52 完成 migration 和
+  golden journey 前，不能误认为 workspace isolation 已完成。
 
-## Rejected alternatives
+## 拒绝的替代方案
 
-- Treat `user_id` as the permanent tenant key: simplest now, but forces broad
-  asset rekeying when team workspaces arrive and keeps actor and owner
-  semantics conflated.
-- Implement full organizations and teams now: adds invitations, role policy,
-  switching, sharing, billing, and operator support before the personal
-  Product needs them.
-- Trust a client-supplied workspace ID: permits confused-deputy and horizontal
-  privilege-escalation failures.
-- Reuse the Community tenant design or runtime code: it is a planning draft
-  coupled to obsolete runtime and storage assumptions, not a compatible
-  implementation.
-- Make all data workspace-owned: duplicates canonical market data and confuses
-  access to shared platform datasets with ownership of user artifacts.
-- Enable RLS first and rely on it alone: leaves service, MCP, object, lineage,
-  import, and audit boundaries unspecified and increases migration risk.
+- 永久以 `user_id` 作为 tenant key：现在简单，但 team workspace 到来时需要大规模 asset
+  rekey，并持续混淆 actor/owner semantics。
+- 立即实现完整 organization/team：在 personal Product 需要前增加 invitation、role
+  policy、switching、sharing、billing 和 operator support。
+- 信任 client-supplied workspace ID：允许 confused-deputy 和 horizontal privilege
+  escalation。
+- 复用 Community tenant design/runtime code：它是与 obsolete runtime/storage assumption
+  耦合的 planning draft，不是 compatible implementation。
+- 让全部 data workspace-owned：复制 canonical market data，并混淆 shared platform
+  dataset access 与 user Artifact ownership。
+- 先启用 RLS 并单独依赖它：service、MCP、object、lineage、import、audit boundary 未定义，
+  且增加 migration risk。
 
 ## Acceptance record
 
-The maintainer selected the personal-workspace tenancy option on 2026-08-24.
-This acceptance authorizes Phases 49-52 below. It does not authorize team
-features, raw DSH browser contracts, DSH database access, Community code
-copying, or silent ownership assignment.
+维护者于 2026-08-24 选择 personal-workspace tenancy option。Acceptance 授权 Phase
+49-52，但不授权 team feature、raw DSH Browser Contract、DSH database access、Community
+code copying 或 silent ownership assignment。

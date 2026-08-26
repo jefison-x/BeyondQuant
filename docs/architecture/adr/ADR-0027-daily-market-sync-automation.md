@@ -1,99 +1,83 @@
-# ADR-0027: Durable Daily Market Synchronization Automation
+# ADR-0027：Durable Daily Market Synchronization Automation
 
 - Status: Accepted
 - Date: 2026-08-25
 - Accepted: 2026-08-25
-- Decision scope: Phase 54 trading calendar, daily full-market synchronization,
-  and trusted Data Plane worker
-- Related: ADR-0005, ADR-0008, ADR-0013, ADR-0015, ADR-0023, ADR-0026
+- Decision scope: Phase 54 trading calendar、daily full-market synchronization 和 trusted
+  Data Plane worker
+- Related: ADR-0005、ADR-0008、ADR-0013、ADR-0015、ADR-0023、ADR-0026
 
-## Context
+## 背景
 
-Phase 53 can bootstrap the stock catalogue and run durable daily-bar jobs, but
-its full-market path calls Tushare once per symbol and requires an administrator
-to choose calendar dates. The Beta database can therefore contain a complete
-security master while holding only a few bars, and no durable process advances
-the market cache after each close.
+Phase 53 可 bootstrap stock catalogue 并运行 durable daily-bar job，但 full-market path 对
+每个 symbol 调一次 Tushare，且要求 administrator 选择 calendar date。因此 Beta database
+可能有完整 security master，却只有少量 bar；也没有 durable process 在每次 close 后推进
+market cache。
 
-The read-only Community scheduler demonstrates useful operational invariants:
-configurable Asia/Shanghai schedule time, one durable job per date, catch-up,
-claim leases, restart recovery and bounded retries. Its ORM, in-process threads,
-provider registry, broad endpoint passthrough, cache and frontend-to-internal
-API coupling are incompatible with BYQ and are not reused.
+Read-only Community scheduler 证明了 useful operational invariant：configurable Asia/
+Shanghai schedule time、每日期一个 durable job、catch-up、claim lease、restart recovery
+和 bounded retry。其 ORM、in-process thread、provider registry、broad endpoint passthrough、
+cache 和 frontend-to-internal API coupling 不兼容 BYQ，不复用。
 
-## Decision
+## 决策
 
-1. BYQ adds a provider-neutral `trading-calendar.v1` contract backed only by
-   the closed Tushare `trade_cal` mapping. SSE is the canonical A-share session
-   calendar for this phase. Dates, exchange, open state, previous open date,
-   bounds, uniqueness and provenance are validated before persistence.
-2. A trusted, independently deployable `data-worker` owns schedule evaluation,
-   provider access and daily ingestion. It has PostgreSQL and encrypted Tushare
-   credential access, but no DSH, MCP, model, browser, repository-write or
-   Docker authority.
-3. Schedule configuration is PostgreSQL-owned, versioned and idempotent. The
-   timezone is fixed to `Asia/Shanghai`; the default time is 18:30; automatic
-   synchronization is disabled until an administrator enables it. Catch-up is
-   bounded to 1-30 calendar days.
-4. Each due open session has one durable job. Workers claim with
-   `FOR UPDATE SKIP LOCKED`, increment bounded attempts, hold a lease, recover
-   stale work and retry provider failures with bounded exponential backoff.
-5. Nightly prices use one unscoped exact-date Tushare `daily` request, not one
-   call per security. The full response is normalized, duplicate/OHLC/value
-   validated and atomically imported under ADR-0013 `KEEP_NEW`. Raw
-   `pre_close` is retained with unadjusted execution prices.
-6. A successful non-empty exact-date provider response creates a
-   content-addressed `provider_snapshot_complete` record. This asserts that the
-   mapped provider snapshot was fully retrieved and imported; it does not claim
-   that every catalogue security traded that day.
-7. Automatic security-master refresh is optional and enabled by default. It
-   reuses ADR-0026's atomic `L/P/D` snapshot contract before newly scheduled
-   daily jobs are processed.
-8. Browser requests remain same-origin Gateway/Product API. Administrators may
-   read status, update configuration and enqueue an idempotent run-now command;
-   the HTTP request never performs provider synchronization itself.
-9. Phase 54 does not add suspension, exact price-limit, adjustment-factor,
-   corporate-action, benchmark, index-membership, valuation or fundamental
-   contracts. Those remain separately gated phases.
+1. BYQ 增加 provider-neutral `trading-calendar.v1` Contract，只由 closed Tushare
+   `trade_cal` mapping 支撑。SSE 是本 Phase canonical A-share session calendar。Date、
+   exchange、open state、previous open date、bound、uniqueness 和 provenance 在 persistence
+   前验证。
+2. Trusted、independently deployable `data-worker` 持有 schedule evaluation、provider
+   access 和 daily ingestion。它拥有 PostgreSQL 和 encrypted Tushare credential access，
+   但无 DSH、MCP、model、Browser、repository-write 或 Docker authority。
+3. Schedule configuration 由 PostgreSQL 持有，versioned、idempotent。Timezone 固定
+   `Asia/Shanghai`，default time 18:30；administrator enable 前 automatic sync disabled。
+   Catch-up 限制 1-30 calendar day。
+4. 每个 due open session 恰有一个 durable job。Worker 以 `FOR UPDATE SKIP LOCKED`
+   claim、增加有界 attempt、持有 lease、recover stale work，并对 provider failure 使用有界
+   exponential backoff retry。
+5. Nightly price 使用一个 unscoped exact-date Tushare `daily` request，而非每 security
+   一个 call。Full response 经过 normalization、duplicate/OHLC/value validation，并依据
+   ADR-0013 `KEEP_NEW` atomic import。Raw `pre_close` 与 unadjusted execution price 保留。
+6. Successful non-empty exact-date provider response 生成 content-addressed
+   `provider_snapshot_complete` record。这表示 mapped provider snapshot 已完整 retrieve/
+   import，不表示每个 catalogue security 当日均交易。
+7. Automatic security-master refresh 可选且 default enabled；在新 scheduled daily job 处理
+   前复用 ADR-0026 atomic `L/P/D` snapshot Contract。
+8. Browser request 保持 same-origin Gateway/Product API。Administrator 可 read status、
+   update configuration 和 enqueue idempotent run-now command；HTTP request 本身不执行
+   provider sync。
+9. Phase 54 不增加 suspension、exact price limit、adjustment factor、corporate action、
+   benchmark、index membership、valuation 或 fundamental Contract；这些由独立 Phase gate。
 
-## Consequences
+## 后果
 
-- Normal daily operation costs one calendar request per scheduling cycle and
-  one market-wide daily request per open session, rather than thousands of
-  symbol requests.
-- Restarts and concurrent workers do not duplicate a session job; immutable
-  dataset hashes and `KEEP_NEW` retain reproducibility.
-- The Data Center can distinguish latest calendar session, latest complete
-  market snapshot, worker health and failed/retrying work.
-- Historical per-symbol jobs remain available for bounded manual backfill.
-- A later readiness gate can use the durable calendar and session-completeness
-  evidence without granting provider access to signal or backtest workers.
+- 正常 daily operation 每 scheduling cycle 一个 calendar request、每 open session 一个
+  market-wide daily request，而不是数千 symbol request。
+- Restart/concurrent worker 不重复 session job；immutable dataset hash 和 `KEEP_NEW` 保持
+  reproducibility。
+- Data Center 可区分 latest calendar session、latest complete market snapshot、worker
+  health 和 failed/retrying work。
+- Historical per-symbol job 继续用于有界 manual backfill。
+- 后续 readiness gate 可使用 durable calendar/session-completeness evidence，而不给 signal/
+  Backtest worker provider access。
 
-## Rejected alternatives
+## 拒绝的替代方案
 
-- A scheduler thread inside Backend: couples request serving to long-running
-  provider work and weakens restart/lease behavior.
-- Browser timers or DSH scheduling: neither owns Data Plane credentials or
-  durable domain synchronization.
-- Per-symbol nightly incremental requests: unbounded for the A-share catalogue
-  and unnecessarily consumes provider quota.
-- Natural-day `today` as completeness: weekends, holidays and provider delay
-  make it false.
-- Copying the Community scheduler/provider stack: violates the migration and
-  Product API boundaries.
+- Backend 内 scheduler thread：耦合 request serving 与 long-running provider work，削弱
+  restart/lease behavior。
+- Browser timer 或 DSH scheduling：均不持有 Data Plane credential/durable sync。
+- Per-symbol nightly incremental request：对 A-share catalogue 无界且浪费 provider quota。
+- 用 natural-day `today` 表示 completeness：weekend、holiday、provider delay 使其错误。
+- 复制 Community scheduler/provider stack：违反 migration 和 Product API boundary。
 
 ## Acceptance evidence
 
-Provider contract tests cover calendar bounds, normalization, duplicate
-rejection and secret-free provenance. PostgreSQL tests cover optimistic and
-idempotent configuration, open-session scheduling, once-per-date restart
-behavior, full-market normalization/import, completeness records and Product
-API RBAC. Compose and browser evidence must show a healthy independent worker,
-the configuration card on desktop/mobile, same-origin Product requests and no
-console errors.
+Provider Contract test 覆盖 calendar bound、normalization、duplicate rejection、secret-free
+provenance。PostgreSQL test 覆盖 optimistic/idempotent configuration、open-session
+scheduling、once-per-date restart behavior、full-market normalization/import、completeness
+record 和 Product API RBAC。Compose/browser evidence 必须显示健康 independent worker、
+desktop/mobile configuration card、same-origin Product request 和无 console error。
 
-## Rollback
+## 回滚
 
-Disable the schedule and remove the `data-worker` service. Manual Phase 53 jobs
-continue to work. Additive calendar, job, configuration and completeness tables
-remain audit evidence; market rows are not deleted or overwritten.
+Disable schedule 并移除 `data-worker` service。Manual Phase 53 job 继续工作。Additive
+calendar/job/configuration/completeness table 保留 audit evidence；market row 不删除或覆盖。

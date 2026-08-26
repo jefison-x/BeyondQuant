@@ -1,144 +1,117 @@
-# ADR-0026: Security Master and Bounded Market-Data Orchestration
+# ADR-0026：Security Master 与 Bounded Market-Data Orchestration
 
 - Status: Accepted
 - Date: 2026-08-24
 - Accepted: 2026-08-24
-- Decision scope: Beta Data Plane security master, catalogue Product API, and
-  daily-bar synchronization orchestration
-- Related: ADR-0005, ADR-0013, ADR-0016, ADR-0019, ADR-0020, ADR-0025
+- Decision scope: Beta Data Plane security master、catalogue Product API 和 daily-bar
+  synchronization orchestration
+- Related: ADR-0005、ADR-0013、ADR-0016、ADR-0019、ADR-0020、ADR-0025
 
-## Context
+## 背景
 
-Phase 39 delivered durable Tushare daily-bar jobs, but every job requires the
-operator to already know 1-20 canonical symbols. The coverage projection lists
-only symbols that already have bars, so it cannot bootstrap a complete A-share
-catalogue. This makes the Data Center internally consistent but not usable for
-initial market-data acquisition.
+Phase 39 交付 durable Tushare daily-bar job，但每个 job 要求 operator 已知 1-20 个
+canonical symbol。Coverage projection 只列已有 bar 的 symbol，无法 bootstrap 完整
+A-share catalogue。这使 Data Center 内部一致，却不能用于首次 market-data acquisition。
 
-The read-only Community implementation calls Tushare `stock_basic` for listed,
-paused, and delisted securities and stores a mutable stock universe. Its useful
-evidence is the need for canonical identity, lifecycle dates, searchable basic
-metadata, and a security-master-first synchronization sequence. Its provider
-registry, ORM, Pandas/Tushare SDK, background threads, broad multi-dataset
-runtime, and frontend-to-internal API coupling are not compatible with BYQ.
+Read-only Community implementation 调用 Tushare `stock_basic` 获取 listed、paused、
+delisted security，并保存 mutable stock universe。有用证据是 canonical identity、
+lifecycle date、searchable basic metadata 和 security-master-first synchronization
+sequence；其 provider registry、ORM、Pandas/Tushare SDK、background thread、broad
+multi-dataset runtime 和 frontend-to-internal API coupling 均不兼容 BYQ。
 
-BeyondQuant remains in Beta until the maintainer explicitly authorizes a formal
-release. This capability closes a Beta product gap and does not authorize a
-release, a new provider, or arbitrary Tushare access.
+BeyondQuant 保持 Beta，直到维护者明确授权正式 release。该能力只闭合 Beta Product
+gap，不授权 release、新 provider 或 arbitrary Tushare access。
 
-## Decision
+## 决策
 
-1. BYQ owns a framework-neutral `security-master.v1` contract for canonical
-   A-share stock identity. Records include canonical symbol, local symbol,
-   display name, exchange, market/board, area, industry, listing status,
-   listing/delisting dates, Stock Connect flag, asset type, and bounded
-   provenance. Only `.SH`, `.SZ`, and `.BJ` stocks are accepted.
-2. The Backend-owned Tushare adapter gains one explicit `stock_basic`
-   capability. It requests the closed status set `L`, `P`, and `D` with an
-   explicit field list, translates raw envelopes inside Backend, rejects
-   duplicate/conflicting identities, and never exposes arbitrary endpoint or
-   parameter passthrough. Tushare's `T`-prefixed historical aliases (for
-   example `T600018.SH`) are not canonical A-share identities and cannot be
-   normalized without colliding with a different six-digit security. A
-   bounded set of otherwise valid aliases is therefore persisted as
-   quarantine evidence and excluded from the authoritative catalogue.
-3. PostgreSQL owns platform-scoped current security records plus immutable,
-   content-addressed security-master snapshots. Each successful full sync is
-   atomic and records provider, request fingerprint, dataset fingerprint,
-   status coverage, row count, retrieval time, actor, and snapshot members.
-   Rows absent from a later snapshot remain historical evidence but are not
-   presented as members of the latest catalogue.
-4. Security master is platform data under ADR-0025. It has no `workspace_id`
-   and is never exported in personal workspace bundles. Synchronization is
-   administrator-only; authenticated Product users may receive only the
-   bounded searchable catalogue where a Product workflow needs it.
-5. Browser access remains same-origin Gateway/Product API. Product responses
-   contain normalized records and job metadata only; no credential, raw
-   Tushare envelope, database schema, MCP surface, or DSH event is exposed.
-6. Daily-bar jobs may resolve a frozen symbol selection from one of four
-   bounded sources: explicit canonical symbols, selected catalogue symbols,
-   the latest security-master snapshot filtered by listing status/exchange, or
-   an authorized immutable Stock Pool snapshot. The resolved symbols and
-   selection provenance are persisted before execution, so later catalogue or
-   pool changes cannot alter a job.
-7. Explicit/selected requests remain bounded. Catalogue and Stock Pool
-   orchestration may resolve at most 6,000 symbols. Public job projections
-   return counts and bounded previews/results rather than unbounded symbol
-   arrays. Provider calls retain bounded retries and durable per-symbol
-   progress.
-8. `range` sync requests the declared inclusive range. `incremental` sync
-   starts after each symbol's latest persisted bar, bounded by the requested
-   range, and records a no-op result when coverage already reaches the end.
-   Existing authoritative bars continue to use `KEEP_NEW` and are never
-   overwritten by last-write-wins.
-9. The Data Center provides basic-data synchronization, status counts,
-   searchable/paginated stock catalogue, explicit selection, all-listed and
-   exchange filters, Stock Pool selection, and daily-bar job progress. It does
-   not imply live quotes, fundamentals, ETF/index masters, or complete market
-   coverage.
+1. BYQ 持有 framework-neutral `security-master.v1` Contract，定义 canonical A-share
+   stock identity。Record 包含 canonical/local symbol、display name、exchange、market/
+   board、area、industry、listing status、listing/delisting date、Stock Connect flag、asset
+   type 和有界 provenance。只接受 `.SH`、`.SZ`、`.BJ` stock。
+2. Backend-owned Tushare Adapter 增加明确 `stock_basic` capability。它以 explicit field
+   list 请求 closed status set `L`、`P`、`D`，在 Backend 内转换 raw envelope，拒绝
+   duplicate/conflicting identity，绝不暴露 arbitrary endpoint/parameter passthrough。
+   Tushare `T` prefix historical alias（如 `T600018.SH`）不是 canonical A-share identity，
+   且 normalization 会与另一 six-digit security collision；因此仅将有界且 otherwise
+   valid alias persistence 为 quarantine evidence，并排除于 authoritative catalogue。
+3. PostgreSQL 持有 platform-scoped current security record 和 immutable content-addressed
+   security-master snapshot。每次 successful full sync 都 atomic，并记录 provider、request/
+   dataset fingerprint、status coverage、row count、retrieval time、actor 和 snapshot
+   member。Later snapshot 缺失的 row 保留为 historical evidence，但不作为 latest catalogue
+   member 显示。
+4. Security master 依据 ADR-0025 是 platform data，没有 `workspace_id`，也不 export 到
+   personal workspace bundle。Synchronization 只允许 administrator；authenticated
+   Product user 在 Product workflow 需要时只能获得有界 searchable catalogue。
+5. Browser access 保持 same-origin Gateway/Product API。Product response 只含 normalized
+   record/job metadata，不暴露 credential、raw Tushare envelope、database schema、MCP
+   surface 或 DSH event。
+6. Daily-bar job 可从四种有界 source resolve frozen symbol selection：explicit canonical
+   symbol、selected catalogue symbol、按 listing status/exchange filter 的 latest security-
+   master snapshot，或 authorized immutable Stock Pool snapshot。Execution 前 persistence
+   resolved symbol/selection provenance，因此后续 catalogue/pool change 不影响 job。
+7. Explicit/selected request 保持有界；catalogue/Stock Pool orchestration 最多 resolve
+   6,000 symbol。Public job projection 返回 count 和 bounded preview/result，不返回无界
+   symbol array。Provider call 保留 bounded retry 和 durable per-symbol progress。
+8. `range` sync 请求 declared inclusive range。`incremental` sync 从每个 symbol latest
+   persisted bar 之后开始，并受 requested range 限制；coverage 已到 end 时记录 no-op。
+   Existing authoritative bar 继续使用 `KEEP_NEW`，绝不 last-write-wins overwrite。
+9. Data Center 提供 basic-data synchronization、status count、searchable/paginated stock
+   catalogue、explicit selection、all-listed/exchange filter、Stock Pool selection 和 daily-
+   bar job progress；不隐含 live quote、fundamental、ETF/index master 或 complete market
+   coverage。
 
-## Security and domain invariants
+## Security 与 domain invariant
 
-- Tushare plaintext remains inside Backend and is resolved under ADR-0019.
-- Canonical `stock_basic` results must match the requested status and
-  symbol/exchange relationship; malformed dates, empty names, conflicts, and
-  unknown out-of-contract identities fail the whole snapshot. Only bounded,
-  fully validated `T`-prefixed historical aliases may be quarantined; their
-  count and identity evidence are stored with the immutable snapshot and they
-  never enter `market_securities` or a daily-bar selection.
-- A successful security-master sync is atomic. Partial provider status results
-  never replace the latest catalogue.
-- Dataset identity excludes mutable timestamps and actor metadata.
-- A daily job freezes its exact symbols and source snapshot before provider
-  execution. A client-supplied workspace or ownership field grants no access.
-- Stock Pool resolution requires the trusted durable workspace/owner context
-  and an existing immutable snapshot; guessed cross-workspace IDs fail as not
-  found.
-- BaoStock and AKShare remain `DROP`. No compatibility provider or fallback is
-  introduced.
+- Tushare plaintext 依据 ADR-0019 保持在 Backend 内。
+- Canonical `stock_basic` result 必须匹配 requested status 和 symbol/exchange relation；
+  malformed date、empty name、conflict 和 unknown out-of-contract identity 使整个 snapshot
+  fail。只有有界、fully validated `T` prefix historical alias 可 quarantine；count/identity
+  evidence 随 immutable snapshot 保存，且不进入 `market_securities` 或 daily-bar selection。
+- Successful security-master sync 是 atomic；partial provider status result 绝不替换 latest
+  catalogue。
+- Dataset identity 排除 mutable timestamp/actor metadata。
+- Daily job 在 provider execution 前冻结准确 symbol/source snapshot。Client-supplied
+  workspace/ownership field 不授予 access。
+- Stock Pool resolve 要求 trusted durable workspace/owner context 和 existing immutable
+  snapshot；guessed cross-workspace ID 按 not found fail。
+- BaoStock/AKShare 保持 `DROP`，不增加 compatibility provider/fallback。
 
-## Consequences
+## 后果
 
-- A fresh BYQ deployment can bootstrap a real A-share catalogue before asking
-  an operator to synchronize daily bars.
-- Full-market historical refresh remains expensive but explicit, bounded,
-  observable, resumable at symbol-level through incremental jobs, and subject
-  to the configured Tushare account's permissions and rate limits.
-- Security metadata becomes a shared platform dependency. Future ETF, index,
-  calendar, valuation, or corporate-action datasets require their own mapped
-  contracts rather than piggybacking on this endpoint.
+- Fresh BYQ deployment 可在要求 operator sync daily bar 前 bootstrap 真实 A-share catalogue。
+- Full-market historical refresh 成本高，但明确、有界、observable，并可通过 incremental
+  job 在 symbol level resume；受 Tushare account permission/rate limit 约束。
+- Security metadata 成为 shared platform dependency。Future ETF、index、calendar、
+  valuation 或 corporate-action dataset 需要独立 mapped Contract，不能 piggyback 本
+  endpoint。
 
-## Required evidence
+## 必需证据
 
-- provider translation/retry/duplicate/status/date tests with secret-free
-  fixtures, including bounded historical-alias quarantine and fail-closed
-  unknown identities;
-- atomic snapshot, idempotency, latest-catalogue, search/filter/pagination, and
-  historical-retention tests against PostgreSQL;
-- daily selection freezing, bounds, incremental semantics, Stock Pool
-  authorization, Product API RBAC, and response-bounding tests;
-- frontend component/API tests and real Product API Chrome DevTools review for
-  desktop and mobile;
-- Community classification and architecture tests proving no excluded
-  provider, raw Tushare, Backend, MCP, DSH, or PostgreSQL browser path.
+- secret-free fixture 的 provider translation/retry/duplicate/status/date test，包括有界
+  historical-alias quarantine 和 fail-closed unknown identity；
+- PostgreSQL atomic snapshot、idempotency、latest catalogue、search/filter/pagination、
+  historical retention test；
+- daily selection freezing/bound、incremental semantics、Stock Pool authorization、Product
+  API RBAC、response-bounding test；
+- frontend component/API test 和真实 Product API desktop/mobile Chrome DevTools review；
+- Community classification 和 architecture test，证明无 excluded provider、raw Tushare、
+  Backend、MCP、DSH 或 PostgreSQL Browser path。
 
-## Rejected alternatives
+## 拒绝的替代方案
 
-- Derive the catalogue from distinct daily bars: omits suspended, not-yet-
-  traded, and historical lifecycle records and cannot bootstrap itself.
-- Fetch one recent `daily` market snapshot: returns codes without authoritative
-  basic identity/lifecycle and omits non-trading securities.
-- Let the frontend or DSH call `stock_basic`: exposes provider schema and
-  credentials and bypasses Product API/MCP boundaries.
-- Copy the Community stock-universe stack: reintroduces incompatible ORM,
-  provider registry, SDK, scheduler, and mutable-current-row assumptions.
-- Submit thousands of symbols from the browser: creates unbounded request and
-  replay payloads and makes the client authoritative for catalogue identity.
+- 从 distinct daily bar 派生 catalogue：遗漏 suspended、not-yet-traded 和 historical
+  lifecycle record，且无法自举。
+- Fetch 一次 recent `daily` market snapshot：code 缺少 authoritative basic identity/
+  lifecycle，并遗漏 non-trading security。
+- 让 Frontend/DSH 调 `stock_basic`：暴露 provider schema/credential，绕过 Product API/MCP。
+- 复制 Community stock-universe stack：重引入 incompatible ORM、provider registry、SDK、
+  scheduler 和 mutable-current-row assumption。
+- 从 Browser submit 数千 symbol：造成 unbounded request/replay payload，并让 client 对
+  catalogue identity 具有权威。
 
-## Rollback
+## 回滚
 
-Disable the new Product routes and security-master job creation. Existing
-daily jobs continue to accept the legacy explicit-symbol contract. Additive
-platform tables and immutable snapshots may remain as audit evidence; no
-workspace row or Community source is modified. A failed schema/data rollout is
-repaired forward or restored from the normal PostgreSQL backup boundary.
+禁用新 Product route/security-master job create。Existing daily job 继续接受 legacy
+explicit-symbol Contract。Additive platform table/immutable snapshot 可保留为 audit
+evidence；不修改 workspace row 或 Community source。Failed schema/data rollout 通过
+forward repair 或正常 PostgreSQL backup boundary restore。
