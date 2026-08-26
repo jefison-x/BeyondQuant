@@ -85,8 +85,8 @@ class AgentRole:
 ROLE_CATALOG: tuple[AgentRole, ...] = (
     AgentRole(
         role_id="quant_orchestrator",
-        version="1.0.0",
-        description="Coordinates bounded research hand-offs and reviews domain evidence.",
+        version="1.1.0",
+        description="Coordinates bounded research hand-offs and explicit owner-scoped domain actions.",
         allowed_tools=(
             "byq_agent_context",
             "byq_agent_run_start",
@@ -97,6 +97,9 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_agent_approval_decide",
             "byq_agent_roles",
             "byq_market_daily",
+            "byq_pool_list",
+            "byq_pool_get",
+            "byq_pool_create",
             "byq_factor_compute",
             "byq_research_task_create",
             "byq_research_get",
@@ -135,11 +138,11 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_backtest_run",
             "byq_backtest_cancel",
         ),
-        evidence_kinds=("research_evidence", "factor_result", "strategy_version", "backtest_result"),
+        evidence_kinds=("research_evidence", "stock_pool", "factor_result", "strategy_version", "backtest_result"),
     ),
     AgentRole(
         role_id="market_researcher",
-        version="1.0.0",
+        version="1.1.0",
         description="Collects normalized market evidence and records bounded research artifacts.",
         allowed_tools=(
             "byq_agent_context",
@@ -181,7 +184,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
     ),
     AgentRole(
         role_id="strategy_researcher",
-        version="1.0.0",
+        version="1.2.0",
         description="Designs and validates strategy artifacts without approving or executing them.",
         allowed_tools=(
             "byq_agent_context",
@@ -189,6 +192,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_agent_authorize",
             "byq_agent_audit",
             "byq_agent_roles",
+            "byq_research_task_create",
             "byq_research_get",
             "byq_experiment_create",
             "byq_artifact_create",

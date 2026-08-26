@@ -10,13 +10,40 @@ Product DSH 仅从经过认证的 Gateway 路径接收 session-scoped context he
 
 版本化 catalogue 由 `byq_agent_roles` 暴露，目前包含：
 
-- `quant_orchestrator`：协调 hand-offs 和 consequential decisions；
-- `market_researcher`：提供 normalized market evidence；
+- `quant_orchestrator`（v1.1.0）：协调 hand-offs 和 consequential decisions；当用户明确要求时，
+  可经 BeyondQuant MCP list/get/create 当前 owner/workspace 的 custom Stock Pool；
+- `market_researcher`（v1.1.0）：提供 normalized market evidence 和冻结的候选列表，
+  不创建或修改股票池；
 - `factor_researcher`：提供可复现的 point-in-time factors；
-- `strategy_researcher`：提供 validated strategy artifacts，不负责 approval 或 execution；
+- `strategy_researcher`（v1.2.0）：可创建其校验所需的 owner-scoped ResearchTask，并提供
+  validated strategy artifacts；不负责 task transition、Stock Pool 写入、approval 或 execution；
 - `backtest_analyst`：执行已授权的 deterministic backtest review。
 
 每个 role 声明允许的 MCP tools、delegate targets、需要 approval 的 actions 和 evidence kinds。DSH `toolFilter` 镜像 child allowlist 以供查看；BYQ authorization 仍是权威，并通过 `byq_agent_authorize` 检查。
+
+Phase 58 的 Stock Pool 权限是封闭集合：协调角色只有 `byq_pool_list`、
+`byq_pool_get`、`byq_pool_create`；snapshot、lifecycle、delete、index/dynamic
+writer 均不在 Agent 权限内。用户明确要求创建 custom pool 时不增加第二次审批，
+但 Agent 必须先授权、使用 trusted owner/workspace context 调用 MCP，并记录真实 domain
+结果。禁止通过切换 role、猜测内部 ID 或扩大候选范围绕过拒绝。
+
+Strategy 生成只有一个 Backend 权威合同：脚本定义且只定义一个同步输出入口——
+`CustomStrategy.generate_signals(self, data, parameters)` 或
+`CustomStrategy.generate_target_weights(self, data, portfolio_state, parameters)`。
+MCP schema 同时保留可选的 `data_requirements`。遇到 BYQ 422 时只使用安全、有界的
+校验摘要修正一次；第二次同类校验失败即停止并向用户说明，不猜测 task state、role 或
+内部 Artifact ID。
+
+Authorization 的 `action` 必须是随后调用的精确 MCP tool name，不允许使用
+`market_daily.read` 等自创别名。每个不同的已授权 domain action 都分别记录真实 success/failure；
+不得把 authorization 误述成执行成功，也不得声称不存在的审计记录。普通用户回答只描述
+“正在读取数据 / 保存股票池 / 校验策略”等产品动作，不暴露 role ID、skill loading、MCP
+tool name、validator/runtime/worker 名称或内部 Artifact ID。
+
+Strategy 的固定动作顺序为：若没有 task，先 authorize → create → audit
+`byq_research_task_create`；然后 authorize → validate → audit
+`byq_strategy_validate`；最后 authorize → create version → audit
+`byq_strategy_version_create`。后一个动作的 authorization 不得覆盖前一个 prerequisite。
 
 ## Run 与审计 contract
 

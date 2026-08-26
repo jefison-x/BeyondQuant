@@ -200,6 +200,23 @@ Maintainer 于 2026-08-24 再次延后 RC，以 ADR-0025/`PERSONAL_WORKSPACE_TEN
 - **Phase 56 Adjusted research/actions（`COMPLETE`）**：ADR-0029 durable factors/implemented actions/effective dates；raw execution prices 不复权，构造 content-addressed research view；actions 冻结进 manifests，并测试 dividends/share ratios/false ex-right signals。Evidence `phase-56/`。
 - **Phase 57 Benchmark/PIT/declared data（`COMPLETE`）**：ADR-0030 closed benchmark/index-weight/daily-basic/financial-indicator contracts、daily automation、bounded declared-input repair、immutable v3 readiness、historical membership/announcement no-lookahead、sandbox membership、frozen benchmark/excess performance。ETF/fund 排除；evidence `phase-57/`。
 
+## Post-Acceptance Agent Completion（Phase 58）
+
+- **Phase 58 Agent Domain Action Contract（`COMPLETE`）**
+  - **目标/范围**：依据 ADR-0031 打通真实用户的候选股票 → owner-scoped custom Stock
+    Pool → validated StrategyDraft/StrategyVersion。升级 BYQ role catalogue，仅为
+    `quant_orchestrator` 增加 pool list/get/create；`market_researcher` 保持 evidence-only。
+    对齐 MCP、DSH skill 与 Backend 的唯一 `CustomStrategy`/`data_requirements` schema，
+    投影安全、有界、可修复的校验信息，并将同类 Domain validation 修正限制为一次。
+  - **边界**：不增加 pool snapshot/lifecycle/delete、index/dynamic writer、数据工具、
+    public-answer 重构、signal/backtest 语义或第二 Agent harness；不信任 Browser/model
+    owner/workspace/provenance；Agent-to-Domain 仍只经 MCP，Backend 仍持有全部 invariant。
+  - **验收/停止**：role/owner/workspace/audit contract tests、真实有效最小策略 MCP test、
+    planned task validate→version integration、无 403/422 风暴的真实 Product Agent journey、
+    Chrome DevTools/Playwright same-origin/secret-boundary evidence。出现 privilege widening、
+    raw Backend/DSH leakage、无法安全投影错误、需要 direct DB/source access 或需要改动
+    Phase 59/60 scope 时停止。
+
 ## Machine-readable phase status markers
 
 以下稳定 markers 供 CI 校验 Phase ID 与完成状态；说明正文仍以各 program section 为准。
@@ -228,3 +245,4 @@ Maintainer 于 2026-08-24 再次延后 RC，以 ADR-0025/`PERSONAL_WORKSPACE_TEN
 ### Phase 55 — Backtest data readiness and execution status(`COMPLETE`)
 ### Phase 56 — Adjusted research prices and corporate actions(`COMPLETE`)
 ### Phase 57 — Benchmark, point-in-time universe and declared data(`COMPLETE`)
+### Phase 58 — Agent domain action contract(`COMPLETE`)

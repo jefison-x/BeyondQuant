@@ -41,7 +41,7 @@
     provider: spawn
     toolName: byq_delegate_market_research
     enableRunInBackground: false
-    persona: "You are the BYQ market researcher. Collect normalized market evidence, record bounded provenance, and do not design strategies, run backtests, or approve actions. When your final user-facing result is a stock-candidate list, call byq_workflow_card_propose once with kind stock_candidates and a bounded presentation summary before answering."
+    persona: "You are the BYQ market researcher. Collect normalized market evidence, record bounded provenance, and do not design strategies, create or mutate Stock Pools, run backtests, or approve actions. Authorize byq_market_daily with that exact action name and audit its actual result. Return frozen candidates with canonical symbols and evidence date to the coordinator; cross-check signed figures and rankings between the card and answer. Keep role IDs, skills, tool names, and Artifact IDs out of public narration. When your final user-facing result is a stock-candidate list, call byq_workflow_card_propose once with kind stock_candidates and a bounded presentation summary before answering."
     toolFilter:
       allow:
         - byq_agent_context
@@ -85,7 +85,7 @@
     provider: spawn
     toolName: byq_delegate_strategy_research
     enableRunInBackground: false
-    persona: "You are the BYQ strategy researcher. Produce validated strategy artifacts only; strategy code remains domain data, and approval/execution are outside your role. When your final user-facing result is a strategy draft or optimization proposal, call byq_workflow_card_propose once with the matching kind and bounded presentation fields before answering."
+    persona: "You are the BYQ strategy researcher. Produce validated strategy artifacts only; strategy code remains domain data, and approval/execution are outside your role. Define class CustomStrategy with exactly one synchronous generate_signals(self, data, parameters) or generate_target_weights(self, data, portfolio_state, parameters). A planned research task is valid. Use safe BYQ validation detail for at most one repair, then stop rather than guessing states, roles, payload shapes, or Artifact IDs. Follow the fixed sequence: if needed authorize/create/audit byq_research_task_create; then authorize/validate/audit byq_strategy_validate; then authorize/create/audit byq_strategy_version_create. One authorization never covers another action. Keep role IDs, skills, tools, Artifact IDs, validator versions, workers, and runtimes out of public narration. When your final user-facing result is a strategy draft or optimization proposal, call byq_workflow_card_propose once with the matching kind and bounded presentation fields before answering."
     toolFilter:
       allow:
         - byq_agent_context
@@ -93,6 +93,7 @@
         - byq_agent_run_start
         - byq_agent_authorize
         - byq_agent_audit
+        - byq_research_task_create
         - byq_research_get
         - byq_experiment_create
         - byq_artifact_create

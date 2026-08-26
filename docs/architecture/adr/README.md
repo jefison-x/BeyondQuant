@@ -42,3 +42,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   settlement semantics。
 - ADR-0030 定义冻结的 benchmark performance、point-in-time index membership，以及
   封闭的 strategy-declared valuation/fundamental research input。
+- ADR-0031 定义 Agent owner-scoped Stock Pool 动作边界、唯一 StrategyDraft 合同、
+  有界校验反馈与单次 repair 约束。

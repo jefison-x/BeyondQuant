@@ -54,7 +54,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "57")
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "58")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
@@ -671,6 +671,30 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         runtime_dockerfile = (ROOT / "services/runtime-adapter/Dockerfile").read_text()
         self.assertIn("plugins/dsh-byq/skills /opt/dsh/bundles/dsh-byq/skills", runtime_dockerfile)
+
+    def test_phase58_agent_actions_are_bounded_and_user_facing(self) -> None:
+        role_skill = (ROOT / "plugins/dsh-byq/skills/byq-role-contracts/SKILL.md").read_text()
+        market_skill = (ROOT / "plugins/dsh-byq/skills/byq-market-researcher/SKILL.md").read_text()
+        strategy_skill = (ROOT / "plugins/dsh-byq/skills/byq-strategy-researcher/SKILL.md").read_text()
+        strategy_mcp = (ROOT / "services/mcp/src/strategy.ts").read_text()
+        adr = (ROOT / "docs/architecture/adr/ADR-0031-agent-domain-action-contract.md").read_text()
+
+        self.assertIn("exact MCP tool name", role_skill)
+        self.assertIn("Audit every distinct authorized", role_skill)
+        self.assertIn("domain action separately", role_skill)
+        self.assertIn("Never narrate role", role_skill)
+        self.assertIn("IDs, skill loading", role_skill)
+        self.assertIn("Authorize `byq_market_daily`", market_skill)
+        self.assertIn("Cross-check every signed return", market_skill)
+        self.assertIn("with exactly", strategy_skill)
+        self.assertIn("one synchronous output method", strategy_skill)
+        self.assertIn("retry once", strategy_skill)
+        self.assertIn("`byq_strategy_version_create` separately", strategy_skill)
+        self.assertIn("If no research task exists", strategy_skill)
+        self.assertIn("do not reorder", strategy_skill)
+        self.assertIn("strategyValidationInputSchema", strategy_mcp)
+        self.assertIn("repair_limit: 1", strategy_mcp)
+        self.assertIn("byq_pool_create", adr)
 
     def test_frontend_has_no_dsh_event_schema_dependency(self) -> None:
         frontend = ROOT / "apps/frontend"

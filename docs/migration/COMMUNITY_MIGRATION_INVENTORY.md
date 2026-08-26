@@ -830,3 +830,20 @@ Backtest and maintenance views were inspected before accepting ADR-0030.
 
 No Community source, database, cache, runtime, credential or Git history was
 modified, imported or copied.
+
+## Phase 58 Agent domain-action pre-implementation audit
+
+The read-only Community agent tool policy, stock-selection contract, artifact
+workflow, approval executor, strategy validation/prompts/tests and Gateway
+idempotency tests were inspected before accepting ADR-0031.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 58 disposition |
+|---|---|---|---|
+| Role-based tool policy and stock-selection output contract | Market research proposes frozen candidates; a coordinator performs an explicit owner-scoped domain action. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Keep `market_researcher` evidence-only and grant only `quant_orchestrator` bounded pool list/get/create through BeyondQuant MCP. |
+| Artifact workflow and approval executor | Model intent is not domain authority; owner/session/provenance and final invariants remain trusted-side concerns. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Browser/model identity is ignored, Backend remains authoritative, and lifecycle/snapshot/delete mutations remain out of scope. |
+| Strategy prompt, validator and tests | Tool schema, prompt and Backend must describe one exact executable contract, and a validation failure gets at most one informed repair. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Publish the exact `CustomStrategy` method contract, preserve declared data requirements, return only safe bounded validation detail, and prohibit blind retry storms. |
+| Gateway idempotency and error tests | A retry must reuse the same request identity; authorization or validation failures must not trigger blind role/state guessing. | `PORT_TESTS` / `REFACTOR` | Test owner/workspace/audit propagation and one-repair behavior; do not add a generic agent harness. |
+| Community PydanticAI/Hermes runtime, direct SQL/internal APIs, target-weight v2/ML, VectorBT/BaoStock/AKShare paths | No compatible architecture boundary. | `REFERENCE_ONLY` / `DROP` | Keep DSH + BeyondQuant MCP + Product API, native Backend invariants and the current Phase 58 strategy scope. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified or copied.
