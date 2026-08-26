@@ -1,78 +1,64 @@
-# ADR-0007: Phase 11 Strategy Artifact, Validation, and Approval Boundary
+# ADR-0007：Phase 11 Strategy Artifact、Validation 与 Approval Boundary
 
 - Status: Accepted
 - Date: 2026-08-15
 - Decision scope: Phase 11 Quant Domain strategy artifacts
-- Supersedes: no prior strategy-artifact decision
+- Supersedes: 无先前 strategy-artifact 决策
 
-## Context
+## 背景
 
-Phase 10 produces reproducible research artifacts, but the repository does
-not yet have a safe BYQ-owned representation for strategy code/configuration.
-Community has useful evidence for content-addressed strategy snapshots,
-static source checks, export hygiene, and the distinction between approval and
-execution. Its SQLAlchemy models, Pandas runtime, Agent Service workflow, and
-optional engines are not compatible with the current architecture.
+Phase 10 生成可复现 research Artifact，但仓库尚无安全的 BYQ-owned strategy
+code/configuration 表示。Community 为 content-addressed strategy snapshot、static source
+check、export hygiene，以及 approval 与 execution 的区分提供了有用证据；其 SQLAlchemy
+model、Pandas runtime、Agent Service workflow 和 optional engine 不兼容当前架构。
 
-Phase 11 must make a generated strategy auditable data without making it
-application source or giving Product DSH execution or filesystem privileges.
+Phase 11 必须让生成的 Strategy 成为可审计数据，而不能把它变成 application source，
+也不能授予 Product DSH execution 或 filesystem privilege。
 
-## Decision
+## 决策
 
-1. A strategy draft is a BYQ `Artifact` with a bounded, normalized strategy
-   snapshot and retained validation evidence. A draft is immutable; a revised
-   draft is a new artifact linked by lineage.
-2. A validated `StrategyVersion` is represented by a content-addressed BYQ
-   Artifact. Its semantic snapshot excludes mutable timestamps and Agent
-   runtime state. The version identity is a SHA-256 of the canonical strategy
-   identity; the source fingerprint is a separate SHA-256 of the strategy
-   source. Repeating the same version request resolves to the same version
-   artifact for the task.
-3. BYQ performs deterministic static validation before a strategy version can
-   be materialized. Validation rejects unsafe imports/calls, invalid Python
-   structure, unsupported categories, oversized or malformed parameters, and
-   invalid strategy method contracts. Arbitrary code execution is not part of
-   this phase; execution belongs to a later BYQ-owned worker boundary.
-4. Export is an explicit BYQ operation. It contains only the strategy version
-   contract and semantic snapshot. Credentials, runtime settings, DSH/Agent
-   internals, prompts, and application-source paths are rejected or omitted.
-5. Approval is a separate immutable `strategy_approval` Artifact linked to a
-   validated StrategyVersion. It records actor, decision, rationale, trace,
-   and idempotency evidence. An approved record authorizes a future attempt;
-   it does not claim that execution or a business mutation succeeded.
-6. Backend owns all strategy validation, versioning, export, approval, and
-   provenance. Agent-to-Domain calls use normalized BeyondQuant MCP tools.
-   Product DSH cannot write the repository, execute strategy code, or access
-   Backend storage directly.
+1. Strategy draft 是 BYQ `Artifact`，包含有界、normalized strategy snapshot 和保留的
+   validation evidence。draft 不可变；修订后的 draft 是通过 lineage 关联的新 Artifact。
+2. 经过验证的 `StrategyVersion` 表示为 content-addressed BYQ Artifact。其 semantic
+   snapshot 排除可变 timestamp 和 Agent runtime state。version identity 是 canonical
+   strategy identity 的 SHA-256；source fingerprint 是 strategy source 的另一 SHA-256。
+   对同一 task 重复相同 version request，会解析为相同 version Artifact。
+3. StrategyVersion materialize 前，BYQ 执行确定性 static validation。Validation 拒绝
+   unsafe import/call、无效 Python structure、不支持的 category、过大或 malformed
+   parameter，以及无效 strategy method Contract。本 Phase 不执行 arbitrary code；
+   execution 属于后续 BYQ-owned worker boundary。
+4. Export 是明确的 BYQ operation，只包含 StrategyVersion Contract 和 semantic snapshot。
+   credential、runtime setting、DSH/Agent internal、prompt 和 application-source path
+   均被拒绝或省略。
+5. Approval 是独立、不可变的 `strategy_approval` Artifact，关联已验证
+   StrategyVersion，并记录 actor、decision、rationale、trace 和 idempotency evidence。
+   approved record 只授权未来尝试，不表示 execution 或 business mutation 已成功。
+6. Backend 持有全部 Strategy validation、versioning、export、approval 和 provenance。
+   Agent-to-Domain call 使用 normalized BeyondQuant MCP tool。Product DSH 不能写仓库、
+   执行 Strategy code 或直接访问 Backend storage。
 
-## Consequences
+## 后果
 
-- Existing Phase 9 Artifact content hashing, lineage, state transitions, and
-  idempotency are reused rather than creating a second persistence model.
-- Strategy history is replayable from the stored version artifact even after a
-  later draft is created.
-- Static validation evidence is durable and explicit, while Phase 12 can add
-  an isolated native execution/preflight worker without changing version
-  identity.
-- Approval and execution outcome remain separate, so a failed later attempt is
-  not represented as a successful business mutation.
+- 复用 Phase 9 Artifact content hashing、lineage、state transition 和 idempotency，而不
+  创建第二套 persistence model。
+- 即使后续创建新 draft，Strategy history 仍可从保存的 version Artifact replay。
+- Static validation evidence 持久且明确；Phase 12 可以增加隔离的 native execution/
+  preflight worker，而不改变 version identity。
+- Approval 与 execution outcome 保持分离，后续失败不会被表示为成功 business mutation。
 
-## Rejected alternatives
+## 拒绝的替代方案
 
-- Storing strategy source in the application repository: violates the strategy
-  data/artifact boundary and Product DSH source protection.
-- Copying Community SQLAlchemy/Pandas/Agent Service strategy runtime: couples
-  the new architecture to the old repository ownership and runtime.
-- Treating the mutable current strategy record as historical truth: breaks
-  reproducibility and historical replay.
-- Executing generated code during a Backend API request: creates an unsafe
-  execution boundary and belongs in a future BYQ-owned worker.
-- Reintroducing VectorBT, BaoStock, or AKShare: explicitly excluded by the
-  current architecture and migration inventory.
+- 将 Strategy source 存入 application repository：违反 Strategy data/Artifact 边界和
+  Product DSH source protection。
+- 复制 Community SQLAlchemy/Pandas/Agent Service Strategy runtime：会把新架构耦合到
+  旧仓库 ownership 和 runtime。
+- 将可变 current Strategy record 视为历史事实：破坏 reproducibility 和 replay。
+- 在 Backend API request 中执行 generated code：创建不安全 execution boundary，应由
+  后续 BYQ-owned worker 处理。
+- 重新引入 VectorBT、BaoStock 或 AKShare：当前架构和 migration inventory 明确排除。
 
-## Exit evidence
+## 退出证据
 
-Phase 11 must test invalid source rejection, deterministic version identity,
-immutable historical snapshots, secret-free deterministic exports, approval
-audit records, idempotent retries, and separation of approval from execution
-outcome through Backend and MCP contracts.
+Phase 11 必须通过 Backend 与 MCP Contract 测试 invalid source rejection、确定性 version
+identity、不可变 historical snapshot、secret-free deterministic export、Approval audit
+record、idempotent retry，以及 Approval 与 execution outcome 的分离。

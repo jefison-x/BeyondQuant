@@ -1,56 +1,46 @@
-# ADR-0010: Phase 14 Quant Learning Loop
+# ADR-0010：Phase 14 Quant Learning Loop
 
 - Status: Accepted
 - Date: 2026-08-16
-- Decision scope: Phase 14 Quant Domain learning and evidence promotion
+- Decision scope: Phase 14 Quant Domain learning 与 evidence promotion
 
-## Context
+## 背景
 
-Phases 9-13 established durable BYQ ResearchTask, Experiment, Artifact,
-Factor, StrategyVersion, Approval, deterministic Backtest, and quant Agent
-role state. The repository still lacks a controlled path by which evaluated
-evidence can become trusted quantitative knowledge. Community implementations
-provide evidence compaction, bounded agent execution profiles, retryable
-error classification, and deterministic trajectory eval fixtures, but no BYQ
-learning-loop or lesson-promotion state machine.
+Phase 9-13 建立了持久化 BYQ ResearchTask、Experiment、Artifact、Factor、
+StrategyVersion、Approval、确定性 Backtest 和 quant Agent role state。仓库仍缺少将
+evaluated evidence 转化为可信量化知识的受控路径。Community implementation 提供
+evidence compaction、有界 Agent execution profile、可重试 error classification 和确定性
+trajectory eval fixture，但没有 BYQ Learning Loop 或 Lesson promotion state machine。
 
-The learning loop must be bounded and auditable: ordinary chat output must not
-become trusted quant knowledge directly, and agent iteration must not become
-unbounded or prompt-driven.
+Learning Loop 必须有界且可审计：普通 chat output 不能直接成为可信量化知识，Agent
+iteration 也不能变得无界或由 prompt 驱动。
 
-## Decision
+## 决策
 
-1. BYQ owns a `LearningRun` state machine. A run is owner/task-scoped, stores
-   an explicit `max_iterations` and `max_repairs` budget plus optional
-   deterministic stopping rules, and transitions
-   `active -> awaiting_review -> completed|failed|cancelled`.
-2. Each run iteration is an append-only, ordered, idempotent BYQ event. Failed
-   iterations may be retried within the explicit repair budget. When the
-   iteration budget, repair budget, or a matching stopping rule is reached, the
-   run becomes `awaiting_review`; only a trusted human reviewer can approve or
-   reject it. A terminal run is immutable and replayable through its ordered
-   iteration history.
-3. BYQ owns `EvaluationSignal` records. Each signal references one validated
-   Artifact, names one finite metric, and retains task/experiment lineage and
-   provenance. `compare_experiments` returns a deterministic metric comparison
-   for two experiments and never invents missing values.
-4. BYQ owns `Lesson` evidence promotion. A proposed lesson must cite at least
-   one validated Artifact or EvaluationSignal as evidence; plain chat content
-   cannot be promoted by itself. Lesson state is
-   `proposed -> approved|rejected|superseded`, and every promotion decision is
-   retained as an ordered history record with reviewer, decision, rationale,
-   and timestamp.
-5. Backend owns all learning-loop persistence and invariants. Agent-to-domain
-   calls use normalized BeyondQuant MCP tools. DSH generic orchestration may
-   propose iterations or lessons, but cannot bypass budgets, stopping rules,
-   human review, provenance, or BYQ storage boundaries.
+1. BYQ 持有 `LearningRun` state machine。Run 按 owner/task 隔离，保存明确的
+   `max_iterations`、`max_repairs` budget 和可选 deterministic stopping rule，并按
+   `active -> awaiting_review -> completed|failed|cancelled` transition。
+2. 每次 run iteration 是 append-only、ordered、idempotent BYQ event。Failed iteration
+   可在 repair budget 内重试。当 iteration budget、repair budget 用尽或命中 stopping
+   rule 时，run 进入 `awaiting_review`；只有 trusted human reviewer 可以 approve/reject。
+   terminal run 不可变，并可通过 ordered iteration history replay。
+3. BYQ 持有 `EvaluationSignal` record。每个 signal 引用一个 validated Artifact、命名
+   一个有限 metric，并保留 task/experiment lineage 和 provenance。
+   `compare_experiments` 对两个 experiment 返回确定性 metric comparison，绝不编造
+   missing value。
+4. BYQ 持有 `Lesson` evidence promotion。Proposed Lesson 必须引用至少一个 validated
+   Artifact 或 EvaluationSignal；plain chat content 不能单独 promotion。Lesson state 为
+   `proposed -> approved|rejected|superseded`，每次 promotion decision 都以 ordered
+   history record 保留 reviewer、decision、rationale 和 timestamp。
+5. Backend 持有全部 Learning Loop persistence 和 invariant。Agent-to-Domain call 使用
+   normalized BeyondQuant MCP tool。DSH generic orchestration 可以提出 iteration 或
+   Lesson，但不能绕过 budget、stopping rule、human review、provenance 或 BYQ storage
+   boundary。
 
-## Consequences
+## 后果
 
-- Agent iteration is bounded and has explicit human gates and stopping rules.
-- Promoted lessons retain evidence, validation, review, provenance, and
-  promotion history.
-- CI can exercise budgets, idempotency, deterministic comparison, promotion
-  gates, and secret rejection without a model credential.
-- No new generic agent harness, DSH runtime fork, or direct business-storage
-  access is introduced.
+- Agent iteration 有界，并具备明确 Human gate 和 stopping rule。
+- Promoted Lesson 保留 evidence、validation、review、provenance 和 promotion history。
+- CI 无需 model credential 即可测试 budget、idempotency、deterministic comparison、
+  promotion gate 和 secret rejection。
+- 不引入新的通用 Agent Harness、DSH runtime fork 或 direct business-storage access。

@@ -1,36 +1,34 @@
-# ADR-0003: Gateway to DSH Runtime Integration
+# ADR-0003：Gateway 与 DSH Runtime Integration
 
 - Status: Accepted
 - Date: 2026-08-15
 - Decision scope: Phase 6 Product Plane / Agent Plane runtime seam
-- Supersedes: the Phase 5 `NO DECISION YET` Gateway integration placeholder
+- Supersedes: Phase 5 的 `NO DECISION YET` Gateway integration placeholder
 
-## 2026-08-25 qualified-pin amendment
+## 2026-08-25 qualified-pin 修订
 
-The formal DSH Upgrade Lane qualifies the Product Runtime at Python
-`deepseek-harness-sdk==0.1.1rc1` plus
-`deepseek-harness-runtime-bin==0.1.1rc1`, with all 54 DSH packages in the
-explicit npm runtime closure pinned to `0.1.1-rc.1` and all seven supporting
-`@deepseek-ai/*` packages pinned to current stable versions. This amendment changes dependency
-versions only. The selected Option B topology, public JSON-RPC carrier, custom
-BYQ Cordis composition, process ownership, MCP-only domain boundary,
-WorkflowTrace normalization, and Product capability restrictions are
-unchanged. Python/npm rc.6 remains the rollback baseline.
+正式 DSH Upgrade Lane 将 Product Runtime 验证到 Python
+`deepseek-harness-sdk==0.1.1rc1` 与
+`deepseek-harness-runtime-bin==0.1.1rc1`；明确 npm runtime closure 中的 54 个 DSH
+package 全部固定为 `0.1.1-rc.1`，另有七个 supporting `@deepseek-ai/*` package 固定到
+当前 stable version。本修订只改变 dependency version。已选择的 Option B topology、
+public JSON-RPC carrier、custom BYQ Cordis composition、process ownership、MCP-only
+domain boundary、WorkflowTrace normalization 和 Product capability restriction 均不变。
+Python/npm rc.6 保持 rollback baseline。
 
-GitHub/npm `0.1.1-rc.2` is not qualified because no corresponding official
-Python SDK/runtime-bin exists. The rc.1 npm closure is complete only when all
-DSH packages are exact direct pins; an ordinary partial top-level set can pull
-rc.2 through upstream ranges and fails peer resolution. The compatibility
-matrix and artifact evidence are in
-`docs/architecture/research/dsh-compatibility-matrix.md`.
+GitHub/npm `0.1.1-rc.2` 未通过验证，因为不存在对应 official Python SDK/runtime-bin。
+只有全部 DSH package 都是准确 direct pin 时，rc.1 npm closure 才完整；普通的部分
+top-level set 会通过 upstream range 拉取 rc.2，并导致 peer resolution 失败。Compatibility
+matrix 和 artifact evidence 位于
+`docs/architecture/research/dsh-compatibility-matrix.md`。
 
-## Context
+## 背景
 
-Phase 5 deliberately stopped at a container-local DSH Web bootstrap. That Web
-surface is not a product API: it remains bound to DSH's loopback interface,
-has no host publication, and must not be proxied or worked around.
+Phase 5 有意停在 container-local DSH Web bootstrap。该 Web surface 不是 Product API：
+它继续 bind 到 DSH loopback interface，不发布 host port，也不得通过 proxy 或 workaround
+暴露。
 
-Phase 6 needs this programmatic path:
+Phase 6 需要以下 programmatic path：
 
 ```text
 BYQ Gateway
@@ -42,72 +40,63 @@ explicit exact-pinned DSH runtime composition
 BeyondQuant MCP
 ```
 
-The seam must preserve the existing boundaries:
+该 seam 必须保持现有边界：
 
-- Product DSH has no coding, source filesystem, Git mutation, or Engineering
-  Plane capability.
-- Agent-to-Domain calls use BeyondQuant MCP only.
-- Gateway does not import the DSH SDK or parse raw DSH notification types.
-- DSH session persistence remains Agent Plane state; Gateway retains only BYQ
-  session and trace identities.
-- DSH remains an exact-pinned external dependency and is not forked or
-  rebuilt for BYQ.
+- Product DSH 没有 coding、source filesystem、Git mutation 或 Engineering Plane
+  capability。
+- Agent-to-Domain call 只使用 BeyondQuant MCP。
+- Gateway 不 import DSH SDK，也不解析 raw DSH notification type。
+- DSH session persistence 保持为 Agent Plane state；Gateway 只保留 BYQ session 与
+  trace identity。
+- DSH 是准确固定的 external dependency，不被 fork，也不为 BYQ rebuild。
 
-The official rc.6 artifacts were inspected rather than inferred. npm uses
-`0.1.0-rc.6`; Python/PyPI uses `0.1.0rc6`. The Python SDK owns a subprocess
-and stdio JSON-RPC client, but rc.6 has no prompt cancel or per-session close.
-`session/prompt` returns an enqueue receipt, not a completed result. These
-limitations make process ownership part of the architecture decision.
+正式检查了 official rc.6 artifact，而不是推断。npm 使用 `0.1.0-rc.6`；Python/PyPI
+使用 `0.1.0rc6`。Python SDK 持有 subprocess 和 stdio JSON-RPC client，但 rc.6 没有
+prompt cancel 或 per-session close；`session/prompt` 返回 enqueue receipt，而非 completed
+result。这些限制使 process ownership 成为架构决策的一部分。
 
-## Options evaluated
+## 评估的方案
 
-### Option A: Python SDK plus bundled runtime
+### Option A：Python SDK 加 bundled runtime
 
-Rejected for the Product runtime. The official
-`deepseek-harness-runtime-bin==0.1.0rc6` closure includes coding-capable bash
-and local filesystem capabilities and does not include
-`@deepseek-ai/dsh-mcp-client`. A custom composition cannot add an absent
-package to that bundled closure. Rebuilding or forking the runtime to add MCP
-would violate the repository boundary.
+不用于 Product runtime。Official `deepseek-harness-runtime-bin==0.1.0rc6` closure 包含
+coding-capable bash 和 local filesystem capability，且不包含
+`@deepseek-ai/dsh-mcp-client`。Custom composition 不能把缺失 package 加入 bundled
+closure。为增加 MCP 而 rebuild 或 fork runtime 会违反仓库边界。
 
-### Option B: Python SDK plus explicit npm DSH runtime
+### Option B：Python SDK 加 explicit npm DSH runtime
 
-Selected. The Python SDK is the application-facing client. It launches an
-exact-pinned npm rc.6 runtime through `launch_args_override` with the official
-public `dsh-jsonrpc-agent` carrier (`lib/bin.js`) and a BYQ-controlled Cordis
-composition containing:
+选择此方案。Python SDK 是 application-facing client。它通过 `launch_args_override`
+启动准确固定的 npm rc.6 runtime，使用 official public `dsh-jsonrpc-agent` carrier
+（`lib/bin.js`）和 BYQ-controlled Cordis composition，composition 包含：
 
-- `@deepseek-ai/dsh-sdk-jsonrpc-server`;
-- non-coding `@deepseek-ai/dsh-agent-spine-demo` configuration;
-- DSH JSONL persistence/checkpoint policy; and
-- `@deepseek-ai/dsh-mcp-client` connected to BeyondQuant MCP.
+- `@deepseek-ai/dsh-sdk-jsonrpc-server`；
+- non-coding `@deepseek-ai/dsh-agent-spine-demo` configuration；
+- DSH JSONL persistence/checkpoint policy；
+- 连接 BeyondQuant MCP 的 `@deepseek-ai/dsh-mcp-client`。
 
-The public `lib/bin.js` and exported `packaged-bin.js` were both run from the
-installed rc.6 artifact with the BYQ composition and healthy MCP. Both passed
-keyless initialize/idle/close. The public `dsh-jsonrpc-agent` is selected
-because it is the package's declared public bin and loads the BYQ composition
-without a packaged-runtime base override. This is an rc.6 exact-pinned
-decision protected by compatibility smoke; it is not a promise of stability
-for future DSH versions.
+在已安装 rc.6 artifact、BYQ composition 和健康 MCP 上，public `lib/bin.js` 与 exported
+`packaged-bin.js` 均已实际运行，并通过 keyless initialize/idle/close。选择 public
+`dsh-jsonrpc-agent`，因为它是 package 声明的 public bin，且无需 packaged-runtime base
+override 即可加载 BYQ composition。这是由 compatibility smoke 保护的准确 rc.6 决策，
+不承诺未来 DSH version 的稳定性。
 
-### Option C: TypeScript SDK plus explicit npm DSH runtime
+### Option C：TypeScript SDK 加 explicit npm DSH runtime
 
-Not selected. `@deepseek-ai/dsh-sdk-client@0.1.0-rc.6` uses the same stdio
-JSON-RPC protocol and inherits the same cancellation and process limitations.
-A Python Gateway would need a Node adapter/sidecar or a Node Gateway, adding a
-language/process boundary without improving lifecycle, event, or observability
-behavior for this phase.
+未选择。`@deepseek-ai/dsh-sdk-client@0.1.0-rc.6` 使用相同 stdio JSON-RPC protocol，
+具有相同 cancellation 和 process limitation。Python Gateway 将需要 Node adapter/sidecar
+或 Node Gateway，增加 language/process boundary，却不能改善本 Phase 的 lifecycle、
+event 或 observability behavior。
 
-## Decision
+## 决策
 
-BYQ adopts Option B with a dedicated Python Runtime Adapter as the only
-Gateway-facing DSH runtime owner. The adapter uses FastAPI for its internal
-HTTP/SSE prototype API and `deepseek-harness-sdk==0.1.1rc1` to launch one
-explicit `@deepseek-ai/dsh-sdk-jsonrpc-demo@0.1.1-rc.1` public
-`dsh-jsonrpc-agent` process per active BYQ session.
+BYQ 采用 Option B，并以专用 Python Runtime Adapter 作为唯一面向 Gateway 的 DSH
+runtime owner。Adapter 使用 FastAPI 提供 internal HTTP/SSE prototype API，并使用
+`deepseek-harness-sdk==0.1.1rc1`，为每个 active BYQ session 启动一个明确的
+`@deepseek-ai/dsh-sdk-jsonrpc-demo@0.1.1-rc.1` public `dsh-jsonrpc-agent` process。
 
-The adapter is an Agent Plane runtime boundary. It is not an Engineering DSH,
-not a second generic agent harness, and not a public chat API.
+Adapter 是 Agent Plane runtime boundary；它不是 Engineering DSH，不是第二套通用
+Agent Harness，也不是 public chat API。
 
 ## Runtime topology
 
@@ -130,33 +119,30 @@ byq-product-sdk.cordis.yml
 BeyondQuant MCP (`/mcp/v1`)
 ```
 
-The base compose contains Gateway, Runtime Adapter, MCP, and Backend. The old
-Phase 5 DSH Web service is available only through `compose.dsh-web.yml` with
-the `dsh-web` diagnostic profile; it is not in the product request path.
+Base Compose 包含 Gateway、Runtime Adapter、MCP 和 Backend。旧 Phase 5 DSH Web service
+只通过带 `dsh-web` diagnostic profile 的 `compose.dsh-web.yml` 提供，不在 Product
+request path 中。
 
 ## Process ownership
 
-The retained lifecycle model is one DSH runtime process per active BYQ
-session. The adapter owns startup, stdin/stdout/stderr pipes through the
-official SDK, shutdown, termination, and cleanup. Gateway web workers do not
-own subprocesses.
+保留的 lifecycle model 是每个 active BYQ session 一个 DSH runtime process。Adapter
+通过 official SDK 持有 startup、stdin/stdout/stderr pipe、shutdown、termination 和
+cleanup；Gateway web worker 不持有 subprocess。
 
-A single shared runtime with multiple `sessionId` values was evaluated. It
-would lower aggregate cold-start and idle overhead, but the qualified runtime
-cannot reliably hard-cancel one session without affecting other sessions and
-shares the whole-agent result interval across queued work. It is not selected
-until DSH provides reliable prompt cancellation and per-session close.
+曾评估多个 `sessionId` 共用单一 runtime。它能降低 cold-start 和 idle overhead，但已
+验证 runtime 无法在不影响其他 session 的情况下可靠 hard-cancel 单个 session，且 queued
+work 共用 whole-agent result interval。因此，在 DSH 提供可靠 prompt cancellation 和
+per-session close 前不采用。
 
-The prototype baseline measured fresh Gateway-to-adapter initialize at
-`0.355827s` and hard cancel at `0.039565s` on 2026-08-15. At idle after
-initialize, `docker stats` reported `101.3MiB` for the Runtime Adapter
-container and `docker top` reported `121112KiB` RSS for the owned Node child.
-These are baseline measurements, not capacity guarantees; Phase 7 must repeat
-them under target CI/production limits.
+2026-08-15 prototype baseline 测得 fresh Gateway-to-Adapter initialize 为
+`0.355827s`，hard cancel 为 `0.039565s`。Initialize 后 idle 时，`docker stats` 报告
+Runtime Adapter container `101.3MiB`，`docker top` 报告 owned Node child `121112KiB`
+RSS。这些只是 baseline measurement，不是 capacity guarantee；Phase 7 必须在目标
+CI/production limit 下复测。
 
 ## Session lifecycle
 
-The adapter state vocabulary is:
+Adapter state vocabulary：
 
 ```text
 starting → ready → idle → running → idle
@@ -165,218 +151,192 @@ starting → ready → idle → running → idle
                          └→ interrupted → closed
 ```
 
-The implementation also accepts normal release from `ready`, `idle`, `failed`,
-or `interrupted` to `closed`.
+实现还允许从 `ready`、`idle`、`failed` 或 `interrupted` 正常 release 到 `closed`。
 
-1. Create validates BYQ `session_id` and `trace_id`, creates the DSH-owned
-   session root, starts the explicit runtime, and completes JSON-RPC
-   `initialize`; the state becomes `ready`.
-2. `submit_prompt` is accepted only in `ready` or `idle`. Under the session
-   lock it claims one `active_run`, atomically changes the state to `running`,
-   and only then starts one `Session.run()` worker. A second prompt receives
-   409 and cannot create concurrent active runs.
-3. Normal completion clears only that active run and changes the state to
-   `idle`; a non-cancel failure changes it to `failed`.
-4. `release` is allowed only with no active run. It changes the state to
-   `closed`, closes/reaps the owned harness, emits a close trace, sends SSE
-   termination, and removes the live record. Recreating the same BYQ session
-   after release creates a new owned runtime under the future resume policy.
-5. Duplicate create while a live record exists is an explicit 409 conflict.
+1. Create 验证 BYQ `session_id` 和 `trace_id`，创建 DSH-owned session root，启动明确
+   runtime 并完成 JSON-RPC `initialize`；state 变为 `ready`。
+2. `submit_prompt` 只在 `ready` 或 `idle` 接受。它在 session lock 下 claim 一个
+   `active_run`，原子地将 state 改为 `running`，然后才启动一个 `Session.run()` worker。
+   第二个 prompt 收到 409，不能创建 concurrent active run。
+3. Normal completion 只清除该 active run，并将 state 改为 `idle`；非 cancel failure 将
+   state 改为 `failed`。
+4. `release` 只在没有 active run 时允许。它将 state 改为 `closed`，close/reap owned
+   Harness，发出 close trace，发送 SSE termination，并移除 live record。Release 后用
+   相同 BYQ session 重建时，在未来 resume policy 下创建新 owned runtime。
+5. Live record 存在时 duplicate create 明确返回 409 conflict。
 
 ## Streaming
 
-The internal prototype selects SSE from Runtime Adapter to Gateway. SSE maps
-to the adapter's ordered notification queue and is sufficient for the
-one-way internal event stream. Internal streaming HTTP remains a future option
-if backpressure or bidirectional control requires it.
+Internal prototype 选择 Runtime Adapter 到 Gateway 的 SSE。SSE 映射到 Adapter ordered
+notification queue，足以承载 one-way internal event stream。如果 backpressure 或
+bidirectional control 有需要，internal streaming HTTP 仍是未来选项。
 
-SSE carries only serialized BYQ `WorkflowTraceEvent` envelopes. Gateway code
-does not parse DSH notification methods, event types, or payload schemas.
+SSE 只承载 serialized BYQ `WorkflowTraceEvent` envelope。Gateway code 不解析 DSH
+notification method、event type 或 payload schema。
 
-## Event normalization and ordering
+## Event normalization 与 ordering
 
-The framework-neutral minimum envelope in `packages/contracts/workflow_trace.py`
-is:
+`packages/contracts/workflow_trace.py` 中 framework-neutral minimum envelope 为：
 
 ```text
 trace_id, session_id, sequence, timestamp, kind, source, payload
 ```
 
-The adapter translates `session.status` and selected `session.event` values
-into BYQ-owned events. Unknown DSH event types become bounded
-`session.progress` events. Raw DSH payloads never cross the Gateway boundary.
+Adapter 将 `session.status` 和选定 `session.event` value 转换为 BYQ-owned event。
+Unknown DSH event type 变为有界 `session.progress` event。Raw DSH payload 不越过
+Gateway boundary。
 
-Each RuntimeSession has one ordering lock. Sequence allocation and queue
-publication happen within that lock, so sequence values are unique, strictly
-increasing, and published in the same order even when notification, cancel,
-result, and failure paths race.
+每个 RuntimeSession 有一个 ordering lock。Sequence allocation 和 queue publication 均
+在该 lock 内完成，因此即使 notification、cancel、result 和 failure path 并发，sequence
+仍唯一、严格递增，并按相同顺序发布。
 
 ## Cancellation
 
 ### Soft cancel
 
-Soft cancel is valid only for the current active run. It transitions the
-session to `cancelling`, emits a BYQ cancellation event, and lets DSH work
-settle because the qualified runtime has no prompt-cancel operation. The
-eventual result is discarded and the state returns to `idle`. The cancel
-request is scoped to the active run and cannot permanently contaminate a later
-prompt.
+只对当前 active run 有效。它将 session transition 到 `cancelling`，发出 BYQ
+cancellation event，并因已验证 runtime 无 prompt-cancel operation 而等待 DSH work
+settle。最终 result 被丢弃，state 回到 `idle`。Cancel request 只作用于 active run，不能
+永久污染后续 prompt。
 
 ### Hard cancel
 
-Hard cancel is valid only for the current active run. It transitions the
-session to `interrupted`, detaches that run, emits a BYQ cancellation event,
-and calls the official SDK `close()` on the adapter-owned DSH runtime. The SDK
-performs its documented shutdown/terminate/kill ladder. The adapter does not
-patch the protocol or fabricate a successful cancellation response.
+只对当前 active run 有效。它将 session transition 到 `interrupted`，detach 该 run，发出
+BYQ cancellation event，并对 Adapter-owned DSH runtime 调用 official SDK `close()`。
+SDK 执行已文档化的 shutdown/terminate/kill ladder。Adapter 不 patch protocol，也不伪造
+successful cancellation response。
 
-A prompt after hard cancel receives 409; the closed harness is never reused.
-The durable log may contain an interrupted/incomplete turn. A future resume
-must create a new owned runtime under an explicit resume policy; Phase 7 owns
-the complete product resume flow.
+Hard cancel 后 prompt 收到 409，closed Harness 永不复用。Durable log 可能含有
+interrupted/incomplete turn。未来 resume 必须依据明确 policy 创建新 owned runtime；
+Phase 7 持有完整 Product resume flow。
 
 ## Failure isolation
 
-One owned runtime per active session limits a runtime crash to that session and
-makes cleanup deterministic. Adapter process failure can still affect all
-sessions assigned to that adapter instance; deployment must restart the
-adapter and preserve ownership/affinity when scaling horizontally.
+每个 active session 一个 owned runtime，将 runtime crash 限制到该 session，并使 cleanup
+确定。Adapter process failure 仍可能影响分配给该 instance 的所有 session；horizontal
+scale 时 deployment 必须 restart Adapter，并保留 ownership/affinity。
 
 ## MCP composition
 
-The selected SDK composition is
-`plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml`. It is the single
-Product capability source and includes the SDK JSON-RPC server and BYQ MCP
-client with `failOnStartupError: true`. Coding tools are `NONE`: bash,
-terminal, write, edit, str-replace, codex, Git mutation, and source filesystem
-write are not installed or enabled. DSH reaches business data only through
-BeyondQuant MCP and never directly accesses PostgreSQL or Redis.
+选择的 SDK composition 是
+`plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml`。它是唯一 Product capability
+source，包含 SDK JSON-RPC server 和使用 `failOnStartupError: true` 的 BYQ MCP client。
+Coding tool 为 `NONE`：未安装或启用 bash、terminal、write、edit、str-replace、Codex、
+Git mutation 和 source filesystem write。DSH 只通过 BeyondQuant MCP 访问 business
+data，绝不直接访问 PostgreSQL 或 Redis。
 
 ## Model configuration
 
-The adapter passes the official `deepseek-official` provider route and
-`deepseek-v4-flash` model through the SDK initialize configuration. Phase 6
-does not mount or invoke a model provider, issue a real model request, or
-require `DEEPSEEK_API_KEY`. Phase 7 must validate real Product Agent model
-routing and credentials; no fake production model abstraction is introduced.
+Adapter 通过 SDK initialize configuration 传入 official `deepseek-official` provider route
+和 `deepseek-v4-flash` model。Phase 6 不 mount/invoke model provider、不发真实 model
+request，也不要求 `DEEPSEEK_API_KEY`。Phase 7 必须验证真实 Product Agent model
+routing 和 credential；不引入 fake production model abstraction。
 
 ## Persistence
 
-The named Compose volume `byq_dsh_sessions` is mounted only at
-`/var/lib/byq/dsh-sessions`. The runtime user can write that Agent Plane
-volume and required temporary storage; application, config, and runtime
-installation paths remain root-owned/read-only. The adapter resolves each
-session path and proves it remains below `DSH_SESSION_ROOT`.
+Named Compose volume `byq_dsh_sessions` 只 mount 到
+`/var/lib/byq/dsh-sessions`。Runtime user 可以写 Agent Plane volume 和必要 temp storage；
+application、config 和 runtime installation path 保持 root-owned/read-only。Adapter 解析
+每个 session path，并证明它保持在 `DSH_SESSION_ROOT` 下。
 
-Gateway stores/transmits only BYQ session identity and BYQ trace identity. DSH
-durable session logs belong to the Agent Plane runtime owner. Future BYQ
-business artifacts remain Backend/Domain Plane state.
+Gateway 只保存/传输 BYQ session identity 和 BYQ trace identity。DSH durable session log
+属于 Agent Plane runtime owner；未来 BYQ business Artifact 保持为 Backend/Domain Plane
+state。
 
-## Security boundary and internal trust
+## Security boundary 与 internal trust
 
-The prototype endpoints trust the private Compose network and use the MCP
-token for the adapter-to-MCP call. They are not external user authentication.
-No source mount, Docker socket, host network, host-published DSH Web port,
-engineering credential, or broad writable application path is available to
-Product DSH. A production cross-host deployment must add service identity and
-authorization, preferably mTLS or an equivalent authenticated internal mesh,
-before exposing the adapter beyond the private network.
+Prototype endpoint 信任 private Compose network，并使用 MCP token 进行 Adapter-to-MCP
+call；它们不是 external user authentication。Product DSH 无 source mount、Docker
+socket、host network、host-published DSH Web port、engineering credential 或宽泛 writable
+application path。Production cross-host deployment 在将 Adapter 暴露到 private network
+之外前，必须增加 service identity 和 authorization，优先使用 mTLS 或等效 authenticated
+internal mesh。
 
 ## Observability
 
-Readiness reports exact SDK/runtime-bin versions, explicit carrier path,
-composition path, persistence owner, and process ownership. SDK stdout remains
-reserved for JSON-RPC frames; diagnostics remain on stderr. Adapter logs and
-normalized WorkflowTrace events are the Gateway-facing observability surface.
-Raw DSH payloads and secrets are not logged.
+Readiness 报告准确 SDK/runtime-bin version、explicit carrier path、composition path、
+persistence owner 和 process ownership。SDK stdout 保留给 JSON-RPC frame；diagnostic
+保留在 stderr。Adapter log 和 normalized WorkflowTrace event 是面向 Gateway 的
+observability surface。Raw DSH payload 和 secret 不记录到 log。
 
 ## Horizontal scaling
 
-The adapter is independently deployable from Gateway. A replicated deployment
-must add an ownership registry or affinity rule so a session is not resumed on
-a second adapter while the first still owns its DSH process. The named DSH
-volume and durable-log strategy must be replaced or provisioned per adapter
-with explicit shared-storage semantics before horizontal session migration.
+Adapter 可独立于 Gateway deployment。Replicated deployment 必须增加 ownership registry
+或 affinity rule，防止第一 Adapter 仍持有 DSH process 时第二 Adapter resume 同一
+session。在 horizontal session migration 前，必须替换 named DSH volume，或按 Adapter
+provision 并明确 shared-storage semantics。
 
 ## DSH upgrade compatibility
 
-The qualified Product Runtime baseline is exact rc.1:
+已验证 Product Runtime baseline 为准确 rc.1：
 
-- all 54 DSH npm runtime packages at `0.1.1-rc.1` plus seven exact-pinned
-  supporting `@deepseek-ai/*` packages;
-- Python `deepseek-harness-sdk==0.1.1rc1`; and
-- `deepseek-harness-runtime-bin==0.1.1rc1`.
+- 54 个 DSH npm runtime package 全部为 `0.1.1-rc.1`，另加七个准确固定的 supporting
+  `@deepseek-ai/*` package；
+- Python `deepseek-harness-sdk==0.1.1rc1`；
+- `deepseek-harness-runtime-bin==0.1.1rc1`。
 
-Any DSH upgrade is a separate compatibility decision requiring fresh npm/PyPI
-metadata, artifact hashes/closure inspection, carrier validation,
-composition/initialization/MCP tests, notification contract review,
-cancellation review, and an ADR update. A newer npm release does not
-automatically change this baseline.
+任何 DSH upgrade 都是独立 compatibility decision，需要新的 npm/PyPI metadata、
+artifact hash/closure inspection、carrier validation、composition/initialization/MCP test、
+notification Contract review、cancellation review 和 ADR update。较新 npm release 不会
+自动改变该 baseline。
 
-## Known qualified-runtime limitations
+## 已验证 runtime 的已知限制
 
-- no prompt cancel;
-- no per-session close;
-- no protocol version negotiation;
-- prompt returns only a MessageId enqueue receipt;
-- whole-agent idle interval owns the high-level run result;
-- request timeout does not stop already-running work;
-- stdout is JSON-RPC protocol-only; and
-- server/client request capabilities for future approval flow are incomplete.
+- 无 prompt cancel；
+- 无 per-session close；
+- 无 protocol version negotiation；
+- prompt 只返回 MessageId enqueue receipt；
+- whole-agent idle interval 持有 high-level run result；
+- request timeout 不停止已经运行的 work；
+- stdout 只用于 JSON-RPC protocol；
+- 面向未来 Approval flow 的 server/client request capability 不完整。
 
-These are current limitations, not available future features. The adapter's
-hard-cancel process close is a BYQ ownership policy, not a claim that the
-qualified DSH release supports prompt cancellation.
+这些是当前限制，不是可用 future feature。Adapter hard-cancel process close 是 BYQ
+ownership policy，并不表示已验证 DSH release 支持 prompt cancellation。
 
-## Base Web DSH decision
+## Base Web DSH 决策
 
-The old Phase 5 Web DSH is removed from base production compose and retained
-in `compose.dsh-web.yml` under the explicit `dsh-web` diagnostic profile. It
-has no host port, source mount, socket, proxy, or host networking. Product
-requests use only Gateway → Runtime Adapter → owned JSON-RPC DSH → MCP. The
-diagnostic profile exists for bootstrap/configuration inspection and is not a
-second product request path.
+旧 Phase 5 Web DSH 从 base production Compose 移除，并保留在
+`compose.dsh-web.yml` 的明确 `dsh-web` diagnostic profile 中。它没有 host port、source
+mount、socket、proxy 或 host networking。Product request 只使用 Gateway → Runtime
+Adapter → owned JSON-RPC DSH → MCP。Diagnostic profile 仅用于 bootstrap/configuration
+inspection，不是第二条 Product request path。
 
-## Rejected alternatives
+## 拒绝的替代方案
 
-- DSH Web as Gateway API: violates the Web boundary and requires forbidden
-  proxy/network workarounds.
-- DSH Web in base production compose: creates a second non-request DSH path
-  and obscures the selected JSON-RPC ownership boundary.
-- Gateway-owned DSH subprocess: couples web-worker lifecycle to agent process
-  lifecycle and weakens failure isolation.
-- Option A bundled zero-config runtime: coding-capable closure and missing MCP
-  client.
-- Option C TypeScript SDK: unnecessary extra language/process seam for the
-  current Python Gateway.
-- Forking or rebuilding DSH: prohibited by repository architecture rules.
-- Gateway parsing raw DSH notifications: couples product contracts to DSH.
+- 将 DSH Web 用作 Gateway API：违反 Web boundary，并要求禁止的 proxy/network
+  workaround。
+- 在 base production Compose 放置 DSH Web：创建第二条非 request DSH path，并模糊已
+  选择的 JSON-RPC ownership boundary。
+- 由 Gateway 持有 DSH subprocess：将 web-worker lifecycle 与 Agent process lifecycle
+  耦合，并削弱 failure isolation。
+- Option A bundled zero-config runtime：closure 含 coding capability，且缺少 MCP client。
+- Option C TypeScript SDK：对当前 Python Gateway 增加不必要 language/process seam。
+- Fork 或 rebuild DSH：仓库架构规则禁止。
+- Gateway 解析 raw DSH notification：使 Product Contract 耦合 DSH。
 
-## Rollback
+## 回滚
 
-The dependency rollback baseline is Python `0.1.0rc6` and npm
-`0.1.0-rc.6`, using the prior runtime manifest and lockfile from repository
-history. Stop and release owned Runtime Adapter sessions, deploy the prior
-image/revision, and restart the adapter against the same Agent Plane JSONL
-session volume. No BYQ business-data migration is required. If runtime-level
-resume of an interrupted rc.1 session is uncertain, retain the durable log as
-audit evidence and start a new owned runtime session rather than converting or
-patching DSH persistence. The rollback must retain the MCP-only domain path,
-no-proxy/no-host-network Web boundary, and all Product capability restrictions.
+Dependency rollback baseline 是 Python `0.1.0rc6` 与 npm `0.1.0-rc.6`，使用仓库历史
+中的 prior runtime manifest 和 lockfile。停止并 release owned Runtime Adapter session，
+deployment prior image/revision，并让 Adapter 使用相同 Agent Plane JSONL session volume
+restart。无需 BYQ business-data migration。若无法确定 interrupted rc.1 session 的
+runtime-level resume，保留 durable log 作为 audit evidence，并启动新 owned runtime
+session，不转换或 patch DSH persistence。Rollback 必须保留 MCP-only domain path、
+no-proxy/no-host-network Web boundary 和全部 Product capability restriction。
 
-## Exit criteria
+## 退出标准
 
-Phase 6 is complete only when:
+只有满足以下条件，Phase 6 才完成：
 
-- official rc.6 Python/npm metadata and bundled closure evidence is recorded;
-- Option A/B/C evidence and this ADR are reviewed;
-- lifecycle, duplicate-create, hard/soft cancellation, release, identifier,
-  ordering, filesystem, and persistence tests pass;
-- keyless JSON-RPC initialize, MCP startup, normalization, Gateway contract,
-  and process cleanup smoke pass;
-- base compose and diagnostic Web profile checks pass; and
-- CI runs Phase 5 plus Phase 6 tests and remains at the human merge gate.
+- 记录 official rc.6 Python/npm metadata 和 bundled closure evidence；
+- Option A/B/C evidence 和本 ADR 完成 review；
+- lifecycle、duplicate-create、hard/soft cancellation、release、identifier、ordering、
+  filesystem 和 persistence test 通过；
+- keyless JSON-RPC initialize、MCP startup、normalization、Gateway Contract 和 process
+  cleanup smoke 通过；
+- base Compose 与 diagnostic Web profile check 通过；
+- CI 运行 Phase 5 与 Phase 6 test，并保持 Human Merge Gate。
 
-If compatibility evidence becomes insufficient or a new DSH behavior breaks
-the seam, this ADR must be changed to Proposed and Phase 6 must stop at a
-documented architecture blocker.
+如果 compatibility evidence 不足或新 DSH behavior 打破该 seam，必须将本 ADR 改为
+Proposed，Phase 6 必须停在已文档化 architecture blocker。
