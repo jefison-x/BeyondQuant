@@ -1,54 +1,46 @@
-# ADR-0006: Phase 9 Research Entities and Backend Persistence
+# ADR-0006：Phase 9 Research Entity 与 Backend Persistence
 
 - Status: Accepted
 - Date: 2026-08-15
 - Decision scope: Phase 9 Quant Domain research entities
-- Supersedes: the ResearchTask, Experiment, and Artifact contract placeholders
+- Supersedes: ResearchTask、Experiment 和 Artifact Contract placeholder
 
-## Context
+## 背景
 
-Phase 9 needs durable BYQ business entities for agent-assisted research. The
-repository currently has no PostgreSQL service, while the architecture already
-requires that business state belongs to the Backend/Domain Plane and remains
-inaccessible to DSH. The phase must therefore establish a small persistent
-implementation without making storage details part of the MCP contract.
+Phase 9 需要用于 Agent-assisted research 的持久化 BYQ business entity。当时仓库还没有
+PostgreSQL service，而架构已经规定 business state 属于 Backend/Domain Plane，且 DSH
+不得访问。因此本 Phase 必须建立小型持久化实现，但不能让 storage detail 成为 MCP
+Contract 的一部分。
 
-The entities also need explicit state transitions, idempotency, and lineage.
-DSH WorkflowTrace may identify the originating run, but it must not own the
-ResearchTask, Experiment, or Artifact state machines.
+这些 entity 还需要明确的 state transition、idempotency 和 lineage。DSH WorkflowTrace
+可以标识发起 run，但不得持有 ResearchTask、Experiment 或 Artifact state machine。
 
-## Decision
+## 决策
 
-1. BYQ owns framework-neutral contracts for `ResearchTask`, `Experiment`, and
-   `Artifact`. Their identifiers, state transitions, idempotency behavior,
-   provenance, and lineage are enforced by Backend domain code.
-2. Phase 9 uses SQLite through the Python standard library as the Backend's
-   durable repository. The database path is configured by
-   `BYQ_DOMAIN_DB_PATH` and defaults to `/var/lib/byq/domain/byq.sqlite3` in
-   Compose. The path is mounted only into Backend through the named
-   `byq_domain_state` volume.
-3. The repository is behind a Backend-owned interface. A future PostgreSQL
-   implementation may replace SQLite without changing the domain or MCP
-   contracts. Phase 9 does not claim horizontal-write scalability or perform a
-   destructive migration.
-4. Every create and transition mutation requires an idempotency key. Repeating
-   the same key with the same canonical request returns the original result;
-   reusing it with different input is a conflict. State transitions are
-   allowlisted and cannot be bypassed by prompts or storage writes.
-5. `ResearchTask` is the root entity. `Experiment` belongs to one task and
-   records a bounded input snapshot. Each input source must retain a BYQ data
-   provenance reference. `Artifact` belongs to a task, may belong to an
-   experiment, stores bounded JSON content, and records lineage references and
-   a deterministic content SHA-256.
-6. Backend exposes the domain endpoints internally. BeyondQuant MCP exposes
-   only normalized domain operations: create/get research entities and perform
-   validated transitions. MCP does not expose SQL, database paths, raw rows,
-   or DSH WorkflowTrace schemas.
-7. Phase 9 does not implement business approval. An Artifact can be marked
-   `validated` only through the BYQ transition contract; approval policy and
-   consequential-action gates remain a later domain decision.
+1. BYQ 持有 framework-neutral 的 `ResearchTask`、`Experiment` 和 `Artifact` Contract。
+   identifier、state transition、idempotency behavior、provenance 和 lineage 由 Backend
+   domain code 强制执行。
+2. Phase 9 通过 Python standard library 使用 SQLite 作为 Backend durable repository。
+   database path 由 `BYQ_DOMAIN_DB_PATH` 配置，在 Compose 中默认为
+   `/var/lib/byq/domain/byq.sqlite3`；该路径只通过 named volume `byq_domain_state`
+   mount 到 Backend。
+3. repository 位于 Backend-owned interface 后。未来 PostgreSQL 实现可以替换 SQLite，
+   而不改变 domain 或 MCP Contract。Phase 9 不宣称 horizontal-write scalability，也不
+   执行 destructive migration。
+4. 每个 create 和 transition mutation 都要求 idempotency key。使用同一 key 和相同
+   canonical request 重试时返回原结果；以不同 input 重用则产生 conflict。state
+   transition 使用 allowlist，不能被 prompt 或 storage write 绕过。
+5. `ResearchTask` 是 root entity。`Experiment` 属于一个 task，并记录有界 input
+   snapshot；每个 input source 必须保留 BYQ data provenance reference。`Artifact` 属于
+   task，也可以属于 experiment；它保存有界 JSON content、lineage reference 和确定性
+   content SHA-256。
+6. Backend 在内部暴露 domain endpoint。BeyondQuant MCP 只暴露 normalized domain
+   operation：create/get research entity 和执行经过验证的 transition。MCP 不暴露 SQL、
+   database path、raw row 或 DSH WorkflowTrace schema。
+7. Phase 9 不实现 Business Approval。Artifact 只能通过 BYQ transition Contract 标记为
+   `validated`；approval policy 和 consequential-action gate 留待后续领域决策。
 
-## State machines
+## State machine
 
 ```text
 ResearchTask: planned → running → completed
@@ -65,36 +57,29 @@ Artifact:     draft → validated → superseded
                  └─────────────→ superseded
 ```
 
-Repeating a transition to the entity's current state is idempotent only when
-the transition key and request match. No other backward or terminal-state
-transition is accepted.
+只有 transition key 与 request 相符时，重复 transition 到 entity 当前 state 才是
+idempotent。其他 backward transition 或 terminal-state transition 均不接受。
 
-## Consequences
+## 后果
 
-- Keyless tests can exercise persistence, restart recovery, idempotency, and
-  lineage with temporary SQLite files.
-- The Backend owns all business state and DSH continues to reach it only via
-  BeyondQuant MCP.
-- SQLite is intentionally a single-Backend implementation. Multi-instance
-  deployment, PostgreSQL migration, retention, and approval policy need a
-  later ADR.
-- Bounded JSON content and input snapshots prevent an agent call from becoming
-  an unbounded storage or cost surface.
+- 无密钥 test 可以使用临时 SQLite file 验证 persistence、restart recovery、
+  idempotency 和 lineage。
+- Backend 持有全部 business state，DSH 继续只能通过 BeyondQuant MCP 访问。
+- SQLite 有意作为 single-Backend 实现；multi-instance deployment、PostgreSQL migration、
+  retention 和 approval policy 需要后续 ADR。
+- 有界 JSON content 和 input snapshot 防止 Agent call 形成无界 storage/cost surface。
 
-## Rejected alternatives
+## 拒绝的替代方案
 
-- In-memory dictionaries would not satisfy durable Phase 9 persistence or
-  restart recovery.
-- Direct DSH access to SQLite or PostgreSQL would violate the MCP and data
-  ownership boundaries.
-- Adding PostgreSQL before the domain contracts would expand topology and
-  migration scope without improving the Phase 9 acceptance evidence.
-- Treating DSH WorkflowTrace as business state would conflate Agent Plane and
-  Domain Plane lifecycles.
+- In-memory dictionary 无法满足 Phase 9 的 durable persistence 和 restart recovery。
+- DSH 直接访问 SQLite 或 PostgreSQL 会违反 MCP 和 data ownership 边界。
+- 在 domain Contract 之前增加 PostgreSQL 会扩大 topology 和 migration 范围，却不能
+  改善 Phase 9 acceptance evidence。
+- 将 DSH WorkflowTrace 视为 business state 会混淆 Agent Plane 与 Domain Plane
+  lifecycle。
 
-## Stop conditions
+## 停止条件
 
-Phase 9 must stop before widening scope if SQLite cannot provide the required
-durability evidence, if the domain contracts require multi-writer semantics,
-if provenance cannot be retained, or if an authorization/approval requirement
-cannot be represented without a new ADR.
+如果 SQLite 无法提供所需 durability evidence、domain Contract 要求 multi-writer
+semantics、provenance 无法保留，或 authorization/approval requirement 无法在没有新 ADR
+的情况下表示，Phase 9 必须停止，不能扩大范围。

@@ -1,31 +1,30 @@
-# ADR-0014: Phase 24 Durable User Identity and Session Authentication
+# ADR-0014：Phase 24 Durable User Identity 与 Session Authentication
 
 - Status: Accepted
 - Date: 2026-08-16
-- Decision scope: Phase 24 Product user identity and browser session boundary
+- Decision scope: Phase 24 Product user identity 与 browser session boundary
 
-## Context
+## 背景
 
-Phases 16-23 used an opaque `BYQ_PRODUCT_TOKEN` for browser login. Product
-completion requires durable users, password authentication, owner isolation,
-and a session boundary that does not place a long-lived bearer token in
-browser storage.
+Phase 16-23 使用 opaque `BYQ_PRODUCT_TOKEN` 进行 browser login。Product completion
+需要 durable user、password authentication、owner isolation，以及不会把 long-lived
+bearer token 放入 browser storage 的 session boundary。
 
-## Decision
+## 决策
 
-1. BYQ Backend owns a durable `users` table and `auth_sessions` table.
-2. Passwords are hashed with Python `hashlib.scrypt` using a per-user random
-   salt. Plaintext, SHA-256 password, MD5, and home-grown crypto are forbidden.
-3. Gateway issues an HTTP-only `byq_session` cookie with `SameSite=Lax` and
-   `Path=/`. The cookie value is a Backend-owned opaque session id. Product API
-   resolves the cookie to a BYQ principal by calling Backend.
-4. The old `BYQ_PRODUCT_TOKEN` remains a bootstrap/internal compatibility seam
-   only and is not the normal browser login path.
-5. Users have `admin` or `user` roles. Admin can create/list/disable users and
-   revoke sessions. Owner-scoped domain state binds to the resolved principal.
+1. BYQ Backend 持有 durable `users` table 和 `auth_sessions` table。
+2. Password 使用 Python `hashlib.scrypt` 和 per-user random salt 进行 hash。禁止保存
+   plaintext、SHA-256 password、MD5 或使用 home-grown crypto。
+3. Gateway 签发 HTTP-only `byq_session` cookie，设置 `SameSite=Lax` 和 `Path=/`。
+   Cookie value 是 Backend-owned opaque session id。Product API 通过调用 Backend 将
+   cookie 解析为 BYQ principal。
+4. 旧 `BYQ_PRODUCT_TOKEN` 只保留为 bootstrap/internal compatibility seam，不是普通
+   browser login path。
+5. User role 为 `admin` 或 `user`。Admin 可以 create/list/disable user 和 revoke session。
+   Owner-scoped domain state 绑定到解析后的 principal。
 
-## Consequences
+## 后果
 
-- Browser clients no longer store a product token in localStorage for login.
-- Session expiration/revocation is Backend-owned and auditable.
-- Product API owner isolation can be enforced per authenticated principal.
+- Browser client 不再为 login 将 Product token 存入 localStorage。
+- Session expiration/revocation 由 Backend 持有且可审计。
+- Product API 可按 authenticated principal 强制 owner isolation。

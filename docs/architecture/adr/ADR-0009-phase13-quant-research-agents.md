@@ -1,71 +1,61 @@
-# ADR-0009: Phase 13 Quant Research Agent Boundary
+# ADR-0009：Phase 13 Quant Research Agent Boundary
 
 - Status: Accepted
 - Date: 2026-08-16
 - Decision scope: Phase 13 Product/Agent/Quant Domain integration
-- Supersedes: the Phase 13 approval contract placeholder only
+- Supersedes: 仅替代 Phase 13 Approval Contract placeholder
 
-## Context
+## 背景
 
-Phases 9–12 established BYQ-owned research entities, factors, strategy
-artifacts, and deterministic backtest jobs. Phase 13 needs specialized quant
-research roles without recreating a generic agent harness or moving domain
-authority into DSH. The Community audit provides useful role/tool allowlist,
-delegation, approval, and audit invariants, but its Agent Service persistence,
-runtime coupling, and direct business APIs are not compatible with BYQ.
+Phase 9-12 建立了 BYQ-owned Research Entity、Factor、Strategy Artifact 和确定性
+Backtest job。Phase 13 需要专业 quant research role，但不能重建通用 Agent Harness，
+也不能把 domain authority 移入 DSH。Community audit 提供有用的 role/tool allowlist、
+delegation、Approval 和 audit invariant；其 Agent Service persistence、runtime coupling
+和 direct business API 不兼容 BYQ。
 
-## Decision
+## 决策
 
-1. DSH supplies the generic role mechanisms: the existing Product preset,
-   filesystem skills, the official `dsh-subagent` seam, the official
-   `dsh-subagent-spawn-in-process` provider, and `dsh-tool-subagent` instances
-   with explicit child `toolFilter` allowlists. BYQ does not create a second
-   agent loop, workflow engine, or runtime.
-2. BYQ owns a versioned role catalogue with five roles: orchestrator, market
-   researcher, factor researcher, strategy researcher, and backtest analyst.
-   Role definitions include allowed MCP capabilities, delegation targets,
-   approval-required actions, and evidence kinds.
-3. Gateway passes the authenticated Product principal to the private Runtime
-   Adapter at session creation. The adapter places only owner, actor, trace,
-   session, and stable DSH correlation values into the DSH-owned MCP client
-   headers. It never passes the Product bearer token or model credential.
-4. MCP extracts those request headers and forwards them to Backend. Backend
-   binds agent runs, approvals, and audit records to the trusted context and
-   fails closed on identity mismatch. Agent arguments cannot override it.
-5. Backend persists `agent_runs`, bounded `agent_audit` events, and
-   `agent_approvals` in BYQ domain storage. DSH run/session identifiers are
-   correlation metadata, not BYQ business state machines.
-6. Consequential actions require a pending BYQ approval. The initiating actor
-   cannot self-approve. Approval state and later execution outcome remain
-   separate and both are auditable.
+1. DSH 提供通用 role mechanism：现有 Product preset、filesystem Skill、official
+   `dsh-subagent` seam、official `dsh-subagent-spawn-in-process` provider，以及带明确 child
+   `toolFilter` allowlist 的 `dsh-tool-subagent` instance。BYQ 不创建第二个 Agent Loop、
+   Workflow engine 或 runtime。
+2. BYQ 持有 versioned role catalogue，包含五个 role：orchestrator、market researcher、
+   factor researcher、strategy researcher 和 backtest analyst。Role definition 包含允许的
+   MCP capability、delegation target、需要 Approval 的 action 和 evidence kind。
+3. Gateway 在 session create 时将 authenticated Product principal 传给 private Runtime
+   Adapter。Adapter 只将 owner、actor、trace、session 和稳定 DSH correlation value 放入
+   DSH-owned MCP client header；绝不传 Product bearer token 或 model credential。
+4. MCP 提取 request header 并转发给 Backend。Backend 将 Agent run、Approval 和 audit
+   record 绑定到 trusted context；identity mismatch 时 fail closed。Agent argument 不能
+   覆盖 trusted context。
+5. Backend 在 BYQ domain storage 中持久化 `agent_runs`、有界 `agent_audit` event 和
+   `agent_approvals`。DSH run/session identifier 是 correlation metadata，不是 BYQ
+   business state machine。
+6. Consequential action 需要 pending BYQ Approval；发起 actor 不能 self-approve。
+   Approval state 与后续 execution outcome 保持分离，且二者均可审计。
 
-## Consequences
+## 后果
 
-- Specialized children receive only the MCP tools needed for their role, and
-  recursion is bounded at one delegation level in the Product composition.
-- The role contract is observable through normalized MCP results and BYQ audit
-  views without exposing DSH internal event schemas.
-- Existing Phase 9–12 invariants remain authoritative; this phase does not
-  add source execution, live trading, database access to DSH, or unreviewed
-  evidence promotion.
-- The stable DSH session is used as the per-session correlation value because
-  rc.6's MCP composition does not expose a dynamic per-call header. A later
-  ADR may add a per-turn signed correlation carrier.
+- 专业 child 只获得其 role 所需 MCP tool；Product composition 中 recursion 限制为一层。
+- Role Contract 可通过 normalized MCP result 和 BYQ audit view 观察，不暴露 DSH
+  internal event schema。
+- Phase 9-12 invariant 继续具有权威性；本 Phase 不增加 source execution、live trading、
+  DSH database access 或未经 review 的 evidence promotion。
+- 因 rc.6 MCP composition 不暴露 dynamic per-call header，使用稳定 DSH session 作为
+  per-session correlation value；后续 ADR 可以增加 per-turn signed correlation carrier。
 
-## Rejected alternatives
+## 拒绝的替代方案
 
-- Copying Community Agent Service roles, SQL repositories, or PydanticAI/
-  Hermes runtime: violates current ownership and runtime decisions.
-- Building a BYQ orchestration loop: duplicates DSH generic capabilities.
-- Trusting model-supplied owner/actor fields: permits cross-owner audit and
-  approval access.
-- Treating approval as execution success: loses failure and retry evidence.
-- Giving Product DSH direct PostgreSQL/SQLite, provider, filesystem, or source
-  access: violates the architecture boundary.
+- 复制 Community Agent Service role、SQL repository 或 PydanticAI/Hermes runtime：违反
+  当前 ownership 和 runtime 决策。
+- 构建 BYQ orchestration loop：重复 DSH 通用能力。
+- 信任 model 提供的 owner/actor field：允许 cross-owner audit 和 Approval access。
+- 将 Approval 视为 execution success：丢失 failure 和 retry evidence。
+- 给予 Product DSH 直接 PostgreSQL/SQLite、provider、filesystem 或 source access：违反
+  架构边界。
 
-## Exit evidence
+## 退出证据
 
-Phase 13 tests cover role allowlists, delegation targets, trusted context
-binding, owner isolation, approval self-approval rejection, separate execution
-outcomes, audit views, MCP context translation, DSH configuration, and the
-absence of Product DSH source/engineering capabilities.
+Phase 13 test 覆盖 role allowlist、delegation target、trusted context binding、owner
+isolation、self-approval rejection、独立 execution outcome、audit view、MCP context
+translation、DSH configuration，以及 Product DSH 不具备 source/engineering capability。

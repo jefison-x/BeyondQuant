@@ -1,49 +1,40 @@
-# ADR-0015: Pre-Release CI Auto-Merge Exception to the Single-Maintainer Gate
+# ADR-0015：预发布阶段对单维护者门禁的 CI Auto-Merge 例外
 
 - Status: Accepted
 - Date: 2026-08-17
-- Decision scope: Engineering Plane pull-request merge gate during BeyondQuant
-  Next pre-release product-depth work
+- Decision scope: BeyondQuant Next 预发布 Product-depth 工作期间的 Engineering Plane
+  pull-request merge gate
 
-## Context
+## 背景
 
-The repository operates under a single-maintainer human merge gate: Codex must
-stop at a Draft PR, must not mark it ready, and must not merge. The human
-maintainer merges after CI passes. Product-depth phases (Backtest, Strategy,
-Stock Pool, Paper Trading, Agent, My Space, Operations) each produce one PR,
-so the manual merge step repeats many times before the v1.0 release.
+仓库采用单维护者 Human Merge Gate：Codex 必须停在 Draft PR，不得标记 ready，也不得
+merge；CI 通过后由 Human maintainer merge。Product-depth Phase（Backtest、Strategy、
+Stock Pool、Paper Trading、Agent、My Space、Operations）各自产生一个 PR，因此在 v1.0
+发布前会反复出现手工 merge 步骤。
 
-The maintainer has explicitly asked to relax this gate until the official
-BeyondQuant Next v1.0 release, with CI-green auto-merge, and to be reminded to
-disable auto-merge again after release.
+维护者明确要求在 BeyondQuant Next v1.0 正式发布前放宽该门禁，采用 CI-green
+auto-merge，并在发布后提醒关闭 auto-merge。
 
-## Decision
+## 决策
 
-1. Until the BeyondQuant Next v1.0 release is officially tagged/delivered,
-   Codex Engineering Plane MAY create non-draft pull requests, mark them ready,
-   and enable GitHub auto-merge with `squash` when all required CI checks pass.
-2. Auto-merge applies only when the PR is mergeable and all required checks are
-   green. Codex must still inspect and fix CI failures, never push directly to
-   `main`, and never force-push.
-3. This exception expires automatically at the v1.0 release boundary. After
-   release, the single-maintainer human merge gate in `AGENTS.md` and
-   `docs/DEVELOPMENT_WORKFLOW.md` is restored without further code changes.
-4. The maintainer must disable GitHub auto-merge at release and confirm to
-   Codex that the gate is closed. `docs/roadmap/STATUS.md` tracks this reminder
-   as a release-blocking checklist item.
+1. 在 BeyondQuant Next v1.0 正式 tag/delivery 前，Codex Engineering Plane MAY 创建
+   non-draft PR、将其标记为 ready，并在所有 required CI check 通过后启用 GitHub
+   `squash` auto-merge。
+2. Auto-merge 只适用于 mergeable 且 required check 全绿的 PR。Codex 仍必须检查并修复
+   CI failure，绝不能直接 push 到 `main`，也绝不能 force-push。
+3. 该例外在 v1.0 release boundary 自动失效。发布后，无需进一步 code change 即恢复
+   `AGENTS.md` 和 `docs/DEVELOPMENT_WORKFLOW.md` 中的单维护者 Human Merge Gate。
+4. 维护者必须在发布时禁用 GitHub auto-merge，并向 Codex 确认门禁已关闭。
+   `docs/roadmap/STATUS.md` 将该提醒作为 release-blocking checklist item 跟踪。
 
-## Consequences
+## 后果
 
-- PRs merged during pre-release go through CI and the same diff/architecture
-  review evidence, but the human-per-PR merge click is removed.
-- The release boundary is the hard stop: auto-merge must not continue past
-  the official v1.0 release.
-- Direct `main` writes, production deploys, and merging PRs with failing checks
-  remain prohibited.
+- 预发布期间合并的 PR 仍经过 CI 和相同 diff/architecture review evidence，但移除每个
+  PR 的 Human merge click。
+- Release boundary 是硬停止点：正式发布后不能继续 auto-merge。
+- 直接写 `main`、production deployment 和合并 failing-check PR 仍被禁止。
 
-## Rejected alternatives
+## 拒绝的替代方案
 
-- Keeping the per-PR human merge gate: slows the product-depth sequence the
-  maintainer wants to accelerate.
-- Permanent auto-merge: conflicts with the single-maintainer audit model and is
-  explicitly out of scope; this exception is pre-release only.
+- 保留每个 PR 的 Human Merge Gate：会减慢维护者希望加速的 Product-depth sequence。
+- 永久 auto-merge：与单维护者 audit model 冲突，明确不在范围内。
