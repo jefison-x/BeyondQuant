@@ -1,53 +1,42 @@
 # Data Provider Contract — Phase 8
 
-## Purpose
+## 目的
 
-Define the BYQ-owned contract for retrieving A-share unadjusted daily bars
-from a configured market-data provider. Provider-specific authentication,
-response envelopes, and retry behavior remain behind the contract.
+定义 BYQ 拥有的 contract，用于从已配置 market-data provider 获取 A-share 未复权 daily bars。Provider-specific authentication、response envelopes 和 retry behavior 保留在 contract 之后。
 
 ## Request semantics
 
-The first operation is `daily`:
+首个 operation 为 `daily`：
 
-- `ts_code` is one uppercase six-digit symbol with `.SH`, `.SZ`, or `.BJ`.
-- `trade_date` is an exact `YYYYMMDD` date.
-- `start_date` and `end_date` are an inclusive `YYYYMMDD` range.
-- An exact `trade_date` may be used without a symbol for one bounded market
-  snapshot.
-- A date range requires `ts_code`; open-ended ranges are rejected.
-- `trade_date` cannot be combined with a date range.
+- `ts_code` 是带 `.SH`、`.SZ` 或 `.BJ` 的一个大写六位 symbol。
+- `trade_date` 是精确 `YYYYMMDD` 日期。
+- `start_date` 和 `end_date` 是闭区间 `YYYYMMDD` range。
+- 精确 `trade_date` 可不带 symbol，用于一个有界 market snapshot。
+- Date range 必须带 `ts_code`；拒绝 open-ended ranges。
+- `trade_date` 不能与 date range 组合。
 
-The contract does not accept comma-separated symbols or arbitrary provider
-parameters. This keeps request cost and market semantics explicit.
+Contract 不接受逗号分隔 symbols 或任意 provider parameters，以保持 request cost 和 market semantics 显式。
 
 ## Response
 
-Each bar contains:
+每根 bar 包含：
 
 ```text
 ts_code, trade_date, open, high, low, close, pre_close,
 change, pct_chg, vol, amount
 ```
 
-The values retain the provider's documented units: prices and changes are in
-RMB, `pct_chg` is a percentage, `vol` is in lots, and `amount` is in thousand
-RMB. The daily contract is unadjusted; adjusted data is a separate future
-contract.
+Values 保留 provider 记录的 units：prices/change 为 RMB，`pct_chg` 为 percentage，`vol` 为 lots，`amount` 为 thousand RMB。Daily contract 未复权；adjusted data 属于独立 contract。
 
-Every response also contains `provenance`:
+每个 response 还包含 `provenance`：
 
 ```text
 provider, endpoint, request_fingerprint, retrieved_at,
 cache_hit, row_count
 ```
 
-`request_fingerprint` is a stable hash of normalized request parameters. It
-never contains a provider token or raw response payload.
+`request_fingerprint` 是 normalized request parameters 的稳定 hash，绝不包含 provider token 或 raw response payload。
 
-## Ownership and security
+## 所有权与安全
 
-The Backend owns provider credentials and translates raw provider responses.
-MCP exposes normalized BYQ data only. DSH reaches this capability only via
-BeyondQuant MCP and never receives `TUSHARE_TOKEN`, raw Tushare envelopes, or
-provider-specific error details.
+Backend 负责 provider credentials 并转换 raw provider responses。MCP 只暴露 normalized BYQ data。DSH 仅经 BeyondQuant MCP 使用此能力，永不接收 `TUSHARE_TOKEN`、raw Tushare envelopes 或 provider-specific error details。

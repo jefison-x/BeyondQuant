@@ -1,11 +1,8 @@
 # EngineeringTask Contract — Phase 15
 
-## Ownership
+## 所有权
 
-BYQ owns the EngineeringTask state machine, evidence gates, and human merge
-record. Engineering DSH/Codex performs isolated repository work and reports
-evidence through the Engineering Plane API. The Product Plane and Product MCP
-surface do not expose EngineeringTask tools or capabilities.
+BYQ 负责 EngineeringTask state machine、evidence gates 和 human merge record。Engineering DSH/Codex 在隔离 repository 中工作，并通过 Engineering Plane API 报告 evidence。Product Plane 和 Product MCP surface 不暴露 EngineeringTask tools/capabilities。
 
 ## State machine
 
@@ -16,26 +13,20 @@ proposed -> approved -> in_progress -> review_required -> completed
               rejected/cancelled ...            rejected/cancelled
 ```
 
-Terminal states are immutable.
+Terminal states 不可变。
 
-## Required evidence
+## 必需证据
 
-Starting `in_progress` requires an approved task. Entering
-`review_required` requires an isolated worktree path and a non-main branch.
-Entering `completed` additionally requires:
+进入 `in_progress` 需要 approved task。进入 `review_required` 需要 isolated worktree path 和 non-main branch。进入 `completed` 还需要：
 
-- a positive draft PR number;
-- `ci_status == success`;
-- `self_review == true`;
-- non-empty architecture evidence;
-- `merge_status == not_merged`.
+- 正数 draft PR number；
+- `ci_status == success`；
+- `self_review == true`；
+- 非空 architecture evidence；
+- `merge_status == not_merged`。
 
-The Backend never pushes, merges, or marks a PR ready. A separate human merge
-record (`merged` or `rejected`) may only be written after `completed` and
-cannot be written by the initiating actor.
+Backend 永不 push、merge 或 mark PR ready。独立 human merge record（`merged` 或 `rejected`）只能在 `completed` 后写入，且不能由 initiating actor 写入。
 
-## Security
+## 安全
 
-Engineering endpoints are owner/actor scoped and reject credential fields.
-They are Engineering Plane only; the Product quant role catalogue and Product
-MCP service must not expose them.
+Engineering endpoints 按 owner/actor scoped，并拒绝 credential fields。它们仅属于 Engineering Plane；Product quant role catalogue 和 Product MCP service 不得暴露。

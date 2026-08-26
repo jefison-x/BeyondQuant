@@ -1,58 +1,39 @@
 # Product API / BFF Contract — Phase 16
 
-## Ownership
+## 所有权
 
-The Gateway owns the browser-facing Product API. It exposes normalized BYQ
-resource projections and does not expose MCP, DSH, raw DSH events, Backend
-storage internals, provider credentials, or bearer tokens.
+Gateway 负责 browser-facing Product API。它暴露 normalized BYQ resource projections，不暴露 MCP、DSH、raw DSH events、Backend storage internals、provider credentials 或 bearer tokens。
 
-## Authentication and session
+## Authentication 与 session
 
-Normal browser login uses username/password through `/api/auth/login` and a
-durable Gateway `byq_session` HttpOnly cookie (`SameSite=Lax`, `Path=/`). The
-Gateway resolves that opaque Backend-owned session to the owner/actor
-principal and forwards only trusted BYQ context headers. The legacy
-`Authorization: Bearer` product token is internal/bootstrap compatibility
-only; it is not normal browser identity and is never forwarded to Backend,
-MCP, Runtime Adapter, or WorkflowTrace payloads.
+普通 browser login 通过 `/api/auth/login` 使用 username/password，以及 durable Gateway `byq_session` HttpOnly cookie（`SameSite=Lax`、`Path=/`）。Gateway 将不透明的 Backend-owned session 解析为 owner/actor principal，只转发 trusted BYQ context headers。Legacy `Authorization: Bearer` product token 仅用于 internal/bootstrap compatibility；不是普通 browser identity，且永不转发给 Backend、MCP、Runtime Adapter 或 WorkflowTrace payloads。
 
 ## Error envelope
 
-Every non-success Product response uses:
+每个非成功 Product response 使用：
 
 ```json
 {"error": {"code": "...", "message": "...", "request_id": "..."}}
 ```
 
-Messages are safe and bounded; internal exception text and storage paths are
-never returned.
+Messages 安全且有界；不返回 internal exception text 或 storage paths。
 
 ## Bounded list policy
 
-Implemented list routes return resource-specific arrays such as `tasks`,
-`artifacts`, `backtests`, `pools`, and `accounts`. Backend queries impose their
-domain bounds and stable ordering where defined. There is no universal
-pagination envelope. Phase 34 Stock Pool catalog/history routes implement
-bounded `limit`/`offset` parameters and return `total`, `limit`, and `offset`;
-other routes must not advertise pagination until they implement and test it.
+已实现 list routes 返回 resource-specific arrays，例如 `tasks`、`artifacts`、`backtests`、`pools` 和 `accounts`。Backend queries 施加各自 domain bounds，并在定义处使用稳定排序。不存在通用 pagination envelope。Phase 34 Stock Pool catalog/history routes 实现有界 `limit`/`offset`，并返回 `total`、`limit`、`offset`；其他 routes 在实现并测试前不得宣称支持 pagination。
 
 ## Resource projections
 
-The versioned OpenAPI source is
-[`product-api.openapi.yaml`](product-api.openapi.yaml). Architecture tests
-require its browser route/method set to match the implemented Gateway surface.
-It maps:
+版本化 OpenAPI source 为 [`product-api.openapi.yaml`](product-api.openapi.yaml)。Architecture tests 要求其 browser route/method set 与已实现 Gateway surface 匹配。映射范围包括：
 
 - Dashboard
-- Agent sessions and WorkflowTrace
+- Agent sessions 和 WorkflowTrace
 - ResearchTask / Experiment / Artifact
 - Factor
 - Strategy / StrategyVersion / Approval
 - Backtest
-- Stock Pool catalog, immutable snapshots, typed provenance, references, and
-  lifecycle
+- Stock Pool catalog、immutable snapshots、typed provenance、references 和 lifecycle
 - Approval Inbox / Audit
 - Data status / migration status
 
-Later productization phases implemented the mapped resource behavior. New or
-removed browser routes must update the OpenAPI source in the same change.
+后续 productization phases 已实现所映射的 resource behavior。新增或移除 browser routes 必须在同一 change 更新 OpenAPI source。

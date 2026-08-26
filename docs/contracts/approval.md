@@ -1,26 +1,22 @@
 # Approval Contract
 
-## Purpose
+## 目的
 
-Define the future BYQ contract for business approvals required before consequential domain actions.
+定义在执行有重大影响的 domain actions 前所需 business approvals 的未来 BYQ contract。
 
-## Ownership
+## 所有权
 
-BYQ owns approval identity, policy, authorization, audit, state transitions, and business idempotency.
+BYQ 负责 approval identity、policy、authorization、audit、state transitions 和 business idempotency。
 
-## Phase 13 shape
+## Phase 13 结构
 
-The Phase 13 `agent_approvals` contract records a bounded `run_id`, owner and
-initiating actor, consequential action, reason, `pending`/`approved`/`rejected`
-decision state, reviewer identity, rationale, and a separate
-`execution_outcome`. The initiating actor cannot self-approve. All records are
-owner-scoped and reached through the normalized BeyondQuant MCP tools.
+Phase 13 `agent_approvals` contract 记录有界 `run_id`、owner 与 initiating actor、consequential action、reason、`pending`/`approved`/`rejected` decision state、reviewer identity、rationale，以及独立的 `execution_outcome`。Initiating actor 不能自我批准。所有 records 都是 owner-scoped，并通过规范化的 BeyondQuant MCP tools 访问。
 
-## Non-goals
+## 非目标
 
-- It does not replace generic DSH human interaction.
-- It does not permit an agent to self-approve a consequential business action.
+- 不取代通用的 DSH human interaction。
+- 不允许 agent 自我批准 consequential business action。
 
-## Stability guarantee
+## 稳定性保证
 
-Approval semantics MUST remain a BYQ domain contract. DSH may request or display approval, but it MUST NOT own business approval state.
+Approval semantics 必须保持为 BYQ domain contract。DSH 可以请求或展示 approval，但不得拥有 business approval state。
