@@ -770,3 +770,14 @@ export interface DataCoverageAudit {
   groups: Array<Record<string, string | number | null>>;
   symbols: Array<{ symbol: string; row_count: number; date_min: string; date_max: string }>;
 }
+
+export interface DataReadinessResult {
+  schema_version: "data-readiness-product.v1";
+  verdict: "usable" | "limited" | "unavailable";
+  scope: { symbol_count: number; symbols: string[]; start_date: string; end_date: string; use_case: "research" | "backtest" };
+  summary: { required_sessions: number; ready_items: number; missing_items: number; calendar_complete: boolean };
+  datasets: Array<{ label: string; state: "missing"; missing_count: number }>;
+  issues: Array<{ symbol?: string; trade_date?: string; label: string; impact: string; recommended_action: string }>;
+  issues_truncated: boolean;
+  checked_against: "persisted_byq";
+}

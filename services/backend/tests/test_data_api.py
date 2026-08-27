@@ -93,3 +93,75 @@ def test_persisted_market_research_api_passes_bounded_payload(monkeypatch) -> No
     })
     assert rejected.status_code == 422
     assert "unsupported fields" in rejected.json()["detail"]
+
+
+class FakeDailyResearchStore:
+    def research_daily(self, request):
+        normalized = request.normalized()
+        return {
+            "schema_version": "market-daily-research.v1",
+            "data": [{"ts_code": normalized.ts_code, "trade_date": normalized.trade_date, "close": 10.5}],
+            "provenance": {"source": "persisted_byq", "live_provider_called": False},
+            "coverage": {"usable": True, "missing": []},
+        }
+
+
+def test_agent_daily_research_uses_durable_store_without_provider(monkeypatch) -> None:
+    monkeypatch.setattr(main, "market_data_store", FakeDailyResearchStore())
+    monkeypatch.setattr(
+        main, "_resolved_tushare_provider",
+        lambda: (_ for _ in ()).throw(AssertionError("provider must not be called")),
+    )
+
+    response = TestClient(main.app).post("/v1/data/research/daily", json={
+        "ts_code": "000001.SZ", "trade_date": "20240102",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["provenance"] == {"source": "persisted_byq", "live_provider_called": False}
+    assert response.json()["data"][0]["close"] == 10.5
+
+
+class FakeSecurityMaster:
+    def latest_snapshot(self):
+        return {"snapshot_id": "security-master-fixture"}
+
+
+class FakeReadinessStore(FakeResearchStore):
+    def requirement(self, **payload):
+        return {"schema_version": "fixture", **payload}
+
+    def assess(self, requirement):
+        return {
+            "state": "partial", "required_session_count": 2, "required_cell_count": 4,
+            "missing_count": 1, "calendar_complete": True,
+            "missing": [{"symbol": "600036.SH", "trade_date": "20260825", "dataset": "stock_daily"}],
+        }
+
+
+def test_product_data_readiness_is_bounded_and_actionable(monkeypatch) -> None:
+    monkeypatch.setattr(main, "security_master_store", FakeSecurityMaster())
+    monkeypatch.setattr(main, "market_readiness_store", FakeReadinessStore())
+
+    response = TestClient(main.app).post(
+        "/v1/data-center/readiness",
+        headers={"x-byq-actor-principal": "alice"},
+        json={
+            "symbols": ["000001.SZ", "600036.SH"], "start_date": "20260824",
+            "end_date": "20260825", "use_case": "backtest",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["verdict"] == "limited"
+    assert body["datasets"] == [{"label": "日线行情", "state": "missing", "missing_count": 1}]
+    assert body["issues"][0]["recommended_action"] == "前往数据同步补齐该范围"
+    assert "stock_daily" not in str(body)
+
+    rejected = TestClient(main.app).post(
+        "/v1/data-center/readiness",
+        headers={"x-byq-actor-principal": "alice"},
+        json={"symbols": [], "start_date": "20260824", "end_date": "20260825"},
+    )
+    assert rejected.status_code == 422

@@ -577,7 +577,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_market_daily",
     {
-      description: "Return BYQ-normalized unadjusted A-share daily bars with provenance.",
+      description: "Read BYQ-synchronized durable A-share daily bars with explicit cutoff and completeness; never calls a live provider.",
       inputSchema: {
         ts_code: z.string().optional().describe("One A-share code such as 000001.SZ."),
         trade_date: z.string().optional().describe("Exact YYYYMMDD trade date."),

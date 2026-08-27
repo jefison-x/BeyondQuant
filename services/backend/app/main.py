@@ -41,7 +41,7 @@ from .conversation_catalog import (
     ConversationNotFound,
     ConversationPersistenceError,
 )
-from .market_data import MarketDataStore
+from .market_data import MarketDataPersistenceError, MarketDataStore
 from .market_readiness import MarketReadinessPersistenceError, MarketReadinessStore
 from .signal_producer import (
     SignalJobStore,
@@ -354,7 +354,11 @@ def _market_research_read(call: Callable[[], dict[str, object]]) -> dict[str, ob
         return call()
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    except MarketReadinessPersistenceError as error:
+    except (
+        MarketReadinessPersistenceError,
+        MarketDataPersistenceError,
+        SecurityMasterPersistenceError,
+    ) as error:
         raise HTTPException(status_code=503, detail="market research data is unavailable") from error
 
 
@@ -374,6 +378,20 @@ def research_valuation(payload: dict[str, Any]) -> dict[str, object]:
         trade_date=request.get("trade_date"),
         fields=request.get("fields"),
     ))
+
+
+@app.post("/v1/data/research/daily")
+def research_daily(payload: dict[str, Any]) -> dict[str, object]:
+    """Read durable daily bars; Agent research never triggers a Provider call."""
+
+    request = _closed_market_research_payload(
+        payload, {"ts_code", "trade_date", "start_date", "end_date"},
+    )
+    normalized = DailyRequest(
+        ts_code=request.get("ts_code"), trade_date=request.get("trade_date"),
+        start_date=request.get("start_date"), end_date=request.get("end_date"),
+    )
+    return _market_research_read(lambda: market_data_store.research_daily(normalized))
 
 
 @app.post("/v1/data/research/fundamentals")
@@ -706,6 +724,98 @@ def get_data_coverage(request: Request, limit: int = 100) -> dict[str, object]:
     if not request.headers.get("x-byq-actor-principal", "").strip():
         raise HTTPException(status_code=401, detail="actor principal is required")
     return _data_sync_call(lambda: {"coverage": data_sync_store.coverage_audit(limit=limit)})
+
+
+_READINESS_DATASET_LABELS = {
+    "trading_calendar": "交易日历", "security_lifecycle": "证券上市状态",
+    "trading_status": "停复牌与交易状态", "stock_daily": "日线行情",
+    "price_limits": "涨跌停价格", "adjustment_factors": "复权因子",
+    "corporate_actions": "公司行动", "index_daily": "基准行情",
+    "index_weights": "指数权重", "index_membership": "指数成分",
+    "daily_basic": "估值数据", "financial_indicators": "财务指标",
+}
+
+
+@app.post("/v1/data-center/readiness")
+def query_data_readiness(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    """Explain whether an explicit, bounded task can use durable market data."""
+
+    if not request.headers.get("x-byq-actor-principal", "").strip():
+        raise HTTPException(status_code=401, detail="actor principal is required")
+
+    def operation() -> dict[str, object]:
+        if not isinstance(payload, dict) or set(payload) - {
+            "symbols", "start_date", "end_date", "use_case", "data_requirements",
+        }:
+            raise ValueError("readiness request contains unsupported fields")
+        raw_symbols = payload.get("symbols")
+        if not isinstance(raw_symbols, list) or not 1 <= len(raw_symbols) <= 20:
+            raise ValueError("symbols must contain between 1 and 20 entries")
+        symbols: list[str] = []
+        for value in raw_symbols:
+            normalized = DailyRequest(ts_code=value, trade_date="20000101").normalized().ts_code
+            if normalized is not None and normalized not in symbols:
+                symbols.append(normalized)
+        use_case = str(payload.get("use_case", "research")).strip()
+        if use_case not in {"research", "backtest"}:
+            raise ValueError("use_case must be research or backtest")
+        start_date = str(payload.get("start_date", ""))
+        end_date = str(payload.get("end_date", ""))
+        DailyRequest(ts_code=symbols[0], start_date=start_date, end_date=end_date).normalized()
+        data_requirements = payload.get("data_requirements", {})
+        if not isinstance(data_requirements, dict):
+            raise ValueError("data_requirements must be an object")
+        latest = security_master_store.latest_snapshot()
+        if latest is None:
+            raise ValueError("security master must be synchronized before checking readiness")
+        requirement = market_readiness_store.requirement(
+            symbols=symbols, start_date=start_date, end_date=end_date,
+            membership_fingerprint=membership_fingerprint(symbols),
+            security_master_snapshot_id=str(latest["snapshot_id"]),
+            data_requirements=data_requirements,
+        )
+        assessment = market_readiness_store.assess(requirement)
+        grouped: dict[str, int] = {}
+        public_issues: list[dict[str, object]] = []
+        missing = assessment.get("missing", [])
+        for item in missing if isinstance(missing, list) else []:
+            if not isinstance(item, dict):
+                continue
+            dataset = str(item.get("dataset", "unknown"))
+            grouped[dataset] = grouped.get(dataset, 0) + 1
+            if len(public_issues) < 50:
+                public_issues.append({
+                    "symbol": item.get("symbol"), "trade_date": item.get("trade_date"),
+                    "label": f"缺少{_READINESS_DATASET_LABELS.get(dataset, '必要数据')}",
+                    "impact": "当前范围不能完整用于回测" if use_case == "backtest" else "当前范围的研究结论可能不完整",
+                    "recommended_action": "前往数据同步补齐该范围",
+                })
+        state = str(assessment.get("state", "missing"))
+        missing_count = int(assessment.get("missing_count") or 0)
+        required_count = int(assessment.get("required_cell_count") or 0)
+        return {
+            "schema_version": "data-readiness-product.v1",
+            "verdict": "usable" if state == "ready" else "limited" if state == "partial" else "unavailable",
+            "scope": {
+                "selection_type": "explicit", "symbol_count": len(symbols), "symbols": symbols,
+                "start_date": start_date.replace("-", ""), "end_date": end_date.replace("-", ""),
+                "use_case": use_case,
+            },
+            "summary": {
+                "required_sessions": int(assessment.get("required_session_count") or 0),
+                "ready_items": max(0, required_count - missing_count), "missing_items": missing_count,
+                "calendar_complete": bool(assessment.get("calendar_complete")),
+            },
+            "datasets": [{
+                "label": _READINESS_DATASET_LABELS.get(dataset, "必要数据"),
+                "state": "missing", "missing_count": count,
+            } for dataset, count in sorted(grouped.items())],
+            "issues": public_issues,
+            "issues_truncated": missing_count > len(public_issues),
+            "checked_against": "persisted_byq",
+        }
+
+    return _market_research_read(operation)
 
 
 @app.post("/v1/data-sync/security-master/jobs", status_code=201)

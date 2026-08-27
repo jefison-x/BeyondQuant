@@ -244,19 +244,20 @@ services:
 
 networks:
   byq_product:
-    name: ${BYQ_PRODUCT_NETWORK_NAME:-byq_product}
+    name: ${BYQ_PRODUCT_NETWORK_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-product}
     driver: bridge
   byq_signal_sandbox:
-    name: ${BYQ_SIGNAL_SANDBOX_NETWORK_NAME:-byq_signal_sandbox}
+    name: ${BYQ_SIGNAL_SANDBOX_NETWORK_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-signal-sandbox}
     driver: bridge
     internal: true
 
 volumes:
   byq_postgres_data:
-    name: ${BYQ_POSTGRES_VOLUME_NAME:-byq_postgres_data}
+    name: ${BYQ_POSTGRES_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-postgres-data}
+    external: ${BYQ_POSTGRES_VOLUME_EXTERNAL:-false}
   byq_domain_state:
-    name: ${BYQ_DOMAIN_VOLUME_NAME:-byq_domain_state}
+    name: ${BYQ_DOMAIN_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-domain-state}
   byq_dsh_sessions:
-    name: ${BYQ_DSH_SESSIONS_VOLUME_NAME:-byq_dsh_sessions}
+    name: ${BYQ_DSH_SESSIONS_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-dsh-sessions}
   byq_workflow_traces:
-    name: ${BYQ_WORKFLOW_TRACES_VOLUME_NAME:-byq_workflow_traces}
+    name: ${BYQ_WORKFLOW_TRACES_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-workflow-traces}

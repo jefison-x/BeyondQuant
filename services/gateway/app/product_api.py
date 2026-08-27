@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import uuid
+from decimal import Decimal
 from datetime import datetime, timezone
 
 import httpx
@@ -208,6 +209,41 @@ def _canonical_digest(value: object) -> str:
         value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _semantic_json_digest(value: object) -> str:
+    """Hash JSON semantics without depending on a browser's number spelling.
+
+    JSON.parse/stringify legitimately changes ``10.0`` to ``10``. Asset bundles
+    cross that boundary, so their manifest must not depend on Python's lexical
+    representation of an otherwise equal JSON number.
+    """
+
+    def project(item: object) -> object:
+        if item is None:
+            return ["null"]
+        if isinstance(item, bool):
+            return ["boolean", item]
+        if isinstance(item, int):
+            return ["number", str(item)]
+        if isinstance(item, float):
+            decimal = Decimal(str(item))
+            if not decimal.is_finite():
+                raise ValueError("asset bundle contains a non-finite number")
+            normalized = decimal.normalize()
+            rendered = "0" if normalized.is_zero() else format(normalized, "f")
+            return ["number", rendered]
+        if isinstance(item, str):
+            return ["string", item]
+        if isinstance(item, list):
+            return ["array", [project(nested) for nested in item]]
+        if isinstance(item, dict):
+            return ["object", [
+                [str(key), project(item[key])] for key in sorted(item, key=lambda key: str(key))
+            ]]
+        raise ValueError("asset bundle contains a non-JSON value")
+
+    return _canonical_digest(project(value))
 
 
 def _portable_strategy(value: object) -> dict[str, object] | None:
@@ -870,6 +906,16 @@ def product_data_coverage(request: Request) -> dict[str, object]:
     )
 
 
+@router.post("/data-center/readiness")
+def product_data_readiness(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    return _backend_request(
+        "POST",
+        "/v1/data-center/readiness",
+        payload,
+        headers=_data_actor_headers(request),
+    )
+
+
 @router.post("/data-center/security-master/sync-jobs", status_code=201)
 def product_security_master_sync_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
     return _backend_request(
@@ -1241,6 +1287,7 @@ def product_assets_export(request: Request) -> dict[str, object]:
     }
     document = {
         "schema_version": "byq-workspace-assets-v2",
+        "manifest_algorithm": "byq-semantic-json-v1",
         "exported_at": _now(),
         "owner_principal": principal.subject,
         "assets": assets,
@@ -1248,7 +1295,7 @@ def product_assets_export(request: Request) -> dict[str, object]:
     workspace = _session_workspace(request)
     if workspace is not None:
         document["source_workspace"] = workspace
-    return {**document, "manifest_sha256": _canonical_digest(document)}
+    return {**document, "manifest_sha256": _semantic_json_digest(document)}
 
 
 @router.post("/settings/assets/import")
@@ -1258,7 +1305,13 @@ def product_assets_import(request: Request, payload: dict[str, object]) -> dict[
         raise ProductError(422, "product_asset_bundle_invalid", "asset bundle is invalid")
     manifest_digest = payload.get("manifest_sha256")
     unsigned = {key: value for key, value in payload.items() if key != "manifest_sha256"}
-    if not isinstance(manifest_digest, str) or manifest_digest != _canonical_digest(unsigned):
+    algorithm = payload.get("manifest_algorithm")
+    expected_digest = (
+        _semantic_json_digest(unsigned)
+        if algorithm == "byq-semantic-json-v1"
+        else _canonical_digest(unsigned)
+    )
+    if not isinstance(manifest_digest, str) or manifest_digest != expected_digest:
         raise ProductError(422, "product_asset_bundle_invalid", "asset bundle manifest digest does not match")
     assets = payload.get("assets")
     if not isinstance(assets, dict):

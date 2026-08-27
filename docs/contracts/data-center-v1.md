@@ -6,6 +6,8 @@ Phase 53 按 ADR-0026 将 Product projection 扩展为 `data-center.v2`。下述
 
 Phase 54 按 ADR-0027 扩展为 `data-center.v3`，加入 `market-sync-automation.v1` member，同时保留所有 v1/v2 manual operations。
 
+Phase 61 按 ADR-0034 增加面向具体任务的 `data-readiness-product.v1` 投影，并将 Agent daily research 固定为持久化 BYQ 数据读取。全库 coverage 只说明观察到的覆盖，不能替代任务 readiness。
+
 ## Source configuration
 
 - 唯一 provider key 是 `tushare`；不接受 browser 提供的 URL 或 provider name。
@@ -28,6 +30,21 @@ Test 接受一个 canonical A-share symbol 和一个 `YYYYMMDD` trade date，通
 ## Coverage audit
 
 Coverage 审计已持久化 observations：total rows/symbols/date bounds、provider/asset groups、per-symbol bounds、non-Tushare source issues 和 OHLC relationship issues。它设置 `completeness_claimed=false`；没有完整 trading-calendar/lifecycle proof 时，不把 date span 表述为完整历史覆盖。
+
+## Task readiness
+
+`POST /api/product/data-center/readiness` 接受 1–20 个 canonical A-share symbols、闭区间日期和 `research|backtest` 使用场景。Gateway 只转发当前可信 browser principal/workspace；Backend 绑定最新 immutable Security Master snapshot，复用 lifecycle-aware requirement/assessment，并返回：
+
+- `usable|limited|unavailable` 结论、股票和日期范围；
+- required sessions、ready/missing item counts 和 calendar completeness；
+- 面向用户的缺失数据标签、有界至 50 条的问题和补齐建议；
+- `checked_against=persisted_byq`，明确不代表刚刚调用了 Provider。
+
+请求是只读且不会隐式同步。非法代码/日期、超过 20 个股票、未知字段或缺少可信 principal 均 fail closed。UI 在不可用时引导有权限的管理员进入既有同步流程，不把一个泛化 `success` 当成数据完整证明。
+
+## Agent daily research
+
+MCP `byq_market_daily` 调用 Backend `POST /v1/data/research/daily`，只读取 `market_daily_bars` 中 `data_source=tushare` 的持久化记录。返回实际 coverage、cutoff、缺失说明和 `live_provider_called=false`。Agent 读取不得触发 Tushare；旧 `GET /v1/data/daily` 仅保留为非 Agent 兼容接口。
 
 ## Daily automation
 

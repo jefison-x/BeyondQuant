@@ -550,11 +550,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "BYQ_GATEWAY_BIND",
             "BYQ_PRODUCT_NETWORK_NAME",
             "BYQ_POSTGRES_VOLUME_NAME",
+            "BYQ_POSTGRES_VOLUME_EXTERNAL",
             "BYQ_DOMAIN_VOLUME_NAME",
             "BYQ_DSH_SESSIONS_VOLUME_NAME",
             "BYQ_WORKFLOW_TRACES_VOLUME_NAME",
         ):
             self.assertIn(variable, compose)
+        self.assertGreaterEqual(compose.count("COMPOSE_PROJECT_NAME"), 6)
+        self.assertNotIn("BYQ_POSTGRES_VOLUME_NAME:-byq_postgres_data", compose)
 
         local_ci = (ROOT / "scripts/ci/local-ci.sh").read_text()
         self.assertIn('COMPOSE_PROJECT_NAME="byq-ci-stack-$BYQ_CI_SCOPE"', local_ci)

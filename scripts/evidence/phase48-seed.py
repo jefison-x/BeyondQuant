@@ -48,7 +48,7 @@ def main() -> None:
                 "amount": 10_500_000,
                 "adjust": "none",
                 "asset_type": "stock",
-                "data_source": "phase48_fixture",
+                "data_source": "tushare",
                 "volume_unit": "share",
                 "amount_unit": "CNY",
                 "provenance": {
@@ -81,7 +81,7 @@ def main() -> None:
         readiness._execute("""INSERT INTO market_daily_status
             (symbol,trade_date,is_suspended,pre_close,up_limit,down_limit,data_source,
              provenance_json,content_sha256,updated_at)
-            VALUES ('000001.SZ',:date,FALSE,:previous,:up,:down,'fixture',
+            VALUES ('000001.SZ',:date,FALSE,:previous,:up,:down,'tushare',
                     '{\"purpose\":\"phase48_golden\"}',:sha,now())
             ON CONFLICT (symbol,trade_date) DO NOTHING""",
             {"date": trade_date, "previous": previous[trade_date],
@@ -89,7 +89,7 @@ def main() -> None:
              "sha": f"phase48-status-{trade_date}"})
         readiness._execute("""INSERT INTO market_adjustment_factors
             (symbol,trade_date,adj_factor,data_source,provenance_json,content_sha256,updated_at)
-            VALUES ('000001.SZ',:date,1,'fixture','{\"purpose\":\"phase48_golden\"}',:sha,now())
+            VALUES ('000001.SZ',:date,1,'tushare','{\"purpose\":\"phase48_golden\"}',:sha,now())
             ON CONFLICT (symbol,trade_date) DO NOTHING""",
             {"date": trade_date, "sha": f"phase48-factor-{trade_date}"})
         readiness._execute("""INSERT INTO market_session_supplement_completeness

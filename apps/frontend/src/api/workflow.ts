@@ -57,3 +57,23 @@ export function workflowActivities(events: WorkflowTraceEvent[]): Array<{
   }
   return [...latest.values()].sort((left, right) => left.sequence - right.sequence).slice(-20);
 }
+
+const TERMINAL_RUN_EVENTS = new Set([
+  "session.result", "session.failed", "session.cancelled", "session.result.discarded",
+]);
+
+export function workflowRunState(events: WorkflowTraceEvent[]): {
+  running: boolean;
+  startedAt?: string;
+} {
+  let started: WorkflowTraceEvent | undefined;
+  let terminalSequence = -1;
+  for (const event of events) {
+    if (event.kind === "session.started" && (!started || event.sequence > started.sequence)) started = event;
+    if (TERMINAL_RUN_EVENTS.has(event.kind)) terminalSequence = Math.max(terminalSequence, event.sequence);
+  }
+  return {
+    running: Boolean(started && started.sequence > terminalSequence),
+    startedAt: started && started.sequence > terminalSequence ? started.timestamp : undefined,
+  };
+}

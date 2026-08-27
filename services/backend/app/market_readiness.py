@@ -709,7 +709,7 @@ class MarketReadinessStore(PgStoreMixin):
         bars = self._execute(
             """SELECT symbol, trade_date, content_sha256 FROM market_daily_bars WHERE symbol IN
                  (SELECT jsonb_array_elements_text(:symbols))
-               AND trade_date BETWEEN :start AND :end""",
+               AND trade_date BETWEEN :start AND :end AND data_source='tushare'""",
             {"symbols": symbols, "start": requirement["start_date"], "end": requirement["end_date"]},
         )
         bar_keys = {(str(row["symbol"]), str(row["trade_date"])) for row in bars}
@@ -720,7 +720,7 @@ class MarketReadinessStore(PgStoreMixin):
             """SELECT symbol, trade_date, is_suspended, pre_close, up_limit, down_limit,
                       content_sha256 FROM market_daily_status WHERE symbol IN
                  (SELECT jsonb_array_elements_text(:symbols))
-               AND trade_date BETWEEN :start AND :end""",
+               AND trade_date BETWEEN :start AND :end AND data_source='tushare'""",
             {"symbols": symbols, "start": requirement["start_date"], "end": requirement["end_date"]},
         )
         status_map = {(str(row["symbol"]), str(row["trade_date"])): row for row in statuses}

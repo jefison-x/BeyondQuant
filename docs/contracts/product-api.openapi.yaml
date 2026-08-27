@@ -76,6 +76,8 @@ paths:
     get: {summary: 搜索并分页返回 the normalized A-share security catalogue bound to its immutable snapshot., responses: *okResponses}
   /api/product/data-center/coverage:
     get: {summary: 返回 an honest audit of persisted observed market-data coverage and quality., responses: *okResponses}
+  /api/product/data-center/readiness:
+    post: {summary: 检查一个有界研究或回测范围能否使用已持久化 BYQ 行情，并返回缺口和下一步。, responses: *okResponses}
   /api/product/operations/status:
     get: {summary: 返回 the admin-only browser-safe operations projection., responses: *okResponses}
   /api/product/operations/budget:

@@ -22,7 +22,7 @@ import { useAuthStore } from "@/stores/auth";
 import ChartWrapper from "@/components/charts/ChartWrapper.vue";
 import MetricCard from "@/components/ui/MetricCard.vue";
 import { formatChinaTime } from "@/time";
-import { statusLabel } from "@/display";
+import { backtestMetricLabel, shortReference, statusLabel } from "@/display";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 
 const auth = useAuthStore();
@@ -69,7 +69,7 @@ const equityOption = computed<EChartsOption>(() => ({
   yAxis: { type: "value" as const, scale: true },
   series: [
     {
-      name: "Equity",
+      name: "组合权益",
       type: "line" as const,
       data: equityCurve.value.map((point) => point.equity),
       showSymbol: false,
@@ -77,7 +77,7 @@ const equityOption = computed<EChartsOption>(() => ({
     },
     ...(benchmarkCurve.value.length
       ? [{
-          name: `Benchmark ${result.value?.benchmark_symbol ?? ""}`,
+          name: `基准 ${result.value?.benchmark_symbol ?? ""}`,
           type: "line" as const,
           data: benchmarkCurve.value.map((point) => point.value),
           showSymbol: false,
@@ -246,7 +246,7 @@ const metricRows = computed(() => {
       typeof a === "number" && typeof b === "number"
         ? (Number(b) - Number(a)).toFixed(6)
         : "-";
-    rows.push({ label: key, a, b, diff });
+    rows.push({ label: backtestMetricLabel(key), a, b, diff });
   }
   return rows;
 });
@@ -318,6 +318,10 @@ async function openCreate() {
     options.value = o.options ?? [];
     snapshots.value = s.snapshots ?? [];
     pools.value = (p.pools ?? []).filter((item) => item.status === "active" && item.current_snapshot_id);
+    const requestedStrategy = typeof route.query.strategy === "string" ? route.query.strategy : "";
+    if (requestedStrategy) selectedOption.value = options.value.find(
+      (item) => item.strategy_version_artifact_id === requestedStrategy,
+    ) ?? null;
   } catch (exc) {
     ElMessage.error(exc instanceof Error ? exc.message : "加载回测选项失败");
   }
@@ -417,7 +421,35 @@ function returnToConversation() {
   void router.push({ path: "/agent", query: session ? { session } : {} });
 }
 
-onMounted(loadList);
+function sendBacktestToAgent(intent: "analyze" | "optimize") {
+  if (!job.value?.job_id) return;
+  const reference = String(job.value.job_id);
+  const draft = intent === "analyze"
+    ? `请分析这次回测的收益、回撤、成交与风险，并说明最值得关注的改进方向。回测任务：${reference}`
+    : `请基于这次回测先分析回撤来源，再提出控制最大回撤的策略优化方案；不要直接执行，先让我确认。回测任务：${reference}`;
+  const session = typeof route.query.session === "string" ? route.query.session : "";
+  void router.push({ path: "/agent", query: { ...(session ? { session } : { new: String(Date.now()) }), draft, context: "backtest" } });
+}
+
+function nestedReference(value: unknown, keys: string[]): string {
+  if (!value || typeof value !== "object") return "";
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (keys.includes(key) && typeof item === "string") return item;
+    const nested = nestedReference(item, keys);
+    if (nested) return nested;
+  }
+  return "";
+}
+
+function openPaperTrading() {
+  const manifest = job.value?.input_manifest as Record<string, unknown> | undefined;
+  const universe = manifest?.universe as Record<string, unknown> | undefined;
+  const poolSnapshot = nestedReference(manifest, ["stock_pool_snapshot_id", "pool_snapshot_id"])
+    || (typeof universe?.version_id === "string" ? universe.version_id : "");
+  void router.push({ path: "/user/paper-trading", query: { ...(poolSnapshot ? { pool_snapshot: poolSnapshot } : {}), from: "backtest", job: String(job.value?.job_id ?? "") } });
+}
+
+onMounted(async () => { await loadList(); if (typeof route.query.strategy === "string") await openCreate(); });
 </script>
 
 <template>
@@ -445,11 +477,11 @@ onMounted(loadList);
         <template #header>
           <div class="card-heading">
             <span class="card-title">回测结果</span>
-            <small class="card-sub">Artifact kind: backtest_result</small>
+            <small class="card-sub">收益、回撤、成交与执行证据</small>
           </div>
         </template>
         <div class="list-toolbar">
-          <el-input v-model="search" placeholder="搜索 Job ID" clearable />
+          <el-input v-model="search" placeholder="搜索回测任务编号" clearable />
           <el-select v-model="statusFilter" aria-label="回测状态筛选" placeholder="状态筛选" clearable>
             <el-option label="排队中" value="queued" />
             <el-option label="运行中" value="running" />
@@ -468,7 +500,7 @@ onMounted(loadList);
           @selection-change="onSelectionChange"
         >
           <el-table-column type="selection" width="42" />
-          <el-table-column prop="job_id" label="Job ID" min-width="220" show-overflow-tooltip />
+          <el-table-column label="回测任务" min-width="150"><template #default="{ row }">{{ shortReference(row.job_id) }}</template></el-table-column>
           <el-table-column label="状态" width="100"><template #default="{ row }">{{ statusLabel(row.status) }}</template></el-table-column>
           <el-table-column label="收益" width="90" align="right">
             <template #default="{ row }">{{ formatPercent(summaryValue(row, "total_return")) }}</template>
@@ -523,7 +555,7 @@ onMounted(loadList);
             @click="select(row)"
           >
             <div class="mobile-card-head">
-              <strong>{{ row.job_id }}</strong>
+              <strong>回测 {{ shortReference(row.job_id) }}</strong>
               <el-tag size="small">{{ statusLabel(row.status) }}</el-tag>
             </div>
             <div class="mobile-card-meta">
@@ -562,14 +594,21 @@ onMounted(loadList);
         <p v-if="error" class="page-error">{{ error }}</p>
         <el-empty v-else-if="!job" description="请选择左侧回测结果" />
         <template v-else>
+          <div v-if="job.status === 'completed'" class="next-actions">
+            <div><strong>接下来</strong><span>带着本次结果继续分析、优化，或基于同一股票池开始独立模拟操盘。</span></div>
+            <el-button @click="sendBacktestToAgent('analyze')">让小巴分析</el-button>
+            <el-button type="primary" @click="sendBacktestToAgent('optimize')">基于结果优化</el-button>
+            <el-button @click="openCreate">再次回测</el-button>
+            <el-button @click="openPaperTrading">进入模拟操盘</el-button>
+          </div>
           <div class="metric-grid">
-            <MetricCard label="Total Return" :value="formatPercent(summary.total_return)" />
-            <MetricCard label="Benchmark Return" :value="formatPercent(summary.benchmark_return)" />
-            <MetricCard label="Excess Return" :value="formatPercent(summary.excess_return)" />
-            <MetricCard label="Max Drawdown" :value="formatPercent(summary.max_drawdown)" />
-            <MetricCard label="Trade Count" :value="String(summary.trade_count ?? '-')" />
-            <MetricCard label="Blocked Trades" :value="String(summary.blocked_trade_count ?? '-')" />
-            <MetricCard label="Final Value" :value="formatMoney(summary.final_value)" />
+            <MetricCard label="累计收益" :value="formatPercent(summary.total_return)" />
+            <MetricCard label="基准收益" :value="formatPercent(summary.benchmark_return)" />
+            <MetricCard label="超额收益" :value="formatPercent(summary.excess_return)" />
+            <MetricCard label="最大回撤" :value="formatPercent(summary.max_drawdown)" />
+            <MetricCard label="成交笔数" :value="String(summary.trade_count ?? '-')" />
+            <MetricCard label="被拦截交易" :value="String(summary.blocked_trade_count ?? '-')" />
+            <MetricCard label="期末资产" :value="formatMoney(summary.final_value)" />
             <MetricCard label="状态" :value="statusLabel(job.status)" />
           </div>
 
@@ -658,24 +697,25 @@ onMounted(loadList);
                 </el-table-column>
               </el-table>
             </el-tab-pane>
-            <el-tab-pane label="策略快照" name="snapshot">
+            <el-tab-pane label="技术详情" name="snapshot">
+              <el-alert title="以下内容用于审计和复现，普通分析无需复制内部编号。" type="info" :closable="false" />
               <el-descriptions :column="1" border>
-                <el-descriptions-item label="策略版本工件">
+                <el-descriptions-item label="策略版本内部编号">
                   <code>{{ strategySnapshot.strategy_version_artifact_id ?? "-" }}</code>
                 </el-descriptions-item>
-                <el-descriptions-item label="审批工件">
+                <el-descriptions-item label="审批记录内部编号">
                   <code>{{ strategySnapshot.approval_artifact_id ?? "-" }}</code>
                 </el-descriptions-item>
               </el-descriptions>
               <pre class="quant-result">{{ JSON.stringify(strategySnapshot.input_manifest ?? {}, null, 2) }}</pre>
             </el-tab-pane>
-            <el-tab-pane label="输入清单 / Preflight" name="manifest">
-              <el-button @click="showManifest = true">查看 Preflight</el-button>
+            <el-tab-pane label="输入就绪检查" name="manifest">
+              <el-button @click="showManifest = true">查看输入就绪检查</el-button>
               <pre class="quant-result">{{ JSON.stringify(job.input_manifest, null, 2) }}</pre>
             </el-tab-pane>
           </el-tabs>
 
-          <el-dialog v-model="showManifest" title="Preflight 摘要" width="720px">
+          <el-dialog v-model="showManifest" title="输入就绪检查摘要" width="720px">
             <pre class="quant-result">{{ JSON.stringify(job.input_manifest, null, 2) }}</pre>
           </el-dialog>
         </template>
@@ -824,6 +864,7 @@ onMounted(loadList);
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-bottom: 1rem;
 }
+.next-actions { align-items: center; background: var(--byq-brand-soft); border: 1px solid var(--byq-border); border-radius: var(--byq-radius); display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; padding: .75rem; }.next-actions > div { display: grid; flex: 1 1 260px; gap: .2rem; }.next-actions span { color: var(--byq-text-muted); font-size: 11px; }
 
 .result-tabs {
   min-height: 320px;

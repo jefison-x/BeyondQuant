@@ -10,9 +10,11 @@ const success = await fetchByqMarketDaily(
   "http://backend:8000",
   { ts_code: "000001.SZ", start_date: "20240102", end_date: "20240103" },
   async (url, init) => {
-    assert.match(url, /ts_code=000001\.SZ/);
-    assert.match(url, /start_date=20240102/);
-    assert.match(url, /end_date=20240103/);
+    assert.equal(url, "http://backend:8000/v1/data/research/daily");
+    assert.equal(init?.method, "POST");
+    assert.deepEqual(JSON.parse(String(init?.body)), {
+      ts_code: "000001.SZ", start_date: "20240102", end_date: "20240103",
+    });
     assert.ok(init?.signal);
     assert.doesNotMatch(url, /token/i);
     return new Response(
@@ -26,19 +28,21 @@ const success = await fetchByqMarketDaily(
         ],
         provenance: {
           provider: "tushare",
-          endpoint: "daily",
-          request_fingerprint: "redacted-fixture",
-          retrieved_at: "2026-08-15T00:00:00+00:00",
-          cache_hit: false,
+          source: "persisted_byq",
+          endpoint: "durable_daily",
+          latest_trade_date: "20240103",
+          live_provider_called: false,
           row_count: 1,
         },
+        coverage: { usable: true, requested_sessions: ["20240102", "20240103"], missing: [] },
       }),
       { status: 200 },
     );
   },
 );
 assert.equal(success.isError, false);
-assert.match(success.content[0].text, /redacted-fixture/);
+assert.match(success.content[0].text, /persisted_byq/);
+assert.match(success.content[0].text, /live_provider_called/);
 
 const unavailable = await fetchByqMarketDaily(
   "http://backend:8000",
@@ -46,7 +50,7 @@ const unavailable = await fetchByqMarketDaily(
   async () => new Response(JSON.stringify({ detail: "provider token must not cross MCP" }), { status: 503 }),
 );
 assert.equal(unavailable.isError, true);
-assert.match(unavailable.content[0].text, /data_provider_unavailable/);
+assert.match(unavailable.content[0].text, /research_data_unavailable/);
 assert.doesNotMatch(unavailable.content[0].text, /provider token/);
 
 const valuation = await fetchByqMarketValuation(
@@ -100,4 +104,4 @@ assert.equal(safeFailure.isError, true);
 assert.match(safeFailure.content[0].text, /research_request_invalid/);
 assert.doesNotMatch(safeFailure.content[0].text, /provider-token|\/tmp/);
 
-console.log("Market data MCP translation PASS: daily, durable valuation/fundamentals, safe failures");
+console.log("Market data MCP translation PASS: durable daily/valuation/fundamentals, safe failures");

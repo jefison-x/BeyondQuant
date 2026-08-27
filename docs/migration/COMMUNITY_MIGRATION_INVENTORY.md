@@ -865,6 +865,28 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+## Phase 61 real-user journey closure pre-implementation audit
+
+The read-only Community Login, AgentThinking/Xiaoba drawer, Strategy, Backtest,
+Data Sync/Data Source and Paper Trading surfaces were inspected before accepting
+ADR-0034. This is a UX/invariant classification only; no Community implementation
+or data is migrated.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 61 disposition |
+|---|---|---|---|
+| Login username/password fields | Standard labels and browser autocomplete make durable login predictable. | `REUSE_AS_IS` for HTML semantics / `REPLACE` auth | Add label/id/name/autocomplete to BYQ durable login; keep Product API/session auth. |
+| AgentThinking collapsed progress | A user needs visible, bounded progress while a long turn runs. | `PORT_UX` / `REFACTOR` | Derive current phase and elapsed time from normalized WorkflowTrace; add a truthful hard-stop/resume action. Raw thinking/tool names are dropped. |
+| Xiaoba backtest intent tabs | Backtest analysis and optimization are understandable next actions when current context is carried. | `PORT_UX` / `REFACTOR` | Add reviewable Backtest → Agent drafts; navigation never auto-submits or auto-executes. |
+| Strategy name/category/status/backtest catalogue | Name and goal should lead; immutable ID/source are audit detail. | `PORT_LAYOUT` / `PORT_UX` / `REFACTOR` | Lead with name, description, approval and next action; collapse JSON/source/internal IDs. |
+| Backtest overview and improvement workflow | Results need localized metrics and direct analysis/iterate actions. | `PORT_UX` / `PORT_STYLE` / `REFACTOR` | Keep BYQ deterministic result and eight tabs, localize ordinary labels, and preserve manifest under technical detail. |
+| Data Sync query/status layout | Users need task-specific scope, completeness, failure impact and a retry/sync next step. | `PORT_UX` / `PORT_TESTS` / `REFACTOR` | Reuse ADR-0028 readiness through Gateway/Product API; observed aggregate remains diagnostic only. Static/fake progress is dropped. |
+| Paper Trading account/strategy affordance | A result can lead to an explicit simulation workspace. | `PORT_UX` / `REFERENCE_ONLY` | Carry only the authorized Stock Pool context and state that Paper Trading is independent/manual. Strategy auto-execution is not claimed. |
+| Raw Community Agent API/events, internal IDs as primary controls, ORM/threads/cache/direct APIs | No compatible Product boundary. | `REPLACE` / `DROP` | Browser remains same-origin Product API; DSH/MCP/Backend/PostgreSQL/provider are never called directly. |
+| PydanticAI, Hermes, BaoStock, AKShare and VectorBT paths | Explicitly prohibited runtime/provider/engine choices. | `DROP` | No dependency, adapter, fallback or compatibility layer is introduced. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.
+
 ## Phase 60 public answer/activity pre-implementation audit
 
 The read-only Community `AgentThinking.vue`, `AgentView.vue`, Agent SSE client,

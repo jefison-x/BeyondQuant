@@ -261,3 +261,14 @@ Maintainer 于 2026-08-24 再次延后 RC，以 ADR-0025/`PERSONAL_WORKSPACE_TEN
 ### Phase 58 — Agent domain action contract(`COMPLETE`)
 ### Phase 59 — Agent point-in-time valuation and fundamentals(`COMPLETE`)
 ### Phase 60 — Public answer and activity projection(`COMPLETE`)
+### Phase 61 — User experience acceptance closure(`IN_PROGRESS`)
+
+Phase 61 依据 ADR-0034 关闭专项验收中 Phase 58–60 后仍未关闭或仅部分关闭的问题。
+范围限定为 Agent 长任务与调用预算、持久化日线口径、任务 readiness、Strategy/Backtest
+普通用户信息层级、回测后续上下文、Login 浏览器语义、最近区间表达和完整黄金旅程复验。
+基础 CRUD、登录和普通 API 只做 smoke，不机械重复既有 Evidence。
+
+Browser 只访问 Gateway/Product API；Agent 日线只读 BYQ PostgreSQL，Provider 仅由 Data
+Center/Data Worker 调用；内部 ID/manifest 不删除但降级到技术详情；不改审批、backtest
+和 domain invariant，不新增 runtime/provider/broker。先完成 Community 分类和原验收报告
+入库，再通过 Backend/MCP/frontend/DSH contract tests 与真实 Chrome/DevTools 黄金旅程。
