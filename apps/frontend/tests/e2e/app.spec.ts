@@ -219,6 +219,50 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
   await expect(page.getByRole("button", { name: "通过" })).toBeVisible();
 });
 
+test("selecting a recent conversation loads its replay without refreshing the page", async ({ page }) => {
+  const sessions = [
+    { session_id: "session-1", trace_id: "trace-1", title: "银行板块研究", status: "active", updated_at: "2026-08-27T10:00:00Z" },
+    { session_id: "session-2", trace_id: "trace-2", title: "红利策略研究", status: "active", updated_at: "2026-08-27T09:00:00Z" },
+  ];
+  await page.route(/\/v1\/agent\/sessions(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ sessions, total: sessions.length }),
+  }));
+  for (const session of sessions) {
+    await page.route(`**/v1/agent/sessions/${session.session_id}`, (route) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        conversation: session,
+        messages: [{
+          message_id: `message-${session.session_id}`,
+          sequence: 1,
+          role: "user",
+          content: session.session_id === "session-1" ? "分析银行板块" : "分析红利策略",
+          created_at: session.updated_at,
+        }],
+        events: [],
+      }),
+    }));
+    await page.route(`**/v1/workflows/${session.session_id}/events`, (route) => route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: "",
+    }));
+  }
+
+  await login(page);
+  await expect(page.getByText("分析银行板块")).toBeVisible();
+  await page.getByText("红利策略研究", { exact: true }).click();
+  await expect(page).toHaveURL(/\/agent\?session=session-2$/);
+  await expect(page.getByText("分析红利策略")).toBeVisible();
+  await expect(page.getByText("分析银行板块")).toHaveCount(0);
+  const conversationHeader = page.locator(".conversation-header");
+  await expect(conversationHeader.getByRole("button", { name: "历史", exact: true })).toHaveCount(0);
+  await expect(conversationHeader.getByRole("button", { name: "会话操作", exact: true })).toHaveCount(0);
+});
+
 test("strategy workspace renders strategy version list and detail", async ({ page }) => {
   await mockResearchLists(page);
   await page.route("**/api/product/research/tasks", (route) =>
@@ -577,7 +621,7 @@ test("mobile shell uses a drawer and keeps account destinations reachable", asyn
   await expect(page.getByRole("navigation", { name: "产品主导航" })).toBeVisible();
   await expect(page.getByText("投研对话", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "历史会话", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "查看全部", exact: true }).click();
+  await page.getByRole("button", { name: "历史", exact: true }).click();
   await expect(page).toHaveURL(/\/agent\?history=recent$/);
   await expect(page.getByRole("heading", { name: "历史会话" })).toBeVisible();
   await page.getByRole("heading", { name: "历史会话" }).locator("..").getByRole("button").click();
