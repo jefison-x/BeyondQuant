@@ -297,10 +297,10 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
   await expect(page.getByRole("heading", { name: "策略管理" })).toBeVisible();
   await expect(page.getByText("策略目录与版本谱系", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "返回投研对话" })).toBeVisible();
-  await expect(page.getByText("策略编辑器", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "插入模板" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "创建不可变版本" })).toBeVisible();
+  await expect(page.getByText("策略编辑器", { exact: true })).not.toBeVisible();
+  await expect(page.getByText("技术与审计详情", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "已批准" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "开始回测" })).toBeEnabled();
 });
 
 test("backtest workspace renders backtest result list", async ({ page }) => {
