@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import * as echarts from "echarts";
+import { LineChart } from "echarts/charts";
+import { AriaComponent, GridComponent, LegendComponent, TitleComponent, TooltipComponent } from "echarts/components";
+import { init, use, type ECharts, type EChartsCoreOption } from "echarts/core";
+import { CanvasRenderer } from "echarts/renderers";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import BaseEmpty from "@/components/ui/BaseEmpty.vue";
 import BaseLoading from "@/components/ui/BaseLoading.vue";
 
 const props = withDefaults(defineProps<{
-  option: echarts.EChartsOption;
+  option: EChartsCoreOption;
   loading?: boolean;
   empty?: boolean;
   ariaLabel?: string;
@@ -20,7 +23,9 @@ const props = withDefaults(defineProps<{
 });
 
 const chartEl = ref<HTMLDivElement | null>(null);
-let chart: echarts.ECharts | null = null;
+use([LineChart, AriaComponent, GridComponent, LegendComponent, TitleComponent, TooltipComponent, CanvasRenderer]);
+
+let chart: ECharts | null = null;
 let themeObserver: MutationObserver | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let mediaQuery: MediaQueryList | null = null;
@@ -57,7 +62,7 @@ async function render() {
     chart?.clear();
     return;
   }
-  if (!chart) chart = echarts.init(chartEl.value, semanticChartTheme());
+  if (!chart) chart = init(chartEl.value, semanticChartTheme());
   chart.setOption({
     ...props.option,
     animation: !reducedMotion(),

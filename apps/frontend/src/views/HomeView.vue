@@ -7,6 +7,7 @@ import { listArtifacts } from "@/api/research";
 import { listBacktests } from "@/api/quant";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
+import { shortReference, statusLabel } from "@/display";
 
 const auth = useAuthStore();
 const loading = ref(true);
@@ -21,13 +22,18 @@ const backtests = ref<Array<Record<string, unknown>>>([]);
 const failedResources = ref<string[]>([]);
 
 const summaryCards = computed(() => [
-  { label: "Backend", value: String(dashboard.value?.resources.backend ?? "unknown") },
-  { label: "Research Tasks", value: String(dashboard.value?.resources.counts?.tasks ?? "-") },
-  { label: "Experiments", value: String(dashboard.value?.resources.counts?.experiments ?? "-") },
-  { label: "策略/资产", value: String(dashboard.value?.resources.counts?.artifacts ?? artifacts.value.length) },
+  { label: "核心服务", value: statusLabel(dashboard.value?.resources.backend) },
+  { label: "研究任务", value: String(dashboard.value?.resources.counts?.tasks ?? "-") },
+  { label: "研究方案", value: String(dashboard.value?.resources.counts?.experiments ?? "-") },
+  { label: "研究成果", value: String(dashboard.value?.resources.counts?.artifacts ?? artifacts.value.length) },
   { label: "回测任务", value: String(dashboard.value?.resources.counts?.backtests ?? "-") },
-  { label: "运行时", value: String(operations.value?.runtime.runtime.status ?? "runtime-adapter") },
+  { label: "智能研究服务", value: statusLabel(operations.value?.runtime.runtime.status ?? health.value?.status) },
 ]);
+
+const failedResourceLabel: Record<string, string> = {
+  dashboard: "工作台", health: "服务状态", data: "行情状态", operations: "运行状态",
+  settings: "个人设置", artifacts: "研究成果", backtests: "回测记录",
+};
 
 onMounted(async () => {
   try {
@@ -89,7 +95,7 @@ function kindLabel(kind: unknown): string {
         v-if="failedResources.length"
         type="warning"
         :closable="false"
-        :title="`部分数据加载失败：${failedResources.join('、')}`"
+        :title="`部分内容暂时无法加载：${failedResources.map((item) => failedResourceLabel[item] ?? item).join('、')}`"
       />
 
       <div class="stats-strip">
@@ -101,15 +107,15 @@ function kindLabel(kind: unknown): string {
 
       <el-card shadow="never" class="top-band">
         <template #header>
-          <div class="card-title">资源状态</div>
+          <div class="card-title">使用状态</div>
         </template>
         <div class="resource-bars">
           <div>
-            <span>Backend</span>
+            <span>核心服务</span>
             <el-progress :percentage="dashboard?.resources.backend === 'ok' ? 100 : 0" />
           </div>
           <div>
-            <span>数据迁移</span>
+            <span>数据准备</span>
             <el-progress :percentage="dataStatus?.migration === 'not_started' ? 0 : 100" />
           </div>
           <div>
@@ -128,7 +134,7 @@ function kindLabel(kind: unknown): string {
 
       <div class="section-label-row">
         <span>最近研究资产</span>
-        <small>来自 BYQ Artifact 列表</small>
+        <small>可继续查看、审批或用于回测</small>
       </div>
 
       <el-card shadow="never" class="top-band">
@@ -138,8 +144,8 @@ function kindLabel(kind: unknown): string {
               <el-tag effect="light">{{ kindLabel(row.kind) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="artifact_id" label="Artifact ID" min-width="260" show-overflow-tooltip />
-          <el-table-column prop="status" label="状态" width="120" />
+          <el-table-column label="记录编号" min-width="180"><template #default="{ row }">{{ shortReference(row.artifact_id) }}</template></el-table-column>
+          <el-table-column label="状态" width="120"><template #default="{ row }">{{ statusLabel(row.status) }}</template></el-table-column>
           <el-table-column label="创建时间" min-width="190">
             <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
           </el-table-column>
@@ -149,12 +155,12 @@ function kindLabel(kind: unknown): string {
 
       <div class="section-label-row">
         <span>最近回测</span>
-        <small>来自 BYQ Backtest 列表</small>
+        <small>最近运行和可继续分析的结果</small>
       </div>
       <el-card shadow="never" class="top-band">
         <el-table v-if="backtests.length" :data="backtests" size="default">
-          <el-table-column prop="job_id" label="Job ID" min-width="240" show-overflow-tooltip />
-          <el-table-column prop="status" label="状态" width="120" />
+          <el-table-column label="回测编号" min-width="180"><template #default="{ row }">{{ shortReference(row.job_id) }}</template></el-table-column>
+          <el-table-column label="状态" width="120"><template #default="{ row }">{{ statusLabel(row.status) }}</template></el-table-column>
           <el-table-column prop="created_at" label="创建时间" min-width="190" />
         </el-table>
         <el-empty v-else description="暂无回测任务" />
@@ -162,15 +168,15 @@ function kindLabel(kind: unknown): string {
 
       <div class="section-label-row">
         <span>服务健康</span>
-        <small>Product API / Gateway 边界</small>
+        <small>只显示普通用户需要关注的可用状态</small>
       </div>
       <el-card shadow="never" class="top-band">
         <div class="status-list">
-          <div><span>Product Health</span><strong>{{ health?.status ?? "unknown" }}</strong></div>
-          <div><span>模型提供方</span><strong>{{ settings?.model_provider.configured ? "configured" : "not_configured" }}</strong></div>
+          <div><span>平台服务</span><strong>{{ health?.status === "ok" ? "正常" : "需检查" }}</strong></div>
+          <div><span>研究模型</span><strong>{{ settings?.model_provider.configured ? "已配置" : "未配置" }}</strong></div>
           <div><span>审批待处理</span><strong>{{ settings?.approval_inbox.pending ?? 0 }}</strong></div>
-          <div><span>WorkflowTrace</span><strong>{{ operations?.observability.workflow_trace ?? "-" }}</strong></div>
-          <div><span>审计</span><strong>{{ operations?.observability.audit ?? "-" }}</strong></div>
+          <div><span>研究过程记录</span><strong>{{ operations?.observability.workflow_trace ? "可用" : "-" }}</strong></div>
+          <div><span>操作记录</span><strong>{{ operations?.observability.audit ? "可用" : "-" }}</strong></div>
         </div>
       </el-card>
     </template>

@@ -261,7 +261,7 @@ Maintainer 于 2026-08-24 再次延后 RC，以 ADR-0025/`PERSONAL_WORKSPACE_TEN
 ### Phase 58 — Agent domain action contract(`COMPLETE`)
 ### Phase 59 — Agent point-in-time valuation and fundamentals(`COMPLETE`)
 ### Phase 60 — Public answer and activity projection(`COMPLETE`)
-### Phase 61 — User experience acceptance closure(`IN_PROGRESS`)
+### Phase 61 — User experience acceptance closure(`COMPLETE`)
 
 Phase 61 依据 ADR-0034 关闭专项验收中 Phase 58–60 后仍未关闭或仅部分关闭的问题。
 范围限定为 Agent 长任务与调用预算、持久化日线口径、任务 readiness、Strategy/Backtest
@@ -272,3 +272,14 @@ Browser 只访问 Gateway/Product API；Agent 日线只读 BYQ PostgreSQL，Prov
 Center/Data Worker 调用；内部 ID/manifest 不删除但降级到技术详情；不改审批、backtest
 和 domain invariant，不新增 runtime/provider/broker。先完成 Community 分类和原验收报告
 入库，再通过 Backend/MCP/frontend/DSH contract tests 与真实 Chrome/DevTools 黄金旅程。
+
+### Phase 62 — User experience P3 polish(`COMPLETE`)
+
+依据 ADR-0035 收口 Phase 61 后剩余非阻断体验项：Data Center 从 owner-scoped 股票池
+snapshot 选择至多 20 只成分执行 readiness；普通工作台和导航清除首屏工程术语并统一
+中文状态；ECharts 使用实际所需模块，消除回测相关大包 warning。保留管理员诊断术语和
+全部审计详情，不改变 Backend/MCP/DSH/domain Contract。
+
+验收包括 frontend 单元测试/build、默认 500 kB chunk gate、architecture、mock/real
+Product browser smoke，以及真实 Data Center 股票池→readiness same-origin 旅程。Community
+硬编码股票池、TODO API、假进度和旧 provider/runtime 路径全部 DROP。

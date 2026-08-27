@@ -1,19 +1,19 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=60 -->
+<!-- byq:current-completed-phase=62 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 60**——Agent 最终回答与公开活动使用封闭、中文化的
-  Product projection；内部工具步骤、控制动作与 raw Contract token 不进入普通用户界面。
+- 当前已完成阶段：**Phase 62**——真实用户专项验收的剩余 P3 已收口：股票池可直接进入
+  任务 readiness，普通页面术语统一，前端图表/共享包不再超过默认 500 kB 告警线。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
   验证到 Python `0.1.1rc1` / npm `0.1.1-rc.1`；它是维护历史，不是隐含的 Product Phase。
 - 当前完成范围内没有未决架构决策。
-- Phase 60 由维护者于 2026-08-26 授权顺序自动执行并已完成；规范与证据位于 ADR-0033、
-  `IMPLEMENTATION_PLAN.md` 和 `docs/evidence/phase-60/`。
+- Phase 61 由维护者于 2026-08-27 授权并完成；规范与证据位于 ADR-0034、验收报告和
+  `docs/evidence/phase-61/`。
 
 ## 生效中的 Accepted ADR
 
@@ -48,6 +48,8 @@ history 推断项目状态。
 - Agent domain action completion：**ADR-0031**
 - Agent point-in-time market research：**ADR-0032**
 - Product Agent public answer/activity projection：**ADR-0033**
+- real-user journey closure：**ADR-0034**
+- user-experience polish：**ADR-0035**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -175,6 +177,12 @@ v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase
 - Phase 60 依据 ADR-0033 只投影 DSH text-only 最终回答，封闭本地化公开研究术语，隐藏
   authorize/audit/unknown control activity，并让公开活动以用户可理解的中文状态正确终止；
   真实无工具和估值工具旅程均未暴露 raw DSH/MCP/coverage token，且未改变 Domain result。
+- Phase 61 依据 ADR-0034 完成真实用户验收闭环：累计 19 项中的 P0/P1/P2 全部关闭，
+  Agent 日线统一为持久化口径，任务 readiness、连续追问和跨模块下一步通过真实浏览器；
+  正式 PostgreSQL 与结果对象完成联合恢复，原损坏卷保持封存。
+- Phase 62 依据 ADR-0035 关闭剩余 P3：股票池 snapshot 可直接选择至多 20 只执行任务
+  readiness；普通工作台移除工程标签；ECharts 模块化与 Vite 8 分包消除默认大包告警，
+  并通过真实 Chromium 的 readiness 和回测图表复验。
 
 Community Parity Delivery Plan Phase 1-8 恢复 Product shell 和 Chrome MCP browser
 evidence。`docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` 中的历史缺口已由 Phase 32-40
@@ -188,11 +196,9 @@ Product capability 和 Gateway → Runtime Adapter → DSH → MCP 边界不变�
 
 ## 当前授权边界
 
-- Active Phase 61 acceptance blockers：生产 PostgreSQL 仍因 BQ-OPS-001 停止，干净恢复副本已验证但
-  切换需要明确生产影响授权；恢复行情发送到外部 DeepSeek 的连续 Agent 复验也需要明确数据外传授权。
-- Phase 49-60 与 ADR-0025 至 ADR-0033 对应计划均已完成。
-- 维护者已于 2026-08-27 授权 Phase 61 真实用户旅程关闭；ADR-0034 已接受，当前实施在
-  isolated worktree/branch 中进行。该授权不扩大为 release-candidate 评审、tag 或
+- Phase 49-62 与 ADR-0025 至 ADR-0035 对应计划均已完成。
+- Next phase 尚未定义。研究→策略→模拟执行自动化属于新产品能力，必须先明确 domain
+  invariant、Accepted ADR 和验收标准；本轮授权不扩大为 release-candidate 评审、tag 或
   production publication。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
