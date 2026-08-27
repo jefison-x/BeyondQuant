@@ -65,4 +65,7 @@ def test_product_research_skill_requires_evidence_bound_public_answers() -> None
     assert "It creates no ResearchTask" in role_contract
     assert "temporary trend or comparison request creates no" in market_contract
     assert "最近 N 个交易日" in market_contract
+    assert "last_close / first_pre_close - 1" in market_contract
+    assert "last_close / first_close - 1" in market_contract
+    assert "首日至末日" in market_contract
     assert "newest listed session" in market_contract

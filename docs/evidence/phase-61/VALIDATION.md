@@ -67,10 +67,19 @@ Phase 61 UX suite without external model calls:
 - no post-login Console errors, HTTP 5xx or unexpected origins in the passing runs;
 - screenshots: [readiness/backtest](screenshots/05-readiness-backtest-next-step.png) and [strategy/backtest](screenshots/06-strategy-backtest-handoff.png).
 
+Maintainer-authorized real DeepSeek continuous research scenario:
+
+- two natural turns comparing `600036.SH` and `601166.SH` passed in 46.0 seconds;
+- conversation: `conversation_cb41f4cedee84fbc94d9d825f0b547ad`;
+- both answers used persisted BYQ daily data, disclosed cutoff `20260826`, and made no live-provider claim;
+- the follow-up created no ResearchTask, Experiment, or Artifact (`delta=0` for all three);
+- the first run exposed a return-basis labeling defect. After the skill contract fix, the model distinguished
+  five-session cumulative return (first row `pre_close` to final `close`) from first-to-final close change;
+- verified values: CMB `+1.66%` / `38.86→39.80, +2.42%`; CIB `-0.16%` / `18.17→18.21, +0.22%`;
+- screenshot: [continuous research](screenshots/04-agent-continuous-research.png).
+
 The bootstrap `/api/auth/me` 401 before login is expected and was excluded only after login; it was not classified as a product failure. The Vite build still reports the pre-existing large-chunk warning (Backtest and shared Element Plus bundles); this is a P3 performance optimization, not an acceptance blocker.
 
 ## Explicitly pending
 
-The continuous real Agent scenario is implemented in `phase61-acceptance.spec.ts`, but execution was blocked before any prompt was sent because it may transmit restored market data to the configured external DeepSeek provider. It requires explicit authorization for that data transfer. No workaround or indirect model call was attempted.
-
-Production cutover is also pending explicit destructive/production-impact authorization. The live `beyondquant-postgres-1` remains exited; the original damaged volume remains unchanged. The isolated clean restore is evidence, not a production switch.
+Production cutover was explicitly authorized after the clean restore and model evidence completed. Until the cutover verification is appended, the live `beyondquant-postgres-1` remains exited, the original damaged volume remains unchanged, and the isolated clean restore is evidence rather than a production switch.

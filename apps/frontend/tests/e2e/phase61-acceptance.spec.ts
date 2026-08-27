@@ -62,13 +62,15 @@ test("Phase 61 continuous research keeps context, visible progress, and zero unn
   const firstText = await first.innerText();
   expect(firstText).not.toMatch(/Artifact ID|WorkflowTrace|DSH|ResearchTask/);
 
-  await composer.fill("和兴业银行比一下，哪个最近更强？还是按刚才的 5 个交易日和同一数据口径。");
+  await composer.fill("和兴业银行比一下，哪个最近更强？还是按刚才的 5 个交易日和同一数据口径。请同时给出首日至末日收盘变化，严格用末日收盘除以首日收盘再减 1 计算。");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(progress).toContainText("已用时");
   await expect(progress).toBeHidden({ timeout: 180_000 });
   const second = page.locator(".conversation-message.agent .message-body").last();
   await expect(second).toContainText("兴业银行");
   await expect(second).toContainText("招商银行");
+  await expect(second).toContainText(/招商银行[^\n]*(?:\+?2\.4|\+?2\.42)%/);
+  await expect(second).toContainText(/兴业银行[^\n]*(?:\+?0\.2|\+?0\.22)%/);
 
   expect(await researchCounts(page)).toEqual(before);
   expect(browser.consoleErrors).toEqual([]);

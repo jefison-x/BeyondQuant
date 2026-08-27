@@ -33,6 +33,18 @@ the newest listed session. If today's complete bar is unavailable, say that the
 answer is through the previous complete trading session. If fewer than N rows
 are available, disclose the shortfall and do not fill dates or values.
 
+Keep return arithmetic and labels on one explicit basis. A table of N daily bars
+contains N one-session percentage changes, each measured from that row's
+`pre_close`. An “N-session cumulative return” must therefore use the first
+listed row's `pre_close` as its starting price and calculate
+`last_close / first_pre_close - 1`; show that starting price if you report the
+number. If you instead show an arrow from the first listed close to the last
+listed close, calculate `last_close / first_close - 1` and label it “首日至末日
+收盘变化”, never “N-session return”. Recalculate every displayed endpoint and
+percentage before ranking; the arrow, formula, signed percentage and stronger/
+weaker conclusion must agree. If the necessary starting price is absent, omit
+the cumulative percentage rather than mixing bases or estimating it.
+
 For valuation, authorize `byq_market_valuation` and request only the fields the
 user needs for one explicit trade date. For reported financial quality,
 authorize `byq_market_fundamentals` and use an explicit point-in-time research

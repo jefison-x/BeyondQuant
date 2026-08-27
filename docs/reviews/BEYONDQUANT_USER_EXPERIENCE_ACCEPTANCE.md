@@ -14,9 +14,9 @@ P2 8、P3 3。Phase 58–60 已关闭 4 项、部分改善 4 项；Phase 61 依�
 后缺少自然下一步。
 
 Phase 61 的目标不是新增功能数量，而是让这些已实现能力形成一个可信的普通用户闭环。整改
-期间又发现 1 个 P0 运维安全问题、1 个 P1 核心流程可见性问题和 1 个 P2 真实资产导入问题，
-累计 17 项（P0 1、P1 4、P2 9、P3 3）。新增 P1/P2 已修复并经真实浏览器复验；P0 的代码
-防线和干净恢复演练已完成，但生产切换尚未授权，因此不能宣称最终接受。
+期间又发现 1 个 P0 运维安全问题、2 个 P1 问题和 1 个 P2 真实资产导入问题，
+累计 18 项（P0 1、P1 5、P2 9、P3 3）。新增 P1/P2 已修复并经真实浏览器复验；P0 的代码
+防线和干净恢复演练已完成，生产切换已获授权、正在执行，因此尚不能宣称最终接受。
 
 ## 2. Environment
 
@@ -110,9 +110,12 @@ Phase 61 新增按股票、日期和研究/回测用途的只读检查，返回�
 - “最近 N 个交易日”必须说明实际起止和行数、日期降序、最新列表日与结论截止日一致；不足
   N 行必须披露。
 
-真实连续 Agent/自然指代复验尚未执行：安全审查在发送提示词前阻止了恢复行情向外部 DeepSeek
-传输。必须由维护者明确批准该数据外传后再运行；现阶段只能确认 skill/static contract 和 UI
-长任务状态实现，不能把它们替代为真实模型结论。
+维护者明确授权有限公开 A 股行情和测试提示词发送至已配置 DeepSeek 后，真实连续 Agent 场景
+完成。Agent 正确保留招商银行／兴业银行指代、披露数据截止日与实际行数，且简单追问前后
+ResearchTask/Experiment/Artifact 数量不变。首轮模型回答暴露一个新的收益口径问题：文字将
+“首日收盘→末日收盘”的箭头与“首日前收盘→末日收盘”的累计收益混用。规则修正后复验得到
+招商银行五个交易时段累计 `+1.66%`、首末收盘变化 `38.86→39.80，+2.42%`；兴业银行分别为
+`-0.16%` 与 `18.17→18.21，+0.22%`，结论与持久行情一致，无 Provider 实时调用或臆测。
 
 ## 8. UX / Interaction Findings
 
@@ -168,8 +171,8 @@ result 从 503 恢复为 200。这是恢复集合边界，不是修改历史结�
 | BQ-UX-002 | Agent Strategy | P1 | 同类 422 重复修复 | Phase 58 已关闭 |
 | BQ-UX-003 | Quant/Data | P0 风险按 P1 管理 | 估值工具缺失，可能臆测 | Phase 59 已关闭，无填值 |
 | BQ-UX-004 | UX/Agent projection | P2 | 内部英文/授权叙述泄漏 | Phase 60 已关闭 |
-| BQ-UX-005 | Interaction | P2 | 长任务无耗时、停止隐藏 | UI/单测已实现，待获批真实模型长任务复验 |
-| BQ-UX-006 | Tool Calling/Product Design | P2 | 简单追问产生过多资产 | 已加最小意图预算，待获批真实模型资源 delta 复验 |
+| BQ-UX-005 | Interaction | P2 | 长任务无耗时、停止隐藏 | 真实模型运行中阶段和耗时可见，已关闭 |
+| BQ-UX-006 | Tool Calling/Product Design | P2 | 简单追问产生过多资产 | 真实连续场景资源 delta=0，已关闭 |
 | BQ-UX-007 | UX/Strategy | P2 | Artifact/JSON/源码主导 | 真实浏览器关闭；技术详情默认折叠 |
 | BQ-UX-008 | Data Sync UX | P2 | 问题计数不说明影响/下一步 | 真实数据与浏览器关闭；23/23 sessions usable |
 | BQ-UX-009 | Data consistency | P1 | Agent 日线实时、回测持久 | 真实 DB→Backend→MCP 关闭，close=13.22 |
@@ -177,9 +180,10 @@ result 从 503 恢复为 200。这是恢复集合边界，不是修改历史结�
 | BQ-UX-011 | Product Design/Data | P2 | 固定前 100，无任务查询 | 已提供 bounded 显式查询；股票池快捷选择留 P3 |
 | BQ-UX-012 | UX/Terminology | P3 | 中英文和工程术语混杂 | 核心 Strategy/Backtest/Data/Agent 已收口，待扫描 |
 | BQ-UX-013 | Accessibility/Login | P3 | 无 label/name/autocomplete | 单测关闭 |
-| BQ-UX-014 | Quant communication | P3 | 最近窗口与最新日表达含混 | skill contract 已修，待获批真实模型复验 |
+| BQ-UX-014 | Quant communication | P3 | 最近窗口与最新日表达含混 | 真实模型披露起止、5 行和截止日，已关闭 |
 | BQ-UX-015 | Functional/Asset Import | P2 | Browser JSON round-trip 把 `10.0` 写为 `10`，manifest digest 失配，真实资产导入 422 | 已使用带算法标识的数值语义 digest 修复；legacy 无标识 bundle 保持旧校验；Gateway 60 tests + 真实浏览器关闭 |
 | BQ-UX-016 | Interaction/Cross-workflow | P1 | 未批准策略的批准按钮在主题下白底白字，用户看不到进入回测的必要下一步 | 按钮改为可见次级动作；真实“批准→开始回测→预选对话框”关闭 |
+| BQ-UX-017 | Quant Agent Bug | P1 | 模型把首末收盘箭头与首日前收盘口径的累计收益混用，数值标签会误导投资判断 | skill 明确两种公式和标签、禁止混用；静态契约和真实 DeepSeek 连续场景关闭 |
 
 新增环境问题：
 
@@ -218,12 +222,11 @@ result 从 503 恢复为 200。这是恢复集合边界，不是修改历史结�
 
 首轮：不建议宣称“普通用户可用”，建议进入整改。
 
-Phase 61 当前为“代码整改基本完成、最终接受挂起”。已通过 Architecture 50、Backend 169、
+Phase 61 当前为“代码整改与模型验收完成、生产恢复接受挂起”。已通过 Architecture 50、Backend 169、
 Gateway 60、MCP 全套与真实持久行情、Runtime 34、Frontend 83/build、真实 Product 3 条，以及
-Phase 61 非模型浏览器 2 条。仍必须完成两项门槛：
+Phase 61 浏览器 3 条（其中一条为真实模型连续对话）。仍必须完成一项门槛：
 
-1. 明确授权后，用全新已验证卷切换生产 PostgreSQL，并确认 Product 全栈、历史回测对象和备份；
-2. 明确授权恢复行情可发送给已配置 DeepSeek 后，运行连续股票研究/指代/资源 delta/最近窗口场景。
+1. 用全新已验证卷切换生产 PostgreSQL，并确认 Product 全栈、历史回测对象和备份。
 
-在这两项完成前，BeyondQuant 仍不应被宣称为线上“普通用户可用”；隔离环境已证明核心 UX
+在生产恢复完成前，BeyondQuant 仍不应被宣称为线上“普通用户可用”；隔离环境已证明核心 UX
 整改方向和大部分真实旅程有效，但线上数据库不可用本身就是 P0 接受阻断。
