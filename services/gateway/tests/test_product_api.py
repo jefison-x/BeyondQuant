@@ -449,6 +449,7 @@ def test_product_assets_export_and_import_are_owner_scoped(monkeypatch) -> None:
     assert bundle["schema_version"] == "byq-workspace-assets-v2"
     assert bundle["assets"]["strategies"][0]["kind"] == "strategy_version"
     assert bundle["assets"]["backtests"][0]["kind"] == "backtest_archive"
+    assert bundle["manifest_algorithm"] == "byq-semantic-json-v1"
     assert bundle["manifest_sha256"]
 
     imported = client.post(
@@ -461,6 +462,19 @@ def test_product_assets_export_and_import_are_owner_scoped(monkeypatch) -> None:
     assert imported.json()["imported"]["strategies"] == 1
     assert imported.json()["imported"]["backtests"] == 1
     assert imported.json()["source_owner_reused"] is False
+
+
+def test_product_asset_manifest_survives_browser_number_round_trip() -> None:
+    document = {
+        "schema_version": "byq-workspace-assets-v2",
+        "manifest_algorithm": "byq-semantic-json-v1",
+        "assets": {"pools": [{"weights": {"600036.SH": 10.0}}]},
+    }
+    browser_round_trip = {
+        **document,
+        "assets": {"pools": [{"weights": {"600036.SH": 10}}]},
+    }
+    assert product_api._semantic_json_digest(document) == product_api._semantic_json_digest(browser_round_trip)
 
 
 def test_product_backtest_result_is_owner_scoped(monkeypatch) -> None:
@@ -851,6 +865,37 @@ def test_product_data_center_status_exposes_masked_provider_capability(monkeypat
     assert response.json()["source"]["effective_source"] == "credential_store"
     assert "token" not in response.text.lower()
     assert "ciphertext" not in response.text.lower()
+
+
+def test_product_data_readiness_forwards_trusted_identity_and_bounded_request(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"schema_version": "data-readiness-product.v1", "verdict": "usable", "issues": []}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured.update({"method": method, "url": url, **kwargs})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api, "resolve_user", lambda _request: {
+        "username": "alice", "role": "user", "_workspace": {"workspace_id": "workspace_alice"},
+    })
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    client.cookies.set(product_api.SESSION_COOKIE, "session_alice")
+    response = client.post("/api/product/data-center/readiness", json={
+        "symbols": ["600036.SH"], "start_date": "20260101", "end_date": "20260826", "use_case": "research",
+    })
+
+    assert response.status_code == 200
+    assert str(captured["url"]).endswith("/v1/data-center/readiness")
+    assert captured["headers"]["x-byq-actor-principal"] == "alice"
+    assert captured["headers"]["x-byq-workspace-id"] == "workspace_alice"
+    assert captured["json"]["symbols"] == ["600036.SH"]
 
 
 def test_product_data_center_writes_are_admin_only_and_use_backend_boundary(monkeypatch) -> None:

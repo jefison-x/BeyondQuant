@@ -5,6 +5,7 @@ import os
 import pytest
 
 from app.market_data import MarketDataStore
+from app.data_provider import DailyRequest
 from app.pg_import import KEEP_NEW, VERIFY_EQUAL, REPORT_MISMATCH
 
 
@@ -70,4 +71,22 @@ def test_market_data_import_is_idempotent_and_conflict_policy_holds() -> None:
 
     reported = store.import_bars([_row(close=10.6)], conflict_policy=REPORT_MISMATCH)
     assert len(reported["mismatches"]) == 1
+    store.close()
+
+
+def test_daily_research_reads_only_durable_verified_source_without_provider() -> None:
+    store = MarketDataStore()
+    store._execute(
+        """INSERT INTO market_trading_sessions
+           (exchange,trade_date,is_open,previous_open_date,data_source,request_fingerprint,retrieved_at,content_sha256,updated_at)
+           VALUES ('SSE','20240102',TRUE,'20231229','tushare','fixture',now(),'calendar-hash',now())"""
+    )
+    store.import_bars([_row(pre_close=10.2)], conflict_policy=KEEP_NEW)
+
+    result = store.research_daily(DailyRequest(ts_code="000001.SZ", trade_date="20240102"))
+
+    assert result["provenance"]["source"] == "persisted_byq"
+    assert result["provenance"]["live_provider_called"] is False
+    assert result["coverage"]["usable"] is True
+    assert result["data"][0]["close"] == 10.5
     store.close()

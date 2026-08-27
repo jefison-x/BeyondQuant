@@ -7,6 +7,7 @@ import {
   getDataCenterStatus,
   getSecurityMasterSyncJob,
   listSecurities,
+  queryDataReadiness,
   runMarketSyncNow,
   revokeDataSourceCredential,
   testDataSource,
@@ -15,6 +16,7 @@ import {
 } from "@/api/dataCenter";
 import type {
   DataCenterStatus,
+  DataReadinessResult,
   DataSourceCredential,
   DataSyncJob,
   SecurityCataloguePage,
@@ -24,7 +26,7 @@ import type {
 const loading = ref(true);
 const busy = ref(false);
 const error = ref("");
-const activeTab = ref("source");
+const activeTab = ref("coverage");
 const status = ref<DataCenterStatus | null>(null);
 const credentialDialog = ref(false);
 const editingCredential = ref<DataSourceCredential | null>(null);
@@ -45,6 +47,13 @@ const catalogueLoading = ref(false);
 const catalogueFilters = reactive({ query: "", statuses: ["L"], exchanges: [] as string[] });
 const cataloguePage = ref(1);
 const cataloguePageSize = 50;
+const readinessBusy = ref(false);
+const readinessResult = ref<DataReadinessResult | null>(null);
+const readinessForm = reactive({
+  symbols: "000001.SZ,600036.SH", start_date: "20260101",
+  end_date: new Date().toISOString().slice(0, 10).replaceAll("-", ""),
+  use_case: "research" as "research" | "backtest",
+});
 
 const credentials = computed(() => status.value?.source.credentials ?? []);
 const canAddCredential = computed(() => !credentials.value.some((item) => item.status !== "revoked"));
@@ -234,6 +243,33 @@ async function triggerAutomation() {
   }
 }
 
+async function checkReadiness() {
+  const symbols = readinessForm.symbols.split(/[，,\s]+/).map((item) => item.trim().toUpperCase()).filter(Boolean);
+  if (!symbols.length) return ElMessage.warning("请输入至少一个股票代码");
+  readinessBusy.value = true;
+  readinessResult.value = null;
+  try {
+    readinessResult.value = await queryDataReadiness({
+      symbols, start_date: readinessForm.start_date, end_date: readinessForm.end_date,
+      use_case: readinessForm.use_case,
+    });
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "数据可用性检查失败");
+  } finally {
+    readinessBusy.value = false;
+  }
+}
+
+function readinessLabel(value: DataReadinessResult["verdict"]) {
+  return ({ usable: "可以使用", limited: "部分受限", unavailable: "暂不可用" } as const)[value];
+}
+
+function readinessType(value: DataReadinessResult["verdict"]) {
+  return ({ usable: "success", limited: "warning", unavailable: "error" } as const)[value];
+}
+
+function goToSync() { activeTab.value = "sync"; }
+
 async function changeCataloguePage(page: number) {
   cataloguePage.value = page;
   await loadCatalogue();
@@ -260,7 +296,7 @@ function securityStatusLabel(value: string) {
 <template>
   <section class="data-center-page">
     <div class="page-heading">
-      <div><p class="eyebrow">Data Plane · Beta</p><h1>数据中心</h1><p>同步股票基本资料，按真实证券目录编排行情，并审计 PostgreSQL 覆盖范围。</p></div>
+      <div><p class="eyebrow">市场数据</p><h1>数据中心</h1><p>检查研究和回测所需数据是否齐全，并在缺失时继续同步。</p></div>
       <el-button :loading="loading" @click="load">刷新状态</el-button>
     </div>
 
@@ -269,7 +305,7 @@ function securityStatusLabel(value: string) {
 
     <template v-else-if="status">
       <div class="stats-strip">
-        <div class="stat-item"><span>数据源</span><strong>Tushare</strong><small>唯一支持的 Provider</small></div>
+        <div class="stat-item"><span>数据源</span><strong>Tushare</strong><small>当前唯一支持的数据源</small></div>
         <div class="stat-item"><span>证券目录</span><strong>{{ status.security_master.total.toLocaleString() }}</strong><small>{{ status.security_master.status_counts.L }} 只上市</small></div>
         <div class="stat-item"><span>日线数据</span><strong>{{ status.coverage.row_count.toLocaleString() }}</strong><small>{{ status.coverage.symbol_count }} 个标的</small></div>
         <div class="stat-item"><span>质量</span><strong>{{ qualityLabel(status.quality) }}</strong><small>{{ status.coverage.checked_at.slice(0, 19).replace("T", " ") }}</small></div>
@@ -376,7 +412,30 @@ function securityStatusLabel(value: string) {
         </el-tab-pane>
 
         <el-tab-pane label="覆盖审计" name="coverage">
-          <el-alert title="覆盖范围只陈述 PostgreSQL 中已观察到的数据，不在缺少完整交易日历证据时宣称历史数据完整。" type="warning" show-icon :closable="false" />
+          <el-card shadow="never" class="readiness-card">
+            <template #header><div><strong>这批数据现在能用吗？</strong><p>按股票、日期和用途检查已同步数据；小巴研究和回测都使用这里的持久数据，不会临时向数据源取数。</p></div></template>
+            <el-form label-position="top">
+              <div class="readiness-form">
+                <el-form-item label="股票代码"><el-input v-model="readinessForm.symbols" placeholder="多个代码用逗号分隔，最多 20 个" /></el-form-item>
+                <el-form-item label="开始日期"><el-input v-model="readinessForm.start_date" maxlength="8" /></el-form-item>
+                <el-form-item label="结束日期"><el-input v-model="readinessForm.end_date" maxlength="8" /></el-form-item>
+                <el-form-item label="准备做什么"><el-select v-model="readinessForm.use_case"><el-option label="研究走势" value="research" /><el-option label="运行回测" value="backtest" /></el-select></el-form-item>
+              </div>
+              <el-button type="primary" :loading="readinessBusy" @click="checkReadiness">检查可用性</el-button>
+            </el-form>
+            <div v-if="readinessResult" class="readiness-result">
+              <el-alert :title="readinessLabel(readinessResult.verdict)" :type="readinessType(readinessResult.verdict)" show-icon :closable="false"
+                :description="`已核对 ${readinessResult.scope.symbol_count} 只股票、${readinessResult.summary.required_sessions} 个交易日；缺少 ${readinessResult.summary.missing_items} 项必要数据。`" />
+              <div v-if="readinessResult.datasets.length" class="dataset-tags"><el-tag v-for="item in readinessResult.datasets" :key="item.label" type="warning">{{ item.label }} · 缺 {{ item.missing_count }}</el-tag></div>
+              <el-table v-if="readinessResult.issues.length" :data="readinessResult.issues" size="small">
+                <el-table-column prop="symbol" label="股票" width="120" /><el-table-column prop="trade_date" label="交易日" width="110" />
+                <el-table-column prop="label" label="缺少内容" min-width="150" /><el-table-column prop="impact" label="影响" min-width="190" />
+                <el-table-column prop="recommended_action" label="下一步" min-width="160" />
+              </el-table>
+              <div v-if="readinessResult.verdict !== 'usable'" class="readiness-next"><span>{{ status.source.can_manage ? "可以前往行情同步补齐，再重新检查。" : "请联系管理员同步缺失范围，再重新检查。" }}</span><el-button v-if="status.source.can_manage" @click="goToSync">前往行情同步</el-button></div>
+            </div>
+          </el-card>
+          <el-alert title="下方全局概览只说明已存数据量，不能代替上面的任务可用性检查。" type="info" show-icon :closable="false" />
           <div class="coverage-grid"><el-card shadow="never"><strong>总体覆盖</strong><el-descriptions :column="1" border><el-descriptions-item label="数据行">{{ status.coverage.row_count.toLocaleString() }}</el-descriptions-item><el-descriptions-item label="标的数">{{ status.coverage.symbol_count }}</el-descriptions-item><el-descriptions-item label="日期范围">{{ status.coverage.date_min ?? "-" }} — {{ status.coverage.date_max ?? "-" }}</el-descriptions-item><el-descriptions-item label="来源问题">{{ status.coverage.source_issues }}</el-descriptions-item><el-descriptions-item label="OHLC 问题">{{ status.coverage.ohlc_issues }}</el-descriptions-item></el-descriptions></el-card><el-card shadow="never"><strong>数据集分组</strong><el-table :data="status.coverage.groups" empty-text="暂无数据"><el-table-column prop="data_source" label="来源" /><el-table-column prop="asset_type" label="资产" /><el-table-column prop="row_count" label="数据行" /><el-table-column prop="symbol_count" label="标的" /></el-table></el-card></div>
           <el-card shadow="never"><template #header><strong>已同步标的覆盖</strong></template><el-table :data="status.coverage.symbols" empty-text="暂无覆盖记录"><el-table-column prop="symbol" label="股票代码" /><el-table-column prop="row_count" label="数据行" /><el-table-column prop="date_min" label="最早日期" /><el-table-column prop="date_max" label="最晚日期" /></el-table></el-card>
         </el-tab-pane>
@@ -405,6 +464,7 @@ function securityStatusLabel(value: string) {
 .automation-status { margin: 1rem 0; }
 .catalogue-toolbar .el-select { width: 100%; }
 .coverage-grid { display: grid; gap: 1rem; grid-template-columns: minmax(260px, .7fr) minmax(0, 1.3fr); }
+.readiness-form { display: grid; gap: .75rem; grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(130px, .6fr)); }.readiness-result { display: grid; gap: .75rem; margin-top: 1rem; }.dataset-tags { display: flex; flex-wrap: wrap; gap: .5rem; }.readiness-next { align-items: center; color: var(--byq-text-muted); display: flex; justify-content: space-between; }
 .coverage-grid :deep(.el-descriptions) { margin-top: 1rem; }
 .catalogue-toolbar { display: grid; gap: .75rem; grid-template-columns: minmax(180px, 1fr) minmax(160px, .7fr) minmax(160px, .7fr) auto; margin-bottom: 1rem; }
 .catalogue-footer { align-items: center; display: flex; font-size: 12px; gap: 1rem; justify-content: space-between; margin-top: 1rem; }
@@ -412,7 +472,7 @@ function securityStatusLabel(value: string) {
 .bounded-note { font-size: 12px; }
 @media (max-width: 760px) {
   .page-heading, .card-header, .catalogue-footer { align-items: flex-start; flex-direction: column; }
-  .automation-grid, .coverage-grid, .catalogue-toolbar { grid-template-columns: 1fr; }
+  .automation-grid, .coverage-grid, .catalogue-toolbar, .readiness-form { grid-template-columns: 1fr; }
   .automation-actions { align-items: stretch; flex-direction: column; }
   .stats-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .catalogue-footer :deep(.el-pagination) { flex-wrap: wrap; }

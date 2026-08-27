@@ -188,11 +188,12 @@ Product capability 和 Gateway → Runtime Adapter → DSH → MCP 边界不变�
 
 ## 当前授权边界
 
-- Active implementation-phase blocker：**none**。
+- Active Phase 61 acceptance blockers：生产 PostgreSQL 仍因 BQ-OPS-001 停止，干净恢复副本已验证但
+  切换需要明确生产影响授权；恢复行情发送到外部 DeepSeek 的连续 Agent 复验也需要明确数据外传授权。
 - Phase 49-60 与 ADR-0025 至 ADR-0033 对应计划均已完成。
-- 当前路线图没有已定义或已授权的下一 Product Phase。后续需要维护者作出产品/发布决策；
-  现有顺序开发授权不扩大为 release-candidate 评审、tag、production publication，亦不
-  构成自行创建 Phase 61 的授权。
+- 维护者已于 2026-08-27 授权 Phase 61 真实用户旅程关闭；ADR-0034 已接受，当前实施在
+  isolated worktree/branch 中进行。该授权不扩大为 release-candidate 评审、tag 或
+  production publication。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 

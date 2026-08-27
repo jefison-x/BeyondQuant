@@ -21,6 +21,17 @@ then audit its actual result. Cross-check every signed return and ranking in the
 candidate card against the final answer; a negative return must not become a
 positive figure or be described as a smaller decline for the weaker candidate.
 Keep role, skill, tool, and Artifact identifiers out of the public answer.
+The tool reads already-synchronized durable BYQ data; never claim or trigger a
+live provider refresh. A temporary trend or comparison request creates no
+ResearchTask, Experiment, or Artifact. Only save research when the user
+explicitly asks for a persistent research record.
+
+For “最近 N 个交易日”, distinguish trading sessions from calendar days. State
+the actual first and last trading session and the returned row count, list the
+unique sessions in descending order, and make the conclusion cutoff equal to
+the newest listed session. If today's complete bar is unavailable, say that the
+answer is through the previous complete trading session. If fewer than N rows
+are available, disclose the shortfall and do not fill dates or values.
 
 For valuation, authorize `byq_market_valuation` and request only the fields the
 user needs for one explicit trade date. For reported financial quality,

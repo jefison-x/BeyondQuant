@@ -223,6 +223,77 @@ class MarketDataStore(PgStoreMixin):
             result.append(item)
         return result
 
+    def research_daily(self, request: object) -> dict[str, Any]:
+        """Read one bounded durable series without a provider fallback."""
+        normalized = request.normalized()
+        start = normalized.trade_date or normalized.start_date
+        end = normalized.trade_date or normalized.end_date
+        assert start is not None and end is not None
+        params: dict[str, Any] = {"start": start, "end": end}
+        symbol_clause = ""
+        if normalized.ts_code:
+            symbol_clause = " AND symbol=:symbol"
+            params["symbol"] = normalized.ts_code
+        rows = self._execute(
+            f"""SELECT symbol,trade_date,open,high,low,close,pre_close,volume,amount,
+                       data_source,content_sha256,provenance_json
+                FROM market_daily_bars
+                WHERE trade_date BETWEEN :start AND :end{symbol_clause}
+                  AND data_source='tushare'
+                ORDER BY trade_date,symbol LIMIT 6001""",
+            params,
+        )
+        if len(rows) > 6000:
+            raise ValueError("daily research result exceeds 6000 rows")
+        sessions = [str(row["trade_date"]) for row in self._execute(
+            """SELECT trade_date FROM market_trading_sessions
+               WHERE is_open=TRUE AND trade_date BETWEEN :start AND :end ORDER BY trade_date""",
+            {"start": start, "end": end},
+        )]
+        statuses = self._execute(
+            f"""SELECT symbol,trade_date,is_suspended FROM market_daily_status
+                WHERE trade_date BETWEEN :start AND :end{symbol_clause}""",
+            params,
+        )
+        status_map = {(str(row["symbol"]), str(row["trade_date"])): bool(row["is_suspended"]) for row in statuses}
+        symbols = [normalized.ts_code] if normalized.ts_code else sorted({str(row["symbol"]) for row in rows})
+        bar_keys = {(str(row["symbol"]), str(row["trade_date"])) for row in rows}
+        missing: list[dict[str, str]] = []
+        for symbol in symbols:
+            if symbol is None:
+                continue
+            for trade_date in sessions:
+                if (symbol, trade_date) in bar_keys or status_map.get((symbol, trade_date)) is True:
+                    continue
+                missing.append({"symbol": symbol, "trade_date": trade_date, "reason": "daily_bar_unavailable"})
+        data: list[dict[str, Any]] = []
+        for row in rows:
+            pre_close = row.get("pre_close")
+            change = None if pre_close is None else float(row["close"]) - float(pre_close)
+            pct_chg = None if pre_close in {None, 0} else change / float(pre_close) * 100
+            data.append({
+                "ts_code": str(row["symbol"]), "trade_date": str(row["trade_date"]),
+                "open": row["open"], "high": row["high"], "low": row["low"], "close": row["close"],
+                "pre_close": pre_close, "change": change, "pct_chg": pct_chg,
+                "vol": row.get("volume"), "amount": row.get("amount"),
+                "content_sha256": str(row["content_sha256"]),
+            })
+        latest = max((str(row["trade_date"]) for row in rows), default=None)
+        return {
+            "schema_version": "market-daily-research.v1",
+            "data": data,
+            "provenance": {
+                "source": "persisted_byq", "provider": "tushare", "endpoint": "durable_daily",
+                "requested_start_date": start, "requested_end_date": end,
+                "latest_trade_date": latest, "row_count": len(data), "live_provider_called": False,
+            },
+            "coverage": {
+                "usable": bool(sessions) and not missing,
+                "calendar_verified": bool(sessions), "requested_sessions": sessions,
+                "returned_rows": len(data), "missing": missing[:200],
+            },
+        }
+
     def coverage(self) -> dict[str, Any]:
         rows = self._execute(
             """SELECT data_source, asset_type, COUNT(*) AS row_count, MIN(trade_date) AS date_min,

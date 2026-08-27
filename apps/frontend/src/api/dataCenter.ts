@@ -1,4 +1,4 @@
-import type { DataCenterStatus, DataSyncJob, MarketSyncAutomationConfig, SecurityCataloguePage, SecurityMasterSyncJob } from "./types";
+import type { DataCenterStatus, DataReadinessResult, DataSyncJob, MarketSyncAutomationConfig, SecurityCataloguePage, SecurityMasterSyncJob } from "./types";
 
 const ROOT = "/api/product/data-center";
 
@@ -20,6 +20,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export function getDataCenterStatus(): Promise<DataCenterStatus> {
   return request("/status");
+}
+
+export function queryDataReadiness(payload: {
+  symbols: string[]; start_date: string; end_date: string; use_case: "research" | "backtest";
+}): Promise<DataReadinessResult> {
+  return request("/readiness", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export function createDataSourceCredential(payload: Record<string, unknown>): Promise<{ credential: Record<string, unknown> }> {

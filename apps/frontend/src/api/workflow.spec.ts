@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foldWorkflowCards, workflowActivities } from "./workflow";
+import { foldWorkflowCards, workflowActivities, workflowRunState } from "./workflow";
 import type { WorkflowTraceEvent } from "./types";
 
 function event(sequence: number, kind: string, payload: Record<string, unknown>): WorkflowTraceEvent {
@@ -46,5 +46,15 @@ describe("workflow projections", () => {
     ]);
     expect(activities).toHaveLength(1);
     expect(JSON.stringify(activities)).not.toContain("hidden");
+  });
+
+  it("derives a replay-safe running state from lifecycle events", () => {
+    expect(workflowRunState([event(3, "session.started", {})]).running).toBe(true);
+    expect(workflowRunState([
+      event(3, "session.started", {}), event(7, "session.result", {}),
+    ]).running).toBe(false);
+    expect(workflowRunState([
+      event(3, "session.started", {}), event(7, "session.cancelled", {}), event(9, "session.started", {}),
+    ]).running).toBe(true);
   });
 });

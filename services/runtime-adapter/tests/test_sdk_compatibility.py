@@ -61,3 +61,8 @@ def test_product_research_skill_requires_evidence_bound_public_answers() -> None
     assert "Do not write a preface" in role_contract
     assert "unqueried or unavailable profitability" in role_contract
     assert "cause is not established by the available data" in market_contract
+    assert "performs no domain write" in role_contract
+    assert "It creates no ResearchTask" in role_contract
+    assert "temporary trend or comparison request creates no" in market_contract
+    assert "最近 N 个交易日" in market_contract
+    assert "newest listed session" in market_contract

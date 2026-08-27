@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { ElMessage } from "element-plus";
 import {
   createPaperAccount, exportPaperAccount, getPaperAccount, getPaperControls,
@@ -12,6 +13,7 @@ import type { PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSn
 import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
+const route = useRoute();
 const loading = ref(true);
 const busy = ref("");
 const error = ref("");
@@ -99,6 +101,9 @@ async function loadAccounts(preferredId?: string) {
     const [accountBody, poolBody] = await Promise.all([listPaperAccounts(auth.token), listStockPools(auth.token)]);
     accounts.value = accountBody.accounts as PaperAccount[];
     pools.value = poolBody.pools.filter((item) => item.status === "active");
+    const requestedSnapshot = typeof route.query.pool_snapshot === "string" ? route.query.pool_snapshot : "";
+    const requestedPool = pools.value.find((item) => item.current_snapshot_id === requestedSnapshot);
+    if (requestedPool?.pool_id) poolId.value = String(requestedPool.pool_id);
     const next = accounts.value.find((item) => item.account_id === preferredId)
       ?? accounts.value.find((item) => item.account_id === selected.value?.account_id)
       ?? accounts.value[0];
@@ -229,6 +234,8 @@ onMounted(loadAccounts);
     </header>
     <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="top-band" />
+    <el-alert v-if="route.query.from === 'backtest'" title="已从回测带入股票池上下文" type="info" :closable="false" show-icon
+      description="模拟账户与回测相互独立，不会自动执行策略；请确认股票池、价格和数量后再提交模拟订单。" />
 
     <div class="account-layout">
       <el-card shadow="never" class="account-rail">

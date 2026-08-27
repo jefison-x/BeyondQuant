@@ -17,7 +17,7 @@ import {
 import { listArtifacts, listTasks } from "@/api/research";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
-import { statusLabel } from "@/display";
+import { shortReference, statusLabel } from "@/display";
 import EntityPagination from "@/components/ui/EntityPagination.vue";
 import AppStateBlock from "@/components/ui/AppStateBlock.vue";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
@@ -141,7 +141,9 @@ const filteredArtifacts = computed(() =>
     const matchesSearch =
       !search.value ||
       String(row.artifact_id ?? "").includes(search.value) ||
-      String(snapshot?.strategy_id ?? "").includes(search.value);
+      String(snapshot?.strategy_id ?? "").includes(search.value) ||
+      String(snapshot?.name ?? "").includes(search.value) ||
+      String(snapshot?.description ?? "").includes(search.value);
     return matchesKind && matchesSearch;
   }),
 );
@@ -158,6 +160,34 @@ const approval = computed(() => {
 });
 
 const isReadonly = computed(() => selected.value?.kind === "strategy_version");
+const selectedSnapshot = computed(() => {
+  const content = selected.value?.content as Record<string, unknown> | undefined;
+  return (content?.snapshot as Record<string, unknown> | undefined) ?? {};
+});
+const parameterSummary = computed(() => {
+  const value = selectedSnapshot.value.parameters;
+  if (!value || Array.isArray(value) || typeof value !== "object") return "使用默认参数";
+  const entries = Object.entries(value);
+  return entries.length ? entries.map(([key, item]) => `${key}=${String(item)}`).join("；") : "使用默认参数";
+});
+
+function rowSnapshot(row: Record<string, unknown>) {
+  return (((row.content as Record<string, unknown> | undefined)?.snapshot as Record<string, unknown> | undefined) ?? {});
+}
+
+function rowName(row: Record<string, unknown>) {
+  const snapshot = rowSnapshot(row);
+  return String(snapshot.name || snapshot.strategy_id || "未命名策略");
+}
+
+function rowDescription(row: Record<string, unknown>) {
+  return String(rowSnapshot(row).description || "暂无策略说明");
+}
+
+function openBacktest() {
+  const artifact = String(selected.value?.artifact_id ?? "");
+  if (artifact) void router.push({ path: "/backtest", query: { strategy: artifact } });
+}
 
 const selectedStrategyId = computed(() => {
   const content = selected.value?.content as Record<string, unknown> | undefined;
@@ -497,7 +527,7 @@ onMounted(loadList);
           </div>
         </template>
         <div class="list-toolbar">
-          <el-input v-model="search" placeholder="搜索 Artifact ID / 策略 ID" clearable />
+          <el-input v-model="search" placeholder="搜索策略名称、说明或策略编号" clearable />
           <el-radio-group :model-value="lifecycle" size="small" @update:model-value="changeLifecycle">
             <el-radio-button value="active">当前</el-radio-button>
             <el-radio-button value="superseded">已归档</el-radio-button>
@@ -516,8 +546,8 @@ onMounted(loadList);
           highlight-current-row
           @current-change="select"
         >
-          <el-table-column prop="artifact_id" label="Artifact ID" min-width="220" show-overflow-tooltip />
-          <el-table-column prop="kind" label="类型" width="140" />
+          <el-table-column label="策略" min-width="220"><template #default="{ row }"><div class="strategy-identity"><strong>{{ rowName(row) }}</strong><small>{{ rowDescription(row) }}</small></div></template></el-table-column>
+          <el-table-column label="阶段" width="100"><template #default="{ row }">{{ row.kind === "strategy_version" ? "不可变版本" : "可编辑草稿" }}</template></el-table-column>
           <el-table-column label="状态" width="100"><template #default="{ row }">{{ statusLabel(row.status) }}</template></el-table-column>
           <el-table-column label="创建时间" min-width="170">
             <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
@@ -533,7 +563,7 @@ onMounted(loadList);
             @click="select(row)"
           >
             <div class="mobile-card-head">
-              <strong>{{ row.artifact_id }}</strong>
+              <strong>{{ rowName(row) }}</strong>
               <el-tag size="small">{{ row.kind === "strategy_version" ? "版本" : "草稿" }}</el-tag>
             </div>
             <div class="mobile-card-meta">
@@ -554,7 +584,7 @@ onMounted(loadList);
 
       <template #detail>
       <div class="strategy-detail-column">
-        <el-card shadow="never" class="strategy-editor-pane">
+        <el-card v-if="!isReadonly" shadow="never" class="strategy-editor-pane">
           <template #header>
             <div class="panel-heading">
               <div>
@@ -571,7 +601,7 @@ onMounted(loadList);
             </div>
           </template>
           <el-select v-model="taskId" placeholder="研究任务" class="task-select" :disabled="isReadonly">
-            <el-option v-for="task in tasks" :key="String(task.task_id)" :label="String(task.task_id)" :value="String(task.task_id)" />
+            <el-option v-for="task in tasks" :key="String(task.task_id)" :label="String(task.title || task.name || `研究任务 ${shortReference(task.task_id)}`)" :value="String(task.task_id)" />
           </el-select>
           <div class="strategy-meta-grid">
             <el-input v-model="strategyId" placeholder="策略 ID" :disabled="isReadonly" />
@@ -634,20 +664,20 @@ onMounted(loadList);
           <template #header>
             <div class="panel-heading">
               <div>
-                <div class="panel-title">策略详情</div>
-                <div class="panel-sub">{{ selected?.artifact_id ?? "未选择策略" }}</div>
+                <div class="panel-title">{{ selected ? rowName(selected) : "策略详情" }}</div>
+                <div class="panel-sub">{{ selected ? rowDescription(selected) : "请选择策略" }}</div>
               </div>
               <el-button type="primary" :loading="busy === 'export'" :disabled="!selected || selected.kind !== 'strategy_version'" @click="exportVersion">
                 导出版本
               </el-button>
               <el-button
-                type="success"
                 :loading="busy === 'approval'"
                 :disabled="!selected || selected.kind !== 'strategy_version' || Boolean(approval)"
                 @click="approveVersion"
               >
                 {{ approval ? "已批准" : "批准此版本" }}
               </el-button>
+              <el-button type="primary" :disabled="!approval?.execution_authorized" @click="openBacktest">开始回测</el-button>
             </div>
           </template>
           <div v-if="approval" class="approval-banner">
@@ -661,13 +691,13 @@ onMounted(loadList);
             <el-descriptions :column="3" size="small" border>
               <el-descriptions-item label="回测任务数">{{ backtestCount }}</el-descriptions-item>
               <el-descriptions-item label="版本数">{{ versionCount }}</el-descriptions-item>
-              <el-descriptions-item label="策略 ID">{{ selectedStrategyId }}</el-descriptions-item>
+              <el-descriptions-item label="策略编号">{{ selectedStrategyId }}</el-descriptions-item>
+              <el-descriptions-item label="关键参数" :span="3">{{ parameterSummary }}</el-descriptions-item>
             </el-descriptions>
           </div>
           <el-divider v-if="versionHistory.length" content-position="left">版本历史</el-divider>
           <el-table v-if="versionHistory.length" :data="versionHistory" size="small" highlight-current-row @current-change="viewHistoryVersion">
-            <el-table-column prop="artifact_id" label="版本 Artifact" min-width="200" show-overflow-tooltip />
-            <el-table-column prop="version_id" label="Version ID" min-width="160" show-overflow-tooltip />
+            <el-table-column label="版本" min-width="140"><template #default="{ row }">{{ shortReference(row.version_id || row.artifact_id) }}</template></el-table-column>
             <el-table-column label="状态" width="100"><template #default="{ row }">{{ statusLabel(row.status) }}</template></el-table-column>
             <el-table-column label="创建时间" min-width="150">
               <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
@@ -675,7 +705,7 @@ onMounted(loadList);
           </el-table>
           <p v-if="error" class="page-error">{{ error }}</p>
           <el-empty v-else-if="!detail" description="请选择左侧策略" />
-          <pre v-else class="quant-result">{{ JSON.stringify(detail, null, 2) }}</pre>
+          <el-collapse v-else class="technical-details"><el-collapse-item title="技术与审计详情" name="technical"><p>这里保留完整内部编号、策略源码和可复现输入，普通使用无需复制这些内容。</p><pre class="quant-result">{{ JSON.stringify(detail, null, 2) }}</pre></el-collapse-item></el-collapse>
         </el-card>
       </div>
       </template>
@@ -697,6 +727,7 @@ onMounted(loadList);
   gap: 1rem;
   min-width: 0;
 }
+.strategy-identity { display: grid; gap: .2rem; }.strategy-identity small { color: var(--byq-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.technical-details p { color: var(--byq-text-muted); font-size: 12px; }
 
 .panel-heading {
   align-items: center;

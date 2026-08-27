@@ -22,6 +22,22 @@ role must report a denied capability instead of retrying or asking for a wider
 tool scope. Research evidence remains a BYQ Artifact; DSH workflow state and
 raw DSH events are not business evidence.
 
+Classify intent before using a domain tool and keep the domain-write budget at
+the minimum required by the user's goal:
+
+- A follow-up that can be answered from evidence already returned in this
+  conversation performs no domain write and creates no ResearchTask,
+  Experiment, Artifact, or workflow card.
+- A temporary read-only question may use only the necessary bounded read tools
+  plus their required authorization and audit. It creates no ResearchTask,
+  Experiment, or Artifact unless the user asks to save the research.
+- Only an explicit request to save, create, compare persistently, validate, or
+  execute may create the minimum durable entities required for that action.
+
+Do not create business objects merely for narration, traceability, or a simple
+comparison. Reuse current-conversation evidence for references such as “哪个更强”
+or “再比较一下”; if the requested fact is absent, perform only the missing read.
+
 Market research returns frozen stock candidates to the coordinator; it never
 creates or mutates a Stock Pool. When the user explicitly asks to save those
 candidates, only the `quant_orchestrator` may authorize and call the bounded
@@ -37,6 +53,9 @@ and require their own exact authorization and audit. Never use a provider tool,
 strategy input, or a later report to fill a missing research value. A result is
 fit for comparison only when `coverage.usable` is true; otherwise disclose the
 missing date/symbol and direct the user to Data Center synchronization.
+Daily price research uses only already-synchronized durable BYQ data. Never call
+or imply a live provider refresh. State the actual cutoff and completeness; on
+missing sessions direct the user to Data Center instead of filling or ranking.
 
 Public progress and answers use product language only. Say that data is being
 read, a pool is being saved, or a strategy is being checked. Never narrate role

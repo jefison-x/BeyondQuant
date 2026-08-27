@@ -6,7 +6,7 @@ import {
   cancelSession, createAgentSession, getAgentSession, listAgentSessions, resumeSession,
   streamWorkflowEvents, submitTurn, updateAgentSession,
 } from "@/api/agent";
-import { foldWorkflowCards, workflowActivities } from "@/api/workflow";
+import { foldWorkflowCards, workflowActivities, workflowRunState } from "@/api/workflow";
 import type { AgentReplayMessage, AgentSession, WorkflowCardEvent, WorkflowTraceEvent } from "@/api/types";
 import AgentActivityPanel from "@/components/agent/AgentActivityPanel.vue";
 import WorkflowCard from "@/components/agent/WorkflowCard.vue";
@@ -29,13 +29,32 @@ const historyStatus = ref<"active" | "archived">("active");
 const historySearch = ref("");
 const historyItems = ref<AgentSession[]>([]);
 const historyTotal = ref(0);
+const stopping = ref(false);
+const localRunStartedAt = ref("");
+const clock = ref(Date.now());
 const conversationRef = ref<HTMLElement | null>(null);
 const starters = ["筛选一组可研究的股票候选", "起草一个可验证的量化策略", "根据最近回测提出优化建议"];
 let conversationGeneration = 0;
 let streamController: AbortController | null = null;
+let clockTimer: ReturnType<typeof setInterval> | null = null;
 
 const activeSession = computed(() => agent.sessions.find((item) => item.session_id === agent.activeSessionId));
 const activities = computed(() => workflowActivities(agent.events));
+const replayRun = computed(() => workflowRunState(agent.events));
+const activeActivity = computed(() => [...activities.value].reverse().find((item) =>
+  item.payload.state === "started" || item.payload.state === "progress" || item.payload.state === "waiting_approval",
+));
+const runActive = computed(() => replayRun.value.running || Boolean(localRunStartedAt.value));
+const runStartedAt = computed(() => replayRun.value.startedAt || localRunStartedAt.value);
+const elapsedSeconds = computed(() => {
+  const started = Date.parse(runStartedAt.value || "");
+  return Number.isFinite(started) ? Math.max(0, Math.floor((clock.value - started) / 1000)) : 0;
+});
+const elapsedLabel = computed(() => {
+  const minutes = Math.floor(elapsedSeconds.value / 60);
+  const seconds = elapsedSeconds.value % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+});
 const cards = computed(() => foldWorkflowCards(agent.events));
 const timeline = computed(() => [
   ...agent.messages.map((message, index) => ({ type: "message" as const, at: message.createdAt ?? "", key: `message-${index}`, message })),
@@ -63,6 +82,10 @@ function handleEvent(event: WorkflowTraceEvent, generation: number) {
   if (generation !== conversationGeneration || event.session_id !== agent.activeSessionId) return;
   if (agent.events.some((current) => current.sequence === event.sequence)) return;
   agent.addEvent(event);
+  if (["session.result", "session.failed", "session.cancelled", "session.result.discarded"].includes(event.kind)) {
+    localRunStartedAt.value = "";
+    stopping.value = false;
+  }
   if (event.kind === "agent.output.delta" && typeof event.payload.delta === "string") {
     const last = agent.messages[agent.messages.length - 1];
     if (last?.role === "agent") last.text += event.payload.delta;
@@ -140,18 +163,41 @@ function navigateCard(event: WorkflowCardEvent) {
 
 async function send(value = prompt.value) {
   const content = value.trim();
-  if (!content || busy.value) return;
+  if (!content || busy.value || runActive.value) return;
   error.value = ""; busy.value = true;
   try {
     if (!agent.activeSessionId) await createNewSession();
     agent.addMessage({ role: "user", text: content, createdAt: new Date().toISOString() });
+    localRunStartedAt.value = new Date().toISOString();
     await submitTurn(agent.activeSessionId, content, auth.token);
     prompt.value = ""; await refreshCatalog();
-  } catch (exc) { error.value = exc instanceof Error ? exc.message : "发送失败"; }
+  } catch (exc) { localRunStartedAt.value = ""; error.value = exc instanceof Error ? exc.message : "发送失败"; }
   finally { busy.value = false; }
 }
 
+function applyRouteDraft(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return;
+  prompt.value = value.trim().slice(0, 2000);
+}
+
+async function stopCurrentRun() {
+  if (!agent.activeSessionId || stopping.value || !runActive.value) return;
+  stopping.value = true;
+  try {
+    await cancelSession(agent.activeSessionId, "hard", auth.token);
+    await resumeSession(agent.activeSessionId, auth.token);
+    localRunStartedAt.value = "";
+    ElMessage.success("本轮已停止，可以继续提问");
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "停止失败";
+  } finally {
+    stopping.value = false;
+  }
+}
+
 onMounted(async () => {
+  clockTimer = setInterval(() => { clock.value = Date.now(); }, 1000);
+  applyRouteDraft(route.query.draft);
   try {
     await refreshCatalog();
     const requested = typeof route.query.session === "string" ? route.query.session : "";
@@ -166,13 +212,14 @@ onMounted(async () => {
 watch(() => route.query.new, async (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous) await createNewSession(); });
 watch(() => route.query.session, async (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous && value !== agent.activeSessionId) await openSession(value, false); });
 watch(() => route.query.history, async (value) => { if (initialized.value && value) await showHistory(); });
+watch(() => route.query.draft, applyRouteDraft);
 watch(historyOpen, (open) => {
   if (open || !route.query.history) return;
   const { history: _history, ...query } = route.query;
   void router.replace({ path: "/agent", query });
 });
 watch([historyStatus, historySearch], () => { if (historyOpen.value) void loadHistory(); });
-onBeforeUnmount(stopStream);
+onBeforeUnmount(() => { stopStream(); if (clockTimer) clearInterval(clockTimer); });
 </script>
 
 <template>
@@ -184,7 +231,7 @@ onBeforeUnmount(stopStream);
         <el-button text @click="activityOpen = true">活动 <el-badge v-if="activities.length" :value="activities.length" /></el-button>
         <el-dropdown><el-button text>会话操作</el-button><template #dropdown><el-dropdown-menu>
           <el-dropdown-item @click="resumeSession(agent.activeSessionId, auth.token)">恢复运行</el-dropdown-item>
-          <el-dropdown-item @click="cancelSession(agent.activeSessionId, 'soft', auth.token)">取消运行</el-dropdown-item>
+          <el-dropdown-item :disabled="!runActive" @click="stopCurrentRun">停止本轮</el-dropdown-item>
         </el-dropdown-menu></template></el-dropdown>
       </div>
     </header>
@@ -205,9 +252,15 @@ onBeforeUnmount(stopStream);
         </template>
       </div>
     </main>
-    <footer class="composer-wrap"><form class="agent-composer" @submit.prevent="send()">
-      <el-input v-model="prompt" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" placeholder="向小巴描述你的投研问题…" />
-      <div class="composer-footer"><span>关键执行仍需 BYQ 审批</span><el-button type="primary" :loading="busy" @click="send()">发送</el-button></div>
+    <footer class="composer-wrap">
+      <div v-if="runActive" class="run-strip" role="status" aria-live="polite">
+        <div><strong>{{ stopping ? "正在停止" : (activeActivity?.payload.label || "正在处理") }}</strong>
+          <span>已用时 {{ elapsedLabel }} · 复杂研究耗时取决于数据范围</span></div>
+        <el-button type="danger" plain :loading="stopping" @click="stopCurrentRun">停止本轮</el-button>
+      </div>
+      <form class="agent-composer" @submit.prevent="send()">
+      <el-input v-model="prompt" type="textarea" :disabled="runActive" :autosize="{ minRows: 2, maxRows: 6 }" placeholder="向小巴描述你的投研问题…" />
+      <div class="composer-footer"><span>{{ runActive ? "完成或停止后可继续提问" : "关键执行仍需 BYQ 审批" }}</span><el-button type="primary" :loading="busy" :disabled="runActive" @click="send()">发送</el-button></div>
     </form></footer>
     <el-drawer v-model="activityOpen" title="活动与执行上下文" size="min(440px, 92vw)">
       <AgentActivityPanel :activities="activities" />
@@ -244,6 +297,7 @@ onBeforeUnmount(stopStream);
 .starter-grid { display: grid; gap: .65rem; grid-template-columns: repeat(3, 1fr); }.starter-grid button { background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: var(--byq-radius); color: var(--byq-text-muted); cursor: pointer; line-height: 1.5; padding: .85rem; text-align: left; }.starter-grid button:hover { border-color: var(--byq-brand); color: var(--byq-text); }
 .timeline { display: grid; gap: 1.15rem; margin: 0 auto; max-width: 860px; }.conversation-message { display: grid; gap: .7rem; grid-template-columns: 42px minmax(0, 1fr); }.message-author { align-items: center; background: var(--byq-surface-muted); border-radius: 12px; color: var(--byq-text-muted); display: flex; font-size: 11px; font-weight: 850; height: 36px; justify-content: center; width: 36px; }.conversation-message.agent .message-author { background: var(--byq-brand-contrast); color: var(--byq-on-brand); }.message-body { color: var(--byq-text); line-height: 1.75; padding: .35rem 0; white-space: pre-wrap; }.conversation-message.user .message-body { background: var(--byq-brand-soft); border-radius: 16px; justify-self: start; padding: .7rem .9rem; }
 .composer-wrap { background: linear-gradient(transparent, var(--byq-bg) 22%); padding: 1rem max(1rem, calc((100% - 860px) / 2)) 1.2rem; }.agent-composer { background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: 18px; box-shadow: var(--byq-shadow-sm); padding: .7rem; }.agent-composer :deep(.el-textarea__inner) { box-shadow: none; padding: .3rem; resize: none; }.composer-footer { align-items: center; color: var(--byq-text-soft); display: flex; font-size: 10px; justify-content: space-between; padding: .35rem 0 0 .25rem; }
+.run-strip { align-items: center; background: var(--byq-brand-soft); border: 1px solid var(--byq-border); border-radius: 14px; display: flex; justify-content: space-between; margin-bottom: .5rem; padding: .65rem .75rem; }.run-strip > div { display: grid; gap: .15rem; }.run-strip strong { color: var(--byq-text); font-size: 12px; }.run-strip span { color: var(--byq-text-muted); font-size: 10px; }
 .history-tools { display: grid; gap: .75rem; }.history-count { color: var(--byq-text-soft); font-size: 11px; }.history-catalog { display: grid; gap: .55rem; }.history-item { align-items: center; border: 1px solid var(--byq-border-subtle); border-radius: var(--byq-radius-sm); display: flex; padding: .35rem .5rem .35rem .75rem; }.history-item > button { background: transparent; border: 0; cursor: pointer; display: grid; flex: 1; gap: .25rem; min-width: 0; padding: .35rem; text-align: left; }.history-item strong, .history-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.history-item span, .history-item small { color: var(--byq-text-soft); }.conversation-state { margin: 2rem auto; max-width: 860px; }
 @media (max-width: 760px) { .conversation-workspace { height: calc(100dvh - 52px); margin: -.7rem; }.conversation-header { align-items: flex-start; padding: .6rem .7rem; }.conversation-header small { display: none; }.header-actions .el-button:first-child { display: none; }.conversation-canvas { padding: 1.2rem .7rem; }.starter-grid { grid-template-columns: 1fr; }.conversation-message { gap: .4rem; grid-template-columns: 32px minmax(0, 1fr); }.message-author { border-radius: 9px; height: 28px; width: 28px; }.composer-wrap { padding: .75rem .7rem; } }
 </style>

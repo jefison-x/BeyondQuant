@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDataSourceCredential, createDataSyncJob, createSecurityMasterSyncJob, getDataCenterStatus, listSecurities, runMarketSyncNow, testDataSource, updateMarketSyncAutomation } from "./dataCenter";
+import { createDataSourceCredential, createDataSyncJob, createSecurityMasterSyncJob, getDataCenterStatus, listSecurities, queryDataReadiness, runMarketSyncNow, testDataSource, updateMarketSyncAutomation } from "./dataCenter";
 
 describe("data center api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -47,5 +47,27 @@ describe("data center api client", () => {
       "/api/product/data-center/automation/run-now",
     ]);
     expect(fetchMock.mock.calls.every((call) => call[1]?.credentials === "include")).toBe(true);
+  });
+
+  it("checks a bounded task through the Product API without triggering sync", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      schema_version: "data-readiness-product.v1", verdict: "usable",
+      scope: { symbol_count: 1, symbols: ["600036.SH"], start_date: "20260101", end_date: "20260630", use_case: "research" },
+      summary: { required_sessions: 120, ready_items: 120, missing_items: 0, calendar_complete: true },
+      datasets: [], issues: [], issues_truncated: false, checked_against: "persisted_byq",
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await queryDataReadiness({
+      symbols: ["600036.SH"], start_date: "20260101", end_date: "20260630", use_case: "research",
+    });
+
+    expect(result.verdict).toBe("usable");
+    expect(fetchMock).toHaveBeenCalledWith("/api/product/data-center/readiness", expect.objectContaining({
+      method: "POST", credentials: "include",
+    }));
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({
+      symbols: ["600036.SH"], start_date: "20260101", end_date: "20260630", use_case: "research",
+    }));
   });
 });

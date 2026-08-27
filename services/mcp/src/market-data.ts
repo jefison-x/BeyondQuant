@@ -33,25 +33,16 @@ function result(payload: unknown, isError: boolean): ByqMarketDailyResult {
   };
 }
 
-function query(request: MarketDailyRequest): string {
-  const params = new URLSearchParams();
-  for (const key of ["ts_code", "trade_date", "start_date", "end_date"] as const) {
-    const value = request[key];
-    if (value !== undefined) {
-      params.set(key, value);
-    }
-  }
-  const encoded = params.toString();
-  return encoded ? `?${encoded}` : "";
-}
-
 export async function fetchByqMarketDaily(
   backendUrl: string,
   request: MarketDailyRequest,
   fetcher: Fetcher = fetch,
 ): Promise<ByqMarketDailyResult> {
   try {
-    const response = await fetcher(`${backendUrl}/v1/data/daily${query(request)}`, {
+    const response = await fetcher(`${backendUrl}/v1/data/research/daily`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
     let payload: unknown;
@@ -82,7 +73,7 @@ export async function fetchByqMarketDaily(
         {
           service: "beyondquant-mcp",
           status: "error",
-          backend: { status: "data_provider_unavailable", http_status: response.status },
+          backend: { status: "research_data_unavailable", http_status: response.status },
         },
         true,
       );
