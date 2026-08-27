@@ -20,7 +20,7 @@ const router = useRouter();
 const agent = useAgentStore();
 const auth = useAuthStore();
 const activeIndex = computed(() => findActiveNavItem(route.path));
-const recentSessions = computed(() => agent.sessions.slice(0, 8));
+const recentSessions = computed(() => agent.sessions.slice(0, 20));
 
 function navigate(path: string) {
   emit("navigate");
@@ -38,7 +38,6 @@ function showHistory() {
 }
 
 function openSession(sessionId: string) {
-  agent.setActiveSession(sessionId);
   emit("navigate");
   void router.push({ path: "/agent", query: { session: sessionId } });
 }
@@ -116,7 +115,10 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
       </nav>
 
       <section v-if="!props.isCollapsed" class="sidebar-history" aria-labelledby="conversation-heading">
-        <div id="conversation-heading" class="history-heading">投研对话</div>
+        <div class="history-heading-row">
+          <div id="conversation-heading" class="history-heading">投研对话</div>
+          <button type="button" class="history-link" @click="showHistory">历史</button>
+        </div>
         <p v-if="!recentSessions.length" class="history-empty">开始一次投研后，会话会显示在这里</p>
         <div v-else class="history-list">
           <div
@@ -140,9 +142,6 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
             </el-dropdown>
           </div>
         </div>
-        <button type="button" class="view-all-conversations" @click="showHistory">
-          查看全部
-        </button>
       </section>
     </div>
 
@@ -172,18 +171,20 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
 .nav-row:focus-visible, .new-conversation:focus-visible, .history-row:focus-visible { outline: 2px solid var(--byq-brand-contrast); outline-offset: 2px; }
 .new-conversation .el-icon, .nav-row .el-icon { flex: 0 0 auto; font-size: 17px; }
 .collapsed .new-conversation, .collapsed .nav-row { justify-content: center; padding: 0; }
-.sidebar-history { border-top: 1px solid var(--byq-border-subtle); margin-top: .75rem; padding: .75rem .2rem 0; }
-.history-heading { color: var(--byq-text-soft); font-size: 11px; font-weight: 850; letter-spacing: .04em; padding: 0 .55rem .35rem; text-transform: uppercase; }
+.sidebar-history { border-top: 1px solid var(--byq-border-subtle); display: flex; flex-direction: column; margin-top: .75rem; min-height: 0; padding: .75rem .2rem 0; }
+.history-heading-row { align-items: center; display: flex; justify-content: space-between; padding: 0 .35rem .35rem .55rem; }
+.history-heading { color: var(--byq-text-soft); font-size: 11px; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+.history-link { background: transparent; border: 0; border-radius: var(--byq-radius-sm); color: var(--byq-brand-contrast); cursor: pointer; font: inherit; font-size: 11px; font-weight: 750; padding: .25rem .35rem; }
+.history-link:hover { background: var(--byq-brand-soft); }
+.history-link:focus-visible { outline: 2px solid var(--byq-brand-contrast); outline-offset: 2px; }
 .history-empty { color: var(--byq-text-soft); font-size: 11px; line-height: 1.45; margin: .2rem .55rem; }
+.history-list { max-height: min(44vh, 420px); overflow-y: auto; overscroll-behavior: contain; padding-right: .1rem; scrollbar-gutter: stable; }
 .history-row { align-items: center; background: transparent; border-radius: var(--byq-radius-sm); color: var(--byq-text-muted); cursor: pointer; display: flex; font-size: 12px; gap: .5rem; overflow: hidden; padding: .5rem .55rem; }
 .history-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-row .el-icon { flex: 0 0 auto; }
 .history-row:hover, .history-row.active { background: var(--byq-surface-muted); color: var(--byq-text); }
 .history-more { background: transparent; border: 0; color: inherit; cursor: pointer; font-weight: 800; opacity: 0; padding: 0 .2rem; }
 .history-row:hover .history-more, .history-more:focus-visible { opacity: 1; }
-.view-all-conversations { background: transparent; border: 0; border-radius: var(--byq-radius-sm); color: var(--byq-text-soft); cursor: pointer; font-size: 11px; margin-top: .35rem; padding: .45rem .55rem; text-align: left; width: 100%; }
-.view-all-conversations:hover { background: var(--byq-surface-muted); color: var(--byq-text); }
-.view-all-conversations:focus-visible { outline: 2px solid var(--byq-brand-contrast); outline-offset: 2px; }
 .sidebar-user-bar { border-top: 1px solid var(--byq-border-subtle); margin-top: auto; padding: .55rem; }
 .sidebar-user-menu { min-width: 0; }
 @media (prefers-reduced-motion: reduce) { .app-sidebar { transition: none; } }

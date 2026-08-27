@@ -210,7 +210,7 @@ onMounted(async () => {
   finally { initialized.value = true; }
 });
 watch(() => route.query.new, async (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous) await createNewSession(); });
-watch(() => route.query.session, async (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous && value !== agent.activeSessionId) await openSession(value, false); });
+watch(() => route.query.session, async (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous) await openSession(value, false); });
 watch(() => route.query.history, async (value) => { if (initialized.value && value) await showHistory(); });
 watch(() => route.query.draft, applyRouteDraft);
 watch(historyOpen, (open) => {
@@ -227,12 +227,7 @@ onBeforeUnmount(() => { stopStream(); if (clockTimer) clearInterval(clockTimer);
     <header class="conversation-header">
       <div><strong>{{ activeSession?.title || "小巴投研对话" }}</strong><small>BYQ 规范化工作流 · 持久会话</small></div>
       <div class="header-actions">
-        <el-button text @click="showHistory">历史</el-button>
         <el-button text @click="activityOpen = true">活动 <el-badge v-if="activities.length" :value="activities.length" /></el-button>
-        <el-dropdown><el-button text>会话操作</el-button><template #dropdown><el-dropdown-menu>
-          <el-dropdown-item @click="resumeSession(agent.activeSessionId, auth.token)">恢复运行</el-dropdown-item>
-          <el-dropdown-item :disabled="!runActive" @click="stopCurrentRun">停止本轮</el-dropdown-item>
-        </el-dropdown-menu></template></el-dropdown>
       </div>
     </header>
     <p v-if="error" class="page-error">{{ error }}</p>
