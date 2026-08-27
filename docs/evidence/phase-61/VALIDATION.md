@@ -45,7 +45,7 @@ Date: 2026-08-27 (Asia/Shanghai)
 
 - Architecture: 50 passed.
 - Backend: 169 passed, 1 skipped.
-- Gateway: 60 passed after the browser-number manifest regression test was added.
+- Gateway: 61 passed after the browser-number manifest and unauthenticated Product error-projection regressions were added.
 - MCP: full contract suite passed; real persisted-market contract passed.
 - Runtime Adapter/DSH static compatibility: 34 passed.
 - Frontend: 34 files, 83 tests passed; production TypeScript/Vite build passed.
@@ -80,6 +80,19 @@ Maintainer-authorized real DeepSeek continuous research scenario:
 
 The bootstrap `/api/auth/me` 401 before login is expected and was excluded only after login; it was not classified as a product failure. The Vite build still reports the pre-existing large-chunk warning (Backtest and shared Element Plus bundles); this is a P3 performance optimization, not an acceptance blocker.
 
-## Explicitly pending
+## Production cutover
 
-Production cutover was explicitly authorized after the clean restore and model evidence completed. Until the cutover verification is appended, the live `beyondquant-postgres-1` remains exited, the original damaged volume remains unchanged, and the isolated clean restore is evidence rather than a production switch.
+- Cutover was explicitly authorized and completed on 2026-08-27 (Asia/Shanghai).
+- Production URL: `http://127.0.0.1`; Gateway: `http://127.0.0.1:8100`.
+- `beyondquant-postgres-1` exclusively mounts `byq-postgres-production-recovered-20260827`.
+- The recovered PostgreSQL volume is declared external so `docker compose down -v` cannot delete it.
+- The original damaged `byq_postgres_data` volume remains unmounted, unchanged, and retained with all archives.
+- All nine production services/workers are running; every healthchecked service is healthy.
+- Production counts remain `127326 / 4 / 34 / 5 / 8` for bars/users/conversations/backtests/paper accounts.
+- Frontend HTTP, Gateway health, and Product Token health returned 200.
+- An unauthenticated admin endpoint initially returned 500 because `ProductAuthError` was not projected. The
+  global mapping and regression test now return the correct 401; this was recorded as `BQ-UX-018` P2.
+- An existing valid admin session through Frontend→Gateway returned operations 200 and historical backtest result 200.
+- Historical result object `8d964f...f7603837423` has size 2220 bytes and its file SHA-256 equals the DB reference.
+- Real Chromium opened `/settings/system/database` with zero Console errors or HTTP 5xx:
+  [production recovery](screenshots/07-production-recovery.png).

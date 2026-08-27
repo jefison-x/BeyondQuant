@@ -14,9 +14,10 @@ P2 8、P3 3。Phase 58–60 已关闭 4 项、部分改善 4 项；Phase 61 依�
 后缺少自然下一步。
 
 Phase 61 的目标不是新增功能数量，而是让这些已实现能力形成一个可信的普通用户闭环。整改
-期间又发现 1 个 P0 运维安全问题、2 个 P1 问题和 1 个 P2 真实资产导入问题，
-累计 18 项（P0 1、P1 5、P2 9、P3 3）。新增 P1/P2 已修复并经真实浏览器复验；P0 的代码
-防线和干净恢复演练已完成，生产切换已获授权、正在执行，因此尚不能宣称最终接受。
+期间又发现 1 个 P0 运维安全问题、2 个 P1 问题和 2 个 P2 问题，
+累计 19 项（P0 1、P1 5、P2 10、P3 3）。P0/P1/P2 已完成整改和对应层级复验；正式服务已
+切换到全新恢复卷，原损坏卷与备份保留。BeyondQuant 现在具备普通用户可用的首版产品闭环，
+剩余 P3 与策略自动执行等产品深化项不阻断本轮接受。
 
 ## 2. Environment
 
@@ -24,7 +25,7 @@ Phase 61 的目标不是新增功能数量，而是让这些已实现能力形�
 - Phase 61 base：`origin/main`（Phase 60 merge 后同步建立 isolated worktree）
 - Branch：`phase/61-user-experience-closure`
 - Runtime：DeepSeek Harness SDK/runtime `0.1.1rc1`，npm `0.1.1-rc.1`
-- Product URL：线上原 URL 当前因 PostgreSQL 事件不可用；隔离复验 URL `http://127.0.0.1:18081`
+- Product URL：正式 `http://127.0.0.1`；隔离复验 `http://127.0.0.1:18081`
 - Browser：真实 Chromium + Playwright request/response/Console/Trace；当前 Codex 未提供稳定 Chrome MCP 会话
 - Data Provider：Tushare；普通 Agent/回测只读 BYQ PostgreSQL 已同步数据
 - Workspace：`/home/jefison/projects/BeyondQuant/.byq-worktrees/phase61-user-experience-closure`
@@ -156,12 +157,19 @@ WAL 检查点损坏。已经完成：
 - 核心只读数量：127,326 日线、4 用户、34 会话、5 回测、8 模拟账户；
 - 原损坏卷保持未重置 WAL，恢复副本只连接隔离测试网络。
 
-正式恢复 Product 网络需要维护者对恢复副本切换或干净新卷重建作明确批准。
+维护者授权后，正式 `beyondquant` 项目已切换到全新恢复卷
+`byq-postgres-production-recovered-20260827`；该卷声明为 external，避免 `down -v` 删除。
+九个正式服务/worker 全部健康，原损坏卷 `byq_postgres_data` 未挂载、未重置、未删除。
 
 另完成全新卷逻辑 restore drill，五项业务数量与恢复源一致；并确认 PostgreSQL dump 不包含
 不可变回测结果对象。Domain 对象卷已另行只读归档（16KB，SHA-256
 `e02bc60f8418c68757fb80d1afbef13ea9f75f7bc42d56c22f7f7d543c049285`），只读挂载后历史回测
 result 从 503 恢复为 200。这是恢复集合边界，不是修改历史结果。
+
+正式切换复验：前端 HTTP 200、Gateway health 200、Product Token health 200；无 Cookie 管理
+请求由错误的 500 修正为 401。既有有效 admin 会话经正式 Frontend→Gateway 路径读取运维投影
+200、历史回测结果 200；结果对象 SHA 与 DB 引用一致。真实 Chromium 打开数据库页无 Console
+error 或 HTTP 5xx，证据见 `screenshots/07-production-recovery.png`。
 
 ## 11. Defect List
 
@@ -181,15 +189,16 @@ result 从 503 恢复为 200。这是恢复集合边界，不是修改历史结�
 | BQ-UX-012 | UX/Terminology | P3 | 中英文和工程术语混杂 | 核心 Strategy/Backtest/Data/Agent 已收口，待扫描 |
 | BQ-UX-013 | Accessibility/Login | P3 | 无 label/name/autocomplete | 单测关闭 |
 | BQ-UX-014 | Quant communication | P3 | 最近窗口与最新日表达含混 | 真实模型披露起止、5 行和截止日，已关闭 |
-| BQ-UX-015 | Functional/Asset Import | P2 | Browser JSON round-trip 把 `10.0` 写为 `10`，manifest digest 失配，真实资产导入 422 | 已使用带算法标识的数值语义 digest 修复；legacy 无标识 bundle 保持旧校验；Gateway 60 tests + 真实浏览器关闭 |
+| BQ-UX-015 | Functional/Asset Import | P2 | Browser JSON round-trip 把 `10.0` 写为 `10`，manifest digest 失配，真实资产导入 422 | 已使用带算法标识的数值语义 digest 修复；legacy 无标识 bundle 保持旧校验；Gateway suite + 真实浏览器关闭 |
 | BQ-UX-016 | Interaction/Cross-workflow | P1 | 未批准策略的批准按钮在主题下白底白字，用户看不到进入回测的必要下一步 | 按钮改为可见次级动作；真实“批准→开始回测→预选对话框”关闭 |
 | BQ-UX-017 | Quant Agent Bug | P1 | 模型把首末收盘箭头与首日前收盘口径的累计收益混用，数值标签会误导投资判断 | skill 明确两种公式和标签、禁止混用；静态契约和真实 DeepSeek 连续场景关闭 |
+| BQ-UX-018 | Error Handling | P2 | 无 Cookie 访问管理员 Product API 时认证异常未映射，返回 HTTP 500 而非 401 | Gateway 增加统一 ProductAuthError 投影；Gateway 61 tests + 正式 API 401 复验关闭 |
 
 新增环境问题：
 
 | ID | 类型 | 级别 | 实际结果 | 建议修复方向 |
 |---|---|---:|---|---|
-| BQ-OPS-001 | Deployment/Data Safety | P0 | 多 Compose project 复用固定 PostgreSQL 卷名，可导致两个 postgres 进程并发挂载和 WAL 损坏 | 代码已改为 project-scoped 默认并通过双 project 解析；DB + Domain object backup/clean restore drill 通过；生产切换仍待明确授权，故 P0 尚不能关闭。 |
+| BQ-OPS-001 | Deployment/Data Safety | P0 | 多 Compose project 复用固定 PostgreSQL 卷名，可导致两个 postgres 进程并发挂载和 WAL 损坏 | project-scoped 默认、external 恢复卷、DB + Domain 联合备份/恢复演练和正式切换全部通过；原卷封存，已关闭。 |
 
 ## 12. Product-Level Findings
 
@@ -222,11 +231,11 @@ result 从 503 恢复为 200。这是恢复集合边界，不是修改历史结�
 
 首轮：不建议宣称“普通用户可用”，建议进入整改。
 
-Phase 61 当前为“代码整改与模型验收完成、生产恢复接受挂起”。已通过 Architecture 50、Backend 169、
-Gateway 60、MCP 全套与真实持久行情、Runtime 34、Frontend 83/build、真实 Product 3 条，以及
-Phase 61 浏览器 3 条（其中一条为真实模型连续对话）。仍必须完成一项门槛：
+Phase 61 最终接受。已通过 Architecture 50、Backend 169、Gateway 61、MCP 全套与真实持久行情、
+Runtime 34、Frontend 83/build、Mock Playwright 15、真实 Product 3 条，以及 Phase 61 浏览器 3 条
+（其中一条为真实模型连续对话）。正式恢复后又通过九服务健康、业务数量、结果对象 SHA、
+Product API、既有历史回测与真实 Chromium 管理页复验。
 
-1. 用全新已验证卷切换生产 PostgreSQL，并确认 Product 全栈、历史回测对象和备份。
-
-在生产恢复完成前，BeyondQuant 仍不应被宣称为线上“普通用户可用”；隔离环境已证明核心 UX
-整改方向和大部分真实旅程有效，但线上数据库不可用本身就是 P0 接受阻断。
+结论：BeyondQuant 已不只是“功能已经实现”，而是具备普通投资者可使用的首版量化研究产品
+体验。仍建议进入下一轮 P3 优化和更完整的研究→策略→模拟执行产品设计，但这些不再是本轮
+普通用户可用性的接受阻断。

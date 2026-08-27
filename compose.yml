@@ -254,6 +254,7 @@ networks:
 volumes:
   byq_postgres_data:
     name: ${BYQ_POSTGRES_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-postgres-data}
+    external: ${BYQ_POSTGRES_VOLUME_EXTERNAL:-false}
   byq_domain_state:
     name: ${BYQ_DOMAIN_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-domain-state}
   byq_dsh_sessions:

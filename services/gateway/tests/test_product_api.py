@@ -106,6 +106,21 @@ def test_operations_projection_is_admin_only_and_aggregates_normalized_runtime(m
     assert denied.json()["error"]["code"] == "product_forbidden"
 
 
+def test_operations_status_without_browser_session_returns_401(monkeypatch) -> None:
+    def missing_session(_request):
+        raise product_api.ProductAuthError(
+            401,
+            "product_authentication_required",
+            "product authentication required",
+        )
+
+    monkeypatch.setattr(product_api, "resolve_user", missing_session)
+    response = TestClient(main.app).get("/api/product/operations/status")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "product_authentication_required"
+
+
 def test_operations_budget_update_forwards_only_admin_actor_context(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

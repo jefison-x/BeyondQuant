@@ -46,6 +46,20 @@ async def product_error_handler(request: Request, exc: ProductError) -> JSONResp
     )
 
 
+@app.exception_handler(ProductAuthError)
+async def product_auth_error_handler(request: Request, exc: ProductAuthError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": exc.code,
+                "message": exc.message,
+                "request_id": uuid.uuid4().hex,
+            }
+        },
+    )
+
+
 class RuntimeSessionRequest(BaseModel):
     session_id: str
     trace_id: str

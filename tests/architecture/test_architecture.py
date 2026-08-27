@@ -550,6 +550,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "BYQ_GATEWAY_BIND",
             "BYQ_PRODUCT_NETWORK_NAME",
             "BYQ_POSTGRES_VOLUME_NAME",
+            "BYQ_POSTGRES_VOLUME_EXTERNAL",
             "BYQ_DOMAIN_VOLUME_NAME",
             "BYQ_DSH_SESSIONS_VOLUME_NAME",
             "BYQ_WORKFLOW_TRACES_VOLUME_NAME",
