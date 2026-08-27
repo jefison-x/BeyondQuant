@@ -254,6 +254,8 @@ test("selecting a recent conversation loads its replay without refreshing the pa
 
   await login(page);
   await expect(page.getByText("分析银行板块")).toBeVisible();
+  await expect(page.locator(".history-row").first()).toHaveCSS("font-size", "14px");
+  await expect(page.getByRole("button", { name: "历史", exact: true })).toHaveCSS("font-size", "12px");
   await page.getByText("红利策略研究", { exact: true }).click();
   await expect(page).toHaveURL(/\/agent\?session=session-2$/);
   await expect(page.getByText("分析红利策略")).toBeVisible();
