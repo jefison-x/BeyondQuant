@@ -163,7 +163,7 @@ test("authenticated dashboard shows resource cards", async ({ page }) => {
   );
   await login(page);
   await page.goto("/dashboard");
-  await expect(page.getByText("Backend", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("核心服务", { exact: true }).first()).toBeVisible();
 });
 
 test("agent workbench renders a normalized BYQ workflow surface", async ({ page }) => {
@@ -408,8 +408,8 @@ test("my space pages render profile, models, assets, and agent policy", async ({
   await expect(page.getByRole("heading", { name: "模型配置" })).toBeVisible();
   await expect(page.getByRole("button", { name: "添加凭据" })).toBeVisible();
 
-  await openNav(page, "Agent 策略");
-  await expect(page.getByRole("heading", { name: "Agent 策略" })).toBeVisible();
+  await openNav(page, "智能助手偏好");
+  await expect(page.getByRole("heading", { name: "智能助手偏好" })).toBeVisible();
   await expect(page.getByRole("button", { name: "保存" })).toBeVisible();
   await expect(page.getByRole("button", { name: "新建规则" })).toBeVisible();
 

@@ -2,7 +2,15 @@ import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ setOption: vi.fn(), dispose: vi.fn() }));
-vi.mock("echarts", () => ({ init: vi.fn(() => ({ setOption: mocks.setOption, clear: vi.fn(), resize: vi.fn(), dispose: mocks.dispose })) }));
+vi.mock("echarts/core", () => ({
+  use: vi.fn(),
+  init: vi.fn(() => ({ setOption: mocks.setOption, clear: vi.fn(), resize: vi.fn(), dispose: mocks.dispose })),
+}));
+vi.mock("echarts/charts", () => ({ LineChart: {} }));
+vi.mock("echarts/components", () => ({
+  AriaComponent: {}, GridComponent: {}, LegendComponent: {}, TitleComponent: {}, TooltipComponent: {},
+}));
+vi.mock("echarts/renderers", () => ({ CanvasRenderer: {} }));
 
 import ChartWrapper from "./ChartWrapper.vue";
 

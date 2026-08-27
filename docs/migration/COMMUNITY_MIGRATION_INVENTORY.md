@@ -865,6 +865,22 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+## Phase 62 user-experience polish pre-implementation audit
+
+The read-only Community Data Sync, Stock Pool dialog/view and Vite configuration
+were inspected before accepting ADR-0035.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 62 disposition |
+|---|---|---|---|
+| Data Sync stock-pool selector | A user should select an existing research scope instead of copying symbols. | `PORT_UX` / `REFACTOR` | Resolve owner-scoped BYQ pool snapshots through Product API and enforce the existing 20-symbol readiness bound. |
+| Data Sync hardcoded pools, TODO API and static 50% success progress | No truthful product behavior. | `DROP` | Use persisted BYQ jobs/readiness only; never display fake progress or fake results. |
+| Stock Pool candidate/final-list interaction | Selecting a bounded subset from a larger pool is understandable. | `REFERENCE_ONLY` | Use a compact multi-select for readiness; do not copy the Community dialog or filtering domain. |
+| Community Vite configuration | No reusable chunking strategy. | `REFERENCE_ONLY` / `REPLACE` | Use ECharts official modular entry points and prove output size in the BYQ Vite 8 build. |
+| Legacy direct APIs/providers and prohibited runtime/engine paths | No compatible architecture boundary. | `DROP` | Browser remains on Gateway/Product API; no PydanticAI, Hermes, BaoStock, AKShare or VectorBT. |
+
+No Community source, data, credential, runtime or Git history was modified or copied.
+
+
 ## Phase 61 real-user journey closure pre-implementation audit
 
 The read-only Community Login, AgentThinking/Xiaoba drawer, Strategy, Backtest,

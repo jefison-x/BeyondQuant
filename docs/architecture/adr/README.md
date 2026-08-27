@@ -50,3 +50,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   control activity 的投影边界。
 - ADR-0034 定义真实用户旅程关闭阶段的持久化 Agent 日线读取、面向任务的数据 readiness、
   长任务公开状态、用户任务导向页面和受控跨页面上下文边界。
+- ADR-0035 定义普通用户 P3 收口：股票池驱动的有界 readiness、普通页面术语层级和
+  ECharts 模块化加载；不扩大 domain/runtime 边界。

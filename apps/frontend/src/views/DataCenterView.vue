@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { getStockPool, listStockPools } from "@/api/paper";
 import {
   createDataSourceCredential,
   createSecurityMasterSyncJob,
@@ -22,6 +23,10 @@ import type {
   SecurityCataloguePage,
   SecurityMasterSyncJob,
 } from "@/api/types";
+import { useAuthStore } from "@/stores/auth";
+import { boundedReadinessSymbols, stockPoolSymbols } from "@/readinessInputs";
+
+const auth = useAuthStore();
 
 const loading = ref(true);
 const busy = ref(false);
@@ -49,6 +54,11 @@ const cataloguePage = ref(1);
 const cataloguePageSize = 50;
 const readinessBusy = ref(false);
 const readinessResult = ref<DataReadinessResult | null>(null);
+const readinessPools = ref<Array<Record<string, unknown>>>([]);
+const readinessPoolId = ref("");
+const readinessPoolMembers = ref<string[]>([]);
+const readinessSelectedMembers = ref<string[]>([]);
+const readinessPoolBusy = ref(false);
 const readinessForm = reactive({
   symbols: "000001.SZ,600036.SH", start_date: "20260101",
   end_date: new Date().toISOString().slice(0, 10).replaceAll("-", ""),
@@ -99,7 +109,49 @@ async function load() {
   }
 }
 
-onMounted(load);
+onMounted(async () => {
+  await Promise.all([load(), loadReadinessPools()]);
+});
+
+async function loadReadinessPools() {
+  try {
+    readinessPools.value = (await listStockPools(auth.token)).pools
+      .filter((pool) => pool.status !== "deleted");
+  } catch {
+    readinessPools.value = [];
+  }
+}
+
+async function selectReadinessPool(poolId: string) {
+  readinessPoolId.value = poolId;
+  readinessPoolMembers.value = [];
+  readinessSelectedMembers.value = [];
+  readinessResult.value = null;
+  if (!poolId) return;
+  readinessPoolBusy.value = true;
+  try {
+    const { pool } = await getStockPool(poolId, auth.token);
+    const symbols = stockPoolSymbols(pool);
+    readinessPoolMembers.value = symbols;
+    readinessSelectedMembers.value = boundedReadinessSymbols(symbols);
+    readinessForm.symbols = readinessSelectedMembers.value.join(",");
+    if (symbols.length > 20) {
+      ElMessage.info(`该股票池有 ${symbols.length} 只股票；单次最多检查 20 只，请在下方选择范围。`);
+    } else if (!symbols.length) {
+      ElMessage.warning("该股票池当前没有可检查的成分股");
+    }
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "读取股票池成分失败");
+  } finally {
+    readinessPoolBusy.value = false;
+  }
+}
+
+function updateReadinessMembers(symbols: string[]) {
+  readinessSelectedMembers.value = symbols;
+  readinessForm.symbols = symbols.join(",");
+  readinessResult.value = null;
+}
 
 function openCredential(item: DataSourceCredential | null = null) {
   editingCredential.value = item;
@@ -415,6 +467,40 @@ function securityStatusLabel(value: string) {
           <el-card shadow="never" class="readiness-card">
             <template #header><div><strong>这批数据现在能用吗？</strong><p>按股票、日期和用途检查已同步数据；小巴研究和回测都使用这里的持久数据，不会临时向数据源取数。</p></div></template>
             <el-form label-position="top">
+              <div class="readiness-pool-row">
+                <el-form-item label="从已有股票池选择（可选）">
+                  <el-select
+                    :model-value="readinessPoolId"
+                    aria-label="选择数据可用性股票池"
+                    clearable
+                    filterable
+                    :loading="readinessPoolBusy"
+                    placeholder="选择股票池后自动带入成分股"
+                    @update:model-value="selectReadinessPool"
+                  >
+                    <el-option
+                      v-for="pool in readinessPools"
+                      :key="String(pool.pool_id)"
+                      :label="`${String(pool.name ?? '未命名股票池')}（${Number(pool.member_count ?? 0)} 只）`"
+                      :value="String(pool.pool_id)"
+                    />
+                  </el-select>
+                </el-form-item>
+                <el-form-item v-if="readinessPoolMembers.length" label="本次检查成分（最多 20 只）">
+                  <el-select
+                    :model-value="readinessSelectedMembers"
+                    aria-label="选择本次检查成分"
+                    multiple
+                    filterable
+                    collapse-tags
+                    collapse-tags-tooltip
+                    :multiple-limit="20"
+                    @update:model-value="updateReadinessMembers"
+                  >
+                    <el-option v-for="symbol in readinessPoolMembers" :key="symbol" :label="symbol" :value="symbol" />
+                  </el-select>
+                </el-form-item>
+              </div>
               <div class="readiness-form">
                 <el-form-item label="股票代码"><el-input v-model="readinessForm.symbols" placeholder="多个代码用逗号分隔，最多 20 个" /></el-form-item>
                 <el-form-item label="开始日期"><el-input v-model="readinessForm.start_date" maxlength="8" /></el-form-item>
@@ -465,6 +551,8 @@ function securityStatusLabel(value: string) {
 .catalogue-toolbar .el-select { width: 100%; }
 .coverage-grid { display: grid; gap: 1rem; grid-template-columns: minmax(260px, .7fr) minmax(0, 1.3fr); }
 .readiness-form { display: grid; gap: .75rem; grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(130px, .6fr)); }.readiness-result { display: grid; gap: .75rem; margin-top: 1rem; }.dataset-tags { display: flex; flex-wrap: wrap; gap: .5rem; }.readiness-next { align-items: center; color: var(--byq-text-muted); display: flex; justify-content: space-between; }
+.readiness-pool-row { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(220px, 1fr)); }
+.readiness-pool-row :deep(.el-select) { width: 100%; }
 .coverage-grid :deep(.el-descriptions) { margin-top: 1rem; }
 .catalogue-toolbar { display: grid; gap: .75rem; grid-template-columns: minmax(180px, 1fr) minmax(160px, .7fr) minmax(160px, .7fr) auto; margin-bottom: 1rem; }
 .catalogue-footer { align-items: center; display: flex; font-size: 12px; gap: 1rem; justify-content: space-between; margin-top: 1rem; }
@@ -472,7 +560,7 @@ function securityStatusLabel(value: string) {
 .bounded-note { font-size: 12px; }
 @media (max-width: 760px) {
   .page-heading, .card-header, .catalogue-footer { align-items: flex-start; flex-direction: column; }
-  .automation-grid, .coverage-grid, .catalogue-toolbar, .readiness-form { grid-template-columns: 1fr; }
+  .automation-grid, .coverage-grid, .catalogue-toolbar, .readiness-form, .readiness-pool-row { grid-template-columns: 1fr; }
   .automation-actions { align-items: stretch; flex-direction: column; }
   .stats-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .catalogue-footer :deep(.el-pagination) { flex-wrap: wrap; }

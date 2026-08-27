@@ -201,7 +201,7 @@ test("real Product API My Space credential, binding, policy, and asset import fl
   await expect(page.getByText(`E2E档案-${suffix}`, { exact: true })).toBeVisible();
   const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
   if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/01-model-settings.png`, fullPage: true });
-  await openUserDestination(page, "Agent 策略");
+  await openUserDestination(page, "智能助手偏好");
   await expect(page).toHaveURL(`${origin}/user/agent-policy`);
   await expect(page.getByText(`E2E拒绝回测-${suffix}`, { exact: true })).toBeVisible();
   if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/02-agent-policy.png`, fullPage: true });

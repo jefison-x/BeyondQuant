@@ -79,7 +79,7 @@ const router = createRouter({
           meta: {
             title: "策略管理",
             kicker: "策略工作台",
-            subtitle: "管理和生成 Python 策略",
+            subtitle: "管理可审阅的策略规则、版本与下一步回测",
           },
         },
         {
@@ -102,8 +102,8 @@ const router = createRouter({
             { path: "assets", name: "user-assets", component: () => import("@/views/AssetsView.vue"), meta: { title: "资产管理", kicker: "用户中心", subtitle: "资产清单与安全导入导出" } },
             { path: "paper-trading", name: "user-paper-trading", component: () => import("@/views/PaperTradingView.vue"), meta: { title: "模拟操盘", kicker: "资产管理", subtitle: "纸面账户、T+1、结算与风控" } },
             { path: "models", name: "user-models", component: () => import("@/views/ModelsView.vue"), meta: { title: "模型配置", kicker: "用户中心", subtitle: "写入保密凭据、模型档案和 Agent 绑定" } },
-            { path: "agent-policy", name: "user-agent-policy", component: () => import("@/views/AgentPolicyView.vue"), meta: { title: "Agent 策略", kicker: "用户中心", subtitle: "个人审批偏好和平台优先边界" } },
-            { path: "research", name: "user-research", component: () => import("@/views/ResearchCenterView.vue"), meta: { title: "研究与审批", kicker: "用户中心", subtitle: "研究实体、资产谱系与审批记录" } },
+            { path: "agent-policy", name: "user-agent-policy", component: () => import("@/views/AgentPolicyView.vue"), meta: { title: "智能助手偏好", kicker: "用户中心", subtitle: "个人审批偏好和操作边界" } },
+            { path: "research", name: "user-research", component: () => import("@/views/ResearchCenterView.vue"), meta: { title: "研究与审批", kicker: "用户中心", subtitle: "研究记录、策略版本与审批记录" } },
           ],
         },
         { path: "profile", redirect: "/user/profile" },

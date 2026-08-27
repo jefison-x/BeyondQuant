@@ -185,8 +185,8 @@ error 或 HTTP 5xx，证据见 `screenshots/07-production-recovery.png`。
 | BQ-UX-008 | Data Sync UX | P2 | 问题计数不说明影响/下一步 | 真实数据与浏览器关闭；23/23 sessions usable |
 | BQ-UX-009 | Data consistency | P1 | Agent 日线实时、回测持久 | 真实 DB→Backend→MCP 关闭，close=13.22 |
 | BQ-UX-010 | Cross-workflow | P2 | 回测后无法自然分析/优化/模拟 | 真实浏览器关闭；四动作与 reviewable draft 通过 |
-| BQ-UX-011 | Product Design/Data | P2 | 固定前 100，无任务查询 | 已提供 bounded 显式查询；股票池快捷选择留 P3 |
-| BQ-UX-012 | UX/Terminology | P3 | 中英文和工程术语混杂 | 核心 Strategy/Backtest/Data/Agent 已收口，待扫描 |
+| BQ-UX-011 | Product Design/Data | P2 | 固定前 100，无任务查询 | Phase 61 提供 bounded 显式查询；Phase 62 增加 owner 股票池 snapshot 快捷选择，已关闭 |
+| BQ-UX-012 | UX/Terminology | P3 | 中英文和工程术语混杂 | Phase 62 完成普通 Dashboard/导航静态契约与真实浏览器扫描；管理员诊断术语保留，已关闭 |
 | BQ-UX-013 | Accessibility/Login | P3 | 无 label/name/autocomplete | 单测关闭 |
 | BQ-UX-014 | Quant communication | P3 | 最近窗口与最新日表达含混 | 真实模型披露起止、5 行和截止日，已关闭 |
 | BQ-UX-015 | Functional/Asset Import | P2 | Browser JSON round-trip 把 `10.0` 写为 `10`，manifest digest 失配，真实资产导入 422 | 已使用带算法标识的数值语义 digest 修复；legacy 无标识 bundle 保持旧校验；Gateway suite + 真实浏览器关闭 |
@@ -239,3 +239,8 @@ Product API、既有历史回测与真实 Chromium 管理页复验。
 结论：BeyondQuant 已不只是“功能已经实现”，而是具备普通投资者可使用的首版量化研究产品
 体验。仍建议进入下一轮 P3 优化和更完整的研究→策略→模拟执行产品设计，但这些不再是本轮
 普通用户可用性的接受阻断。
+
+Phase 62 后续收口：剩余 P3 已关闭。股票池可直接带入有界 readiness；普通 Dashboard
+不再以工程术语或完整内部 ID 作为首屏标签；ECharts 模块化和 Vite 8 分包使最大 JS chunk
+降至 435.55 kB，并在真实 Chromium 中验证历史回测图表渲染。更完整的策略驱动模拟执行
+仍属于需要新 ADR 的产品能力，不作为已实现功能宣称。

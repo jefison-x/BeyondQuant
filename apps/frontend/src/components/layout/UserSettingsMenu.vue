@@ -65,7 +65,7 @@ async function handleCommand(command: string) {
           <el-dropdown-item command="/user/appearance"><el-icon><User /></el-icon>个性化</el-dropdown-item>
           <el-dropdown-item command="/user/assets"><el-icon><FolderOpened /></el-icon>资产管理</el-dropdown-item>
           <el-dropdown-item command="/user/models"><el-icon><SetUp /></el-icon>模型配置</el-dropdown-item>
-          <el-dropdown-item command="/user/agent-policy"><el-icon><SetUp /></el-icon>Agent 策略</el-dropdown-item>
+          <el-dropdown-item command="/user/agent-policy"><el-icon><SetUp /></el-icon>智能助手偏好</el-dropdown-item>
           <el-dropdown-item command="/user/research"><el-icon><Bell /></el-icon>研究与审批</el-dropdown-item>
           <template v-if="auth.isAdmin">
             <el-dropdown-item command="system-settings" divided><el-icon><Tools /></el-icon>系统设置</el-dropdown-item>
