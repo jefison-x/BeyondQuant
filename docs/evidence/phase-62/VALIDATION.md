@@ -48,4 +48,3 @@ under the existing acceptance rule.
 
 Phase 62 closes the remaining acceptance-report P3 items in scope. It does not add strategy-driven
 automatic simulation, live brokerage, a new Provider or a new runtime/domain contract.
-

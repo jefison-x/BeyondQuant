@@ -8,4 +8,3 @@
 | Vite 配置 | `REFERENCE_ONLY` / `REPLACE` | ECharts 官方模块化入口与真实 build 体积证据 |
 
 Community repository remained read-only.
-
