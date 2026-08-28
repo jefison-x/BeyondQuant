@@ -103,6 +103,7 @@ onMounted(load);
           <el-table-column label="能力" min-width="180"><template #default="{ row }">{{ row.capabilities.join(", ") || "无外部能力" }}</template></el-table-column>
           <el-table-column label="Agent" min-width="180"><template #default="{ row }">{{ row.desired_agents.join(", ") || "未分配" }}</template></el-table-column>
           <el-table-column label="凭证" width="110"><template #default="{ row }">{{ row.credential_required ? (row.credential_configured ? "已配置" : "未配置") : "不需要" }}</template></el-table-column>
+          <el-table-column label="操作" width="84" fixed="right"><template #default="{ row }"><el-button link type="primary" :aria-label="`查看 ${row.display_name} 详情`" @click.stop="openDetail(row)">查看</el-button></template></el-table-column>
         </el-table>
       </el-card>
       <el-card shadow="never">

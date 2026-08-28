@@ -29,6 +29,7 @@ def test_projection_is_admin_only_secret_free_and_uses_real_registry(store: Plug
     result = store.projection(actor_role="admin")
     assert result["schema_version"] == "plugin-center.v1"
     assert {plugin["id"] for plugin in result["plugins"]} == {"compaction", "guard", "interaction", "spill", "web-search"}
+    assert result["counts"]["QUALIFIED"] == 3
     assert result["counts"]["ENABLED"] == 3
     assert result["boundaries"] == {"online_install": False, "runtime_mutation": False, "secrets_exposed": False}
     serialized = str(result).lower()

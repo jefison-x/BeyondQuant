@@ -223,8 +223,10 @@ class PluginCenterStore(PgStoreMixin):
         catalog.sort(key=lambda item: item["id"])
         counts = {state: 0 for state in ("AVAILABLE", "QUALIFIED", "ENABLED", "BLOCKED", "REJECTED", "DEPRECATED")}
         for item in catalog:
-            state = "ENABLED" if item["desired_enabled"] else item["qualification_state"]
+            state = item["qualification_state"]
             counts[state] = counts.get(state, 0) + 1
+            if item["desired_enabled"]:
+                counts["ENABLED"] += 1
         return {
             "schema_version": "plugin-center.v1",
             "runtime_baseline": self.registry["runtime_baseline"],

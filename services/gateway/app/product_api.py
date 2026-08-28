@@ -1743,7 +1743,7 @@ def _decorate_plugin_center(body: dict[str, object], runtime: dict[str, object])
                 continue
             plugin["active"] = runtime_ready and plugin.get("id") in active_ids
             if plugin.get("credential_required") is True:
-                plugin["credential_configured"] = runtime_state.get("model_credentials") in {"configured", "resolver"}
+                plugin["credential_configured"] = runtime_state.get("model_credentials") == "configured"
     policy = body.get("policy") if isinstance(body.get("policy"), dict) else {}
     desired_ids = policy.get("enabled_plugin_ids") if isinstance(policy, dict) else []
     requests = body.get("requests") if isinstance(body.get("requests"), list) else []
