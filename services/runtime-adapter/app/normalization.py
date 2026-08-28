@@ -37,6 +37,7 @@ _CAPABILITIES: dict[str, tuple[str, str]] = {
     "byq_agent_approval_get": ("review", "读取审批状态"),
     "byq_agent_approval_decide": ("review", "记录审批决定"),
     "byq_market_daily": ("select", "读取市场数据"),
+    "byq_market_session_context": ("select", "确认交易日与数据截止"),
     "byq_market_valuation": ("select", "读取估值数据"),
     "byq_market_fundamentals": ("select", "读取基本面数据"),
     "byq_pool_list": ("select", "读取股票池"),

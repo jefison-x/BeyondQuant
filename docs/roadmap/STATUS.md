@@ -50,6 +50,7 @@ history 推断项目状态。
 - Product Agent public answer/activity projection：**ADR-0033**
 - real-user journey closure：**ADR-0034**
 - user-experience polish：**ADR-0035**
+- trusted runtime/market time：**ADR-0037**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -193,6 +194,11 @@ Post-Phase 40 DSH Upgrade Lane 已完成：Product Runtime 准确固定 Python
 `@deepseek-ai/*` npm package closure（其中 54 个 DSH package 为 `0.1.1-rc.1`）。由于
 缺少匹配的 Python artifact，GitHub/npm rc.2 不合格；rc.6 保持 rollback baseline。
 Product capability 和 Gateway → Runtime Adapter → DSH → MCP 边界不变。
+
+Post-Phase 62 Trusted Time Maintenance 依据 ADR-0037 将服务器权威自然时间作为 DSH
+逐轮动态 runtime context，并通过 BYQ MCP 暴露已有 SSE calendar 与 persisted market
+snapshot 的有界只读截止语义。它是维护修复，不改变 Phase 62 完成状态，也不定义下一
+Product Phase。
 
 ## 当前授权边界
 

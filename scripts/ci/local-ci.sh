@@ -221,8 +221,9 @@ check_runtime() {
       -v "$REPO_ROOT/services/runtime-adapter:/app" \
       -v "$REPO_ROOT/packages:/app/packages" -w /app \
       -v "$REPO_ROOT/plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml:/opt/byq/compositions/byq-product-sdk.cordis.yml:ro" \
+      -v "$REPO_ROOT/plugins/dsh-byq/runtime:/opt/byq/runtime:ro" \
       -v "$REPO_ROOT/plugins/dsh-byq/skills:/opt/dsh/bundles/dsh-byq/skills:ro" \
-      beyondquant-runtime-adapter python3 -m pytest -q -p no:cacheprovider >/dev/null 2>&1; then
+      beyondquant-runtime-adapter sh -ec 'node --test /opt/byq/runtime/*.test.js && python3 -m pytest -q -p no:cacheprovider' >/dev/null 2>&1; then
     ok "runtime-adapter tests"; else bad "runtime-adapter tests"; fi
 }
 

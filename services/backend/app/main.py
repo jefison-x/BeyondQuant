@@ -395,6 +395,13 @@ def research_daily(payload: dict[str, Any]) -> dict[str, object]:
     return _market_research_read(lambda: market_data_store.research_daily(normalized))
 
 
+@app.get("/v1/data/research/session-context")
+def research_market_session_context() -> dict[str, object]:
+    """Read verified exchange-session and durable market-data cutoff facts."""
+
+    return _market_research_read(market_automation_store.market_session_context)
+
+
 @app.post("/v1/data/research/fundamentals")
 def research_fundamentals(payload: dict[str, Any]) -> dict[str, object]:
     """Read announcement-visible fundamentals already persisted by the Data Plane."""

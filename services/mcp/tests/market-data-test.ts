@@ -3,8 +3,32 @@ import assert from "node:assert/strict";
 import {
   fetchByqMarketDaily,
   fetchByqMarketFundamentals,
+  fetchByqMarketSessionContext,
   fetchByqMarketValuation,
 } from "../src/market-data.js";
+
+const sessionContext = await fetchByqMarketSessionContext(
+  "http://backend:8000",
+  async (url, init) => {
+    assert.equal(url, "http://backend:8000/v1/data/research/session-context");
+    assert.equal(init?.method, "GET");
+    assert.equal(init?.body, undefined);
+    return new Response(JSON.stringify({
+      schema_version: "market-session-context.v1",
+      exchange: "SSE",
+      timezone: "Asia/Shanghai",
+      current_date: "20260828",
+      current_session: { state: "open", calendar_verified: true },
+      latest_complete_session: { trade_date: "20260827", row_count: 5200 },
+      source: "persisted_byq",
+      live_provider_called: false,
+    }), { status: 200 });
+  },
+);
+assert.equal(sessionContext.isError, false);
+assert.match(sessionContext.content[0].text, /market-session-context\.v1/);
+assert.match(sessionContext.content[0].text, /20260827/);
+assert.doesNotMatch(sessionContext.content[0].text, /dataset_sha256|worker|job_id/);
 
 const success = await fetchByqMarketDaily(
   "http://backend:8000",
@@ -104,4 +128,4 @@ assert.equal(safeFailure.isError, true);
 assert.match(safeFailure.content[0].text, /research_request_invalid/);
 assert.doesNotMatch(safeFailure.content[0].text, /provider-token|\/tmp/);
 
-console.log("Market data MCP translation PASS: durable daily/valuation/fundamentals, safe failures");
+console.log("Market data MCP translation PASS: session context, durable daily/valuation/fundamentals, safe failures");

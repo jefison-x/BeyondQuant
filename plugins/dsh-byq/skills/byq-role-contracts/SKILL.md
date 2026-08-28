@@ -47,6 +47,11 @@ never expand the candidate set silently, and audit the actual domain result.
 Pool snapshot, lifecycle, delete, index, and dynamic-pool mutations are not
 Agent capabilities.
 
+The trusted DSH runtime clock answers natural wall-clock date and time only.
+For whether today is an exchange session or for the latest complete persisted
+market-data cutoff, authorize and call `byq_market_session_context`; never infer
+either fact from the wall clock. An unverified calendar state remains unknown.
+
 Valuation and financial research use only `byq_market_valuation` and
 `byq_market_fundamentals`. Both are bounded, read-only views of durable BYQ data
 and require their own exact authorization and audit. Never use a provider tool,

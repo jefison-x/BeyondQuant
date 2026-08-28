@@ -409,8 +409,59 @@ def test_daily_automation_uses_open_sessions_and_full_market_snapshots() -> None
     status = automation.status()
     assert status["latest_complete_session"]["trade_date"] == "20260825"
     assert status["latest_complete_session"]["row_count"] == 2
+    context = automation.market_session_context(
+        now=datetime(2026, 8, 25, 19, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    assert context == {
+        "schema_version": "market-session-context.v1",
+        "exchange": "SSE",
+        "timezone": "Asia/Shanghai",
+        "evaluated_at": "2026-08-25T19:00:00+08:00",
+        "current_date": "20260825",
+        "current_session": {
+            "state": "open",
+            "calendar_verified": True,
+            "previous_open_date": "20260824",
+            "calendar_retrieved_at": "2026-08-25T10:31:00+00:00",
+        },
+        "calendar_through_date": "20260825",
+        "latest_complete_session": {
+            "trade_date": "20260825",
+            "row_count": 2,
+            "verified_at": context["latest_complete_session"]["verified_at"],
+        },
+        "source": "persisted_byq",
+        "live_provider_called": False,
+    }
+    closed_context = automation.market_session_context(
+        now=datetime(2026, 8, 23, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    assert closed_context["current_session"]["state"] == "closed"
+    assert closed_context["current_session"]["calendar_verified"] is True
+    assert closed_context["current_session"]["previous_open_date"] == "20260821"
+    assert closed_context["calendar_through_date"] == "20260823"
+    assert closed_context["latest_complete_session"] is None
     automation.close()
     market.close()
+
+
+def test_market_session_context_reports_unknown_without_inventing_calendar_or_cutoff() -> None:
+    automation = MarketAutomationStore()
+
+    context = automation.market_session_context(
+        now=datetime(2026, 8, 29, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    assert context["current_session"] == {
+        "state": "unknown",
+        "calendar_verified": False,
+        "previous_open_date": None,
+        "calendar_retrieved_at": None,
+    }
+    assert context["calendar_through_date"] is None
+    assert context["latest_complete_session"] is None
+    assert context["live_provider_called"] is False
+    automation.close()
 
 
 def test_daily_worker_defers_current_session_until_configured_close_time() -> None:
