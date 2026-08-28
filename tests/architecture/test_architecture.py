@@ -31,6 +31,13 @@ def dsh_service_block() -> str:
 
 
 class ArchitectureBoundaryTests(unittest.TestCase):
+    def test_frontend_proxy_does_not_buffer_workflow_sse(self) -> None:
+        nginx = (ROOT / "apps/frontend/nginx.conf").read_text()
+        self.assertIn("location /v1/workflows/", nginx)
+        self.assertIn("proxy_buffering off", nginx)
+        self.assertIn("proxy_cache off", nginx)
+        self.assertIn("proxy_read_timeout 1h", nginx)
+
     def test_self_hosted_ci_uses_the_immutable_event_base(self) -> None:
         workflow = (ROOT / ".github/workflows/ci-selfhosted.yml").read_text()
         local_ci = (ROOT / "scripts/ci/local-ci.sh").read_text()

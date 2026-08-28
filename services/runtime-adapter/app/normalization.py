@@ -122,6 +122,7 @@ def normalize_dsh_notification(
     *,
     trace_id: str,
     session_id: str,
+    runtime_session_id: str | None = None,
     sequence: int,
     state: NormalizationState | None = None,
 ) -> list[WorkflowTraceEvent]:
@@ -129,7 +130,7 @@ def normalize_dsh_notification(
 
     current = state or NormalizationState()
     payload = notification.payload if isinstance(notification.payload, dict) else {}
-    if payload.get("sessionId") != session_id:
+    if payload.get("sessionId") != (runtime_session_id or session_id):
         return []
     if notification.method == "session.status":
         status = payload.get("status")

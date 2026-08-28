@@ -558,7 +558,11 @@ def product_workflow_events(
                 f"data: {json.dumps(public_event, separators=(',', ':'))}\n\n"
             ).encode()
 
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/internal/runtime/health")

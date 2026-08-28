@@ -39,6 +39,22 @@ def test_session_status_is_a_byq_owned_event() -> None:
     }
 
 
+def test_resumed_runtime_identity_is_correlated_to_the_stable_byq_session() -> None:
+    events = normalize_dsh_notification(
+        Notification(
+            method="session.status",
+            payload={"sessionId": "s-1-resume-private", "status": "idle"},
+        ),
+        trace_id="t-1",
+        session_id="s-1",
+        runtime_session_id="s-1-resume-private",
+        sequence=5,
+    )
+
+    assert events[0]["session_id"] == "s-1"
+    assert "resume-private" not in json.dumps(events)
+
+
 def test_turn_does_not_forward_raw_event_data() -> None:
     events = normalize(notify("turn/end", {"reason": {"kind": "completed"}, "private": "no"}))
 

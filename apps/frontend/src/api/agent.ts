@@ -112,4 +112,14 @@ export async function streamWorkflowEvents(
       }
     }
   }
+  buffer += decoder.decode();
+  for (const line of buffer.split("\n")) {
+    if (!line.startsWith("data: ")) continue;
+    try {
+      onEvent(JSON.parse(line.slice(6)) as WorkflowTraceEvent);
+    } catch {
+      continue;
+    }
+  }
+  throw new Error("workflow stream ended");
 }

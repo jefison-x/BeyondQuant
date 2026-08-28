@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cancelSession, createAgentSession, getAgentSession, listAgentSessions, submitTurn, updateAgentSession } from "./agent";
+import { cancelSession, createAgentSession, getAgentSession, listAgentSessions, streamWorkflowEvents, submitTurn, updateAgentSession } from "./agent";
 
 describe("agent api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -48,5 +48,16 @@ describe("agent api client", () => {
     expect(fetchMock.mock.calls[1][0]).toBe("/v1/agent/sessions/c1");
     expect(fetchMock.mock.calls[2][1]).toEqual(expect.objectContaining({ method: "PATCH" }));
     expect(String(fetchMock.mock.calls[2][1]?.body)).not.toContain("runtime");
+  });
+
+  it("reports an unexpected workflow stream end so the caller can reconnect", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      'id: 3\nevent: workflow-trace\ndata: {"session_id":"s1","sequence":3,"kind":"session.result","payload":{}}\n\n',
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    )));
+    const events: unknown[] = [];
+    await expect(streamWorkflowEvents("s1", "token", (event) => events.push(event), "2"))
+      .rejects.toThrow("workflow stream ended");
+    expect(events).toHaveLength(1);
   });
 });

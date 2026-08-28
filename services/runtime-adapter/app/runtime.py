@@ -61,6 +61,7 @@ class RuntimeSession:
     session_id: str
     trace_id: str
     harness: DeepSeekHarness
+    runtime_session_id: str
     owner_principal: str | None = None
     workspace_id: str | None = None
     model_resolution: dict[str, object] = field(default_factory=dict, repr=False)
@@ -214,6 +215,7 @@ class RuntimeAdapter:
                 session_id=session_id,
                 trace_id=trace_id,
                 harness=harness,
+                runtime_session_id=session_id,
                 owner_principal=owner_principal,
                 workspace_id=workspace_id,
                 model_resolution=model_resolution,
@@ -265,7 +267,7 @@ class RuntimeAdapter:
 
     def _run_prompt(self, record: RuntimeSession, run: ActiveRun, content: str) -> None:
         try:
-            result = record.harness.start_session(record.session_id).run(
+            result = record.harness.start_session(record.runtime_session_id).run(
                 content,
                 on_notification=lambda notification: self._on_notification(record, notification),
             )
@@ -294,13 +296,22 @@ class RuntimeAdapter:
                 record.status = SessionStatus.IDLE
                 self._emit(record, "session.result.discarded", "runtime-adapter", {"reason": "soft-cancelled"})
                 return
-            record.status = SessionStatus.IDLE
-            self._emit(
-                record,
-                "session.result",
-                "runtime-adapter",
-                {"finish_reason": result.finish_reason},
-            )
+            if result.finish_reason in {"error", "failed"}:
+                record.status = SessionStatus.FAILED
+                self._emit(
+                    record,
+                    "session.failed",
+                    "runtime-adapter",
+                    {"code": "model-run-failed", "retryable": True},
+                )
+            else:
+                record.status = SessionStatus.IDLE
+                self._emit(
+                    record,
+                    "session.result",
+                    "runtime-adapter",
+                    {"finish_reason": result.finish_reason},
+                )
 
     def cancel_session(self, session_id: str, mode: str) -> dict[str, Any]:
         if mode not in {"soft", "hard"}:
@@ -333,9 +344,12 @@ class RuntimeAdapter:
     def resume_session(self, session_id: str) -> dict[str, Any]:
         record = self._get(session_id)
         with record.lock:
-            if record.status != SessionStatus.INTERRUPTED or record.active_run is not None:
-                raise SessionConflict(f"session {session_id} is not interrupted")
+            if record.status not in {SessionStatus.INTERRUPTED, SessionStatus.FAILED} or record.active_run is not None:
+                raise SessionConflict(f"session {session_id} cannot be resumed")
+            previous_status = record.status
             resumed_from_run_id = record.interrupted_run_id
+            previous_harness = record.harness
+            runtime_session_id = f"{record.session_id}-resume-{uuid.uuid4().hex[:12]}"
             record.status = SessionStatus.STARTING
             self._emit(
                 record,
@@ -344,9 +358,11 @@ class RuntimeAdapter:
                 {"resumed_from_run_id": resumed_from_run_id},
             )
 
+        if previous_status == SessionStatus.FAILED:
+            previous_harness.close()
         harness = self._build_harness(
             record.session_id,
-            contained_session_path(self._session_root, record.session_id),
+            contained_session_path(self._session_root, runtime_session_id),
             trace_id=record.trace_id,
             owner_principal=record.owner_principal,
             workspace_id=record.workspace_id,
@@ -363,6 +379,9 @@ class RuntimeAdapter:
 
         with record.lock:
             record.harness = harness
+            record.runtime_session_id = runtime_session_id
+            record.normalization = NormalizationState()
+            record.interrupted_run_id = None
             record.status = SessionStatus.READY
             self._emit(
                 record,
@@ -553,6 +572,7 @@ class RuntimeAdapter:
                 notification,
                 trace_id=record.trace_id,
                 session_id=record.session_id,
+                runtime_session_id=record.runtime_session_id,
                 sequence=record.sequence + 1,
                 state=record.normalization,
             )
@@ -564,7 +584,7 @@ class RuntimeAdapter:
 
         if notification.method != "session.event" or not isinstance(notification.payload, dict):
             return
-        if notification.payload.get("sessionId") != record.session_id:
+        if notification.payload.get("sessionId") != record.runtime_session_id:
             return
         raw_event = notification.payload.get("event")
         if not isinstance(raw_event, dict) or raw_event.get("type") != "assistant/message":

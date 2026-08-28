@@ -38,11 +38,15 @@ const starters = ["筛选一组可研究的股票候选", "起草一个可验证
 let conversationGeneration = 0;
 let streamController: AbortController | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
+let reconciliationTimer: ReturnType<typeof setTimeout> | null = null;
 
 const activeSession = computed(() => agent.sessions.find((item) => item.session_id === agent.activeSessionId));
 const userDisplayName = computed(() => auth.user?.display_name?.trim() || "我");
 const activities = computed(() => workflowActivities(agent.events));
 const replayRun = computed(() => workflowRunState(agent.events));
+const runFailureMessage = computed(() => replayRun.value.failed
+  ? "本轮未能完成，运行环境已安全停止。你可以调整问题后重新发送，或直接重试。"
+  : "");
 const activeActivity = computed(() => [...activities.value].reverse().find((item) =>
   item.payload.state === "started" || item.payload.state === "progress" || item.payload.state === "waiting_approval",
 ));
@@ -79,6 +83,16 @@ function replayMessages(messages: AgentReplayMessage[], events: WorkflowTraceEve
 }
 
 function stopStream() { streamController?.abort(); streamController = null; }
+function stopReconciliation() {
+  if (reconciliationTimer) clearTimeout(reconciliationTimer);
+  reconciliationTimer = null;
+}
+
+function scrollConversation(behavior?: ScrollBehavior) {
+  const canvas = conversationRef.value;
+  if (!canvas || typeof canvas.scrollTo !== "function") return;
+  canvas.scrollTo({ top: canvas.scrollHeight, behavior });
+}
 
 function handleEvent(event: WorkflowTraceEvent, generation: number) {
   if (generation !== conversationGeneration || event.session_id !== agent.activeSessionId) return;
@@ -87,29 +101,84 @@ function handleEvent(event: WorkflowTraceEvent, generation: number) {
   if (["session.result", "session.failed", "session.cancelled", "session.result.discarded"].includes(event.kind)) {
     localRunStartedAt.value = "";
     stopping.value = false;
+    stopReconciliation();
   }
   if (event.kind === "agent.output.delta" && typeof event.payload.delta === "string") {
     const last = agent.messages[agent.messages.length - 1];
     if (last?.role === "agent") last.text += event.payload.delta;
     else agent.addMessage({ role: "agent", text: event.payload.delta, createdAt: event.timestamp });
   }
-  void nextTick(() => conversationRef.value?.scrollTo({ top: conversationRef.value.scrollHeight, behavior: "smooth" }));
+  void nextTick(() => scrollConversation("smooth"));
+}
+
+function reconnectDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, milliseconds);
+    signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+  });
+}
+
+async function replayMissedEvents(sessionId: string, generation: number): Promise<number> {
+  const replay = await getAgentSession(sessionId, auth.token);
+  if (generation !== conversationGeneration || sessionId !== agent.activeSessionId) return 0;
+  let maximum = 0;
+  for (const event of [...replay.events].sort((left, right) => left.sequence - right.sequence)) {
+    maximum = Math.max(maximum, event.sequence);
+    handleEvent(event, generation);
+  }
+  return maximum;
+}
+
+async function maintainStream(
+  sessionId: string,
+  afterSequence: number,
+  generation: number,
+  controller: AbortController,
+) {
+  let cursor = afterSequence;
+  let delay = 500;
+  while (!controller.signal.aborted && generation === conversationGeneration) {
+    try {
+      await streamWorkflowEvents(sessionId, auth.token, (event) => {
+        cursor = Math.max(cursor, event.sequence);
+        delay = 500;
+        handleEvent(event, generation);
+      }, String(cursor), controller.signal);
+    } catch {
+      if (controller.signal.aborted || generation !== conversationGeneration) return;
+    }
+    try {
+      cursor = Math.max(cursor, await replayMissedEvents(sessionId, generation));
+    } catch {
+      delay = Math.min(delay * 2, 5_000);
+    }
+    await reconnectDelay(delay, controller.signal);
+  }
 }
 
 function startStream(sessionId: string, afterSequence: number, generation: number) {
   stopStream();
   const controller = new AbortController();
   streamController = controller;
-  void streamWorkflowEvents(sessionId, auth.token, (event) => handleEvent(event, generation), String(afterSequence), controller.signal)
-    .catch((exc) => {
-      if (controller.signal.aborted || generation !== conversationGeneration) return;
-      error.value = exc instanceof Error ? exc.message : "事件流失败";
-    });
+  void maintainStream(sessionId, afterSequence, generation, controller);
+}
+
+function scheduleRunReconciliation(sessionId: string, generation: number) {
+  stopReconciliation();
+  if (!localRunStartedAt.value) return;
+  reconciliationTimer = setTimeout(async () => {
+    reconciliationTimer = null;
+    if (generation !== conversationGeneration || sessionId !== agent.activeSessionId || !localRunStartedAt.value) return;
+    try { await replayMissedEvents(sessionId, generation); }
+    catch { /* the live stream remains primary; the next bounded poll retries */ }
+    if (localRunStartedAt.value) scheduleRunReconciliation(sessionId, generation);
+  }, 2_500);
 }
 
 async function openSession(sessionId: string, updateRoute = true) {
   const generation = ++conversationGeneration;
-  stopStream(); loading.value = true; error.value = "";
+  stopStream(); stopReconciliation(); localRunStartedAt.value = ""; stopping.value = false;
+  loading.value = true; error.value = "";
   try {
     const replay = await getAgentSession(sessionId, auth.token);
     if (generation !== conversationGeneration) return;
@@ -119,7 +188,7 @@ async function openSession(sessionId: string, updateRoute = true) {
     const lastSequence = replay.events.reduce((maximum, event) => Math.max(maximum, event.sequence), 0);
     startStream(sessionId, lastSequence, generation);
     await nextTick();
-    conversationRef.value?.scrollTo({ top: conversationRef.value.scrollHeight });
+    scrollConversation();
   } catch (exc) {
     if (generation === conversationGeneration) error.value = exc instanceof Error ? exc.message : "会话加载失败";
   } finally { if (generation === conversationGeneration) loading.value = false; }
@@ -169,9 +238,11 @@ async function send(value = prompt.value) {
   error.value = ""; busy.value = true;
   try {
     if (!agent.activeSessionId) await createNewSession();
+    if (replayRun.value.failed) await resumeSession(agent.activeSessionId, auth.token);
     agent.addMessage({ role: "user", text: content, createdAt: new Date().toISOString() });
     localRunStartedAt.value = new Date().toISOString();
     await submitTurn(agent.activeSessionId, content, auth.token);
+    scheduleRunReconciliation(agent.activeSessionId, conversationGeneration);
     prompt.value = ""; await refreshCatalog();
   } catch (exc) { localRunStartedAt.value = ""; error.value = exc instanceof Error ? exc.message : "发送失败"; }
   finally { busy.value = false; }
@@ -195,6 +266,7 @@ async function stopCurrentRun() {
     await cancelSession(agent.activeSessionId, "hard", auth.token);
     await resumeSession(agent.activeSessionId, auth.token);
     localRunStartedAt.value = "";
+    stopReconciliation();
     ElMessage.success("本轮已停止，可以继续提问");
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "停止失败";
@@ -227,7 +299,7 @@ watch(historyOpen, (open) => {
   void router.replace({ path: "/agent", query });
 });
 watch([historyStatus, historySearch], () => { if (historyOpen.value) void loadHistory(); });
-onBeforeUnmount(() => { stopStream(); if (clockTimer) clearInterval(clockTimer); });
+onBeforeUnmount(() => { stopStream(); stopReconciliation(); if (clockTimer) clearInterval(clockTimer); });
 </script>
 
 <template>
@@ -267,6 +339,10 @@ onBeforeUnmount(() => { stopStream(); if (clockTimer) clearInterval(clockTimer);
             </button>
             <small>查看小巴正在进行的公开步骤</small>
           </div>
+        </article>
+        <article v-else-if="runFailureMessage" class="conversation-message agent run-failure" role="alert">
+          <span class="message-author">小巴</span>
+          <div class="message-body">{{ runFailureMessage }}</div>
         </article>
       </div>
     </main>

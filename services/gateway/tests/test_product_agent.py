@@ -104,6 +104,8 @@ def test_product_trace_stream_replays_ordered_byq_events(monkeypatch, tmp_path: 
         headers={"Authorization": f"Bearer {TOKEN}"},
     )
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache, no-store"
+    assert response.headers["x-accel-buffering"] == "no"
     assert "id: 1" in response.text
     assert '"kind":"session.ready"' in response.text
     assert ("session." + "event") not in response.text
