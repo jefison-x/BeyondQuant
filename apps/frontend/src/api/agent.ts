@@ -72,7 +72,7 @@ export function cancelSession(sessionId: string, mode: "soft" | "hard", token: s
   });
 }
 
-export function releaseSession(sessionId: string, token: string): Promise<{ status?: string }> {
+export function deleteAgentSession(sessionId: string, token: string): Promise<{ status?: string }> {
   return jsonRequest(`${AGENT_ROOT}/sessions/${encodeURIComponent(sessionId)}`, token, { method: "DELETE" });
 }
 

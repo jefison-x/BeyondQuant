@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ChatLineRound, Menu, Plus } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { updateAgentSession } from "@/api/agent";
+import { deleteAgentSession, updateAgentSession } from "@/api/agent";
 import { findActiveNavItem, primaryNavItems } from "@/router/navigation";
 import { useAgentStore } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
@@ -50,6 +50,19 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
     const response = await updateAgentSession(session.session_id, { title: result.value.trim() }, auth.token);
     agent.replaceSession(response.session);
     ElMessage.success("会话已重命名");
+    return;
+  }
+  if (command === "delete") {
+    await ElMessageBox.confirm(
+      `永久删除会话“${session.title ?? "新投研对话"}”？删除后无法恢复。`,
+      "删除会话",
+      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" },
+    );
+    const wasActive = agent.activeSessionId === session.session_id;
+    await deleteAgentSession(session.session_id, auth.token);
+    agent.removeSession(session.session_id);
+    if (wasActive) await router.push({ path: "/agent", query: { new: String(Date.now()) } });
+    ElMessage.success("会话已删除");
     return;
   }
   const payload = command === "pin"
@@ -138,6 +151,7 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
                 <el-dropdown-item command="pin">{{ session.pinned ? "取消置顶" : "置顶" }}</el-dropdown-item>
                 <el-dropdown-item command="rename">重命名</el-dropdown-item>
                 <el-dropdown-item command="archive" divided>归档</el-dropdown-item>
+                <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
               </el-dropdown-menu></template>
             </el-dropdown>
           </div>

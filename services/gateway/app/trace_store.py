@@ -24,11 +24,14 @@ class TraceStore:
         self._root = Path(root).expanduser().resolve()
         self._condition = threading.Condition(threading.RLock())
         self._closed: set[str] = set()
+        self._deleted: set[str] = set()
 
     def append(self, event: WorkflowTraceEvent) -> bool:
         event = validate_workflow_trace_event(event)
         path = self._path(event["session_id"])
         with self._condition:
+            if event["session_id"] in self._deleted:
+                return False
             existing = self._read(path)
             if existing:
                 previous = existing[-1]
@@ -62,6 +65,8 @@ class TraceStore:
 
     def read(self, session_id: str, *, after_sequence: int = 0) -> list[WorkflowTraceEvent]:
         with self._condition:
+            if session_id in self._deleted:
+                return []
             return [
                 event
                 for event in self._read(self._path(session_id))
@@ -71,6 +76,14 @@ class TraceStore:
     def close(self, session_id: str) -> None:
         with self._condition:
             self._closed.add(session_id)
+            self._condition.notify_all()
+
+    def delete(self, session_id: str) -> None:
+        path = self._path(session_id)
+        with self._condition:
+            self._deleted.add(session_id)
+            self._closed.add(session_id)
+            path.unlink(missing_ok=True)
             self._condition.notify_all()
 
     def stream(self, session_id: str, *, after_sequence: int = 0) -> Iterator[WorkflowTraceEvent | None]:

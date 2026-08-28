@@ -297,6 +297,13 @@ def update_conversation(conversation_id: str, payload: dict[str, Any], request: 
     )})
 
 
+@app.delete("/v1/product/conversations/{conversation_id}")
+def delete_conversation(conversation_id: str, request: Request) -> dict[str, object]:
+    return _conversation_call(lambda: conversation_store.delete(
+        _conversation_owner(request), conversation_id
+    ))
+
+
 @app.get("/v1/operations/overview")
 def operations_overview(request: Request) -> dict[str, object]:
     """Return bounded aggregate state to the admin Product BFF only."""

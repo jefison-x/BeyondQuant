@@ -74,6 +74,59 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
     assert TOKEN not in str(calls)
 
 
+def test_delete_product_session_releases_runtime_and_deletes_catalog_and_trace(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    session = main.ProductSession(
+        conversation_id="conversation_1",
+        session_id="runtime-private",
+        trace_id="trace-1",
+        principal=main.Principal(subject=main.PRODUCT_PRINCIPAL),
+    )
+    main.product_sessions.add(session)
+    store.append({
+        "trace_id": "trace-1", "session_id": "runtime-private", "sequence": 1,
+        "timestamp": "2026-08-28T00:00:00+00:00", "kind": "session.ready",
+        "source": "runtime-adapter", "payload": {"status": "ready"},
+    })
+    catalog_calls: list[tuple[str, str]] = []
+
+    def fake_catalog(method, path, *_args, **_kwargs):
+        catalog_calls.append((method, path))
+        if method == "GET":
+            return {"conversation": {
+                "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
+                "trace_id": "trace-1", "status": "archived",
+            }}
+        return {"conversation_id": "conversation_1", "deleted": True}
+
+    adapter_calls: list[str] = []
+    monkeypatch.setattr(main, "_catalog_request", fake_catalog)
+    monkeypatch.setattr(
+        main, "_adapter_post",
+        lambda path, **_kwargs: adapter_calls.append(path) or {"status": "closed"},
+    )
+
+    response = TestClient(main.app).delete(
+        "/v1/agent/sessions/conversation_1",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "deleted"
+    assert adapter_calls == ["/internal/runtime/sessions/runtime-private/release"]
+    assert catalog_calls == [
+        ("GET", "/v1/product/conversations/conversation_1"),
+        ("DELETE", "/v1/product/conversations/conversation_1"),
+    ]
+    assert main.product_sessions.find_owned(
+        "conversation_1", main.Principal(subject=main.PRODUCT_PRINCIPAL)
+    ) is None
+    assert store.read("runtime-private") == []
+
+
 def test_product_trace_stream_replays_ordered_byq_events(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
