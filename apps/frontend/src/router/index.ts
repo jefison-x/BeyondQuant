@@ -94,6 +94,16 @@ const router = createRouter({
           },
         },
         {
+          path: "paper-trading",
+          name: "paper-trading",
+          component: () => import("@/views/PaperTradingView.vue"),
+          meta: {
+            title: "模拟操盘",
+            kicker: "模拟交易工作台",
+            subtitle: "管理纸面账户、T+1、结算与风控",
+          },
+        },
+        {
           path: "user",
           component: () => import("@/components/layout/UserCenterLayout.vue"),
           children: [
@@ -101,7 +111,7 @@ const router = createRouter({
             { path: "profile", name: "user-profile", component: () => import("@/views/ProfileView.vue"), meta: { title: "个人资料", kicker: "用户中心", subtitle: "昵称、研究偏好与默认提示词" } },
             { path: "appearance", name: "user-appearance", component: () => import("@/views/AppearanceView.vue"), meta: { title: "外观与主题", kicker: "用户中心", subtitle: "跨设备显示模式和主题颜色" } },
             { path: "assets", name: "user-assets", component: () => import("@/views/AssetsView.vue"), meta: { title: "资产管理", kicker: "用户中心", subtitle: "资产清单与安全导入导出" } },
-            { path: "paper-trading", name: "user-paper-trading", component: () => import("@/views/PaperTradingView.vue"), meta: { title: "模拟操盘", kicker: "资产管理", subtitle: "纸面账户、T+1、结算与风控" } },
+            { path: "paper-trading", redirect: (to) => ({ path: "/paper-trading", query: to.query, hash: to.hash }) },
             { path: "models", name: "user-models", component: () => import("@/views/ModelsView.vue"), meta: { title: "模型配置", kicker: "用户中心", subtitle: "写入保密凭据、模型档案和 Agent 绑定" } },
             { path: "agent-policy", name: "user-agent-policy", component: () => import("@/views/AgentPolicyView.vue"), meta: { title: "智能助手偏好", kicker: "用户中心", subtitle: "个人审批偏好和操作边界" } },
             { path: "research", name: "user-research", component: () => import("@/views/ResearchCenterView.vue"), meta: { title: "研究与审批", kicker: "用户中心", subtitle: "研究记录、策略版本与审批记录" } },
@@ -109,7 +119,6 @@ const router = createRouter({
         },
         { path: "profile", redirect: "/user/profile" },
         { path: "assets", redirect: "/user/assets" },
-        { path: "paper-trading", redirect: "/user/paper-trading" },
         { path: "models", redirect: "/user/models" },
         { path: "agent-settings", redirect: "/user/agent-policy" },
         { path: "research-center", redirect: "/user/research" },

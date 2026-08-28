@@ -229,6 +229,11 @@ Post-Phase 65 Web Evidence Persistence UX Maintenance 依据 ADR-0039 clarificat
 Evidence Artifact，并把 MCP 结果收敛为中文 saved/not-saved 状态与来源数。旧保存失败不再在
 无关对话中主动重播；该修复不改变 Phase 65 完成状态，也不定义下一 Product Phase。
 
+Post-Phase 65 Paper Trading Navigation Maintenance 将模拟操盘从 User Center 移回主业务导航，
+固定在回测管理之后，并复用 Phase 46 `ManagementWorkspace` 的目录/详情层级。旧
+`/user/paper-trading` 深链保留为兼容重定向；Paper Trading 的 Product API、授权、持久化和
+仅模拟交易边界均未改变。该修复不改变 Phase 65 完成状态，也不定义下一 Product Phase。
+
 ## 当前授权边界
 
 - Phase 49-65 与相应 Accepted ADR/计划均已完成。

@@ -589,6 +589,20 @@ Community state or APIs.
 | Arbitrary provider URLs, old credential API and local-only preference authority | None under ADR-0019/ADR-0024. | `DROP` / `REPLACE` | BYQ write-only encrypted credentials and Backend-authoritative preferences remain the only Product boundary. |
 | Community Paper/Agent runtime, VectorBT option, PydanticAI/Hermes assumptions | None as an integration boundary. | `REFERENCE_ONLY` / `DROP` | No runtime, schema, Provider, Agent API, engine, or storage code is copied. |
 
+### Post-Phase 65 Paper Trading navigation maintenance audit
+
+The read-only Community `AppSidebar.vue`, `PaperTradingView.vue`, and current
+BYQ Phase 35/44/46 surfaces were re-inspected before moving Paper Trading back
+to primary Product navigation. This maintenance changes composition only; the
+Phase 35 Product API and simulation domain remain authoritative.
+
+| Community/current capability | Reusable invariant / UX | Decision | Maintenance disposition |
+|---|---|---|---|
+| Paper Trading as a primary business destination below Backtest | Simulation is an ongoing business workflow, not a personal preference. | `PORT_UX` / `REFACTOR` | Add `/paper-trading` after Backtest in the flat main navigation; remove it from User Center. |
+| Searchable account catalog beside persistent detail | Users need stable account selection while inspecting orders, settlement and risk. | `PORT_LAYOUT` / `REUSE_AS_IS` | Compose the existing real account workflow with BYQ `ManagementWorkspace`; no Community component is copied. |
+| Existing `/user/paper-trading` deep links | Saved links and older Product journeys must not fail. | `PORT_TESTS` / `REFACTOR` | Redirect to `/paper-trading`; Backtest emits the canonical route. |
+| Community Agent/runtime, broker paths and storage | None under ADR-0021/0024/0034. | `REFERENCE_ONLY` / `DROP` | No backend, Product API, DSH, authorization or persistence change. |
+
 ## Phase 45 System Settings pre-implementation audit
 
 The read-only Community `OpsLayout.vue`, `SystemMaintenanceWorkbench.vue`,
