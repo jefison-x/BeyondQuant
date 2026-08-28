@@ -2700,7 +2700,7 @@ def get_model_catalog(request: Request) -> dict[str, object]:
                 {key: value for key, value in item.items() if key != "runtime_provider"}
                 for item in MODEL_CATALOG
             ], "agents": [
-        {"agent_id": "byq-product", "name": "小霸 Product Agent"},
+        {"agent_id": "byq-product", "name": "小巴 Product Agent"},
     ]}
 
 

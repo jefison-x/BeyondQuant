@@ -1239,7 +1239,7 @@ class CredentialStore(PgStoreMixin):
             return {
                 "owner_principal": owner,
                 "agent_id": agent_id,
-                "agent_name": "小霸 Product Agent",
+                "agent_name": "小巴 Product Agent",
                 "profile_id": None,
                 "effective_source": "system_default",
                 "available": True,
@@ -1250,7 +1250,7 @@ class CredentialStore(PgStoreMixin):
         return {
             "owner_principal": owner,
             "agent_id": agent_id,
-            "agent_name": "小霸 Product Agent",
+            "agent_name": "小巴 Product Agent",
             "profile_id": row["profile_id"],
             "profile_name": row["display_name"],
             "model": row["model"],
