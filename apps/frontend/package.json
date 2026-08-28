@@ -17,14 +17,17 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.1",
+    "dompurify": "3.4.14",
     "echarts": "6.1.0",
     "element-plus": "2.14.3",
+    "markdown-it": "15.0.1",
     "pinia": "2.1.7",
     "vue": "3.5.18",
     "vue-router": "4.0.3"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
+    "@types/markdown-it": "14.2.0",
     "@types/node": "22.15.3",
     "@vitejs/plugin-vue": "6.0.8",
     "@vue/test-utils": "2.4.6",

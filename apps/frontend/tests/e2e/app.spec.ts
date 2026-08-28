@@ -189,7 +189,10 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
       body: JSON.stringify({
         conversation: { session_id: "session-1", trace_id: "trace-1", title: "动量研究", status: "active" },
         messages: [{ message_id: "m1", sequence: 1, role: "user", content: "研究动量", created_at: "2026-08-21T23:59:00Z" }],
-        events: [{ trace_id: "trace-1", session_id: "session-1", sequence: 1, timestamp: "2026-08-22T00:00:00Z", kind: "agent.activity", source: "runtime-adapter", payload: { schema_version: "workflow-activity.v1", activity_id: "activity_11111111111111111111111111111111", phase: "understand", state: "started", label: "理解请求" } }],
+        events: [
+          { trace_id: "trace-1", session_id: "session-1", sequence: 1, timestamp: "2026-08-22T00:00:00Z", kind: "agent.activity", source: "runtime-adapter", payload: { schema_version: "workflow-activity.v1", activity_id: "activity_11111111111111111111111111111111", phase: "understand", state: "started", label: "理解请求" } },
+          { trace_id: "trace-1", session_id: "session-1", sequence: 2, timestamp: "2026-08-22T00:00:01Z", kind: "agent.output.delta", source: "runtime-adapter", payload: { delta: "## 研究结论\n\n- 动量信号有效\n- 需要控制回撤\n\n[查看来源](https://example.com/report)" } },
+        ],
       }),
     }),
   );
@@ -216,7 +219,17 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
   await expect(page.getByText("BYQ 规范化工作流 · 持久会话")).toBeVisible();
   await expect(page.getByText("研究动量")).toBeVisible();
   await expect(page.locator(".conversation-message.user .message-author")).toHaveText("量化小周");
+  await expect(page.getByRole("heading", { name: "研究结论" })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "动量信号有效" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "查看来源" })).toHaveAttribute("rel", "noopener noreferrer nofollow");
+  await expect(page.getByText("Ctrl + Enter 发送")).not.toBeVisible();
+  await expect(page.getByText("关键执行仍需 BYQ 审批")).not.toBeVisible();
   await page.getByPlaceholder("向小巴描述你的投研问题…").fill("快捷发送问题");
+  const textareaBox = await page.getByPlaceholder("向小巴描述你的投研问题…").boundingBox();
+  const sendBox = await page.getByRole("button", { name: "发送", exact: true }).boundingBox();
+  expect(textareaBox).not.toBeNull();
+  expect(sendBox).not.toBeNull();
+  expect(Math.abs((textareaBox!.y + textareaBox!.height / 2) - (sendBox!.y + sendBox!.height / 2))).toBeLessThanOrEqual(1);
   await page.getByPlaceholder("向小巴描述你的投研问题…").press("Control+Enter");
   await expect(page.locator(".assistant-processing")).toBeVisible();
   await expect(page.getByRole("button", { name: "停止本轮" })).toBeVisible();
