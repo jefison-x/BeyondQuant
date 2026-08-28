@@ -511,6 +511,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
         self.assertIn("--network-alias backend", local_ci)
         self.assertIn("ensure_ci_backend", local_ci)
+        self.assertIn(
+            "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml:/opt/byq/compositions/byq-product-sdk.cordis.yml:ro",
+            local_ci,
+        )
         self.assertNotIn("CI_PG_NET=byq_product", local_ci)
         self.assertNotIn("npm run build >/tmp/byq-mcp-build.log 2>&1", local_ci)
 
