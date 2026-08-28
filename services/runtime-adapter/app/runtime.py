@@ -347,6 +347,8 @@ class RuntimeAdapter:
     def resume_session(self, session_id: str) -> dict[str, Any]:
         record = self._get(session_id)
         with record.lock:
+            if record.status == SessionStatus.READY and record.active_run is None:
+                return {**self.describe_session(record), "resumed_from_run_id": None}
             if record.status not in {SessionStatus.INTERRUPTED, SessionStatus.FAILED} or record.active_run is not None:
                 raise SessionConflict(f"session {session_id} cannot be resumed")
             previous_status = record.status
