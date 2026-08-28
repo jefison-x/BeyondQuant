@@ -38,6 +38,9 @@ research-only usage policy。
 
 DSH Web result 在调用 `byq_web_evidence_create` 前只是 session context。晋升必须经过 trusted
 owner/workspace、authorization、MCP、Backend validation、idempotency、hash、lineage 和 audit。
+保存命令提交来源数组与 claim 的零基 `source_indexes`；`source_id` 由 Backend 根据已校验 URL
+稳定生成，不属于模型或 Browser Contract。新建网页研究记录时，ResearchTask 与 Artifact 在同一
+PostgreSQL transaction 中创建；验证或持久化任一步失败都会整体回滚，不留下孤立 task。
 Artifact validation 不把网页内容升级为权威市场数据；其 `deterministic_input` 和
 `authoritative_market_data` 永远为 false。Factor、Strategy、signal 与 Backtest consumers 必须
 继续只接收 BYQ Data Plane 已规范化、PIT 校验并冻结的输入。

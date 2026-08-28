@@ -83,6 +83,17 @@ class PluginRegistryTests(unittest.TestCase):
         self.assertNotIn("ask_user", composition)
         self.assertNotIn("spill-local", composition)
 
+    def test_web_evidence_save_uses_system_ids_and_public_language(self) -> None:
+        skill = (
+            ROOT / "plugins/dsh-byq/skills/byq-market-researcher/SKILL.md"
+        ).read_text()
+        self.assertIn("BYQ generates stable internal source", skill)
+        self.assertIn('"source_indexes": [0]', skill)
+        self.assertNotIn('"source_id":', skill)
+        self.assertIn("Do not call `byq_research_task_create` first", skill)
+        self.assertIn("Do not bring a previous save failure", skill)
+        self.assertIn("搜索结果已展示，但", skill)
+
     def test_registry_invalid_contracts_fail_closed(self) -> None:
         cases = [
             (lambda value: value["plugins"].append(copy.deepcopy(value["plugins"][0])), "duplicate plugin id"),

@@ -28,9 +28,10 @@ historical claim. Never infer an exchange session, announcement effective date,
 or persisted-data cutoff from a webpage or wall clock.
 
 Web results are non-authoritative session evidence. Only when the user explicitly
-asks to save the research, create the minimum ResearchTask if needed, authorize
-`byq_web_evidence_create`, and promote the results using
-`web-research-evidence.v1`. Audit the actual outcome. The content must declare
+asks to save the research, authorize `byq_web_evidence_create` and use that one
+atomic command to create the minimum ResearchTask plus its
+`web-research-evidence.v1` Artifact. Do not call `byq_research_task_create` first
+for a web-evidence save. Audit the actual outcome. The content must declare
 `research_only=true`, `deterministic_input=false`, and
 `authoritative_market_data=false`. Never use or describe unpromoted web values as
 Factor, Strategy, signal, or Backtest inputs, and never use the generic Artifact
@@ -56,7 +57,6 @@ do not add fields:
     "stopped_reason": "EVIDENCE_SUFFICIENT|NO_RESULTS|BUDGET_EXHAUSTED|CONFLICT_UNRESOLVED|PROVIDER_ERROR"
   },
   "sources": [{
-    "source_id": "source_shortlowercaseid",
     "url": "absolute public HTTP(S) URL without fragment",
     "title": "...",
     "publisher": "...",
@@ -71,7 +71,7 @@ do not add fields:
     "statement": "...",
     "claim_type": "FACT|CAUSAL|CANDIDATE",
     "state": "SUPPORTED|CONFLICTED|UNESTABLISHED",
-    "source_ids": ["source_shortlowercaseid"]
+    "source_indexes": [0]
   }],
   "limitations": ["..."],
   "usage_policy": {
@@ -81,6 +81,18 @@ do not add fields:
   }
 }
 ```
+
+`source_indexes` are zero-based positions in the submitted `sources` array.
+Never invent or send a `source_id`; BYQ generates stable internal source
+identifiers from validated URLs. On a normalized validation failure, repair the
+specific field once and retry once; if it still fails, stop instead of looping.
+
+Describe persistence in user language only. On success say that the research
+record was saved and report the source count. On failure say: “搜索结果已展示，但
+研究记录暂未保存；这不影响本次阅读，且这些网页内容未用于量化计算。” Never
+mention source IDs, schema fields, tool names, Artifact IDs, validation enums, or
+raw runtime details. Do not bring a previous save failure into an unrelated
+greeting, new topic, or later turn unless the user explicitly asks about it.
 
 When the calendar context is not verified, set `calendar_verified=false` and
 `trading_session=null`. Compute temporal status only from publication time and

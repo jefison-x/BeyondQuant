@@ -1,6 +1,7 @@
 const BACKEND_TIMEOUT_MS = 8000;
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
+type SuccessProjector = (payload: Record<string, unknown>) => Record<string, unknown>;
 
 export type ResearchTaskCreateRequest = {
   owner_principal: string;
@@ -38,8 +39,7 @@ export type ArtifactCreateRequest = {
 };
 
 export type WebEvidenceCreateRequest = {
-  task_id: string;
-  experiment_id?: string;
+  task: { title: string; objective: string };
   content: Record<string, unknown>;
   lineage: Array<{ kind: string; id: string }>;
   idempotency_key: string;
@@ -79,6 +79,7 @@ async function requestResearch(
   init: RequestInit,
   fetcher: Fetcher,
   safeWebValidation = false,
+  successProjector?: SuccessProjector,
 ): Promise<ByqResearchResult> {
   try {
     const response = await fetcher(`${backendUrl}${path}`, {
@@ -114,11 +115,20 @@ async function requestResearch(
             http_status: response.status,
             ...(validationIssue ? { validation_issue: validationIssue } : {}),
           },
+          ...(safeWebValidation ? {
+            public_status: {
+              state: "not_saved",
+              message: "搜索结果已展示，但研究记录暂未保存；这不影响本次阅读，且这些网页内容未用于量化计算。",
+            },
+          } : {}),
         },
         true,
       );
     }
-    return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
+    const safePayload = successProjector
+      ? successProjector(payload as Record<string, unknown>)
+      : payload;
+    return result({ service: "beyondquant-mcp", status: "ok", ...safePayload }, false);
   } catch {
     return result(
       { service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } },
@@ -152,6 +162,7 @@ function safeWebEvidenceValidationIssue(payload: unknown): string {
     ["supported claim", "SUPPORTED_SOURCE"],
     ["conflicted claim", "CONFLICT_SOURCE_COUNT"],
     ["claim source_ids", "CLAIM_SOURCE_ID"],
+    ["claim source_indexes", "CLAIM_SOURCE_INDEX"],
     ["claim type or state", "CLAIM_CLASSIFICATION"],
     ["unverified market context", "MARKET_CONTEXT"],
     ["usage policy", "USAGE_POLICY"],
@@ -222,9 +233,27 @@ export function fetchByqWebEvidenceCreate(
 ): Promise<ByqResearchResult> {
   return requestResearch(
     backendUrl,
-    "/v1/research/web-evidence",
+    "/v1/research/web-evidence-records",
     { method: "POST", body: JSON.stringify(request) },
     fetcher,
     true,
+    (payload) => {
+      const artifact = payload.artifact;
+      const artifactId = artifact !== null && typeof artifact === "object" && !Array.isArray(artifact)
+        ? (artifact as Record<string, unknown>).artifact_id
+        : undefined;
+      return {
+        record_status: payload.record_status,
+        source_count: payload.source_count,
+        public_status: {
+          state: "saved",
+          message: "研究记录已保存。",
+          source_count: payload.source_count,
+        },
+        ...(typeof artifactId === "string" ? {
+          audit_resource: { resource_type: "artifact", resource_id: artifactId },
+        } : {}),
+      };
+    },
   );
 }

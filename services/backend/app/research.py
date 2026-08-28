@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 
 from .db import PgStoreMixin, ensure_column, execute, fetch_one
-from .web_research import validate_web_research_evidence
+from .web_research import normalize_web_research_evidence, validate_web_research_evidence
 
 
 MAX_JSON_BYTES = 64 * 1024
@@ -331,6 +331,116 @@ class ResearchStore(PgStoreMixin):
                  "created_at": now, "updated_at": now},
             )
         return self.get_task(task_id)
+
+    def create_web_evidence_record(self, payload: object) -> dict[str, object]:
+        """Atomically create the task and its normalized web-evidence Artifact."""
+
+        if not isinstance(payload, dict):
+            raise ValueError("web evidence record request must be an object")
+        _reject_unknown(payload, {"owner_principal", "task", "content", "lineage", "trace_id", "idempotency_key"})
+        task_input = _object(payload.get("task"), field="task")
+        _reject_unknown(task_input, {"title", "objective"})
+        owner = _text(payload.get("owner_principal"), field="owner_principal", max_length=128)
+        trace_id = _trace_id(payload.get("trace_id"))
+        record_key = _idempotency_key(payload.get("idempotency_key"))
+        key_digest = hashlib.sha256(record_key.encode("utf-8")).hexdigest()[:32]
+        content = normalize_web_research_evidence(payload.get("content"))
+        lineage, _ = _lineage(payload.get("lineage", []))
+        task_data = self._task_payload(
+            {
+                "owner_principal": owner,
+                "title": task_input.get("title"),
+                "objective": task_input.get("objective"),
+                "trace_id": trace_id,
+                "idempotency_key": f"web-record-task:{key_digest}",
+            }
+        )
+        task_hash = _hash_request(task_data)
+
+        with self._transaction() as connection:
+            task_row = fetch_one(
+                connection,
+                "SELECT * FROM research_tasks WHERE owner_principal = :owner_principal AND idempotency_key = :idempotency_key",
+                {"owner_principal": owner, "idempotency_key": task_data["idempotency_key"]},
+            )
+            if task_row is None:
+                now = _now()
+                task_id = _new_id("task")
+                execute(
+                    connection,
+                    """INSERT INTO research_tasks
+                    (task_id, owner_principal, title, objective, status, trace_id,
+                     idempotency_key, request_hash, created_at, updated_at, version)
+                    VALUES (:task_id, :owner_principal, :title, :objective, 'planned', :trace_id,
+                            :idempotency_key, :request_hash, :created_at, :updated_at, 1)""",
+                    {
+                        **task_data,
+                        "task_id": task_id,
+                        "request_hash": task_hash,
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                )
+                task_row = fetch_one(
+                    connection, "SELECT * FROM research_tasks WHERE task_id = :task_id", {"task_id": task_id}
+                )
+            elif task_row["request_hash"] != task_hash:
+                raise IdempotencyConflict("web evidence record idempotency key was reused")
+            assert task_row is not None
+
+            artifact_data = self._artifact_payload(
+                {
+                    "task_id": task_row["task_id"],
+                    "kind": "web_research_evidence",
+                    "content": content,
+                    "lineage": lineage,
+                    "trace_id": trace_id,
+                    "idempotency_key": f"web-record-artifact:{key_digest}",
+                }
+            )
+            artifact_lineage, _ = _lineage(
+                [{"kind": "research_task", "id": str(task_row["task_id"])}] + artifact_data["lineage"]  # type: ignore[operator]
+            )
+            artifact_data["lineage"] = artifact_lineage
+            artifact_hash = _hash_request(artifact_data)
+            artifact_row = fetch_one(
+                connection,
+                "SELECT * FROM artifacts WHERE task_id = :task_id AND idempotency_key = :idempotency_key",
+                {"task_id": task_row["task_id"], "idempotency_key": artifact_data["idempotency_key"]},
+            )
+            if artifact_row is None:
+                now = _now()
+                artifact_id = _new_id("artifact")
+                execute(
+                    connection,
+                    """INSERT INTO artifacts
+                    (artifact_id, task_id, experiment_id, owner_principal, kind,
+                     status, content, content_sha256, lineage, trace_id,
+                     idempotency_key, request_hash, created_at, updated_at, version)
+                    VALUES (:artifact_id, :task_id, NULL, :owner_principal, :kind,
+                            'draft', :content, :content_sha256, :lineage, :trace_id,
+                            :idempotency_key, :request_hash, :created_at, :updated_at, 1)""",
+                    {
+                        **artifact_data,
+                        "artifact_id": artifact_id,
+                        "owner_principal": owner,
+                        "request_hash": artifact_hash,
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                )
+                artifact_row = fetch_one(
+                    connection, "SELECT * FROM artifacts WHERE artifact_id = :artifact_id", {"artifact_id": artifact_id}
+                )
+            elif artifact_row["request_hash"] != artifact_hash:
+                raise IdempotencyConflict("web evidence record idempotency key was reused")
+            assert artifact_row is not None
+            return {
+                "record_status": "saved",
+                "source_count": len(content["sources"]),  # type: ignore[arg-type]
+                "task": self._task_row(task_row),
+                "artifact": self._artifact_row(artifact_row),
+            }
 
     def get_task(self, task_id: object) -> dict[str, object]:
         task_id = _identifier(task_id, field="task_id")

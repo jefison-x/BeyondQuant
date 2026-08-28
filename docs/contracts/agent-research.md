@@ -53,6 +53,10 @@ qualified rc.1 root seam 可见搜索工具，但必须把专业搜索委派给 
 Artifact；不得通过 generic Artifact payload 绕过 `web-research-evidence.v1` validator。
 Web evidence 422 只向 Agent 暴露固定枚举的安全校验码，不回显原始输入或内部错误；同一保存
 动作最多修正一次，第二次失败必须停止并记录真实 failure。
+网页证据保存使用单一 `byq_web_evidence_create` 原子命令，不先创建 ResearchTask；claim 只提交
+来源数组的零基序号，内部来源 ID 由 BYQ 生成。公开回答只说明“研究记录已保存（N 个来源）”，
+或“搜索结果可阅读但研究记录暂未保存，且未用于量化计算”。不得公开 schema/source ID/校验枚举，
+也不得在无关的后续问候或新话题中主动重提旧保存失败。
 
 Authorization 的 `action` 必须是随后调用的精确 MCP tool name，不允许使用
 `market_daily.read` 等自创别名。每个不同的已授权 domain action 都分别记录真实 success/failure；

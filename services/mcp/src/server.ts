@@ -118,7 +118,6 @@ const webEvidenceContentSchema = z.object({
     ]),
   }).strict(),
   sources: z.array(z.object({
-    source_id: z.string(),
     url: z.string(),
     title: z.string(),
     publisher: z.string(),
@@ -133,7 +132,7 @@ const webEvidenceContentSchema = z.object({
     statement: z.string(),
     claim_type: z.enum(["FACT", "CAUSAL", "CANDIDATE"]),
     state: z.enum(["SUPPORTED", "CONFLICTED", "UNESTABLISHED"]),
-    source_ids: z.array(z.string()).max(32),
+    source_indexes: z.array(z.number().int().nonnegative()).max(32),
   }).strict()).max(32),
   limitations: z.array(z.string()).max(16),
   usage_policy: z.object({
@@ -934,8 +933,10 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     {
       description: "Promote qualified search-only web results into a versioned, research-only BYQ Artifact with strict source and time provenance.",
       inputSchema: {
-        task_id: z.string(),
-        experiment_id: z.string().optional(),
+        task: z.object({
+          title: z.string(),
+          objective: z.string(),
+        }).strict(),
         content: webEvidenceContentSchema,
         lineage: z.array(z.object({ kind: z.string(), id: z.string() })),
         idempotency_key: z.string(),
