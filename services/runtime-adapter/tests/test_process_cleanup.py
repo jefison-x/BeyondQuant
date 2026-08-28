@@ -120,6 +120,17 @@ def test_session_creation_can_continue_a_durable_trace_sequence(adapter: Runtime
     adapter.release_session("s-sequence")
 
 
+def test_resume_is_idempotent_after_runtime_recreation(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-ready", "t-ready", initial_sequence=7)
+
+    resumed = adapter.resume_session("s-ready")
+
+    assert resumed["status"] == SessionStatus.READY
+    assert resumed["resumed_from_run_id"] is None
+    assert len(FakeHarness.instances) == 1
+    adapter.release_session("s-ready")
+
+
 def test_hard_cancel_resume_uses_a_new_owned_runtime(adapter: RuntimeAdapter) -> None:
     adapter.create_session("s-1", "t-1")
     adapter.submit_prompt("s-1", "running")

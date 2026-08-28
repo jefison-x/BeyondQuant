@@ -23,10 +23,12 @@ uses a fresh private runtime identity while retaining the stable BYQ conversatio
   failure message, and resumes the runtime before a subsequent send.
 - Restoring a durable conversation reattaches or recreates its Runtime Adapter session and continues
   WorkflowTrace sequencing after the last persisted event, including a full service restart.
+- A post-restart `session.ready`/`session.resumed` marker clears the prior failed projection, while
+  retrying `resume` against an already-ready recreated runtime remains safely idempotent.
 
 ## Verification
 
-- Runtime Adapter tests: 45 passed, including maximum-length public session identity resume and
+- Runtime Adapter tests: 46 passed, including maximum-length public session identity resume and
   durable trace sequence continuation.
 - Gateway tests: 63 passed, including Gateway-only and full Runtime restart restoration.
 - Frontend unit tests: 38 files / 99 tests passed.

@@ -81,12 +81,16 @@ export function workflowRunState(events: WorkflowTraceEvent[]): {
 } {
   let started: WorkflowTraceEvent | undefined;
   let terminal: WorkflowTraceEvent | undefined;
+  let recoverySequence = -1;
   for (const event of events) {
     if (event.kind === "session.started" && (!started || event.sequence > started.sequence)) started = event;
     if (TERMINAL_RUN_EVENTS.has(event.kind) && (!terminal || event.sequence > terminal.sequence)) terminal = event;
+    if (["session.ready", "session.resumed"].includes(event.kind)) {
+      recoverySequence = Math.max(recoverySequence, event.sequence);
+    }
   }
   const running = Boolean(started && started.sequence > (terminal?.sequence ?? -1));
-  const failed = !running && terminal?.kind === "session.failed";
+  const failed = !running && terminal?.kind === "session.failed" && terminal.sequence > recoverySequence;
   return {
     running,
     startedAt: running ? started?.timestamp : undefined,
