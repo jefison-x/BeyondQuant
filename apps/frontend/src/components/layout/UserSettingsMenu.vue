@@ -21,7 +21,7 @@ const auth = useAuthStore();
 const route = useRoute();
 const router = useRouter();
 
-const displayName = computed(() => auth.user?.subject ?? "未登录");
+const displayName = computed(() => auth.user?.display_name?.trim() || auth.user?.subject || "未登录");
 const workspaceName = computed(() => auth.user?.workspace?.display_name ?? "个人工作区");
 const avatarText = computed(() => displayName.value.slice(0, 1).toUpperCase() || "B");
 

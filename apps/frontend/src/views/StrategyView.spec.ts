@@ -127,6 +127,37 @@ describe("StrategyView", () => {
     expect((wrapper.vm as unknown as { versionCount: number }).versionCount).toBe(3);
   });
 
+  it("opens a fresh editable strategy from the explicit create action", async () => {
+    const version = {
+      artifact_id: "artifact_version",
+      kind: "strategy_version",
+      status: "validated",
+      content: { snapshot: { strategy_id: "ExistingStrategy", script: "class CustomStrategy: pass" } },
+    };
+    listStrategies.mockResolvedValue({ strategies: [version], total: 1, limit: 50, offset: 0 });
+    const wrapper = mountView();
+    await flushPromises();
+    expect((wrapper.vm as unknown as { isReadonly: boolean }).isReadonly).toBe(true);
+
+    await (wrapper.vm as unknown as { newDraft: () => Promise<void> }).newDraft();
+
+    const state = wrapper.vm as unknown as {
+      isReadonly: boolean;
+      selected: Record<string, unknown> | null;
+      strategyId: string;
+      strategyName: string;
+      script: string;
+      filter: string;
+    };
+    expect(state.isReadonly).toBe(false);
+    expect(state.selected).toBeNull();
+    expect(state.strategyId).toBe("CustomStrategy");
+    expect(state.strategyName).toBe("自定义策略");
+    expect(state.script).toBe("");
+    expect(state.filter).toBe("draft");
+    expect(replaceRoute).toHaveBeenCalledWith({ path: "/strategy", query: {} });
+  });
+
   it("saves and soft-deletes a selected draft through Product API", async () => {
     const draft = {
       artifact_id: "artifact_draft",

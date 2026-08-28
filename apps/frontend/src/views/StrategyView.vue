@@ -189,6 +189,29 @@ function openBacktest() {
   if (artifact) void router.push({ path: "/backtest", query: { strategy: artifact } });
 }
 
+async function newDraft() {
+  if (!confirmDiscard()) return;
+  selected.value = null;
+  detail.value = null;
+  lifecycle.value = "active";
+  filter.value = "draft";
+  strategyId.value = "CustomStrategy";
+  strategyName.value = "自定义策略";
+  description.value = "用户自定义策略";
+  parametersJson.value = "{}";
+  parameterSchemaJson.value = "{}";
+  dataRequirementsJson.value = "{}";
+  script.value = "";
+  templateId.value = "";
+  lastDraftId.value = "";
+  versionHistory.value = [];
+  backtestCount.value = 0;
+  versionCount.value = 0;
+  syncEditorBaseline();
+  const { artifact: _artifact, ...query } = route.query;
+  await router.replace({ path: route.path, query });
+}
+
 const selectedStrategyId = computed(() => {
   const content = selected.value?.content as Record<string, unknown> | undefined;
   const snapshot = content?.snapshot as Record<string, unknown> | undefined;
@@ -516,7 +539,10 @@ onMounted(loadList);
         @return="returnToConversation"
       >
       <template #return>返回投研对话</template>
-      <template #actions><el-button @click="refreshList">刷新目录</el-button></template>
+      <template #actions>
+        <el-button type="primary" @click="newDraft">新建策略</el-button>
+        <el-button @click="refreshList">刷新目录</el-button>
+      </template>
       <template #summary>审批只授权精确的不可变版本</template>
       <template #catalog>
       <el-card shadow="never" class="strategy-list-pane">

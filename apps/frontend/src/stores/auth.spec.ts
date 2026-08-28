@@ -30,6 +30,7 @@ describe("auth store", () => {
   it("bootstraps the bounded personal workspace from the durable session", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       subject: "alice",
+      display_name: "量化小周",
       role: "user",
       workspace: {
         contract: "personal-workspace.v1",
@@ -41,6 +42,7 @@ describe("auth store", () => {
     }), { status: 200 })));
     const auth = useAuthStore();
     await auth.fetchMe();
+    expect(auth.user?.display_name).toBe("量化小周");
     expect(auth.user?.workspace.display_name).toBe("Alice 的个人工作区");
   });
 });

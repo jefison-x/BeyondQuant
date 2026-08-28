@@ -4,7 +4,9 @@ import { ElMessage } from "element-plus";
 import { getProfile, updateProfile } from "@/api/settings";
 import type { UserProfile } from "@/api/types";
 import { useUnsavedChanges } from "@/composables/useUnsavedChanges";
+import { useAuthStore } from "@/stores/auth";
 
+const auth = useAuthStore();
 const loading = ref(true);
 const saving = ref(false);
 const error = ref("");
@@ -42,6 +44,9 @@ async function save() {
       default_prompt: body.profile.default_prompt ?? "",
     };
     savedForm.value = JSON.stringify(form.value);
+    if (auth.user) {
+      auth.setUser({ ...auth.user, display_name: body.profile.display_name ?? "" });
+    }
     ElMessage.success("个人设置已保存");
   } catch (exc) {
     ElMessage.error(exc instanceof Error ? exc.message : "保存个人设置失败");
@@ -75,7 +80,7 @@ async function save() {
       <el-form v-else label-position="top" class="profile-form">
         <el-form-item label="昵称">
           <el-input v-model="form.display_name" maxlength="80" show-word-limit placeholder="例如：老李 / 量化小周" />
-          <div class="form-hint">对话中“你”会显示为该昵称；留空则使用用户名。</div>
+          <div class="form-hint">对话中的用户消息会显示该昵称；未设置时显示“我”。</div>
         </el-form-item>
         <el-form-item label="偏好">
           <el-input

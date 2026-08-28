@@ -74,6 +74,7 @@ def me(request: Request) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content={"error": {"code": exc.code, "message": exc.message}})
     return JSONResponse(content={
         "subject": str(user.get("username") or user.get("user_id")),
+        "display_name": str(user.get("display_name") or ""),
         "role": str(user.get("role") or "user"),
         "workspace": workspace,
     })
