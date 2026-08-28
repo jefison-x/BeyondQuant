@@ -85,8 +85,8 @@ test("real Product API Paper Trading settlement, risk, detail, and bundle flow",
     return (await response.json()).pool;
   }, `纸面交易池-${suffix}`) as { pool_id: string; name: string };
 
-  await page.goto("/user/paper-trading");
-  await expect(page.getByRole("heading", { name: "模拟操盘" }).last()).toBeVisible();
+  await page.goto("/paper-trading");
+  await expect(page.getByRole("heading", { name: "模拟账户与交易监督" })).toBeVisible();
   await page.getByPlaceholder("账户名称").fill(`纸面账户-${suffix}`);
   const createdAccount = page.waitForResponse((response) => response.url().endsWith("/api/product/paper/accounts") && response.request().method() === "POST");
   await page.getByRole("button", { name: "新建账户" }).click();

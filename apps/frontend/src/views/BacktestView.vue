@@ -447,7 +447,7 @@ function openPaperTrading() {
   const universe = manifest?.universe as Record<string, unknown> | undefined;
   const poolSnapshot = nestedReference(manifest, ["stock_pool_snapshot_id", "pool_snapshot_id"])
     || (typeof universe?.version_id === "string" ? universe.version_id : "");
-  void router.push({ path: "/user/paper-trading", query: { ...(poolSnapshot ? { pool_snapshot: poolSnapshot } : {}), from: "backtest", job: String(job.value?.job_id ?? "") } });
+  void router.push({ path: "/paper-trading", query: { ...(poolSnapshot ? { pool_snapshot: poolSnapshot } : {}), from: "backtest", job: String(job.value?.job_id ?? "") } });
 }
 
 onMounted(async () => { await loadList(); if (typeof route.query.strategy === "string") await openCreate(); });

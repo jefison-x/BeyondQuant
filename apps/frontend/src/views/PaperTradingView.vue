@@ -10,6 +10,7 @@ import {
   updatePaperControls,
 } from "@/api/paper";
 import type { PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot } from "@/api/types";
+import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 import { useAuthStore } from "@/stores/auth";
 import { createRequestId } from "@/utils/requestId";
 
@@ -229,23 +230,34 @@ onMounted(loadAccounts);
 
 <template>
   <section class="paper-page">
-    <header class="page-hero">
-      <div><p class="eyebrow">SIMULATION · CNY · A-SHARE</p><h1>模拟操盘</h1><p>独立于回测的持仓、成交、结算与风险工作台；所有状态均由 BYQ Product API 持久化。</p></div>
-      <div class="hero-actions"><el-button :loading="busy === 'import'" @click="importInput?.click()">导入账户资产包</el-button><input ref="importInput" data-testid="paper-import-input" class="hidden-input" type="file" accept="application/json,.json" @change="onImportFile" /><el-button @click="loadAccounts()">刷新</el-button></div>
-    </header>
     <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="top-band" />
     <el-alert v-if="route.query.from === 'backtest'" title="已从回测带入股票池上下文" type="info" :closable="false" show-icon
       description="模拟账户与回测相互独立，不会自动执行策略；请确认股票池、价格和数量后再提交模拟订单。" />
 
-    <div class="account-layout">
+    <ManagementWorkspace
+      eyebrow="模拟交易资产"
+      title="模拟账户与交易监督"
+      description="在独立于回测和实盘的工作区管理纸面持仓、确定性成交、T+1 结算与风险控制。"
+      catalog-label="模拟账户"
+      :count="accounts.length"
+    >
+      <template #actions>
+        <el-button :loading="busy === 'import'" @click="importInput?.click()">导入账户资产包</el-button>
+        <input ref="importInput" data-testid="paper-import-input" class="hidden-input" type="file" accept="application/json,.json" @change="onImportFile" />
+        <el-button @click="loadAccounts()">刷新</el-button>
+      </template>
+      <template #summary>仅模拟交易，不连接真实券商</template>
+      <template #catalog>
       <el-card shadow="never" class="account-rail">
         <template #header><div class="panel-heading"><strong>模拟账户</strong><el-tag>{{ accounts.length }}</el-tag></div></template>
         <button v-for="account in accounts" :key="account.account_id" class="account-item" :class="{ active: selected?.account_id === account.account_id }" @click="selectAccount(account)"><span><strong>{{ account.name }}</strong><small>{{ account.account_id }}</small></span><span class="account-value">¥ {{ money(account.cash) }}</span></button>
         <el-empty v-if="!accounts.length" description="暂无模拟账户" :image-size="72" /><el-divider />
         <div class="create-grid"><el-input v-model="accountName" data-testid="paper-account-name" placeholder="账户名称" /><el-input-number v-model="initialCash" data-testid="paper-initial-cash" :min="1000" :step="10000" controls-position="right" /><el-button data-testid="paper-create-account" type="primary" :loading="busy === 'create'" @click="createAccount">新建账户</el-button></div>
       </el-card>
+      </template>
 
+      <template #detail>
       <main v-if="selected" class="workspace">
         <section class="summary-strip"><div><span>现金</span><strong>¥ {{ money(overview.cash) }}</strong></div><div><span>总权益</span><strong>¥ {{ money(overview.equity) }}</strong></div><div><span>持仓市值</span><strong>¥ {{ money(overview.marketValue) }}</strong></div><div><span>已实现盈亏</span><strong :class="{ positive: overview.realizedPnl > 0, negative: overview.realizedPnl < 0 }">¥ {{ money(overview.realizedPnl) }}</strong></div></section>
         <el-card shadow="never" class="trade-ticket"><template #header><div class="panel-heading"><strong>模拟委托</strong><span class="muted">即时确定性成交 · 非实盘</span></div></template>
@@ -262,7 +274,9 @@ onMounted(loadAccounts);
           <el-tab-pane label="风险与迁移" name="risk"><div class="risk-grid"><section class="risk-panel"><h3>显式风险控制</h3><el-form label-position="top"><el-form-item label="暂停全部新订单"><el-switch v-model="killSwitch" /></el-form-item><el-form-item label="开关原因"><el-input v-model="killReason" maxlength="256" show-word-limit /></el-form-item><el-form-item label="单笔最大金额（CNY）"><el-input-number v-model="maxOrderNotional" :min="100" :step="10000" controls-position="right" /></el-form-item><el-button type="primary" :loading="busy === 'controls'" @click="saveControls">保存风险控制</el-button></el-form></section><section class="risk-panel"><h3>冻结股票池</h3><p class="muted">仅空仓账户可显式重绑；股票池编辑不会改变既有账户。</p><el-select v-model="poolId" placeholder="选择股票池" class="wide-select"><el-option v-for="pool in pools" :key="String(pool.pool_id)" :label="String(pool.name)" :value="String(pool.pool_id)" /></el-select><el-button :disabled="positions.length > 0" :loading="busy === 'binding'" @click="rebind">重新绑定当前快照</el-button></section><section class="risk-panel"><h3>BYQ 账户资产包</h3><p class="muted">导入会校验摘要与引用，并生成新账户 ID；不会覆盖现有账户或导入所有权。</p><div class="button-row"><el-button :loading="busy === 'export'" @click="downloadBundle">导出 JSON</el-button><el-button :loading="busy === 'import'" @click="importInput?.click()">导入为新账户</el-button></div></section></div></el-tab-pane>
         </el-tabs></el-card>
       </main>
-    </div>
+      <el-card v-else shadow="never" class="account-empty"><el-empty description="选择或新建模拟账户查看详情" /></el-card>
+      </template>
+    </ManagementWorkspace>
 
     <el-dialog v-model="orderDialog" title="订单审计详情" width="min(720px, 94vw)"><div v-if="orderDetail" class="detail-list"><div><span>订单</span><code>{{ orderDetail.order_id }}</code></div><div><span>冻结快照</span><code>{{ orderDetail.stock_pool_snapshot_id }}</code></div><div><span>结果</span><strong>{{ orderDetail.blocked_reason ? reasonLabel(orderDetail.blocked_reason) : statusLabel(orderDetail.status) }}</strong></div><div><span>风险评估</span><pre>{{ JSON.stringify(orderDetail.risk_evaluation_json, null, 2) }}</pre></div><div><span>决策来源</span><pre>{{ JSON.stringify(orderDetail.decision_provenance_json, null, 2) }}</pre></div><div><span>事件</span><pre>{{ JSON.stringify(orderDetail.events_json, null, 2) }}</pre></div></div></el-dialog>
     <el-dialog v-model="settlementDialog" title="手动日终结算" width="min(620px, 94vw)"><el-alert title="所有持仓必须提供正数标记价；同一交易日的快照不可改写。" type="warning" :closable="false" show-icon /><el-form label-position="top" class="settlement-form"><el-form-item label="交易日"><el-input v-model="settlementDate" placeholder="YYYYMMDD" /></el-form-item><el-form-item v-for="position in positions" :key="String(position.symbol)" :label="`${position.symbol} 标记价`"><el-input-number v-model="settlementMarks[String(position.symbol)]" :min="0.01" :precision="4" :step="0.01" controls-position="right" /></el-form-item></el-form><template #footer><el-button @click="settlementDialog = false">取消</el-button><el-button type="primary" :loading="busy === 'settle'" @click="settle">确认结算</el-button></template></el-dialog>
@@ -270,5 +284,5 @@ onMounted(loadAccounts);
 </template>
 
 <style scoped>
-.paper-page{display:grid;gap:16px}.page-hero{align-items:flex-end;background:linear-gradient(135deg,var(--byq-brand-hover),var(--byq-brand) 65%,color-mix(in srgb,var(--byq-brand) 72%,var(--byq-surface)));border-radius:16px;color:var(--byq-on-brand);display:flex;justify-content:space-between;padding:24px 28px}.page-hero h1{font-size:28px;margin:2px 0 6px}.page-hero p{margin:0;opacity:.88}.eyebrow{color:var(--byq-on-brand);font-size:11px;font-weight:800;letter-spacing:.16em;opacity:.82}.hero-actions,.button-row,.panel-heading,.tab-toolbar{align-items:center;display:flex;gap:10px;justify-content:space-between}.hidden-input{display:none}.account-layout{align-items:start;display:grid;gap:16px;grid-template-columns:260px minmax(0,1fr)}.account-rail{position:sticky;top:12px}.account-item{align-items:center;background:transparent;border:1px solid transparent;border-radius:10px;color:inherit;cursor:pointer;display:flex;justify-content:space-between;margin-bottom:6px;padding:10px;text-align:left;width:100%}.account-item:hover,.account-item.active{background:color-mix(in srgb,var(--byq-brand) 9%,transparent);border-color:color-mix(in srgb,var(--byq-brand) 38%,transparent)}.account-item small{color:var(--byq-text-muted);display:block;font-size:10px;max-width:130px;overflow:hidden;text-overflow:ellipsis}.account-value{font-size:12px;font-weight:700}.create-grid,.workspace{display:grid;gap:10px}.summary-strip{display:grid;gap:10px;grid-template-columns:repeat(4,minmax(0,1fr))}.summary-strip>div,.info-panel,.risk-panel{background:var(--el-bg-color);border:1px solid var(--el-border-color-lighter);border-radius:12px;padding:16px}.summary-strip span,.info-panel span{color:var(--byq-text-muted);display:block;font-size:12px;margin-bottom:6px}.summary-strip strong{font-size:20px}.trade-form{display:grid;gap:9px;grid-template-columns:1.5fr 1fr auto 1fr 1fr 1fr auto}.binding-note,.muted{color:var(--byq-text-muted);font-size:12px}.binding-note{margin:10px 0 0;overflow-wrap:anywhere}.overview-grid{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}.tab-toolbar{margin-bottom:12px}.risk-grid{display:grid;gap:14px;grid-template-columns:repeat(3,minmax(0,1fr))}.risk-panel h3{margin-top:0}.wide-select{margin-bottom:12px;width:100%}.positive{color:var(--el-color-success)}.negative{color:var(--el-color-danger)}.detail-list{display:grid;gap:12px}.detail-list>div{display:grid;gap:6px}.detail-list span{color:var(--byq-text-muted);font-size:12px}.detail-list code,.detail-list pre{background:var(--el-fill-color-light);border-radius:8px;margin:0;overflow:auto;padding:10px;white-space:pre-wrap}.settlement-form{display:grid;gap:0 12px;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:14px}@media(max-width:1100px){.account-layout{grid-template-columns:1fr}.account-rail{position:static}.trade-form{grid-template-columns:repeat(2,minmax(0,1fr))}.risk-grid{grid-template-columns:1fr}}@media(max-width:720px){.page-hero{align-items:flex-start;flex-direction:column;gap:18px;padding:20px}.hero-actions{width:100%}.summary-strip,.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.trade-form,.settlement-form{grid-template-columns:1fr}.summary-strip strong{font-size:16px}}
+.paper-page{display:grid;gap:12px}.button-row,.panel-heading,.tab-toolbar{align-items:center;display:flex;gap:10px;justify-content:space-between}.hidden-input{display:none}.account-rail,.account-empty{min-width:0}.account-empty{display:grid;min-height:360px;place-items:center}.account-item{align-items:center;background:transparent;border:1px solid transparent;border-radius:10px;color:inherit;cursor:pointer;display:flex;gap:8px;justify-content:space-between;margin-bottom:6px;padding:10px;text-align:left;width:100%}.account-item>span:first-child{flex:1;min-width:0}.account-item strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-item:hover,.account-item.active{background:color-mix(in srgb,var(--byq-brand) 9%,transparent);border-color:color-mix(in srgb,var(--byq-brand) 38%,transparent)}.account-item small{color:var(--byq-text-muted);display:block;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-value{flex:0 0 auto;font-size:12px;font-weight:700;white-space:nowrap}.create-grid,.workspace{display:grid;gap:10px;min-width:0}.summary-strip{display:grid;gap:10px;grid-template-columns:repeat(4,minmax(0,1fr))}.summary-strip>div,.info-panel,.risk-panel{background:var(--el-bg-color);border:1px solid var(--el-border-color-lighter);border-radius:12px;padding:16px}.summary-strip span,.info-panel span{color:var(--byq-text-muted);display:block;font-size:12px;margin-bottom:6px}.summary-strip strong{font-size:20px}.trade-form{display:grid;gap:9px;grid-template-columns:1.5fr 1fr auto 1fr 1fr 1fr auto}.binding-note,.muted{color:var(--byq-text-muted);font-size:12px}.binding-note{margin:10px 0 0;overflow-wrap:anywhere}.overview-grid{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}.tab-toolbar{margin-bottom:12px}.risk-grid{display:grid;gap:14px;grid-template-columns:repeat(3,minmax(0,1fr))}.risk-panel h3{margin-top:0}.wide-select{margin-bottom:12px;width:100%}.positive{color:var(--el-color-success)}.negative{color:var(--el-color-danger)}.detail-list{display:grid;gap:12px}.detail-list>div{display:grid;gap:6px}.detail-list span{color:var(--byq-text-muted);font-size:12px}.detail-list code,.detail-list pre{background:var(--el-fill-color-light);border-radius:8px;margin:0;overflow:auto;padding:10px;white-space:pre-wrap}.settlement-form{display:grid;gap:0 12px;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:14px}@media(max-width:1100px){.trade-form{grid-template-columns:repeat(2,minmax(0,1fr))}.risk-grid{grid-template-columns:1fr}}@media(max-width:720px){.summary-strip,.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.trade-form,.settlement-form{grid-template-columns:1fr}.summary-strip strong{font-size:16px}}
 </style>

@@ -8,7 +8,6 @@ const sections = [
   { path: "/user/profile", label: "个人资料", description: "昵称与投研偏好" },
   { path: "/user/appearance", label: "外观与主题", description: "显示模式与主题颜色" },
   { path: "/user/assets", label: "资产管理", description: "资产清单与安全迁移" },
-  { path: "/user/paper-trading", label: "模拟操盘", description: "纸面账户与风控" },
   { path: "/user/models", label: "模型配置", description: "凭据、档案与绑定" },
   { path: "/user/agent-policy", label: "智能助手偏好", description: "个人审批与操作边界" },
   { path: "/user/research", label: "研究与审批", description: "研究谱系与审批历史" },
