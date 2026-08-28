@@ -31,10 +31,14 @@ def _store(*, active: str = "old", include_old: bool = True) -> CredentialStore:
     return CredentialStore(cipher=CredentialCipher.for_test(keys, active))
 
 
-def _credential_payload(secret: str = "sk-phase37-secret-abcd") -> dict[str, object]:
+def _credential_payload(
+    secret: str = "sk-phase37-secret-abcd",
+    *,
+    provider: str = "deepseek",
+) -> dict[str, object]:
     return {
         "purpose": "model_api_key",
-        "provider": "deepseek",
+        "provider": provider,
         "scope": "user",
         "label": "我的 DeepSeek",
         "secret": secret,
@@ -178,6 +182,49 @@ def test_profile_binding_resolution_and_rotation_fail_closed() -> None:
     store.close()
 
 
+def test_opencode_go_credential_resolves_to_the_reviewed_protocol_route() -> None:
+    store = _store()
+    credential = store.create_credential(
+        "alice",
+        _credential_payload("go-personal-secret-abcd", provider="opencode-go"),
+        actor="alice",
+    )
+    profile = store.create_profile(
+        "alice",
+        {
+            "credential_id": credential["credential_id"],
+            "key_name": "go-minimax",
+            "display_name": "Go MiniMax",
+            "provider": "opencode-go",
+            "model": "minimax-m3",
+            "temperature": 0.2,
+            "reasoning_enabled": True,
+        },
+    )
+    store.bind("alice", "byq-product", profile["profile_id"])
+
+    assert store.resolve_model("alice", "byq-product") == {
+        "source": "user_binding",
+        "provider": "opencode-go-messages",
+        "model": "minimax-m3",
+        "temperature": 0.2,
+        "reasoning_enabled": True,
+        "api_key": "go-personal-secret-abcd",
+    }
+    with pytest.raises(CredentialNotFound, match="active model credential"):
+        store.create_profile(
+            "alice",
+            {
+                "credential_id": credential["credential_id"],
+                "key_name": "cross-provider",
+                "display_name": "Wrong provider",
+                "provider": "opencode-zen",
+                "model": "minimax-m3",
+            },
+        )
+    store.close()
+
+
 def test_system_tushare_resolution_is_backend_only_and_fails_closed_when_ambiguous() -> None:
     store = _store()
     first = store.create_credential(
@@ -228,6 +275,14 @@ def test_backend_model_routes_never_echo_secret_and_resolver_is_private(monkeypa
     monkeypatch.setattr(main, "credential_store", store)
     monkeypatch.setattr(main, "CREDENTIAL_RESOLVER_TOKEN", "resolver-test-only")
     client = TestClient(main.app)
+
+    catalog = client.get("/v1/users/model-catalog", headers=context)
+    assert catalog.status_code == 200
+    assert {item["provider"] for item in catalog.json()["providers"]} == {
+        "deepseek", "opencode-go", "opencode-zen",
+    }
+    assert "runtime_provider" not in catalog.text
+    assert "base_url" not in catalog.text
 
     created = client.post(
         "/v1/users/model-credentials",

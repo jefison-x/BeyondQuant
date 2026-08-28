@@ -266,6 +266,63 @@ def test_personal_model_binding_is_resolved_directly_without_public_exposure(
     adapter.release_session("s-1")
 
 
+@pytest.mark.parametrize("provider", [
+    "opencode-go-responses",
+    "opencode-go-chat",
+    "opencode-go-messages",
+    "opencode-zen-responses",
+    "opencode-zen-chat",
+    "opencode-zen-messages",
+])
+def test_opencode_personal_key_is_scoped_to_each_reviewed_runtime_route(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    provider: str,
+) -> None:
+    FakeHarness.reset()
+    monkeypatch.setattr(runtime_module, "DeepSeekHarness", FakeHarness)
+    monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
+    adapter = RuntimeAdapter()
+    harness = adapter._build_harness(
+        "s-1",
+        tmp_path / "sessions" / "s-1",
+        trace_id="t-1",
+        owner_principal="alice",
+        workspace_id="workspace_alice",
+        model_resolution={
+            "provider": provider,
+            "model": "catalog-model",
+            "api_key": "opencode-personal-secret",
+        },
+    )
+
+    assert harness.config.provider == provider
+    assert harness.config.env["OPENCODE_API_KEY"] == "opencode-personal-secret"
+    assert "DEEPSEEK_API_KEY" not in harness.config.env
+    assert "opencode-personal-secret" not in str(adapter.readiness())
+
+
+def test_unreviewed_runtime_provider_cannot_receive_a_personal_key(
+    adapter: RuntimeAdapter,
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ModelCredentialUnavailable, match="provider is unavailable"):
+        adapter._build_harness(
+            "s-1",
+            tmp_path / "sessions" / "s-1",
+            trace_id="t-1",
+            owner_principal="alice",
+            workspace_id="workspace_alice",
+            model_resolution={
+                "provider": "browser-controlled-provider",
+                "model": "arbitrary-model",
+                "api_key": "must-not-enter-child-env",
+            },
+        )
+
+
 def test_broken_personal_resolution_never_falls_back_to_system_key(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

@@ -22,7 +22,9 @@ class DshUpgradePreparationTests(unittest.TestCase):
         manifest = json.loads(MODULE.RUNTIME_MANIFEST.read_text())
         lock = json.loads(MODULE.RUNTIME_LOCK.read_text())
         closure = MODULE.verify_closure(manifest, lock, "0.1.1-rc.1")
-        self.assertEqual(len(closure), 61)
+        self.assertEqual(len(closure), 63)
+        self.assertEqual(closure["@deepseek-ai/dsh-llm-pi-ai"], "0.1.1-rc.1")
+        self.assertEqual(closure["@deepseek-ai/dsh-authorization"], "0.1.1-rc.1")
         dsh_versions = {
             version
             for name, version in closure.items()

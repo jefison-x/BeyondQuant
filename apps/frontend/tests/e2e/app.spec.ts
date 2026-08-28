@@ -445,7 +445,21 @@ test("my space pages render profile, models, assets, and agent policy", async ({
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ provider: "deepseek", configured: false, models: [], agents: [], credential_items: [], profiles: [], bindings: [], audit: [], encryption: { configured: true, status: "ready" }, credentials: { masked: true, write_only: true } }),
+      body: JSON.stringify({
+        provider: "deepseek",
+        providers: [
+          { provider: "deepseek", display_name: "DeepSeek", credential_label: "DeepSeek API Key" },
+          { provider: "opencode-go", display_name: "OpenCode Go", credential_label: "OpenCode Go API Key" },
+          { provider: "opencode-zen", display_name: "OpenCode Zen", credential_label: "OpenCode Zen API Key" },
+        ],
+        configured: false,
+        models: [
+          { provider: "opencode-go", model: "deepseek-v4-flash", display_name: "DeepSeek V4 Flash", reasoning_supported: false },
+          { provider: "opencode-zen", model: "gpt-5.6-sol", display_name: "GPT 5.6 Sol", reasoning_supported: true },
+        ],
+        agents: [], credential_items: [], profiles: [], bindings: [], audit: [],
+        encryption: { configured: true, status: "ready" }, credentials: { masked: true, write_only: true },
+      }),
     }),
   );
   await page.route("**/api/product/settings/assets", (route) =>
@@ -483,6 +497,12 @@ test("my space pages render profile, models, assets, and agent policy", async ({
   await openNav(page, "模型配置");
   await expect(page.getByRole("heading", { name: "模型配置" })).toBeVisible();
   await expect(page.getByRole("button", { name: "添加凭据" })).toBeVisible();
+  await page.getByRole("button", { name: "添加凭据" }).click();
+  await page.getByRole("dialog").locator(".el-select").first().click();
+  await page.getByRole("option", { name: "OpenCode Go" }).click();
+  await expect(page.getByRole("dialog").getByText("OpenCode Go API Key", { exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog").getByLabel("名称")).toHaveValue("个人 OpenCode Go API");
+  await page.getByRole("dialog").getByRole("button", { name: "取消" }).click();
 
   await openNav(page, "智能助手偏好");
   await expect(page.getByRole("heading", { name: "智能助手偏好" })).toBeVisible();

@@ -534,6 +534,13 @@ boundaries. The Community repository remained read-only. The completed
 checklist, real Product API flow, and Chrome DevTools MCP evidence are under
 `docs/evidence/phase-37/`.
 
+The OpenCode Go/Zen extension re-inspected the complete Community
+`UserModelSettingsPanel.vue` on 2026-08-28. Provider-first selection and the
+credential/profile/binding flow remain `PORT_UX`; Community arbitrary Base URL,
+free-form model ID, OpenAI-compatible/local routes, Community persistence and
+legacy runtime remain `DROP` / `REFERENCE_ONLY`. The replacement is a BYQ-owned
+fixed Go/Zen catalogue over Product API plus official DSH provider routes.
+
 ## Phase 43 durable-conversation pre-implementation audit
 
 The read-only Community `AppSidebar.vue`, `AgentView.vue`, and `api/agent.js`

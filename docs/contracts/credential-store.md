@@ -16,7 +16,7 @@ ADR-0019 定义 authority boundary。本文固定初始 storage、public project
 - 正数 `version`；
 - created/updated timestamps 和 actor identifiers。
 
-`tushare_token` 为 system-scoped。Phase 37 model provider/model values 来自 BYQ runtime catalogue；拒绝任意 base URLs。
+`tushare_token` 为 system-scoped。Model provider/model values 来自 BYQ runtime catalogue；拒绝任意 base URLs。受审核的 user-scoped model credential providers 为 `deepseek`、`opencode-go` 和 `opencode-zen`。
 
 ## Public projection
 
@@ -84,11 +84,13 @@ Owner-scoped model profile 引用一个 owner 可见且 active 的 `model_api_ke
 
 Gateway 可把 owner、Agent preset、selected profile 和 session/turn ids 传给 Runtime Adapter，但永不接收 resolution output。Runtime Adapter 只以 resolver service token 调用专用 internal resolve operation。单一用途 response 包含 provider/model runtime fields 和 plaintext key；adapter 不得在 owned session 之外缓存，也不得写入 durable session record。
 
+OpenCode Go/Zen 的 provider family 只用于 credential/profile ownership。Backend 从固定 catalogue 解析为六个 DSH runtime routes：每个 gateway 分别使用 `openai-responses`、`openai-completions` 和 `anthropic-messages`。固定根端点为 `https://opencode.ai/zen/go/v1` 与 `https://opencode.ai/zen/v1`；浏览器、profile payload 和 credential payload 均不能覆盖端点、协议或 runtime route。同一 provider family 的 credential 可用于其三个受审核 route，并只以 `OPENCODE_API_KEY` 注入当前 owned SDK child environment。
+
 `BYQ_CREDENTIAL_RESOLVER_TOKEN` 是仅注入 Backend 和 Runtime Adapter 的独立高熵 service secret；不得复用为 `BYQ_MCP_TOKEN`、`BYQ_PRODUCT_TOKEN`、browser session 或 encryption key。缺失/无效 resolver authentication 返回规范化 denial，不尝试 lookup。
 
 ## Environment fallback
 
-`DEEPSEEK_API_KEY` 和 `TUSHARE_TOKEN` 仅为 system bootstrap fallback。Active database system credential 优先。选定 user binding 后，绝不回退到 environment/system credential。Environment values 不自动导入，其 mask 也不用于 public response。
+`DEEPSEEK_API_KEY` 和 `TUSHARE_TOKEN` 仅为 system bootstrap fallback。OpenCode 不提供 environment fallback，必须使用当前用户的加密 credential/profile/binding。Active database system credential 优先。选定 user binding 后，绝不回退到 environment/system credential。Environment values 不自动导入，其 mask 也不用于 public response。
 
 ## Failure 与 redaction
 
