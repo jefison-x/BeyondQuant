@@ -131,6 +131,7 @@ ensure_ci_backend() {
       -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
       -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/backend:/app" -w /app \
+      -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
       beyondquant-backend >/dev/null
   fi
   for _ in $(seq 1 30); do
@@ -202,6 +203,7 @@ check_backend() {
       -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
       -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/backend:/app" -w /app \
+      -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
       beyondquant-backend python -m pytest -q -p no:cacheprovider >/dev/null 2>&1; then
     ok "backend tests"; else bad "backend tests"; fi
 }
