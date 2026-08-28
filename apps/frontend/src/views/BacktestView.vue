@@ -24,6 +24,7 @@ import MetricCard from "@/components/ui/MetricCard.vue";
 import { formatChinaTime } from "@/time";
 import { backtestMetricLabel, shortReference, statusLabel } from "@/display";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
+import { createRequestId } from "@/utils/requestId";
 
 const auth = useAuthStore();
 const route = useRoute();
@@ -356,8 +357,8 @@ async function produceSignals() {
           max_attempts: 2,
         },
         order_quantity: signalQuantity.value,
-        trace_id: `signal-${crypto.randomUUID()}`,
-        idempotency_key: crypto.randomUUID(),
+        trace_id: `signal-${createRequestId()}`,
+        idempotency_key: createRequestId(),
       },
       auth.token,
     );

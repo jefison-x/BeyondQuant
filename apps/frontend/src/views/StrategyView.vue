@@ -22,6 +22,7 @@ import EntityPagination from "@/components/ui/EntityPagination.vue";
 import AppStateBlock from "@/components/ui/AppStateBlock.vue";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 import { useUnsavedChanges } from "@/composables/useUnsavedChanges";
+import { createRequestId } from "@/utils/requestId";
 
 const auth = useAuthStore();
 const route = useRoute();
@@ -362,8 +363,8 @@ async function saveDraft() {
       {
         task_id: taskId.value,
         strategy: strategyPayload(),
-        trace_id: `strategy-${crypto.randomUUID()}`,
-        idempotency_key: crypto.randomUUID(),
+        trace_id: `strategy-${createRequestId()}`,
+        idempotency_key: createRequestId(),
       },
       auth.token,
     );
@@ -425,8 +426,8 @@ async function validateDraft() {
       {
         task_id: taskId.value,
         strategy: strategyPayload(),
-        trace_id: `strategy-${crypto.randomUUID()}`,
-        idempotency_key: crypto.randomUUID(),
+        trace_id: `strategy-${createRequestId()}`,
+        idempotency_key: createRequestId(),
       },
       auth.token,
     );
@@ -459,8 +460,8 @@ async function createVersion() {
       {
         task_id: taskId.value,
         draft_artifact_id: lastDraftId.value,
-        trace_id: `strategy-${crypto.randomUUID()}`,
-        idempotency_key: crypto.randomUUID(),
+        trace_id: `strategy-${createRequestId()}`,
+        idempotency_key: createRequestId(),
       },
       auth.token,
     );
@@ -500,8 +501,8 @@ async function approveVersion() {
         strategy_version_artifact_id: selected.value.artifact_id,
         decision: "approved",
         rationale: "策略所有者已在产品界面确认该不可变版本用于信号生成与回测。",
-        trace_id: `strategy-approval-${crypto.randomUUID()}`,
-        idempotency_key: crypto.randomUUID(),
+        trace_id: `strategy-approval-${createRequestId()}`,
+        idempotency_key: createRequestId(),
       },
       auth.token,
     );

@@ -1,4 +1,5 @@
 import type { PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot, StockPool, StockPoolSnapshot } from "./types";
+import { createRequestId } from "@/utils/requestId";
 
 const ROOT = "/api/product/paper";
 
@@ -96,14 +97,14 @@ export function setStockPoolLifecycle(
 ): Promise<{ pool: StockPool }> {
   return request(`/pools/${encodeURIComponent(poolId)}/lifecycle`, token, {
     method: "PATCH",
-    body: JSON.stringify({ status, reason, idempotency_key: crypto.randomUUID() }),
+    body: JSON.stringify({ status, reason, idempotency_key: createRequestId() }),
   });
 }
 
 export function deleteStockPool(poolId: string, token: string): Promise<{ pool: StockPool }> {
   return request(`/pools/${encodeURIComponent(poolId)}`, token, {
     method: "DELETE",
-    headers: { "x-idempotency-key": crypto.randomUUID() },
+    headers: { "x-idempotency-key": createRequestId() },
   });
 }
 

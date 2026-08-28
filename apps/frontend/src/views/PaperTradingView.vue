@@ -11,6 +11,7 @@ import {
 } from "@/api/paper";
 import type { PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
+import { createRequestId } from "@/utils/requestId";
 
 const auth = useAuthStore();
 const route = useRoute();
@@ -139,7 +140,7 @@ async function placeOrder() {
       account_id: selected.value.account_id, pool_id: poolId.value,
       symbol: symbol.value.trim().toUpperCase(), side: side.value,
       quantity: quantity.value, price: price.value, trade_date: tradeDate.value,
-      idempotency_key: crypto.randomUUID(),
+      idempotency_key: createRequestId(),
     }, auth.token);
     await loadDetail(selected.value.account_id);
     if (body.order.status === "blocked") ElMessage.warning(`订单已拦截：${reasonLabel(body.order.blocked_reason)}`);
@@ -166,7 +167,7 @@ async function settle() {
   busy.value = "settle";
   try {
     await settlePaperAccount(selected.value.account_id, { trade_date: settlementDate.value,
-      expected_version: selected.value.version, idempotency_key: crypto.randomUUID(), marks: settlementMarks.value }, auth.token);
+      expected_version: selected.value.version, idempotency_key: createRequestId(), marks: settlementMarks.value }, auth.token);
     settlementDialog.value = false;
     await loadDetail(selected.value.account_id);
     activeTab.value = "snapshots";
@@ -182,7 +183,7 @@ async function saveControls() {
     controls.value = (await updatePaperControls(selected.value.account_id, {
       kill_switch_engaged: killSwitch.value, kill_switch_reason: killReason.value,
       max_order_notional: maxOrderNotional.value ?? null,
-      expected_version: controls.value.version, idempotency_key: crypto.randomUUID(),
+      expected_version: controls.value.version, idempotency_key: createRequestId(),
     }, auth.token)).controls;
     ElMessage.success("风险控制已保存");
   } catch (exc) { error.value = exc instanceof Error ? exc.message : "保存风险控制失败"; }
@@ -193,7 +194,7 @@ async function rebind() {
   if (!selected.value?.account_id || !selected.value.version || !poolId.value) return;
   busy.value = "binding";
   try {
-    await rebindPaperAccount(selected.value.account_id, { pool_id: poolId.value, expected_version: selected.value.version, idempotency_key: crypto.randomUUID() }, auth.token);
+    await rebindPaperAccount(selected.value.account_id, { pool_id: poolId.value, expected_version: selected.value.version, idempotency_key: createRequestId() }, auth.token);
     await loadDetail(selected.value.account_id); ElMessage.success("账户股票池快照已重新绑定");
   } catch (exc) { error.value = exc instanceof Error ? exc.message : "重新绑定失败"; }
   finally { busy.value = ""; }

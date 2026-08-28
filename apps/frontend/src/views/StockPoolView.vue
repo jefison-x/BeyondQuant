@@ -21,6 +21,7 @@ import { formatChinaTime } from "@/time";
 import { statusLabel } from "@/display";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 import { useUnsavedChanges } from "@/composables/useUnsavedChanges";
+import { createRequestId } from "@/utils/requestId";
 
 const auth = useAuthStore();
 const route = useRoute();
@@ -224,7 +225,7 @@ async function saveSnapshot() {
     const definition = editDefinition.value.trim() ? JSON.parse(editDefinition.value) : {};
     await replaceStockPoolSnapshot(selected.value.pool_id, {
       expected_current_snapshot_id: selected.value.current_snapshot_id,
-      idempotency_key: crypto.randomUUID(), symbols, weights, definition,
+      idempotency_key: createRequestId(), symbols, weights, definition,
     }, auth.token);
     await select({ pool_id: selected.value.pool_id }, false);
     await loadPools();
