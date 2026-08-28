@@ -62,7 +62,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
         self.assertEqual(markdown_marker(status, "current-completed-phase"), "62")
-        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035"):
+        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
 
@@ -728,11 +728,38 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("/v1/data/research/fundamentals", translator)
         self.assertNotIn("tushare", translator.lower())
         self.assertIn('role_id="market_researcher"', roles)
-        self.assertIn('version="1.2.0"', roles)
+        self.assertIn('version="1.3.0"', roles)
         self.assertIn("coverage.usable", skill)
         self.assertIn("Status: Accepted", adr)
         for prohibited in ("BaoStock", "AKShare", "VectorBT", "PydanticAI", "Hermes"):
             self.assertIn(prohibited, adr)
+
+    def test_trusted_time_is_split_between_dsh_clock_and_byq_market_facts(self) -> None:
+        plugin = (ROOT / "plugins/dsh-byq/runtime/byq-runtime-time-context.js").read_text()
+        composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
+        dockerfile = (ROOT / "services/runtime-adapter/Dockerfile").read_text()
+        verifier = (ROOT / "services/runtime-adapter/runtime/verify-time-context.mjs").read_text()
+        backend = (ROOT / "services/backend/app/market_automation.py").read_text()
+        mcp = (ROOT / "services/mcp/src/server.ts").read_text()
+        roles = (ROOT / "services/backend/app/agent_research.py").read_text()
+        adr = (ROOT / "docs/architecture/adr/ADR-0037-trusted-runtime-market-time.md").read_text()
+        inventory = (ROOT / "docs/migration/COMMUNITY_MIGRATION_INVENTORY.md").read_text()
+
+        self.assertIn("ctx.systemPrompt.context", plugin)
+        self.assertIn("text: () => formatRuntimeClockContext(new Date(), timezone)", plugin)
+        self.assertIn("不得据此推断交易日", plugin)
+        self.assertIn("name: '../runtime/byq-runtime-time-context.js'", composition)
+        self.assertIn("timezone: Asia/Shanghai", composition)
+        self.assertIn("COPY plugins/dsh-byq/runtime /opt/byq/runtime", dockerfile)
+        self.assertIn("node verify-time-context.mjs", dockerfile)
+        self.assertIn("renderContextSnapshot", verifier)
+        self.assertIn('"market-session-context.v1"', backend)
+        self.assertIn('"byq_market_session_context"', mcp)
+        self.assertIn('"byq_market_session_context"', roles)
+        self.assertNotIn("fetch_trading_calendar", backend.split("def market_session_context", 1)[1].split("def ", 1)[0])
+        self.assertIn("- Status: Accepted", adr)
+        self.assertIn("PydanticAI", adr)
+        self.assertIn("Post-Phase 62 trusted-time maintenance audit", inventory)
 
     def test_frontend_has_no_dsh_event_schema_dependency(self) -> None:
         frontend = ROOT / "apps/frontend"

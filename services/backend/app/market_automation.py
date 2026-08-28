@@ -76,6 +76,10 @@ def _local_now(value: datetime | None = None) -> datetime:
     return current.astimezone(ZoneInfo(TIMEZONE))
 
 
+def _iso_timestamp(value: object) -> str:
+    return value.isoformat() if isinstance(value, datetime) else str(value)
+
+
 class MarketAutomationStore(PgStoreMixin):
     SCHEMA_DDL: list[str] = [
         """
@@ -845,6 +849,76 @@ class MarketAutomationStore(PgStoreMixin):
                 """SELECT * FROM market_sync_run_requests
                    ORDER BY created_at DESC LIMIT 10""",
             )],
+        }
+
+    def market_session_context(self, *, now: datetime | None = None) -> dict[str, object]:
+        """Project today's verified SSE session and latest durable data cutoff.
+
+        This is deliberately narrower than the administrator automation status:
+        Agent research receives no worker, job, configuration, error, or content-
+        hash details and this read never calls a Provider.
+        """
+
+        local = _local_now(now)
+        current_date = local.strftime("%Y%m%d")
+        current_session = self._fetch_one(
+            """SELECT trade_date, is_open, previous_open_date, retrieved_at
+               FROM market_trading_sessions WHERE trade_date = :trade_date""",
+            {"trade_date": current_date},
+        )
+        latest_calendar = self._fetch_one(
+            """SELECT trade_date FROM market_trading_sessions
+               WHERE trade_date <= :trade_date ORDER BY trade_date DESC LIMIT 1""",
+            {"trade_date": current_date},
+        )
+        latest_complete = self._fetch_one(
+            """SELECT trade_date, row_count, verified_at
+               FROM market_session_completeness
+               WHERE trade_date <= :trade_date
+                 AND state IN ('provider_snapshot_complete',
+                               'provider_snapshot_with_status_complete',
+                               'provider_snapshot_with_research_complete',
+                               'provider_snapshot_with_declared_inputs_complete')
+               ORDER BY trade_date DESC LIMIT 1""",
+            {"trade_date": current_date},
+        )
+        session_state = (
+            "unknown" if current_session is None
+            else "open" if bool(current_session["is_open"])
+            else "closed"
+        )
+        return {
+            "schema_version": "market-session-context.v1",
+            "exchange": "SSE",
+            "timezone": TIMEZONE,
+            "evaluated_at": local.isoformat(),
+            "current_date": current_date,
+            "current_session": {
+                "state": session_state,
+                "calendar_verified": current_session is not None,
+                "previous_open_date": (
+                    None if current_session is None else current_session["previous_open_date"]
+                ),
+                "calendar_retrieved_at": (
+                    None
+                    if current_session is None
+                    else _iso_timestamp(current_session["retrieved_at"])
+                ),
+            },
+            "calendar_through_date": (
+                None if latest_calendar is None else latest_calendar["trade_date"]
+            ),
+            "latest_complete_session": (
+                None
+                if latest_complete is None
+                else {
+                    "trade_date": latest_complete["trade_date"],
+                    "row_count": int(latest_complete["row_count"]),
+                    "verified_at": _iso_timestamp(latest_complete["verified_at"]),
+                }
+            ),
+            "source": "persisted_byq",
+            "live_provider_called": False,
         }
 
     @staticmethod

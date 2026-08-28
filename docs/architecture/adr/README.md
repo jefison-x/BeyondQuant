@@ -52,3 +52,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   长任务公开状态、用户任务导向页面和受控跨页面上下文边界。
 - ADR-0035 定义普通用户 P3 收口：股票池驱动的有界 readiness、普通页面术语层级和
   ECharts 模块化加载；不扩大 domain/runtime 边界。
+- ADR-0037 定义 Product Agent 的双层时间边界：DSH 每轮可信自然时钟，以及 BYQ
+  persisted trading-session/data-cutoff 只读投影；两者不得互相推断。

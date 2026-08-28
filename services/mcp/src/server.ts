@@ -52,6 +52,7 @@ import {
 import {
   fetchByqMarketDaily,
   fetchByqMarketFundamentals,
+  fetchByqMarketSessionContext,
   fetchByqMarketValuation,
   type MarketDailyRequest,
   type MarketFundamentalsRequest,
@@ -317,6 +318,13 @@ async function byqMarketDaily(args: MarketDailyRequest, extra: unknown) {
   return context ? fetchByqMarketDaily(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
+async function byqMarketSessionContext(_args: Record<string, never>, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context
+    ? fetchByqMarketSessionContext(BACKEND_URL, trustedBackendFetcher(context))
+    : agentContextUnavailable();
+}
+
 async function byqMarketValuation(args: MarketValuationRequest, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqMarketValuation(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
@@ -573,6 +581,14 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       },
     },
     (args) => byqAgentApprovalDecide(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_market_session_context",
+    {
+      description: "Read today's verified SSE trading-session state and the latest complete persisted BYQ market-data session. This never calls a live provider and is distinct from the runtime wall clock.",
+      inputSchema: {},
+    },
+    (args) => byqMarketSessionContext(args, trustedContext),
   );
   server.registerTool(
     "byq_market_daily",

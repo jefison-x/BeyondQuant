@@ -266,6 +266,16 @@ def test_internal_control_activity_is_hidden_but_domain_research_is_public() -> 
     assert completed[0]["payload"]["label"] == "读取估值数据"
     assert "capability" not in started[0]["payload"]
 
+    session_started = normalize(
+        notify(
+            "tool/call",
+            {"callId": "session-context-1", "name": "byq_market_session_context"},
+        ),
+        state,
+    )
+    assert session_started[0]["payload"]["label"] == "确认交易日与数据截止"
+    assert "capability" not in session_started[0]["payload"]
+
 
 def test_raw_chunks_and_unknown_events_do_not_cross_the_boundary() -> None:
     assert normalize(notify("assistant/chunk", {"text": "private partial"})) == []

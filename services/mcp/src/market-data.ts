@@ -98,6 +98,33 @@ export async function fetchByqMarketDaily(
   }
 }
 
+export async function fetchByqMarketSessionContext(
+  backendUrl: string,
+  fetcher: Fetcher = fetch,
+): Promise<ByqMarketDailyResult> {
+  try {
+    const response = await fetcher(`${backendUrl}/v1/data/research/session-context`, {
+      method: "GET",
+      signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
+    });
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
+    }
+    if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+      return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
+    }
+    if (!response.ok) {
+      return result({ service: "beyondquant-mcp", status: "error", backend: { status: "market_session_unavailable", http_status: response.status } }, true);
+    }
+    return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
+  } catch {
+    return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
+  }
+}
+
 async function fetchPersistedResearch(
   backendUrl: string,
   path: string,

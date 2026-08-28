@@ -71,8 +71,20 @@ class FakeResearchStore:
         return {"schema_version": "market-fundamentals-research.v1", "request": payload}
 
 
+class FakeMarketAutomationStore:
+    def market_session_context(self):
+        return {
+            "schema_version": "market-session-context.v1",
+            "current_date": "20260828",
+            "current_session": {"state": "open", "calendar_verified": True},
+            "latest_complete_session": {"trade_date": "20260827"},
+            "live_provider_called": False,
+        }
+
+
 def test_persisted_market_research_api_passes_bounded_payload(monkeypatch) -> None:
     monkeypatch.setattr(main, "market_readiness_store", FakeResearchStore())
+    monkeypatch.setattr(main, "market_automation_store", FakeMarketAutomationStore())
     client = TestClient(main.app)
 
     valuation = client.post("/v1/data/research/valuation", json={
@@ -81,11 +93,15 @@ def test_persisted_market_research_api_passes_bounded_payload(monkeypatch) -> No
     fundamentals = client.post("/v1/data/research/fundamentals", json={
         "symbols": ["000001.SZ"], "as_of_date": "20260825", "fields": ["roe"],
     })
+    session_context = client.get("/v1/data/research/session-context")
 
     assert valuation.status_code == 200
     assert valuation.json()["request"]["trade_date"] == "20260825"
     assert fundamentals.status_code == 200
     assert fundamentals.json()["request"]["as_of_date"] == "20260825"
+    assert session_context.status_code == 200
+    assert session_context.json()["latest_complete_session"]["trade_date"] == "20260827"
+    assert session_context.json()["live_provider_called"] is False
 
     rejected = client.post("/v1/data/research/valuation", json={
         "symbols": ["000001.SZ"], "trade_date": "20260825", "fields": ["pb"],

@@ -79,6 +79,20 @@ BeyondQuant architecture 的内容。
 | Phase 37 | My Space model credentials/profiles/bindings, asset re-import, and Agent policy preset/rule UX under BYQ ownership and secret boundaries. |
 | Phase 49 | Personal-workspace tenancy principles, trusted context, resource classification, owner-to-workspace migration and future team seam. |
 
+## Post-Phase 62 trusted-time maintenance audit
+
+本轮在实现前完成 `inspect → classify → extract invariants/tests → decide → implement`：
+
+| Community evidence | Classification | Disposition |
+|---|---|---|
+| `agent-service/app/runtime/pydantic_ai.py::_normalize_relative_backtest_dates` | `REPLACE` runtime + `PORT_TESTS` relative-date intent | 不迁移 PydanticAI/tool-boundary `date.today()`；由 DSH 动态可信时钟提供自然日，保留“显式日期优先、相对日期确定化”的测试语义。 |
+| `agent-service/app/harness/prompts.py` 相对日期提示 | `REFERENCE_ONLY` | 不复制旧 prompt/runtime coupling；在 BYQ DSH skill 中明确自然日与交易日语义。 |
+| `backend/app/ops/sync_jobs.py::scheduler_now_local` 和 scheduler timezone tests | `PORT_LOGIC`/`PORT_TESTS`（已由 ADR-0027 实现） | 继续使用 BYQ `Asia/Shanghai` trading calendar 和 durable completeness，不移植 Community scheduler、ORM 或 provider stack。 |
+| Community websocket UTC timestamp helper | `REFERENCE_ONLY` | 仅用于事件显示，不能作为模型时钟或市场数据截止证据。 |
+
+决策由 ADR-0037 固定：通用 wall clock 属于 DSH；交易会话和数据完整性属于 BYQ，经 MCP
+读取。Community repository 保持只读，未修改任何文件。
+
 ## Productization frontend audit
 
 The Community frontend was inspected before planning Phase 17+. The detailed

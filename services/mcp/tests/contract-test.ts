@@ -19,6 +19,7 @@ try {
   const listed = await client.listTools();
   assert.ok(listed.tools.some((tool) => tool.name === "byq_health"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_market_daily"));
+  assert.ok(listed.tools.some((tool) => tool.name === "byq_market_session_context"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_market_valuation"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_market_fundamentals"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_factor_compute"));

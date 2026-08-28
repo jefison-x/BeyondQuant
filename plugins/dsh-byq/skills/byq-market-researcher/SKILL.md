@@ -16,6 +16,13 @@ and, when useful to the user, propose one `stock_candidates` workflow card.
 Do not create, update, snapshot, or delete a Stock Pool and do not ask the user
 to copy internal IDs.
 
+The trusted runtime clock is authoritative for natural date and time, but it is
+not market evidence. When the user asks whether today is a trading day, which
+session is the latest complete one, or what date persisted market data reaches,
+authorize `byq_market_session_context`, call it once, and audit that read. Treat
+an unverified current session or missing cutoff as unknown; never infer it from
+weekday, wall-clock time, or model knowledge.
+
 Authorize `byq_market_daily` using that exact action name before calling it,
 then audit its actual result. Cross-check every signed return and ranking in the
 candidate card against the final answer; a negative return must not become a
