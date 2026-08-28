@@ -131,14 +131,14 @@ def test_public_answer_translates_closed_domain_vocabulary() -> None:
     assert event["payload"]["delta"] == "截至 20260825，覆盖完整性尚未验证；市盈率（TTM） 为 6.61。"
 
 
-def test_public_answer_with_internal_runtime_token_fails_closed() -> None:
+def test_public_answer_with_internal_runtime_token_is_safely_localized() -> None:
     event = project_workflow_event(
         candidate(
             "agent.output.delta",
             {
                 "schema_version": "workflow-answer.v1",
                 "channel": "answer",
-                "delta": "调用 byq_agent_audit 后继续。",
+                "delta": "调用 byq_agent_audit、MCP 和 mcp__byq__byq_market_daily 后继续。",
                 "truncated": False,
             },
         ),
@@ -146,9 +146,31 @@ def test_public_answer_with_internal_runtime_token_fails_closed() -> None:
         revision_for=lambda _card_id: 1,
     )
 
-    assert event["kind"] == "session.progress"
-    assert event["payload"] == {"reason": "projection-rejected", "truncated": False}
+    assert event["kind"] == "agent.output.delta"
+    assert event["payload"]["delta"] == "调用 系统能力、系统能力 和 系统能力 后继续。"
     assert "byq_agent_audit" not in str(event)
+    assert "mcp__" not in str(event)
+
+
+def test_malformed_public_answer_becomes_an_explicit_safe_message() -> None:
+    event = project_workflow_event(
+        candidate(
+            "agent.output.delta",
+            {
+                "schema_version": "workflow-answer.v1",
+                "channel": "answer",
+                "delta": {"private": True},
+                "truncated": False,
+            },
+        ),
+        backend_get=lambda _path: {},
+        revision_for=lambda _card_id: 1,
+    )
+
+    assert event["kind"] == "agent.output.delta"
+    assert event["payload"]["truncated"] is True
+    assert "无法安全展示" in event["payload"]["delta"]
+    assert "private" not in str(event)
 
 
 def test_public_answer_localizes_known_role_language() -> None:

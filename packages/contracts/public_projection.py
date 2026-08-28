@@ -39,6 +39,19 @@ _INTERNAL_TOKEN = re.compile(
     r"\bWorkflowTrace\b|\bArtifact\s+IDs?\b|\bDSH\b|\bMCP\b)",
     re.IGNORECASE,
 )
+_INTERNAL_PUBLIC_TERMS = (
+    (re.compile(r"\bmcp__[a-z0-9_:./-]+\b", re.IGNORECASE), "系统能力"),
+    (re.compile(r"\bbyq_market_session_context\b", re.IGNORECASE), "交易日与数据截止查询"),
+    (re.compile(r"\bbyq_market_daily\b", re.IGNORECASE), "日线行情查询"),
+    (re.compile(r"\bbyq_market_valuation\b", re.IGNORECASE), "估值数据查询"),
+    (re.compile(r"\bbyq_market_fundamentals\b", re.IGNORECASE), "基本面数据查询"),
+    (re.compile(r"\bbyq_[a-z0-9_]+\b", re.IGNORECASE), "系统能力"),
+    (re.compile(r"\bcoverage\.[a-z0-9_.-]+\b", re.IGNORECASE), "数据覆盖状态"),
+    (re.compile(r"\bWorkflowTrace\b", re.IGNORECASE), "执行记录"),
+    (re.compile(r"\bArtifact\s+IDs?\b", re.IGNORECASE), "研究成果编号"),
+    (re.compile(r"\bDSH\b", re.IGNORECASE), "智能体运行环境"),
+    (re.compile(r"\bMCP\b", re.IGNORECASE), "系统能力"),
+)
 
 
 def project_public_answer_text(value: str) -> str:
@@ -54,6 +67,8 @@ def project_public_answer_text(value: str) -> str:
             projected,
             flags=re.IGNORECASE,
         )
+    for pattern, public in _INTERNAL_PUBLIC_TERMS:
+        projected = pattern.sub(public, projected)
     return projected
 
 

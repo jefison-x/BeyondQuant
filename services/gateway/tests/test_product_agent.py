@@ -199,6 +199,75 @@ def test_durable_replay_hides_runtime_session_and_is_owner_scoped(monkeypatch, t
     assert response.json()["events"][0]["session_id"] == "conversation_1"
 
 
+def test_projected_answer_is_persisted_and_filtered_from_durable_replay(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    event = {
+        "trace_id": "trace-1", "session_id": "runtime-private", "sequence": 8,
+        "timestamp": "2026-08-28T00:00:08+00:00", "kind": "agent.output.delta",
+        "source": "runtime-adapter", "payload": {
+            "schema_version": "workflow-answer.v1", "channel": "answer",
+            "delta": "持久化回答", "truncated": False,
+        },
+    }
+    store.append(event)
+    calls: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def fake_catalog(method, path, _principal, _workspace_id, *, payload=None, params=None):
+        calls.append((method, path, payload))
+        if method == "POST":
+            return {"message": {"workflow_sequence": 8}}
+        return {
+            "conversation": {
+                "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
+                "trace_id": "trace-1", "title": "研究", "status": "active",
+            },
+            "messages": [{
+                "message_id": "message-1", "sequence": 1, "role": "assistant",
+                "content": "持久化回答", "workflow_sequence": 8,
+                "created_at": "2026-08-28T00:00:08+00:00",
+            }],
+        }
+
+    monkeypatch.setattr(main, "_catalog_request", fake_catalog)
+    session = main.ProductSession(
+        conversation_id="conversation_1", session_id="runtime-private", trace_id="trace-1",
+        principal=main.Principal(subject=main.PRODUCT_PRINCIPAL),
+    )
+    main._persist_projected_answer(session, event)
+    response = TestClient(main.app).get(
+        "/v1/agent/sessions/conversation_1", headers={"Authorization": f"Bearer {TOKEN}"},
+    )
+
+    assert calls[0] == (
+        "POST", "/v1/product/conversations/conversation_1/messages",
+        {"role": "assistant", "content": "持久化回答", "workflow_sequence": 8},
+    )
+    assert response.status_code == 200
+    assert response.json()["messages"][0]["role"] == "assistant"
+    assert response.json()["events"] == []
+
+
+def test_answer_trace_remains_available_when_catalog_persistence_is_temporarily_unavailable(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        main, "_catalog_request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(main.HTTPException(status_code=503)),
+    )
+    session = main.ProductSession(
+        conversation_id="conversation_1", session_id="runtime-private", trace_id="trace-1",
+        principal=main.Principal(subject=main.PRODUCT_PRINCIPAL),
+    )
+    event = {
+        "kind": "agent.output.delta", "sequence": 8,
+        "payload": {"delta": "仍由执行记录回放"},
+    }
+
+    main._persist_projected_answer(session, event)
+
+
 def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
     store = TraceStore(tmp_path)

@@ -51,6 +51,8 @@ def project_workflow_event(
             return _project_public_answer(event)
         return validate_workflow_trace_event(event)
     except (KeyError, TypeError, ValueError, RuntimeError):
+        if isinstance(event, dict) and event.get("kind") == "agent.output.delta":
+            return validate_workflow_trace_event(_degraded_answer(event))
         return validate_workflow_trace_event(_degraded(event))
 
 
@@ -173,6 +175,26 @@ def _degraded(event: dict[str, Any]) -> WorkflowTraceEvent:
         "kind": "session.progress",
         "source": "runtime-adapter",
         "payload": {"reason": "projection-rejected", "truncated": False},
+    }
+
+
+def _degraded_answer(event: dict[str, Any]) -> WorkflowTraceEvent:
+    required = ("trace_id", "session_id", "sequence", "timestamp")
+    if any(field not in event for field in required):
+        raise ValueError("invalid answer envelope cannot preserve its sequence")
+    return {
+        "trace_id": event["trace_id"],
+        "session_id": event["session_id"],
+        "sequence": event["sequence"],
+        "timestamp": event["timestamp"],
+        "kind": "agent.output.delta",
+        "source": "runtime-adapter",
+        "payload": {
+            "schema_version": "workflow-answer.v1",
+            "channel": "answer",
+            "delta": "本轮回答已生成，但包含无法安全展示的内部信息。请重新提问或稍后重试。",
+            "truncated": True,
+        },
     }
 
 

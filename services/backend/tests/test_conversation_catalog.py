@@ -4,7 +4,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
-from app.conversation_catalog import ConversationCatalogStore, ConversationNotFound, deterministic_title
+from app.conversation_catalog import (
+    ConversationCatalogStore,
+    ConversationConflict,
+    ConversationNotFound,
+    deterministic_title,
+)
 from tests.workspace_helpers import trusted_agent_context
 
 
@@ -33,6 +38,30 @@ def test_catalog_is_owner_scoped_and_replays_messages() -> None:
         pass
     else:
         raise AssertionError("another owner must not see the conversation")
+
+
+def test_catalog_persists_projected_assistant_output_idempotently() -> None:
+    store = ConversationCatalogStore.from_env()
+    conversation = store.create("alice", "session-answer", "trace-answer")
+    store.append_user_message("alice", conversation["conversation_id"], "能否查询行情？")
+
+    first = store.append_assistant_message(
+        "alice", conversation["conversation_id"], "可以查询已同步的行情。", 17,
+    )
+    replayed = store.append_assistant_message(
+        "alice", conversation["conversation_id"], "可以查询已同步的行情。", 17,
+    )
+
+    assert replayed == first
+    assert store.get("alice", conversation["conversation_id"])["message_count"] == 2
+    messages = store.messages("alice", conversation["conversation_id"])
+    assert [message["role"] for message in messages] == ["user", "assistant"]
+    assert messages[1]["workflow_sequence"] == 17
+
+    with pytest.raises(ConversationConflict, match="different content"):
+        store.append_assistant_message(
+            "alice", conversation["conversation_id"], "冲突回答", 17,
+        )
 
 
 def test_catalog_survives_store_recreation() -> None:
@@ -106,3 +135,25 @@ def test_conversation_api_exposes_owner_scoped_permanent_delete(monkeypatch) -> 
     assert deleted.status_code == 200
     assert deleted.json() == {"conversation_id": conversation_id, "deleted": True}
     assert client.get(f"/v1/product/conversations/{conversation_id}").status_code == 404
+
+
+def test_conversation_api_accepts_trusted_projected_assistant_output(monkeypatch) -> None:
+    store = ConversationCatalogStore.from_env()
+    monkeypatch.setattr(main, "conversation_store", store)
+    client = TestClient(main.app)
+    client.headers.update(trusted_agent_context("answer-owner"))
+    created = client.post(
+        "/v1/product/conversations",
+        json={"runtime_session_id": "runtime-answer-api", "trace_id": "trace-answer-api"},
+    )
+    conversation_id = created.json()["conversation"]["conversation_id"]
+
+    response = client.post(
+        f"/v1/product/conversations/{conversation_id}/messages",
+        json={"role": "assistant", "content": "安全公开回答", "workflow_sequence": 9},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["message"]["role"] == "assistant"
+    detail = client.get(f"/v1/product/conversations/{conversation_id}").json()
+    assert detail["messages"][0]["workflow_sequence"] == 9

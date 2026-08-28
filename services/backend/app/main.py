@@ -285,9 +285,17 @@ def get_conversation(conversation_id: str, request: Request) -> dict[str, object
 
 @app.post("/v1/product/conversations/{conversation_id}/messages", status_code=201)
 def append_conversation_message(conversation_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
-    return _conversation_call(lambda: {"message": conversation_store.append_user_message(
-        _conversation_owner(request), conversation_id, payload.get("content")
-    )})
+    owner = _conversation_owner(request)
+    role = payload.get("role", "user")
+    if role == "user":
+        return _conversation_call(lambda: {"message": conversation_store.append_user_message(
+            owner, conversation_id, payload.get("content")
+        )})
+    if role == "assistant":
+        return _conversation_call(lambda: {"message": conversation_store.append_assistant_message(
+            owner, conversation_id, payload.get("content"), payload.get("workflow_sequence")
+        )})
+    return _conversation_call(lambda: (_ for _ in ()).throw(ValueError("role must be user or assistant")))
 
 
 @app.patch("/v1/product/conversations/{conversation_id}")
