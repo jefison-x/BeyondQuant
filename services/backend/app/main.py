@@ -52,6 +52,7 @@ from .signal_producer import (
 )
 from .credentials import (
     MODEL_CATALOG,
+    MODEL_PROVIDERS,
     CredentialConflict,
     CredentialForbidden,
     CredentialNotFound,
@@ -2694,7 +2695,11 @@ def _credential_call(operation: Callable[[], dict[str, object]]) -> dict[str, ob
 @app.get("/v1/users/model-catalog")
 def get_model_catalog(request: Request) -> dict[str, object]:
     _required_agent_context(request)
-    return {"models": [dict(item) for item in MODEL_CATALOG], "agents": [
+    return {"providers": [dict(item) for item in MODEL_PROVIDERS],
+            "models": [
+                {key: value for key, value in item.items() if key != "runtime_provider"}
+                for item in MODEL_CATALOG
+            ], "agents": [
         {"agent_id": "byq-product", "name": "小霸 Product Agent"},
     ]}
 

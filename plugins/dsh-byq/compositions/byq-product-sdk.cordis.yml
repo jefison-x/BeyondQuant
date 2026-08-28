@@ -14,6 +14,67 @@
     workspaceContext: false
     goals: false
 
+# OpenCode Go and Zen publish mixed-protocol catalogues. DSH's official
+# pi-ai adapter owns one fixed route per wire protocol; all six routes resolve
+# the same per-session write-only credential reference. Endpoints and models
+# are deployment-owned allowlists, never browser-supplied URLs or model IDs.
+- id: llm-opencode
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      opencode-go-responses:
+        displayName: OpenCode Go · Responses
+        apiKeyEnv: OPENCODE_API_KEY
+        api: openai-responses
+        baseURL: https://opencode.ai/zen/go/v1
+        models:
+          - id: gpt-5.6-luna
+          - id: grok-4.6
+      opencode-go-chat:
+        displayName: OpenCode Go · Chat Completions
+        apiKeyEnv: OPENCODE_API_KEY
+        api: openai-completions
+        baseURL: https://opencode.ai/zen/go/v1
+        models:
+          - id: deepseek-v4-flash
+          - id: deepseek-v4-pro
+          - id: glm-5.3
+          - id: kimi-k3
+      opencode-go-messages:
+        displayName: OpenCode Go · Messages
+        apiKeyEnv: OPENCODE_API_KEY
+        api: anthropic-messages
+        baseURL: https://opencode.ai/zen/go/v1
+        models:
+          - id: minimax-m3
+          - id: qwen3.8-max
+      opencode-zen-responses:
+        displayName: OpenCode Zen · Responses
+        apiKeyEnv: OPENCODE_API_KEY
+        api: openai-responses
+        baseURL: https://opencode.ai/zen/v1
+        models:
+          - id: gpt-5.6-sol
+          - id: gpt-5.6-terra
+          - id: grok-4.6
+      opencode-zen-chat:
+        displayName: OpenCode Zen · Chat Completions
+        apiKeyEnv: OPENCODE_API_KEY
+        api: openai-completions
+        baseURL: https://opencode.ai/zen/v1
+        models:
+          - id: deepseek-v4-flash
+          - id: minimax-m3
+      opencode-zen-messages:
+        displayName: OpenCode Zen · Messages
+        apiKeyEnv: OPENCODE_API_KEY
+        api: anthropic-messages
+        baseURL: https://opencode.ai/zen/v1
+        models:
+          - id: claude-opus-5
+          - id: claude-sonnet-5
+          - id: qwen3.7-max
+
 - id: skills
   name: '@deepseek-ai/dsh-skill'
 

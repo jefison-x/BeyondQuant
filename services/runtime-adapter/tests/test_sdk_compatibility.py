@@ -42,6 +42,11 @@ def test_product_composition_contains_jsonrpc_and_byq_mcp_without_coding() -> No
     assert "@deepseek-ai/dsh-mcp-client" in contents
     assert "@deepseek-ai/dsh-session-checkpoint-policy" in contents
     assert "@deepseek-ai/dsh-session-persistence-jsonl" in contents
+    assert "@deepseek-ai/dsh-llm-pi-ai" in contents
+    assert "https://opencode.ai/zen/go/v1" in contents
+    assert "https://opencode.ai/zen/v1" in contents
+    assert contents.count("apiKeyEnv: OPENCODE_API_KEY") == 6
+    assert "baseURL: !!js" not in contents
     assert "toolBash: false" in contents
     assert "toolJobs: false" in contents
     assert "enabled: false" in contents

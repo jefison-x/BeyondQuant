@@ -20,6 +20,24 @@ from .db import PgStoreMixin, execute, fetch_one
 
 
 ENVELOPE_VERSION = "credential-envelope.v1"
+MODEL_PROVIDERS: tuple[dict[str, str], ...] = (
+    {
+        "provider": "deepseek",
+        "display_name": "DeepSeek",
+        "credential_label": "DeepSeek API Key",
+    },
+    {
+        "provider": "opencode-go",
+        "display_name": "OpenCode Go",
+        "credential_label": "OpenCode Go API Key",
+    },
+    {
+        "provider": "opencode-zen",
+        "display_name": "OpenCode Zen",
+        "credential_label": "OpenCode Zen API Key",
+    },
+)
+_MODEL_PROVIDER_IDS = {item["provider"] for item in MODEL_PROVIDERS}
 MODEL_CATALOG: tuple[dict[str, object], ...] = (
     {
         "provider": "deepseek",
@@ -40,6 +58,118 @@ MODEL_CATALOG: tuple[dict[str, object], ...] = (
         "runtime_provider": "deepseek-official",
         "model": "deepseek-reasoner",
         "display_name": "DeepSeek Reasoner",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-go",
+        "runtime_provider": "opencode-go-responses",
+        "model": "gpt-5.6-luna",
+        "display_name": "GPT 5.6 Luna",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-go",
+        "runtime_provider": "opencode-go-responses",
+        "model": "grok-4.6",
+        "display_name": "Grok 4.6",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-go",
+        "runtime_provider": "opencode-go-chat",
+        "model": "deepseek-v4-flash",
+        "display_name": "DeepSeek V4 Flash",
+        "reasoning_supported": False,
+    },
+    {
+        "provider": "opencode-go",
+        "runtime_provider": "opencode-go-chat",
+        "model": "deepseek-v4-pro",
+        "display_name": "DeepSeek V4 Pro",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-go",
+        "runtime_provider": "opencode-go-chat",
+        "model": "glm-5.3",
+        "display_name": "GLM-5.3",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-go",
+        "runtime_provider": "opencode-go-chat",
+        "model": "kimi-k3",
+        "display_name": "Kimi K3",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-go",
+        "runtime_provider": "opencode-go-messages",
+        "model": "minimax-m3",
+        "display_name": "MiniMax M3",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-go",
+        "runtime_provider": "opencode-go-messages",
+        "model": "qwen3.8-max",
+        "display_name": "Qwen3.8 Max",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-zen",
+        "runtime_provider": "opencode-zen-responses",
+        "model": "gpt-5.6-sol",
+        "display_name": "GPT 5.6 Sol",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-zen",
+        "runtime_provider": "opencode-zen-responses",
+        "model": "gpt-5.6-terra",
+        "display_name": "GPT 5.6 Terra",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-zen",
+        "runtime_provider": "opencode-zen-responses",
+        "model": "grok-4.6",
+        "display_name": "Grok 4.6",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-zen",
+        "runtime_provider": "opencode-zen-messages",
+        "model": "claude-opus-5",
+        "display_name": "Claude Opus 5",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-zen",
+        "runtime_provider": "opencode-zen-messages",
+        "model": "claude-sonnet-5",
+        "display_name": "Claude Sonnet 5",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-zen",
+        "runtime_provider": "opencode-zen-messages",
+        "model": "qwen3.7-max",
+        "display_name": "Qwen3.7 Max",
+        "reasoning_supported": True,
+    },
+    {
+        "provider": "opencode-zen",
+        "runtime_provider": "opencode-zen-chat",
+        "model": "deepseek-v4-flash",
+        "display_name": "DeepSeek V4 Flash",
+        "reasoning_supported": False,
+    },
+    {
+        "provider": "opencode-zen",
+        "runtime_provider": "opencode-zen-chat",
+        "model": "minimax-m3",
+        "display_name": "MiniMax M3",
         "reasoning_supported": True,
     },
 )
@@ -366,7 +496,7 @@ class CredentialStore(PgStoreMixin):
             raise ValueError("credential purpose or scope is not supported")
         if purpose == "tushare_token" and (provider != "tushare" or scope != "system"):
             raise ValueError("Tushare credentials must use the system scope and tushare provider")
-        if purpose == "model_api_key" and provider != "deepseek":
+        if purpose == "model_api_key" and provider not in _MODEL_PROVIDER_IDS:
             raise ValueError("model credential provider is not in the BYQ catalogue")
         if scope == "system" and actor_role != "admin":
             raise CredentialForbidden("system credentials require admin role")

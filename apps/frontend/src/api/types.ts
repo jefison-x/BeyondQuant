@@ -235,6 +235,7 @@ export interface UiPreferences {
 
 export interface ModelSettings {
   provider: string;
+  providers: ModelProvider[];
   configured: boolean;
   models: Array<{ provider: string; model: string; display_name: string; reasoning_supported: boolean }>;
   agents: Array<{ agent_id: string; name: string }>;
@@ -244,6 +245,12 @@ export interface ModelSettings {
   audit: Array<Record<string, unknown>>;
   encryption: { configured: boolean; status: string; envelope_version?: string };
   credentials: { masked: boolean; write_only: boolean };
+}
+
+export interface ModelProvider {
+  provider: string;
+  display_name: string;
+  credential_label: string;
 }
 
 export interface ModelCredential {

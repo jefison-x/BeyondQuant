@@ -25,6 +25,16 @@ class ModelCredentialUnavailable(RuntimeError):
     """A model-keyed Product turn was requested without its provider secret."""
 
 
+_OPENCODE_PROVIDERS = frozenset({
+    "opencode-go-responses",
+    "opencode-go-chat",
+    "opencode-go-messages",
+    "opencode-zen-responses",
+    "opencode-zen-chat",
+    "opencode-zen-messages",
+})
+
+
 class SessionStatus:
     STARTING: ClassVar[str] = "starting"
     READY: ClassVar[str] = "ready"
@@ -462,7 +472,13 @@ class RuntimeAdapter:
         # trace payloads, or exception details.
         model_api_key = model_resolution.get("api_key")
         if isinstance(model_api_key, str) and model_api_key:
-            environment["DEEPSEEK_API_KEY"] = model_api_key
+            runtime_provider = str(model_resolution.get("provider") or self._provider)
+            if runtime_provider == "deepseek-official":
+                environment["DEEPSEEK_API_KEY"] = model_api_key
+            elif runtime_provider in _OPENCODE_PROVIDERS:
+                environment["OPENCODE_API_KEY"] = model_api_key
+            else:
+                raise ModelCredentialUnavailable("selected model provider is unavailable")
         config = DeepSeekHarnessConfig(
             provider=str(model_resolution.get("provider") or self._provider),
             model=str(model_resolution.get("model") or self._model),

@@ -1045,6 +1045,7 @@ def product_model_settings(request: Request) -> dict[str, object]:
     credentials = credential_body.get("credentials", [])
     return {
         "provider": "deepseek",
+        "providers": catalog.get("providers", []),
         "configured": any(
             isinstance(item, dict) and item.get("status") == "active"
             for item in credentials if isinstance(credentials, list)
