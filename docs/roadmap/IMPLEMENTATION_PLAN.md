@@ -283,3 +283,22 @@ snapshot 选择至多 20 只成分执行 readiness；普通工作台和导航清
 验收包括 frontend 单元测试/build、默认 500 kB chunk gate、architecture、mock/real
 Product browser smoke，以及真实 Data Center 股票池→readiness same-origin 旅程。Community
 硬编码股票池、TODO API、假进度和旧 provider/runtime 路径全部 DROP。
+
+## Phase 63 — DSH Plugin Registry + Qualification Framework (`COMPLETE`)
+
+- **目标/范围**：依据 ADR-0038 建立 BYQ-owned、声明式、版本化的 Plugin Registry、
+  qualification state、capability/risk metadata、独立 Agent assignment、exact manifest/lock
+  validation、deterministic Composition Builder、profile/hash identity 和 qualification
+  evidence。以 official Web Search、Guard、Compaction、Spill、Interaction 为首批真实样板。
+- **边界/非目标**：不建设 Marketplace、用户上传、runtime `npm install`、hot install、
+  extensions/self-modification、任意 package/URL/GitHub source、shell、terminal、filesystem
+  mutation、coding/Engineering capability或数据库/provider直连。Frontend→Product API→
+  Gateway→Runtime Adapter→DSH→BYQ MCP 不变；DSH plugin 不拥有 BYQ authorization/domain
+  invariant。Web evidence 不成为 deterministic Factor/Strategy/Backtest input；spill 不成为
+  Artifact/database；DSH interaction/approval 不替代 BYQ authorization。
+- **验收/停止**：Registry schema 和 qualification runner 拒绝 duplicate/unknown/range/
+  integrity/peer/rc-mixing/risk/capability/assignment 错误；Builder 稳定生成 composition、
+  profile/hash/plugin/version identity，并拒绝 unqualified/prohibited/disabled escalation；
+  Runtime Adapter keyless initialize、MCP/session/lifecycle、Agent Web least privilege、secret
+  absence、architecture/unit/contract/security/integration tests 通过。单个 sample 因 runtime
+  或 security boundary 失败时只标记 BLOCKED，不 fork/patch/upgrade/workaround。

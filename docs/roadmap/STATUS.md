@@ -1,12 +1,13 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=62 -->
+<!-- byq:current-completed-phase=63 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 62**——真实用户专项验收的剩余 P3 已收口：股票池可直接进入
-  任务 readiness，普通页面术语统一，前端图表/共享包不再超过默认 500 kB 告警线。
+- 当前已完成阶段：**Phase 63**——建立受控的 DSH Plugin Registry、qualification gate、
+  Agent capability mapping、确定性 Composition Builder 与 runtime identity；五类 official
+  sample 均得到有证据的 QUALIFIED/ENABLED 或 BLOCKED 结论。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -51,6 +52,7 @@ history 推断项目状态。
 - real-user journey closure：**ADR-0034**
 - user-experience polish：**ADR-0035**
 - trusted runtime/market time：**ADR-0037**
+- DSH Product plugin registry/qualification boundary：**ADR-0038**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -190,10 +192,16 @@ evidence。`docs/roadmap/COMMUNITY_FEATURE_PARITY_GAP.md` 中的历史缺口已�
 分类并解决；parity-only RC 结论已被 Phase 41 的 Product experience program 取代。
 
 Post-Phase 40 DSH Upgrade Lane 已完成：Product Runtime 准确固定 Python
-`deepseek-harness-sdk` / `deepseek-harness-runtime-bin` `0.1.1rc1`，以及一致的 61 个
-`@deepseek-ai/*` npm package closure（其中 54 个 DSH package 为 `0.1.1-rc.1`）。由于
+`deepseek-harness-sdk` / `deepseek-harness-runtime-bin` `0.1.1rc1`，以及一致的 78 个
+`@deepseek-ai/*` npm package closure（其中 71 个 DSH package 为 `0.1.1-rc.1`）。由于
 缺少匹配的 Python artifact，GitHub/npm rc.2 不合格；rc.6 保持 rollback baseline。
 Product capability 和 Gateway → Runtime Adapter → DSH → MCP 边界不变。
+
+Phase 63 依据 ADR-0038 建立 Git-managed Plugin Registry、状态/风险/capability contract、
+qualification checker、静态 Product profiles、独立 Agent assignment 和 deterministic
+Cordis composition/hash。Guard、Compaction、search-only Web Search 已 QUALIFIED + ENABLED；
+Spill 因 rc.1 本地文件/cleanup 边界 BLOCKED，Interaction 因当前 SDK/JSON-RPC 缺少已验证
+的 Product 问答 lifecycle 而 BLOCKED_BY_RUNTIME_VERSION。DSH baseline 未升级。
 
 Post-Phase 62 Trusted Time Maintenance 依据 ADR-0037 将服务器权威自然时间作为 DSH
 逐轮动态 runtime context，并通过 BYQ MCP 暴露已有 SSE calendar 与 persisted market
@@ -202,7 +210,7 @@ Product Phase。
 
 ## 当前授权边界
 
-- Phase 49-62 与 ADR-0025 至 ADR-0035 对应计划均已完成。
+- Phase 49-63 与相应 Accepted ADR/计划均已完成。
 - Next phase 尚未定义。研究→策略→模拟执行自动化属于新产品能力，必须先明确 domain
   invariant、Accepted ADR 和验收标准；本轮授权不扩大为 release-candidate 评审、tag 或
   production publication。

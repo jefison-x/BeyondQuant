@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://beyondquant.local/contracts/dsh-plugin-registry.v1.schema.json",
+  "title": "BYQ DSH Plugin Registry",
+  "type": "object",
+  "required": ["schema_version", "runtime_baseline", "plugins"],
+  "properties": {
+    "schema_version": {"const": "dsh-plugin-registry.v1"},
+    "runtime_baseline": {"type": "object", "required": ["python_sdk", "runtime_bin", "npm_runtime"]},
+    "plugins": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "display_name", "source", "packages", "compatibility", "qualification", "capabilities", "credentials", "tools", "agents", "risk", "product_policy"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+          "qualification": {"type": "object", "properties": {"state": {"enum": ["AVAILABLE", "QUALIFIED", "BLOCKED", "REJECTED", "DEPRECATED"]}}},
+          "risk": {"type": "object", "properties": {"level": {"enum": ["LOW", "MEDIUM", "HIGH", "PROHIBITED"]}}},
+          "product_policy": {"type": "object", "required": ["enabled"], "properties": {"enabled": {"type": "boolean"}}}
+        }
+      }
+    }
+  }
+}

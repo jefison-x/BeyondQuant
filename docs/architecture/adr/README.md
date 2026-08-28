@@ -54,3 +54,6 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   ECharts 模块化加载；不扩大 domain/runtime 边界。
 - ADR-0037 定义 Product Agent 的双层时间边界：DSH 每轮可信自然时钟，以及 BYQ
   persisted trading-session/data-cutoff 只读投影；两者不得互相推断。
+- ADR-0038 定义 Product DSH official plugin 的 AVAILABLE/QUALIFIED/ENABLED 状态、
+  capability/risk/Agent assignment、exact qualification、deterministic composition、runtime
+  identity 与禁止 online install/self-modification 的治理边界。

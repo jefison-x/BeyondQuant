@@ -10,12 +10,12 @@ Status: **QUALIFIED — `0.1.1rc1` / `0.1.1-rc.1` maintenance upgrade**
 
 - Python `deepseek-harness-sdk==0.1.1rc1`；
 - Python `deepseek-harness-runtime-bin==0.1.1rc1`；
-- BYQ JSON-RPC runtime closure 中全部 54 个 `@deepseek-ai/dsh-*` packages 精确固定为 npm `0.1.1-rc.1`；
+- BYQ JSON-RPC runtime closure 中全部 71 个 `@deepseek-ai/dsh-*` packages 精确固定为 npm `0.1.1-rc.1`；Phase 63 candidate package 仍由 Registry 决定是否加载；
 - 七个 supporting `@deepseek-ai/*` Cordis packages 精确固定为当前 official stable versions；
 - public `@deepseek-ai/dsh-sdk-jsonrpc-demo` `lib/bin.js` carrier；
 - 不变的 BYQ Cordis composition、JSONL persistence，以及作为唯一 Agent-to-Domain path 的 `@deepseek-ai/dsh-mcp-client`。
 
-GitHub/npm `0.1.1-rc.2` 更新，但没有匹配 Python SDK/runtime-bin release，因此拒绝。普通 top-level npm rc.1 install 也 fail closed，因为 upstream caret peer ranges 会选择 rc.2 transitive packages。BYQ 将完整 DSH closure 列为 exact direct pins，阻止混合 prerelease tree；clean npm resolution 包含 61 个 `@deepseek-ai/*` packages，其中 54 个 DSH packages 只有 `0.1.1-rc.1`，且不使用 overrides、`--force` 或 `--legacy-peer-deps`。
+GitHub/npm `0.1.1-rc.2` 更新，但没有匹配 Python SDK/runtime-bin release，因此拒绝。普通 top-level npm rc.1 install 也 fail closed，因为 upstream caret peer ranges 会选择 rc.2 transitive packages。BYQ 将完整 DSH closure 列为 exact direct pins，阻止混合 prerelease tree；Phase 63 后 clean npm resolution 包含 78 个 `@deepseek-ai/*` packages，其中 71 个 DSH packages 只有 `0.1.1-rc.1`，且不使用 overrides、`--force` 或 `--legacy-peer-deps`。package presence 不等于 Product enabled。
 
 证据与 compatibility results 记录在 [`dsh-compatibility-matrix.md`](../architecture/research/dsh-compatibility-matrix.md)。未来 candidate 在不改变 qualified pin 的情况下运行：
 

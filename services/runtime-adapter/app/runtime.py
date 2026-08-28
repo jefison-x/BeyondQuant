@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 import queue
+import re
 import shutil
 import threading
 import uuid
@@ -95,6 +97,12 @@ class RuntimeAdapter:
                 "/opt/byq/compositions/byq-product-sdk.cordis.yml",
             )
         )
+        self._composition_identity = Path(
+            os.environ.get(
+                "BYQ_DSH_COMPOSITION_IDENTITY",
+                "/opt/byq/compositions/byq-product-sdk.identity.json",
+            )
+        )
         self._session_root = Path(
             os.environ.get("DSH_SESSION_ROOT", "/var/lib/byq/dsh-sessions")
         ).expanduser().resolve()
@@ -119,6 +127,7 @@ class RuntimeAdapter:
         return (node, str(runtime))
 
     def readiness(self) -> dict[str, Any]:
+        composition_identity = self._safe_composition_identity()
         return {
             "runtime_adapter": "ready",
             "sdk": "deepseek-harness-sdk==0.1.1rc1",
@@ -126,6 +135,9 @@ class RuntimeAdapter:
             "explicit_runtime": self.runtime_command[1],
             "composition": str(self._composition),
             "composition_exists": self._composition.is_file(),
+            "plugin_profile": composition_identity["profile"],
+            "composition_hash": composition_identity["composition_hash"],
+            "enabled_plugin_ids": composition_identity["enabled_plugin_ids"],
             "model_credentials": (
                 "configured" if self._model_api_key
                 else "resolver" if self._resolver_token
@@ -158,6 +170,7 @@ class RuntimeAdapter:
             with record.lock:
                 status_counts[record.status] = status_counts.get(record.status, 0) + 1
                 active_prompts += int(record.active_run is not None)
+        composition_identity = self._safe_composition_identity()
         return {
             "schema_version": "runtime-operations.v1",
             "runtime": {
@@ -167,6 +180,9 @@ class RuntimeAdapter:
                 "process_ownership": "one-per-active-session",
                 "provider": self._provider,
                 "model": self._model,
+                "plugin_profile": composition_identity["profile"],
+                "composition_hash": composition_identity["composition_hash"],
+                "enabled_plugin_ids": composition_identity["enabled_plugin_ids"],
             },
             "sessions": {
                 "active": len(records),
@@ -186,6 +202,30 @@ class RuntimeAdapter:
             },
             "raw_dsh_events": False,
         }
+
+    def _safe_composition_identity(self) -> dict[str, Any]:
+        """Load only the public, secret-free generated composition identity."""
+
+        fallback = {"profile": "unknown", "composition_hash": "unavailable", "enabled_plugin_ids": []}
+        try:
+            value = json.loads(self._composition_identity.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return fallback
+        if not isinstance(value, dict):
+            return fallback
+        profile = value.get("profile")
+        digest = value.get("composition_hash")
+        plugin_ids = value.get("enabled_plugin_ids")
+        if not isinstance(profile, str) or not profile:
+            return fallback
+        if not isinstance(digest, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
+            return fallback
+        if not isinstance(plugin_ids, list) or not all(
+            isinstance(item, str) and re.fullmatch(r"[a-z0-9-]+", item) is not None
+            for item in plugin_ids
+        ):
+            return fallback
+        return {"profile": profile, "composition_hash": digest, "enabled_plugin_ids": plugin_ids}
 
     def create_session(
         self, session_id: str, trace_id: str, owner_principal: str | None = None,
