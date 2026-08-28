@@ -17,6 +17,7 @@ class CreateSessionRequest(BaseModel):
     trace_id: str
     workspace_id: str | None = None
     owner_principal: str | None = None
+    initial_sequence: int = 0
 
 
 class PromptRequest(BaseModel):
@@ -47,7 +48,8 @@ def runtime_operations() -> dict[str, object]:
 def create_session(request: CreateSessionRequest) -> dict[str, object]:
     try:
         return adapter.create_session(
-            request.session_id, request.trace_id, request.owner_principal, request.workspace_id
+            request.session_id, request.trace_id, request.owner_principal, request.workspace_id,
+            request.initial_sequence,
         )
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

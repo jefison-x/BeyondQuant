@@ -331,10 +331,28 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
         principal=principal,
         workspace_id=workspace_id,
     )
+    persisted_events = trace_store.read(session.session_id)
+    initial_sequence = max((event["sequence"] for event in persisted_events), default=0)
+    try:
+        _adapter_post(
+            "/internal/runtime/sessions",
+            payload={
+                "session_id": session.session_id,
+                "trace_id": session.trace_id,
+                "workspace_id": session.workspace_id,
+                "owner_principal": session.principal.subject,
+                "initial_sequence": initial_sequence,
+            },
+        )
+    except HTTPException as exc:
+        # A 409 means Gateway restarted while this adapter session survived.
+        if exc.status_code != 409:
+            raise
     try:
         product_sessions.add(session)
     except RuntimeError:
         return product_sessions.get_owned(conversation_id, principal)
+    _start_trace_collector(session)
     return session
 
 

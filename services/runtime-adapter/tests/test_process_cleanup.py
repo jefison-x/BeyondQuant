@@ -110,6 +110,16 @@ def test_hard_cancel_closes_runtime_and_rejects_later_prompt(adapter: RuntimeAda
     assert released["status"] == SessionStatus.CLOSED
 
 
+def test_session_creation_can_continue_a_durable_trace_sequence(adapter: RuntimeAdapter) -> None:
+    created = adapter.create_session("s-sequence", "t-sequence", initial_sequence=41)
+
+    record = adapter._get("s-sequence")
+    assert created["status"] == SessionStatus.READY
+    assert record.history[0]["sequence"] == 42
+    assert record.sequence == 42
+    adapter.release_session("s-sequence")
+
+
 def test_hard_cancel_resume_uses_a_new_owned_runtime(adapter: RuntimeAdapter) -> None:
     adapter.create_session("s-1", "t-1")
     adapter.submit_prompt("s-1", "running")

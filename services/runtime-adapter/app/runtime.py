@@ -189,10 +189,12 @@ class RuntimeAdapter:
 
     def create_session(
         self, session_id: str, trace_id: str, owner_principal: str | None = None,
-        workspace_id: str | None = None,
+        workspace_id: str | None = None, initial_sequence: int = 0,
     ) -> dict[str, Any]:
         validate_identifier(session_id, field="session_id")
         validate_identifier(trace_id, field="trace_id")
+        if isinstance(initial_sequence, bool) or not isinstance(initial_sequence, int) or initial_sequence < 0:
+            raise ValueError("initial_sequence must be a non-negative integer")
         session_root = contained_session_path(self._session_root, session_id)
         model_resolution = self._resolve_model(
             owner_principal=owner_principal,
@@ -219,6 +221,7 @@ class RuntimeAdapter:
                 owner_principal=owner_principal,
                 workspace_id=workspace_id,
                 model_resolution=model_resolution,
+                sequence=initial_sequence,
             )
             self._sessions[session_id] = record
 
