@@ -21,6 +21,7 @@ describe("system settings navigation", () => {
       "/settings/system/sources",
       "/settings/system/cache",
       "/settings/system/database",
+      "/settings/system/plugins",
       "/settings/system/models",
       "/settings/system/agents",
       "/settings/system/budget",

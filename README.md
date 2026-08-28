@@ -1,11 +1,11 @@
 # BeyondQuant
 
-<!-- byq:current-completed-phase=64 -->
+<!-- byq:current-completed-phase=65 -->
 
 BeyondQuant（BYQ）是一个 AI 原生量化研究平台。当前已完成的项目阶段为
-**Phase 64**：在 Phase 63 Plugin Registry 基线上，将 qualified search-only Web Search
-转化为 Market Research Agent 的受控、可追溯、时间安全研究证据能力；运行时 baseline
-保持 Python `0.1.1rc1` / npm `0.1.1-rc.1`。
+**Phase 65**：在 Phase 63/64 治理基线上，提供 admin-only Plugin Center、受审计的
+策略/资格请求、deterministic composition deployment identity 与 active runtime 验证；
+运行时 baseline 保持 Python `0.1.1rc1` / npm `0.1.1-rc.1`。
 当前状态以
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) 为准。
 
@@ -31,7 +31,7 @@ BYQ 不 fork DSH。DSH 版本通过明确的依赖策略和兼容性 Contract �
 - 支持 ResearchTask、Experiment、Artifact、Approval、因子研究、策略草稿/版本、
   确定性的 signal-snapshot Backtest、Stock Pool，以及仅模拟的 Paper Trading 领域。
 - 提供 Vue 产品工作区，覆盖研究、策略、Backtest、Stock Pool、Paper Trading、
-  资产/设置、Data Center 和受保护的运维界面。
+  资产/设置、Data Center、Plugin Center 和受保护的运维界面。
 - 提供按 owner 隔离的加密模型凭证、profile 和 Product Agent binding；规范化的
   workspace 资产传输；以及受平台 Approval 优先级约束的个人 Agent Policy
   preset/rule。

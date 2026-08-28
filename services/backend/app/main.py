@@ -150,6 +150,13 @@ from .operations import (
     OperationsPersistenceError,
     OperationsStore,
 )
+from .plugin_center import (
+    PluginCenterConflict,
+    PluginCenterForbidden,
+    PluginCenterNotFound,
+    PluginCenterPersistenceError,
+    PluginCenterStore,
+)
 
 
 SERVICE = "byq-backend"
@@ -168,6 +175,7 @@ user_store = UserAuthStore.from_env()
 user_policy_store = UserPolicyStore.from_env()
 credential_store = CredentialStore.from_env()
 operations_store = OperationsStore.from_env()
+plugin_center_store = PluginCenterStore.from_env()
 market_data_store = MarketDataStore.from_env()
 market_readiness_store = MarketReadinessStore.from_env()
 signal_job_store = SignalJobStore.from_env()
@@ -202,6 +210,21 @@ def _operations_call(call: Callable[[], dict[str, object]]) -> dict[str, object]
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except OperationsPersistenceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _plugin_center_call(call: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return call()
+    except PluginCenterForbidden as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except PluginCenterNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PluginCenterConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except PluginCenterPersistenceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
@@ -329,6 +352,52 @@ def operations_budget_update(payload: dict[str, Any], request: Request) -> dict[
         payload,
         actor_principal=request.headers.get("x-byq-actor-principal"),
         actor_role=request.headers.get("x-byq-actor-role"),
+    ))
+
+
+@app.get("/v1/plugin-center")
+def plugin_center_projection(request: Request) -> dict[str, object]:
+    return _plugin_center_call(lambda: plugin_center_store.projection(
+        actor_role=request.headers.get("x-byq-actor-role"),
+    ))
+
+
+@app.get("/v1/plugin-center/plugins/{plugin_id}")
+def plugin_center_detail(plugin_id: str, request: Request) -> dict[str, object]:
+    return _plugin_center_call(lambda: plugin_center_store.detail(
+        plugin_id, actor_role=request.headers.get("x-byq-actor-role"),
+    ))
+
+
+@app.post("/v1/plugin-center/changes", status_code=202)
+def plugin_center_change(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    return _plugin_center_call(lambda: plugin_center_store.request_change(
+        payload,
+        actor_principal=request.headers.get("x-byq-actor-principal"),
+        actor_role=request.headers.get("x-byq-actor-role"),
+    ))
+
+
+@app.post("/v1/plugin-center/qualifications", status_code=202)
+def plugin_center_qualification(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    return _plugin_center_call(lambda: plugin_center_store.request_qualification(
+        payload,
+        actor_principal=request.headers.get("x-byq-actor-principal"),
+        actor_role=request.headers.get("x-byq-actor-role"),
+    ))
+
+
+@app.get("/internal/plugin-center/requests/{request_id}")
+def plugin_deployment_input(request_id: str, request: Request) -> dict[str, object]:
+    return _plugin_center_call(lambda: plugin_center_store.deployment_input(
+        request_id, service_token=request.headers.get("x-byq-plugin-deployment-token"),
+    ))
+
+
+@app.post("/internal/plugin-center/requests/{request_id}/result")
+def plugin_deployment_result(request_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    return _plugin_center_call(lambda: plugin_center_store.record_result(
+        request_id, payload, service_token=request.headers.get("x-byq-plugin-deployment-token"),
     ))
 
 

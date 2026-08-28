@@ -15,6 +15,7 @@ virtualenv/
 
 # JavaScript / tooling caches
 node_modules/
+.byq-build/
 dist/
 test-results/
 playwright-report/

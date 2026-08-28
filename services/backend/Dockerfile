@@ -8,6 +8,7 @@ WORKDIR /app
 COPY services/backend/pyproject.toml ./
 COPY services/backend/app ./app
 COPY services/backend/tests ./tests
+COPY plugins/dsh-byq/registry/plugins.json /app/plugin-registry/plugins.json
 
 RUN pip install --no-cache-dir ".[test]"
 

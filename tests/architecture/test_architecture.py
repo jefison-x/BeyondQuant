@@ -61,8 +61,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "64")
-        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039"):
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "65")
+        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
 
@@ -649,7 +649,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         copy_lines = [line for line in dockerfile.splitlines() if line.startswith("COPY")]
         self.assertNotIn("COPY .", dockerfile)
         self.assertIn("packages/contracts", "\n".join(copy_lines))
-        self.assertIn("plugins/dsh-byq/compositions", "\n".join(copy_lines))
+        self.assertIn("BYQ_DSH_COMPOSITION_SOURCE=plugins/dsh-byq/compositions", dockerfile)
+        self.assertIn("COPY ${BYQ_DSH_COMPOSITION_SOURCE}", "\n".join(copy_lines))
         self.assertNotIn("services/backend", dockerfile)
         self.assertNotIn(".git", dockerfile)
 
@@ -811,6 +812,26 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             )
         )
         self.assertNotIn("web_research_evidence", deterministic_consumers)
+
+    def test_phase65_plugin_center_has_no_install_or_runtime_control_path(self) -> None:
+        backend = (ROOT / "services/backend/app/plugin_center.py").read_text()
+        gateway = (ROOT / "services/gateway/app/product_api.py").read_text()
+        frontend = (ROOT / "apps/frontend/src/api/plugins.ts").read_text()
+        adr = (ROOT / "docs/architecture/adr/ADR-0040-plugin-center-deployment-control-plane.md").read_text()
+        self.assertIn("awaiting_generation", backend)
+        self.assertIn("expected_version", backend)
+        self.assertIn("idempotency_key", backend)
+        self.assertIn('qualification != "QUALIFIED"', backend)
+        self.assertIn("_PROHIBITED", backend)
+        self.assertIn('user.get("role") != "admin"', gateway)
+        self.assertIn("desired_matches_active_plugins", gateway)
+        self.assertIn("/api/product/plugins", frontend)
+        self.assertNotIn("runtime-adapter", frontend)
+        self.assertNotIn("/v1/plugin-center", frontend)
+        for forbidden in ("npm install", "legacy-peer-deps", "docker.sock", "subprocess.", "os.system("):
+            self.assertNotIn(forbidden, backend.lower())
+            self.assertNotIn(forbidden, gateway.lower())
+        self.assertIn("Status: Accepted", adr)
 
     def test_frontend_has_no_dsh_event_schema_dependency(self) -> None:
         frontend = ROOT / "apps/frontend"

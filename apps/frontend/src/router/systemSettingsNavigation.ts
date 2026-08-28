@@ -12,6 +12,7 @@ import {
   SetUp,
   Share,
   Tools,
+  Grid,
 } from "@element-plus/icons-vue";
 
 export interface SystemSettingsItem {
@@ -45,6 +46,7 @@ export const systemSettingsGroups: SystemSettingsGroup[] = [
   {
     label: "Agent 平台",
     items: [
+      { path: "/settings/system/plugins", label: "Plugin Center", description: "资格、风险与部署状态", icon: Grid },
       { path: "/settings/system/models", label: "平台模型", description: "系统档案与绑定状态", icon: SetUp },
       { path: "/settings/system/agents", label: "Agent", description: "角色与最近运行", icon: Tools },
       { path: "/settings/system/budget", label: "执行预算", description: "有界阈值与用量", icon: Money },

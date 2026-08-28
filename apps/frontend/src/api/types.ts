@@ -577,6 +577,71 @@ export interface OperationsBudgetUpdate {
   idempotency_key: string;
 }
 
+export interface PluginCatalogItem {
+  id: string;
+  display_name: string;
+  description: string;
+  publisher: string;
+  packages: Array<{ name: string; version: string }>;
+  qualified_version?: string | null;
+  upstream_latest_observed?: string | null;
+  qualification_state: "AVAILABLE" | "QUALIFIED" | "BLOCKED" | "REJECTED" | "DEPRECATED";
+  qualification_reason: string;
+  qualification_checks: Record<string, boolean | string>;
+  evidence_refs: string[];
+  compatibility: Record<string, string>;
+  risk: { level: "LOW" | "MEDIUM" | "HIGH" | "PROHIBITED"; reasons: string[] };
+  capabilities: string[];
+  tools: string[];
+  allowed_agents: string[];
+  denied_agents: string[];
+  desired_agents: string[];
+  desired_enabled: boolean;
+  active: boolean;
+  credential_required: boolean;
+  credential_configured: boolean;
+}
+
+export interface PluginChangeRequest {
+  request_id: string;
+  request_kind: string;
+  plugin_id: string;
+  requested_version?: string | null;
+  status: string;
+  deployment_state: string;
+  actor_principal: string;
+  reason: string;
+  old_policy_version: number;
+  new_policy_version: number;
+  desired_policy_hash: string;
+  target_composition_hash?: string | null;
+  bounded_result?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PluginCenter {
+  schema_version: "plugin-center.v1";
+  runtime_baseline: Record<string, string>;
+  policy: { version: number; enabled_plugin_ids: string[]; agent_assignments: Record<string, string[]>; updated_by: string; updated_at: string };
+  counts: Record<string, number>;
+  plugins: PluginCatalogItem[];
+  requests: PluginChangeRequest[];
+  audit: Array<Record<string, unknown>>;
+  boundaries: { online_install: false; runtime_mutation: false; secrets_exposed: false };
+  runtime: { status: string; sdk?: string; runtime_bin?: string; active_profile?: string; active_composition_hash?: string; active_plugin_ids: string[]; desired_matches_active_plugins: boolean };
+  projection_status: "ready" | "partial";
+}
+
+export interface PluginDetail {
+  schema_version: "plugin-center-detail.v1";
+  plugin: PluginCatalogItem;
+  plugins: PluginCatalogItem[];
+  recent_requests: PluginChangeRequest[];
+  runtime: PluginCenter["runtime"];
+  projection_status: "ready" | "partial";
+}
+
 export interface DataCenterStatus {
   schema_version: "data-center.v3";
   migration: string;

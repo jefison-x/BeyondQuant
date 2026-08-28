@@ -312,7 +312,7 @@ Phase 63  Plugin Registry + Qualification Framework（COMPLETE）
     ↓
 Phase 64  Research Agent Web Search 深化（COMPLETE）
     ↓
-Phase 65  DSH Plugin Center Admin UI（AUTHORIZED; NEXT）
+Phase 65  DSH Plugin Center Admin UI（COMPLETE）
 ```
 
 `STATUS.md` 仍是阶段授权的唯一事实来源。两个阶段不得并行，不得共用 worktree/branch/PR。Phase 64 必须
@@ -451,7 +451,7 @@ authorization 或 Artifact contract；Agent assignment 可串权；需要用模�
 raw DSH schema 或内部 token 可能进入 Browser/WorkflowTrace/log/error；需要混合 DSH prerelease、
 fork/patch upstream 或建立第二 harness。上游变化只能触发 Upgrade Lane，不得在本阶段自动升级。
 
-## Phase 65 — DSH Plugin Center Admin UI（`AUTHORIZED`; NEXT AFTER PHASE 64 MERGE）
+## Phase 65 — DSH Plugin Center Admin UI（`COMPLETE`）
 
 ### 目标与前置决策
 
@@ -460,7 +460,7 @@ fork/patch upstream 或建立第二 harness。上游变化只能触发 Upgrade L
 发起 enable/disable、assignment 和 qualification workflow。Plugin Center 是治理与部署状态
 界面，不是 Marketplace、package installer 或 DSH runtime console。
 
-Phase 65 已获维护者条件授权，但只有在 Phase 64 合并后才能开始。实现前必须接受新的
+Phase 65 已在 Phase 64 合并后完成。ADR-0040 已接受并明确新的
 control-plane ADR，明确：
 
 - Git-managed Registry/qualification evidence、期望 Product policy、generated composition 与
