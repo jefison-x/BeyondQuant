@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,6 +36,16 @@ class PluginRegistryTests(unittest.TestCase):
         self.assertEqual(registry_module.build(), registry_module.build())
         self.assertEqual(data["profile_name"], "research")
         registry_module.write_or_check(profile_name=None, check=True)
+
+    def test_product_plugin_descriptive_copy_is_chinese(self) -> None:
+        chinese = re.compile(r"[\u4e00-\u9fff]")
+        for plugin in _registry()["plugins"]:
+            with self.subTest(plugin=plugin["id"]):
+                self.assertRegex(plugin["display_name"], chinese)
+                self.assertRegex(plugin["description"], chinese)
+                self.assertRegex(plugin["qualification"]["reason"], chinese)
+                for reason in plugin["risk"]["reasons"]:
+                    self.assertRegex(reason, chinese)
 
     def test_enabled_plugin_states_and_agent_web_boundary(self) -> None:
         data = registry_module.load_and_validate()

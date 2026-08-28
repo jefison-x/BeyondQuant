@@ -3,7 +3,7 @@
   "runtime_baseline": {"python_sdk": "0.1.1rc1", "runtime_bin": "0.1.1rc1", "npm_runtime": "0.1.1-rc.1", "upstream_latest_observed": "0.1.2-alpha.1", "observed_at": "2026-08-28"},
   "plugins": [
     {
-      "id": "compaction", "display_name": "DSH Compaction", "description": "Automatic conversation compaction and bounded tool-result pruning.",
+      "id": "compaction", "display_name": "DSH 上下文压缩", "description": "自动压缩长对话，并对超大的工具结果进行有界裁剪。",
       "source": {"kind": "official_npm", "publisher": "deepseek-ai"},
       "packages": [
         {"name": "@deepseek-ai/dsh-commands", "version": "0.1.1-rc.1", "integrity": "sha512-jOtQNe5RBfyCQxUqCAhqJbrfM3iUZZp1H197SrhFDuZT8v4CbbnyjBWQTAeuztf66pM8VoCxnBik79kY6tN/KA=="},
@@ -13,11 +13,11 @@
         {"name": "@deepseek-ai/dsh-token-meter", "version": "0.1.1-rc.1", "integrity": "sha512-P5CIwXRbGUO8AquJIuoZaLlBY7NZ/OqGM7BRM9Qps+vNaC3lmwa/Dq/I+fhmckXjPMYLA20X4kVVn/SDUG422Q=="}
       ],
       "compatibility": {"dsh_runtime": "0.1.1-rc.1", "python_sdk": "0.1.1rc1", "runtime_bin": "0.1.1rc1", "status": "COMPATIBLE"},
-      "qualification": {"state": "QUALIFIED", "qualified_at": "2026-08-28", "reason": "Exact rc.1 closure initializes under the BYQ JSON-RPC composition; compaction remains Agent context and cannot replace BYQ artifacts or domain state.", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": true, "composition_initialize": true, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": true, "agent_boundary": true, "mcp_boundary": true, "contract_tests": true, "architecture_tests": true}},
+      "qualification": {"state": "QUALIFIED", "qualified_at": "2026-08-28", "reason": "精确锁定的 rc.1 依赖闭包已在 BYQ JSON-RPC 组合中完成初始化；压缩内容仅属于 Agent 上下文，不能替代 BYQ Artifact 或领域状态。", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": true, "composition_initialize": true, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": true, "agent_boundary": true, "mcp_boundary": true, "contract_tests": true, "architecture_tests": true}},
       "capabilities": {"network": false, "web_search": false, "web_fetch": false, "filesystem_read": false, "filesystem_write": false, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": false, "runtime_mutation": false, "user_interaction": false},
       "credentials": {"required": false, "references": []}, "tools": {"exposed": []},
       "agents": {"allowed": ["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"], "denied": []},
-      "risk": {"level": "LOW", "reasons": ["No network or mutation capability", "Summary is non-authoritative Agent context"]}, "product_policy": {"enabled": true},
+      "risk": {"level": "LOW", "reasons": ["不具备网络访问或运行时修改能力", "压缩摘要只是非权威的 Agent 上下文"]}, "product_policy": {"enabled": true},
       "composition": {"entries": [
         {"id": "compaction-basic", "name": "@deepseek-ai/dsh-compaction-basic", "config": {"thresholdRatio": 0.8, "retainRatio": 0.16, "maxTokens": 8192, "compactionRetries": 1}},
         {"id": "compaction-tool-result-pruner", "name": "@deepseek-ai/dsh-compaction-tool-result-pruner", "config": {"thresholdChars": 8192, "headChars": 4096, "tailChars": 1024}},
@@ -25,39 +25,39 @@
       ]}
     },
     {
-      "id": "guard", "display_name": "DSH Guard", "description": "Advisory repeated-call guard and cooperative per-tool timeout enforcement.",
+      "id": "guard", "display_name": "DSH 调用防护", "description": "对重复工具调用给出提醒，并以协作方式执行单次工具调用超时限制。",
       "source": {"kind": "official_npm", "publisher": "deepseek-ai"},
       "packages": [
         {"name": "@deepseek-ai/dsh-repeat-tool-reminder", "version": "0.1.1-rc.1", "integrity": "sha512-b5DPzJPJTKACT2RNmdTBRvo8ajkJ1n+UttlH5tULaKepr6AdTxxvq31a7HFWMwmHJ6aftXGyui+g7a2PSCW9bw=="},
         {"name": "@deepseek-ai/dsh-tool-call-timeout-policy", "version": "0.1.1-rc.1", "integrity": "sha512-lAd+eRth7mhr/SRb8CFz9OhS5arF3VQgnrWxfeftE+oofytj8juiwppSBXPfjl1lP6a2D5jVsQ0G6pd3pdZCXQ=="}
       ],
       "compatibility": {"dsh_runtime": "0.1.1-rc.1", "python_sdk": "0.1.1rc1", "runtime_bin": "0.1.1rc1", "status": "COMPATIBLE"},
-      "qualification": {"state": "QUALIFIED", "qualified_at": "2026-08-28", "reason": "Both official guards initialize on rc.1, add no tools or authority, preserve tool results, and produce bounded advisory/timeout outcomes.", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": true, "composition_initialize": true, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": true, "agent_boundary": true, "mcp_boundary": true, "contract_tests": true, "architecture_tests": true}},
+      "qualification": {"state": "QUALIFIED", "qualified_at": "2026-08-28", "reason": "两个官方防护插件均已在 rc.1 上完成初始化；它们不会增加工具或权限，会保留真实工具结果，并产生有界的提醒或超时结果。", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": true, "composition_initialize": true, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": true, "agent_boundary": true, "mcp_boundary": true, "contract_tests": true, "architecture_tests": true}},
       "capabilities": {"network": false, "web_search": false, "web_fetch": false, "filesystem_read": false, "filesystem_write": false, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": false, "runtime_mutation": false, "user_interaction": false},
       "credentials": {"required": false, "references": []}, "tools": {"exposed": []},
       "agents": {"allowed": ["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"], "denied": []},
-      "risk": {"level": "LOW", "reasons": ["Advisory only", "Timeout is cooperative and cannot forge domain success"]}, "product_policy": {"enabled": true},
+      "risk": {"level": "LOW", "reasons": ["重复调用防护仅提供提醒", "超时控制采用协作方式，不能伪造领域操作成功"]}, "product_policy": {"enabled": true},
       "composition": {"entries": [
         {"id": "repeat-tool-reminder", "name": "@deepseek-ai/dsh-repeat-tool-reminder", "config": {"thresholds": [3, 5, 8], "argumentsPreviewChars": 500}},
         {"id": "tool-call-timeout-policy", "name": "@deepseek-ai/dsh-tool-call-timeout-policy"}
       ]}
     },
     {
-      "id": "interaction", "display_name": "DSH User Questions", "description": "Structured ask-user interaction service and model-facing tool.",
+      "id": "interaction", "display_name": "DSH 用户提问", "description": "向用户发起结构化问题并接收回答的通用交互服务与模型工具。",
       "source": {"kind": "official_npm", "publisher": "deepseek-ai"},
       "packages": [
         {"name": "@deepseek-ai/dsh-tool-ask-user", "version": "0.1.1-rc.1", "integrity": "sha512-MUXpZ6BYy/rAY8Yp+NXXwbH9Cxlria4GGq+nbnYaTHpc8xM76X1hpp3n2iOzV/ef9V+IDCWmW3Z3gnljbDFWRw=="},
         {"name": "@deepseek-ai/dsh-user-questions", "version": "0.1.1-rc.1", "integrity": "sha512-q5RZczXTNzSC/fas+qIno5jCqH/jotz0OpBzRCTNMPV1ID4YcGroaUKsLxzaGXP5bbiaVlX5Tqt5FUYO6rYStQ=="}
       ],
       "compatibility": {"dsh_runtime": "0.1.1-rc.1", "python_sdk": "0.1.1rc1", "runtime_bin": "0.1.1rc1", "status": "BLOCKED_BY_RUNTIME_VERSION"},
-      "qualification": {"state": "BLOCKED", "qualified_at": null, "reason": "The rc.1 packages exist, but the qualified BYQ SDK/JSON-RPC transport has no proven Product question request/answer lifecycle; DSH interaction cannot be confused with BYQ authorization.", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": false, "composition_initialize": false, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": false, "agent_boundary": true, "mcp_boundary": true, "contract_tests": false, "architecture_tests": true}},
+      "qualification": {"state": "BLOCKED", "qualified_at": null, "reason": "rc.1 软件包虽然存在，但当前已认证的 BYQ SDK/JSON-RPC 传输尚未证明完整的 Product 提问与回答生命周期；DSH 用户交互也不能被视为 BYQ 业务授权。", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": false, "composition_initialize": false, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": false, "agent_boundary": true, "mcp_boundary": true, "contract_tests": false, "architecture_tests": true}},
       "capabilities": {"network": false, "web_search": false, "web_fetch": false, "filesystem_read": false, "filesystem_write": false, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": false, "runtime_mutation": false, "user_interaction": true},
       "credentials": {"required": false, "references": []}, "tools": {"exposed": ["ask_user"]},
       "agents": {"allowed": ["quant_orchestrator"], "denied": ["market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"]},
-      "risk": {"level": "MEDIUM", "reasons": ["Requires durable human interaction routing", "Cannot substitute for BYQ authorization"]}, "product_policy": {"enabled": false}, "composition": {"entries": []}
+      "risk": {"level": "MEDIUM", "reasons": ["需要可靠且可恢复的人机交互链路", "不能替代 BYQ 业务授权"]}, "product_policy": {"enabled": false}, "composition": {"entries": []}
     },
     {
-      "id": "spill", "display_name": "DSH Spill", "description": "Large tool-result spill seam with local filesystem storage.",
+      "id": "spill", "display_name": "DSH 结果暂存", "description": "将超大工具结果暂存到本地文件系统的通用能力。",
       "source": {"kind": "official_npm", "publisher": "deepseek-ai"},
       "packages": [
         {"name": "@deepseek-ai/dsh-spill", "version": "0.1.1-rc.1", "integrity": "sha512-PK1A1YxQVgisWacljbHAyL2z3MGXE+GWeXzNf2hHElzmtAkv412a3TXtMTL5XLZ1m0laLZxstEcf8L+S4zxvPQ=="},
@@ -65,14 +65,14 @@
         {"name": "@deepseek-ai/dsh-spill-policy", "version": "0.1.1-rc.1", "integrity": "sha512-shbTUw8Cpq+X5XZlM3G8q5pPDmXnNgyW8NRDUg2l/bPLipdejIivs7T5dLLXKRtxhaD9GB6Z7jqFuy+dlV8iIg=="}
       ],
       "compatibility": {"dsh_runtime": "0.1.1-rc.1", "python_sdk": "0.1.1rc1", "runtime_bin": "0.1.1rc1", "status": "BLOCKED_BY_SECURITY_BOUNDARY"},
-      "qualification": {"state": "BLOCKED", "qualified_at": null, "reason": "spill-local has no session/age cleanup in rc.1 and returns filesystem locators with read/grep guidance; Product DSH intentionally has no filesystem-read tool.", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": false, "composition_initialize": false, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": false, "agent_boundary": true, "mcp_boundary": true, "contract_tests": false, "architecture_tests": true}},
+      "qualification": {"state": "BLOCKED", "qualified_at": null, "reason": "rc.1 的 spill-local 没有按会话或保存时长执行清理，并会返回依赖文件读取或检索工具的本地路径；Product DSH 按安全设计不提供文件系统读取工具。", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": false, "composition_initialize": false, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": false, "agent_boundary": true, "mcp_boundary": true, "contract_tests": false, "architecture_tests": true}},
       "capabilities": {"network": false, "web_search": false, "web_fetch": false, "filesystem_read": false, "filesystem_write": true, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": true, "runtime_mutation": false, "user_interaction": false},
       "credentials": {"required": false, "references": []}, "tools": {"exposed": []},
       "agents": {"allowed": [], "denied": ["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"]},
-      "risk": {"level": "HIGH", "reasons": ["Writes local files", "No rc.1 lifecycle cleanup", "Filesystem locator is unusable without prohibited Product read tools"]}, "product_policy": {"enabled": false}, "composition": {"entries": []}
+      "risk": {"level": "HIGH", "reasons": ["会写入本地文件", "rc.1 没有满足要求的生命周期清理机制", "文件定位信息依赖 Product Plane 禁止提供的文件读取工具"]}, "product_policy": {"enabled": false}, "composition": {"entries": []}
     },
     {
-      "id": "web-search", "display_name": "DSH Web Search", "description": "DeepSeek-backed structured web search with web_fetch disabled.",
+      "id": "web-search", "display_name": "DSH 网页搜索", "description": "由 DeepSeek 提供的结构化网页搜索能力；网页抓取功能保持禁用。",
       "source": {"kind": "official_npm", "publisher": "deepseek-ai"},
       "packages": [
         {"name": "@deepseek-ai/dsh-tool-web", "version": "0.1.1-rc.1", "integrity": "sha512-d3/9NJQc2Vcv4m6Q94POCRZ0conqjAeqUobNwIpMiWrSL4U8jZYzXwFVBw0Sw+cwYVBi2Og5Vv9aJmWANTX3Mw=="},
@@ -80,11 +80,11 @@
         {"name": "@deepseek-ai/dsh-web-search-deepseek", "version": "0.1.1-rc.1", "integrity": "sha512-3iQHtGsPYEi0r2Zd34XO+FayTPrE9PfPpwnHSdvKy0MdfGqjEvJyujh0V4X9tA8EhW1eGXzoOXIIKzVOxxdmTw=="}
       ],
       "compatibility": {"dsh_runtime": "0.1.1-rc.1", "python_sdk": "0.1.1rc1", "runtime_bin": "0.1.1rc1", "status": "COMPATIBLE"},
-      "qualification": {"state": "QUALIFIED", "qualified_at": "2026-08-28", "reason": "Official rc.1 provider and tool initialize keylessly; web_fetch is disabled, queries/results are bounded, credentials stay child-only, and evidence is non-authoritative research context.", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": true, "composition_initialize": true, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": true, "agent_boundary": true, "mcp_boundary": true, "contract_tests": true, "architecture_tests": true}},
+      "qualification": {"state": "QUALIFIED", "qualified_at": "2026-08-28", "reason": "官方 rc.1 服务商与工具已通过无凭证初始化；网页抓取保持禁用，查询和结果都有明确上限，凭证只进入子进程，网页证据仅作为非权威研究上下文。", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": true, "composition_initialize": true, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": true, "agent_boundary": true, "mcp_boundary": true, "contract_tests": true, "architecture_tests": true}},
       "capabilities": {"network": true, "web_search": true, "web_fetch": false, "filesystem_read": false, "filesystem_write": false, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": false, "runtime_mutation": false, "user_interaction": false},
       "credentials": {"required": true, "references": ["DEEPSEEK_API_KEY"]}, "tools": {"exposed": ["web_search"]},
       "agents": {"allowed": ["quant_orchestrator", "market_researcher"], "denied": ["factor_researcher", "strategy_researcher", "backtest_analyst"]},
-      "risk": {"level": "MEDIUM", "reasons": ["Outbound network and provider credential", "Web evidence is not deterministic Domain input"]}, "product_policy": {"enabled": true},
+      "risk": {"level": "MEDIUM", "reasons": ["需要外部网络访问和服务商凭证", "网页证据不是确定性的领域输入"]}, "product_policy": {"enabled": true},
       "composition": {"entries": [
         {"id": "tool-web-search-only", "name": "@deepseek-ai/dsh-tool-web", "config": {"search": true, "fetch": false, "searchMaxResults": 8, "searchMaxQueries": 4, "searchTimeoutMs": 60000}},
         {"id": "web-search-deepseek", "name": "@deepseek-ai/dsh-web-search-deepseek", "config": {"apiKeyEnv": "DEEPSEEK_API_KEY", "maxTokens": 4096, "maxUses": 5}},
