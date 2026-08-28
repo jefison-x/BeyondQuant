@@ -28,3 +28,16 @@ draft → validated → superseded
 ## 稳定性保证
 
 Artifact consumers 应依赖 BYQ artifact contracts 和 provenance，而不是 DSH session internals 或 storage details。
+
+## Web Research Evidence（Phase 64）
+
+`web_research_evidence` 使用 `web-research-evidence.v1`，是现有 Artifact 的严格 content kind，
+不是新数据库。它保存 research as-of、BYQ market cutoff context、有界 search queries、来源
+URL/title/publisher/tier/published/retrieved time、typed claims、conflicts/limitations 和固定
+research-only usage policy。
+
+DSH Web result 在调用 `byq_web_evidence_create` 前只是 session context。晋升必须经过 trusted
+owner/workspace、authorization、MCP、Backend validation、idempotency、hash、lineage 和 audit。
+Artifact validation 不把网页内容升级为权威市场数据；其 `deterministic_input` 和
+`authoritative_market_data` 永远为 false。Factor、Strategy、signal 与 Backtest consumers 必须
+继续只接收 BYQ Data Plane 已规范化、PIT 校验并冻结的输入。

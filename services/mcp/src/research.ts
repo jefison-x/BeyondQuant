@@ -37,6 +37,14 @@ export type ArtifactCreateRequest = {
   idempotency_key: string;
 };
 
+export type WebEvidenceCreateRequest = {
+  task_id: string;
+  experiment_id?: string;
+  content: Record<string, unknown>;
+  lineage: Array<{ kind: string; id: string }>;
+  idempotency_key: string;
+};
+
 export type ByqResearchResult = {
   content: Array<{ type: "text"; text: string }>;
   isError: boolean;
@@ -70,6 +78,7 @@ async function requestResearch(
   path: string,
   init: RequestInit,
   fetcher: Fetcher,
+  safeWebValidation = false,
 ): Promise<ByqResearchResult> {
   try {
     const response = await fetcher(`${backendUrl}${path}`, {
@@ -93,11 +102,18 @@ async function requestResearch(
       );
     }
     if (!response.ok) {
+      const validationIssue = safeWebValidation && response.status === 422
+        ? safeWebEvidenceValidationIssue(payload)
+        : undefined;
       return result(
         {
           service: "beyondquant-mcp",
           status: "error",
-          backend: { status: errorStatus(response.status), http_status: response.status },
+          backend: {
+            status: errorStatus(response.status),
+            http_status: response.status,
+            ...(validationIssue ? { validation_issue: validationIssue } : {}),
+          },
         },
         true,
       );
@@ -109,6 +125,42 @@ async function requestResearch(
       true,
     );
   }
+}
+
+function safeWebEvidenceValidationIssue(payload: unknown): string {
+  const detail = payload !== null && typeof payload === "object" && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>).detail
+    : undefined;
+  if (typeof detail !== "string") return "INVALID_WEB_EVIDENCE";
+  const rules: Array<[string, string]> = [
+    ["missing or unknown fields", "SCHEMA_FIELDS"],
+    ["schema_version", "SCHEMA_VERSION"],
+    ["qualified search plugin version", "PLUGIN_VERSION"],
+    ["search.queries", "QUERY_COUNT"],
+    ["duplicate web search query", "DUPLICATE_QUERY"],
+    ["query language", "QUERY_LANGUAGE"],
+    ["stopped_reason", "STOPPED_REASON"],
+    ["duplicate source_id", "DUPLICATE_SOURCE_ID"],
+    ["duplicate source URL", "DUPLICATE_SOURCE_URL"],
+    ["source URL", "SOURCE_URL"],
+    ["source_id", "SOURCE_ID"],
+    ["source_tier", "SOURCE_TIER"],
+    ["temporal_status", "TEMPORAL_STATUS"],
+    ["retrieved_at cannot precede", "SOURCE_TIME_ORDER"],
+    ["query_indexes", "SOURCE_QUERY_INDEX"],
+    ["supported causal claim", "CAUSAL_SOURCE"],
+    ["supported claim", "SUPPORTED_SOURCE"],
+    ["conflicted claim", "CONFLICT_SOURCE_COUNT"],
+    ["claim source_ids", "CLAIM_SOURCE_ID"],
+    ["claim type or state", "CLAIM_CLASSIFICATION"],
+    ["unverified market context", "MARKET_CONTEXT"],
+    ["usage policy", "USAGE_POLICY"],
+    ["ISO-8601 timestamp", "TIMESTAMP"],
+    ["must include a timezone", "TIMESTAMP_TIMEZONE"],
+    ["must use YYYYMMDD", "MARKET_DATE"],
+    ["not a valid date", "MARKET_DATE"],
+  ];
+  return rules.find(([fragment]) => detail.includes(fragment))?.[1] ?? "INVALID_WEB_EVIDENCE";
 }
 
 export function fetchByqResearchTaskCreate(
@@ -161,4 +213,18 @@ export function fetchByqArtifactCreate(
   fetcher: Fetcher = fetch,
 ): Promise<ByqResearchResult> {
   return postResearch(backendUrl, "/v1/research/artifacts", request, fetcher);
+}
+
+export function fetchByqWebEvidenceCreate(
+  backendUrl: string,
+  request: WebEvidenceCreateRequest,
+  fetcher: Fetcher = fetch,
+): Promise<ByqResearchResult> {
+  return requestResearch(
+    backendUrl,
+    "/v1/research/web-evidence",
+    { method: "POST", body: JSON.stringify(request) },
+    fetcher,
+    true,
+  );
 }

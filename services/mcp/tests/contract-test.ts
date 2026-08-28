@@ -54,6 +54,7 @@ try {
     "byq_research_transition",
     "byq_experiment_create",
     "byq_artifact_create",
+    "byq_web_evidence_create",
   ]) {
     assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);
   }

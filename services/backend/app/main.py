@@ -1176,6 +1176,30 @@ def create_artifact(payload: dict[str, Any]) -> dict[str, object]:
     return _research_call(operation)
 
 
+@app.post("/v1/research/web-evidence", status_code=201)
+def create_web_research_evidence(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    """Promote bounded search evidence through the trusted BYQ domain boundary."""
+
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        allowed = {"task_id", "experiment_id", "content", "lineage", "idempotency_key"}
+        unknown = sorted(set(payload) - allowed)
+        if unknown:
+            raise ValueError(f"unknown fields: {', '.join(unknown)}")
+        task = research_store.get_task(payload.get("task_id"))
+        if task["owner_principal"] != context["owner_principal"]:
+            raise ResearchNotFound("research task not found")
+        artifact_payload = {
+            **payload,
+            "kind": "web_research_evidence",
+            "trace_id": context["trace_id"],
+        }
+        return research_store.create_artifact(artifact_payload)
+
+    return _research_call(operation)
+
+
 @app.get("/v1/research/artifacts/{artifact_id}")
 def get_artifact(artifact_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request)

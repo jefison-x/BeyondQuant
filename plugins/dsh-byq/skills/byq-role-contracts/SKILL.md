@@ -22,6 +22,13 @@ role must report a denied capability instead of retrying or asking for a wider
 tool scope. Research evidence remains a BYQ Artifact; DSH workflow state and
 raw DSH events are not business evidence.
 
+Web search is a Market Research specialization. The coordinator delegates it
+to the market researcher and does not pass web results to Factor, Strategy, or
+Backtest roles as deterministic input. Although the current qualified rc.1 root
+registry exposes `web_search`, root visibility is not permission to bypass that
+delegation rule. Factor, Strategy, and Backtest roles must never receive or call
+the web tool through inheritance, resume, or profile switching.
+
 Classify intent before using a domain tool and keep the domain-write budget at
 the minimum required by the user's goal:
 

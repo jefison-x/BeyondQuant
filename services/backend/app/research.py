@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 
 from .db import PgStoreMixin, ensure_column, execute, fetch_one
+from .web_research import validate_web_research_evidence
 
 
 MAX_JSON_BYTES = 64 * 1024
@@ -685,9 +686,12 @@ class ResearchStore(PgStoreMixin):
             payload,
             {"task_id", "experiment_id", "kind", "content", "lineage", "trace_id", "idempotency_key"},
         )
+        kind = _text(payload.get("kind"), field="kind", max_length=64)
         raw_content = payload.get("content")
         if not isinstance(raw_content, dict):
             raise ValueError("content must be an object")
+        if kind == "web_research_evidence":
+            raw_content = validate_web_research_evidence(raw_content)
         content, content_json = _canonical_json(
             raw_content, field="content", max_bytes=MAX_ARTIFACT_JSON_BYTES
         )
@@ -699,7 +703,7 @@ class ResearchStore(PgStoreMixin):
                 if payload.get("experiment_id") is not None
                 else None
             ),
-            "kind": _text(payload.get("kind"), field="kind", max_length=64),
+            "kind": kind,
             "content": content,
             "content_sha256": hashlib.sha256(content_json.encode("utf-8")).hexdigest(),
             "lineage": lineage,

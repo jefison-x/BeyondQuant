@@ -61,8 +61,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "63")
-        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038"):
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "64")
+        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
 
@@ -728,7 +728,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("/v1/data/research/fundamentals", translator)
         self.assertNotIn("tushare", translator.lower())
         self.assertIn('role_id="market_researcher"', roles)
-        self.assertIn('version="1.3.0"', roles)
+        self.assertIn('version="1.4.0"', roles)
         self.assertIn("coverage.usable", skill)
         self.assertIn("Status: Accepted", adr)
         for prohibited in ("BaoStock", "AKShare", "VectorBT", "PydanticAI", "Hermes"):
@@ -782,6 +782,35 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             self.assertNotIn(prohibited, composition)
         self.assertNotIn("web_fetch", composition)
         self.assertIn("fetch: false", composition)
+
+    def test_phase64_web_evidence_stays_research_only_and_mcp_owned(self) -> None:
+        validator = (ROOT / "services/backend/app/web_research.py").read_text()
+        research = (ROOT / "services/backend/app/research.py").read_text()
+        mcp = (ROOT / "services/mcp/src/server.ts").read_text()
+        skill = (ROOT / "plugins/dsh-byq/skills/byq-market-researcher/SKILL.md").read_text()
+        composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
+        adr = (ROOT / "docs/architecture/adr/ADR-0039-market-research-web-evidence.md").read_text()
+
+        self.assertIn('SCHEMA_VERSION = "web-research-evidence.v1"', validator)
+        self.assertIn('"deterministic_input": False', validator)
+        self.assertIn('"authoritative_market_data": False', validator)
+        self.assertIn("validate_web_research_evidence", research)
+        self.assertIn('"byq_web_evidence_create"', mcp)
+        self.assertIn("现有证据无法建立原因", skill)
+        self.assertIn("`web_fetch` is unavailable", skill)
+        self.assertNotIn("web_fetch", composition)
+        self.assertIn("fetch: false", composition)
+        self.assertIn("- Status: Accepted", adr)
+        deterministic_consumers = "\n".join(
+            (ROOT / relative).read_text()
+            for relative in (
+                "services/backend/app/factor_research.py",
+                "services/backend/app/strategy_artifact.py",
+                "services/backend/app/backtest.py",
+                "services/backend/app/signal_producer.py",
+            )
+        )
+        self.assertNotIn("web_research_evidence", deterministic_consumers)
 
     def test_frontend_has_no_dsh_event_schema_dependency(self) -> None:
         frontend = ROOT / "apps/frontend"

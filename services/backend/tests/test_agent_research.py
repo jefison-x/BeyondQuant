@@ -47,7 +47,7 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_strategy_approve" not in strategy_tools
     assert "byq_backtest_run" not in strategy_tools
     orchestrator = ROLE_BY_ID["quant_orchestrator"]
-    assert orchestrator.version == "1.3.0"
+    assert orchestrator.version == "1.4.0"
     orchestrator_tools = set(orchestrator.allowed_tools)
     assert {"byq_pool_list", "byq_pool_get", "byq_pool_create"} <= orchestrator_tools
     assert {"byq_market_valuation", "byq_market_fundamentals"} <= orchestrator_tools
@@ -61,7 +61,13 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert {"byq_market_valuation", "byq_market_fundamentals"} <= market_tools
     assert "byq_market_session_context" in market_tools
     assert not {"byq_pool_list", "byq_pool_get", "byq_pool_create"} & market_tools
-    assert ROLE_BY_ID["market_researcher"].version == "1.3.0"
+    assert ROLE_BY_ID["market_researcher"].version == "1.4.0"
+    assert "byq_web_evidence_create" in orchestrator_tools
+    assert "byq_web_evidence_create" in market_tools
+    assert all(
+        "byq_web_evidence_create" not in ROLE_BY_ID[role].allowed_tools
+        for role in ("factor_researcher", "strategy_researcher", "backtest_analyst")
+    )
     assert ROLE_BY_ID["strategy_researcher"].version == "1.2.0"
     assert "byq_research_task_create" in strategy_tools
     assert "byq_research_transition" not in strategy_tools
@@ -84,6 +90,34 @@ def test_pool_creation_is_orchestrator_only_and_not_approval_gated() -> None:
     )
     with pytest.raises(AgentForbidden, match="not authorized"):
         store.authorize({"run_id": market["run_id"], "action": "byq_pool_create"})
+    store.close()
+
+
+def test_web_evidence_promotion_is_market_only_and_not_inherited() -> None:
+    store = AgentResearchStore()
+    orchestrator = start(store, idempotency_key="agent-run-web-root")
+    market = start(
+        store,
+        role_id="market_researcher",
+        parent_run_id=orchestrator["run_id"],
+        idempotency_key="agent-run-web-market",
+    )
+    allowed = store.authorize(
+        {"run_id": market["run_id"], "action": "byq_web_evidence_create"}
+    )
+    assert allowed["decision"] == "allowed"
+
+    for role_id in ("factor_researcher", "strategy_researcher", "backtest_analyst"):
+        child = start(
+            store,
+            role_id=role_id,
+            parent_run_id=orchestrator["run_id"],
+            idempotency_key=f"agent-run-web-{role_id}",
+        )
+        with pytest.raises(AgentForbidden, match="not authorized"):
+            store.authorize(
+                {"run_id": child["run_id"], "action": "byq_web_evidence_create"}
+            )
     store.close()
 
 

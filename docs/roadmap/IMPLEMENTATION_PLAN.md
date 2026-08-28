@@ -303,24 +303,23 @@ Product browser smoke，以及真实 Data Center 股票池→readiness same-orig
   absence、architecture/unit/contract/security/integration tests 通过。单个 sample 因 runtime
   或 security boundary 失败时只标记 BLOCKED，不 fork/patch/upgrade/workaround。
 
-## Post-Phase 63 development sequence（规划约束，尚未授权实现）
+## Post-Phase 63 development sequence
 
 后续两个阶段固定按以下顺序推进：
 
 ```text
 Phase 63  Plugin Registry + Qualification Framework（COMPLETE）
     ↓
-Phase 64  Research Agent Web Search 深化（PLANNED）
+Phase 64  Research Agent Web Search 深化（COMPLETE）
     ↓
-Phase 65  DSH Plugin Center Admin UI（PLANNED）
+Phase 65  DSH Plugin Center Admin UI（AUTHORIZED; NEXT）
 ```
 
-本节只记录 future roadmap。`STATUS.md` 仍是阶段授权的唯一事实来源；本计划的存在不授权
-实现 Phase 64 或 Phase 65。两个阶段不得并行，不得共用 worktree/branch/PR。Phase 64 必须
+`STATUS.md` 仍是阶段授权的唯一事实来源。两个阶段不得并行，不得共用 worktree/branch/PR。Phase 64 必须
 在 Phase 63 已完成且 Web Search 对当前精确 DSH baseline 保持真实 QUALIFIED 后才能获批；
 Phase 65 必须等待 Phase 64 合并，并吸收其实际运行中形成的插件状态、证据和管理需求。
 
-## Phase 64 — Research Agent Web Search 深化（`PLANNED`; NOT AUTHORIZED）
+## Phase 64 — Research Agent Web Search 深化（`COMPLETE`）
 
 ### 目标
 
@@ -452,7 +451,7 @@ authorization 或 Artifact contract；Agent assignment 可串权；需要用模�
 raw DSH schema 或内部 token 可能进入 Browser/WorkflowTrace/log/error；需要混合 DSH prerelease、
 fork/patch upstream 或建立第二 harness。上游变化只能触发 Upgrade Lane，不得在本阶段自动升级。
 
-## Phase 65 — DSH Plugin Center Admin UI（`PLANNED`; NOT AUTHORIZED）
+## Phase 65 — DSH Plugin Center Admin UI（`AUTHORIZED`; NEXT AFTER PHASE 64 MERGE）
 
 ### 目标与前置决策
 
@@ -461,7 +460,8 @@ fork/patch upstream 或建立第二 harness。上游变化只能触发 Upgrade L
 发起 enable/disable、assignment 和 qualification workflow。Plugin Center 是治理与部署状态
 界面，不是 Marketplace、package installer 或 DSH runtime console。
 
-Phase 65 只有在 Phase 64 合并后才能获批。实现前必须接受新的 control-plane ADR，明确：
+Phase 65 已获维护者条件授权，但只有在 Phase 64 合并后才能开始。实现前必须接受新的
+control-plane ADR，明确：
 
 - Git-managed Registry/qualification evidence、期望 Product policy、generated composition 与
   当前运行 composition 各自的 authoritative source 和版本关系；
