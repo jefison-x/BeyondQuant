@@ -48,6 +48,20 @@ describe("workflow projections", () => {
     expect(JSON.stringify(activities)).not.toContain("hidden");
   });
 
+  it("closes orphaned public activities when the run has a terminal event", () => {
+    const activities = workflowActivities([
+      event(1, "agent.activity", {
+        schema_version: "workflow-activity.v1",
+        activity_id: `activity_${"c".repeat(64)}`,
+        phase: "understand",
+        state: "started",
+        label: "理解请求",
+      }),
+      event(2, "session.failed", { code: "model-run-failed", retryable: true }),
+    ]);
+    expect(activities[0].payload.state).toBe("failed");
+  });
+
   it("derives a replay-safe running state from lifecycle events", () => {
     expect(workflowRunState([event(3, "session.started", {})]).running).toBe(true);
     expect(workflowRunState([
@@ -56,5 +70,8 @@ describe("workflow projections", () => {
     expect(workflowRunState([
       event(3, "session.started", {}), event(7, "session.cancelled", {}), event(9, "session.started", {}),
     ]).running).toBe(true);
+    expect(workflowRunState([
+      event(3, "session.started", {}), event(7, "session.failed", { code: "model-run-failed", retryable: true }),
+    ])).toEqual(expect.objectContaining({ running: false, failed: true, retryable: true }));
   });
 });

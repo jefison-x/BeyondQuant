@@ -292,6 +292,69 @@ test("selecting a recent conversation loads its replay without refreshing the pa
   await expect(conversationHeader.getByRole("button", { name: "会话操作", exact: true })).toHaveCount(0);
 });
 
+test("failed agent run unlocks the composer and resumes before retry", async ({ page }) => {
+  const session = {
+    session_id: "session-failed",
+    trace_id: "trace-failed",
+    title: "中断的投研会话",
+    status: "active",
+    updated_at: "2026-08-28T04:02:53Z",
+  };
+  const requestOrder: string[] = [];
+  await page.route(/\/v1\/agent\/sessions(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ sessions: [session], total: 1 }),
+  }));
+  await page.route("**/v1/agent/sessions/session-failed", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      conversation: session,
+      messages: [{
+        message_id: "message-failed",
+        sequence: 1,
+        role: "user",
+        content: "继续完成指数研究",
+        created_at: "2026-08-28T04:02:50Z",
+      }],
+      events: [
+        { trace_id: "trace-failed", session_id: "session-failed", sequence: 1, timestamp: "2026-08-28T04:02:50Z", kind: "session.started", source: "runtime-adapter", payload: {} },
+        { trace_id: "trace-failed", session_id: "session-failed", sequence: 2, timestamp: "2026-08-28T04:02:51Z", kind: "agent.activity", source: "runtime-adapter", payload: { schema_version: "workflow-activity.v1", activity_id: "activity_failed111111111111111111111111", phase: "reason", state: "started", label: "分析市场数据" } },
+        { trace_id: "trace-failed", session_id: "session-failed", sequence: 3, timestamp: "2026-08-28T04:02:53Z", kind: "session.failed", source: "runtime-adapter", payload: { code: "model-run-failed", retryable: true } },
+      ],
+    }),
+  }));
+  await page.route("**/v1/workflows/session-failed/events", (route) => route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    body: ": heartbeat\n\n",
+  }));
+  await page.route("**/v1/agent/sessions/session-failed/resume", (route) => {
+    requestOrder.push("resume");
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "idle" }) });
+  });
+  await page.route("**/v1/agent/sessions/session-failed/turns", (route) => {
+    requestOrder.push("turn");
+    return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ accepted: true }) });
+  });
+  await page.route("**/api/product/approvals", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ approvals: [] }),
+  }));
+
+  await login(page);
+  await expect(page.getByText("本轮未能完成，运行环境已安全停止。你可以调整问题后重新发送，或直接重试。")).toBeVisible();
+  await expect(page.locator(".assistant-processing")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "发送", exact: true })).toBeDisabled();
+  await page.getByPlaceholder("向小巴描述你的投研问题…").fill("重新尝试");
+  await expect(page.getByRole("button", { name: "发送", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await expect.poll(() => requestOrder).toEqual(["resume", "turn"]);
+  await expect(page.getByRole("button", { name: "停止本轮" })).toBeVisible();
+});
+
 test("strategy workspace renders strategy version list and detail", async ({ page }) => {
   await mockResearchLists(page);
   await page.route("**/api/product/research/tasks", (route) =>

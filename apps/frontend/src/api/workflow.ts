@@ -55,7 +55,17 @@ export function workflowActivities(events: WorkflowTraceEvent[]): Array<{
       payload: event.payload as unknown as WorkflowActivityPayload,
     });
   }
-  return [...latest.values()].sort((left, right) => left.sequence - right.sequence).slice(-20);
+  const terminalSequence = events.reduce(
+    (maximum, event) => TERMINAL_RUN_EVENTS.has(event.kind) ? Math.max(maximum, event.sequence) : maximum,
+    -1,
+  );
+  return [...latest.values()]
+    .map((activity) => terminalSequence > activity.sequence
+      && ["started", "progress", "waiting_approval"].includes(activity.payload.state)
+      ? { ...activity, payload: { ...activity.payload, state: "failed" as const } }
+      : activity)
+    .sort((left, right) => left.sequence - right.sequence)
+    .slice(-20);
 }
 
 const TERMINAL_RUN_EVENTS = new Set([
@@ -65,15 +75,23 @@ const TERMINAL_RUN_EVENTS = new Set([
 export function workflowRunState(events: WorkflowTraceEvent[]): {
   running: boolean;
   startedAt?: string;
+  failed: boolean;
+  retryable: boolean;
+  failureCode?: string;
 } {
   let started: WorkflowTraceEvent | undefined;
-  let terminalSequence = -1;
+  let terminal: WorkflowTraceEvent | undefined;
   for (const event of events) {
     if (event.kind === "session.started" && (!started || event.sequence > started.sequence)) started = event;
-    if (TERMINAL_RUN_EVENTS.has(event.kind)) terminalSequence = Math.max(terminalSequence, event.sequence);
+    if (TERMINAL_RUN_EVENTS.has(event.kind) && (!terminal || event.sequence > terminal.sequence)) terminal = event;
   }
+  const running = Boolean(started && started.sequence > (terminal?.sequence ?? -1));
+  const failed = !running && terminal?.kind === "session.failed";
   return {
-    running: Boolean(started && started.sequence > terminalSequence),
-    startedAt: started && started.sequence > terminalSequence ? started.timestamp : undefined,
+    running,
+    startedAt: running ? started?.timestamp : undefined,
+    failed,
+    retryable: failed && terminal?.payload.retryable === true,
+    failureCode: failed && typeof terminal?.payload.code === "string" ? terminal.payload.code : undefined,
   };
 }

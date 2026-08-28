@@ -17,6 +17,7 @@ class FakeHarness:
     instances: list["FakeHarness"] = []
     run_started = threading.Event()
     allow_run = threading.Event()
+    finish_reason = "completed"
 
     def __init__(self, config: object) -> None:
         self.config = config
@@ -30,6 +31,7 @@ class FakeHarness:
         cls.instances.clear()
         cls.run_started.clear()
         cls.allow_run.clear()
+        cls.finish_reason = "completed"
 
     def start(self) -> None:
         self.started = True
@@ -41,7 +43,7 @@ class FakeHarness:
         self.run_count += 1
         self.__class__.run_started.set()
         self.__class__.allow_run.wait(timeout=2.0)
-        return SimpleNamespace(finish_reason="completed")
+        return SimpleNamespace(finish_reason=self.__class__.finish_reason)
 
     def close(self) -> None:
         self.closed = True
@@ -119,6 +121,47 @@ def test_hard_cancel_resume_uses_a_new_owned_runtime(adapter: RuntimeAdapter) ->
     assert resumed["status"] == SessionStatus.READY
     assert resumed["resumed_from_run_id"]
     assert len(FakeHarness.instances) == 2
+    assert FakeHarness.instances[0].closed is True
+    record = adapter._get("s-1")
+    assert record.runtime_session_id != "s-1"
+    adapter.release_session("s-1")
+
+
+def test_resume_private_id_remains_valid_for_maximum_public_id(adapter: RuntimeAdapter) -> None:
+    public_session_id = "s" * MAX_IDENTIFIER_LENGTH
+    adapter.create_session(public_session_id, "t-1")
+    adapter.submit_prompt(public_session_id, "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+
+    adapter.cancel_session(public_session_id, "hard")
+    resumed = adapter.resume_session(public_session_id)
+
+    record = adapter._get(public_session_id)
+    assert resumed["status"] == SessionStatus.READY
+    assert len(record.runtime_session_id) <= MAX_IDENTIFIER_LENGTH
+    assert record.runtime_session_id != public_session_id
+    adapter.release_session(public_session_id)
+
+
+def test_error_finish_reason_is_failed_and_can_resume_with_fresh_runtime(adapter: RuntimeAdapter) -> None:
+    FakeHarness.finish_reason = "error"
+    FakeHarness.allow_run.set()
+    adapter.create_session("s-1", "t-1")
+    adapter.submit_prompt("s-1", "fails")
+    wait_for_status(adapter, "s-1", SessionStatus.FAILED)
+
+    record = adapter._get("s-1")
+    assert record.history[-1]["kind"] == "session.failed"
+    assert record.history[-1]["payload"] == {
+        "code": "model-run-failed",
+        "retryable": True,
+    }
+    assert "error" not in str(record.history[-1]["payload"]).lower()
+
+    previous_runtime_session_id = record.runtime_session_id
+    resumed = adapter.resume_session("s-1")
+    assert resumed["status"] == SessionStatus.READY
+    assert record.runtime_session_id != previous_runtime_session_id
     assert FakeHarness.instances[0].closed is True
     adapter.release_session("s-1")
 
