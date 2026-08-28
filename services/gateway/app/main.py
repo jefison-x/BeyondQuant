@@ -271,6 +271,7 @@ def _collect_trace(session: ProductSession) -> None:
                         ),
                     )
                     trace_store.append(projected)
+                    _persist_projected_answer(session, projected)
                 except (ValueError, TypeError, json.JSONDecodeError):
                     # The adapter is the only producer. Invalid data is not
                     # persisted or reflected to the product client.
@@ -280,6 +281,33 @@ def _collect_trace(session: ProductSession) -> None:
     finally:
         if session.released:
             trace_store.close(session.session_id)
+
+
+def _persist_projected_answer(session: ProductSession, event: dict[str, object]) -> None:
+    if event.get("kind") != "agent.output.delta":
+        return
+    payload = event.get("payload")
+    sequence = event.get("sequence")
+    if not isinstance(payload, dict) or not isinstance(payload.get("delta"), str):
+        return
+    if isinstance(sequence, bool) or not isinstance(sequence, int):
+        return
+    try:
+        _catalog_request(
+            "POST",
+            f"/v1/product/conversations/{session.conversation_id}/messages",
+            session.principal,
+            session.workspace_id,
+            payload={
+                "role": "assistant",
+                "content": payload["delta"],
+                "workflow_sequence": sequence,
+            },
+        )
+    except HTTPException:
+        # WorkflowTrace remains the replay source when the durable catalog is
+        # temporarily unavailable; an adapter replay can retry this idempotent write.
+        return
 
 
 def _domain_get(path: str, session: ProductSession) -> dict[str, object]:
@@ -453,9 +481,16 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
     if not isinstance(conversation, dict):
         raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
     runtime_session_id = str(conversation.get("runtime_session_id", ""))
+    messages = body.get("messages", [])
+    persisted_answer_sequences = {
+        item.get("workflow_sequence")
+        for item in messages if isinstance(item, dict) and item.get("role") == "assistant"
+        and isinstance(item.get("workflow_sequence"), int)
+    } if isinstance(messages, list) else set()
     events = [
         {**event, "session_id": session_id}
         for event in trace_store.read(runtime_session_id)
+        if event["kind"] != "agent.output.delta" or event["sequence"] not in persisted_answer_sequences
     ]
     public = {
         "session_id": session_id,
@@ -468,7 +503,7 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
         "created_at": conversation.get("created_at"),
         "updated_at": conversation.get("updated_at"),
     }
-    return {"conversation": public, "messages": body.get("messages", []), "events": events}
+    return {"conversation": public, "messages": messages, "events": events}
 
 
 @app.patch("/v1/agent/sessions/{session_id}")

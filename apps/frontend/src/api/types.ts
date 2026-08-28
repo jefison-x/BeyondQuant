@@ -56,8 +56,9 @@ export interface AgentSession {
 export interface AgentReplayMessage {
   message_id: string;
   sequence: number;
-  role: "user";
+  role: "user" | "assistant";
   content: string;
+  workflow_sequence?: number | null;
   created_at: string;
 }
 

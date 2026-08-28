@@ -98,9 +98,16 @@ class ConversationCatalogStore(PgStoreMixin):
             sequence INTEGER NOT NULL,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
+            workflow_sequence INTEGER,
             created_at TIMESTAMPTZ NOT NULL,
             UNIQUE(conversation_id, sequence)
         )
+        """,
+        "ALTER TABLE product_conversation_messages ADD COLUMN IF NOT EXISTS workflow_sequence INTEGER",
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS product_conversation_messages_workflow_sequence
+            ON product_conversation_messages(conversation_id, workflow_sequence)
+            WHERE workflow_sequence IS NOT NULL
         """,
         """
         CREATE INDEX IF NOT EXISTS product_conversation_messages_replay
@@ -215,12 +222,91 @@ class ConversationCatalogStore(PgStoreMixin):
             )
         return {"message_id": message_id, "sequence": sequence, "role": "user", "content": content, "created_at": now}
 
+    def append_assistant_message(
+        self,
+        owner: object,
+        conversation_id: object,
+        content: object,
+        workflow_sequence: object,
+    ) -> dict[str, object]:
+        """Persist one already-projected answer fragment idempotently."""
+
+        owner = _owner(owner)
+        conversation_id = _identifier(conversation_id, "conversation_id")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("content must not be empty")
+        content = content.strip()
+        if len(content.encode("utf-8")) > 65_536:
+            raise ValueError("content exceeds 65536 bytes")
+        if isinstance(workflow_sequence, bool) or not isinstance(workflow_sequence, int) or workflow_sequence < 1:
+            raise ValueError("workflow_sequence must be a positive integer")
+        now = _now()
+        with self._transaction() as connection:
+            row = connection.execute(
+                text(
+                    "SELECT * FROM product_conversations "
+                    "WHERE owner_principal = :owner AND conversation_id = :id FOR UPDATE"
+                ),
+                {"owner": owner, "id": conversation_id},
+            ).mappings().first()
+            if row is None:
+                raise ConversationNotFound("conversation not found")
+            existing = connection.execute(
+                text(
+                    """SELECT message_id, sequence, role, content, workflow_sequence, created_at
+                    FROM product_conversation_messages
+                    WHERE owner_principal = :owner AND conversation_id = :id
+                    AND workflow_sequence = :workflow_sequence"""
+                ),
+                {"owner": owner, "id": conversation_id, "workflow_sequence": workflow_sequence},
+            ).mappings().first()
+            if existing is not None:
+                if existing["role"] != "assistant" or existing["content"] != content:
+                    raise ConversationConflict("workflow sequence already contains different content")
+                replayed = dict(existing)
+                created_at = replayed.get("created_at")
+                if isinstance(created_at, datetime):
+                    replayed["created_at"] = created_at.isoformat()
+                return replayed
+            sequence = int(row["message_count"]) + 1
+            preview = content if len(content) <= 120 else f"{content[:119]}…"
+            message_id = f"message_{uuid.uuid4().hex}"
+            connection.execute(
+                text(
+                    """INSERT INTO product_conversation_messages
+                    (message_id, conversation_id, owner_principal, sequence, role, content,
+                     workflow_sequence, created_at)
+                    VALUES (:message_id, :conversation_id, :owner, :sequence, 'assistant', :content,
+                            :workflow_sequence, :now)"""
+                ),
+                {"message_id": message_id, "conversation_id": conversation_id, "owner": owner,
+                 "sequence": sequence, "content": content, "workflow_sequence": workflow_sequence,
+                 "now": now},
+            )
+            connection.execute(
+                text(
+                    """UPDATE product_conversations SET message_count = :sequence,
+                    last_message_preview = :preview, updated_at = :now
+                    WHERE conversation_id = :conversation_id"""
+                ),
+                {"sequence": sequence, "preview": preview, "now": now,
+                 "conversation_id": conversation_id},
+            )
+        return {
+            "message_id": message_id,
+            "sequence": sequence,
+            "role": "assistant",
+            "content": content,
+            "workflow_sequence": workflow_sequence,
+            "created_at": now,
+        }
+
     def messages(self, owner: object, conversation_id: object, *, limit: object = 200) -> list[dict[str, object]]:
         self.get(owner, conversation_id)
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
             raise ValueError("limit must be between 1 and 500")
         return self._execute(
-            """SELECT message_id, sequence, role, content, created_at
+            """SELECT message_id, sequence, role, content, workflow_sequence, created_at
             FROM product_conversation_messages WHERE owner_principal = :owner AND conversation_id = :id
             ORDER BY sequence LIMIT :limit""",
             {"owner": _owner(owner), "id": conversation_id, "limit": limit},

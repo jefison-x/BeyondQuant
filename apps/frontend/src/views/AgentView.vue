@@ -68,9 +68,17 @@ const timeline = computed(() => [
 ].sort((left, right) => left.at.localeCompare(right.at)));
 
 function replayMessages(messages: AgentReplayMessage[], events: WorkflowTraceEvent[]): AgentMessage[] {
+  const persistedAnswerSequences = new Set(messages
+    .filter((message) => message.role === "assistant" && typeof message.workflow_sequence === "number")
+    .map((message) => message.workflow_sequence));
   const ordered = [
-    ...messages.map((message) => ({ kind: "user" as const, at: message.created_at, text: message.content })),
-    ...events.filter((event) => event.kind === "agent.output.delta" && typeof event.payload.delta === "string")
+    ...messages.map((message) => ({
+      kind: message.role === "assistant" ? "agent" as const : "user" as const,
+      at: message.created_at,
+      text: message.content,
+    })),
+    ...events.filter((event) => event.kind === "agent.output.delta"
+      && typeof event.payload.delta === "string" && !persistedAnswerSequences.has(event.sequence))
       .map((event) => ({ kind: "agent" as const, at: event.timestamp, text: String(event.payload.delta) })),
   ].sort((left, right) => left.at.localeCompare(right.at));
   const result: AgentMessage[] = [];

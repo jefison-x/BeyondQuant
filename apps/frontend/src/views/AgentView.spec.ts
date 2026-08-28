@@ -142,6 +142,29 @@ describe("AgentView", () => {
     expect(agentMessages[0].text).toBe("唯一输出");
   });
 
+  it("replays persisted assistant output without duplicating its workflow event", async () => {
+    getAgentSession.mockResolvedValue({
+      conversation: { session_id: "session-1", trace_id: "trace-1", title: "可靠回答" },
+      messages: [
+        { message_id: "m1", sequence: 1, role: "user", content: "问题", created_at: "2026-08-28T00:00:00Z" },
+        { message_id: "m2", sequence: 2, role: "assistant", content: "数据库回答", workflow_sequence: 7, created_at: "2026-08-28T00:00:02Z" },
+      ],
+      events: [{
+        trace_id: "trace-1", session_id: "session-1", sequence: 7,
+        timestamp: "2026-08-28T00:00:02Z", kind: "agent.output.delta", source: "runtime-adapter",
+        payload: { delta: "数据库回答" },
+      }],
+    });
+
+    shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+
+    const messages = useAgentStore().messages;
+    expect(messages.map((message) => [message.role, message.text])).toEqual([
+      ["user", "问题"], ["agent", "数据库回答"],
+    ]);
+  });
+
   it("keeps a new empty conversation local until the first message is sent", async () => {
     listAgentSessions.mockResolvedValueOnce({ sessions: [], total: 0 });
     const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
