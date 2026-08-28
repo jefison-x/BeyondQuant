@@ -114,6 +114,7 @@ def test_product_trace_stream_replays_ordered_byq_events(monkeypatch, tmp_path: 
 
 def test_durable_replay_hides_runtime_session_and_is_owner_scoped(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
     store = TraceStore(tmp_path)
     monkeypatch.setattr(main, "trace_store", store)
     store.append({
@@ -143,3 +144,61 @@ def test_durable_replay_hides_runtime_session_and_is_owner_scoped(monkeypatch, t
     assert response.status_code == 200
     assert "runtime-private" not in response.text
     assert response.json()["events"][0]["session_id"] == "conversation_1"
+
+
+def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    store.append({
+        "trace_id": "trace-1", "session_id": "runtime-private", "sequence": 7,
+        "timestamp": "2026-08-24T00:00:00+00:00", "kind": "session.failed",
+        "source": "runtime-adapter", "payload": {"code": "model-run-failed", "retryable": True},
+    })
+    monkeypatch.setattr(main, "_catalog_request", lambda *_args, **_kwargs: {"conversation": {
+        "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
+        "trace_id": "trace-1", "status": "active",
+    }})
+    adapter_calls: list[tuple[str, dict[str, object] | None]] = []
+    monkeypatch.setattr(
+        main,
+        "_adapter_post",
+        lambda path, *, payload=None, timeout=20.0: adapter_calls.append((path, payload)) or {"status": "ready"},
+    )
+    collectors: list[str] = []
+    monkeypatch.setattr(main, "_start_trace_collector", lambda session: collectors.append(session.session_id))
+
+    restored = main._restore_product_session(
+        "conversation_1", main.Principal(subject=main.PRODUCT_PRINCIPAL), "workspace_bootstrap_unresolved"
+    )
+
+    assert restored.session_id == "runtime-private"
+    assert adapter_calls == [("/internal/runtime/sessions", {
+        "session_id": "runtime-private", "trace_id": "trace-1",
+        "workspace_id": "workspace_bootstrap_unresolved", "owner_principal": main.PRODUCT_PRINCIPAL,
+        "initial_sequence": 7,
+    })]
+    assert collectors == ["runtime-private"]
+
+
+def test_restore_accepts_an_adapter_session_that_survived_gateway_restart(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
+    monkeypatch.setattr(main, "_catalog_request", lambda *_args, **_kwargs: {"conversation": {
+        "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
+        "trace_id": "trace-1", "status": "active",
+    }})
+
+    def conflict(*_args, **_kwargs):
+        raise main.HTTPException(status_code=409, detail="already exists")
+
+    monkeypatch.setattr(main, "_adapter_post", conflict)
+    collectors: list[str] = []
+    monkeypatch.setattr(main, "_start_trace_collector", lambda session: collectors.append(session.session_id))
+
+    restored = main._restore_product_session(
+        "conversation_1", main.Principal(subject=main.PRODUCT_PRINCIPAL), "workspace_bootstrap_unresolved"
+    )
+
+    assert restored.session_id == "runtime-private"
+    assert collectors == ["runtime-private"]

@@ -21,11 +21,14 @@ uses a fresh private runtime identity while retaining the stable BYQ conversatio
   reconciles durable replay while a local run is active.
 - A terminal failure closes orphan progress rows, removes the thinking/stop state, renders a useful
   failure message, and resumes the runtime before a subsequent send.
+- Restoring a durable conversation reattaches or recreates its Runtime Adapter session and continues
+  WorkflowTrace sequencing after the last persisted event, including a full service restart.
 
 ## Verification
 
-- Runtime Adapter tests: 44 passed, including maximum-length public session identity resume.
-- Gateway tests: 61 passed.
+- Runtime Adapter tests: 45 passed, including maximum-length public session identity resume and
+  durable trace sequence continuation.
+- Gateway tests: 63 passed, including Gateway-only and full Runtime restart restoration.
 - Frontend unit tests: 38 files / 99 tests passed.
 - Frontend TypeScript and production build: passed.
 - Architecture tests: 42 passed.
