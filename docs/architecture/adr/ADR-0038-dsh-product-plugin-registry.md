@@ -128,3 +128,26 @@ plugin 并重新生成，绝不升级、fork、patch 或绕过 protocol。
 维护者于 2026-08-28 明确授权 Phase 63。该授权接受本 ADR 的 Registry、Qualification、
 Composition Builder 与五类 official sample inspection，不授权 release/tag/production
 publication 或下一 Product Phase。
+
+## Future phase relationship（2026-08-28 planning note）
+
+维护者在 Phase 63 完成后要求正式记录、但尚未授权实现以下固定顺序：
+
+```text
+Phase 63 Registry / Qualification
+    → Phase 64 Market Research Web Search evidence governance
+    → Phase 65 admin-only Plugin Center
+```
+
+Phase 64 只能深化本 ADR 已 qualification 的 search-only Web Search，并须以新的 Accepted ADR
+固定 source tier、point-in-time、Research Evidence/Artifact promotion 和防幻觉语义；它不能启用
+`web_fetch`，也不能使网页数据成为 deterministic Factor/Strategy/Backtest input。
+
+Phase 65 不改变本 ADR 的 online-install 禁令。它在实现前须以新的 Accepted ADR 明确期望
+Product policy、Git-managed Registry、generated composition、active runtime identity 和 trusted
+deployment/restart/rollback owner 的关系。Admin UI 的 enable/disable 只能创建 audited normal
+deployment change，不能让 Browser、Gateway、Backend 或 Product DSH 执行 npm、写 source/Git、
+访问 Docker，或修改正在运行的 composition。在该 ADR 被接受前，Phase 63 Registry/profile
+继续是唯一 deployment input。
+
+本 planning note 不改变 `STATUS.md`，也不构成 Phase 64 或 Phase 65 的执行授权。

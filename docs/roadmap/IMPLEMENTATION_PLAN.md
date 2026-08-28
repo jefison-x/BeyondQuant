@@ -302,3 +302,291 @@ Product browser smoke，以及真实 Data Center 股票池→readiness same-orig
   Runtime Adapter keyless initialize、MCP/session/lifecycle、Agent Web least privilege、secret
   absence、architecture/unit/contract/security/integration tests 通过。单个 sample 因 runtime
   或 security boundary 失败时只标记 BLOCKED，不 fork/patch/upgrade/workaround。
+
+## Post-Phase 63 development sequence（规划约束，尚未授权实现）
+
+后续两个阶段固定按以下顺序推进：
+
+```text
+Phase 63  Plugin Registry + Qualification Framework（COMPLETE）
+    ↓
+Phase 64  Research Agent Web Search 深化（PLANNED）
+    ↓
+Phase 65  DSH Plugin Center Admin UI（PLANNED）
+```
+
+本节只记录 future roadmap。`STATUS.md` 仍是阶段授权的唯一事实来源；本计划的存在不授权
+实现 Phase 64 或 Phase 65。两个阶段不得并行，不得共用 worktree/branch/PR。Phase 64 必须
+在 Phase 63 已完成且 Web Search 对当前精确 DSH baseline 保持真实 QUALIFIED 后才能获批；
+Phase 65 必须等待 Phase 64 合并，并吸收其实际运行中形成的插件状态、证据和管理需求。
+
+## Phase 64 — Research Agent Web Search 深化（`PLANNED`; NOT AUTHORIZED）
+
+### 目标
+
+把 Phase 63 已 qualification 的 search-only DSH Web Search 转化为 Market Research Agent
+可控、可追溯、时间安全的互联网研究能力。Market Research Agent 可以综合 BYQ MCP 的
+结构化、已持久化数据与 Web research evidence；BYQ 继续拥有 evidence promotion、Artifact、
+authorization、audit、point-in-time 和金融 Domain invariant。
+
+正式实现前必须接受一份 Phase 64 ADR，确定网页 evidence schema、来源等级、冲突处理、
+时间截点、Artifact promotion 与 retention。不得只靠 prompt 定义这些 invariants；若现有
+Artifact 有界 JSON contract 不足以准确保存这些语义，应对既有 ResearchTask/Experiment/
+Artifact contract 做版本化扩展，而不是新建第二套 Research Database。
+
+### 范围
+
+1. **搜索策略与预算**
+   - 只在用户要求当前公开背景、新闻、政策、监管/交易所/公司公告，或 BYQ persisted data
+     无法回答解释性问题时搜索；确定性计算和已由 BYQ structured data 完整回答的问题不搜索。
+   - 每次 run 明确 query/result/retry/time budget、相同 tool+arguments 去重、相似查询收敛、
+     domain/result 去重和停止条件；Repeat Guard 只能提供 advisory，BYQ/role policy 负责预算。
+   - 中英文 query 按实体、地域和目标来源拆分；不得无条件把每个查询翻译后重复搜索。每个
+     query 保存原始语言、目的及其与 evidence 的关联。
+   - 搜索失败、无结果或预算耗尽时安全结束并如实说明，不循环、不扩大 capability。
+
+2. **来源治理与 provenance**
+   - 来源等级至少为：`PRIMARY`（监管、政府、交易所、公司法定公告/官方站点）、
+     `SECONDARY`（可识别的专业财经媒体）和 `AUXILIARY`（论坛、自媒体及其他非权威来源）。
+     未能可靠分类的来源不得伪装成官方来源。
+   - 关键结论优先引用 PRIMARY；SECONDARY 用于补充报道与交叉验证；AUXILIARY 只用于线索和
+     候选发现，不能单独支持确定性事实或因果结论。
+   - 每条被采用 evidence 至少保留规范化 URL、标题、发布者/domain、发布时间（可缺失但必须
+     显式）、检索时间、来源等级、query identity、provider/plugin provenance 和有界摘要。
+     不保存 credential、raw DSH object、hidden reasoning、完整网页副本或任意 HTML。
+   - 来源冲突必须并列呈现来源、时间和分歧；不能静默选择更符合模型结论的一条。
+
+3. **时间语义与 no-look-ahead**
+   - 明确区分 `published_at`、`retrieved_at`、research `as_of`、BYQ trading session 与
+     persisted-data cutoff；缺失发布时间不能由检索时间或自然语言猜测补齐。
+   - 历史 as-of 研究不得使用 as-of 后发布的内容支持当时可知结论。后来检索到的历史网页
+     只有在其可见性与发布时间可证明时，才能作为该历史时点的辅助 evidence。
+   - Web 页面、系统自然时间和模型记忆均不得推断交易日、公告生效日或数据可见性；这些语义
+     继续来自 BYQ exchange calendar、announcement/effective-date 与 trusted time contract。
+   - 当前 Web evidence 与 BYQ persisted-data cutoff 不一致时必须标记差异，不得写回或冒充
+     Data Plane 的权威快照。
+
+4. **Research Evidence / Artifact promotion**
+   - DSH Web result 首先只是 session-scoped evidence candidate。需要持久化时，Agent 必须经
+     既有 BYQ MCP、trusted owner/workspace context、authorization 和 audit 创建/关联有
+     provenance 的 Research Artifact；Web plugin 本身不得直接访问 Backend 或数据库。
+   - Artifact 明确区分 claim、supporting source、conflict、time context、检索失败和缺失字段，
+     并保持 content hash、lineage、ResearchTask/Experiment 与 WorkflowTrace correlation。
+   - Web evidence 只用于解释、研究和候选发现。未经 BYQ Data Plane 采集、规范化、PIT 校验、
+     provenance 和冻结的数据，永远不得成为 Factor、Strategy calculation、signal snapshot 或
+     Backtest deterministic input。
+
+5. **Agent 融合与最小权限**
+   - `market_researcher` 可读取 BYQ MCP structured data 并调用 `web_search`，在最终回答中清楚
+     区分权威结构化数据、网页证据与推断。
+   - `factor_researcher`、`strategy_researcher`、`backtest_analyst` 的 toolFilter 与执行限制
+     均保持 Web Search DENY，不因 delegation、subagent inheritance、resume 或 profile 切换串权。
+   - Phase 63 因 rc.1 root tool registry seam 显式允许 `quant_orchestrator` 看见 Web Search；
+     Phase 64 必须将专业研究委派给 `market_researcher`，并验证 Coordinator 不自行扩大查询或把
+     Web evidence 传成 deterministic input。若无法可靠约束 root capability，则停止并进入 DSH
+     Upgrade Lane，不能创建 BYQ 第二工具运行时。
+   - 搜索和 evidence promotion 不替代 `byq_agent_authorize`、owner/workspace、role、approval、
+     idempotency 或 audit。
+
+6. **防幻觉与公开回答**
+   - Agent 只能基于本次实际检索结果与 BYQ structured data 陈述事实；不得用模型记忆补齐未查到
+     的事件、数字、引用或因果链。
+   - 无可靠来源、只有低等级来源、来源互相冲突或时点不成立时，必须明确说明“现有证据无法建立
+     原因”及缺口，不得输出貌似确定的解释。
+   - Product public answer/WorkflowTrace 只投影有界、用户可理解的来源卡片与结果摘要，不暴露
+     query credential、raw tool arguments/results、raw DSH schema、内部 token 或 hidden reasoning。
+
+### 非目标
+
+- `web_fetch`、任意 URL 下载、浏览器自动化、通用爬虫/新闻平台或网页全文仓库；
+- 用网页数据直接计算 Factor、Strategy、signal 或 Backtest；
+- 新建第二套 Research Database、Artifact Store、search index 或通用 Agent harness；
+- 让 DSH 直连 Provider、PostgreSQL、Redis、BYQ Backend，或由 Web Search 定义 Domain policy；
+- 在本阶段升级 DSH、patch/fork upstream、扩大 Product filesystem/shell/code capability；
+- Phase 65 Plugin Center、在线插件启停或任何 frontend 插件管理功能。
+
+### 架构边界
+
+```text
+Frontend
+  → Gateway / Product API
+  → Runtime Adapter
+  → DSH market_researcher
+       ├─ qualified search-only web_search → bounded evidence candidate
+       └─ BYQ MCP → structured data / authorized Artifact promotion
+  → normalized public answer + WorkflowTrace projection
+```
+
+Browser 不接触 DSH；Web Search 不接触 BYQ domain storage；持久 evidence 只通过 BYQ MCP 与
+Backend domain contract。DSH 决定 generic search/tool orchestration，BYQ 决定 capability 是否
+允许、Agent assignment、证据是否可晋升、时间/数据可见性、authorization 与 audit。
+
+### 验收标准
+
+- Phase 64 ADR Accepted，versioned Web Research Evidence contract、source tiers、time fields、
+  conflict/missing semantics、retention 和 Artifact promotion 均有 contract tests。
+- Search policy 对需要/不需要搜索、中英文拆分、预算、完全重复和语义重复查询有 deterministic
+  tests；重复或无结果不会形成无限 loop。
+- 测试覆盖官方与媒体冲突、AUXILIARY-only、过期新闻、无发布时间、无结果、错误 trading-day
+  推断、future-information rejection 和 persisted-data cutoff 冲突。
+- Market Research Agent 可综合 BYQ MCP + Web evidence；Factor/Strategy/Backtest 在 visibility、
+  direct invocation、delegation、resume 和 profile tests 中均无法访问 Web Search。
+- Evidence/Artifact 保留 URL、title、publisher、published/retrieved time、source tier、query、
+  provenance、hash/lineage/trace；确定性研究 input manifest 明确排除未晋升网页数据。
+- keyless CI 验证 package/init/tool registration/policy/error contract；credentialed smoke 使用外部
+  secret，真实执行 Web Search 并验证来源，不提交 secret、不把公网结果作为 golden fixture。
+- 至少完成一条真实 Product Agent journey：durable login → Market Research request → BYQ
+  structured data + credentialed Web Search → normalized sources/evidence → conversation resume；
+  Network/WorkflowTrace/error/readiness 均无 secret 或 raw DSH schema。
+- architecture、unit、contract、security、Product Agent integration、DSH compatibility、existing
+  regression、`git diff --check` 全部通过；若影响现有 UI，按仓库纪律完成 Community 分类和
+  desktop/mobile Chrome MCP review。
+
+### STOP CONDITIONS
+
+出现以下任一条件时停止对应路径，不 workaround：Web Search 不再对当前 exact baseline
+QUALIFIED；需要启用 fetch/arbitrary URL、shell/filesystem/code runtime；无法可靠保留 URL/
+时间/provenance 或隔离危险 capability；无法区分发布时间、研究 as-of、trading session 与
+persisted-data cutoff；网页结果将进入 deterministic Factor/Strategy/Backtest；需要绕过 MCP、
+authorization 或 Artifact contract；Agent assignment 可串权；需要用模型记忆补齐事实；secret、
+raw DSH schema 或内部 token 可能进入 Browser/WorkflowTrace/log/error；需要混合 DSH prerelease、
+fork/patch upstream 或建立第二 harness。上游变化只能触发 Upgrade Lane，不得在本阶段自动升级。
+
+## Phase 65 — DSH Plugin Center Admin UI（`PLANNED`; NOT AUTHORIZED）
+
+### 目标与前置决策
+
+将 Phase 63 稳定的 Registry/Qualification/Composition identity 以 admin-only Product surface
+产品化，使管理员能查看真实插件状态、证据、风险和 Agent assignment，并通过受控变更请求
+发起 enable/disable、assignment 和 qualification workflow。Plugin Center 是治理与部署状态
+界面，不是 Marketplace、package installer 或 DSH runtime console。
+
+Phase 65 只有在 Phase 64 合并后才能获批。实现前必须接受新的 control-plane ADR，明确：
+
+- Git-managed Registry/qualification evidence、期望 Product policy、generated composition 与
+  当前运行 composition 各自的 authoritative source 和版本关系；
+- admin change request 的 durable persistence、RBAC、idempotency、optimistic concurrency、
+  approval/audit、worker ownership、失败状态与取消语义；
+- 由哪个 trusted deployment/Engineering component 生成 policy snapshot、运行 qualification/
+  builder/CI、构建 image、正常 deploy/restart、验证 active hash 并执行 rollback；
+- 如何保证 Browser、Gateway、Backend 和 Product DSH 都不直接写 Git/source、执行 npm/shell、
+  控制 Docker 或修改正在运行的 Cordis composition。
+
+在该 ADR Accepted 前，Phase 63 的 Git-managed registry/profile 继续是唯一 deployment input；
+不得先做一个看似可用、实际只改内存/数据库或直接改 runtime 的启停按钮。
+
+### 范围
+
+1. **Plugin Overview**
+   - 展示 normalized DSH runtime version、active plugin profile、composition hash、enabled plugin
+     IDs，以及 AVAILABLE/QUALIFIED/ENABLED/BLOCKED/REJECTED/DEPRECATED 计数。
+   - 区分 desired、generated/validated、deploying 和 active runtime identity；仅在 Runtime Adapter
+     readiness 报告匹配 hash/profile 后显示 Active。
+   - update 状态只表达 verified upstream observation 与 compatibility/qualification 差异，不提供
+     一键升级或自动下载；未知/过期 discovery 必须显式。
+
+2. **Plugin Catalog 与 Detail**
+   - Catalog 投影 plugin id/display name、official publisher、package、qualified/current/upstream
+     observed exact version、qualification/enabled state、risk、capabilities、Agent assignments、
+     credential configured boolean、compatibility/block reason。
+   - Detail 展示 versioned qualification evidence summary、integrity/closure result、当前与上游版本、
+     capability/risk reasons、allowed/denied agents、profile/composition membership 和最近 qualification
+     request/result。证据链接/摘要有界、可审计且不泄内部路径或可执行配置。
+   - 所有投影由 Gateway Product API 组合 BYQ services 的有界 contract；Browser 不解析 registry
+     YAML、Cordis YAML、lockfile、raw DSH metadata/event 或 Runtime Adapter private response。
+
+3. **Admin Actions**
+   - 对已 `QUALIFIED` 且 risk/capability policy 允许的 registered plugin 发起 enable/disable change；
+     对 descriptor 允许范围内的已知 Agent 发起 assignment change。请求之外的 package/version/
+     capability/agent field 一律拒绝，不能通过 assignment 提升插件 capability。
+   - 发起已登记 exact package/version 的 Qualification Request；请求只排队执行既有 qualification
+     gates，结果不会自动 enable。unknown package、arbitrary version/source/URL/GitHub 均拒绝。
+   - 所有 mutation 要求 durable admin session、expected version、idempotency key、actor、reason、
+     append-only audit 和状态机；普通用户即使知道 ID 也不能读取 admin projection 或发起动作。
+   - “Enable”在 UI 中必须表达为 deployment change request：
+
+     ```text
+     Product Policy request
+       → validate registered/qualified/risk/assignment
+       → deterministic composition generation + exact lock validation
+       → normal CI/image build/deploy/restart
+       → active profile/hash verification
+     ```
+
+     请求被接受不等于已 enabled；只有新 runtime 以目标 hash readiness 后才成为 active。失败保留
+     旧 active composition，并展示有界失败原因和可审计 rollback 状态。
+
+4. **Product UI**
+   - 在既有 administrator System Settings/Operations 信息架构内增加 Plugin Center，而不是创建
+     第二套 admin shell。实现前按 `AGENTS.md` 检查并分类 Community 对应页面/组件；没有对应物
+     时记录 `REPLACE`/new BYQ surface，而不是臆造 Community parity。
+   - 支持 desktop/mobile、loading/error/empty/stale/partial-unavailable、权限拒绝、长 package 名、
+     状态/风险不可只靠颜色表达、危险动作确认和 deployment progress/recovery。
+   - 所有 browser traffic 为 same-origin `Frontend → Gateway/Product API → BYQ services`；无
+     Frontend→DSH/Runtime Adapter/Backend direct path。
+
+### 非目标
+
+- 开放 Marketplace、第三方开发者平台、评分/推荐/付费、用户上传或任意 package/source；
+- runtime `npm install`、hot install/hot reload、GitHub URL、arbitrary Cordis YAML、DSH extensions/
+  self-modification、自动 baseline/plugin upgrade；
+- Browser/Gateway/Product Backend shell、terminal、Git/source write、Docker socket、code runtime、
+  process control、任意 filesystem、database 或 provider access；
+- 在页面读取/显示 credential value、environment secret、internal token、connection string、raw
+  executable config、internal filesystem path 或 qualification command；
+- 用 DSH approval 替代 BYQ admin authorization/deployment approval，或把 qualification success
+  当作 enable/deploy success；
+- 与 Phase 65 无关的完整 Operations/Marketplace 重构。
+
+### 架构边界
+
+```text
+Admin Browser
+  → Gateway Product API（durable admin RBAC）
+  → BYQ Plugin governance projection / audited change request
+  → trusted deployment control plane（ADR-defined, Product DSH 之外）
+  → qualification + deterministic builder + CI/image/deploy/restart
+  → Runtime Adapter readiness（active profile/hash）
+```
+
+Plugin Center 只管理 BYQ Product policy 允许的 registered generic capability。Plugin descriptor
+不能定义 BYQ owner/workspace/role/domain authorization；Agent `toolFilter` 仍须镜像独立 assignment，
+BYQ authorization 仍是 Domain ceiling。Credential 通过既有 encrypted store/reference 注入，只向
+Browser 返回 `configured`/health boolean，不把 secret 放入 Registry、request、composition identity、
+evidence、WorkflowTrace、audit、log 或 error。
+
+### 验收标准
+
+- Phase 65 control-plane ADR Accepted；versioned Plugin Center read/write Product API contract 明确
+  desired/generated/active/request/result 状态，OpenAPI/typed client 与 secret-negative schema tests
+  完成。
+- Overview/Catalog/Detail 对 Phase 63/64 真实 registry、qualification evidence、runtime readiness
+  和 update observation 投影准确；blocked reason、risk、assignments 与 credential configured 状态
+  可解释，partial runtime failure 不伪造 healthy/active。
+- duplicate/stale/idempotent admin requests deterministic；ordinary user/disabled user/cross-workspace
+  被拒；audit 可关联 actor、request、old/new policy version、composition hash、deployment result，
+  但不含 secret/raw config。
+- AVAILABLE/BLOCKED/REJECTED/DEPRECATED、HIGH/PROHIBITED、unknown package/version/agent、invalid
+  assignment 和 capability escalation 都无法进入 composition；disabled plugin 缺席，qualified +
+  policy-enabled + valid assignment plugin 才出现。
+- Qualification Request 执行 exact version/integrity/closure/runtime/capability/security gates；失败不
+  自动升级、不自动 enable、不改变 active runtime。
+- 完整 admin journey：登录 → Overview → Catalog/Detail → 发起允许的 policy/assignment change →
+  观察 validation/deployment/restart → active hash 匹配；失败 journey 验证旧 composition 保持 active
+  且 rollback/audit 可见。另有普通用户 403、two-user isolation 和 restart recovery。
+- architecture tests 明确拒绝 online install、extensions、shell/terminal/source write、Docker/runtime
+  direct control、frontend→DSH、MCP bypass、direct DB/provider 和 secret projection。
+- Community feature classification、desktop/mobile Chrome MCP、loading/error/empty/stale、accessibility、
+  real Product API Network review，以及 frontend/backend/unit/contract/security/integration/runtime/
+  DSH compatibility/regression、`git diff --check` 全部通过。
+
+### STOP CONDITIONS
+
+出现以下任一条件时停止，不实现伪控制面或 workaround：Phase 63 Registry Contract 尚不稳定或
+Phase 64 尚未合并；无法在 ADR 中确定 policy/qualification/deployment 的权威 owner；需要 Browser、
+Gateway、Backend 或 Product DSH 直接执行 npm/shell/Git/Docker、写 source/YAML 或修改 running
+runtime；enable 无法区分 requested 与 active；需要启用未 QUALIFIED、危险 capability 或越权 Agent；
+需要 arbitrary package/version/source/URL；qualification metadata 无法准确验证；正常 build/deploy/
+restart 或 rollback 不可审计；credential/raw config/internal path 可能泄漏；需要 DSH extension、fork/
+patch、prerelease 混用、MCP/authorization bypass 或第二 generic harness。单个插件不兼容只进入
+BLOCKED，不阻塞 Plugin Center 的只读治理能力。
