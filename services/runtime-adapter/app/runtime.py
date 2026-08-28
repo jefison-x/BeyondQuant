@@ -183,6 +183,11 @@ class RuntimeAdapter:
                 "plugin_profile": composition_identity["profile"],
                 "composition_hash": composition_identity["composition_hash"],
                 "enabled_plugin_ids": composition_identity["enabled_plugin_ids"],
+                "model_credentials": (
+                    "configured" if self._model_api_key
+                    else "resolver" if self._resolver_token
+                    else "missing"
+                ),
             },
             "sessions": {
                 "active": len(records),

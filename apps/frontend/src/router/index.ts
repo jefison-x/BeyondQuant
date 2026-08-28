@@ -38,6 +38,7 @@ const router = createRouter({
           children: [
             { path: "", redirect: "/settings/system/overview" },
             { path: "overview", name: "system-settings-overview", component: () => import("@/views/SystemOverviewView.vue") },
+            { path: "plugins", name: "system-settings-plugins", component: () => import("@/views/PluginCenterView.vue") },
             { path: "data", name: "system-settings-data", component: () => import("@/views/DataCenterView.vue") },
             { path: "sources", name: "system-settings-sources", component: () => import("@/views/AdminOpsView.vue"), props: { section: "sources" } },
             { path: "cache", name: "system-settings-cache", component: () => import("@/views/AdminOpsView.vue"), props: { section: "cache" } },

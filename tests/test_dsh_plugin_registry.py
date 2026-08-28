@@ -153,6 +153,33 @@ class PluginRegistryTests(unittest.TestCase):
         for forbidden in ("credential", "api_key", "secret", "authorization"):
             self.assertTrue(all(forbidden not in key for key in public_keys))
 
+    def test_managed_policy_build_is_deterministic_and_fail_closed(self) -> None:
+        policy = {
+            "schema_version": "plugin-deployment-policy.v1",
+            "policy_version": 2,
+            "enabled_plugin_ids": ["guard", "compaction"],
+            "agent_assignments": {
+                "guard": ["quant_orchestrator"],
+                "compaction": ["quant_orchestrator"],
+            },
+        }
+        first = registry_module.build(policy=policy)
+        second = registry_module.build(policy=copy.deepcopy(policy))
+        self.assertEqual(first, second)
+        composition, identity = first
+        self.assertEqual(identity["profile"], "managed-v2")
+        self.assertEqual(identity["enabled_plugin_ids"], ["compaction", "guard"])
+        self.assertNotIn("web-search-plugin", composition)
+        invalid = copy.deepcopy(policy)
+        invalid["enabled_plugin_ids"].append("spill")
+        invalid["agent_assignments"]["spill"] = []
+        with self.assertRaisesRegex(registry_module.RegistryError, "not QUALIFIED"):
+            registry_module.build(policy=invalid)
+        escalated = copy.deepcopy(policy)
+        escalated["agent_assignments"]["guard"] = ["unknown-agent"]
+        with self.assertRaisesRegex(registry_module.RegistryError, "exceeds allowlist"):
+            registry_module.build(policy=escalated)
+
 
 if __name__ == "__main__":
     unittest.main()

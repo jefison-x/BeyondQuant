@@ -76,6 +76,9 @@ services:
     build:
       context: .
       dockerfile: services/runtime-adapter/Dockerfile
+      args:
+        BYQ_DSH_COMPOSITION_SOURCE: ${BYQ_DSH_COMPOSITION_SOURCE:-plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml}
+        BYQ_DSH_IDENTITY_SOURCE: ${BYQ_DSH_IDENTITY_SOURCE:-plugins/dsh-byq/compositions/byq-product-sdk.identity.json}
     environment:
       BYQ_MCP_TOKEN: ${BYQ_MCP_TOKEN:?BYQ_MCP_TOKEN must be set}
       BYQ_MCP_URL: http://mcp:8300/mcp/v1
@@ -147,6 +150,7 @@ services:
       BYQ_CREDENTIAL_KEYRING: ${BYQ_CREDENTIAL_KEYRING:-}
       BYQ_CREDENTIAL_ACTIVE_KEY_ID: ${BYQ_CREDENTIAL_ACTIVE_KEY_ID:-}
       BYQ_CREDENTIAL_RESOLVER_TOKEN: ${BYQ_CREDENTIAL_RESOLVER_TOKEN:-dev-credential-resolver-change-me}
+      BYQ_PLUGIN_DEPLOYMENT_TOKEN: ${BYQ_PLUGIN_DEPLOYMENT_TOKEN:-dev-plugin-deployment-change-me}
       TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
       TUSHARE_API_URL: ${TUSHARE_API_URL:-http://api.tushare.pro}
     depends_on:

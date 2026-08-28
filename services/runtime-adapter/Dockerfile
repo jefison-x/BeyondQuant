@@ -23,8 +23,10 @@ COPY services/runtime-adapter/tests ./tests
 COPY packages/contracts ./packages/contracts
 RUN python3 -m pip install --break-system-packages --no-cache-dir ".[test]"
 
-COPY plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml /opt/byq/compositions/byq-product-sdk.cordis.yml
-COPY plugins/dsh-byq/compositions/byq-product-sdk.identity.json /opt/byq/compositions/byq-product-sdk.identity.json
+ARG BYQ_DSH_COMPOSITION_SOURCE=plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml
+ARG BYQ_DSH_IDENTITY_SOURCE=plugins/dsh-byq/compositions/byq-product-sdk.identity.json
+COPY ${BYQ_DSH_COMPOSITION_SOURCE} /opt/byq/compositions/byq-product-sdk.cordis.yml
+COPY ${BYQ_DSH_IDENTITY_SOURCE} /opt/byq/compositions/byq-product-sdk.identity.json
 COPY plugins/dsh-byq/runtime /opt/byq/runtime
 COPY services/runtime-adapter/runtime/verify-time-context.mjs /opt/dsh-runtime/verify-time-context.mjs
 COPY services/runtime-adapter/runtime/verify-qualified-plugins.mjs /opt/dsh-runtime/verify-qualified-plugins.mjs

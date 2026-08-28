@@ -1718,3 +1718,88 @@ def product_operations_budget_update(
         payload,
         headers={"x-byq-actor-role": "admin", "x-byq-actor-principal": actor},
     )
+
+
+def _plugin_admin(request: Request) -> tuple[str, dict[str, str]]:
+    user = resolve_user(request)
+    if user.get("role") != "admin":
+        raise ProductError(403, "product_forbidden", "admin role required")
+    actor = str(user.get("username") or user.get("user_id") or "admin")
+    return actor, {"x-byq-actor-role": "admin", "x-byq-actor-principal": actor}
+
+
+def _decorate_plugin_center(body: dict[str, object], runtime: dict[str, object]) -> dict[str, object]:
+    runtime_state = runtime.get("runtime") if isinstance(runtime.get("runtime"), dict) else {}
+    assert isinstance(runtime_state, dict)
+    active_ids = runtime_state.get("enabled_plugin_ids")
+    active_ids = active_ids if isinstance(active_ids, list) else []
+    active_hash = runtime_state.get("composition_hash")
+    active_profile = runtime_state.get("plugin_profile")
+    runtime_ready = runtime_state.get("status") == "ready"
+    plugins = body.get("plugins")
+    if isinstance(plugins, list):
+        for plugin in plugins:
+            if not isinstance(plugin, dict):
+                continue
+            plugin["active"] = runtime_ready and plugin.get("id") in active_ids
+            if plugin.get("credential_required") is True:
+                plugin["credential_configured"] = runtime_state.get("model_credentials") in {"configured", "resolver"}
+    policy = body.get("policy") if isinstance(body.get("policy"), dict) else {}
+    desired_ids = policy.get("enabled_plugin_ids") if isinstance(policy, dict) else []
+    requests = body.get("requests") if isinstance(body.get("requests"), list) else []
+    policy_requests = [item for item in requests if isinstance(item, dict) and item.get("request_kind") != "qualify"]
+    deployment_pending = any(
+        isinstance(item, dict)
+        and item.get("request_kind") != "qualify"
+        and item.get("deployment_state") not in {"active", "rolled_back", "not_applicable"}
+        for item in requests
+    )
+    latest_policy_request = policy_requests[0] if policy_requests else None
+    deployed_identity_matches = (
+        latest_policy_request is None
+        or (
+            latest_policy_request.get("deployment_state") == "active"
+            and latest_policy_request.get("target_composition_hash") == active_hash
+        )
+    )
+    body["runtime"] = {
+        "status": runtime_state.get("status", "unavailable"),
+        "sdk": runtime_state.get("sdk"),
+        "runtime_bin": runtime_state.get("runtime_bin"),
+        "active_profile": active_profile,
+        "active_composition_hash": active_hash,
+        "active_plugin_ids": active_ids,
+        "desired_matches_active_plugins": (
+            runtime_ready and not deployment_pending and deployed_identity_matches
+            and sorted(active_ids) == sorted(desired_ids or [])
+        ),
+    }
+    body["projection_status"] = "ready" if runtime_ready else "partial"
+    return body
+
+
+@router.get("/plugins")
+def product_plugin_center(request: Request) -> dict[str, object]:
+    _actor, headers = _plugin_admin(request)
+    body = _backend_request("GET", "/v1/plugin-center", headers=headers)
+    return _decorate_plugin_center(body, _runtime_operations())
+
+
+@router.get("/plugins/{plugin_id}")
+def product_plugin_detail(plugin_id: str, request: Request) -> dict[str, object]:
+    _actor, headers = _plugin_admin(request)
+    detail = _backend_request("GET", f"/v1/plugin-center/plugins/{plugin_id}", headers=headers)
+    projection = {"plugins": [detail.get("plugin")], "policy": {}, **detail}
+    return _decorate_plugin_center(projection, _runtime_operations())
+
+
+@router.post("/plugins/changes", status_code=202)
+def product_plugin_change(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _actor, headers = _plugin_admin(request)
+    return _backend_request("POST", "/v1/plugin-center/changes", payload, headers=headers)
+
+
+@router.post("/plugins/qualifications", status_code=202)
+def product_plugin_qualification(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _actor, headers = _plugin_admin(request)
+    return _backend_request("POST", "/v1/plugin-center/qualifications", payload, headers=headers)

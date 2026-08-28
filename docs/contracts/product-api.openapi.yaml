@@ -82,6 +82,15 @@ paths:
     get: {summary: 返回 the admin-only browser-safe operations projection., responses: *okResponses}
   /api/product/operations/budget:
     put: {summary: 更新 audited Product Agent usage-monitoring thresholds., responses: *okResponses}
+  /api/product/plugins:
+    get: {summary: 返回 admin-only、secret-free Plugin Registry、desired policy 与 active runtime identity 投影。, responses: *okResponses}
+  /api/product/plugins/{plugin_id}:
+    parameters: [{$ref: "#/components/parameters/PluginId"}]
+    get: {summary: 返回一个 registered plugin 的资格、风险、证据 ID 与最近治理请求。, responses: *okResponses}
+  /api/product/plugins/changes:
+    post: {summary: 创建 versioned、idempotent 的 Product plugin policy deployment change request；不热修改 runtime。, responses: *acceptedResponses}
+  /api/product/plugins/qualifications:
+    post: {summary: 为已登记的 exact plugin version 排队 Qualification；成功也不会自动启用。, responses: *acceptedResponses}
 
   /api/product/research/{entity_type}/{entity_id}:
     parameters:
@@ -319,6 +328,7 @@ components:
     EntityId: {name: entity_id, in: path, required: true, schema: {type: string}}
     JobId: {name: job_id, in: path, required: true, schema: {type: string}}
     RequestId: {name: request_id, in: path, required: true, schema: {type: string}}
+    PluginId: {name: plugin_id, in: path, required: true, schema: {type: string, pattern: "^[a-z0-9-]+$"}}
     CredentialId: {name: credential_id, in: path, required: true, schema: {type: string}}
     ArtifactId: {name: artifact_id, in: path, required: true, schema: {type: string}}
     StrategyId: {name: strategy_id, in: path, required: true, schema: {type: string}}

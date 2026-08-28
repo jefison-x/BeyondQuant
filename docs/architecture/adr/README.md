@@ -57,3 +57,7 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
 - ADR-0038 定义 Product DSH official plugin 的 AVAILABLE/QUALIFIED/ENABLED 状态、
   capability/risk/Agent assignment、exact qualification、deterministic composition、runtime
   identity 与禁止 online install/self-modification 的治理边界。
+- ADR-0039 定义 Market Research Web evidence 的 source、time、claim、research-only Artifact
+  promotion 和 Agent least-privilege 边界。
+- ADR-0040 定义 Plugin Center desired policy、generated target、active runtime identity 与
+  trusted deployment lane 的权限和状态边界。
