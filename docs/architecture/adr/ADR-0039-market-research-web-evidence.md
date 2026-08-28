@@ -113,3 +113,22 @@ golden fixture。
 capability、模型记忆补证、Agent 串权、网页 deterministic input、无法证明 provenance/time、secret
 或 raw DSH schema 泄漏时停止。缺 credential 只阻止 credentialed smoke，不得伪造实网结果；
 keyless contract、Product boundary 和实现仍可独立验证。
+
+## 2026-08-29 maintenance clarification：保存命令与公共状态
+
+真实 Product journey 发现，让模型生成内部 `source_id` 会把一次成功搜索退化为难以理解的
+“入库校验失败”，并且分开的 task/evidence mutation 会留下孤立 ResearchTask。现接受以下不改变
+Artifact v1 持久格式和安全边界的收紧：
+
+1. Agent-facing command 只用零基 `source_indexes` 关联 claim 与本次来源数组；Backend 对已校验
+   public URL 计算稳定 `source_id`。Browser、模型和 DSH plugin 均不拥有该 identifier contract。
+2. 显式保存使用一个 BYQ MCP command；Backend 在同一 PostgreSQL transaction 内创建最小
+   ResearchTask 与 `web_research_evidence` Artifact。validation、idempotency conflict 或写入失败
+   整体回滚。
+3. normalized validation issue 仍最多定向修复一次。公共回答只投影保存成功与来源数，或说明
+   “结果可阅读但研究记录暂未保存，且未用于量化计算”；不得暴露 schema/source ID/tool/enum，
+   也不得在无关后续 turn 主动重播历史保存故障。
+
+旧 `/v1/research/web-evidence` 的 existing-task Backend route 暂保留为兼容内部 Contract；Product
+Agent 使用新的 atomic record route。二者都只能经 trusted MCP/Backend boundary，均不能使 Web
+evidence 成为确定性量化输入。

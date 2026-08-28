@@ -1269,6 +1269,24 @@ def create_web_research_evidence(payload: dict[str, Any], request: Request) -> d
     return _research_call(operation)
 
 
+@app.post("/v1/research/web-evidence-records", status_code=201)
+def create_web_research_evidence_record(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    """Atomically create a ResearchTask and its bounded web-evidence Artifact."""
+
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        return research_store.create_web_evidence_record(
+            {
+                **payload,
+                "owner_principal": context["owner_principal"],
+                "trace_id": context["trace_id"],
+            }
+        )
+
+    return _research_call(operation)
+
+
 @app.get("/v1/research/artifacts/{artifact_id}")
 def get_artifact(artifact_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request)

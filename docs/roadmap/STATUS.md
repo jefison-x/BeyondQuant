@@ -224,6 +224,11 @@ Post-Phase 62 Trusted Time Maintenance 依据 ADR-0037 将服务器权威自然�
 snapshot 的有界只读截止语义。它是维护修复，不改变 Phase 62 完成状态，也不定义下一
 Product Phase。
 
+Post-Phase 65 Web Evidence Persistence UX Maintenance 依据 ADR-0039 clarification，将网页来源
+内部 ID 改为 BYQ 根据已验证 URL 生成，以单一 PostgreSQL transaction 创建 ResearchTask 与
+Evidence Artifact，并把 MCP 结果收敛为中文 saved/not-saved 状态与来源数。旧保存失败不再在
+无关对话中主动重播；该修复不改变 Phase 65 完成状态，也不定义下一 Product Phase。
+
 ## 当前授权边界
 
 - Phase 49-65 与相应 Accepted ADR/计划均已完成。

@@ -4,7 +4,11 @@ import copy
 import unittest
 
 from app.research import ResearchStore
-from app.web_research import SCHEMA_VERSION, validate_web_research_evidence
+from app.web_research import (
+    SCHEMA_VERSION,
+    normalize_web_research_evidence,
+    validate_web_research_evidence,
+)
 
 
 def evidence_fixture() -> dict[str, object]:
@@ -70,6 +74,32 @@ def evidence_fixture() -> dict[str, object]:
 
 
 class WebResearchEvidenceTests(unittest.TestCase):
+    def test_system_generates_stable_source_ids_and_resolves_claim_indexes(self) -> None:
+        fixture = evidence_fixture()
+        for source in fixture["sources"]:  # type: ignore[index]
+            source.pop("source_id")
+        fixture["claims"][0]["source_indexes"] = [0]  # type: ignore[index]
+        fixture["claims"][0].pop("source_ids")  # type: ignore[index]
+
+        normalized = normalize_web_research_evidence(fixture)
+
+        source_ids = [source["source_id"] for source in normalized["sources"]]
+        self.assertEqual(len(source_ids), len(set(source_ids)))
+        self.assertTrue(all(str(source_id).startswith("source_") for source_id in source_ids))
+        self.assertEqual(normalized["claims"][0]["source_ids"], [source_ids[0]])
+        self.assertEqual(normalize_web_research_evidence(fixture), normalized)
+        validate_web_research_evidence(normalized)
+
+    def test_system_rejects_invalid_claim_source_index(self) -> None:
+        fixture = evidence_fixture()
+        for source in fixture["sources"]:  # type: ignore[index]
+            source.pop("source_id")
+        fixture["claims"][0]["source_indexes"] = [99]  # type: ignore[index]
+        fixture["claims"][0].pop("source_ids")  # type: ignore[index]
+
+        with self.assertRaisesRegex(ValueError, "claim source_indexes"):
+            normalize_web_research_evidence(fixture)
+
     def test_valid_evidence_and_artifact_promotion_contract(self) -> None:
         fixture = evidence_fixture()
         self.assertIs(validate_web_research_evidence(fixture), fixture)
