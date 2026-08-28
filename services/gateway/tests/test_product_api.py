@@ -304,7 +304,7 @@ def test_product_model_settings_are_secret_free(monkeypatch) -> None:
                     {"provider": "opencode-go", "display_name": "OpenCode Go"},
                 ],
                 "models": [{"provider": "deepseek", "model": "deepseek-v4-flash"}],
-                "agents": [{"agent_id": "byq-product", "name": "小霸 Product Agent"}],
+                "agents": [{"agent_id": "byq-product", "name": "小巴 Product Agent"}],
             })
         if url.endswith("/v1/users/model-credentials"):
             return FakeResponse({
@@ -334,6 +334,7 @@ def test_product_model_settings_are_secret_free(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["credentials"]["masked"] is True
     assert response.json()["providers"][1]["provider"] == "opencode-go"
+    assert response.json()["agents"][0]["name"] == "小巴 Product Agent"
     assert response.json()["credential_items"][0]["masked"] == "sk-…abcd"
     assert "token" not in response.text.lower()
     assert "secret" not in response.text.lower()

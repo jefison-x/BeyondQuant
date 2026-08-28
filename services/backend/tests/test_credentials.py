@@ -138,6 +138,7 @@ def test_profile_binding_resolution_and_rotation_fail_closed() -> None:
     )
     binding = store.bind("alice", "byq-product", profile["profile_id"])
     assert binding["effective_source"] == "personal"
+    assert binding["agent_name"] == "小巴 Product Agent"
     resolution = store.resolve_model("alice", "byq-product")
     assert resolution == {
         "source": "user_binding",
@@ -178,6 +179,7 @@ def test_profile_binding_resolution_and_rotation_fail_closed() -> None:
     with pytest.raises(CredentialUnavailable):
         store.resolve_model("alice", "byq-product")
     assert store.list_bindings("alice")[0]["profile_id"] == profile["profile_id"]
+    assert store.list_bindings("alice")[0]["agent_name"] == "小巴 Product Agent"
     assert store.list_bindings("alice")[0]["available"] is False
     store.close()
 
