@@ -1,12 +1,13 @@
 # BeyondQuant / DeepSeek Harness compatibility matrix
 
-验证日期：2026-08-25
+验证日期：2026-08-28
 
 ## 版本决策
 
 | Surface | 观察到的最高 official release | BYQ 决策 | 原因 |
 | --- | --- | --- | --- |
 | GitHub Releases | `dsh-v0.1.1-rc.2` | Not qualified | 没有匹配的 official Python SDK/runtime-bin |
+| GitHub latest observed | `dsh-v0.1.2-alpha.1` | AVAILABLE / Not qualified | alpha release；没有匹配的 official Python SDK/runtime-bin，也未进入 BYQ Upgrade Lane |
 | PyPI SDK | `0.1.1rc1` | Qualified | 准确依赖 runtime-bin `0.1.1rc1` |
 | PyPI runtime-bin | `0.1.1rc1` | Qualified | 与 SDK 使用相同 Python prerelease |
 | npm BYQ runtime closure | 已发布 `0.1.1-rc.2` | `0.1.1-rc.1` qualified | 与 Python 匹配；完整准确 closure 可解析且不混合 prerelease |
@@ -37,7 +38,8 @@ stable version：`cordis@4.0.1`、`cordis-plugin-group@1.0.1`、
 `cordis-plugin-timer@1.1.3`、`cosmokit@1.8.2` 和 `schemastery@3.18.1`。
 
 仓库中的 npm manifest 将 DSH closure 的每个 package 列为准确 direct pin。clean lock
-包含 61 个 `@deepseek-ai/*` package：54 个 `@deepseek-ai/dsh-*` 均为
+Phase 63 扩展后的 clean lock 包含 78 个 `@deepseek-ai/*` package：71 个
+`@deepseek-ai/dsh-*` 均为
 `0.1.1-rc.1`，另有上述七个 stable support package。manifest 与 lock 的 package set
 相等。clean install 和 `npm audit --audit-level=high` 报告零 vulnerability。BYQ 顶层
 DSH pin 不使用 `latest`、caret 或 tilde，也不使用 override、force 或 legacy peer
@@ -96,3 +98,18 @@ upstream 新能力均未启用。只有在 BYQ public Contract 和必要的 Acce
 reporting 和 image。部署前先 stop/release owned process；保留 Agent Plane JSONL
 session volume，若无法证明 cross-version resume，则启动新 runtime session。无需回滚
 或迁移 BYQ business database。
+
+## Phase 63 Plugin Qualification summary
+
+| Capability | Exact official packages | Qualification | Enabled | Risk | Agent assignment / reason |
+| --- | --- | --- | --- | --- | --- |
+| Guard | `dsh-repeat-tool-reminder`、`dsh-tool-call-timeout-policy@0.1.1-rc.1` | QUALIFIED | Yes | LOW | 全部 Product Agent；不增加工具或 authority |
+| Compaction | `dsh-compaction-basic`、pruner/token-meter closure `@0.1.1-rc.1` | QUALIFIED | Yes | LOW | 全部 Product Agent；仅 Agent context |
+| Web Search | `dsh-web`、`dsh-web-search-deepseek`、`dsh-tool-web@0.1.1-rc.1` | QUALIFIED | Yes | MEDIUM | Market Research + explicit root coordinator；Factor/Strategy/Backtest denied；`fetch:false` |
+| Spill | `dsh-spill* @0.1.1-rc.1` | BLOCKED | No | HIGH | rc.1 无 lifecycle cleanup，locator 需要被禁止的 filesystem tool |
+| Interaction | `dsh-user-questions`、`dsh-tool-ask-user@0.1.1-rc.1` | BLOCKED_BY_RUNTIME_VERSION | No | MEDIUM | 当前 SDK/JSON-RPC Product request/answer lifecycle 未证明 |
+
+精确 integrity、capability bitmap、checks 和 evidence 路径由
+`plugins/dsh-byq/registry/plugins.json` 持有；generated identity 位于
+`plugins/dsh-byq/compositions/byq-product-sdk.identity.json`。Phase 63 没有升级 Python 或
+npm baseline，且不使用 rc.2/alpha package。

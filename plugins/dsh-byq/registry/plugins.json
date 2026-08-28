@@ -1,0 +1,95 @@
+{
+  "schema_version": "dsh-plugin-registry.v1",
+  "runtime_baseline": {"python_sdk": "0.1.1rc1", "runtime_bin": "0.1.1rc1", "npm_runtime": "0.1.1-rc.1", "upstream_latest_observed": "0.1.2-alpha.1", "observed_at": "2026-08-28"},
+  "plugins": [
+    {
+      "id": "compaction", "display_name": "DSH Compaction", "description": "Automatic conversation compaction and bounded tool-result pruning.",
+      "source": {"kind": "official_npm", "publisher": "deepseek-ai"},
+      "packages": [
+        {"name": "@deepseek-ai/dsh-commands", "version": "0.1.1-rc.1", "integrity": "sha512-jOtQNe5RBfyCQxUqCAhqJbrfM3iUZZp1H197SrhFDuZT8v4CbbnyjBWQTAeuztf66pM8VoCxnBik79kY6tN/KA=="},
+        {"name": "@deepseek-ai/dsh-compaction", "version": "0.1.1-rc.1", "integrity": "sha512-0aDCK6TDF2RXJTrgkmuh6KAGLA8jthR3JKNp0be5RS1U2IIEXwjOLwr5ol4gvSaNLerMlcyLyslkATrHj8hQVw=="},
+        {"name": "@deepseek-ai/dsh-compaction-basic", "version": "0.1.1-rc.1", "integrity": "sha512-dNi5IZg0nOUPckhOSgEltHpF8On+wEkMR4gMVF0YItYJifReqcj1qHDZ+8jjmDNFTT5lnOUXylMXyY08IM1a/Q=="},
+        {"name": "@deepseek-ai/dsh-compaction-tool-result-pruner", "version": "0.1.1-rc.1", "integrity": "sha512-pRFLE04eJRkH46NMH4F6HvCz7lQMxdua2MifcyAdfuHLRCfGtmzJtlkNJkHd7936rJqHaRmVUz3+UMt86MbyBQ=="},
+        {"name": "@deepseek-ai/dsh-token-meter", "version": "0.1.1-rc.1", "integrity": "sha512-P5CIwXRbGUO8AquJIuoZaLlBY7NZ/OqGM7BRM9Qps+vNaC3lmwa/Dq/I+fhmckXjPMYLA20X4kVVn/SDUG422Q=="}
+      ],
+      "compatibility": {"dsh_runtime": "0.1.1-rc.1", "python_sdk": "0.1.1rc1", "runtime_bin": "0.1.1rc1", "status": "COMPATIBLE"},
+      "qualification": {"state": "QUALIFIED", "qualified_at": "2026-08-28", "reason": "Exact rc.1 closure initializes under the BYQ JSON-RPC composition; compaction remains Agent context and cannot replace BYQ artifacts or domain state.", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": true, "composition_initialize": true, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": true, "agent_boundary": true, "mcp_boundary": true, "contract_tests": true, "architecture_tests": true}},
+      "capabilities": {"network": false, "web_search": false, "web_fetch": false, "filesystem_read": false, "filesystem_write": false, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": false, "runtime_mutation": false, "user_interaction": false},
+      "credentials": {"required": false, "references": []}, "tools": {"exposed": []},
+      "agents": {"allowed": ["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"], "denied": []},
+      "risk": {"level": "LOW", "reasons": ["No network or mutation capability", "Summary is non-authoritative Agent context"]}, "product_policy": {"enabled": true},
+      "composition": {"entries": [
+        {"id": "compaction-basic", "name": "@deepseek-ai/dsh-compaction-basic", "config": {"thresholdRatio": 0.8, "retainRatio": 0.16, "maxTokens": 8192, "compactionRetries": 1}},
+        {"id": "compaction-tool-result-pruner", "name": "@deepseek-ai/dsh-compaction-tool-result-pruner", "config": {"thresholdChars": 8192, "headChars": 4096, "tailChars": 1024}},
+        {"id": "token-meter", "name": "@deepseek-ai/dsh-token-meter"}
+      ]}
+    },
+    {
+      "id": "guard", "display_name": "DSH Guard", "description": "Advisory repeated-call guard and cooperative per-tool timeout enforcement.",
+      "source": {"kind": "official_npm", "publisher": "deepseek-ai"},
+      "packages": [
+        {"name": "@deepseek-ai/dsh-repeat-tool-reminder", "version": "0.1.1-rc.1", "integrity": "sha512-b5DPzJPJTKACT2RNmdTBRvo8ajkJ1n+UttlH5tULaKepr6AdTxxvq31a7HFWMwmHJ6aftXGyui+g7a2PSCW9bw=="},
+        {"name": "@deepseek-ai/dsh-tool-call-timeout-policy", "version": "0.1.1-rc.1", "integrity": "sha512-lAd+eRth7mhr/SRb8CFz9OhS5arF3VQgnrWxfeftE+oofytj8juiwppSBXPfjl1lP6a2D5jVsQ0G6pd3pdZCXQ=="}
+      ],
+      "compatibility": {"dsh_runtime": "0.1.1-rc.1", "python_sdk": "0.1.1rc1", "runtime_bin": "0.1.1rc1", "status": "COMPATIBLE"},
+      "qualification": {"state": "QUALIFIED", "qualified_at": "2026-08-28", "reason": "Both official guards initialize on rc.1, add no tools or authority, preserve tool results, and produce bounded advisory/timeout outcomes.", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": true, "composition_initialize": true, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": true, "agent_boundary": true, "mcp_boundary": true, "contract_tests": true, "architecture_tests": true}},
+      "capabilities": {"network": false, "web_search": false, "web_fetch": false, "filesystem_read": false, "filesystem_write": false, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": false, "runtime_mutation": false, "user_interaction": false},
+      "credentials": {"required": false, "references": []}, "tools": {"exposed": []},
+      "agents": {"allowed": ["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"], "denied": []},
+      "risk": {"level": "LOW", "reasons": ["Advisory only", "Timeout is cooperative and cannot forge domain success"]}, "product_policy": {"enabled": true},
+      "composition": {"entries": [
+        {"id": "repeat-tool-reminder", "name": "@deepseek-ai/dsh-repeat-tool-reminder", "config": {"thresholds": [3, 5, 8], "argumentsPreviewChars": 500}},
+        {"id": "tool-call-timeout-policy", "name": "@deepseek-ai/dsh-tool-call-timeout-policy"}
+      ]}
+    },
+    {
+      "id": "interaction", "display_name": "DSH User Questions", "description": "Structured ask-user interaction service and model-facing tool.",
+      "source": {"kind": "official_npm", "publisher": "deepseek-ai"},
+      "packages": [
+        {"name": "@deepseek-ai/dsh-tool-ask-user", "version": "0.1.1-rc.1", "integrity": "sha512-MUXpZ6BYy/rAY8Yp+NXXwbH9Cxlria4GGq+nbnYaTHpc8xM76X1hpp3n2iOzV/ef9V+IDCWmW3Z3gnljbDFWRw=="},
+        {"name": "@deepseek-ai/dsh-user-questions", "version": "0.1.1-rc.1", "integrity": "sha512-q5RZczXTNzSC/fas+qIno5jCqH/jotz0OpBzRCTNMPV1ID4YcGroaUKsLxzaGXP5bbiaVlX5Tqt5FUYO6rYStQ=="}
+      ],
+      "compatibility": {"dsh_runtime": "0.1.1-rc.1", "python_sdk": "0.1.1rc1", "runtime_bin": "0.1.1rc1", "status": "BLOCKED_BY_RUNTIME_VERSION"},
+      "qualification": {"state": "BLOCKED", "qualified_at": null, "reason": "The rc.1 packages exist, but the qualified BYQ SDK/JSON-RPC transport has no proven Product question request/answer lifecycle; DSH interaction cannot be confused with BYQ authorization.", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": false, "composition_initialize": false, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": false, "agent_boundary": true, "mcp_boundary": true, "contract_tests": false, "architecture_tests": true}},
+      "capabilities": {"network": false, "web_search": false, "web_fetch": false, "filesystem_read": false, "filesystem_write": false, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": false, "runtime_mutation": false, "user_interaction": true},
+      "credentials": {"required": false, "references": []}, "tools": {"exposed": ["ask_user"]},
+      "agents": {"allowed": ["quant_orchestrator"], "denied": ["market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"]},
+      "risk": {"level": "MEDIUM", "reasons": ["Requires durable human interaction routing", "Cannot substitute for BYQ authorization"]}, "product_policy": {"enabled": false}, "composition": {"entries": []}
+    },
+    {
+      "id": "spill", "display_name": "DSH Spill", "description": "Large tool-result spill seam with local filesystem storage.",
+      "source": {"kind": "official_npm", "publisher": "deepseek-ai"},
+      "packages": [
+        {"name": "@deepseek-ai/dsh-spill", "version": "0.1.1-rc.1", "integrity": "sha512-PK1A1YxQVgisWacljbHAyL2z3MGXE+GWeXzNf2hHElzmtAkv412a3TXtMTL5XLZ1m0laLZxstEcf8L+S4zxvPQ=="},
+        {"name": "@deepseek-ai/dsh-spill-local", "version": "0.1.1-rc.1", "integrity": "sha512-YquagM4ZY6p1+03BSJxfp/rK9yy/ZkfZ0yNumiL5juF0drte6OqUj6YvrR2/RVhV88Id85fv6ik0As70x9l+Ww=="},
+        {"name": "@deepseek-ai/dsh-spill-policy", "version": "0.1.1-rc.1", "integrity": "sha512-shbTUw8Cpq+X5XZlM3G8q5pPDmXnNgyW8NRDUg2l/bPLipdejIivs7T5dLLXKRtxhaD9GB6Z7jqFuy+dlV8iIg=="}
+      ],
+      "compatibility": {"dsh_runtime": "0.1.1-rc.1", "python_sdk": "0.1.1rc1", "runtime_bin": "0.1.1rc1", "status": "BLOCKED_BY_SECURITY_BOUNDARY"},
+      "qualification": {"state": "BLOCKED", "qualified_at": null, "reason": "spill-local has no session/age cleanup in rc.1 and returns filesystem locators with read/grep guidance; Product DSH intentionally has no filesystem-read tool.", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": false, "composition_initialize": false, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": false, "agent_boundary": true, "mcp_boundary": true, "contract_tests": false, "architecture_tests": true}},
+      "capabilities": {"network": false, "web_search": false, "web_fetch": false, "filesystem_read": false, "filesystem_write": true, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": true, "runtime_mutation": false, "user_interaction": false},
+      "credentials": {"required": false, "references": []}, "tools": {"exposed": []},
+      "agents": {"allowed": [], "denied": ["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"]},
+      "risk": {"level": "HIGH", "reasons": ["Writes local files", "No rc.1 lifecycle cleanup", "Filesystem locator is unusable without prohibited Product read tools"]}, "product_policy": {"enabled": false}, "composition": {"entries": []}
+    },
+    {
+      "id": "web-search", "display_name": "DSH Web Search", "description": "DeepSeek-backed structured web search with web_fetch disabled.",
+      "source": {"kind": "official_npm", "publisher": "deepseek-ai"},
+      "packages": [
+        {"name": "@deepseek-ai/dsh-tool-web", "version": "0.1.1-rc.1", "integrity": "sha512-d3/9NJQc2Vcv4m6Q94POCRZ0conqjAeqUobNwIpMiWrSL4U8jZYzXwFVBw0Sw+cwYVBi2Og5Vv9aJmWANTX3Mw=="},
+        {"name": "@deepseek-ai/dsh-web", "version": "0.1.1-rc.1", "integrity": "sha512-fYJ3epKwpY0zO61a9SshY/gKmrcfP7N9EX7/VUGWdpE89jKg52LkioZ5QQ2cKYatbPUHLWx3H+llCGmqOf4bAA=="},
+        {"name": "@deepseek-ai/dsh-web-search-deepseek", "version": "0.1.1-rc.1", "integrity": "sha512-3iQHtGsPYEi0r2Zd34XO+FayTPrE9PfPpwnHSdvKy0MdfGqjEvJyujh0V4X9tA8EhW1eGXzoOXIIKzVOxxdmTw=="}
+      ],
+      "compatibility": {"dsh_runtime": "0.1.1-rc.1", "python_sdk": "0.1.1rc1", "runtime_bin": "0.1.1rc1", "status": "COMPATIBLE"},
+      "qualification": {"state": "QUALIFIED", "qualified_at": "2026-08-28", "reason": "Official rc.1 provider and tool initialize keylessly; web_fetch is disabled, queries/results are bounded, credentials stay child-only, and evidence is non-authoritative research context.", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": true, "composition_initialize": true, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": true, "agent_boundary": true, "mcp_boundary": true, "contract_tests": true, "architecture_tests": true}},
+      "capabilities": {"network": true, "web_search": true, "web_fetch": false, "filesystem_read": false, "filesystem_write": false, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": false, "runtime_mutation": false, "user_interaction": false},
+      "credentials": {"required": true, "references": ["DEEPSEEK_API_KEY"]}, "tools": {"exposed": ["web_search"]},
+      "agents": {"allowed": ["quant_orchestrator", "market_researcher"], "denied": ["factor_researcher", "strategy_researcher", "backtest_analyst"]},
+      "risk": {"level": "MEDIUM", "reasons": ["Outbound network and provider credential", "Web evidence is not deterministic Domain input"]}, "product_policy": {"enabled": true},
+      "composition": {"entries": [
+        {"id": "tool-web-search-only", "name": "@deepseek-ai/dsh-tool-web", "config": {"search": true, "fetch": false, "searchMaxResults": 8, "searchMaxQueries": 4, "searchTimeoutMs": 60000}},
+        {"id": "web-search-deepseek", "name": "@deepseek-ai/dsh-web-search-deepseek", "config": {"apiKeyEnv": "DEEPSEEK_API_KEY", "maxTokens": 4096, "maxUses": 5}},
+        {"id": "web-service", "name": "@deepseek-ai/dsh-web", "config": {"searchProvider": "deepseek-official"}}
+      ]}
+    }
+  ]
+}

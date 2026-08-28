@@ -1,0 +1,10 @@
+{
+  "schema_version": "dsh-agent-plugin-capabilities.v1",
+  "agents": {
+    "quant_orchestrator": {"kind": "root", "plugins": ["compaction", "guard", "web-search"]},
+    "market_researcher": {"kind": "subagent", "plugins": ["compaction", "guard", "web-search"]},
+    "factor_researcher": {"kind": "subagent", "plugins": ["compaction", "guard"]},
+    "strategy_researcher": {"kind": "subagent", "plugins": ["compaction", "guard"]},
+    "backtest_analyst": {"kind": "subagent", "plugins": ["compaction", "guard"]}
+  }
+}

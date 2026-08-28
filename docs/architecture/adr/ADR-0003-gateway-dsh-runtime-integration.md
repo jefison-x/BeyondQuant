@@ -22,6 +22,15 @@ top-level set 会通过 upstream range 拉取 rc.2，并导致 peer resolution �
 matrix 和 artifact evidence 位于
 `docs/architecture/research/dsh-compatibility-matrix.md`。
 
+## 2026-08-28 Phase 63 plugin-governance 修订
+
+ADR-0038 在不改变 Python/npm release baseline 的情况下，将 explicit manifest 扩展为
+71 个 exact `@deepseek-ai/dsh-* @0.1.1-rc.1` package，以便 qualification framework 对
+official samples 做真实 closure/init 验证。只有 Registry 中 QUALIFIED + Product enabled
++ Agent assigned 的 package 才进入 generated Cordis composition；package presence 不等于
+enabled。Runtime online install、extensions、自修改和原有 MCP/security/ownership 边界均
+不变。
+
 ## 背景
 
 Phase 5 有意停在 container-local DSH Web bootstrap。该 Web surface 不是 Product API：

@@ -1,0 +1,68 @@
+{
+  "agent_assignments": {
+    "backtest_analyst": {
+      "kind": "subagent",
+      "plugins": [
+        "compaction",
+        "guard"
+      ]
+    },
+    "factor_researcher": {
+      "kind": "subagent",
+      "plugins": [
+        "compaction",
+        "guard"
+      ]
+    },
+    "market_researcher": {
+      "kind": "subagent",
+      "plugins": [
+        "compaction",
+        "guard",
+        "web-search"
+      ]
+    },
+    "quant_orchestrator": {
+      "kind": "root",
+      "plugins": [
+        "compaction",
+        "guard",
+        "web-search"
+      ]
+    },
+    "strategy_researcher": {
+      "kind": "subagent",
+      "plugins": [
+        "compaction",
+        "guard"
+      ]
+    }
+  },
+  "composition_hash": "sha256:1f4e0f6edd42e678f4b73a54076aa33c89a77c0f07d81b0fe5c4d99bbf44a608",
+  "enabled_plugin_ids": [
+    "compaction",
+    "guard",
+    "web-search"
+  ],
+  "profile": "research",
+  "qualified_versions": {
+    "@deepseek-ai/dsh-commands": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-compaction": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-compaction-basic": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-compaction-tool-result-pruner": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-repeat-tool-reminder": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-token-meter": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-tool-call-timeout-policy": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-tool-web": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-web": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-web-search-deepseek": "0.1.1-rc.1"
+  },
+  "runtime_baseline": {
+    "npm_runtime": "0.1.1-rc.1",
+    "observed_at": "2026-08-28",
+    "python_sdk": "0.1.1rc1",
+    "runtime_bin": "0.1.1rc1",
+    "upstream_latest_observed": "0.1.2-alpha.1"
+  },
+  "schema_version": "dsh-composition-identity.v1"
+}

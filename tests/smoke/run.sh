@@ -226,6 +226,17 @@ from urllib.request import Request, urlopen
 session_id = f"phase6-smoke-{uuid.uuid4().hex}"
 base = "http://127.0.0.1:8400/internal/runtime"
 
+with urlopen("http://127.0.0.1:8400/readyz", timeout=20) as response:
+    readiness = json.load(response)
+assert readiness["sdk"] == "deepseek-harness-sdk==0.1.1rc1"
+assert readiness["runtime_bin"] == "deepseek-harness-runtime-bin==0.1.1rc1"
+assert readiness["plugin_profile"] == "research"
+assert readiness["enabled_plugin_ids"] == ["compaction", "guard", "web-search"]
+assert readiness["composition_hash"].startswith("sha256:")
+serialized_readiness = json.dumps(readiness).lower()
+assert "deepseek_api_key" not in serialized_readiness
+assert "authorization" not in serialized_readiness
+
 def post(path, payload=None, expected=(200, 201, 202)):
     body = None if payload is None else json.dumps(payload).encode()
     request = Request(

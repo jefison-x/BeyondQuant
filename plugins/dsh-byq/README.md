@@ -1,12 +1,14 @@
 # dsh-byq
 
-这是 Phase 5 DSH configuration bundle。它只添加 BeyondQuant MCP
-Streamable HTTP client，并暴露 MCP tool namespace `byq`。
+这是 BYQ-owned Product DSH configuration bundle。它包含 MCP client、Product Agent
+spine、skills/subagents，以及 Phase 63 的声明式 Plugin Registry。Product composition
+只能由 `scripts/dsh/plugin_registry.py` 从受控 template、Product profile 和 Agent mapping
+确定性生成。
 
-它有意不含 personas、skills、subagents、prompts 或 strategy agents。Bundle
-通过 official `dsh plugin --profile byq add ...` mechanism 安装到 `byq`
-profile。
+Registry 只接受已登记的 official DeepSeek packages；package 存在或安装在 image 中不等于
+QUALIFIED/ENABLED。运行中的 Runtime 不提供 npm install、extensions、hot install 或
+self-modification。所有 Agent-to-Domain 调用仍只经 BYQ MCP，Product DSH 不获得 shell、
+terminal、source write、database 或 Engineering capability。
 
-Bundle 还拥有唯一 Product preset root。`byq-product` 是默认且唯一可选
-Product preset；其 composition 有意为空，使 Product DSH 不暴露 shipped
-coding presets/source-editing capabilities。Product DSH 禁用 user preset roots。
+`byq-product` 仍是默认且唯一 Product preset。新增插件的标准流程与风险边界见
+`docs/architecture/dsh-plugin-registry.md` 和 `docs/architecture/dsh-plugin-qualification.md`。

@@ -1,0 +1,9 @@
+{
+  "schema_version": "dsh-plugin-profiles.v1",
+  "product_default": "research",
+  "profiles": {
+    "core": {"plugins": ["compaction", "guard"]},
+    "research": {"plugins": ["compaction", "guard", "web-search"]},
+    "interaction": {"plugins": ["compaction", "guard"], "blocked_candidates": ["interaction"]}
+  }
+}
