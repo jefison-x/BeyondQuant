@@ -78,11 +78,13 @@ import {
   fetchByqResearchGet,
   fetchByqResearchTaskCreate,
   fetchByqResearchTransition,
+  fetchByqWebEvidenceCreate,
   type ArtifactCreateRequest,
   type ExperimentCreateRequest,
   type ResearchEntityType,
   type ResearchTaskCreateRequest,
   type ResearchTransitionRequest,
+  type WebEvidenceCreateRequest,
 } from "./research.js";
 import { proposeWorkflowCard, workflowCardProposalSchema } from "./workflow-card.js";
 
@@ -92,6 +94,54 @@ const PORT = Number(process.env.PORT ?? "8300");
 const MCP_PATH = "/mcp/v1";
 const BACKEND_URL = process.env.BYQ_BACKEND_URL ?? "http://backend:8000";
 const MCP_TOKEN = process.env.BYQ_MCP_TOKEN;
+
+const webEvidenceContentSchema = z.object({
+  schema_version: z.literal("web-research-evidence.v1"),
+  research_as_of: z.string(),
+  market_context: z.object({
+    as_of_date: z.string(),
+    trading_session: z.string().nullable(),
+    persisted_data_cutoff: z.string().nullable(),
+    calendar_verified: z.boolean(),
+  }).strict(),
+  search: z.object({
+    plugin_id: z.literal("web-search"),
+    plugin_version: z.literal("0.1.1-rc.1"),
+    queries: z.array(z.object({
+      text: z.string(),
+      language: z.enum(["zh", "en", "mixed"]),
+      purpose: z.string(),
+    }).strict()).min(1).max(4),
+    stopped_reason: z.enum([
+      "EVIDENCE_SUFFICIENT", "NO_RESULTS", "BUDGET_EXHAUSTED",
+      "CONFLICT_UNRESOLVED", "PROVIDER_ERROR",
+    ]),
+  }).strict(),
+  sources: z.array(z.object({
+    source_id: z.string(),
+    url: z.string(),
+    title: z.string(),
+    publisher: z.string(),
+    source_tier: z.enum(["PRIMARY", "SECONDARY", "AUXILIARY", "UNKNOWN"]),
+    published_at: z.string().nullable(),
+    retrieved_at: z.string(),
+    temporal_status: z.enum(["WITHIN_AS_OF", "AFTER_AS_OF", "PUBLISHED_AT_UNKNOWN"]),
+    query_indexes: z.array(z.number().int().nonnegative()).min(1).max(4),
+    summary: z.string(),
+  }).strict()).max(32),
+  claims: z.array(z.object({
+    statement: z.string(),
+    claim_type: z.enum(["FACT", "CAUSAL", "CANDIDATE"]),
+    state: z.enum(["SUPPORTED", "CONFLICTED", "UNESTABLISHED"]),
+    source_ids: z.array(z.string()).max(32),
+  }).strict()).max(32),
+  limitations: z.array(z.string()).max(16),
+  usage_policy: z.object({
+    research_only: z.literal(true),
+    deterministic_input: z.literal(false),
+    authoritative_market_data: z.literal(false),
+  }).strict(),
+}).strict();
 
 if (!MCP_TOKEN) {
   throw new Error("BYQ_MCP_TOKEN is required to start the MCP service");
@@ -403,6 +453,11 @@ async function byqExperimentCreate(args: ExperimentCreateRequest, extra: unknown
 async function byqArtifactCreate(args: ArtifactCreateRequest, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqArtifactCreate(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqWebEvidenceCreate(args: WebEvidenceCreateRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqWebEvidenceCreate(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
 function buildServer(factoryContext: unknown = undefined): McpServer {
@@ -873,6 +928,20 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       },
     },
     (args) => byqArtifactCreate(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_web_evidence_create",
+    {
+      description: "Promote qualified search-only web results into a versioned, research-only BYQ Artifact with strict source and time provenance.",
+      inputSchema: {
+        task_id: z.string(),
+        experiment_id: z.string().optional(),
+        content: webEvidenceContentSchema,
+        lineage: z.array(z.object({ kind: z.string(), id: z.string() })),
+        idempotency_key: z.string(),
+      },
+    },
+    (args) => byqWebEvidenceCreate(args, trustedContext),
   );
   server.registerTool(
     "byq_learning_run_start",

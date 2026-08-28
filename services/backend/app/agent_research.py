@@ -85,7 +85,7 @@ class AgentRole:
 ROLE_CATALOG: tuple[AgentRole, ...] = (
     AgentRole(
         role_id="quant_orchestrator",
-        version="1.3.0",
+        version="1.4.0",
         description="Coordinates bounded research hand-offs and explicit owner-scoped domain actions.",
         allowed_tools=(
             "byq_agent_context",
@@ -109,6 +109,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_research_transition",
             "byq_experiment_create",
             "byq_artifact_create",
+            "byq_web_evidence_create",
             "byq_strategy_validate",
             "byq_strategy_version_create",
             "byq_strategy_approve",
@@ -141,11 +142,11 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_backtest_run",
             "byq_backtest_cancel",
         ),
-        evidence_kinds=("research_evidence", "stock_pool", "factor_result", "strategy_version", "backtest_result"),
+        evidence_kinds=("research_evidence", "web_research_evidence", "stock_pool", "factor_result", "strategy_version", "backtest_result"),
     ),
     AgentRole(
         role_id="market_researcher",
-        version="1.3.0",
+        version="1.4.0",
         description="Collects normalized market evidence and records bounded research artifacts.",
         allowed_tools=(
             "byq_agent_context",
@@ -161,10 +162,11 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_research_get",
             "byq_experiment_create",
             "byq_artifact_create",
+            "byq_web_evidence_create",
         ),
         delegate_to=(),
         approval_required_actions=(),
-        evidence_kinds=("research_evidence",),
+        evidence_kinds=("research_evidence", "web_research_evidence"),
     ),
     AgentRole(
         role_id="factor_researcher",

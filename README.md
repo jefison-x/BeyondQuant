@@ -1,11 +1,11 @@
 # BeyondQuant
 
-<!-- byq:current-completed-phase=63 -->
+<!-- byq:current-completed-phase=64 -->
 
 BeyondQuant（BYQ）是一个 AI 原生量化研究平台。当前已完成的项目阶段为
-**Phase 63**：在 Accepted ADR-0038 约束下建立 Git-managed DSH Plugin Registry、
-qualification gate、最小 Agent capability mapping、确定性 Cordis composition 与 runtime
-identity；运行时 baseline 保持 Python `0.1.1rc1` / npm `0.1.1-rc.1`。
+**Phase 64**：在 Phase 63 Plugin Registry 基线上，将 qualified search-only Web Search
+转化为 Market Research Agent 的受控、可追溯、时间安全研究证据能力；运行时 baseline
+保持 Python `0.1.1rc1` / npm `0.1.1-rc.1`。
 当前状态以
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) 为准。
 

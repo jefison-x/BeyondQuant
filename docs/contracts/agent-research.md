@@ -41,6 +41,19 @@ Phase 59 只为 `quant_orchestrator` 和 `market_researcher` 增加
 `coverage.usable=true` 才能用于排名或选择；否则必须保留 null/missing，说明缺口并建议
 Data Center 同步，不得用 later report、模型记忆或外部数字填充。
 
+Phase 64 将 `market_researcher` 升级为 v1.4.0，并增加 search-only `web_search` 与专用
+`byq_web_evidence_create`。搜索只补充当前公开背景、解释和候选发现；采用来源必须保留 URL、
+title、publisher、published/retrieved time、tier、query 和 research as-of。PRIMARY 优先，
+SECONDARY 交叉验证，AUXILIARY 只能提供线索。未来/未知发布时间不能支持 historical claim；
+因果结论没有 PRIMARY 时必须说“现有证据无法建立原因”。
+
+Factor、Strategy、Backtest role 不拥有 Web Search 或 Web Evidence promotion。Coordinator 因
+qualified rc.1 root seam 可见搜索工具，但必须把专业搜索委派给 Market Research，且不能将结果
+传为 deterministic input。网页结果只有在用户明确要求保存时才通过专用 MCP 晋升到现有
+Artifact；不得通过 generic Artifact payload 绕过 `web-research-evidence.v1` validator。
+Web evidence 422 只向 Agent 暴露固定枚举的安全校验码，不回显原始输入或内部错误；同一保存
+动作最多修正一次，第二次失败必须停止并记录真实 failure。
+
 Authorization 的 `action` 必须是随后调用的精确 MCP tool name，不允许使用
 `market_daily.read` 等自创别名。每个不同的已授权 domain action 都分别记录真实 success/failure；
 不得把 authorization 误述成执行成功，也不得声称不存在的审计记录。普通用户回答只描述

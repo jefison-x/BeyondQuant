@@ -1,13 +1,13 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=63 -->
+<!-- byq:current-completed-phase=64 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 63**——建立受控的 DSH Plugin Registry、qualification gate、
-  Agent capability mapping、确定性 Composition Builder 与 runtime identity；五类 official
-  sample 均得到有证据的 QUALIFIED/ENABLED 或 BLOCKED 结论。
+- 当前已完成阶段：**Phase 64**——将 qualified search-only Web Search 深化为
+  Market Research Agent 的受控互联网研究能力；来源、时间、claim、research-only Artifact
+  promotion、Agent 隔离与真实 credentialed Product journey 均已闭合。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -53,6 +53,7 @@ history 推断项目状态。
 - user-experience polish：**ADR-0035**
 - trusted runtime/market time：**ADR-0037**
 - DSH Product plugin registry/qualification boundary：**ADR-0038**
+- Market Research Web Search evidence boundary：**ADR-0039**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -203,6 +204,13 @@ Cordis composition/hash。Guard、Compaction、search-only Web Search 已 QUALIF
 Spill 因 rc.1 本地文件/cleanup 边界 BLOCKED，Interaction 因当前 SDK/JSON-RPC 缺少已验证
 的 Product 问答 lifecycle 而 BLOCKED_BY_RUNTIME_VERSION。DSH baseline 未升级。
 
+Phase 64 依据 ADR-0039 建立 `web-research-evidence.v1` 与专用
+`byq_web_evidence_create` promotion boundary；Market Research 最多四条有目的的 query，按
+PRIMARY/SECONDARY/AUXILIARY/UNKNOWN 治理来源，并显式区分 publication、retrieval、research
+as-of、trading session 与 persisted cutoff。Web evidence 永远是 research-only，不能成为
+Factor/Strategy/signal/Backtest deterministic input。Factor、Strategy、Backtest 仍无 Web
+capability；credentialed Product journey 已通过，DSH baseline 未升级。
+
 Post-Phase 62 Trusted Time Maintenance 依据 ADR-0037 将服务器权威自然时间作为 DSH
 逐轮动态 runtime context，并通过 BYQ MCP 暴露已有 SSE calendar 与 persisted market
 snapshot 的有界只读截止语义。它是维护修复，不改变 Phase 62 完成状态，也不定义下一
@@ -210,10 +218,10 @@ Product Phase。
 
 ## 当前授权边界
 
-- Phase 49-63 与相应 Accepted ADR/计划均已完成。
-- Next phase 尚未定义。研究→策略→模拟执行自动化属于新产品能力，必须先明确 domain
-  invariant、Accepted ADR 和验收标准；本轮授权不扩大为 release-candidate 评审、tag 或
-  production publication。
+- Phase 49-64 与相应 Accepted ADR/计划均已完成。
+- Next phase：**Phase 65 — DSH Plugin Center Admin UI**，已获维护者授权；必须在 Phase 64
+  合并后使用独立 worktree/branch/PR，先接受 control-plane ADR，再实现 admin-only Product
+  surface。授权不扩大为 Marketplace、runtime install、tag 或 production publication。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 

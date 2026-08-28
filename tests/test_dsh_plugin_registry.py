@@ -65,7 +65,9 @@ class PluginRegistryTests(unittest.TestCase):
             "# Qualified", 1
         )[0]
         self.assertIn("- web_search", market)
+        self.assertIn("- byq_web_evidence_create", market)
         self.assertTrue(all("web_search" not in block for block in (factor, strategy, backtest)))
+        self.assertTrue(all("byq_web_evidence_create" not in block for block in (factor, strategy, backtest)))
         self.assertNotIn("web_fetch", composition)
         self.assertNotIn("ask_user", composition)
         self.assertNotIn("spill-local", composition)
