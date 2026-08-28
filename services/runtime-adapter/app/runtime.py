@@ -349,7 +349,10 @@ class RuntimeAdapter:
             previous_status = record.status
             resumed_from_run_id = record.interrupted_run_id
             previous_harness = record.harness
-            runtime_session_id = f"{record.session_id}-resume-{uuid.uuid4().hex[:12]}"
+            # The public BYQ identifier may already use the full 64-character
+            # contract allowance, so the private generation ID must not append
+            # to it. The stable public identity remains on RuntimeSession.
+            runtime_session_id = f"resume-{uuid.uuid4().hex}"
             record.status = SessionStatus.STARTING
             self._emit(
                 record,

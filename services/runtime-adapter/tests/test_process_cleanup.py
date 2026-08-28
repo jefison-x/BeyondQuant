@@ -127,6 +127,22 @@ def test_hard_cancel_resume_uses_a_new_owned_runtime(adapter: RuntimeAdapter) ->
     adapter.release_session("s-1")
 
 
+def test_resume_private_id_remains_valid_for_maximum_public_id(adapter: RuntimeAdapter) -> None:
+    public_session_id = "s" * MAX_IDENTIFIER_LENGTH
+    adapter.create_session(public_session_id, "t-1")
+    adapter.submit_prompt(public_session_id, "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+
+    adapter.cancel_session(public_session_id, "hard")
+    resumed = adapter.resume_session(public_session_id)
+
+    record = adapter._get(public_session_id)
+    assert resumed["status"] == SessionStatus.READY
+    assert len(record.runtime_session_id) <= MAX_IDENTIFIER_LENGTH
+    assert record.runtime_session_id != public_session_id
+    adapter.release_session(public_session_id)
+
+
 def test_error_finish_reason_is_failed_and_can_resume_with_fresh_runtime(adapter: RuntimeAdapter) -> None:
     FakeHarness.finish_reason = "error"
     FakeHarness.allow_run.set()

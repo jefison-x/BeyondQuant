@@ -24,7 +24,7 @@ uses a fresh private runtime identity while retaining the stable BYQ conversatio
 
 ## Verification
 
-- Runtime Adapter tests: 43 passed.
+- Runtime Adapter tests: 44 passed, including maximum-length public session identity resume.
 - Gateway tests: 61 passed.
 - Frontend unit tests: 38 files / 99 tests passed.
 - Frontend TypeScript and production build: passed.
