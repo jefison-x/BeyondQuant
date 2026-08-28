@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  cancelSession, createAgentSession, getAgentSession, listAgentSessions, resumeSession,
+  cancelSession, createAgentSession, deleteAgentSession, getAgentSession, listAgentSessions, resumeSession,
   streamWorkflowEvents, submitTurn, updateAgentSession,
 } from "@/api/agent";
 import { foldWorkflowCards, workflowActivities, workflowRunState } from "@/api/workflow";
@@ -194,10 +194,18 @@ async function openSession(sessionId: string, updateRoute = true) {
   } finally { if (generation === conversationGeneration) loading.value = false; }
 }
 
-async function createNewSession() {
+async function persistNewSession() {
   const session = await createAgentSession(auth.token);
   agent.addSession(session);
   await openSession(session.session_id, false);
+}
+
+function startNewSession(preservePrompt = false) {
+  conversationGeneration += 1;
+  stopStream(); stopReconciliation();
+  localRunStartedAt.value = ""; stopping.value = false; loading.value = false; error.value = "";
+  agent.clearActiveSession();
+  if (!preservePrompt) prompt.value = "";
 }
 
 async function refreshCatalog() {
@@ -228,6 +236,23 @@ async function historyAction(session: AgentSession, action: "pin" | "rename" | "
   ElMessage.success(action === "restore" ? "会话已恢复" : action === "archive" ? "会话已归档" : "会话已更新");
 }
 
+async function deleteHistorySession(session: AgentSession) {
+  await ElMessageBox.confirm(
+    `永久删除会话“${session.title || "新投研对话"}”？删除后无法恢复。`,
+    "删除会话",
+    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" },
+  );
+  const wasActive = agent.activeSessionId === session.session_id;
+  await deleteAgentSession(session.session_id, auth.token);
+  agent.removeSession(session.session_id);
+  if (wasActive) {
+    startNewSession();
+    await router.replace({ path: "/agent" });
+  }
+  await Promise.all([refreshCatalog(), loadHistory()]);
+  ElMessage.success("会话已删除");
+}
+
 function navigateCard(event: WorkflowCardEvent) {
   void router.push(workflowCardDestination(event, agent.activeSessionId));
 }
@@ -237,7 +262,7 @@ async function send(value = prompt.value) {
   if (!content || busy.value || runActive.value) return;
   error.value = ""; busy.value = true;
   try {
-    if (!agent.activeSessionId) await createNewSession();
+    if (!agent.activeSessionId) await persistNewSession();
     if (replayRun.value.failed) await resumeSession(agent.activeSessionId, auth.token);
     agent.addMessage({ role: "user", text: content, createdAt: new Date().toISOString() });
     localRunStartedAt.value = new Date().toISOString();
@@ -281,15 +306,15 @@ onMounted(async () => {
   try {
     await refreshCatalog();
     const requested = typeof route.query.session === "string" ? route.query.session : "";
-    if (typeof route.query.new === "string") await createNewSession();
+    if (typeof route.query.new === "string") startNewSession(typeof route.query.draft === "string");
     else if (requested && agent.sessions.some((item) => item.session_id === requested)) await openSession(requested, false);
     else if (agent.sessions[0]) await openSession(agent.sessions[0].session_id, false);
-    else await createNewSession();
+    else startNewSession(typeof route.query.draft === "string");
     if (route.query.history) await showHistory();
   } catch (exc) { error.value = exc instanceof Error ? exc.message : "初始化失败"; }
   finally { initialized.value = true; }
 });
-watch(() => route.query.new, async (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous) await createNewSession(); });
+watch(() => route.query.new, (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous) startNewSession(typeof route.query.draft === "string"); });
 watch(() => route.query.session, async (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous) await openSession(value, false); });
 watch(() => route.query.history, async (value) => { if (initialized.value && value) await showHistory(); });
 watch(() => route.query.draft, applyRouteDraft);
@@ -305,7 +330,7 @@ onBeforeUnmount(() => { stopStream(); stopReconciliation(); if (clockTimer) clea
 <template>
   <section class="conversation-workspace">
     <header class="conversation-header">
-      <div><strong>{{ activeSession?.title || "小巴投研对话" }}</strong><small>BYQ 规范化工作流 · 持久会话</small></div>
+      <div><strong>{{ activeSession?.title || "小巴投研对话" }}</strong><small>{{ activeSession ? "BYQ 规范化工作流 · 持久会话" : "发送第一条消息后保存" }}</small></div>
       <div class="header-actions">
         <el-button text @click="activityOpen = true">活动 <el-badge v-if="activities.length" :value="activities.length" /></el-button>
       </div>
@@ -377,6 +402,7 @@ onBeforeUnmount(() => { stopStream(); stopReconciliation(); if (clockTimer) clea
             <el-dropdown-item @click="historyAction(session, 'rename')">重命名</el-dropdown-item>
             <el-dropdown-item v-if="historyStatus === 'active'" divided @click="historyAction(session, 'archive')">归档</el-dropdown-item>
             <el-dropdown-item v-else @click="historyAction(session, 'restore')">恢复</el-dropdown-item>
+            <el-dropdown-item divided @click="deleteHistorySession(session)">删除</el-dropdown-item>
           </el-dropdown-menu></template></el-dropdown>
         </article><el-empty v-if="!historyItems.length" description="没有匹配的会话" />
       </div>

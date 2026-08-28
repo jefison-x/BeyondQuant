@@ -48,4 +48,20 @@ describe("agent session store", () => {
     expect(store.messages).toEqual([{ role: "agent", text: "B" }]);
     expect(store.events.every((event) => event.session_id === "conversation-b")).toBe(true);
   });
+
+  it("removes a deleted conversation and returns an active deletion to a local blank draft", () => {
+    const store = useAgentStore();
+    store.replaceSessions([
+      { session_id: "conversation-a", trace_id: "trace-a", status: "active" },
+      { session_id: "conversation-b", trace_id: "trace-b", status: "active" },
+    ]);
+    store.hydrateSession("conversation-a", [{ role: "user", text: "待删除" }], []);
+
+    store.removeSession("conversation-a");
+
+    expect(store.sessions.map((session) => session.session_id)).toEqual(["conversation-b"]);
+    expect(store.activeSessionId).toBe("");
+    expect(store.messages).toEqual([]);
+    expect(store.events).toEqual([]);
+  });
 });

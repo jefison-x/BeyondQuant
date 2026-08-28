@@ -249,6 +249,35 @@ class ConversationCatalogStore(PgStoreMixin):
             raise ConversationNotFound("conversation not found")
         return self._public(row)
 
+    def delete(self, owner: object, conversation_id: object) -> dict[str, object]:
+        owner = _owner(owner)
+        conversation_id = _identifier(conversation_id, "conversation_id")
+        with self._transaction() as connection:
+            row = connection.execute(
+                text(
+                    "SELECT * FROM product_conversations "
+                    "WHERE owner_principal = :owner AND conversation_id = :id FOR UPDATE"
+                ),
+                {"owner": owner, "id": conversation_id},
+            ).mappings().first()
+            if row is None:
+                raise ConversationNotFound("conversation not found")
+            connection.execute(
+                text(
+                    "DELETE FROM product_conversation_messages "
+                    "WHERE owner_principal = :owner AND conversation_id = :id"
+                ),
+                {"owner": owner, "id": conversation_id},
+            )
+            connection.execute(
+                text(
+                    "DELETE FROM product_conversations "
+                    "WHERE owner_principal = :owner AND conversation_id = :id"
+                ),
+                {"owner": owner, "id": conversation_id},
+            )
+        return {"conversation_id": conversation_id, "deleted": True}
+
     @staticmethod
     def _public(row: dict[str, object]) -> dict[str, object]:
         result = dict(row)

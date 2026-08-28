@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cancelSession, createAgentSession, getAgentSession, listAgentSessions, streamWorkflowEvents, submitTurn, updateAgentSession } from "./agent";
+import { cancelSession, createAgentSession, deleteAgentSession, getAgentSession, listAgentSessions, streamWorkflowEvents, submitTurn, updateAgentSession } from "./agent";
 
 describe("agent api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -32,6 +32,20 @@ describe("agent api client", () => {
     vi.stubGlobal("fetch", fetchMock);
     await cancelSession("s1", "soft", "test-token");
     expect(String(fetchMock.mock.calls[0][1]?.body)).not.toContain("deepseek");
+  });
+
+  it("deletes a durable conversation instead of treating deletion as archive", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ session_id: "c1", status: "deleted" }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await deleteAgentSession("c1", "token");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/v1/agent/sessions/c1",
+      expect.objectContaining({ method: "DELETE", credentials: "include" }),
+    );
   });
 
   it("loads and updates only the durable conversation projection", async () => {

@@ -120,6 +120,21 @@ class ProductSessionRegistry:
             session.released = True
         return session
 
+    def find_owned(self, conversation_id: str, principal: Principal) -> ProductSession | None:
+        with self._lock:
+            session = self._sessions.get(conversation_id)
+        if session is None or session.principal.subject != principal.subject:
+            return None
+        return session
+
+    def remove_owned(self, conversation_id: str, principal: Principal) -> None:
+        with self._lock:
+            session = self._sessions.get(conversation_id)
+            if session is None or session.principal.subject != principal.subject:
+                return
+            session.released = True
+            del self._sessions[conversation_id]
+
     def list_owned(self, principal: Principal) -> list[ProductSession]:
         with self._lock:
             return [
@@ -536,19 +551,34 @@ def cancel_product_session(
 
 
 @app.delete("/v1/agent/sessions/{session_id}")
-def release_product_session(session_id: str, request: Request) -> dict[str, object]:
-    session = _product_session(request, session_id)
-    principal = session.principal
-    body = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/release", timeout=5.0)
-    _catalog_request(
-        "PATCH", f"/v1/product/conversations/{session.conversation_id}",
-        principal, session.workspace_id, payload={"status": "archived"},
+def delete_product_session(session_id: str, request: Request) -> dict[str, object]:
+    principal, workspace_id = _trusted_request_identity(request)
+    catalog = _catalog_request(
+        "GET", f"/v1/product/conversations/{session_id}", principal, workspace_id,
     )
-    product_sessions.mark_released(session.conversation_id, principal)
+    conversation = catalog.get("conversation")
+    if not isinstance(conversation, dict):
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    runtime_session_id = str(conversation.get("runtime_session_id", ""))
+    trace_id = str(conversation.get("trace_id", ""))
+    if not runtime_session_id:
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    try:
+        _adapter_post(f"/internal/runtime/sessions/{runtime_session_id}/release", timeout=5.0)
+    except HTTPException as exc:
+        # Runtime processes are ephemeral. A missing process must not make an
+        # otherwise owner-authorized durable conversation impossible to delete.
+        if exc.status_code != 404:
+            raise
+    _catalog_request(
+        "DELETE", f"/v1/product/conversations/{session_id}", principal, workspace_id,
+    )
+    product_sessions.remove_owned(session_id, principal)
+    trace_store.delete(runtime_session_id)
     return {
-        "session_id": session.conversation_id,
-        "trace_id": session.trace_id,
-        "status": body.get("status"),
+        "session_id": session_id,
+        "trace_id": trace_id,
+        "status": "deleted",
     }
 
 

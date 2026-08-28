@@ -42,6 +42,17 @@ def test_trace_store_rejects_gaps_and_reused_sequences(tmp_path: Path) -> None:
         store.append({**event(1), "payload": {"different": True}})
 
 
+def test_trace_store_delete_removes_replay_and_rejects_late_collector_events(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path)
+    store.append(event(1))
+
+    store.delete("session-1")
+
+    assert store.read("session-1") == []
+    assert store.append(event(2)) is False
+    assert not (tmp_path / "session-1.ndjson").exists()
+
+
 def card(sequence: int, revision: int) -> dict[str, object]:
     return {
         **event(sequence, kind="agent.card.strategy_draft"),

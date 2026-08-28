@@ -35,6 +35,15 @@ export const useAgentStore = defineStore("agent", {
       this.messages = [];
       this.events = [];
     },
+    clearActiveSession() {
+      this.activeSessionId = "";
+      this.messages = [];
+      this.events = [];
+    },
+    removeSession(sessionId: string) {
+      this.sessions = this.sessions.filter((session) => session.session_id !== sessionId);
+      if (this.activeSessionId === sessionId) this.clearActiveSession();
+    },
     addMessage(message: AgentMessage) {
       this.messages.push(message);
     },

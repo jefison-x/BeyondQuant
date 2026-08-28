@@ -3,10 +3,17 @@ import { shallowMount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { ElMessageBox } from "element-plus";
 import AppSidebar from "./AppSidebar.vue";
 import { useAgentStore } from "@/stores/agent";
 
 const push = vi.fn();
+const deleteAgentSession = vi.fn();
+
+vi.mock("@/api/agent", () => ({
+  deleteAgentSession: (...args: unknown[]) => deleteAgentSession(...args),
+  updateAgentSession: vi.fn(),
+}));
 
 vi.mock("vue-router", () => ({
   useRoute: () => ({ path: "/agent" }),
@@ -17,6 +24,8 @@ describe("AppSidebar", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     push.mockReset();
+    deleteAgentSession.mockReset();
+    deleteAgentSession.mockResolvedValue({ status: "deleted" });
   });
 
   it("places the history entry beside the conversation heading", async () => {
@@ -57,5 +66,21 @@ describe("AppSidebar", () => {
     expect(source).toContain(".sidebar-history { border-top: 1px solid var(--byq-border-subtle); display: flex; flex: 1;");
     expect(source).toContain(".history-list { flex: 1; min-height: 0; overflow-y: auto;");
     expect(source).not.toContain("max-height: min(44vh, 420px)");
+  });
+
+  it("permanently deletes a recent conversation after confirmation", async () => {
+    vi.spyOn(ElMessageBox, "confirm").mockResolvedValue("confirm" as never);
+    const agent = useAgentStore();
+    const session = { session_id: "session-delete", trace_id: "trace-delete", status: "active", title: "待删除" };
+    agent.addSession(session);
+    const wrapper = shallowMount(AppSidebar, { props: { isCollapsed: false } });
+
+    await (wrapper.vm as unknown as {
+      sessionCommand: (command: string, item: typeof session) => Promise<void>;
+    }).sessionCommand("delete", session);
+
+    expect(deleteAgentSession).toHaveBeenCalledWith("session-delete", "");
+    expect(agent.sessions).toEqual([]);
+    expect(push).toHaveBeenCalledWith(expect.objectContaining({ path: "/agent" }));
   });
 });
