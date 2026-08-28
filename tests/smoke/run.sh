@@ -143,7 +143,13 @@ if not os.environ.get("DEEPSEEK_API_KEY"):
 
 with request(f"/v1/agent/sessions/{session_id}", method="DELETE") as response:
     assert response.status == 200
-    assert json.load(response)["status"] == "closed"
+    assert json.load(response)["status"] == "deleted"
+try:
+    request(f"/v1/agent/sessions/{session_id}")
+except HTTPError as exc:
+    assert exc.code == 404
+else:
+    raise AssertionError("deleted Product conversation remained readable")
 print(json.dumps({"session_id": session_id, "first_event": first_event}, sort_keys=True))
 PY
 
