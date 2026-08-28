@@ -2,6 +2,7 @@
 import { reactive, ref, watch } from "vue";
 import { updateOperationsBudget } from "@/api/operations";
 import type { OperationsStatus } from "@/api/types";
+import { createRequestId } from "@/utils/requestId";
 const props = defineProps<{ data: OperationsStatus }>();
 const emit = defineEmits<{ changed: [] }>();
 const saving = ref(false);
@@ -10,7 +11,7 @@ const form = reactive({ enabled: false, alert_total_tokens: 400000, alert_reques
 watch(() => props.data.budget, (budget) => { form.enabled = budget.enabled; form.alert_total_tokens = budget.alert_total_tokens; form.alert_requests = budget.alert_requests; }, { immediate: true });
 async function save() {
   saving.value = true; message.value = "";
-  try { await updateOperationsBudget({ ...form, expected_version: props.data.budget.version, idempotency_key: `budget-${props.data.budget.version}-${crypto.randomUUID()}` }); message.value = "监控阈值已更新并写入追加审计"; emit("changed"); }
+  try { await updateOperationsBudget({ ...form, expected_version: props.data.budget.version, idempotency_key: `budget-${props.data.budget.version}-${createRequestId()}` }); message.value = "监控阈值已更新并写入追加审计"; emit("changed"); }
   catch (exc) { message.value = exc instanceof Error ? exc.message : "保存失败"; }
   finally { saving.value = false; }
 }
