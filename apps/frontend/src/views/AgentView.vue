@@ -9,6 +9,7 @@ import {
 import { foldWorkflowCards, workflowActivities, workflowRunState } from "@/api/workflow";
 import type { AgentReplayMessage, AgentSession, WorkflowCardEvent, WorkflowTraceEvent } from "@/api/types";
 import AgentActivityPanel from "@/components/agent/AgentActivityPanel.vue";
+import RichMessage from "@/components/agent/RichMessage.vue";
 import WorkflowCard from "@/components/agent/WorkflowCard.vue";
 import { useAgentStore, type AgentMessage } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
@@ -177,7 +178,7 @@ async function send(value = prompt.value) {
 }
 
 function handleComposerKeydown(event: KeyboardEvent) {
-  if (event.key !== "Enter" || !event.ctrlKey || event.isComposing) return;
+  if (event.key !== "Enter" || !event.ctrlKey) return;
   event.preventDefault();
   if (!runActive.value) void send();
 }
@@ -248,7 +249,11 @@ onBeforeUnmount(() => { stopStream(); if (clockTimer) clearInterval(clockTimer);
       <div v-else class="timeline">
         <template v-for="item in timeline" :key="item.key">
           <article v-if="item.type === 'message'" :class="['conversation-message', item.message.role]">
-            <span class="message-author" :title="item.message.role === 'user' ? userDisplayName : '小巴'">{{ item.message.role === "user" ? userDisplayName : "小巴" }}</span><div class="message-body">{{ item.message.text }}</div>
+            <span class="message-author" :title="item.message.role === 'user' ? userDisplayName : '小巴'">{{ item.message.role === "user" ? userDisplayName : "小巴" }}</span>
+            <div class="message-body">
+              <RichMessage v-if="item.message.role === 'agent'" :content="item.message.text" />
+              <template v-else>{{ item.message.text }}</template>
+            </div>
           </article>
           <WorkflowCard v-else :event="item.card" @navigate="navigateCard" />
         </template>
@@ -267,21 +272,19 @@ onBeforeUnmount(() => { stopStream(); if (clockTimer) clearInterval(clockTimer);
     </main>
     <footer class="composer-wrap">
       <form class="agent-composer" @submit.prevent="send()">
-      <el-input v-model="prompt" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" placeholder="向小巴描述你的投研问题…" @keydown="handleComposerKeydown" />
-      <div class="composer-footer">
-        <span>{{ runActive ? "小巴工作时可以继续编辑问题" : "Ctrl + Enter 发送 · 关键执行仍需 BYQ 审批" }}</span>
+        <el-input v-model="prompt" class="composer-input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" placeholder="向小巴描述你的投研问题…" @keydown="handleComposerKeydown" />
         <el-button
           v-if="runActive"
-          class="composer-stop"
+          class="composer-action composer-stop"
           circle
           :loading="stopping"
           aria-label="停止本轮"
           title="停止本轮"
           @click="stopCurrentRun"
         ><span class="stop-square" aria-hidden="true"></span></el-button>
-        <el-button v-else type="primary" :loading="busy" :disabled="!prompt.trim()" @click="send()">发送</el-button>
-      </div>
-    </form></footer>
+        <el-button v-else class="composer-action" type="primary" :loading="busy" :disabled="!prompt.trim()" @click="send()">发送</el-button>
+      </form>
+    </footer>
     <el-drawer v-model="activityOpen" title="活动与执行上下文" size="min(440px, 92vw)">
       <AgentActivityPanel :activities="activities" />
     </el-drawer>
@@ -317,7 +320,7 @@ onBeforeUnmount(() => { stopStream(); if (clockTimer) clearInterval(clockTimer);
 .starter-grid { display: grid; gap: .65rem; grid-template-columns: repeat(3, 1fr); }.starter-grid button { background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: var(--byq-radius); color: var(--byq-text-muted); cursor: pointer; line-height: 1.5; padding: .85rem; text-align: left; }.starter-grid button:hover { border-color: var(--byq-brand); color: var(--byq-text); }
 .timeline { display: grid; gap: 1.15rem; margin: 0 auto; max-width: 860px; }.conversation-message { display: grid; gap: .7rem; grid-template-columns: minmax(42px, max-content) minmax(0, 1fr); }.message-author { align-items: center; background: var(--byq-surface-muted); border-radius: 12px; color: var(--byq-text-muted); display: flex; font-size: 11px; font-weight: 850; height: 36px; justify-content: center; max-width: 96px; min-width: 36px; overflow: hidden; padding: 0 7px; text-overflow: ellipsis; white-space: nowrap; }.conversation-message.agent .message-author { background: var(--byq-brand-contrast); color: var(--byq-on-brand); width: 36px; }.message-body { color: var(--byq-text); line-height: 1.75; padding: .35rem 0; white-space: pre-wrap; }.conversation-message.user .message-body { background: var(--byq-brand-soft); border-radius: 16px; justify-self: start; padding: .7rem .9rem; }
 .thinking-status { align-items: flex-start; display: grid; gap: .15rem; padding: .35rem 0; }.thinking-summary { align-items: center; background: transparent; border: 0; color: var(--byq-text-muted); cursor: pointer; display: flex; font: inherit; gap: .55rem; padding: 0; text-align: left; }.thinking-summary strong { color: var(--byq-text); font-size: 13px; }.thinking-summary > span:last-child, .thinking-status small { color: var(--byq-text-soft); font-size: 11px; }.thinking-spark { align-items: center; display: inline-flex; gap: 3px; height: 16px; }.thinking-spark i { animation: thinking-dot 1.15s ease-in-out infinite; background: var(--byq-brand); border-radius: 50%; display: block; height: 5px; width: 5px; }.thinking-spark i:nth-child(2) { animation-delay: .16s; }.thinking-spark i:nth-child(3) { animation-delay: .32s; }
-.composer-wrap { background: linear-gradient(transparent, var(--byq-bg) 22%); padding: 1rem max(1rem, calc((100% - 860px) / 2)) 1.2rem; }.agent-composer { background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: 18px; box-shadow: var(--byq-shadow-sm); padding: .7rem; }.agent-composer :deep(.el-textarea__inner) { box-shadow: none; padding: .3rem; resize: none; }.composer-footer { align-items: center; color: var(--byq-text-soft); display: flex; font-size: 10px; justify-content: space-between; padding: .35rem 0 0 .25rem; }
+.composer-wrap { background: linear-gradient(transparent, var(--byq-bg) 22%); padding: 1rem max(1rem, calc((100% - 860px) / 2)) 1.2rem; }.agent-composer { align-items: center; background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: 18px; box-shadow: var(--byq-shadow-sm); display: flex; gap: .65rem; padding: .65rem .7rem .65rem .9rem; }.composer-input { flex: 1; min-width: 0; }.agent-composer :deep(.el-textarea__inner) { box-shadow: none; line-height: 1.55; padding: .35rem 0; resize: none; }.composer-action { align-self: center; flex: 0 0 auto; margin-left: 0; }
 .composer-stop { background: var(--byq-text); border-color: var(--byq-text); color: var(--byq-surface); }.stop-square { background: currentColor; border-radius: 2px; display: block; height: 10px; width: 10px; }
 @keyframes thinking-dot { 0%, 60%, 100% { opacity: .28; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 .history-tools { display: grid; gap: .75rem; }.history-count { color: var(--byq-text-soft); font-size: 11px; }.history-catalog { display: grid; gap: .55rem; }.history-item { align-items: center; border: 1px solid var(--byq-border-subtle); border-radius: var(--byq-radius-sm); display: flex; padding: .35rem .5rem .35rem .75rem; }.history-item > button { background: transparent; border: 0; cursor: pointer; display: grid; flex: 1; gap: .25rem; min-width: 0; padding: .35rem; text-align: left; }.history-item strong, .history-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.history-item span, .history-item small { color: var(--byq-text-soft); }.conversation-state { margin: 2rem auto; max-width: 860px; }

@@ -60,7 +60,7 @@ describe("AgentView", () => {
     expect(wrapper.find(".conversation-message.user .message-author").text()).toBe("量化小周");
 
     (wrapper.vm as unknown as { prompt: string }).prompt = "快捷发送";
-    const event = new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, cancelable: true });
+    const event = new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, isComposing: true, cancelable: true });
     (wrapper.vm as unknown as { handleComposerKeydown: (event: KeyboardEvent) => void }).handleComposerKeydown(event);
     await flushPromises();
 
@@ -68,6 +68,8 @@ describe("AgentView", () => {
     expect(submitTurn).toHaveBeenCalledWith("session-1", "快捷发送", "");
     expect(wrapper.find(".assistant-processing").exists()).toBe(true);
     expect(wrapper.find(".composer-stop").attributes("aria-label")).toBe("停止本轮");
+    expect(wrapper.text()).not.toContain("Ctrl + Enter 发送");
+    expect(wrapper.text()).not.toContain("关键执行仍需 BYQ 审批");
   });
 
   it("falls back to 我 when no nickname is available", async () => {
