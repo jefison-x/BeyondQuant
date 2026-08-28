@@ -81,22 +81,20 @@ onMounted(load);
       </div>
       <el-card shadow="never" class="identity">
         <template #header><strong>Runtime 与组合身份</strong></template>
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="DSH SDK">{{ data.runtime.sdk ?? data.runtime_baseline.python_sdk }}</el-descriptions-item>
-          <el-descriptions-item label="runtime-bin">{{ data.runtime.runtime_bin ?? data.runtime_baseline.runtime_bin }}</el-descriptions-item>
-          <el-descriptions-item label="Active profile">{{ data.runtime.active_profile ?? "不可用" }}</el-descriptions-item>
-          <el-descriptions-item label="Policy version">v{{ data.policy.version }}</el-descriptions-item>
-          <el-descriptions-item label="Composition hash" :span="2"><code>{{ data.runtime.active_composition_hash ?? "不可用" }}</code></el-descriptions-item>
-          <el-descriptions-item label="Desired / Active">
-            <el-tag :type="data.runtime.desired_matches_active_plugins ? 'success' : 'warning'">{{ data.runtime.desired_matches_active_plugins ? "一致 · Active" : "待生成/部署" }}</el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="安全边界">无在线安装 · 无运行时修改 · 无 secret 投影</el-descriptions-item>
-        </el-descriptions>
+        <dl class="identity-grid">
+          <div><dt>DSH SDK</dt><dd>{{ data.runtime.sdk ?? data.runtime_baseline.python_sdk }}</dd></div>
+          <div><dt>runtime-bin</dt><dd>{{ data.runtime.runtime_bin ?? data.runtime_baseline.runtime_bin }}</dd></div>
+          <div><dt>Active profile</dt><dd>{{ data.runtime.active_profile ?? "不可用" }}</dd></div>
+          <div><dt>Policy version</dt><dd>v{{ data.policy.version }}</dd></div>
+          <div class="wide"><dt>Composition hash</dt><dd><code>{{ data.runtime.active_composition_hash ?? "不可用" }}</code></dd></div>
+          <div><dt>Desired / Active</dt><dd><el-tag :type="data.runtime.desired_matches_active_plugins ? 'success' : 'warning'">{{ data.runtime.desired_matches_active_plugins ? "一致 · Active" : "待生成/部署" }}</el-tag></dd></div>
+          <div><dt>安全边界</dt><dd>无在线安装 · 无运行时修改 · 无 secret 投影</dd></div>
+        </dl>
       </el-card>
       <el-card shadow="never">
         <template #header><strong>官方插件目录</strong></template>
         <el-empty v-if="!data.plugins.length" description="Registry 中暂无插件" />
-        <el-table v-else :data="data.plugins" row-key="id" @row-click="openDetail">
+        <el-table v-else class="desktop-table" :data="data.plugins" row-key="id" @row-click="openDetail">
           <el-table-column label="插件" min-width="210"><template #default="{ row }"><strong>{{ row.display_name }}</strong><small class="block">{{ row.packages[0]?.name ?? row.id }}</small></template></el-table-column>
           <el-table-column label="资格 / 生效" min-width="165"><template #default="{ row }"><el-tag :type="tagType(row.qualification_state)">{{ row.qualification_state }}</el-tag> <el-tag v-if="row.active" type="success" effect="plain">ACTIVE</el-tag><el-tag v-else-if="row.desired_enabled" type="warning" effect="plain">DESIRED</el-tag></template></el-table-column>
           <el-table-column label="风险" width="110"><template #default="{ row }"><el-tag :type="tagType(row.risk.level)" effect="plain">{{ row.risk.level }}</el-tag></template></el-table-column>
@@ -105,17 +103,41 @@ onMounted(load);
           <el-table-column label="凭证" width="110"><template #default="{ row }">{{ row.credential_required ? (row.credential_configured ? "已配置" : "未配置") : "不需要" }}</template></el-table-column>
           <el-table-column label="操作" width="84" fixed="right"><template #default="{ row }"><el-button link type="primary" :aria-label="`查看 ${row.display_name} 详情`" @click.stop="openDetail(row)">查看</el-button></template></el-table-column>
         </el-table>
+        <div v-if="data.plugins.length" class="mobile-list" aria-label="官方插件目录">
+          <article v-for="plugin in data.plugins" :key="plugin.id" class="mobile-card">
+            <div><strong>{{ plugin.display_name }}</strong><small>{{ plugin.packages[0]?.name ?? plugin.id }}</small></div>
+            <dl>
+              <div><dt>资格 / 生效</dt><dd><el-tag :type="tagType(plugin.qualification_state)">{{ plugin.qualification_state }}</el-tag> <el-tag v-if="plugin.active" type="success" effect="plain">ACTIVE</el-tag><el-tag v-else-if="plugin.desired_enabled" type="warning" effect="plain">DESIRED</el-tag></dd></div>
+              <div><dt>风险</dt><dd><el-tag :type="tagType(plugin.risk.level)" effect="plain">{{ plugin.risk.level }}</el-tag></dd></div>
+              <div><dt>能力</dt><dd>{{ plugin.capabilities.join(", ") || "无外部能力" }}</dd></div>
+              <div><dt>Agent</dt><dd>{{ plugin.desired_agents.join(", ") || "未分配" }}</dd></div>
+              <div><dt>凭证</dt><dd>{{ plugin.credential_required ? (plugin.credential_configured ? "已配置" : "未配置") : "不需要" }}</dd></div>
+            </dl>
+            <el-button type="primary" plain @click="openDetail(plugin)">查看详情</el-button>
+          </article>
+        </div>
       </el-card>
       <el-card shadow="never">
         <template #header><strong>最近治理请求</strong></template>
         <el-empty v-if="!data.requests.length" description="暂无变更或 Qualification 请求" />
-        <el-table v-else :data="data.requests" size="small">
+        <el-table v-else class="desktop-table" :data="data.requests" size="small">
           <el-table-column prop="plugin_id" label="Plugin" min-width="130" />
           <el-table-column prop="request_kind" label="动作" width="100" />
           <el-table-column label="状态" min-width="190"><template #default="{ row }"><el-tag :type="tagType(row.status)">{{ row.status }}</el-tag> <span class="block">{{ row.deployment_state }}</span></template></el-table-column>
           <el-table-column prop="actor_principal" label="Actor" min-width="130" />
           <el-table-column prop="reason" label="原因" min-width="220" show-overflow-tooltip />
         </el-table>
+        <div v-if="data.requests.length" class="mobile-list" aria-label="最近治理请求">
+          <article v-for="request in data.requests" :key="request.request_id" class="mobile-card request-card">
+            <strong>{{ request.plugin_id }}</strong>
+            <dl>
+              <div><dt>动作</dt><dd>{{ request.request_kind }}</dd></div>
+              <div><dt>状态</dt><dd>{{ request.status }} · {{ request.deployment_state }}</dd></div>
+              <div><dt>Actor</dt><dd>{{ request.actor_principal }}</dd></div>
+              <div><dt>原因</dt><dd>{{ request.reason }}</dd></div>
+            </dl>
+          </article>
+        </div>
       </el-card>
     </template>
 
@@ -150,5 +172,5 @@ onMounted(load);
 </template>
 
 <style scoped>
-.plugin-center,.detail{display:grid;gap:16px}.toolbar{align-items:start;display:grid;gap:12px;grid-template-columns:minmax(0,1fr) auto}.metrics{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}.metrics span,.block{color:var(--byq-text-muted);display:block;font-size:12px}.metrics strong{display:block;font-size:25px;margin-top:6px}.identity code,td code{overflow-wrap:anywhere}.detail h3{margin:0}.detail p{color:var(--byq-text-muted);margin:5px 0 0}.actions{display:flex;flex-wrap:wrap;gap:8px}@media(max-width:800px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.toolbar{grid-template-columns:1fr}.toolbar .el-button{width:100%}.identity :deep(.el-descriptions__body){overflow-x:auto}}
+.plugin-center,.detail{display:grid;gap:16px}.toolbar{align-items:start;display:grid;gap:12px;grid-template-columns:minmax(0,1fr) auto}.metrics{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}.metrics span,.block{color:var(--byq-text-muted);display:block;font-size:12px}.metrics strong{display:block;font-size:25px;margin-top:6px}.identity-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:0}.identity-grid>div{border-bottom:1px solid var(--byq-border);display:grid;gap:5px;padding:12px}.identity-grid>div:nth-child(odd){border-right:1px solid var(--byq-border)}.identity-grid .wide{grid-column:1/-1}.identity-grid dt,.mobile-card dt{color:var(--byq-text-muted);font-size:12px;font-weight:700}.identity-grid dd,.mobile-card dd{margin:0;min-width:0;overflow-wrap:anywhere}.identity code,td code{overflow-wrap:anywhere}.mobile-list{display:none}.detail h3{margin:0}.detail p{color:var(--byq-text-muted);margin:5px 0 0}.actions{display:flex;flex-wrap:wrap;gap:8px}@media(max-width:800px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.toolbar{grid-template-columns:1fr}.toolbar .el-button{width:100%}.identity-grid{grid-template-columns:1fr}.identity-grid>div,.identity-grid>div:nth-child(odd){border-right:0}.identity-grid .wide{grid-column:auto}.desktop-table{display:none}.mobile-list{display:grid;gap:12px}.mobile-card{border:1px solid var(--byq-border);border-radius:10px;display:grid;gap:12px;padding:14px}.mobile-card>div{display:grid;gap:3px}.mobile-card small{color:var(--byq-text-muted);overflow-wrap:anywhere}.mobile-card dl{display:grid;gap:8px;margin:0}.mobile-card dl>div{display:grid;gap:3px}.mobile-card .el-button{width:100%}.request-card{gap:8px}}
 </style>

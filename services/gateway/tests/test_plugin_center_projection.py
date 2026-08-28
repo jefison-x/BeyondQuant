@@ -18,7 +18,9 @@ def test_plugin_projection_only_marks_runtime_reported_identity_active() -> None
     result = _decorate_plugin_center(backend, runtime)
     assert result["plugins"][0]["active"] is True
     assert result["plugins"][1]["active"] is False
-    assert result["plugins"][1]["credential_configured"] is True
+    # A resolver is only a credential delivery mechanism. It must not be
+    # projected as configured unless readiness reports a real configured key.
+    assert result["plugins"][1]["credential_configured"] is False
     assert result["runtime"]["desired_matches_active_plugins"] is False
 
 

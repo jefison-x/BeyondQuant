@@ -57,8 +57,15 @@ def test_policy_change_is_versioned_idempotent_audited_and_not_active(store: Plu
     request_id = first["request"]["request_id"]
     with pytest.raises(PluginCenterForbidden):
         store.deployment_input(request_id, service_token="wrong")
+    # A later request must not retarget this request to a newer policy. Each
+    # trusted deployment input is an immutable snapshot of its own transition.
+    store.request_change({"action": "disable", "plugin_id": "compaction", "expected_version": 2,
+        "idempotency_key": "phase65-disable-compaction", "reason": "concurrent policy exercise"},
+        actor_principal="admin", actor_role="admin")
     deployment = store.deployment_input(request_id, service_token="deployment-test")
     assert deployment["policy"]["policy_version"] == 2
+    assert "compaction" in deployment["policy"]["enabled_plugin_ids"]
+    assert "web-search" not in deployment["policy"]["enabled_plugin_ids"]
     digest = "sha256:" + "a" * 64
     generated = store.record_result(request_id, {"state": "generated", "composition_hash": digest,
         "result": "exact lock and deterministic builder passed"}, service_token="deployment-test")

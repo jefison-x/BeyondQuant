@@ -338,6 +338,7 @@ class PluginCenterStore(PgStoreMixin):
                     assignments[plugin_id] = sorted(requested_agents)
                 new_version = expected + 1
                 desired = {"enabled_plugin_ids": sorted(enabled), "agent_assignments": assignments, "policy_version": new_version}
+                deployment_policy = {"schema_version": "plugin-deployment-policy.v1", **desired}
                 desired_hash = "sha256:" + hashlib.sha256(_canonical(desired).encode()).hexdigest()
                 execute(connection, """UPDATE plugin_product_policy SET enabled_plugin_ids_json=:enabled,
                     agent_assignments_json=:assignments, version=:version, updated_by=:actor, updated_at=now()
@@ -352,7 +353,8 @@ class PluginCenterStore(PgStoreMixin):
                      :sha, :old, :new, :desired_hash, :request, now(), now())""",
                     {"id": request_id, "kind": action, "plugin": plugin_id, "actor": actor, "reason": reason,
                      "key": key, "sha": request_hash, "old": expected, "new": new_version,
-                     "desired_hash": desired_hash, "request": canonical})
+                     "desired_hash": desired_hash,
+                     "request": {**canonical, "desired_policy": deployment_policy}})
                 execute(connection, """INSERT INTO plugin_governance_audit
                     (audit_id, request_id, actor_principal, action, plugin_id, outcome, old_policy_version,
                      new_policy_version, detail_json, created_at)
@@ -433,11 +435,21 @@ class PluginCenterStore(PgStoreMixin):
                 if row is None:
                     raise PluginCenterNotFound("plugin governance request was not found")
                 policy = self._policy(connection)
+                request_json = row.get("request_json") if isinstance(row, dict) else None
+                policy_snapshot = request_json.get("desired_policy") if isinstance(request_json, dict) else None
+                if not isinstance(policy_snapshot, dict):
+                    # Backward-compatible fallback for requests created before
+                    # immutable desired-policy snapshots were introduced.
+                    policy_snapshot = {
+                        "schema_version": "plugin-deployment-policy.v1",
+                        "policy_version": policy["version"],
+                        "enabled_plugin_ids": policy["enabled_plugin_ids_json"],
+                        "agent_assignments": policy["agent_assignments_json"],
+                    }
                 return {
                     "schema_version": "plugin-deployment-input.v1",
                     "request": self._public_request(row),
-                    "policy": {"schema_version": "plugin-deployment-policy.v1", "policy_version": policy["version"], "enabled_plugin_ids": policy["enabled_plugin_ids_json"],
-                               "agent_assignments": policy["agent_assignments_json"]},
+                    "policy": policy_snapshot,
                     "runtime_baseline": self.registry["runtime_baseline"],
                 }
         except PluginCenterError:

@@ -5,6 +5,7 @@
   --byq-surface-subtle: #fbfbfc;
   --byq-surface-muted: #f2f4f7;
   --byq-text: #111827;
+  --byq-overlay-contrast-text: #000000;
   --byq-text-muted: #5f6b7a;
   --byq-text-soft: #5f6b7a;
   --byq-border: #dde3ea;
@@ -97,6 +98,7 @@
   --byq-surface-subtle: #172033;
   --byq-surface-muted: #1f2937;
   --byq-text: #f3f4f6;
+  --byq-overlay-contrast-text: #ffffff;
   --byq-text-muted: #c1c9d6;
   --byq-text-soft: #8f9bad;
   --byq-border: #39465a;

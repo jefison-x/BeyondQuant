@@ -141,7 +141,7 @@ onUnmounted(() => window.removeEventListener("resize", updateViewport));
   .settings-mobile-nav label { color: var(--byq-text-muted); font-size: 11px; font-weight: 750; }
   .settings-mobile-nav :deep(.el-select) { width: 100%; }
   .settings-mobile-nav :deep(.el-select__wrapper) { background: var(--byq-surface); }
-  .settings-mobile-nav :deep(.el-select__selected-item) { color: var(--byq-text); }
+  .settings-mobile-nav :deep(.el-select__selected-item) { color: var(--byq-overlay-contrast-text); }
   .settings-grid { display: block; height: auto; min-height: 0; }
   .settings-nav { display: none; }
   .settings-content { height: calc(100vh - 174px); }
@@ -153,7 +153,7 @@ onUnmounted(() => window.removeEventListener("resize", updateViewport));
 </style>
 
 <style>
-.system-settings-dialog { --el-dialog-bg-color: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: 14px; margin-top: 5vh; overflow: hidden; }
+.system-settings-dialog { --el-dialog-bg-color: var(--byq-surface); background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: 14px; margin-top: 5vh; overflow: hidden; }
 .system-settings-dialog .el-dialog__header { border-bottom: 1px solid var(--byq-border); margin: 0; padding: 14px 18px; }
 .system-settings-dialog .el-dialog__body { padding: 0 18px; }
 @media (max-width: 767px) {
