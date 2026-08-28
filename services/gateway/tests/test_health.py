@@ -72,6 +72,7 @@ def test_browser_session_exposes_only_bounded_personal_workspace(monkeypatch) ->
     monkeypatch.setattr(auth_api, "resolve_user", lambda _request: {
         "user_id": "user_alice",
         "username": "alice",
+        "display_name": "量化小周",
         "role": "user",
         "_workspace": workspace,
     })
@@ -81,6 +82,7 @@ def test_browser_session_exposes_only_bounded_personal_workspace(monkeypatch) ->
     assert response.status_code == 200
     assert response.json() == {
         "subject": "alice",
+        "display_name": "量化小周",
         "role": "user",
         "workspace": {
             "contract": "personal-workspace.v1",

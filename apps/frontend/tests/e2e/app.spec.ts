@@ -12,7 +12,7 @@ async function login(page: Page) {
   );
   await page.route("**/api/auth/me", (route) =>
     meAuthenticated
-      ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ subject: "testuser" }) })
+      ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ subject: "testuser", display_name: "量化小周" }) })
       : (meAuthenticated = true, route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { message: "unauthenticated" } }) })),
   );
   await page.goto("/login");
@@ -193,6 +193,10 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
       }),
     }),
   );
+  await page.route("**/v1/agent/sessions/session-1/turns", async (route) => {
+    expect((await route.request().postDataJSON()).content).toBe("快捷发送问题");
+    await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ accepted: true }) });
+  });
   await page.route("**/api/product/approvals", (route) =>
     route.fulfill({
       status: 200,
@@ -211,8 +215,13 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
   await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
   await expect(page.getByText("BYQ 规范化工作流 · 持久会话")).toBeVisible();
   await expect(page.getByText("研究动量")).toBeVisible();
+  await expect(page.locator(".conversation-message.user .message-author")).toHaveText("量化小周");
+  await page.getByPlaceholder("向小巴描述你的投研问题…").fill("快捷发送问题");
+  await page.getByPlaceholder("向小巴描述你的投研问题…").press("Control+Enter");
+  await expect(page.locator(".assistant-processing")).toBeVisible();
+  await expect(page.getByRole("button", { name: "停止本轮" })).toBeVisible();
   await page.getByRole("button", { name: /^活动/ }).click();
-  await expect(page.getByText("理解请求")).toBeVisible();
+  await expect(page.getByLabel("公开执行进度").getByText("理解请求", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "通过" })).not.toBeVisible();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /待人工审批，1 项/ }).click();
@@ -256,6 +265,11 @@ test("selecting a recent conversation loads its replay without refreshing the pa
   await expect(page.getByText("分析银行板块")).toBeVisible();
   await expect(page.locator(".history-row").first()).toHaveCSS("font-size", "14px");
   await expect(page.getByRole("button", { name: "历史", exact: true })).toHaveCSS("font-size", "12px");
+  const historyBox = await page.locator(".history-list").boundingBox();
+  const userBarBox = await page.locator(".sidebar-user-bar").boundingBox();
+  expect(historyBox).not.toBeNull();
+  expect(userBarBox).not.toBeNull();
+  expect(Math.abs(userBarBox!.y - (historyBox!.y + historyBox!.height))).toBeLessThan(24);
   await page.getByText("红利策略研究", { exact: true }).click();
   await expect(page).toHaveURL(/\/agent\?session=session-2$/);
   await expect(page.getByText("分析红利策略")).toBeVisible();
@@ -347,6 +361,9 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
   await expect(page.getByText("技术与审计详情", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "已批准" })).toBeVisible();
   await expect(page.getByRole("button", { name: "开始回测" })).toBeEnabled();
+  await page.getByRole("button", { name: "新建策略" }).click();
+  await expect(page.getByText("策略编辑器", { exact: true })).toBeVisible();
+  await expect(page.getByPlaceholder("策略名称", { exact: true })).toHaveValue("自定义策略");
 });
 
 test("backtest workspace renders backtest result list", async ({ page }) => {

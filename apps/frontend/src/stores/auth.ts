@@ -3,6 +3,7 @@ import type { PersonalWorkspace } from "@/api/types";
 
 interface CurrentUser {
   subject: string;
+  display_name?: string;
   role?: string;
   workspace: PersonalWorkspace;
 }

@@ -21,6 +21,7 @@ describe("UserSettingsMenu", () => {
     const auth = useAuthStore();
     auth.setUser({
       subject: "alice",
+      display_name: "量化小周",
       role: "user",
       workspace: {
         contract: "personal-workspace.v1",
@@ -41,6 +42,7 @@ describe("UserSettingsMenu", () => {
       },
     });
 
+    expect(wrapper.text()).toContain("量化小周");
     expect(wrapper.text()).toContain("Alice 的个人工作区");
     expect(wrapper.text()).toContain("仅你本人可访问 · 无需切换");
     expect(wrapper.text()).not.toMatch(/邀请|成员管理|切换工作区|创建工作区/);

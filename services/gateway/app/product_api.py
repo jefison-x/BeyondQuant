@@ -432,6 +432,7 @@ def product_me(request: Request) -> dict[str, object]:
     user = resolve_user(request)
     return {
         "subject": str(user.get("username") or user.get("user_id")),
+        "display_name": str(user.get("display_name") or ""),
         "role": str(user.get("role") or "user"),
         "workspace": _public_workspace(user.get("_workspace")),
     }

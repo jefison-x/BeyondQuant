@@ -1,6 +1,8 @@
 import { createPinia, setActivePinia } from "pinia";
 import { shallowMount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import AppSidebar from "./AppSidebar.vue";
 import { useAgentStore } from "@/stores/agent";
 
@@ -48,5 +50,12 @@ describe("AppSidebar", () => {
     expect(push).toHaveBeenCalledWith({ path: "/agent", query: { session: "session-5" } });
     expect(agent.activeSessionId).toBe("session-2");
     expect(agent.messages[0]?.text).toBe("旧内容");
+  });
+
+  it("lets the conversation history fill all space above the user bar", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/components/layout/AppSidebar.vue"), "utf8");
+    expect(source).toContain(".sidebar-history { border-top: 1px solid var(--byq-border-subtle); display: flex; flex: 1;");
+    expect(source).toContain(".history-list { flex: 1; min-height: 0; overflow-y: auto;");
+    expect(source).not.toContain("max-height: min(44vh, 420px)");
   });
 });
