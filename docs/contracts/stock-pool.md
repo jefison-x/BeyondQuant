@@ -1,6 +1,9 @@
-# Stock Pool Contract — Phase 34
+# Stock Pool Contract — Phase 34（由 Phase 66 生产器契约补充）
 
 本 contract 落实 ADR-0020。关键词 **MUST**、**MUST NOT**、**SHOULD** 和 **MAY** 具有规范性。
+
+指数型与动态股票池的定义、物化任务、调度、恢复和 Product intent boundary 由 ADR-0041 及
+`docs/contracts/stock-pool-producer.md` 补充；它们不改变本文件的 immutable snapshot 权威性。
 
 ## Domain records
 

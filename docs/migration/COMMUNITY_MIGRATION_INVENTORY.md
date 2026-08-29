@@ -145,6 +145,15 @@ Visual interaction evidence is indexed at
 `docs/evidence/phase-34/community-stock-pool/README.md`. It is reference-only
 and does not satisfy the Phase 34 real Product API Chrome MCP exit gate.
 
+### Phase 66–69 index/dynamic producer follow-up classification
+
+2026-08-29 重新检查 Community stock-pool routes/service/model 和 `StockPoolView.vue`：指数目录、
+latest-snapshot-不晚于-as-of、成分页码/权重/历史属于 `PORT_LOGIC` + `PORT_UX`，但 direct ORM、
+Provider query、optional ownership 和旧 API 全部 `REPLACE`。Community 的动态计数固定为零、页面
+“后续接入执行器”和 sample universe 都是占位，分类为 `DROP`；没有可迁移的动态 evaluator。
+Phase 67–69 只复用上述时间点语义与信息层级，使用 BYQ Product API、ADR-0030 canonical Data Plane
+和 ADR-0041 trusted producer，不复制 Community runtime/storage，也不修改只读 Community 仓库。
+
 ## Historical market-cache audit 与 migration policy
 
 Community schema/model evidence identifies `market_data_daily`,
