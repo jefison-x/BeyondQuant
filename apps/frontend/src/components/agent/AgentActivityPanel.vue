@@ -11,8 +11,8 @@ const phaseLabel = (phase: WorkflowActivityPayload["phase"]) => ({ understand: "
   <section class="activity-panel" aria-label="公开执行进度">
     <div class="panel-heading"><span class="panel-title">执行进度</span><el-tag size="small">{{ activities.length }}</el-tag></div>
     <el-empty v-if="!activities.length" description="尚无公开执行进度" :image-size="52" />
-    <ol v-else><li v-for="activity in activities" :key="`${activity.payload.activity_id}-${activity.sequence}`"><span class="activity-dot" :class="activity.payload.state" /><div><strong>{{ activity.payload.label }}</strong><small>{{ phaseLabel(activity.payload.phase) }}</small></div><el-tag size="small" :type="stateType(activity.payload.state)">{{ stateLabel(activity.payload.state) }}</el-tag></li></ol>
-    <p class="privacy-note">这里只显示完成任务所需的公开进度，不展示内部执行细节。</p>
+    <ol v-else><li v-for="activity in activities" :key="`${activity.payload.activity_id}-${activity.sequence}`"><span class="activity-dot" :class="activity.payload.state" /><div><strong>{{ activity.payload.label }}</strong><small>{{ phaseLabel(activity.payload.phase) }}</small><span v-if="activity.payload.agent_label || activity.payload.plugin_label || activity.payload.skill_label" class="execution-context"><em v-if="activity.payload.agent_label">Agent · {{ activity.payload.agent_label }}</em><em v-if="activity.payload.plugin_label">插件 · {{ activity.payload.plugin_label }}</em><em v-if="activity.payload.skill_label">Skill · {{ activity.payload.skill_label }}</em></span></div><el-tag size="small" :type="stateType(activity.payload.state)">{{ stateLabel(activity.payload.state) }}</el-tag></li></ol>
+    <p class="privacy-note">这里只显示经过安全映射的公开执行信息，不展示工具参数、原始事件或内部推理。</p>
   </section>
 </template>
 
@@ -22,5 +22,6 @@ li { align-items: center; display: grid; gap: .55rem; grid-template-columns: 8px
 .activity-dot { background: var(--byq-text-soft); border-radius: 50%; height: 8px; width: 8px; }
 .activity-dot.completed { background: var(--el-color-success); } .activity-dot.failed { background: var(--el-color-danger); } .activity-dot.started, .activity-dot.progress { background: var(--byq-brand); }
 li div { display: grid; } li strong { color: var(--byq-text); font-size: 12px; } li small, .privacy-note { color: var(--byq-text-soft); font-size: 11px; }
+.execution-context { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .25rem; }.execution-context em { background: var(--byq-surface-muted); border-radius: 999px; color: var(--byq-text-muted); font-size: 10px; font-style: normal; padding: .15rem .4rem; }
 .privacy-note { border-top: 1px solid var(--byq-border-subtle); margin: 0; padding-top: .55rem; }
 </style>

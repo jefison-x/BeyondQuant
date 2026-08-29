@@ -25,6 +25,31 @@ def test_cross_owner_account_lookup_does_not_reveal_existence() -> None:
     store.close()
 
 
+def test_account_delete_is_owner_scoped_tombstone_and_keeps_audit_history() -> None:
+    store = PaperTradingStore()
+    account = store.create_account({"name": "可删除账户", "cash": 100000}, trusted_owner="alice")
+    account_id = account["account_id"]
+    payload = {"expected_version": account["version"], "idempotency_key": "delete-account-1", "reason": "用户清理"}
+
+    with pytest.raises(PaperTradingNotFound):
+        store.delete_account(account_id, payload, trusted_owner="bob", trusted_actor="bob")
+    result = store.delete_account(account_id, payload, trusted_owner="alice", trusted_actor="alice")
+    assert result == {"account_id": account_id, "deleted": True}
+    assert store.delete_account(account_id, payload, trusted_owner="alice", trusted_actor="alice") == result
+    assert store.list_accounts(trusted_owner="alice") == {"accounts": []}
+    with pytest.raises(PaperTradingNotFound):
+        store.get_account(account_id, trusted_owner="alice")
+    audit = store._fetch_one(
+        "SELECT * FROM paper_account_audit WHERE account_id = :account_id AND action = 'account_deleted'",
+        {"account_id": account_id},
+    )
+    assert audit is not None
+    assert audit["details_json"]["previous_name"] == "可删除账户"
+    recreated = store.create_account({"name": "可删除账户", "cash": 50000}, trusted_owner="alice")
+    assert recreated["account_id"] != account_id
+    store.close()
+
+
 pytestmark = pytest.mark.skipif(
     not os.environ.get("BYQ_DATABASE_URL"),
     reason="BYQ_DATABASE_URL is not set",

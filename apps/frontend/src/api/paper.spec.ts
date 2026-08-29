@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPaperAccount, createStockPool, exportPaperAccount, getPaperOrder, listPaperLedger, listPaperOrders, listPaperSnapshots, replaceStockPoolSnapshot, settlePaperAccount, submitPaperOrder, updatePaperControls } from "./paper";
+import { createPaperAccount, createStockPool, deletePaperAccount, exportPaperAccount, getPaperOrder, listPaperLedger, listPaperOrders, listPaperSnapshots, replaceStockPoolSnapshot, settlePaperAccount, submitPaperOrder, updatePaperControls } from "./paper";
 
 describe("paper trading api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -27,6 +27,18 @@ describe("paper trading api client", () => {
       "test-token",
     );
     expect(result.order.blocked_reason).toBe("suspended");
+  });
+
+  it("tombstones an account through the Product API with optimistic identity", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ account_id: "paper_account_1", deleted: true }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await deletePaperAccount("paper_account_1", 3, "test-token");
+    const request = fetchMock.mock.calls[0];
+    expect(request[0]).toBe("/api/product/paper/accounts/paper_account_1");
+    expect(request[1]).toEqual(expect.objectContaining({ method: "DELETE", credentials: "include" }));
+    expect(JSON.parse(String(request[1]?.body))).toEqual(expect.objectContaining({ expected_version: 3 }));
   });
 
   it("lists orders without exposing provider or database internals", async () => {

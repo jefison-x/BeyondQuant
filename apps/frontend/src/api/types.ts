@@ -158,6 +158,9 @@ export interface WorkflowActivityPayload {
   state: "started" | "progress" | "completed" | "failed" | "waiting_approval";
   label: string;
   capability?: string;
+  agent_label?: string;
+  plugin_label?: string;
+  skill_label?: string;
 }
 
 export interface BacktestJob {

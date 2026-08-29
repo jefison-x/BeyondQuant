@@ -108,7 +108,9 @@ class WorkflowTraceProjectionTests(unittest.TestCase):
             "phase": "strategy",
             "state": "completed",
             "label": "策略校验完成",
-            "capability": "byq_strategy_validate",
+            "agent_label": "量化研究 Agent",
+            "plugin_label": "BeyondQuant MCP",
+            "skill_label": "策略研究 Skill",
         }
         validate_workflow_trace_event(event("agent.activity", payload))
         payload["arguments"] = {"source": "private"}

@@ -2524,6 +2524,19 @@ def list_paper_accounts(request: Request) -> dict[str, object]:
     return _paper_call(lambda: paper_store.list_accounts(trusted_owner=context["owner_principal"]))
 
 
+@app.delete("/v1/paper/accounts/{account_id}")
+def delete_paper_account(account_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    return _paper_call(lambda: paper_store.delete_account(
+        account_id,
+        {key: value for key, value in payload.items() if key not in {
+            "owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"
+        }},
+        trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    ))
+
+
 @app.post("/v1/paper/pools", status_code=201)
 def create_stock_pool(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, payload)

@@ -13,6 +13,7 @@ const getAgentSession = vi.fn();
 const createAgentSession = vi.fn();
 const deleteAgentSession = vi.fn();
 const listAgentSessions = vi.fn();
+const updateAgentSession = vi.fn();
 
 vi.mock("vue-router", () => ({
   useRoute: () => ({ path: "/agent", query: {} }),
@@ -28,7 +29,7 @@ vi.mock("@/api/agent", () => ({
   resumeSession: (...args: unknown[]) => resumeSession(...args),
   streamWorkflowEvents: vi.fn(() => new Promise<void>(() => undefined)),
   submitTurn: (...args: unknown[]) => submitTurn(...args),
-  updateAgentSession: vi.fn(),
+  updateAgentSession: (...args: unknown[]) => updateAgentSession(...args),
 }));
 
 describe("AgentView", () => {
@@ -66,6 +67,8 @@ describe("AgentView", () => {
       sessions: [{ session_id: "session-1", trace_id: "trace-1", title: "测试会话" }],
       total: 1,
     });
+    updateAgentSession.mockReset();
+    updateAgentSession.mockResolvedValue({ session: {} });
   });
 
   it("shows the personalized nickname and sends with Ctrl+Enter", async () => {
@@ -196,5 +199,30 @@ describe("AgentView", () => {
     expect(deleteAgentSession).toHaveBeenCalledWith("session-1", "");
     expect(useAgentStore().activeSessionId).toBe("");
     expect(useAgentStore().sessions).toEqual([]);
+  });
+
+  it("batch archives selected history conversations", async () => {
+    vi.spyOn(ElMessageBox, "confirm").mockResolvedValue("confirm" as never);
+    listAgentSessions.mockResolvedValue({
+      sessions: [
+        { session_id: "session-1", trace_id: "trace-1", title: "会话一" },
+        { session_id: "session-2", trace_id: "trace-2", title: "会话二" },
+      ],
+      total: 2,
+    });
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as {
+      showHistory: () => Promise<void>;
+      toggleAllHistory: (selected: boolean) => void;
+      batchArchiveHistory: () => Promise<void>;
+    };
+    await view.showHistory();
+    view.toggleAllHistory(true);
+    await view.batchArchiveHistory();
+
+    expect(updateAgentSession).toHaveBeenCalledTimes(2);
+    expect(updateAgentSession).toHaveBeenCalledWith("session-1", { status: "archived" }, "");
+    expect(updateAgentSession).toHaveBeenCalledWith("session-2", { status: "archived" }, "");
   });
 });

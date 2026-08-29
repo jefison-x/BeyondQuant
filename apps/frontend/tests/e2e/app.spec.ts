@@ -277,7 +277,7 @@ test("selecting a recent conversation loads its replay without refreshing the pa
   await login(page);
   await expect(page.getByText("分析银行板块")).toBeVisible();
   await expect(page.locator(".history-row").first()).toHaveCSS("font-size", "14px");
-  await expect(page.getByRole("button", { name: "历史", exact: true })).toHaveCSS("font-size", "12px");
+  await expect(page.getByRole("button", { name: "对话历史", exact: true })).toHaveCSS("font-size", "12px");
   const historyBox = await page.locator(".history-list").boundingBox();
   const userBarBox = await page.locator(".sidebar-user-bar").boundingBox();
   expect(historyBox).not.toBeNull();
@@ -589,6 +589,7 @@ test("my space pages render profile, models, assets, and agent policy", async ({
 
 test("paper trading and stock pool pages render", async ({ page }) => {
   await login(page);
+  let paperAccountDeleted = false;
   await page.route("**/api/product/paper/pools", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ pools: [{
       pool_id: "stock_pool_1", name: "沪深300", pool_type: "index", description: "指数池",
@@ -615,7 +616,7 @@ test("paper trading and stock pool pages render", async ({ page }) => {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ accounts: [{ account_id: "paper_account_1", name: "sim", cash: 100000, status: "active" }] }),
+      body: JSON.stringify({ accounts: paperAccountDeleted ? [] : [{ account_id: "paper_account_1", name: "sim", cash: 100000, status: "active" }] }),
     }),
   );
   await page.route("**/api/product/paper/accounts/paper_account_1/positions", (route) =>
@@ -636,9 +637,13 @@ test("paper trading and stock pool pages render", async ({ page }) => {
   await page.route("**/api/product/paper/accounts/paper_account_1/controls", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ controls: { kill_switch_engaged: false, max_order_notional: null, version: 1 } }) }),
   );
-  await page.route("**/api/product/paper/accounts/paper_account_1", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ account: { account_id: "paper_account_1", name: "sim", cash: 100000, equity: 100000, version: 1, status: "active" } }) }),
-  );
+  await page.route("**/api/product/paper/accounts/paper_account_1", (route) => {
+    if (route.request().method() === "DELETE") {
+      paperAccountDeleted = true;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ account_id: "paper_account_1", deleted: true }) });
+    }
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ account: { account_id: "paper_account_1", name: "sim", cash: 100000, equity: 100000, version: 1, status: "active" } }) });
+  });
   await openNav(page, "模拟操盘");
   await expect(page.getByRole("heading", { name: "模拟账户与交易监督" })).toBeVisible();
   await page.goto("/user/paper-trading?from=backtest&pool_snapshot=snapshot_1");
@@ -646,9 +651,14 @@ test("paper trading and stock pool pages render", async ({ page }) => {
   expect(new URL(page.url()).searchParams.get("from")).toBe("backtest");
   expect(new URL(page.url()).searchParams.get("pool_snapshot")).toBe("snapshot_1");
   await expect(page.getByText("sim", { exact: true })).toBeVisible();
+  await expect(page.getByText("初始资金", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("paper-initial-cash")).toContainText("¥");
   await expect(page.getByRole("tab", { name: "资金流水" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "结算快照" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "风险与迁移" })).toBeVisible();
+  await page.getByRole("button", { name: "删除账户", exact: true }).click();
+  await page.getByRole("dialog", { name: "删除模拟账户" }).getByRole("button", { name: "删除", exact: true }).click();
+  await expect(page.getByText("暂无模拟账户")).toBeVisible();
   await page.goto("/stock-pool?pool=stock_pool_1&from=agent&session=session-1");
   await expect(page.getByRole("heading", { name: "股票管理" })).toBeVisible();
   await expect(page.getByText("股票池目录与快照", { exact: true })).toBeVisible();
@@ -745,9 +755,9 @@ test("mobile shell uses a drawer and keeps account destinations reachable", asyn
 
   await page.getByRole("button", { name: "打开产品导航" }).click();
   await expect(page.getByRole("navigation", { name: "产品主导航" })).toBeVisible();
-  await expect(page.getByText("投研对话", { exact: true })).toBeVisible();
+  await expect(page.getByText("对话历史", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "历史会话", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "历史", exact: true }).click();
+  await page.getByRole("button", { name: "对话历史", exact: true }).click();
   await expect(page).toHaveURL(/\/agent\?history=recent$/);
   await expect(page.getByRole("heading", { name: "历史会话" })).toBeVisible();
   await page.getByRole("heading", { name: "历史会话" }).locator("..").getByRole("button").click();

@@ -1493,6 +1493,19 @@ def product_paper_accounts(request: Request) -> dict[str, object]:
     return _backend_request("GET", "/v1/paper/accounts", headers=_trusted_agent_headers(request))
 
 
+@router.delete("/paper/accounts/{account_id}")
+def product_paper_account_delete(
+    account_id: str, request: Request, payload: dict[str, object],
+) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "DELETE",
+        f"/v1/paper/accounts/{account_id}",
+        payload,
+        headers=_trusted_agent_headers(request),
+    )
+
+
 @router.post("/paper/pools", status_code=201)
 def product_stock_pool_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)

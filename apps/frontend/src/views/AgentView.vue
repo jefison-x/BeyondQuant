@@ -30,6 +30,8 @@ const historyStatus = ref<"active" | "archived">("active");
 const historySearch = ref("");
 const historyItems = ref<AgentSession[]>([]);
 const historyTotal = ref(0);
+const selectedHistoryIds = ref<Set<string>>(new Set());
+const historyBatchBusy = ref(false);
 const stopping = ref(false);
 const localRunStartedAt = ref("");
 const clock = ref(Date.now());
@@ -56,6 +58,8 @@ const elapsedSeconds = computed(() => {
   const started = Date.parse(runStartedAt.value || "");
   return Number.isFinite(started) ? Math.max(0, Math.floor((clock.value - started) / 1000)) : 0;
 });
+const allHistorySelected = computed(() => historyItems.value.length > 0
+  && historyItems.value.every((item) => selectedHistoryIds.value.has(item.session_id)));
 const elapsedLabel = computed(() => {
   const minutes = Math.floor(elapsedSeconds.value / 60);
   const seconds = elapsedSeconds.value % 60;
@@ -224,6 +228,9 @@ async function refreshCatalog() {
 async function loadHistory() {
   const response = await listAgentSessions(auth.token, { status: historyStatus.value, search: historySearch.value, limit: 50 });
   historyItems.value = response.sessions; historyTotal.value = response.total;
+  selectedHistoryIds.value = new Set(
+    [...selectedHistoryIds.value].filter((sessionId) => response.sessions.some((item) => item.session_id === sessionId)),
+  );
 }
 
 async function showHistory() {
@@ -259,6 +266,70 @@ async function deleteHistorySession(session: AgentSession) {
   }
   await Promise.all([refreshCatalog(), loadHistory()]);
   ElMessage.success("会话已删除");
+}
+
+function toggleHistorySelection(sessionId: string, selected: boolean) {
+  const next = new Set(selectedHistoryIds.value);
+  if (selected) next.add(sessionId);
+  else next.delete(sessionId);
+  selectedHistoryIds.value = next;
+}
+
+function toggleAllHistory(selected: boolean) {
+  selectedHistoryIds.value = selected ? new Set(historyItems.value.map((item) => item.session_id)) : new Set();
+}
+
+async function batchArchiveHistory() {
+  const sessions = historyItems.value.filter((item) => selectedHistoryIds.value.has(item.session_id));
+  if (!sessions.length) return;
+  const target = historyStatus.value === "active" ? "archived" : "active";
+  await ElMessageBox.confirm(
+    `${target === "archived" ? "归档" : "恢复"}选中的 ${sessions.length} 个会话？`,
+    target === "archived" ? "批量归档" : "批量恢复",
+  );
+  historyBatchBusy.value = true;
+  try {
+    const results = await Promise.allSettled(
+      sessions.map((session) => updateAgentSession(session.session_id, { status: target }, auth.token)),
+    );
+    const failedIds = sessions.filter((_, index) => results[index].status === "rejected").map((item) => item.session_id);
+    selectedHistoryIds.value = new Set(failedIds);
+    await Promise.all([refreshCatalog(), loadHistory()]);
+    if (failedIds.length) ElMessage.warning(`${sessions.length - failedIds.length} 个会话已更新，${failedIds.length} 个失败，请重试`);
+    else ElMessage.success(target === "archived" ? "所选会话已归档" : "所选会话已恢复");
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "批量更新会话失败";
+  } finally { historyBatchBusy.value = false; }
+}
+
+async function batchDeleteHistory() {
+  const sessions = historyItems.value.filter((item) => selectedHistoryIds.value.has(item.session_id));
+  if (!sessions.length) return;
+  await ElMessageBox.confirm(
+    `永久删除选中的 ${sessions.length} 个会话？删除后无法恢复。`,
+    "批量删除会话",
+    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" },
+  );
+  historyBatchBusy.value = true;
+  try {
+    const results = await Promise.allSettled(
+      sessions.map((session) => deleteAgentSession(session.session_id, auth.token)),
+    );
+    const deletedIds = new Set(sessions.filter((_, index) => results[index].status === "fulfilled").map((item) => item.session_id));
+    const failedIds = sessions.filter((_, index) => results[index].status === "rejected").map((item) => item.session_id);
+    const activeDeleted = deletedIds.has(agent.activeSessionId);
+    for (const sessionId of deletedIds) agent.removeSession(sessionId);
+    if (activeDeleted) {
+      startNewSession();
+      await router.replace({ path: "/agent" });
+    }
+    selectedHistoryIds.value = new Set(failedIds);
+    await Promise.all([refreshCatalog(), loadHistory()]);
+    if (failedIds.length) ElMessage.warning(`${deletedIds.size} 个会话已删除，${failedIds.length} 个失败，请重试`);
+    else ElMessage.success("所选会话已删除");
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "批量删除会话失败";
+  } finally { historyBatchBusy.value = false; }
 }
 
 function navigateCard(event: WorkflowCardEvent) {
@@ -400,9 +471,15 @@ onBeforeUnmount(() => { stopStream(); stopReconciliation(); if (clockTimer) clea
     <el-drawer v-model="historyOpen" title="历史会话" size="min(520px, 94vw)">
       <div class="history-tools"><el-input v-model="historySearch" clearable placeholder="搜索标题或最近消息" />
         <el-segmented v-model="historyStatus" :options="[{ label: '进行中', value: 'active' }, { label: '已归档', value: 'archived' }]" /></div>
-      <p class="history-count">共 {{ historyTotal }} 个会话</p>
+      <div class="history-batch-bar">
+        <el-checkbox :model-value="allHistorySelected" :indeterminate="selectedHistoryIds.size > 0 && !allHistorySelected" @change="toggleAllHistory(Boolean($event))">全选当前列表</el-checkbox>
+        <span class="history-count">共 {{ historyTotal }} 个会话 · 已选 {{ selectedHistoryIds.size }} 个</span>
+        <el-button size="small" :disabled="!selectedHistoryIds.size" :loading="historyBatchBusy" @click="batchArchiveHistory">{{ historyStatus === "active" ? "批量归档" : "批量恢复" }}</el-button>
+        <el-button size="small" type="danger" plain :disabled="!selectedHistoryIds.size" :loading="historyBatchBusy" @click="batchDeleteHistory">批量删除</el-button>
+      </div>
       <div class="history-catalog">
         <article v-for="session in historyItems" :key="session.session_id" class="history-item">
+          <el-checkbox :model-value="selectedHistoryIds.has(session.session_id)" :aria-label="`选择会话 ${session.title || '新投研对话'}`" @change="toggleHistorySelection(session.session_id, Boolean($event))" />
           <button type="button" @click="historyOpen = false; openSession(session.session_id)"><strong>{{ session.title || "新投研对话" }}</strong>
             <span>{{ session.last_message_preview || "尚未发送消息" }}</span><small>{{ session.message_count || 0 }} 轮提问 · {{ session.updated_at?.slice(0, 16).replace('T', ' ') }}</small></button>
           <el-dropdown trigger="click"><el-button text>···</el-button><template #dropdown><el-dropdown-menu>
@@ -433,7 +510,7 @@ onBeforeUnmount(() => { stopStream(); stopReconciliation(); if (clockTimer) clea
 .composer-wrap { background: linear-gradient(transparent, var(--byq-bg) 22%); padding: 1rem max(1rem, calc((100% - 860px) / 2)) 1.2rem; }.agent-composer { align-items: center; background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: 18px; box-shadow: var(--byq-shadow-sm); display: flex; gap: .65rem; padding: .65rem .7rem .65rem .9rem; }.composer-input { flex: 1; min-width: 0; }.agent-composer :deep(.el-textarea__inner) { box-shadow: none; line-height: 1.55; padding: .35rem 0; resize: none; }.composer-action { align-self: center; flex: 0 0 auto; margin-left: 0; }
 .composer-stop { background: var(--byq-text); border-color: var(--byq-text); color: var(--byq-surface); }.stop-square { background: currentColor; border-radius: 2px; display: block; height: 10px; width: 10px; }
 @keyframes thinking-dot { 0%, 60%, 100% { opacity: .28; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
-.history-tools { display: grid; gap: .75rem; }.history-count { color: var(--byq-text-soft); font-size: 11px; }.history-catalog { display: grid; gap: .55rem; }.history-item { align-items: center; border: 1px solid var(--byq-border-subtle); border-radius: var(--byq-radius-sm); display: flex; padding: .35rem .5rem .35rem .75rem; }.history-item > button { background: transparent; border: 0; cursor: pointer; display: grid; flex: 1; gap: .25rem; min-width: 0; padding: .35rem; text-align: left; }.history-item strong, .history-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.history-item span, .history-item small { color: var(--byq-text-soft); }.conversation-state { margin: 2rem auto; max-width: 860px; }
+.history-tools { display: grid; gap: .75rem; }.history-batch-bar { align-items: center; display: flex; flex-wrap: wrap; gap: .45rem; margin: .75rem 0; }.history-count { color: var(--byq-text-soft); flex: 1; font-size: 11px; min-width: 130px; }.history-catalog { display: grid; gap: .55rem; }.history-item { align-items: center; border: 1px solid var(--byq-border-subtle); border-radius: var(--byq-radius-sm); display: flex; gap: .25rem; padding: .35rem .5rem .35rem .75rem; }.history-item > button { background: transparent; border: 0; cursor: pointer; display: grid; flex: 1; gap: .25rem; min-width: 0; padding: .35rem; text-align: left; }.history-item strong, .history-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.history-item span, .history-item small { color: var(--byq-text-soft); }.conversation-state { margin: 2rem auto; max-width: 860px; }
 @media (max-width: 760px) { .conversation-workspace { height: calc(100dvh - 52px); margin: -.7rem; }.conversation-header { align-items: flex-start; padding: .6rem .7rem; }.conversation-header small { display: none; }.header-actions .el-button:first-child { display: none; }.conversation-canvas { padding: 1.2rem .7rem; }.starter-grid { grid-template-columns: 1fr; }.conversation-message { gap: .4rem; grid-template-columns: minmax(32px, max-content) minmax(0, 1fr); }.message-author { border-radius: 9px; height: 28px; max-width: 72px; min-width: 28px; }.conversation-message.agent .message-author { width: 28px; }.composer-wrap { padding: .75rem .7rem; } }
 @media (prefers-reduced-motion: reduce) { .thinking-spark i { animation: none; opacity: 1; } }
 </style>

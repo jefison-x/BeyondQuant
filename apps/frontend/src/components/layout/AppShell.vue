@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
+import { listAgentSessions } from "@/api/agent";
+import { useAgentStore } from "@/stores/agent";
+import { useAuthStore } from "@/stores/auth";
 import AppHeader from "./AppHeader.vue";
 import AppSidebar from "./AppSidebar.vue";
 
 const route = useRoute();
+const agent = useAgentStore();
+const auth = useAuthStore();
 const isPublicRoute = computed(() => Boolean(route.meta.public));
 const isSystemSettingsRoute = computed(() => route.path.startsWith("/settings/system"));
 const isMobile = ref(false);
@@ -20,9 +25,17 @@ function toggleSidebarCollapse() {
   sidebarCollapsed.value = !sidebarCollapsed.value;
 }
 
-onMounted(() => {
+onMounted(async () => {
   updateViewport();
   window.addEventListener("resize", updateViewport);
+  if (!isPublicRoute.value && auth.isAuthenticated) {
+    try {
+      const response = await listAgentSessions(auth.token, { limit: 100 });
+      agent.replaceSessions(response.sessions);
+    } catch {
+      // The shell remains usable when the best-effort recent catalogue is unavailable.
+    }
+  }
 });
 
 onUnmounted(() => {

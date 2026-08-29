@@ -31,6 +31,21 @@ export function listPaperAccounts(token: string): Promise<{ accounts: Array<Reco
   return request(`/accounts`, token);
 }
 
+export function deletePaperAccount(
+  accountId: string,
+  expectedVersion: number,
+  token: string,
+): Promise<{ account_id: string; deleted: boolean }> {
+  return request(`/accounts/${encodeURIComponent(accountId)}`, token, {
+    method: "DELETE",
+    body: JSON.stringify({
+      expected_version: expectedVersion,
+      idempotency_key: createRequestId(),
+      reason: "用户删除模拟账户",
+    }),
+  });
+}
+
 export function createStockPool(
   name: string,
   symbols: string[],

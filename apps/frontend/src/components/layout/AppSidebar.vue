@@ -128,10 +128,9 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
       </nav>
 
       <section v-if="!props.isCollapsed" class="sidebar-history" aria-labelledby="conversation-heading">
-        <div class="history-heading-row">
-          <div id="conversation-heading" class="history-heading">投研对话</div>
-          <button type="button" class="history-link" @click="showHistory">历史</button>
-        </div>
+        <button id="conversation-heading" type="button" class="history-heading history-heading-button" @click="showHistory">
+          对话历史
+        </button>
         <p v-if="!recentSessions.length" class="history-empty">开始一次投研后，会话会显示在这里</p>
         <div v-else class="history-list">
           <div
@@ -186,11 +185,10 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
 .new-conversation .el-icon, .nav-row .el-icon { flex: 0 0 auto; font-size: 17px; }
 .collapsed .new-conversation, .collapsed .nav-row { justify-content: center; padding: 0; }
 .sidebar-history { border-top: 1px solid var(--byq-border-subtle); display: flex; flex: 1; flex-direction: column; margin-top: .75rem; min-height: 0; padding: .75rem .2rem 0; }
-.history-heading-row { align-items: center; display: flex; justify-content: space-between; padding: 0 .35rem .35rem .55rem; }
 .history-heading { color: var(--byq-text-soft); font-size: 12px; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
-.history-link { background: transparent; border: 0; border-radius: var(--byq-radius-sm); color: var(--byq-brand-contrast); cursor: pointer; font: inherit; font-size: 12px; font-weight: 750; padding: .25rem .35rem; }
-.history-link:hover { background: var(--byq-brand-soft); }
-.history-link:focus-visible { outline: 2px solid var(--byq-brand-contrast); outline-offset: 2px; }
+.history-heading-button { background: transparent; border: 0; border-radius: var(--byq-radius-sm); cursor: pointer; font-family: inherit; margin: 0 .35rem .35rem; padding: .3rem .2rem; text-align: left; }
+.history-heading-button:hover { background: var(--byq-brand-soft); color: var(--byq-brand-contrast); }
+.history-heading-button:focus-visible { outline: 2px solid var(--byq-brand-contrast); outline-offset: 2px; }
 .history-empty { color: var(--byq-text-soft); font-size: 11px; line-height: 1.45; margin: .2rem .55rem; }
 .history-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: .1rem; scrollbar-gutter: stable; }
 .history-row { align-items: center; background: transparent; border-radius: var(--byq-radius-sm); color: var(--byq-text-muted); cursor: pointer; display: flex; font-size: 14px; gap: .5rem; line-height: 1.35; overflow: hidden; padding: .55rem; }

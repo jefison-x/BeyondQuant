@@ -22,6 +22,9 @@ describe("AgentActivityPanel", () => {
               phase: "select",
               state: "completed",
               label: "读取估值数据",
+              agent_label: "市场研究 Agent",
+              plugin_label: "BeyondQuant MCP",
+              skill_label: "市场研究 Skill",
             },
           },
         ],
@@ -31,8 +34,11 @@ describe("AgentActivityPanel", () => {
     expect(wrapper.text()).toContain("读取估值数据");
     expect(wrapper.text()).toContain("研究数据");
     expect(wrapper.text()).toContain("已完成");
+    expect(wrapper.text()).toContain("Agent · 市场研究 Agent");
+    expect(wrapper.text()).toContain("插件 · BeyondQuant MCP");
+    expect(wrapper.text()).toContain("Skill · 市场研究 Skill");
     expect(wrapper.text()).not.toContain("select");
     expect(wrapper.text()).not.toContain("completed");
-    expect(wrapper.text()).not.toContain("工具参数");
+    expect(wrapper.text()).not.toContain("arguments");
   });
 });

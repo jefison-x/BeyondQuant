@@ -537,6 +537,7 @@ class PaperTradingStore(PgStoreMixin):
             ensure_column(connection, "paper_accounts", "last_settlement_date", "TEXT")
             ensure_column(connection, "paper_accounts", "bound_pool_id", "TEXT")
             ensure_column(connection, "paper_accounts", "bound_snapshot_id", "TEXT")
+            ensure_column(connection, "paper_accounts", "deleted_at", "TIMESTAMPTZ")
             ensure_column(connection, "paper_positions", "sellable_quantity", "INTEGER NOT NULL DEFAULT 0")
             ensure_column(connection, "paper_positions", "locked_quantity", "INTEGER NOT NULL DEFAULT 0")
             ensure_column(connection, "paper_positions", "average_cost", "NUMERIC(18,4) NOT NULL DEFAULT 0")
@@ -664,7 +665,7 @@ class PaperTradingStore(PgStoreMixin):
         name = _text(payload.get("name"), field="name", max_length=128)
         cash = _money(payload.get("cash"), "cash", positive=True)
         existing = self._fetch_one(
-            "SELECT * FROM paper_accounts WHERE owner_principal = :owner AND name = :name",
+            "SELECT * FROM paper_accounts WHERE owner_principal = :owner AND name = :name AND status <> 'deleted'",
             {"owner": owner, "name": name},
         )
         if existing is not None:
@@ -703,7 +704,10 @@ class PaperTradingStore(PgStoreMixin):
 
     def get_account(self, account_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         account_id = _id(account_id, prefix="paper_account")
-        row = self._fetch_one("SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
+        row = self._fetch_one(
+            "SELECT * FROM paper_accounts WHERE account_id = :account_id AND status <> 'deleted'",
+            {"account_id": account_id},
+        )
         if row is None:
             raise PaperTradingNotFound("paper account not found")
         if trusted_owner and row["owner_principal"] != trusted_owner:
@@ -713,12 +717,74 @@ class PaperTradingStore(PgStoreMixin):
     def list_accounts(self, *, trusted_owner: str | None = None) -> dict[str, object]:
         if trusted_owner:
             rows = self._execute(
-                "SELECT * FROM paper_accounts WHERE owner_principal = :owner_principal ORDER BY created_at DESC, account_id DESC",
+                "SELECT * FROM paper_accounts WHERE owner_principal = :owner_principal AND status <> 'deleted' ORDER BY created_at DESC, account_id DESC",
                 {"owner_principal": trusted_owner},
             )
         else:
-            rows = self._execute("SELECT * FROM paper_accounts ORDER BY created_at DESC, account_id DESC")
+            rows = self._execute("SELECT * FROM paper_accounts WHERE status <> 'deleted' ORDER BY created_at DESC, account_id DESC")
         return {"accounts": [dict(row) for row in rows]}
+
+    def delete_account(
+        self, account_id: object, payload: object, *, trusted_owner: str | None = None,
+        trusted_actor: str | None = None,
+    ) -> dict[str, object]:
+        """Tombstone an account while retaining its immutable trading and audit history."""
+
+        if not isinstance(payload, dict):
+            raise ValueError("account deletion request must be an object")
+        owner = _principal(trusted_owner, field="owner_principal") if trusted_owner else None
+        if owner is None:
+            raise PaperTradingForbidden("account deletion requires a trusted owner")
+        actor = _principal(trusted_actor or owner, field="actor_principal")
+        account_id = _id(account_id, prefix="paper_account")
+        expected = _positive_int(payload.get("expected_version"), "expected_version")
+        key = _idempotency(payload.get("idempotency_key"))
+        reason = _text(payload.get("reason") or "用户删除模拟账户", field="reason", max_length=256)
+        request_hash = _hash({
+            "account_id": account_id,
+            "expected_version": expected,
+            "reason": reason,
+        })
+        with self._transaction() as connection:
+            prior = fetch_one(
+                connection,
+                "SELECT * FROM paper_account_audit WHERE owner_principal = :owner AND idempotency_key = :key",
+                {"owner": owner, "key": key},
+            )
+            if prior is not None:
+                if prior["action"] != "account_deleted" or prior["request_hash"] != request_hash:
+                    raise PaperTradingConflict("account deletion idempotency key was reused")
+                return {"account_id": account_id, "deleted": True}
+            account = fetch_one(
+                connection,
+                "SELECT * FROM paper_accounts WHERE account_id = :account_id",
+                {"account_id": account_id},
+            )
+            if account is None or account["owner_principal"] != owner or account["status"] == "deleted":
+                raise PaperTradingNotFound("paper account not found")
+            if int(account["version"]) != expected:
+                raise PaperTradingConflict("paper account version is stale")
+            now = _now()
+            tombstone_name = f"{account['name']} · deleted · {account_id[-8:]}"
+            execute(
+                connection,
+                """UPDATE paper_accounts SET name = :name, status = 'deleted', deleted_at = :at,
+                   updated_at = :at, version = version + 1 WHERE account_id = :account_id""",
+                {"name": tombstone_name, "at": now, "account_id": account_id},
+            )
+            execute(
+                connection,
+                """INSERT INTO paper_account_audit
+                   (audit_id, account_id, owner_principal, actor_principal, action,
+                    idempotency_key, request_hash, details_json, created_at)
+                   VALUES (:audit_id, :account_id, :owner, :actor, 'account_deleted',
+                           :key, :request_hash, :details, :at)""",
+                {"audit_id": _new_id("paper_audit"), "account_id": account_id,
+                 "owner": owner, "actor": actor, "key": key, "request_hash": request_hash,
+                 "details": {"reason": reason, "previous_name": account["name"],
+                             "previous_status": account["status"], "version": expected + 1}, "at": now},
+            )
+        return {"account_id": account_id, "deleted": True}
 
     def _backfill_pool_snapshots(self, connection: Any) -> None:
         rows = execute(connection, "SELECT * FROM stock_pools WHERE current_snapshot_id IS NULL ORDER BY pool_id")
@@ -1194,7 +1260,7 @@ class PaperTradingStore(PgStoreMixin):
         }
         with self._transaction() as connection:
             account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
-            if account is None or account["owner_principal"] != owner:
+            if account is None or account["owner_principal"] != owner or account["status"] != "active":
                 raise PaperTradingNotFound("paper account not found")
             pool = fetch_one(connection, "SELECT * FROM stock_pools WHERE pool_id = :pool_id", {"pool_id": pool_id})
             if pool is None or pool["owner_principal"] != owner:
@@ -1332,7 +1398,7 @@ class PaperTradingStore(PgStoreMixin):
     def list_orders(self, account_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         account_id = _id(account_id, prefix="paper_account")
         account = self._fetch_one("SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
-        if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
+        if account is None or account["status"] == "deleted" or (trusted_owner and account["owner_principal"] != trusted_owner):
             raise PaperTradingNotFound("paper account not found")
         rows = self._execute(
             "SELECT * FROM paper_orders WHERE account_id = :account_id ORDER BY created_at DESC, order_id DESC",
@@ -1343,7 +1409,7 @@ class PaperTradingStore(PgStoreMixin):
     def list_positions(self, account_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         account_id = _id(account_id, prefix="paper_account")
         account = self._fetch_one("SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
-        if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
+        if account is None or account["status"] == "deleted" or (trusted_owner and account["owner_principal"] != trusted_owner):
             raise PaperTradingNotFound("paper account not found")
         rows = self._execute(
             "SELECT * FROM paper_positions WHERE account_id = :account_id ORDER BY symbol ASC",
@@ -1354,7 +1420,7 @@ class PaperTradingStore(PgStoreMixin):
     def list_fills(self, account_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         account_id = _id(account_id, prefix="paper_account")
         account = self._fetch_one("SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
-        if account is None or (trusted_owner and account["owner_principal"] != trusted_owner):
+        if account is None or account["status"] == "deleted" or (trusted_owner and account["owner_principal"] != trusted_owner):
             raise PaperTradingNotFound("paper account not found")
         rows = self._execute(
             "SELECT * FROM paper_fills WHERE account_id = :account_id ORDER BY created_at DESC, fill_id DESC",
@@ -1411,7 +1477,7 @@ class PaperTradingStore(PgStoreMixin):
         request_hash = _hash(request)
         with self._transaction() as connection:
             account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
-            if account is None or account["owner_principal"] != owner:
+            if account is None or account["owner_principal"] != owner or account["status"] != "active":
                 raise PaperTradingNotFound("paper account not found")
             audit = fetch_one(connection, "SELECT * FROM paper_account_audit WHERE owner_principal = :owner AND idempotency_key = :key",
                               {"owner": owner, "key": key})
@@ -1456,7 +1522,7 @@ class PaperTradingStore(PgStoreMixin):
         request_hash = _hash({"account_id": account_id, "pool_id": pool_id, "expected_version": expected})
         with self._transaction() as connection:
             account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
-            if account is None or account["owner_principal"] != owner:
+            if account is None or account["owner_principal"] != owner or account["status"] != "active":
                 raise PaperTradingNotFound("paper account not found")
             if int(account["version"]) != expected:
                 raise PaperTradingConflict("paper account version is stale")
@@ -1531,7 +1597,7 @@ class PaperTradingStore(PgStoreMixin):
         request_hash = _hash(request)
         with self._transaction() as connection:
             account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
-            if account is None or account["owner_principal"] != owner:
+            if account is None or account["owner_principal"] != owner or account["status"] != "active":
                 raise PaperTradingNotFound("paper account not found")
             existing = fetch_one(connection, "SELECT * FROM paper_account_snapshots WHERE account_id = :account_id AND trade_date = :trade_date",
                                  {"account_id": account_id, "trade_date": trade_date})

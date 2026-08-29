@@ -218,6 +218,7 @@ paths:
   /api/product/paper/accounts/{account_id}:
     parameters: [{$ref: "#/components/parameters/AccountId"}]
     get: {summary: 获取 one owner-scoped paper account., responses: *okResponses}
+    delete: {summary: 以审计 tombstone 删除 owner-scoped paper account while retaining immutable history., responses: *okResponses}
   /api/product/paper/pools:
     parameters: [{$ref: "#/components/parameters/Limit"}, {$ref: "#/components/parameters/Offset"}]
     get: {summary: 列出 owner-scoped stock pools., responses: *okResponses}
