@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPaperAccount, createStockPool, deletePaperAccount, exportPaperAccount, getPaperOrder, listPaperLedger, listPaperOrders, listPaperSnapshots, replaceStockPoolSnapshot, settlePaperAccount, submitPaperOrder, updatePaperControls } from "./paper";
+import { createIndexStockPool, createPaperAccount, createStockPool, deletePaperAccount, exportPaperAccount, getPaperOrder, listIndexPoolCatalog, listPaperLedger, listPaperOrders, listPaperSnapshots, listStockPoolMaterializations, refreshIndexStockPool, replaceStockPoolSnapshot, settlePaperAccount, submitPaperOrder, updatePaperControls } from "./paper";
 
 describe("paper trading api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -76,6 +76,25 @@ describe("paper trading api client", () => {
       "/api/product/paper/pools/p1/snapshot",
       expect.objectContaining({ method: "PUT", credentials: "include" }),
     );
+  });
+
+  it("uses bounded Product paths for index catalog, creation and materialization", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({
+      indices: [], pool: { pool_id: "stock_pool_1", pool_type: "index" }, runs: [], run: { run_id: "run_1" },
+    }), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+    await listIndexPoolCatalog("test-token");
+    await createIndexStockPool({ index_symbol: "000300.SH", name: "沪深300" }, "test-token");
+    await listStockPoolMaterializations("stock_pool_1", "test-token");
+    await refreshIndexStockPool("stock_pool_1", "20240131", "test-token");
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/product/paper/index-pools/catalog",
+      "/api/product/paper/index-pools",
+      "/api/product/paper/pools/stock_pool_1/materializations",
+      "/api/product/paper/pools/stock_pool_1/materializations",
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual(expect.objectContaining({ index_symbol: "000300.SH" }));
+    expect(fetchMock.mock.calls[3][1]).toEqual(expect.objectContaining({ method: "POST" }));
   });
 
   it("lists the persisted paper ledger", async () => {

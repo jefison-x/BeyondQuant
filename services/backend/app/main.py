@@ -110,6 +110,13 @@ from .paper_trading import (
     PaperTradingPersistenceError,
     PaperTradingStore,
 )
+from .stock_pool_producer import (
+    StockPoolProducerConflict,
+    StockPoolProducerForbidden,
+    StockPoolProducerNotFound,
+    StockPoolProducerPersistenceError,
+    StockPoolProducerStore,
+)
 from .user_auth import (
     UserAuthError,
     UserAuthPersistenceError,
@@ -171,6 +178,7 @@ agent_store = AgentResearchStore.from_env()
 learning_store = LearningLoopStore.from_env(research_store)
 engineering_store = EngineeringTaskStore.from_env()
 paper_store = PaperTradingStore.from_env()
+stock_pool_producer_store = StockPoolProducerStore.from_env()
 user_store = UserAuthStore.from_env()
 user_policy_store = UserPolicyStore.from_env()
 credential_store = CredentialStore.from_env()
@@ -1066,6 +1074,21 @@ def _paper_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]
         raise HTTPException(status_code=503, detail="paper trading storage is unavailable") from error
 
 
+def _stock_pool_producer_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except StockPoolProducerForbidden as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except StockPoolProducerNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except StockPoolProducerConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except StockPoolProducerPersistenceError as error:
+        raise HTTPException(status_code=503, detail="stock-pool producer storage is unavailable") from error
+
+
 def _user_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return operation()
@@ -1115,7 +1138,9 @@ def _agent_context(request: Request, payload: dict[str, Any]) -> dict[str, str |
     }
 
 
-def _required_agent_context(request: Request, payload: dict[str, Any] | None = None) -> dict[str, str]:
+def _required_agent_context(
+    request: Request, payload: dict[str, Any] | None = None, *, include_workspace: bool = False,
+) -> dict[str, str]:
     context = _agent_context(request, payload or {})
     missing = sorted(field for field, value in context.items() if value is None)
     if missing:
@@ -1128,7 +1153,7 @@ def _required_agent_context(request: Request, payload: dict[str, Any] | None = N
     # workspace_id is an authorization-boundary value, not a domain command
     # field. Persistence stamps it from the validated owner via database
     # triggers, keeping existing framework-neutral domain contracts stable.
-    return {field: value for field, value in complete.items() if field != "workspace_id"}
+    return complete if include_workspace else {field: value for field, value in complete.items() if field != "workspace_id"}
 
 
 def _strategy_payload(payload: object, allowed: set[str]) -> dict[str, Any]:
@@ -2543,6 +2568,47 @@ def create_stock_pool(payload: dict[str, Any], request: Request) -> dict[str, ob
     return _paper_call(lambda: {"pool": paper_store.create_pool(
         {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
         trusted_owner=context["owner_principal"],
+    )})
+
+
+@app.get("/v1/paper/index-pools/catalog")
+def list_index_pool_catalog(request: Request, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    _required_agent_context(request)
+    return _stock_pool_producer_call(lambda: stock_pool_producer_store.list_index_catalog(limit=limit, offset=offset))
+
+
+@app.post("/v1/paper/index-pools", status_code=202)
+def create_index_pool(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload, include_workspace=True)
+    return _stock_pool_producer_call(lambda: stock_pool_producer_store.create_index_pool(
+        payload, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+    ))
+
+
+@app.get("/v1/paper/pools/{pool_id}/producer")
+def get_stock_pool_producer(pool_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _stock_pool_producer_call(lambda: {"producer": stock_pool_producer_store.get_definition(
+        pool_id, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+    )})
+
+
+@app.get("/v1/paper/pools/{pool_id}/materializations")
+def list_stock_pool_materializations(
+    pool_id: str, request: Request, limit: int = 50, offset: int = 0,
+) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _stock_pool_producer_call(lambda: stock_pool_producer_store.list_runs(
+        pool_id, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        limit=limit, offset=offset,
+    ))
+
+
+@app.post("/v1/paper/pools/{pool_id}/materializations", status_code=202)
+def refresh_index_pool(pool_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload, include_workspace=True)
+    return _stock_pool_producer_call(lambda: {"run": stock_pool_producer_store.enqueue_index_refresh(
+        pool_id, payload, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
     )})
 
 

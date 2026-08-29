@@ -1,4 +1,4 @@
-import type { PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot, StockPool, StockPoolSnapshot } from "./types";
+import type { IndexPoolCatalogItem, PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot, StockPool, StockPoolMaterializationRun, StockPoolProducerDefinition, StockPoolSnapshot } from "./types";
 import { createRequestId } from "@/utils/requestId";
 
 const ROOT = "/api/product/paper";
@@ -61,6 +61,41 @@ export function createStockPool(
       description: options.description ?? null,
       weights: options.weights ?? {},
     }),
+  });
+}
+
+export function listIndexPoolCatalog(token: string): Promise<{ indices: IndexPoolCatalogItem[]; total: number }> {
+  return request("/index-pools/catalog", token);
+}
+
+export function createIndexStockPool(
+  payload: { index_symbol: string; name?: string; description?: string; requested_as_of?: string },
+  token: string,
+): Promise<{ pool: StockPool; run: StockPoolMaterializationRun }> {
+  return request("/index-pools", token, {
+    method: "POST",
+    body: JSON.stringify({ ...payload, idempotency_key: createRequestId() }),
+  });
+}
+
+export function getStockPoolProducer(
+  poolId: string, token: string,
+): Promise<{ producer: StockPoolProducerDefinition }> {
+  return request(`/pools/${encodeURIComponent(poolId)}/producer`, token);
+}
+
+export function listStockPoolMaterializations(
+  poolId: string, token: string,
+): Promise<{ runs: StockPoolMaterializationRun[]; total: number }> {
+  return request(`/pools/${encodeURIComponent(poolId)}/materializations`, token);
+}
+
+export function refreshIndexStockPool(
+  poolId: string, requestedAsOf: string | undefined, token: string,
+): Promise<{ run: StockPoolMaterializationRun }> {
+  return request(`/pools/${encodeURIComponent(poolId)}/materializations`, token, {
+    method: "POST",
+    body: JSON.stringify({ requested_as_of: requestedAsOf, idempotency_key: createRequestId() }),
   });
 }
 

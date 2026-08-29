@@ -599,13 +599,13 @@ BLOCKED，不阻塞 Plugin Center 的只读治理能力。
 index no-look-ahead、closed dynamic rule、atomic promotion/recovery 和 Product intent boundary。完成
 Community index `PORT_LOGIC`/`PORT_UX` 与 dynamic placeholder `DROP` 分类；本阶段不改 runtime。
 
-### Phase 67 — Index stock pools（`AUTHORIZED`）
+### Phase 67 — Index stock pools（`COMPLETE`）
 
 实现 validated canonical index catalog、owner-scoped index definition、持久化 materialization run、
 trusted worker、import-trigger/manual idempotent refresh、as-of/history/diff Product API 和 responsive UI。
 只开放 coverage 完整的 closed index set；不得从 Browser/股票池 service 直接访问 Provider。
 
-### Phase 68 — Dynamic stock pools（`AUTHORIZED_AFTER_PHASE_67`）
+### Phase 68 — Dynamic stock pools（`AUTHORIZED`）
 
 实现 ADR-0041 closed rule schema、point-in-time preview、deterministic evaluator、交易日历 cadence、
 waiting/stale/failure recovery、definition/run/history/diff Product API 和可访问 UI。不允许 arbitrary

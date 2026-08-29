@@ -35,6 +35,7 @@ from app.paper_trading import PaperTradingStore
 from app.research import ResearchStore
 from app.security_master import SecurityMasterStore
 from app.signal_producer import SignalJobStore
+from app.stock_pool_producer import StockPoolProducerStore
 from app.user_auth import UserAuthStore
 from app.user_policy import UserPolicyStore
 from app.workspace_tenancy import WorkspaceTenancyStore
@@ -51,6 +52,7 @@ REGISTERED_SCHEMA_DDL: list[str] = [
     *SecurityMasterStore.SCHEMA_DDL,
     *UserPolicyStore.SCHEMA_DDL,
     *PaperTradingStore.SCHEMA_DDL,
+    *StockPoolProducerStore.SCHEMA_DDL,
     *BacktestJobStore.SCHEMA_DDL,
     *AgentResearchStore.SCHEMA_DDL,
     *EngineeringTaskStore.SCHEMA_DDL,

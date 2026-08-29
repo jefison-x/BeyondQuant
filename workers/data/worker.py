@@ -14,6 +14,7 @@ from app.market_data import MarketDataStore
 from app.market_readiness import MarketReadinessStore
 from app.provider_runtime import resolved_tushare_provider
 from app.security_master import SecurityMasterStore
+from app.stock_pool_producer import StockPoolProducerStore
 
 
 def main() -> int:
@@ -24,6 +25,7 @@ def main() -> int:
     market = MarketDataStore.from_env()
     readiness = MarketReadinessStore.from_env()
     securities = SecurityMasterStore.from_env()
+    pool_producers = StockPoolProducerStore.from_env()
     running = True
 
     def provider_factory():
@@ -36,11 +38,16 @@ def main() -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     automation.recover_stale_jobs()
+    pool_producers.recover_stale_runs()
     automation.heartbeat(worker_id)
     next_scheduler_at = 0.0
 
     try:
         while running:
+            pool_run = pool_producers.claim_next_run(worker_id=worker_id)
+            if pool_run is not None:
+                pool_producers.materialize_claimed_index(pool_run, worker_id=worker_id)
+                continue
             repair = automation.claim_data_repair()
             if repair is not None:
                 try:
@@ -114,6 +121,7 @@ def main() -> int:
             automation.heartbeat(worker_id)
             time.sleep(poll_seconds)
     finally:
+        pool_producers.close()
         readiness.close()
         securities.close()
         market.close()

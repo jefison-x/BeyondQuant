@@ -3,19 +3,24 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
+  createIndexStockPool,
   createStockPool,
   deleteStockPool,
   getStockPoolAsOf,
   getStockPool,
+  getStockPoolProducer,
   getStockPoolSnapshot,
+  listIndexPoolCatalog,
+  listStockPoolMaterializations,
   listStockPoolReferences,
   listStockPoolSnapshots,
   listStockPools,
+  refreshIndexStockPool,
   replaceStockPoolSnapshot,
   setStockPoolLifecycle,
   updateStockPoolMetadata,
 } from "@/api/paper";
-import type { StockPool, StockPoolSnapshot } from "@/api/types";
+import type { IndexPoolCatalogItem, StockPool, StockPoolMaterializationRun, StockPoolProducerDefinition, StockPoolSnapshot } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import { statusLabel } from "@/display";
@@ -33,11 +38,16 @@ const pools = ref<Array<Record<string, unknown>>>([]);
 const selected = ref<StockPool | null>(null);
 const snapshots = ref<StockPoolSnapshot[]>([]);
 const references = ref<Array<Record<string, unknown>>>([]);
+const indexCatalog = ref<IndexPoolCatalogItem[]>([]);
+const materializations = ref<StockPoolMaterializationRun[]>([]);
+const producer = ref<StockPoolProducerDefinition | null>(null);
 const activeTab = ref("overview");
 const historicalSnapshot = ref<StockPoolSnapshot | null>(null);
 const asOfDate = ref("");
 const name = ref("");
 const poolType = ref<"custom" | "index" | "dynamic">("custom");
+const indexSymbol = ref("");
+const requestedAsOf = ref("");
 const description = ref("");
 const symbolsText = ref("");
 const weightsText = ref("");
@@ -61,7 +71,7 @@ const snapshotDirty = computed(() => Boolean(selected.value?.pool_type === "cust
   weights: editWeights.value,
   definition: editDefinition.value,
 }) !== snapshotBaseline.value);
-const createDirty = computed(() => showCreate.value && Boolean(name.value || description.value || symbolsText.value || weightsText.value));
+const createDirty = computed(() => showCreate.value && Boolean(name.value || description.value || symbolsText.value || weightsText.value || indexSymbol.value || requestedAsOf.value));
 const dirty = computed(() => metadataDirty.value || snapshotDirty.value || createDirty.value);
 const { confirmDiscard } = useUnsavedChanges(dirty);
 
@@ -77,6 +87,9 @@ function closeCreate() {
   description.value = "";
   symbolsText.value = "";
   weightsText.value = "";
+  indexSymbol.value = "";
+  requestedAsOf.value = "";
+  poolType.value = "custom";
 }
 
 async function refreshPools() {
@@ -119,22 +132,30 @@ async function loadPools() {
   }
 }
 
+async function loadIndexCatalog() {
+  try {
+    indexCatalog.value = (await listIndexPoolCatalog(auth.token)).indices;
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "加载指数目录失败";
+  }
+}
+
 async function submit() {
   error.value = "";
   const symbols = symbolsText.value
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-  if (!name.value.trim()) {
+  if (poolType.value === "custom" && !name.value.trim()) {
     ElMessage.warning("请填写股票池名称");
     return;
   }
-  if (!symbols.length) {
+  if (poolType.value === "custom" && !symbols.length) {
     ElMessage.warning("请填写成分股");
     return;
   }
   let weights: Record<string, number> | undefined;
-  if (weightsText.value.trim()) {
+  if (poolType.value === "custom" && weightsText.value.trim()) {
     try {
       const parsed = JSON.parse(weightsText.value) as Record<string, unknown>;
       weights = Object.fromEntries(
@@ -147,18 +168,30 @@ async function submit() {
   }
   busy.value = true;
   try {
-    const created = await createStockPool(name.value.trim(), symbols, auth.token, {
-      poolType: poolType.value,
-      description: description.value.trim() || undefined,
-      weights,
-    });
+    if (poolType.value === "index" && !indexSymbol.value) {
+      ElMessage.warning("请选择指数");
+      return;
+    }
+    const created = poolType.value === "index"
+      ? await createIndexStockPool({
+          index_symbol: indexSymbol.value,
+          name: name.value.trim() || undefined,
+          description: description.value.trim() || undefined,
+          requested_as_of: requestedAsOf.value?.replaceAll("-", "") || undefined,
+        }, auth.token)
+      : await createStockPool(name.value.trim(), symbols, auth.token, {
+          poolType: "custom", description: description.value.trim() || undefined, weights,
+        });
     selected.value = created.pool;
     showCreate.value = false;
-    ElMessage.success("股票池已创建");
+    ElMessage.success(poolType.value === "index" ? "指数池已创建，正在生成成分快照" : "股票池已创建");
     name.value = "";
     description.value = "";
     symbolsText.value = "";
     weightsText.value = "";
+    indexSymbol.value = "";
+    requestedAsOf.value = "";
+    poolType.value = "custom";
     await loadPools();
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "创建失败";
@@ -181,6 +214,17 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
     selected.value = detail.pool;
     snapshots.value = history.snapshots;
     references.value = refs.references;
+    if (detail.pool.pool_type === "index") {
+      const [definitionResult, runsResult] = await Promise.all([
+        getStockPoolProducer(poolId, auth.token),
+        listStockPoolMaterializations(poolId, auth.token),
+      ]);
+      producer.value = definitionResult.producer;
+      materializations.value = runsResult.runs;
+    } else {
+      producer.value = null;
+      materializations.value = [];
+    }
     editName.value = detail.pool.name ?? "";
     editDescription.value = detail.pool.description ?? "";
     editSymbols.value = (detail.pool.snapshot?.members ?? []).map((item) => item.symbol).join(",");
@@ -192,6 +236,20 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
     }
   } catch (exc) {
     ElMessage.error(exc instanceof Error ? exc.message : "加载股票池详情失败");
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function refreshIndexPool() {
+  if (!selected.value?.pool_id || selected.value.pool_type !== "index") return;
+  busy.value = true;
+  try {
+    await refreshIndexStockPool(selected.value.pool_id, undefined, auth.token);
+    await select({ pool_id: selected.value.pool_id }, false);
+    ElMessage.success("刷新任务已提交");
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "提交刷新失败");
   } finally {
     busy.value = false;
   }
@@ -275,14 +333,20 @@ function returnToConversation() {
   void router.push({ path: "/agent", query: session ? { session } : {} });
 }
 
-onMounted(loadPools);
+onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
 </script>
 
 <template>
   <section class="stock-page">
     <el-dialog v-model="showCreate" title="创建版本化股票池" width="min(680px, 94vw)">
-      <p class="dialog-intro">创建自建股票池；指数与动态池只能由可信 BYQ 数据或计算边界生成。</p>
+      <p class="dialog-intro">自建池由你维护成员；指数池从已验证的 BYQ 指数权重生成不可变快照。</p>
       <el-form label-position="top">
+        <el-form-item label="股票池类型">
+          <el-radio-group v-model="poolType">
+            <el-radio-button value="custom">自建股票池</el-radio-button>
+            <el-radio-button value="index">指数型股票池</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
         <el-row :gutter="14">
           <el-col :xs="24" :sm="12">
             <el-form-item label="股票池名称">
@@ -291,24 +355,43 @@ onMounted(loadPools);
           </el-col>
           <el-col :xs="24" :sm="12">
             <el-form-item label="类型">
-              <el-tag type="primary">自建</el-tag>
-              <small class="card-sub">指数/动态池只能由可信 BYQ 数据或计算边界生成</small>
+              <el-tag type="primary">{{ poolType === "index" ? "指数" : "自建" }}</el-tag>
+              <small class="card-sub">{{ poolType === "index" ? "成员和权重只读，由可信 Data Worker 生成" : "成员由用户维护" }}</small>
             </el-form-item>
           </el-col>
         </el-row>
         <el-form-item label="说明">
           <el-input v-model="description" placeholder="股票池用途或说明" />
         </el-form-item>
-        <el-form-item label="成分股">
+        <template v-if="poolType === 'index'">
+          <el-form-item label="指数">
+            <el-select v-model="indexSymbol" filterable placeholder="选择已具备完整权重的指数" style="width: 100%">
+              <el-option
+                v-for="item in indexCatalog"
+                :key="item.index_symbol"
+                :label="`${item.name}（${item.index_symbol}）`"
+                :value="item.index_symbol"
+              >
+                <span>{{ item.name }}（{{ item.index_symbol }}）</span>
+                <small class="catalog-option-meta">{{ item.member_count }}只 · {{ item.latest_snapshot_date }}</small>
+              </el-option>
+            </el-select>
+          </el-form-item>
+          <el-form-item label="截至日期（可选）">
+            <el-date-picker v-model="requestedAsOf" value-format="YYYY-MM-DD" placeholder="默认使用当前日期前最新完整快照" />
+          </el-form-item>
+          <el-alert v-if="!indexCatalog.length" title="暂无已验证且完整的指数权重，请先在数据中心完成同步。" type="warning" :closable="false" />
+        </template>
+        <el-form-item v-if="poolType === 'custom'" label="成分股">
           <el-input v-model="symbolsText" type="textarea" placeholder="000001.SZ,600000.SH" />
         </el-form-item>
-        <el-form-item label="权重（可选 JSON）">
+        <el-form-item v-if="poolType === 'custom'" label="权重（可选 JSON）">
           <el-input v-model="weightsText" type="textarea" :rows="3" placeholder='{"000001.SZ": 0.6, "600000.SH": 0.4}' />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="closeCreate">取消</el-button>
-        <el-button type="primary" :loading="busy" @click="submit">创建股票池</el-button>
+        <el-button type="primary" :loading="busy" @click="submit">{{ poolType === "index" ? "创建并生成快照" : "创建股票池" }}</el-button>
       </template>
     </el-dialog>
 
@@ -397,6 +480,12 @@ onMounted(loadPools);
             <el-descriptions-item label="状态"><el-tag>{{ statusLabel(selected.status) }}</el-tag></el-descriptions-item>
             <el-descriptions-item label="当前版本">{{ selected.version }}</el-descriptions-item>
             <el-descriptions-item label="成员数">{{ selected.member_count }}</el-descriptions-item>
+            <el-descriptions-item v-if="selected.pool_type === 'index'" label="物化状态">
+              <el-tag>{{ materializations[0]?.status ?? "等待任务" }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item v-if="selected.pool_type === 'index'" label="指数代码">
+              {{ producer?.definition?.index_symbol ?? "-" }}
+            </el-descriptions-item>
           </el-descriptions>
           <el-form label-position="top" class="detail-form">
             <el-form-item label="名称"><el-input v-model="editName" /></el-form-item>
@@ -406,6 +495,7 @@ onMounted(loadPools);
             <el-button v-if="selected.status === 'active'" @click="changeLifecycle('inactive')">停用</el-button>
             <el-button v-else-if="selected.status === 'inactive'" type="primary" @click="changeLifecycle('active')">启用</el-button>
             <el-button type="danger" plain @click="removeSelected">删除</el-button>
+            <el-button v-if="selected.pool_type === 'index'" type="primary" plain :loading="busy" @click="refreshIndexPool">刷新指数成分</el-button>
           </el-form>
         </el-tab-pane>
         <el-tab-pane label="成员与权重" name="members">
@@ -425,6 +515,11 @@ onMounted(loadPools);
           <el-alert title="筛选条件用于解释候选来源；只有已持久化成员才是授权范围。" type="info" :closable="false" />
           <el-input v-model="editDefinition" type="textarea" :rows="10" :readonly="selected.pool_type !== 'custom'" />
           <el-button v-if="selected.pool_type === 'custom'" type="primary" class="detail-action" :disabled="!snapshotDirty || busy" @click="saveSnapshot">随新快照保存</el-button>
+          <el-descriptions v-if="selected.pool_type === 'index' && producer" :column="1" border class="detail-action">
+            <el-descriptions-item label="定义版本">v{{ producer.version }}</el-descriptions-item>
+            <el-descriptions-item label="刷新策略">{{ producer.schedule.cadence }}</el-descriptions-item>
+            <el-descriptions-item label="定义指纹">{{ producer.definition_fingerprint }}</el-descriptions-item>
+          </el-descriptions>
         </el-tab-pane>
         <el-tab-pane label="来源与引用" name="provenance">
           <pre class="quant-result">{{ JSON.stringify(selected.snapshot?.provenance ?? {}, null, 2) }}</pre>
@@ -447,6 +542,17 @@ onMounted(loadPools);
             <el-table-column prop="membership_fingerprint" label="成员指纹" min-width="220" show-overflow-tooltip />
             <el-table-column label="创建时间" min-width="170"><template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template></el-table-column>
           </el-table>
+          <template v-if="selected.pool_type === 'index'">
+            <h3 class="section-title">物化任务</h3>
+            <el-table :data="materializations" size="small" empty-text="暂无任务">
+              <el-table-column prop="status" label="状态" width="130" />
+              <el-table-column prop="requested_as_of" label="请求日期" width="110" />
+              <el-table-column prop="effective_trade_date" label="实际快照日" width="110" />
+              <el-table-column prop="member_count" label="成员" width="80" />
+              <el-table-column prop="error_message" label="说明" min-width="180" show-overflow-tooltip />
+              <el-table-column label="创建时间" min-width="170"><template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template></el-table-column>
+            </el-table>
+          </template>
         </el-tab-pane>
       </el-tabs>
       </el-card>
@@ -480,6 +586,8 @@ onMounted(loadPools);
 }
 
 .dialog-intro { color: var(--byq-text-muted); font-size: 12px; margin: 0 0 14px; }
+.catalog-option-meta { color: var(--byq-text-muted); float: right; margin-left: 18px; }
+.section-title { font-size: 14px; margin: 20px 0 10px; }
 .edit-state { color: var(--byq-text-muted); display: inline-block; font-size: 12px; margin: 0 8px 8px 0; }
 .stock-list-pane, .stock-detail-pane { min-width: 0; }
 .detail-empty { min-height: 360px; display: grid; place-items: center; }
@@ -553,3 +661,7 @@ onMounted(loadPools);
   }
 }
 </style>
+  getStockPoolProducer,
+  listIndexPoolCatalog,
+  listStockPoolMaterializations,
+  refreshIndexStockPool,

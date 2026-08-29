@@ -1517,6 +1517,53 @@ def product_stock_pool_create(request: Request, payload: dict[str, object]) -> d
     )
 
 
+@router.get("/paper/index-pools/catalog")
+def product_index_pool_catalog(request: Request, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET", f"/v1/paper/index-pools/catalog?limit={limit}&offset={offset}",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.post("/paper/index-pools", status_code=202)
+def product_index_pool_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "POST", "/v1/paper/index-pools", payload, headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/paper/pools/{pool_id}/producer")
+def product_stock_pool_producer(pool_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET", f"/v1/paper/pools/{pool_id}/producer", headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/paper/pools/{pool_id}/materializations")
+def product_stock_pool_materializations(
+    pool_id: str, request: Request, limit: int = 50, offset: int = 0,
+) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET", f"/v1/paper/pools/{pool_id}/materializations?limit={limit}&offset={offset}",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.post("/paper/pools/{pool_id}/materializations", status_code=202)
+def product_stock_pool_materialization_create(
+    pool_id: str, request: Request, payload: dict[str, object],
+) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "POST", f"/v1/paper/pools/{pool_id}/materializations", payload,
+        headers=_trusted_agent_headers(request),
+    )
+
+
 @router.get("/paper/pools/{pool_id}")
 def product_stock_pool_get(pool_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
