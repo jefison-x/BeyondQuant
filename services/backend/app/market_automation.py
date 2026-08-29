@@ -28,6 +28,7 @@ from .data_provider import (
 from .data_sync import DataSyncStore, _safe_provider_error
 from .db import PgStoreMixin, execute, fetch_one
 from .market_data import MarketDataStore
+from .index_catalog import INDEX_WEIGHT_LOOKBACK_DAYS, SUPPORTED_INDEXES
 from .market_readiness import MarketReadinessStore
 from .pg_import import KEEP_NEW
 
@@ -207,6 +208,21 @@ class MarketAutomationStore(PgStoreMixin):
             completed_at TIMESTAMPTZ,
             error_message TEXT
         )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS market_index_catalog_sync_runs (
+            run_id TEXT PRIMARY KEY,
+            requested_as_of TEXT NOT NULL,
+            status TEXT NOT NULL,
+            result_json JSONB NOT NULL,
+            requested_by TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            completed_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS market_index_catalog_sync_runs_date_idx
+            ON market_index_catalog_sync_runs(requested_as_of DESC, created_at DESC)
         """,
     ]
 
@@ -849,6 +865,10 @@ class MarketAutomationStore(PgStoreMixin):
                 """SELECT * FROM market_sync_run_requests
                    ORDER BY created_at DESC LIMIT 10""",
             )],
+            "index_catalog_sync_runs": self._execute(
+                """SELECT run_id,requested_as_of,status,result_json,requested_by,created_at,completed_at
+                   FROM market_index_catalog_sync_runs ORDER BY created_at DESC LIMIT 10""",
+            ),
         }
 
     def market_session_context(self, *, now: datetime | None = None) -> dict[str, object]:
@@ -1026,6 +1046,67 @@ def sync_declared_inputs(
     return counts
 
 
+def sync_supported_index_catalog(
+    as_of_date: str, *, provider: TushareProvider, readiness_store: MarketReadinessStore,
+) -> dict[str, object]:
+    """Refresh the closed canonical index set without widening Provider access."""
+    end = datetime.strptime(str(as_of_date), "%Y%m%d")
+    start = end - timedelta(days=INDEX_WEIGHT_LOOKBACK_DAYS)
+    items: list[dict[str, object]] = []
+    for definition in SUPPORTED_INDEXES:
+        symbol = definition["index_symbol"]
+        try:
+            result = provider.fetch_index_weights(symbol, start.strftime("%Y%m%d"), end.strftime("%Y%m%d"))
+            by_period: dict[str, list[object]] = {}
+            for weight in result.weights:
+                by_period.setdefault(str(weight.trade_date)[:6], []).append(weight)
+            imported = 0
+            for period, weights in sorted(by_period.items()):
+                imported += readiness_store.import_index_weights(
+                    symbol, period, weights, result.provenance.as_dict(),
+                )
+            latest = readiness_store._fetch_one(
+                """SELECT snapshot_date,member_count,content_sha256,verified_at
+                   FROM market_index_weight_snapshots
+                   WHERE index_symbol=:symbol AND status='verified' AND snapshot_date<=:date
+                   ORDER BY snapshot_date DESC LIMIT 1""",
+                {"symbol": symbol, "date": as_of_date},
+            )
+            items.append({
+                "index_symbol": symbol,
+                "name": definition["name"],
+                "status": "ready" if latest is not None else "waiting_for_data",
+                "rows_imported": imported,
+                "latest_snapshot_date": None if latest is None else latest["snapshot_date"],
+                "member_count": 0 if latest is None else int(latest["member_count"]),
+            })
+        except Exception as error:
+            existing = readiness_store._fetch_one(
+                """SELECT snapshot_date,member_count FROM market_index_weight_snapshots
+                   WHERE index_symbol=:symbol AND status='verified' AND snapshot_date<=:date
+                   ORDER BY snapshot_date DESC LIMIT 1""",
+                {"symbol": symbol, "date": as_of_date},
+            )
+            items.append({
+                "index_symbol": symbol,
+                "name": definition["name"],
+                "status": "stale" if existing is not None else "failed",
+                "rows_imported": 0,
+                "latest_snapshot_date": None if existing is None else existing["snapshot_date"],
+                "member_count": 0 if existing is None else int(existing["member_count"]),
+                "error_code": type(error).__name__,
+            })
+    ready = sum(item["status"] == "ready" for item in items)
+    return {
+        "schema_version": "index-catalogue-sync.v1",
+        "requested_as_of": as_of_date,
+        "status": "completed" if ready == len(items) else "partial" if ready else "failed",
+        "ready_count": ready,
+        "total": len(items),
+        "items": items,
+    }
+
+
 def run_scheduler_cycle(
     store: MarketAutomationStore,
     *,
@@ -1033,6 +1114,7 @@ def run_scheduler_cycle(
     worker_id: str,
     now: datetime | None = None,
     force: bool = False,
+    readiness_store: MarketReadinessStore | None = None,
 ) -> list[dict[str, object]]:
     local = _local_now(now)
     config = store.get_config()
@@ -1051,6 +1133,25 @@ def run_scheduler_cycle(
     last = local.strftime("%Y%m%d")
     provider = provider_factory()
     store.refresh_calendar(provider, start_date=first, end_date=last)
+    if readiness_store is not None:
+        started = _now()
+        index_result = sync_supported_index_catalog(
+            local_date, provider=provider, readiness_store=readiness_store,
+        )
+        store._execute(
+            """INSERT INTO market_index_catalog_sync_runs
+               (run_id,requested_as_of,status,result_json,requested_by,created_at,completed_at)
+               VALUES (:run,:date,:status,:result,:by,:created,:completed)""",
+            {
+                "run": f"index_catalog_sync_{uuid.uuid4().hex}",
+                "date": local_date,
+                "status": index_result["status"],
+                "result": index_result,
+                "by": "run-now" if force else "scheduler",
+                "created": started,
+                "completed": _now(),
+            },
+        )
     created = store.enqueue_due_sessions(now=local, force=force)
     store.heartbeat(
         worker_id,

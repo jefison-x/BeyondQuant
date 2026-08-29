@@ -289,6 +289,9 @@ check_smoke() {
   if docker compose cp scripts/evidence/phase67-seed.py backend:/tmp/phase67-seed.py >/dev/null \
     && docker compose exec -T backend python /tmp/phase67-seed.py; then
     ok "Phase 67 validated index fixture"; else bad "Phase 67 validated index fixture"; fi
+  if docker compose cp scripts/evidence/phase70-seed.py backend:/tmp/phase70-seed.py >/dev/null \
+    && docker compose exec -T backend python /tmp/phase70-seed.py; then
+    ok "Phase 70 multi-index catalogue fixture"; else bad "Phase 70 multi-index catalogue fixture"; fi
   if docker compose cp scripts/evidence/phase68-seed.py backend:/tmp/phase68-seed.py >/dev/null \
     && docker compose exec -T backend python /tmp/phase68-seed.py; then
     ok "Phase 68 dynamic inputs fixture"; else bad "Phase 68 dynamic inputs fixture"; fi

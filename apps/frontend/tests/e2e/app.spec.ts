@@ -81,7 +81,8 @@ async function mockAdminOps(page: Page) {
         source: { configured: false, effective_source: "none", credentials: [], encryption: { configured: true, status: "ready" }, secrets_exposed: false, can_manage: true },
         jobs: [], security_master_jobs: [], security_master: { schema_version: "security-master.v1", quality: "empty", latest_snapshot: null, total: 0, status_counts: { L: 0, P: 0, D: 0 }, exchange_counts: { SSE: 0, SZSE: 0, BSE: 0 } },
         coverage: { checked_at: "2026-08-24T00:00:00Z", provider: "tushare", scope: "persisted_observations", quality: "empty", completeness_claimed: false, row_count: 0, symbol_count: 0, source_issues: 0, ohlc_issues: 0, groups: [], symbols: [] },
-        automation: { schema_version: "market-sync-automation.v1", config: { enabled: false, schedule_time: "18:30", timezone: "Asia/Shanghai", catchup_days: 7, security_master_enabled: true, datasets: ["trade_calendar", "stock_daily"], version: 1, updated_by: "system", updated_at: "2026-08-25T00:00:00Z" }, worker: { healthy: false, heartbeat_at: null, last_error: null }, latest_calendar_open_date: null, latest_complete_session: null, next_run_at: "2026-08-25T18:30:00+08:00", jobs: [], run_requests: [] },
+        automation: { schema_version: "market-sync-automation.v1", config: { enabled: false, schedule_time: "18:30", timezone: "Asia/Shanghai", catchup_days: 7, security_master_enabled: true, datasets: ["trade_calendar", "stock_daily"], version: 1, updated_by: "system", updated_at: "2026-08-25T00:00:00Z" }, worker: { healthy: false, heartbeat_at: null, last_error: null }, latest_calendar_open_date: null, latest_complete_session: null, next_run_at: "2026-08-25T18:30:00+08:00", jobs: [], run_requests: [], index_catalog_sync_runs: [] },
+        index_catalog: { schema_version: "index-catalogue.v1", total: 6, available_total: 0, indices: [] },
       }),
     }),
   );

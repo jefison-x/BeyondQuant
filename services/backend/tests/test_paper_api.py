@@ -114,13 +114,18 @@ def test_index_pool_product_boundary_enqueues_trusted_materialization(monkeypatc
         (index_symbol,period,row_count,content_sha256,provenance_json,verified_at)
         VALUES ('000300.SH','202401',1,'api-period',:provenance,now())""",
         {"provenance": {"provider": "tushare"}})
+    producer._execute("""INSERT INTO market_index_weight_snapshots
+        (index_symbol,snapshot_date,member_count,weight_sum,content_sha256,provenance_json,status,verified_at)
+        VALUES ('000300.SH','20240102',1,'100','api-snapshot',:provenance,'verified',now())""",
+        {"provenance": {"provider": "tushare"}})
     monkeypatch.setattr(main, "paper_store", paper)
     monkeypatch.setattr(main, "stock_pool_producer_store", producer)
     client = TestClient(main.app)
 
     catalog = client.get("/v1/paper/index-pools/catalog", headers=headers)
     assert catalog.status_code == 200
-    assert catalog.json()["indices"][0]["index_symbol"] == "000300.SH"
+    available = [item for item in catalog.json()["indices"] if item["selectable"]]
+    assert [item["index_symbol"] for item in available] == ["000300.SH"]
     created = client.post("/v1/paper/index-pools", headers=headers, json={
         "index_symbol": "000300.SH", "requested_as_of": "20240131", "idempotency_key": "api-index-create",
     })

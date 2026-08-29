@@ -52,3 +52,16 @@ Preview 是非权威结果，不得被 Research/Backtest/Paper 引用。Agent-to
 - frozen Research/Backtest/Paper references and replay stability；
 - Product API/OpenAPI/typed client parity、secret/internal-schema negative tests；
 - real PostgreSQL two-user journey、desktop/mobile Chrome review、same-origin Network evidence。
+
+## Phase 70 `index-catalogue.v1` / `market-index-weights-v2`
+
+指数 Product 目录投影 BYQ 封闭 canonical 候选集合，并为每项返回 `readiness`、`selectable`、
+最新 verified snapshot 日期、成员数和 completeness hash。没有精确 verified snapshot 的候选可见但
+不可创建；`INDEX_NAMES`、月度非空记录或 Browser 输入都不是 authority。
+
+`market-index-weights-v2` completeness 以 `(index_symbol, snapshot_date)` 为 identity。只有成员
+canonical/唯一、权重 finite/positive、percent sum 完整且内容哈希稳定的 snapshot 才标记 verified。
+Producer create/materialize 必须直接查询该 evidence，仍执行 requested-as-of no-look-ahead。
+
+Trusted Data Worker 每次最多同步合同内六个指数和 62 日窗口。逐指数失败保留安全状态和旧 verified
+snapshot，不影响其他指数、daily session completeness 或 current pool pointer。

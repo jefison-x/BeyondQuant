@@ -452,6 +452,30 @@ function securityStatusLabel(value: string) {
               <el-descriptions-item label="最近心跳">{{ status.automation.worker.heartbeat_at ?? "-" }}</el-descriptions-item>
               <el-descriptions-item label="最近错误">{{ status.automation.worker.last_error ?? "无" }}</el-descriptions-item>
             </el-descriptions>
+            <div class="card-header index-catalog-header">
+              <div>
+                <strong>指数股票池数据</strong>
+                <p>仅已通过精确快照成员数、权重和与内容哈希验证的指数可用于创建股票池。</p>
+              </div>
+              <el-tag :type="status.index_catalog.available_total === status.index_catalog.total ? 'success' : 'warning'">
+                {{ status.index_catalog.available_total }}/{{ status.index_catalog.total }} 可用
+              </el-tag>
+            </div>
+            <el-table :data="status.index_catalog.indices" size="small" empty-text="暂无指数目录">
+              <el-table-column prop="name" label="指数" min-width="130" />
+              <el-table-column prop="index_symbol" label="代码" min-width="120" />
+              <el-table-column label="状态" width="110">
+                <template #default="scope">
+                  <el-tag :type="scope.row.selectable ? 'success' : 'warning'">
+                    {{ scope.row.selectable ? "可创建" : "等待同步" }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="latest_snapshot_date" label="最新快照" min-width="120">
+                <template #default="scope">{{ scope.row.latest_snapshot_date ?? "-" }}</template>
+              </el-table-column>
+              <el-table-column prop="member_count" label="成分数" width="90" />
+            </el-table>
             <el-table :data="status.automation.jobs" empty-text="暂无自动同步任务" size="small">
               <el-table-column prop="trade_date" label="交易日" width="110" /><el-table-column prop="status" label="状态" width="100" /><el-table-column prop="attempts" label="尝试" width="80" /><el-table-column prop="rows_received" label="获取" width="100" /><el-table-column prop="rows_inserted" label="新增" width="100" /><el-table-column prop="rows_kept" label="保留" width="100" /><el-table-column prop="error_message" label="说明" min-width="180" />
             </el-table>

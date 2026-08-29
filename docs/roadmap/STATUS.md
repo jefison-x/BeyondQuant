@@ -1,13 +1,13 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=69 -->
+<!-- byq:current-completed-phase=70 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 69**——依据 ADR-0041 统一自建、指数和动态股票池目录，提供
-  封闭 readiness 与不可变快照 diff，安全导入 producer intent，并完成运维、重启、隔离和
-  responsive Product browser 闭环；Browser 只访问 Gateway/Product API。
+- 当前已完成阶段：**Phase 70**——依据 ADR-0042 将指数股票池从单一沪深300供给扩展为
+  六个 canonical 候选的可信目录，使用精确权重快照完整性、逐指数失败隔离和有界 Data Worker
+  同步；Product 诚实区分可创建与等待数据，Browser 只访问 Gateway/Product API。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -56,6 +56,7 @@ history 推断项目状态。
 - Market Research Web Search evidence boundary：**ADR-0039**
 - Plugin Center deployment control plane：**ADR-0040**
 - trusted stock-pool producers：**ADR-0041**
+- trusted multi-index catalogue：**ADR-0042**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -264,9 +265,16 @@ portable intent；导入后强制 `inactive` pool 与 `draft` definition，必�
 Backend/Gateway restart recovery，以及 Chrome DevTools MCP desktop/mobile/same-origin/Console/
 Lighthouse 验收均通过；证据位于 `docs/evidence/phase-69/`。
 
+Phase 70 Index Catalogue Coverage Closure 已建立六个 canonical 候选的 BYQ-owned 封闭目录，
+由 trusted Data Worker 以 62 日窗口逐指数同步并隔离失败。`market-index-weights-v2` 使用精确
+`(index_symbol,snapshot_date)` evidence 验证成员、权重和与内容哈希；旧月度数据只在重新验证后
+进入目录。Product API、Data Center 和股票池创建界面展示可用/等待状态，只有 verified snapshot
+可创建。Backend/Gateway/frontend、PostgreSQL forward repair、完整 Compose、真实 Product API 和
+Chrome desktop/mobile 验收证据位于 `docs/evidence/phase-70/`。
+
 ## 当前授权边界
 
-- Phase 49-69 与相应 Accepted ADR/计划均已完成。
+- Phase 49-70 与相应 Accepted ADR/计划均已完成。
 - 当前没有被状态文件授权的下一 Product Phase；继续开发必须先由维护者明确授权并接受相关 ADR。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。

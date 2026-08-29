@@ -44,6 +44,7 @@ const selected = ref<StockPool | null>(null);
 const snapshots = ref<StockPoolSnapshot[]>([]);
 const references = ref<Array<Record<string, unknown>>>([]);
 const indexCatalog = ref<IndexPoolCatalogItem[]>([]);
+const availableIndexCount = computed(() => indexCatalog.value.filter((item) => item.selectable).length);
 const materializations = ref<StockPoolMaterializationRun[]>([]);
 const producer = ref<StockPoolProducerDefinition | null>(null);
 const readiness = ref<StockPoolReadiness | null>(null);
@@ -220,6 +221,12 @@ async function submit() {
   try {
     if (poolType.value === "index" && !indexSymbol.value) {
       ElMessage.warning("请选择指数");
+      return;
+    }
+    if (poolType.value === "index" && !indexCatalog.value.some(
+      (item) => item.index_symbol === indexSymbol.value && item.selectable,
+    )) {
+      ElMessage.warning("该指数尚无已验证的完整权重快照");
       return;
     }
     const created = poolType.value === "index"
@@ -467,16 +474,24 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
                 :key="item.index_symbol"
                 :label="`${item.name}（${item.index_symbol}）`"
                 :value="item.index_symbol"
+                :disabled="!item.selectable"
               >
                 <span>{{ item.name }}（{{ item.index_symbol }}）</span>
-                <small class="catalog-option-meta">{{ item.member_count }}只 · {{ item.latest_snapshot_date }}</small>
+                <small class="catalog-option-meta">
+                  {{ item.selectable ? `${item.member_count}只 · ${item.latest_snapshot_date}` : "等待可信数据同步" }}
+                </small>
               </el-option>
             </el-select>
           </el-form-item>
           <el-form-item label="截至日期（可选）">
             <el-date-picker v-model="requestedAsOf" value-format="YYYY-MM-DD" placeholder="默认使用当前日期前最新完整快照" />
           </el-form-item>
-          <el-alert v-if="!indexCatalog.length" title="暂无已验证且完整的指数权重，请先在数据中心完成同步。" type="warning" :closable="false" />
+          <el-alert
+            v-if="availableIndexCount < indexCatalog.length"
+            :title="`当前 ${availableIndexCount}/${indexCatalog.length} 个指数具备已验证快照；其余指数将在数据中心可信同步完成后开放。`"
+            type="warning"
+            :closable="false"
+          />
         </template>
         <template v-if="poolType === 'dynamic'">
           <el-alert title="规则仅支持 BYQ 白名单字段和运算符，不执行 Python、SQL、URL、插件或模型表达式。" type="info" :closable="false" />

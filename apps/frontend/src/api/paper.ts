@@ -64,7 +64,12 @@ export function createStockPool(
   });
 }
 
-export function listIndexPoolCatalog(token: string): Promise<{ indices: IndexPoolCatalogItem[]; total: number }> {
+export function listIndexPoolCatalog(token: string): Promise<{
+  schema_version: "index-catalogue.v1";
+  indices: IndexPoolCatalogItem[];
+  total: number;
+  available_total: number;
+}> {
   return request("/index-pools/catalog", token);
 }
 

@@ -393,12 +393,15 @@ export interface StockPool {
 export interface IndexPoolCatalogItem {
   index_symbol: string;
   name: string;
-  latest_snapshot_date: string;
+  family: string;
+  latest_snapshot_date: string | null;
   member_count: number;
   source: "tushare";
   dataset_contract: string;
-  completeness_hash: string;
-  verified_at: string;
+  completeness_hash: string | null;
+  verified_at: string | null;
+  readiness: "current" | "stale" | "waiting_for_data" | "failed";
+  selectable: boolean;
 }
 
 export interface StockPoolMaterializationRun {
@@ -749,6 +752,12 @@ export interface DataCenterStatus {
   security_master: SecurityMasterStatus;
   coverage: DataCoverageAudit;
   automation: MarketSyncAutomation;
+  index_catalog: {
+    schema_version: "index-catalogue.v1";
+    indices: IndexPoolCatalogItem[];
+    total: number;
+    available_total: number;
+  };
 }
 
 export interface MarketSyncAutomationConfig {
@@ -805,6 +814,7 @@ export interface MarketSyncAutomation {
   next_run_at: string;
   jobs: MarketSessionSyncJob[];
   run_requests: Array<Record<string, unknown>>;
+  index_catalog_sync_runs: Array<Record<string, unknown>>;
 }
 
 export interface SecurityMasterSnapshot {
