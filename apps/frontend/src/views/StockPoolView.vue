@@ -7,9 +7,11 @@ import {
   createIndexStockPool,
   createStockPool,
   deleteStockPool,
+  diffStockPoolSnapshots,
   getStockPoolAsOf,
   getStockPool,
   getStockPoolProducer,
+  getStockPoolReadiness,
   getStockPoolSnapshot,
   listIndexPoolCatalog,
   listStockPoolMaterializations,
@@ -23,7 +25,7 @@ import {
   updateStockPoolMetadata,
   updateDynamicStockPoolDefinition,
 } from "@/api/paper";
-import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogItem, StockPool, StockPoolMaterializationRun, StockPoolProducerDefinition, StockPoolSnapshot } from "@/api/types";
+import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogItem, StockPool, StockPoolMaterializationRun, StockPoolProducerDefinition, StockPoolReadiness, StockPoolSnapshot, StockPoolSnapshotDiff } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import { statusLabel } from "@/display";
@@ -44,6 +46,8 @@ const references = ref<Array<Record<string, unknown>>>([]);
 const indexCatalog = ref<IndexPoolCatalogItem[]>([]);
 const materializations = ref<StockPoolMaterializationRun[]>([]);
 const producer = ref<StockPoolProducerDefinition | null>(null);
+const readiness = ref<StockPoolReadiness | null>(null);
+const snapshotDiff = ref<StockPoolSnapshotDiff | null>(null);
 const activeTab = ref("overview");
 const historicalSnapshot = ref<StockPoolSnapshot | null>(null);
 const asOfDate = ref("");
@@ -258,14 +262,17 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
   if (!poolId) return;
   busy.value = true;
   try {
-    const [detail, history, refs] = await Promise.all([
+    const [detail, history, refs, readinessResult] = await Promise.all([
       getStockPool(poolId, auth.token),
       listStockPoolSnapshots(poolId, auth.token),
       listStockPoolReferences(poolId, auth.token),
+      getStockPoolReadiness(poolId, auth.token),
     ]);
     selected.value = detail.pool;
     snapshots.value = history.snapshots;
     references.value = refs.references;
+    readiness.value = readinessResult.readiness;
+    snapshotDiff.value = null;
     if (detail.pool.pool_type === "index" || detail.pool.pool_type === "dynamic") {
       const [definitionResult, runsResult] = await Promise.all([
         getStockPoolProducer(poolId, auth.token),
@@ -290,6 +297,20 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
     }
   } catch (exc) {
     ElMessage.error(exc instanceof Error ? exc.message : "加载股票池详情失败");
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function compareLatestSnapshots() {
+  if (!selected.value?.pool_id || snapshots.value.length < 2) return;
+  busy.value = true;
+  try {
+    snapshotDiff.value = (await diffStockPoolSnapshots(
+      selected.value.pool_id, snapshots.value[1].snapshot_id, snapshots.value[0].snapshot_id, auth.token,
+    )).diff;
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "快照差异加载失败");
   } finally {
     busy.value = false;
   }
@@ -582,6 +603,7 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
             <el-descriptions-item label="状态"><el-tag>{{ statusLabel(selected.status) }}</el-tag></el-descriptions-item>
             <el-descriptions-item label="当前版本">{{ selected.version }}</el-descriptions-item>
             <el-descriptions-item label="成员数">{{ selected.member_count }}</el-descriptions-item>
+            <el-descriptions-item label="数据就绪度"><el-tag>{{ readiness?.state ?? "-" }}</el-tag></el-descriptions-item>
             <el-descriptions-item v-if="selected.pool_type !== 'custom'" label="物化状态">
               <el-tag>{{ materializations[0]?.status ?? "等待任务" }}</el-tag>
             </el-descriptions-item>
@@ -639,6 +661,17 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="快照历史" name="history">
+          <div class="button-row">
+            <el-button :disabled="snapshots.length < 2" @click="compareLatestSnapshots">比较最近两个快照</el-button>
+            <span v-if="snapshots.length < 2" class="edit-state">至少需要两个不可变快照</span>
+          </div>
+          <el-descriptions v-if="snapshotDiff" :column="3" border class="detail-action" data-testid="stock-pool-snapshot-diff">
+            <el-descriptions-item label="新增">{{ snapshotDiff.added.length }}</el-descriptions-item>
+            <el-descriptions-item label="移除">{{ snapshotDiff.removed.length }}</el-descriptions-item>
+            <el-descriptions-item label="权重变化">{{ snapshotDiff.weight_changed.length }}</el-descriptions-item>
+            <el-descriptions-item label="保留成员">{{ snapshotDiff.retained_count }}</el-descriptions-item>
+            <el-descriptions-item label="新增代码" :span="2">{{ snapshotDiff.added.map((item) => item.symbol).join("、") || "-" }}</el-descriptions-item>
+          </el-descriptions>
           <div v-if="selected.pool_type === 'index'" class="as-of-row">
             <el-date-picker v-model="asOfDate" value-format="YYYY-MM-DD" placeholder="选择 as-of 日期" />
             <el-button @click="resolveAsOf">按日期解析（无前视）</el-button>

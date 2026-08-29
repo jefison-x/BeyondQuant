@@ -669,10 +669,12 @@ def test_product_stock_pool_depth_routes_forward_methods_and_owner(monkeypatch) 
     assert client.patch("/api/product/paper/pools/stock_pool_1/metadata", headers=auth, json={}).status_code == 200
     assert client.put("/api/product/paper/pools/stock_pool_1/snapshot", headers=auth, json={}).status_code == 200
     assert client.get("/api/product/paper/pools/stock_pool_1/snapshots", headers=auth).status_code == 200
+    assert client.get("/api/product/paper/pools/stock_pool_1/readiness", headers=auth).status_code == 200
+    assert client.get("/api/product/paper/pools/stock_pool_1/snapshot-diff?from_snapshot_id=a&to_snapshot_id=b", headers=auth).status_code == 200
     assert client.get("/api/product/paper/pools/stock_pool_1/as-of/20240131", headers=auth).status_code == 200
     assert client.patch("/api/product/paper/pools/stock_pool_1/lifecycle", headers=auth, json={}).status_code == 200
     assert client.get("/api/product/paper/pools/stock_pool_1/references", headers=auth).status_code == 200
-    assert [item[0] for item in captured] == ["PATCH", "PUT", "GET", "GET", "PATCH", "GET"]
+    assert [item[0] for item in captured] == ["PATCH", "PUT", "GET", "GET", "GET", "GET", "PATCH", "GET"]
     assert all(item[2]["x-byq-owner-principal"] == "product-user" for item in captured)
 
 

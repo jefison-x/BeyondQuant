@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDynamicStockPool, createIndexStockPool, createPaperAccount, createStockPool, deletePaperAccount, exportPaperAccount, getPaperOrder, listIndexPoolCatalog, listPaperLedger, listPaperOrders, listPaperSnapshots, listStockPoolMaterializations, previewDynamicStockPool, refreshIndexStockPool, replaceStockPoolSnapshot, settlePaperAccount, submitPaperOrder, updateDynamicStockPoolDefinition, updatePaperControls } from "./paper";
+import { createDynamicStockPool, createIndexStockPool, createPaperAccount, createStockPool, deletePaperAccount, diffStockPoolSnapshots, exportPaperAccount, getPaperOrder, getStockPoolReadiness, listIndexPoolCatalog, listPaperLedger, listPaperOrders, listPaperSnapshots, listStockPoolMaterializations, previewDynamicStockPool, refreshIndexStockPool, replaceStockPoolSnapshot, settlePaperAccount, submitPaperOrder, updateDynamicStockPoolDefinition, updatePaperControls } from "./paper";
 import type { DynamicStockPoolRule } from "./types";
 
 describe("paper trading api client", () => {
@@ -118,6 +118,19 @@ describe("paper trading api client", () => {
       "/api/product/paper/pools/dynamic-1/producer",
     ]);
     expect(fetchMock.mock.calls[2][1]).toEqual(expect.objectContaining({ method: "PUT" }));
+  });
+
+  it("reads normalized readiness and immutable snapshot diffs", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
+      new Response(JSON.stringify({ readiness: { state: "current" }, diff: { added: [] } }), { status: 200 }),
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+    await getStockPoolReadiness("pool 1", "test-token");
+    await diffStockPoolSnapshots("pool 1", "snapshot a", "snapshot b", "test-token");
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/product/paper/pools/pool%201/readiness",
+      "/api/product/paper/pools/pool%201/snapshot-diff?from_snapshot_id=snapshot+a&to_snapshot_id=snapshot+b",
+    ]);
   });
 
   it("lists the persisted paper ledger", async () => {

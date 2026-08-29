@@ -420,6 +420,27 @@ export interface StockPoolMaterializationRun {
   input_manifest?: Record<string, unknown>;
 }
 
+export interface StockPoolReadiness {
+  schema_version: "stock-pool-readiness.v1";
+  pool_id: string;
+  state: "current" | "stale" | "waiting_for_data" | "failed" | "paused";
+  current_snapshot_id?: string | null;
+  latest_run_id?: string | null;
+  latest_run_status?: string | null;
+  message?: string | null;
+}
+
+export interface StockPoolSnapshotDiff {
+  schema_version: "stock-pool-snapshot-diff.v1";
+  pool_id: string;
+  from_snapshot_id: string;
+  to_snapshot_id: string;
+  added: Array<{ symbol: string; weight?: string | null }>;
+  removed: Array<{ symbol: string; weight?: string | null }>;
+  weight_changed: Array<{ symbol: string; from_weight?: string | null; to_weight?: string | null }>;
+  retained_count: number;
+}
+
 export interface StockPoolProducerDefinition {
   definition_id: string;
   pool_id: string;

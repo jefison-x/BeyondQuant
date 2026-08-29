@@ -188,6 +188,24 @@ class OperationsStore(PgStoreMixin):
                        FROM operations_audit
                        ORDER BY created_at DESC, audit_id DESC LIMIT 30""",
                 )
+                stock_pool_producers = execute(
+                    connection,
+                    """SELECT producer_kind,status,COUNT(*)::bigint AS count
+                       FROM stock_pool_producer_definitions
+                       GROUP BY producer_kind,status ORDER BY producer_kind,status""",
+                )
+                stock_pool_runs = execute(
+                    connection,
+                    """SELECT status,COUNT(*)::bigint AS count
+                       FROM stock_pool_materialization_runs GROUP BY status ORDER BY status""",
+                )
+                recent_stock_pool_failures = execute(
+                    connection,
+                    """SELECT run_id,pool_id,status,error_code,error_message,finished_at
+                       FROM stock_pool_materialization_runs
+                       WHERE status IN ('waiting_for_data','failed','cancelled')
+                       ORDER BY created_at DESC,run_id DESC LIMIT 20""",
+                )
                 budget = fetch_one(
                     connection,
                     """SELECT policy_id, enabled, alert_total_tokens, alert_requests,
@@ -243,6 +261,12 @@ class OperationsStore(PgStoreMixin):
                 "projection": "normalized_agent_runs",
                 "recent_runs": recent_runs,
                 "raw_dsh_events": False,
+            },
+            "stock_pool_producers": {
+                "definitions": stock_pool_producers,
+                "runs": stock_pool_runs,
+                "recent_non_success": recent_stock_pool_failures,
+                "raw_worker_payload": False,
             },
             "access": {
                 "principal_groups": access_counts,

@@ -61,7 +61,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "68")
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "69")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
@@ -875,6 +875,22 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("/dynamic-pools/preview", frontend)
         for forbidden in ("eval(", "exec(", "subprocess", "requests.", "http://", "https://"):
             self.assertNotIn(forbidden, evaluator)
+
+    def test_phase69_stock_pool_closure_is_normalized_and_imports_are_inactive(self) -> None:
+        producer = (ROOT / "services/backend/app/stock_pool_producer.py").read_text()
+        paper = (ROOT / "services/backend/app/paper_trading.py").read_text()
+        operations = (ROOT / "services/backend/app/operations.py").read_text()
+        gateway = (ROOT / "services/gateway/app/product_api.py").read_text()
+        frontend = (ROOT / "apps/frontend/src/api/paper.ts").read_text()
+        self.assertIn("stock-pool-readiness.v1", producer)
+        self.assertIn("import_inactive_definition", producer)
+        self.assertIn("'pending',:provenance,:now,:now,'inactive',1", producer)
+        self.assertIn("'draft',:fingerprint", producer)
+        self.assertIn("stock-pool-snapshot-diff.v1", paper)
+        self.assertIn('"raw_worker_payload": False', operations)
+        self.assertIn("/paper/producer-imports", gateway)
+        self.assertIn("/snapshot-diff", frontend)
+        self.assertNotIn("/v1/paper", frontend)
 
     def test_frontend_has_no_dsh_event_schema_dependency(self) -> None:
         frontend = ROOT / "apps/frontend"

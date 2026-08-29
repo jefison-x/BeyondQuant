@@ -244,6 +244,12 @@ paths:
   /api/product/paper/pools/{pool_id}/snapshots:
     parameters: [{$ref: "#/components/parameters/PoolId"}, {$ref: "#/components/parameters/Limit"}, {$ref: "#/components/parameters/Offset"}]
     get: {summary: 列出 immutable stock-pool snapshot history., responses: *okResponses}
+  /api/product/paper/pools/{pool_id}/snapshot-diff:
+    parameters: [{$ref: "#/components/parameters/PoolId"}]
+    get: {summary: 比较 two owner-scoped immutable snapshots with added removed and weight-changed members., responses: *okResponses}
+  /api/product/paper/pools/{pool_id}/readiness:
+    parameters: [{$ref: "#/components/parameters/PoolId"}]
+    get: {summary: 获取 derived current stale waiting failed or paused producer readiness., responses: *okResponses}
   /api/product/paper/pools/{pool_id}/snapshots/{snapshot_id}:
     parameters: [{$ref: "#/components/parameters/PoolId"}, {$ref: "#/components/parameters/SnapshotId"}]
     get: {summary: 获取 one immutable stock-pool snapshot., responses: *okResponses}
