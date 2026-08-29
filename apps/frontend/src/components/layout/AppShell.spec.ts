@@ -73,4 +73,11 @@ describe("AppShell", () => {
     expect(listAgentSessions).toHaveBeenCalledWith("", { limit: 100 });
     expect(useAgentStore().sessions[0]?.title).toBe("刷新后恢复");
   });
+
+  it("gives the conversation route one internal scroll container", async () => {
+    const wrapper = shallowMount(AppShell, { global: { stubs: { RouterView: true } } });
+    await nextTick();
+
+    expect(wrapper.get("main").classes()).toContain("content-area--conversation");
+  });
 });

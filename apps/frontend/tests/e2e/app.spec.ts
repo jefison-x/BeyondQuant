@@ -218,6 +218,25 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
   await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
   await expect(page.getByText("BYQ 规范化工作流 · 持久会话")).toBeVisible();
   await expect(page.getByText("研究动量")).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 600 });
+  const scrollLayout = await page.evaluate(() => {
+    const content = document.querySelector<HTMLElement>(".content-area");
+    const workspace = document.querySelector<HTMLElement>(".conversation-workspace");
+    const canvas = document.querySelector<HTMLElement>(".conversation-canvas");
+    if (!content || !workspace || !canvas) throw new Error("conversation layout is missing");
+    return {
+      contentClientHeight: content.clientHeight,
+      contentScrollHeight: content.scrollHeight,
+      contentOverflowY: getComputedStyle(content).overflowY,
+      workspaceHeight: workspace.getBoundingClientRect().height,
+      canvasOverflowY: getComputedStyle(canvas).overflowY,
+    };
+  });
+  expect(scrollLayout.contentOverflowY).toBe("hidden");
+  expect(scrollLayout.contentScrollHeight).toBe(scrollLayout.contentClientHeight);
+  expect(Math.abs(scrollLayout.workspaceHeight - scrollLayout.contentClientHeight)).toBeLessThanOrEqual(1);
+  expect(scrollLayout.canvasOverflowY).toBe("auto");
+  await page.setViewportSize({ width: 1280, height: 720 });
   await expect(page.locator(".conversation-message.user .message-author")).toHaveText("量化小周");
   await expect(page.getByRole("heading", { name: "研究结论" })).toBeVisible();
   await expect(page.getByRole("listitem").filter({ hasText: "动量信号有效" })).toBeVisible();
