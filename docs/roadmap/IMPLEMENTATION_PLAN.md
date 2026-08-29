@@ -590,3 +590,29 @@ runtime；enable 无法区分 requested 与 active；需要启用未 QUALIFIED�
 restart 或 rollback 不可审计；credential/raw config/internal path 可能泄漏；需要 DSH extension、fork/
 patch、prerelease 混用、MCP/authorization bypass 或第二 generic harness。单个插件不兼容只进入
 BLOCKED，不阻塞 Plugin Center 的只读治理能力。
+
+## Stock Pool Producer Completion（Phase 66–69）
+
+### Phase 66 — Trusted producer contract（`COMPLETE`）
+
+接受 ADR-0041 和 `stock-pool-producer.v1`，冻结 definition/run/snapshot 分离、trusted Data Worker、
+index no-look-ahead、closed dynamic rule、atomic promotion/recovery 和 Product intent boundary。完成
+Community index `PORT_LOGIC`/`PORT_UX` 与 dynamic placeholder `DROP` 分类；本阶段不改 runtime。
+
+### Phase 67 — Index stock pools（`AUTHORIZED`）
+
+实现 validated canonical index catalog、owner-scoped index definition、持久化 materialization run、
+trusted worker、import-trigger/manual idempotent refresh、as-of/history/diff Product API 和 responsive UI。
+只开放 coverage 完整的 closed index set；不得从 Browser/股票池 service 直接访问 Provider。
+
+### Phase 68 — Dynamic stock pools（`AUTHORIZED_AFTER_PHASE_67`）
+
+实现 ADR-0041 closed rule schema、point-in-time preview、deterministic evaluator、交易日历 cadence、
+waiting/stale/failure recovery、definition/run/history/diff Product API 和可访问 UI。不允许 arbitrary
+Python/SQL/URL、DSH evaluator 或第二 rules harness。
+
+### Phase 69 — Integration and product closure（`AUTHORIZED_AFTER_PHASE_68`）
+
+统一 catalog/readiness/diff，验证 Research/Strategy/Backtest/Paper immutable snapshot 消费、资产导入
+重新验证、监控/audit/restart/two-user isolation；完成 real Product API desktop/mobile Chrome、same-origin
+Network、Community checklist 与完整 regression evidence。

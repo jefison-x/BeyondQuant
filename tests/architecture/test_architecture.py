@@ -61,8 +61,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "65")
-        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040"):
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "66")
+        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
 
@@ -832,6 +832,19 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             self.assertNotIn(forbidden, backend.lower())
             self.assertNotIn(forbidden, gateway.lower())
         self.assertIn("Status: Accepted", adr)
+
+    def test_phase66_stock_pool_producer_contract_keeps_trusted_boundary(self) -> None:
+        adr = (ROOT / "docs/architecture/adr/ADR-0041-trusted-stock-pool-producers.md").read_text()
+        contract = (ROOT / "docs/contracts/stock-pool-producer.md").read_text()
+        inventory = (ROOT / "docs/migration/COMMUNITY_MIGRATION_INVENTORY.md").read_text()
+        self.assertIn("- Status: Accepted", adr)
+        self.assertIn("stock_pool_materialization_runs", adr)
+        self.assertIn("latest", adr)
+        self.assertIn("arbitrary Python", adr)
+        self.assertIn("Atomic promotion", contract)
+        self.assertIn("Browser 不得", contract)
+        self.assertIn("动态计数固定为零", inventory)
+        self.assertIn("分类为 `DROP`", inventory)
 
     def test_frontend_has_no_dsh_event_schema_dependency(self) -> None:
         frontend = ROOT / "apps/frontend"

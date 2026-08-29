@@ -1,13 +1,13 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=65 -->
+<!-- byq:current-completed-phase=66 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 65**——将 Phase 63/64 的 Plugin Registry、qualification evidence
-  与 Runtime identity 产品化为 admin-only Plugin Center；desired policy、生成目标与 active
-  runtime 明确分离，受控请求、正常 immutable build/restart 和 active hash 验证均已闭合。
+- 当前已完成阶段：**Phase 66**——接受 ADR-0041 与 `stock-pool-producer.v1`，冻结指数/动态股票池
+  definition、materialization run、immutable snapshot、trusted Data Worker、时间点计算、失败恢复和
+  Product intent 边界；本阶段没有提前修改 runtime。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -55,6 +55,7 @@ history 推断项目状态。
 - DSH Product plugin registry/qualification boundary：**ADR-0038**
 - Market Research Web Search evidence boundary：**ADR-0039**
 - Plugin Center deployment control plane：**ADR-0040**
+- trusted stock-pool producers：**ADR-0041**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -219,6 +220,12 @@ Runtime Adapter readiness identity 匹配时显示 Active。真实浏览器 jour
 restart recovery、desktop/mobile accessibility 100 和 same-origin Network review 已通过；没有
 runtime install、Browser direct DSH、source write、secret projection 或 DSH baseline 升级。
 
+Phase 66 依据 ADR-0041 接受指数型/动态股票池生产边界：owner-scoped versioned definition、持久化
+materialization run 与 ADR-0020 immutable snapshot 分离；指数只消费 ADR-0030 canonical data 并
+禁止 look-ahead，动态只允许 closed declarative point-in-time rule。Product 只提交意图，trusted Data
+Worker 原子物化，失败不推进 current pointer。Community 指数语义分类为 `PORT_LOGIC`/`PORT_UX`，
+动态占位和 sample data 为 `DROP`；本阶段无 runtime implementation。
+
 Post-Phase 62 Trusted Time Maintenance 依据 ADR-0037 将服务器权威自然时间作为 DSH
 逐轮动态 runtime context，并通过 BYQ MCP 暴露已有 SSE calendar 与 persisted market
 snapshot 的有界只读截止语义。它是维护修复，不改变 Phase 62 完成状态，也不定义下一
@@ -236,9 +243,9 @@ Post-Phase 65 Paper Trading Navigation Maintenance 将模拟操盘从 User Cente
 
 ## 当前授权边界
 
-- Phase 49-65 与相应 Accepted ADR/计划均已完成。
-- Next phase：**未定义、未授权**。不得从提交历史自行选择后续 Product Phase；新的阶段必须由
-  维护者明确授权并先完成计划/ADR/独立 worktree workflow。
+- Phase 49-66 与相应 Accepted ADR/计划均已完成。
+- Next phase：**Phase 67 — Index stock pools，已由维护者于 2026-08-29 明确授权**。只能在 Phase 66
+  合并且 CI 通过后，于新隔离 worktree 实现 ADR-0041 指数范围；不得提前进入 Phase 68。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 
