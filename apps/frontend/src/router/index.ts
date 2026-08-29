@@ -84,6 +84,16 @@ const router = createRouter({
           },
         },
         {
+          path: "model-research",
+          name: "model-research",
+          component: () => import("@/views/MLResearchView.vue"),
+          meta: {
+            title: "模型研究",
+            kicker: "量化模型工作台",
+            subtitle: "训练可审计模型并生成样本外预测、冻结信号与可复现回测",
+          },
+        },
+        {
           path: "backtest",
           name: "backtest",
           component: () => import("@/views/BacktestView.vue"),

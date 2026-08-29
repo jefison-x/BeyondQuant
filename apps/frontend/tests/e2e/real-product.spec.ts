@@ -90,7 +90,7 @@ test("Phase 74 real LightGBM training to frozen-signal backtest journey", async 
   await expect(page).toHaveURL(`${origin}/agent`);
   const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `Phase 74 ML 冻结池-${Date.now()}`, pool_type: "custom", description: "真实浏览器 LightGBM 闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
   expect(poolStatus).toBe(201);
-  await page.goto("/user/models"); await page.getByRole("tab", { name: "量化模型研究" }).click();
+  await page.goto("/model-research");
   await expect(page.getByText("可靠 LightGBM 最小闭环")).toBeVisible();
   await page.getByTestId("ml-save").click(); await expect(page.getByText("策略版本已冻结")).toBeVisible();
   await page.getByTestId("ml-train").click(); await page.getByRole("button", { name: "批准并训练" }).click();

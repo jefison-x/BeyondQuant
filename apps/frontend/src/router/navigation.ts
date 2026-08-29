@@ -1,5 +1,5 @@
 import type { Component } from "vue";
-import { Coin, Collection, Histogram, Management } from "@element-plus/icons-vue";
+import { Coin, Collection, DataLine, Histogram, Management } from "@element-plus/icons-vue";
 
 export interface NavItem {
   to: string;
@@ -11,6 +11,7 @@ export interface NavItem {
 export const primaryNavItems: NavItem[] = [
   { to: "/stock-pool", label: "股票池管理", icon: Collection },
   { to: "/strategy", label: "策略管理", icon: Management },
+  { to: "/model-research", label: "模型研究", icon: DataLine },
   { to: "/backtest", label: "回测管理", icon: Histogram },
   { to: "/paper-trading", label: "模拟操盘", icon: Coin },
 ];
