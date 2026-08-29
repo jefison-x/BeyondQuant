@@ -115,6 +115,64 @@ test("real Product API index pool materializes validated point-in-time weights",
   expect(serverErrors).toEqual([]);
 });
 
+test("real Product API dynamic pool previews and materializes a closed rule", async ({ page, baseURL }) => {
+  const username = process.env.BYQ_E2E_ADMIN_USERNAME;
+  const password = process.env.BYQ_E2E_ADMIN_PASSWORD;
+  if (!username || !password) throw new Error("BYQ_E2E admin credentials are required");
+  const origin = new URL(baseURL ?? "http://127.0.0.1:18080").origin;
+  const unexpectedOrigins = new Set<string>();
+  const serverErrors: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if ((url.protocol === "http:" || url.protocol === "https:") && url.origin !== origin) unexpectedOrigins.add(url.origin);
+  });
+  page.on("response", (response) => { if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`); });
+
+  await page.goto("/login");
+  await page.getByLabel("用户名").fill(username);
+  await page.getByLabel("密码").fill(password);
+  await page.getByRole("button", { name: "进入" }).click();
+  await expect(page).toHaveURL(`${origin}/agent`);
+  await page.goto("/stock-pool");
+  await page.getByRole("button", { name: "新建股票池" }).click();
+  const dialog = page.getByRole("dialog", { name: "创建版本化股票池" });
+  await dialog.getByText("动态股票池", { exact: true }).click();
+  const poolName = `CI动态池-${Date.now()}`;
+  await dialog.getByPlaceholder("Pool name").fill(poolName);
+  await dialog.getByTestId("dynamic-top-n").locator("input").fill("2");
+  const previewResponse = page.waitForResponse((response) =>
+    response.url().endsWith("/api/product/paper/dynamic-pools/preview") && response.request().method() === "POST",
+  );
+  await dialog.getByTestId("dynamic-preview").click();
+  expect((await previewResponse).status()).toBe(200);
+  await expect(dialog.getByText(/非权威预览：2 只/)).toBeVisible();
+  const createResponse = page.waitForResponse((response) =>
+    response.url().endsWith("/api/product/paper/dynamic-pools") && response.request().method() === "POST",
+  );
+  await dialog.getByRole("button", { name: "创建并生成快照" }).click();
+  const response = await createResponse;
+  expect(response.status()).toBe(202);
+  const created = await response.json() as { pool: { pool_id: string } };
+  await expect.poll(async () => page.evaluate(async (poolId) => {
+    const result = await fetch(`/api/product/paper/pools/${poolId}/materializations`, { credentials: "include" });
+    return result.ok ? (await result.json()).runs?.[0]?.status ?? "missing" : `http-${result.status}`;
+  }, created.pool.pool_id), { timeout: 30_000 }).toBe("succeeded");
+  await page.goto(`/stock-pool?pool=${created.pool.pool_id}`);
+  await expect(page.getByText(poolName, { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("规则 v1 已保存", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "成员与权重" }).click();
+  await expect(page.getByText("300750.SZ", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("000001.SZ", { exact: true }).first()).toBeVisible();
+  const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
+  if (evidenceDir) {
+    await page.screenshot({ path: `${evidenceDir}/03-dynamic-pool-desktop.png`, fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: `${evidenceDir}/04-dynamic-pool-mobile.png`, fullPage: true });
+  }
+  expect([...unexpectedOrigins]).toEqual([]);
+  expect(serverErrors).toEqual([]);
+});
+
 test("real Product API Paper Trading settlement, risk, detail, and bundle flow", async ({ page, baseURL }) => {
   const adminUsername = process.env.BYQ_E2E_ADMIN_USERNAME;
   const adminPassword = process.env.BYQ_E2E_ADMIN_PASSWORD;

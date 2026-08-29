@@ -1,13 +1,13 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=67 -->
+<!-- byq:current-completed-phase=68 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 67**——依据 ADR-0041 实现 validated canonical index catalog、
-  owner/workspace-scoped index definition、持久化 materialization run、trusted Data Worker、
-  no-look-ahead 物化、失败原子性与 responsive Product UI；Browser 只访问 Product API。
+- 当前已完成阶段：**Phase 68**——依据 ADR-0041 实现封闭且版本化的动态选股规则、
+  point-in-time 输入验证、确定性预览与物化、周期调度、不可变快照和 responsive Product UI；
+  Browser 只访问 Product API，预览结果明确标记为非权威结果。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -248,11 +248,19 @@ Post-Phase 65 Paper Trading Navigation Maintenance 将模拟操盘从 User Cente
 `/user/paper-trading` 深链保留为兼容重定向；Paper Trading 的 Product API、授权、持久化和
 仅模拟交易边界均未改变。该修复不改变 Phase 65 完成状态，也不定义下一 Product Phase。
 
+Phase 68 Dynamic Stock Pools 已完成 ADR-0041 的封闭 `dynamic-stock-pool-rule.v1`、时间点
+非权威 preview、确定性 evaluator、trusted Data Worker 物化与交易日历 cadence。规则仅允许
+白名单字段、运算符、bounded filters/top_n 和显式 missing/weight policy；Browser、DSH、插件、
+Python、SQL 与 URL 均不能成为 evaluator。definition/run 状态、waiting/stale/failure recovery、
+不可变 snapshot/current pointer、Product API 与 responsive UI 均已实现。真实 PostgreSQL、完整
+Compose smoke、Product Chromium desktop/mobile 和独立 Chrome DevTools MCP same-origin/Console/
+Lighthouse review 均通过；Community dynamic placeholder 已按 inventory 分类为 `DROP`。
+
 ## 当前授权边界
 
-- Phase 49-67 与相应 Accepted ADR/计划均已完成。
-- Next phase：**Phase 68 — Dynamic stock pools，已由维护者于 2026-08-29 明确授权**。只能在 Phase 67
-  合并且 CI 通过后，于新隔离 worktree 实现 ADR-0041 closed dynamic rule 范围；不得提前进入 Phase 69。
+- Phase 49-68 与相应 Accepted ADR/计划均已完成。
+- Next phase：**Phase 69 — Integration and product closure，已由维护者于 2026-08-29 明确授权**。
+  只能在 Phase 68 合并且 CI 通过后，于新隔离 worktree 完成 ADR-0041 产品闭环。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 

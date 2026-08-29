@@ -61,7 +61,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "67")
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "68")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
@@ -854,12 +854,27 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("market_index_weights", producer)
         self.assertIn("stock_pool_materialization_runs", producer)
         self.assertIn("snapshot_date<=:requested", producer)
-        self.assertIn("materialize_claimed_index", worker)
+        self.assertIn("materialize_claimed", worker)
         self.assertIn("/paper/index-pools", gateway)
         self.assertIn("/index-pools", frontend)
         self.assertNotIn("TushareProvider", producer)
         self.assertNotIn("fetch_index_weights", producer)
         self.assertNotIn("/v1/paper", frontend)
+
+    def test_phase68_dynamic_pool_rule_is_closed_and_runs_in_trusted_worker(self) -> None:
+        evaluator = (ROOT / "services/backend/app/dynamic_stock_pool.py").read_text()
+        producer = (ROOT / "services/backend/app/stock_pool_producer.py").read_text()
+        worker = (ROOT / "workers/data/worker.py").read_text()
+        gateway = (ROOT / "services/gateway/app/product_api.py").read_text()
+        frontend = (ROOT / "apps/frontend/src/api/paper.ts").read_text()
+        self.assertIn("dynamic-stock-pool-rule.v1", evaluator)
+        self.assertIn("MAX_FILTERS = 20", evaluator)
+        self.assertIn("evaluate_dynamic_rule", producer)
+        self.assertIn("enqueue_due_dynamic_runs", worker)
+        self.assertIn("/paper/dynamic-pools/preview", gateway)
+        self.assertIn("/dynamic-pools/preview", frontend)
+        for forbidden in ("eval(", "exec(", "subprocess", "requests.", "http://", "https://"):
+            self.assertNotIn(forbidden, evaluator)
 
     def test_frontend_has_no_dsh_event_schema_dependency(self) -> None:
         frontend = ROOT / "apps/frontend"

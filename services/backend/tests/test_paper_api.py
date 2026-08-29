@@ -137,3 +137,40 @@ def test_index_pool_product_boundary_enqueues_trusted_materialization(monkeypatc
     }).status_code == 422
     producer.close()
     paper.close()
+
+
+def test_dynamic_pool_product_boundary_rejects_spoofed_and_open_rules(monkeypatch) -> None:
+    headers = trusted_agent_context("dynamic-api-user")
+    paper = PaperTradingStore()
+    producer = StockPoolProducerStore(paper_store=paper)
+    monkeypatch.setattr(main, "paper_store", paper)
+    monkeypatch.setattr(main, "stock_pool_producer_store", producer)
+    client = TestClient(main.app)
+    rule = {
+        "schema_version": "dynamic-stock-pool-rule.v1",
+        "base_universe": {"kind": "security_master"}, "filters": [],
+        "ranking": {"field": "daily_basic.total_mv", "direction": "desc"}, "top_n": 20,
+        "missing_policy": "exclude", "weight_mode": "equal_weight", "cadence": "manual",
+    }
+    created = client.post("/v1/paper/dynamic-pools", headers=headers, json={
+        "name": "动态大盘池", "rule": rule, "activate": False, "idempotency_key": "dynamic-api-1",
+    })
+    assert created.status_code == 202
+    assert created.json()["pool"]["pool_type"] == "dynamic"
+    assert created.json()["run"] is None
+    pool_id = created.json()["pool"]["pool_id"]
+    updated = client.put(f"/v1/paper/pools/{pool_id}/producer", headers=headers, json={
+        "rule": rule, "status": "paused", "expected_version": 1,
+    })
+    assert updated.status_code == 200
+    assert updated.json()["producer"]["version"] == 2
+    assert client.post("/v1/paper/dynamic-pools", headers=headers, json={
+        "name": "恶意规则", "rule": {**rule, "python": "open('/etc/passwd').read()"},
+        "activate": False, "idempotency_key": "dynamic-api-2",
+    }).status_code == 422
+    assert client.post("/v1/paper/dynamic-pools", headers=headers, json={
+        "name": "越权规则", "rule": rule, "activate": False, "idempotency_key": "dynamic-api-3",
+        "owner_principal": "spoofed-owner",
+    }).status_code == 401
+    producer.close()
+    paper.close()

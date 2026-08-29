@@ -605,13 +605,13 @@ Community index `PORT_LOGIC`/`PORT_UX` 与 dynamic placeholder `DROP` 分类；�
 trusted worker、import-trigger/manual idempotent refresh、as-of/history/diff Product API 和 responsive UI。
 只开放 coverage 完整的 closed index set；不得从 Browser/股票池 service 直接访问 Provider。
 
-### Phase 68 — Dynamic stock pools（`AUTHORIZED`）
+### Phase 68 — Dynamic stock pools（`COMPLETE`）
 
 实现 ADR-0041 closed rule schema、point-in-time preview、deterministic evaluator、交易日历 cadence、
 waiting/stale/failure recovery、definition/run/history/diff Product API 和可访问 UI。不允许 arbitrary
 Python/SQL/URL、DSH evaluator 或第二 rules harness。
 
-### Phase 69 — Integration and product closure（`AUTHORIZED_AFTER_PHASE_68`）
+### Phase 69 — Integration and product closure（`AUTHORIZED`）
 
 统一 catalog/readiness/diff，验证 Research/Strategy/Backtest/Paper immutable snapshot 消费、资产导入
 重新验证、监控/audit/restart/two-user isolation；完成 real Product API desktop/mobile Chrome、same-origin

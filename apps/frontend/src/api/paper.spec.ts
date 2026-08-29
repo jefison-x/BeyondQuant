@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createIndexStockPool, createPaperAccount, createStockPool, deletePaperAccount, exportPaperAccount, getPaperOrder, listIndexPoolCatalog, listPaperLedger, listPaperOrders, listPaperSnapshots, listStockPoolMaterializations, refreshIndexStockPool, replaceStockPoolSnapshot, settlePaperAccount, submitPaperOrder, updatePaperControls } from "./paper";
+import { createDynamicStockPool, createIndexStockPool, createPaperAccount, createStockPool, deletePaperAccount, exportPaperAccount, getPaperOrder, listIndexPoolCatalog, listPaperLedger, listPaperOrders, listPaperSnapshots, listStockPoolMaterializations, previewDynamicStockPool, refreshIndexStockPool, replaceStockPoolSnapshot, settlePaperAccount, submitPaperOrder, updateDynamicStockPoolDefinition, updatePaperControls } from "./paper";
+import type { DynamicStockPoolRule } from "./types";
 
 describe("paper trading api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -95,6 +96,28 @@ describe("paper trading api client", () => {
     ]);
     expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual(expect.objectContaining({ index_symbol: "000300.SH" }));
     expect(fetchMock.mock.calls[3][1]).toEqual(expect.objectContaining({ method: "POST" }));
+  });
+
+  it("uses only Product paths for dynamic preview, creation and definition update", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({
+      authoritative: false, members: [], member_count: 0, pool: { pool_id: "dynamic-1" }, run: null, producer: {},
+    }), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const rule: DynamicStockPoolRule = {
+      schema_version: "dynamic-stock-pool-rule.v1",
+      base_universe: { kind: "security_master" }, filters: [],
+      ranking: { field: "daily_basic.total_mv", direction: "desc" }, top_n: 20,
+      missing_policy: "exclude", weight_mode: "equal_weight", cadence: "daily",
+    };
+    await previewDynamicStockPool(rule, "20240103", "test-token");
+    await createDynamicStockPool({ name: "动态大盘池", rule, activate: true }, "test-token");
+    await updateDynamicStockPoolDefinition("dynamic-1", { rule, status: "paused", expected_version: 1 }, "test-token");
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/product/paper/dynamic-pools/preview",
+      "/api/product/paper/dynamic-pools",
+      "/api/product/paper/pools/dynamic-1/producer",
+    ]);
+    expect(fetchMock.mock.calls[2][1]).toEqual(expect.objectContaining({ method: "PUT" }));
   });
 
   it("lists the persisted paper ledger", async () => {

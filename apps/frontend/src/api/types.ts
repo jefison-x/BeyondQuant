@@ -432,6 +432,28 @@ export interface StockPoolProducerDefinition {
   definition_fingerprint: string;
 }
 
+export interface DynamicStockPoolRule {
+  schema_version: "dynamic-stock-pool-rule.v1";
+  base_universe: { kind: "security_master" } | { kind: "stock_pool_snapshot"; snapshot_id: string };
+  filters: Array<{ field: string; operator: "eq" | "ne" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte"; value: string | number | boolean | Array<string | number | boolean> }>;
+  ranking: { field: string; direction: "asc" | "desc" } | null;
+  top_n: number;
+  missing_policy: "exclude";
+  weight_mode: "unweighted" | "equal_weight";
+  cadence: "manual" | "daily" | "weekly" | "monthly";
+}
+
+export interface DynamicStockPoolPreview {
+  schema_version: "dynamic-stock-pool-preview.v1";
+  authoritative: false;
+  requested_as_of: string;
+  effective_trade_date: string;
+  members: Array<{ symbol: string; weight?: string | null }>;
+  member_count: number;
+  rule_fingerprint: string;
+  input_manifest: Record<string, unknown>;
+}
+
 export interface StockPoolSnapshot {
   snapshot_id: string;
   pool_id: string;

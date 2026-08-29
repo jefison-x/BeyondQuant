@@ -1,4 +1,4 @@
-import type { IndexPoolCatalogItem, PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot, StockPool, StockPoolMaterializationRun, StockPoolProducerDefinition, StockPoolSnapshot } from "./types";
+import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogItem, PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot, StockPool, StockPoolMaterializationRun, StockPoolProducerDefinition, StockPoolSnapshot } from "./types";
 import { createRequestId } from "@/utils/requestId";
 
 const ROOT = "/api/product/paper";
@@ -78,10 +78,37 @@ export function createIndexStockPool(
   });
 }
 
+export function previewDynamicStockPool(
+  rule: DynamicStockPoolRule, requestedAsOf: string | undefined, token: string,
+): Promise<DynamicStockPoolPreview> {
+  return request("/dynamic-pools/preview", token, {
+    method: "POST", body: JSON.stringify({ rule, requested_as_of: requestedAsOf }),
+  });
+}
+
+export function createDynamicStockPool(
+  payload: { name: string; description?: string; rule: DynamicStockPoolRule; requested_as_of?: string; activate: boolean },
+  token: string,
+): Promise<{ pool: StockPool; run: StockPoolMaterializationRun | null }> {
+  return request("/dynamic-pools", token, {
+    method: "POST", body: JSON.stringify({ ...payload, idempotency_key: createRequestId() }),
+  });
+}
+
 export function getStockPoolProducer(
   poolId: string, token: string,
 ): Promise<{ producer: StockPoolProducerDefinition }> {
   return request(`/pools/${encodeURIComponent(poolId)}/producer`, token);
+}
+
+export function updateDynamicStockPoolDefinition(
+  poolId: string,
+  payload: { rule: DynamicStockPoolRule; status: "draft" | "active" | "paused"; expected_version: number },
+  token: string,
+): Promise<{ producer: StockPoolProducerDefinition }> {
+  return request(`/pools/${encodeURIComponent(poolId)}/producer`, token, {
+    method: "PUT", body: JSON.stringify(payload),
+  });
 }
 
 export function listStockPoolMaterializations(

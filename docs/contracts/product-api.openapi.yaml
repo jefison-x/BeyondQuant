@@ -227,6 +227,10 @@ paths:
     get: {summary: 列出 validated canonical index-weight catalog without provider access., responses: *okResponses}
   /api/product/paper/index-pools:
     post: {summary: 创建 owner-scoped index pool definition and enqueue trusted materialization., responses: *createdResponses}
+  /api/product/paper/dynamic-pools/preview:
+    post: {summary: 以 point-in-time inputs 预览 closed dynamic rule；结果不构成权威快照., responses: *okResponses}
+  /api/product/paper/dynamic-pools:
+    post: {summary: 创建 owner-scoped dynamic pool definition and optionally enqueue trusted materialization., responses: *createdResponses}
   /api/product/paper/pools/{pool_id}:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
     get: {summary: 获取 one owner-scoped stock pool., responses: *okResponses}
@@ -255,6 +259,7 @@ paths:
   /api/product/paper/pools/{pool_id}/producer:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
     get: {summary: 获取 owner-scoped normalized stock-pool producer definition., responses: *okResponses}
+    put: {summary: 以 optimistic version 更新 closed dynamic rule and lifecycle state., responses: *okResponses}
   /api/product/paper/pools/{pool_id}/materializations:
     parameters: [{$ref: "#/components/parameters/PoolId"}, {$ref: "#/components/parameters/Limit"}, {$ref: "#/components/parameters/Offset"}]
     get: {summary: 列出 owner-scoped stock-pool materialization history., responses: *okResponses}
