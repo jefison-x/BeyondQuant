@@ -21,6 +21,7 @@ from app.ml_training import (
     RUNTIME_IDENTITY,
     promote_waiting_training_runs,
 )
+from app.ml_prediction import MLPredictionCoordinator, MLPredictionRunStore
 from app.research import ResearchStore
 
 
@@ -93,6 +94,27 @@ class LightGBMTrainer:
         }
 
 
+class LightGBMPredictor:
+    def predict(
+        self, model_text: str, rows: list[dict[str, object]], *, best_iteration: int
+    ) -> list[float]:
+        booster = lgb.Booster(model_str=model_text)
+        if booster.feature_name() != FEATURE_ORDER:
+            raise ValueError("native model feature order does not match the trusted profile")
+        matrix = np.asarray(
+            [[float(row["features"][name]) for name in FEATURE_ORDER] for row in rows],
+            dtype=np.float64,
+        )
+        if matrix.ndim != 2 or matrix.shape[1] != len(FEATURE_ORDER) or not np.isfinite(matrix).all():
+            raise ValueError("prediction matrix is invalid")
+        values = np.asarray(
+            booster.predict(matrix, num_iteration=best_iteration), dtype=np.float64
+        )
+        if values.shape != (len(rows),) or not np.isfinite(values).all():
+            raise ValueError("LightGBM returned invalid prediction output")
+        return [float(value) for value in values]
+
+
 def probe() -> int:
     if lgb.__version__ != "4.7.0":
         raise RuntimeError(f"unexpected LightGBM version: {lgb.__version__}")
@@ -127,6 +149,15 @@ def probe() -> int:
         raise RuntimeError("LightGBM runtime identity mismatch")
     if not trained.get("image_identity"):
         raise RuntimeError("LightGBM image identity is unavailable")
+    prediction_rows = [
+        {"features": {name: float(index + offset) / 100.0 for offset, name in enumerate(FEATURE_ORDER)}}
+        for index in range(3)
+    ]
+    scores = LightGBMPredictor().predict(
+        str(trained_text), prediction_rows, best_iteration=int(trained["best_iteration"])
+    )
+    if len(scores) != 3 or not all(math.isfinite(score) for score in scores):
+        raise RuntimeError("five-feature LightGBM prediction probe failed")
     return 0
 
 
@@ -148,11 +179,16 @@ def main() -> int:
     READY_PATH.unlink(missing_ok=True)
     probe()
     runs = MLTrainingRunStore.from_env()
+    prediction_runs = MLPredictionRunStore.from_env()
     research = ResearchStore.from_env()
     readiness = MarketReadinessStore.from_env()
     objects = LocalObjectStore(os.environ.get("BYQ_ML_OBJECT_ROOT", "/var/lib/byq/ml-objects"))
     coordinator = MLTrainingCoordinator(
         runs, research, objects, LightGBMTrainer(),
+        worker_id=os.environ.get("BYQ_ML_WORKER_ID", "ml-worker-1"),
+    )
+    prediction_coordinator = MLPredictionCoordinator(
+        prediction_runs, research, objects, LightGBMPredictor(),
         worker_id=os.environ.get("BYQ_ML_WORKER_ID", "ml-worker-1"),
     )
     READY_PATH.write_text(RUNTIME_IDENTITY, encoding="utf-8")
@@ -168,12 +204,15 @@ def main() -> int:
     try:
         while running:
             promote_waiting_training_runs(runs, readiness)
-            if coordinator.run_next() is None:
+            trained = coordinator.run_next()
+            predicted = prediction_coordinator.run_next()
+            if trained is None and predicted is None:
                 time.sleep(poll)
     finally:
         READY_PATH.unlink(missing_ok=True)
         readiness.close()
         research.close()
+        prediction_runs.close()
         runs.close()
     return 0
 

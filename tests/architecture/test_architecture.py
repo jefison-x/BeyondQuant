@@ -78,6 +78,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         compose = (ROOT / "compose.yml").read_text()
         worker_dockerfile = (ROOT / "workers/ml/Dockerfile").read_text()
         worker_source = (ROOT / "workers/ml/worker.py").read_text()
+        prediction_source = (ROOT / "services/backend/app/ml_prediction.py").read_text()
 
         self.assertIn("- Status: Accepted", adr)
         self.assertIn("LightGBM 4.7.0", adr)
@@ -114,6 +115,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn('CMD ["python", "worker.py", "--healthcheck"]', worker_dockerfile)
         self.assertNotIn("pickle", worker_source.lower())
         self.assertNotIn("joblib", worker_source.lower())
+        self.assertIn('PREDICTION_SCHEMA = "ml-prediction-snapshot.v1"', prediction_source)
+        self.assertIn("score DESC, symbol ASC", contract)
+        self.assertIn("normalize_signal_snapshot", prediction_source)
+        self.assertNotIn("import lightgbm", prediction_source.lower())
+        self.assertNotIn("import numpy", prediction_source.lower())
+        self.assertIn("class LightGBMPredictor", worker_source)
 
     def test_base_compose_uses_runtime_adapter_as_the_only_product_dsh_path(self) -> None:
         compose = (ROOT / "compose.yml").read_text()

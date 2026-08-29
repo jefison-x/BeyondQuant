@@ -357,6 +357,11 @@ def _normalize_execution(value: object) -> dict[str, object]:
     }
 
 
+def normalize_execution_profile(value: object) -> dict[str, object]:
+    """Public closed execution-profile normalizer for trusted signal producers."""
+    return _normalize_execution(value)
+
+
 def _normalize_actions(value: object, universe_symbols: set[str]) -> list[dict[str, object]]:
     if value is None:
         return []
@@ -600,7 +605,10 @@ def normalize_signal_snapshot(
         source = {}
     if not isinstance(source, dict):
         raise ValueError("signal snapshot source must be an object")
-    _reject_unknown(source, {"producer", "note", "data_readiness"}, field="signal snapshot source")
+    _reject_unknown(
+        source, {"producer", "note", "data_readiness", "ml_lineage"},
+        field="signal snapshot source",
+    )
     producer = _text(source.get("producer", "keyless-import"), field="source.producer", max_length=64)
     data_readiness = source.get("data_readiness", {})
     if not isinstance(data_readiness, dict):
@@ -611,6 +619,23 @@ def normalize_signal_snapshot(
     normalized_readiness = {}
     for key, value in data_readiness.items():
         normalized_readiness[key] = _text(value, field=f"source.data_readiness.{key}", max_length=64)
+    ml_lineage = source.get("ml_lineage")
+    normalized_ml_lineage: dict[str, str] = {}
+    if ml_lineage is not None:
+        if not isinstance(ml_lineage, dict):
+            raise ValueError("source.ml_lineage must be an object")
+        allowed_ml_lineage = {
+            "ml_strategy_artifact_id", "ml_strategy_approval_artifact_id", "model_artifact_id",
+            "feature_snapshot_artifact_id", "prediction_snapshot_artifact_id",
+            "stock_pool_snapshot_id", "policy_sha256",
+        }
+        _reject_unknown(ml_lineage, allowed_ml_lineage, field="source.ml_lineage")
+        if set(ml_lineage) != allowed_ml_lineage:
+            raise ValueError("source.ml_lineage is incomplete")
+        for key in sorted(allowed_ml_lineage):
+            normalized_ml_lineage[key] = _text(
+                ml_lineage[key], field=f"source.ml_lineage.{key}", max_length=128
+            )
     document = {
         "schema_version": SIGNAL_SNAPSHOT_SCHEMA_VERSION,
         "strategy": {
@@ -623,7 +648,11 @@ def normalize_signal_snapshot(
         "corporate_actions": actions,
         "benchmark": benchmark,
         "execution": execution,
-        "source": {"producer": producer, **({"data_readiness": normalized_readiness} if normalized_readiness else {})},
+        "source": {
+            "producer": producer,
+            **({"data_readiness": normalized_readiness} if normalized_readiness else {}),
+            **({"ml_lineage": normalized_ml_lineage} if normalized_ml_lineage else {}),
+        },
     }
     encoded = _canonical(document)
     if len(encoded.encode("utf-8")) > MAX_SNAPSHOT_BYTES:
