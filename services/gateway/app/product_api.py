@@ -538,6 +538,107 @@ def product_research_experiments(request: Request) -> dict[str, object]:
     return _backend_request("GET", "/v1/research/experiments", headers=_trusted_agent_headers(request))
 
 
+def _ml_nonce(prefix: str) -> tuple[str, str]:
+    nonce = uuid.uuid4().hex
+    return f"product-ml-{prefix}-{nonce}", f"product-ml-{prefix}-{nonce}"
+
+
+def _ml_artifact_projection(artifact: object) -> dict[str, object] | None:
+    if not isinstance(artifact, dict) or artifact.get("kind") not in {
+        "ml_strategy_version", "ml_strategy_approval", "ml_model",
+        "ml_prediction_snapshot", "signal_snapshot",
+    }:
+        return None
+    content = artifact.get("content") if isinstance(artifact.get("content"), dict) else {}
+    kind = str(artifact["kind"])
+    allowed = {
+        "ml_strategy_version": {"schema_version", "version_id", "name", "learner", "feature_set", "target", "split", "learner_parameters", "signal_policy", "runtime_lock"},
+        "ml_strategy_approval": {"schema_version", "ml_strategy_version_id", "ml_strategy_artifact_id", "decision", "rationale", "execution_authorized", "execution_outcome"},
+        "ml_model": {"schema_version", "training_run_id", "strategy_version_artifact_id", "feature_snapshot_artifact_id", "stock_pool_snapshot_id", "split", "feature_order", "best_iteration", "metrics", "counts", "runtime_lock", "runtime_identity", "content_sha256"},
+        "ml_prediction_snapshot": {"schema_version", "model_artifact_id", "stock_pool_snapshot_id", "prediction_split", "runtime_lock", "runtime_identity", "rows", "counts", "content_sha256"},
+        "signal_snapshot": {"schema_version", "strategy_version_id", "strategy_version_artifact_id", "universe", "signals", "execution", "source", "content_sha256"},
+    }[kind]
+    projected = {key: value for key, value in content.items() if key in allowed}
+    if kind == "ml_prediction_snapshot" and isinstance(projected.get("rows"), list):
+        projected["rows"] = projected["rows"][:200]
+    if kind == "signal_snapshot":
+        projected.pop("bars", None)
+        if isinstance(projected.get("signals"), list):
+            projected["signals"] = projected["signals"][:200]
+    return {
+        "artifact_id": artifact.get("artifact_id"), "task_id": artifact.get("task_id"),
+        "kind": kind, "status": artifact.get("status"), "content_sha256": artifact.get("content_sha256"),
+        "created_at": artifact.get("created_at"), "content": projected,
+    }
+
+
+@router.get("/ml/workspace")
+def product_ml_workspace(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    headers = _trusted_agent_headers(request)
+    tasks = _backend_request("GET", "/v1/research/tasks", headers=headers).get("tasks", [])
+    pools = _backend_request("GET", "/v1/paper/pools?limit=100&offset=0", headers=headers).get("pools", [])
+    artifacts = _backend_request("GET", "/v1/research/artifacts", headers=headers).get("artifacts", [])
+    training = _backend_request("GET", "/v1/research/ml/training-runs", headers=headers).get("runs", [])
+    predictions = _backend_request("GET", "/v1/research/ml/prediction-runs", headers=headers).get("runs", [])
+    raw_backtests = _backend_request("GET", "/v1/research/backtests", headers=headers).get("backtests", [])
+    backtests = [{key: item.get(key) for key in (
+        "job_id", "task_id", "status", "strategy_version_artifact_id", "approval_artifact_id",
+        "result_artifact_id", "summary", "error_code", "error_message", "created_at", "finished_at",
+    )} for item in raw_backtests if isinstance(item, dict)]
+    projected = [_ml_artifact_projection(item) for item in artifacts]
+    return {
+        "tasks": tasks, "pools": pools, "training_runs": training, "prediction_runs": predictions,
+        "artifacts": [item for item in projected if item is not None], "backtests": backtests,
+    }
+
+
+def _ml_command(request: Request, path: str, payload: dict[str, object], fields: set[str], prefix: str) -> dict[str, object]:
+    _product_principal(request)
+    if set(payload) != fields:
+        raise ProductError(422, "product_request_invalid", "ML research request has invalid fields")
+    trace_id, idempotency_key = _ml_nonce(prefix)
+    return _backend_request("POST", path, {**payload, "trace_id": trace_id, "idempotency_key": idempotency_key}, headers=_trusted_agent_headers(request))
+
+
+@router.post("/ml/strategies/versions", status_code=201)
+def product_ml_strategy(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    return _ml_command(request, "/v1/research/ml/strategies/versions", payload, {"task_id", "strategy"}, "strategy")
+
+
+@router.post("/ml/strategies/approvals", status_code=201)
+def product_ml_approval(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    return _ml_command(request, "/v1/research/ml/strategies/approvals", payload, {"task_id", "ml_strategy_artifact_id", "decision", "rationale"}, "approval")
+
+
+@router.post("/ml/training-runs", status_code=202)
+def product_ml_training(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    return _ml_command(request, "/v1/research/ml/training-runs", payload, {"task_id", "ml_strategy_artifact_id", "stock_pool_snapshot_id"}, "training")
+
+
+@router.get("/ml/training-runs/{run_id}")
+def product_ml_training_get(run_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/research/ml/training-runs/{run_id}", headers=_trusted_agent_headers(request))
+
+
+@router.post("/ml/training-runs/{run_id}/cancel")
+def product_ml_training_cancel(run_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("POST", f"/v1/research/ml/training-runs/{run_id}/cancel", headers=_trusted_agent_headers(request))
+
+
+@router.post("/ml/prediction-runs", status_code=202)
+def product_ml_prediction(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    return _ml_command(request, "/v1/research/ml/prediction-runs", payload, {"task_id", "model_artifact_id", "approval_artifact_id", "execution"}, "prediction")
+
+
+@router.get("/ml/prediction-runs/{run_id}")
+def product_ml_prediction_get(run_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/research/ml/prediction-runs/{run_id}", headers=_trusted_agent_headers(request))
+
+
 @router.get("/backtests/options")
 def product_backtest_options(request: Request) -> dict[str, object]:
     _product_principal(request)

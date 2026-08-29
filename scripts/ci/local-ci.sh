@@ -295,6 +295,9 @@ check_smoke() {
   if docker compose cp scripts/evidence/phase68-seed.py backend:/tmp/phase68-seed.py >/dev/null \
     && docker compose exec -T backend python /tmp/phase68-seed.py; then
     ok "Phase 68 dynamic inputs fixture"; else bad "Phase 68 dynamic inputs fixture"; fi
+  if docker compose cp scripts/evidence/phase74-seed.py backend:/tmp/phase74-seed.py >/dev/null \
+    && docker compose exec -T backend python /tmp/phase74-seed.py; then
+    ok "Phase 74 LightGBM fixture"; else bad "Phase 74 LightGBM fixture"; fi
   if (
     cd apps/frontend
     [ -x node_modules/.bin/playwright ] || npm ci --no-audit --no-fund
@@ -302,6 +305,13 @@ check_smoke() {
     npm run test:e2e:real
   ); then
     ok "real Product API browser smoke"; else bad "real Product API browser smoke"; fi
+  if BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
+      scripts/evidence/phase74-product-verification.py /tmp/byq-phase74-identities.json \
+    && docker compose restart ml-worker >/dev/null \
+    && docker compose up -d --wait ml-worker >/dev/null \
+    && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
+      scripts/evidence/phase74-product-verification.py --verify /tmp/byq-phase74-identities.json; then
+    ok "Phase 74 restart persistence and two-user isolation"; else bad "Phase 74 restart persistence and two-user isolation"; fi
   if docker compose cp scripts/evidence/phase48-seed.py backend:/tmp/phase48-seed.py >/dev/null \
     && docker compose exec -T \
       -e BYQ_GOLDEN_OTHER_USERNAME="$BYQ_GOLDEN_OTHER_USERNAME" \

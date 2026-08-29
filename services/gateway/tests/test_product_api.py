@@ -26,6 +26,43 @@ def test_product_api_uses_error_envelope_and_auth_boundary(monkeypatch) -> None:
     assert healthy.json()["status"] == "ok"
 
 
+def test_ml_workspace_projects_safe_artifacts_and_owner_context(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    calls: list[tuple[str, dict[str, str]]] = []
+    def backend(_method, path, payload=None, *, headers=None):
+        calls.append((path, headers))
+        if path == "/v1/research/artifacts":
+            return {"artifacts": [{"artifact_id": "artifact_model", "task_id": "task_1", "kind": "ml_model", "status": "validated", "content": {"best_iteration": 7, "object_reference": "/secret/model.txt", "rows": [{"features": {"leak": 1}}]}}, {"artifact_id": "artifact_features", "kind": "ml_feature_snapshot", "content": {"rows": [{"secret": 1}]}}]}
+        if path.startswith("/v1/paper/pools"): return {"pools": []}
+        if path.endswith("training-runs") or path.endswith("prediction-runs"): return {"runs": []}
+        return {"tasks": []}
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).get("/api/product/ml/workspace", headers={"Authorization": "Bearer product-test-token"})
+    assert response.status_code == 200
+    assert response.json()["artifacts"][0]["content"] == {"best_iteration": 7}
+    assert "object_reference" not in response.text
+    assert "ml_feature_snapshot" not in response.text
+    assert all(headers["x-byq-owner-principal"] == "product-user" for _, headers in calls)
+
+
+def test_ml_commands_reject_browser_identity_fields_and_generate_them_server_side(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    captured: dict[str, object] = {}
+    def backend(method, path, payload=None, *, headers=None):
+        captured.update(method=method, path=path, payload=payload, headers=headers)
+        return {"artifact": {"artifact_id": "artifact_ml"}}
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    client = TestClient(main.app)
+    headers = {"Authorization": "Bearer product-test-token"}
+    bad = client.post("/api/product/ml/strategies/versions", headers=headers, json={"task_id": "task_1", "strategy": {}, "trace_id": "browser"})
+    assert bad.status_code == 422
+    good = client.post("/api/product/ml/strategies/versions", headers=headers, json={"task_id": "task_1", "strategy": {}})
+    assert good.status_code == 201
+    assert str(captured["payload"]["trace_id"]).startswith("product-ml-strategy-")
+    assert captured["payload"]["trace_id"] == captured["payload"]["idempotency_key"]
+
+
 def test_asset_diagnostics_name_destination_workspace_without_trust_metadata(monkeypatch) -> None:
     workspace = {
         "contract": "personal-workspace.v1",

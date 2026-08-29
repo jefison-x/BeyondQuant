@@ -104,6 +104,25 @@ paths:
     get: {summary: 列出 owner-scoped experiments., responses: *okResponses}
   /api/product/research/artifacts:
     get: {summary: 列出 owner-scoped artifacts., responses: *okResponses}
+  /api/product/ml/workspace:
+    get: {summary: 返回 owner-scoped LightGBM 研究工作区安全投影，不包含模型对象地址或原始特征行。, responses: *okResponses}
+  /api/product/ml/strategies/versions:
+    post: {summary: 冻结一个 closed-profile LightGBM 策略版本。, responses: *createdResponses}
+  /api/product/ml/strategies/approvals:
+    post: {summary: 记录 LightGBM 策略版本的显式人工批准或拒绝。, responses: *createdResponses}
+  /api/product/ml/training-runs:
+    post: {summary: 对冻结股票池提交 durable LightGBM 训练。, responses: *acceptedResponses}
+  /api/product/ml/training-runs/{run_id}:
+    parameters: [{$ref: "#/components/parameters/RunId"}]
+    get: {summary: 获取 owner-scoped LightGBM 训练状态和制品 ID。, responses: *okResponses}
+  /api/product/ml/training-runs/{run_id}/cancel:
+    parameters: [{$ref: "#/components/parameters/RunId"}]
+    post: {summary: 取消可取消的 owner-scoped LightGBM 训练。, responses: *okResponses}
+  /api/product/ml/prediction-runs:
+    post: {summary: 提交样本外预测并生成冻结信号。, responses: *acceptedResponses}
+  /api/product/ml/prediction-runs/{run_id}:
+    parameters: [{$ref: "#/components/parameters/RunId"}]
+    get: {summary: 获取 owner-scoped 样本外预测和冻结信号制品 ID。, responses: *okResponses}
   /api/product/factors:
     get: {summary: 列出 owner-scoped factor results., responses: *okResponses}
   /api/product/signal-snapshots:
@@ -350,6 +369,7 @@ components:
     EntityType: {name: entity_type, in: path, required: true, schema: {type: string, enum: [tasks, experiments, artifacts]}}
     EntityId: {name: entity_id, in: path, required: true, schema: {type: string}}
     JobId: {name: job_id, in: path, required: true, schema: {type: string}}
+    RunId: {name: run_id, in: path, required: true, schema: {type: string}}
     RequestId: {name: request_id, in: path, required: true, schema: {type: string}}
     PluginId: {name: plugin_id, in: path, required: true, schema: {type: string, pattern: "^[a-z0-9-]+$"}}
     CredentialId: {name: credential_id, in: path, required: true, schema: {type: string}}

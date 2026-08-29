@@ -78,6 +78,32 @@ test("real Product API login and Stock Pool create flow", async ({ page, baseURL
   expect(serverErrors).toEqual([]);
 });
 
+test("Phase 74 real LightGBM training to frozen-signal backtest journey", async ({ page, baseURL }) => {
+  test.setTimeout(240_000);
+  const username = process.env.BYQ_E2E_ADMIN_USERNAME, password = process.env.BYQ_E2E_ADMIN_PASSWORD;
+  if (!username || !password) throw new Error("BYQ_E2E admin credentials are required");
+  const origin = new URL(baseURL ?? "http://127.0.0.1:18080").origin;
+  const unexpectedOrigins = new Set<string>(), serverErrors: string[] = [];
+  page.on("request", request => { const url = new URL(request.url()); if (["http:", "https:"].includes(url.protocol) && url.origin !== origin) unexpectedOrigins.add(url.origin); });
+  page.on("response", response => { if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`); });
+  await page.goto("/login"); await page.getByLabel("用户名").fill(username); await page.getByLabel("密码").fill(password); await page.getByRole("button", { name: "进入" }).click();
+  await expect(page).toHaveURL(`${origin}/agent`);
+  const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `Phase 74 ML 冻结池-${Date.now()}`, pool_type: "custom", description: "真实浏览器 LightGBM 闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
+  expect(poolStatus).toBe(201);
+  await page.goto("/user/models"); await page.getByRole("tab", { name: "量化模型研究" }).click();
+  await expect(page.getByText("可靠 LightGBM 最小闭环")).toBeVisible();
+  await page.getByTestId("ml-save").click(); await expect(page.getByText("策略版本已冻结")).toBeVisible();
+  await page.getByTestId("ml-train").click(); await page.getByRole("button", { name: "批准并训练" }).click();
+  await expect(page.getByText(/训练：completed/)).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByText("模型制品")).toBeVisible();
+  await page.getByTestId("ml-predict").click(); await expect(page.getByText(/预测：completed/)).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole("columnheader", { name: "排名" })).toBeVisible();
+  await page.getByTestId("ml-backtest").click(); await expect(page.getByText("completed", { exact: true }).last()).toBeVisible({ timeout: 120_000 });
+  const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
+  if (evidenceDir) { await page.screenshot({ path: `${evidenceDir}/01-lightgbm-desktop.png`, fullPage: true }); await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: `${evidenceDir}/02-lightgbm-mobile.png`, fullPage: true }); }
+  expect([...unexpectedOrigins]).toEqual([]); expect(serverErrors).toEqual([]);
+});
+
 test("real Product API index pool materializes validated point-in-time weights", async ({ page, baseURL }) => {
   const username = process.env.BYQ_E2E_ADMIN_USERNAME;
   const password = process.env.BYQ_E2E_ADMIN_PASSWORD;

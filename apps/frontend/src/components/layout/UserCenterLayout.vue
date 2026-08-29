@@ -26,7 +26,7 @@ const activePath = computed(() => route.path);
     </header>
     <div class="user-center-mobile-nav">
       <label for="user-center-section">设置分区</label>
-      <el-select id="user-center-section" :model-value="activePath" @change="router.push(String($event))">
+      <el-select id="user-center-section" aria-label="用户中心页面" :model-value="activePath" @change="router.push(String($event))">
         <el-option v-for="section in sections" :key="section.path" :label="section.label" :value="section.path" />
       </el-select>
     </div>
