@@ -289,6 +289,19 @@ artifact hash/closure inspection、carrier validation、composition/initializati
 notification Contract review、cancellation review 和 ADR update。较新 npm release 不会
 自动改变该 baseline。
 
+## 运行时会话资源维护说明（2026-08-29）
+
+“每个 active BYQ session 一个 DSH process”中的 active 指正在执行、被 Product SSE
+消费，或仍处于短暂重连宽限期的运行时会话，不等同于 durable conversation catalog 中
+所有 active lifecycle conversation。浏览器离开且无消费者后，Gateway 可以在有界宽限期
+后经 Runtime Adapter release 该临时进程；再次打开会话时，仍按本 ADR 的 create seam，
+以 BYQ WorkflowTrace 的最后 sequence 恢复运行时投影。Durable conversation、消息和
+WorkflowTrace 不因此删除或归档。
+
+Runtime Adapter 的长连接通知等待不得占用共享 web executor。每个 owned session 的
+blocking notification queue 可通过 Adapter-owned 有界桥接线程转入 async SSE queue，
+仍由 Adapter 独占 raw DSH notification normalization，且不改变 Browser Contract。
+
 ## 已验证 runtime 的已知限制
 
 - 无 prompt cancel；

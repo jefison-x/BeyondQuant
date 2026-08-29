@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  cancelSession, createAgentSession, deleteAgentSession, getAgentSession, listAgentSessions, resumeSession,
+  AgentRequestError, cancelSession, createAgentSession, deleteAgentSession, getAgentSession, listAgentSessions, resumeSession,
   streamWorkflowEvents, submitTurn, updateAgentSession,
 } from "@/api/agent";
 import { foldWorkflowCards, workflowActivities, workflowRunState } from "@/api/workflow";
@@ -41,6 +41,7 @@ let conversationGeneration = 0;
 let streamController: AbortController | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 let reconciliationTimer: ReturnType<typeof setTimeout> | null = null;
+let lastStreamEventAt = 0;
 
 const activeSession = computed(() => agent.sessions.find((item) => item.session_id === agent.activeSessionId));
 const userDisplayName = computed(() => auth.user?.display_name?.trim() || "我");
@@ -154,10 +155,12 @@ async function maintainStream(
       await streamWorkflowEvents(sessionId, auth.token, (event) => {
         cursor = Math.max(cursor, event.sequence);
         delay = 500;
+        lastStreamEventAt = Date.now();
         handleEvent(event, generation);
       }, String(cursor), controller.signal);
-    } catch {
+    } catch (exc) {
       if (controller.signal.aborted || generation !== conversationGeneration) return;
+      if (exc instanceof AgentRequestError && [401, 403, 404, 410].includes(exc.status)) return;
     }
     try {
       cursor = Math.max(cursor, await replayMissedEvents(sessionId, generation));
@@ -172,6 +175,7 @@ function startStream(sessionId: string, afterSequence: number, generation: numbe
   stopStream();
   const controller = new AbortController();
   streamController = controller;
+  lastStreamEventAt = Date.now();
   void maintainStream(sessionId, afterSequence, generation, controller);
 }
 
@@ -181,10 +185,12 @@ function scheduleRunReconciliation(sessionId: string, generation: number) {
   reconciliationTimer = setTimeout(async () => {
     reconciliationTimer = null;
     if (generation !== conversationGeneration || sessionId !== agent.activeSessionId || !localRunStartedAt.value) return;
-    try { await replayMissedEvents(sessionId, generation); }
-    catch { /* the live stream remains primary; the next bounded poll retries */ }
+    if (Date.now() - lastStreamEventAt >= 10_000) {
+      try { await replayMissedEvents(sessionId, generation); }
+      catch { /* the live stream remains primary; the next bounded poll retries */ }
+    }
     if (localRunStartedAt.value) scheduleRunReconciliation(sessionId, generation);
-  }, 2_500);
+  }, 5_000);
 }
 
 async function openSession(sessionId: string, updateRoute = true) {

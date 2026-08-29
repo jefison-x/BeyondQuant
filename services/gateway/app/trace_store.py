@@ -78,6 +78,13 @@ class TraceStore:
             self._closed.add(session_id)
             self._condition.notify_all()
 
+    def reopen(self, session_id: str) -> None:
+        """Allow a durable trace to receive events from a rehydrated runtime."""
+
+        with self._condition:
+            if session_id not in self._deleted:
+                self._closed.discard(session_id)
+
     def delete(self, session_id: str) -> None:
         path = self._path(session_id)
         with self._condition:

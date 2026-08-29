@@ -13,11 +13,11 @@ import uuid
 from decimal import Decimal
 from datetime import datetime, timezone
 
-import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
+from .pooled_http import pooled_http as httpx
 from .user_session import SESSION_COOKIE, ProductAuthError, login as login_user, logout as logout_user, resolve_principal, resolve_user
 
 
