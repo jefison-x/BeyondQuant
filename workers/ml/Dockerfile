@@ -24,6 +24,6 @@ RUN pip install --no-cache-dir . \
 USER byq
 
 HEALTHCHECK --interval=15s --timeout=5s --retries=4 \
-  CMD ["python", "worker.py", "--probe"]
+  CMD ["python", "worker.py", "--healthcheck"]
 
 CMD ["python", "worker.py"]

@@ -110,6 +110,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn('"numpy==2.3.3"', worker_dockerfile)
         self.assertIn("libgomp1", worker_dockerfile)
         self.assertIn("USER byq", worker_dockerfile)
+        self.assertIn('CMD ["python", "worker.py", "--healthcheck"]', worker_dockerfile)
         self.assertNotIn("pickle", worker_source.lower())
         self.assertNotIn("joblib", worker_source.lower())
 

@@ -7,6 +7,7 @@ import math
 import os
 import signal
 import time
+from pathlib import Path
 
 import lightgbm as lgb
 import numpy as np
@@ -21,6 +22,9 @@ from app.ml_training import (
     promote_waiting_training_runs,
 )
 from app.research import ResearchStore
+
+
+READY_PATH = Path("/tmp/byq-ml-worker-ready")
 
 
 class LightGBMTrainer:
@@ -126,12 +130,23 @@ def probe() -> int:
     return 0
 
 
+def healthcheck() -> int:
+    if not READY_PATH.is_file() or READY_PATH.read_text(encoding="utf-8") != RUNTIME_IDENTITY:
+        raise RuntimeError("ML worker initialization is incomplete")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", action="store_true")
+    parser.add_argument("--healthcheck", action="store_true")
     args = parser.parse_args()
     if args.probe:
         return probe()
+    if args.healthcheck:
+        return healthcheck()
+    READY_PATH.unlink(missing_ok=True)
+    probe()
     runs = MLTrainingRunStore.from_env()
     research = ResearchStore.from_env()
     readiness = MarketReadinessStore.from_env()
@@ -140,6 +155,7 @@ def main() -> int:
         runs, research, objects, LightGBMTrainer(),
         worker_id=os.environ.get("BYQ_ML_WORKER_ID", "ml-worker-1"),
     )
+    READY_PATH.write_text(RUNTIME_IDENTITY, encoding="utf-8")
     poll = max(0.2, float(os.environ.get("BYQ_ML_POLL_SECONDS", "2")))
     running = True
 
@@ -155,6 +171,7 @@ def main() -> int:
             if coordinator.run_next() is None:
                 time.sleep(poll)
     finally:
+        READY_PATH.unlink(missing_ok=True)
         readiness.close()
         research.close()
         runs.close()
