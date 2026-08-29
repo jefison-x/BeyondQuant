@@ -611,7 +611,7 @@ trusted worker、import-trigger/manual idempotent refresh、as-of/history/diff P
 waiting/stale/failure recovery、definition/run/history/diff Product API 和可访问 UI。不允许 arbitrary
 Python/SQL/URL、DSH evaluator 或第二 rules harness。
 
-### Phase 69 — Integration and product closure（`AUTHORIZED`）
+### Phase 69 — Integration and product closure（`COMPLETE`）
 
 统一 catalog/readiness/diff，验证 Research/Strategy/Backtest/Paper immutable snapshot 消费、资产导入
 重新验证、监控/audit/restart/two-user isolation；完成 real Product API desktop/mobile Chrome、same-origin

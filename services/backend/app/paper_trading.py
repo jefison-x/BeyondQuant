@@ -1052,6 +1052,31 @@ class PaperTradingStore(PgStoreMixin):
         total = self._fetch_one("SELECT COUNT(*) AS total FROM stock_pool_snapshots WHERE pool_id = :pool_id", {"pool_id": pool["pool_id"]})
         return {"snapshots": rows, "total": int(total["total"] if total else 0), "limit": limit, "offset": offset}
 
+    def diff_pool_snapshots(
+        self, pool_id: object, from_snapshot_id: object, to_snapshot_id: object,
+        *, trusted_owner: str | None = None,
+    ) -> dict[str, object]:
+        pool = self.get_pool(pool_id, trusted_owner=trusted_owner)
+        before = self.get_pool_snapshot(from_snapshot_id, trusted_owner=trusted_owner)
+        after = self.get_pool_snapshot(to_snapshot_id, trusted_owner=trusted_owner)
+        if before["pool_id"] != pool["pool_id"] or after["pool_id"] != pool["pool_id"]:
+            raise PaperTradingNotFound("stock pool snapshot not found")
+        before_members = {str(item["symbol"]): item.get("weight") for item in before["members"]}
+        after_members = {str(item["symbol"]): item.get("weight") for item in after["members"]}
+        before_symbols, after_symbols = set(before_members), set(after_members)
+        changed = [
+            {"symbol": symbol, "from_weight": before_members[symbol], "to_weight": after_members[symbol]}
+            for symbol in sorted(before_symbols & after_symbols)
+            if before_members[symbol] != after_members[symbol]
+        ]
+        return {
+            "schema_version": "stock-pool-snapshot-diff.v1", "pool_id": pool["pool_id"],
+            "from_snapshot_id": before["snapshot_id"], "to_snapshot_id": after["snapshot_id"],
+            "added": [{"symbol": symbol, "weight": after_members[symbol]} for symbol in sorted(after_symbols - before_symbols)],
+            "removed": [{"symbol": symbol, "weight": before_members[symbol]} for symbol in sorted(before_symbols - after_symbols)],
+            "weight_changed": changed, "retained_count": len(before_symbols & after_symbols),
+        }
+
     def get_pool_as_of(self, pool_id: object, trade_date: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         pool = self.get_pool(pool_id, trusted_owner=trusted_owner)
         if pool["pool_type"] != "index":

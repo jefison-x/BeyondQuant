@@ -2601,6 +2601,14 @@ def create_dynamic_pool(payload: dict[str, Any], request: Request) -> dict[str, 
     ))
 
 
+@app.post("/v1/paper/producer-imports", status_code=201)
+def import_stock_pool_producer(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload, include_workspace=True)
+    return _stock_pool_producer_call(lambda: stock_pool_producer_store.import_inactive_definition(
+        payload, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+    ))
+
+
 @app.get("/v1/paper/pools/{pool_id}/producer")
 def get_stock_pool_producer(pool_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
@@ -2647,8 +2655,38 @@ def get_stock_pool(pool_id: str, request: Request) -> dict[str, object]:
 
 @app.get("/v1/paper/pools")
 def list_stock_pools(request: Request, limit: int = 50, offset: int = 0) -> dict[str, object]:
-    context = _required_agent_context(request)
-    return _paper_call(lambda: paper_store.list_pools(trusted_owner=context["owner_principal"], limit=limit, offset=offset))
+    context = _required_agent_context(request, include_workspace=True)
+    def catalog() -> dict[str, object]:
+        result = paper_store.list_pools(trusted_owner=context["owner_principal"], limit=limit, offset=offset)
+        for pool in result["pools"]:
+            if pool.get("pool_type") == "custom":
+                pool["readiness"] = {
+                    "schema_version": "stock-pool-readiness.v1", "pool_id": pool["pool_id"],
+                    "state": "current" if pool.get("current_snapshot_id") and pool.get("status") == "active" else "paused",
+                    "current_snapshot_id": pool.get("current_snapshot_id"),
+                }
+            else:
+                pool["readiness"] = stock_pool_producer_store.get_readiness(
+                    pool["pool_id"], trusted_owner=context["owner_principal"],
+                    trusted_workspace=context["workspace_id"],
+                )
+        return result
+    return _paper_call(catalog)
+
+
+@app.get("/v1/paper/pools/{pool_id}/readiness")
+def get_stock_pool_readiness(pool_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    pool = paper_store.get_pool(pool_id, trusted_owner=context["owner_principal"])
+    if pool["pool_type"] == "custom":
+        return {"readiness": {
+            "schema_version": "stock-pool-readiness.v1", "pool_id": pool_id,
+            "state": "current" if pool.get("current_snapshot_id") and pool.get("status") == "active" else "paused",
+            "current_snapshot_id": pool.get("current_snapshot_id"),
+        }}
+    return _stock_pool_producer_call(lambda: {"readiness": stock_pool_producer_store.get_readiness(
+        pool_id, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+    )})
 
 
 @app.patch("/v1/paper/pools/{pool_id}/metadata")
@@ -2673,6 +2711,16 @@ def list_stock_pool_snapshots(pool_id: str, request: Request, limit: int = 50, o
     return _paper_call(lambda: paper_store.list_pool_snapshots(
         pool_id, trusted_owner=context["owner_principal"], limit=limit, offset=offset
     ))
+
+
+@app.get("/v1/paper/pools/{pool_id}/snapshot-diff")
+def diff_stock_pool_snapshots(
+    pool_id: str, request: Request, from_snapshot_id: str, to_snapshot_id: str,
+) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: {"diff": paper_store.diff_pool_snapshots(
+        pool_id, from_snapshot_id, to_snapshot_id, trusted_owner=context["owner_principal"],
+    )})
 
 
 @app.get("/v1/paper/pools/{pool_id}/snapshots/{snapshot_id}")

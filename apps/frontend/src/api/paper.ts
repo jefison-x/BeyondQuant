@@ -1,4 +1,4 @@
-import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogItem, PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot, StockPool, StockPoolMaterializationRun, StockPoolProducerDefinition, StockPoolSnapshot } from "./types";
+import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogItem, PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot, StockPool, StockPoolMaterializationRun, StockPoolProducerDefinition, StockPoolReadiness, StockPoolSnapshot, StockPoolSnapshotDiff } from "./types";
 import { createRequestId } from "@/utils/requestId";
 
 const ROOT = "/api/product/paper";
@@ -152,6 +152,17 @@ export function replaceStockPoolSnapshot(
 
 export function listStockPoolSnapshots(poolId: string, token: string): Promise<{ snapshots: StockPoolSnapshot[] }> {
   return request(`/pools/${encodeURIComponent(poolId)}/snapshots`, token);
+}
+
+export function getStockPoolReadiness(poolId: string, token: string): Promise<{ readiness: StockPoolReadiness }> {
+  return request(`/pools/${encodeURIComponent(poolId)}/readiness`, token);
+}
+
+export function diffStockPoolSnapshots(
+  poolId: string, fromSnapshotId: string, toSnapshotId: string, token: string,
+): Promise<{ diff: StockPoolSnapshotDiff }> {
+  const query = new URLSearchParams({ from_snapshot_id: fromSnapshotId, to_snapshot_id: toSnapshotId });
+  return request(`/pools/${encodeURIComponent(poolId)}/snapshot-diff?${query}`, token);
 }
 
 export function getStockPoolSnapshot(poolId: string, snapshotId: string, token: string): Promise<{ snapshot: StockPoolSnapshot }> {

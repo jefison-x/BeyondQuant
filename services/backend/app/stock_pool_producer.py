@@ -316,6 +316,55 @@ class StockPoolProducerStore(PgStoreMixin):
             "rule_fingerprint": _hash(rule),
         }
 
+    def import_inactive_definition(
+        self, payload: object, *, trusted_owner: str, trusted_workspace: str,
+    ) -> dict[str, object]:
+        """Restore portable intent only; imported authority and snapshots are never trusted."""
+        if not isinstance(payload, dict) or set(payload) != {"name", "description", "producer_kind", "definition"}:
+            raise ValueError("producer import must contain name, description, producer_kind and definition")
+        owner, workspace = _text(trusted_owner, "owner_principal"), _text(trusted_workspace, "workspace_id")
+        name = _text(payload.get("name"), "name")
+        description = payload.get("description")
+        description = _text(description, "description", 2000) if description not in {None, ""} else None
+        kind = payload.get("producer_kind")
+        source = payload.get("definition")
+        if kind == "dynamic":
+            definition = normalize_dynamic_rule(source)
+            schema, schedule = DYNAMIC_RULE_SCHEMA_VERSION, {"cadence": definition["cadence"]}
+        elif kind == "index":
+            if not isinstance(source, dict) or set(source) != {
+                "index_symbol", "dataset_contract", "refresh_policy", "weight_mode",
+            }:
+                raise ValueError("imported index definition is invalid")
+            symbol = _index_symbol(source.get("index_symbol"))
+            definition = {
+                "index_symbol": symbol, "dataset_contract": "market-index-weights-v1",
+                "refresh_policy": "on_validated_import", "weight_mode": "provider_weight",
+            }
+            schema, schedule = "stock-pool-producer.v1", {"cadence": "on_validated_import"}
+        else:
+            raise ValueError("producer_kind must be index or dynamic")
+        pool_id, definition_id, now = _new_id("stock_pool"), _new_id("stock_pool_definition"), _now()
+        with self._transaction() as connection:
+            execute(connection, """INSERT INTO stock_pools
+                (pool_id,workspace_id,owner_principal,name,pool_type,description,weights_json,symbols_json,
+                 version,provenance_json,created_at,updated_at,status,metadata_version)
+                VALUES (:pool,:workspace,:owner,:name,:kind,:description,:weights,:symbols,
+                        'pending',:provenance,:now,:now,'inactive',1)""",
+                {"pool": pool_id, "workspace": workspace, "owner": owner, "name": name, "kind": kind,
+                 "description": description, "weights": {}, "symbols": [],
+                 "provenance": {"source": "portable_intent", "authoritative": False}, "now": now})
+            execute(connection, """INSERT INTO stock_pool_producer_definitions
+                (definition_id,pool_id,workspace_id,owner_principal,producer_kind,schema_version,version,
+                 definition_json,schedule_json,status,definition_fingerprint,created_at,updated_at)
+                VALUES (:definition_id,:pool,:workspace,:owner,:kind,:schema,1,:definition,:schedule,
+                        'draft',:fingerprint,:now,:now)""",
+                {"definition_id": definition_id, "pool": pool_id, "workspace": workspace, "owner": owner,
+                 "kind": kind, "schema": schema, "definition": definition, "schedule": schedule,
+                 "fingerprint": _hash(definition), "now": now})
+        return {"pool": self.paper_store.get_pool(pool_id, trusted_owner=owner),
+                "producer": self.get_definition(pool_id, trusted_owner=owner, trusted_workspace=workspace)}
+
     def create_dynamic_pool(
         self, payload: object, *, trusted_owner: str, trusted_workspace: str,
     ) -> dict[str, object]:
@@ -573,6 +622,49 @@ class StockPoolProducerStore(PgStoreMixin):
         result.pop("workspace_id", None)
         result.pop("owner_principal", None)
         return result
+
+    def get_readiness(self, pool_id: object, *, trusted_owner: str, trusted_workspace: str) -> dict[str, object]:
+        """Project producer state without allowing callers to submit readiness."""
+        pool = _text(pool_id, "pool_id", 80)
+        owner = _text(trusted_owner, "owner_principal")
+        workspace = _text(trusted_workspace, "workspace_id")
+        row = self._fetch_one("""SELECT p.status AS pool_status,p.current_snapshot_id,
+                d.definition_id,d.version AS definition_version,d.status AS definition_status,
+                r.run_id,r.definition_version AS run_definition_version,r.status AS run_status,
+                r.snapshot_id,r.error_code,r.error_message,r.finished_at
+            FROM stock_pools p
+            LEFT JOIN stock_pool_producer_definitions d ON d.pool_id=p.pool_id
+            LEFT JOIN LATERAL (
+                SELECT * FROM stock_pool_materialization_runs candidate
+                WHERE candidate.definition_id=d.definition_id
+                ORDER BY candidate.created_at DESC,candidate.run_id DESC LIMIT 1
+            ) r ON TRUE
+            WHERE p.pool_id=:pool AND p.owner_principal=:owner AND p.workspace_id=:workspace""",
+            {"pool": pool, "owner": owner, "workspace": workspace})
+        if row is None:
+            raise StockPoolProducerNotFound("stock pool producer not found")
+        if row.get("pool_status") != "active" or row.get("definition_status") in {"draft", "paused"}:
+            state = "paused"
+        elif row.get("run_status") == "waiting_for_data":
+            state = "waiting_for_data"
+        elif row.get("run_status") == "failed":
+            state = "failed"
+        elif (
+            row.get("current_snapshot_id")
+            and row.get("run_status") == "succeeded"
+            and row.get("snapshot_id") == row.get("current_snapshot_id")
+            and int(row.get("run_definition_version") or 0) == int(row.get("definition_version") or 0)
+        ):
+            state = "current"
+        else:
+            state = "stale"
+        return {
+            "schema_version": "stock-pool-readiness.v1", "pool_id": pool, "state": state,
+            "definition_version": row.get("definition_version"), "current_snapshot_id": row.get("current_snapshot_id"),
+            "latest_run_id": row.get("run_id"), "latest_run_status": row.get("run_status"),
+            "error_code": row.get("error_code"), "message": row.get("error_message"),
+            "updated_at": row.get("finished_at"),
+        }
 
     def list_runs(self, pool_id: object, *, trusted_owner: str, trusted_workspace: str,
                   limit: int = 50, offset: int = 0) -> dict[str, object]:

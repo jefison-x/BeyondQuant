@@ -919,6 +919,22 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+## Phase 69 stock-pool product closure audit
+
+The read-only Community `StockPoolView.vue`, stock-pool service/version model and
+API routes were inspected before implementing the final ADR-0041 integration.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 69 disposition |
+|---|---|---|---|
+| Unified list with type, member count, version and update time | Users need one catalogue for custom, index and dynamic pools. | `PORT_LAYOUT` / `PORT_UX` / `REFACTOR` | Compose owner-scoped BYQ Product projections and add a closed readiness state; keep immutable snapshots authoritative. |
+| Version list and member comparison | Historical membership changes must be visible and deterministic. | `PORT_UX` / `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Compare two immutable ADR-0020 snapshots in Backend and expose a normalized Product API diff. |
+| Import/export intent | Portable configuration must not carry trusted runtime state into another workspace. | `REFERENCE_ONLY` / `REPLACE` | Export only normalized producer intent; import index/dynamic definitions as `draft` with an `inactive` pool and require revalidation/materialization. |
+| Static sample universe and fake dynamic placeholder | No truthful persisted domain behavior. | `DROP` | Use canonical index evidence and the closed Phase 68 evaluator only; do not import samples or placeholder results. |
+| Direct ORM/internal API and legacy auth | Violates the Product and domain boundaries. | `REPLACE` / `DROP` | Browser remains on same-origin Gateway/Product API; Backend owns invariants and PostgreSQL persistence. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.
+
 ## Phase 62 user-experience polish pre-implementation audit
 
 The read-only Community Data Sync, Stock Pool dialog/view and Vite configuration

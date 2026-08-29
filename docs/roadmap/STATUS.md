@@ -1,13 +1,13 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=68 -->
+<!-- byq:current-completed-phase=69 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 68**——依据 ADR-0041 实现封闭且版本化的动态选股规则、
-  point-in-time 输入验证、确定性预览与物化、周期调度、不可变快照和 responsive Product UI；
-  Browser 只访问 Product API，预览结果明确标记为非权威结果。
+- 当前已完成阶段：**Phase 69**——依据 ADR-0041 统一自建、指数和动态股票池目录，提供
+  封闭 readiness 与不可变快照 diff，安全导入 producer intent，并完成运维、重启、隔离和
+  responsive Product browser 闭环；Browser 只访问 Gateway/Product API。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -256,11 +256,18 @@ Python、SQL 与 URL 均不能成为 evaluator。definition/run 状态、waiting
 Compose smoke、Product Chromium desktop/mobile 和独立 Chrome DevTools MCP same-origin/Console/
 Lighthouse review 均通过；Community dynamic placeholder 已按 inventory 分类为 `DROP`。
 
+Phase 69 Integration and Product Closure 已统一 custom/index/dynamic catalog，并提供封闭
+`stock-pool-readiness.v1` 状态和确定性的 `stock-pool-snapshot-diff.v1`。生产者资产导出只携带
+portable intent；导入后强制 `inactive` pool 与 `draft` definition，必须重新验证和物化，历史快照及
+权威状态不会跨 workspace 信任。Operations 仅暴露有界 definition/run 摘要，不暴露 worker payload。
+完整 PostgreSQL、Gateway、Runtime、MCP、frontend、mock/real E2E、Compose smoke、two-user isolation、
+Backend/Gateway restart recovery，以及 Chrome DevTools MCP desktop/mobile/same-origin/Console/
+Lighthouse 验收均通过；证据位于 `docs/evidence/phase-69/`。
+
 ## 当前授权边界
 
-- Phase 49-68 与相应 Accepted ADR/计划均已完成。
-- Next phase：**Phase 69 — Integration and product closure，已由维护者于 2026-08-29 明确授权**。
-  只能在 Phase 68 合并且 CI 通过后，于新隔离 worktree 完成 ADR-0041 产品闭环。
+- Phase 49-69 与相应 Accepted ADR/计划均已完成。
+- 当前没有被状态文件授权的下一 Product Phase；继续开发必须先由维护者明确授权并接受相关 ADR。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 

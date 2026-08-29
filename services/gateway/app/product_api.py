@@ -12,6 +12,7 @@ import os
 import uuid
 from decimal import Decimal
 from datetime import datetime, timezone
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -187,7 +188,16 @@ def _asset_lists(request: Request) -> tuple[list[object], list[object], list[obj
             continue
         try:
             body = _backend_request("GET", f"/v1/paper/pools/{pool_id}", headers=headers)
-            pools.append(body.get("pool") if isinstance(body.get("pool"), dict) else summary)
+            detail = body.get("pool") if isinstance(body.get("pool"), dict) else summary
+            if isinstance(detail, dict) and detail.get("pool_type") in {"index", "dynamic"}:
+                producer_body = _backend_request("GET", f"/v1/paper/pools/{pool_id}/producer", headers=headers)
+                producer = producer_body.get("producer")
+                if isinstance(producer, dict):
+                    detail = {**detail, "portable_producer": {
+                        "producer_kind": producer.get("producer_kind"),
+                        "definition": producer.get("definition"),
+                    }}
+            pools.append(detail)
         except ProductError:
             pools.append(summary)
     accounts = _owner_scoped_list("/v1/paper/accounts", "accounts", headers)
@@ -198,7 +208,7 @@ def _clean_pool(pool: object) -> dict[str, object]:
     if not isinstance(pool, dict):
         raise ValueError("pool asset must be an object")
     result: dict[str, object] = {}
-    for key in ("name", "pool_type", "description", "symbols", "weights", "provenance"):
+    for key in ("name", "pool_type", "description", "symbols", "weights", "provenance", "portable_producer"):
         if key in pool:
             result[key] = pool[key]
     return result
@@ -1432,7 +1442,18 @@ def product_assets_import(request: Request, payload: dict[str, object]) -> dict[
                 raise ValueError("pool asset has no name")
             suffix = f" · 导入-{import_nonce[:6]}-{index + 1}"
             clean_pool["name"] = f"{source_name[:128 - len(suffix)]}{suffix}"
-            _backend_request("POST", "/v1/paper/pools", clean_pool, headers=headers)
+            pool_type = clean_pool.get("pool_type", "custom")
+            if pool_type in {"index", "dynamic"}:
+                portable = clean_pool.get("portable_producer")
+                if not isinstance(portable, dict) or portable.get("producer_kind") != pool_type:
+                    raise ValueError("producer pool asset has no valid portable definition")
+                _backend_request("POST", "/v1/paper/producer-imports", {
+                    "name": clean_pool["name"], "description": clean_pool.get("description"),
+                    "producer_kind": pool_type, "definition": portable.get("definition"),
+                }, headers=headers)
+            else:
+                custom = {key: value for key, value in clean_pool.items() if key != "portable_producer"}
+                _backend_request("POST", "/v1/paper/pools", custom, headers=headers)
             imported_pools += 1
         except (ProductError, ValueError) as exc:
             errors.append({"kind": "pool", "message": str(exc)})
@@ -1607,6 +1628,12 @@ def product_stock_pools(request: Request, limit: int = 50, offset: int = 0) -> d
     return _backend_request("GET", f"/v1/paper/pools?limit={limit}&offset={offset}", headers=_trusted_agent_headers(request))
 
 
+@router.get("/paper/pools/{pool_id}/readiness")
+def product_stock_pool_readiness(pool_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/paper/pools/{pool_id}/readiness", headers=_trusted_agent_headers(request))
+
+
 @router.patch("/paper/pools/{pool_id}/metadata")
 def product_stock_pool_metadata(pool_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
@@ -1623,6 +1650,17 @@ def product_stock_pool_snapshot_replace(pool_id: str, request: Request, payload:
 def product_stock_pool_snapshots(pool_id: str, request: Request, limit: int = 50, offset: int = 0) -> dict[str, object]:
     _product_principal(request)
     return _backend_request("GET", f"/v1/paper/pools/{pool_id}/snapshots?limit={limit}&offset={offset}", headers=_trusted_agent_headers(request))
+
+
+@router.get("/paper/pools/{pool_id}/snapshot-diff")
+def product_stock_pool_snapshot_diff(
+    pool_id: str, request: Request, from_snapshot_id: str, to_snapshot_id: str,
+) -> dict[str, object]:
+    _product_principal(request)
+    query = urlencode({"from_snapshot_id": from_snapshot_id, "to_snapshot_id": to_snapshot_id})
+    return _backend_request(
+        "GET", f"/v1/paper/pools/{pool_id}/snapshot-diff?{query}", headers=_trusted_agent_headers(request),
+    )
 
 
 @router.get("/paper/pools/{pool_id}/snapshots/{snapshot_id}")

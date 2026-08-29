@@ -47,10 +47,32 @@ test("real Product API login and Stock Pool create flow", async ({ page, baseURL
       response.request().method() === "POST",
   );
   await page.getByRole("button", { name: "创建股票池" }).click();
-  expect((await createdResponse).status()).toBe(201);
+  const response = await createdResponse;
+  expect(response.status()).toBe(201);
+  const created = await response.json() as { pool: { pool_id: string; current_snapshot_id: string } };
+  const replaceStatus = await page.evaluate(async (pool) => {
+    const result = await fetch(`/api/product/paper/pools/${pool.pool_id}/snapshot`, {
+      method: "PUT", credentials: "include", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ expected_current_snapshot_id: pool.current_snapshot_id,
+        symbols: ["000001.SZ", "300750.SZ"], idempotency_key: crypto.randomUUID() }),
+    });
+    return result.status;
+  }, created.pool);
+  expect(replaceStatus).toBe(200);
+  await page.goto(`/stock-pool?pool=${created.pool.pool_id}`);
   await expect(page.getByText(poolName, { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("current", { exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "成员与权重" }).click();
   await expect(page.getByText("000001.SZ", { exact: true }).first()).toBeVisible();
+  await page.getByRole("tab", { name: "快照历史" }).click();
+  await page.getByRole("button", { name: "比较最近两个快照" }).click();
+  await expect(page.getByTestId("stock-pool-snapshot-diff")).toContainText("新增");
+  const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
+  if (evidenceDir) {
+    await page.screenshot({ path: `${evidenceDir}/01-stock-pool-closure-desktop.png`, fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: `${evidenceDir}/02-stock-pool-closure-mobile.png`, fullPage: true });
+  }
 
   expect([...unexpectedOrigins]).toEqual([]);
   expect(serverErrors).toEqual([]);
