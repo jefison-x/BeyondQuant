@@ -20,4 +20,3 @@ SUPPORTED_INDEXES: tuple[dict[str, str], ...] = (
 
 INDEX_NAMES = {item["index_symbol"]: item["name"] for item in SUPPORTED_INDEXES}
 SUPPORTED_INDEX_SYMBOLS = tuple(item["index_symbol"] for item in SUPPORTED_INDEXES)
-
