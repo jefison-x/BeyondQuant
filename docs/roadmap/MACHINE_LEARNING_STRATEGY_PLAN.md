@@ -20,7 +20,7 @@
 - 持久化 ModelArtifact、validation metrics 和完整 lineage；
 - 只交付 Backend/domain/worker contract，不做 prediction、signal、Backtest 或 UI。
 
-## Phase 73 — Out-of-sample prediction and signal closure（`NEXT`）
+## Phase 73 — Out-of-sample prediction and signal closure（`COMPLETE`）
 
 - 验证 model bytes/hash/runtime/feature order 后执行 prediction-only split；
 - 生成 immutable PredictionSnapshot，按确定性 score/symbol 排名；
@@ -28,7 +28,7 @@
 - 接入现有 Backtest submit/approval/manifest，不让 Backtest 加载模型；
 - 验证 no-look-ahead、tamper、重复 identity、restart 和端到端 regression。
 
-## Phase 74 — Product closure（`PENDING`）
+## Phase 74 — Product closure（`NEXT`）
 
 - 实现 Gateway/Product API typed contract 和模型研究界面；
 - 用户可选择 frozen pool、日期窗口、封闭参数并查看训练状态、指标、预测排名、信号和 Backtest；
