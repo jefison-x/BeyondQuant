@@ -66,7 +66,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
 
-    def test_phase71_accepts_the_closed_lightgbm_contract_without_runtime_changes(self) -> None:
+    def test_phase72_keeps_lightgbm_in_the_isolated_credential_free_worker(self) -> None:
         adr = (
             ROOT
             / "docs/architecture/adr/ADR-0043-auditable-machine-learning-research-pipeline.md"
@@ -76,6 +76,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         inventory = (ROOT / "docs/migration/COMMUNITY_MIGRATION_INVENTORY.md").read_text()
         backend_dependencies = (ROOT / "services/backend/pyproject.toml").read_text()
         compose = (ROOT / "compose.yml").read_text()
+        worker_dockerfile = (ROOT / "workers/ml/Dockerfile").read_text()
+        worker_source = (ROOT / "workers/ml/worker.py").read_text()
 
         self.assertIn("- Status: Accepted", adr)
         self.assertIn("LightGBM 4.7.0", adr)
@@ -95,7 +97,19 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("Phase 71 machine-learning strategy pre-implementation audit", inventory)
         self.assertIn("`REFERENCE_ONLY` / `REPLACE`", inventory)
         self.assertNotIn('"lightgbm', backend_dependencies.lower())
-        self.assertNotRegex(compose, r"(?m)^  ml-worker:")
+        self.assertRegex(compose, r"(?m)^  ml-worker:")
+        ml_worker = service_block("ml-worker")
+        self.assertIn("workers/ml/Dockerfile", ml_worker)
+        self.assertIn("no-new-privileges:true", ml_worker)
+        self.assertIn("cap_drop:", ml_worker)
+        for secret in ("TUSHARE", "MODEL_API", "MCP_TOKEN", "CREDENTIAL"):
+            self.assertNotIn(secret, ml_worker.upper())
+        self.assertIn('"lightgbm==4.7.0"', worker_dockerfile)
+        self.assertIn('"numpy==2.3.3"', worker_dockerfile)
+        self.assertIn("libgomp1", worker_dockerfile)
+        self.assertIn("USER byq", worker_dockerfile)
+        self.assertNotIn("pickle", worker_source.lower())
+        self.assertNotIn("joblib", worker_source.lower())
 
     def test_base_compose_uses_runtime_adapter_as_the_only_product_dsh_path(self) -> None:
         compose = (ROOT / "compose.yml").read_text()

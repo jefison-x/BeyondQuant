@@ -30,6 +30,7 @@ from app.learning_loop import LearningLoopStore
 from app.market_data import MarketDataStore
 from app.market_automation import MarketAutomationStore
 from app.market_readiness import MarketReadinessStore
+from app.ml_training import MLTrainingRunStore
 from app.operations import OperationsStore
 from app.paper_trading import PaperTradingStore
 from app.research import ResearchStore
@@ -62,6 +63,7 @@ REGISTERED_SCHEMA_DDL: list[str] = [
     *MarketAutomationStore.SCHEMA_DDL,
     *MarketReadinessStore.SCHEMA_DDL,
     *SignalJobStore.SCHEMA_DDL,
+    *MLTrainingRunStore.SCHEMA_DDL,
     *OperationsStore.SCHEMA_DDL,
     *WorkspaceTenancyStore.SCHEMA_DDL,
 ]

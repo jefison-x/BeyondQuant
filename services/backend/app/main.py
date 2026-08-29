@@ -151,6 +151,13 @@ from .strategy_artifact import (
     strategy_output_method,
     validate_version_content,
 )
+from .ml_strategy import normalize_ml_strategy, validate_ml_strategy_version
+from .ml_training import (
+    MLTrainingConflict,
+    MLTrainingNotFound,
+    MLTrainingPersistenceError,
+    MLTrainingRunStore,
+)
 from .operations import (
     OperationsConflict,
     OperationsForbidden,
@@ -187,6 +194,7 @@ plugin_center_store = PluginCenterStore.from_env()
 market_data_store = MarketDataStore.from_env()
 market_readiness_store = MarketReadinessStore.from_env()
 signal_job_store = SignalJobStore.from_env()
+ml_training_store = MLTrainingRunStore.from_env()
 data_sync_store = DataSyncStore.from_env()
 market_automation_store = MarketAutomationStore.from_env()
 security_master_store = SecurityMasterStore.from_env()
@@ -233,6 +241,25 @@ def _plugin_center_call(call: Callable[[], dict[str, object]]) -> dict[str, obje
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except PluginCenterPersistenceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _ml_call(call: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return call()
+    except (MLTrainingNotFound, ResearchNotFound, PaperTradingNotFound, SecurityMasterNotFound,
+            MarketAutomationNotFound) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (MLTrainingConflict, PaperTradingConflict, SecurityMasterConflict,
+            MarketAutomationConflict, IdempotencyConflict, InvalidTransition) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except PaperTradingForbidden as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (MLTrainingPersistenceError, ResearchPersistenceError, PaperTradingPersistenceError,
+            SecurityMasterPersistenceError, MarketReadinessPersistenceError,
+            MarketAutomationPersistenceError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
@@ -1529,6 +1556,212 @@ def export_strategy_version_artifact(artifact_id: str, request: Request) -> dict
         }
 
     return _research_call(operation)
+
+
+@app.post("/v1/research/ml/strategies/versions", status_code=201)
+def create_ml_strategy_version(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        data = _strategy_payload(
+            payload, {"task_id", "experiment_id", "strategy", "trace_id", "idempotency_key"}
+        )
+        task = research_store.get_task(data.get("task_id"))
+        if task["owner_principal"] != context["owner_principal"] or task.get("workspace_id") != context["workspace_id"]:
+            raise ResearchNotFound("research task not found")
+        normalized = normalize_ml_strategy(data.get("strategy"))
+        fingerprint = content_sha256(normalized)
+        artifact = research_store.find_artifact_by_content(
+            str(task["task_id"]), "ml_strategy_version", fingerprint
+        )
+        if artifact is None:
+            artifact = research_store.create_artifact({
+                "task_id": task["task_id"], "experiment_id": data.get("experiment_id"),
+                "kind": "ml_strategy_version", "content": normalized, "lineage": [],
+                "trace_id": data.get("trace_id"), "idempotency_key": data.get("idempotency_key"),
+            })
+        if artifact["status"] == "draft":
+            artifact = research_store.transition(
+                "artifact", artifact["artifact_id"], "validated",
+                f"ml-strategy-validate-{str(normalized['version_id'])[-24:]}",
+            )
+        return {"ml_strategy_version": normalized, "artifact": artifact}
+
+    return _research_call(operation)
+
+
+@app.post("/v1/research/ml/strategies/approvals", status_code=201)
+def create_ml_strategy_approval(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        data = _strategy_payload(
+            payload,
+            {"task_id", "experiment_id", "ml_strategy_artifact_id", "decision", "rationale",
+             "trace_id", "idempotency_key"},
+        )
+        task = research_store.get_task(data.get("task_id"))
+        version = research_store.get_artifact(data.get("ml_strategy_artifact_id"))
+        if (
+            task["owner_principal"] != context["owner_principal"]
+            or task.get("workspace_id") != context["workspace_id"]
+            or version["owner_principal"] != context["owner_principal"]
+            or version.get("workspace_id") != context["workspace_id"]
+        ):
+            raise ResearchNotFound("ML strategy version not found")
+        if version["kind"] != "ml_strategy_version" or version["status"] != "validated":
+            raise ValueError("ml_strategy_artifact_id must reference a validated ML strategy version")
+        if version["task_id"] != task["task_id"]:
+            raise ValueError("ML strategy version does not belong to task")
+        normalized = validate_ml_strategy_version(version["content"])
+        decision = data.get("decision")
+        if decision not in {"approved", "rejected"}:
+            raise ValueError("decision must be approved or rejected")
+        rationale = data.get("rationale", "")
+        if not isinstance(rationale, str) or len(rationale) > 4000:
+            raise ValueError("rationale must be a string of at most 4000 characters")
+        content = {
+            "schema_version": "ml-strategy-approval.v1",
+            "ml_strategy_version_id": normalized["version_id"],
+            "ml_strategy_artifact_id": version["artifact_id"],
+            "decision": decision,
+            "reviewer_principal": context["actor_principal"],
+            "rationale": rationale,
+            "execution_authorized": decision == "approved",
+            "execution_outcome": "not_started",
+        }
+        artifact = research_store.create_artifact({
+            "task_id": task["task_id"], "experiment_id": data.get("experiment_id"),
+            "kind": "ml_strategy_approval", "content": content,
+            "lineage": [{"kind": "artifact", "id": version["artifact_id"]}],
+            "trace_id": data.get("trace_id"), "idempotency_key": data.get("idempotency_key"),
+        })
+        if artifact["status"] == "draft":
+            artifact = research_store.transition(
+                "artifact", artifact["artifact_id"], "validated",
+                f"ml-approval-validate-{str(artifact['artifact_id'])[-24:]}",
+            )
+        return {"approval": content, "artifact": artifact}
+
+    return _research_call(operation)
+
+
+@app.post("/v1/research/ml/training-runs", status_code=202)
+def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        data = _strategy_payload(
+            payload,
+            {"task_id", "experiment_id", "ml_strategy_artifact_id", "stock_pool_snapshot_id",
+             "trace_id", "idempotency_key"},
+        )
+        task = research_store.get_task(data.get("task_id"))
+        version = research_store.get_artifact(data.get("ml_strategy_artifact_id"))
+        if (
+            task["owner_principal"] != context["owner_principal"]
+            or task.get("workspace_id") != context["workspace_id"]
+            or version["owner_principal"] != context["owner_principal"]
+            or version.get("workspace_id") != context["workspace_id"]
+        ):
+            raise ResearchNotFound("ML strategy version not found")
+        if version["kind"] != "ml_strategy_version" or version["status"] != "validated":
+            raise ValueError("ml_strategy_artifact_id must reference a validated ML strategy version")
+        if version["task_id"] != task["task_id"]:
+            raise ValueError("ML strategy version does not belong to task")
+        experiment_id = data.get("experiment_id")
+        if experiment_id is not None:
+            experiment = research_store.get_experiment(experiment_id)
+            if experiment["task_id"] != task["task_id"]:
+                raise ValueError("experiment does not belong to ML research task")
+        strategy = validate_ml_strategy_version(version["content"])
+        pool_snapshot = paper_store.get_pool_snapshot(
+            data.get("stock_pool_snapshot_id"), trusted_owner=context["owner_principal"]
+        )
+        pool = paper_store.get_pool(pool_snapshot["pool_id"], trusted_owner=context["owner_principal"])
+        if pool["status"] != "active":
+            raise ValueError("stock pool must be active for ML training")
+        symbols = sorted(str(member["symbol"]) for member in pool_snapshot.get("members", []))
+        if not symbols or len(symbols) > 1000:
+            raise ValueError("ML training stock pool must contain between 1 and 1000 symbols")
+        pool_type = str(pool.get("pool_type"))
+        declared: dict[str, object] = {}
+        membership_mode = "fixed_snapshot"
+        if pool_type == "index":
+            provenance = pool_snapshot.get("provenance")
+            index_symbol = provenance.get("index_symbol") if isinstance(provenance, dict) else None
+            if not isinstance(index_symbol, str) or not index_symbol:
+                raise ValueError("index stock pool has no canonical index identity")
+            declared["index_universe"] = index_symbol
+            membership_mode = "point_in_time"
+        elif pool_type == "dynamic":
+            raise ValueError("dynamic stock pool historical membership is not supported by Phase 72")
+        master = security_master_store.latest_snapshot()
+        if master is None:
+            raise ValueError("security master must be synchronized before ML training")
+        split = strategy["split"]
+        requirement = market_readiness_store.requirement(
+            symbols=symbols, start_date=split["train"]["start"], end_date=split["prediction"]["end"],
+            membership_fingerprint=str(pool_snapshot["membership_fingerprint"]),
+            security_master_snapshot_id=str(master["snapshot_id"]), data_requirements=declared,
+        )
+        readiness = market_readiness_store.assess(requirement)
+        if readiness["state"] != "ready":
+            market_automation_store.request_data_repair(
+                requirement=requirement, requested_by=f"ml:{context['owner_principal']}"
+            )
+        preparation = {
+            "strategy": strategy,
+            "universe": {
+                "membership_mode": membership_mode,
+                "stock_pool_id": pool_snapshot["pool_id"],
+                "stock_pool_snapshot_id": pool_snapshot["snapshot_id"],
+                "membership_fingerprint": pool_snapshot["membership_fingerprint"],
+                "symbols": symbols,
+                "index_symbol": declared.get("index_universe"),
+            },
+        }
+        run = ml_training_store.create_waiting(
+            workspace_id=context["workspace_id"], owner_principal=context["owner_principal"],
+            task_id=task["task_id"], experiment_id=data.get("experiment_id"),
+            ml_strategy_artifact_id=version["artifact_id"],
+            stock_pool_snapshot_id=pool_snapshot["snapshot_id"], preparation=preparation,
+            requirement=requirement, readiness=readiness, trace_id=data.get("trace_id"),
+            idempotency_key=data.get("idempotency_key"),
+        )
+        paper_store.record_pool_reference(
+            pool_snapshot["snapshot_id"], domain="ml_training", reference_id=run["training_run_id"],
+            trusted_owner=context["owner_principal"],
+        )
+        return {"training_run": run}
+
+    return _ml_call(operation)
+
+
+@app.get("/v1/research/ml/training-runs")
+def list_ml_training_runs(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _ml_call(lambda: ml_training_store.list_runs(
+        trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"]
+    ))
+
+
+@app.get("/v1/research/ml/training-runs/{training_run_id}")
+def get_ml_training_run(training_run_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _ml_call(lambda: {"training_run": ml_training_store.get(
+        training_run_id, trusted_workspace=context["workspace_id"],
+        trusted_owner=context["owner_principal"],
+    )})
+
+
+@app.post("/v1/research/ml/training-runs/{training_run_id}/cancel")
+def cancel_ml_training_run(training_run_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _ml_call(lambda: {"training_run": ml_training_store.cancel(
+        training_run_id, trusted_workspace=context["workspace_id"],
+        trusted_owner=context["owner_principal"],
+    )})
 
 
 _STRATEGY_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{2,63}$")
