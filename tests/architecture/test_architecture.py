@@ -100,6 +100,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertRegex(compose, r"(?m)^  ml-worker:")
         ml_worker = service_block("ml-worker")
         self.assertIn("workers/ml/Dockerfile", ml_worker)
+        self.assertIn("byq_ml_model_state:/var/lib/byq/ml-objects", ml_worker)
+        self.assertNotIn("byq_domain_state", ml_worker)
         self.assertIn("no-new-privileges:true", ml_worker)
         self.assertIn("cap_drop:", ml_worker)
         for secret in ("TUSHARE", "MODEL_API", "MCP_TOKEN", "CREDENTIAL"):

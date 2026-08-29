@@ -135,7 +135,7 @@ def main() -> int:
     runs = MLTrainingRunStore.from_env()
     research = ResearchStore.from_env()
     readiness = MarketReadinessStore.from_env()
-    objects = LocalObjectStore(os.environ.get("BYQ_ML_OBJECT_ROOT", "/var/lib/byq/domain/ml-objects"))
+    objects = LocalObjectStore(os.environ.get("BYQ_ML_OBJECT_ROOT", "/var/lib/byq/ml-objects"))
     coordinator = MLTrainingCoordinator(
         runs, research, objects, LightGBMTrainer(),
         worker_id=os.environ.get("BYQ_ML_WORKER_ID", "ml-worker-1"),
