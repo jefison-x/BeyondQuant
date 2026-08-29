@@ -1,6 +1,7 @@
 # Chrome DevTools MCP review
 
-Date: 2026-08-30  
+Date: 2026-08-30
+
 Target: isolated full Compose frontend at `http://127.0.0.1:32824`
 
 ## Desktop
