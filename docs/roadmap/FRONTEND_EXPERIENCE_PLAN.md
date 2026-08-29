@@ -87,3 +87,26 @@ Acceptance：不存在无法解释的 missing capability、raw internal-browser 
 ## Post-merge preview contract
 
 每个 phase merge 后同步 `main`、保留 volumes，并以 frontend `0.0.0.0:80`、Gateway `127.0.0.1:8100` 运行最新 stack。交付 maintainer 前验证 container health、homepage HTTP 200、durable login、phase journey 和 LAN address。
+
+## Post-program UI optimization backlog（未授权实施）
+
+本节只登记 Phase 42–48 完成后发现的非阻断界面问题，不重新打开已完成 Phase，也不授权实现
+新的 Product scope。每一项在实施前仍需维护者明确授权，并按隔离 worktree、测试、PR 和 browser
+review 流程交付。
+
+### BQ-UI-001 — 股票池“版本”语义消歧
+
+- **状态／优先级**：`PLANNED` / P3。
+- **涉及界面**：股票池目录、股票池概览、动态规则和快照历史。
+- **现状**：目录列“版本”和概览“当前版本”实际表示 current immutable member snapshot 的
+  `version_number`，但动态股票池同时存在独立的规则定义版本，名称/说明更新还使用不公开的
+  metadata concurrency version。通用“版本”标签容易让用户误以为修改名称、规则或刷新任务都会
+  推进同一个版本号。
+- **计划调整**：目录列改为“当前快照”，概览改为“当前成员快照”；动态定义继续明确显示
+  “规则 vN”，历史记录明确显示“快照 vN”。metadata concurrency version 保持内部实现，不作为
+  普通用户概念展示。
+- **必须保留的语义**：只有当前指针指向的不可变成员快照决定目录中的 `vN`；规则修改、元数据
+  修改、等待数据、失败任务和相同内容的幂等刷新不得伪装成新成员快照。
+- **验收标准**：custom/index/dynamic 三类目录和详情不再出现无上下文的“版本”；desktop/mobile
+  均能区分当前快照、规则版本和历史快照；补充 frontend unit/Playwright 文案与行为回归；不修改
+  Product API、snapshot identity、producer version、metadata concurrency 或下游冻结引用语义。
