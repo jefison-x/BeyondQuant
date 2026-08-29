@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import asyncio
 import threading
 import uuid
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 
-import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
 from .auth_api import router as auth_router
 from .product_api import ProductError, router as product_router
+from .pooled_http import pooled_http as httpx
 from .user_session import ProductAuthError, resolve_principal, resolve_user
 from .trace_store import TraceStore
 from .workflow_projection import project_workflow_event
@@ -26,6 +27,7 @@ app = FastAPI(title="BeyondQuant Gateway", version=VERSION)
 app.include_router(product_router)
 app.include_router(auth_router)
 RUNTIME_ADAPTER_URL = os.environ.get("BYQ_RUNTIME_ADAPTER_URL", "http://runtime-adapter:8400")
+RUNTIME_SESSION_IDLE_SECONDS = max(5.0, float(os.environ.get("BYQ_RUNTIME_SESSION_IDLE_SECONDS", "30")))
 BACKEND_URL = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
 PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
@@ -91,6 +93,9 @@ class ProductSession:
     principal: Principal
     workspace_id: str = "workspace_bootstrap_unresolved"
     released: bool = False
+    public_streams: int = 0
+    release_generation: int = 0
+    release_timer: threading.Timer | None = None
 
 
 class ProductSessionRegistry:
@@ -114,6 +119,45 @@ class ProductSessionRegistry:
             raise HTTPException(status_code=409, detail="product session is closed")
         return session
 
+    def begin_stream(self, session: ProductSession) -> None:
+        with self._lock:
+            session.release_generation += 1
+            session.public_streams += 1
+            if session.release_timer is not None:
+                session.release_timer.cancel()
+                session.release_timer = None
+
+    def end_stream(self, session: ProductSession) -> int | None:
+        with self._lock:
+            session.public_streams = max(0, session.public_streams - 1)
+            if session.released or session.public_streams:
+                return None
+            session.release_generation += 1
+            return session.release_generation
+
+    def attach_release_timer(self, session: ProductSession, generation: int, timer: threading.Timer) -> bool:
+        with self._lock:
+            if session.released or session.public_streams or session.release_generation != generation:
+                return False
+            session.release_timer = timer
+            return True
+
+    def claim_idle_release(self, session: ProductSession, generation: int) -> bool:
+        with self._lock:
+            if session.released or session.public_streams or session.release_generation != generation:
+                return False
+            session.released = True
+            session.release_timer = None
+            return True
+
+    def restore_failed_release(self, session: ProductSession) -> int | None:
+        with self._lock:
+            session.released = False
+            if session.public_streams:
+                return None
+            session.release_generation += 1
+            return session.release_generation
+
     def mark_released(self, conversation_id: str, principal: Principal) -> ProductSession:
         session = self.get_owned(conversation_id, principal)
         with self._lock:
@@ -133,6 +177,8 @@ class ProductSessionRegistry:
             if session is None or session.principal.subject != principal.subject:
                 return
             session.released = True
+            if session.release_timer is not None:
+                session.release_timer.cancel()
             del self._sessions[conversation_id]
 
     def list_owned(self, principal: Principal) -> list[ProductSession]:
@@ -145,6 +191,75 @@ class ProductSessionRegistry:
 
 
 product_sessions = ProductSessionRegistry()
+
+
+class _AsyncTraceBridge:
+    """Forward the blocking TraceStore iterator without consuming an AnyIO worker token."""
+
+    def __init__(self, events: Iterator[dict[str, object] | None]) -> None:
+        self._events = events
+        self._loop = asyncio.get_running_loop()
+        self._end = object()
+        self._items: asyncio.Queue[object] = asyncio.Queue()
+        self._stopped = threading.Event()
+        self._thread = threading.Thread(target=self._pump, name="byq-public-sse", daemon=True)
+        self._thread.start()
+
+    def _put(self, item: object) -> None:
+        try:
+            self._loop.call_soon_threadsafe(self._items.put_nowait, item)
+        except RuntimeError:
+            return
+
+    def _pump(self) -> None:
+        try:
+            for item in self._events:
+                if self._stopped.is_set():
+                    return
+                self._put(item)
+        except BaseException as exc:
+            self._put(exc)
+        finally:
+            self._put(self._end)
+
+    async def get(self) -> tuple[bool, dict[str, object] | None]:
+        item = await self._items.get()
+        if item is self._end:
+            return False, None
+        if isinstance(item, BaseException):
+            raise item
+        return True, item if isinstance(item, dict) else None
+
+    def close(self) -> None:
+        self._stopped.set()
+
+
+def _schedule_idle_release(session: ProductSession, generation: int | None = None) -> None:
+    if generation is None:
+        generation = product_sessions.end_stream(session)
+    if generation is None:
+        return
+
+    def release() -> None:
+        if not product_sessions.claim_idle_release(session, generation):
+            return
+        try:
+            _adapter_post(f"/internal/runtime/sessions/{session.session_id}/release", timeout=5.0)
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                product_sessions.remove_owned(session.conversation_id, session.principal)
+                trace_store.close(session.session_id)
+                return
+            retry_generation = product_sessions.restore_failed_release(session)
+            if retry_generation is not None:
+                _schedule_idle_release(session, retry_generation)
+            return
+        product_sessions.remove_owned(session.conversation_id, session.principal)
+
+    timer = threading.Timer(RUNTIME_SESSION_IDLE_SECONDS, release)
+    timer.daemon = True
+    if product_sessions.attach_release_timer(session, generation, timer):
+        timer.start()
 
 
 @app.get("/healthz")
@@ -395,6 +510,7 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
         product_sessions.add(session)
     except RuntimeError:
         return product_sessions.get_owned(conversation_id, principal)
+    trace_store.reopen(session.session_id)
     _start_trace_collector(session)
     return session
 
@@ -419,13 +535,22 @@ def create_product_session(request: Request) -> dict[str, object]:
         payload={"session_id": session_id, "trace_id": trace_id,
                  "workspace_id": workspace_id, "owner_principal": principal.subject},
     )
-    catalog = _catalog_request(
-        "POST", "/v1/product/conversations", principal, workspace_id,
-        payload={"runtime_session_id": session_id, "trace_id": trace_id},
-    )
-    conversation = catalog.get("conversation")
-    if not isinstance(conversation, dict):
-        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    try:
+        catalog = _catalog_request(
+            "POST", "/v1/product/conversations", principal, workspace_id,
+            payload={"runtime_session_id": session_id, "trace_id": trace_id},
+        )
+        conversation = catalog.get("conversation")
+        if not isinstance(conversation, dict):
+            raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    except Exception:
+        # Runtime processes are ephemeral and must not leak when the durable
+        # Product catalog transaction fails after process creation.
+        try:
+            _adapter_post(f"/internal/runtime/sessions/{session_id}/release", timeout=5.0)
+        except HTTPException:
+            pass
+        raise
     session = ProductSession(
         conversation_id=str(conversation["conversation_id"]),
         session_id=session_id,
@@ -629,17 +754,29 @@ def product_workflow_events(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Last-Event-ID must be an integer") from exc
 
-    def stream() -> Iterator[bytes]:
-        for event in trace_store.stream(session.session_id, after_sequence=after_sequence):
-            if event is None:
-                yield b": heartbeat\n\n"
-                continue
-            public_event = {**event, "session_id": session.conversation_id}
-            yield (
-                f"id: {public_event['sequence']}\n"
-                f"event: workflow-trace\n"
-                f"data: {json.dumps(public_event, separators=(',', ':'))}\n\n"
-            ).encode()
+    # Claim the consumer before returning the response so an old disconnect
+    # timer cannot release the runtime during ASGI response startup.
+    product_sessions.begin_stream(session)
+
+    async def stream() -> AsyncIterator[bytes]:
+        bridge = _AsyncTraceBridge(trace_store.stream(session.session_id, after_sequence=after_sequence))
+        try:
+            while True:
+                available, event = await bridge.get()
+                if not available:
+                    return
+                if event is None:
+                    yield b": heartbeat\n\n"
+                    continue
+                public_event = {**event, "session_id": session.conversation_id}
+                yield (
+                    f"id: {public_event['sequence']}\n"
+                    f"event: workflow-trace\n"
+                    f"data: {json.dumps(public_event, separators=(',', ':'))}\n\n"
+                ).encode()
+        finally:
+            bridge.close()
+            _schedule_idle_release(session)
 
     return StreamingResponse(
         stream(),

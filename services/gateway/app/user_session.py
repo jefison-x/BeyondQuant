@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import os
 
-import httpx
 from fastapi import Request
 
 from .auth import Principal
+from .pooled_http import pooled_http as httpx
 
 
 BACKEND_URL = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
@@ -57,6 +57,9 @@ def resolve_principal(request: Request) -> Principal:
 
 
 def resolve_user(request: Request) -> dict[str, object]:
+    cached = getattr(request.state, "byq_resolved_user", None)
+    if isinstance(cached, dict):
+        return cached
     session_id = request.cookies.get(SESSION_COOKIE)
     if not session_id:
         raise ProductAuthError(401, "product_authentication_required", "product authentication required")
@@ -81,4 +84,5 @@ def resolve_user(request: Request) -> dict[str, object]:
         raise ProductAuthError(502, "backend_invalid_response", "backend returned an invalid response")
     user = dict(body["user"])
     user["_workspace"] = body["workspace"]
+    request.state.byq_resolved_user = user
     return user

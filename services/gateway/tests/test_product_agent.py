@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 
 from fastapi.testclient import TestClient
 
@@ -72,6 +73,29 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
     assert calls[0][1]["owner_principal"] == main.PRODUCT_PRINCIPAL
     assert messages == ["summarize the health contract"]
     assert TOKEN not in str(calls)
+
+
+def test_failed_catalog_create_releases_ephemeral_runtime(monkeypatch) -> None:
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        main,
+        "_adapter_post",
+        lambda path, **_kwargs: calls.append(path) or {"status": "ready"},
+    )
+    monkeypatch.setattr(
+        main,
+        "_catalog_request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(main.HTTPException(status_code=503)),
+    )
+
+    response = TestClient(main.app).post(
+        "/v1/agent/sessions", headers={"Authorization": f"Bearer {TOKEN}"},
+    )
+
+    assert response.status_code == 503
+    assert calls[0] == "/internal/runtime/sessions"
+    assert calls[1].endswith("/release")
 
 
 def test_delete_product_session_releases_runtime_and_deletes_catalog_and_trace(monkeypatch, tmp_path: Path) -> None:
@@ -301,6 +325,26 @@ def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(mon
         "initial_sequence": 7,
     })]
     assert collectors == ["runtime-private"]
+    assert "runtime-private" not in store._closed
+
+
+def test_disconnected_public_stream_releases_idle_runtime(monkeypatch) -> None:
+    registry = main.ProductSessionRegistry()
+    monkeypatch.setattr(main, "product_sessions", registry)
+    monkeypatch.setattr(main, "RUNTIME_SESSION_IDLE_SECONDS", 0.01)
+    released = threading.Event()
+    monkeypatch.setattr(main, "_adapter_post", lambda _path, **_kwargs: released.set() or {"status": "closed"})
+    session = main.ProductSession(
+        conversation_id="conversation_idle", session_id="runtime-idle", trace_id="trace-idle",
+        principal=main.Principal(subject=main.PRODUCT_PRINCIPAL),
+    )
+    registry.add(session)
+    registry.begin_stream(session)
+
+    main._schedule_idle_release(session)
+
+    assert released.wait(timeout=1.0)
+    assert registry.find_owned(session.conversation_id, session.principal) is None
 
 
 def test_restore_accepts_an_adapter_session_that_survived_gateway_restart(monkeypatch, tmp_path: Path) -> None:

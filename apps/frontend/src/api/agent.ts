@@ -3,6 +3,13 @@ import type { AgentSession, AgentSessionReplay, WorkflowTraceEvent } from "./typ
 const AGENT_ROOT = "/v1/agent";
 const WORKFLOW_ROOT = "/v1/workflows";
 
+export class AgentRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "AgentRequestError";
+  }
+}
+
 async function jsonRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -92,7 +99,7 @@ export async function streamWorkflowEvents(
     signal,
   });
   if (!response.ok || !response.body) {
-    throw new Error("workflow stream failed");
+    throw new AgentRequestError("workflow stream failed", response.status);
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

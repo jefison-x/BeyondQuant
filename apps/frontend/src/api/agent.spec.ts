@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cancelSession, createAgentSession, deleteAgentSession, getAgentSession, listAgentSessions, streamWorkflowEvents, submitTurn, updateAgentSession } from "./agent";
+import { AgentRequestError, cancelSession, createAgentSession, deleteAgentSession, getAgentSession, listAgentSessions, streamWorkflowEvents, submitTurn, updateAgentSession } from "./agent";
 
 describe("agent api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -73,5 +73,12 @@ describe("agent api client", () => {
     await expect(streamWorkflowEvents("s1", "token", (event) => events.push(event), "2"))
       .rejects.toThrow("workflow stream ended");
     expect(events).toHaveLength(1);
+  });
+
+  it("preserves a workflow stream status so authorization failures are not retried", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 403 })));
+    const failure = await streamWorkflowEvents("s1", "token", () => undefined).catch((error) => error);
+    expect(failure).toBeInstanceOf(AgentRequestError);
+    expect(failure.status).toBe(403);
   });
 });

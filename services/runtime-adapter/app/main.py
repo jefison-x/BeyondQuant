@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import queue
+import threading
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Query
@@ -27,6 +28,37 @@ class PromptRequest(BaseModel):
 
 adapter = RuntimeAdapter()
 app = FastAPI(title="BeyondQuant DSH Runtime Adapter", version="0.1.0")
+
+
+class _AsyncSubscriberBridge:
+    """Forward a blocking runtime subscriber without using the shared executor."""
+
+    def __init__(self, subscriber: queue.Queue[dict[str, object] | None]) -> None:
+        self._subscriber = subscriber
+        self._loop = asyncio.get_running_loop()
+        self._items: asyncio.Queue[dict[str, object] | None] = asyncio.Queue()
+        self._stopped = threading.Event()
+        self._thread = threading.Thread(target=self._pump, name="byq-runtime-sse", daemon=True)
+        self._thread.start()
+
+    def _pump(self) -> None:
+        while not self._stopped.is_set():
+            try:
+                item = self._subscriber.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            try:
+                self._loop.call_soon_threadsafe(self._items.put_nowait, item)
+            except RuntimeError:
+                return
+            if item is None:
+                return
+
+    async def get(self) -> dict[str, object] | None:
+        return await asyncio.wait_for(self._items.get(), timeout=15.0)
+
+    def close(self) -> None:
+        self._stopped.set()
 
 
 @app.get("/healthz")
@@ -122,18 +154,21 @@ async def events(session_id: str, replay: bool = False) -> StreamingResponse:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    bridge = _AsyncSubscriberBridge(subscriber)
+
     async def stream() -> AsyncIterator[bytes]:
         try:
             while True:
                 try:
-                    item = await asyncio.to_thread(subscriber.get, True, 15.0)
-                except queue.Empty:
+                    item = await bridge.get()
+                except TimeoutError:
                     yield b": heartbeat\n\n"
                     continue
                 if item is None:
                     return
                 yield f"event: workflow-trace\ndata: {json.dumps(item, separators=(',', ':'))}\n\n".encode()
         finally:
+            bridge.close()
             adapter.unsubscribe(session_id, subscriber)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
