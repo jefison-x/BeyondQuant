@@ -636,13 +636,13 @@ ML StrategyVersion、TrainingRun、FeatureSnapshot、ModelArtifact、PredictionS
 SignalSnapshot/Backtest 衔接合同。固定 Python 3.13 / LightGBM 4.7.0 CPU profile 和禁止项；
 不改 runtime/schema/API/UI。
 
-### Phase 72 — Trusted training and model artifact（`NEXT`）
+### Phase 72 — Trusted training and model artifact（`COMPLETE`）
 
 实现 owner/workspace-scoped ML strategy validation/approval、TrainingRun、point-in-time
 `price-volume-basic-v1` FeatureSnapshot、独立无凭证 LightGBM CPU Worker、native text model object、
 ModelArtifact/metrics/lineage 和 restart/idempotency/tamper tests。不实现预测、信号、Backtest 或 UI。
 
-### Phase 73 — Out-of-sample prediction and signal closure（`PENDING`）
+### Phase 73 — Out-of-sample prediction and signal closure（`NEXT`）
 
 实现 prediction-only inference、immutable PredictionSnapshot、确定性 ranking、approved closed top-N
 policy → ADR-0017 SignalSnapshot，以及现有 Backtest approval/manifest 衔接。Backtest 不加载模型或

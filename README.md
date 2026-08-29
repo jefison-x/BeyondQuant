@@ -1,11 +1,11 @@
 # BeyondQuant
 
-<!-- byq:current-completed-phase=71 -->
+<!-- byq:current-completed-phase=72 -->
 
 BeyondQuant（BYQ）是一个 AI 原生量化研究平台。当前已完成的项目阶段为
-**Phase 71**：接受可审计机器学习研究架构，冻结 LightGBM 训练、模型制品、样本外预测和
-冻结信号合同；运行时实现从 Phase 72 开始，当前 baseline 仍保持 Python `0.1.1rc1` /
-npm `0.1.1-rc.1`。
+**Phase 72**：交付 owner/workspace 隔离的 LightGBM 策略版本、人工批准、可恢复训练任务、
+point-in-time 特征快照和哈希验证的原生模型制品；样本外预测与冻结信号从 Phase 73 开始。
+Product Runtime baseline 仍保持 Python `0.1.1rc1` / npm `0.1.1-rc.1`。
 当前状态以
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) 为准。
 
@@ -46,6 +46,8 @@ BYQ 不 fork DSH。DSH 版本通过明确的依赖策略和兼容性 Contract �
   日期结算已实现的分红和送转行动。
 - 闭合的基准、历史指数成分、日估值和财务指标输入，具备 point-in-time、
   no-look-ahead readiness 及运行前修复能力。
+- 独立、无 Provider/模型凭证的可信 LightGBM CPU Worker，使用固定 Python/LightGBM/NumPy
+  profile，从冻结股票池和市场输入生成可审计 FeatureSnapshot 与 native-text ModelArtifact。
 
 ## 当前限制
 
