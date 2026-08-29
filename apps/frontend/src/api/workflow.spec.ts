@@ -63,13 +63,20 @@ describe("workflow projections", () => {
   });
 
   it("derives a replay-safe running state from lifecycle events", () => {
-    expect(workflowRunState([event(3, "session.started", {})]).running).toBe(true);
+    expect(workflowRunState([event(3, "session.started", {})])).toEqual(expect.objectContaining({
+      running: true, answerStarted: false,
+    }));
     expect(workflowRunState([
-      event(3, "session.started", {}), event(7, "session.result", {}),
-    ]).running).toBe(false);
+      event(3, "session.started", {}), event(5, "agent.output.delta", { delta: "最终回答" }),
+    ])).toEqual(expect.objectContaining({ running: true, answerStarted: true }));
     expect(workflowRunState([
-      event(3, "session.started", {}), event(7, "session.cancelled", {}), event(9, "session.started", {}),
-    ]).running).toBe(true);
+      event(3, "session.started", {}), event(5, "agent.output.delta", { delta: "最终回答" }),
+      event(7, "session.result", {}),
+    ])).toEqual(expect.objectContaining({ running: false, answerStarted: false }));
+    expect(workflowRunState([
+      event(3, "session.started", {}), event(5, "agent.output.delta", { delta: "上一轮回答" }),
+      event(7, "session.cancelled", {}), event(9, "session.started", {}),
+    ])).toEqual(expect.objectContaining({ running: true, answerStarted: false }));
     expect(workflowRunState([
       event(3, "session.started", {}), event(7, "session.failed", { code: "model-run-failed", retryable: true }),
     ])).toEqual(expect.objectContaining({ running: false, failed: true, retryable: true }));

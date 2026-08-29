@@ -272,6 +272,11 @@ Phase 70 Index Catalogue Coverage Closure 已建立六个 canonical 候选的 BY
 可创建。Backend/Gateway/frontend、PostgreSQL forward repair、完整 Compose、真实 Product API 和
 Chrome desktop/mobile 验收证据位于 `docs/evidence/phase-70/`。
 
+Post-Phase 70 Conversation Completion Presentation Maintenance 使用 ADR-0033 已有的 text-only
+最终回答锚点收起独立公开进度气泡，避免答案显示后短暂闪回“正在思考”。Runtime lifecycle、
+停止入口、WorkflowTrace、公开活动 allowlist 与 hidden-reasoning 边界不变；该维护修复不改变
+Phase 70 完成状态，也不定义下一 Product Phase。
+
 ## 当前授权边界
 
 - Phase 49-70 与相应 Accepted ADR/计划均已完成。

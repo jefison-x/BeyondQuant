@@ -375,6 +375,55 @@ test("failed agent run unlocks the composer and resumes before retry", async ({ 
   await expect(page.getByRole("button", { name: "停止本轮" })).toBeVisible();
 });
 
+test("final answer replaces standalone progress before the terminal event arrives", async ({ page }) => {
+  const session = {
+    session_id: "session-answer-visible",
+    trace_id: "trace-answer-visible",
+    title: "回答收口复核",
+    status: "active",
+    updated_at: "2026-08-29T14:00:03Z",
+  };
+  await page.route(/\/v1\/agent\/sessions(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ sessions: [session], total: 1 }),
+  }));
+  await page.route("**/v1/agent/sessions/session-answer-visible", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      conversation: session,
+      messages: [{
+        message_id: "message-answer-question",
+        sequence: 1,
+        role: "user",
+        content: "检查回答收口",
+        created_at: "2026-08-29T14:00:00Z",
+      }],
+      events: [
+        { trace_id: session.trace_id, session_id: session.session_id, sequence: 1, timestamp: "2026-08-29T14:00:01Z", kind: "session.started", source: "runtime-adapter", payload: {} },
+        { trace_id: session.trace_id, session_id: session.session_id, sequence: 2, timestamp: "2026-08-29T14:00:02Z", kind: "agent.activity", source: "runtime-adapter", payload: { schema_version: "workflow-activity.v1", activity_id: "activity_answer_visible11111111111111111", phase: "reason", state: "started", label: "分析问题" } },
+        { trace_id: session.trace_id, session_id: session.session_id, sequence: 3, timestamp: "2026-08-29T14:00:03Z", kind: "agent.output.delta", source: "runtime-adapter", payload: { delta: "最终回答已经可见" } },
+      ],
+    }),
+  }));
+  await page.route("**/v1/workflows/session-answer-visible/events", (route) => route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    body: ": heartbeat\n\n",
+  }));
+  await page.route("**/api/product/approvals", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ approvals: [] }),
+  }));
+
+  await login(page);
+  await expect(page.getByText("最终回答已经可见", { exact: true })).toBeVisible();
+  await expect(page.locator(".assistant-processing")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "停止本轮" })).toBeVisible();
+});
+
 test("strategy workspace renders strategy version list and detail", async ({ page }) => {
   await mockResearchLists(page);
   await page.route("**/api/product/research/tasks", (route) =>
