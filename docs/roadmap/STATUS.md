@@ -1,13 +1,14 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=72 -->
+<!-- byq:current-completed-phase=73 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 72**——依据 ADR-0043 实现 owner/workspace-scoped ML 策略版本与
-  人工批准、可恢复 TrainingRun、point-in-time FeatureSnapshot，以及独立无凭证 LightGBM CPU
-  Worker 生成的 hash-verified native-text ModelArtifact；尚未实现 prediction、signal、Backtest 或 UI。
+- 当前已完成阶段：**Phase 73**——可信 ML Worker 对 hash/runtime/feature contract 验证后的原生
+  LightGBM 模型执行严格 prediction-only inference，生成确定性 PredictionSnapshot；approved top-N
+  policy 转为包含明确数量与完整 ML lineage 的 ADR-0017 SignalSnapshot，并由现有 native Backtest
+  manifest 消费。尚未实现 Product API/UI，HIST 仍被禁止。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -294,11 +295,19 @@ research bars 与历史指数 membership，严格隔离 chronological split 且 
 identity 与完整 lineage。模型对象使用独立 volume；Worker runtime 健康必须等待 Store 初始化完成。
 Backend 不引入 LightGBM 依赖；本阶段不提供 Product API/UI，也不生成预测、信号或 Backtest。
 
+Phase 73 Out-of-sample Prediction and Signal Closure 实现持久化 `ml-prediction-run.v1`、claim/lease/
+retry/attempt fencing，重新验证 model object size/hash、runtime、feature order 与完整 lineage 后，只对
+无 target/label 的 prediction split 推理。PredictionSnapshot 按 `(score DESC, symbol ASC)` 排名；
+approved `top_n_equal_weight` policy 使用冻结 capital、当日可见 close 和 lot size 生成仅包含进入/退出
+的明确数量信号。标准 SignalSnapshot 保存 Strategy Approval、Model、Feature、Prediction、Pool 与
+policy identity；现有 Backtest 只消费冻结 manifest，不加载 LightGBM、不重新排名或训练。本阶段没有
+Product API/UI，也没有引入 HIST。
+
 ## 当前授权边界
 
-- Phase 49-72 与相应 Accepted ADR/计划均已完成。
-- 下一阶段为 **Phase 73 — Out-of-sample prediction and signal closure**。只有 Phase 72 状态收口
-  合并且 CI 通过后，才可在新的隔离 worktree/branch/PR 实现；不得提前进入 Phase 74 或 HIST。
+- Phase 49-73 与相应 Accepted ADR/计划均已完成。
+- 下一阶段为 **Phase 74 — Product closure**。只有 Phase 73 状态收口合并且 CI 通过后，才可在新的
+  隔离 worktree/branch/PR 实现；Phase 74 合并前不得开始 HIST。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 

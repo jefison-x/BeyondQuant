@@ -61,7 +61,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "72")
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "73")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
@@ -94,7 +94,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             self.assertIn(schema, contract)
         self.assertIn("Phase 71 — Contract baseline（`COMPLETE`）", plan)
         self.assertIn("Phase 72 — Trusted training and model artifact（`COMPLETE`）", plan)
-        self.assertIn("Phase 73 — Out-of-sample prediction and signal closure（`NEXT`）", plan)
+        self.assertIn("Phase 73 — Out-of-sample prediction and signal closure（`COMPLETE`）", plan)
+        self.assertIn("Phase 74 — Product closure（`NEXT`）", plan)
         self.assertIn("Phase 74 合并前不得设计或实现 HIST", plan)
         self.assertIn("Phase 71 machine-learning strategy pre-implementation audit", inventory)
         self.assertIn("`REFERENCE_ONLY` / `REPLACE`", inventory)
