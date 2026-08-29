@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
+  createDynamicStockPool,
   createIndexStockPool,
   createStockPool,
   deleteStockPool,
@@ -15,12 +16,14 @@ import {
   listStockPoolReferences,
   listStockPoolSnapshots,
   listStockPools,
+  previewDynamicStockPool,
   refreshIndexStockPool,
   replaceStockPoolSnapshot,
   setStockPoolLifecycle,
   updateStockPoolMetadata,
+  updateDynamicStockPoolDefinition,
 } from "@/api/paper";
-import type { IndexPoolCatalogItem, StockPool, StockPoolMaterializationRun, StockPoolProducerDefinition, StockPoolSnapshot } from "@/api/types";
+import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogItem, StockPool, StockPoolMaterializationRun, StockPoolProducerDefinition, StockPoolSnapshot } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import { statusLabel } from "@/display";
@@ -48,6 +51,16 @@ const name = ref("");
 const poolType = ref<"custom" | "index" | "dynamic">("custom");
 const indexSymbol = ref("");
 const requestedAsOf = ref("");
+const dynamicMinimumMarketCap = ref<number | null>(null);
+const dynamicTopN = ref(50);
+const dynamicRanking = ref("daily_basic.total_mv");
+const dynamicDirection = ref<"asc" | "desc">("desc");
+const dynamicCadence = ref<"manual" | "daily" | "weekly" | "monthly">("manual");
+const dynamicWeightMode = ref<"unweighted" | "equal_weight">("equal_weight");
+const dynamicActivate = ref(true);
+const dynamicPreview = ref<DynamicStockPoolPreview | null>(null);
+const dynamicRuleText = ref("");
+const dynamicRuleBaseline = ref("");
 const description = ref("");
 const symbolsText = ref("");
 const weightsText = ref("");
@@ -71,8 +84,9 @@ const snapshotDirty = computed(() => Boolean(selected.value?.pool_type === "cust
   weights: editWeights.value,
   definition: editDefinition.value,
 }) !== snapshotBaseline.value);
-const createDirty = computed(() => showCreate.value && Boolean(name.value || description.value || symbolsText.value || weightsText.value || indexSymbol.value || requestedAsOf.value));
-const dirty = computed(() => metadataDirty.value || snapshotDirty.value || createDirty.value);
+const dynamicDefinitionDirty = computed(() => selected.value?.pool_type === "dynamic" && dynamicRuleText.value !== dynamicRuleBaseline.value);
+const createDirty = computed(() => showCreate.value && Boolean(name.value || description.value || symbolsText.value || weightsText.value || indexSymbol.value || requestedAsOf.value || poolType.value !== "custom"));
+const dirty = computed(() => metadataDirty.value || snapshotDirty.value || dynamicDefinitionDirty.value || createDirty.value);
 const { confirmDiscard } = useUnsavedChanges(dirty);
 
 function syncEditBaseline() {
@@ -89,7 +103,39 @@ function closeCreate() {
   weightsText.value = "";
   indexSymbol.value = "";
   requestedAsOf.value = "";
+  dynamicPreview.value = null;
   poolType.value = "custom";
+}
+
+function buildDynamicRule(): DynamicStockPoolRule {
+  const filters: DynamicStockPoolRule["filters"] = [];
+  if (dynamicMinimumMarketCap.value !== null) {
+    filters.push({ field: "daily_basic.total_mv", operator: "gte", value: dynamicMinimumMarketCap.value });
+  }
+  return {
+    schema_version: "dynamic-stock-pool-rule.v1",
+    base_universe: { kind: "security_master" },
+    filters,
+    ranking: { field: dynamicRanking.value, direction: dynamicDirection.value },
+    top_n: dynamicTopN.value,
+    missing_policy: "exclude",
+    weight_mode: dynamicWeightMode.value,
+    cadence: dynamicCadence.value,
+  };
+}
+
+async function previewDynamic() {
+  busy.value = true;
+  try {
+    dynamicPreview.value = await previewDynamicStockPool(
+      buildDynamicRule(), requestedAsOf.value?.replaceAll("-", "") || undefined, auth.token,
+    );
+    ElMessage.success(`预览完成：${dynamicPreview.value.member_count} 只成分（非权威快照）`);
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "动态股票池预览失败");
+  } finally {
+    busy.value = false;
+  }
 }
 
 async function refreshPools() {
@@ -146,7 +192,7 @@ async function submit() {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-  if (poolType.value === "custom" && !name.value.trim()) {
+  if (poolType.value !== "index" && !name.value.trim()) {
     ElMessage.warning("请填写股票池名称");
     return;
   }
@@ -179,12 +225,18 @@ async function submit() {
           description: description.value.trim() || undefined,
           requested_as_of: requestedAsOf.value?.replaceAll("-", "") || undefined,
         }, auth.token)
-      : await createStockPool(name.value.trim(), symbols, auth.token, {
+      : poolType.value === "dynamic"
+        ? await createDynamicStockPool({
+            name: name.value.trim(), description: description.value.trim() || undefined,
+            rule: buildDynamicRule(), requested_as_of: requestedAsOf.value?.replaceAll("-", "") || undefined,
+            activate: dynamicActivate.value,
+          }, auth.token)
+        : await createStockPool(name.value.trim(), symbols, auth.token, {
           poolType: "custom", description: description.value.trim() || undefined, weights,
         });
     selected.value = created.pool;
     showCreate.value = false;
-    ElMessage.success(poolType.value === "index" ? "指数池已创建，正在生成成分快照" : "股票池已创建");
+    ElMessage.success(poolType.value === "custom" ? "股票池已创建" : `${poolType.value === "index" ? "指数" : "动态"}池已创建，正在生成成分快照`);
     name.value = "";
     description.value = "";
     symbolsText.value = "";
@@ -214,13 +266,15 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
     selected.value = detail.pool;
     snapshots.value = history.snapshots;
     references.value = refs.references;
-    if (detail.pool.pool_type === "index") {
+    if (detail.pool.pool_type === "index" || detail.pool.pool_type === "dynamic") {
       const [definitionResult, runsResult] = await Promise.all([
         getStockPoolProducer(poolId, auth.token),
         listStockPoolMaterializations(poolId, auth.token),
       ]);
       producer.value = definitionResult.producer;
       materializations.value = runsResult.runs;
+      dynamicRuleText.value = detail.pool.pool_type === "dynamic" ? JSON.stringify(definitionResult.producer.definition, null, 2) : "";
+      dynamicRuleBaseline.value = dynamicRuleText.value;
     } else {
       producer.value = null;
       materializations.value = [];
@@ -241,13 +295,33 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
   }
 }
 
+async function saveDynamicDefinition(status: "draft" | "active" | "paused" = producer.value?.status ?? "draft") {
+  if (!selected.value?.pool_id || selected.value.pool_type !== "dynamic" || !producer.value) return;
+  busy.value = true;
+  try {
+    const rule = JSON.parse(dynamicRuleText.value) as DynamicStockPoolRule;
+    const result = await updateDynamicStockPoolDefinition(selected.value.pool_id, {
+      rule, status, expected_version: producer.value.version,
+    }, auth.token);
+    producer.value = result.producer;
+    dynamicRuleText.value = JSON.stringify(result.producer.definition, null, 2);
+    dynamicRuleBaseline.value = dynamicRuleText.value;
+    await select({ pool_id: selected.value.pool_id }, false);
+    ElMessage.success(status === "active" ? "动态规则已激活" : status === "paused" ? "动态规则已暂停" : "动态规则草稿已保存");
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "动态规则保存失败");
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function refreshIndexPool() {
-  if (!selected.value?.pool_id || selected.value.pool_type !== "index") return;
+  if (!selected.value?.pool_id || !["index", "dynamic"].includes(selected.value.pool_type ?? "")) return;
   busy.value = true;
   try {
     await refreshIndexStockPool(selected.value.pool_id, undefined, auth.token);
     await select({ pool_id: selected.value.pool_id }, false);
-    ElMessage.success("刷新任务已提交");
+    ElMessage.success("物化刷新任务已提交");
   } catch (exc) {
     ElMessage.error(exc instanceof Error ? exc.message : "提交刷新失败");
   } finally {
@@ -339,12 +413,13 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
 <template>
   <section class="stock-page">
     <el-dialog v-model="showCreate" title="创建版本化股票池" width="min(680px, 94vw)">
-      <p class="dialog-intro">自建池由你维护成员；指数池从已验证的 BYQ 指数权重生成不可变快照。</p>
+      <p class="dialog-intro">自建池由你维护成员；指数池和动态池由可信 Data Worker 生成不可变快照。</p>
       <el-form label-position="top">
         <el-form-item label="股票池类型">
           <el-radio-group v-model="poolType">
             <el-radio-button value="custom">自建股票池</el-radio-button>
             <el-radio-button value="index">指数型股票池</el-radio-button>
+            <el-radio-button value="dynamic">动态股票池</el-radio-button>
           </el-radio-group>
         </el-form-item>
         <el-row :gutter="14">
@@ -355,8 +430,8 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
           </el-col>
           <el-col :xs="24" :sm="12">
             <el-form-item label="类型">
-              <el-tag type="primary">{{ poolType === "index" ? "指数" : "自建" }}</el-tag>
-              <small class="card-sub">{{ poolType === "index" ? "成员和权重只读，由可信 Data Worker 生成" : "成员由用户维护" }}</small>
+              <el-tag type="primary">{{ POOL_TYPE_LABELS[poolType] }}</el-tag>
+              <small class="card-sub">{{ poolType === "custom" ? "成员由用户维护" : "成员和权重只读，由可信 Data Worker 生成" }}</small>
             </el-form-item>
           </el-col>
         </el-row>
@@ -382,6 +457,33 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
           </el-form-item>
           <el-alert v-if="!indexCatalog.length" title="暂无已验证且完整的指数权重，请先在数据中心完成同步。" type="warning" :closable="false" />
         </template>
+        <template v-if="poolType === 'dynamic'">
+          <el-alert title="规则仅支持 BYQ 白名单字段和运算符，不执行 Python、SQL、URL、插件或模型表达式。" type="info" :closable="false" />
+          <el-row :gutter="14" class="dynamic-form-row">
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="最低总市值（万元，可选）">
+                <el-input-number v-model="dynamicMinimumMarketCap" data-testid="dynamic-min-market-cap" :min="0" :step="10000" controls-position="right" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="最多成分数">
+                <el-input-number v-model="dynamicTopN" data-testid="dynamic-top-n" :min="1" :max="500" controls-position="right" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="14">
+            <el-col :xs="24" :sm="12"><el-form-item label="排序字段"><el-select v-model="dynamicRanking" data-testid="dynamic-ranking" style="width:100%"><el-option label="总市值" value="daily_basic.total_mv" /><el-option label="市净率" value="daily_basic.pb" /><el-option label="滚动市盈率" value="daily_basic.pe_ttm" /><el-option label="换手率" value="daily_basic.turnover_rate" /><el-option label="20日平均成交额" value="window.avg_amount_20" /></el-select></el-form-item></el-col>
+            <el-col :xs="24" :sm="12"><el-form-item label="排序方向"><el-select v-model="dynamicDirection" style="width:100%"><el-option label="从高到低" value="desc" /><el-option label="从低到高" value="asc" /></el-select></el-form-item></el-col>
+          </el-row>
+          <el-row :gutter="14">
+            <el-col :xs="24" :sm="12"><el-form-item label="刷新频率"><el-select v-model="dynamicCadence" style="width:100%"><el-option label="手动" value="manual" /><el-option label="每日交易日" value="daily" /><el-option label="每周" value="weekly" /><el-option label="每月" value="monthly" /></el-select></el-form-item></el-col>
+            <el-col :xs="24" :sm="12"><el-form-item label="权重模式"><el-select v-model="dynamicWeightMode" style="width:100%"><el-option label="等权" value="equal_weight" /><el-option label="无权重" value="unweighted" /></el-select></el-form-item></el-col>
+          </el-row>
+          <el-form-item label="截至日期（可选）"><el-date-picker v-model="requestedAsOf" value-format="YYYY-MM-DD" placeholder="默认使用当前日期前最新完整交易日" /></el-form-item>
+          <el-form-item label="创建后立即激活"><el-switch v-model="dynamicActivate" /></el-form-item>
+          <div class="preview-actions"><el-button data-testid="dynamic-preview" :loading="busy" @click="previewDynamic">预览规则结果</el-button><span v-if="dynamicPreview">非权威预览：{{ dynamicPreview.member_count }} 只 · 数据日 {{ dynamicPreview.effective_trade_date }}</span></div>
+          <el-table v-if="dynamicPreview" :data="dynamicPreview.members" size="small" max-height="180"><el-table-column prop="symbol" label="预览成分" /><el-table-column prop="weight" label="权重" /></el-table>
+        </template>
         <el-form-item v-if="poolType === 'custom'" label="成分股">
           <el-input v-model="symbolsText" type="textarea" placeholder="000001.SZ,600000.SH" />
         </el-form-item>
@@ -391,7 +493,7 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
       </el-form>
       <template #footer>
         <el-button @click="closeCreate">取消</el-button>
-        <el-button type="primary" :loading="busy" @click="submit">{{ poolType === "index" ? "创建并生成快照" : "创建股票池" }}</el-button>
+        <el-button type="primary" :loading="busy" @click="submit">{{ poolType === "custom" ? "创建股票池" : "创建并生成快照" }}</el-button>
       </template>
     </el-dialog>
 
@@ -480,12 +582,13 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
             <el-descriptions-item label="状态"><el-tag>{{ statusLabel(selected.status) }}</el-tag></el-descriptions-item>
             <el-descriptions-item label="当前版本">{{ selected.version }}</el-descriptions-item>
             <el-descriptions-item label="成员数">{{ selected.member_count }}</el-descriptions-item>
-            <el-descriptions-item v-if="selected.pool_type === 'index'" label="物化状态">
+            <el-descriptions-item v-if="selected.pool_type !== 'custom'" label="物化状态">
               <el-tag>{{ materializations[0]?.status ?? "等待任务" }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item v-if="selected.pool_type === 'index'" label="指数代码">
               {{ producer?.definition?.index_symbol ?? "-" }}
             </el-descriptions-item>
+            <el-descriptions-item v-if="selected.pool_type === 'dynamic'" label="规则状态">{{ producer?.status ?? "-" }}</el-descriptions-item>
           </el-descriptions>
           <el-form label-position="top" class="detail-form">
             <el-form-item label="名称"><el-input v-model="editName" /></el-form-item>
@@ -495,8 +598,14 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
             <el-button v-if="selected.status === 'active'" @click="changeLifecycle('inactive')">停用</el-button>
             <el-button v-else-if="selected.status === 'inactive'" type="primary" @click="changeLifecycle('active')">启用</el-button>
             <el-button type="danger" plain @click="removeSelected">删除</el-button>
-            <el-button v-if="selected.pool_type === 'index'" type="primary" plain :loading="busy" @click="refreshIndexPool">刷新指数成分</el-button>
+            <el-button v-if="selected.pool_type !== 'custom'" type="primary" plain :loading="busy" @click="refreshIndexPool">刷新生成成分</el-button>
           </el-form>
+          <section v-if="selected.pool_type === 'dynamic' && producer" class="dynamic-definition">
+            <h3 class="section-title">封闭动态规则</h3>
+            <el-input v-model="dynamicRuleText" data-testid="dynamic-rule-json" type="textarea" :rows="12" aria-label="动态股票池规则 JSON" />
+            <p class="edit-state">{{ dynamicDefinitionDirty ? "规则有未保存更改" : `规则 v${producer.version} 已保存` }}</p>
+            <div class="button-row"><el-button :disabled="!dynamicDefinitionDirty" @click="saveDynamicDefinition('draft')">保存草稿</el-button><el-button type="primary" @click="saveDynamicDefinition('active')">校验并激活</el-button><el-button @click="saveDynamicDefinition('paused')">暂停调度</el-button></div>
+          </section>
         </el-tab-pane>
         <el-tab-pane label="成员与权重" name="members">
           <el-alert v-if="selected.pool_type !== 'custom'" title="可信指数/动态池为只读，成员由 BYQ 数据或计算边界生成。" type="info" :closable="false" />
@@ -542,7 +651,7 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
             <el-table-column prop="membership_fingerprint" label="成员指纹" min-width="220" show-overflow-tooltip />
             <el-table-column label="创建时间" min-width="170"><template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template></el-table-column>
           </el-table>
-          <template v-if="selected.pool_type === 'index'">
+          <template v-if="selected.pool_type !== 'custom'">
             <h3 class="section-title">物化任务</h3>
             <el-table :data="materializations" size="small" empty-text="暂无任务">
               <el-table-column prop="status" label="状态" width="130" />
@@ -588,6 +697,9 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
 .dialog-intro { color: var(--byq-text-muted); font-size: 12px; margin: 0 0 14px; }
 .catalog-option-meta { color: var(--byq-text-muted); float: right; margin-left: 18px; }
 .section-title { font-size: 14px; margin: 20px 0 10px; }
+.dynamic-form-row { margin-top: 14px; }
+.preview-actions { align-items: center; color: var(--byq-text-muted); display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 12px; }
+.dynamic-definition { border-top: 1px solid var(--byq-border-subtle); margin-top: 18px; padding-top: 2px; }
 .edit-state { color: var(--byq-text-muted); display: inline-block; font-size: 12px; margin: 0 8px 8px 0; }
 .stock-list-pane, .stock-detail-pane { min-width: 0; }
 .detail-empty { min-height: 360px; display: grid; place-items: center; }
@@ -597,6 +709,10 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+:deep(.list-toolbar .el-radio-button.is-active .el-radio-button__inner) {
+  color: var(--byq-on-brand);
 }
 
 .quant-result {

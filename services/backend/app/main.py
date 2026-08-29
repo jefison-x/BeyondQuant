@@ -2585,6 +2585,22 @@ def create_index_pool(payload: dict[str, Any], request: Request) -> dict[str, ob
     ))
 
 
+@app.post("/v1/paper/dynamic-pools/preview")
+def preview_dynamic_pool(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload, include_workspace=True)
+    return _stock_pool_producer_call(lambda: stock_pool_producer_store.preview_dynamic_pool(
+        payload, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+    ))
+
+
+@app.post("/v1/paper/dynamic-pools", status_code=202)
+def create_dynamic_pool(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload, include_workspace=True)
+    return _stock_pool_producer_call(lambda: stock_pool_producer_store.create_dynamic_pool(
+        payload, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+    ))
+
+
 @app.get("/v1/paper/pools/{pool_id}/producer")
 def get_stock_pool_producer(pool_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
@@ -2604,10 +2620,18 @@ def list_stock_pool_materializations(
     ))
 
 
-@app.post("/v1/paper/pools/{pool_id}/materializations", status_code=202)
-def refresh_index_pool(pool_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+@app.put("/v1/paper/pools/{pool_id}/producer")
+def update_stock_pool_producer(pool_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, payload, include_workspace=True)
-    return _stock_pool_producer_call(lambda: {"run": stock_pool_producer_store.enqueue_index_refresh(
+    return _stock_pool_producer_call(lambda: {"producer": stock_pool_producer_store.update_dynamic_definition(
+        pool_id, payload, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+    )})
+
+
+@app.post("/v1/paper/pools/{pool_id}/materializations", status_code=202)
+def refresh_stock_pool_producer(pool_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, payload, include_workspace=True)
+    return _stock_pool_producer_call(lambda: {"run": stock_pool_producer_store.enqueue_pool_refresh(
         pool_id, payload, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
     )})
 

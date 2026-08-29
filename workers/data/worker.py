@@ -41,12 +41,20 @@ def main() -> int:
     pool_producers.recover_stale_runs()
     automation.heartbeat(worker_id)
     next_scheduler_at = 0.0
+    next_pool_scheduler_at = 0.0
 
     try:
         while running:
+            if time.monotonic() >= next_pool_scheduler_at:
+                try:
+                    pool_producers.enqueue_due_dynamic_runs()
+                    next_pool_scheduler_at = time.monotonic() + 60
+                except Exception as error:
+                    next_pool_scheduler_at = time.monotonic() + 300
+                    automation.heartbeat(worker_id, last_error=type(error).__name__)
             pool_run = pool_producers.claim_next_run(worker_id=worker_id)
             if pool_run is not None:
-                pool_producers.materialize_claimed_index(pool_run, worker_id=worker_id)
+                pool_producers.materialize_claimed(pool_run, worker_id=worker_id)
                 continue
             repair = automation.claim_data_repair()
             if repair is not None:

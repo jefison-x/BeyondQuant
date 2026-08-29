@@ -1534,11 +1534,38 @@ def product_index_pool_create(request: Request, payload: dict[str, object]) -> d
     )
 
 
+@router.post("/paper/dynamic-pools/preview")
+def product_dynamic_pool_preview(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "POST", "/v1/paper/dynamic-pools/preview", payload, headers=_trusted_agent_headers(request),
+    )
+
+
+@router.post("/paper/dynamic-pools", status_code=202)
+def product_dynamic_pool_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "POST", "/v1/paper/dynamic-pools", payload, headers=_trusted_agent_headers(request),
+    )
+
+
 @router.get("/paper/pools/{pool_id}/producer")
 def product_stock_pool_producer(pool_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
         "GET", f"/v1/paper/pools/{pool_id}/producer", headers=_trusted_agent_headers(request),
+    )
+
+
+@router.put("/paper/pools/{pool_id}/producer")
+def product_stock_pool_producer_update(
+    pool_id: str, request: Request, payload: dict[str, object],
+) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "PUT", f"/v1/paper/pools/{pool_id}/producer", payload,
+        headers=_trusted_agent_headers(request),
     )
 
 

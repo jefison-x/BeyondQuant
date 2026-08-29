@@ -289,6 +289,9 @@ check_smoke() {
   if docker compose cp scripts/evidence/phase67-seed.py backend:/tmp/phase67-seed.py >/dev/null \
     && docker compose exec -T backend python /tmp/phase67-seed.py; then
     ok "Phase 67 validated index fixture"; else bad "Phase 67 validated index fixture"; fi
+  if docker compose cp scripts/evidence/phase68-seed.py backend:/tmp/phase68-seed.py >/dev/null \
+    && docker compose exec -T backend python /tmp/phase68-seed.py; then
+    ok "Phase 68 dynamic inputs fixture"; else bad "Phase 68 dynamic inputs fixture"; fi
   if (
     cd apps/frontend
     [ -x node_modules/.bin/playwright ] || npm ci --no-audit --no-fund
