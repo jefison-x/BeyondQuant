@@ -1,14 +1,14 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=73 -->
+<!-- byq:current-completed-phase=74 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 73**——可信 ML Worker 对 hash/runtime/feature contract 验证后的原生
-  LightGBM 模型执行严格 prediction-only inference，生成确定性 PredictionSnapshot；approved top-N
-  policy 转为包含明确数量与完整 ML lineage 的 ADR-0017 SignalSnapshot，并由现有 native Backtest
-  manifest 消费。尚未实现 Product API/UI，HIST 仍被禁止。
+- 当前已完成阶段：**Phase 74**——可靠 LightGBM 最小闭环已通过 owner/workspace-scoped
+  Gateway/Product API 与真实模型研究界面贯通 frozen pool → training → model → out-of-sample
+  prediction → frozen signal → Backtest；PostgreSQL/Compose、restart、two-user、no-mock 浏览器和
+  Chrome MCP 验收均通过。浏览器不接触模型对象、原始特征或内部运行时边界。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -303,11 +303,20 @@ approved `top_n_equal_weight` policy 使用冻结 capital、当日可见 close �
 policy identity；现有 Backtest 只消费冻结 manifest，不加载 LightGBM、不重新排名或训练。本阶段没有
 Product API/UI，也没有引入 HIST。
 
+Phase 74 Product Closure 实现 owner/workspace-scoped Gateway/Product API 安全投影、typed client 和
+真实模型研究工作台。用户可从冻结股票池与时间窗口创建不可变 ML StrategyVersion，经人工批准后查看
+持久化训练状态、模型指标、确定性样本外排名、冻结信号并提交现有 native Backtest。模型对象路径、
+FeatureSnapshot/raw rows 和 raw Backtest manifest 不进入浏览器。完整 PostgreSQL/Compose journey、
+Worker restart identity、two-user isolation、六条真实 Product API 浏览器旅程，以及 Chrome DevTools MCP
+desktop/mobile Accessibility/Best Practices 100、same-origin Network 和空 Console 验收均通过；证据位于
+`docs/evidence/phase-74/`。
+
 ## 当前授权边界
 
-- Phase 49-73 与相应 Accepted ADR/计划均已完成。
-- 下一阶段为 **Phase 74 — Product closure**。只有 Phase 73 状态收口合并且 CI 通过后，才可在新的
-  隔离 worktree/branch/PR 实现；Phase 74 合并前不得开始 HIST。
+- Phase 49-74 与相应 Accepted ADR/计划均已完成。
+- 当前没有已授权的下一 Product Phase。LightGBM 最小闭环已满足 ADR-0043 的 HIST 前置验收，但这不构成
+  HIST 实现授权；HIST 必须先由新的 Accepted ADR 与明确 Phase 计划固定图关系来源、历史可见性、runtime、
+  资源上限和复用边界，再由维护者明确授权。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 

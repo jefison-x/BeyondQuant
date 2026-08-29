@@ -28,7 +28,7 @@
 - 接入现有 Backtest submit/approval/manifest，不让 Backtest 加载模型；
 - 验证 no-look-ahead、tamper、重复 identity、restart 和端到端 regression。
 
-## Phase 74 — Product closure（`NEXT`）
+## Phase 74 — Product closure（`COMPLETE`）
 
 - 实现 Gateway/Product API typed contract 和模型研究界面；
 - 用户可选择 frozen pool、日期窗口、封闭参数并查看训练状态、指标、预测排名、信号和 Backtest；
@@ -38,6 +38,6 @@
 
 ## HIST gate
 
-Phase 74 合并前不得设计或实现 HIST。之后必须以新 ADR 明确图关系来源、历史行业/概念可见性、模型
-runtime、资源上限和与现有 Feature/Model/Prediction contracts 的复用关系。HIST 不得以“模型适配器”
-名义绕过 point-in-time 或独立 Phase gate。
+LightGBM golden journey 已通过 Phase 74 验收，但 HIST 尚未授权。后续必须以新 ADR 明确图关系来源、
+历史行业/概念可见性、模型 runtime、资源上限和与现有 Feature/Model/Prediction contracts 的复用关系，
+并建立独立 Phase 计划。HIST 不得以“模型适配器”名义绕过 point-in-time 或独立 Phase gate。
