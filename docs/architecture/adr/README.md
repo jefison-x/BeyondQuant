@@ -63,3 +63,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   trusted deployment lane 的权限和状态边界。
 - ADR-0041 定义指数/动态股票池 definition、trusted materialization 和不可变快照边界。
 - ADR-0042 定义 Phase 70 封闭多指数目录、可信同步和精确权重快照完整性。
+- ADR-0043 定义 Phase 71–74 的可审计机器学习研究边界、独立 LightGBM 训练、不可变模型
+  与样本外预测制品，以及复用现有冻结信号/Backtest 的顺序门禁。

@@ -61,10 +61,41 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "70")
-        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042"):
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "71")
+        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
+
+    def test_phase71_accepts_the_closed_lightgbm_contract_without_runtime_changes(self) -> None:
+        adr = (
+            ROOT
+            / "docs/architecture/adr/ADR-0043-auditable-machine-learning-research-pipeline.md"
+        ).read_text()
+        contract = (ROOT / "docs/contracts/machine-learning-research.md").read_text()
+        plan = (ROOT / "docs/roadmap/MACHINE_LEARNING_STRATEGY_PLAN.md").read_text()
+        inventory = (ROOT / "docs/migration/COMMUNITY_MIGRATION_INVENTORY.md").read_text()
+        backend_dependencies = (ROOT / "services/backend/pyproject.toml").read_text()
+        compose = (ROOT / "compose.yml").read_text()
+
+        self.assertIn("- Status: Accepted", adr)
+        self.assertIn("LightGBM 4.7.0", adr)
+        self.assertIn("trusted ML Worker", adr)
+        self.assertIn("Backtest Worker 继续只消费", adr)
+        for schema in (
+            "ml-strategy-version.v1",
+            "ml-training-run.v1",
+            "ml-feature-snapshot.v1",
+            "ml-model-artifact.v1",
+            "ml-prediction-snapshot.v1",
+        ):
+            self.assertIn(schema, contract)
+        self.assertIn("Phase 71 — Contract baseline（`COMPLETE`）", plan)
+        self.assertIn("Phase 72 — Trusted training and model artifact（`NEXT`）", plan)
+        self.assertIn("Phase 74 合并前不得设计或实现 HIST", plan)
+        self.assertIn("Phase 71 machine-learning strategy pre-implementation audit", inventory)
+        self.assertIn("`REFERENCE_ONLY` / `REPLACE`", inventory)
+        self.assertNotIn('"lightgbm', backend_dependencies.lower())
+        self.assertNotRegex(compose, r"(?m)^  ml-worker:")
 
     def test_base_compose_uses_runtime_adapter_as_the_only_product_dsh_path(self) -> None:
         compose = (ROOT / "compose.yml").read_text()

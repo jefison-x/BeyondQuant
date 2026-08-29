@@ -919,6 +919,24 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+## Phase 71 machine-learning strategy pre-implementation audit
+
+The read-only Community strategy capability declarations, source validator,
+sample execution probe, user strategy adapter, Backtest strategy executor and
+ML design notes were inspected before accepting ADR-0043.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 71 disposition |
+|---|---|---|---|
+| ML import allowlist and runtime capability probe | A claimed learner must be verified in its actual execution image, not inferred from prompts or static validation. | `PORT_TESTS` / `REFACTOR` | Pin and probe one closed LightGBM CPU profile in a dedicated trusted Worker; static ML imports do not authorize execution. |
+| AST rejection of `model.fit()` inside a historical loop | Training must not be repeated implicitly for every Backtest date. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Move training out of strategy execution entirely and persist one explicit TrainingRun with frozen split identity. |
+| User strategy adapter performs `exec`, fit/predict and Backtest interaction in one runtime | No safe or reproducible component boundary. | `REFERENCE_ONLY` / `REPLACE` | Use a source-free ML Strategy Contract, trusted training Worker, immutable ModelArtifact/PredictionSnapshot and existing frozen-signal Backtest. |
+| Design-note `MLStrategy(model_path)` and arbitrary model loader | Model inference needs a stable artifact reference, but arbitrary paths/loaders are unsafe. | `REFERENCE_ONLY` / `REPLACE` | Store LightGBM native text in the BYQ object store with size/hash/runtime/feature-order metadata; reject pickle/joblib/path upload. |
+| Community LightGBM 4.3.0 backend dependency and broad sklearn/scipy/xgboost imports | Historical environment evidence only; it does not prove the current BYQ runtime. | `DROP` / `REPLACE` | Phase 71 pins the independently verified LightGBM 4.7.0 Python 3.13 CPU profile; other learners and libraries remain out of scope. |
+| No FeatureSnapshot, model artifact, chronological split or prediction artifact | Missing domain invariants cannot be migrated. | `DROP` / `REPLACE` | Define BYQ-owned point-in-time feature, model and prediction contracts before implementation. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.
+
 ### Post-Phase 70 conversation completion presentation audit（2026-08-29）
 
 The read-only Community `AgentView.vue` and `AgentThinking.vue` were re-inspected

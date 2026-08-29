@@ -624,3 +624,32 @@ Network、Community checklist 与完整 regression evidence。
 月度非空记录不再授权股票池。Product API/UI 展示可用与等待同步状态，只有 verified snapshot 可创建。
 验收覆盖多指数、失败修复、no-look-ahead、完整 Compose、真实 Product API desktop/mobile Chrome、
 same-origin Network、restart 和 Community checklist。
+
+## Machine Learning Strategy Program（Phase 71–74）
+
+详细合同和逐阶段 gate 位于 `MACHINE_LEARNING_STRATEGY_PLAN.md`，架构边界由 ADR-0043 固定。
+
+### Phase 71 — Auditable ML contract baseline（`COMPLETE`）
+
+检查并分类 Community 的 ML import、runtime probe、回测内训练与设计说明；接受 ADR-0043，冻结
+ML StrategyVersion、TrainingRun、FeatureSnapshot、ModelArtifact、PredictionSnapshot 和现有
+SignalSnapshot/Backtest 衔接合同。固定 Python 3.13 / LightGBM 4.7.0 CPU profile 和禁止项；
+不改 runtime/schema/API/UI。
+
+### Phase 72 — Trusted training and model artifact（`NEXT`）
+
+实现 owner/workspace-scoped ML strategy validation/approval、TrainingRun、point-in-time
+`price-volume-basic-v1` FeatureSnapshot、独立无凭证 LightGBM CPU Worker、native text model object、
+ModelArtifact/metrics/lineage 和 restart/idempotency/tamper tests。不实现预测、信号、Backtest 或 UI。
+
+### Phase 73 — Out-of-sample prediction and signal closure（`PENDING`）
+
+实现 prediction-only inference、immutable PredictionSnapshot、确定性 ranking、approved closed top-N
+policy → ADR-0017 SignalSnapshot，以及现有 Backtest approval/manifest 衔接。Backtest 不加载模型或
+重新训练；验收 no-look-ahead、重复 identity、tamper 和 restart。
+
+### Phase 74 — Product closure（`PENDING`）
+
+实现 Gateway/Product API、typed client 和真实模型研究界面；完成 frozen pool → training → model →
+prediction → signal → Backtest 的 PostgreSQL/Compose/two-user/restart/Chrome MCP/no-mock golden
+journey。Phase 74 合并前禁止开始 HIST。
