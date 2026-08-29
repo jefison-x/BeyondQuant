@@ -33,6 +33,11 @@ BaoStock 或 AKShare path。
 Gateway/Product API 提供 durable user identity。DSH 只能用 trusted owner/actor context
 propose/invoke 有界 MCP capability，不能访问 PostgreSQL 或 raw Backend route。
 
+2026-08-29 maintenance clarification：Product Account 删除采用 irreversible tombstone，而非
+物理级联。它要求 owner、expected version 与 idempotency key；catalog/read/trade 隐藏已删除
+账户，但 order、fill、ledger、snapshot、transfer 和 audit rows 均保留，并追加删除审计。
+该维护语义补齐既有 account `status` lifecycle，不引入 live broker 或新的执行状态。
+
 ### 2. Account 与 frozen universe identity
 
 Account 有 Backend-generated global ID、owner、name、CNY currency、initial/current cash、

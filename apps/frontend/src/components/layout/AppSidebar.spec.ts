@@ -28,15 +28,16 @@ describe("AppSidebar", () => {
     deleteAgentSession.mockResolvedValue({ status: "deleted" });
   });
 
-  it("places the history entry beside the conversation heading", async () => {
+  it("uses one conversation history heading without a second history button", async () => {
     const wrapper = shallowMount(AppSidebar, { props: { isCollapsed: false } });
 
-    expect(wrapper.text()).toContain("投研对话");
+    expect(wrapper.text()).toContain("对话历史");
+    expect(wrapper.find(".history-heading").text()).not.toContain("投研对话");
     expect(wrapper.text()).not.toContain("最近会话");
     expect(wrapper.findAll("button").filter((button) => button.text() === "历史会话")).toHaveLength(0);
 
     expect(wrapper.text()).not.toContain("查看全部");
-    const history = wrapper.findAll("button").find((button) => button.text() === "历史");
+    const history = wrapper.findAll("button").find((button) => button.text() === "对话历史");
     expect(history).toBeDefined();
     await history?.trigger("click");
     expect(push).toHaveBeenCalledWith({ path: "/agent", query: { history: "recent" } });

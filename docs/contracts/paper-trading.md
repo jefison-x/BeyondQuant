@@ -15,6 +15,12 @@
 
 Account 暴露 generated identity、name、CNY currency、initial/current cash、equity、realized P&L、status、version、settlement date、frozen Stock Pool snapshot binding 和 timestamps。首个 accepted order 必须绑定 active、owner-equal snapshot，后续 orders 必须使用该 binding。显式 rebind 要求 empty portfolio、expected account version、idempotency key 和 audit record。
 
+用户删除 Account 必须是 owner-scoped、expected-version、idempotent 的 tombstone mutation。
+删除后的账户不再出现在 Product catalog，也不能继续读取或交易；Backend 必须保留既有 order、
+fill、ledger、snapshot、transfer 与 audit history，并追加 `account_deleted` audit。删除不得物理级联
+或改写不可变历史。为允许用户重新使用原账户名，tombstone 可将内部名称改为带 account identity
+后缀的不可见保留名。
+
 ## Orders、positions 与 fills
 
 Order 必须保留 normalized input、pool/snapshot identity、risk outcome、stable blocked reason、cost/tax result、decision provenance、fill reference 和 immutable events。Phase 35 terminal states 为 `filled` 和 `blocked`；UI 不得暗示 asynchronous/live-broker states。

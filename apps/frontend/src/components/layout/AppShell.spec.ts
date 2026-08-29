@@ -1,12 +1,23 @@
 import { defineComponent, h, nextTick } from "vue";
+import { createPinia, setActivePinia } from "pinia";
 import { shallowMount } from "@vue/test-utils";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AppHeader from "./AppHeader.vue";
 import AppShell from "./AppShell.vue";
+import { useAgentStore } from "@/stores/agent";
+import { useAuthStore } from "@/stores/auth";
 
 vi.mock("vue-router", () => ({ useRoute: () => ({ meta: {}, path: "/agent" }) }));
+const listAgentSessions = vi.fn();
+vi.mock("@/api/agent", () => ({ listAgentSessions: (...args: unknown[]) => listAgentSessions(...args) }));
 
 const originalWidth = window.innerWidth;
+
+beforeEach(() => {
+  setActivePinia(createPinia());
+  listAgentSessions.mockReset();
+  listAgentSessions.mockResolvedValue({ sessions: [], total: 0 });
+});
 
 afterEach(() => {
   Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
@@ -45,5 +56,28 @@ describe("AppShell", () => {
 
     expect(wrapper.findComponent({ name: "AppSidebar" }).props("isCollapsed")).toBe(false);
     expect(wrapper.findComponent(AppHeader).props("showMenu")).toBe(false);
+  });
+
+  it("restores recent conversations when a protected page is refreshed", async () => {
+    useAuthStore().setUser({
+      subject: "admin",
+      workspace: { contract: "personal-workspace.v1", workspace_id: "workspace-admin", kind: "personal", display_name: "Admin", role: "owner" },
+    });
+    listAgentSessions.mockResolvedValue({
+      sessions: [{ session_id: "session-1", trace_id: "trace-1", title: "刷新后恢复" }], total: 1,
+    });
+    shallowMount(AppShell, { global: { stubs: { RouterView: true } } });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(listAgentSessions).toHaveBeenCalledWith("", { limit: 100 });
+    expect(useAgentStore().sessions[0]?.title).toBe("刷新后恢复");
+  });
+
+  it("gives the conversation route one internal scroll container", async () => {
+    const wrapper = shallowMount(AppShell, { global: { stubs: { RouterView: true } } });
+    await nextTick();
+
+    expect(wrapper.get("main").classes()).toContain("content-area--conversation");
   });
 });

@@ -22,6 +22,7 @@ const route = useRoute();
 const router = useRouter();
 
 const displayName = computed(() => auth.user?.display_name?.trim() || auth.user?.subject || "未登录");
+const userId = computed(() => auth.user?.subject || "未登录");
 const workspaceName = computed(() => auth.user?.workspace?.display_name ?? "个人工作区");
 const avatarText = computed(() => displayName.value.slice(0, 1).toUpperCase() || "B");
 
@@ -50,7 +51,7 @@ async function handleCommand(command: string) {
           {{ props.mobileLabel }}
         </span>
         <span v-else-if="!props.compact" class="user-copy">
-          <strong>{{ displayName }}</strong>
+          <strong>{{ userId }}</strong>
           <small>{{ workspaceName }}</small>
         </span>
         <el-icon v-if="props.variant !== 'mobile' && !props.compact" class="user-caret"><CaretBottom /></el-icon>

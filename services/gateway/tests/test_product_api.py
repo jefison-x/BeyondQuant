@@ -784,8 +784,9 @@ def test_product_paper_depth_routes_forward_methods_and_owner(monkeypatch) -> No
     assert client.put(f"{base}/controls", headers=auth, json={}).status_code == 200
     assert client.put(f"{base}/binding", headers=auth, json={}).status_code == 200
     assert client.get(f"{base}/export", headers=auth).status_code == 200
+    assert client.request("DELETE", base, headers=auth, json={}).status_code == 200
     assert client.post("/api/product/paper/accounts/import", headers=auth, json={}).status_code == 201
-    assert [item[0] for item in captured] == ["GET", "GET", "POST", "GET", "PUT", "PUT", "GET", "POST"]
+    assert [item[0] for item in captured] == ["GET", "GET", "POST", "GET", "PUT", "PUT", "GET", "DELETE", "POST"]
     assert all(item[2]["x-byq-owner-principal"] == "product-user" for item in captured)
 
 

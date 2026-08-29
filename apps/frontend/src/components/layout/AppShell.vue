@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
+import { listAgentSessions } from "@/api/agent";
+import { useAgentStore } from "@/stores/agent";
+import { useAuthStore } from "@/stores/auth";
 import AppHeader from "./AppHeader.vue";
 import AppSidebar from "./AppSidebar.vue";
 
 const route = useRoute();
+const agent = useAgentStore();
+const auth = useAuthStore();
 const isPublicRoute = computed(() => Boolean(route.meta.public));
+const isConversationRoute = computed(() => route.path === "/agent");
 const isSystemSettingsRoute = computed(() => route.path.startsWith("/settings/system"));
 const isMobile = ref(false);
 const sidebarCollapsed = ref(false);
@@ -20,9 +26,17 @@ function toggleSidebarCollapse() {
   sidebarCollapsed.value = !sidebarCollapsed.value;
 }
 
-onMounted(() => {
+onMounted(async () => {
   updateViewport();
   window.addEventListener("resize", updateViewport);
+  if (!isPublicRoute.value && auth.isAuthenticated) {
+    try {
+      const response = await listAgentSessions(auth.token, { limit: 100 });
+      agent.replaceSessions(response.sessions);
+    } catch {
+      // The shell remains usable when the best-effort recent catalogue is unavailable.
+    }
+  }
 });
 
 onUnmounted(() => {
@@ -64,7 +78,7 @@ watch(() => route.fullPath, async () => {
         />
         <section class="workspace-shell">
           <AppHeader :show-menu="isMobile" @toggle-menu="mobileDrawerOpen = true" />
-          <main ref="contentArea" class="content-area" tabindex="-1">
+          <main ref="contentArea" class="content-area" :class="{ 'content-area--conversation': isConversationRoute }" tabindex="-1">
             <RouterView />
           </main>
         </section>
@@ -115,6 +129,11 @@ watch(() => route.fullPath, async () => {
   min-height: 0;
   overflow-y: auto;
   padding: 1rem;
+}
+
+.content-area.content-area--conversation {
+  overflow: hidden;
+  padding: 0;
 }
 
 .public-area {

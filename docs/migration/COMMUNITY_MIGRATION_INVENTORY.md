@@ -601,6 +601,15 @@ Phase 35 Product API and simulation domain remain authoritative.
 | Paper Trading as a primary business destination below Backtest | Simulation is an ongoing business workflow, not a personal preference. | `PORT_UX` / `REFACTOR` | Add `/paper-trading` after Backtest in the flat main navigation; remove it from User Center. |
 | Searchable account catalog beside persistent detail | Users need stable account selection while inspecting orders, settlement and risk. | `PORT_LAYOUT` / `REUSE_AS_IS` | Compose the existing real account workflow with BYQ `ManagementWorkspace`; no Community component is copied. |
 | Existing `/user/paper-trading` deep links | Saved links and older Product journeys must not fail. | `PORT_TESTS` / `REFACTOR` | Redirect to `/paper-trading`; Backtest emits the canonical route. |
+
+### Post-Phase 65 conversation and paper maintenance audit（2026-08-29）
+
+| Community asset | Preserved invariant / UX | Classification | BYQ treatment |
+|---|---|---|---|
+| `AppSidebar.vue` recent sessions and per-row actions | History remains discoverable after refresh and opens from one clear navigation label. | `PORT_UX` / `PORT_TESTS` / `REFACTOR` | Shell loads the durable BYQ conversation catalog; “对话历史” opens the BYQ drawer with batch archive/delete. Community session API/store remains `DROP`. |
+| `AgentThinking.vue` tool/step presentation | Users benefit from knowing which bounded execution role produced a public step. | `PORT_UX` / `REFACTOR` | Add only Adapter-owned allow-listed Agent/plugin/Skill Product labels to `agent.activity`; raw names, arguments, results and reasoning remain `DROP`. |
+| `PaperTradingView.vue` account create form | Initial funding needs an explicit label and CNY symbol. | `PORT_UX` | Keep BYQ generated account identity and Product API; show “初始资金” and `¥`. |
+| Community paper account lifecycle | No safe reusable deletion invariant exists in Community. | `REFERENCE_ONLY` / `REPLACE` | BYQ adds owner/version/idempotency checked tombstone deletion and retains immutable trading/audit history. |
 | Community Agent/runtime, broker paths and storage | None under ADR-0021/0024/0034. | `REFERENCE_ONLY` / `DROP` | No backend, Product API, DSH, authorization or persistence change. |
 
 ## Phase 45 System Settings pre-implementation audit

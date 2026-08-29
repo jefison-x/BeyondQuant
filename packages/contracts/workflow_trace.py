@@ -262,7 +262,10 @@ def _validate_activity(payload: dict[str, Any]) -> None:
     _exact_fields(
         payload,
         required={"schema_version", "activity_id", "phase", "state", "label"},
-        allowed={"schema_version", "activity_id", "phase", "state", "label", "capability"},
+        allowed={
+            "schema_version", "activity_id", "phase", "state", "label", "capability",
+            "agent_label", "plugin_label", "skill_label",
+        },
     )
     if payload["schema_version"] != WORKFLOW_ACTIVITY_VERSION:
         raise ValueError("workflow activity schema_version is invalid")
@@ -274,6 +277,9 @@ def _validate_activity(payload: dict[str, Any]) -> None:
         raise ValueError("workflow activity state is invalid")
     _text(payload["label"], field="label", minimum=1, maximum=240)
     _optional_text(payload, "capability", maximum=128)
+    _optional_text(payload, "agent_label", maximum=80)
+    _optional_text(payload, "plugin_label", maximum=80)
+    _optional_text(payload, "skill_label", maximum=80)
 
 
 def _optional_metrics(

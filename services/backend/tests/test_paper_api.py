@@ -59,6 +59,22 @@ def test_paper_ledger_endpoint_derives_cash_flow(monkeypatch) -> None:
     store.close()
 
 
+def test_paper_account_delete_endpoint_tombstones_owned_account(monkeypatch) -> None:
+    headers = trusted_agent_context("product-user")
+    store = PaperTradingStore()
+    monkeypatch.setattr(main, "paper_store", store)
+    client = TestClient(main.app)
+    account = store.create_account({"name": "delete-api", "cash": 100_000}, trusted_owner="product-user")
+
+    response = client.request("DELETE", f"/v1/paper/accounts/{account['account_id']}", headers=headers, json={
+        "expected_version": account["version"], "idempotency_key": "delete-api-1", "reason": "用户删除",
+    })
+    assert response.status_code == 200
+    assert response.json() == {"account_id": account["account_id"], "deleted": True}
+    assert client.get(f"/v1/paper/accounts/{account['account_id']}", headers=headers).status_code == 404
+    store.close()
+
+
 def test_stock_pool_snapshot_and_lifecycle_api(monkeypatch) -> None:
     headers = trusted_agent_context(
         "product-user", trace_id="trace-pool", session_id="session-pool", dsh_run_id="browser"

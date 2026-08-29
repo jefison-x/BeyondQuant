@@ -68,13 +68,15 @@ Artifact ID token 的回答 fail closed，不保留原文。
 `agent.activity` payload：
 
 ```json
-{"schema_version":"workflow-activity.v1","activity_id":"activity_<hex>","phase":"strategy","state":"started","label":"校验策略草稿","capability":"byq_strategy_validate"}
+{"schema_version":"workflow-activity.v1","activity_id":"activity_<hex>","phase":"strategy","state":"started","label":"校验策略草稿","agent_label":"量化研究 Agent","plugin_label":"BeyondQuant MCP","skill_label":"策略研究 Skill"}
 ```
 
 `phase` 为 `understand|select|strategy|backtest|review|tool`；`state` 为
 `started|progress|completed|failed|waiting_approval`；`label` 为 1–240 characters。
 可选 `capability` 只为历史 v1 replay compatibility 保留；Phase 60 Adapter 不再生成该
-field。Agent context、role catalogue、run start、authorize、audit 和 unknown tools 不产生
+field。可选 `agent_label`、`plugin_label`、`skill_label` 只能由 Adapter 根据已观察到的
+allow-listed capability 映射为 1–80 characters 的 Product label；它们不得来自 model text，
+不得包含 raw tool/package/role identifier，也不得暗示未实际发生的调用。Agent context、role catalogue、run start、authorize、audit 和 unknown tools 不产生
 公开 activity。Frontend 必须把 phase/state 映射为产品语言，不显示 enum token。不存在
 reasoning、prompt、argument、raw result 或 stack-trace fields。
 

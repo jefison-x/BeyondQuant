@@ -59,6 +59,12 @@ Frontend 将 closed phase/state enums 映射为中文用户标签，不直接显
 `completed` 等 Contract token。Activity 仍按 `activity_id` fold started/completed，保持
 有界、可重放、无 hidden reasoning。
 
+2026-08-29 maintenance clarification：`workflow-activity.v1` 可附加 Adapter-owned 的
+`agent_label`、`plugin_label`、`skill_label`，但只能由实际观察到的 allow-listed capability
+映射为中文 Product label。该信息用于解释“由谁、通过哪类受控能力执行”，不是 raw DSH
+tool/package/role identity，也不证明未发生的 Skill/插件调用；tool argument/result、控制动作
+和 hidden reasoning 仍保持不可见。
+
 ### 4. DSH skill 明确一次性最终回答协议
 
 BYQ role skill 与相关 persona 要求：tool step 只发 tool call，不写授权、审计、选择工具或

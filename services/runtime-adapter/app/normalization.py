@@ -40,6 +40,8 @@ _CAPABILITIES: dict[str, tuple[str, str]] = {
     "byq_market_session_context": ("select", "确认交易日与数据截止"),
     "byq_market_valuation": ("select", "读取估值数据"),
     "byq_market_fundamentals": ("select", "读取基本面数据"),
+    "byq_web_evidence_create": ("select", "保存网页研究来源"),
+    "web_search": ("select", "检索公开网页"),
     "byq_pool_list": ("select", "读取股票池"),
     "byq_pool_get": ("select", "读取股票池详情"),
     "byq_pool_history": ("select", "读取股票池历史"),
@@ -276,6 +278,7 @@ def _tool_call_events(
         phase=phase,
         activity_state="started",
         label=label,
+        **_execution_context(capability),
     )
 
 
@@ -306,6 +309,7 @@ def _tool_result_events(
         phase=phase,
         activity_state="failed" if failed else "completed",
         label=label,
+        **_execution_context(capability),
     )
     if failed or capability is None:
         return events
@@ -386,6 +390,9 @@ def _bounded_activity(
     phase: str,
     activity_state: str,
     label: str,
+    agent_label: str | None = None,
+    plugin_label: str | None = None,
+    skill_label: str | None = None,
 ) -> list[WorkflowTraceEvent]:
     if state.activity_count >= MAX_ACTIVITIES_PER_TURN:
         if state.activity_truncated:
@@ -400,6 +407,12 @@ def _bounded_activity(
         "state": activity_state,
         "label": label,
     }
+    if agent_label:
+        payload["agent_label"] = agent_label
+    if plugin_label:
+        payload["plugin_label"] = plugin_label
+    if skill_label:
+        payload["skill_label"] = skill_label
     event = _event(trace_id, session_id, sequence, "agent.activity", "runtime-adapter", payload)
     validate_workflow_trace_event(event)
     return [event]
@@ -467,6 +480,34 @@ def _canonical_capability(value: object) -> str | None:
         if prefix.endswith(("__", "/", ":", ".")):
             return capability
     return None
+
+
+def _execution_context(capability: str) -> dict[str, str]:
+    """Map an observed allow-listed call to product-owned execution labels."""
+
+    delegates = {
+        "byq_delegate_market_research": ("市场研究 Agent", "子 Agent 编排插件", "市场研究 Skill"),
+        "byq_delegate_factor_research": ("因子研究 Agent", "子 Agent 编排插件", "因子研究 Skill"),
+        "byq_delegate_strategy_research": ("策略研究 Agent", "子 Agent 编排插件", "策略研究 Skill"),
+        "byq_delegate_backtest_analysis": ("回测分析 Agent", "子 Agent 编排插件", "回测分析 Skill"),
+    }
+    if capability in delegates:
+        agent, plugin, skill = delegates[capability]
+    elif capability == "web_search":
+        agent, plugin, skill = "市场研究 Agent", "网页研究插件", "市场研究 Skill"
+    elif capability.startswith("byq_market_") or capability == "byq_web_evidence_create":
+        agent, plugin, skill = "量化研究 Agent", "BeyondQuant MCP", "市场研究 Skill"
+    elif capability.startswith("byq_factor_"):
+        agent, plugin, skill = "量化研究 Agent", "BeyondQuant MCP", "因子研究 Skill"
+    elif capability.startswith("byq_strategy_"):
+        agent, plugin, skill = "量化研究 Agent", "BeyondQuant MCP", "策略研究 Skill"
+    elif capability.startswith("byq_backtest_"):
+        agent, plugin, skill = "量化研究 Agent", "BeyondQuant MCP", "回测分析 Skill"
+    elif capability.startswith("byq_pool_"):
+        agent, plugin, skill = "小巴协调 Agent", "BeyondQuant MCP", "股票池管理 Skill"
+    else:
+        agent, plugin, skill = "小巴协调 Agent", "BeyondQuant MCP", "量化研究职责 Skill"
+    return {"agent_label": agent, "plugin_label": plugin, "skill_label": skill}
 
 
 def _progress(

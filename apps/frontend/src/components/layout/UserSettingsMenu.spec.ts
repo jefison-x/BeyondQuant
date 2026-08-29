@@ -42,7 +42,9 @@ describe("UserSettingsMenu", () => {
       },
     });
 
-    expect(wrapper.text()).toContain("量化小周");
+    expect(wrapper.find(".user-avatar").text()).toBe("量");
+    expect(wrapper.find(".user-copy strong").text()).toBe("alice");
+    expect(wrapper.find(".user-trigger").attributes("title")).toContain("量化小周");
     expect(wrapper.text()).toContain("Alice 的个人工作区");
     expect(wrapper.text()).toContain("仅你本人可访问 · 无需切换");
     expect(wrapper.text()).not.toMatch(/邀请|成员管理|切换工作区|创建工作区/);

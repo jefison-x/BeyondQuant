@@ -191,6 +191,9 @@ def test_known_tool_emits_curated_activity_and_proposal_card() -> None:
         "phase": "strategy",
         "state": "started",
         "label": "整理工作台建议",
+        "agent_label": "小巴协调 Agent",
+        "plugin_label": "BeyondQuant MCP",
+        "skill_label": "量化研究职责 Skill",
     }
     assert [event["kind"] for event in completed] == [
         "agent.activity",
@@ -263,6 +266,9 @@ def test_internal_control_activity_is_hidden_but_domain_research_is_public() -> 
     )
 
     assert started[0]["payload"]["label"] == "读取估值数据"
+    assert started[0]["payload"]["agent_label"] == "量化研究 Agent"
+    assert started[0]["payload"]["plugin_label"] == "BeyondQuant MCP"
+    assert started[0]["payload"]["skill_label"] == "市场研究 Skill"
     assert completed[0]["payload"]["label"] == "读取估值数据"
     assert "capability" not in started[0]["payload"]
 
