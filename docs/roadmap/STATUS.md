@@ -1,13 +1,13 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=66 -->
+<!-- byq:current-completed-phase=67 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 66**——接受 ADR-0041 与 `stock-pool-producer.v1`，冻结指数/动态股票池
-  definition、materialization run、immutable snapshot、trusted Data Worker、时间点计算、失败恢复和
-  Product intent 边界；本阶段没有提前修改 runtime。
+- 当前已完成阶段：**Phase 67**——依据 ADR-0041 实现 validated canonical index catalog、
+  owner/workspace-scoped index definition、持久化 materialization run、trusted Data Worker、
+  no-look-ahead 物化、失败原子性与 responsive Product UI；Browser 只访问 Product API。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -226,6 +226,13 @@ materialization run 与 ADR-0020 immutable snapshot 分离；指数只消费 ADR
 Worker 原子物化，失败不推进 current pointer。Community 指数语义分类为 `PORT_LOGIC`/`PORT_UX`，
 动态占位和 sample data 为 `DROP`；本阶段无 runtime implementation。
 
+Phase 67 依据 ADR-0041 交付指数型股票池：validated index catalog 只投影完整 canonical coverage；
+Product 创建 owner/workspace-scoped definition 与幂等任务，trusted Data Worker 选择不晚于请求日期的
+最新完整权重、转换 percent 单位并原子追加不可变 snapshot。失败与晚到旧任务不回退 current pointer；
+API/UI 展示 definition、物化状态、成员和历史。PostgreSQL、Gateway、frontend、真实 Chromium 与
+Chrome DevTools MCP desktop/mobile journey、same-origin Network review 均通过，未调用 Provider 或
+暴露 worker internal。
+
 Post-Phase 62 Trusted Time Maintenance 依据 ADR-0037 将服务器权威自然时间作为 DSH
 逐轮动态 runtime context，并通过 BYQ MCP 暴露已有 SSE calendar 与 persisted market
 snapshot 的有界只读截止语义。它是维护修复，不改变 Phase 62 完成状态，也不定义下一
@@ -243,9 +250,9 @@ Post-Phase 65 Paper Trading Navigation Maintenance 将模拟操盘从 User Cente
 
 ## 当前授权边界
 
-- Phase 49-66 与相应 Accepted ADR/计划均已完成。
-- Next phase：**Phase 67 — Index stock pools，已由维护者于 2026-08-29 明确授权**。只能在 Phase 66
-  合并且 CI 通过后，于新隔离 worktree 实现 ADR-0041 指数范围；不得提前进入 Phase 68。
+- Phase 49-67 与相应 Accepted ADR/计划均已完成。
+- Next phase：**Phase 68 — Dynamic stock pools，已由维护者于 2026-08-29 明确授权**。只能在 Phase 67
+  合并且 CI 通过后，于新隔离 worktree 实现 ADR-0041 closed dynamic rule 范围；不得提前进入 Phase 69。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 

@@ -1,10 +1,10 @@
 # BeyondQuant
 
-<!-- byq:current-completed-phase=66 -->
+<!-- byq:current-completed-phase=67 -->
 
 BeyondQuant（BYQ）是一个 AI 原生量化研究平台。当前已完成的项目阶段为
-**Phase 66**：接受指数型与动态股票池的可信生产器、时间点物化、失败恢复及 Product
-intent boundary；运行时 baseline 保持 Python `0.1.1rc1` / npm `0.1.1-rc.1`。
+**Phase 67**：完成 validated canonical 指数目录、可信时间点物化、失败恢复与 Product
+API/UI；运行时 baseline 保持 Python `0.1.1rc1` / npm `0.1.1-rc.1`。
 当前状态以
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) 为准。
 

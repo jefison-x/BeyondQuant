@@ -390,6 +390,48 @@ export interface StockPool {
   updated_at?: string;
 }
 
+export interface IndexPoolCatalogItem {
+  index_symbol: string;
+  name: string;
+  latest_snapshot_date: string;
+  member_count: number;
+  source: "tushare";
+  dataset_contract: string;
+  completeness_hash: string;
+  verified_at: string;
+}
+
+export interface StockPoolMaterializationRun {
+  run_id: string;
+  pool_id: string;
+  requested_as_of: string;
+  effective_trade_date?: string | null;
+  status: "queued" | "running" | "succeeded" | "waiting_for_data" | "failed" | "cancelled";
+  attempt_count: number;
+  producer_id: string;
+  producer_version: string;
+  member_count?: number | null;
+  error_code?: string | null;
+  error_message?: string | null;
+  snapshot_id?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  input_manifest?: Record<string, unknown>;
+}
+
+export interface StockPoolProducerDefinition {
+  definition_id: string;
+  pool_id: string;
+  producer_kind: "index" | "dynamic";
+  schema_version: string;
+  version: number;
+  status: "draft" | "active" | "paused";
+  definition: Record<string, unknown>;
+  schedule: Record<string, unknown>;
+  definition_fingerprint: string;
+}
+
 export interface StockPoolSnapshot {
   snapshot_id: string;
   pool_id: string;

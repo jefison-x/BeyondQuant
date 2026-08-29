@@ -223,6 +223,10 @@ paths:
     parameters: [{$ref: "#/components/parameters/Limit"}, {$ref: "#/components/parameters/Offset"}]
     get: {summary: 列出 owner-scoped stock pools., responses: *okResponses}
     post: {summary: 创建 an owner-scoped stock pool., responses: *createdResponses}
+  /api/product/paper/index-pools/catalog:
+    get: {summary: 列出 validated canonical index-weight catalog without provider access., responses: *okResponses}
+  /api/product/paper/index-pools:
+    post: {summary: 创建 owner-scoped index pool definition and enqueue trusted materialization., responses: *createdResponses}
   /api/product/paper/pools/{pool_id}:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
     get: {summary: 获取 one owner-scoped stock pool., responses: *okResponses}
@@ -248,6 +252,13 @@ paths:
   /api/product/paper/pools/{pool_id}/references:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
     get: {summary: 列出 bounded owner-safe downstream stock-pool references., responses: *okResponses}
+  /api/product/paper/pools/{pool_id}/producer:
+    parameters: [{$ref: "#/components/parameters/PoolId"}]
+    get: {summary: 获取 owner-scoped normalized stock-pool producer definition., responses: *okResponses}
+  /api/product/paper/pools/{pool_id}/materializations:
+    parameters: [{$ref: "#/components/parameters/PoolId"}, {$ref: "#/components/parameters/Limit"}, {$ref: "#/components/parameters/Offset"}]
+    get: {summary: 列出 owner-scoped stock-pool materialization history., responses: *okResponses}
+    post: {summary: 幂等排队 trusted index-pool refresh without provider access from Product Plane., responses: *createdResponses}
   /api/product/paper/orders:
     post: {summary: 提交 an owner-scoped paper order., responses: *createdResponses}
   /api/product/paper/accounts/{account_id}/orders:

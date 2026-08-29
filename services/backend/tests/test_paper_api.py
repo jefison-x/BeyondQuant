@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.paper_trading import PaperTradingStore
+from app.stock_pool_producer import StockPoolProducerStore
 from tests.workspace_helpers import trusted_agent_context
 
 
@@ -98,3 +99,41 @@ def test_stock_pool_snapshot_and_lifecycle_api(monkeypatch) -> None:
     })
     assert inactive.json()["pool"]["status"] == "inactive"
     store.close()
+
+
+def test_index_pool_product_boundary_enqueues_trusted_materialization(monkeypatch) -> None:
+    headers = trusted_agent_context("index-api-user")
+    other_headers = trusted_agent_context("index-api-other")
+    paper = PaperTradingStore()
+    producer = StockPoolProducerStore(paper_store=paper)
+    producer._execute("""INSERT INTO market_index_weights
+        (index_symbol,constituent_symbol,snapshot_date,weight,data_source,provenance_json,content_sha256,updated_at)
+        VALUES ('000300.SH','000001.SZ','20240102',100,'tushare',:provenance,'api-row',now())""",
+        {"provenance": {"provider": "tushare"}})
+    producer._execute("""INSERT INTO market_index_weight_completeness
+        (index_symbol,period,row_count,content_sha256,provenance_json,verified_at)
+        VALUES ('000300.SH','202401',1,'api-period',:provenance,now())""",
+        {"provenance": {"provider": "tushare"}})
+    monkeypatch.setattr(main, "paper_store", paper)
+    monkeypatch.setattr(main, "stock_pool_producer_store", producer)
+    client = TestClient(main.app)
+
+    catalog = client.get("/v1/paper/index-pools/catalog", headers=headers)
+    assert catalog.status_code == 200
+    assert catalog.json()["indices"][0]["index_symbol"] == "000300.SH"
+    created = client.post("/v1/paper/index-pools", headers=headers, json={
+        "index_symbol": "000300.SH", "requested_as_of": "20240131", "idempotency_key": "api-index-create",
+    })
+    assert created.status_code == 202
+    body = created.json()
+    assert body["pool"]["pool_type"] == "index"
+    assert body["run"]["status"] == "queued"
+    assert "workspace_id" not in body["run"]
+    pool_id = body["pool"]["pool_id"]
+    assert client.get(f"/v1/paper/pools/{pool_id}/producer", headers=other_headers).status_code == 404
+    assert client.post("/v1/paper/index-pools", headers=headers, json={
+        "index_symbol": "000300.SH", "requested_as_of": "20240131", "idempotency_key": "api-index-create",
+        "provider": "browser-spoof",
+    }).status_code == 422
+    producer.close()
+    paper.close()
