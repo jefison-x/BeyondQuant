@@ -1,13 +1,13 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=71 -->
+<!-- byq:current-completed-phase=72 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 71**——依据 ADR-0043 接受可审计机器学习研究边界，冻结
-  LightGBM 训练任务、point-in-time FeatureSnapshot、不可变 ModelArtifact、严格样本外
-  PredictionSnapshot 和现有冻结信号/Backtest 衔接合同；本阶段未改 runtime/schema/API/UI。
+- 当前已完成阶段：**Phase 72**——依据 ADR-0043 实现 owner/workspace-scoped ML 策略版本与
+  人工批准、可恢复 TrainingRun、point-in-time FeatureSnapshot，以及独立无凭证 LightGBM CPU
+  Worker 生成的 hash-verified native-text ModelArtifact；尚未实现 prediction、signal、Backtest 或 UI。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -285,11 +285,20 @@ Phase 71 Auditable Machine Learning Contract Baseline 依据 ADR-0043 完成只�
 文本模型和现有 ADR-0017 冻结信号。Community 的 Backtest 内 `fit/predict`、任意用户 source、
 pickle/joblib、Provider/DSH/Browser 训练路径均为 `REPLACE`/`DROP`。本阶段没有修改运行时。
 
+Phase 72 Trusted Training and Model Artifact 实现封闭 ML StrategyVersion validation/approval，
+持久化 `waiting_for_data → queued → running → completed/failed/cancelled` 训练任务和数据库
+claim/lease/retry/attempt fencing。FeatureSnapshot 使用冻结股票池、canonical session、前复权
+research bars 与历史指数 membership，严格隔离 chronological split 且 prediction rows 不含 target。
+独立非 root `ml-worker` 固定 Python 3.13 / LightGBM 4.7.0 / NumPy 2.3.3、单线程 CPU 和有限参数，
+在无 Provider/模型凭证环境生成 native text 模型对象、SHA-256、validation metrics、runtime/image
+identity 与完整 lineage。模型对象使用独立 volume；Worker runtime 健康必须等待 Store 初始化完成。
+Backend 不引入 LightGBM 依赖；本阶段不提供 Product API/UI，也不生成预测、信号或 Backtest。
+
 ## 当前授权边界
 
-- Phase 49-71 与相应 Accepted ADR/计划均已完成。
-- 下一阶段为 **Phase 72 — Trusted training and model artifact**。只有 Phase 71 合并且 CI 通过后，
-  才可在新的隔离 worktree/branch/PR 实现；不得提前进入 Phase 73/74 或 HIST。
+- Phase 49-72 与相应 Accepted ADR/计划均已完成。
+- 下一阶段为 **Phase 73 — Out-of-sample prediction and signal closure**。只有 Phase 72 状态收口
+  合并且 CI 通过后，才可在新的隔离 worktree/branch/PR 实现；不得提前进入 Phase 74 或 HIST。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 

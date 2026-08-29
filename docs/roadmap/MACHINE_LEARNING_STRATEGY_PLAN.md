@@ -11,7 +11,7 @@
 - 固定 LightGBM 4.7.0 / Python 3.13 CPU execution profile、禁止项、阶段顺序和验收/停止条件；
 - 不改 runtime、database、API、MCP、frontend 或 Compose。
 
-## Phase 72 — Trusted training and model artifact（`NEXT`）
+## Phase 72 — Trusted training and model artifact（`COMPLETE`）
 
 - 实现 `ml-strategy-version.v1` validation/version/approval；
 - 实现 owner/workspace-scoped TrainingRun、claim/lease/retry/idempotency；
@@ -20,7 +20,7 @@
 - 持久化 ModelArtifact、validation metrics 和完整 lineage；
 - 只交付 Backend/domain/worker contract，不做 prediction、signal、Backtest 或 UI。
 
-## Phase 73 — Out-of-sample prediction and signal closure（`PENDING`）
+## Phase 73 — Out-of-sample prediction and signal closure（`NEXT`）
 
 - 验证 model bytes/hash/runtime/feature order 后执行 prediction-only split；
 - 生成 immutable PredictionSnapshot，按确定性 score/symbol 排名；

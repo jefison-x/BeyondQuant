@@ -1,7 +1,7 @@
 # Machine Learning Research Contract
 
-本合同冻结 ADR-0043 的 LightGBM 最小闭环边界。Phase 71 只定义合同；对应 runtime 从 Phase 72
-开始按顺序实现。
+本合同冻结 ADR-0043 的 LightGBM 最小闭环边界。Phase 71 定义合同；Phase 72 已实现可信训练与
+ModelArtifact，后续按 Phase 73–74 顺序闭合 prediction/signal 与 Product journey。
 
 ## 领域对象与 lineage
 
@@ -149,4 +149,5 @@ Browser 只访问 Gateway/Product API，看到有界状态、指标、lineage �
 Backend、Worker、PostgreSQL、object path、LightGBM text 或 raw feature rows。Product Agent 如后续获得
 能力，只能经 BYQ MCP 创建/读取领域意图；DSH 不训练、不推理、不读取模型对象。
 
-Phase 71 不新增 Product API、MCP tool、UI、schema、Worker 或 runtime dependency。
+Phase 72 仅新增 Backend/domain schema/API 与隔离 ML Worker；LightGBM/NumPy 不进入 Backend、MCP、
+DSH、signal sandbox 或 Browser。Product API、MCP tool、UI、prediction、signal 与 Backtest 仍未新增。
