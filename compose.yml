@@ -216,6 +216,34 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  ml-worker:
+    build:
+      context: .
+      dockerfile: workers/ml/Dockerfile
+    environment:
+      BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
+      BYQ_ML_OBJECT_ROOT: /var/lib/byq/ml-objects
+      BYQ_ML_POLL_SECONDS: 2
+      BYQ_ML_WORKER_ID: ml-worker-1
+      BYQ_ML_IMAGE_IDENTITY: ${BYQ_ML_IMAGE_IDENTITY:-byq-ml-worker-v1-local-build}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - byq_product
+    volumes:
+      - byq_ml_model_state:/var/lib/byq/ml-objects
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 1536m
+    cpus: 2.0
+
   signal-sandbox:
     build:
       context: .
@@ -261,6 +289,8 @@ volumes:
     external: ${BYQ_POSTGRES_VOLUME_EXTERNAL:-false}
   byq_domain_state:
     name: ${BYQ_DOMAIN_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-domain-state}
+  byq_ml_model_state:
+    name: ${BYQ_ML_MODEL_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-ml-model-state}
   byq_dsh_sessions:
     name: ${BYQ_DSH_SESSIONS_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-dsh-sessions}
   byq_workflow_traces:

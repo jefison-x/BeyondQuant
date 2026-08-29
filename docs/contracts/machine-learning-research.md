@@ -94,6 +94,8 @@ return_1, return_5, return_20, volatility_20, volume_ratio_5
 - snapshot 保存 source manifests、membership fingerprint、row counts、exclusion counts 和 content hash。
 
 首版上限：1 个 frozen pool snapshot、1,000 symbols、2,500 sessions、2,000,000 usable rows、5 features。
+具体提交仍受 MarketReadiness 防滥用边界约束；当前训练实现采用更小的 50,000 个输入/特征行和
+32 MiB 上限，超过时 fail closed，不承诺自动拆分大规模训练。
 
 ## `ml-training-run.v1`
 
