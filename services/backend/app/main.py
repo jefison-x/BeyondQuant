@@ -75,6 +75,7 @@ from .backtest import (
     build_manifest,
     normalize_backtest_request,
     normalize_signal_snapshot,
+    normalize_execution_profile,
     signal_snapshot_content_sha256,
     membership_fingerprint,
 )
@@ -158,6 +159,12 @@ from .ml_training import (
     MLTrainingPersistenceError,
     MLTrainingRunStore,
 )
+from .ml_prediction import (
+    MLPredictionConflict,
+    MLPredictionNotFound,
+    MLPredictionPersistenceError,
+    MLPredictionRunStore,
+)
 from .operations import (
     OperationsConflict,
     OperationsForbidden,
@@ -195,6 +202,7 @@ market_data_store = MarketDataStore.from_env()
 market_readiness_store = MarketReadinessStore.from_env()
 signal_job_store = SignalJobStore.from_env()
 ml_training_store = MLTrainingRunStore.from_env()
+ml_prediction_store = MLPredictionRunStore.from_env()
 data_sync_store = DataSyncStore.from_env()
 market_automation_store = MarketAutomationStore.from_env()
 security_master_store = SecurityMasterStore.from_env()
@@ -247,17 +255,17 @@ def _plugin_center_call(call: Callable[[], dict[str, object]]) -> dict[str, obje
 def _ml_call(call: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return call()
-    except (MLTrainingNotFound, ResearchNotFound, PaperTradingNotFound, SecurityMasterNotFound,
+    except (MLTrainingNotFound, MLPredictionNotFound, ResearchNotFound, PaperTradingNotFound, SecurityMasterNotFound,
             MarketAutomationNotFound) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except (MLTrainingConflict, PaperTradingConflict, SecurityMasterConflict,
+    except (MLTrainingConflict, MLPredictionConflict, PaperTradingConflict, SecurityMasterConflict,
             MarketAutomationConflict, IdempotencyConflict, InvalidTransition) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except PaperTradingForbidden as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except (MLTrainingPersistenceError, ResearchPersistenceError, PaperTradingPersistenceError,
+    except (MLTrainingPersistenceError, MLPredictionPersistenceError, ResearchPersistenceError, PaperTradingPersistenceError,
             SecurityMasterPersistenceError, MarketReadinessPersistenceError,
             MarketAutomationPersistenceError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -1764,6 +1772,132 @@ def cancel_ml_training_run(training_run_id: str, request: Request) -> dict[str, 
     )})
 
 
+@app.post("/v1/research/ml/prediction-runs", status_code=202)
+def create_ml_prediction_run(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        data = _strategy_payload(
+            payload,
+            {"task_id", "experiment_id", "model_artifact_id", "approval_artifact_id",
+             "execution", "trace_id", "idempotency_key"},
+        )
+        task = research_store.get_task(data.get("task_id"))
+        model_artifact = research_store.get_artifact(data.get("model_artifact_id"))
+        approval_artifact = research_store.get_artifact(data.get("approval_artifact_id"))
+        for artifact in (model_artifact, approval_artifact):
+            if (
+                artifact["owner_principal"] != context["owner_principal"]
+                or artifact.get("workspace_id") != context["workspace_id"]
+                or artifact["task_id"] != task["task_id"]
+            ):
+                raise ResearchNotFound("ML prediction artifact not found")
+        if task["owner_principal"] != context["owner_principal"] or task.get("workspace_id") != context["workspace_id"]:
+            raise ResearchNotFound("ML research task not found")
+        if model_artifact["kind"] != "ml_model" or model_artifact["status"] != "validated":
+            raise ValueError("model_artifact_id must reference a validated ML model")
+        if approval_artifact["kind"] != "ml_strategy_approval" or approval_artifact["status"] != "validated":
+            raise ValueError("approval_artifact_id must reference a validated ML strategy approval")
+        model = model_artifact.get("content")
+        approval = approval_artifact.get("content")
+        if not isinstance(model, dict) or not isinstance(approval, dict):
+            raise ValueError("ML model or approval content is invalid")
+        strategy_artifact = research_store.get_artifact(model.get("strategy_version_artifact_id"))
+        if (
+            strategy_artifact["kind"] != "ml_strategy_version"
+            or strategy_artifact["status"] != "validated"
+            or strategy_artifact["owner_principal"] != context["owner_principal"]
+            or strategy_artifact.get("workspace_id") != context["workspace_id"]
+            or strategy_artifact["task_id"] != task["task_id"]
+        ):
+            raise ValueError("model strategy lineage is invalid")
+        if (
+            approval.get("ml_strategy_artifact_id") != strategy_artifact["artifact_id"]
+            or approval.get("decision") != "approved"
+            or approval.get("execution_authorized") is not True
+        ):
+            raise ValueError("ML strategy is not approved for signal production")
+        strategy = validate_ml_strategy_version(strategy_artifact["content"])
+        feature_artifact = research_store.get_artifact(model.get("feature_snapshot_artifact_id"))
+        if (
+            feature_artifact["kind"] != "ml_feature_snapshot"
+            or feature_artifact["status"] != "validated"
+            or feature_artifact["owner_principal"] != context["owner_principal"]
+            or feature_artifact.get("workspace_id") != context["workspace_id"]
+            or feature_artifact["task_id"] != task["task_id"]
+        ):
+            raise ValueError("model feature lineage is invalid")
+        material = ml_training_store.prediction_material(
+            model.get("training_run_id"), trusted_workspace=context["workspace_id"],
+            trusted_owner=context["owner_principal"],
+        )
+        if material.get("model_artifact_id") != model_artifact["artifact_id"]:
+            raise ValueError("completed training run does not authorize this model")
+        requirement = material.get("requirement")
+        frozen_readiness = material.get("readiness")
+        if not isinstance(requirement, dict) or not isinstance(frozen_readiness, dict):
+            raise ValueError("training data provenance is unavailable")
+        current_readiness = market_readiness_store.assess(requirement)
+        if (
+            current_readiness.get("state") != "ready"
+            or current_readiness.get("ready_input_sha256") != frozen_readiness.get("ready_input_sha256")
+        ):
+            raise ValueError("frozen ML data identity changed after training")
+        ready_input = market_readiness_store.build_ready_input(requirement)
+        feature_content = feature_artifact.get("content")
+        if (
+            not isinstance(feature_content, dict)
+            or ready_input.get("research_view_sha256") != feature_content.get("source", {}).get("research_view_sha256")
+        ):
+            raise ValueError("frozen feature source no longer matches market input")
+        raw_execution = data.get("execution")
+        if not isinstance(raw_execution, dict) or "initial_capital" not in raw_execution or "lot_size" not in raw_execution:
+            raise ValueError("execution must explicitly freeze initial_capital and lot_size")
+        execution = normalize_execution_profile(raw_execution)
+        experiment_id = data.get("experiment_id")
+        if experiment_id is not None and research_store.get_experiment(experiment_id)["task_id"] != task["task_id"]:
+            raise ValueError("experiment does not belong to ML research task")
+        run = ml_prediction_store.create(
+            workspace_id=context["workspace_id"], owner_principal=context["owner_principal"],
+            task_id=task["task_id"], experiment_id=experiment_id,
+            ml_strategy_artifact_id=strategy_artifact["artifact_id"],
+            approval_artifact_id=approval_artifact["artifact_id"],
+            model_artifact_id=model_artifact["artifact_id"],
+            feature_artifact_id=feature_artifact["artifact_id"],
+            stock_pool_snapshot_id=model.get("stock_pool_snapshot_id"),
+            input_document={"strategy": strategy, "model": model, "feature": feature_content,
+                            "ready_input": ready_input, "readiness": {
+                                "requirement_sha256": requirement.get("requirement_sha256"),
+                                "ready_input_sha256": current_readiness.get("ready_input_sha256"),
+                            }, "execution": execution},
+            trace_id=data.get("trace_id"), idempotency_key=data.get("idempotency_key"),
+        )
+        paper_store.record_pool_reference(
+            model.get("stock_pool_snapshot_id"), domain="ml_prediction",
+            reference_id=run["prediction_run_id"], trusted_owner=context["owner_principal"],
+        )
+        return {"prediction_run": run}
+
+    return _ml_call(operation)
+
+
+@app.get("/v1/research/ml/prediction-runs")
+def list_ml_prediction_runs(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _ml_call(lambda: ml_prediction_store.list_runs(
+        trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"]
+    ))
+
+
+@app.get("/v1/research/ml/prediction-runs/{prediction_run_id}")
+def get_ml_prediction_run(prediction_run_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _ml_call(lambda: {"prediction_run": ml_prediction_store.get(
+        prediction_run_id, trusted_workspace=context["workspace_id"],
+        trusted_owner=context["owner_principal"],
+    )})
+
+
 _STRATEGY_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{2,63}$")
 
 
@@ -1935,25 +2069,44 @@ def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
             if key not in snapshot_content:
                 raise ValueError(f"signal snapshot content is missing {key}")
     version_artifact = research_store.get_artifact(request.get("strategy_version_artifact_id"))
-    if version_artifact["kind"] != "strategy_version":
-        raise ValueError("strategy_version_artifact_id must reference a strategy_version artifact")
+    if version_artifact["kind"] not in {"strategy_version", "ml_strategy_version"}:
+        raise ValueError("strategy_version_artifact_id must reference a supported strategy version")
     if version_artifact["status"] != "validated":
         raise ValueError("strategy version must be validated before backtest")
     if version_artifact["task_id"] != request.get("task_id"):
         raise ValueError("strategy version artifact does not belong to task_id")
-    validated_version = validate_version_content(version_artifact["content"])
+    is_ml = version_artifact["kind"] == "ml_strategy_version"
+    validated_version = (
+        validate_ml_strategy_version(version_artifact["content"])
+        if is_ml else validate_version_content(version_artifact["content"])
+    )
     approval_artifact = research_store.get_artifact(request.get("approval_artifact_id"))
-    if approval_artifact["kind"] != "strategy_approval" or approval_artifact["status"] != "validated":
+    expected_approval_kind = "ml_strategy_approval" if is_ml else "strategy_approval"
+    if approval_artifact["kind"] != expected_approval_kind or approval_artifact["status"] != "validated":
         raise ValueError("approval_artifact_id must reference a validated strategy approval")
     if approval_artifact["task_id"] != request.get("task_id"):
         raise ValueError("approval artifact does not belong to task_id")
     approval = approval_artifact["content"]
     if not isinstance(approval, dict):
         raise ValueError("strategy approval content is invalid")
-    if approval.get("strategy_version_artifact_id") != version_artifact["artifact_id"]:
+    approval_strategy_id = (
+        approval.get("ml_strategy_artifact_id") if is_ml
+        else approval.get("strategy_version_artifact_id")
+    )
+    if approval_strategy_id != version_artifact["artifact_id"]:
         raise ValueError("approval does not authorize this strategy version")
     if approval.get("decision") != "approved" or approval.get("execution_authorized") is not True:
         raise ValueError("strategy version is not approved for execution")
+    if is_ml:
+        source = snapshot_content.get("source") if isinstance(snapshot_content, dict) else None
+        ml_lineage = source.get("ml_lineage") if isinstance(source, dict) else None
+        if not isinstance(ml_lineage, dict):
+            raise ValueError("ML backtest requires a frozen ML signal lineage")
+        if (
+            ml_lineage.get("ml_strategy_artifact_id") != version_artifact["artifact_id"]
+            or ml_lineage.get("ml_strategy_approval_artifact_id") != approval_artifact["artifact_id"]
+        ):
+            raise ValueError("ML signal lineage does not match the selected approval")
     if validated_version.get("version_id") != version_artifact["content"].get("version_id"):
         raise ValueError("strategy version content is inconsistent")
     task = research_store.get_task(request.get("task_id"))

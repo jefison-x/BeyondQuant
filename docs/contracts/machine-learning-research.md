@@ -1,7 +1,8 @@
 # Machine Learning Research Contract
 
-本合同冻结 ADR-0043 的 LightGBM 最小闭环边界。Phase 71 定义合同；Phase 72 已实现可信训练与
-ModelArtifact，后续按 Phase 73–74 顺序闭合 prediction/signal 与 Product journey。
+本合同冻结 ADR-0043 的 LightGBM 最小闭环边界。Phase 71 定义合同，Phase 72 已实现可信训练与
+ModelArtifact。本阶段实现 prediction-only inference、冻结 top-N 信号与现有 Backtest 衔接；在
+Phase 73 合并门禁完成前，Phase 74 Product journey 仍不得开始。
 
 ## 领域对象与 lineage
 
@@ -151,3 +152,12 @@ Backend、Worker、PostgreSQL、object path、LightGBM text 或 raw feature rows
 
 Phase 72 仅新增 Backend/domain schema/API 与隔离 ML Worker；LightGBM/NumPy 不进入 Backend、MCP、
 DSH、signal sandbox 或 Browser。Product API、MCP tool、UI、prediction、signal 与 Backtest 仍未新增。
+
+Phase 73 implementation 增加 durable `ml-prediction-run.v1`。Backend 在排队前验证
+owner/workspace、approved ML Strategy、Model/Feature/Pool lineage，并确认 MarketReadiness identity
+与训练冻结值相同；ML Worker 读取对象时复验 native model size/hash/runtime/feature order，只对无标签
+prediction rows 推理。Worker 以 `(score DESC, symbol ASC)` 生成不可变 PredictionSnapshot，再按批准
+cadence/top-N、冻结 `execution.initial_capital`、当日 close 与 lot size 生成仅包含进入/退出的明确数量
+信号。ML 信号保留 Strategy Approval、Model、Feature、Prediction、Pool 与 policy hash lineage；现有
+Backtest 只构造标准 manifest，不导入 LightGBM、读取模型或重新排名。Product/Gateway/UI 留待
+Phase 74。

@@ -305,6 +305,20 @@ class MLTrainingRunStore(PgStoreMixin):
             {"workspace": trusted_workspace, "owner": trusted_owner})
         return {"runs": [self._public(row) for row in rows]}
 
+    def prediction_material(
+        self, run_id: object, *, trusted_workspace: str, trusted_owner: str
+    ) -> dict[str, object]:
+        """Return frozen training material only to the trusted inference boundary."""
+        identity = _identifier(run_id, "training_run_id")
+        row = self._fetch_one(
+            """SELECT * FROM ml_training_runs WHERE training_run_id=:id
+               AND workspace_id=:workspace AND owner_principal=:owner AND status='completed'""",
+            {"id": identity, "workspace": trusted_workspace, "owner": trusted_owner},
+        )
+        if row is None:
+            raise MLTrainingNotFound("completed ML training run not found")
+        return self._internal(row)
+
     def list_waiting(self, limit: int = 20) -> list[dict[str, object]]:
         return self._execute("""SELECT * FROM ml_training_runs WHERE status='waiting_for_data'
             ORDER BY created_at,training_run_id LIMIT :limit""", {"limit": limit})
