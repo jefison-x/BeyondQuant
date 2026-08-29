@@ -54,6 +54,7 @@ const activeActivity = computed(() => [...activities.value].reverse().find((item
   item.payload.state === "started" || item.payload.state === "progress" || item.payload.state === "waiting_approval",
 ));
 const runActive = computed(() => replayRun.value.running || Boolean(localRunStartedAt.value));
+const processingVisible = computed(() => runActive.value && !replayRun.value.answerStarted);
 const runStartedAt = computed(() => replayRun.value.startedAt || localRunStartedAt.value);
 const elapsedSeconds = computed(() => {
   const started = Date.parse(runStartedAt.value || "");
@@ -439,7 +440,7 @@ onBeforeUnmount(() => { stopStream(); stopReconciliation(); if (clockTimer) clea
           </article>
           <WorkflowCard v-else :event="item.card" @navigate="navigateCard" />
         </template>
-        <article v-if="runActive" class="conversation-message agent assistant-processing" role="status" aria-live="polite">
+        <article v-if="processingVisible" class="conversation-message agent assistant-processing" role="status" aria-live="polite">
           <span class="message-author">小巴</span>
           <div class="thinking-status">
             <button type="button" class="thinking-summary" @click="activityOpen = true">

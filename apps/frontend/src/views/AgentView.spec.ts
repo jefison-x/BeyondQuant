@@ -145,6 +145,45 @@ describe("AgentView", () => {
     expect(agentMessages[0].text).toBe("唯一输出");
   });
 
+  it("removes the standalone processing bubble as soon as the final answer starts", async () => {
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as {
+      prompt: string;
+      send: () => Promise<void>;
+      handleEvent: (event: Record<string, unknown>, generation: number) => void;
+    };
+
+    view.prompt = "检查回答收口";
+    await view.send();
+    view.handleEvent({
+      trace_id: "trace-1", session_id: "session-1", sequence: 2,
+      timestamp: "2026-08-28T00:00:01Z", kind: "session.started", source: "runtime-adapter", payload: {},
+    }, 1);
+    expect(wrapper.find(".assistant-processing").exists()).toBe(true);
+
+    view.handleEvent({
+      trace_id: "trace-1", session_id: "session-1", sequence: 3,
+      timestamp: "2026-08-28T00:00:02Z", kind: "agent.output.delta", source: "runtime-adapter",
+      payload: { delta: "这是最终回答" },
+    }, 1);
+    await flushPromises();
+
+    expect(useAgentStore().messages.at(-1)?.text).toBe("这是最终回答");
+    expect(wrapper.find(".assistant-processing").exists()).toBe(false);
+    expect(wrapper.find(".composer-stop").exists()).toBe(true);
+
+    view.handleEvent({
+      trace_id: "trace-1", session_id: "session-1", sequence: 4,
+      timestamp: "2026-08-28T00:00:03Z", kind: "session.result", source: "runtime-adapter",
+      payload: { finish_reason: "completed" },
+    }, 1);
+    await flushPromises();
+
+    expect(wrapper.find(".assistant-processing").exists()).toBe(false);
+    expect(wrapper.find(".composer-stop").exists()).toBe(false);
+  });
+
   it("replays persisted assistant output without duplicating its workflow event", async () => {
     getAgentSession.mockResolvedValue({
       conversation: { session_id: "session-1", trace_id: "trace-1", title: "可靠回答" },

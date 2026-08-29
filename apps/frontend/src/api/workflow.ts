@@ -74,6 +74,7 @@ const TERMINAL_RUN_EVENTS = new Set([
 
 export function workflowRunState(events: WorkflowTraceEvent[]): {
   running: boolean;
+  answerStarted: boolean;
   startedAt?: string;
   failed: boolean;
   retryable: boolean;
@@ -81,18 +82,22 @@ export function workflowRunState(events: WorkflowTraceEvent[]): {
 } {
   let started: WorkflowTraceEvent | undefined;
   let terminal: WorkflowTraceEvent | undefined;
+  let answerSequence = -1;
   let recoverySequence = -1;
   for (const event of events) {
     if (event.kind === "session.started" && (!started || event.sequence > started.sequence)) started = event;
     if (TERMINAL_RUN_EVENTS.has(event.kind) && (!terminal || event.sequence > terminal.sequence)) terminal = event;
+    if (event.kind === "agent.output.delta") answerSequence = Math.max(answerSequence, event.sequence);
     if (["session.ready", "session.resumed"].includes(event.kind)) {
       recoverySequence = Math.max(recoverySequence, event.sequence);
     }
   }
   const running = Boolean(started && started.sequence > (terminal?.sequence ?? -1));
+  const answerStarted = Boolean(running && started && answerSequence > started.sequence);
   const failed = !running && terminal?.kind === "session.failed" && terminal.sequence > recoverySequence;
   return {
     running,
+    answerStarted,
     startedAt: running ? started?.timestamp : undefined,
     failed,
     retryable: failed && terminal?.payload.retryable === true,

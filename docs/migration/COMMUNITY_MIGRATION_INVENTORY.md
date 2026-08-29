@@ -919,6 +919,21 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+### Post-Phase 70 conversation completion presentation audit（2026-08-29）
+
+The read-only Community `AgentView.vue` and `AgentThinking.vue` were re-inspected
+for the final-answer/progress transition. Community keeps the live progress and
+answer in one temporary message until the whole request returns; its raw event
+model remains incompatible with BYQ.
+
+| Community evidence | Reusable invariant / UX | Decision | Maintenance disposition |
+|---|---|---|---|
+| Final answer replaces the temporary running presentation atomically | A completed public answer must not be followed by a transient “thinking” bubble. | `PORT_UX` / `PORT_TESTS` / `REFACTOR` | Use ADR-0033's text-only final-answer anchor to suppress only the standalone progress bubble; keep BYQ lifecycle state and stop control active until the terminal event. |
+| Raw live answer, tool steps and request result share one Community object | No compatible Product contract. | `REFERENCE_ONLY` / `REPLACE` | Keep normalized WorkflowTrace, public activity allowlists and hidden-reasoning drop rules unchanged. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.
+
 ## Phase 70 multi-index catalogue coverage audit
 
 The read-only Community index-weight scheduler, Tushare provider allowlist,
