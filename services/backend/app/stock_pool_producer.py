@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.exc import SQLAlchemyError
 
 from .db import PgStoreMixin, execute, fetch_one
+from .index_catalog import INDEX_CATALOG_CONTRACT, INDEX_NAMES, SUPPORTED_INDEXES
 from .dynamic_stock_pool import (
     DYNAMIC_RULE_SCHEMA_VERSION,
     evaluate_dynamic_rule,
@@ -25,14 +26,6 @@ from .paper_trading import PaperTradingStore, _now
 
 INDEX_PATTERN = re.compile(r"^\d{6}\.(SH|SZ)$")
 DATE_PATTERN = re.compile(r"^\d{8}$")
-INDEX_NAMES = {
-    "000300.SH": "沪深300",
-    "000905.SH": "中证500",
-    "000852.SH": "中证1000",
-    "000001.SH": "上证指数",
-    "399001.SZ": "深证成指",
-    "399006.SZ": "创业板指",
-}
 class StockPoolProducerError(RuntimeError):
     pass
 
@@ -184,35 +177,36 @@ class StockPoolProducerStore(PgStoreMixin):
             raise ValueError("limit must be between 1 and 100")
         if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
             raise ValueError("offset must be non-negative")
-        rows = self._execute(
-            """WITH latest AS (
-                   SELECT index_symbol, MAX(snapshot_date) AS latest_snapshot_date
-                   FROM market_index_weights GROUP BY index_symbol
-               )
-               SELECT l.index_symbol, l.latest_snapshot_date,
-                      COUNT(w.constituent_symbol)::integer AS member_count,
-                      c.content_sha256 AS completeness_hash, c.verified_at
-               FROM latest l
-               JOIN market_index_weights w ON w.index_symbol=l.index_symbol
-                    AND w.snapshot_date=l.latest_snapshot_date
-               JOIN market_index_weight_completeness c ON c.index_symbol=l.index_symbol
-                    AND c.period=substring(l.latest_snapshot_date,1,6) AND c.row_count>0
-               GROUP BY l.index_symbol,l.latest_snapshot_date,c.content_sha256,c.verified_at
-               ORDER BY l.index_symbol LIMIT :limit OFFSET :offset""",
-            {"limit": limit, "offset": offset},
-        )
-        count = self._fetch_one(
-            """SELECT COUNT(DISTINCT w.index_symbol) AS total FROM market_index_weights w
-               JOIN market_index_weight_completeness c ON c.index_symbol=w.index_symbol
-                    AND c.period=substring(w.snapshot_date,1,6) AND c.row_count>0"""
-        )
-        items = [{
-            **row,
-            "name": INDEX_NAMES.get(str(row["index_symbol"]), str(row["index_symbol"])),
-            "source": "tushare",
-            "dataset_contract": "market-index-weights-v1",
-        } for row in rows]
-        return {"indices": items, "total": int(count["total"] if count else 0), "limit": limit, "offset": offset}
+        catalog: list[dict[str, object]] = []
+        for definition in SUPPORTED_INDEXES:
+            symbol = definition["index_symbol"]
+            snapshot = self._fetch_one(
+                """SELECT index_symbol,snapshot_date AS latest_snapshot_date,member_count,
+                          content_sha256 AS completeness_hash,verified_at
+                   FROM market_index_weight_snapshots
+                   WHERE index_symbol=:symbol AND status='verified'
+                   ORDER BY snapshot_date DESC LIMIT 1""",
+                {"symbol": symbol},
+            )
+            catalog.append({
+                **definition,
+                "latest_snapshot_date": None if snapshot is None else snapshot["latest_snapshot_date"],
+                "member_count": 0 if snapshot is None else int(snapshot["member_count"]),
+                "completeness_hash": None if snapshot is None else snapshot["completeness_hash"],
+                "verified_at": None if snapshot is None else snapshot["verified_at"],
+                "readiness": "waiting_for_data" if snapshot is None else "current",
+                "selectable": snapshot is not None,
+                "source": "tushare",
+                "dataset_contract": "market-index-weights-v2",
+            })
+        return {
+            "schema_version": INDEX_CATALOG_CONTRACT,
+            "indices": catalog[offset:offset + limit],
+            "total": len(SUPPORTED_INDEXES),
+            "available_total": sum(1 for item in catalog if item["selectable"]),
+            "limit": limit,
+            "offset": offset,
+        }
 
     def create_index_pool(
         self, payload: object, *, trusted_owner: str, trusted_workspace: str,
@@ -225,6 +219,8 @@ class StockPoolProducerStore(PgStoreMixin):
         owner = _text(trusted_owner, "owner_principal")
         workspace = _text(trusted_workspace, "workspace_id")
         symbol = _index_symbol(payload.get("index_symbol"))
+        if symbol not in INDEX_NAMES:
+            raise ValueError("index_symbol is not in the closed BYQ index catalogue")
         name = _text(payload.get("name") or INDEX_NAMES.get(symbol) or symbol, "name")
         description = payload.get("description")
         if description not in {None, ""}:
@@ -254,10 +250,9 @@ class StockPoolProducerStore(PgStoreMixin):
                     raise StockPoolProducerConflict("idempotent pool result is unavailable")
                 return {"pool": self.paper_store.get_pool(previous["pool_id"], trusted_owner=owner),
                         "run": self.get_run(previous["run_id"], trusted_owner=owner, trusted_workspace=workspace)}
-            catalogue = fetch_one(connection, """SELECT MAX(w.snapshot_date) AS latest_snapshot_date
-                FROM market_index_weights w JOIN market_index_weight_completeness c
-                  ON c.index_symbol=w.index_symbol AND c.period=substring(w.snapshot_date,1,6) AND c.row_count>0
-                WHERE w.index_symbol=:symbol AND w.snapshot_date<=:requested""",
+            catalogue = fetch_one(connection, """SELECT MAX(snapshot_date) AS latest_snapshot_date
+                FROM market_index_weight_snapshots
+                WHERE index_symbol=:symbol AND status='verified' AND snapshot_date<=:requested""",
                 {"symbol": symbol, "requested": requested_as_of})
             if catalogue is None or not catalogue.get("latest_snapshot_date"):
                 raise StockPoolProducerNotFound("no validated index weights exist at or before requested_as_of")
@@ -747,10 +742,9 @@ class StockPoolProducerStore(PgStoreMixin):
                 if definition is None or definition["producer_kind"] != "index":
                     raise StockPoolProducerNotFound("index producer definition not found")
                 symbol = str(definition["definition_json"]["index_symbol"])
-                latest = fetch_one(connection, """SELECT MAX(w.snapshot_date) AS snapshot_date
-                    FROM market_index_weights w JOIN market_index_weight_completeness c
-                      ON c.index_symbol=w.index_symbol AND c.period=substring(w.snapshot_date,1,6) AND c.row_count>0
-                    WHERE w.index_symbol=:symbol AND w.snapshot_date<=:requested""",
+                latest = fetch_one(connection, """SELECT MAX(snapshot_date) AS snapshot_date
+                    FROM market_index_weight_snapshots
+                    WHERE index_symbol=:symbol AND status='verified' AND snapshot_date<=:requested""",
                     {"symbol": symbol, "requested": locked["requested_as_of"]})
                 if latest is None or not latest.get("snapshot_date"):
                     execute(connection, """UPDATE stock_pool_materialization_runs SET status='waiting_for_data',
@@ -761,8 +755,9 @@ class StockPoolProducerStore(PgStoreMixin):
                                "lease_expires_at": None, "finished_at": _now()}
                     return self._public_run(waiting)
                 snapshot_date = str(latest["snapshot_date"])
-                completeness = fetch_one(connection, """SELECT * FROM market_index_weight_completeness
-                    WHERE index_symbol=:symbol AND period=:period""", {"symbol": symbol, "period": snapshot_date[:6]})
+                completeness = fetch_one(connection, """SELECT * FROM market_index_weight_snapshots
+                    WHERE index_symbol=:symbol AND snapshot_date=:date AND status='verified'""",
+                    {"symbol": symbol, "date": snapshot_date})
                 rows = execute(connection, """SELECT constituent_symbol,weight,data_source,content_sha256
                     FROM market_index_weights WHERE index_symbol=:symbol AND snapshot_date=:date
                     ORDER BY constituent_symbol""", {"symbol": symbol, "date": snapshot_date})
@@ -770,7 +765,7 @@ class StockPoolProducerStore(PgStoreMixin):
                     raise ValueError("validated index snapshot is incomplete")
                 weights = self._normalize_percent_weights(rows)
                 input_manifest = {
-                    "dataset_contract": "market-index-weights-v1", "index_symbol": symbol,
+                    "dataset_contract": "market-index-weights-v2", "index_symbol": symbol,
                     "effective_trade_date": snapshot_date, "completeness_hash": completeness["content_sha256"],
                     "row_hashes": [row["content_sha256"] for row in rows],
                 }

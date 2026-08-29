@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -24,6 +25,7 @@ REQUIRED_DATASETS = (
 MAX_REQUIRED_CELLS = 50_000
 MAX_AGENT_RESEARCH_SYMBOLS = 20
 _CANONICAL_A_SHARE = re.compile(r"^(?:[03]\d{5}\.SZ|6\d{5}\.SH)$")
+_CANONICAL_INDEX_MEMBER = re.compile(r"^(?:[03]\d{5}\.SZ|6\d{5}\.SH|[48]\d{5}\.BJ)$")
 
 
 class MarketReadinessPersistenceError(RuntimeError):
@@ -184,6 +186,23 @@ class MarketReadinessStore(PgStoreMixin):
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS market_index_weight_snapshots (
+            index_symbol TEXT NOT NULL,
+            snapshot_date TEXT NOT NULL,
+            member_count INTEGER NOT NULL,
+            weight_sum TEXT NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            provenance_json JSONB NOT NULL,
+            status TEXT NOT NULL,
+            verified_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (index_symbol, snapshot_date)
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS market_index_weight_snapshots_latest_idx
+            ON market_index_weight_snapshots(index_symbol, snapshot_date DESC)
+        """,
+        """
         CREATE TABLE IF NOT EXISTS market_daily_basic (
             symbol TEXT NOT NULL,
             trade_date TEXT NOT NULL,
@@ -236,8 +255,76 @@ class MarketReadinessStore(PgStoreMixin):
     def __init__(self, database_url: str | None = None) -> None:
         try:
             super().__init__(database_url)
+            self._backfill_index_snapshot_evidence()
         except SQLAlchemyError as error:
             raise MarketReadinessPersistenceError("market readiness storage is unavailable") from error
+
+    @staticmethod
+    def _verified_index_snapshot(
+        index_symbol: str, snapshot_date: str, rows: list[dict[str, object]], provenance: dict[str, object],
+    ) -> dict[str, object]:
+        if not rows:
+            raise ValueError("index snapshot must contain members")
+        normalized: list[dict[str, object]] = []
+        total = Decimal("0")
+        seen: set[str] = set()
+        for row in sorted(rows, key=lambda item: str(item["constituent_symbol"])):
+            symbol = str(row["constituent_symbol"])
+            if not _CANONICAL_INDEX_MEMBER.fullmatch(symbol) or symbol in seen:
+                raise ValueError("index snapshot contains invalid or duplicate members")
+            seen.add(symbol)
+            try:
+                weight = Decimal(str(row["weight"]))
+            except (InvalidOperation, ValueError) as error:
+                raise ValueError("index snapshot weight is invalid") from error
+            if not weight.is_finite() or weight <= 0 or weight > 100:
+                raise ValueError("index snapshot weight is outside percent range")
+            total += weight
+            normalized.append({"symbol": symbol, "weight": format(weight.normalize(), "f")})
+        if total < Decimal("99") or total > Decimal("101"):
+            raise ValueError("index snapshot percent weights are incomplete")
+        return {
+            "index_symbol": index_symbol,
+            "snapshot_date": snapshot_date,
+            "member_count": len(normalized),
+            "weight_sum": format(total.normalize(), "f"),
+            "content_sha256": _hash(normalized),
+            "provenance": provenance,
+            "status": "verified",
+        }
+
+    def _backfill_index_snapshot_evidence(self) -> None:
+        snapshots = self._execute(
+            """SELECT DISTINCT w.index_symbol,w.snapshot_date,w.provenance_json
+               FROM market_index_weights w
+               JOIN market_index_weight_completeness c
+                 ON c.index_symbol=w.index_symbol
+                AND c.period=substring(w.snapshot_date,1,6) AND c.row_count>0
+               LEFT JOIN market_index_weight_snapshots s
+                 ON s.index_symbol=w.index_symbol AND s.snapshot_date=w.snapshot_date
+               WHERE s.index_symbol IS NULL ORDER BY w.index_symbol,w.snapshot_date"""
+        )
+        for snapshot in snapshots:
+            rows = self._execute(
+                """SELECT constituent_symbol,weight FROM market_index_weights
+                   WHERE index_symbol=:symbol AND snapshot_date=:date ORDER BY constituent_symbol""",
+                {"symbol": snapshot["index_symbol"], "date": snapshot["snapshot_date"]},
+            )
+            try:
+                evidence = self._verified_index_snapshot(
+                    str(snapshot["index_symbol"]), str(snapshot["snapshot_date"]), rows,
+                    dict(snapshot.get("provenance_json") or {}),
+                )
+            except ValueError:
+                continue
+            self._execute(
+                """INSERT INTO market_index_weight_snapshots
+                   (index_symbol,snapshot_date,member_count,weight_sum,content_sha256,
+                    provenance_json,status,verified_at)
+                   VALUES (:index_symbol,:snapshot_date,:member_count,:weight_sum,:content_sha256,
+                           :provenance,:status,now()) ON CONFLICT DO NOTHING""",
+                evidence,
+            )
 
     @classmethod
     def from_env(cls) -> "MarketReadinessStore":
@@ -445,9 +532,16 @@ class MarketReadinessStore(PgStoreMixin):
             }
             row["content_sha256"] = _hash(row)
             rows.append(row)
+        snapshots: list[dict[str, object]] = []
+        for snapshot_date in sorted({str(row["snapshot_date"]) for row in rows}):
+            snapshot_rows = [row for row in rows if row["snapshot_date"] == snapshot_date]
+            snapshots.append(self._verified_index_snapshot(index_symbol, snapshot_date, snapshot_rows, provenance))
         identity = _hash([row["content_sha256"] for row in rows])
         with self._transaction() as connection:
             execute(connection, """DELETE FROM market_index_weights
+                WHERE index_symbol=:index_symbol AND substring(snapshot_date,1,6)=:period""",
+                {"index_symbol": index_symbol, "period": period})
+            execute(connection, """DELETE FROM market_index_weight_snapshots
                 WHERE index_symbol=:index_symbol AND substring(snapshot_date,1,6)=:period""",
                 {"index_symbol": index_symbol, "period": period})
             for row in rows:
@@ -456,6 +550,12 @@ class MarketReadinessStore(PgStoreMixin):
                      provenance_json,content_sha256,updated_at)
                     VALUES (:index_symbol,:constituent_symbol,:snapshot_date,:weight,:data_source,
                             :provenance,:content_sha256,now())""", row)
+            for snapshot in snapshots:
+                execute(connection, """INSERT INTO market_index_weight_snapshots
+                    (index_symbol,snapshot_date,member_count,weight_sum,content_sha256,
+                     provenance_json,status,verified_at)
+                    VALUES (:index_symbol,:snapshot_date,:member_count,:weight_sum,:content_sha256,
+                            :provenance,:status,now())""", snapshot)
             execute(connection, """INSERT INTO market_index_weight_completeness
                 (index_symbol,period,row_count,content_sha256,provenance_json,verified_at)
                 VALUES (:index_symbol,:period,:count,:identity,:provenance,now())

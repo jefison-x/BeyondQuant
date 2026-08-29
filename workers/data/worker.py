@@ -90,6 +90,7 @@ def main() -> int:
                         provider_factory=provider_factory,
                         worker_id=worker_id,
                         force=force,
+                        readiness_store=readiness,
                     )
                     next_scheduler_at = time.monotonic() + 60
                     if command is not None:

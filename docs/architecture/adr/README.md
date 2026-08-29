@@ -61,3 +61,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   promotion 和 Agent least-privilege 边界。
 - ADR-0040 定义 Plugin Center desired policy、generated target、active runtime identity 与
   trusted deployment lane 的权限和状态边界。
+- ADR-0041 定义指数/动态股票池 definition、trusted materialization 和不可变快照边界。
+- ADR-0042 定义 Phase 70 封闭多指数目录、可信同步和精确权重快照完整性。

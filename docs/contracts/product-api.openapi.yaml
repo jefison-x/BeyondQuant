@@ -224,7 +224,7 @@ paths:
     get: {summary: 列出 owner-scoped stock pools., responses: *okResponses}
     post: {summary: 创建 an owner-scoped stock pool., responses: *createdResponses}
   /api/product/paper/index-pools/catalog:
-    get: {summary: 列出 validated canonical index-weight catalog without provider access., responses: *okResponses}
+    get: {summary: 列出 six canonical index candidates with verified-snapshot readiness and no provider access., responses: *okResponses}
   /api/product/paper/index-pools:
     post: {summary: 创建 owner-scoped index pool definition and enqueue trusted materialization., responses: *createdResponses}
   /api/product/paper/dynamic-pools/preview:

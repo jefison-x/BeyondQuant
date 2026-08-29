@@ -101,6 +101,10 @@ test("real Product API index pool materializes validated point-in-time weights",
   const dialog = page.getByRole("dialog", { name: "创建版本化股票池" });
   await dialog.getByText("指数型股票池", { exact: true }).click();
   await dialog.locator(".el-select").click();
+  await expect(page.getByRole("option")).toHaveCount(6);
+  await expect(page.getByRole("option", { name: /上证50/ })).toBeEnabled();
+  await expect(page.getByRole("option", { name: /中证500/ })).toBeEnabled();
+  await expect(page.getByRole("option", { name: /中证1000/ })).toBeEnabled();
   await page.getByRole("option", { name: /沪深300/ }).click();
   const poolName = `CI指数池-${Date.now()}`;
   await dialog.getByPlaceholder("Pool name").fill(poolName);

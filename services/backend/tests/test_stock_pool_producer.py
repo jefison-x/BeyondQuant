@@ -31,6 +31,10 @@ def _seed_index(store: StockPoolProducerStore) -> None:
             (index_symbol,period,row_count,content_sha256,provenance_json,verified_at)
             VALUES ('000300.SH',:period,2,:hash,:provenance,now())""",
             {"period": snapshot_date[:6], "hash": identity, "provenance": {"provider": "tushare"}})
+        store._execute("""INSERT INTO market_index_weight_snapshots
+            (index_symbol,snapshot_date,member_count,weight_sum,content_sha256,provenance_json,status,verified_at)
+            VALUES ('000300.SH',:date,2,'100',:hash,:provenance,'verified',now())""",
+            {"date": snapshot_date, "hash": identity, "provenance": {"provider": "tushare"}})
 
 
 def test_index_pool_materialization_is_point_in_time_idempotent_and_owner_scoped() -> None:
@@ -41,8 +45,10 @@ def test_index_pool_materialization_is_point_in_time_idempotent_and_owner_scoped
     _seed_index(store)
 
     catalog = store.list_index_catalog()
-    assert catalog["indices"][0]["index_symbol"] == "000300.SH"
-    assert catalog["indices"][0]["latest_snapshot_date"] == "20240201"
+    available = [item for item in catalog["indices"] if item["selectable"]]
+    assert [item["index_symbol"] for item in available] == ["000300.SH"]
+    assert available[0]["latest_snapshot_date"] == "20240201"
+    assert catalog["total"] == 6
 
     payload = {
         "index_symbol": "000300.SH", "name": "沪深300研究池",
@@ -98,7 +104,7 @@ def test_index_pool_materialization_is_point_in_time_idempotent_and_owner_scoped
     paper.close()
 
 
-def test_index_materialization_rejects_incomplete_percent_weights_without_snapshot() -> None:
+def test_index_catalog_rejects_month_only_evidence_without_verified_snapshot() -> None:
     headers = trusted_agent_context("invalid-index")
     paper = PaperTradingStore()
     store = StockPoolProducerStore(paper_store=paper)
@@ -110,14 +116,13 @@ def test_index_materialization_rejects_incomplete_percent_weights_without_snapsh
         (index_symbol,period,row_count,content_sha256,provenance_json,verified_at)
         VALUES ('000300.SH','202401',1,'bad-period',:provenance,now())""",
         {"provenance": {"provider": "tushare"}})
-    created = store.create_index_pool(
-        {"index_symbol": "000300.SH", "requested_as_of": "20240131", "idempotency_key": "bad-create"},
-        trusted_owner="invalid-index", trusted_workspace=headers["x-byq-workspace-id"],
-    )
-    run = store.claim_next_run(worker_id="index-worker")
-    assert run is not None
-    failed = store.materialize_claimed_index(run, worker_id="index-worker")
-    assert failed["status"] == "failed"
-    assert paper.get_pool(created["pool"]["pool_id"], trusted_owner="invalid-index")["current_snapshot_id"] is None
+    catalog = store.list_index_catalog()
+    csi300 = next(item for item in catalog["indices"] if item["index_symbol"] == "000300.SH")
+    assert csi300["selectable"] is False
+    with pytest.raises(StockPoolProducerNotFound, match="no validated index weights"):
+        store.create_index_pool(
+            {"index_symbol": "000300.SH", "requested_as_of": "20240131", "idempotency_key": "bad-create"},
+            trusted_owner="invalid-index", trusted_workspace=headers["x-byq-workspace-id"],
+        )
     store.close()
     paper.close()

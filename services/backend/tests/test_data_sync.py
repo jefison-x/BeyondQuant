@@ -12,6 +12,8 @@ from app.credentials import CredentialCipher, CredentialStore
 from app.data_provider import (
     DailyBar,
     DailyResult,
+    IndexWeight,
+    IndexWeightResult,
     Provenance,
     SecurityMasterResult,
     SecurityRecord,
@@ -19,8 +21,14 @@ from app.data_provider import (
     TradingSession,
 )
 from app.data_sync import DataSyncConflict, DataSyncStore
-from app.market_automation import MarketAutomationConflict, MarketAutomationStore, run_scheduler_cycle
+from app.market_automation import (
+    MarketAutomationConflict,
+    MarketAutomationStore,
+    run_scheduler_cycle,
+    sync_supported_index_catalog,
+)
 from app.market_data import MarketDataStore
+from app.market_readiness import MarketReadinessStore
 from app.paper_trading import PaperTradingNotFound, PaperTradingStore
 from app.security_master import SecurityMasterStore
 
@@ -332,6 +340,7 @@ class FakeAutomationProvider:
     def __init__(self) -> None:
         self.calendar_requests = []
         self.daily_requests = []
+        self.index_weight_requests: list[str] = []
 
     def fetch_trading_calendar(self, request):
         normalized = request.normalized()
@@ -362,6 +371,87 @@ class FakeAutomationProvider:
                 retrieved_at="2026-08-25T10:32:00+00:00", cache_hit=False, row_count=2,
             ),
         )
+
+    def fetch_index_weights(self, symbol: str, start_date: str, end_date: str):
+        self.index_weight_requests.append(symbol)
+        return IndexWeightResult(
+            weights=(
+                IndexWeight(symbol, "000001.SZ", "20260731", 60.0),
+                IndexWeight(symbol, "600000.SH", "20260731", 40.0),
+            ),
+            provenance=Provenance(
+                provider="tushare", endpoint="index_weight",
+                request_fingerprint=f"automation-weights-{symbol}",
+                retrieved_at="2026-08-29T00:00:00+00:00", cache_hit=False, row_count=2,
+            ),
+        )
+
+
+class FakeMultiIndexProvider:
+    def __init__(self, failed_symbol: str | None = None) -> None:
+        self.failed_symbol = failed_symbol
+        self.requests: list[str] = []
+
+    def fetch_index_weights(self, symbol: str, start_date: str, end_date: str):
+        self.requests.append(symbol)
+        if symbol == self.failed_symbol:
+            raise ProviderProtocolError("fixture index failure")
+        return IndexWeightResult(
+            weights=(
+                IndexWeight(symbol, "000001.SZ", "20260731", 60.0),
+                IndexWeight(symbol, "600000.SH", "20260731", 40.0),
+            ),
+            provenance=Provenance(
+                provider="tushare", endpoint="index_weight",
+                request_fingerprint=f"weights-{symbol}",
+                retrieved_at="2026-08-29T00:00:00+00:00", cache_hit=False, row_count=2,
+            ),
+        )
+
+
+def test_closed_multi_index_sync_isolated_and_snapshot_verified() -> None:
+    readiness = MarketReadinessStore()
+    provider = FakeMultiIndexProvider(failed_symbol="000688.SH")
+
+    first = sync_supported_index_catalog("20260829", provider=provider, readiness_store=readiness)
+
+    assert first["status"] == "partial"
+    assert first["ready_count"] == 5
+    assert len(provider.requests) == 6
+    assert next(item for item in first["items"] if item["index_symbol"] == "000688.SH")["status"] == "failed"
+    evidence = readiness._execute(
+        "SELECT index_symbol,member_count,weight_sum,status FROM market_index_weight_snapshots ORDER BY index_symbol"
+    )
+    assert len(evidence) == 5
+    assert all(item["member_count"] == 2 and item["weight_sum"] == "100" for item in evidence)
+
+    repaired = sync_supported_index_catalog(
+        "20260829", provider=FakeMultiIndexProvider(), readiness_store=readiness,
+    )
+    assert repaired["status"] == "completed"
+    assert repaired["ready_count"] == 6
+    readiness.close()
+
+
+def test_scheduler_persists_bounded_index_catalogue_summary() -> None:
+    automation = MarketAutomationStore()
+    readiness = MarketReadinessStore()
+    provider = FakeAutomationProvider()
+
+    run_scheduler_cycle(
+        automation, provider_factory=lambda: provider, worker_id="index-catalogue-worker",
+        now=datetime(2026, 8, 29, 18, 31, tzinfo=ZoneInfo("Asia/Shanghai")),
+        force=True, readiness_store=readiness,
+    )
+
+    assert len(provider.index_weight_requests) == 6
+    summary = automation.status()["index_catalog_sync_runs"]
+    assert len(summary) == 1
+    assert summary[0]["status"] == "completed"
+    assert summary[0]["requested_by"] == "run-now"
+    assert summary[0]["result_json"]["ready_count"] == 6
+    readiness.close()
+    automation.close()
 
 
 def test_daily_automation_uses_open_sessions_and_full_market_snapshots() -> None:

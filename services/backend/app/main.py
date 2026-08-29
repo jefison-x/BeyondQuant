@@ -649,6 +649,7 @@ def data_center_status(request: Request) -> dict[str, object]:
         "security_master": security_master,
         "coverage": coverage,
         "automation": market_automation_store.status(),
+        "index_catalog": stock_pool_producer_store.list_index_catalog(limit=100),
         "migration": "ready" if coverage["row_count"] else "not_started",
         "quality": coverage["quality"],
     }

@@ -919,6 +919,23 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+## Phase 70 multi-index catalogue coverage audit
+
+The read-only Community index-weight scheduler, Tushare provider allowlist,
+Stock Pool routes and Operations synchronization UI were inspected before
+accepting ADR-0042.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 70 disposition |
+|---|---|---|---|
+| Eleven configured index-weight codes and two-month lookback | Core index membership should refresh as a bounded batch instead of requiring a strategy side effect. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Use six canonical BYQ identities, a maximum 62-day request and trusted Data Worker execution. |
+| Shanghai/Shenzhen aliases for the same CSI index | Provider codes may alias one economic index. | `REFERENCE_ONLY` / `REPLACE` | Keep one canonical Product identity; do not show or materialize duplicate aliases. |
+| Per-index scheduler tasks and status | One unavailable index must not block unrelated valid data. | `PORT_LOGIC` / `PORT_UX` / `PORT_TESTS` / `REFACTOR` | Isolate each closed adapter request, persist a bounded run summary and retain prior verified snapshots. |
+| Monthly index-weight replacement | Historical membership needs repeatable import evidence. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Add exact snapshot-level member/weight/hash verification; monthly non-empty evidence alone is insufficient. |
+| Community SDK/Pandas, ORM, thread scheduler, mutable config file and direct internal API | Violates current Data/Product boundaries. | `REPLACE` / `DROP` | Keep the closed BYQ adapter, PostgreSQL stores, independent Data Worker and Gateway/Product API. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.
+
 ## Phase 69 stock-pool product closure audit
 
 The read-only Community `StockPoolView.vue`, stock-pool service/version model and

@@ -616,3 +616,11 @@ Python/SQL/URL、DSH evaluator 或第二 rules harness。
 统一 catalog/readiness/diff，验证 Research/Strategy/Backtest/Paper immutable snapshot 消费、资产导入
 重新验证、监控/audit/restart/two-user isolation；完成 real Product API desktop/mobile Chrome、same-origin
 Network、Community checklist 与完整 regression evidence。
+
+### Phase 70 — Index catalogue coverage closure（`COMPLETE`）
+
+依据 ADR-0042 将单一沪深300供给扩展为六个 canonical 候选的可信目录同步；Data Worker 以最多
+62 日窗口逐指数隔离刷新。新增精确 snapshot-level completeness evidence 和旧数据 forward repair，
+月度非空记录不再授权股票池。Product API/UI 展示可用与等待同步状态，只有 verified snapshot 可创建。
+验收覆盖多指数、失败修复、no-look-ahead、完整 Compose、真实 Product API desktop/mobile Chrome、
+same-origin Network、restart 和 Community checklist。

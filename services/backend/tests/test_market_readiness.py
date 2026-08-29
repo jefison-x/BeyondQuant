@@ -4,12 +4,40 @@ import os
 
 import pytest
 
+from app.data_provider import IndexWeight
 from app.market_readiness import MarketReadinessStore
 
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("BYQ_DATABASE_URL"), reason="BYQ_DATABASE_URL is not set"
 )
+
+
+def test_index_weight_import_requires_exact_complete_snapshots() -> None:
+    store = MarketReadinessStore()
+    with pytest.raises(ValueError, match="incomplete"):
+        store.import_index_weights(
+            "000300.SH", "202401",
+            [IndexWeight("000300.SH", "000001.SZ", "20240131", 50.0)],
+            {"provider": "tushare"},
+        )
+    assert store._fetch_one("SELECT * FROM market_index_weight_snapshots") is None
+
+    store.import_index_weights(
+        "000300.SH", "202401",
+        [
+            IndexWeight("000300.SH", "000001.SZ", "20240131", 60.0),
+            IndexWeight("000300.SH", "600000.SH", "20240131", 40.0),
+        ],
+        {"provider": "tushare"},
+    )
+    snapshot = store._fetch_one("SELECT * FROM market_index_weight_snapshots")
+    assert snapshot is not None
+    assert snapshot["snapshot_date"] == "20240131"
+    assert snapshot["member_count"] == 2
+    assert snapshot["weight_sum"] == "100"
+    assert snapshot["status"] == "verified"
+    store.close()
 
 
 def test_lifecycle_and_suspension_evidence_define_ready_cells() -> None:

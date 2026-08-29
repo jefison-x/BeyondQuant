@@ -1,6 +1,14 @@
 # Community Frontend Migration
 
-Status: `PLANNED` for Productization Phases 17–23.
+Status: `HISTORICAL_BASELINE` for Productization Phases 17–23. Current delivery
+status is tracked by `docs/roadmap/STATUS.md`, the implementation plan and the
+Community parity matrices; per-row status is retained as the original migration
+decision unless explicitly reconciled.
+
+Stock Pool reconciliation: Phase 34 delivered durable snapshot/lifecycle semantics,
+Phase 46 standardized responsive UX, Phases 67–69 delivered trusted producers, and
+Phase 70 closed multi-index catalogue coverage. The result is `REDESIGNED_PASS`;
+Community remains read-only evidence.
 
 本文记录只读 Community frontend reference 的 inspect → classify →
 port/rewrite → test 计划，不授权复制 frontend，也不授权实现未来 phase。
@@ -124,7 +132,7 @@ contracts.
 | `components/agent/XiaobaAssistantDrawer.vue` | Assistant drawer/cards | Ask, approve, generate strategy/select stocks | Old Agent endpoints and artifact payloads | Product assistant surface | `PORT_UX`, `REFACTOR` | 18–19 | `PLANNED` |
 | `components/agent/GlobalApprovalCenter.vue` | Approval bell/dropdown | Pending list and decision actions | Old Agent approvals | BYQ Approval Inbox projection | `PORT_COMPONENT` + `PORT_UX`, API rewrite | 18, 20 | `PLANNED` |
 | `components/agent/ApprovalManagementPanel.vue` | Policy cards/forms/tables | Policy edit, presets, history | Old Agent policy schema and actions | BYQ approval policy UI | `PORT_UX`, `REFACTOR` | 20 | `PLANNED` |
-| `components/stocks/StockPoolDialog.vue` | Multi-step filter/final-list dialog | Candidate search, add/remove, validation | Old stock search/pool APIs | BYQ StockPool draft/version flow | `PORT_COMPONENT` + `PORT_UX`, domain rewrite | 21 | `PLANNED` |
+| `components/stocks/StockPoolDialog.vue` | Multi-step filter/final-list dialog | Candidate search, add/remove, validation | Old stock search/pool APIs | BYQ StockPool draft/version flow | `PORT_COMPONENT` + `PORT_UX`, domain rewrite | 21, 34, 46, 67–70 | `IMPLEMENTED` (`REDESIGNED_PASS`) |
 | `components/settings/UserModelSettingsPanel.vue` | Two-column model settings/cards | Credentials/profile/binding flows | Old credential endpoints | Secret-safe Product model settings | `PORT_LAYOUT` + `PORT_UX`, API rewrite | 20 | `PLANNED` |
 | `components/system/SystemAnalytics.vue` | Metrics/status cards | Refresh/status visibility | Old system metrics | Product operations health projection | `PORT_STYLE` + `REFACTOR`, API rewrite | 38 | `IMPLEMENTED` |
 | `views/LoginView.vue` | Centered login card/form | Submit/loading/error/redirect | `/api/v1/auth/login` | Product Login | `PORT_LAYOUT` + `PORT_UX`, auth rewrite | 17 | `PLANNED` |
@@ -132,7 +140,7 @@ contracts.
 | `views/AgentView.vue` | Research workbench and context-pane layout | Chat, stream, history, trace/progress, approvals, artifact cards | `/agent-api`, old SSE/event schema, old backtest API | Agent Research Workbench | `PORT_LAYOUT` + `PORT_UX`, API/event replace | 18 | `PLANNED` |
 | `views/BacktestView.vue` | Task/result split, tabs, tables, charts, dialogs | Filter/compare/preflight/result inspection | Old backtest, engine, cache and sync APIs | BYQ Backtest Workspace | `PORT_LAYOUT` + `PORT_UX`, API/domain replace | 19 | `PLANNED` |
 | `views/StrategyView.vue` | List/detail/editor split, templates, mobile cards | Draft/edit/validate/save/version inspection | Old strategy and Agent validation endpoints | Strategy Draft/Version product view | `PORT_LAYOUT` + `PORT_UX`, domain/API rewrite | 19 | `PLANNED` |
-| `views/StockPoolView.vue` | Catalog/detail tabs, tables, mobile cards | Pool create, membership/snapshot inspection | Old stock-pool APIs and search semantics | Stock Pool workspace | `PORT_LAYOUT` + `PORT_UX`, domain/API rewrite | 21 | `PLANNED` |
+| `views/StockPoolView.vue` | Catalog/detail tabs, tables, mobile cards | Pool create, membership/snapshot inspection | Old stock-pool APIs and search semantics | Stock Pool workspace | `PORT_LAYOUT` + `PORT_UX`, domain/API rewrite | 21, 34, 46, 67–70 | `IMPLEMENTED` (`REDESIGNED_PASS`) |
 | `views/PaperTradingView.vue` | Account/detail/tabs/dialogs/table UX | Simulation account/order/fill/settle/risk flows | Old Agent paper API and legacy execution assumptions | BYQ Paper Trading workspace | `PORT_LAYOUT` + `PORT_UX`, domain/API replace | 21 | `PLANNED` |
 | `views/UserProfileView.vue` | Settings card/form | Profile/preference save | Old `/auth/me` | Product profile | `PORT_LAYOUT` + `PORT_UX`, API rewrite | 20 | `PLANNED` |
 | `views/UserModelsView.vue` | Settings page framing | User model settings entry | Old user model contracts | Product model settings | `PORT_LAYOUT` + `PORT_UX`, API rewrite | 20 | `PLANNED` |
