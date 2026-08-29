@@ -6,8 +6,10 @@ import {
   revokeModelCredential, updateModelBinding, updateModelCredential,
 } from "@/api/settings";
 import type { ModelCredential, ModelProfile, ModelSettings } from "@/api/types";
+import MLResearchWorkbench from "@/components/MLResearchWorkbench.vue";
 
 const loading = ref(true);
+const activeArea = ref("llm");
 const busy = ref(false);
 const error = ref("");
 const settings = ref<ModelSettings | null>(null);
@@ -147,6 +149,9 @@ function actionLabel(value: unknown) {
 
 <template>
   <section class="my-space-page">
+    <el-tabs v-model="activeArea" class="model-tabs"><el-tab-pane label="大模型设置" name="llm" /><el-tab-pane label="量化模型研究" name="quant" /></el-tabs>
+    <MLResearchWorkbench v-if="activeArea === 'quant'" />
+    <div v-show="activeArea === 'llm'" class="llm-settings">
     <el-alert title="密钥仅可写入，不会返回浏览器、日志或 WorkflowTrace；运行时通过 Backend 私有边界按当前用户解析。" type="info" show-icon :closable="false" />
     <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
     <div v-else-if="error" class="base-error" role="alert">{{ error }}</div>
@@ -178,7 +183,7 @@ function actionLabel(value: unknown) {
         <template #header><div><strong>Agent 绑定</strong><p class="muted">显式选择个人档案；未绑定时使用服务端系统默认。</p></div></template>
         <div v-for="binding in settings?.bindings" :key="binding.agent_id" class="binding-row">
           <div><strong>{{ binding.agent_name }}</strong><p class="muted">{{ binding.effective_source === "personal" ? `个人档案 · ${binding.model}` : "系统默认" }}</p></div>
-          <el-select :model-value="binding.profile_id ?? ''" :disabled="busy" @change="bind(binding.agent_id, String($event) || null, binding.version)"><el-option label="系统默认" value="" /><el-option v-for="profile in availableProfiles" :key="profile.profile_id" :label="`${profile.display_name} · ${profile.model}`" :value="profile.profile_id" /></el-select>
+          <el-select :model-value="binding.profile_id ?? ''" :aria-label="`${binding.agent_name} 模型档案`" :disabled="busy" @change="bind(binding.agent_id, String($event) || null, binding.version)"><el-option label="系统默认" value="" /><el-option v-for="profile in availableProfiles" :key="profile.profile_id" :label="`${profile.display_name} · ${profile.model}`" :value="profile.profile_id" /></el-select>
         </div>
       </el-card>
 
@@ -197,11 +202,13 @@ function actionLabel(value: unknown) {
       <el-form label-position="top"><el-form-item label="档案名称"><el-input v-model="profileForm.display_name" /></el-form-item><el-form-item label="唯一键"><el-input v-model="profileForm.key_name" placeholder="research-fast" /></el-form-item><el-form-item label="凭据"><el-select v-model="profileForm.credential_id" class="full"><el-option v-for="item in activeCredentials" :key="item.credential_id" :label="`${providerName(item.provider)} · ${item.label} · ${item.masked}`" :value="item.credential_id" /></el-select></el-form-item><el-form-item label="模型"><el-select v-model="profileForm.model" class="full"><el-option v-for="model in modelsForProvider" :key="`${model.provider}:${model.model}`" :label="model.display_name" :value="model.model" /></el-select></el-form-item><el-form-item label="温度"><el-slider v-model="profileForm.temperature" :min="0" :max="2" :step="0.1" show-input /></el-form-item><el-form-item label="推理模式"><el-switch v-model="profileForm.reasoning_enabled" :disabled="!selectedModel?.reasoning_supported" /></el-form-item></el-form>
       <template #footer><el-button @click="profileDialog = false">取消</el-button><el-button type="primary" :loading="busy" @click="saveProfile">创建档案</el-button></template>
     </el-dialog>
+    </div>
   </section>
 </template>
 
 <style scoped>
 .my-space-page { display: grid; gap: 1rem; min-width: 0; }
+.llm-settings { display: grid; gap: 1rem; }
 .card-header, .binding-row { align-items: center; display: flex; gap: 1rem; justify-content: space-between; }
 .binding-row { border-bottom: 1px solid var(--byq-border); padding: .75rem 0; }
 .binding-row:last-child { border-bottom: 0; }
