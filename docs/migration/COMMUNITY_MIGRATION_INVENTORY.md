@@ -919,6 +919,22 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+## Phase 82 scalable data-task pre-implementation audit
+
+The read-only Community `DataSync.vue`, durable `DataSyncTask` model,
+`sync_jobs.py`, and maintenance task-progress surface were inspected before
+accepting ADR-0047.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 82 disposition |
+|---|---|---|---|
+| Data Sync page hardcodes pools, a TODO API and static 50% progress | No truthful Product behavior. | `DROP` | Render only persisted BYQ task state and measured units. |
+| Durable task states, progress, rows, summary and error | Long synchronization needs restart-safe, inspectable progress. | `PORT_UX` / `PORT_TESTS` / `REFACTOR` | Derive `data-task.v1` from existing BYQ demands/repairs/session jobs; do not copy the ORM. |
+| Lease, heartbeat, retry and stale recovery | A failed unit must not stall or crash unrelated work. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Keep BYQ claim/lease/fencing and isolate ML preparation errors per run. |
+| Thread runner, direct Provider/ORM calls and legacy API | Violates current execution and Product boundaries. | `REPLACE` / `DROP` | Data Worker exclusively calls the provider; Browser uses Gateway/Product API. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.
+
 ## Phase 80 Agent data-demand pre-implementation audit
 
 The read-only Community `frontend/src/views/system/DataSync.vue`, its data-source

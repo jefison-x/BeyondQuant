@@ -11,7 +11,9 @@ from app.ml_training import (
     MLTrainingCoordinator,
     MLTrainingNotFound,
     MLTrainingRunStore,
+    aggregate_ml_readiness,
     build_feature_snapshot,
+    promote_waiting_training_runs,
 )
 from app.research import ResearchStore
 from tests.test_ml_strategy import valid_strategy
@@ -69,6 +71,47 @@ def test_feature_snapshot_is_deterministic_and_never_labels_prediction_rows() ->
         else:
             assert row["label_end_date"] <= strategy["split"][row["split"]]["end"]
     assert not any(row["symbol"] == "000002.SZ" and row["session"] == "2024-02-15" for row in first["rows"])
+
+
+def test_bad_waiting_run_is_isolated_from_following_preparation() -> None:
+    class Runs:
+        def __init__(self) -> None:
+            self.failed: list[str] = []
+            self.updated: list[str] = []
+
+        def list_waiting(self):
+            return [
+                {"training_run_id": "mlrun_bad", "requirement_json": {"bad": True},
+                 "preparation_json": {"requirements": [{"bad": True}]}},
+                {"training_run_id": "mlrun_waiting", "requirement_json": {"bad": False},
+                 "preparation_json": {"requirements": [{"bad": False}]}},
+            ]
+
+        def fail_waiting(self, run_id, code, detail):
+            self.failed.append(run_id)
+
+        def update_readiness(self, run_id, readiness):
+            self.updated.append(run_id)
+
+    class Readiness:
+        def assess(self, requirement):
+            if requirement["bad"]:
+                raise ValueError("oversized legacy request")
+            return {"state": "missing", "required_cell_count": 10, "missing_count": 10}
+
+    runs = Runs()
+    assert promote_waiting_training_runs(runs, Readiness()) == 0
+    assert runs.failed == ["mlrun_bad"]
+    assert runs.updated == ["mlrun_waiting"]
+
+
+def test_single_partition_keeps_existing_frozen_readiness_identity() -> None:
+    readiness = aggregate_ml_readiness([{
+        "state": "ready", "required_cell_count": 178, "missing_count": 0,
+        "ready_input_sha256": "a" * 64,
+    }])
+    assert readiness["ready_input_sha256"] == "a" * 64
+    assert readiness["state"] == "ready"
 
 
 class FakeTrainer:

@@ -6,6 +6,12 @@ Phase 53 按 ADR-0026 将 Product projection 扩展为 `data-center.v2`。下述
 
 Phase 54 按 ADR-0027 扩展为 `data-center.v3`，加入 `market-sync-automation.v1` member，同时保留所有 v1/v2 manual operations。
 
+Phase 82 在 `data-center.v3` 中增加 additive `data_tasks` member。每项为
+`data-task.v1` 安全投影，包含稳定任务/引用 identity、kind、purpose、status、stage、
+`progress.completed/total/percent/unit`、rows、safe error 与时间戳。它只聚合既有同步、
+按需准备、股票目录和 ML 训练状态，不是新的任务状态机；进度必须来自持久工作单元，
+不得使用前端计时或模拟百分比。
+
 Phase 61 按 ADR-0034 增加面向具体任务的 `data-readiness-product.v1` 投影，并将 Agent daily research 固定为持久化 BYQ 数据读取。全库 coverage 只说明观察到的覆盖，不能替代任务 readiness。
 
 ## Source configuration

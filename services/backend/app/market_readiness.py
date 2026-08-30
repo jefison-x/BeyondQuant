@@ -989,7 +989,11 @@ class MarketReadinessStore(PgStoreMixin):
             "ready_input_sha256": ready_identity,
         }
 
-    def list_ready_bars(self, requirement: dict[str, object]) -> list[dict[str, Any]]:
+    def list_ready_bars(
+        self, requirement: dict[str, object], *, row_limit: int = MAX_REQUIRED_CELLS + 1,
+    ) -> list[dict[str, Any]]:
+        if not 1 <= row_limit <= 2_000_001:
+            raise ValueError("ready input row limit is invalid")
         return self._execute(
             """SELECT b.symbol, b.trade_date, b.open, b.high, b.low, b.close,
                       COALESCE(b.pre_close, s.pre_close) AS pre_close, b.volume, b.amount,
@@ -1003,12 +1007,17 @@ class MarketReadinessStore(PgStoreMixin):
                  ON db.symbol=b.symbol AND db.trade_date=b.trade_date
                WHERE b.symbol IN (SELECT jsonb_array_elements_text(:symbols))
                  AND b.trade_date BETWEEN :start AND :end
-               ORDER BY b.trade_date, b.symbol LIMIT 50001""",
-            {"symbols": requirement["symbols"], "start": requirement["start_date"], "end": requirement["end_date"]},
+               ORDER BY b.trade_date, b.symbol LIMIT :row_limit""",
+            {"symbols": requirement["symbols"], "start": requirement["start_date"],
+             "end": requirement["end_date"], "row_limit": row_limit},
         )
 
-    def build_ready_input(self, requirement: dict[str, object]) -> dict[str, object]:
-        rows = self.list_ready_bars(requirement)
+    def build_ready_input(
+        self, requirement: dict[str, object], *, row_limit: int = MAX_REQUIRED_CELLS + 1,
+    ) -> dict[str, object]:
+        rows = self.list_ready_bars(requirement, row_limit=row_limit)
+        if len(rows) >= row_limit:
+            raise ValueError("ready input exceeds its bounded row limit")
         legacy = requirement.get("schema_version") == LEGACY_SCHEMA_VERSION
         declared = requirement.get("declared", {}) if requirement.get("schema_version") == SCHEMA_VERSION else {}
         if not isinstance(declared, dict):
@@ -1138,3 +1147,24 @@ class MarketReadinessStore(PgStoreMixin):
         return {"bars": raw_bars, "research_bars": research_bars,
                 "corporate_actions": normalized_actions, "benchmark": benchmark,
                 "declared": declared, "research_view_sha256": identity}
+
+    def build_partitioned_ready_input(
+        self, requirements: list[dict[str, object]], *, row_limit: int = 2_000_001,
+    ) -> dict[str, object]:
+        """Build one continuous research view after bounded partitions are verified."""
+        if not requirements or len(requirements) > 32:
+            raise ValueError("market preparation partition plan is invalid")
+        first = requirements[0]
+        symbols = first.get("symbols")
+        declared = first.get("declared", {})
+        for requirement in requirements:
+            if requirement.get("symbols") != symbols or requirement.get("declared", {}) != declared:
+                raise ValueError("market preparation partitions do not share one frozen scope")
+        ordered = sorted(requirements, key=lambda item: str(item.get("start_date")))
+        for previous, current in zip(ordered, ordered[1:]):
+            if str(previous.get("end_date")) >= str(current.get("start_date")):
+                raise ValueError("market preparation partitions overlap")
+        aggregate = dict(first)
+        aggregate["start_date"] = ordered[0]["start_date"]
+        aggregate["end_date"] = ordered[-1]["end_date"]
+        return self.build_ready_input(aggregate, row_limit=row_limit)

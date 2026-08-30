@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -129,6 +130,35 @@ def test_data_demand_is_owner_scoped_idempotent_and_readiness_derived() -> None:
     with pytest.raises(DataDemandNotFound):
         store.get(demand["demand_id"], trusted_owner="bob")
     store.close()
+
+
+def test_five_year_300_symbol_scope_is_partitioned_below_atomic_cell_bound(monkeypatch) -> None:
+    class PartitionReadiness:
+        def requirement(self, **values):
+            start = datetime.strptime(values["start_date"], "%Y%m%d")
+            end = datetime.strptime(values["end_date"], "%Y%m%d")
+            weekdays = sum(
+                (start + timedelta(days=offset)).weekday() < 5
+                for offset in range((end - start).days + 1)
+            )
+            return {**values, "projected_cells": weekdays * len(values["symbols"])}
+
+    monkeypatch.setattr(main, "market_readiness_store", PartitionReadiness())
+    partitions = main._partition_market_requirements(
+        symbols=[f"{index:06d}.SZ" for index in range(1, 301)],
+        start=datetime(2022, 1, 1), end=datetime(2026, 12, 31),
+        membership_fingerprint_value="membership-test",
+        security_master_snapshot_id="security-test", declared={},
+    )
+
+    assert 1 < len(partitions) <= 32
+    assert all(int(item["projected_cells"]) <= 50_000 for item in partitions)
+    assert partitions[0]["start_date"] == "20220101"
+    assert partitions[-1]["end_date"] == "20261231"
+    for previous, current in zip(partitions, partitions[1:]):
+        assert datetime.strptime(current["start_date"], "%Y%m%d") == datetime.strptime(
+            previous["end_date"], "%Y%m%d"
+        ) + timedelta(days=1)
 
 
 def test_data_demand_rejects_same_key_for_different_scope() -> None:

@@ -737,6 +737,15 @@ export interface DataCenterStatus {
   schema_version: "data-center.v3";
   migration: string;
   provider: "tushare";
+  provider_budget: {
+    schema_version: "provider-budget.v1";
+    profile: string;
+    official_calls_per_minute: number;
+    official_calls_per_api_per_day: number;
+    daily_rows_per_call: number;
+    configured_request_interval_seconds: number;
+    actual_credential_tier_detected: false;
+  };
   legacy_providers: [];
   quality: string;
   source: {
@@ -749,6 +758,7 @@ export interface DataCenterStatus {
   };
   jobs: DataSyncJob[];
   data_demands: DataDemand[];
+  data_tasks: DataTask[];
   security_master_jobs: SecurityMasterSyncJob[];
   security_master: SecurityMasterStatus;
   coverage: DataCoverageAudit;
@@ -759,6 +769,22 @@ export interface DataCenterStatus {
     total: number;
     available_total: number;
   };
+}
+
+export interface DataTask {
+  schema_version: "data-task.v1";
+  task_id: string;
+  kind: "data_demand" | "manual_sync" | "security_master" | "ml_preparation";
+  purpose: string;
+  title: string;
+  status: string;
+  stage: string;
+  progress: { completed: number; total: number; percent: number; unit: string };
+  rows: number;
+  safe_error?: string | null;
+  reference: { kind: string; id: string };
+  created_at: string;
+  updated_at: string;
 }
 
 export interface DataDemand {
@@ -780,6 +806,11 @@ export interface DataDemand {
     ready_partitions: number;
     missing_items?: number;
     session_jobs?: Record<string, number>;
+    completed_units?: number;
+    total_units?: number;
+    percent?: number;
+    unit?: string;
+    stage?: string;
   };
   requested_by: string;
   notification: string;

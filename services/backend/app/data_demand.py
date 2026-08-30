@@ -130,7 +130,9 @@ class DataDemandStore(PgStoreMixin):
                     "trace": context["trace_id"], "session": context["session_id"],
                     "purpose": purpose, "snapshot": str(payload.get("stock_pool_snapshot_id")),
                     "scope": scope, "requirements": requirements, "repairs": repair_request_ids,
-                    "progress": {"partition_count": len(requirements), "ready_partitions": 0},
+                    "progress": {"partition_count": len(requirements), "ready_partitions": 0,
+                                 "completed_units": 0, "total_units": 0, "percent": 0,
+                                 "unit": "symbol_session_cells", "stage": "queued"},
                     "key": key, "sha": request_sha256, "now": now,
                 })
         except IntegrityError as error:
@@ -216,6 +218,15 @@ class DataDemandStore(PgStoreMixin):
             "missing_items": sum(int(item.get("missing_count") or 0) for item in assessments),
             "session_jobs": session_jobs,
         }
+        total_units = sum(int(item.get("required_cell_count") or 0) for item in assessments)
+        completed_units = max(0, total_units - int(progress["missing_items"]))
+        progress.update({
+            "completed_units": completed_units, "total_units": total_units,
+            "percent": round(completed_units * 100 / total_units) if total_units else 0,
+            "unit": "symbol_session_cells",
+            "stage": "verified" if status == "ready" else "failed" if status in {"failed", "partial"}
+                     else "synchronizing" if active else "queued",
+        })
         terminal = status in {"ready", "partial", "failed"}
         self._execute("""UPDATE data_demands SET status=:status,progress_json=:progress,
             completed_at=CASE WHEN :terminal THEN COALESCE(completed_at,now()) ELSE NULL END,
@@ -239,6 +250,19 @@ class DataDemandStore(PgStoreMixin):
             "SELECT * FROM data_demands ORDER BY created_at DESC,demand_id DESC LIMIT :limit",
             {"limit": limit},
         )]
+
+    def refresh_recent(self, *, readiness_store: Any, automation_store: Any, limit: int = 50) -> list[dict[str, object]]:
+        rows = self._execute(
+            "SELECT * FROM data_demands ORDER BY created_at DESC,demand_id DESC LIMIT :limit",
+            {"limit": limit},
+        )
+        return [
+            self.refresh(
+                row["demand_id"], trusted_owner=str(row["owner_principal"]),
+                readiness_store=readiness_store, automation_store=automation_store,
+            ) if row["status"] in {"queued", "syncing"} else self._public(row)
+            for row in rows
+        ]
 
     @staticmethod
     def _public(row: dict[str, object]) -> dict[str, object]:

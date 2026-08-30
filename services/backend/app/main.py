@@ -173,6 +173,7 @@ from .ml_training import (
     MLTrainingNotFound,
     MLTrainingPersistenceError,
     MLTrainingRunStore,
+    aggregate_ml_readiness,
 )
 from .ml_prediction import (
     MLPredictionConflict,
@@ -696,9 +697,82 @@ def data_center_status(request: Request) -> dict[str, object]:
     security_master = security_master_store.catalogue_status()
     coverage = data_sync_store.coverage_audit(limit=100)
     environment_configured = bool(os.environ.get("TUSHARE_TOKEN", "").strip())
+    demands = data_demand_store.refresh_recent(
+        readiness_store=market_readiness_store, automation_store=market_automation_store, limit=50,
+    ) if role == "admin" else []
+    ml_runs = ml_training_store.list_recent(limit=50) if role == "admin" else []
+
+    def task_progress(completed: int, total: int, *, fallback: int = 0, unit: str) -> dict[str, object]:
+        percent = round(completed * 100 / total) if total else fallback
+        return {"completed": completed, "total": total, "percent": max(0, min(100, percent)), "unit": unit}
+
+    data_tasks: list[dict[str, object]] = []
+    for demand in demands:
+        progress = dict(demand.get("progress") or {})
+        data_tasks.append({
+            "schema_version": "data-task.v1", "task_id": demand["demand_id"],
+            "kind": "data_demand", "purpose": demand["purpose"], "title": "按需准备研究数据",
+            "status": demand["status"], "stage": progress.get("stage", "queued"),
+            "progress": task_progress(int(progress.get("completed_units") or 0),
+                                      int(progress.get("total_units") or 0),
+                                      fallback=int(progress.get("percent") or 0),
+                                      unit=str(progress.get("unit") or "symbol_session_cells")),
+            "rows": 0, "safe_error": demand["notification"] if demand["status"] in {"failed", "partial"} else None,
+            "reference": {"kind": "data_demand", "id": demand["demand_id"]},
+            "created_at": demand["created_at"], "updated_at": demand["updated_at"],
+        })
+    for job in jobs:
+        total = int(job.get("symbol_count") or 0)
+        completed = round(total * int(job.get("progress") or 0) / 100)
+        data_tasks.append({
+            "schema_version": "data-task.v1", "task_id": job["job_id"], "kind": "manual_sync",
+            "purpose": "market_data", "title": "行情同步", "status": job["status"],
+            "stage": "finished" if job["status"] in {"completed", "failed"} else "synchronizing",
+            "progress": task_progress(completed, total, fallback=int(job.get("progress") or 0), unit="symbols"),
+            "rows": int(job.get("rows_inserted") or 0), "safe_error": job.get("error_message"),
+            "reference": {"kind": "data_sync_job", "id": job["job_id"]},
+            "created_at": job["created_at"], "updated_at": job["updated_at"],
+        })
+    for job in security_jobs:
+        received = int(job.get("records_received") or 0)
+        completed_records = received if job["status"] == "completed" else int(job.get("records_imported") or 0)
+        data_tasks.append({
+            "schema_version": "data-task.v1", "task_id": job["job_id"], "kind": "security_master",
+            "purpose": "catalogue", "title": "股票基本资料同步", "status": job["status"],
+            "stage": "finished" if job["status"] in {"completed", "failed"} else "synchronizing",
+            "progress": task_progress(completed_records, received,
+                                      fallback=int(job.get("progress") or 0), unit="records"),
+            "rows": int(job.get("records_imported") or 0), "safe_error": job.get("error_message"),
+            "reference": {"kind": "security_master_sync_job", "id": job["job_id"]},
+            "created_at": job["created_at"], "updated_at": job["updated_at"],
+        })
+    for run in ml_runs:
+        readiness = dict(run.get("readiness") or {})
+        total = int(readiness.get("required_cell_count") or 0)
+        completed = max(0, total - int(readiness.get("missing_count") or 0))
+        stage = "preparing_data" if run["status"] == "waiting_for_data" else "training" if run["status"] in {"queued", "running"} else "finished"
+        data_tasks.append({
+            "schema_version": "data-task.v1", "task_id": run["training_run_id"], "kind": "ml_preparation",
+            "purpose": "machine_learning", "title": "机器学习数据准备与训练", "status": run["status"],
+            "stage": stage, "progress": task_progress(completed, total, fallback=100 if run["status"] == "completed" else 0,
+                                                        unit="symbol_session_cells"),
+            "rows": 0, "safe_error": run.get("error_detail"),
+            "reference": {"kind": "ml_training_run", "id": run["training_run_id"]},
+            "created_at": run["created_at"], "updated_at": run["updated_at"],
+        })
+    data_tasks.sort(key=lambda item: (str(item.get("updated_at")), str(item["task_id"])), reverse=True)
     return {
         "schema_version": "data-center.v3",
         "provider": "tushare",
+        "provider_budget": {
+            "schema_version": "provider-budget.v1",
+            "profile": "tushare-personal-2000",
+            "official_calls_per_minute": 200,
+            "official_calls_per_api_per_day": 100_000,
+            "daily_rows_per_call": 6_000,
+            "configured_request_interval_seconds": float(os.environ.get("TUSHARE_REQUEST_INTERVAL_SECONDS", "0.34")),
+            "actual_credential_tier_detected": False,
+        },
         "legacy_providers": [],
         "source": {
             "configured": len(active) == 1 or (not active and environment_configured),
@@ -709,7 +783,8 @@ def data_center_status(request: Request) -> dict[str, object]:
             "can_manage": role == "admin",
         },
         "jobs": jobs,
-        "data_demands": data_demand_store.list_recent(limit=50) if role == "admin" else [],
+        "data_demands": demands,
+        "data_tasks": data_tasks[:100],
         "security_master_jobs": security_jobs,
         "security_master": security_master,
         "coverage": coverage,
@@ -877,6 +952,30 @@ _DEMAND_DECLARED_FIELDS = {"benchmark", "index_universe", "daily_basic", "fundam
 _DEMAND_INDEX = re.compile(r"^\d{6}\.(?:SH|SZ)$")
 
 
+def _partition_market_requirements(
+    *, symbols: list[str], start: datetime, end: datetime,
+    membership_fingerprint_value: str, security_master_snapshot_id: str,
+    declared: dict[str, object],
+) -> list[dict[str, object]]:
+    """Create bounded atomic readiness units for one aggregate frozen scope."""
+    requirements: list[dict[str, object]] = []
+    cursor = start
+    max_chunk_days = min(180, max(1, int(50_000 / len(symbols) * 1.25)))
+    while cursor <= end:
+        chunk_end = min(end, cursor + timedelta(days=max_chunk_days - 1))
+        requirements.append(market_readiness_store.requirement(
+            symbols=symbols, start_date=cursor.strftime("%Y%m%d"),
+            end_date=chunk_end.strftime("%Y%m%d"),
+            membership_fingerprint=membership_fingerprint_value,
+            security_master_snapshot_id=security_master_snapshot_id,
+            data_requirements=declared,
+        ))
+        cursor = chunk_end + timedelta(days=1)
+    if not requirements or len(requirements) > 32:
+        raise ValueError("market data preparation partition plan exceeds 32 units")
+    return requirements
+
+
 def _data_demand_requirements(payload: dict[str, Any], context: dict[str, str]) -> tuple[dict[str, object], list[dict[str, object]]]:
     snapshot = paper_store.get_pool_snapshot(
         payload.get("stock_pool_snapshot_id"), trusted_owner=context["owner_principal"],
@@ -910,18 +1009,11 @@ def _data_demand_requirements(payload: dict[str, Any], context: dict[str, str]) 
     latest = security_master_store.latest_snapshot()
     if latest is None:
         raise ValueError("security master must be synchronized before requesting data")
-    requirements: list[dict[str, object]] = []
-    cursor = start
-    # Keep each projected open-session matrix below the 50k readiness-cell bound.
-    max_chunk_days = min(180, max(1, int(50_000 / len(symbols) * 1.25)))
-    while cursor <= end:
-        chunk_end = min(end, cursor + timedelta(days=max_chunk_days - 1))
-        requirements.append(market_readiness_store.requirement(
-            symbols=symbols, start_date=cursor.strftime("%Y%m%d"), end_date=chunk_end.strftime("%Y%m%d"),
-            membership_fingerprint=membership_fingerprint(symbols),
-            security_master_snapshot_id=str(latest["snapshot_id"]), data_requirements=declared,
-        ))
-        cursor = chunk_end + timedelta(days=1)
+    requirements = _partition_market_requirements(
+        symbols=symbols, start=start, end=end,
+        membership_fingerprint_value=membership_fingerprint(symbols),
+        security_master_snapshot_id=str(latest["snapshot_id"]), declared=declared,
+    )
     scope = {
         "stock_pool_snapshot_id": snapshot["snapshot_id"], "pool_id": snapshot["pool_id"],
         "membership_fingerprint": snapshot["membership_fingerprint"], "symbol_count": len(symbols),
@@ -1978,18 +2070,27 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
         if master is None:
             raise ValueError("security master must be synchronized before ML training")
         split = strategy["split"]
-        requirement = market_readiness_store.requirement(
-            symbols=symbols, start_date=split["train"]["start"], end_date=split["prediction"]["end"],
-            membership_fingerprint=str(pool_snapshot["membership_fingerprint"]),
-            security_master_snapshot_id=str(master["snapshot_id"]), data_requirements=declared,
+        requirements = _partition_market_requirements(
+            symbols=symbols,
+            start=datetime.strptime(str(split["train"]["start"]).replace("-", ""), "%Y%m%d"),
+            end=datetime.strptime(str(split["prediction"]["end"]).replace("-", ""), "%Y%m%d"),
+            membership_fingerprint_value=str(pool_snapshot["membership_fingerprint"]),
+            security_master_snapshot_id=str(master["snapshot_id"]), declared=declared,
         )
-        readiness = market_readiness_store.assess(requirement)
-        if readiness["state"] != "ready":
-            market_automation_store.request_data_repair(
+        assessments = [market_readiness_store.assess(requirement) for requirement in requirements]
+        readiness = aggregate_ml_readiness(assessments)
+        repair_request_ids = []
+        for requirement, assessment in zip(requirements, assessments, strict=True):
+            if assessment.get("state") == "ready":
+                continue
+            repair = market_automation_store.request_data_repair(
                 requirement=requirement, requested_by=f"ml:{context['owner_principal']}"
             )
+            repair_request_ids.append(str(repair["request_id"]))
         preparation = {
             "strategy": strategy,
+            "requirements": requirements,
+            "repair_request_ids": repair_request_ids,
             "universe": {
                 "membership_mode": membership_mode,
                 "stock_pool_id": pool_snapshot["pool_id"],
@@ -2004,7 +2105,7 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
             task_id=task["task_id"], experiment_id=data.get("experiment_id"),
             ml_strategy_artifact_id=version["artifact_id"],
             stock_pool_snapshot_id=pool_snapshot["snapshot_id"], preparation=preparation,
-            requirement=requirement, readiness=readiness, trace_id=data.get("trace_id"),
+            requirement=requirements[0], readiness=readiness, trace_id=data.get("trace_id"),
             idempotency_key=data.get("idempotency_key"),
         )
         paper_store.record_pool_reference(
@@ -2104,16 +2205,28 @@ def create_ml_prediction_run(payload: dict[str, Any], request: Request) -> dict[
         if material.get("model_artifact_id") != model_artifact["artifact_id"]:
             raise ValueError("completed training run does not authorize this model")
         requirement = material.get("requirement")
+        preparation = material.get("preparation")
         frozen_readiness = material.get("readiness")
-        if not isinstance(requirement, dict) or not isinstance(frozen_readiness, dict):
+        if not isinstance(requirement, dict) or not isinstance(preparation, dict) or not isinstance(frozen_readiness, dict):
             raise ValueError("training data provenance is unavailable")
-        current_readiness = market_readiness_store.assess(requirement)
+        raw_requirements = preparation.get("requirements", [requirement])
+        if not isinstance(raw_requirements, list) or not raw_requirements or any(
+            not isinstance(item, dict) for item in raw_requirements
+        ):
+            raise ValueError("training data partition provenance is unavailable")
+        requirements = [dict(item) for item in raw_requirements]
+        current_readiness = aggregate_ml_readiness([
+            market_readiness_store.assess(item) for item in requirements
+        ])
         if (
             current_readiness.get("state") != "ready"
             or current_readiness.get("ready_input_sha256") != frozen_readiness.get("ready_input_sha256")
         ):
             raise ValueError("frozen ML data identity changed after training")
-        ready_input = market_readiness_store.build_ready_input(requirement)
+        ready_input = (
+            market_readiness_store.build_partitioned_ready_input(requirements)
+            if len(requirements) > 1 else market_readiness_store.build_ready_input(requirement)
+        )
         feature_content = feature_artifact.get("content")
         if (
             not isinstance(feature_content, dict)
@@ -2137,7 +2250,9 @@ def create_ml_prediction_run(payload: dict[str, Any], request: Request) -> dict[
             stock_pool_snapshot_id=model.get("stock_pool_snapshot_id"),
             input_document={"strategy": strategy, "model": model, "feature": feature_content,
                             "ready_input": ready_input, "readiness": {
-                                "requirement_sha256": requirement.get("requirement_sha256"),
+                                "requirement_sha256": content_sha256([
+                                    item.get("requirement_sha256") for item in requirements
+                                ]),
                                 "ready_input_sha256": current_readiness.get("ready_input_sha256"),
                             }, "execution": execution},
             trace_id=data.get("trace_id"), idempotency_key=data.get("idempotency_key"),
