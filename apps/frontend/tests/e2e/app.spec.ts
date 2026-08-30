@@ -515,7 +515,7 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
   await expect(page.getByRole("button", { name: "开始回测" })).toBeEnabled();
   await page.getByRole("button", { name: "新建策略" }).click();
   await expect(page.getByText("策略编辑器", { exact: true })).toBeVisible();
-  await expect(page.getByPlaceholder("策略名称", { exact: true })).toHaveValue("自定义策略");
+  await expect(page.getByRole("textbox", { name: "策略名称", exact: true })).toHaveValue("自定义策略");
 });
 
 test("backtest workspace renders backtest result list", async ({ page }) => {
