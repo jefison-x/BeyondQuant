@@ -1,14 +1,9 @@
 # BeyondQuant Self-Hosted CI
 #
-# Runs the project's own local CI (scripts/ci/local-ci.sh) on a self-hosted
-# GitHub Actions runner, so checks execute on the local machine instead of
-# GitHub-hosted runners (which require paid billing). The runner must be
-# registered with labels: byq, linux, x64 — see docs/operations/self-hosted-ci.md.
-#
-# This workflow intentionally reuses scripts/ci/local-ci.sh (the same checks
-# that `make local-ci` runs) rather than re-implementing compose steps, so it
-# avoids the shared byq_postgres_data volume and never conflicts with the
-# developer's own `docker compose` stack.
+# TEMPORARY BRANCH OVERRIDE:
+# This build-only branch is used to package upstream OxideTerm for Kylin V11.
+# Skip the normal BYQ CI job here so the single self-hosted runner is available
+# for the dedicated OxideTerm packaging workflow. This branch is not for merge.
 name: BeyondQuant Self-Hosted CI
 
 on:
@@ -24,7 +19,6 @@ on:
           - selective
           - full
   schedule:
-    # 03:00 Asia/Shanghai: full drift detection without duplicating every merge.
     - cron: '0 19 * * *'
 
 concurrency:
@@ -36,39 +30,8 @@ permissions:
 
 jobs:
   local-ci:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: ${{ false }}
     runs-on: [self-hosted, linux, x64, byq]
     timeout-minutes: 30
-    env:
-      # Guard against any future opt-in compose usage colliding with the
-      # developer's local stack project name.
-      COMPOSE_PROJECT_NAME: byq-ci-runner
-      # A pull request's base SHA is immutable even if main advances or the PR
-      # is squash-merged while this self-hosted job is queued/running.
-      BYQ_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
-      BYQ_CI_SCOPE: ${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Fetch main baseline for path filtering
-        run: |
-          if [ "$BYQ_CI_BASE_SHA" != "HEAD^" ]; then
-            git fetch --quiet origin "$BYQ_CI_BASE_SHA"
-          fi
-
-      - name: Run risk-selected or full CI profile
-        env:
-          BYQ_CI_PROFILE: ${{ inputs.profile || 'full' }}
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ] || [ "$BYQ_CI_PROFILE" = "selective" ]; then
-            ./scripts/ci/local-ci.sh --base="$BYQ_CI_BASE_SHA" --with-e2e --auto-smoke
-          else
-            ./scripts/ci/local-ci.sh --base="${BYQ_CI_BASE_SHA:-HEAD^}" --all --with-e2e --with-smoke
-          fi
-
-      - name: Verify run-scoped resource cleanup
-        if: always()
-        run: ./scripts/ci/cleanup-resources.sh --scope="$BYQ_CI_SCOPE"
+      - run: echo "Skipped on temporary OxideTerm build branch"
