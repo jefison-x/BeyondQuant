@@ -1,14 +1,14 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=80 -->
+<!-- byq:current-completed-phase=81 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 80**——修复 DSH delegate 工具过滤器与 `mcp__byq__*` 运行时名称漂移；
-  小巴可用 `data-demand.v1` 将冻结股票池、日期、用途与封闭数据声明交给 Backend，复用现有
-  repair/readiness 和可信 Data Worker 按需同步，并在后续 Agent context 收到就绪/失败通知。Product
-  数据中心展示同一持久状态；DSH/MCP/Browser 仍不接触 Provider 凭据或行情写入。
+- 当前已完成阶段：**Phase 81**——稳定 BYQ 对话身份与私有 DSH process generation 已分离；
+  Gateway 从持久 Product conversation catalog 有界回灌已完成的公开消息，使首轮结束并经 idle
+  release 或服务重启后的追问可以在新 generation 中继续。DSH `error` 现在安全投影为 `failed`，
+  Browser 不再错误建议用户修改问题。未读取 raw DSH log、未 fork/升级 DSH，也未新增 Agent harness。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -61,6 +61,7 @@ history 推断项目状态。
 - auditable machine-learning research pipeline：**ADR-0043**
 - Product Agent 产品能力目录与任务化接入：**ADR-0044**
 - Agent 按需数据准备与通知：**ADR-0045**
+- Durable conversation runtime rehydration：**ADR-0046**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -346,6 +347,13 @@ Phase 80 Xiaoba Data Demand and Automation-channel Repair 依据生产会话证�
 Product API 展示同一状态；未引入第二同步引擎、Provider 直连或 Backend 主动模型执行。验收证据位于
 `docs/evidence/phase-80/`。
 
+Phase 81 Durable Conversation Runtime Rehydration 依据生产故障证据，将稳定 BYQ session/trace 与
+每次新建 DSH process 的私有 generation identity 分离。Gateway 只回灌最近、已完成且用户可见的
+有界 Product 消息，尾部未回答 user turn 不重复注入；Runtime Adapter 二次验证合同，并将 DSH
+`error`/未知结束原因安全投影为 failed。真实生产 Chrome 旅程证明首轮完成、30 秒 idle release、重开
+同一会话和上下文追问闭环；桌面/移动端、同源网络、空 Console 和临时会话清理均通过。证据位于
+`docs/evidence/phase-81/`。
+
 Post-Phase 74 Model Research Navigation Maintenance 将量化模型研究从个人“模型配置”提升为
 “策略管理”与“回测管理”之间的一级业务工作台；个人模型设置继续只管理 LLM 凭据、档案与 Agent
 绑定。策略编辑器为研究任务、策略身份、说明、参数、数据依赖和 Python 脚本提供持久可见标题与
@@ -358,8 +366,8 @@ always-cleanup、重型任务锁、内存 preflight 和 zero-resource verificati
 
 ## 当前授权边界
 
-- Phase 49-80 与相应 Accepted ADR/计划均已完成。
-- ADR-0044 授权的 Phase 75–79、ADR-0045 授权的 Phase 80 已完成。后续 Product Phase 必须由新的
+- Phase 49-81 与相应 Accepted ADR/计划均已完成。
+- ADR-0044 授权的 Phase 75–79、ADR-0045 授权的 Phase 80、ADR-0046 授权的 Phase 81 已完成。后续 Product Phase 必须由新的
   Accepted ADR 与明确授权启动；
   当前完成范围不包含 HIST、实盘券商、AutoML、GPU 或在线学习。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human

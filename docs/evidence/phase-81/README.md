@@ -1,8 +1,8 @@
 # Phase 81 Evidence
 
 Phase 81 closes the production regression where a durable Product conversation failed on its first
-follow-up after the idle DSH process had been released. Evidence must include targeted Runtime/Gateway/
-Frontend tests, full selective CI, a real Product API multi-turn journey across release/reopen, Chrome
-desktop/mobile review, and process cleanup verification.
+follow-up after the idle DSH process had been released.
 
-Final command results and browser observations are recorded in `VALIDATION.md` before completion.
+- `VALIDATION.md` records unit, contract, full CI, deployment health and the real release/reopen journey.
+- `CHROME_MCP_REVIEW.md` records desktop/mobile, console and same-origin network evidence.
+- `community-feature-checklist.md` records the mandatory read-only Community classification.

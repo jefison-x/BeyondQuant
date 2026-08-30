@@ -690,7 +690,7 @@ restart、two-user、no-mock Product API、desktop/mobile Chrome MCP 与说明/�
 Data Worker 独占 Provider 与行情写入；完成状态在下一次 Agent context 中通知小巴，并由 Product API
 投影到数据中心。不得新增第二同步引擎、Provider 直连或 Backend 主动触发无用户回合的模型执行。
 
-### Phase 81 — Durable conversation runtime rehydration（`IN_PROGRESS`）
+### Phase 81 — Durable conversation runtime rehydration（`COMPLETE`）
 
 依据 ADR-0046 修复 Product durable conversation 在 DSH idle process release/reopen 后的首个 follow-up。
 稳定 BYQ identity 与私有 DSH generation 分离；Gateway 从 durable catalog 提供 bounded completed public
