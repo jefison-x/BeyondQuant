@@ -48,7 +48,7 @@ const userDisplayName = computed(() => auth.user?.display_name?.trim() || "我")
 const activities = computed(() => workflowActivities(agent.events));
 const replayRun = computed(() => workflowRunState(agent.events));
 const runFailureMessage = computed(() => replayRun.value.failed
-  ? "本轮未能完成，运行环境已安全停止。你可以调整问题后重新发送，或直接重试。"
+  ? "本轮运行未能完成，与你的问题表述无关。对话内容已保留，可以直接重试；若持续失败，请新建对话并联系管理员。"
   : "");
 const activeActivity = computed(() => [...activities.value].reverse().find((item) =>
   item.payload.state === "started" || item.payload.state === "progress" || item.payload.state === "waiting_approval",

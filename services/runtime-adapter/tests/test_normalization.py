@@ -74,6 +74,17 @@ def test_turn_activity_reaches_a_terminal_public_state() -> None:
     assert completed[1]["kind"] == "turn.completed"
 
 
+def test_dsh_error_turn_is_never_projected_as_completed() -> None:
+    state = NormalizationState()
+    normalize(notify("turn/start", {"turn": 1}), state)
+
+    failed = normalize(notify("turn/end", {"reason": {"kind": "error"}}), state)
+
+    assert failed[0]["payload"]["state"] == "failed"
+    assert failed[1]["kind"] == "turn.completed"
+    assert failed[1]["payload"] == {"reason": "failed"}
+
+
 def test_answer_excludes_reasoning_and_duplicate_messages() -> None:
     state = NormalizationState()
     message = notify(

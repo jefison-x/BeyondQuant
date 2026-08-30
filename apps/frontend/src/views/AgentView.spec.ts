@@ -116,7 +116,7 @@ describe("AgentView", () => {
     await flushPromises();
 
     expect(wrapper.find(".assistant-processing").exists()).toBe(false);
-    expect(wrapper.find(".run-failure").text()).toContain("本轮未能完成");
+    expect(wrapper.find(".run-failure").text()).toContain("与你的问题表述无关");
 
     view.prompt = "重试请求";
     await view.send();

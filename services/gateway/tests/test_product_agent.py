@@ -304,7 +304,11 @@ def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(mon
     monkeypatch.setattr(main, "_catalog_request", lambda *_args, **_kwargs: {"conversation": {
         "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
         "trace_id": "trace-1", "status": "active",
-    }})
+    }, "messages": [
+        {"role": "user", "content": "第一轮问题"},
+        {"role": "assistant", "content": "第一轮回答"},
+        {"role": "user", "content": "失败后待重试的问题"},
+    ]})
     adapter_calls: list[tuple[str, dict[str, object] | None]] = []
     monkeypatch.setattr(
         main,
@@ -323,9 +327,27 @@ def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(mon
         "session_id": "runtime-private", "trace_id": "trace-1",
         "workspace_id": "workspace_bootstrap_unresolved", "owner_principal": main.PRODUCT_PRINCIPAL,
         "initial_sequence": 7,
+        "conversation_context": [
+            {"role": "user", "content": "第一轮问题"},
+            {"role": "assistant", "content": "第一轮回答"},
+        ],
     })]
     assert collectors == ["runtime-private"]
     assert "runtime-private" not in store._closed
+
+
+def test_conversation_context_keeps_recent_completed_public_turns_only() -> None:
+    messages = [
+        {"role": "user", "content": "old"},
+        {"role": "assistant", "content": "answer"},
+        {"role": "user", "content": "failed prompt"},
+        {"role": "internal", "content": "must not pass"},
+    ]
+
+    assert main._conversation_context(messages) == [
+        {"role": "user", "content": "old"},
+        {"role": "assistant", "content": "answer"},
+    ]
 
 
 def test_disconnected_public_stream_releases_idle_runtime(monkeypatch) -> None:

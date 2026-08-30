@@ -8,7 +8,9 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from packages.contracts.conversation_rehydration import ConversationContextMessage
 
 from .runtime import ModelCredentialUnavailable, RuntimeAdapter, SessionConflict
 
@@ -19,6 +21,11 @@ class CreateSessionRequest(BaseModel):
     workspace_id: str | None = None
     owner_principal: str | None = None
     initial_sequence: int = 0
+    conversation_context: list[ConversationContextMessage] = Field(default_factory=list)
+
+
+class ResumeSessionRequest(BaseModel):
+    conversation_context: list[ConversationContextMessage] = Field(default_factory=list)
 
 
 class PromptRequest(BaseModel):
@@ -81,7 +88,7 @@ def create_session(request: CreateSessionRequest) -> dict[str, object]:
     try:
         return adapter.create_session(
             request.session_id, request.trace_id, request.owner_principal, request.workspace_id,
-            request.initial_sequence,
+            request.initial_sequence, request.conversation_context,
         )
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -109,9 +116,12 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
 
 
 @app.post("/internal/runtime/sessions/{session_id}/resume")
-def resume_session(session_id: str) -> dict[str, object]:
+def resume_session(session_id: str, request: ResumeSessionRequest | None = None) -> dict[str, object]:
     try:
-        return adapter.resume_session(session_id)
+        return adapter.resume_session(
+            session_id,
+            conversation_context=[] if request is None else request.conversation_context,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SessionConflict as exc:

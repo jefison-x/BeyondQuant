@@ -24,6 +24,8 @@ class FakeHarness:
         self.started = False
         self.closed = False
         self.run_count = 0
+        self.session_id = ""
+        self.last_content = ""
         self.__class__.instances.append(self)
 
     @classmethod
@@ -36,11 +38,13 @@ class FakeHarness:
     def start(self) -> None:
         self.started = True
 
-    def start_session(self, _session_id: str) -> "FakeHarness":
+    def start_session(self, session_id: str) -> "FakeHarness":
+        self.session_id = session_id
         return self
 
-    def run(self, _content: str, *, on_notification: object) -> SimpleNamespace:
+    def run(self, content: str, *, on_notification: object) -> SimpleNamespace:
         self.run_count += 1
+        self.last_content = content
         self.__class__.run_started.set()
         self.__class__.allow_run.wait(timeout=2.0)
         return SimpleNamespace(finish_reason=self.__class__.finish_reason)
@@ -117,7 +121,50 @@ def test_session_creation_can_continue_a_durable_trace_sequence(adapter: Runtime
     assert created["status"] == SessionStatus.READY
     assert record.history[0]["sequence"] == 42
     assert record.sequence == 42
+    assert record.runtime_session_id.startswith("resume-")
     adapter.release_session("s-sequence")
+
+
+def test_recreated_runtime_uses_private_generation_and_bounded_public_context(
+    adapter: RuntimeAdapter,
+) -> None:
+    FakeHarness.allow_run.set()
+    adapter.create_session(
+        "s-durable",
+        "t-durable",
+        initial_sequence=9,
+        conversation_context=[
+            {"role": "user", "content": "第一轮问题"},
+            {"role": "assistant", "content": "第一轮回答"},
+        ],
+    )
+
+    record = adapter._get("s-durable")
+    assert record.runtime_session_id.startswith("resume-")
+    assert record.runtime_session_id != record.session_id
+    adapter.submit_prompt("s-durable", "第二轮追问")
+    wait_for_status(adapter, "s-durable", SessionStatus.IDLE)
+
+    harness = FakeHarness.instances[0]
+    assert harness.session_id == record.runtime_session_id
+    assert '"role":"user","content":"第一轮问题"' in harness.last_content
+    assert '"role":"assistant","content":"第一轮回答"' in harness.last_content
+    assert "[CURRENT_USER_MESSAGE]\n第二轮追问" in harness.last_content
+    assert record.pending_conversation_context == []
+    adapter.release_session("s-durable")
+
+
+def test_conversation_context_rejects_private_or_unbounded_shapes(adapter: RuntimeAdapter) -> None:
+    with pytest.raises(ValueError, match="field set"):
+        adapter.create_session(
+            "s-private", "t-private", initial_sequence=1,
+            conversation_context=[{"role": "user", "content": "问题", "raw_dsh": "no"}],
+        )
+    with pytest.raises(ValueError, match="character limit"):
+        adapter.create_session(
+            "s-large", "t-large", initial_sequence=1,
+            conversation_context=[{"role": "assistant", "content": "x" * 6_001}],
+        )
 
 
 def test_resume_is_idempotent_after_runtime_recreation(adapter: RuntimeAdapter) -> None:
