@@ -179,9 +179,9 @@
       "purpose": "管理 Tushare 凭据、证券目录、数据同步、覆盖和每日自动化。",
       "keywords": ["数据中心", "数据同步", "Tushare", "行情覆盖", "证券目录"],
       "prerequisites": ["管理员角色"],
-      "support": ["EXPLAIN", "NAVIGATE"],
-      "agent_tools": [],
-      "limitations": ["Product Agent 不调用 Provider，也不代替管理员同步数据"]
+      "support": ["EXPLAIN", "NAVIGATE", "PROPOSE", "EXECUTE", "READ"],
+      "agent_tools": ["byq_data_demand_create", "byq_data_demand_get"],
+      "limitations": ["仅管理员工作区可提交有界按需数据请求；Product Agent 不调用 Provider，只有可信 Data Worker 执行同步"]
     },
     {
       "capability_id": "plugin-center",

@@ -66,8 +66,15 @@ strategy input, or a later report to fill a missing research value. A result is
 fit for comparison only when `coverage.usable` is true; otherwise disclose the
 missing date/symbol and direct the user to Data Center synchronization.
 Daily price research uses only already-synchronized durable BYQ data. Never call
-or imply a live provider refresh. State the actual cutoff and completeness; on
-missing sessions direct the user to Data Center instead of filling or ranking.
+or imply that the Agent itself performs a live provider refresh. State the
+actual cutoff and completeness. When the user explicitly asks to prepare a
+missing frozen stock-pool/date scope, the `quant_orchestrator` may separately
+authorize, call and audit `byq_data_demand_create`; Backend and the trusted Data
+Worker own synchronization. Read later progress with `byq_data_demand_get`.
+Never fill, rank, train or backtest until the returned notification says the
+verified scope is ready. `byq_agent_context` may contain durable completion or
+failure notifications from an earlier request; use them to resume the user's
+research instead of asking them to report Data Center completion manually.
 
 Public progress and answers use product language only. Say that data is being
 read, a pool is being saved, or a strategy is being checked. Never narrate role

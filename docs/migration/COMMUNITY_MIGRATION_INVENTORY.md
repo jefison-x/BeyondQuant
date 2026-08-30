@@ -919,6 +919,22 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+## Phase 80 Agent data-demand pre-implementation audit
+
+The read-only Community `frontend/src/views/system/DataSync.vue`, its data-source
+service calls, and the old Agent market-data synchronization request/approval
+flow were inspected before accepting ADR-0045.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 80 disposition |
+|---|---|---|---|
+| Data Sync scope, task progress and completion presentation | A user should describe a bounded scope and later see a durable, truthful outcome. | `PORT_UX` / `PORT_TESTS` / `REFACTOR` | Add a BYQ `data-demand.v1` facade over existing repair/readiness jobs and show it in Data Center. |
+| Agent request followed by a separate synchronization task | Agent intent and trusted Data Plane execution must remain separate. | `PORT_LOGIC` / `REFACTOR` | Xiaoba submits through BYQ MCP; Backend resolves scope; only Data Worker calls the Provider. |
+| Hardcoded pools, TODO sync handler and simulated progress | No truthful domain behavior. | `DROP` | Use immutable BYQ pool snapshots, persisted repair jobs and readiness verification only. |
+| Community Agent API, ORM/thread executor and Provider paths | No compatible ownership or integration boundary. | `REFERENCE_ONLY` / `REPLACE` | Keep DSH → MCP → Backend and Data Worker boundaries; copy no runtime, schema, API or Provider implementation. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.
+
 ## Phase 79 ML prediction and Backtest conversation audit
 
 The read-only Community ML prediction examples and Backtest integration were

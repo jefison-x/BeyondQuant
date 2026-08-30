@@ -26,9 +26,20 @@ ADR-0030 数据。前者要求 exact trade date，后者要求 point-in-time as-
 后次日可见。二者只接受最多 20 个 canonical A-share symbols 和封闭字段集合，返回
 row/content hash、dataset completeness、missing symbol/report 和 `coverage.usable`。
 
-MCP 不得调用 Tushare、触发同步、执行 latest fallback、填充 null、透传 Backend detail，
+MCP 不得调用 Tushare、执行 latest fallback、填充 null、透传 Backend detail，
 或接收任意 Provider endpoint/field。不可用 coverage 是正常结构化结果，不是授权 Agent
 臆测数据或换来源绕过的理由。
+
+## Phase 80 data-demand capability
+
+`byq_data_demand_create/get` 是小巴向可信数据中心表达按需准备意图的 Agent-to-Domain
+入口。create 只接受管理员工作区、不可变股票池快照、最长五年日期范围、封闭用途和
+BYQ 已支持的声明数据字段；Backend 将范围拆成有界 `market-data-requirement.v3`，复用
+既有 repair/session job。MCP 本身仍不得调用 Tushare、读取凭据、写数据或控制 Worker。
+
+`byq_agent_context` 可附带同一 owner/session 的终态通知；`ready` 必须来自当前 readiness
+验证，不能由 repair enqueue/expand/completed 状态推断。Backend 不主动向 DSH 注入 prompt，
+小巴只在下一次或恢复的用户 turn 消费通知并继续研究。
 
 ## Phase 9 research capability
 

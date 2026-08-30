@@ -77,19 +77,27 @@ class PluginRegistryTests(unittest.TestCase):
         )[0]
         ml = composition.split("- id: delegate-ml-research", 1)[1].split("# Qualified", 1)[0]
         self.assertIn("- web_search", market)
-        self.assertIn("- byq_web_evidence_create", market)
+        self.assertIn("- mcp__byq__byq_web_evidence_create", market)
         self.assertTrue(all("web_search" not in block for block in (factor, strategy, backtest, ml)))
         self.assertTrue(all("byq_web_evidence_create" not in block for block in (factor, strategy, backtest, ml)))
-        self.assertIn("- byq_ml_capabilities", ml)
-        self.assertIn("- byq_ml_training_create", ml)
-        self.assertIn("- byq_ml_prediction_create", ml)
-        self.assertIn("- byq_ml_prediction_get", ml)
-        self.assertIn("- byq_backtest_task_execute", ml)
-        self.assertNotIn("- byq_backtest_task_create", ml)
+        self.assertIn("- mcp__byq__byq_ml_capabilities", ml)
+        self.assertIn("- mcp__byq__byq_ml_training_create", ml)
+        self.assertIn("- mcp__byq__byq_ml_prediction_create", ml)
+        self.assertIn("- mcp__byq__byq_ml_prediction_get", ml)
+        self.assertIn("- mcp__byq__byq_backtest_task_execute", ml)
+        self.assertNotIn("- mcp__byq__byq_backtest_task_create", ml)
         self.assertNotIn("byq_strategy_approve", ml)
         self.assertNotIn("web_fetch", composition)
         self.assertNotIn("ask_user", composition)
         self.assertNotIn("spill-local", composition)
+
+    def test_subagent_filters_use_registered_mcp_runtime_names(self) -> None:
+        composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
+        delegate_region = composition.split("- id: delegate-market-research", 1)[1].split("# Qualified", 1)[0]
+        allow_entries = re.findall(r"^\s+- ([a-zA-Z0-9_]+)$", delegate_region, flags=re.MULTILINE)
+        self.assertTrue(allow_entries)
+        self.assertFalse([name for name in allow_entries if name.startswith("byq_")])
+        self.assertTrue([name for name in allow_entries if name.startswith("mcp__byq__byq_")])
 
     def test_web_evidence_save_uses_system_ids_and_public_language(self) -> None:
         skill = (
