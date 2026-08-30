@@ -5,6 +5,7 @@
     "market_researcher": {"kind": "subagent", "plugins": ["compaction", "guard", "web-search"]},
     "factor_researcher": {"kind": "subagent", "plugins": ["compaction", "guard"]},
     "strategy_researcher": {"kind": "subagent", "plugins": ["compaction", "guard"]},
-    "backtest_analyst": {"kind": "subagent", "plugins": ["compaction", "guard"]}
+    "backtest_analyst": {"kind": "subagent", "plugins": ["compaction", "guard"]},
+    "ml_researcher": {"kind": "subagent", "plugins": ["compaction", "guard"]}
   }
 }

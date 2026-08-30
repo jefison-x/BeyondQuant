@@ -63,6 +63,7 @@ def test_product_research_skill_requires_evidence_bound_public_answers() -> None
     role_contract = (skill_root / "byq-role-contracts/SKILL.md").read_text()
     market_contract = (skill_root / "byq-market-researcher/SKILL.md").read_text()
     product_guide = (skill_root / "byq-product-guide/SKILL.md").read_text()
+    ml_contract = (skill_root / "byq-ml-researcher/SKILL.md").read_text()
 
     assert "Do not write a preface" in role_contract
     assert "unqueried or unavailable profitability" in role_contract
@@ -78,3 +79,6 @@ def test_product_research_skill_requires_evidence_bound_public_answers() -> None
     assert "last_close / first_close - 1" in market_contract
     assert "首日至末日" in market_contract
     assert "newest listed session" in market_contract
+    assert "byq_ml_capabilities" in ml_contract
+    assert "never create or decide that" in ml_contract
+    assert "Prediction, frozen-signal creation" in ml_contract

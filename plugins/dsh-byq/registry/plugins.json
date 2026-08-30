@@ -16,7 +16,7 @@
       "qualification": {"state": "QUALIFIED", "qualified_at": "2026-08-28", "reason": "精确锁定的 rc.1 依赖闭包已在 BYQ JSON-RPC 组合中完成初始化；压缩内容仅属于 Agent 上下文，不能替代 BYQ Artifact 或领域状态。", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": true, "composition_initialize": true, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": true, "agent_boundary": true, "mcp_boundary": true, "contract_tests": true, "architecture_tests": true}},
       "capabilities": {"network": false, "web_search": false, "web_fetch": false, "filesystem_read": false, "filesystem_write": false, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": false, "runtime_mutation": false, "user_interaction": false},
       "credentials": {"required": false, "references": []}, "tools": {"exposed": []},
-      "agents": {"allowed": ["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"], "denied": []},
+      "agents": {"allowed": ["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher"], "denied": []},
       "risk": {"level": "LOW", "reasons": ["不具备网络访问或运行时修改能力", "压缩摘要只是非权威的 Agent 上下文"]}, "product_policy": {"enabled": true},
       "composition": {"entries": [
         {"id": "compaction-basic", "name": "@deepseek-ai/dsh-compaction-basic", "config": {"thresholdRatio": 0.8, "retainRatio": 0.16, "maxTokens": 8192, "compactionRetries": 1}},
@@ -35,7 +35,7 @@
       "qualification": {"state": "QUALIFIED", "qualified_at": "2026-08-28", "reason": "两个官方防护插件均已在 rc.1 上完成初始化；它们不会增加工具或权限，会保留真实工具结果，并产生有界的提醒或超时结果。", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": true, "composition_initialize": true, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": true, "agent_boundary": true, "mcp_boundary": true, "contract_tests": true, "architecture_tests": true}},
       "capabilities": {"network": false, "web_search": false, "web_fetch": false, "filesystem_read": false, "filesystem_write": false, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": false, "runtime_mutation": false, "user_interaction": false},
       "credentials": {"required": false, "references": []}, "tools": {"exposed": []},
-      "agents": {"allowed": ["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"], "denied": []},
+      "agents": {"allowed": ["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher"], "denied": []},
       "risk": {"level": "LOW", "reasons": ["重复调用防护仅提供提醒", "超时控制采用协作方式，不能伪造领域操作成功"]}, "product_policy": {"enabled": true},
       "composition": {"entries": [
         {"id": "repeat-tool-reminder", "name": "@deepseek-ai/dsh-repeat-tool-reminder", "config": {"thresholds": [3, 5, 8], "argumentsPreviewChars": 500}},
@@ -53,7 +53,7 @@
       "qualification": {"state": "BLOCKED", "qualified_at": null, "reason": "rc.1 软件包虽然存在，但当前已认证的 BYQ SDK/JSON-RPC 传输尚未证明完整的 Product 提问与回答生命周期；DSH 用户交互也不能被视为 BYQ 业务授权。", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": false, "composition_initialize": false, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": false, "agent_boundary": true, "mcp_boundary": true, "contract_tests": false, "architecture_tests": true}},
       "capabilities": {"network": false, "web_search": false, "web_fetch": false, "filesystem_read": false, "filesystem_write": false, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": false, "runtime_mutation": false, "user_interaction": true},
       "credentials": {"required": false, "references": []}, "tools": {"exposed": ["ask_user"]},
-      "agents": {"allowed": ["quant_orchestrator"], "denied": ["market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"]},
+      "agents": {"allowed": ["quant_orchestrator"], "denied": ["market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher"]},
       "risk": {"level": "MEDIUM", "reasons": ["需要可靠且可恢复的人机交互链路", "不能替代 BYQ 业务授权"]}, "product_policy": {"enabled": false}, "composition": {"entries": []}
     },
     {
@@ -68,7 +68,7 @@
       "qualification": {"state": "BLOCKED", "qualified_at": null, "reason": "rc.1 的 spill-local 没有按会话或保存时长执行清理，并会返回依赖文件读取或检索工具的本地路径；Product DSH 按安全设计不提供文件系统读取工具。", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": false, "composition_initialize": false, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": false, "agent_boundary": true, "mcp_boundary": true, "contract_tests": false, "architecture_tests": true}},
       "capabilities": {"network": false, "web_search": false, "web_fetch": false, "filesystem_read": false, "filesystem_write": true, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": true, "runtime_mutation": false, "user_interaction": false},
       "credentials": {"required": false, "references": []}, "tools": {"exposed": []},
-      "agents": {"allowed": [], "denied": ["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"]},
+      "agents": {"allowed": [], "denied": ["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher"]},
       "risk": {"level": "HIGH", "reasons": ["会写入本地文件", "rc.1 没有满足要求的生命周期清理机制", "文件定位信息依赖 Product Plane 禁止提供的文件读取工具"]}, "product_policy": {"enabled": false}, "composition": {"entries": []}
     },
     {
@@ -83,7 +83,7 @@
       "qualification": {"state": "QUALIFIED", "qualified_at": "2026-08-28", "reason": "官方 rc.1 服务商与工具已通过无凭证初始化；网页抓取保持禁用，查询和结果都有明确上限，凭证只进入子进程，网页证据仅作为非权威研究上下文。", "evidence": ["docs/evidence/phase-63/upstream-inspection.md", "docs/evidence/phase-63/qualification-report.md"], "checks": {"package": true, "integrity": true, "dependency_closure": true, "peer_compatibility": true, "startup": true, "composition_initialize": true, "capability_audit": true, "credential_audit": true, "secret_leakage": true, "lifecycle": true, "agent_boundary": true, "mcp_boundary": true, "contract_tests": true, "architecture_tests": true}},
       "capabilities": {"network": true, "web_search": true, "web_fetch": false, "filesystem_read": false, "filesystem_write": false, "shell": false, "terminal": false, "code_execution": false, "git": false, "database": false, "subprocess": false, "persistent_storage": false, "runtime_mutation": false, "user_interaction": false},
       "credentials": {"required": true, "references": ["DEEPSEEK_API_KEY"]}, "tools": {"exposed": ["web_search"]},
-      "agents": {"allowed": ["quant_orchestrator", "market_researcher"], "denied": ["factor_researcher", "strategy_researcher", "backtest_analyst"]},
+      "agents": {"allowed": ["quant_orchestrator", "market_researcher"], "denied": ["factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher"]},
       "risk": {"level": "MEDIUM", "reasons": ["需要外部网络访问和服务商凭证", "网页证据不是确定性的领域输入"]}, "product_policy": {"enabled": true},
       "composition": {"entries": [
         {"id": "tool-web-search-only", "name": "@deepseek-ai/dsh-tool-web", "config": {"search": true, "fetch": false, "searchMaxResults": 8, "searchMaxQueries": 4, "searchTimeoutMs": 60000}},

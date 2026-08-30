@@ -1,14 +1,14 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=77 -->
+<!-- byq:current-completed-phase=78 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 77**——交付 `backtest-task.v1` prepare/create/get/execute/cancel MCP，基于既有
-  ResearchTask、Approval、MarketReadiness、SignalProducerJob 与 BacktestJob 动态投影，不新建第二状态机。
-  小巴只需提供策略版本、冻结股票池、日期和参数，不再构造 raw bars/signals；prepare 零写入，创建、执行、
-  取消继续使用逐动作审批，已有旧回测个人风控规则通过兼容 action alias 保持有效。
+- 当前已完成阶段：**Phase 78**——交付最小权限 `ml_researcher`、薄技能和 DSH delegate，并通过
+  BYQ MCP 开放封闭能力查询、工作区定位、LightGBM 策略创建与可信训练 create/get/cancel。小巴不训练、
+  不推理、不读模型对象或 raw feature rows；ML 策略批准仍由用户在模型研究页完成，训练创建与取消继续
+  使用逐动作审批。Prediction、冻结信号和 ML Backtest 对话串联保留到 Phase 79。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -328,6 +328,11 @@ Agent API/VectorBT 分类为 `DROP`。`backtest-task.v1` 使用 SignalProducerJo
 prepare 不触发补数或领域写；create 可请求现有数据修复并排队可信信号生成，execute 只消费完成后的不可变
 signal snapshot，BacktestJob 继续负责重试、结果对象和 lineage。
 
+Phase 78 ML Agent Create/Training 将 Community 的“先确认可用模型能力再配置研究”意图分类为
+`PORT_UX`；任意 sklearn/scipy/statsmodels/XGBoost/LightGBM import、在回测内 fit/predict 与旧 Agent
+工具策略分类为 `DROP`/`REPLACE`。新能力只接受 ADR-0043 的封闭 LightGBM 合同，通过 BYQ MCP
+操作领域对象，并把策略人工批准、Agent action approval、训练执行状态明确分离。
+
 Post-Phase 74 Model Research Navigation Maintenance 将量化模型研究从个人“模型配置”提升为
 “策略管理”与“回测管理”之间的一级业务工作台；个人模型设置继续只管理 LLM 凭据、档案与 Agent
 绑定。策略编辑器为研究任务、策略身份、说明、参数、数据依赖和 Python 脚本提供持久可见标题与
@@ -340,7 +345,7 @@ always-cleanup、重型任务锁、内存 preflight 和 zero-resource verificati
 
 ## 当前授权边界
 
-- Phase 49-77 与相应 Accepted ADR/计划均已完成。
+- Phase 49-78 与相应 Accepted ADR/计划均已完成。
 - 维护者已明确授权按 ADR-0044 顺序推进 Phase 78–79；每阶段仍必须独立 worktree/branch/PR，前一阶段
   合并后才能开始下一阶段。该授权不包含 HIST、实盘券商、AutoML、GPU 或在线学习。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human

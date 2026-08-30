@@ -43,7 +43,7 @@ def test_orchestrator_candidates_to_pool_to_validated_strategy_version(
     )
     assert started.status_code == 201, started.text
     run = started.json()["run"]
-    assert run["role_version"] == "1.6.0"
+    assert run["role_version"] == "1.7.0"
 
     authorization = client.post(
         "/v1/agents/authorize",

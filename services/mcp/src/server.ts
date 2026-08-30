@@ -90,6 +90,15 @@ import {
 } from "./research.js";
 import { proposeWorkflowCard, workflowCardProposalSchema } from "./workflow-card.js";
 import { productHelpInputSchema, queryProductHelp } from "./product-help.js";
+import {
+  fetchByqMlCapabilities,
+  fetchByqMlStrategyCreate,
+  fetchByqMlTrainingCancel,
+  fetchByqMlTrainingCreate,
+  fetchByqMlTrainingGet,
+  fetchByqMlWorkspace,
+  type MlRequest,
+} from "./ml-research.js";
 
 const SERVICE = "beyondquant-mcp";
 const VERSION = "0.1.0";
@@ -375,6 +384,44 @@ async function byqBacktestTaskCancel(args: { backtest_task_id: string }, extra: 
   return context ? fetchByqBacktestTaskCancel(BACKEND_URL, args.backtest_task_id, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
+async function byqMlCapabilities(_args: Record<string, never>, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMlCapabilities(BACKEND_URL, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqMlWorkspace(_args: Record<string, never>, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMlWorkspace(BACKEND_URL, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqMlStrategyCreate(args: MlRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMlStrategyCreate(
+    BACKEND_URL, { ...args, trace_id: context.trace_id }, trustedBackendFetcher(context),
+  ) : agentContextUnavailable();
+}
+
+async function byqMlTrainingCreate(args: MlRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMlTrainingCreate(
+    BACKEND_URL, { ...args, trace_id: context.trace_id }, trustedBackendFetcher(context),
+  ) : agentContextUnavailable();
+}
+
+async function byqMlTrainingGet(args: { training_run_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMlTrainingGet(
+    BACKEND_URL, args.training_run_id, trustedBackendFetcher(context),
+  ) : agentContextUnavailable();
+}
+
+async function byqMlTrainingCancel(args: { training_run_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMlTrainingCancel(
+    BACKEND_URL, args.training_run_id, trustedBackendFetcher(context),
+  ) : agentContextUnavailable();
+}
+
 async function byqMarketDaily(args: MarketDailyRequest, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqMarketDaily(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
@@ -581,7 +628,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     {
       description: "Start an owner-scoped BYQ agent run correlated to the trusted DSH session and trace.",
       inputSchema: {
-        role_id: z.enum(["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst"]),
+        role_id: z.enum(["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher"]),
         parent_run_id: z.string().optional(),
         idempotency_key: z.string(),
       },
@@ -773,6 +820,71 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_backtest_get",
     { description: "Read durable BYQ backtest job state and immutable result reference.", inputSchema: { job_id: z.string() } },
     (args) => byqBacktestGet(args, trustedContext),
+  );
+  const dateWindowSchema = z.object({
+    start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  }).strict();
+  server.registerTool(
+    "byq_ml_capabilities",
+    { description: "Read the closed BYQ machine-learning capability catalogue and bounded parameter limits.", inputSchema: {} },
+    (args) => byqMlCapabilities(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_ml_workspace_get",
+    { description: "Locate owner-scoped ML tasks, frozen pools, safe artifacts and training runs without model objects or raw feature rows.", inputSchema: {} },
+    (args) => byqMlWorkspace(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_ml_strategy_create",
+    { description: "Create a validated closed-profile LightGBM strategy version. Human approval remains a separate Product action.", inputSchema: {
+      task_id: z.string(), experiment_id: z.string().optional(), idempotency_key: z.string().min(1).max(128),
+      strategy: z.object({
+        schema_version: z.literal("ml-strategy-version.v1"),
+        name: z.string().min(1).max(128),
+        learner: z.object({ kind: z.literal("lightgbm_regression"), profile: z.literal("byq-lightgbm-cpu-v1") }).strict(),
+        feature_set: z.object({ id: z.literal("price-volume-basic-v1") }).strict(),
+        target: z.object({ kind: z.literal("forward_return"), horizon_sessions: z.number().int().min(1).max(20) }).strict(),
+        split: z.object({ train: dateWindowSchema, validation: dateWindowSchema, prediction: dateWindowSchema }).strict(),
+        learner_parameters: z.object({
+          num_leaves: z.number().int().min(2).max(255).optional(),
+          learning_rate: z.number().min(0.001).max(0.5).optional(),
+          max_depth: z.number().int().min(-1).max(32).optional(),
+          min_data_in_leaf: z.number().int().min(5).max(10000).optional(),
+          feature_fraction: z.number().min(0.1).max(1).optional(),
+          bagging_fraction: z.number().min(0.1).max(1).optional(),
+          num_boost_round: z.number().int().min(10).max(2000).optional(),
+          early_stopping_rounds: z.number().int().min(1).max(200).optional(),
+        }).strict().optional(),
+        signal_policy: z.object({
+          kind: z.literal("top_n_equal_weight"), top_n: z.number().int().min(1).max(100),
+          rebalance: z.enum(["daily", "weekly", "monthly"]),
+        }).strict(),
+      }).strict(),
+    } },
+    (args) => byqMlStrategyCreate(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_ml_training_create",
+    { description: "Create an approval-gated trusted LightGBM training run from a human-approved ML strategy and frozen stock-pool snapshot.", inputSchema: {
+      task_id: z.string(), experiment_id: z.string().optional(), ml_strategy_artifact_id: z.string(),
+      stock_pool_snapshot_id: z.string(), idempotency_key: z.string().min(1).max(128),
+    } },
+    (args) => byqMlTrainingCreate(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_ml_training_get",
+    { description: "Read one owner-scoped trusted ML training lifecycle and safe result metadata.", inputSchema: {
+      training_run_id: z.string().regex(/^mlrun_[0-9a-f]{32}$/),
+    } },
+    (args) => byqMlTrainingGet(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_ml_training_cancel",
+    { description: "Cancel an eligible approval-gated ML training run without accessing the model object.", inputSchema: {
+      training_run_id: z.string().regex(/^mlrun_[0-9a-f]{32}$/),
+    } },
+    (args) => byqMlTrainingCancel(args, trustedContext),
   );
   server.registerTool(
     "byq_signal_snapshot_get",

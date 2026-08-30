@@ -10,6 +10,21 @@ from tests.workspace_helpers import trusted_agent_context
 client = TestClient(app)
 
 
+def test_ml_capabilities_and_workspace_are_closed_safe_projections() -> None:
+    headers = trusted_agent_context("ml-capability-owner")
+    capabilities = client.get("/v1/research/ml/capabilities", headers=headers)
+    assert capabilities.status_code == 200
+    body = capabilities.json()
+    assert body["schema_version"] == "ml-capabilities.v1"
+    assert body["capabilities"][0]["learner"]["kind"] == "lightgbm_regression"
+    assert "xgboost" not in capabilities.text.lower()
+    workspace = client.get("/v1/research/ml/workspace", headers=headers)
+    assert workspace.status_code == 200
+    assert workspace.json()["schema_version"] == "ml-agent-workspace.v1"
+    assert workspace.json()["prediction_available_via_agent"] is False
+    assert "object_reference" not in workspace.text and "rows" not in workspace.text
+
+
 def test_ml_strategy_version_and_human_approval_are_owner_scoped() -> None:
     headers = trusted_agent_context("ml-api-owner", actor="ml-api-owner")
     task = client.post("/v1/research/tasks", headers=headers, json={
@@ -49,6 +64,28 @@ def test_ml_strategy_endpoint_rejects_open_python_contract() -> None:
     })
     assert response.status_code == 422
     assert "unknown fields" in response.text
+
+
+def test_ml_training_requires_separate_human_strategy_approval() -> None:
+    headers = trusted_agent_context("ml-training-approval-owner")
+    task = client.post("/v1/research/tasks", headers=headers, json={
+        "owner_principal": "ml-training-approval-owner", "title": "ML approval",
+        "objective": "Require approval", "trace_id": "trace-ml-training-approval",
+        "idempotency_key": "task-ml-training-approval",
+    }).json()
+    version = client.post("/v1/research/ml/strategies/versions", headers=headers, json={
+        "task_id": task["task_id"], "strategy": valid_strategy(),
+        "trace_id": "trace-ml-training-approval", "idempotency_key": "version-ml-training-approval",
+    }).json()
+    response = client.post("/v1/research/ml/training-runs", headers=headers, json={
+        "task_id": task["task_id"],
+        "ml_strategy_artifact_id": version["artifact"]["artifact_id"],
+        "stock_pool_snapshot_id": "snapshot_not_reached",
+        "trace_id": "trace-ml-training-approval",
+        "idempotency_key": "training-ml-training-approval",
+    })
+    assert response.status_code == 422
+    assert "explicit human approval" in response.text
 
 
 def test_ml_training_read_is_workspace_scoped_and_returns_safe_not_found() -> None:

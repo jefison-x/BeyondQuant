@@ -59,9 +59,9 @@
       "purpose": "创建可审计 LightGBM 研究，完成训练、样本外预测、冻结信号和回测。",
       "keywords": ["机器学习", "LightGBM", "训练模型", "模型预测", "量化模型"],
       "prerequisites": ["冻结股票池", "严格时间顺序的训练、验证和预测窗口", "策略人工批准"],
-      "support": ["EXPLAIN", "NAVIGATE", "UNAVAILABLE"],
-      "agent_tools": [],
-      "limitations": ["Phase 77 尚未向 Product Agent 暴露 ML MCP；只支持 LightGBM 封闭能力"]
+      "support": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE"],
+      "agent_tools": ["byq_ml_capabilities", "byq_ml_workspace_get", "byq_ml_strategy_create", "byq_ml_training_create", "byq_ml_training_get", "byq_ml_training_cancel"],
+      "limitations": ["只支持 LightGBM 封闭能力；策略批准必须由用户在模型研究页完成；Phase 78 不开放 Agent 预测、冻结信号或 ML 回测串联"]
     },
     {
       "capability_id": "backtest-management",

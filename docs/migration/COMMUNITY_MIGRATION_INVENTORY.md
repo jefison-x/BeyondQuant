@@ -919,6 +919,21 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+## Phase 78 ML Agent create/training audit
+
+The read-only Community machine-learning imports, strategy examples, backtest
+integration and Agent tool policy were inspected before implementation.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 78 disposition |
+|---|---|---|---|
+| Model code checked installed libraries before choosing an approach | Users need a truthful capability check before configuring a study. | `PORT_UX` / `REFACTOR` | Add a closed BYQ capability catalogue and require the ML researcher to query it first. |
+| sklearn/scipy/statsmodels/XGBoost/LightGBM imports exposed to strategy code | Arbitrary in-process ML execution violates the trusted-worker and closed-contract boundary. | `DROP` / `REPLACE` | Permit only ADR-0043 LightGBM regression in the isolated ML Worker; DSH only creates BYQ domain intent through MCP. |
+| Backtest examples fitted and predicted inside strategy execution | Training, prediction, frozen signal production and deterministic backtest must have separate immutable lineage. | `DROP` / `REPLACE` | Preserve the Phase 71–74 pipeline; Phase 78 exposes strategy creation and training lifecycle only. |
+| Legacy Agent tool policy and internal APIs | No compatible owner/workspace, approval, Product API or MCP boundary. | `REFERENCE_ONLY` / `REPLACE` | Add a least-privilege ML role/skill/delegate; human ML strategy approval stays outside the Agent. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.
+
 ## Phase 75 Product Agent capability pre-implementation audit
 
 The read-only Community Agent、Strategy、Backtest、Paper Trading、Profile、Models、Assets、

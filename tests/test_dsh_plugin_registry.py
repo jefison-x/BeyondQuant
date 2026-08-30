@@ -73,12 +73,17 @@ class PluginRegistryTests(unittest.TestCase):
             "- id: delegate-backtest-analysis", 1
         )[0]
         backtest = composition.split("- id: delegate-backtest-analysis", 1)[1].split(
-            "# Qualified", 1
+            "- id: delegate-ml-research", 1
         )[0]
+        ml = composition.split("- id: delegate-ml-research", 1)[1].split("# Qualified", 1)[0]
         self.assertIn("- web_search", market)
         self.assertIn("- byq_web_evidence_create", market)
-        self.assertTrue(all("web_search" not in block for block in (factor, strategy, backtest)))
-        self.assertTrue(all("byq_web_evidence_create" not in block for block in (factor, strategy, backtest)))
+        self.assertTrue(all("web_search" not in block for block in (factor, strategy, backtest, ml)))
+        self.assertTrue(all("byq_web_evidence_create" not in block for block in (factor, strategy, backtest, ml)))
+        self.assertIn("- byq_ml_capabilities", ml)
+        self.assertIn("- byq_ml_training_create", ml)
+        self.assertNotIn("byq_ml_prediction", ml)
+        self.assertNotIn("byq_strategy_approve", ml)
         self.assertNotIn("web_fetch", composition)
         self.assertNotIn("ask_user", composition)
         self.assertNotIn("spill-local", composition)
