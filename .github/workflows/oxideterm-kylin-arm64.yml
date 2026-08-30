@@ -6,11 +6,6 @@ on:
       - build/oxideterm-kylin-arm64
     paths:
       - .github/workflows/oxideterm-kylin-arm64.yml
-  pull_request:
-    branches:
-      - main
-    paths:
-      - .github/workflows/oxideterm-kylin-arm64.yml
   workflow_dispatch:
 
 permissions:
@@ -19,7 +14,7 @@ permissions:
 jobs:
   build:
     name: Kylin V11 ARM64 (Ubuntu 22.04 ARM64 / glibc 2.35 baseline)
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, linux, x64, byq]
     timeout-minutes: 180
 
     steps:
@@ -30,6 +25,14 @@ jobs:
           ref: main
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Show host capacity
+        shell: bash
+        run: |
+          set -euxo pipefail
+          uname -a
+          docker version
+          df -h .
 
       - name: Enable ARM64 emulation
         uses: docker/setup-qemu-action@v3
