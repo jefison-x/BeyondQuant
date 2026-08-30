@@ -21,7 +21,8 @@ def test_ml_capabilities_and_workspace_are_closed_safe_projections() -> None:
     workspace = client.get("/v1/research/ml/workspace", headers=headers)
     assert workspace.status_code == 200
     assert workspace.json()["schema_version"] == "ml-agent-workspace.v1"
-    assert workspace.json()["prediction_available_via_agent"] is False
+    assert workspace.json()["prediction_available_via_agent"] is True
+    assert workspace.json()["prediction_runs"] == []
     assert "object_reference" not in workspace.text and "rows" not in workspace.text
 
 

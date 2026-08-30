@@ -919,6 +919,20 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+## Phase 79 ML prediction and Backtest conversation audit
+
+The read-only Community ML prediction examples and Backtest integration were
+inspected before implementation.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 79 disposition |
+|---|---|---|---|
+| Predict first, then validate the strategy with a Backtest | Users need one understandable research sequence with visible prerequisites and status. | `PORT_UX` / `REFACTOR` | Add prediction create/get and derive an ML `backtest-task.v1` from the existing PredictionRun and frozen signal. |
+| Model fitting and `predict` embedded in arbitrary Backtest strategy source | Training, inference, signal production and Backtest need separate immutable lineage. | `DROP` / `REPLACE` | Keep execution in the trusted ML Worker and native Backtest; the Backtest consumes only the standard frozen signal manifest. |
+| Direct model objects, feature rows and legacy internal Agent APIs | These violate the trusted-worker, owner/workspace and MCP boundaries. | `REFERENCE_ONLY` / `DROP` / `REPLACE` | Return bounded metadata through BYQ MCP, enforce per-action approval, and never expose model/object/raw-row payloads to DSH or Browser. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.
+
 ## Phase 78 ML Agent create/training audit
 
 The read-only Community machine-learning imports, strategy examples, backtest

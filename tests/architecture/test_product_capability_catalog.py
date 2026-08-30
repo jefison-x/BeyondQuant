@@ -50,6 +50,7 @@ class ProductCapabilityCatalogTests(unittest.TestCase):
         allowed = (
             "byq_ml_capabilities", "byq_ml_workspace_get", "byq_ml_strategy_create",
             "byq_ml_training_create", "byq_ml_training_get", "byq_ml_training_cancel",
+            "byq_ml_prediction_create", "byq_ml_prediction_get",
         )
         for tool in allowed:
             self.assertIn(f'"{tool}"', mcp)
@@ -58,8 +59,8 @@ class ProductCapabilityCatalogTests(unittest.TestCase):
         ml_role = roles.split('role_id="ml_researcher"', 1)[1].split("    ),", 1)[0]
         ml_delegate = composition.split("- id: delegate-ml-research", 1)[1].split("# Qualified", 1)[0]
         for prohibited in (
-            "byq_ml_strategy_approve", "byq_ml_prediction_create", "byq_ml_prediction_get",
-            "byq_strategy_approve", "byq_backtest_task_create", "byq_artifact_create",
+            "byq_ml_strategy_approve", "byq_strategy_approve",
+            "byq_backtest_task_prepare", "byq_backtest_task_create", "byq_artifact_create",
         ):
             self.assertNotIn(prohibited, ml_role)
             self.assertNotIn(prohibited, ml_delegate)
@@ -68,3 +69,4 @@ class ProductCapabilityCatalogTests(unittest.TestCase):
             self.assertNotIn(prohibited, registration.lower())
         self.assertIn("never create or decide that", skill)
         self.assertIn("ML Strategy Approval", contract)
+        self.assertIn("backtesttask_ml_", contract)

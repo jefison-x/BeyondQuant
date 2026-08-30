@@ -81,4 +81,5 @@ def test_product_research_skill_requires_evidence_bound_public_answers() -> None
     assert "newest listed session" in market_contract
     assert "byq_ml_capabilities" in ml_contract
     assert "never create or decide that" in ml_contract
-    assert "Prediction, frozen-signal creation" in ml_contract
+    assert "byq_ml_prediction_create" in ml_contract
+    assert "Only the derived ML backtest task" in ml_contract

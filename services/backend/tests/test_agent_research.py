@@ -88,12 +88,18 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
         "byq_ml_training_create", "byq_ml_training_get", "byq_ml_training_cancel",
     } <= ml_tools
     assert not {
-        "byq_ml_strategy_approve", "byq_ml_prediction_create", "byq_ml_prediction_get",
-        "byq_strategy_approve", "byq_backtest_task_create", "byq_artifact_create",
+        "byq_ml_strategy_approve", "byq_strategy_approve",
+        "byq_backtest_task_prepare", "byq_backtest_task_create", "byq_artifact_create",
     } & ml_tools
     assert ROLE_BY_ID["ml_researcher"].approval_required_actions == (
-        "byq_ml_training_create", "byq_ml_training_cancel",
+        "byq_ml_training_create", "byq_ml_training_cancel", "byq_ml_prediction_create",
+        "byq_backtest_task_execute", "byq_backtest_task_cancel",
     )
+    assert ROLE_BY_ID["ml_researcher"].version == "1.1.0"
+    assert {
+        "byq_ml_prediction_create", "byq_ml_prediction_get", "byq_backtest_task_get",
+        "byq_backtest_task_execute", "byq_backtest_task_cancel",
+    } <= ml_tools
 
 
 def test_pool_creation_is_orchestrator_only_and_not_approval_gated() -> None:

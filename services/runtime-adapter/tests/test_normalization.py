@@ -283,6 +283,27 @@ def test_internal_control_activity_is_hidden_but_domain_research_is_public() -> 
     assert "capability" not in session_started[0]["payload"]
 
 
+def test_ml_prediction_and_derived_backtest_have_closed_public_activities() -> None:
+    state = NormalizationState()
+    prediction = normalize(
+        notify("tool/call", {"callId": "ml-pred-1", "name": "byq_ml_prediction_create"}),
+        state,
+    )
+    assert prediction[0]["payload"]["phase"] == "strategy"
+    assert prediction[0]["payload"]["label"] == "生成样本外预测与冻结信号"
+    assert prediction[0]["payload"]["agent_label"] == "模型研究 Agent"
+    assert prediction[0]["payload"]["skill_label"] == "模型研究 Skill"
+    assert "capability" not in prediction[0]["payload"]
+
+    backtest = normalize(
+        notify("tool/call", {"callId": "ml-bt-1", "name": "byq_backtest_task_execute"}),
+        state,
+    )
+    assert backtest[0]["payload"]["phase"] == "backtest"
+    assert backtest[0]["payload"]["label"] == "执行回测任务"
+    assert "arguments" not in backtest[0]["payload"]
+
+
 def test_raw_chunks_and_unknown_events_do_not_cross_the_boundary() -> None:
     assert normalize(notify("assistant/chunk", {"text": "private partial"})) == []
     assert normalize(notify("request/context", {"credentials": "private"})) == []

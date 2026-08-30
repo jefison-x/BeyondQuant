@@ -678,7 +678,7 @@ BacktestJob，提供 prepare/create/execute/get/cancel MCP。不得新建第二�
 增加最小权限 ML researcher role/skill/delegate 和 capability/workspace/strategy/training MCP；DSH 不训练、
 不推理、不读取模型对象，策略批准保持人工边界。
 
-### Phase 79 — ML prediction, frozen signal and Backtest conversation closure（`AUTHORIZED`）
+### Phase 79 — ML prediction, frozen signal and Backtest conversation closure（`COMPLETE`）
 
 增加 prediction/status MCP、封闭 WorkflowTrace 投影并接入 Phase 77 Backtest task；完成真实 PostgreSQL、
 restart、two-user、no-mock Product API、desktop/mobile Chrome MCP 与说明/准备/执行行为评测。

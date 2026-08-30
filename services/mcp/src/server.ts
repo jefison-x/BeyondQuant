@@ -92,6 +92,8 @@ import { proposeWorkflowCard, workflowCardProposalSchema } from "./workflow-card
 import { productHelpInputSchema, queryProductHelp } from "./product-help.js";
 import {
   fetchByqMlCapabilities,
+  fetchByqMlPredictionCreate,
+  fetchByqMlPredictionGet,
   fetchByqMlStrategyCreate,
   fetchByqMlTrainingCancel,
   fetchByqMlTrainingCreate,
@@ -419,6 +421,20 @@ async function byqMlTrainingCancel(args: { training_run_id: string }, extra: unk
   const context = completeAgentContext(extra);
   return context ? fetchByqMlTrainingCancel(
     BACKEND_URL, args.training_run_id, trustedBackendFetcher(context),
+  ) : agentContextUnavailable();
+}
+
+async function byqMlPredictionCreate(args: MlRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMlPredictionCreate(
+    BACKEND_URL, { ...args, trace_id: context.trace_id }, trustedBackendFetcher(context),
+  ) : agentContextUnavailable();
+}
+
+async function byqMlPredictionGet(args: { prediction_run_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMlPredictionGet(
+    BACKEND_URL, args.prediction_run_id, trustedBackendFetcher(context),
   ) : agentContextUnavailable();
 }
 
@@ -796,7 +812,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_backtest_task_get",
     {
       description: "Read the derived backtest-task.v1 status and component lineage.",
-      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_[0-9a-f]{32}$/) },
+      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_(?:ml_)?[0-9a-f]{32}$/) },
     },
     (args) => byqBacktestTaskGet(args, trustedContext),
   );
@@ -804,7 +820,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_backtest_task_execute",
     {
       description: "Execute an approved task only after trusted signal production created an immutable frozen snapshot.",
-      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_[0-9a-f]{32}$/) },
+      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_(?:ml_)?[0-9a-f]{32}$/) },
     },
     (args) => byqBacktestTaskExecute(args, trustedContext),
   );
@@ -812,7 +828,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_backtest_task_cancel",
     {
       description: "Cancel the active signal-preparation or backtest component when its BYQ state transition permits cancellation.",
-      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_[0-9a-f]{32}$/) },
+      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_(?:ml_)?[0-9a-f]{32}$/) },
     },
     (args) => byqBacktestTaskCancel(args, trustedContext),
   );
@@ -885,6 +901,28 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       training_run_id: z.string().regex(/^mlrun_[0-9a-f]{32}$/),
     } },
     (args) => byqMlTrainingCancel(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_ml_prediction_create",
+    { description: "Create an approval-gated prediction run that freezes out-of-sample ranking, standard signals, and a derived backtest-task.v1 reference.", inputSchema: {
+      task_id: z.string(), experiment_id: z.string().optional(), model_artifact_id: z.string(),
+      approval_artifact_id: z.string(),
+      execution: z.object({
+        initial_capital: z.number().positive(), lot_size: z.number().int().positive(),
+        commission_rate: z.number().min(0).max(1).optional(),
+        stamp_tax_rate: z.number().min(0).max(1).optional(),
+        slippage_rate: z.number().min(0).max(1).optional(),
+      }).strict(),
+      idempotency_key: z.string().min(1).max(128),
+    } },
+    (args) => byqMlPredictionCreate(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_ml_prediction_get",
+    { description: "Read safe prediction, frozen-signal, and derived backtest-task status without model objects or raw feature rows.", inputSchema: {
+      prediction_run_id: z.string().regex(/^mlpred_[0-9a-f]{32}$/),
+    } },
+    (args) => byqMlPredictionGet(args, trustedContext),
   );
   server.registerTool(
     "byq_signal_snapshot_get",

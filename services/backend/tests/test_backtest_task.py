@@ -1,7 +1,10 @@
 from app.backtest_task import (
+    is_ml_backtest_task,
+    ml_prediction_id_from_task,
     project_backtest_task,
     signal_job_id_from_task,
     task_id_from_signal_job,
+    task_id_from_ml_prediction,
 )
 
 
@@ -22,6 +25,15 @@ def test_task_identity_is_reversible_and_bounded_to_signal_job():
     task = task_id_from_signal_job(signal)
     assert task == "backtesttask_0123456789abcdef0123456789abcdef"
     assert signal_job_id_from_task(task) == signal
+
+
+def test_ml_task_identity_is_reversible_and_never_aliases_signal_job():
+    prediction = "mlpred_0123456789abcdef0123456789abcdef"
+    task = task_id_from_ml_prediction(prediction)
+    assert task == "backtesttask_ml_0123456789abcdef0123456789abcdef"
+    assert is_ml_backtest_task(task) is True
+    assert ml_prediction_id_from_task(task) == prediction
+    assert is_ml_backtest_task("backtesttask_0123456789abcdef0123456789abcdef") is False
 
 
 def test_prepare_is_read_only_and_reports_missing_approval():
@@ -67,3 +79,20 @@ def test_running_signal_job_never_claims_unsafe_cancellation():
     }))
     assert task["phase"] == "producing_signals"
     assert task["actions"]["can_cancel"] is False
+
+
+def test_completed_ml_prediction_is_the_same_derived_backtest_task_contract():
+    task = project_backtest_task(**base(
+        signal_job={
+            "job_id": "mlpred_0123456789abcdef0123456789abcdef",
+            "status": "completed",
+            "result_artifact_id": "artifact_frozen_ml_signal",
+            "attempt_count": 1,
+        },
+        backtest_task_id="backtesttask_ml_0123456789abcdef0123456789abcdef",
+        signal_cancellable=False,
+    ))
+    assert task["schema_version"] == "backtest-task.v1"
+    assert task["phase"] == "ready_to_execute"
+    assert task["actions"] == {"can_create": False, "can_execute": True, "can_cancel": False}
+    assert task["references"]["signal_snapshot_artifact_id"] == "artifact_frozen_ml_signal"

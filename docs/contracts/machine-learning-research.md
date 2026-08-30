@@ -174,3 +174,10 @@ Phase 78 增加 Product Agent 的最小 ML 创建与训练面。`byq_ml_capabili
 对象引用或 raw feature rows。ML Strategy Approval 仍是模型研究页中的独立人工动作，Agent 无审批工具；
 训练创建与取消另外遵守 Agent action approval。Prediction、冻结信号与 ML Backtest 对话串联保留到
 Phase 79。
+
+Phase 79 增加 `byq_ml_prediction_create/get`。预测创建只接受 validated ModelArtifact、匹配的人工
+ML Strategy Approval 和封闭 execution profile；可信 ML Worker 继续产生不可变 PredictionSnapshot 与
+标准 `signal_snapshot`。Backend 为每个 PredictionRun 派生 `backtesttask_ml_*`，并使用既有
+`backtest-task.v1` 投影、`byq_backtest_task_get/execute/cancel` 与 BacktestJob，不新增任务表或状态机。
+DSH 不加载模型、不读取 raw feature/prediction rows、不排名、不构造信号；ML Agent 也不能调用通用
+backtest prepare/create 来替换 ML lineage。Prediction 创建、Backtest 执行和取消各自保持独立审批与审计。
