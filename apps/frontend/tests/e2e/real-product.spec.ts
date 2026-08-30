@@ -91,14 +91,16 @@ test("Phase 74 real LightGBM training to frozen-signal backtest journey", async 
   const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `Phase 74 ML 冻结池-${Date.now()}`, pool_type: "custom", description: "真实浏览器 LightGBM 闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
   expect(poolStatus).toBe(201);
   await page.goto("/model-research");
-  await expect(page.getByText("可靠 LightGBM 最小闭环")).toBeVisible();
-  await page.getByTestId("ml-save").click(); await expect(page.getByText("策略版本已冻结")).toBeVisible();
-  await page.getByTestId("ml-train").click(); await page.getByRole("button", { name: "批准并训练" }).click();
-  await expect(page.getByText(/训练：completed/)).toBeVisible({ timeout: 120_000 });
-  await expect(page.getByText("模型制品")).toBeVisible();
-  await page.getByTestId("ml-predict").click(); await expect(page.getByText(/预测：completed/)).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole("heading", { name: "模型研究目录与实验进程" })).toBeVisible();
+  await page.getByRole("button", { name: "新建模型研究" }).first().click();
+  await page.getByTestId("ml-save").click(); await expect(page.getByText("研究定义已冻结，可以进入训练")).toBeVisible();
+  await page.getByTestId("ml-train").click(); await page.getByRole("button", { name: "批准并开始训练" }).click();
+  await expect(page.getByTestId("ml-predict")).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByText("训练结果")).toBeVisible();
+  await page.getByTestId("ml-predict").click(); await expect(page.getByTestId("ml-backtest")).toBeVisible({ timeout: 120_000 });
+  await page.getByRole("tab", { name: "预测结果" }).click();
   await expect(page.getByRole("columnheader", { name: "排名" })).toBeVisible();
-  await page.getByTestId("ml-backtest").click(); await expect(page.getByText("completed", { exact: true }).last()).toBeVisible({ timeout: 120_000 });
+  await page.getByTestId("ml-backtest").click(); await expect(page.getByRole("button", { name: "查看完整回测" })).toBeVisible({ timeout: 120_000 });
   const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
   if (evidenceDir) { await page.screenshot({ path: `${evidenceDir}/01-lightgbm-desktop.png`, fullPage: true }); await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: `${evidenceDir}/02-lightgbm-mobile.png`, fullPage: true }); }
   expect([...unexpectedOrigins]).toEqual([]); expect(serverErrors).toEqual([]);
