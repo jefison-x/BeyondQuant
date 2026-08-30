@@ -1,0 +1,105 @@
+name: Build OxideTerm for Kylin V11 ARM64
+
+on:
+  push:
+    branches:
+      - build/oxideterm-kylin-arm64
+    paths:
+      - .github/workflows/oxideterm-kylin-arm64.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Kylin V11 ARM64 (Ubuntu 22.04 / glibc 2.35 baseline)
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout upstream OxideTerm
+        uses: actions/checkout@v4
+        with:
+          repository: AnalyseDeCircuit/oxideterm
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Show build baseline
+        shell: bash
+        run: |
+          set -euxo pipefail
+          uname -a
+          ldd --version | head -1
+          git rev-parse HEAD
+
+      - name: Install Rust 1.94.1
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.94.1
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Install Linux build and packaging dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export EXTRA_PACKAGES="curl file patchelf desktop-file-utils dpkg-dev rpm freerdp2-dev"
+          bash scripts/ci/install-linux-deps.sh
+
+      - name: Install ARM64 AppImage tooling
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -L --retry 3 \
+            -o appimagetool \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
+          echo "a48972e5ae91c944c5a7c80214e7e0a42dd6aa3ae979d8756203512a74ff574d  appimagetool" | sha256sum --check --strict
+          chmod +x appimagetool
+          sudo mv appimagetool /usr/local/bin/appimagetool
+
+      - name: Build and package OxideTerm ARM64
+        shell: bash
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          set -euxo pipefail
+          python3 scripts/release/package_native.py aarch64-unknown-linux-gnu
+
+      - name: Verify GLIBC compatibility
+        shell: bash
+        run: |
+          set -euxo pipefail
+          BIN=target/aarch64-unknown-linux-gnu/release/oxideterm-native
+          test -x "$BIN"
+          echo "Highest GLIBC symbol required by oxideterm-native:"
+          max_glibc="$(objdump -T "$BIN" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -Vu | tail -1)"
+          echo "$max_glibc"
+          printf '%s\n' "$max_glibc" > dist/GLIBC_REQUIREMENT.txt
+          printf 'Built on: ' >> dist/GLIBC_REQUIREMENT.txt
+          ldd --version | head -1 >> dist/GLIBC_REQUIREMENT.txt
+          if [ "$(printf '%s\n' GLIBC_2.38 "$max_glibc" | sort -V | tail -1)" != "GLIBC_2.38" ]; then
+            echo "ERROR: binary requires newer than GLIBC 2.38: $max_glibc" >&2
+            exit 1
+          fi
+          echo "Kylin V11 GLIBC 2.38 compatibility check passed."
+
+      - name: Inspect Debian package
+        shell: bash
+        run: |
+          set -euxo pipefail
+          deb="$(find dist -maxdepth 1 -type f -name '*.deb' | head -1)"
+          test -n "$deb"
+          dpkg-deb -I "$deb" | sed -n '1,120p'
+
+      - name: Upload Kylin-compatible packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: OxideTerm-KylinV11-arm64-glibc238
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            dist/*.deb
+            dist/*_portable.tar.gz
+            dist/*.AppImage
+            dist/GLIBC_REQUIREMENT.txt
