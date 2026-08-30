@@ -56,4 +56,3 @@ JSON-RPC protocol、长期保留无界 idle process，或让 Gateway/Browser 读
 - DSH error reason 投影为 failed，Frontend 不再要求用户调整问题。
 - cleanup、owner/workspace、MCP-only domain、secret/raw-event boundary 和现有 cancellation tests
   保持绿色。
-

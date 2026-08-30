@@ -6,4 +6,3 @@ Frontend tests, full selective CI, a real Product API multi-turn journey across 
 desktop/mobile review, and process cleanup verification.
 
 Final command results and browser observations are recorded in `VALIDATION.md` before completion.
-

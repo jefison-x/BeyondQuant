@@ -7,4 +7,3 @@
 | Retryable error semantics | Legacy bounded error categories and retry guidance | `PORT_UX` | Preserve honest retry guidance, but derive authority from BYQ WorkflowTrace. |
 
 The Community repository was inspected read-only and was not modified.
-

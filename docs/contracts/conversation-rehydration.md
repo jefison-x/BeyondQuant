@@ -26,4 +26,3 @@ Product 对话恢复合同。它只在一个 released/restarted DSH process 的�
 
 超过边界的 Runtime request 返回 validation failure；Gateway 正常投影会从最近 completed turn
 向前截取到合同上限，因此普通长对话不会依赖 DSH raw persistence。
-
