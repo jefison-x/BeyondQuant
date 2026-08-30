@@ -919,6 +919,23 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+### Post-Phase 74 model-research workspace redesign audit（2026-08-30）
+
+The read-only Community `StrategyView.vue` and `BacktestView.vue` were inspected
+again before redesigning the BYQ model-research workspace. Community has no
+dedicated model-research page; its model configuration pages govern LLM
+credentials and are not a Product ML research analogue.
+
+| Community evidence | Reusable invariant / UX | Decision | Maintenance disposition |
+|---|---|---|---|
+| Strategy and Backtest use searchable task catalogs with a selected detail surface | Users find a named research asset first, then act on its current state. | `PORT_LAYOUT` / `PORT_UX` / `REFACTOR` | Reuse BYQ's existing `ManagementWorkspace` catalog/detail hierarchy for ML strategies and keep all reads on the Phase 74 Product API. |
+| Backtest surfaces status, summary and the next task near the selected result | A long-running workflow should present one truthful next action instead of every possible action at once. | `PORT_UX` / `REFACTOR` | Derive a four-stage research progress view and one stage-aware primary action from persisted TrainingRun, PredictionRun and Backtest state. |
+| Community ML execution remains embedded in arbitrary strategy/backtest source | Training and inference are not safely separable or auditable there. | `REFERENCE_ONLY` / `DROP` | Keep ADR-0043 trusted Worker, immutable artifacts and frozen-signal boundary; do not copy Community runtime or source execution. |
+| No Community model-research capability catalogue exists | Future learners need an explicit qualification and Product contract before appearing. | `REPLACE` | Organize the UI around an available-capability registry containing only the currently qualified LightGBM profile; do not render placeholder learners. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified or copied.
+
 ## Phase 71 machine-learning strategy pre-implementation audit
 
 The read-only Community strategy capability declarations, source validator,

@@ -823,8 +823,14 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   await expect(page.getByText("Python 策略脚本", { exact: true })).toBeVisible();
   await openNav(page, "模型研究");
   await expect(page).toHaveURL(/\/model-research$/);
-  await expect(page.getByRole("heading", { name: "模型研究" })).toBeVisible();
-  await expect(page.getByText("可靠 LightGBM 最小闭环")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "模型研究", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "模型研究目录与实验进程" })).toBeVisible();
+  await expect(page.getByText("当前仅展示已验证、可审计的模型能力")).toBeVisible();
+  await page.getByRole("button", { name: "新建模型研究" }).first().click();
+  await expect(page.getByRole("dialog", { name: "新建模型研究" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "新建模型研究" }).getByText("LightGBM 收益排序", { exact: true })).toBeVisible();
+  await expect(page.getByText("当前只开放通过运行验证的能力。")).toBeVisible();
+  await page.getByRole("dialog", { name: "新建模型研究" }).getByRole("button", { name: "取消" }).click();
   await openNav(page, "个性化");
   await expect(page.getByRole("heading", { name: "外观与主题" }).first()).toBeVisible();
   await openNav(page, "系统设置");
