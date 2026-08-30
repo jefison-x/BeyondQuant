@@ -24,6 +24,7 @@ from .contracts import (
 
 
 _CAPABILITIES: dict[str, tuple[str, str]] = {
+    "byq_product_help_query": ("review", "查询产品使用说明"),
     "byq_delegate_market_research": ("select", "开展市场研究"),
     "byq_delegate_factor_research": ("strategy", "开展因子研究"),
     "byq_delegate_strategy_research": ("strategy", "开展策略研究"),

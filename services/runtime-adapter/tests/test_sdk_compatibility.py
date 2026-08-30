@@ -62,6 +62,7 @@ def test_product_research_skill_requires_evidence_bound_public_answers() -> None
     skill_root = next(path for path in skill_roots if path.is_dir())
     role_contract = (skill_root / "byq-role-contracts/SKILL.md").read_text()
     market_contract = (skill_root / "byq-market-researcher/SKILL.md").read_text()
+    product_guide = (skill_root / "byq-product-guide/SKILL.md").read_text()
 
     assert "Do not write a preface" in role_contract
     assert "unqueried or unavailable profitability" in role_contract
@@ -69,6 +70,9 @@ def test_product_research_skill_requires_evidence_bound_public_answers() -> None
     assert "performs no domain write" in role_contract
     assert "It creates no ResearchTask" in role_contract
     assert "temporary trend or comparison request creates no" in market_contract
+    assert "byq_product_help_query" in product_guide
+    assert "do not start a domain AgentRun" in product_guide
+    assert "Product help never authorizes" in product_guide
     assert "最近 N 个交易日" in market_contract
     assert "last_close / first_pre_close - 1" in market_contract
     assert "last_close / first_close - 1" in market_contract

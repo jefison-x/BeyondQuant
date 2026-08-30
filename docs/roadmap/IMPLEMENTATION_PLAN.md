@@ -663,12 +663,12 @@ journey。HIST 不在本阶段范围内，后续必须由新的 Accepted ADR 和
 建立 `product-capability-catalog.v1`，覆盖稳定用户路由、受众、前置条件、Agent 支持等级、MCP tool
 映射和限制；CI 拒绝重复 identity、无效 route、未知 tool 与越权声明。本阶段不改 runtime/schema/API/UI。
 
-### Phase 76 — Xiaoba product guide（`AUTHORIZED`）
+### Phase 76 — Xiaoba product guide（`COMPLETE`）
 
 实现精简 `byq-product-guide` skill、按领域 references、只读 `byq_product_help_query` MCP 和固定
 Product route 投影。说明类请求不得产生领域 mutation；Production Product DSH 不挂载源码。
 
-### Phase 77 — Backtest task facade（`PLANNED`）
+### Phase 77 — Backtest task facade（`AUTHORIZED`）
 
 以 `backtest-task.v1` 聚合既有 ResearchTask、Approval、MarketReadiness、SignalProducerJob 和
 BacktestJob，提供 prepare/create/execute/get/cancel MCP。不得新建第二工作流或让模型构造 raw bars/signals。

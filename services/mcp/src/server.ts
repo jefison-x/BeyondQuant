@@ -87,6 +87,7 @@ import {
   type WebEvidenceCreateRequest,
 } from "./research.js";
 import { proposeWorkflowCard, workflowCardProposalSchema } from "./workflow-card.js";
+import { productHelpInputSchema, queryProductHelp } from "./product-help.js";
 
 const SERVICE = "beyondquant-mcp";
 const VERSION = "0.1.0";
@@ -469,6 +470,14 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       inputSchema: {},
     },
     byqHealth,
+  );
+  server.registerTool(
+    "byq_product_help_query",
+    {
+      description: "Search the versioned BYQ product guide and return bounded fixed Product routes. Read-only; this never grants access or mutates Domain state.",
+      inputSchema: productHelpInputSchema.shape,
+    },
+    (args) => queryProductHelp(args),
   );
   server.registerTool(
     "byq_workflow_card_propose",
