@@ -85,9 +85,10 @@ class AgentRole:
 ROLE_CATALOG: tuple[AgentRole, ...] = (
     AgentRole(
         role_id="quant_orchestrator",
-        version="1.4.0",
+        version="1.5.0",
         description="Coordinates bounded research hand-offs and explicit owner-scoped domain actions.",
         allowed_tools=(
+            "byq_product_help_query",
             "byq_agent_context",
             "byq_agent_run_start",
             "byq_agent_authorize",

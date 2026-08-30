@@ -1,14 +1,14 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=75 -->
+<!-- byq:current-completed-phase=76 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 75**——依据 ADR-0044 建立版本化
-  `product-capability-catalog.v1`，覆盖全部稳定 Product 用户路由、受众、前置条件、Agent 支持等级、
-  MCP 对应关系和限制，并由架构测试阻止无效 route、未知 tool、越权支持声明和目录漂移。本阶段不改
-  Product runtime、schema、API 或 UI；Phase 74 的 LightGBM 浏览器闭环保持不变。
+- 当前已完成阶段：**Phase 76**——在 Phase 75 能力目录上交付 `byq-product-guide` 精简路由技能、六组
+  按需领域 reference 和只读 `byq_product_help_query` MCP。查询返回版本化、固定 Product route、受众、
+  前置条件和真实限制，默认排除管理员能力且不暴露内部 tool/API；说明请求不创建 AgentRun、研究对象、
+  审批或审计，也不授予后续领域动作权限。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -318,6 +318,11 @@ Phase 75 Product Capability Contract Baseline 依据 ADR-0044 建立 BYQ-owned�
 Agent API/runtime/direct internal path 保持 `DROP`/`REPLACE`。本阶段未增加 Product DSH tool、领域写、
 第二工作流或 UI。
 
+Phase 76 Xiaoba Product Guide 交付自动发现的 `byq-product-guide`，以精简 SKILL 路由到市场研究、股票池/
+策略、模型研究/回测、模拟操盘、用户设置和管理员六类 reference。只读 MCP 对目录做有界搜索，返回
+`product-help-result.v1` 与固定 route；管理员结果默认隐藏，显式说明也不授予权限。模型配置与量化模型
+研究被明确区分，Product DSH 仍不挂载源码，说明请求零领域 mutation。
+
 Post-Phase 74 Model Research Navigation Maintenance 将量化模型研究从个人“模型配置”提升为
 “策略管理”与“回测管理”之间的一级业务工作台；个人模型设置继续只管理 LLM 凭据、档案与 Agent
 绑定。策略编辑器为研究任务、策略身份、说明、参数、数据依赖和 Python 脚本提供持久可见标题与
@@ -330,8 +335,8 @@ always-cleanup、重型任务锁、内存 preflight 和 zero-resource verificati
 
 ## 当前授权边界
 
-- Phase 49-75 与相应 Accepted ADR/计划均已完成。
-- 维护者已明确授权按 ADR-0044 顺序推进 Phase 76–79；每阶段仍必须独立 worktree/branch/PR，前一阶段
+- Phase 49-76 与相应 Accepted ADR/计划均已完成。
+- 维护者已明确授权按 ADR-0044 顺序推进 Phase 77–79；每阶段仍必须独立 worktree/branch/PR，前一阶段
   合并后才能开始下一阶段。该授权不包含 HIST、实盘券商、AutoML、GPU 或在线学习。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。

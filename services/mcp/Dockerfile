@@ -7,6 +7,7 @@ RUN npm ci
 
 COPY services/mcp/src ./src
 COPY services/mcp/tests ./tests
+COPY docs/contracts/product-capability-catalog.v1.json /app/product-capability-catalog.v1.json
 RUN npm run build
 
 ENV NODE_ENV=production
