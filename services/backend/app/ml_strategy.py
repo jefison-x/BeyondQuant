@@ -184,3 +184,33 @@ def effective_lightgbm_parameters(strategy: dict[str, object]) -> dict[str, obje
     if not isinstance(supplied, dict):
         raise ValueError("ML strategy learner parameters are invalid")
     return {**supplied, **FORCED_PARAMETERS}
+
+
+def ml_capability_catalog() -> dict[str, object]:
+    """Return closed public metadata without probing a runtime or exposing object paths."""
+    return {
+        "schema_version": "ml-capabilities.v1",
+        "capabilities": [{
+            "capability_id": "lightgbm-return-ranking",
+            "name": "LightGBM 收益排序",
+            "learner": {"kind": "lightgbm_regression", "profile": EXECUTION_PROFILE},
+            "feature_set": {"id": FEATURE_SET, "feature_order": list(FEATURE_ORDER)},
+            "target": {"kind": "forward_return", "horizon_sessions": {"min": 1, "max": 20}},
+            "signal_policy": {
+                "kind": "top_n_equal_weight",
+                "top_n": {"min": 1, "max": 100},
+                "rebalance": ["daily", "weekly", "monthly"],
+            },
+            "learner_parameter_defaults": dict(DEFAULT_PARAMETERS),
+            "learner_parameter_limits": {
+                key: {"min": minimum, "max": maximum, "type": expected.__name__}
+                for key, (expected, minimum, maximum) in PARAMETER_RULES.items()
+            },
+            "runtime_lock": RUNTIME_LOCK,
+        }],
+        "limitations": [
+            "closed LightGBM regression profile only",
+            "chronological train, validation and prediction splits only",
+            "no Python, SQL, URL, model upload, AutoML, GPU or online learning",
+        ],
+    }

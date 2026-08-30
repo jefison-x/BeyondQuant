@@ -153,7 +153,7 @@ from .strategy_artifact import (
     strategy_output_method,
     validate_version_content,
 )
-from .ml_strategy import normalize_ml_strategy, validate_ml_strategy_version
+from .ml_strategy import ml_capability_catalog, normalize_ml_strategy, validate_ml_strategy_version
 from .ml_training import (
     MLTrainingConflict,
     MLTrainingNotFound,
@@ -1580,6 +1580,96 @@ def export_strategy_version_artifact(artifact_id: str, request: Request) -> dict
     return _research_call(operation)
 
 
+def _ml_agent_artifact_projection(artifact: dict[str, Any]) -> dict[str, object] | None:
+    kind = artifact.get("kind")
+    allowed = {
+        "ml_strategy_version": {
+            "schema_version", "version_id", "name", "learner", "feature_set", "target",
+            "split", "learner_parameters", "signal_policy", "runtime_lock",
+        },
+        "ml_strategy_approval": {
+            "schema_version", "ml_strategy_version_id", "ml_strategy_artifact_id",
+            "decision", "rationale", "execution_authorized", "execution_outcome",
+        },
+        "ml_model": {
+            "schema_version", "training_run_id", "strategy_version_artifact_id",
+            "feature_snapshot_artifact_id", "stock_pool_snapshot_id", "split",
+            "feature_order", "best_iteration", "metrics", "counts", "runtime_lock",
+            "runtime_identity", "content_sha256",
+        },
+    }
+    if kind not in allowed:
+        return None
+    content = artifact.get("content")
+    safe_content = (
+        {key: value for key, value in content.items() if key in allowed[str(kind)]}
+        if isinstance(content, dict) else {}
+    )
+    return {
+        "artifact_id": artifact.get("artifact_id"),
+        "task_id": artifact.get("task_id"),
+        "kind": kind,
+        "status": artifact.get("status"),
+        "content_sha256": artifact.get("content_sha256"),
+        "created_at": artifact.get("created_at"),
+        "content": safe_content,
+    }
+
+
+def _approved_ml_strategy_artifact(
+    *, owner_principal: str, workspace_id: str, strategy_artifact_id: str
+) -> str | None:
+    for artifact in research_store.list_artifacts(owner_principal=owner_principal)["artifacts"]:
+        content = artifact.get("content")
+        if (
+            artifact.get("workspace_id") == workspace_id
+            and artifact.get("kind") == "ml_strategy_approval"
+            and artifact.get("status") == "validated"
+            and isinstance(content, dict)
+            and content.get("ml_strategy_artifact_id") == strategy_artifact_id
+            and content.get("decision") == "approved"
+            and content.get("execution_authorized") is True
+        ):
+            return str(artifact["artifact_id"])
+    return None
+
+
+@app.get("/v1/research/ml/capabilities")
+def get_ml_capabilities(request: Request) -> dict[str, object]:
+    _required_agent_context(request, include_workspace=True)
+    return ml_capability_catalog()
+
+
+@app.get("/v1/research/ml/workspace")
+def get_ml_agent_workspace(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    tasks = [
+        task for task in research_store.list_tasks(owner_principal=context["owner_principal"])["tasks"]
+        if task.get("workspace_id") == context["workspace_id"]
+    ]
+    pools = paper_store.list_pools(
+        trusted_owner=context["owner_principal"], limit=100, offset=0
+    )["pools"]
+    artifacts = [
+        projected
+        for artifact in research_store.list_artifacts(owner_principal=context["owner_principal"])["artifacts"]
+        if artifact.get("workspace_id") == context["workspace_id"]
+        for projected in [_ml_agent_artifact_projection(artifact)]
+        if projected is not None
+    ]
+    training_runs = ml_training_store.list_runs(
+        trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"]
+    )["runs"]
+    return {
+        "schema_version": "ml-agent-workspace.v1",
+        "tasks": tasks,
+        "pools": pools,
+        "artifacts": artifacts,
+        "training_runs": training_runs,
+        "prediction_available_via_agent": False,
+    }
+
+
 @app.post("/v1/research/ml/strategies/versions", status_code=201)
 def create_ml_strategy_version(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
@@ -1691,6 +1781,12 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
             raise ValueError("ml_strategy_artifact_id must reference a validated ML strategy version")
         if version["task_id"] != task["task_id"]:
             raise ValueError("ML strategy version does not belong to task")
+        if _approved_ml_strategy_artifact(
+            owner_principal=context["owner_principal"],
+            workspace_id=context["workspace_id"],
+            strategy_artifact_id=str(version["artifact_id"]),
+        ) is None:
+            raise ValueError("ML strategy requires explicit human approval before training")
         experiment_id = data.get("experiment_id")
         if experiment_id is not None:
             experiment = research_store.get_experiment(experiment_id)

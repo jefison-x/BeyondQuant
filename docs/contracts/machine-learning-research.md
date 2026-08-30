@@ -166,3 +166,11 @@ Phase 74 增加 owner/workspace-scoped Gateway/Product API 安全投影、typed 
 Browser 可查看有界状态、指标、排名、信号和 Backtest，但看不到模型对象路径、FeatureSnapshot/raw
 rows 或 raw Backtest manifest。真实 PostgreSQL/Compose、restart、two-user 和 Chrome MCP golden
 journey 已验证该边界。
+
+Phase 78 增加 Product Agent 的最小 ML 创建与训练面。`byq_ml_capabilities` 返回封闭能力与参数界限，
+`byq_ml_workspace_get` 只投影 owner/workspace-scoped 任务、股票池、安全 Artifact metadata 与训练状态；
+`byq_ml_strategy_create` 只接受本文冻结的 `ml-strategy-version.v1`；`byq_ml_training_create/get/cancel`
+只管理可信训练生命周期。MCP 自动绑定 trusted trace/owner/workspace，不接受 Python、SQL、URL、模型上传、
+对象引用或 raw feature rows。ML Strategy Approval 仍是模型研究页中的独立人工动作，Agent 无审批工具；
+训练创建与取消另外遵守 Agent action approval。Prediction、冻结信号与 ML Backtest 对话串联保留到
+Phase 79。

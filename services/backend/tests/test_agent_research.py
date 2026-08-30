@@ -41,13 +41,15 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
         "factor_researcher",
         "strategy_researcher",
         "backtest_analyst",
+        "ml_researcher",
     }
     strategy_tools = set(ROLE_BY_ID["strategy_researcher"].allowed_tools)
     assert "byq_strategy_validate" in strategy_tools
     assert "byq_strategy_approve" not in strategy_tools
     assert "byq_backtest_run" not in strategy_tools
     orchestrator = ROLE_BY_ID["quant_orchestrator"]
-    assert orchestrator.version == "1.6.0"
+    assert orchestrator.version == "1.7.0"
+    assert "ml_researcher" in orchestrator.delegate_to
     orchestrator_tools = set(orchestrator.allowed_tools)
     assert {"byq_pool_list", "byq_pool_get", "byq_pool_create"} <= orchestrator_tools
     assert {"byq_market_valuation", "byq_market_fundamentals"} <= orchestrator_tools
@@ -72,7 +74,7 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_web_evidence_create" in market_tools
     assert all(
         "byq_web_evidence_create" not in ROLE_BY_ID[role].allowed_tools
-        for role in ("factor_researcher", "strategy_researcher", "backtest_analyst")
+        for role in ("factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher")
     )
     assert ROLE_BY_ID["strategy_researcher"].version == "1.2.0"
     assert ROLE_BY_ID["backtest_analyst"].version == "1.1.0"
@@ -80,6 +82,18 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_research_task_create" in strategy_tools
     assert "byq_research_transition" not in strategy_tools
     assert "byq_pool_create" not in strategy_tools
+    ml_tools = set(ROLE_BY_ID["ml_researcher"].allowed_tools)
+    assert {
+        "byq_ml_capabilities", "byq_ml_workspace_get", "byq_ml_strategy_create",
+        "byq_ml_training_create", "byq_ml_training_get", "byq_ml_training_cancel",
+    } <= ml_tools
+    assert not {
+        "byq_ml_strategy_approve", "byq_ml_prediction_create", "byq_ml_prediction_get",
+        "byq_strategy_approve", "byq_backtest_task_create", "byq_artifact_create",
+    } & ml_tools
+    assert ROLE_BY_ID["ml_researcher"].approval_required_actions == (
+        "byq_ml_training_create", "byq_ml_training_cancel",
+    )
 
 
 def test_pool_creation_is_orchestrator_only_and_not_approval_gated() -> None:
@@ -115,7 +129,7 @@ def test_web_evidence_promotion_is_market_only_and_not_inherited() -> None:
     )
     assert allowed["decision"] == "allowed"
 
-    for role_id in ("factor_researcher", "strategy_researcher", "backtest_analyst"):
+    for role_id in ("factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher"):
         child = start(
             store,
             role_id=role_id,

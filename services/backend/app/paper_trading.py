@@ -267,7 +267,12 @@ class PaperTradingStore(PgStoreMixin):
             symbols_json JSONB NOT NULL,
             version TEXT NOT NULL,
             provenance_json JSONB NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL
+            created_at TIMESTAMPTZ NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            current_snapshot_id TEXT,
+            updated_at TIMESTAMPTZ,
+            metadata_version INTEGER NOT NULL DEFAULT 1,
+            deleted_at TIMESTAMPTZ
         )
         """,
         """

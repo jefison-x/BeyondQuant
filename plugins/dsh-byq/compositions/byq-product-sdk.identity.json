@@ -22,6 +22,13 @@
         "web-search"
       ]
     },
+    "ml_researcher": {
+      "kind": "subagent",
+      "plugins": [
+        "compaction",
+        "guard"
+      ]
+    },
     "quant_orchestrator": {
       "kind": "root",
       "plugins": [
@@ -38,7 +45,7 @@
       ]
     }
   },
-  "composition_hash": "sha256:b631cf6ef6b033c5c01c2b5217c0d187e19f653729f964a5dcd4e17847411bd1",
+  "composition_hash": "sha256:4516b373ab1bab4b0a7c4305c064b5351972fc9bc681c8132b127022f3676207",
   "enabled_plugin_ids": [
     "compaction",
     "guard",

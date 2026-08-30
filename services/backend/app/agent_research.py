@@ -85,7 +85,7 @@ class AgentRole:
 ROLE_CATALOG: tuple[AgentRole, ...] = (
     AgentRole(
         role_id="quant_orchestrator",
-        version="1.6.0",
+        version="1.7.0",
         description="Coordinates bounded research hand-offs and explicit owner-scoped domain actions.",
         allowed_tools=(
             "byq_product_help_query",
@@ -137,6 +137,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "factor_researcher",
             "strategy_researcher",
             "backtest_analyst",
+            "ml_researcher",
         ),
         approval_required_actions=(
             "byq_strategy_approve",
@@ -240,6 +241,29 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_backtest_task_cancel",
         ),
         evidence_kinds=("backtest_result",),
+    ),
+    AgentRole(
+        role_id="ml_researcher",
+        version="1.0.0",
+        description="Creates closed-profile ML research strategies and manages trusted training without approving strategies or accessing model objects.",
+        allowed_tools=(
+            "byq_agent_context",
+            "byq_agent_run_start",
+            "byq_agent_authorize",
+            "byq_agent_audit",
+            "byq_agent_roles",
+            "byq_research_task_create",
+            "byq_research_get",
+            "byq_ml_capabilities",
+            "byq_ml_workspace_get",
+            "byq_ml_strategy_create",
+            "byq_ml_training_create",
+            "byq_ml_training_get",
+            "byq_ml_training_cancel",
+        ),
+        delegate_to=(),
+        approval_required_actions=("byq_ml_training_create", "byq_ml_training_cancel"),
+        evidence_kinds=("ml_strategy_version", "ml_training_run", "ml_model_metadata"),
     ),
 )
 ROLE_BY_ID = {role.role_id: role for role in ROLE_CATALOG}

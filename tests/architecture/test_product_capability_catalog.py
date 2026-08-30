@@ -39,3 +39,32 @@ class ProductCapabilityCatalogTests(unittest.TestCase):
         self.assertNotIn("bars:", task_registration)
         self.assertNotIn("signals:", task_registration)
         self.assertIn("not a second workflow", contract)
+
+    def test_ml_agent_surface_is_closed_training_only_and_keeps_human_approval(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        mcp = (root / "services/mcp/src/server.ts").read_text()
+        roles = (root / "services/backend/app/agent_research.py").read_text()
+        composition = (root / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
+        skill = (root / "plugins/dsh-byq/skills/byq-ml-researcher/SKILL.md").read_text()
+        contract = (root / "docs/contracts/machine-learning-research.md").read_text()
+        allowed = (
+            "byq_ml_capabilities", "byq_ml_workspace_get", "byq_ml_strategy_create",
+            "byq_ml_training_create", "byq_ml_training_get", "byq_ml_training_cancel",
+        )
+        for tool in allowed:
+            self.assertIn(f'"{tool}"', mcp)
+            self.assertIn(f'"{tool}"', roles)
+            self.assertIn(tool, composition)
+        ml_role = roles.split('role_id="ml_researcher"', 1)[1].split("    ),", 1)[0]
+        ml_delegate = composition.split("- id: delegate-ml-research", 1)[1].split("# Qualified", 1)[0]
+        for prohibited in (
+            "byq_ml_strategy_approve", "byq_ml_prediction_create", "byq_ml_prediction_get",
+            "byq_strategy_approve", "byq_backtest_task_create", "byq_artifact_create",
+        ):
+            self.assertNotIn(prohibited, ml_role)
+            self.assertNotIn(prohibited, ml_delegate)
+        registration = mcp[mcp.index('"byq_ml_strategy_create"'):mcp.index('"byq_signal_snapshot_get"')]
+        for prohibited in ("python:", "sql:", "url:", "model_object", "object_reference", "feature_rows"):
+            self.assertNotIn(prohibited, registration.lower())
+        self.assertIn("never create or decide that", skill)
+        self.assertIn("ML Strategy Approval", contract)
