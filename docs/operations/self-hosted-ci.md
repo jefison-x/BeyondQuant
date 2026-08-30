@@ -9,11 +9,10 @@ Status: **Active** — `scripts/ci/local-ci.sh` 和
 payments/spending limit 失败。Self-hosted runner 让 GitHub 继续 orchestration
 并在 PR 显示 status，但 checks 在本地机器免费执行。
 
-Workflow 运行项目自身
-`scripts/ci/local-ci.sh --all --with-e2e --with-smoke`，覆盖 locked frontend
-build/unit suite、mocked browser、isolated full Compose、real Product API
-browser flow 和 service checks；high/critical npm advisories 会使 frontend gate
-失败。
+Pull request workflow 运行项目自身的 selective profile：先通过
+`scripts/ci/classify-changes.sh` 生成影响计划，再执行受影响组件的完整测试；只有
+integration-risk 变化才启动 Compose。Nightly 和人工 Full 仍运行
+`--all --with-e2e --with-smoke`。规范见 `docs/operations/ci-policy.md`。
 
 ## Architecture
 
@@ -25,13 +24,15 @@ GitHub（仅 orchestration）
                                ├─ docker（clean CI PostgreSQL）
                                ├─ python3（architecture tests）
                                ├─ node 22（frontend build + Vitest）
-                               └─ local-ci.sh --all --with-e2e --with-smoke
+                               ├─ PR: local-ci.sh --with-e2e --auto-smoke
+                               └─ Nightly/manual: --all --with-e2e --with-smoke
 ```
 
-Core checks 使用 clean CI-only PostgreSQL。Smoke tier 也启动 Compose，但每次
-run 都分配 unique project name、network、volumes、images、Docker loopback
-ports、bootstrap identity 和 Product API URL；cleanup 只删除 run-scoped
-resources，不碰 developer `beyondquant` stack。
+需要数据库的 component checks 使用 clean CI-only PostgreSQL。Smoke tier 启动 Compose，
+但每个 run attempt 都分配 unique project name、network、volumes、Docker loopback
+ports、bootstrap identity 和 Product API URL。Shell signal trap 与 workflow
+`if: always()` cleanup 双重删除并验证 run-scoped resources，不碰 developer
+`beyondquant` stack。
 
 ## Runner machine prerequisites
 
@@ -98,11 +99,10 @@ sudo systemctl restart actions.runner.jefison-x-BeyondQuant.byq-local-runner.ser
 
 ## Workflow 与端到端验证
 
-`.github/workflows/ci-selfhosted.yml` 在 PR 及 push 到 `main` /
-`bootstrap/**` 时触发；使用 `fetch-depth: 0` 并 fetch `origin/main`，运行
-完整 local CI。每次 Compose 资源唯一，不能与 developer stack 冲突。旧
-`ci.yml` 保留供 reference/rollback；runner 稳定后可在 GitHub 禁用或后续 PR
-删除，避免调度付费 jobs。
+`.github/workflows/ci-selfhosted.yml` 在 PR、Nightly schedule 和人工 dispatch 时触发；
+PR 执行 selective profile，Nightly/人工 Full 执行完整回归。合并到 `main` 不再重复
+同一套 PR 检查。每次 Compose 资源以 run ID + run attempt 唯一，不能与 developer
+stack 冲突。
 
 验证：runner 在 GitHub 显示 `Idle`；更新 PR 后出现
 `BeyondQuant Self-Hosted CI / local-ci`；可在
@@ -118,6 +118,7 @@ mocked UI、isolated Compose 和 real browser 全部 PASS。
 | `tsc: not found` | host `node_modules` partial | rebuild current MCP image |
 | Backend `no schema has been selected` | stale shared PG volume | 应使用 clean `byq-ci-postgres`，检查 stale container |
 | Build OOM | RAM 不足 | serial build，heavy job 时停 local Compose |
+| Cancel 后遗留资源 | signal/post cleanup regression | 使用 exact run-attempt scope 执行 `scripts/ci/cleanup-resources.sh`，不得 broad prune |
 | Playwright 无 Chromium | browser cache 缺失 | `cd apps/frontend && npx playwright install chromium` |
 | 需要固定 debug ports | CI 动态分配 | 设置 `BYQ_CI_FRONTEND_BIND` / `BYQ_CI_GATEWAY_BIND` |
 | CI 改变 local stack | isolation regression | CI resources 必须以 `byq-ci-*` 开头 |

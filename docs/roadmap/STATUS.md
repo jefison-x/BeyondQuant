@@ -316,6 +316,11 @@ Post-Phase 74 Model Research Navigation Maintenance 将量化模型研究从个�
 绑定。策略编辑器为研究任务、策略身份、说明、参数、数据依赖和 Python 脚本提供持久可见标题与
 accessible name。该维护不改变 Product API、ML lineage、策略生命周期、授权或 runtime 边界。
 
+Post-Phase 74 CI Reliability Maintenance 将 PR 检查改为 change-impact selective profile，
+保留 Nightly/manual Full；以 run ID + attempt 隔离 Docker 资源，并以 signal trap、workflow
+always-cleanup、重型任务锁、内存 preflight 和 zero-resource verification 保证取消/失败后收口。
+该维护不改变 Product、Domain、DSH、MCP 或持久化边界。
+
 ## 当前授权边界
 
 - Phase 49-74 与相应 Accepted ADR/计划均已完成。

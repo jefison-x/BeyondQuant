@@ -29,6 +29,11 @@ development”是指：读取 `docs/roadmap/STATUS.md`，识别其中的 `Next p
 14. 最终复核文件、测试、依赖 pin 和边界变更。
 15. 停在人工合并门禁；Codex 不得 merge，也不得直接 push 到 `main`。
 
+CI 必须遵循 `docs/operations/ci-policy.md`：PR 运行 change-impact selective profile，
+受影响组件运行完整 suite；Compose/真实浏览器只由 integration-risk 变化触发。任何 CI
+创建的容器、网络和卷必须在 success/failure/cancel 后按 run-attempt scope 清理并验证为零。
+不得为了浏览器证据默认使用 `--no-cleanup`，也不得让 CI 与正式 `beyondquant` 栈共享资源。
+
 ## 单维护者 Human Merge Gate
 
 当仓库只有一名人工维护者，且维护者同时也是 PR 作者时：

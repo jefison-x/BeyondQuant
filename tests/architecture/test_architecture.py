@@ -45,7 +45,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CI_BASE_SHA:", workflow)
         self.assertIn('--base="$BYQ_CI_BASE_SHA"', workflow)
         self.assertNotIn("--depth=1 origin main", workflow)
-        self.assertIn('git diff --check "$DIFF_BASE" HEAD', local_ci)
+        self.assertIn('hygiene_command=(git diff --check "$DIFF_BASE" HEAD)', local_ci)
+        self.assertIn('hygiene_command=(git diff --check "$DIFF_BASE")', local_ci)
         self.assertNotIn('git diff --check "$BASE_SHA"...HEAD', local_ci)
 
     def test_adr_0019_accepts_a_closed_secret_resolution_boundary(self) -> None:
@@ -593,9 +594,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         workflow = (ROOT / ".github/workflows/ci-selfhosted.yml").read_text()
         self.assertIn(
-            './scripts/ci/local-ci.sh --base="$BYQ_CI_BASE_SHA" --all --with-e2e --with-smoke',
+            './scripts/ci/local-ci.sh --base="$BYQ_CI_BASE_SHA" --with-e2e --auto-smoke',
             workflow,
         )
+        self.assertIn('--all --with-e2e --with-smoke', workflow)
         self.assertIn("head.repo.full_name == github.repository", workflow)
 
         dockerfile = (frontend / "Dockerfile").read_text()
@@ -635,7 +637,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("docker compose port gateway 8100", local_ci)
         self.assertIn("npm run test:e2e:real", local_ci)
         self.assertIn("[ -x node_modules/.bin/playwright ] || npm ci", local_ci)
-        self.assertIn("docker compose down --rmi local -v", local_ci)
+        cleanup = (ROOT / "scripts/ci/cleanup-resources.sh").read_text()
+        self.assertIn("docker compose down --rmi local -v --remove-orphans", cleanup)
 
         smoke = (ROOT / "tests/smoke/run.sh").read_text()
         self.assertNotIn('gateway = "http://127.0.0.1:8100/internal/runtime"', smoke)

@@ -9,14 +9,16 @@
 #
 # Options:
 #   --base=<sha|ref>   Diff baseline (default: origin/main)
-#   --only=<checks>    Comma list: architecture,backend,gateway,runtime,mcp,frontend
+#   --only=<checks>    Comma list: docs,architecture,backend,gateway,runtime,mcp,frontend
 #   --all              Run every check (ignore path filtering)
 #   --build            docker compose build before service tests (reuse images by default)
 #   --with-e2e         Also run frontend Playwright e2e (needs browsers installed)
 #   --with-smoke       Also run full compose smoke (./tests/smoke/run.sh)
+#   --auto-smoke       Run full compose smoke only for integration-risk changes
 #   --with-dsh-web     Also run DSH Web diagnostic profile checks
 #   --keep-postgres    Keep the local CI postgres container after the run
 #   --no-cleanup       Leave compose/services running (debug)
+#   --plan-only        Print the selected checks without executing them
 #
 set -euo pipefail
 
@@ -30,9 +32,11 @@ ALL=0
 DO_BUILD=0
 WITH_E2E=0
 WITH_SMOKE=0
+AUTO_SMOKE=0
 WITH_DSH_WEB=0
 KEEP_POSTGRES=0
 NO_CLEANUP=0
+PLAN_ONLY=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -42,9 +46,11 @@ for arg in "$@"; do
     --build) DO_BUILD=1 ;;
     --with-e2e) WITH_E2E=1 ;;
     --with-smoke) WITH_SMOKE=1 ;;
+    --auto-smoke) AUTO_SMOKE=1 ;;
     --with-dsh-web) WITH_DSH_WEB=1 ;;
     --keep-postgres) KEEP_POSTGRES=1 ;;
     --no-cleanup) NO_CLEANUP=1 ;;
+    --plan-only) PLAN_ONLY=1 ;;
     --help|-h) sed -n '2,28p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Unknown option: $arg" >&2; exit 2 ;;
   esac
@@ -57,7 +63,8 @@ ok()  { printf '    [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 bad() { printf '    [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
 
 # ---------------------------------------------------------------- changed paths
-backend=no; gateway=no; runtime=no; mcp=no; frontend=no; infra=no
+docs=no; docs_only=no; architecture=no; backend=no; gateway=no; runtime=no
+mcp=no; frontend=no; integration=no; unknown=no; changed_count=0
 compute_changed() {
   step "changes: diff baseline $BASE_SHA"
   git fetch --quiet origin 2>/dev/null || true
@@ -74,15 +81,24 @@ compute_changed() {
     echo "    [FAIL] unable to compute changed files from '$DIFF_BASE'" >&2
     return 1
   fi
+  if [ "${GITHUB_ACTIONS:-false}" != true ]; then
+    CHANGED="$({
+      printf '%s\n' "$CHANGED"
+      git diff --name-only HEAD
+      git ls-files --others --exclude-standard
+    } | sed '/^$/d' | sort -u)"
+  fi
   if [ -z "$CHANGED" ]; then echo "    (no changed files)"; fi
-  echo "$CHANGED" | grep -qE '^services/backend/' && backend=yes
-  echo "$CHANGED" | grep -qE '^services/gateway/|^packages/' && gateway=yes
-  echo "$CHANGED" | grep -qE '^services/runtime-adapter/|^services/dsh/|^plugins/|^packages/' && runtime=yes
-  echo "$CHANGED" | grep -qE '^services/mcp/' && mcp=yes
-  echo "$CHANGED" | grep -qE '^apps/frontend/' && frontend=yes
-  echo "$CHANGED" | grep -qE '^\.github/workflows/|^compose.*\.yml$|^infra/|^tests/smoke/' && infra=yes
-  printf '    changed -> backend=%s gateway=%s runtime=%s mcp=%s frontend=%s infra=%s\n' \
-    "$backend" "$gateway" "$runtime" "$mcp" "$frontend" "$infra"
+  while IFS='=' read -r key value; do
+    case "$key" in
+      changed_count|docs|docs_only|architecture|backend|gateway|runtime|mcp|frontend|integration|unknown)
+        printf -v "$key" '%s' "$value"
+        ;;
+      *) echo "    [FAIL] unknown classifier output: $key" >&2; return 1 ;;
+    esac
+  done < <(printf '%s\n' "$CHANGED" | scripts/ci/classify-changes.sh)
+  printf '    plan -> docs=%s architecture=%s backend=%s gateway=%s runtime=%s mcp=%s frontend=%s integration=%s unknown=%s\n' \
+    "$docs" "$architecture" "$backend" "$gateway" "$runtime" "$mcp" "$frontend" "$integration" "$unknown"
 }
 
 want() { # want <check>
@@ -91,28 +107,93 @@ want() { # want <check>
     case ",$ONLY," in *",$1,"*) return 0 ;; *) return 1 ;; esac
   fi
   case "$1" in
-    architecture) return 0 ;; # always run
-    backend)  [ "$backend" = yes ] || [ "$infra" = yes ] ;;
-    gateway)  [ "$gateway" = yes ] || [ "$infra" = yes ] ;;
-    runtime)  [ "$runtime" = yes ] || [ "$infra" = yes ] ;;
-    mcp)      [ "$mcp" = yes ] || [ "$infra" = yes ] ;;
-    frontend) [ "$frontend" = yes ] || [ "$infra" = yes ] ;;
+    docs)         [ "$docs" = yes ] ;;
+    architecture) [ "$architecture" = yes ] ;;
+    backend)      [ "$backend" = yes ] ;;
+    gateway)      [ "$gateway" = yes ] ;;
+    runtime)      [ "$runtime" = yes ] ;;
+    mcp)          [ "$mcp" = yes ] ;;
+    frontend)     [ "$frontend" = yes ] ;;
     *) return 1 ;;
   esac
 }
 
 # ------------------------------------------------------------------- postgres
-BYQ_CI_SCOPE="${GITHUB_RUN_ID:-local-$$}"
+BYQ_CI_SCOPE="${BYQ_CI_SCOPE:-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-$$}}"
 CI_PG="byq-ci-postgres-$BYQ_CI_SCOPE"
 CI_BACKEND="byq-ci-backend-$BYQ_CI_SCOPE"
 CI_PG_NET="byq-ci-network-$BYQ_CI_SCOPE"
 CI_PG_VOL="byq-ci-postgres-data-$BYQ_CI_SCOPE"
+CI_BACKEND_TEST="byq-ci-backend-test-$BYQ_CI_SCOPE"
+CI_GATEWAY_TEST="byq-ci-gateway-test-$BYQ_CI_SCOPE"
+CI_RUNTIME_TEST="byq-ci-runtime-test-$BYQ_CI_SCOPE"
+CI_MCP_TEST="byq-ci-mcp-test-$BYQ_CI_SCOPE"
+RESOURCES_TOUCHED=0
+ACTIVE_CHILD_PID=""
+HEAVY_LOCK_HELD=0
+
+cleanup_on_exit() {
+  exit_code=$?
+  trap - EXIT INT TERM HUP
+  if [ "$NO_CLEANUP" -eq 1 ]; then
+    echo "CI debug resources retained for scope: $BYQ_CI_SCOPE" >&2
+  elif [ "$RESOURCES_TOUCHED" -eq 1 ]; then
+    cleanup_args=("--scope=$BYQ_CI_SCOPE" --quiet)
+    [ "$KEEP_POSTGRES" -eq 0 ] || cleanup_args+=(--keep-postgres)
+    scripts/ci/cleanup-resources.sh "${cleanup_args[@]}" || exit_code=1
+  fi
+  exit "$exit_code"
+}
+trap cleanup_on_exit EXIT
+
+terminate_on_signal() {
+  code="$1"
+  if [ -n "$ACTIVE_CHILD_PID" ]; then
+    kill -TERM "$ACTIVE_CHILD_PID" >/dev/null 2>&1 || true
+  fi
+  exit "$code"
+}
+trap 'terminate_on_signal 130' INT
+trap 'terminate_on_signal 143' TERM HUP
+
+run_interruptible() {
+  "$@" &
+  ACTIVE_CHILD_PID=$!
+  if wait "$ACTIVE_CHILD_PID"; then
+    child_status=0
+  else
+    child_status=$?
+  fi
+  ACTIVE_CHILD_PID=""
+  return "$child_status"
+}
+
+acquire_heavy_capacity() {
+  [ "$HEAVY_LOCK_HELD" -eq 0 ] || return 0
+  available_kb="$(awk '/MemAvailable:/ {print $2}' /proc/meminfo)"
+  minimum_kb="${BYQ_CI_MIN_AVAILABLE_MEMORY_KB:-3145728}"
+  if [ "$available_kb" -lt "$minimum_kb" ]; then
+    echo "available memory ${available_kb}KiB is below ${minimum_kb}KiB" >&2
+    return 1
+  fi
+  exec 9>/tmp/byq-ci-heavy.lock
+  flock -w "${BYQ_CI_HEAVY_LOCK_TIMEOUT_SECONDS:-900}" 9 || return 1
+  HEAVY_LOCK_HELD=1
+}
+
+if [ "${GITHUB_ACTIONS:-false}" = true ] && [ "$NO_CLEANUP" -eq 1 ]; then
+  echo "--no-cleanup is forbidden in GitHub Actions" >&2
+  exit 2
+fi
+
 ensure_clean_postgres() {
-  docker network inspect "$CI_PG_NET" >/dev/null 2>&1 || docker network create "$CI_PG_NET" >/dev/null
+  RESOURCES_TOUCHED=1
+  docker network inspect "$CI_PG_NET" >/dev/null 2>&1 || \
+    docker network create --label "byq.ci.scope=$BYQ_CI_SCOPE" "$CI_PG_NET" >/dev/null
   if ! docker inspect "$CI_PG" >/dev/null 2>&1; then
     step "postgres: creating clean CI instance ($CI_PG)"
-    docker volume create "$CI_PG_VOL" >/dev/null
-    docker run -d --name "$CI_PG" --network "$CI_PG_NET" \
+    docker volume create --label "byq.ci.scope=$BYQ_CI_SCOPE" "$CI_PG_VOL" >/dev/null
+    docker run -d --name "$CI_PG" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" \
       -e POSTGRES_DB=byq_domain -e POSTGRES_USER=byq_app -e POSTGRES_PASSWORD=byq-app-dev \
       -v "$CI_PG_VOL":/var/lib/postgresql/data \
       -v "$REPO_ROOT/infra/postgres/init:/docker-entrypoint-initdb.d:ro" \
@@ -125,9 +206,10 @@ ensure_clean_postgres() {
   return 1
 }
 ensure_ci_backend() {
+  RESOURCES_TOUCHED=1
   if ! docker inspect "$CI_BACKEND" >/dev/null 2>&1; then
     step "backend: starting live MCP contract dependency ($CI_BACKEND)"
-    docker run -d --name "$CI_BACKEND" --network "$CI_PG_NET" --network-alias backend \
+    docker run -d --name "$CI_BACKEND" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" --network-alias backend \
       -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
       -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/backend:/app" -w /app \
@@ -143,19 +225,13 @@ ensure_ci_backend() {
   docker logs "$CI_BACKEND" >&2 || true
   return 1
 }
-cleanup_ci_services() {
-  docker rm -f "$CI_BACKEND" >/dev/null 2>&1 || true
-  [ "$KEEP_POSTGRES" -eq 1 ] && return 0
-  docker rm -f "$CI_PG" >/dev/null 2>&1 || true
-  docker volume rm "$CI_PG_VOL" >/dev/null 2>&1 || true
-  docker network rm "$CI_PG_NET" >/dev/null 2>&1 || true
-}
 prepare_ci_compose_env() {
   export COMPOSE_PROJECT_NAME="byq-ci-stack-$BYQ_CI_SCOPE"
   export BYQ_PRODUCT_NETWORK_NAME="byq-ci-product-$BYQ_CI_SCOPE"
   export BYQ_SIGNAL_SANDBOX_NETWORK_NAME="byq-ci-signal-sandbox-$BYQ_CI_SCOPE"
   export BYQ_POSTGRES_VOLUME_NAME="byq-ci-postgres-$BYQ_CI_SCOPE"
   export BYQ_DOMAIN_VOLUME_NAME="byq-ci-domain-$BYQ_CI_SCOPE"
+  export BYQ_ML_MODEL_VOLUME_NAME="byq-ci-ml-model-$BYQ_CI_SCOPE"
   export BYQ_DSH_SESSIONS_VOLUME_NAME="byq-ci-dsh-sessions-$BYQ_CI_SCOPE"
   export BYQ_WORKFLOW_TRACES_VOLUME_NAME="byq-ci-workflow-traces-$BYQ_CI_SCOPE"
   # An empty host-port asks Docker to allocate an available loopback port.
@@ -189,9 +265,23 @@ resolve_ci_compose_urls() {
 }
 
 # ------------------------------------------------------------------- checks
+check_hygiene() {
+  step "hygiene: git diff --check"
+  if [ "${GITHUB_ACTIONS:-false}" = true ]; then
+    hygiene_command=(git diff --check "$DIFF_BASE" HEAD)
+  else
+    hygiene_command=(git diff --check "$DIFF_BASE")
+  fi
+  if "${hygiene_command[@]}"; then ok "git diff --check"; else bad "git diff --check"; fi
+}
+
+check_docs() {
+  step "docs: changed Markdown links and structure"
+  if scripts/ci/check-docs.py --base="$DIFF_BASE"; then ok "docs checks"; else bad "docs checks"; fi
+}
+
 check_architecture() {
-  step "architecture: git diff --check + unittest"
-  if git diff --check "$DIFF_BASE" HEAD; then ok "git diff --check"; else bad "git diff --check"; fi
+  step "architecture: unittest"
   if python3 -m unittest discover -s tests -p 'test_*.py' >/dev/null 2>&1; then
     ok "architecture tests"; else bad "architecture tests"; fi
 }
@@ -199,7 +289,8 @@ check_architecture() {
 check_backend() {
   step "backend: pytest against clean postgres"
   ensure_clean_postgres || { bad "clean postgres"; return; }
-  if docker run --rm --network "$CI_PG_NET" \
+  RESOURCES_TOUCHED=1
+  if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" \
       -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
       -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/backend:/app" -w /app \
@@ -210,7 +301,8 @@ check_backend() {
 
 check_gateway() {
   step "gateway: pytest (mocked backend)"
-  if docker run --rm -e PYTHONDONTWRITEBYTECODE=1 \
+  RESOURCES_TOUCHED=1
+  if run_interruptible docker run --rm --name "$CI_GATEWAY_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/gateway:/app" \
       -v "$REPO_ROOT/packages:/app/packages" -w /app \
       beyondquant-gateway python -m pytest -q -p no:cacheprovider >/dev/null 2>&1; then
@@ -219,7 +311,8 @@ check_gateway() {
 
 check_runtime() {
   step "runtime-adapter: pytest"
-  if docker run --rm -e PYTHONDONTWRITEBYTECODE=1 \
+  RESOURCES_TOUCHED=1
+  if run_interruptible docker run --rm --name "$CI_RUNTIME_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/runtime-adapter:/app" \
       -v "$REPO_ROOT/packages:/app/packages" -w /app \
       -v "$REPO_ROOT/plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml:/opt/byq/compositions/byq-product-sdk.cordis.yml:ro" \
@@ -236,7 +329,8 @@ check_mcp() {
   # Mount only sources so the image's complete node_modules/dist stay intact;
   # run as root so tsc can rewrite /app/dist; start the MCP server in-container
   # because the contract test connects to a live 127.0.0.1:8300 endpoint.
-  if docker run --rm --network "$CI_PG_NET" -u 0 \
+  RESOURCES_TOUCHED=1
+  if run_interruptible docker run --rm --name "$CI_MCP_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" -u 0 \
       -e BYQ_MCP_TOKEN=ci-phase5-test-only \
       -e BYQ_BACKEND_URL=http://backend:8000 \
       -e MCP_URL=http://127.0.0.1:8300/mcp/v1 \
@@ -267,25 +361,22 @@ check_frontend() {
 
 check_smoke() {
   step "smoke: isolated full compose stack"
+  RESOURCES_TOUCHED=1
+  if ! acquire_heavy_capacity; then
+    bad "heavy-CI resource preflight/lock"
+    return
+  fi
   prepare_ci_compose_env
-  if ! docker compose up -d --wait; then
+  if ! run_interruptible docker compose up -d --wait; then
     docker compose logs --no-color || true
     bad "isolated compose startup"
-    if [ "$NO_CLEANUP" -eq 0 ]; then
-      docker compose down --rmi local -v >/dev/null 2>&1 || true
-      cleanup_ci_services
-    fi
     return
   fi
   if ! resolve_ci_compose_urls; then
     bad "isolated compose endpoint discovery"
-    if [ "$NO_CLEANUP" -eq 0 ]; then
-      docker compose down --rmi local -v >/dev/null 2>&1 || true
-      cleanup_ci_services
-    fi
     return
   fi
-  if ./tests/smoke/run.sh; then ok "full smoke"; else bad "full smoke"; fi
+  if run_interruptible ./tests/smoke/run.sh; then ok "full smoke"; else bad "full smoke"; fi
   if docker compose cp scripts/evidence/phase67-seed.py backend:/tmp/phase67-seed.py >/dev/null \
     && docker compose exec -T backend python /tmp/phase67-seed.py; then
     ok "Phase 67 validated index fixture"; else bad "Phase 67 validated index fixture"; fi
@@ -319,27 +410,52 @@ check_smoke() {
       backend python /tmp/phase48-seed.py \
     && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" scripts/evidence/phase48-product-golden.py; then
     ok "Phase 48 no-mock two-user Product coherence"; else bad "Phase 48 no-mock two-user Product coherence"; fi
-  if [ "$NO_CLEANUP" -eq 0 ]; then
-    docker compose down --rmi local -v >/dev/null 2>&1 || true
-    cleanup_ci_services
-  fi
 }
 
 check_dsh_web() {
   step "dsh-web: diagnostic profile"
-  if [ "$DO_BUILD" -eq 1 ]; then
-    docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web build dsh >/dev/null 2>&1 || true
+  RESOURCES_TOUCHED=1
+  prepare_ci_compose_env
+  if ! acquire_heavy_capacity; then
+    bad "heavy-CI resource preflight/lock"
+    return
   fi
-  docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web up -d --wait >/dev/null 2>&1
-  if ./tests/smoke/run-dsh-web.sh >/dev/null 2>&1; then ok "dsh-web smoke"; else bad "dsh-web smoke"; fi
-  [ "$NO_CLEANUP" -eq 1 ] || docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web down -v >/dev/null 2>&1 || true
+  if [ "$DO_BUILD" -eq 1 ]; then
+    run_interruptible docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web build dsh >/dev/null 2>&1 || true
+  fi
+  if ! run_interruptible docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web up -d --wait >/dev/null 2>&1; then
+    bad "dsh-web startup"
+    return
+  fi
+  if run_interruptible ./tests/smoke/run-dsh-web.sh >/dev/null 2>&1; then ok "dsh-web smoke"; else bad "dsh-web smoke"; fi
 }
 
 # ------------------------------------------------------------------- main
 compute_changed
 
-[ "$DO_BUILD" -eq 1 ] && { step "build: docker compose build"; docker compose build >/dev/null 2>&1 || true; }
+if [ "$AUTO_SMOKE" -eq 1 ] && [ "$integration" = yes ]; then
+  WITH_SMOKE=1
+fi
 
+printf '    execution -> all=%s e2e=%s smoke=%s dsh_web=%s\n' \
+  "$ALL" "$WITH_E2E" "$WITH_SMOKE" "$WITH_DSH_WEB"
+if [ "$PLAN_ONLY" -eq 1 ]; then
+  exit 0
+fi
+
+if [ "$DO_BUILD" -eq 1 ]; then
+  step "build: isolated docker compose images"
+  RESOURCES_TOUCHED=1
+  prepare_ci_compose_env
+  if acquire_heavy_capacity && run_interruptible docker compose build >/dev/null 2>&1; then
+    ok "compose build"
+  else
+    bad "compose build"
+  fi
+fi
+
+check_hygiene
+want docs && check_docs
 want architecture && check_architecture
 want backend && check_backend
 want gateway && check_gateway
@@ -348,7 +464,6 @@ want mcp && check_mcp
 want frontend && check_frontend
 [ "$WITH_SMOKE" -eq 1 ] && check_smoke
 [ "$WITH_DSH_WEB" -eq 1 ] && check_dsh_web
-[ "$WITH_SMOKE" -eq 0 ] && [ "$WITH_DSH_WEB" -eq 0 ] && cleanup_ci_services
 
 printf '\n=============================\n'
 if [ "$FAIL" -gt 0 ]; then
