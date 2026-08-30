@@ -697,3 +697,14 @@ Data Worker 独占 Provider 与行情写入；完成状态在下一次 Agent con
 messages，Runtime Adapter 在新 generation 第一次 prompt 恢复语义上下文。不得读取 raw DSH log、patch/
 fork/upgrade DSH、无限保留 idle process 或重建第二 Agent harness。DSH error fail closed 为 failed，并以
 Runtime/Gateway/Frontend contract、真实 release/reopen 多轮 Product journey、Chrome 与 cleanup evidence 验收。
+
+### Phase 82 — Provider-aware scalable data tasks（`COMPLETE`）
+
+依据 ADR-0047，将 50,000 单元明确为单个 readiness/repair 分片上限，而非 Tushare 或完整 ML
+准备上限。ML 创建复用确定性分片和既有 repair/session job，单任务错误隔离且不再重启 Worker；Data
+Worker 按配置的 Tushare 2,000 积分预算保守节流。新增由现有持久状态派生的 `data-task.v1` Product
+投影和数据中心进度界面，展示阶段、完成/总单元、行数、失败原因与更新时间，不新增第二任务引擎。
+
+验收必须覆盖 300 只×五年分片、单个坏任务不阻塞队列、重启恢复、额度单元测试、Gateway 安全投影、
+真实 Product API/Chrome 桌面与移动端流程，以及 Community 功能清单。Browser 不得调用 Backend、MCP、
+DSH、PostgreSQL 或 Tushare；Data Worker 仍是唯一 Provider caller。

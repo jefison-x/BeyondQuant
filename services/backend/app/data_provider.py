@@ -857,6 +857,8 @@ class TushareConfig:
     backoff_seconds: float = 0.25
     cache_ttl_seconds: float = 300.0
     cache_max_entries: int = 128
+    # Explicit adapters may opt out for deterministic tests; from_env is conservative.
+    request_interval_seconds: float = 0.0
 
     @classmethod
     def from_env(cls) -> "TushareConfig":
@@ -868,6 +870,7 @@ class TushareConfig:
             backoff_seconds=float(os.getenv("TUSHARE_BACKOFF_SECONDS", "0.25")),
             cache_ttl_seconds=float(os.getenv("TUSHARE_CACHE_TTL_SECONDS", "300")),
             cache_max_entries=int(os.getenv("TUSHARE_CACHE_MAX_ENTRIES", "128")),
+            request_interval_seconds=float(os.getenv("TUSHARE_REQUEST_INTERVAL_SECONDS", "0.34")),
         )
 
 
@@ -895,6 +898,8 @@ class TushareProvider:
         self._sleep = sleep
         self._cache: OrderedDict[str, _CacheEntry] = OrderedDict()
         self._cache_lock = threading.RLock()
+        self._budget_lock = threading.Lock()
+        self._next_request_at = 0.0
 
     @classmethod
     def from_env(cls) -> "TushareProvider":
@@ -1246,6 +1251,7 @@ class TushareProvider:
     def _request(self, payload: dict[str, object]) -> tuple[list[str], list[list[Any]]]:
         last_status: int | None = None
         for attempt in range(self._config.max_retries + 1):
+            self._wait_for_request_budget()
             try:
                 response = self._transport.post(
                     self._config.api_url,
@@ -1277,6 +1283,18 @@ class TushareProvider:
                 continue
 
         raise ProviderUnavailable(f"Tushare request failed with status {last_status}")
+
+    def _wait_for_request_budget(self) -> None:
+        interval = self._config.request_interval_seconds
+        if not math.isfinite(interval) or interval < 0 or interval > 60:
+            raise ValueError("Tushare request interval is invalid")
+        with self._budget_lock:
+            now = self._clock()
+            delay = max(0.0, self._next_request_at - now)
+            if delay:
+                self._sleep(delay)
+                now = self._clock()
+            self._next_request_at = max(now, self._next_request_at) + interval
 
     def _decode(self, body: bytes) -> tuple[list[str], list[list[Any]]]:
         try:

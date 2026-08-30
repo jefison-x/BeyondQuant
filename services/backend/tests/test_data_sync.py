@@ -308,6 +308,7 @@ def test_backend_data_center_routes_are_admin_scoped_and_secret_free(monkeypatch
     assert status.json()["source"]["credentials"][0]["masked"].endswith("oken")
     assert status.json()["coverage"]["row_count"] == 1
     assert status.json()["schema_version"] == "data-center.v3"
+    assert any(task["kind"] == "manual_sync" for task in status.json()["data_tasks"])
     assert status.json()["security_master"]["total"] == 1
     assert "phase39-secret-token" not in status.text
     config = client.put("/v1/data-sync/automation/config", headers=admin, json={

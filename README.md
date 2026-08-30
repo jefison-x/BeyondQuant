@@ -1,9 +1,10 @@
 # BeyondQuant
 
-<!-- byq:current-completed-phase=81 -->
+<!-- byq:current-completed-phase=82 -->
 
 BeyondQuant（BYQ）是一个 AI 原生量化研究平台。当前已完成的项目阶段为
-**Phase 81**：可靠 LightGBM、自动化通道和按需数据准备均已接入小巴；持久对话在 idle release 或
+**Phase 82**：可靠 LightGBM、自动化通道和按需数据准备均已接入小巴；大范围数据准备按原子分片推进，
+后台任务进度可在数据中心持续查看；持久对话在 idle release 或
 服务重启后会用新的私有 DSH generation 恢复已完成的公开上下文，继续追问不再复用冲突的 Runtime
 身份。策略批准及预测、回测等有后果动作仍由用户分别确认，DSH 不接收 Provider 凭据、模型对象、
 raw features、raw predictions 或 raw signals。

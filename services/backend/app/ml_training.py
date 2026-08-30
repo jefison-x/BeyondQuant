@@ -21,8 +21,8 @@ from .research import ResearchStore
 TRAINING_SCHEMA = "ml-training-run.v1"
 FEATURE_SCHEMA = "ml-feature-snapshot.v1"
 MODEL_SCHEMA = "ml-model-artifact.v1"
-MAX_INPUT_BYTES = 32 * 1024 * 1024
-MAX_ROWS = 50_000
+MAX_INPUT_BYTES = 256 * 1024 * 1024
+MAX_ROWS = 2_000_000
 MAX_ATTEMPTS = 3
 RUNTIME_IDENTITY = "lightgbm-4.7.0-python-3.13-linux-cpu-single-thread"
 
@@ -45,6 +45,23 @@ class MLTrainingPersistenceError(MLTrainingError):
 
 class MLTrainer(Protocol):
     def train(self, feature_snapshot: dict[str, object], strategy: dict[str, object]) -> dict[str, object]: ...
+
+
+def aggregate_ml_readiness(assessments: list[dict[str, object]]) -> dict[str, object]:
+    if not assessments:
+        raise ValueError("ML data preparation has no readiness partitions")
+    ready_count = sum(item.get("state") == "ready" for item in assessments)
+    ready_hashes = [item.get("ready_input_sha256") for item in assessments]
+    return {
+        "schema_version": "ml-data-preparation.v1",
+        "state": "ready" if ready_count == len(assessments) else "waiting_for_data",
+        "partition_count": len(assessments), "ready_partitions": ready_count,
+        "required_cell_count": sum(int(item.get("required_cell_count") or 0) for item in assessments),
+        "missing_count": sum(int(item.get("missing_count") or 0) for item in assessments),
+        "ready_input_sha256": (
+            ready_hashes[0] if len(ready_hashes) == 1 else content_sha256(ready_hashes)
+        ) if ready_count == len(assessments) else None,
+    }
 
 
 def _now() -> str:
@@ -92,7 +109,7 @@ def build_feature_snapshot(
     if not isinstance(bars, list) or not isinstance(split, dict) or not isinstance(target, dict):
         raise ValueError("ML feature input is incomplete")
     if len(bars) > MAX_ROWS:
-        raise ValueError("ML feature input exceeds 50000 rows")
+        raise ValueError("ML feature input exceeds 2000000 rows")
     horizon = int(target["horizon_sessions"])
     by_symbol: dict[str, dict[str, dict[str, object]]] = {}
     all_dates: set[str] = set()
@@ -192,7 +209,7 @@ def build_feature_snapshot(
     document["content_sha256"] = content_sha256(document)
     encoded = _canonical(document)
     if len(encoded) > MAX_INPUT_BYTES:
-        raise ValueError("ML feature snapshot exceeds 32 MiB")
+        raise ValueError("ML feature snapshot exceeds 256 MiB")
     return document
 
 
@@ -305,6 +322,13 @@ class MLTrainingRunStore(PgStoreMixin):
             {"workspace": trusted_workspace, "owner": trusted_owner})
         return {"runs": [self._public(row) for row in rows]}
 
+    def list_recent(self, limit: int = 50) -> list[dict[str, object]]:
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        rows = self._execute("""SELECT * FROM ml_training_runs
+            ORDER BY created_at DESC,training_run_id DESC LIMIT :limit""", {"limit": limit})
+        return [self._public(row) for row in rows]
+
     def prediction_material(
         self, run_id: object, *, trusted_workspace: str, trusted_owner: str
     ) -> dict[str, object]:
@@ -328,6 +352,13 @@ class MLTrainingRunStore(PgStoreMixin):
             WHERE training_run_id=:id AND status='waiting_for_data'""",
             {"readiness": readiness, "now": _now(), "id": run_id})
 
+    def fail_waiting(self, run_id: str, code: str, detail: str) -> None:
+        self._execute("""UPDATE ml_training_runs SET status='failed',error_code=:code,
+            error_detail=:detail,finished_at=now(),updated_at=now()
+            WHERE training_run_id=:id AND status='waiting_for_data'""",
+            {"code": _text(code, "error_code", 64),
+             "detail": _text(detail, "error_detail", 500), "id": run_id})
+
     def promote_ready(self, run_id: str, feature_snapshot: dict[str, object]) -> dict[str, object]:
         expected = feature_snapshot.get("content_sha256")
         body = dict(feature_snapshot)
@@ -335,7 +366,7 @@ class MLTrainingRunStore(PgStoreMixin):
         if expected != content_sha256(body):
             raise ValueError("ML feature snapshot identity does not match content")
         if len(_canonical(feature_snapshot)) > MAX_INPUT_BYTES:
-            raise ValueError("ML training input exceeds 32 MiB")
+            raise ValueError("ML training input exceeds 256 MiB")
         self._execute("""UPDATE ml_training_runs SET status='queued',input_json=:input,
             input_sha256=:sha,updated_at=:now WHERE training_run_id=:id AND status='waiting_for_data'""",
             {"input": feature_snapshot, "sha": expected, "now": _now(), "id": run_id})
@@ -426,19 +457,36 @@ def promote_waiting_training_runs(store: MLTrainingRunStore, readiness_store: ob
         requirement, preparation = row.get("requirement_json"), row.get("preparation_json")
         if not isinstance(requirement, dict) or not isinstance(preparation, dict):
             continue
-        readiness = readiness_store.assess(requirement)
-        store.update_readiness(str(row["training_run_id"]), readiness)
-        if readiness.get("state") != "ready":
-            continue
-        ready_input = readiness_store.build_ready_input(requirement)
-        strategy, universe = preparation.get("strategy"), preparation.get("universe")
-        if not isinstance(strategy, dict) or not isinstance(universe, dict):
-            continue
-        feature_snapshot = build_feature_snapshot(
-            strategy=strategy, universe=universe, ready_input=ready_input, readiness=readiness
-        )
-        store.promote_ready(str(row["training_run_id"]), feature_snapshot)
-        promoted += 1
+        run_id = str(row["training_run_id"])
+        try:
+            raw_requirements = preparation.get("requirements", [requirement])
+            if not isinstance(raw_requirements, list) or not raw_requirements or any(
+                not isinstance(item, dict) for item in raw_requirements
+            ):
+                raise ValueError("ML data preparation partition plan is invalid")
+            requirements = [dict(item) for item in raw_requirements]
+            assessments = [readiness_store.assess(item) for item in requirements]
+            readiness = aggregate_ml_readiness(assessments)
+            store.update_readiness(run_id, readiness)
+            if readiness["state"] != "ready":
+                continue
+            ready_input = (
+                readiness_store.build_partitioned_ready_input(requirements)
+                if len(requirements) > 1 else readiness_store.build_ready_input(requirement)
+            )
+            strategy, universe = preparation.get("strategy"), preparation.get("universe")
+            if not isinstance(strategy, dict) or not isinstance(universe, dict):
+                raise ValueError("ML preparation snapshot is invalid")
+            feature_snapshot = build_feature_snapshot(
+                strategy=strategy, universe=universe, ready_input=ready_input, readiness=readiness
+            )
+            store.promote_ready(run_id, feature_snapshot)
+            promoted += 1
+        except Exception as error:
+            store.fail_waiting(
+                run_id, "ml_data_preparation_failed",
+                str(error)[:500] or "ML data preparation failed",
+            )
     return promoted
 
 

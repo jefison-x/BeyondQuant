@@ -137,6 +137,26 @@ def test_provider_retries_http_rate_limit_with_bounded_backoff() -> None:
     assert sleeps == [0.5]
 
 
+def test_provider_applies_configured_request_budget_between_calls() -> None:
+    transport = FakeTransport([TransportResponse(200, envelope([])), TransportResponse(200, envelope([]))])
+    now = [100.0]
+    sleeps: list[float] = []
+
+    def advance(seconds: float) -> None:
+        sleeps.append(seconds)
+        now[0] += seconds
+
+    provider_instance = TushareProvider(
+        TushareConfig(token="fixture-token", request_interval_seconds=0.34),
+        transport=transport, clock=lambda: now[0], sleep=advance,
+    )
+    provider_instance.fetch_daily(DailyRequest(trade_date="20240102"))
+    provider_instance.fetch_daily(DailyRequest(trade_date="20240103"))
+
+    assert sleeps == pytest.approx([0.34])
+    assert len(transport.calls) == 2
+
+
 def test_provider_retries_http_server_error_then_reports_unavailable() -> None:
     transport = FakeTransport(
         [

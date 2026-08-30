@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { getStockPool, listStockPools } from "@/api/paper";
 import {
@@ -67,6 +67,18 @@ const readinessForm = reactive({
 
 const credentials = computed(() => status.value?.source.credentials ?? []);
 const canAddCredential = computed(() => !credentials.value.some((item) => item.status !== "revoked"));
+let refreshTimer: number | undefined;
+
+const taskStatusLabel = (value: string) => ({
+  queued: "已排队", syncing: "同步中", waiting_for_data: "等待数据", running: "运行中",
+  ready: "已就绪", completed: "已完成", partial: "部分完成", failed: "失败", cancelled: "已取消",
+}[value] ?? value);
+const taskStageLabel = (value: string) => ({
+  queued: "等待调度", synchronizing: "同步并校验", verified: "完整性已验证",
+  preparing_data: "准备训练数据", training: "训练模型", finished: "已结束", failed: "处理失败",
+}[value] ?? value);
+const taskStatusType = (value: string) => value === "completed" || value === "ready" ? "success"
+  : value === "failed" ? "danger" : value === "partial" ? "warning" : "info";
 
 async function loadCatalogue() {
   catalogueLoading.value = true;
@@ -111,7 +123,9 @@ async function load() {
 
 onMounted(async () => {
   await Promise.all([load(), loadReadinessPools()]);
+  refreshTimer = window.setInterval(() => { if (!document.hidden) void load(); }, 5000);
 });
+onBeforeUnmount(() => { if (refreshTimer !== undefined) window.clearInterval(refreshTimer); });
 
 async function loadReadinessPools() {
   try {
@@ -435,6 +449,14 @@ function securityStatusLabel(value: string) {
               show-icon
               :closable="false"
             />
+            <el-alert
+              class="provider-budget-alert"
+              type="info"
+              show-icon
+              :closable="false"
+              :title="`Tushare 2000 积分预算：官方 ${status.provider_budget.official_calls_per_minute} 次/分钟、单接口 ${status.provider_budget.official_calls_per_api_per_day.toLocaleString()} 次/日；日线单次最多 ${status.provider_budget.daily_rows_per_call.toLocaleString()} 行`"
+              :description="`系统按每次至少 ${status.provider_budget.configured_request_interval_seconds} 秒保守调度；这是配置档案，不代表已自动识别账号实际等级。`"
+            />
             <el-form label-position="top" class="automation-form">
               <div class="automation-grid">
                 <el-form-item label="自动同步"><el-switch v-model="automationForm.enabled" active-text="启用" inactive-text="关闭" /></el-form-item>
@@ -478,6 +500,20 @@ function securityStatusLabel(value: string) {
             </el-table>
             <el-table :data="status.automation.jobs" empty-text="暂无自动同步任务" size="small">
               <el-table-column prop="trade_date" label="交易日" width="110" /><el-table-column prop="status" label="状态" width="100" /><el-table-column prop="attempts" label="尝试" width="80" /><el-table-column prop="rows_received" label="获取" width="100" /><el-table-column prop="rows_inserted" label="新增" width="100" /><el-table-column prop="rows_kept" label="保留" width="100" /><el-table-column prop="error_message" label="说明" min-width="180" />
+            </el-table>
+          </el-card>
+          <el-card shadow="never" class="task-board">
+            <template #header><div class="card-header"><div><strong>后台任务进度</strong><p>统一展示同步、按需补数、股票目录和机器学习数据准备；进度来自持久任务单元，可在服务重启后继续。</p></div><el-tag effect="plain">每 5 秒刷新</el-tag></div></template>
+            <el-table :data="status.data_tasks" empty-text="暂无后台数据任务" size="small">
+              <el-table-column prop="title" label="任务" min-width="170" />
+              <el-table-column label="状态" width="105"><template #default="scope"><el-tag :type="taskStatusType(scope.row.status)">{{ taskStatusLabel(scope.row.status) }}</el-tag></template></el-table-column>
+              <el-table-column label="当前阶段" min-width="130"><template #default="scope">{{ taskStageLabel(scope.row.stage) }}</template></el-table-column>
+              <el-table-column label="进度" min-width="230">
+                <template #default="scope"><el-progress :percentage="scope.row.progress.percent" :status="scope.row.status === 'failed' ? 'exception' : ['completed', 'ready'].includes(scope.row.status) ? 'success' : undefined" /><small>{{ scope.row.progress.completed.toLocaleString() }} / {{ scope.row.progress.total.toLocaleString() }} {{ scope.row.progress.unit === 'symbols' ? '只标的' : scope.row.progress.unit === 'records' ? '条记录' : '个数据单元' }}</small></template>
+              </el-table-column>
+              <el-table-column label="新增行" width="100"><template #default="scope">{{ scope.row.rows.toLocaleString() }}</template></el-table-column>
+              <el-table-column label="说明" min-width="190"><template #default="scope">{{ scope.row.safe_error ?? '—' }}</template></el-table-column>
+              <el-table-column prop="updated_at" label="更新时间" min-width="180" />
             </el-table>
           </el-card>
           <el-card shadow="never">
@@ -580,6 +616,7 @@ function securityStatusLabel(value: string) {
 .workspace-tabs :deep(.el-tab-pane) { display: grid; gap: 1rem; }
 .inline-form { align-items: end; }
 .automation-form { margin-top: 1rem; }
+.provider-budget-alert { margin-top: .75rem; }
 .automation-grid { display: grid; gap: 1rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .automation-actions { align-items: center; display: flex; gap: 1rem; justify-content: space-between; }
 .automation-actions > div { align-items: center; color: var(--byq-text-muted); display: flex; flex-wrap: wrap; gap: .5rem; }
