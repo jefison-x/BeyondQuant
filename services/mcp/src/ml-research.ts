@@ -65,3 +65,11 @@ export function fetchByqMlTrainingGet(backendUrl: string, runId: string, fetcher
 export function fetchByqMlTrainingCancel(backendUrl: string, runId: string, fetcher: Fetcher = fetch) {
   return requestMl(backendUrl, `/v1/research/ml/training-runs/${encodeURIComponent(runId)}/cancel`, { method: "POST", body: "{}" }, fetcher);
 }
+
+export function fetchByqMlPredictionCreate(backendUrl: string, request: MlRequest, fetcher: Fetcher = fetch) {
+  return requestMl(backendUrl, "/v1/research/ml/prediction-runs", { method: "POST", body: JSON.stringify(request) }, fetcher);
+}
+
+export function fetchByqMlPredictionGet(backendUrl: string, runId: string, fetcher: Fetcher = fetch) {
+  return requestMl(backendUrl, `/v1/research/ml/prediction-runs/${encodeURIComponent(runId)}`, { method: "GET" }, fetcher);
+}

@@ -244,8 +244,8 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
     ),
     AgentRole(
         role_id="ml_researcher",
-        version="1.0.0",
-        description="Creates closed-profile ML research strategies and manages trusted training without approving strategies or accessing model objects.",
+        version="1.1.0",
+        description="Creates closed-profile ML research, manages trusted training/prediction, and executes derived backtest tasks without approving strategies or accessing model objects.",
         allowed_tools=(
             "byq_agent_context",
             "byq_agent_run_start",
@@ -260,10 +260,21 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_ml_training_create",
             "byq_ml_training_get",
             "byq_ml_training_cancel",
+            "byq_ml_prediction_create",
+            "byq_ml_prediction_get",
+            "byq_backtest_task_get",
+            "byq_backtest_task_execute",
+            "byq_backtest_task_cancel",
         ),
         delegate_to=(),
-        approval_required_actions=("byq_ml_training_create", "byq_ml_training_cancel"),
-        evidence_kinds=("ml_strategy_version", "ml_training_run", "ml_model_metadata"),
+        approval_required_actions=(
+            "byq_ml_training_create", "byq_ml_training_cancel",
+            "byq_ml_prediction_create", "byq_backtest_task_execute", "byq_backtest_task_cancel",
+        ),
+        evidence_kinds=(
+            "ml_strategy_version", "ml_training_run", "ml_model_metadata",
+            "ml_prediction_snapshot", "signal_snapshot", "backtest_result",
+        ),
     ),
 )
 ROLE_BY_ID = {role.role_id: role for role in ROLE_CATALOG}

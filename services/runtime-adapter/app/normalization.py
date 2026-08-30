@@ -46,6 +46,8 @@ _CAPABILITIES: dict[str, tuple[str, str]] = {
     "byq_ml_training_create": ("strategy", "创建模型训练任务"),
     "byq_ml_training_get": ("review", "跟踪模型训练任务"),
     "byq_ml_training_cancel": ("review", "取消模型训练任务"),
+    "byq_ml_prediction_create": ("strategy", "生成样本外预测与冻结信号"),
+    "byq_ml_prediction_get": ("review", "跟踪模型预测任务"),
     "byq_agent_approval_request": ("review", "发起审批"),
     "byq_agent_approval_get": ("review", "读取审批状态"),
     "byq_agent_approval_decide": ("review", "记录审批决定"),
@@ -503,6 +505,7 @@ def _execution_context(capability: str) -> dict[str, str]:
         "byq_delegate_factor_research": ("因子研究 Agent", "子 Agent 编排插件", "因子研究 Skill"),
         "byq_delegate_strategy_research": ("策略研究 Agent", "子 Agent 编排插件", "策略研究 Skill"),
         "byq_delegate_backtest_analysis": ("回测分析 Agent", "子 Agent 编排插件", "回测分析 Skill"),
+        "byq_delegate_ml_research": ("模型研究 Agent", "子 Agent 编排插件", "模型研究 Skill"),
     }
     if capability in delegates:
         agent, plugin, skill = delegates[capability]
@@ -514,6 +517,8 @@ def _execution_context(capability: str) -> dict[str, str]:
         agent, plugin, skill = "量化研究 Agent", "BeyondQuant MCP", "因子研究 Skill"
     elif capability.startswith("byq_strategy_"):
         agent, plugin, skill = "量化研究 Agent", "BeyondQuant MCP", "策略研究 Skill"
+    elif capability.startswith("byq_ml_"):
+        agent, plugin, skill = "模型研究 Agent", "BeyondQuant MCP", "模型研究 Skill"
     elif capability.startswith("byq_backtest_"):
         agent, plugin, skill = "量化研究 Agent", "BeyondQuant MCP", "回测分析 Skill"
     elif capability.startswith("byq_pool_"):

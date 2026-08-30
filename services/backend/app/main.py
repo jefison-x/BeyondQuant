@@ -79,7 +79,13 @@ from .backtest import (
     signal_snapshot_content_sha256,
     membership_fingerprint,
 )
-from .backtest_task import project_backtest_task, signal_job_id_from_task
+from .backtest_task import (
+    is_ml_backtest_task,
+    ml_prediction_id_from_task,
+    project_backtest_task,
+    signal_job_id_from_task,
+    task_id_from_ml_prediction,
+)
 from .agent_research import (
     AgentConflict,
     AgentForbidden,
@@ -1048,11 +1054,11 @@ def _backtest_task_call(operation: Callable[[], dict[str, object]]) -> dict[str,
         return operation()
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    except (ResearchNotFound, PaperTradingNotFound, SignalProducerNotFound, BacktestNotFound) as error:
+    except (ResearchNotFound, PaperTradingNotFound, SignalProducerNotFound, BacktestNotFound, MLPredictionNotFound) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    except (SignalProducerConflict, BacktestConflict) as error:
+    except (SignalProducerConflict, BacktestConflict, MLPredictionConflict) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
-    except (SignalProducerPersistenceError, BacktestStorageError) as error:
+    except (SignalProducerPersistenceError, BacktestStorageError, MLPredictionPersistenceError) as error:
         raise HTTPException(status_code=503, detail="backtest task storage is unavailable") from error
 
 
@@ -1597,6 +1603,11 @@ def _ml_agent_artifact_projection(artifact: dict[str, Any]) -> dict[str, object]
             "feature_order", "best_iteration", "metrics", "counts", "runtime_lock",
             "runtime_identity", "content_sha256",
         },
+        "ml_prediction_snapshot": {
+            "schema_version", "model_artifact_id", "stock_pool_snapshot_id",
+            "prediction_split", "runtime_lock", "runtime_identity", "counts",
+            "content_sha256",
+        },
     }
     if kind not in allowed:
         return None
@@ -1660,13 +1671,17 @@ def get_ml_agent_workspace(request: Request) -> dict[str, object]:
     training_runs = ml_training_store.list_runs(
         trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"]
     )["runs"]
+    prediction_runs = ml_prediction_store.list_runs(
+        trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"]
+    )["runs"]
     return {
         "schema_version": "ml-agent-workspace.v1",
         "tasks": tasks,
         "pools": pools,
         "artifacts": artifacts,
         "training_runs": training_runs,
-        "prediction_available_via_agent": False,
+        "prediction_runs": prediction_runs,
+        "prediction_available_via_agent": True,
     }
 
 
@@ -1986,7 +2001,12 @@ def create_ml_prediction_run(payload: dict[str, Any], request: Request) -> dict[
             model.get("stock_pool_snapshot_id"), domain="ml_prediction",
             reference_id=run["prediction_run_id"], trusted_owner=context["owner_principal"],
         )
-        return {"prediction_run": run}
+        return {
+            "prediction_run": run,
+            "backtest_task": _ml_backtest_task_view(
+                run, owner_principal=context["owner_principal"]
+            ),
+        }
 
     return _ml_call(operation)
 
@@ -2002,10 +2022,19 @@ def list_ml_prediction_runs(request: Request) -> dict[str, object]:
 @app.get("/v1/research/ml/prediction-runs/{prediction_run_id}")
 def get_ml_prediction_run(prediction_run_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
-    return _ml_call(lambda: {"prediction_run": ml_prediction_store.get(
-        prediction_run_id, trusted_workspace=context["workspace_id"],
-        trusted_owner=context["owner_principal"],
-    )})
+    def operation() -> dict[str, object]:
+        run = ml_prediction_store.get(
+            prediction_run_id, trusted_workspace=context["workspace_id"],
+            trusted_owner=context["owner_principal"],
+        )
+        return {
+            "prediction_run": run,
+            "backtest_task": _ml_backtest_task_view(
+                run, owner_principal=context["owner_principal"]
+            ),
+        }
+
+    return _ml_call(operation)
 
 
 _STRATEGY_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{2,63}$")
@@ -2545,6 +2574,36 @@ def _backtest_task_view(signal_job: dict[str, Any], *, owner_principal: str) -> 
     )
 
 
+def _ml_backtest_task_view(
+    prediction_run: dict[str, Any], *, owner_principal: str
+) -> dict[str, object]:
+    snapshot_id = prediction_run.get("signal_artifact_id")
+    backtest_job = None
+    if isinstance(snapshot_id, str):
+        backtest_job = backtest_store.find_by_signal_snapshot(
+            owner_principal=owner_principal, signal_snapshot_artifact_id=snapshot_id
+        )
+    signal_projection = {
+        "job_id": prediction_run["prediction_run_id"],
+        "status": prediction_run["status"],
+        "attempt_count": prediction_run.get("attempt_count"),
+        "result_artifact_id": snapshot_id,
+        "error_code": prediction_run.get("error_code"),
+        "error_detail": prediction_run.get("error_detail"),
+    }
+    return project_backtest_task(
+        research_task_id=str(prediction_run["task_id"]),
+        strategy_version_artifact_id=str(prediction_run["ml_strategy_artifact_id"]),
+        approval_artifact_id=str(prediction_run["approval_artifact_id"]),
+        stock_pool_snapshot_id=str(prediction_run["stock_pool_snapshot_id"]),
+        readiness={"state": "ready", "source": "frozen_ml_prediction"},
+        signal_job=signal_projection,
+        backtest_job=backtest_job,
+        backtest_task_id=task_id_from_ml_prediction(prediction_run["prediction_run_id"]),
+        signal_cancellable=False,
+    )
+
+
 def _backtest_task_input(payload: object, *, include_idempotency: bool) -> dict[str, Any]:
     allowed = {
         "task_id", "experiment_id", "strategy_version_artifact_id",
@@ -2624,6 +2683,16 @@ def get_backtest_task(backtest_task_id: str, request: Request) -> dict[str, obje
     context = _required_agent_context(request)
 
     def operation() -> dict[str, object]:
+        if is_ml_backtest_task(backtest_task_id):
+            ml_context = _required_agent_context(request, include_workspace=True)
+            prediction_run = ml_prediction_store.get(
+                ml_prediction_id_from_task(backtest_task_id),
+                trusted_workspace=ml_context["workspace_id"],
+                trusted_owner=ml_context["owner_principal"],
+            )
+            return {"task": _ml_backtest_task_view(
+                prediction_run, owner_principal=ml_context["owner_principal"]
+            )}
         signal_job = signal_job_store.get(
             signal_job_id_from_task(backtest_task_id),
             trusted_owner=context["owner_principal"],
@@ -2639,6 +2708,46 @@ def execute_backtest_task(backtest_task_id: str, request: Request) -> dict[str, 
     context = _required_agent_context(request)
 
     def operation() -> dict[str, object]:
+        if is_ml_backtest_task(backtest_task_id):
+            ml_context = _required_agent_context(request, include_workspace=True)
+            prediction_run = ml_prediction_store.get(
+                ml_prediction_id_from_task(backtest_task_id),
+                trusted_workspace=ml_context["workspace_id"],
+                trusted_owner=ml_context["owner_principal"],
+            )
+            current = _ml_backtest_task_view(
+                prediction_run, owner_principal=ml_context["owner_principal"]
+            )
+            if current["phase"] not in {"ready_to_execute", "queued"}:
+                return {"task": current}
+            references = current["references"]
+            backtest_job_id = references.get("backtest_job_id")
+            if backtest_job_id is None:
+                created = create_backtest_job(
+                    {
+                        "task_id": prediction_run["task_id"],
+                        "experiment_id": prediction_run.get("experiment_id"),
+                        "strategy_version_artifact_id": prediction_run["ml_strategy_artifact_id"],
+                        "approval_artifact_id": prediction_run["approval_artifact_id"],
+                        "signal_snapshot_artifact_id": prediction_run["signal_artifact_id"],
+                        "stock_pool_snapshot_id": prediction_run["stock_pool_snapshot_id"],
+                        "trace_id": ml_context["trace_id"],
+                        "idempotency_key": f"backtest-task-{backtest_task_id.removeprefix('backtesttask_ml_')}",
+                    },
+                    request,
+                )
+                backtest_job_id = created["job"]["job_id"]
+            job = backtest_store.get(backtest_job_id)
+            if job["status"] == "queued":
+                run_backtest_job(str(backtest_job_id), request)
+            refreshed = ml_prediction_store.get(
+                prediction_run["prediction_run_id"],
+                trusted_workspace=ml_context["workspace_id"],
+                trusted_owner=ml_context["owner_principal"],
+            )
+            return {"task": _ml_backtest_task_view(
+                refreshed, owner_principal=ml_context["owner_principal"]
+            )}
         signal_job = signal_job_store.get(
             signal_job_id_from_task(backtest_task_id),
             trusted_owner=context["owner_principal"],
@@ -2680,6 +2789,27 @@ def cancel_backtest_task(backtest_task_id: str, request: Request) -> dict[str, o
     context = _required_agent_context(request)
 
     def operation() -> dict[str, object]:
+        if is_ml_backtest_task(backtest_task_id):
+            ml_context = _required_agent_context(request, include_workspace=True)
+            prediction_run = ml_prediction_store.get(
+                ml_prediction_id_from_task(backtest_task_id),
+                trusted_workspace=ml_context["workspace_id"],
+                trusted_owner=ml_context["owner_principal"],
+            )
+            current = _ml_backtest_task_view(
+                prediction_run, owner_principal=ml_context["owner_principal"]
+            )
+            backtest_job_id = current["references"].get("backtest_job_id")
+            if isinstance(backtest_job_id, str):
+                cancel_backtest_job(backtest_job_id, request)
+            refreshed = ml_prediction_store.get(
+                prediction_run["prediction_run_id"],
+                trusted_workspace=ml_context["workspace_id"],
+                trusted_owner=ml_context["owner_principal"],
+            )
+            return {"task": _ml_backtest_task_view(
+                refreshed, owner_principal=ml_context["owner_principal"]
+            )}
         signal_job = signal_job_store.get(
             signal_job_id_from_task(backtest_task_id),
             trusted_owner=context["owner_principal"],

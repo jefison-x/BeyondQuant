@@ -14,6 +14,8 @@ from app.ml_prediction import (
 from app.ml_strategy import FEATURE_ORDER, normalize_ml_strategy, content_sha256
 from app.ml_training import FEATURE_SCHEMA, MODEL_SCHEMA, RUNTIME_IDENTITY
 from app.main import app
+from app.backtest_task import task_id_from_ml_prediction
+from app.paper_trading import PaperTradingStore
 from app.research import ResearchStore
 from tests.test_ml_strategy import valid_strategy
 from tests.workspace_helpers import trusted_agent_context
@@ -97,8 +99,13 @@ def test_prediction_ranking_is_deterministic_and_rows_never_expose_labels() -> N
 
 def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_path) -> None:
     context = trusted_agent_context("ml-prediction-owner")
-    research, runs = ResearchStore(), MLPredictionRunStore()
+    research, runs, pools = ResearchStore(), MLPredictionRunStore(), PaperTradingStore()
     try:
+        pool = pools.create_pool(
+            {"name": "ML prediction pool", "symbols": ["000001.SZ", "000002.SZ"]},
+            trusted_owner="ml-prediction-owner",
+        )
+        pool_snapshot_id = pool["snapshot"]["snapshot_id"]
         task = research.create_task({"owner_principal": "ml-prediction-owner", "title": "ML prediction",
             "objective": "Freeze OOS signals", "trace_id": "trace-pred", "idempotency_key": "pred-task"})
         strategy = strategy_value()
@@ -121,7 +128,7 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
             "runtime_identity": RUNTIME_IDENTITY, "image_identity": "test-image", "feature_order": FEATURE_ORDER,
             "target": strategy["target"], "split": strategy["split"], "feature_snapshot_artifact_id": feature_artifact["artifact_id"],
             "feature_snapshot_sha256": feature["content_sha256"], "strategy_version_artifact_id": strategy_artifact["artifact_id"],
-            "stock_pool_snapshot_id": "snapshot_pool", "training_run_id": "mlrun_test", "effective_parameters": {},
+            "stock_pool_snapshot_id": pool_snapshot_id, "training_run_id": "mlrun_test", "effective_parameters": {},
             "best_iteration": 3, "metrics": {}, "counts": {}, "coverage": {}}
         model["content_sha256"] = content_sha256(model)
         model_artifact = research.create_artifact({"task_id": task["task_id"], "kind": "ml_model", "content": model,
@@ -130,7 +137,7 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
         run = runs.create(workspace_id=context["x-byq-workspace-id"], owner_principal="ml-prediction-owner",
             task_id=task["task_id"], experiment_id=None, ml_strategy_artifact_id=strategy_artifact["artifact_id"],
             approval_artifact_id=approval["artifact_id"], model_artifact_id=model_artifact["artifact_id"],
-            feature_artifact_id=feature_artifact["artifact_id"], stock_pool_snapshot_id="snapshot_pool",
+            feature_artifact_id=feature_artifact["artifact_id"], stock_pool_snapshot_id=pool_snapshot_id,
             input_document={"strategy": strategy, "model": model, "feature": feature, "ready_input": ready_input(),
                             "readiness": {"requirement_sha256": "c" * 64, "ready_input_sha256": "b" * 64},
                             "execution": {"initial_capital": 100000.0, "lot_size": 100}},
@@ -147,17 +154,25 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
             ("2024-03-03", "000002.SZ", -1),
         ]
         assert signal["content"]["source"]["ml_lineage"]["prediction_snapshot_artifact_id"] == prediction["artifact_id"]
-        response = TestClient(app).post("/v1/research/backtests", headers=context, json={
-            "task_id": task["task_id"], "strategy_version_artifact_id": strategy_artifact["artifact_id"],
-            "approval_artifact_id": approval["artifact_id"], "signal_snapshot_artifact_id": signal["artifact_id"],
-            "trace_id": "trace-ml-backtest", "idempotency_key": "ml-backtest-submit",
-        })
-        assert response.status_code == 202, response.text
-        assert response.json()["job"]["strategy_version_artifact_id"] == strategy_artifact["artifact_id"]
+        client = TestClient(app)
+        backtest_task_id = task_id_from_ml_prediction(completed["prediction_run_id"])
+        status = client.get(f"/v1/research/backtest-tasks/{backtest_task_id}", headers=context)
+        assert status.status_code == 200, status.text
+        assert status.json()["task"]["phase"] == "ready_to_execute"
+        assert status.json()["task"]["references"]["signal_snapshot_artifact_id"] == signal["artifact_id"]
+        hidden = client.get(
+            f"/v1/research/backtest-tasks/{backtest_task_id}",
+            headers=trusted_agent_context("ml-prediction-other"),
+        )
+        assert hidden.status_code == 404
+        response = client.post(f"/v1/research/backtest-tasks/{backtest_task_id}/execute", headers=context)
+        assert response.status_code == 200, response.text
+        assert response.json()["task"]["phase"] == "completed"
+        assert response.json()["task"]["references"]["backtest_job_id"]
         assert runs.create(workspace_id=context["x-byq-workspace-id"], owner_principal="ml-prediction-owner",
             task_id=task["task_id"], experiment_id=None, ml_strategy_artifact_id=strategy_artifact["artifact_id"],
             approval_artifact_id=approval["artifact_id"], model_artifact_id=model_artifact["artifact_id"],
-            feature_artifact_id=feature_artifact["artifact_id"], stock_pool_snapshot_id="snapshot_pool",
+            feature_artifact_id=feature_artifact["artifact_id"], stock_pool_snapshot_id=pool_snapshot_id,
             input_document={"strategy": strategy, "model": model, "feature": feature, "ready_input": ready_input(),
                             "readiness": {"requirement_sha256": "c" * 64, "ready_input_sha256": "b" * 64},
                             "execution": {"initial_capital": 100000.0, "lot_size": 100}},
@@ -168,7 +183,7 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
         tampered = runs.create(workspace_id=context["x-byq-workspace-id"], owner_principal="ml-prediction-owner",
             task_id=task["task_id"], experiment_id=None, ml_strategy_artifact_id=strategy_artifact["artifact_id"],
             approval_artifact_id=approval["artifact_id"], model_artifact_id=model_artifact["artifact_id"],
-            feature_artifact_id=feature_artifact["artifact_id"], stock_pool_snapshot_id="snapshot_pool",
+            feature_artifact_id=feature_artifact["artifact_id"], stock_pool_snapshot_id=pool_snapshot_id,
             input_document={"strategy": strategy, "model": tampered_model, "feature": feature, "ready_input": ready_input(),
                             "readiness": {"requirement_sha256": "c" * 64, "ready_input_sha256": "b" * 64},
                             "execution": {"initial_capital": 100000.0, "lot_size": 100}},
@@ -180,7 +195,7 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
         recoverable = runs.create(workspace_id=context["x-byq-workspace-id"], owner_principal="ml-prediction-owner",
             task_id=task["task_id"], experiment_id=None, ml_strategy_artifact_id=strategy_artifact["artifact_id"],
             approval_artifact_id=approval["artifact_id"], model_artifact_id=model_artifact["artifact_id"],
-            feature_artifact_id=feature_artifact["artifact_id"], stock_pool_snapshot_id="snapshot_pool",
+            feature_artifact_id=feature_artifact["artifact_id"], stock_pool_snapshot_id=pool_snapshot_id,
             input_document={"strategy": strategy, "model": model, "feature": feature, "ready_input": ready_input(),
                             "readiness": {"requirement_sha256": "c" * 64, "ready_input_sha256": "b" * 64},
                             "execution": {"initial_capital": 100000.0, "lot_size": 100}},
@@ -202,5 +217,6 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
         finally:
             restarted.close()
     finally:
+        pools.close()
         runs.close()
         research.close()

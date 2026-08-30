@@ -32,10 +32,21 @@ Use `byq_ml_training_get` for status and safe metrics; do not request model
 objects, object references, raw feature rows, Provider payloads, PostgreSQL, or
 DSH internals.
 
-Prediction, frozen-signal creation, and ML-to-backtest execution are not Agent
-capabilities in this phase. Do not call similarly named tools or substitute a
-generic artifact operation. Explain that those steps remain available in the
-Product model-research workspace until the Agent contract is extended.
+After a completed training run returns safe model metadata, prediction follows
+a separate sequence. Authorize `byq_ml_prediction_create`, pass the validated
+model Artifact, its matching human approval, and a bounded execution profile,
+then audit that exact action. `byq_ml_prediction_get` returns prediction status,
+the immutable frozen-signal reference, and a derived `backtest-task.v1` ID. The
+Worker performs prediction, ranking, and signal freezing; never reproduce those
+steps in DSH or construct raw prediction rows/signals.
+
+Only the derived ML backtest task returned by prediction may be used. Query it
+with `byq_backtest_task_get`; when it is ready and the user explicitly requests
+execution, separately authorize and invoke `byq_backtest_task_execute`, then
+audit the result. Cancellation is also separately approval-gated. Never use
+`byq_backtest_task_prepare` or `byq_backtest_task_create` for ML, never swap in
+a generic strategy version, and never claim prediction completion before the
+status and frozen signal are authoritative.
 
 In public progress and final answers, use product language. Omit role IDs,
 skill names, tool names, internal Artifact IDs, workers, runtime locks, and

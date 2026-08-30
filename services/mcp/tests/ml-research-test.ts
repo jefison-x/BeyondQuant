@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
-  fetchByqMlCapabilities, fetchByqMlStrategyCreate, fetchByqMlTrainingCancel,
+  fetchByqMlCapabilities, fetchByqMlPredictionCreate, fetchByqMlPredictionGet,
+  fetchByqMlStrategyCreate, fetchByqMlTrainingCancel,
   fetchByqMlTrainingCreate, fetchByqMlTrainingGet, fetchByqMlWorkspace,
 } from "../src/ml-research.js";
 
@@ -52,3 +53,26 @@ for (const [call, suffix, method] of [
 }
 
 console.log("ML MCP translation PASS: closed capabilities, safe workspace, strategy and training lifecycle");
+
+const predictionId = "mlpred_0123456789abcdef0123456789abcdef";
+const prediction = await fetchByqMlPredictionCreate(backend, {
+  task_id: "task_1", model_artifact_id: "artifact_model", approval_artifact_id: "artifact_approval",
+  execution: { initial_capital: 100000, lot_size: 100 }, trace_id: "trace-1", idempotency_key: "prediction-1",
+}, async (url, init) => {
+  assert.equal(url, `${backend}/v1/research/ml/prediction-runs`);
+  assert.doesNotMatch(String(init?.body), /model_object|object_reference|feature_rows|python|sql|url/i);
+  return new Response(JSON.stringify({
+    prediction_run: { prediction_run_id: predictionId, status: "queued" },
+    backtest_task: { schema_version: "backtest-task.v1", backtest_task_id: "backtesttask_ml_0123456789abcdef0123456789abcdef" },
+  }), { status: 202 });
+});
+assert.equal(prediction.isError, false);
+
+const predictionStatus = await fetchByqMlPredictionGet(backend, predictionId, async (url, init) => {
+  assert.equal(url, `${backend}/v1/research/ml/prediction-runs/${predictionId}`);
+  assert.equal(init?.method, "GET");
+  return new Response(JSON.stringify({ prediction_run: { prediction_run_id: predictionId, status: "completed" } }), { status: 200 });
+});
+assert.equal(predictionStatus.isError, false);
+
+console.log("ML prediction MCP translation PASS: prediction lifecycle returns the derived backtest task without model objects");
