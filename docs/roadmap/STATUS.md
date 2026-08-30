@@ -1,14 +1,14 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=74 -->
+<!-- byq:current-completed-phase=75 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 74**——可靠 LightGBM 最小闭环已通过 owner/workspace-scoped
-  Gateway/Product API 与真实模型研究界面贯通 frozen pool → training → model → out-of-sample
-  prediction → frozen signal → Backtest；PostgreSQL/Compose、restart、two-user、no-mock 浏览器和
-  Chrome MCP 验收均通过。浏览器不接触模型对象、原始特征或内部运行时边界。
+- 当前已完成阶段：**Phase 75**——依据 ADR-0044 建立版本化
+  `product-capability-catalog.v1`，覆盖全部稳定 Product 用户路由、受众、前置条件、Agent 支持等级、
+  MCP 对应关系和限制，并由架构测试阻止无效 route、未知 tool、越权支持声明和目录漂移。本阶段不改
+  Product runtime、schema、API 或 UI；Phase 74 的 LightGBM 浏览器闭环保持不变。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -59,6 +59,7 @@ history 推断项目状态。
 - trusted stock-pool producers：**ADR-0041**
 - trusted multi-index catalogue：**ADR-0042**
 - auditable machine-learning research pipeline：**ADR-0043**
+- Product Agent 产品能力目录与任务化接入：**ADR-0044**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -311,6 +312,12 @@ Worker restart identity、two-user isolation、六条真实 Product API 浏览�
 desktop/mobile Accessibility/Best Practices 100、same-origin Network 和空 Console 验收均通过；证据位于
 `docs/evidence/phase-74/`。
 
+Phase 75 Product Capability Contract Baseline 依据 ADR-0044 建立 BYQ-owned、版本化的产品能力目录，
+统一稳定路由、普通/管理员受众、前置条件、产品用途、Agent 支持等级、MCP 映射和真实限制。CI 验证
+目录 identity、固定 route 和已登记 MCP tool；Community 的帮助/Agent UX 只作 `PORT_UX` 证据，旧
+Agent API/runtime/direct internal path 保持 `DROP`/`REPLACE`。本阶段未增加 Product DSH tool、领域写、
+第二工作流或 UI。
+
 Post-Phase 74 Model Research Navigation Maintenance 将量化模型研究从个人“模型配置”提升为
 “策略管理”与“回测管理”之间的一级业务工作台；个人模型设置继续只管理 LLM 凭据、档案与 Agent
 绑定。策略编辑器为研究任务、策略身份、说明、参数、数据依赖和 Python 脚本提供持久可见标题与
@@ -323,10 +330,9 @@ always-cleanup、重型任务锁、内存 preflight 和 zero-resource verificati
 
 ## 当前授权边界
 
-- Phase 49-74 与相应 Accepted ADR/计划均已完成。
-- 当前没有已授权的下一 Product Phase。LightGBM 最小闭环已满足 ADR-0043 的 HIST 前置验收，但这不构成
-  HIST 实现授权；HIST 必须先由新的 Accepted ADR 与明确 Phase 计划固定图关系来源、历史可见性、runtime、
-  资源上限和复用边界，再由维护者明确授权。
+- Phase 49-75 与相应 Accepted ADR/计划均已完成。
+- 维护者已明确授权按 ADR-0044 顺序推进 Phase 76–79；每阶段仍必须独立 worktree/branch/PR，前一阶段
+  合并后才能开始下一阶段。该授权不包含 HIST、实盘券商、AutoML、GPU 或在线学习。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 

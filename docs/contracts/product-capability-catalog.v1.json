@@ -1,0 +1,183 @@
+{
+  "schema_version": "product-capability-catalog.v1",
+  "catalog_version": "2026.08.30",
+  "support_levels": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE", "UNAVAILABLE"],
+  "capabilities": [
+    {
+      "capability_id": "xiaoba-research-conversation",
+      "name": "小巴投研会话",
+      "route_id": "/agent",
+      "audience": "USER",
+      "purpose": "在持久化对话中进行市场研究、策略设计、任务跟进和结果复盘。",
+      "prerequisites": ["已登录并拥有有效个人工作区"],
+      "support": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE"],
+      "agent_tools": ["byq_agent_context", "byq_agent_roles", "byq_agent_run_start"],
+      "limitations": ["小巴不能获得 Engineering 权限或直接访问业务数据库"]
+    },
+    {
+      "capability_id": "dashboard",
+      "name": "账户工作台",
+      "route_id": "/dashboard",
+      "audience": "USER",
+      "purpose": "查看投研资产、最近回测、行情状态和系统健康摘要。",
+      "prerequisites": ["已登录"],
+      "support": ["EXPLAIN", "NAVIGATE"],
+      "agent_tools": [],
+      "limitations": ["工作台摘要不是领域对象的权威编辑入口"]
+    },
+    {
+      "capability_id": "stock-pool-management",
+      "name": "股票池管理",
+      "route_id": "/stock-pool",
+      "audience": "USER",
+      "purpose": "创建和管理 custom、index、dynamic 股票池及不可变成分快照。",
+      "prerequisites": ["有效个人工作区", "指数或动态股票池需要已就绪的可信数据"],
+      "support": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE"],
+      "agent_tools": ["byq_pool_list", "byq_pool_get", "byq_pool_create"],
+      "limitations": ["小巴当前只执行有界 custom 股票池读写；指数和动态生产能力仅提供产品引导"]
+    },
+    {
+      "capability_id": "strategy-management",
+      "name": "策略管理",
+      "route_id": "/strategy",
+      "audience": "USER",
+      "purpose": "管理策略草稿、校验、不可变版本、审批、信号 lineage 和回测入口。",
+      "prerequisites": ["研究任务", "可执行策略必须通过 BYQ 校验"],
+      "support": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE"],
+      "agent_tools": ["byq_strategy_validate", "byq_strategy_version_create", "byq_strategy_export"],
+      "limitations": ["策略批准和执行保持独立，Agent 不能自行批准"]
+    },
+    {
+      "capability_id": "machine-learning-research",
+      "name": "模型研究",
+      "route_id": "/model-research",
+      "audience": "USER",
+      "purpose": "创建可审计 LightGBM 研究，完成训练、样本外预测、冻结信号和回测。",
+      "prerequisites": ["冻结股票池", "严格时间顺序的训练、验证和预测窗口", "策略人工批准"],
+      "support": ["EXPLAIN", "NAVIGATE", "UNAVAILABLE"],
+      "agent_tools": [],
+      "limitations": ["Phase 75 尚未向 Product Agent 暴露 ML MCP；只支持 LightGBM 封闭能力"]
+    },
+    {
+      "capability_id": "backtest-management",
+      "name": "回测管理",
+      "route_id": "/backtest",
+      "audience": "USER",
+      "purpose": "以冻结信号运行确定性回测，并比较指标、成交、持仓、风险和 lineage。",
+      "prerequisites": ["已批准策略版本", "匹配的冻结信号", "完整市场数据"],
+      "support": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE"],
+      "agent_tools": ["byq_backtest_get", "byq_backtest_submit", "byq_backtest_run", "byq_backtest_cancel"],
+      "limitations": ["Phase 75 仍是底层提交合同；Phase 77 将提供面向用户的任务封装"]
+    },
+    {
+      "capability_id": "paper-trading",
+      "name": "模拟操盘",
+      "route_id": "/paper-trading",
+      "audience": "USER",
+      "purpose": "管理仅模拟账户、持仓、订单、T+1、结算、快照、风控和安全转移。",
+      "prerequisites": ["有效股票池快照"],
+      "support": ["EXPLAIN", "NAVIGATE", "UNAVAILABLE"],
+      "agent_tools": [],
+      "limitations": ["当前 Agent 角色未开放模拟账户操作；不存在实盘券商或自动调仓"]
+    },
+    {
+      "capability_id": "profile",
+      "name": "个人资料",
+      "route_id": "/user/profile",
+      "audience": "USER",
+      "purpose": "管理昵称、研究偏好和默认提示词。",
+      "prerequisites": ["已登录"],
+      "support": ["EXPLAIN", "NAVIGATE"],
+      "agent_tools": [],
+      "limitations": ["小巴不代替用户修改账户资料"]
+    },
+    {
+      "capability_id": "appearance",
+      "name": "外观与主题",
+      "route_id": "/user/appearance",
+      "audience": "USER",
+      "purpose": "管理跨设备颜色模式和主题色。",
+      "prerequisites": ["已登录"],
+      "support": ["EXPLAIN", "NAVIGATE"],
+      "agent_tools": [],
+      "limitations": []
+    },
+    {
+      "capability_id": "asset-transfer",
+      "name": "资产管理",
+      "route_id": "/user/assets",
+      "audience": "USER",
+      "purpose": "查看工作区资产并执行安全、可验证的导入导出。",
+      "prerequisites": ["有效个人工作区"],
+      "support": ["EXPLAIN", "NAVIGATE"],
+      "agent_tools": [],
+      "limitations": ["导入不信任 bundle 中的 owner、workspace 或审批权限"]
+    },
+    {
+      "capability_id": "llm-model-settings",
+      "name": "模型配置",
+      "route_id": "/user/models",
+      "audience": "USER",
+      "purpose": "管理写入保密的 LLM 凭据、模型档案和 Agent 绑定。",
+      "prerequisites": ["已登录"],
+      "support": ["EXPLAIN", "NAVIGATE"],
+      "agent_tools": [],
+      "limitations": ["这里配置对话模型，不是量化机器学习研究；小巴不能读取凭据明文"]
+    },
+    {
+      "capability_id": "agent-policy",
+      "name": "智能助手偏好",
+      "route_id": "/user/agent-policy",
+      "audience": "USER",
+      "purpose": "管理个人 Agent 审批偏好、规则和操作边界。",
+      "prerequisites": ["已登录"],
+      "support": ["EXPLAIN", "NAVIGATE"],
+      "agent_tools": [],
+      "limitations": ["个人策略不能越过平台审批和领域不变量"]
+    },
+    {
+      "capability_id": "research-and-approvals",
+      "name": "研究与审批",
+      "route_id": "/user/research",
+      "audience": "USER",
+      "purpose": "查看研究任务、实验、策略版本、Artifact 和审批记录。",
+      "prerequisites": ["有效个人工作区"],
+      "support": ["EXPLAIN", "NAVIGATE", "READ"],
+      "agent_tools": ["byq_research_get"],
+      "limitations": ["Approval 只授权尝试，不代表执行成功"]
+    },
+    {
+      "capability_id": "system-overview",
+      "name": "系统设置",
+      "route_id": "/settings/system/overview",
+      "audience": "ADMIN",
+      "purpose": "查看系统、数据、运行时、模型、Agent、预算、访问和审计投影。",
+      "prerequisites": ["管理员角色"],
+      "support": ["EXPLAIN", "NAVIGATE"],
+      "agent_tools": [],
+      "limitations": ["普通用户不可见；小巴不获得管理员或部署权限"]
+    },
+    {
+      "capability_id": "data-center",
+      "name": "数据中心",
+      "route_id": "/settings/system/data",
+      "audience": "ADMIN",
+      "purpose": "管理 Tushare 凭据、证券目录、数据同步、覆盖和每日自动化。",
+      "prerequisites": ["管理员角色"],
+      "support": ["EXPLAIN", "NAVIGATE"],
+      "agent_tools": [],
+      "limitations": ["Product Agent 不调用 Provider，也不代替管理员同步数据"]
+    },
+    {
+      "capability_id": "plugin-center",
+      "name": "插件中心",
+      "route_id": "/settings/system/plugins",
+      "audience": "ADMIN",
+      "purpose": "查看插件资格、期望策略、部署请求和实际运行 composition identity。",
+      "prerequisites": ["管理员角色"],
+      "support": ["EXPLAIN", "NAVIGATE"],
+      "agent_tools": [],
+      "limitations": ["不支持在线安装、热修改或 Product DSH 自修改"]
+    }
+  ]
+}
