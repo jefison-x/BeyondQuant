@@ -1,10 +1,10 @@
 # BeyondQuant
 
-<!-- byq:current-completed-phase=74 -->
+<!-- byq:current-completed-phase=75 -->
 
 BeyondQuant（BYQ）是一个 AI 原生量化研究平台。当前已完成的项目阶段为
-**Phase 74**：可靠 LightGBM 最小闭环已通过 Product API 和真实模型研究界面贯通冻结股票池、
-训练、模型制品、样本外预测、冻结信号与可复现 Backtest。
+**Phase 75**：可靠 LightGBM 训练、模型制品、样本外预测、冻结信号与可复现 Backtest 闭环保持可用，
+并新增版本化 Product 能力目录与 Agent 接入合同。
 Product Runtime baseline 仍保持 Python `0.1.1rc1` / npm `0.1.1-rc.1`。
 当前状态以
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) 为准。

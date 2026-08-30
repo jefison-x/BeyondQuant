@@ -919,6 +919,20 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+## Phase 75 Product Agent capability pre-implementation audit
+
+The read-only Community Agent、Strategy、Backtest、Paper Trading、Profile、Models、Assets、
+Agent Policy and Operations pages plus its user-guide material were inspected before accepting ADR-0044.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 75 disposition |
+|---|---|---|---|
+| Page-oriented user guide and contextual assistant affordance | Users ask by goal and need a short route, prerequisite and next action. | `PORT_UX` / `REFACTOR` | Build a BYQ-owned versioned capability catalogue; do not copy prose or route/runtime assumptions. |
+| Backtest plan helper and result-to-Agent intents | A user-facing task should resolve prerequisites before consequential execution. | `PORT_UX` / `PORT_TESTS` / `REFACTOR` | Plan a facade over existing BYQ ResearchTask/Approval/readiness/signal/backtest states; no second workflow. |
+| Strategy/backtest embedded ML execution | It demonstrates user intent but mixes fit/predict/execution and cannot prove no-look-ahead. | `REFERENCE_ONLY` / `REPLACE` | Expose ADR-0043 domain intents through bounded MCP while trusted ML Worker remains authoritative. |
+| Raw Agent API/SSE, direct internal API, PydanticAI/Hermes and VectorBT/BaoStock/AKShare paths | No compatible boundary. | `DROP` / `REPLACE` | Preserve DSH + BYQ MCP + Product API and current provider/engine exclusions. |
+
+No Community source, database, cache, credential, runtime or Git history was modified or copied.
+
 ### Post-Phase 74 model-research workspace redesign audit（2026-08-30）
 
 The read-only Community `StrategyView.vue` and `BacktestView.vue` were inspected

@@ -653,3 +653,32 @@ policy → ADR-0017 SignalSnapshot，以及现有 Backtest approval/manifest 衔
 实现 Gateway/Product API、typed client 和真实模型研究界面；完成 frozen pool → training → model →
 prediction → signal → Backtest 的 PostgreSQL/Compose/two-user/restart/Chrome MCP/no-mock golden
 journey。HIST 不在本阶段范围内，后续必须由新的 Accepted ADR 和明确授权启动。
+
+## Product Agent Capability Completion（Phase 75–79）
+
+架构边界由 ADR-0044 固定。五个阶段严格串行，每阶段使用独立 worktree、branch 和 PR。
+
+### Phase 75 — Product capability contract baseline（`COMPLETE`）
+
+建立 `product-capability-catalog.v1`，覆盖稳定用户路由、受众、前置条件、Agent 支持等级、MCP tool
+映射和限制；CI 拒绝重复 identity、无效 route、未知 tool 与越权声明。本阶段不改 runtime/schema/API/UI。
+
+### Phase 76 — Xiaoba product guide（`AUTHORIZED`）
+
+实现精简 `byq-product-guide` skill、按领域 references、只读 `byq_product_help_query` MCP 和固定
+Product route 投影。说明类请求不得产生领域 mutation；Production Product DSH 不挂载源码。
+
+### Phase 77 — Backtest task facade（`PLANNED`）
+
+以 `backtest-task.v1` 聚合既有 ResearchTask、Approval、MarketReadiness、SignalProducerJob 和
+BacktestJob，提供 prepare/create/execute/get/cancel MCP。不得新建第二工作流或让模型构造 raw bars/signals。
+
+### Phase 78 — ML create and training Agent（`PLANNED`）
+
+增加最小权限 ML researcher role/skill/delegate 和 capability/workspace/strategy/training MCP；DSH 不训练、
+不推理、不读取模型对象，策略批准保持人工边界。
+
+### Phase 79 — ML prediction, frozen signal and Backtest conversation closure（`PLANNED`）
+
+增加 prediction/status MCP、封闭 WorkflowTrace 投影并接入 Phase 77 Backtest task；完成真实 PostgreSQL、
+restart、two-user、no-mock Product API、desktop/mobile Chrome MCP 与说明/准备/执行行为评测。
