@@ -446,6 +446,32 @@ class SignalJobStore(PgStoreMixin):
             )
         return self.get(job_id)
 
+    def cancel(self, job_id: object, *, trusted_owner: str) -> dict[str, object]:
+        """Cancel preparation before trusted signal execution has started."""
+        identity = _identifier(job_id, "job_id")
+        with self._transaction() as connection:
+            row = fetch_one(
+                connection,
+                """SELECT owner_principal, status FROM signal_producer_jobs
+                   WHERE job_id = :job_id FOR UPDATE""",
+                {"job_id": identity},
+            )
+            if row is None or row["owner_principal"] != trusted_owner:
+                raise SignalProducerNotFound("signal producer job not found")
+            if row["status"] in {"waiting_for_data", "queued"}:
+                now = _now()
+                execute(
+                    connection,
+                    """UPDATE signal_producer_jobs
+                       SET status='cancelled', error_code='cancelled',
+                           error_detail='cancelled by owner', finished_at=:now, updated_at=:now
+                       WHERE job_id=:job_id""",
+                    {"job_id": identity, "now": now},
+                )
+            elif row["status"] == "running":
+                raise SignalProducerConflict("running signal job cannot be cancelled safely")
+        return self.get(identity, trusted_owner=trusted_owner)
+
     @staticmethod
     def _public_row(row: dict[str, Any]) -> dict[str, object]:
         value = dict(row)

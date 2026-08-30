@@ -6,10 +6,12 @@ import { z } from "zod";
 
 import { fetchByqHealth } from "./backend-health.js";
 import {
-  fetchByqBacktestCancel,
   fetchByqBacktestGet,
-  fetchByqBacktestRun,
-  fetchByqBacktestSubmit,
+  fetchByqBacktestTaskCancel,
+  fetchByqBacktestTaskCreate,
+  fetchByqBacktestTaskExecute,
+  fetchByqBacktestTaskGet,
+  fetchByqBacktestTaskPrepare,
   fetchByqSignalSnapshotGet,
   type BacktestRequest,
 } from "./backtest.js";
@@ -343,24 +345,34 @@ async function byqLessonReview(args: { lesson_id: string; decision: string; rati
   return fetchByqLessonReview(BACKEND_URL, lesson_id, request, context);
 }
 
-async function byqBacktestSubmit(args: BacktestRequest, extra: unknown) {
-  const context = completeAgentContext(extra);
-  return context ? fetchByqBacktestSubmit(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
-}
-
 async function byqBacktestGet(args: { job_id: string }, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqBacktestGet(BACKEND_URL, args.job_id, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqBacktestRun(args: { job_id: string }, extra: unknown) {
+async function byqBacktestTaskPrepare(args: BacktestRequest, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqBacktestRun(BACKEND_URL, args.job_id, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqBacktestTaskPrepare(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqBacktestCancel(args: { job_id: string }, extra: unknown) {
+async function byqBacktestTaskCreate(args: BacktestRequest, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqBacktestCancel(BACKEND_URL, args.job_id, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqBacktestTaskCreate(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqBacktestTaskGet(args: { backtest_task_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqBacktestTaskGet(BACKEND_URL, args.backtest_task_id, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqBacktestTaskExecute(args: { backtest_task_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqBacktestTaskExecute(BACKEND_URL, args.backtest_task_id, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqBacktestTaskCancel(args: { backtest_task_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqBacktestTaskCancel(BACKEND_URL, args.backtest_task_id, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
 async function byqMarketDaily(args: MarketDailyRequest, extra: unknown) {
@@ -697,35 +709,65 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     (args) => byqMarketFundamentals(args, trustedContext),
   );
   server.registerTool(
-    "byq_backtest_submit",
+    "byq_backtest_task_prepare",
     {
-      description: "Queue a validated strategy version against a frozen universe and deterministic input snapshot.",
+      description: "Read-only preflight for a user-level backtest task. Resolves BYQ strategy, approval, frozen pool and market readiness without creating domain state.",
       inputSchema: {
         task_id: z.string(),
         experiment_id: z.string().optional(),
         strategy_version_artifact_id: z.string(),
-        approval_artifact_id: z.string(),
-        trace_id: z.string(),
-        idempotency_key: z.string(),
-        universe: z.object({
-          universe_id: z.string().optional(),
-          version_id: z.string(),
-          membership_fingerprint: z.string(),
-          symbols: z.array(z.string()).min(1),
-        }),
-        bars: z.array(z.object({
-          symbol: z.string(), trade_date: z.string(), open: z.number(), high: z.number(), low: z.number(), close: z.number(),
-          volume: z.number().optional(), prev_close: z.number().optional(), is_suspended: z.boolean().optional(),
-          up_limit: z.number().optional(), down_limit: z.number().optional(),
-        })).min(1),
-        signals: z.array(z.object({
-          symbol: z.string(), trade_date: z.string(), side: z.union([z.enum(["buy", "sell", "hold"]), z.number()]), quantity: z.number().int().positive().optional(),
-        })),
+        stock_pool_snapshot_id: z.string(),
+        start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        parameters: z.record(z.string(), z.unknown()).optional(),
         execution: z.record(z.string(), z.unknown()).optional(),
-        corporate_actions: z.array(z.record(z.string(), z.unknown())).optional(),
+        order_quantity: z.number().int().positive().default(100),
       },
     },
-    (args) => byqBacktestSubmit(args, trustedContext),
+    (args) => byqBacktestTaskPrepare(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_backtest_task_create",
+    {
+      description: "Create an approved backtest task using BYQ-owned signal preparation; never accepts raw bars or signals.",
+      inputSchema: {
+        task_id: z.string(),
+        experiment_id: z.string().optional(),
+        strategy_version_artifact_id: z.string(),
+        stock_pool_snapshot_id: z.string(),
+        start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        parameters: z.record(z.string(), z.unknown()).optional(),
+        execution: z.record(z.string(), z.unknown()).optional(),
+        order_quantity: z.number().int().positive().default(100),
+        idempotency_key: z.string().min(1).max(128),
+      },
+    },
+    (args) => byqBacktestTaskCreate(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_backtest_task_get",
+    {
+      description: "Read the derived backtest-task.v1 status and component lineage.",
+      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_[0-9a-f]{32}$/) },
+    },
+    (args) => byqBacktestTaskGet(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_backtest_task_execute",
+    {
+      description: "Execute an approved task only after trusted signal production created an immutable frozen snapshot.",
+      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_[0-9a-f]{32}$/) },
+    },
+    (args) => byqBacktestTaskExecute(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_backtest_task_cancel",
+    {
+      description: "Cancel the active signal-preparation or backtest component when its BYQ state transition permits cancellation.",
+      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_[0-9a-f]{32}$/) },
+    },
+    (args) => byqBacktestTaskCancel(args, trustedContext),
   );
   server.registerTool(
     "byq_backtest_get",
@@ -739,16 +781,6 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       inputSchema: { artifact_id: z.string() },
     },
     (args) => byqSignalSnapshotGet(args, trustedContext),
-  );
-  server.registerTool(
-    "byq_backtest_run",
-    { description: "Run one queued deterministic BYQ backtest job through the worker boundary.", inputSchema: { job_id: z.string() } },
-    (args) => byqBacktestRun(args, trustedContext),
-  );
-  server.registerTool(
-    "byq_backtest_cancel",
-    { description: "Cancel a queued or running BYQ backtest job.", inputSchema: { job_id: z.string() } },
-    (args) => byqBacktestCancel(args, trustedContext),
   );
   server.registerTool(
     "byq_factor_compute",

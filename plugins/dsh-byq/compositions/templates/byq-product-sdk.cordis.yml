@@ -192,9 +192,11 @@
         - byq_agent_authorize
         - byq_agent_audit
         - byq_research_get
-        - byq_backtest_get
-        - byq_backtest_submit
-        - byq_backtest_run
+        - byq_backtest_task_prepare
+        - byq_backtest_task_create
+        - byq_backtest_task_get
+        - byq_backtest_task_execute
+        - byq_backtest_task_cancel
         - byq_workflow_card_propose
     maxDepth: 1
 

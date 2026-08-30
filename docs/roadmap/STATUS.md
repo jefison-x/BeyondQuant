@@ -1,14 +1,14 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=76 -->
+<!-- byq:current-completed-phase=77 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 76**——在 Phase 75 能力目录上交付 `byq-product-guide` 精简路由技能、六组
-  按需领域 reference 和只读 `byq_product_help_query` MCP。查询返回版本化、固定 Product route、受众、
-  前置条件和真实限制，默认排除管理员能力且不暴露内部 tool/API；说明请求不创建 AgentRun、研究对象、
-  审批或审计，也不授予后续领域动作权限。
+- 当前已完成阶段：**Phase 77**——交付 `backtest-task.v1` prepare/create/get/execute/cancel MCP，基于既有
+  ResearchTask、Approval、MarketReadiness、SignalProducerJob 与 BacktestJob 动态投影，不新建第二状态机。
+  小巴只需提供策略版本、冻结股票池、日期和参数，不再构造 raw bars/signals；prepare 零写入，创建、执行、
+  取消继续使用逐动作审批，已有旧回测个人风控规则通过兼容 action alias 保持有效。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -323,6 +323,11 @@ Phase 76 Xiaoba Product Guide 交付自动发现的 `byq-product-guide`，以精
 `product-help-result.v1` 与固定 route；管理员结果默认隐藏，显式说明也不授予权限。模型配置与量化模型
 研究被明确区分，Product DSH 仍不挂载源码，说明请求零领域 mutation。
 
+Phase 77 Backtest Task Facade 将 Community 的预检、幂等、进度与取消 UX 分类为 `PORT_UX`，旧
+Agent API/VectorBT 分类为 `DROP`。`backtest-task.v1` 使用 SignalProducerJob 稳定身份并从既有组件派生阶段，
+prepare 不触发补数或领域写；create 可请求现有数据修复并排队可信信号生成，execute 只消费完成后的不可变
+signal snapshot，BacktestJob 继续负责重试、结果对象和 lineage。
+
 Post-Phase 74 Model Research Navigation Maintenance 将量化模型研究从个人“模型配置”提升为
 “策略管理”与“回测管理”之间的一级业务工作台；个人模型设置继续只管理 LLM 凭据、档案与 Agent
 绑定。策略编辑器为研究任务、策略身份、说明、参数、数据依赖和 Python 脚本提供持久可见标题与
@@ -335,8 +340,8 @@ always-cleanup、重型任务锁、内存 preflight 和 zero-resource verificati
 
 ## 当前授权边界
 
-- Phase 49-76 与相应 Accepted ADR/计划均已完成。
-- 维护者已明确授权按 ADR-0044 顺序推进 Phase 77–79；每阶段仍必须独立 worktree/branch/PR，前一阶段
+- Phase 49-77 与相应 Accepted ADR/计划均已完成。
+- 维护者已明确授权按 ADR-0044 顺序推进 Phase 78–79；每阶段仍必须独立 worktree/branch/PR，前一阶段
   合并后才能开始下一阶段。该授权不包含 HIST、实盘券商、AutoML、GPU 或在线学习。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。

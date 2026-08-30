@@ -33,7 +33,19 @@ try {
   ]) {
     assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);
   }
+  for (const retired of ["byq_backtest_submit", "byq_backtest_run", "byq_backtest_cancel"]) {
+    assert.ok(!listed.tools.some((tool) => tool.name === retired), `${retired} must not be exposed`);
+  }
   for (const name of ["byq_pool_list", "byq_pool_get", "byq_pool_create", "byq_pool_snapshot_replace", "byq_pool_history", "byq_pool_lifecycle", "byq_paper_account_list", "byq_paper_account_get", "byq_paper_order_get", "byq_paper_snapshot_list"]) {
+    assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);
+  }
+  for (const name of [
+    "byq_backtest_task_prepare",
+    "byq_backtest_task_create",
+    "byq_backtest_task_get",
+    "byq_backtest_task_execute",
+    "byq_backtest_task_cancel",
+  ]) {
     assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);
   }
   for (const name of [

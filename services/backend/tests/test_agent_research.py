@@ -47,11 +47,17 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_strategy_approve" not in strategy_tools
     assert "byq_backtest_run" not in strategy_tools
     orchestrator = ROLE_BY_ID["quant_orchestrator"]
-    assert orchestrator.version == "1.5.0"
+    assert orchestrator.version == "1.6.0"
     orchestrator_tools = set(orchestrator.allowed_tools)
     assert {"byq_pool_list", "byq_pool_get", "byq_pool_create"} <= orchestrator_tools
     assert {"byq_market_valuation", "byq_market_fundamentals"} <= orchestrator_tools
     assert "byq_market_session_context" in orchestrator_tools
+    task_tools = {
+        "byq_backtest_task_prepare", "byq_backtest_task_create", "byq_backtest_task_get",
+        "byq_backtest_task_execute", "byq_backtest_task_cancel",
+    }
+    assert task_tools <= orchestrator_tools
+    assert not {"byq_backtest_submit", "byq_backtest_run", "byq_backtest_cancel"} & orchestrator_tools
     assert not {
         "byq_pool_snapshot_create",
         "byq_pool_lifecycle_update",
@@ -69,6 +75,8 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
         for role in ("factor_researcher", "strategy_researcher", "backtest_analyst")
     )
     assert ROLE_BY_ID["strategy_researcher"].version == "1.2.0"
+    assert ROLE_BY_ID["backtest_analyst"].version == "1.1.0"
+    assert task_tools <= set(ROLE_BY_ID["backtest_analyst"].allowed_tools)
     assert "byq_research_task_create" in strategy_tools
     assert "byq_research_transition" not in strategy_tools
     assert "byq_pool_create" not in strategy_tools
@@ -154,7 +162,7 @@ def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> N
     pending = store.create_approval(
         {
             "run_id": run["run_id"],
-            "action": "byq_backtest_run",
+            "action": "byq_backtest_task_execute",
             "reason": "Run the reviewed deterministic job.",
             "idempotency_key": "approval-1",
         }
@@ -181,7 +189,7 @@ def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> N
     audit = store.record_audit(
         {
             "run_id": run["run_id"],
-            "action": "byq_backtest_run",
+            "action": "byq_backtest_task_execute",
             "outcome": "completed",
             "resource_type": "backtest_job",
             "resource_id": "job-1",
@@ -195,7 +203,7 @@ def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> N
         store.record_audit(
             {
                 "run_id": run["run_id"],
-                "action": "byq_backtest_run",
+                "action": "byq_backtest_task_execute",
                 "outcome": "failed",
                 "detail": {"nested": [{"api-key": "must-not-be-recorded"}]},
             },

@@ -102,6 +102,18 @@ def test_policy_rule_crud_is_owner_scoped_and_changes_authorization() -> None:
     )
     assert effective["decision"] == "policy_denied"
     assert effective["policy_rule_id"] == rule["rule_id"]
+    facade_effective = store.evaluate_authorization(
+        "alice",
+        {
+            "authorized": False,
+            "decision": "approval_required",
+            "run_id": "agent_run_test",
+            "role_id": "chief_quant_researcher",
+            "action": "byq_backtest_task_execute",
+        },
+    )
+    assert facade_effective["decision"] == "policy_denied"
+    assert facade_effective["policy_rule_id"] == rule["rule_id"]
 
     with pytest.raises(UserPolicyNotFound):
         store.get_rule(rule["rule_id"], owner="bob")
