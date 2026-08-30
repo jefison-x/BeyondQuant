@@ -372,7 +372,7 @@ test("failed agent run unlocks the composer and resumes before retry", async ({ 
   }));
 
   await login(page);
-  await expect(page.getByText("本轮未能完成，运行环境已安全停止。你可以调整问题后重新发送，或直接重试。")).toBeVisible();
+  await expect(page.getByText("本轮运行未能完成，与你的问题表述无关。对话内容已保留，可以直接重试；若持续失败，请新建对话并联系管理员。")).toBeVisible();
   await expect(page.locator(".assistant-processing")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "发送", exact: true })).toBeDisabled();
   await page.getByPlaceholder("向小巴描述你的投研问题…").fill("重新尝试");

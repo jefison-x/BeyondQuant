@@ -12,6 +12,13 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from packages.contracts.conversation_rehydration import (
+    MAX_REHYDRATION_MESSAGE_CHARS,
+    MAX_REHYDRATION_MESSAGES,
+    MAX_REHYDRATION_TOTAL_CHARS,
+    ConversationContextMessage,
+)
+
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
 from .auth_api import router as auth_router
 from .product_api import ProductError, router as product_router
@@ -491,6 +498,7 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
     )
     persisted_events = trace_store.read(session.session_id)
     initial_sequence = max((event["sequence"] for event in persisted_events), default=0)
+    conversation_context = _conversation_context(body.get("messages"))
     try:
         _adapter_post(
             "/internal/runtime/sessions",
@@ -500,6 +508,7 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
                 "workspace_id": session.workspace_id,
                 "owner_principal": session.principal.subject,
                 "initial_sequence": initial_sequence,
+                "conversation_context": conversation_context,
             },
         )
     except HTTPException as exc:
@@ -513,6 +522,42 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
     trace_store.reopen(session.session_id)
     _start_trace_collector(session)
     return session
+
+
+def _conversation_context(value: object) -> list[ConversationContextMessage]:
+    """Project only completed, public Product turns into a bounded recent transcript."""
+
+    if not isinstance(value, list):
+        return []
+    public: list[ConversationContextMessage] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        content = item.get("content")
+        if role not in {"user", "assistant"} or not isinstance(content, str) or not content.strip():
+            continue
+        bounded = content[:MAX_REHYDRATION_MESSAGE_CHARS]
+        public.append({"role": role, "content": bounded})
+
+    # A trailing user turn has no completed public answer. It may be the failed
+    # prompt that the browser is about to retry, so do not replay it twice.
+    last_assistant = max(
+        (index for index, item in enumerate(public) if item["role"] == "assistant"),
+        default=-1,
+    )
+    if last_assistant < 0:
+        return []
+    selected: list[ConversationContextMessage] = []
+    total = 0
+    for item in reversed(public[:last_assistant + 1]):
+        if len(selected) >= MAX_REHYDRATION_MESSAGES:
+            break
+        if total + len(item["content"]) > MAX_REHYDRATION_TOTAL_CHARS:
+            break
+        selected.append(item)
+        total += len(item["content"])
+    return list(reversed(selected))
 
 
 def _product_session(request: Request, session_id: str) -> ProductSession:
@@ -678,7 +723,14 @@ def submit_product_turn(
 @app.post("/v1/agent/sessions/{session_id}/resume")
 def resume_product_session(session_id: str, request: Request) -> dict[str, object]:
     session = _product_session(request, session_id)
-    body = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/resume")
+    catalog = _catalog_request(
+        "GET", f"/v1/product/conversations/{session.conversation_id}",
+        session.principal, session.workspace_id,
+    )
+    body = _adapter_post(
+        f"/internal/runtime/sessions/{session.session_id}/resume",
+        payload={"conversation_context": _conversation_context(catalog.get("messages"))},
+    )
     return {
         "session_id": session.conversation_id,
         "trace_id": session.trace_id,

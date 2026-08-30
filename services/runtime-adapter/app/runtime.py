@@ -14,6 +14,12 @@ from typing import Any, ClassVar
 import httpx
 from deepseek_harness import DeepSeekHarness, DeepSeekHarnessConfig, Notification
 
+from packages.contracts.conversation_rehydration import (
+    ConversationContextMessage,
+    normalize_conversation_context,
+    rehydrated_prompt,
+)
+
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
 from .identifiers import contained_session_path, validate_identifier
 from .normalization import NormalizationState, normalize_dsh_notification
@@ -67,6 +73,7 @@ class RuntimeSession:
     owner_principal: str | None = None
     workspace_id: str | None = None
     model_resolution: dict[str, object] = field(default_factory=dict, repr=False)
+    pending_conversation_context: list[ConversationContextMessage] = field(default_factory=list, repr=False)
     status: str = SessionStatus.STARTING
     active_run: ActiveRun | None = None
     interrupted_run_id: str | None = None
@@ -235,12 +242,19 @@ class RuntimeAdapter:
     def create_session(
         self, session_id: str, trace_id: str, owner_principal: str | None = None,
         workspace_id: str | None = None, initial_sequence: int = 0,
+        conversation_context: object = None,
     ) -> dict[str, Any]:
         validate_identifier(session_id, field="session_id")
         validate_identifier(trace_id, field="trace_id")
         if isinstance(initial_sequence, bool) or not isinstance(initial_sequence, int) or initial_sequence < 0:
             raise ValueError("initial_sequence must be a non-negative integer")
-        session_root = contained_session_path(self._session_root, session_id)
+        context = normalize_conversation_context([] if conversation_context is None else conversation_context)
+        # The official rc.1 JSON-RPC carrier creates sessions but exposes no
+        # persisted-session resume operation. Never recreate a released DSH
+        # session over its append-only identity; use a fresh private generation
+        # while keeping the stable BYQ session and trace identities public.
+        runtime_session_id = session_id if initial_sequence == 0 else f"resume-{uuid.uuid4().hex}"
+        session_root = contained_session_path(self._session_root, runtime_session_id)
         model_resolution = self._resolve_model(
             owner_principal=owner_principal,
             session_id=session_id,
@@ -262,10 +276,11 @@ class RuntimeAdapter:
                 session_id=session_id,
                 trace_id=trace_id,
                 harness=harness,
-                runtime_session_id=session_id,
+                runtime_session_id=runtime_session_id,
                 owner_principal=owner_principal,
                 workspace_id=workspace_id,
                 model_resolution=model_resolution,
+                pending_conversation_context=context,
                 sequence=initial_sequence,
             )
             self._sessions[session_id] = record
@@ -292,13 +307,15 @@ class RuntimeAdapter:
                     f"session {session_id} cannot accept a prompt in state {record.status}"
                 )
             run = ActiveRun(run_id=uuid.uuid4().hex)
+            effective_content = rehydrated_prompt(record.pending_conversation_context, content)
+            record.pending_conversation_context = []
             record.active_run = run
             record.status = SessionStatus.RUNNING
             self._emit(record, "session.started", "runtime-adapter", {"run_id": run.run_id})
 
         worker = threading.Thread(
             target=self._run_prompt,
-            args=(record, run, content),
+            args=(record, run, effective_content),
             name=f"byq-dsh-session-{session_id}",
             daemon=True,
         )
@@ -389,10 +406,14 @@ class RuntimeAdapter:
             record.harness.close()
         return self.describe_session(record)
 
-    def resume_session(self, session_id: str) -> dict[str, Any]:
+    def resume_session(
+        self, session_id: str, *, conversation_context: object = None,
+    ) -> dict[str, Any]:
         record = self._get(session_id)
+        context = normalize_conversation_context([] if conversation_context is None else conversation_context)
         with record.lock:
             if record.status == SessionStatus.READY and record.active_run is None:
+                record.pending_conversation_context = context
                 return {**self.describe_session(record), "resumed_from_run_id": None}
             if record.status not in {SessionStatus.INTERRUPTED, SessionStatus.FAILED} or record.active_run is not None:
                 raise SessionConflict(f"session {session_id} cannot be resumed")
@@ -433,6 +454,7 @@ class RuntimeAdapter:
         with record.lock:
             record.harness = harness
             record.runtime_session_id = runtime_session_id
+            record.pending_conversation_context = context
             record.normalization = NormalizationState()
             record.interrupted_run_id = None
             record.status = SessionStatus.READY

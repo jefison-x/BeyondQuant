@@ -689,3 +689,11 @@ restart、two-user、no-mock Product API、desktop/mobile Chrome MCP 与说明/�
 股票池、日期、用途和封闭数据声明向 Backend 表达按需准备需求。Backend 复用既有 repair/readiness，
 Data Worker 独占 Provider 与行情写入；完成状态在下一次 Agent context 中通知小巴，并由 Product API
 投影到数据中心。不得新增第二同步引擎、Provider 直连或 Backend 主动触发无用户回合的模型执行。
+
+### Phase 81 — Durable conversation runtime rehydration（`IN_PROGRESS`）
+
+依据 ADR-0046 修复 Product durable conversation 在 DSH idle process release/reopen 后的首个 follow-up。
+稳定 BYQ identity 与私有 DSH generation 分离；Gateway 从 durable catalog 提供 bounded completed public
+messages，Runtime Adapter 在新 generation 第一次 prompt 恢复语义上下文。不得读取 raw DSH log、patch/
+fork/upgrade DSH、无限保留 idle process 或重建第二 Agent harness。DSH error fail closed 为 failed，并以
+Runtime/Gateway/Frontend contract、真实 release/reopen 多轮 Product journey、Chrome 与 cleanup evidence 验收。

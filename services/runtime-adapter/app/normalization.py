@@ -180,7 +180,9 @@ def normalize_dsh_notification(
     if event_type == "turn/end":
         reason = data.get("reason")
         reason_kind = reason.get("kind") if isinstance(reason, dict) else None
-        safe_reason = reason_kind if reason_kind in _TURN_REASONS else "completed"
+        safe_reason = "failed" if reason_kind == "error" else (
+            reason_kind if reason_kind in _TURN_REASONS else "failed"
+        )
         events: list[WorkflowTraceEvent] = []
         if current.turn_activity_id is not None:
             events.extend(
