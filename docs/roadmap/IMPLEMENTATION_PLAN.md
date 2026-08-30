@@ -682,3 +682,10 @@ BacktestJob，提供 prepare/create/execute/get/cancel MCP。不得新建第二�
 
 增加 prediction/status MCP、封闭 WorkflowTrace 投影并接入 Phase 77 Backtest task；完成真实 PostgreSQL、
 restart、two-user、no-mock Product API、desktop/mobile Chrome MCP 与说明/准备/执行行为评测。
+
+### Phase 80 — Xiaoba data demand and automation-channel repair（`COMPLETE`）
+
+修复 DSH delegate `toolFilter` 与实际 `mcp__byq__*` 注册名漂移；新增 `data-demand.v1`，由小巴用冻结
+股票池、日期、用途和封闭数据声明向 Backend 表达按需准备需求。Backend 复用既有 repair/readiness，
+Data Worker 独占 Provider 与行情写入；完成状态在下一次 Agent context 中通知小巴，并由 Product API
+投影到数据中心。不得新增第二同步引擎、Provider 直连或 Backend 主动触发无用户回合的模型执行。

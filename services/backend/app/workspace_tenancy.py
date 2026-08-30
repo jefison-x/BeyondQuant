@@ -78,6 +78,7 @@ WORKSPACE_TABLES = (
     "product_conversations", "product_conversation_messages",
     "research_tasks", "experiments", "artifacts", "research_transitions",
     "agent_runs", "agent_audit", "agent_approvals",
+    "data_demands",
     "signal_producer_jobs", "ml_training_runs", "backtest_jobs",
     "paper_accounts", "stock_pools", "stock_pool_snapshots",
     "stock_pool_snapshot_members", "stock_pool_lifecycle_audit",
@@ -96,6 +97,7 @@ DIRECT_OWNER_TABLES: dict[str, tuple[str, ...]] = {
     "research_tasks": ("task_id",), "experiments": ("experiment_id",),
     "artifacts": ("artifact_id",), "agent_runs": ("run_id",),
     "agent_audit": ("audit_id",), "agent_approvals": ("approval_id",),
+    "data_demands": ("demand_id",),
     "signal_producer_jobs": ("job_id",), "ml_training_runs": ("training_run_id",),
     "backtest_jobs": ("job_id",),
     "paper_accounts": ("account_id",), "stock_pools": ("pool_id",),
@@ -139,6 +141,7 @@ INHERITED_TABLES: dict[str, tuple[tuple[str, ...], str, str]] = {
 WORKSPACE_UNIQUE_INDEXES = {
     "research_tasks_workspace_idempotency": ("research_tasks", "workspace_id, idempotency_key"),
     "agent_runs_workspace_idempotency": ("agent_runs", "workspace_id, idempotency_key"),
+    "data_demands_workspace_idempotency": ("data_demands", "workspace_id, idempotency_key"),
     "signal_jobs_workspace_idempotency": ("signal_producer_jobs", "workspace_id, idempotency_key"),
     "ml_training_workspace_idempotency": ("ml_training_runs", "workspace_id, idempotency_key"),
     "learning_runs_workspace_idempotency": ("learning_runs", "workspace_id, idempotency_key"),

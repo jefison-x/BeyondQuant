@@ -48,12 +48,13 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_strategy_approve" not in strategy_tools
     assert "byq_backtest_run" not in strategy_tools
     orchestrator = ROLE_BY_ID["quant_orchestrator"]
-    assert orchestrator.version == "1.7.0"
+    assert orchestrator.version == "1.8.0"
     assert "ml_researcher" in orchestrator.delegate_to
     orchestrator_tools = set(orchestrator.allowed_tools)
     assert {"byq_pool_list", "byq_pool_get", "byq_pool_create"} <= orchestrator_tools
     assert {"byq_market_valuation", "byq_market_fundamentals"} <= orchestrator_tools
     assert "byq_market_session_context" in orchestrator_tools
+    assert {"byq_data_demand_create", "byq_data_demand_get"} <= orchestrator_tools
     task_tools = {
         "byq_backtest_task_prepare", "byq_backtest_task_create", "byq_backtest_task_get",
         "byq_backtest_task_execute", "byq_backtest_task_cancel",

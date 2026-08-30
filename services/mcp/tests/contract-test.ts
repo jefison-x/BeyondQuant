@@ -23,6 +23,8 @@ try {
   assert.ok(listed.tools.some((tool) => tool.name === "byq_market_session_context"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_market_valuation"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_market_fundamentals"));
+  assert.ok(listed.tools.some((tool) => tool.name === "byq_data_demand_create"));
+  assert.ok(listed.tools.some((tool) => tool.name === "byq_data_demand_get"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_factor_compute"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_workflow_card_propose"));
   for (const name of [

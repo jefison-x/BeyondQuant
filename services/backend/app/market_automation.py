@@ -564,6 +564,39 @@ class MarketAutomationStore(PgStoreMixin):
             WHERE request_id=:id""", {"id": request_id, "status": "failed" if error else "completed",
                                       "now": _now(), "error": error})
 
+    def get_data_repairs(self, request_ids: list[str]) -> list[dict[str, object]]:
+        """Return bounded repair coordinator state for a BYQ-owned facade."""
+        ids = sorted({str(value) for value in request_ids if str(value)})
+        if not ids or len(ids) > 16:
+            raise ValueError("data repair request ids must contain between 1 and 16 entries")
+        return [dict(row) for row in self._execute(
+            """SELECT request_id,status,error_message,created_at,claimed_at,completed_at
+               FROM market_data_repair_requests
+               WHERE request_id IN (SELECT jsonb_array_elements_text(:ids))
+               ORDER BY created_at,request_id""",
+            {"ids": ids},
+        )]
+
+    def session_job_counts(self, trade_dates: list[str]) -> dict[str, int]:
+        """Summarize trusted per-session work without exposing worker payloads."""
+        dates = sorted({str(value) for value in trade_dates if str(value)})
+        if not dates:
+            return {"queued": 0, "running": 0, "completed": 0, "failed": 0}
+        if len(dates) > 1_300:
+            raise ValueError("data demand exceeds session progress bounds")
+        rows = self._execute(
+            """SELECT status,COUNT(*)::integer AS count FROM market_session_sync_jobs
+               WHERE trade_date IN (SELECT jsonb_array_elements_text(:dates))
+               GROUP BY status""",
+            {"dates": dates},
+        )
+        counts = {"queued": 0, "running": 0, "completed": 0, "failed": 0}
+        for row in rows:
+            status = str(row["status"])
+            if status in counts:
+                counts[status] = int(row["count"])
+        return counts
+
     def claim_next_job(
         self, *, worker_id: str, now: datetime | None = None,
     ) -> dict[str, object] | None:

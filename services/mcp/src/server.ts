@@ -101,6 +101,12 @@ import {
   fetchByqMlWorkspace,
   type MlRequest,
 } from "./ml-research.js";
+import {
+  fetchByqDataDemandCreate,
+  fetchByqDataDemandGet,
+  fetchByqDataDemandNotifications,
+  type DataDemandRequest,
+} from "./data-demand.js";
 
 const SERVICE = "beyondquant-mcp";
 const VERSION = "0.1.0";
@@ -248,10 +254,32 @@ function trustedBackendFetcher(context: Required<AgentContext>): typeof fetch {
 async function byqAgentContext(_args: Record<string, never>, extra: unknown) {
   const context = completeAgentContext(extra);
   if (!context) return agentContextUnavailable();
+  const inbox = await fetchByqDataDemandNotifications(BACKEND_URL, trustedBackendFetcher(context));
+  let notifications: unknown[] = [];
+  if (!inbox.isError) {
+    try {
+      const parsed = JSON.parse(inbox.content[0]?.text ?? "{}") as { notifications?: unknown[] };
+      notifications = Array.isArray(parsed.notifications) ? parsed.notifications : [];
+    } catch { notifications = []; }
+  }
   return {
-    content: [{ type: "text" as const, text: JSON.stringify({ service: SERVICE, status: "ok", context }) }],
+    content: [{ type: "text" as const, text: JSON.stringify({ service: SERVICE, status: "ok", context, notifications }) }],
     isError: false,
   };
+}
+
+async function byqDataDemandCreate(args: DataDemandRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqDataDemandCreate(
+    BACKEND_URL, args, trustedBackendFetcher(context),
+  ) : agentContextUnavailable();
+}
+
+async function byqDataDemandGet(args: { demand_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqDataDemandGet(
+    BACKEND_URL, args.demand_id, trustedBackendFetcher(context),
+  ) : agentContextUnavailable();
 }
 
 async function byqAgentRoles() {
@@ -727,6 +755,34 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       inputSchema: {},
     },
     (args) => byqMarketSessionContext(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_data_demand_create",
+    {
+      description: "Ask the trusted BYQ Data Center to prepare a bounded frozen stock-pool/date scope. This queues durable repair work and never gives the Agent Provider access.",
+      inputSchema: {
+        purpose: z.enum(["research", "backtest", "machine_learning"]),
+        stock_pool_snapshot_id: z.string(),
+        start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        data_requirements: z.object({
+          benchmark: z.string().regex(/^\d{6}\.(?:SH|SZ)$/).optional(),
+          index_universe: z.string().regex(/^\d{6}\.(?:SH|SZ)$/).optional(),
+          daily_basic: z.array(z.string()).max(12).optional(),
+          fundamentals: z.array(z.string()).max(12).optional(),
+        }).strict().optional(),
+        idempotency_key: z.string().min(1).max(128),
+      },
+    },
+    (args) => byqDataDemandCreate(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_data_demand_get",
+    {
+      description: "Read verified preparation progress for one owner-scoped data-demand.v1 request.",
+      inputSchema: { demand_id: z.string().regex(/^datademand_[0-9a-f]{32}$/) },
+    },
+    (args) => byqDataDemandGet(args, trustedContext),
   );
   server.registerTool(
     "byq_market_daily",

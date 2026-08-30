@@ -25,6 +25,7 @@ from app.db import create_db_engine, run_ddl
 from app.credentials import CredentialStore
 from app.conversation_catalog import ConversationCatalogStore
 from app.data_sync import DataSyncStore
+from app.data_demand import DataDemandStore
 from app.engineering import EngineeringTaskStore
 from app.learning_loop import LearningLoopStore
 from app.market_data import MarketDataStore
@@ -51,6 +52,7 @@ REGISTERED_SCHEMA_DDL: list[str] = [
     *UserAuthStore.SCHEMA_DDL,
     *CredentialStore.SCHEMA_DDL,
     *DataSyncStore.SCHEMA_DDL,
+    *DataDemandStore.SCHEMA_DDL,
     *SecurityMasterStore.SCHEMA_DDL,
     *UserPolicyStore.SCHEMA_DDL,
     *PaperTradingStore.SCHEMA_DDL,

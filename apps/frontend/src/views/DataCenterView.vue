@@ -484,6 +484,18 @@ function securityStatusLabel(value: string) {
             <template #header><div><strong>同步历史</strong><p>任务与逐标的结果持久化；增量模式从每只股票最后一个已存日期之后继续。</p></div></template>
             <el-table :data="status.jobs" empty-text="暂无同步任务" @row-click="selectedJob = $event"><el-table-column prop="job_id" label="任务" min-width="220" show-overflow-tooltip /><el-table-column prop="mode" label="模式" width="110" /><el-table-column prop="symbol_count" label="标的" width="90" /><el-table-column prop="status" label="状态" width="110" /><el-table-column prop="rows_inserted" label="新增行" width="100" /><el-table-column prop="rows_kept" label="保留行" width="100" /><el-table-column prop="created_at" label="创建时间" min-width="180" /></el-table>
           </el-card>
+          <el-card shadow="never">
+            <template #header><div><strong>小巴按需准备</strong><p>小巴提交冻结股票池、日期和用途；可信数据 Worker 同步后，以完整性校验结果通知小巴继续研究。</p></div></template>
+            <el-table :data="status.data_demands" empty-text="暂无小巴按需数据任务" size="small">
+              <el-table-column prop="demand_id" label="需求" min-width="210" show-overflow-tooltip />
+              <el-table-column label="用途" width="120"><template #default="scope">{{ ({ research: "市场研究", backtest: "策略回测", machine_learning: "机器学习" } as Record<string, string>)[scope.row.purpose] ?? scope.row.purpose }}</template></el-table-column>
+              <el-table-column label="范围" min-width="210"><template #default="scope">{{ scope.row.scope.symbol_count }} 只 · {{ scope.row.scope.start_date }}—{{ scope.row.scope.end_date }}</template></el-table-column>
+              <el-table-column label="分片" width="100"><template #default="scope">{{ scope.row.progress.ready_partitions }}/{{ scope.row.progress.partition_count }}</template></el-table-column>
+              <el-table-column label="状态" width="110"><template #default="scope"><el-tag :type="scope.row.status === 'ready' ? 'success' : scope.row.status === 'failed' ? 'danger' : scope.row.status === 'partial' ? 'warning' : 'info'">{{ ({ queued: "已排队", syncing: "准备中", ready: "已就绪", partial: "部分就绪", failed: "失败" } as Record<string, string>)[scope.row.status] }}</el-tag></template></el-table-column>
+              <el-table-column prop="notification" label="通知" min-width="220" />
+              <el-table-column prop="updated_at" label="更新时间" min-width="180" />
+            </el-table>
+          </el-card>
           <el-card v-if="selectedJob" shadow="never"><template #header><strong>任务明细 · {{ selectedJob.job_id }}</strong></template><el-progress :percentage="selectedJob.progress" :status="selectedJob.status === 'failed' ? 'exception' : selectedJob.status === 'completed' ? 'success' : undefined" /><p v-if="selectedJob.results_truncated" class="bounded-note">逐标的结果已按公开合同截断：显示 {{ selectedJob.symbol_results.length }} / {{ selectedJob.result_count }}</p><el-table :data="selectedJob.symbol_results" size="small"><el-table-column prop="symbol" label="标的" width="120" /><el-table-column prop="status" label="状态" width="100" /><el-table-column prop="rows_received" label="获取" width="90" /><el-table-column prop="rows_inserted" label="新增" width="90" /><el-table-column prop="date_min" label="起始" width="110" /><el-table-column prop="date_max" label="结束" width="110" /><el-table-column prop="message" label="说明" min-width="180" /></el-table></el-card>
         </el-tab-pane>
 

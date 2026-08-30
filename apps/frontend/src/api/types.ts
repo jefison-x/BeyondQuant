@@ -748,6 +748,7 @@ export interface DataCenterStatus {
     can_manage: boolean;
   };
   jobs: DataSyncJob[];
+  data_demands: DataDemand[];
   security_master_jobs: SecurityMasterSyncJob[];
   security_master: SecurityMasterStatus;
   coverage: DataCoverageAudit;
@@ -758,6 +759,33 @@ export interface DataCenterStatus {
     total: number;
     available_total: number;
   };
+}
+
+export interface DataDemand {
+  schema_version: "data-demand.v1";
+  demand_id: string;
+  purpose: "research" | "backtest" | "machine_learning";
+  status: "queued" | "syncing" | "ready" | "partial" | "failed";
+  scope: {
+    stock_pool_snapshot_id: string;
+    pool_id: string;
+    symbol_count: number;
+    start_date: string;
+    end_date: string;
+    partition_count: number;
+    datasets: string[];
+  };
+  progress: {
+    partition_count: number;
+    ready_partitions: number;
+    missing_items?: number;
+    session_jobs?: Record<string, number>;
+  };
+  requested_by: string;
+  notification: string;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
 }
 
 export interface MarketSyncAutomationConfig {

@@ -365,6 +365,14 @@ def build(profile_name: str | None = None, policy: dict[str, Any] | None = None)
         indent = match.group("indent")
         rendered.extend(f"{indent}- {tool}" for tool in sorted(tools_by_agent[agent_id]))
     body = "\n".join(rendered).rstrip() + "\n"
+    # DSH exposes MCP tools through the server-qualified runtime namespace.
+    # Templates and Registry policy keep BYQ logical names; only executable
+    # child filters receive the concrete runtime identity.
+    body = re.sub(
+        r"(?m)^(?P<indent>\s*- )(?P<tool>byq_(?!delegate_)[a-z0-9_]+)$",
+        r"\g<indent>mcp__byq__\g<tool>",
+        body,
+    )
     required_markers = {
         agent for agent, tools in tools_by_agent.items()
         if tools and data["agents"]["agents"][agent].get("kind") == "subagent"

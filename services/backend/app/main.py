@@ -1,7 +1,7 @@
 import os
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import BackgroundTasks, FastAPI
 from fastapi import HTTPException, Request
@@ -9,6 +9,8 @@ from collections.abc import Callable
 from typing import Any
 
 from .data_provider import (
+    DAILY_BASIC_FIELDS,
+    FINANCIAL_INDICATOR_FIELDS,
     DailyRequest,
     ProviderAuthorizationError,
     ProviderCredentialsMissing,
@@ -21,6 +23,12 @@ from .data_sync import (
     DataSyncNotFound,
     DataSyncPersistenceError,
     DataSyncStore,
+)
+from .data_demand import (
+    DataDemandConflict,
+    DataDemandNotFound,
+    DataDemandPersistenceError,
+    DataDemandStore,
 )
 from .market_automation import (
     MarketAutomationConflict,
@@ -211,6 +219,7 @@ signal_job_store = SignalJobStore.from_env()
 ml_training_store = MLTrainingRunStore.from_env()
 ml_prediction_store = MLPredictionRunStore.from_env()
 data_sync_store = DataSyncStore.from_env()
+data_demand_store = DataDemandStore.from_env()
 market_automation_store = MarketAutomationStore.from_env()
 security_master_store = SecurityMasterStore.from_env()
 conversation_store = ConversationCatalogStore.from_env()
@@ -571,6 +580,19 @@ def _data_sync_call(operation: Callable[[], dict[str, object]]) -> dict[str, obj
         raise HTTPException(status_code=503, detail="data synchronization is unavailable") from error
 
 
+def _data_demand_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except DataDemandNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except DataDemandConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except DataDemandPersistenceError as error:
+        raise HTTPException(status_code=503, detail="data demand is unavailable") from error
+
+
 def _market_automation_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return operation()
@@ -687,6 +709,7 @@ def data_center_status(request: Request) -> dict[str, object]:
             "can_manage": role == "admin",
         },
         "jobs": jobs,
+        "data_demands": data_demand_store.list_recent(limit=50) if role == "admin" else [],
         "security_master_jobs": security_jobs,
         "security_master": security_master,
         "coverage": coverage,
@@ -848,6 +871,128 @@ def create_data_sync_job(
         return {"job": job, "created": created}
 
     return _data_sync_call(operation)
+
+
+_DEMAND_DECLARED_FIELDS = {"benchmark", "index_universe", "daily_basic", "fundamentals"}
+_DEMAND_INDEX = re.compile(r"^\d{6}\.(?:SH|SZ)$")
+
+
+def _data_demand_requirements(payload: dict[str, Any], context: dict[str, str]) -> tuple[dict[str, object], list[dict[str, object]]]:
+    snapshot = paper_store.get_pool_snapshot(
+        payload.get("stock_pool_snapshot_id"), trusted_owner=context["owner_principal"],
+    )
+    symbols = sorted(str(item["symbol"]) for item in snapshot.get("members", []))
+    if not symbols:
+        raise ValueError("stock-pool snapshot has no members")
+    if len(symbols) > 500:
+        raise ValueError("data demand stock-pool snapshot must not exceed 500 members")
+    start_raw, end_raw = str(payload.get("start_date", "")), str(payload.get("end_date", ""))
+    start_canonical, end_canonical = start_raw.replace("-", ""), end_raw.replace("-", "")
+    DailyRequest(ts_code=symbols[0], start_date=start_canonical, end_date=end_canonical).normalized()
+    start = datetime.strptime(start_canonical, "%Y%m%d")
+    end = datetime.strptime(end_canonical, "%Y%m%d")
+    if (end - start).days + 1 > 1_827:
+        raise ValueError("data demand date range must not exceed five years")
+    declared = payload.get("data_requirements") or {}
+    if not isinstance(declared, dict) or set(declared) - _DEMAND_DECLARED_FIELDS:
+        raise ValueError("data_requirements contains unsupported fields")
+    for field in ("benchmark", "index_universe"):
+        value = declared.get(field)
+        if value is not None and (not isinstance(value, str) or _DEMAND_INDEX.fullmatch(value) is None):
+            raise ValueError(f"data_requirements.{field} is invalid")
+    for field in ("daily_basic", "fundamentals"):
+        value = declared.get(field, [])
+        if not isinstance(value, list) or len(value) > 12 or any(not isinstance(item, str) for item in value):
+            raise ValueError(f"data_requirements.{field} is invalid")
+        supported = DAILY_BASIC_FIELDS if field == "daily_basic" else FINANCIAL_INDICATOR_FIELDS
+        if any(item not in supported for item in value):
+            raise ValueError(f"data_requirements.{field} contains unsupported fields")
+    latest = security_master_store.latest_snapshot()
+    if latest is None:
+        raise ValueError("security master must be synchronized before requesting data")
+    requirements: list[dict[str, object]] = []
+    cursor = start
+    # Keep each projected open-session matrix below the 50k readiness-cell bound.
+    max_chunk_days = min(180, max(1, int(50_000 / len(symbols) * 1.25)))
+    while cursor <= end:
+        chunk_end = min(end, cursor + timedelta(days=max_chunk_days - 1))
+        requirements.append(market_readiness_store.requirement(
+            symbols=symbols, start_date=cursor.strftime("%Y%m%d"), end_date=chunk_end.strftime("%Y%m%d"),
+            membership_fingerprint=membership_fingerprint(symbols),
+            security_master_snapshot_id=str(latest["snapshot_id"]), data_requirements=declared,
+        ))
+        cursor = chunk_end + timedelta(days=1)
+    scope = {
+        "stock_pool_snapshot_id": snapshot["snapshot_id"], "pool_id": snapshot["pool_id"],
+        "membership_fingerprint": snapshot["membership_fingerprint"], "symbol_count": len(symbols),
+        "start_date": start.strftime("%Y%m%d"), "end_date": end.strftime("%Y%m%d"),
+        "partition_count": len(requirements), "datasets": list(requirements[0]["datasets"]),
+        "declared": declared,
+    }
+    return scope, requirements
+
+
+def _require_data_demand_admin(context: dict[str, str]) -> None:
+    tenancy = workspace_tenancy_store.resolve_context(context["owner_principal"], context["workspace_id"])
+    user = user_store.get_user(tenancy["owner_user_id"])
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="administrator-owned workspace required")
+
+
+@app.post("/v1/agent/data-demands", status_code=202)
+def create_agent_data_demand(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    _require_data_demand_admin(context)
+
+    def operation() -> dict[str, object]:
+        scope, requirements = _data_demand_requirements(payload, context)
+        existing = data_demand_store.find_idempotent(
+            payload, context=context, scope=scope, requirements=requirements,
+        )
+        if existing is not None:
+            return {"demand": data_demand_store.refresh(
+                existing["demand_id"], trusted_owner=context["owner_principal"],
+                readiness_store=market_readiness_store, automation_store=market_automation_store,
+            ), "created": False}
+        repairs = [market_automation_store.request_data_repair(
+            requirement=requirement, requested_by=f"agent-data-demand:{context['owner_principal']}",
+        ) for requirement in requirements]
+        demand, created = data_demand_store.create(
+            payload, context=context, scope=scope, requirements=requirements,
+            repair_request_ids=[str(item["request_id"]) for item in repairs],
+        )
+        return {"demand": data_demand_store.refresh(
+            demand["demand_id"], trusted_owner=context["owner_principal"],
+            readiness_store=market_readiness_store, automation_store=market_automation_store,
+        ), "created": created}
+
+    return _data_demand_call(operation)
+
+
+@app.get("/v1/agent/data-demands/{demand_id}")
+def get_agent_data_demand(demand_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _data_demand_call(lambda: {"demand": data_demand_store.refresh(
+        demand_id, trusted_owner=context["owner_principal"],
+        readiness_store=market_readiness_store, automation_store=market_automation_store,
+    )})
+
+
+@app.get("/v1/agent/data-demand-notifications")
+def get_agent_data_demand_notifications(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        demands = data_demand_store.list_for_session(
+            trusted_owner=context["owner_principal"], session_id=context["session_id"],
+        )
+        refreshed = [data_demand_store.refresh(
+            item["demand_id"], trusted_owner=context["owner_principal"],
+            readiness_store=market_readiness_store, automation_store=market_automation_store,
+        ) for item in demands]
+        return {"notifications": [item for item in refreshed if item["status"] in {"ready", "partial", "failed"}]}
+
+    return _data_demand_call(operation)
 
 
 @app.get("/v1/data-sync/jobs")
