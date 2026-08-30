@@ -6,6 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+from app.backtest import BacktestJobStore, LocalObjectStore
+from app.backtest_task import task_id_from_signal_job
 from app.market_data import MarketDataStore
 from app.market_automation import MarketAutomationStore
 from app.market_readiness import MarketReadinessStore
@@ -57,7 +59,7 @@ def _bar(trade_date: str, close: float) -> dict[str, object]:
     }
 
 
-def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(monkeypatch) -> None:
+def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(monkeypatch, tmp_path) -> None:
     research = ResearchStore()
     paper = PaperTradingStore()
     market = MarketDataStore()
@@ -65,6 +67,7 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
     readiness = MarketReadinessStore()
     automation = MarketAutomationStore()
     securities = SecurityMasterStore()
+    backtests = BacktestJobStore()
     monkeypatch.setattr(main, "research_store", research)
     monkeypatch.setattr(main, "paper_store", paper)
     monkeypatch.setattr(main, "market_data_store", market)
@@ -72,6 +75,8 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
     monkeypatch.setattr(main, "market_readiness_store", readiness)
     monkeypatch.setattr(main, "market_automation_store", automation)
     monkeypatch.setattr(main, "security_master_store", securities)
+    monkeypatch.setattr(main, "backtest_store", backtests)
+    monkeypatch.setattr(main, "backtest_objects", LocalObjectStore(tmp_path / "backtest-objects"))
     client = TestClient(main.app)
     client.headers.update(_headers("signal-owner"))
 
@@ -137,6 +142,14 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
         "parameters": {"lookback": 2}, "execution": {"lot_size": 100, "max_runtime_seconds": 5},
         "order_quantity": 100, "trace_id": "signal-trace", "idempotency_key": "signal-job-1",
     }
+    prepared = client.post(
+        "/v1/research/backtest-tasks/prepare",
+        json={key: value for key, value in request.items() if key not in {"trace_id", "idempotency_key"}},
+    )
+    assert prepared.status_code == 200, prepared.text
+    assert prepared.json()["task"]["phase"] == "prepared"
+    assert prepared.json()["task"]["blockers"][0]["code"] == "approval_required"
+    assert jobs.list_jobs(trusted_owner="signal-owner")["total"] == 0
     created = client.post("/v1/research/signal-producer/jobs", json=request)
     assert created.status_code == 202, created.text
     job = created.json()["job"]
@@ -182,7 +195,33 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
     ]
     assert artifact["content"]["source"]["producer"] == "byq-signal-python-v1"
 
+    approval = client.post(
+        "/v1/research/strategies/approvals",
+        json={
+            "task_id": task["task_id"],
+            "strategy_version_artifact_id": version["artifact"]["artifact_id"],
+            "reviewer_principal": "human-reviewer",
+            "decision": "approved",
+            "trace_id": "signal-trace",
+            "idempotency_key": "signal-approval-1",
+        },
+    )
+    assert approval.status_code == 201, approval.text
+    facade_id = task_id_from_signal_job(job["job_id"])
+    facade = client.get(f"/v1/research/backtest-tasks/{facade_id}")
+    assert facade.status_code == 200, facade.text
+    assert facade.json()["task"]["phase"] == "ready_to_execute"
+    assert "bars" not in facade.text and "signals" not in facade.text
+    assert client.get(
+        f"/v1/research/backtest-tasks/{facade_id}", headers=_headers("other-owner")
+    ).status_code == 404
+    executed = client.post(f"/v1/research/backtest-tasks/{facade_id}/execute")
+    assert executed.status_code == 200, executed.text
+    assert executed.json()["task"]["phase"] == "completed"
+    assert executed.json()["task"]["references"]["result_artifact_id"]
+
     jobs.close()
     market.close()
     paper.close()
     research.close()
+    backtests.close()

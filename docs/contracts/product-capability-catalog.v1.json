@@ -61,7 +61,7 @@
       "prerequisites": ["冻结股票池", "严格时间顺序的训练、验证和预测窗口", "策略人工批准"],
       "support": ["EXPLAIN", "NAVIGATE", "UNAVAILABLE"],
       "agent_tools": [],
-      "limitations": ["Phase 76 尚未向 Product Agent 暴露 ML MCP；只支持 LightGBM 封闭能力"]
+      "limitations": ["Phase 77 尚未向 Product Agent 暴露 ML MCP；只支持 LightGBM 封闭能力"]
     },
     {
       "capability_id": "backtest-management",
@@ -72,8 +72,8 @@
       "keywords": ["回测", "回测任务", "回测结果", "收益", "最大回撤"],
       "prerequisites": ["已批准策略版本", "匹配的冻结信号", "完整市场数据"],
       "support": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE"],
-      "agent_tools": ["byq_backtest_get", "byq_backtest_submit", "byq_backtest_run", "byq_backtest_cancel"],
-      "limitations": ["当前仍是底层提交合同；Phase 77 将提供面向用户的任务封装"]
+      "agent_tools": ["byq_backtest_task_prepare", "byq_backtest_task_create", "byq_backtest_task_get", "byq_backtest_task_execute", "byq_backtest_task_cancel"],
+      "limitations": ["仅接收已验证策略、冻结股票池和日期等用户级选择，不接受 raw bars/signals；执行与取消保持审批边界"]
     },
     {
       "capability_id": "paper-trading",

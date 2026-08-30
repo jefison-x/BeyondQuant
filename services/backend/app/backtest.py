@@ -1132,6 +1132,19 @@ class BacktestJobStore(PgStoreMixin):
             rows = self._execute("SELECT * FROM backtest_jobs ORDER BY created_at DESC, job_id DESC LIMIT 200")
         return {"backtests": [self._public(row) for row in rows]}
 
+    def find_by_signal_snapshot(
+        self, *, owner_principal: str, signal_snapshot_artifact_id: str
+    ) -> dict[str, object] | None:
+        """Resolve the job already created for a facade's frozen signal input."""
+        row = self._fetch_one(
+            """SELECT * FROM backtest_jobs
+               WHERE owner_principal = :owner
+                 AND request_json->>'signal_snapshot_artifact_id' = :snapshot
+               ORDER BY created_at DESC, job_id DESC LIMIT 1""",
+            {"owner": owner_principal, "snapshot": signal_snapshot_artifact_id},
+        )
+        return None if row is None else self._public(row)
+
     def count_by_strategy_versions(self, version_artifact_ids: Sequence[str]) -> dict[str, int]:
         """Return backtest job counts per strategy_version_artifact_id.
 

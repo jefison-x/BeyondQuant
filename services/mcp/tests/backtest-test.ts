@@ -5,10 +5,57 @@ import {
   fetchByqBacktestGet,
   fetchByqBacktestRun,
   fetchByqBacktestSubmit,
+  fetchByqBacktestTaskCancel,
+  fetchByqBacktestTaskCreate,
+  fetchByqBacktestTaskExecute,
+  fetchByqBacktestTaskGet,
+  fetchByqBacktestTaskPrepare,
 } from "../src/backtest.js";
 
 const jobId = "backtest_0123456789abcdef0123456789abcdef";
 const request = { task_id: "task_0123456789abcdef0123456789abcdef", idempotency_key: "backtest-mcp-1" };
+const taskId = "backtesttask_0123456789abcdef0123456789abcdef";
+const taskRequest = {
+  task_id: request.task_id,
+  strategy_version_artifact_id: "artifact_version",
+  stock_pool_snapshot_id: "snapshot_pool",
+  start_date: "2026-01-01",
+  end_date: "2026-06-30",
+  order_quantity: 100,
+};
+
+const prepared = await fetchByqBacktestTaskPrepare("http://backend:8000", taskRequest, async (url, init) => {
+  assert.equal(url, "http://backend:8000/v1/research/backtest-tasks/prepare");
+  assert.equal(init?.method, "POST");
+  assert.doesNotMatch(String(init?.body), /\"bars\"|\"signals\"/);
+  return new Response(JSON.stringify({ task: { schema_version: "backtest-task.v1", phase: "prepared" } }), { status: 200 });
+});
+assert.equal(prepared.isError, false);
+
+const taskCreated = await fetchByqBacktestTaskCreate(
+  "http://backend:8000",
+  { ...taskRequest, idempotency_key: "task-create-1" },
+  async (url, init) => {
+    assert.equal(url, "http://backend:8000/v1/research/backtest-tasks");
+    assert.equal(init?.method, "POST");
+    assert.doesNotMatch(String(init?.body), /\"bars\"|\"signals\"/);
+    return new Response(JSON.stringify({ task: { backtest_task_id: taskId, phase: "waiting_for_data" } }), { status: 202 });
+  },
+);
+assert.equal(taskCreated.isError, false);
+
+for (const [call, suffix, method] of [
+  [fetchByqBacktestTaskGet, "", "GET"],
+  [fetchByqBacktestTaskExecute, "/execute", "POST"],
+  [fetchByqBacktestTaskCancel, "/cancel", "POST"],
+] as const) {
+  const response = await call("http://backend:8000", taskId, async (url, init) => {
+    assert.equal(url, `http://backend:8000/v1/research/backtest-tasks/${taskId}${suffix}`);
+    assert.equal(init?.method, method);
+    return new Response(JSON.stringify({ task: { backtest_task_id: taskId, phase: "completed" } }), { status: 200 });
+  });
+  assert.equal(response.isError, false);
+}
 
 const submitted = await fetchByqBacktestSubmit(
   "http://backend:8000",
@@ -51,4 +98,4 @@ const invalid = await fetchByqBacktestGet("http://backend:8000", jobId, async ()
 assert.equal(invalid.isError, true);
 assert.match(invalid.content[0].text, /backtest_not_found/);
 
-console.log("Backtest MCP translation PASS: submit, get, run, cancel and safe error mapping");
+console.log("Backtest MCP translation PASS: task facade, legacy transport and safe error mapping");

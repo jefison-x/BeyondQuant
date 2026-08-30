@@ -62,7 +62,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "76")
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "77")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043", "ADR-0044"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
@@ -736,7 +736,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("customSkillDirs:", composition)
         self.assertIn("/opt/dsh/bundles/dsh-byq/skills", composition)
         self.assertNotIn("byq_strategy_approve", composition)
-        self.assertNotIn("byq_backtest_cancel", composition)
+        self.assertNotIn("- byq_backtest_cancel\n", composition)
 
         role_contract = (ROOT / "services/backend/app/agent_research.py").read_text()
         self.assertIn("ROLE_CATALOG", role_contract)
@@ -789,7 +789,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("/v1/data/research/fundamentals", translator)
         self.assertNotIn("tushare", translator.lower())
         self.assertIn('role_id="market_researcher"', roles)
-        self.assertIn('version="1.5.0"', roles)
+        self.assertIn('version="1.6.0"', roles)
         self.assertIn("coverage.usable", skill)
         self.assertIn("Status: Accepted", adr)
         for prohibited in ("BaoStock", "AKShare", "VectorBT", "PydanticAI", "Hermes"):

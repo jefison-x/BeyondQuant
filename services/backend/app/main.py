@@ -79,6 +79,7 @@ from .backtest import (
     signal_snapshot_content_sha256,
     membership_fingerprint,
 )
+from .backtest_task import project_backtest_task, signal_job_id_from_task
 from .agent_research import (
     AgentConflict,
     AgentForbidden,
@@ -1040,6 +1041,19 @@ def _signal_producer_call(operation: Callable[[], dict[str, object]]) -> dict[st
         raise HTTPException(status_code=409, detail=str(error)) from error
     except SignalProducerPersistenceError as error:
         raise HTTPException(status_code=503, detail="signal producer storage is unavailable") from error
+
+
+def _backtest_task_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except (ResearchNotFound, PaperTradingNotFound, SignalProducerNotFound, BacktestNotFound) as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except (SignalProducerConflict, BacktestConflict) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except (SignalProducerPersistenceError, BacktestStorageError) as error:
+        raise HTTPException(status_code=503, detail="backtest task storage is unavailable") from error
 
 
 def _agent_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
@@ -2135,6 +2149,7 @@ def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
             "idempotency_key": request["idempotency_key"],
             "manifest": manifest,
             "input_manifest_id": input_manifest_id,
+            "signal_snapshot_artifact_id": snapshot_artifact_id,
         }
     return normalize_backtest_request(
         request,
@@ -2237,6 +2252,108 @@ def _signal_date(value: object, field: str) -> str:
     return parsed.strftime("%Y-%m-%d")
 
 
+def _prepare_signal_producer(
+    data: dict[str, Any], *, owner_principal: str, request_repair: bool
+) -> dict[str, object]:
+    """Shared BYQ preflight for signal jobs and the backtest task facade."""
+    task = research_store.get_task(data.get("task_id"))
+    if task["owner_principal"] != owner_principal:
+        raise ResearchNotFound("research task not found")
+    version = research_store.get_artifact(data.get("strategy_version_artifact_id"))
+    if version["owner_principal"] != owner_principal:
+        raise ResearchNotFound("strategy version not found")
+    if version["kind"] != "strategy_version" or version["status"] != "validated":
+        raise ValueError("strategy_version_artifact_id must reference a validated strategy version")
+    if version["task_id"] != task["task_id"]:
+        raise ValueError("strategy version does not belong to task_id")
+    version_content = validate_version_content(version["content"])
+    strategy_snapshot = version_content.get("snapshot")
+    if not isinstance(strategy_snapshot, dict):
+        raise ValueError("strategy version snapshot is invalid")
+    script = strategy_snapshot.get("script")
+    if not isinstance(script, str):
+        raise ValueError("strategy source is unavailable")
+    if strategy_output_method(script) != "generate_signals":
+        raise ValueError("execution_profile_unsupported: generate_target_weights is not supported")
+
+    pool_snapshot = paper_store.get_pool_snapshot(
+        data.get("stock_pool_snapshot_id"), trusted_owner=owner_principal
+    )
+    pool = paper_store.get_pool(pool_snapshot["pool_id"], trusted_owner=owner_principal)
+    if pool["status"] != "active":
+        raise ValueError("stock pool must be active for signal production")
+    symbols = sorted(
+        str(item["symbol"])
+        for item in pool_snapshot.get("members", [])
+        if isinstance(item, dict) and isinstance(item.get("symbol"), str)
+    )
+    if not symbols:
+        raise ValueError("stock pool snapshot has no members")
+    start_date = _signal_date(data.get("start_date"), "start_date")
+    end_date = _signal_date(data.get("end_date"), "end_date")
+    if start_date > end_date:
+        raise ValueError("start_date must not be after end_date")
+    parameters = data.get("parameters", strategy_snapshot.get("parameters", {}))
+    if not isinstance(parameters, dict):
+        raise ValueError("parameters must be an object")
+    execution = data.get("execution", {})
+    if not isinstance(execution, dict):
+        raise ValueError("execution must be an object")
+    order_quantity = data.get("order_quantity", 100)
+    if not isinstance(order_quantity, int) or isinstance(order_quantity, bool) or order_quantity < 1:
+        raise ValueError("order_quantity must be a positive integer")
+    lot_size = execution.get("lot_size", 100)
+    if not isinstance(lot_size, int) or isinstance(lot_size, bool) or lot_size < 1:
+        raise ValueError("execution.lot_size must be a positive integer")
+    if order_quantity % lot_size:
+        raise ValueError("order_quantity must be aligned to execution.lot_size")
+
+    master_snapshot = security_master_store.latest_snapshot()
+    if master_snapshot is None:
+        raise ValueError("security master must be synchronized before backtest data preparation")
+    fingerprint = membership_fingerprint(symbols)
+    requirement = market_readiness_store.requirement(
+        symbols=symbols,
+        start_date=start_date,
+        end_date=end_date,
+        membership_fingerprint=fingerprint,
+        security_master_snapshot_id=str(master_snapshot["snapshot_id"]),
+        data_requirements=(
+            strategy_snapshot.get("data_requirements")
+            if isinstance(strategy_snapshot.get("data_requirements"), dict) else {}
+        ),
+    )
+    readiness = market_readiness_store.assess(requirement)
+    if readiness["state"] != "ready":
+        if any(item.get("dataset") == "security_lifecycle" for item in readiness["missing"]):
+            raise ValueError("stock pool contains symbols absent from the frozen security master")
+        if request_repair:
+            market_automation_store.request_data_repair(
+                requirement=requirement, requested_by=f"signal:{owner_principal}"
+            )
+    preparation = {
+        "strategy_version_artifact_id": str(version["artifact_id"]),
+        "strategy_version_id": str(version_content["version_id"]),
+        "source_fingerprint": str(version_content["source_fingerprint"]),
+        "script": script,
+        "stock_pool_snapshot_id": str(pool_snapshot["snapshot_id"]),
+        "stock_pool_id": str(pool_snapshot["pool_id"]),
+        "membership_fingerprint": fingerprint,
+        "symbols": symbols,
+        "parameters": parameters,
+        "execution": execution,
+        "order_quantity": order_quantity,
+    }
+    return {
+        "task": task,
+        "version": version,
+        "pool_snapshot": pool_snapshot,
+        "preparation": preparation,
+        "requirement": requirement,
+        "readiness": readiness,
+    }
+
+
 @app.post("/v1/research/signal-producer/jobs", status_code=202)
 def create_signal_producer_job(payload: dict[str, Any], request: Request) -> dict[str, object]:
     """Freeze owner-scoped BYQ inputs before isolated strategy execution."""
@@ -2251,100 +2368,20 @@ def create_signal_producer_job(payload: dict[str, Any], request: Request) -> dic
                 "execution", "order_quantity", "trace_id", "idempotency_key",
             },
         )
-        task = research_store.get_task(data.get("task_id"))
-        if task["owner_principal"] != context["owner_principal"]:
-            raise ResearchNotFound("research task not found")
-        version = research_store.get_artifact(data.get("strategy_version_artifact_id"))
-        if version["owner_principal"] != context["owner_principal"]:
-            raise ResearchNotFound("strategy version not found")
-        if version["kind"] != "strategy_version" or version["status"] != "validated":
-            raise ValueError("strategy_version_artifact_id must reference a validated strategy version")
-        if version["task_id"] != task["task_id"]:
-            raise ValueError("strategy version does not belong to task_id")
-        version_content = validate_version_content(version["content"])
-        strategy_snapshot = version_content.get("snapshot")
-        if not isinstance(strategy_snapshot, dict):
-            raise ValueError("strategy version snapshot is invalid")
-        script = strategy_snapshot.get("script")
-        if not isinstance(script, str):
-            raise ValueError("strategy source is unavailable")
-        if strategy_output_method(script) != "generate_signals":
-            raise ValueError("execution_profile_unsupported: generate_target_weights is not supported")
-
-        pool_snapshot = paper_store.get_pool_snapshot(
-            data.get("stock_pool_snapshot_id"),
-            trusted_owner=context["owner_principal"],
+        prepared = _prepare_signal_producer(
+            data, owner_principal=context["owner_principal"], request_repair=True
         )
-        pool = paper_store.get_pool(
-            pool_snapshot["pool_id"], trusted_owner=context["owner_principal"]
-        )
-        if pool["status"] != "active":
-            raise ValueError("stock pool must be active for signal production")
-        symbols = sorted(
-            str(item["symbol"])
-            for item in pool_snapshot.get("members", [])
-            if isinstance(item, dict) and isinstance(item.get("symbol"), str)
-        )
-        if not symbols:
-            raise ValueError("stock pool snapshot has no members")
-        start_date = _signal_date(data.get("start_date"), "start_date")
-        end_date = _signal_date(data.get("end_date"), "end_date")
-        if start_date > end_date:
-            raise ValueError("start_date must not be after end_date")
-        parameters = data.get("parameters", strategy_snapshot.get("parameters", {}))
-        if not isinstance(parameters, dict):
-            raise ValueError("parameters must be an object")
-        execution = data.get("execution", {})
-        if not isinstance(execution, dict):
-            raise ValueError("execution must be an object")
-        order_quantity = data.get("order_quantity")
-        if not isinstance(order_quantity, int) or isinstance(order_quantity, bool) or order_quantity < 1:
-            raise ValueError("order_quantity must be a positive integer")
-        lot_size = execution.get("lot_size", 100)
-        if not isinstance(lot_size, int) or isinstance(lot_size, bool) or lot_size < 1:
-            raise ValueError("execution.lot_size must be a positive integer")
-        if order_quantity % lot_size:
-            raise ValueError("order_quantity must be aligned to execution.lot_size")
-
-        master_snapshot = security_master_store.latest_snapshot()
-        if master_snapshot is None:
-            raise ValueError("security master must be synchronized before backtest data preparation")
-        fingerprint = membership_fingerprint(symbols)
-        requirement = market_readiness_store.requirement(
-            symbols=symbols, start_date=start_date, end_date=end_date,
-            membership_fingerprint=fingerprint,
-            security_master_snapshot_id=str(master_snapshot["snapshot_id"]),
-            data_requirements=(
-                strategy_snapshot.get("data_requirements")
-                if isinstance(strategy_snapshot.get("data_requirements"), dict) else {}
-            ),
-        )
-        readiness = market_readiness_store.assess(requirement)
-        if readiness["state"] != "ready":
-            if any(item.get("dataset") == "security_lifecycle" for item in readiness["missing"]):
-                raise ValueError("stock pool contains symbols absent from the frozen security master")
-            market_automation_store.request_data_repair(
-                requirement=requirement,
-                requested_by=f"signal:{context['owner_principal']}",
-            )
-        preparation = {
-            "strategy_version_artifact_id": str(version["artifact_id"]),
-            "strategy_version_id": str(version_content["version_id"]),
-            "source_fingerprint": str(version_content["source_fingerprint"]),
-            "script": script,
-            "stock_pool_snapshot_id": str(pool_snapshot["snapshot_id"]),
-            "stock_pool_id": str(pool_snapshot["pool_id"]),
-            "membership_fingerprint": fingerprint,
-            "symbols": symbols, "parameters": parameters, "execution": execution,
-            "order_quantity": order_quantity,
-        }
+        task = prepared["task"]
+        version = prepared["version"]
+        pool_snapshot = prepared["pool_snapshot"]
         job = signal_job_store.create_waiting(
             owner_principal=context["owner_principal"],
             task_id=task["task_id"],
             experiment_id=data.get("experiment_id"),
             strategy_version_artifact_id=version["artifact_id"],
             stock_pool_snapshot_id=pool_snapshot["snapshot_id"],
-            preparation=preparation, requirement=requirement, readiness=readiness,
+            preparation=prepared["preparation"], requirement=prepared["requirement"],
+            readiness=prepared["readiness"],
             trace_id=data.get("trace_id"),
             idempotency_key=data.get("idempotency_key"),
         )
@@ -2373,6 +2410,198 @@ def get_signal_producer_job(job_id: str, request: Request) -> dict[str, object]:
     return _signal_producer_call(
         lambda: {"job": signal_job_store.get(job_id, trusted_owner=context["owner_principal"])}
     )
+
+
+def _approved_strategy_artifact(owner_principal: str, version_artifact_id: str) -> str | None:
+    for artifact in research_store.list_strategy_approvals(owner_principal=owner_principal):
+        content = artifact.get("content")
+        if (
+            artifact.get("kind") == "strategy_approval"
+            and artifact.get("status") == "validated"
+            and isinstance(content, dict)
+            and content.get("strategy_version_artifact_id") == version_artifact_id
+            and content.get("decision") == "approved"
+            and content.get("execution_authorized") is True
+        ):
+            return str(artifact["artifact_id"])
+    return None
+
+
+def _backtest_task_view(signal_job: dict[str, Any], *, owner_principal: str) -> dict[str, object]:
+    approval_id = _approved_strategy_artifact(
+        owner_principal, str(signal_job["strategy_version_artifact_id"])
+    )
+    snapshot_id = signal_job.get("result_artifact_id")
+    backtest_job = None
+    if isinstance(snapshot_id, str):
+        backtest_job = backtest_store.find_by_signal_snapshot(
+            owner_principal=owner_principal, signal_snapshot_artifact_id=snapshot_id
+        )
+    readiness = signal_job.get("readiness")
+    return project_backtest_task(
+        research_task_id=str(signal_job["task_id"]),
+        strategy_version_artifact_id=str(signal_job["strategy_version_artifact_id"]),
+        approval_artifact_id=approval_id,
+        stock_pool_snapshot_id=str(signal_job["stock_pool_snapshot_id"]),
+        readiness=readiness if isinstance(readiness, dict) else None,
+        signal_job=signal_job,
+        backtest_job=backtest_job,
+    )
+
+
+def _backtest_task_input(payload: object, *, include_idempotency: bool) -> dict[str, Any]:
+    allowed = {
+        "task_id", "experiment_id", "strategy_version_artifact_id",
+        "stock_pool_snapshot_id", "start_date", "end_date", "parameters",
+        "execution", "order_quantity",
+    }
+    if include_idempotency:
+        allowed.add("idempotency_key")
+    return _strategy_payload(payload, allowed)
+
+
+@app.post("/v1/research/backtest-tasks/prepare")
+def prepare_backtest_task(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    """Read-only preflight; no AgentRun, repair request, signal job, or backtest job."""
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        data = _backtest_task_input(payload, include_idempotency=False)
+        prepared = _prepare_signal_producer(
+            data, owner_principal=context["owner_principal"], request_repair=False
+        )
+        version = prepared["version"]
+        approval_id = _approved_strategy_artifact(
+            context["owner_principal"], str(version["artifact_id"])
+        )
+        return {"task": project_backtest_task(
+            research_task_id=str(prepared["task"]["task_id"]),
+            strategy_version_artifact_id=str(version["artifact_id"]),
+            approval_artifact_id=approval_id,
+            stock_pool_snapshot_id=str(prepared["pool_snapshot"]["snapshot_id"]),
+            readiness=prepared["readiness"],
+        )}
+
+    return _backtest_task_call(operation)
+
+
+@app.post("/v1/research/backtest-tasks", status_code=202)
+def create_backtest_task(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    """Create the existing signal-preparation component and return its derived facade."""
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        data = _backtest_task_input(payload, include_idempotency=True)
+        prepared = _prepare_signal_producer(
+            data, owner_principal=context["owner_principal"], request_repair=True
+        )
+        version = prepared["version"]
+        if _approved_strategy_artifact(
+            context["owner_principal"], str(version["artifact_id"])
+        ) is None:
+            raise ValueError("strategy version must be approved before task creation")
+        job = signal_job_store.create_waiting(
+            owner_principal=context["owner_principal"],
+            task_id=prepared["task"]["task_id"],
+            experiment_id=data.get("experiment_id"),
+            strategy_version_artifact_id=version["artifact_id"],
+            stock_pool_snapshot_id=prepared["pool_snapshot"]["snapshot_id"],
+            preparation=prepared["preparation"],
+            requirement=prepared["requirement"],
+            readiness=prepared["readiness"],
+            trace_id=context["trace_id"],
+            idempotency_key=data.get("idempotency_key"),
+        )
+        paper_store.record_pool_reference(
+            str(prepared["pool_snapshot"]["snapshot_id"]),
+            domain="signal_producer",
+            reference_id=str(job["job_id"]),
+            trusted_owner=context["owner_principal"],
+        )
+        return {"task": _backtest_task_view(job, owner_principal=context["owner_principal"])}
+
+    return _backtest_task_call(operation)
+
+
+@app.get("/v1/research/backtest-tasks/{backtest_task_id}")
+def get_backtest_task(backtest_task_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        signal_job = signal_job_store.get(
+            signal_job_id_from_task(backtest_task_id),
+            trusted_owner=context["owner_principal"],
+        )
+        return {"task": _backtest_task_view(signal_job, owner_principal=context["owner_principal"])}
+
+    return _backtest_task_call(operation)
+
+
+@app.post("/v1/research/backtest-tasks/{backtest_task_id}/execute")
+def execute_backtest_task(backtest_task_id: str, request: Request) -> dict[str, object]:
+    """Materialize and run only after the trusted worker produced a frozen snapshot."""
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        signal_job = signal_job_store.get(
+            signal_job_id_from_task(backtest_task_id),
+            trusted_owner=context["owner_principal"],
+        )
+        current = _backtest_task_view(signal_job, owner_principal=context["owner_principal"])
+        if current["phase"] not in {"ready_to_execute", "queued"}:
+            return {"task": current}
+        references = current["references"]
+        backtest_job_id = references.get("backtest_job_id")
+        if backtest_job_id is None:
+            created = create_backtest_job(
+                {
+                    "task_id": signal_job["task_id"],
+                    "experiment_id": signal_job.get("experiment_id"),
+                    "strategy_version_artifact_id": signal_job["strategy_version_artifact_id"],
+                    "approval_artifact_id": references["approval_artifact_id"],
+                    "signal_snapshot_artifact_id": signal_job["result_artifact_id"],
+                    "stock_pool_snapshot_id": signal_job["stock_pool_snapshot_id"],
+                    "trace_id": context["trace_id"],
+                    "idempotency_key": f"backtest-task-{backtest_task_id.removeprefix('backtesttask_')}",
+                },
+                request,
+            )
+            backtest_job_id = created["job"]["job_id"]
+        job = backtest_store.get(backtest_job_id)
+        if job["status"] == "queued":
+            run_backtest_job(str(backtest_job_id), request)
+        refreshed = signal_job_store.get(
+            signal_job_id_from_task(backtest_task_id),
+            trusted_owner=context["owner_principal"],
+        )
+        return {"task": _backtest_task_view(refreshed, owner_principal=context["owner_principal"])}
+
+    return _backtest_task_call(operation)
+
+
+@app.post("/v1/research/backtest-tasks/{backtest_task_id}/cancel")
+def cancel_backtest_task(backtest_task_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        signal_job = signal_job_store.get(
+            signal_job_id_from_task(backtest_task_id),
+            trusted_owner=context["owner_principal"],
+        )
+        current = _backtest_task_view(signal_job, owner_principal=context["owner_principal"])
+        backtest_job_id = current["references"].get("backtest_job_id")
+        if isinstance(backtest_job_id, str):
+            cancel_backtest_job(backtest_job_id, request)
+        else:
+            signal_job_store.cancel(
+                signal_job["job_id"], trusted_owner=context["owner_principal"]
+            )
+        refreshed = signal_job_store.get(
+            signal_job["job_id"], trusted_owner=context["owner_principal"]
+        )
+        return {"task": _backtest_task_view(refreshed, owner_principal=context["owner_principal"])}
+
+    return _backtest_task_call(operation)
 
 
 @app.post("/v1/research/backtests", status_code=202)

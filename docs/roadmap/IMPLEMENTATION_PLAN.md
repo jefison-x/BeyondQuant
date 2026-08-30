@@ -668,12 +668,12 @@ journey。HIST 不在本阶段范围内，后续必须由新的 Accepted ADR 和
 实现精简 `byq-product-guide` skill、按领域 references、只读 `byq_product_help_query` MCP 和固定
 Product route 投影。说明类请求不得产生领域 mutation；Production Product DSH 不挂载源码。
 
-### Phase 77 — Backtest task facade（`AUTHORIZED`）
+### Phase 77 — Backtest task facade（`COMPLETE`）
 
 以 `backtest-task.v1` 聚合既有 ResearchTask、Approval、MarketReadiness、SignalProducerJob 和
 BacktestJob，提供 prepare/create/execute/get/cancel MCP。不得新建第二工作流或让模型构造 raw bars/signals。
 
-### Phase 78 — ML create and training Agent（`PLANNED`）
+### Phase 78 — ML create and training Agent（`AUTHORIZED`）
 
 增加最小权限 ML researcher role/skill/delegate 和 capability/workspace/strategy/training MCP；DSH 不训练、
 不推理、不读取模型对象，策略批准保持人工边界。

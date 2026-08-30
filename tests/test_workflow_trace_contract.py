@@ -80,7 +80,7 @@ class WorkflowTraceProjectionTests(unittest.TestCase):
             authority="domain",
             title="人工审批",
             approval_id=f"agent_approval_{'c' * 32}",
-            action="byq_backtest_run",
+            action="byq_backtest_task_execute",
             status="approved",
             execution_outcome="authorized",
         )

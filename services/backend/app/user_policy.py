@@ -15,7 +15,14 @@ from .db import PgStoreMixin, execute, fetch_one
 
 _PRINCIPAL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$")
 _RULE_ID_PATTERN = re.compile(r"^policy_rule_[0-9a-f]{32}$")
-_RULE_ACTIONS = {"byq_backtest_submit", "byq_backtest_run"}
+_RULE_ACTIONS = {
+    "byq_backtest_submit", "byq_backtest_run",
+    "byq_backtest_task_create", "byq_backtest_task_execute",
+}
+_LEGACY_ACTION_ALIAS = {
+    "byq_backtest_task_create": "byq_backtest_submit",
+    "byq_backtest_task_execute": "byq_backtest_run",
+}
 _RULE_AGENTS = {"*", "chief_quant_researcher", "strategy_researcher"}
 _RISK_LEVELS = {"low", "medium", "high", "critical"}
 _PRESETS: tuple[dict[str, object], ...] = (
@@ -477,11 +484,12 @@ class UserPolicyStore(PgStoreMixin):
         if settings["paused"] or not settings["automation_enabled"]:
             return result
         action = str(result.get("action", ""))
+        compatible_actions = {action, _LEGACY_ACTION_ALIAS.get(action, action)}
         role_id = str(result.get("role_id", ""))
         matching = [
             rule for rule in self.list_rules(owner)
             if rule["enabled"]
-            and rule["action"] == action
+            and rule["action"] in compatible_actions
             and rule["agent_id"] in {"*", role_id}
         ]
         decision = (

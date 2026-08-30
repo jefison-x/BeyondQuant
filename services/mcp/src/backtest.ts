@@ -97,3 +97,68 @@ export function fetchByqBacktestCancel(
 ): Promise<ByqBacktestResult> {
   return requestBacktest(backendUrl, `/v1/research/backtests/${encodeURIComponent(jobId)}/cancel`, { method: "POST", body: "{}" }, fetcher);
 }
+
+export function fetchByqBacktestTaskPrepare(
+  backendUrl: string,
+  request: BacktestRequest,
+  fetcher: Fetcher = fetch,
+): Promise<ByqBacktestResult> {
+  return requestBacktest(
+    backendUrl,
+    "/v1/research/backtest-tasks/prepare",
+    { method: "POST", body: JSON.stringify(request) },
+    fetcher,
+  );
+}
+
+export function fetchByqBacktestTaskCreate(
+  backendUrl: string,
+  request: BacktestRequest,
+  fetcher: Fetcher = fetch,
+): Promise<ByqBacktestResult> {
+  return requestBacktest(
+    backendUrl,
+    "/v1/research/backtest-tasks",
+    { method: "POST", body: JSON.stringify(request) },
+    fetcher,
+  );
+}
+
+export function fetchByqBacktestTaskGet(
+  backendUrl: string,
+  taskId: string,
+  fetcher: Fetcher = fetch,
+): Promise<ByqBacktestResult> {
+  return requestBacktest(
+    backendUrl,
+    `/v1/research/backtest-tasks/${encodeURIComponent(taskId)}`,
+    { method: "GET" },
+    fetcher,
+  );
+}
+
+export function fetchByqBacktestTaskExecute(
+  backendUrl: string,
+  taskId: string,
+  fetcher: Fetcher = fetch,
+): Promise<ByqBacktestResult> {
+  return requestBacktest(
+    backendUrl,
+    `/v1/research/backtest-tasks/${encodeURIComponent(taskId)}/execute`,
+    { method: "POST", body: "{}" },
+    fetcher,
+  );
+}
+
+export function fetchByqBacktestTaskCancel(
+  backendUrl: string,
+  taskId: string,
+  fetcher: Fetcher = fetch,
+): Promise<ByqBacktestResult> {
+  return requestBacktest(
+    backendUrl,
+    `/v1/research/backtest-tasks/${encodeURIComponent(taskId)}/cancel`,
+    { method: "POST", body: "{}" },
+    fetcher,
+  );
+}
