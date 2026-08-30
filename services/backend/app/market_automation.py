@@ -515,7 +515,6 @@ class MarketAutomationStore(PgStoreMixin):
                         (job_id,trade_date,status,scheduled_by,created_at,updated_at)
                         VALUES (:job_id,:date,'queued',:by,:now,:now)""",
                         {"job_id": job_id, "date": trade_date, "by": scheduled_by, "now": now})
-                    created.append(self.get_job(job_id))
                 elif existing["status"] == "failed" or (
                     existing["status"] == "completed" and (
                         self._fetch_one("""SELECT state FROM market_session_completeness
@@ -528,7 +527,9 @@ class MarketAutomationStore(PgStoreMixin):
                         next_attempt_at=NULL,lease_until=NULL,error_code=NULL,error_message=NULL,
                         completed_at=NULL,updated_at=:now WHERE job_id=:job_id""",
                         {"job_id": job_id, "now": now})
-                    created.append(self.get_job(job_id))
+                else:
+                    continue
+            created.append(self.get_job(job_id))
         return created
 
     def request_data_repair(

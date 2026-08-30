@@ -536,6 +536,21 @@ def test_daily_automation_uses_open_sessions_and_full_market_snapshots() -> None
     market.close()
 
 
+def test_repair_enqueue_returns_jobs_only_after_transaction_commit() -> None:
+    automation = MarketAutomationStore()
+    provider = FakeAutomationProvider()
+    automation.refresh_calendar(provider, start_date="20260823", end_date="20260825")
+
+    created = automation.enqueue_dates(["20260824", "20260825"], scheduled_by="ml-training")
+
+    assert [(item["trade_date"], item["status"]) for item in created] == [
+        ("20260824", "queued"),
+        ("20260825", "queued"),
+    ]
+    assert automation.enqueue_dates(["20260824", "20260825"], scheduled_by="ml-training") == []
+    automation.close()
+
+
 def test_market_session_context_reports_unknown_without_inventing_calendar_or_cutoff() -> None:
     automation = MarketAutomationStore()
 
