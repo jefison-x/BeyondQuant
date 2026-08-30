@@ -94,7 +94,7 @@ test("Phase 74 real LightGBM training to frozen-signal backtest journey", async 
   await expect(page.getByRole("heading", { name: "模型研究目录与实验进程" })).toBeVisible();
   await page.getByRole("button", { name: "新建模型研究" }).first().click();
   await page.getByTestId("ml-save").click(); await expect(page.getByText("研究定义已冻结，可以进入训练")).toBeVisible();
-  await page.getByTestId("ml-train").click(); await page.getByRole("button", { name: "批准并开始训练" }).click();
+  await page.getByTestId("ml-train").click(); await page.getByLabel("确认训练范围").getByRole("button", { name: "批准并开始训练" }).click();
   await expect(page.getByTestId("ml-predict")).toBeVisible({ timeout: 120_000 });
   await expect(page.getByText("训练结果")).toBeVisible();
   await page.getByTestId("ml-predict").click(); await expect(page.getByTestId("ml-backtest")).toBeVisible({ timeout: 120_000 });
