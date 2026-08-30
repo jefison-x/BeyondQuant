@@ -554,12 +554,15 @@ onMounted(loadList);
           </div>
         </template>
         <div class="list-toolbar">
-          <el-input v-model="search" placeholder="搜索策略名称、说明或策略编号" clearable />
-          <el-radio-group :model-value="lifecycle" size="small" @update:model-value="changeLifecycle">
+          <div class="catalog-field">
+            <label class="field-label" for="strategy-search">搜索策略</label>
+            <el-input id="strategy-search" v-model="search" aria-label="搜索策略" placeholder="输入策略名称、说明或策略编号" clearable />
+          </div>
+          <el-radio-group :model-value="lifecycle" aria-label="策略归档状态" size="small" @update:model-value="changeLifecycle">
             <el-radio-button value="active">当前</el-radio-button>
             <el-radio-button value="superseded">已归档</el-radio-button>
           </el-radio-group>
-          <el-radio-group v-model="filter" size="small">
+          <el-radio-group v-model="filter" aria-label="策略资产类型" size="small">
             <el-radio-button value="all">全部</el-radio-button>
             <el-radio-button value="draft">草稿</el-radio-button>
             <el-radio-button value="version">版本</el-radio-button>
@@ -619,57 +622,81 @@ onMounted(loadList);
                 <div class="panel-sub">{{ isReadonly ? "版本只读" : "草稿可编辑" }}</div>
               </div>
               <div class="editor-actions">
-                <el-select v-model="templateId" placeholder="选择模板" size="small" :disabled="isReadonly">
-                  <el-option v-for="item in STRATEGY_TEMPLATES" :key="item.id" :label="item.label" :value="item.id" />
-                </el-select>
+                <div class="template-field">
+                  <label class="field-label" for="strategy-template">策略模板</label>
+                  <el-select id="strategy-template" v-model="templateId" aria-label="策略模板" placeholder="选择模板" size="small" :disabled="isReadonly">
+                    <el-option v-for="item in STRATEGY_TEMPLATES" :key="item.id" :label="item.label" :value="item.id" />
+                  </el-select>
+                </div>
                 <el-button size="small" :disabled="isReadonly" @click="insertTemplate">插入模板</el-button>
                 <el-button size="small" :disabled="isReadonly" @click="insertSnippet">插入信号片段</el-button>
               </div>
             </div>
           </template>
-          <el-select v-model="taskId" placeholder="研究任务" class="task-select" :disabled="isReadonly">
-            <el-option v-for="task in tasks" :key="String(task.task_id)" :label="String(task.title || task.name || `研究任务 ${shortReference(task.task_id)}`)" :value="String(task.task_id)" />
-          </el-select>
-          <div class="strategy-meta-grid">
-            <el-input v-model="strategyId" placeholder="策略 ID" :disabled="isReadonly" />
-            <el-input v-model="strategyName" placeholder="策略名称" :disabled="isReadonly" />
-          </div>
-          <el-input v-model="description" placeholder="策略说明" :disabled="isReadonly" class="strategy-description" />
-          <div class="strategy-meta-grid">
-            <el-input
-              v-model="parametersJson"
-              type="textarea"
-              :rows="4"
-              :disabled="isReadonly"
-              spellcheck="false"
-              placeholder="参数默认值 JSON，例如 {&quot;lookback&quot;: 20}"
-            />
-            <el-input
-              v-model="parameterSchemaJson"
-              type="textarea"
-              :rows="4"
-              :disabled="isReadonly"
-              spellcheck="false"
-              placeholder="参数规范 JSON"
-            />
-          </div>
-          <el-input
-            v-model="dataRequirementsJson"
-            type="textarea"
-            :rows="4"
-            :disabled="isReadonly"
-            spellcheck="false"
-            class="strategy-description"
-            placeholder='声明数据依赖 JSON，例如 {"benchmark":"000300.SH","daily_basic":["pe_ttm","pb"]}'
-          />
-          <el-input
-            v-model="script"
-            type="textarea"
-            :rows="14"
-            :disabled="isReadonly"
-            spellcheck="false"
-            placeholder="在这里编写 Python 策略脚本"
-          />
+          <el-form label-position="top" class="strategy-editor-form">
+            <el-form-item label="研究任务">
+              <el-select v-model="taskId" aria-label="研究任务" placeholder="选择研究任务" class="task-select" :disabled="isReadonly">
+                <el-option v-for="task in tasks" :key="String(task.task_id)" :label="String(task.title || task.name || `研究任务 ${shortReference(task.task_id)}`)" :value="String(task.task_id)" />
+              </el-select>
+            </el-form-item>
+            <div class="strategy-meta-grid">
+              <el-form-item label="策略 ID">
+                <el-input v-model="strategyId" aria-label="策略 ID" placeholder="例如 CustomStrategy" :disabled="isReadonly" />
+              </el-form-item>
+              <el-form-item label="策略名称">
+                <el-input v-model="strategyName" aria-label="策略名称" placeholder="输入便于识别的策略名称" :disabled="isReadonly" />
+              </el-form-item>
+            </div>
+            <el-form-item label="策略说明">
+              <el-input v-model="description" aria-label="策略说明" placeholder="说明策略目标、适用市场和主要假设" :disabled="isReadonly" />
+            </el-form-item>
+            <div class="strategy-meta-grid">
+              <el-form-item label="参数默认值（JSON）">
+                <el-input
+                  v-model="parametersJson"
+                  aria-label="参数默认值（JSON）"
+                  type="textarea"
+                  :rows="4"
+                  :disabled="isReadonly"
+                  spellcheck="false"
+                  placeholder="例如 {&quot;lookback&quot;: 20}"
+                />
+              </el-form-item>
+              <el-form-item label="参数规范（JSON Schema）">
+                <el-input
+                  v-model="parameterSchemaJson"
+                  aria-label="参数规范（JSON Schema）"
+                  type="textarea"
+                  :rows="4"
+                  :disabled="isReadonly"
+                  spellcheck="false"
+                  placeholder="声明参数类型、范围与必填项"
+                />
+              </el-form-item>
+            </div>
+            <el-form-item label="数据依赖（JSON）">
+              <el-input
+                v-model="dataRequirementsJson"
+                aria-label="数据依赖（JSON）"
+                type="textarea"
+                :rows="4"
+                :disabled="isReadonly"
+                spellcheck="false"
+                placeholder='例如 {"benchmark":"000300.SH","daily_basic":["pe_ttm","pb"]}'
+              />
+            </el-form-item>
+            <el-form-item label="Python 策略脚本">
+              <el-input
+                v-model="script"
+                aria-label="Python 策略脚本"
+                type="textarea"
+                :rows="14"
+                :disabled="isReadonly"
+                spellcheck="false"
+                placeholder="定义 CustomStrategy 并实现 generate_signals"
+              />
+            </el-form-item>
+          </el-form>
           <div class="editor-actions">
             <el-button type="primary" :loading="busy === 'validate'" :disabled="isReadonly" @click="validateDraft">
               验证并保存草稿
@@ -749,6 +776,12 @@ onMounted(loadList);
   margin-bottom: 0.75rem;
 }
 
+.catalog-field, .template-field { display: grid; gap: 0.3rem; min-width: 0; }
+.field-label { color: var(--byq-text-muted); font-size: 12px; font-weight: 700; }
+.template-field { min-width: min(230px, 100%); }
+.strategy-editor-form { margin-top: 0.75rem; }
+.strategy-editor-form :deep(.el-form-item) { margin-bottom: 0.8rem; }
+
 .strategy-detail-column {
   display: grid;
   gap: 1rem;
@@ -784,20 +817,12 @@ onMounted(loadList);
   margin-top: 0.5rem;
 }
 
-.task-select {
-  margin-bottom: 0.6rem;
-  width: 100%;
-}
+.task-select { width: 100%; }
 
 .strategy-meta-grid {
   display: grid;
   gap: 0.6rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-bottom: 0.6rem;
-}
-
-.strategy-description {
-  margin-bottom: 0.6rem;
 }
 
 .strategy-stats {

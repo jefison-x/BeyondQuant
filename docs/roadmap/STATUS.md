@@ -311,6 +311,11 @@ Worker restart identity、two-user isolation、六条真实 Product API 浏览�
 desktop/mobile Accessibility/Best Practices 100、same-origin Network 和空 Console 验收均通过；证据位于
 `docs/evidence/phase-74/`。
 
+Post-Phase 74 Model Research Navigation Maintenance 将量化模型研究从个人“模型配置”提升为
+“策略管理”与“回测管理”之间的一级业务工作台；个人模型设置继续只管理 LLM 凭据、档案与 Agent
+绑定。策略编辑器为研究任务、策略身份、说明、参数、数据依赖和 Python 脚本提供持久可见标题与
+accessible name。该维护不改变 Product API、ML lineage、策略生命周期、授权或 runtime 边界。
+
 ## 当前授权边界
 
 - Phase 49-74 与相应 Accepted ADR/计划均已完成。

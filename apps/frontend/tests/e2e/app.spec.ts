@@ -121,6 +121,13 @@ async function openNav(page: Page, label: string) {
 }
 
 async function mockResearchLists(page: Page) {
+  await page.route("**/api/product/research/tasks", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ tasks: [] }),
+    }),
+  );
   await page.route("**/api/product/research/artifacts", (route) =>
     route.fulfill({
       status: 200,
@@ -508,7 +515,7 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
   await expect(page.getByRole("button", { name: "开始回测" })).toBeEnabled();
   await page.getByRole("button", { name: "新建策略" }).click();
   await expect(page.getByText("策略编辑器", { exact: true })).toBeVisible();
-  await expect(page.getByPlaceholder("策略名称", { exact: true })).toHaveValue("自定义策略");
+  await expect(page.getByRole("textbox", { name: "策略名称", exact: true })).toHaveValue("自定义策略");
 });
 
 test("backtest workspace renders backtest result list", async ({ page }) => {
@@ -783,12 +790,20 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   );
   await mockAdminOps(page);
   await mockResearchLists(page);
+  await page.route("**/api/product/ml/workspace", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ tasks: [], pools: [], artifacts: [], training_runs: [], prediction_runs: [], backtests: [] }),
+    }),
+  );
 
   await loginAsAdmin(page);
   const primaryNavigation = page.getByRole("navigation", { name: "产品主导航" });
   await expect(primaryNavigation.locator(".nav-row")).toHaveText([
     "股票池管理",
     "策略管理",
+    "模型研究",
     "回测管理",
     "模拟操盘",
   ]);
@@ -798,6 +813,18 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
   await openNav(page, "策略管理");
   await expect(page.getByRole("heading", { name: "策略管理" })).toBeVisible();
+  await expect(page.getByText("研究任务", { exact: true })).toBeVisible();
+  await expect(page.getByText("策略 ID", { exact: true })).toBeVisible();
+  await expect(page.getByText("策略名称", { exact: true })).toBeVisible();
+  await expect(page.getByText("策略说明", { exact: true })).toBeVisible();
+  await expect(page.getByText("参数默认值（JSON）", { exact: true })).toBeVisible();
+  await expect(page.getByText("参数规范（JSON Schema）", { exact: true })).toBeVisible();
+  await expect(page.getByText("数据依赖（JSON）", { exact: true })).toBeVisible();
+  await expect(page.getByText("Python 策略脚本", { exact: true })).toBeVisible();
+  await openNav(page, "模型研究");
+  await expect(page).toHaveURL(/\/model-research$/);
+  await expect(page.getByRole("heading", { name: "模型研究" })).toBeVisible();
+  await expect(page.getByText("可靠 LightGBM 最小闭环")).toBeVisible();
   await openNav(page, "个性化");
   await expect(page.getByRole("heading", { name: "外观与主题" }).first()).toBeVisible();
   await openNav(page, "系统设置");
