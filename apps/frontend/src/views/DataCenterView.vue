@@ -68,6 +68,10 @@ const readinessForm = reactive({
 const credentials = computed(() => status.value?.source.credentials ?? []);
 const canAddCredential = computed(() => !credentials.value.some((item) => item.status !== "revoked"));
 let refreshTimer: number | undefined;
+let refreshFailures = 0;
+let refreshStopped = false;
+const refreshIntervalMs = 5000;
+const maxRefreshBackoffMs = 60000;
 
 const taskStatusLabel = (value: string) => ({
   queued: "已排队", syncing: "同步中", waiting_for_data: "等待数据", running: "运行中",
@@ -95,7 +99,7 @@ async function loadCatalogue() {
   }
 }
 
-async function load() {
+async function load(): Promise<boolean> {
   loading.value = true;
   error.value = "";
   try {
@@ -114,18 +118,41 @@ async function load() {
       selectedSecurityJob.value = status.value.security_master_jobs.find((item) => item.job_id === selectedSecurityJob.value?.job_id) ?? selectedSecurityJob.value;
     }
     if (status.value.security_master.latest_snapshot) await loadCatalogue();
+    return true;
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "数据中心加载失败";
+    return false;
   } finally {
     loading.value = false;
   }
 }
 
+function scheduleRefresh(delayMs: number) {
+  if (refreshStopped) return;
+  refreshTimer = window.setTimeout(() => { void refreshStatus(); }, delayMs);
+}
+
+async function refreshStatus() {
+  refreshTimer = undefined;
+  if (refreshStopped) return;
+  if (document.hidden) {
+    scheduleRefresh(refreshIntervalMs);
+    return;
+  }
+  const succeeded = await load();
+  refreshFailures = succeeded ? 0 : Math.min(refreshFailures + 1, 4);
+  scheduleRefresh(Math.min(refreshIntervalMs * (2 ** refreshFailures), maxRefreshBackoffMs));
+}
+
 onMounted(async () => {
-  await Promise.all([load(), loadReadinessPools()]);
-  refreshTimer = window.setInterval(() => { if (!document.hidden) void load(); }, 5000);
+  const [loaded] = await Promise.all([load(), loadReadinessPools()]);
+  refreshFailures = loaded ? 0 : 1;
+  scheduleRefresh(Math.min(refreshIntervalMs * (2 ** refreshFailures), maxRefreshBackoffMs));
 });
-onBeforeUnmount(() => { if (refreshTimer !== undefined) window.clearInterval(refreshTimer); });
+onBeforeUnmount(() => {
+  refreshStopped = true;
+  if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+});
 
 async function loadReadinessPools() {
   try {

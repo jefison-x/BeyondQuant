@@ -347,6 +347,27 @@ def test_exact_session_status_contracts_are_closed_and_validated() -> None:
     assert all(call[1]["params"] == {"trade_date": "20240102"} for call in transport.calls)
 
 
+def test_suspensions_preserve_distinct_intraday_suspend_and_resume_events() -> None:
+    fields = ["ts_code", "trade_date", "suspend_timing", "suspend_type"]
+    rows = [
+        ["870204.BJ", "20220118", None, "R"],
+        ["870204.BJ", "20220118", "09:59:32-10:09:32", "S"],
+    ]
+    result = provider(FakeTransport([
+        TransportResponse(200, envelope(rows, fields=fields)),
+    ])).fetch_suspensions("20220118")
+
+    assert [(item.suspend_type, item.suspend_timing) for item in result.suspensions] == [
+        ("R", None), ("S", "09:59:32-10:09:32"),
+    ]
+
+    duplicate = provider(FakeTransport([
+        TransportResponse(200, envelope([rows[1], rows[1]], fields=fields)),
+    ]))
+    with pytest.raises(ProviderProtocolError, match="duplicate suspension rows"):
+        duplicate.fetch_suspensions("20220118")
+
+
 def test_price_limits_filter_bounded_mixed_asset_response_to_daily_stock_set() -> None:
     rows = [
         ["20240102", f"{number:06d}.SZ", 1, 1.1, .9]

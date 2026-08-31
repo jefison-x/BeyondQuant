@@ -118,6 +118,30 @@ def test_sync_job_is_durable_idempotent_and_updates_coverage() -> None:
     assert coverage["completeness_claimed"] is False
     assert coverage["row_count"] == 1
     assert coverage["symbols"][0]["symbol"] == "000001.SZ"
+    assert coverage["groups"] == [{
+        "data_source": "tushare", "asset_type": "stock", "row_count": 1,
+        "symbol_count": 1, "date_min": "20240102", "date_max": "20240102",
+    }]
+
+    market.import_bars([{
+        "symbol": "600000.SH", "trade_date": "20240103", "open": 8.0,
+        "high": 8.5, "low": 7.8, "close": 8.2, "volume": 500.0,
+        "amount": 4100.0, "adjust": "none", "asset_type": "stock",
+        "data_source": "tushare", "volume_unit": "lots",
+        "amount_unit": "thousand_cny", "provenance": {"fixture": True},
+    }])
+    replayed = market.import_bars([{
+        "symbol": "600000.SH", "trade_date": "20240103", "open": 8.0,
+        "high": 8.5, "low": 7.8, "close": 8.2, "volume": 500.0,
+        "amount": 4100.0, "adjust": "none", "asset_type": "stock",
+        "data_source": "tushare", "volume_unit": "lots",
+        "amount_unit": "thousand_cny", "provenance": {"fixture": True},
+    }])
+    assert replayed["kept"] == 1
+    updated_coverage = jobs.coverage_audit()
+    assert updated_coverage["row_count"] == 2
+    assert updated_coverage["symbol_count"] == 2
+    assert updated_coverage["date_max"] == "20240103"
     jobs.close()
     market.close()
 

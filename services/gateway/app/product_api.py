@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import uuid
 from decimal import Decimal
@@ -38,6 +39,7 @@ _SECRET_KEY_FRAGMENTS = (
     "authorization",
 )
 router = APIRouter(prefix="/api/product")
+logger = logging.getLogger(__name__)
 
 
 class ProductError(Exception):
@@ -318,9 +320,17 @@ def _backend_get(path: str) -> dict[str, object]:
         detail = error_body.get("detail") if isinstance(error_body, dict) else None
         message = detail if isinstance(detail, str) else "backend rejected the request"
         if status not in {400, 401, 403, 404, 409, 422}:
+            logger.warning(
+                "backend request rejected method=%s path=%s status=%s",
+                "GET", path, status,
+            )
             raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
         raise ProductError(status, "product_domain_rejected", message) from exc
     except httpx.HTTPError as exc:
+        logger.warning(
+            "backend request failed method=%s path=%s error_type=%s",
+            "GET", path, type(exc).__name__,
+        )
         raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
     body = response.json()
     if not isinstance(body, dict):
@@ -354,9 +364,17 @@ def _backend_request(
         detail = error_body.get("detail") if isinstance(error_body, dict) else None
         message = detail if isinstance(detail, str) else "backend rejected the request"
         if status not in {400, 401, 403, 404, 409, 422}:
+            logger.warning(
+                "backend request rejected method=%s path=%s status=%s",
+                method, path, status,
+            )
             raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
         raise ProductError(status, "product_domain_rejected", message) from exc
     except httpx.HTTPError as exc:
+        logger.warning(
+            "backend request failed method=%s path=%s error_type=%s",
+            method, path, type(exc).__name__,
+        )
         raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
     body = response.json()
     if not isinstance(body, dict):

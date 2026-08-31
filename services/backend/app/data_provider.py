@@ -1030,7 +1030,12 @@ class TushareProvider:
         suspensions = tuple(Suspension.from_row(fields, row) for row in rows)
         if any(item.trade_date != normalized for item in suspensions):
             raise ProviderProtocolError("provider returned a suspension date outside the request")
-        if len({(item.ts_code, item.trade_date) for item in suspensions}) != len(suspensions):
+        # Tushare can legitimately report both an intraday suspension and a
+        # resumption for one security/session. Preserve those distinct events;
+        # reject only an exact duplicate provider row.
+        if len({(
+            item.ts_code, item.trade_date, item.suspend_type, item.suspend_timing,
+        ) for item in suspensions}) != len(suspensions):
             raise ProviderProtocolError("provider returned duplicate suspension rows")
         return SuspensionResult(suspensions, provenance)
 

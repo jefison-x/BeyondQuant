@@ -357,28 +357,28 @@ class DataSyncStore(PgStoreMixin):
         with self._transaction() as connection:
             totals = fetch_one(
                 connection,
-                """SELECT COUNT(*)::bigint AS row_count,
-                          COUNT(DISTINCT symbol)::bigint AS symbol_count,
-                          MIN(trade_date) AS date_min, MAX(trade_date) AS date_max,
-                          COUNT(*) FILTER (WHERE data_source <> 'tushare')::bigint AS source_issues,
-                          COUNT(*) FILTER (WHERE high < low OR open < low OR open > high
-                            OR close < low OR close > high)::bigint AS ohlc_issues
-                   FROM market_daily_bars""",
+                """SELECT totals.row_count, symbols.symbol_count,
+                          totals.date_min, totals.date_max,
+                          totals.source_issues, totals.ohlc_issues
+                   FROM market_daily_coverage_totals totals
+                   CROSS JOIN (
+                       SELECT COUNT(*)::bigint AS symbol_count
+                       FROM market_daily_symbol_coverage
+                   ) symbols
+                   WHERE totals.projection_key = 1""",
             ) or {}
             groups = execute(
                 connection,
-                """SELECT data_source, asset_type, COUNT(*)::bigint AS row_count,
-                          COUNT(DISTINCT symbol)::bigint AS symbol_count,
-                          MIN(trade_date) AS date_min, MAX(trade_date) AS date_max
-                   FROM market_daily_bars GROUP BY data_source, asset_type
+                """SELECT data_source, asset_type, SUM(row_count)::bigint AS row_count,
+                          COUNT(*)::bigint AS symbol_count,
+                          MIN(date_min) AS date_min, MAX(date_max) AS date_max
+                   FROM market_daily_group_symbol_coverage GROUP BY data_source, asset_type
                    ORDER BY data_source, asset_type LIMIT 50""",
             )
             symbols = execute(
                 connection,
-                """SELECT symbol, COUNT(*)::bigint AS row_count,
-                          MIN(trade_date) AS date_min, MAX(trade_date) AS date_max
-                   FROM market_daily_bars GROUP BY symbol
-                   ORDER BY symbol LIMIT :limit""",
+                """SELECT symbol, row_count, date_min, date_max
+                   FROM market_daily_symbol_coverage ORDER BY symbol LIMIT :limit""",
                 {"limit": limit},
             )
         row_count = int(totals.get("row_count") or 0)
