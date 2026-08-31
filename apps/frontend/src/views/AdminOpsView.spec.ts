@@ -34,7 +34,7 @@ describe("AdminOpsView", () => {
   it("loads the admin Product API projection and selects a phase-owned workbench", async () => {
     const wrapper = shallowMount(AdminOpsView, { props: { section: "database" } });
     await flushPromises();
-    expect(getOperationsStatus).toHaveBeenCalledWith("admin-test");
+    expect(getOperationsStatus).toHaveBeenCalledWith("admin-test", { force: false });
     expect(wrapper.findComponent({ name: "DatabaseOperations" }).exists()).toBe(true);
     expect(wrapper.text()).toContain("原始 DSH 事件不可见");
   });

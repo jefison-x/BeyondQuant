@@ -3734,12 +3734,27 @@ def refresh_stock_pool_producer(pool_id: str, payload: dict[str, Any], request: 
 
 
 @app.get("/v1/paper/pools/{pool_id}")
-def get_stock_pool(pool_id: str, request: Request) -> dict[str, object]:
+def get_stock_pool(pool_id: str, request: Request, include_members: bool = True) -> dict[str, object]:
     context = _required_agent_context(request)
     return _paper_call(lambda: {"pool": paper_store.get_pool(
         pool_id,
         trusted_owner=context["owner_principal"],
+        include_members=include_members,
     )})
+
+
+@app.get("/v1/paper/pools/{pool_id}/members")
+def list_stock_pool_members(
+    pool_id: str, request: Request, query: str = "", limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _paper_call(lambda: paper_store.list_pool_members(
+        pool_id,
+        trusted_owner=context["owner_principal"],
+        query=query,
+        limit=limit,
+        offset=offset,
+    ))
 
 
 @app.get("/v1/paper/pools")

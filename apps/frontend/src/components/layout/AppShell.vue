@@ -17,6 +17,8 @@ const isMobile = ref(false);
 const sidebarCollapsed = ref(false);
 const mobileDrawerOpen = ref(false);
 const contentArea = ref<HTMLElement | null>(null);
+let sessionLoadHandle: number | undefined;
+let sessionLoadUsesIdleCallback = false;
 
 function updateViewport() {
   isMobile.value = window.innerWidth <= 767;
@@ -26,21 +28,38 @@ function toggleSidebarCollapse() {
   sidebarCollapsed.value = !sidebarCollapsed.value;
 }
 
-onMounted(async () => {
+async function loadRecentSessions() {
+  if (agent.sessions.length || isPublicRoute.value || !auth.isAuthenticated) return;
+  try {
+    const response = await listAgentSessions(auth.token, { limit: 20 });
+    agent.replaceSessions(response.sessions);
+  } catch {
+    // The shell remains usable when the best-effort recent catalogue is unavailable.
+  }
+}
+
+onMounted(() => {
   updateViewport();
   window.addEventListener("resize", updateViewport);
-  if (!isPublicRoute.value && auth.isAuthenticated) {
-    try {
-      const response = await listAgentSessions(auth.token, { limit: 100 });
-      agent.replaceSessions(response.sessions);
-    } catch {
-      // The shell remains usable when the best-effort recent catalogue is unavailable.
-    }
+  const idleWindow = window as Window & {
+    requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+    cancelIdleCallback?: (handle: number) => void;
+  };
+  if (idleWindow.requestIdleCallback) {
+    sessionLoadUsesIdleCallback = true;
+    sessionLoadHandle = idleWindow.requestIdleCallback(() => void loadRecentSessions(), { timeout: 1_500 });
+  } else {
+    sessionLoadHandle = window.setTimeout(() => void loadRecentSessions(), 0);
   }
 });
 
 onUnmounted(() => {
   window.removeEventListener("resize", updateViewport);
+  if (sessionLoadHandle !== undefined) {
+    const idleWindow = window as Window & { cancelIdleCallback?: (handle: number) => void };
+    if (sessionLoadUsesIdleCallback) idleWindow.cancelIdleCallback?.(sessionLoadHandle);
+    else window.clearTimeout(sessionLoadHandle);
+  }
 });
 
 watch(() => route.fullPath, async () => {

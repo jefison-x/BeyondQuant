@@ -252,8 +252,19 @@ paths:
     post: {summary: 创建 owner-scoped dynamic pool definition and optionally enqueue trusted materialization., responses: *createdResponses}
   /api/product/paper/pools/{pool_id}:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
-    get: {summary: 获取 one owner-scoped stock pool., responses: *okResponses}
+    get:
+      summary: 获取 one owner-scoped stock pool.
+      parameters:
+        - {name: include_members, in: query, schema: {type: boolean, default: true}}
+      responses: *okResponses
     delete: {summary: 以 tombstone 方式删除 an owner-scoped stock pool while retaining snapshots., responses: *okResponses}
+  /api/product/paper/pools/{pool_id}/members:
+    parameters:
+      - {$ref: "#/components/parameters/PoolId"}
+      - {name: query, in: query, schema: {type: string, maxLength: 80}}
+      - {$ref: "#/components/parameters/Limit"}
+      - {$ref: "#/components/parameters/Offset"}
+    get: {summary: 分页筛选 current immutable members with non-authoritative Chinese display names., responses: *okResponses}
   /api/product/paper/pools/{pool_id}/metadata:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
     patch: {summary: 更新 mutable stock-pool catalog metadata without creating a snapshot., responses: *okResponses}

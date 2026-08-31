@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getOperationsStatus, updateOperationsBudget } from "./operations";
+import { clearOperationsStatusCache, getOperationsStatus, updateOperationsBudget } from "./operations";
 
 describe("operations api client", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    clearOperationsStatusCache();
+    vi.restoreAllMocks();
+  });
 
   it("returns secret-free operations status", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -26,6 +29,16 @@ describe("operations api client", () => {
       "/api/product/operations/status",
       expect.objectContaining({ credentials: "include" }),
     );
+  });
+
+  it("deduplicates and briefly caches the shared admin projection", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ schema_version: "operations.v1" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await Promise.all([getOperationsStatus("admin"), getOperationsStatus("admin")]);
+    await getOperationsStatus("admin");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await getOperationsStatus("admin", { force: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("updates only the bounded audited budget threshold contract", async () => {

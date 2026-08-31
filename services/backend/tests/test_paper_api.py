@@ -94,6 +94,11 @@ def test_stock_pool_snapshot_and_lifecycle_api(monkeypatch) -> None:
     assert replaced.json()["snapshot"]["version_number"] == 2
     history = client.get(f"/v1/paper/pools/{pool['pool_id']}/snapshots", headers=headers)
     assert [item["version_number"] for item in history.json()["snapshots"]] == [2, 1]
+    members = client.get(f"/v1/paper/pools/{pool['pool_id']}/members?query=600000&limit=20", headers=headers)
+    assert members.status_code == 200
+    assert members.json()["members"][0]["symbol"] == "600000.SH"
+    compact = client.get(f"/v1/paper/pools/{pool['pool_id']}?include_members=false", headers=headers)
+    assert "members" not in compact.json()["pool"]["snapshot"]
     inactive = client.patch(f"/v1/paper/pools/{pool['pool_id']}/lifecycle", headers=headers, json={
         "status": "inactive", "reason": "api pause", "idempotency_key": "api-life-1",
     })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { getStockPool, listStockPools } from "@/api/paper";
 import {
@@ -74,6 +74,18 @@ let refreshFailures = 0;
 let refreshStopped = false;
 const refreshIntervalMs = 5000;
 const maxRefreshBackoffMs = 60000;
+const ACTIVE_PROGRESS_STATES = new Set(["queued", "pending", "running", "syncing", "waiting_for_data"]);
+
+function needsProgressRefresh(value: DataCenterStatus | null): boolean {
+  if (!value) return false;
+  return [
+    ...value.jobs,
+    ...value.security_master_jobs,
+    ...value.automation.jobs,
+    ...value.data_tasks,
+    ...value.data_demands,
+  ].some((item) => ACTIVE_PROGRESS_STATES.has(String(item.status)));
+}
 
 const taskStatusLabel = (value: string) => ({
   queued: "已排队", syncing: "同步中", waiting_for_data: "等待数据", running: "运行中",
@@ -137,7 +149,14 @@ async function load(options: { progressOnly?: boolean } = {}): Promise<boolean> 
     if (selectedSecurityJob.value) {
       selectedSecurityJob.value = status.value.security_master_jobs.find((item) => item.job_id === selectedSecurityJob.value?.job_id) ?? selectedSecurityJob.value;
     }
-    if ((!progressOnly || !hadStatus) && status.value.security_master.latest_snapshot) await loadCatalogue();
+    if (
+      (!progressOnly || !hadStatus) &&
+      activeTab.value === "securities" &&
+      status.value.security_master.latest_snapshot
+    ) await loadCatalogue();
+    if (!progressOnly && needsProgressRefresh(status.value) && refreshTimer === undefined) {
+      scheduleRefresh(refreshIntervalMs);
+    }
     return true;
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "数据中心加载失败";
@@ -164,17 +183,23 @@ async function refreshStatus() {
   }
   const succeeded = await load({ progressOnly: true });
   refreshFailures = succeeded ? 0 : Math.min(refreshFailures + 1, 4);
-  scheduleRefresh(Math.min(refreshIntervalMs * (2 ** refreshFailures), maxRefreshBackoffMs));
+  if (needsProgressRefresh(status.value)) {
+    scheduleRefresh(Math.min(refreshIntervalMs * (2 ** refreshFailures), maxRefreshBackoffMs));
+  }
 }
 
 onMounted(async () => {
   const [loaded] = await Promise.all([load(), loadReadinessPools()]);
   refreshFailures = loaded ? 0 : 1;
-  scheduleRefresh(Math.min(refreshIntervalMs * (2 ** refreshFailures), maxRefreshBackoffMs));
 });
 onBeforeUnmount(() => {
   refreshStopped = true;
   if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+});
+watch(activeTab, (tab) => {
+  if (tab === "securities" && status.value?.security_master.latest_snapshot && !catalogue.value.snapshot) {
+    void loadCatalogue();
+  }
 });
 
 async function loadReadinessPools() {
@@ -431,7 +456,7 @@ function securityStatusLabel(value: string) {
       <el-alert title="BaoStock、AKShare 与任意自定义 Provider 已移除；Token 只在 Backend 解密，股票目录和日线数据均为平台级数据。" type="info" show-icon :closable="false" />
 
       <el-tabs v-model="activeTab" class="workspace-tabs">
-        <el-tab-pane label="数据源配置" name="source">
+        <el-tab-pane label="数据源配置" name="source" lazy>
           <el-card shadow="never">
             <template #header><div class="card-header"><div><strong>Tushare 系统数据源</strong><p>固定官方协议端点 · AES-256-GCM 信封加密 · 管理员专用</p></div><el-button v-if="status.source.can_manage" type="primary" :disabled="!status.source.encryption.configured || !canAddCredential" @click="openCredential()">添加 Token</el-button></div></template>
             <el-table :data="credentials" empty-text="尚未保存数据库凭据；可继续使用显式环境引导配置">
@@ -450,7 +475,7 @@ function securityStatusLabel(value: string) {
           </el-card>
         </el-tab-pane>
 
-        <el-tab-pane label="股票清单" name="securities">
+        <el-tab-pane label="股票清单" name="securities" lazy>
           <el-card shadow="never">
             <template #header><div class="card-header"><div><strong>股票基本资料</strong><p>一次原子同步上市、暂停上市和退市证券；失败不会替换当前目录。</p></div><el-button type="primary" :loading="busy" :disabled="!status.source.configured" @click="syncSecurityMaster">同步基本资料</el-button></div></template>
             <el-descriptions :column="4" border>
@@ -491,7 +516,7 @@ function securityStatusLabel(value: string) {
           </el-card>
         </el-tab-pane>
 
-        <el-tab-pane label="行情同步" name="sync">
+        <el-tab-pane label="行情同步" name="sync" lazy>
           <el-card v-if="status.source.can_manage" shadow="never">
             <template #header><div class="card-header"><div><strong>每日自动同步</strong><p>按 Asia/Shanghai 交易日历，在盘后一次获取全市场日线并追赶遗漏交易日。</p></div><el-button type="primary" plain :loading="busy" :disabled="!status.source.configured" @click="triggerAutomation">立即检查并同步</el-button></div></template>
             <el-alert
@@ -586,7 +611,7 @@ function securityStatusLabel(value: string) {
           <el-card v-if="selectedJob" shadow="never"><template #header><strong>任务明细 · {{ selectedJob.job_id }}</strong></template><el-progress :percentage="selectedJob.progress" :status="selectedJob.status === 'failed' ? 'exception' : selectedJob.status === 'completed' ? 'success' : undefined" /><p v-if="selectedJob.results_truncated" class="bounded-note">逐标的结果已按公开合同截断：显示 {{ selectedJob.symbol_results.length }} / {{ selectedJob.result_count }}</p><el-table :data="selectedJob.symbol_results" size="small"><el-table-column prop="symbol" label="标的" width="120" /><el-table-column prop="status" label="状态" width="100" /><el-table-column prop="rows_received" label="获取" width="90" /><el-table-column prop="rows_inserted" label="新增" width="90" /><el-table-column prop="date_min" label="起始" width="110" /><el-table-column prop="date_max" label="结束" width="110" /><el-table-column prop="message" label="说明" min-width="180" /></el-table></el-card>
         </el-tab-pane>
 
-        <el-tab-pane label="覆盖审计" name="coverage">
+        <el-tab-pane label="覆盖审计" name="coverage" lazy>
           <el-card shadow="never" class="readiness-card">
             <template #header><div><strong>这批数据现在能用吗？</strong><p>按股票、日期和用途检查已同步数据；小巴研究和回测都使用这里的持久数据，不会临时向数据源取数。</p></div></template>
             <el-form label-position="top">

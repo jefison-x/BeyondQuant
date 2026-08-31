@@ -278,6 +278,10 @@ def test_stock_pool_catalog_type_description_and_weights() -> None:
     listed = store.list_pools(trusted_owner="alice")["pools"]
     assert listed[0]["pool_type"] == "custom"
     assert listed[0]["member_count"] == 2
+    member_page = store.list_pool_members(pool["pool_id"], trusted_owner="alice", query="000001", limit=1)
+    assert member_page["total"] == 1
+    assert member_page["members"] == [{"symbol": "000001.SZ", "weight": "0.600000000000", "name": None}]
+    assert "members" not in store.get_pool(pool["pool_id"], trusted_owner="alice", include_members=False)["snapshot"]
 
     with pytest.raises(ValueError):
         store.create_pool(

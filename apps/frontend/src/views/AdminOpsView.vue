@@ -38,11 +38,11 @@ const activeViewProps = computed(() => {
   return {};
 });
 
-async function load() {
+async function load(force = false) {
   loading.value = true;
   error.value = "";
   try {
-    data.value = await getOperationsStatus(auth.token);
+    data.value = await getOperationsStatus(auth.token, { force });
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "运维数据加载失败";
   } finally {
@@ -50,7 +50,9 @@ async function load() {
   }
 }
 
-watch(() => props.section, load);
+watch(() => props.section, () => {
+  if (!data.value) void load();
+});
 onMounted(load);
 </script>
 
@@ -61,7 +63,7 @@ onMounted(load);
         <el-tag effect="plain">管理员边界</el-tag>
         <span class="operations-boundary">Product API · 去敏投影 · 原始 DSH 事件不可见</span>
       </div>
-      <el-button :loading="loading" @click="load">刷新</el-button>
+      <el-button :loading="loading" @click="load(true)">刷新</el-button>
     </div>
     <div v-if="loading && !data" class="base-loading" role="status" aria-live="polite">正在读取真实运维投影...</div>
     <div v-else-if="error && !data" class="base-error" role="alert">

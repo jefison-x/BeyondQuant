@@ -10,8 +10,7 @@ import MLResearchWorkbench from "@/components/MLResearchWorkbench.vue";
 
 <style scoped>
 .ml-research-page {
-  margin: 0 auto;
-  max-width: 1380px;
   min-width: 0;
+  width: 100%;
 }
 </style>

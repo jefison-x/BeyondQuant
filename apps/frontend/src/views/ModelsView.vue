@@ -6,6 +6,8 @@ import {
   revokeModelCredential, updateModelBinding, updateModelCredential,
 } from "@/api/settings";
 import type { ModelCredential, ModelProfile, ModelSettings } from "@/api/types";
+import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
+import { useFilteredPagination } from "@/composables/useFilteredPagination";
 
 const loading = ref(true);
 const busy = ref(false);
@@ -22,6 +24,9 @@ const modelsForProvider = computed(() => (settings.value?.models ?? []).filter((
 const availableProfiles = computed(() => (settings.value?.profiles ?? []).filter((item) => item.available));
 const selectedModel = computed(() => settings.value?.models.find((item) => item.provider === profileForm.provider && item.model === profileForm.model));
 const selectedProvider = computed(() => settings.value?.providers.find((item) => item.provider === credentialForm.provider));
+const credentialPages = useFilteredPagination(computed(() => settings.value?.credential_items ?? []), (item) => `${item.label} ${item.provider} ${item.status}`, 15);
+const profilePages = useFilteredPagination(computed(() => settings.value?.profiles ?? []), (item) => `${item.display_name} ${item.provider} ${item.model} ${item.status}`, 15);
+const auditPages = useFilteredPagination(computed(() => settings.value?.audit ?? []), (item) => `${item.action ?? ""} ${item.credential_id ?? ""} ${item.created_at ?? ""}`, 15);
 
 function providerName(provider: string) {
   return settings.value?.providers.find((item) => item.provider === provider)?.display_name ?? provider;
@@ -153,18 +158,21 @@ function actionLabel(value: unknown) {
     <template v-else>
       <el-card shadow="never">
         <template #header><div class="card-header"><div><strong>模型凭据</strong><p class="muted">AES-256-GCM 信封加密 · {{ settings?.encryption.configured ? "密钥环就绪" : "加密不可用" }}</p></div><el-button type="primary" :disabled="!settings?.encryption.configured" @click="openCredential()">添加凭据</el-button></div></template>
-        <el-table :data="settings?.credential_items ?? []" empty-text="尚未配置凭据">
+        <ListFilterPagination v-model:query="credentialPages.query.value" v-model:page="credentialPages.page.value" :page-size="credentialPages.pageSize.value" :total="credentialPages.total.value" placeholder="筛选凭据名称、厂商或状态" label="模型凭据分页">
+        <el-table :data="credentialPages.pageItems.value" empty-text="尚未配置凭据">
           <el-table-column prop="label" label="名称" min-width="150" />
           <el-table-column label="厂商" min-width="130"><template #default="scope">{{ providerName(scope.row.provider) }}</template></el-table-column>
           <el-table-column prop="masked" label="掩码" min-width="130" />
           <el-table-column label="状态" width="100"><template #default="scope"><el-tag :type="scope.row.status === 'active' ? 'success' : scope.row.status === 'revoked' ? 'danger' : 'info'">{{ scope.row.status }}</el-tag></template></el-table-column>
           <el-table-column label="操作" min-width="260"><template #default="scope"><el-button link type="primary" :disabled="scope.row.status === 'revoked'" @click="openCredential(scope.row)">替换</el-button><el-button v-if="scope.row.status === 'active'" link @click="setCredentialStatus(scope.row, 'disabled')">停用</el-button><el-button v-else-if="scope.row.status === 'disabled'" link @click="setCredentialStatus(scope.row, 'active')">启用</el-button><el-button link type="danger" :disabled="scope.row.status === 'revoked'" @click="revoke(scope.row)">撤销</el-button></template></el-table-column>
         </el-table>
+        </ListFilterPagination>
       </el-card>
 
       <el-card shadow="never">
         <template #header><div class="card-header"><div><strong>模型档案</strong><p class="muted">模型参数与凭据分离，可复用于 Agent 绑定。</p></div><el-button type="primary" :disabled="!activeCredentials.length" @click="openProfile">新建档案</el-button></div></template>
-        <el-table :data="settings?.profiles ?? []" empty-text="尚无模型档案">
+        <ListFilterPagination v-model:query="profilePages.query.value" v-model:page="profilePages.page.value" :page-size="profilePages.pageSize.value" :total="profilePages.total.value" placeholder="筛选档案、厂商、模型或状态" label="模型档案分页">
+        <el-table :data="profilePages.pageItems.value" empty-text="尚无模型档案">
           <el-table-column prop="display_name" label="档案" min-width="150" />
           <el-table-column label="厂商" min-width="130"><template #default="scope">{{ providerName(scope.row.provider) }}</template></el-table-column>
           <el-table-column prop="model" label="模型" min-width="170" />
@@ -172,6 +180,7 @@ function actionLabel(value: unknown) {
           <el-table-column label="可用" width="90"><template #default="scope"><el-tag :type="scope.row.available ? 'success' : 'danger'">{{ scope.row.available ? "可用" : "不可用" }}</el-tag></template></el-table-column>
           <el-table-column label="操作" width="100"><template #default="scope"><el-button link type="danger" :disabled="scope.row.status === 'deleted'" @click="removeProfile(scope.row)">删除</el-button></template></el-table-column>
         </el-table>
+        </ListFilterPagination>
       </el-card>
 
       <el-card shadow="never">
@@ -184,7 +193,7 @@ function actionLabel(value: unknown) {
 
       <el-card shadow="never">
         <template #header><div><strong>凭据审计</strong><p class="muted">仅记录元数据，不记录密钥明文或密文。</p></div></template>
-        <el-table :data="settings?.audit ?? []" size="small" empty-text="暂无审计记录"><el-table-column label="动作" width="120"><template #default="scope">{{ actionLabel(scope.row.action) }}</template></el-table-column><el-table-column prop="credential_id" label="凭据" min-width="230" show-overflow-tooltip /><el-table-column prop="created_at" label="时间" min-width="180" /></el-table>
+        <ListFilterPagination v-model:query="auditPages.query.value" v-model:page="auditPages.page.value" :page-size="auditPages.pageSize.value" :total="auditPages.total.value" placeholder="筛选动作、凭据或时间" label="凭据审计分页"><el-table :data="auditPages.pageItems.value" size="small" empty-text="暂无审计记录"><el-table-column label="动作" width="120"><template #default="scope">{{ actionLabel(scope.row.action) }}</template></el-table-column><el-table-column prop="credential_id" label="凭据" min-width="230" show-overflow-tooltip /><el-table-column prop="created_at" label="时间" min-width="180" /></el-table></ListFilterPagination>
       </el-card>
     </template>
 

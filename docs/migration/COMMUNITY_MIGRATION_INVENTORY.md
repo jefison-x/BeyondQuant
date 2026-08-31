@@ -928,6 +928,22 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+## Post-Phase 82 frontend list-performance maintenance audit（2026-09-01）
+
+The read-only Community Stock Pool, Backtest, Strategy and Operations surfaces
+were re-inspected before this maintenance change. This is a UX/performance
+classification only; Community runtime, APIs and storage remain incompatible.
+
+| Community evidence | Reusable invariant / UX | Decision | Maintenance disposition |
+|---|---|---|---|
+| Stock Pool catalogue pagination and constituent code/name columns | Large catalogues and member lists need searchable, bounded pages; a symbol needs a human-readable Chinese name. | `PORT_UX` / `PORT_LAYOUT` / `REFACTOR` | Use owner-scoped BYQ Product API pagination and enrich the read projection from canonical `market_securities`; snapshot identity remains symbol/weight based. |
+| Backtest catalogue pagination and lazy result tabs | Hidden result tables should not mount before the user opens them, and only one bounded page should render at a time. | `PORT_UX` / `REFACTOR` | Reuse BYQ immutable Backtest results with shared client-side filter/page rendering and lazy tabs; no Community engine or API is copied. |
+| Operations workbench lazy tabs and bounded tables | Admin navigation should not repeatedly load and mount the same large projection. | `PORT_UX` / `REFACTOR` | Deduplicate/cache the existing secret-safe `operations.v1` Product projection and paginate its audit/run lists. |
+| Community direct internal APIs, raw runtime objects and legacy storage assumptions | No compatible Product boundary. | `REPLACE` / `DROP` | Browser traffic remains same-origin Gateway/Product API; no Backend, MCP, DSH, PostgreSQL or Provider direct call is added. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.
+
 ## Phase 82 scalable data-task pre-implementation audit
 
 The read-only Community `DataSync.vue`, durable `DataSyncTask` model,

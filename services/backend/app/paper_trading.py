@@ -972,14 +972,16 @@ class PaperTradingStore(PgStoreMixin):
                     {"snapshot_id": snapshot_id, "pool_id": pool_id})
         return self.get_pool(pool_id, trusted_owner=owner)
 
-    def get_pool(self, pool_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
+    def get_pool(
+        self, pool_id: object, *, trusted_owner: str | None = None, include_members: bool = True,
+    ) -> dict[str, object]:
         pool_id = _id(pool_id, prefix="stock_pool")
         row = self._fetch_one("SELECT * FROM stock_pools WHERE pool_id = :pool_id", {"pool_id": pool_id})
         if row is None:
             raise PaperTradingNotFound("stock pool not found")
         if trusted_owner and row["owner_principal"] != trusted_owner:
             raise PaperTradingNotFound("stock pool not found")
-        return self._pool_detail(row)
+        return self._pool_detail(row, include_members=include_members)
 
     def list_pools(self, *, trusted_owner: str | None = None, limit: int = 50, offset: int = 0) -> dict[str, object]:
         if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > 100:
@@ -1032,13 +1034,77 @@ class PaperTradingStore(PgStoreMixin):
         result["provenance"] = result.pop("provenance_json") or {}
         result["weight_sum"] = None if result["weight_sum"] is None else format(Decimal(str(result["weight_sum"])), "f")
         if include_members:
+            has_catalogue = bool((self._fetch_one(
+                "SELECT to_regclass('public.market_securities') IS NOT NULL AS present"
+            ) or {}).get("present"))
             rows = self._execute(
-                """SELECT symbol, weight::text AS weight FROM stock_pool_snapshot_members
+                """SELECT member.symbol, member.weight::text AS weight,
+                          security.name
+                   FROM stock_pool_snapshot_members member
+                   LEFT JOIN market_securities security ON security.symbol = member.symbol
+                   WHERE member.snapshot_id = :snapshot_id ORDER BY member.symbol"""
+                if has_catalogue else
+                """SELECT symbol, weight::text AS weight, NULL::text AS name
+                   FROM stock_pool_snapshot_members
                    WHERE snapshot_id = :snapshot_id ORDER BY symbol""",
                 {"snapshot_id": snapshot_id},
             )
             result["members"] = [dict(item) for item in rows]
         return result
+
+    def list_pool_members(
+        self,
+        pool_id: object,
+        *,
+        trusted_owner: str | None = None,
+        query: str = "",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > 200:
+            raise ValueError("limit must be between 1 and 200")
+        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+            raise ValueError("offset must be non-negative")
+        normalized_query = str(query).strip()
+        if len(normalized_query) > 80:
+            raise ValueError("query must not exceed 80 characters")
+        pool = self.get_pool(pool_id, trusted_owner=trusted_owner, include_members=False)
+        snapshot_id = pool.get("current_snapshot_id")
+        if not snapshot_id:
+            return {"members": [], "total": 0, "limit": limit, "offset": offset, "snapshot_id": None}
+
+        has_catalogue = bool((self._fetch_one(
+            "SELECT to_regclass('public.market_securities') IS NOT NULL AS present"
+        ) or {}).get("present"))
+        clauses = ["member.snapshot_id = :snapshot_id"]
+        params: dict[str, object] = {"snapshot_id": snapshot_id, "limit": limit, "offset": offset}
+        if normalized_query:
+            clauses.append(
+                "(member.symbol ILIKE :query OR security.name ILIKE :query)"
+                if has_catalogue else "member.symbol ILIKE :query"
+            )
+            params["query"] = f"%{normalized_query}%"
+        where = " AND ".join(clauses)
+        join = "LEFT JOIN market_securities security ON security.symbol = member.symbol" if has_catalogue else ""
+        name = "security.name" if has_catalogue else "NULL::text AS name"
+        rows = self._execute(
+            f"""SELECT member.symbol, member.weight::text AS weight, {name}
+                FROM stock_pool_snapshot_members member {join}
+                WHERE {where} ORDER BY member.symbol LIMIT :limit OFFSET :offset""",
+            params,
+        )
+        total = self._fetch_one(
+            f"""SELECT COUNT(*)::bigint AS total FROM stock_pool_snapshot_members member {join}
+                WHERE {where}""",
+            {key: value for key, value in params.items() if key not in {"limit", "offset"}},
+        )
+        return {
+            "members": rows,
+            "total": int(total["total"] if total else 0),
+            "limit": limit,
+            "offset": offset,
+            "snapshot_id": snapshot_id,
+        }
 
     def list_pool_snapshots(self, pool_id: object, *, trusted_owner: str | None = None, limit: int = 50, offset: int = 0) -> dict[str, object]:
         if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > 100:
