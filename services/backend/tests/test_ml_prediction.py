@@ -12,7 +12,7 @@ from app.ml_prediction import (
     build_prediction_snapshot,
 )
 from app.ml_strategy import FEATURE_ORDER, normalize_ml_strategy, content_sha256
-from app.ml_training import FEATURE_SCHEMA, MODEL_SCHEMA, RUNTIME_IDENTITY
+from app.ml_training import FEATURE_SCHEMA, MODEL_SCHEMA, RUNTIME_IDENTITY, store_feature_snapshot
 from app.main import app
 from app.backtest_task import task_id_from_ml_prediction
 from app.paper_trading import PaperTradingStore
@@ -118,16 +118,17 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
             "trace_id": "trace-pred", "idempotency_key": "pred-approval"})
         approval = research.transition("artifact", approval["artifact_id"], "validated", "pred-approval-valid")
         feature = feature_value()
-        feature_artifact = research.create_artifact({"task_id": task["task_id"], "kind": "ml_feature_snapshot",
-            "content": feature, "lineage": [], "trace_id": "trace-pred", "idempotency_key": "pred-feature"})
-        feature_artifact = research.transition("artifact", feature_artifact["artifact_id"], "validated", "pred-feature-valid")
         objects = LocalObjectStore(tmp_path)
+        stored_feature = store_feature_snapshot(feature, objects)
+        feature_artifact = research.create_artifact({"task_id": task["task_id"], "kind": "ml_feature_snapshot",
+            "content": stored_feature, "lineage": [], "trace_id": "trace-pred", "idempotency_key": "pred-feature"})
+        feature_artifact = research.transition("artifact", feature_artifact["artifact_id"], "validated", "pred-feature-valid")
         reference = objects.put("ml-models", b"tree\ntrusted\n", media_type="text/x-lightgbm-model")
         model: dict[str, object] = {"schema_version": MODEL_SCHEMA, "model_format": "lightgbm-text-v1",
             "object_reference": reference, "runtime_lock": "python-3.13/lightgbm-4.7.0/numpy-2.3.3/cpu-single-thread",
             "runtime_identity": RUNTIME_IDENTITY, "image_identity": "test-image", "feature_order": FEATURE_ORDER,
             "target": strategy["target"], "split": strategy["split"], "feature_snapshot_artifact_id": feature_artifact["artifact_id"],
-            "feature_snapshot_sha256": feature["content_sha256"], "strategy_version_artifact_id": strategy_artifact["artifact_id"],
+            "feature_snapshot_sha256": stored_feature["content_sha256"], "strategy_version_artifact_id": strategy_artifact["artifact_id"],
             "stock_pool_snapshot_id": pool_snapshot_id, "training_run_id": "mlrun_test", "effective_parameters": {},
             "best_iteration": 3, "metrics": {}, "counts": {}, "coverage": {}}
         model["content_sha256"] = content_sha256(model)
@@ -138,7 +139,7 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
             task_id=task["task_id"], experiment_id=None, ml_strategy_artifact_id=strategy_artifact["artifact_id"],
             approval_artifact_id=approval["artifact_id"], model_artifact_id=model_artifact["artifact_id"],
             feature_artifact_id=feature_artifact["artifact_id"], stock_pool_snapshot_id=pool_snapshot_id,
-            input_document={"strategy": strategy, "model": model, "feature": feature, "ready_input": ready_input(),
+            input_document={"strategy": strategy, "model": model, "feature": stored_feature, "ready_input": ready_input(),
                             "readiness": {"requirement_sha256": "c" * 64, "ready_input_sha256": "b" * 64},
                             "execution": {"initial_capital": 100000.0, "lot_size": 100}},
             trace_id="trace-pred", idempotency_key="prediction-1")
@@ -173,7 +174,7 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
             task_id=task["task_id"], experiment_id=None, ml_strategy_artifact_id=strategy_artifact["artifact_id"],
             approval_artifact_id=approval["artifact_id"], model_artifact_id=model_artifact["artifact_id"],
             feature_artifact_id=feature_artifact["artifact_id"], stock_pool_snapshot_id=pool_snapshot_id,
-            input_document={"strategy": strategy, "model": model, "feature": feature, "ready_input": ready_input(),
+            input_document={"strategy": strategy, "model": model, "feature": stored_feature, "ready_input": ready_input(),
                             "readiness": {"requirement_sha256": "c" * 64, "ready_input_sha256": "b" * 64},
                             "execution": {"initial_capital": 100000.0, "lot_size": 100}},
             trace_id="trace-pred", idempotency_key="prediction-1")["prediction_run_id"] == run["prediction_run_id"]

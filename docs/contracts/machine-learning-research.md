@@ -93,10 +93,13 @@ return_1, return_5, return_20, volatility_20, volume_ratio_5
 - 不对未来值 backfill，不以当前指数/股票池成员重建历史成员；
 - 缺失历史窗口的行排除并在 completeness 中计数，不以零伪造；
 - snapshot 保存 source manifests、membership fingerprint、row counts、exclusion counts 和 content hash。
+  大型 row payload 以 canonical JSON + deterministic gzip 写入不可变对象存储；Research Artifact 仅保存
+  有界元数据、对象 size/SHA-256、row count 和原始 snapshot hash。读取预测输入时必须同时验证 descriptor、
+  object reference、解压后 snapshot hash 和 row count；不得把 raw feature rows 暴露给 Browser。
 
 首版上限：1 个 frozen pool snapshot、1,000 symbols、2,500 sessions、2,000,000 usable rows、5 features。
-具体提交仍受 MarketReadiness 防滥用边界约束；当前训练实现采用更小的 50,000 个输入/特征行和
-32 MiB 上限，超过时 fail closed，不承诺自动拆分大规模训练。
+具体提交仍受 MarketReadiness 防滥用边界约束；训练输入解压后最大 256 MiB，对象仍受 32 MiB
+压缩载荷上限约束，任一 identity/size/row-count 校验失败均 fail closed。
 
 ## `ml-training-run.v1`
 
@@ -105,6 +108,7 @@ return_1, return_5, return_20, volatility_20, volume_ratio_5
 ```text
 waiting_for_data → queued → running → completed
                          └→ failed
+failed → queued（仅 input 已冻结、attempt 未耗尽的受约束重试）
 waiting_for_data/queued → cancelled
 ```
 

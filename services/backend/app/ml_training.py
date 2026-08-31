@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
+import io
 import json
 import math
 import statistics
@@ -20,6 +22,7 @@ from .research import ResearchStore
 
 TRAINING_SCHEMA = "ml-training-run.v1"
 FEATURE_SCHEMA = "ml-feature-snapshot.v1"
+FEATURE_STORAGE_FORMAT = "gzip-json-v1"
 MODEL_SCHEMA = "ml-model-artifact.v1"
 MAX_INPUT_BYTES = 256 * 1024 * 1024
 MAX_ROWS = 2_000_000
@@ -96,6 +99,81 @@ def _canonical(value: object) -> bytes:
         ).encode("utf-8")
     except (TypeError, ValueError) as error:
         raise ValueError("ML training input must be finite JSON") from error
+
+
+def store_feature_snapshot(
+    feature: dict[str, object], objects: LocalObjectStore,
+) -> dict[str, object]:
+    """Persist large row data as an immutable compressed object.
+
+    The Research artifact remains small and queryable while retaining the
+    source/coverage metadata needed by Product validation.
+    """
+    snapshot_hash = feature.get("content_sha256")
+    body = dict(feature)
+    body.pop("content_sha256", None)
+    rows = feature.get("rows")
+    if not isinstance(snapshot_hash, str) or snapshot_hash != content_sha256(body):
+        raise ValueError("ML feature snapshot identity does not match content")
+    if not isinstance(rows, list):
+        raise ValueError("ML feature snapshot rows are unavailable")
+    payload = gzip.compress(_canonical(feature), compresslevel=6, mtime=0)
+    reference = objects.put(
+        "ml-features", payload, media_type="application/vnd.byq.ml-feature+json+gzip",
+    )
+    descriptor = {key: value for key, value in feature.items() if key not in {"rows", "content_sha256"}}
+    descriptor.update({
+        "storage_format": FEATURE_STORAGE_FORMAT,
+        "object_reference": reference,
+        "row_count": len(rows),
+        "snapshot_sha256": snapshot_hash,
+    })
+    descriptor["content_sha256"] = content_sha256(descriptor)
+    return descriptor
+
+
+def load_feature_snapshot(
+    descriptor: dict[str, object], objects: LocalObjectStore,
+) -> dict[str, object]:
+    """Load a frozen feature snapshot, retaining legacy inline compatibility."""
+    descriptor_hash = descriptor.get("content_sha256")
+    descriptor_body = dict(descriptor)
+    descriptor_body.pop("content_sha256", None)
+    if not isinstance(descriptor_hash, str) or descriptor_hash != content_sha256(descriptor_body):
+        raise ValueError("ML feature descriptor identity does not match content")
+    if descriptor.get("storage_format") is None:
+        if not isinstance(descriptor.get("rows"), list):
+            raise ValueError("ML feature snapshot rows are unavailable")
+        return descriptor
+    if descriptor.get("storage_format") != FEATURE_STORAGE_FORMAT:
+        raise ValueError("ML feature snapshot storage format is unsupported")
+    reference = descriptor.get("object_reference")
+    if not isinstance(reference, dict):
+        raise ValueError("ML feature snapshot object reference is unavailable")
+    compressed = objects.get(reference)
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(compressed), mode="rb") as handle:
+            payload = handle.read(MAX_INPUT_BYTES + 1)
+        if len(payload) > MAX_INPUT_BYTES:
+            raise ValueError("ML feature snapshot exceeds 256 MiB")
+        feature = json.loads(payload)
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("ML feature snapshot object is invalid") from error
+    if not isinstance(feature, dict):
+        raise ValueError("ML feature snapshot object is invalid")
+    snapshot_hash = feature.get("content_sha256")
+    body = dict(feature)
+    body.pop("content_sha256", None)
+    rows = feature.get("rows")
+    if (
+        not isinstance(snapshot_hash, str)
+        or snapshot_hash != descriptor.get("snapshot_sha256")
+        or snapshot_hash != content_sha256(body)
+        or not isinstance(rows, list)
+        or len(rows) != descriptor.get("row_count")
+    ):
+        raise ValueError("ML feature snapshot object failed integrity validation")
+    return feature
 
 
 def _text(value: object, field: str, maximum: int = 128) -> str:
@@ -414,6 +492,16 @@ class MLTrainingRunStore(PgStoreMixin):
                 {"worker": worker, "id": row["training_run_id"]})
         return self._internal(claimed) if claimed else None
 
+    def retry_failed(self, run_id: object) -> dict[str, object]:
+        identity = _identifier(run_id, "training_run_id")
+        row = self._fetch_one("""UPDATE ml_training_runs SET status='queued',worker_id=NULL,
+            lease_expires_at=NULL,error_code=NULL,error_detail=NULL,finished_at=NULL,updated_at=now()
+            WHERE training_run_id=:id AND status='failed' AND input_json IS NOT NULL
+            AND attempt_count<max_attempts RETURNING *""", {"id": identity})
+        if row is None:
+            raise MLTrainingConflict("ML training run is not retryable")
+        return self._public(row)
+
     def complete(
         self, run_id: str, *, feature_artifact_id: str, model_artifact_id: str,
         worker_id: str, attempt_count: int,
@@ -550,15 +638,16 @@ class MLTrainingCoordinator:
             reference = self.objects.put(
                 "ml-models", model_text.encode("utf-8"), media_type="text/x-lightgbm-model"
             )
-            feature_hash = str(feature["content_sha256"])
-            feature_artifact_hash = content_sha256(feature)
+            stored_feature = store_feature_snapshot(feature, self.objects)
+            feature_hash = str(stored_feature["content_sha256"])
+            feature_artifact_hash = content_sha256(stored_feature)
             feature_artifact = self.research.find_artifact_by_content(
                 str(job["task_id"]), "ml_feature_snapshot", feature_artifact_hash
             )
             if feature_artifact is None:
                 feature_artifact = self.research.create_artifact({
                     "task_id": job["task_id"], "experiment_id": job.get("experiment_id"),
-                    "kind": "ml_feature_snapshot", "content": feature,
+                    "kind": "ml_feature_snapshot", "content": stored_feature,
                     "lineage": [
                         {"kind": "artifact", "id": job["ml_strategy_artifact_id"]},
                         {"kind": "stock_pool_snapshot", "id": job["stock_pool_snapshot_id"]},

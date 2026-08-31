@@ -13,6 +13,7 @@ from app.ml_training import (
     MLTrainingRunStore,
     aggregate_ml_readiness,
     build_feature_snapshot,
+    load_feature_snapshot,
     promote_waiting_training_runs,
 )
 from app.research import ResearchStore
@@ -194,12 +195,35 @@ def test_training_run_creates_immutable_feature_and_model_artifacts(tmp_path) ->
         feature_artifact = research.get_artifact(completed["feature_artifact_id"])
         model_artifact = research.get_artifact(completed["model_artifact_id"])
         assert feature_artifact["status"] == model_artifact["status"] == "validated"
+        assert feature_artifact["content"]["storage_format"] == "gzip-json-v1"
+        assert "rows" not in feature_artifact["content"]
+        restored = load_feature_snapshot(feature_artifact["content"], LocalObjectStore(tmp_path))
+        assert restored["content_sha256"] == feature["content_sha256"]
+        assert restored["rows"] == feature["rows"]
         assert model_artifact["content"]["target"] == strategy_value["target"]
         assert model_artifact["content"]["split"] == strategy_value["split"]
         assert model_artifact["content"]["counts"]["symbols"]["train"] == 2
         assert model_artifact["content"]["image_identity"] == "byq-ml-worker-v1-test"
         reference = model_artifact["content"]["object_reference"]
         assert LocalObjectStore(tmp_path).get(reference) == b"tree\nversion=v4\n"
+        failed = runs.create_waiting(
+            workspace_id=context["x-byq-workspace-id"], owner_principal="ml-owner",
+            task_id=task["task_id"], experiment_id=None,
+            ml_strategy_artifact_id=strategy_artifact["artifact_id"],
+            stock_pool_snapshot_id="snapshot_test", preparation={"strategy": strategy_value, "universe": universe},
+            requirement={"requirement_sha256": "d" * 64}, readiness={"state": "ready"},
+            trace_id="trace-ml", idempotency_key="train-retry",
+        )
+        runs.promote_ready(str(failed["training_run_id"]), feature)
+        claimed = runs.claim_next("worker-fail")
+        assert claimed is not None
+        runs.fail(str(failed["training_run_id"]), "ml_training_failed", "size boundary",
+                  worker_id="worker-fail", attempt_count=int(claimed["attempt_count"]))
+        assert runs.retry_failed(failed["training_run_id"])["status"] == "queued"
+        runs.cancel(
+            failed["training_run_id"],
+            trusted_workspace=context["x-byq-workspace-id"], trusted_owner="ml-owner",
+        )
         with pytest.raises(MLTrainingNotFound):
             runs.get(str(run["training_run_id"]), trusted_workspace="workspace_other", trusted_owner="ml-owner")
         with pytest.raises(MLTrainingConflict):
