@@ -74,6 +74,22 @@ class FakePredictor:
         return [0.5, 0.5, 0.1, 0.9, 0.8, 0.2]
 
 
+class FakeMarketData:
+    def __init__(self) -> None:
+        self.build_count = 0
+
+    def assess(self, requirement):
+        return {"state": "ready", "ready_input_sha256": "b" * 64}
+
+    def build_ready_input(self, requirement):
+        self.build_count += 1
+        return ready_input()
+
+    def build_partitioned_ready_input(self, requirements):
+        self.build_count += 1
+        return ready_input()
+
+
 def test_prediction_ranking_is_deterministic_and_rows_never_expose_labels() -> None:
     feature = feature_value()
     model = {"content_sha256": "a" * 64, "feature_snapshot_sha256": feature["content_sha256"],
@@ -139,12 +155,17 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
             task_id=task["task_id"], experiment_id=None, ml_strategy_artifact_id=strategy_artifact["artifact_id"],
             approval_artifact_id=approval["artifact_id"], model_artifact_id=model_artifact["artifact_id"],
             feature_artifact_id=feature_artifact["artifact_id"], stock_pool_snapshot_id=pool_snapshot_id,
-            input_document={"strategy": strategy, "model": model, "feature": stored_feature, "ready_input": ready_input(),
+            input_document={"strategy": strategy, "model": model, "feature": stored_feature,
+                            "requirements": [{"requirement_sha256": "c" * 64}],
                             "readiness": {"requirement_sha256": "c" * 64, "ready_input_sha256": "b" * 64},
                             "execution": {"initial_capital": 100000.0, "lot_size": 100}},
             trace_id="trace-pred", idempotency_key="prediction-1")
-        completed = MLPredictionCoordinator(runs, research, objects, FakePredictor(), worker_id="worker-pred").run_next()
+        market_data = FakeMarketData()
+        completed = MLPredictionCoordinator(
+            runs, research, objects, FakePredictor(), worker_id="worker-pred", market_data=market_data,
+        ).run_next()
         assert completed is not None and completed["status"] == "completed"
+        assert market_data.build_count == 1
         prediction = research.get_artifact(completed["prediction_artifact_id"])
         signal = research.get_artifact(completed["signal_artifact_id"])
         assert prediction["status"] == signal["status"] == "validated"
@@ -174,7 +195,8 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
             task_id=task["task_id"], experiment_id=None, ml_strategy_artifact_id=strategy_artifact["artifact_id"],
             approval_artifact_id=approval["artifact_id"], model_artifact_id=model_artifact["artifact_id"],
             feature_artifact_id=feature_artifact["artifact_id"], stock_pool_snapshot_id=pool_snapshot_id,
-            input_document={"strategy": strategy, "model": model, "feature": stored_feature, "ready_input": ready_input(),
+            input_document={"strategy": strategy, "model": model, "feature": stored_feature,
+                            "requirements": [{"requirement_sha256": "c" * 64}],
                             "readiness": {"requirement_sha256": "c" * 64, "ready_input_sha256": "b" * 64},
                             "execution": {"initial_capital": 100000.0, "lot_size": 100}},
             trace_id="trace-pred", idempotency_key="prediction-1")["prediction_run_id"] == run["prediction_run_id"]

@@ -2220,16 +2220,9 @@ def create_ml_prediction_run(payload: dict[str, Any], request: Request) -> dict[
             or current_readiness.get("ready_input_sha256") != frozen_readiness.get("ready_input_sha256")
         ):
             raise ValueError("frozen ML data identity changed after training")
-        ready_input = (
-            market_readiness_store.build_partitioned_ready_input(requirements)
-            if len(requirements) > 1 else market_readiness_store.build_ready_input(requirement)
-        )
         feature_content = feature_artifact.get("content")
-        if (
-            not isinstance(feature_content, dict)
-            or ready_input.get("research_view_sha256") != feature_content.get("source", {}).get("research_view_sha256")
-        ):
-            raise ValueError("frozen feature source no longer matches market input")
+        if not isinstance(feature_content, dict):
+            raise ValueError("frozen feature snapshot is unavailable")
         raw_execution = data.get("execution")
         if not isinstance(raw_execution, dict) or "initial_capital" not in raw_execution or "lot_size" not in raw_execution:
             raise ValueError("execution must explicitly freeze initial_capital and lot_size")
@@ -2246,7 +2239,7 @@ def create_ml_prediction_run(payload: dict[str, Any], request: Request) -> dict[
             feature_artifact_id=feature_artifact["artifact_id"],
             stock_pool_snapshot_id=model.get("stock_pool_snapshot_id"),
             input_document={"strategy": strategy, "model": model, "feature": feature_content,
-                            "ready_input": ready_input, "readiness": {
+                            "requirements": requirements, "readiness": {
                                 "requirement_sha256": content_sha256([
                                     item.get("requirement_sha256") for item in requirements
                                 ]),
