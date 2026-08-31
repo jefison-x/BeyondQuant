@@ -2212,14 +2212,11 @@ def create_ml_prediction_run(payload: dict[str, Any], request: Request) -> dict[
         ):
             raise ValueError("training data partition provenance is unavailable")
         requirements = [dict(item) for item in raw_requirements]
-        current_readiness = aggregate_ml_readiness([
-            market_readiness_store.assess(item) for item in requirements
-        ])
         if (
-            current_readiness.get("state") != "ready"
-            or current_readiness.get("ready_input_sha256") != frozen_readiness.get("ready_input_sha256")
+            frozen_readiness.get("state") != "ready"
+            or not isinstance(frozen_readiness.get("ready_input_sha256"), str)
         ):
-            raise ValueError("frozen ML data identity changed after training")
+            raise ValueError("completed training data identity is unavailable")
         feature_content = feature_artifact.get("content")
         if not isinstance(feature_content, dict):
             raise ValueError("frozen feature snapshot is unavailable")
@@ -2243,7 +2240,7 @@ def create_ml_prediction_run(payload: dict[str, Any], request: Request) -> dict[
                                 "requirement_sha256": content_sha256([
                                     item.get("requirement_sha256") for item in requirements
                                 ]),
-                                "ready_input_sha256": current_readiness.get("ready_input_sha256"),
+                                "ready_input_sha256": frozen_readiness.get("ready_input_sha256"),
                             }, "execution": execution},
             trace_id=data.get("trace_id"), idempotency_key=data.get("idempotency_key"),
         )
