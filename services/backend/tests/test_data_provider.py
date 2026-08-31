@@ -497,7 +497,7 @@ def test_corporate_actions_reject_conflicting_duplicate_economic_event() -> None
         "record_date", "ex_date", "pay_date", "div_listdate", "imp_ann_date",
     ]
     transport = FakeTransport([TransportResponse(200, envelope([
-        ["000651.SZ", "20210630", "20210823", "实施", 0, None, None, 1, 1,
+        ["000651.SZ", "20210630", "20220301", "实施", 0, None, None, 1, 1,
          "20220407", "20220408", "20220408", None, "20220331"],
         ["000651.SZ", "20210630", "20220301", "实施", 0, None, None, 0.8, 1,
          "20220407", "20220408", "20220408", None, "20220331"],
@@ -505,6 +505,26 @@ def test_corporate_actions_reject_conflicting_duplicate_economic_event() -> None
 
     with pytest.raises(ProviderProtocolError, match="conflicting corporate-action rows"):
         provider(transport).fetch_corporate_actions("20220408")
+
+
+def test_corporate_actions_keep_latest_revised_implemented_event() -> None:
+    fields = [
+        "ts_code", "end_date", "ann_date", "div_proc", "stk_div",
+        "stk_bo_rate", "stk_co_rate", "cash_div", "cash_div_tax",
+        "record_date", "ex_date", "pay_date", "div_listdate", "imp_ann_date",
+    ]
+    transport = FakeTransport([TransportResponse(200, envelope([
+        ["600989.SH", "20231231", "20240622", "实施", 0, None, None, .3158, .3158,
+         "20240723", "20240724", "20240724", None, "20240718"],
+        ["600989.SH", "20231231", "20240322", "实施", 0, None, None, .265, .265,
+         "20240723", "20240724", "20240724", None, "20240718"],
+    ], fields=fields))])
+
+    actions = provider(transport).fetch_corporate_actions("20240724").actions
+
+    assert len(actions) == 1
+    assert actions[0].announcement_date == "20240622"
+    assert actions[0].cash_dividend_gross == .3158
 
 
 def test_declared_research_input_contracts_are_bounded_and_point_in_time() -> None:

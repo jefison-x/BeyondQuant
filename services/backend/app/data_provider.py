@@ -1084,18 +1084,25 @@ class TushareProvider:
                 "stock_dividend_per_share", "bonus_share_ratio",
                 "transfer_share_ratio", "cash_dividend_net", "cash_dividend_gross",
             )
-            if any(getattr(existing, field) != getattr(action, field) for field in economic_fields):
-                raise ProviderProtocolError("provider returned conflicting corporate-action rows")
-            # Tushare can repeat one implemented economic event under an updated
-            # announcement. Preserve the latest disclosed row deterministically;
-            # economic or settlement differences still fail closed above.
-            if (
+            action_version = (
                 action.announcement_date or "",
                 action.implementation_announcement_date or "",
-            ) >= (
+            )
+            existing_version = (
                 existing.announcement_date or "",
                 existing.implementation_announcement_date or "",
-            ):
+            )
+            economics_differ = any(
+                getattr(existing, field) != getattr(action, field)
+                for field in economic_fields
+            )
+            # An issuer can revise an already implemented event in a later
+            # announcement. The newest public version is authoritative. Two
+            # conflicting rows for the same disclosure version remain
+            # ambiguous and therefore fail closed.
+            if economics_differ and action_version == existing_version:
+                raise ProviderProtocolError("provider returned conflicting corporate-action rows")
+            if action_version >= existing_version:
                 canonical[key] = action
         return CorporateActionResult(tuple(canonical[key] for key in sorted(canonical)), provenance)
 
