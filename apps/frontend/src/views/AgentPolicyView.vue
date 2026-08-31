@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { applyAgentPolicyPreset, createAgentPolicyRule, deleteAgentPolicyRule, getAgentPolicyStatus, updateAgentPolicy, updateAgentPolicyRule } from "@/api/settings";
 import { listApprovals } from "@/api/research";
 import type { AgentPolicyRule, AgentPolicyStatus } from "@/api/types";
+import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
+import { useFilteredPagination } from "@/composables/useFilteredPagination";
 
 const loading = ref(true);
 const error = ref("");
@@ -20,6 +22,9 @@ const personal = ref<AgentPolicyStatus["personal_policy"]>({
   max_auto_executions_per_hour: 20,
   max_auto_failures_per_hour: 3,
 });
+const rulePages = useFilteredPagination(computed(() => policy.value?.rules ?? []), (row) => `${row.name} ${row.action} ${row.agent_id} ${row.decision_mode}`, 15);
+const auditPages = useFilteredPagination(computed(() => policy.value?.audit ?? []), (row) => `${row.action} ${row.resource_id} ${row.actor_principal} ${row.created_at}`, 15);
+const approvalPages = useFilteredPagination(computed(() => approvals.value), (row) => `${row.action ?? ""} ${row.status ?? ""} ${row.execution_outcome ?? ""}`, 15);
 
 async function load() {
   loading.value = true;
@@ -144,7 +149,8 @@ function statusLabel(value: unknown) {
 
       <el-card shadow="never">
         <template #header><div class="card-header"><div><strong>个人规则</strong><p class="muted">按优先级匹配。个人自动批准不能绕过平台人工审批边界。</p></div><el-button type="primary" @click="openRule()">新建规则</el-button></div></template>
-        <el-table :data="policy?.rules ?? []" size="small" empty-text="暂无个人规则">
+        <ListFilterPagination v-model:query="rulePages.query.value" v-model:page="rulePages.page.value" :page-size="rulePages.pageSize.value" :total="rulePages.total.value" placeholder="筛选规则、动作、Agent 或决策" label="个人规则分页">
+        <el-table :data="rulePages.pageItems.value" size="small" empty-text="暂无个人规则">
           <el-table-column prop="priority" label="优先级" width="80" />
           <el-table-column prop="name" label="规则" min-width="150" />
           <el-table-column prop="action" label="动作" min-width="170" />
@@ -153,6 +159,7 @@ function statusLabel(value: unknown) {
           <el-table-column label="启用" width="75"><template #default="scope">{{ scope.row.enabled ? "是" : "否" }}</template></el-table-column>
           <el-table-column label="操作" width="130"><template #default="scope"><el-button link type="primary" @click="openRule(scope.row)">编辑</el-button><el-button link type="danger" @click="removeRule(scope.row)">删除</el-button></template></el-table-column>
         </el-table>
+        </ListFilterPagination>
       </el-card>
 
       <el-card shadow="never">
@@ -180,17 +187,20 @@ function statusLabel(value: unknown) {
 
       <el-card shadow="never">
         <template #header><div><strong>规则变更历史</strong><p class="muted">规则和预设变更保留所有者、动作与时间证据。</p></div></template>
-        <el-table :data="policy?.audit ?? []" size="small" empty-text="暂无规则变更">
+        <ListFilterPagination v-model:query="auditPages.query.value" v-model:page="auditPages.page.value" :page-size="auditPages.pageSize.value" :total="auditPages.total.value" placeholder="筛选动作、资源、操作者或时间" label="规则变更分页">
+        <el-table :data="auditPages.pageItems.value" size="small" empty-text="暂无规则变更">
           <el-table-column prop="action" label="动作" min-width="150" />
           <el-table-column prop="resource_id" label="资源" min-width="200" show-overflow-tooltip />
           <el-table-column prop="actor_principal" label="操作者" min-width="140" />
           <el-table-column prop="created_at" label="时间" min-width="180" />
         </el-table>
+        </ListFilterPagination>
       </el-card>
 
       <el-card shadow="never">
         <template #header><div><strong>我的审批历史</strong><p class="muted">只展示当前账号的审批请求和执行结果。</p></div></template>
-        <el-table :data="approvals" size="small" empty-text="暂无审批记录">
+        <ListFilterPagination v-model:query="approvalPages.query.value" v-model:page="approvalPages.page.value" :page-size="approvalPages.pageSize.value" :total="approvalPages.total.value" placeholder="筛选操作、状态或执行结果" label="审批历史分页">
+        <el-table :data="approvalPages.pageItems.value" size="small" empty-text="暂无审批记录">
           <el-table-column label="操作" min-width="170">
             <template #default="scope"><strong>{{ scope.row.action }}</strong></template>
           </el-table-column>
@@ -205,6 +215,7 @@ function statusLabel(value: unknown) {
             <template #default="scope">{{ scope.row.created_at }}</template>
           </el-table-column>
         </el-table>
+        </ListFilterPagination>
       </el-card>
     </template>
 

@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from datetime import datetime, timezone
 from urllib.parse import urlencode
@@ -594,12 +595,20 @@ def _ml_artifact_projection(artifact: object) -> dict[str, object] | None:
 def product_ml_workspace(request: Request) -> dict[str, object]:
     _product_principal(request)
     headers = _trusted_agent_headers(request)
-    tasks = _backend_request("GET", "/v1/research/tasks", headers=headers).get("tasks", [])
-    pools = _backend_request("GET", "/v1/paper/pools?limit=100&offset=0", headers=headers).get("pools", [])
-    artifacts = _backend_request("GET", "/v1/research/artifacts", headers=headers).get("artifacts", [])
-    training = _backend_request("GET", "/v1/research/ml/training-runs", headers=headers).get("runs", [])
-    predictions = _backend_request("GET", "/v1/research/ml/prediction-runs", headers=headers).get("runs", [])
-    raw_backtests = _backend_request("GET", "/v1/research/backtests", headers=headers).get("backtests", [])
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="ml-workspace") as executor:
+        workspace_future = executor.submit(
+            _backend_request, "GET", "/v1/research/ml/workspace", headers=headers,
+        )
+        backtests_future = executor.submit(
+            _backend_request, "GET", "/v1/research/backtests", headers=headers,
+        )
+        workspace = workspace_future.result()
+        raw_backtests = backtests_future.result().get("backtests", [])
+    tasks = workspace.get("tasks", [])
+    pools = workspace.get("pools", [])
+    artifacts = workspace.get("artifacts", [])
+    training = workspace.get("training_runs", [])
+    predictions = workspace.get("prediction_runs", [])
     backtests = [{key: item.get(key) for key in (
         "job_id", "task_id", "status", "strategy_version_artifact_id", "approval_artifact_id",
         "result_artifact_id", "summary", "error_code", "error_message", "created_at", "finished_at",
@@ -1732,12 +1741,23 @@ def product_stock_pool_materialization_create(
 
 
 @router.get("/paper/pools/{pool_id}")
-def product_stock_pool_get(pool_id: str, request: Request) -> dict[str, object]:
+def product_stock_pool_get(pool_id: str, request: Request, include_members: bool = True) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
         "GET",
-        f"/v1/paper/pools/{pool_id}",
+        f"/v1/paper/pools/{pool_id}?include_members={'true' if include_members else 'false'}",
         headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/paper/pools/{pool_id}/members")
+def product_stock_pool_members(
+    pool_id: str, request: Request, query: str = "", limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    _product_principal(request)
+    params = urlencode({"query": query, "limit": limit, "offset": offset})
+    return _backend_request(
+        "GET", f"/v1/paper/pools/{pool_id}/members?{params}", headers=_trusted_agent_headers(request),
     )
 
 

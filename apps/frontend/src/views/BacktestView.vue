@@ -24,6 +24,8 @@ import MetricCard from "@/components/ui/MetricCard.vue";
 import { formatChinaTime } from "@/time";
 import { backtestMetricLabel, shortReference, statusLabel } from "@/display";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
+import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
+import { useFilteredPagination } from "@/composables/useFilteredPagination";
 import { createRequestId } from "@/utils/requestId";
 
 const auth = useAuthStore();
@@ -50,6 +52,7 @@ const filteredBacktests = computed(() =>
     return matchesStatus && matchesSearch;
   }),
 );
+const backtestPages = useFilteredPagination(filteredBacktests, (row) => String(row.job_id ?? ""), 20);
 
 const summary = computed<Record<string, unknown>>(() => {
   const value = result.value as unknown as Record<string, unknown> | null;
@@ -94,6 +97,9 @@ const corporateEvents = computed(() => result.value?.corporate_action_events ?? 
 const dailyPositions = computed(() => result.value?.daily_positions ?? []);
 const dailyReturns = computed(() => result.value?.daily_returns ?? []);
 const backtestLogs = computed(() => result.value?.logs ?? []);
+const tradePages = useFilteredPagination(trades, (row) => `${row.symbol ?? ""} ${row.timestamp ?? ""} ${row.order_type ?? ""}`, 50);
+const dailyPages = useFilteredPagination(dailyPositions, (row) => `${row.trade_date ?? ""} ${JSON.stringify(row.positions ?? {})}`, 50);
+const logPages = useFilteredPagination(backtestLogs, (row) => `${row.level ?? ""} ${row.message ?? ""}`, 50);
 const strategySnapshot = computed(() => ({
   strategy_version_artifact_id: job.value?.strategy_version_artifact_id ?? result.value?.strategy_version_artifact_id ?? null,
   approval_artifact_id: job.value?.approval_artifact_id ?? result.value?.approval_artifact_id ?? null,
@@ -492,10 +498,10 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
           </el-select>
         </div>
         <el-empty v-if="!filteredBacktests.length" description="暂无回测结果" />
+        <ListFilterPagination v-else v-model:page="backtestPages.page.value" query="" :page-size="backtestPages.pageSize.value" :total="backtestPages.total.value" label="回测任务分页" hide-search>
         <el-table
-          v-else
           class="desktop-catalog-table"
-          :data="filteredBacktests"
+          :data="backtestPages.pageItems.value"
           highlight-current-row
           @current-change="select"
           @selection-change="onSelectionChange"
@@ -549,7 +555,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
 
         <div class="mobile-list">
           <el-card
-            v-for="row in filteredBacktests"
+            v-for="row in backtestPages.pageItems.value"
             :key="String(row.job_id)"
             shadow="never"
             class="mobile-card"
@@ -570,6 +576,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
             </div>
           </el-card>
         </div>
+        </ListFilterPagination>
 
         <div class="page-toolbar">
           <el-button
@@ -614,7 +621,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
           </div>
 
           <el-tabs v-model="activeTab" class="result-tabs">
-            <el-tab-pane label="权益曲线" name="equity">
+            <el-tab-pane label="权益曲线" name="equity" lazy>
               <ChartWrapper
                 :option="equityOption"
                 :empty="!equityCurve.length"
@@ -623,8 +630,9 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
                 empty-message="暂无权益曲线数据"
               />
             </el-tab-pane>
-            <el-tab-pane label="交易明细" name="trades">
-              <el-table :data="trades" size="small" empty-text="暂无交易">
+            <el-tab-pane label="交易明细" name="trades" lazy>
+              <ListFilterPagination v-model:query="tradePages.query.value" v-model:page="tradePages.page.value" :page-size="tradePages.pageSize.value" :total="tradePages.total.value" placeholder="筛选股票、日期或方向" label="交易明细分页">
+              <el-table :data="tradePages.pageItems.value" size="small" empty-text="暂无交易">
                 <el-table-column prop="timestamp" label="日期" width="120" />
                 <el-table-column prop="symbol" label="证券" width="110" />
                 <el-table-column prop="order_type" label="方向" width="80" />
@@ -642,8 +650,9 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
                   <template #default="{ row }">{{ formatMoney(row.realized_pnl) }}</template>
                 </el-table-column>
               </el-table>
+              </ListFilterPagination>
             </el-tab-pane>
-            <el-tab-pane label="拦截明细" name="blocked">
+            <el-tab-pane label="拦截明细" name="blocked" lazy>
               <el-table :data="blockedTrades" size="small" empty-text="暂无拦截">
                 <el-table-column prop="symbol" label="证券" width="110" />
                 <el-table-column prop="trade_date" label="日期" width="120" />
@@ -652,7 +661,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
                 <el-table-column prop="detail" label="说明" min-width="220" show-overflow-tooltip />
               </el-table>
             </el-tab-pane>
-            <el-tab-pane label="公司行动" name="corporate">
+            <el-tab-pane label="公司行动" name="corporate" lazy>
               <el-table :data="corporateEvents" size="small" empty-text="暂无公司行动">
                 <el-table-column prop="symbol" label="证券" width="110" />
                 <el-table-column prop="ex_date" label="除权日" width="120" />
@@ -672,8 +681,9 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
                 </el-table-column>
               </el-table>
             </el-tab-pane>
-            <el-tab-pane label="每日持仓&收益" name="daily">
-              <el-table :data="dailyPositions" size="small" empty-text="暂无每日数据">
+            <el-tab-pane label="每日持仓&收益" name="daily" lazy>
+              <ListFilterPagination v-model:query="dailyPages.query.value" v-model:page="dailyPages.page.value" :page-size="dailyPages.pageSize.value" :total="dailyPages.total.value" placeholder="筛选日期或持仓" label="每日持仓分页">
+              <el-table :data="dailyPages.pageItems.value" size="small" empty-text="暂无每日数据">
                 <el-table-column prop="trade_date" label="日期" width="120" />
                 <el-table-column label="持仓" min-width="260">
                   <template #default="{ row }">
@@ -684,10 +694,12 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
                   <template #default="{ row }">{{ formatPercent(dailyReturnFor(row.trade_date)) }}</template>
                 </el-table-column>
               </el-table>
+              </ListFilterPagination>
             </el-tab-pane>
-            <el-tab-pane label="日志输出" name="logs">
+            <el-tab-pane label="日志输出" name="logs" lazy>
               <el-alert v-if="result?.log_truncated" title="日志已截断，仅显示前 500 条" type="warning" :closable="false" class="log-truncated" />
-              <el-table :data="backtestLogs" size="small" empty-text="暂无日志" max-height="420">
+              <ListFilterPagination v-model:query="logPages.query.value" v-model:page="logPages.page.value" :page-size="logPages.pageSize.value" :total="logPages.total.value" placeholder="筛选日志级别或事件" label="回测日志分页">
+              <el-table :data="logPages.pageItems.value" size="small" empty-text="暂无日志" max-height="420">
                 <el-table-column prop="seq" label="#" width="70" />
                 <el-table-column prop="level" label="级别" width="80" />
                 <el-table-column prop="message" label="事件" min-width="180" />
@@ -697,8 +709,9 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
                   </template>
                 </el-table-column>
               </el-table>
+              </ListFilterPagination>
             </el-tab-pane>
-            <el-tab-pane label="技术详情" name="snapshot">
+            <el-tab-pane label="技术详情" name="snapshot" lazy>
               <el-alert title="以下内容用于审计和复现，普通分析无需复制内部编号。" type="info" :closable="false" />
               <el-descriptions :column="1" border>
                 <el-descriptions-item label="策略版本内部编号">
@@ -710,7 +723,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
               </el-descriptions>
               <pre class="quant-result">{{ JSON.stringify(strategySnapshot.input_manifest ?? {}, null, 2) }}</pre>
             </el-tab-pane>
-            <el-tab-pane label="输入就绪检查" name="manifest">
+            <el-tab-pane label="输入就绪检查" name="manifest" lazy>
               <el-button @click="showManifest = true">查看输入就绪检查</el-button>
               <pre class="quant-result">{{ JSON.stringify(job.input_manifest, null, 2) }}</pre>
             </el-tab-pane>

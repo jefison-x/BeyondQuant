@@ -1,4 +1,4 @@
-import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogItem, PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot, StockPool, StockPoolMaterializationRun, StockPoolProducerDefinition, StockPoolReadiness, StockPoolSnapshot, StockPoolSnapshotDiff } from "./types";
+import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogItem, PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot, StockPool, StockPoolMaterializationRun, StockPoolMember, StockPoolProducerDefinition, StockPoolReadiness, StockPoolSnapshot, StockPoolSnapshotDiff } from "./types";
 import { createRequestId } from "@/utils/requestId";
 
 const ROOT = "/api/product/paper";
@@ -135,8 +135,24 @@ export function listStockPools(token: string): Promise<{ pools: Array<Record<str
   return request(`/pools`, token);
 }
 
-export function getStockPool(poolId: string, token: string): Promise<{ pool: StockPool }> {
-  return request(`/pools/${encodeURIComponent(poolId)}`, token);
+export function getStockPool(
+  poolId: string, token: string, options: { includeMembers?: boolean } = {},
+): Promise<{ pool: StockPool }> {
+  const params = new URLSearchParams({ include_members: String(options.includeMembers ?? true) });
+  return request(`/pools/${encodeURIComponent(poolId)}?${params}`, token);
+}
+
+export function listStockPoolMembers(
+  poolId: string,
+  token: string,
+  options: { query?: string; limit?: number; offset?: number } = {},
+): Promise<{ members: StockPoolMember[]; total: number; limit: number; offset: number; snapshot_id: string | null }> {
+  const params = new URLSearchParams({
+    query: options.query ?? "",
+    limit: String(options.limit ?? 20),
+    offset: String(options.offset ?? 0),
+  });
+  return request(`/pools/${encodeURIComponent(poolId)}/members?${params}`, token);
 }
 
 export function updateStockPoolMetadata(

@@ -17,12 +17,12 @@ const readyServices = computed(() => {
   return Object.values(services).filter((value) => value === "ready" || value === "ok").length;
 });
 
-async function load() {
+async function load(force = false) {
   loading.value = true;
   error.value = "";
   try {
     [operations.value, dataStatus.value] = await Promise.all([
-      getOperationsStatus(""),
+      getOperationsStatus("", { force }),
       fetchDataStatus(""),
     ]);
   } catch (exc) {
@@ -43,7 +43,7 @@ onMounted(load);
   <section class="system-overview">
     <div class="overview-toolbar">
       <el-alert title="这里只显示有界、去敏的 Product API 状态；不提供数据库切换、任意 SQL、原始 DSH 事件或部署控制。" type="info" show-icon :closable="false" />
-      <el-button :loading="loading" @click="load">刷新全部</el-button>
+      <el-button :loading="loading" @click="load(true)">刷新全部</el-button>
     </div>
     <div v-if="loading && !operations" class="base-loading" role="status" aria-live="polite">正在读取系统概览...</div>
     <div v-else-if="error && !operations" class="base-error" role="alert">{{ error }} <el-button link type="primary" @click="load">重试</el-button></div>

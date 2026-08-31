@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from threading import Barrier
+
 import pytest
 
 from fastapi.testclient import TestClient
@@ -30,19 +32,23 @@ def test_ml_workspace_projects_safe_artifacts_and_owner_context(monkeypatch) -> 
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
     calls: list[tuple[str, dict[str, str]]] = []
+    concurrent_reads = Barrier(2)
     def backend(_method, path, payload=None, *, headers=None):
         calls.append((path, headers))
-        if path == "/v1/research/artifacts":
-            return {"artifacts": [{"artifact_id": "artifact_model", "task_id": "task_1", "kind": "ml_model", "status": "validated", "content": {"best_iteration": 7, "object_reference": "/secret/model.txt", "rows": [{"features": {"leak": 1}}]}}, {"artifact_id": "artifact_features", "kind": "ml_feature_snapshot", "content": {"rows": [{"secret": 1}]}}]}
-        if path.startswith("/v1/paper/pools"): return {"pools": []}
-        if path.endswith("training-runs") or path.endswith("prediction-runs"): return {"runs": []}
-        return {"tasks": []}
+        concurrent_reads.wait(timeout=1)
+        if path == "/v1/research/ml/workspace":
+            return {
+                "tasks": [], "pools": [], "training_runs": [], "prediction_runs": [],
+                "artifacts": [{"artifact_id": "artifact_model", "task_id": "task_1", "kind": "ml_model", "status": "validated", "content": {"best_iteration": 7, "object_reference": "/secret/model.txt", "rows": [{"features": {"leak": 1}}]}}, {"artifact_id": "artifact_features", "kind": "ml_feature_snapshot", "content": {"rows": [{"secret": 1}]}}],
+            }
+        return {"backtests": []}
     monkeypatch.setattr(product_api, "_backend_request", backend)
     response = TestClient(main.app).get("/api/product/ml/workspace", headers={"Authorization": "Bearer product-test-token"})
     assert response.status_code == 200
     assert response.json()["artifacts"][0]["content"] == {"best_iteration": 7}
     assert "object_reference" not in response.text
     assert "ml_feature_snapshot" not in response.text
+    assert {path for path, _ in calls} == {"/v1/research/ml/workspace", "/v1/research/backtests"}
     assert all(headers["x-byq-owner-principal"] == "product-user" for _, headers in calls)
 
 
@@ -706,12 +712,14 @@ def test_product_stock_pool_depth_routes_forward_methods_and_owner(monkeypatch) 
     assert client.patch("/api/product/paper/pools/stock_pool_1/metadata", headers=auth, json={}).status_code == 200
     assert client.put("/api/product/paper/pools/stock_pool_1/snapshot", headers=auth, json={}).status_code == 200
     assert client.get("/api/product/paper/pools/stock_pool_1/snapshots", headers=auth).status_code == 200
+    assert client.get("/api/product/paper/pools/stock_pool_1/members?query=银行&limit=20&offset=0", headers=auth).status_code == 200
     assert client.get("/api/product/paper/pools/stock_pool_1/readiness", headers=auth).status_code == 200
     assert client.get("/api/product/paper/pools/stock_pool_1/snapshot-diff?from_snapshot_id=a&to_snapshot_id=b", headers=auth).status_code == 200
     assert client.get("/api/product/paper/pools/stock_pool_1/as-of/20240131", headers=auth).status_code == 200
     assert client.patch("/api/product/paper/pools/stock_pool_1/lifecycle", headers=auth, json={}).status_code == 200
     assert client.get("/api/product/paper/pools/stock_pool_1/references", headers=auth).status_code == 200
-    assert [item[0] for item in captured] == ["PATCH", "PUT", "GET", "GET", "GET", "GET", "PATCH", "GET"]
+    assert [item[0] for item in captured] == ["PATCH", "PUT", "GET", "GET", "GET", "GET", "GET", "PATCH", "GET"]
+    assert "query=%E9%93%B6%E8%A1%8C" in captured[3][1]
     assert all(item[2]["x-byq-owner-principal"] == "product-user" for item in captured)
 
 

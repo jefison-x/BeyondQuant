@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -15,6 +15,7 @@ import {
   getStockPoolSnapshot,
   listIndexPoolCatalog,
   listStockPoolMaterializations,
+  listStockPoolMembers,
   listStockPoolReferences,
   listStockPoolSnapshots,
   listStockPools,
@@ -25,13 +26,15 @@ import {
   updateStockPoolMetadata,
   updateDynamicStockPoolDefinition,
 } from "@/api/paper";
-import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogItem, StockPool, StockPoolMaterializationRun, StockPoolProducerDefinition, StockPoolReadiness, StockPoolSnapshot, StockPoolSnapshotDiff } from "@/api/types";
+import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogItem, StockPool, StockPoolMaterializationRun, StockPoolMember, StockPoolProducerDefinition, StockPoolReadiness, StockPoolSnapshot, StockPoolSnapshotDiff } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import { statusLabel } from "@/display";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
+import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { useUnsavedChanges } from "@/composables/useUnsavedChanges";
 import { createRequestId } from "@/utils/requestId";
+import { useFilteredPagination } from "@/composables/useFilteredPagination";
 
 const auth = useAuthStore();
 const route = useRoute();
@@ -49,6 +52,13 @@ const materializations = ref<StockPoolMaterializationRun[]>([]);
 const producer = ref<StockPoolProducerDefinition | null>(null);
 const readiness = ref<StockPoolReadiness | null>(null);
 const snapshotDiff = ref<StockPoolSnapshotDiff | null>(null);
+const members = ref<StockPoolMember[]>([]);
+const memberTotal = ref(0);
+const memberPage = ref(1);
+const memberQuery = ref("");
+const memberLoading = ref(false);
+const fullMembersLoaded = ref(false);
+const MEMBER_PAGE_SIZE = 20;
 const activeTab = ref("overview");
 const historicalSnapshot = ref<StockPoolSnapshot | null>(null);
 const asOfDate = ref("");
@@ -163,6 +173,7 @@ const filteredPools = computed(() =>
     return matchesType && matchesSearch;
   }),
 );
+const poolPages = useFilteredPagination(filteredPools, (row) => `${row.name ?? ""} ${row.pool_id ?? ""}`, 20);
 
 async function loadPools() {
   loading.value = true;
@@ -270,12 +281,17 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
   busy.value = true;
   try {
     const [detail, history, refs, readinessResult] = await Promise.all([
-      getStockPool(poolId, auth.token),
+      getStockPool(poolId, auth.token, { includeMembers: false }),
       listStockPoolSnapshots(poolId, auth.token),
       listStockPoolReferences(poolId, auth.token),
       getStockPoolReadiness(poolId, auth.token),
     ]);
     selected.value = detail.pool;
+    members.value = [];
+    memberTotal.value = detail.pool.member_count ?? 0;
+    memberPage.value = 1;
+    memberQuery.value = "";
+    fullMembersLoaded.value = false;
     snapshots.value = history.snapshots;
     references.value = refs.references;
     readiness.value = readinessResult.readiness;
@@ -295,10 +311,11 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
     }
     editName.value = detail.pool.name ?? "";
     editDescription.value = detail.pool.description ?? "";
-    editSymbols.value = (detail.pool.snapshot?.members ?? []).map((item) => item.symbol).join(",");
-    editWeights.value = JSON.stringify(detail.pool.weights ?? {}, null, 2);
+    editSymbols.value = "";
+    editWeights.value = "{}";
     editDefinition.value = JSON.stringify(detail.pool.snapshot?.definition ?? {}, null, 2);
     syncEditBaseline();
+    if (activeTab.value === "members") await loadMemberPage();
     if (updateRoute && route.query.pool !== poolId) {
       await router.replace({ path: route.path, query: { ...route.query, pool: poolId } });
     }
@@ -308,6 +325,61 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
     busy.value = false;
   }
 }
+
+async function loadMemberPage() {
+  if (!selected.value?.pool_id || activeTab.value !== "members") return;
+  memberLoading.value = true;
+  try {
+    const result = await listStockPoolMembers(selected.value.pool_id, auth.token, {
+      query: memberQuery.value,
+      limit: MEMBER_PAGE_SIZE,
+      offset: (memberPage.value - 1) * MEMBER_PAGE_SIZE,
+    });
+    members.value = result.members;
+    memberTotal.value = result.total;
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "加载股票池成员失败");
+  } finally {
+    memberLoading.value = false;
+  }
+}
+
+async function loadFullMembersForEditing() {
+  if (!selected.value?.pool_id || selected.value.pool_type !== "custom") return;
+  memberLoading.value = true;
+  try {
+    const detail = await getStockPool(selected.value.pool_id, auth.token);
+    selected.value = detail.pool;
+    const allMembers = detail.pool.snapshot?.members ?? [];
+    editSymbols.value = allMembers.map((item) => item.symbol).join(",");
+    editWeights.value = JSON.stringify(
+      Object.fromEntries(allMembers.filter((item) => item.weight !== null).map((item) => [item.symbol, item.weight])),
+      null,
+      2,
+    );
+    fullMembersLoaded.value = true;
+    syncEditBaseline();
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "加载完整成员失败");
+  } finally {
+    memberLoading.value = false;
+  }
+}
+
+let memberSearchTimer: number | undefined;
+watch(activeTab, (tab) => {
+  if (tab === "members") void loadMemberPage();
+});
+watch(memberPage, () => void loadMemberPage());
+watch(memberQuery, () => {
+  window.clearTimeout(memberSearchTimer);
+  memberSearchTimer = window.setTimeout(() => {
+    memberPage.value = 1;
+    void loadMemberPage();
+  }, 250);
+});
+
+onBeforeUnmount(() => window.clearTimeout(memberSearchTimer));
 
 async function compareLatestSnapshots() {
   if (!selected.value?.pool_id || snapshots.value.length < 2) return;
@@ -567,7 +639,8 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
       </template>
       <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
       <el-empty v-else-if="!filteredPools.length" description="暂无股票池" />
-      <el-table v-else class="desktop-catalog-table" :data="filteredPools" highlight-current-row @current-change="select">
+      <ListFilterPagination v-else v-model:page="poolPages.page.value" query="" :page-size="poolPages.pageSize.value" :total="poolPages.total.value" label="股票池分页" hide-search>
+      <el-table class="desktop-catalog-table" :data="poolPages.pageItems.value" highlight-current-row @current-change="select">
         <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
         <el-table-column label="类型" width="90">
           <template #default="{ row }">{{ POOL_TYPE_LABELS[String(row.pool_type ?? "custom")] ?? row.pool_type }}</template>
@@ -584,7 +657,7 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
 
       <div class="mobile-list">
         <el-card
-          v-for="row in filteredPools"
+          v-for="row in poolPages.pageItems.value"
           :key="String(row.pool_id)"
           shadow="never"
           class="mobile-card"
@@ -600,6 +673,7 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
           </div>
         </el-card>
       </div>
+      </ListFilterPagination>
       </el-card>
       </template>
 
@@ -612,7 +686,7 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
         </div>
       </template>
       <el-tabs v-model="activeTab">
-        <el-tab-pane label="概览" name="overview">
+        <el-tab-pane label="概览" name="overview" lazy>
           <el-descriptions :column="2" border>
             <el-descriptions-item label="类型">{{ POOL_TYPE_LABELS[selected.pool_type ?? "custom"] }}</el-descriptions-item>
             <el-descriptions-item label="状态"><el-tag>{{ statusLabel(selected.status) }}</el-tag></el-descriptions-item>
@@ -644,20 +718,36 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
             <div class="button-row"><el-button :disabled="!dynamicDefinitionDirty" @click="saveDynamicDefinition('draft')">保存草稿</el-button><el-button type="primary" @click="saveDynamicDefinition('active')">校验并激活</el-button><el-button @click="saveDynamicDefinition('paused')">暂停调度</el-button></div>
           </section>
         </el-tab-pane>
-        <el-tab-pane label="成员与权重" name="members">
+        <el-tab-pane label="成员与权重" name="members" lazy>
           <el-alert v-if="selected.pool_type !== 'custom'" title="可信指数/动态池为只读，成员由 BYQ 数据或计算边界生成。" type="info" :closable="false" />
+          <div v-else-if="!fullMembersLoaded" class="member-edit-loader">
+            <span>成员清单按页加载；编辑前需显式读取当前完整快照，避免误覆盖未显示成员。</span>
+            <el-button :loading="memberLoading" @click="loadFullMembersForEditing">加载完整成员并编辑</el-button>
+          </div>
           <el-form v-else label-position="top">
             <el-form-item label="成分股（逗号分隔）"><el-input v-model="editSymbols" type="textarea" :rows="4" /></el-form-item>
             <el-form-item label="完整权重 JSON（留空表示等权/无权重）"><el-input v-model="editWeights" type="textarea" :rows="5" /></el-form-item>
             <span class="edit-state" aria-live="polite">{{ snapshotDirty ? "快照内容有未保存更改" : "快照内容已保存" }}</span>
             <el-button type="primary" :disabled="!snapshotDirty || busy" @click="saveSnapshot">创建新快照</el-button>
           </el-form>
-          <el-table :data="selected.snapshot?.members ?? []" size="small">
-            <el-table-column prop="symbol" label="成分" min-width="160" />
-            <el-table-column prop="weight" label="权重" min-width="140" />
-          </el-table>
+          <ListFilterPagination
+            v-model:query="memberQuery"
+            v-model:page="memberPage"
+            :page-size="MEMBER_PAGE_SIZE"
+            :total="memberTotal"
+            placeholder="按股票代码或中文名称筛选"
+            label="股票池成员分页"
+          >
+            <el-table v-loading="memberLoading" :data="members" size="small" empty-text="暂无匹配成员">
+              <el-table-column prop="symbol" label="股票代码" min-width="140" />
+              <el-table-column prop="name" label="股票名称（中文）" min-width="160">
+                <template #default="{ row }">{{ row.name || "名称待基础资料同步" }}</template>
+              </el-table-column>
+              <el-table-column prop="weight" label="权重" min-width="120" />
+            </el-table>
+          </ListFilterPagination>
         </el-tab-pane>
-        <el-tab-pane label="定义与筛选" name="definition">
+        <el-tab-pane label="定义与筛选" name="definition" lazy>
           <el-alert title="筛选条件用于解释候选来源；只有已持久化成员才是授权范围。" type="info" :closable="false" />
           <el-input v-model="editDefinition" type="textarea" :rows="10" :readonly="selected.pool_type !== 'custom'" />
           <el-button v-if="selected.pool_type === 'custom'" type="primary" class="detail-action" :disabled="!snapshotDirty || busy" @click="saveSnapshot">随新快照保存</el-button>
@@ -667,7 +757,7 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
             <el-descriptions-item label="定义指纹">{{ producer.definition_fingerprint }}</el-descriptions-item>
           </el-descriptions>
         </el-tab-pane>
-        <el-tab-pane label="来源与引用" name="provenance">
+        <el-tab-pane label="来源与引用" name="provenance" lazy>
           <pre class="quant-result">{{ JSON.stringify(selected.snapshot?.provenance ?? {}, null, 2) }}</pre>
           <el-table :data="references" size="small" empty-text="暂无下游引用">
             <el-table-column prop="domain" label="领域" />
@@ -675,7 +765,7 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
             <el-table-column prop="reference_count" label="引用数" />
           </el-table>
         </el-tab-pane>
-        <el-tab-pane label="快照历史" name="history">
+        <el-tab-pane label="快照历史" name="history" lazy>
           <div class="button-row">
             <el-button :disabled="snapshots.length < 2" @click="compareLatestSnapshots">比较最近两个快照</el-button>
             <span v-if="snapshots.length < 2" class="edit-state">至少需要两个不可变快照</span>
@@ -726,7 +816,8 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
         <el-descriptions-item label="成员指纹" :span="2">{{ historicalSnapshot.membership_fingerprint }}</el-descriptions-item>
       </el-descriptions>
       <el-table v-if="historicalSnapshot" :data="historicalSnapshot.members ?? []" size="small">
-        <el-table-column prop="symbol" label="成分" />
+        <el-table-column prop="symbol" label="股票代码" />
+        <el-table-column prop="name" label="股票名称（中文）"><template #default="{ row }">{{ row.name || "-" }}</template></el-table-column>
         <el-table-column prop="weight" label="权重" />
       </el-table>
     </el-dialog>
@@ -749,6 +840,7 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
 .preview-actions { align-items: center; color: var(--byq-text-muted); display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 12px; }
 .dynamic-definition { border-top: 1px solid var(--byq-border-subtle); margin-top: 18px; padding-top: 2px; }
 .edit-state { color: var(--byq-text-muted); display: inline-block; font-size: 12px; margin: 0 8px 8px 0; }
+.member-edit-loader { align-items: center; background: var(--byq-surface-subtle); border-radius: 8px; color: var(--byq-text-muted); display: flex; gap: 12px; justify-content: space-between; margin-bottom: 12px; padding: 10px 12px; }
 .stock-list-pane, .stock-detail-pane { min-width: 0; }
 .detail-empty { min-height: 360px; display: grid; place-items: center; }
 

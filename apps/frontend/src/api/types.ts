@@ -490,8 +490,14 @@ export interface StockPoolSnapshot {
   weight_mode: "weighted" | "unweighted";
   weight_sum?: string | null;
   member_count: number;
-  members?: Array<{ symbol: string; weight: string | null }>;
+  members?: StockPoolMember[];
   created_at: string;
+}
+
+export interface StockPoolMember {
+  symbol: string;
+  name?: string | null;
+  weight: string | null;
 }
 
 export interface PaperOrder {
