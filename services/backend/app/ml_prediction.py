@@ -14,7 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from .backtest import LocalObjectStore, membership_fingerprint, normalize_signal_snapshot, signal_snapshot_content_sha256
 from .db import PgStoreMixin, execute, fetch_one
 from .ml_strategy import FEATURE_ORDER, RUNTIME_LOCK, content_sha256, validate_ml_strategy_version
-from .ml_training import FEATURE_SCHEMA, MODEL_SCHEMA, RUNTIME_IDENTITY
+from .ml_training import FEATURE_SCHEMA, MODEL_SCHEMA, RUNTIME_IDENTITY, load_feature_snapshot
 from .research import ResearchStore
 
 
@@ -360,7 +360,8 @@ class MLPredictionCoordinator:
             if model.get("runtime_lock") != RUNTIME_LOCK or model.get("runtime_identity") != RUNTIME_IDENTITY or model.get("feature_order") != FEATURE_ORDER:
                 raise ValueError("model runtime or feature contract is unsupported")
             model_text = self.objects.get(model["object_reference"]).decode("utf-8")
-            prediction_rows = [row for row in feature.get("rows", []) if isinstance(row, dict) and row.get("split") == "prediction"]
+            hydrated_feature = load_feature_snapshot(feature, self.objects)
+            prediction_rows = [row for row in hydrated_feature.get("rows", []) if isinstance(row, dict) and row.get("split") == "prediction"]
             scores = self.predictor.predict(model_text, prediction_rows, best_iteration=int(model["best_iteration"]))
             prediction = build_prediction_snapshot(scores=scores, prediction_rows=prediction_rows, model=model,
                 feature_artifact_id=str(job["feature_artifact_id"]), model_artifact_id=str(job["model_artifact_id"]),
