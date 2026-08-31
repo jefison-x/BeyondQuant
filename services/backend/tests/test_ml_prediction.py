@@ -9,6 +9,7 @@ from app.backtest import LocalObjectStore
 from app.ml_prediction import (
     MLPredictionCoordinator,
     MLPredictionRunStore,
+    build_ml_signal_snapshot,
     build_prediction_snapshot,
 )
 from app.ml_strategy import FEATURE_ORDER, normalize_ml_strategy, content_sha256
@@ -111,6 +112,37 @@ def test_prediction_ranking_is_deterministic_and_rows_never_expose_labels() -> N
             feature_artifact_id="artifact_feature", model_artifact_id="artifact_model",
             stock_pool_snapshot_id="snapshot_pool",
         )
+
+
+def test_signal_skips_unfunded_lot_and_keeps_affordable_selection() -> None:
+    strategy = strategy_value()
+    strategy["signal_policy"] = {
+        "kind": "top_n_equal_weight", "top_n": 2, "rebalance": "daily",
+    }
+    prediction = {
+        "prediction_split": strategy["split"]["prediction"],
+        "rows": [
+            {"session": "2024-03-01", "symbol": "000001.SZ", "score": 0.9, "rank": 1},
+            {"session": "2024-03-01", "symbol": "000002.SZ", "score": 0.8, "rank": 2},
+        ],
+    }
+    market = ready_input()
+    for bar in market["bars"]:
+        if bar["symbol"] == "000001.SZ":
+            bar.update({"open": 20_000.0, "high": 20_001.0, "low": 19_999.0, "close": 20_000.0})
+    signal = build_ml_signal_snapshot(
+        prediction=prediction, strategy=strategy,
+        strategy_artifact_id=f"artifact_{'a' * 32}", approval_artifact_id=f"artifact_{'b' * 32}",
+        feature_artifact_id=f"artifact_{'c' * 32}", model_artifact_id=f"artifact_{'d' * 32}",
+        prediction_artifact_id=f"artifact_{'e' * 32}", stock_pool_snapshot_id=f"stock_pool_snapshot_{'f' * 64}",
+        ready_input=market, execution={"initial_capital": 1_000_000.0, "lot_size": 100},
+        readiness={"requirement_sha256": "a" * 64, "ready_input_sha256": "b" * 64},
+    )
+    assert [(row["symbol"], row["direction"], row["quantity"]) for row in signal["signals"] if row["direction"] == 1] == [
+        ("000002.SZ", 1, 45_400),
+    ]
+    assert all(row["symbol"] != "000001.SZ" for row in signal["signals"])
+    assert signal["source"]["selection_constraints"] == {"unfunded_lots_skipped": 1}
 
 
 def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_path) -> None:
