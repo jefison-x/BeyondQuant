@@ -1163,7 +1163,16 @@ class MarketReadinessStore(PgStoreMixin):
             "index_weight_hashes": [str(row["content_sha256"]) for row in weight_rows],
             "financial_hashes": [str(row["content_sha256"]) for row in financial_rows],
         })
+        adjustment_factors = [
+            {
+                "symbol": str(row["symbol"]),
+                "trade_date": f"{str(row['trade_date'])[:4]}-{str(row['trade_date'])[4:6]}-{str(row['trade_date'])[6:8]}",
+                "adjustment_factor": float(row.get("adj_factor") or 1.0),
+            }
+            for row in rows
+        ]
         return {"bars": raw_bars, "research_bars": research_bars,
+                "adjustment_factors": adjustment_factors,
                 "corporate_actions": normalized_actions, "benchmark": benchmark,
                 "declared": declared, "research_view_sha256": identity}
 

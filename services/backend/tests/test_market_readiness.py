@@ -152,6 +152,10 @@ def test_adjusted_research_view_preserves_raw_execution_and_freezes_actions() ->
     assert [row["close"] for row in ready["research_bars"]] == [5, 5]
     assert ready["corporate_actions"][0]["pay_date"] == "2024-01-04"
     assert ready["research_view_sha256"]
+    assert ready["adjustment_factors"] == [
+        {"symbol": "000001.SZ", "trade_date": "2024-01-02", "adjustment_factor": 1.0},
+        {"symbol": "000001.SZ", "trade_date": "2024-01-03", "adjustment_factor": 2.0},
+    ]
 
 
 def test_declared_inputs_use_point_in_time_membership_and_announcement_effective_dates() -> None:

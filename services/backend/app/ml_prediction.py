@@ -170,6 +170,17 @@ def build_ml_signal_snapshot(
     split = prediction["prediction_split"]
     start, end = str(split["start"]), str(split["end"])
     bars = [dict(row) for row in raw_bars if isinstance(row, dict) and start <= str(row.get("trade_date")) <= end]
+    raw_factors = ready_input.get("adjustment_factors", [])
+    if not isinstance(raw_factors, list):
+        raise ValueError("frozen adjustment factors are invalid")
+    factor_by_key = {
+        (str(row.get("trade_date")), str(row.get("symbol"))): row.get("adjustment_factor")
+        for row in raw_factors if isinstance(row, dict)
+    }
+    for bar in bars:
+        factor = factor_by_key.get((str(bar.get("trade_date")), str(bar.get("symbol"))))
+        if factor is not None:
+            bar["adjustment_factor"] = factor
     bar_by_key = {(str(row["trade_date"]), str(row["symbol"])): row for row in bars}
     sessions = sorted({str(row["trade_date"]) for row in bars})
     # A signal on the final frozen session has no next-session execution bar.
