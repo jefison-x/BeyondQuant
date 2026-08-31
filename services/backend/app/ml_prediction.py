@@ -14,7 +14,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from .backtest import LocalObjectStore, membership_fingerprint, normalize_signal_snapshot, signal_snapshot_content_sha256
 from .db import PgStoreMixin, execute, fetch_one
 from .ml_strategy import FEATURE_ORDER, RUNTIME_LOCK, content_sha256, validate_ml_strategy_version
-from .ml_training import FEATURE_SCHEMA, MODEL_SCHEMA, RUNTIME_IDENTITY, load_feature_snapshot
+from .ml_training import (
+    FEATURE_SCHEMA,
+    MODEL_SCHEMA,
+    RUNTIME_IDENTITY,
+    aggregate_ml_readiness,
+    load_feature_snapshot,
+)
 from .research import ResearchStore
 
 
@@ -41,6 +47,14 @@ class MLPredictionPersistenceError(MLPredictionError):
 
 class MLPredictor(Protocol):
     def predict(self, model_text: str, rows: list[dict[str, object]], *, best_iteration: int) -> list[float]: ...
+
+
+class MLPredictionMarketData(Protocol):
+    def assess(self, requirement: dict[str, object]) -> dict[str, object]: ...
+    def build_ready_input(self, requirement: dict[str, object]) -> dict[str, object]: ...
+    def build_partitioned_ready_input(
+        self, requirements: list[dict[str, object]],
+    ) -> dict[str, object]: ...
 
 
 def _now() -> str:
@@ -334,8 +348,48 @@ class MLPredictionRunStore(PgStoreMixin):
 
 class MLPredictionCoordinator:
     def __init__(self, runs: MLPredictionRunStore, research: ResearchStore, objects: LocalObjectStore,
-                 predictor: MLPredictor, *, worker_id: str) -> None:
+                 predictor: MLPredictor, *, worker_id: str,
+                 market_data: MLPredictionMarketData | None = None) -> None:
         self.runs, self.research, self.objects, self.predictor, self.worker_id = runs, research, objects, predictor, worker_id
+        self.market_data = market_data
+
+    def _ready_input(
+        self, input_document: dict[str, object], feature: dict[str, object],
+    ) -> dict[str, object]:
+        ready_input = input_document.get("ready_input")
+        if isinstance(ready_input, dict):
+            return ready_input
+        requirements = input_document.get("requirements")
+        readiness = input_document.get("readiness")
+        if (
+            self.market_data is None
+            or not isinstance(requirements, list)
+            or not requirements
+            or any(not isinstance(item, dict) for item in requirements)
+            or not isinstance(readiness, dict)
+        ):
+            raise ValueError("ML prediction market input is unavailable")
+        frozen_requirements = [dict(item) for item in requirements]
+        current = aggregate_ml_readiness([
+            self.market_data.assess(item) for item in frozen_requirements
+        ])
+        if (
+            current.get("state") != "ready"
+            or current.get("ready_input_sha256") != readiness.get("ready_input_sha256")
+        ):
+            raise ValueError("frozen ML data identity changed before prediction")
+        ready_input = (
+            self.market_data.build_partitioned_ready_input(frozen_requirements)
+            if len(frozen_requirements) > 1
+            else self.market_data.build_ready_input(frozen_requirements[0])
+        )
+        source = feature.get("source")
+        if (
+            not isinstance(source, dict)
+            or ready_input.get("research_view_sha256") != source.get("research_view_sha256")
+        ):
+            raise ValueError("frozen feature source no longer matches market input")
+        return ready_input
 
     def run_next(self) -> dict[str, object] | None:
         job = self.runs.claim_next(self.worker_id)
@@ -361,6 +415,7 @@ class MLPredictionCoordinator:
                 raise ValueError("model runtime or feature contract is unsupported")
             model_text = self.objects.get(model["object_reference"]).decode("utf-8")
             hydrated_feature = load_feature_snapshot(feature, self.objects)
+            ready_input = self._ready_input(input_document, feature)
             prediction_rows = [row for row in hydrated_feature.get("rows", []) if isinstance(row, dict) and row.get("split") == "prediction"]
             scores = self.predictor.predict(model_text, prediction_rows, best_iteration=int(model["best_iteration"]))
             prediction = build_prediction_snapshot(scores=scores, prediction_rows=prediction_rows, model=model,
@@ -380,7 +435,7 @@ class MLPredictionCoordinator:
                 strategy_artifact_id=str(job["ml_strategy_artifact_id"]), approval_artifact_id=str(job["approval_artifact_id"]),
                 feature_artifact_id=str(job["feature_artifact_id"]), model_artifact_id=str(job["model_artifact_id"]),
                 prediction_artifact_id=str(prediction_artifact["artifact_id"]), stock_pool_snapshot_id=str(job["stock_pool_snapshot_id"]),
-                ready_input=input_document["ready_input"], execution=input_document["execution"], readiness=input_document["readiness"])
+                ready_input=ready_input, execution=input_document["execution"], readiness=input_document["readiness"])
             signal_hash = signal_snapshot_content_sha256(signal)
             signal_artifact = self.research.find_artifact_by_content(str(job["task_id"]), "signal_snapshot", signal_hash)
             if signal_artifact is None:

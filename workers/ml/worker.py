@@ -190,6 +190,7 @@ def main() -> int:
     prediction_coordinator = MLPredictionCoordinator(
         prediction_runs, research, objects, LightGBMPredictor(),
         worker_id=os.environ.get("BYQ_ML_WORKER_ID", "ml-worker-1"),
+        market_data=readiness,
     )
     READY_PATH.write_text(RUNTIME_IDENTITY, encoding="utf-8")
     poll = max(0.2, float(os.environ.get("BYQ_ML_POLL_SECONDS", "2")))
