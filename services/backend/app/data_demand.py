@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .db import PgStoreMixin, execute, fetch_one
+from .task_progress import progress_percent
 
 
 class DataDemandError(RuntimeError):
@@ -204,7 +205,10 @@ class DataDemandStore(PgStoreMixin):
         ready_count = sum(item.get("state") == "ready" for item in assessments)
         any_ready_cells = any(int(item.get("required_cell_count") or 0) > int(item.get("missing_count") or 0) for item in assessments)
         repair_failed = any(item.get("status") == "failed" for item in repairs)
-        active = any(item.get("status") in {"queued", "running"} for item in repairs) or session_jobs["queued"] + session_jobs["running"] > 0
+        active = (
+            any(item.get("status") in {"queued", "running", "waiting_for_sessions"} for item in repairs)
+            or session_jobs["queued"] + session_jobs["running"] > 0
+        )
         if ready_count == len(assessments):
             status = "ready"
         elif repair_failed or (repairs and all(item.get("status") == "completed" for item in repairs) and not active and session_jobs["failed"]):
@@ -222,7 +226,7 @@ class DataDemandStore(PgStoreMixin):
         completed_units = max(0, total_units - int(progress["missing_items"]))
         progress.update({
             "completed_units": completed_units, "total_units": total_units,
-            "percent": round(completed_units * 100 / total_units) if total_units else 0,
+            "percent": progress_percent(completed_units, total_units),
             "unit": "symbol_session_cells",
             "stage": "verified" if status == "ready" else "failed" if status in {"failed", "partial"}
                      else "synchronizing" if active else "queued",

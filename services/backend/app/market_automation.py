@@ -493,7 +493,13 @@ class MarketAutomationStore(PgStoreMixin):
             created.append(self.get_job(job_id))
         return created
 
-    def enqueue_dates(self, trade_dates: list[str], *, scheduled_by: str) -> list[dict[str, object]]:
+    def enqueue_dates(
+        self,
+        trade_dates: list[str],
+        *,
+        scheduled_by: str,
+        force_completed: bool = False,
+    ) -> list[dict[str, object]]:
         """Queue a bounded, calendar-verified repair without broad provider access."""
         dates = sorted(set(str(value) for value in trade_dates))
         if len(dates) > 250:
@@ -517,7 +523,8 @@ class MarketAutomationStore(PgStoreMixin):
                         {"job_id": job_id, "date": trade_date, "by": scheduled_by, "now": now})
                 elif existing["status"] == "failed" or (
                     existing["status"] == "completed" and (
-                        self._fetch_one("""SELECT state FROM market_session_completeness
+                        force_completed
+                        or self._fetch_one("""SELECT state FROM market_session_completeness
                             WHERE trade_date=:date AND state='provider_snapshot_with_declared_inputs_complete'""",
                             {"date": trade_date}) is None
                     )
@@ -540,6 +547,15 @@ class MarketAutomationStore(PgStoreMixin):
         existing = self._fetch_one("SELECT * FROM market_data_repair_requests WHERE requirement_sha256=:sha",
                                    {"sha": requirement_sha256})
         if existing is not None:
+            if existing["status"] in {"completed", "failed"}:
+                self._execute("""UPDATE market_data_repair_requests
+                    SET status='queued',claimed_at=NULL,completed_at=NULL,error_message=NULL,
+                        requested_by=:by WHERE request_id=:id""",
+                    {"id": existing["request_id"], "by": requested_by})
+                existing = self._fetch_one(
+                    "SELECT * FROM market_data_repair_requests WHERE request_id=:id",
+                    {"id": existing["request_id"]},
+                )
             return dict(existing)
         request_id, now = f"datarepair_{uuid.uuid4().hex}", _now()
         self._execute("""INSERT INTO market_data_repair_requests
@@ -564,6 +580,47 @@ class MarketAutomationStore(PgStoreMixin):
         self._execute("""UPDATE market_data_repair_requests SET status=:status,completed_at=:now,error_message=:error
             WHERE request_id=:id""", {"id": request_id, "status": "failed" if error else "completed",
                                       "now": _now(), "error": error})
+
+    def defer_data_repair(self, request_id: object) -> dict[str, object]:
+        rows = self._execute("""UPDATE market_data_repair_requests
+            SET status='waiting_for_sessions',completed_at=NULL,error_message=NULL
+            WHERE request_id=:id AND status='running' RETURNING *""", {"id": str(request_id)})
+        if not rows:
+            raise MarketAutomationConflict("data repair is not running")
+        return dict(rows[0])
+
+    def retry_data_repair(self, request_id: object) -> dict[str, object]:
+        rows = self._execute("""UPDATE market_data_repair_requests
+            SET status='queued',claimed_at=NULL,completed_at=NULL,error_message=NULL
+            WHERE request_id=:id AND status IN ('completed','failed') RETURNING *""",
+            {"id": str(request_id)})
+        if not rows:
+            raise MarketAutomationConflict("data repair is not retryable")
+        return dict(rows[0])
+
+    def reconcile_data_repairs(self, readiness_store: MarketReadinessStore) -> dict[str, int]:
+        outcomes = {"completed": 0, "failed": 0}
+        rows = self._execute("""SELECT * FROM market_data_repair_requests
+            WHERE status='waiting_for_sessions' ORDER BY created_at LIMIT 32""")
+        for row in rows:
+            try:
+                assessment = readiness_store.assess(dict(row["requirement_json"]))
+                if assessment.get("state") == "ready":
+                    self.complete_data_repair(str(row["request_id"]))
+                    outcomes["completed"] += 1
+                    continue
+                counts = self.session_job_counts(list(assessment.get("missing_trade_dates", [])))
+                if counts["queued"] + counts["running"]:
+                    continue
+                error = "session_repair_failed" if counts["failed"] else "readiness_not_satisfied"
+                self.complete_data_repair(str(row["request_id"]), error=error)
+                outcomes["failed"] += 1
+            except Exception:
+                self.complete_data_repair(
+                    str(row["request_id"]), error="readiness_assessment_failed",
+                )
+                outcomes["failed"] += 1
+        return outcomes
 
     def get_data_repairs(self, request_ids: list[str]) -> list[dict[str, object]]:
         """Return bounded repair coordinator state for a BYQ-owned facade."""
@@ -667,7 +724,9 @@ class MarketAutomationStore(PgStoreMixin):
                 {key: row[key] for key in sorted(row) if key != "provenance"}
                 for row in rows
             ])
-            report = market_store.import_bars(rows, conflict_policy=KEEP_NEW)
+            report = market_store.import_bars(
+                rows, conflict_policy=KEEP_NEW, replace_non_authoritative=True,
+            )
             completeness_state = "provider_snapshot_complete"
             if readiness_store is not None:
                 assert all(item is not None for item in (
@@ -786,9 +845,12 @@ class MarketAutomationStore(PgStoreMixin):
                next_attempt_at = now(), error_code = 'stale_lease_recovered',
                error_message = 'worker lease expired; job recovered', updated_at = now()
                WHERE status = 'running' AND lease_until < now()
-               RETURNING job_id""",
+            RETURNING job_id""",
         )
-        return len(rows)
+        repairs = self._execute("""UPDATE market_data_repair_requests
+            SET status='queued',claimed_at=NULL,error_message=NULL
+            WHERE status='running' RETURNING request_id""")
+        return len(rows) + len(repairs)
 
     def heartbeat(
         self,
@@ -1012,6 +1074,33 @@ class MarketAutomationStore(PgStoreMixin):
                 "completed_at", "result_json", "error_message",
             )
         }
+
+
+def sync_session_supplements(
+    trade_dates: list[str], *, provider: TushareProvider,
+    readiness_store: MarketReadinessStore,
+) -> dict[str, int]:
+    """Repair factor/action evidence without redownloading validated daily bars."""
+    dates = sorted({str(value) for value in trade_dates if str(value)})
+    if len(dates) > 250:
+        raise ValueError("session supplement repair exceeds 250 trading sessions")
+    counts = {"sessions": 0, "factors": 0, "corporate_actions": 0}
+    for trade_date in dates:
+        factors = provider.fetch_adjustment_factors(trade_date)
+        actions = provider.fetch_corporate_actions(trade_date)
+        result = readiness_store.import_session_supplements(
+            trade_date,
+            factors=list(factors.factors),
+            actions=list(actions.actions),
+            provenance={
+                "adjustment_factors": factors.provenance.as_dict(),
+                "corporate_actions": actions.provenance.as_dict(),
+            },
+        )
+        counts["sessions"] += 1
+        counts["factors"] += int(result["factor_count"])
+        counts["corporate_actions"] += int(result["corporate_action_count"])
+    return counts
 
 
 def sync_declared_inputs(

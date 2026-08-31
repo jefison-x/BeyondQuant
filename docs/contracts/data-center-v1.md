@@ -10,7 +10,7 @@ Phase 82 在 `data-center.v3` 中增加 additive `data_tasks` member。每项为
 `data-task.v1` 安全投影，包含稳定任务/引用 identity、kind、purpose、status、stage、
 `progress.completed/total/percent/unit`、rows、safe error 与时间戳。它只聚合既有同步、
 按需准备、股票目录和 ML 训练状态，不是新的任务状态机；进度必须来自持久工作单元，
-不得使用前端计时或模拟百分比。
+不得使用前端计时或模拟百分比。只要仍有缺失工作单元，百分比不得四舍五入为 100。
 
 Phase 61 按 ADR-0034 增加面向具体任务的 `data-readiness-product.v1` 投影，并将 Agent daily research 固定为持久化 BYQ 数据读取。全库 coverage 只说明观察到的覆盖，不能替代任务 readiness。
 
@@ -30,7 +30,7 @@ Test 接受一个 canonical A-share symbol 和一个 `YYYYMMDD` trade date，通
 - Legacy explicit request 包含 1–500 个唯一 canonical symbols。Catalogue 和 Stock Pool orchestration 最多冻结 6,000 symbols。每个 request 包含 `range` 或 `incremental` mode、最多 366 个自然日的闭区间，以及 idempotency key。
 - Jobs 持久化为 `queued → running → completed|partial|failed`；刷新页面后仍可读取 progress 和 per-symbol normalized results。
 - Provider rows 必须匹配 requested symbol，具有唯一 symbol/date keys、完整 OHLC values 和有效 high/low relationships，之后方可 import。
-- Import 使用 `MarketDataStore` 与 `KEEP_NEW`；refresh 不以 last-write-wins 覆盖现有 authoritative BYQ row。
+- Import 使用 `MarketDataStore` 与 `KEEP_NEW`；refresh 不以 last-write-wins 覆盖现有 authoritative BYQ row。Trusted Data Worker repair 只可用已验证 Tushare row 替换同主键的 non-authoritative/test source；Tushare-to-Tushare 仍不得静默覆盖。
 - Tushare daily units 显式记录为 unadjusted stock bars、`lots` 和 `thousand_cny`，并带 BYQ request provenance。
 
 ## Coverage audit
@@ -58,5 +58,6 @@ MCP `byq_market_daily` 调用 Backend `POST /v1/data/research/daily`，只读取
 - Browser 只创建 Product API configuration 或 run-now commands；trusted `data-worker` 刷新 calendar 并执行 provider requests。
 - 每个 open session 最多一个 durable job。Jobs leased 后经 `queued → running → completed|failed` 转换，最多四次 attempts，并有 bounded backoff/recovery。
 - 每个 session 使用一个 exact-date、unscoped `daily` request，以 `KEEP_NEW` 导入完整 normalized response；`pre_close` 与 raw unadjusted OHLCV/amount 一同保留。
+- 缺失仅限 adjustment/corporate-action evidence 时，repair 只调用对应 exact-date supplement contracts，不重新下载已验证 daily bars。Repair 必须等待重新评估或其 session 子任务终态；enqueue 本身不能产生 `completed`。
 - `provider_snapshot_complete` 表示一个非空 exact-date provider snapshot 通过 normalization 且完整导入；不表示每个 catalogue member 都交易，也不取代 Phase 55 的 lifecycle-aware readiness assessment。
 - Public status 包含 worker heartbeat/health、latest calendar open date、latest complete session、next configured run 和有界 recent job/command projections；不暴露 credential 或 raw provider envelope。

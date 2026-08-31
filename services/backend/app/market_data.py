@@ -215,24 +215,59 @@ class MarketDataStore(PgStoreMixin):
         ).encode("utf-8")
         return hashlib.sha256(canonical).hexdigest()
 
-    def import_bars(self, rows: list[dict[str, Any]], *, conflict_policy: str = KEEP_NEW) -> dict[str, Any]:
+    def import_bars(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        conflict_policy: str = KEEP_NEW,
+        replace_non_authoritative: bool = False,
+    ) -> dict[str, Any]:
         """Idempotent import of validated daily-bar rows (never last-write-wins)."""
         if conflict_policy not in CONFLICT_POLICIES:
             raise ValueError(f"conflict_policy must be one of {sorted(CONFLICT_POLICIES)}")
         inserted = 0
         kept = 0
+        replaced = 0
         mismatches: list[dict[str, Any]] = []
         with self._transaction() as connection:
             for row in rows:
                 symbol = row["symbol"]
                 trade_date = row["trade_date"]
                 content_sha256 = self._content_sha256(row)
+                provenance = row.get("provenance") or {}
+                if not isinstance(provenance, dict):
+                    raise ValueError("provenance must be an object")
                 existing = fetch_one(
                     connection,
-                    "SELECT content_sha256 FROM market_daily_bars WHERE symbol = :symbol AND trade_date = :trade_date",
+                    """SELECT content_sha256,data_source FROM market_daily_bars
+                       WHERE symbol=:symbol AND trade_date=:trade_date FOR UPDATE""",
                     {"symbol": symbol, "trade_date": trade_date},
                 )
                 if existing is not None:
+                    if (
+                        replace_non_authoritative
+                        and row.get("data_source") == "tushare"
+                        and existing.get("data_source") != "tushare"
+                    ):
+                        execute(connection, """UPDATE market_daily_bars SET
+                            open=:open,high=:high,low=:low,close=:close,volume=:volume,
+                            amount=:amount,pre_close=:pre_close,adjust=:adjust,
+                            asset_type=:asset_type,data_source=:data_source,
+                            volume_unit=:volume_unit,amount_unit=:amount_unit,
+                            content_sha256=:content_sha256,provenance_json=:provenance_json,
+                            imported_at=now()
+                            WHERE symbol=:symbol AND trade_date=:trade_date
+                              AND data_source<>'tushare'""", {
+                            **row,
+                            "pre_close": row.get("pre_close"),
+                            "adjust": row.get("adjust", "none"),
+                            "volume_unit": row.get("volume_unit"),
+                            "amount_unit": row.get("amount_unit"),
+                            "content_sha256": content_sha256,
+                            "provenance_json": provenance,
+                        })
+                        replaced += 1
+                        continue
                     if conflict_policy in {VERIFY_EQUAL, REPORT_MISMATCH} and existing["content_sha256"] != content_sha256:
                         mismatches.append({
                             "symbol": symbol,
@@ -241,9 +276,6 @@ class MarketDataStore(PgStoreMixin):
                         })
                     kept += 1
                     continue
-                provenance = row.get("provenance") or {}
-                if not isinstance(provenance, dict):
-                    raise ValueError("provenance must be an object")
                 execute(
                     connection,
                     """INSERT INTO market_daily_bars
@@ -275,7 +307,13 @@ class MarketDataStore(PgStoreMixin):
                     },
                 )
                 inserted += 1
-        return {"inserted": inserted, "kept": kept, "reported": len(mismatches), "mismatches": mismatches}
+        return {
+            "inserted": inserted,
+            "replaced": replaced,
+            "kept": kept,
+            "reported": len(mismatches),
+            "mismatches": mismatches,
+        }
 
     def get_bar(self, symbol: object, trade_date: object) -> dict[str, Any] | None:
         row = self._fetch_one(

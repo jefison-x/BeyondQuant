@@ -52,12 +52,33 @@ def aggregate_ml_readiness(assessments: list[dict[str, object]]) -> dict[str, ob
         raise ValueError("ML data preparation has no readiness partitions")
     ready_count = sum(item.get("state") == "ready" for item in assessments)
     ready_hashes = [item.get("ready_input_sha256") for item in assessments]
+    missing_by_dataset: dict[str, int] = {}
+    missing_sample: list[dict[str, str]] = []
+    for assessment in assessments:
+        counts = assessment.get("missing_by_dataset", {})
+        if isinstance(counts, dict):
+            for dataset, count in counts.items():
+                missing_by_dataset[str(dataset)] = (
+                    missing_by_dataset.get(str(dataset), 0) + int(count or 0)
+                )
+        items = assessment.get("missing", [])
+        if isinstance(items, list):
+            for item in items:
+                if len(missing_sample) >= 20 or not isinstance(item, dict):
+                    break
+                missing_sample.append({
+                    "symbol": str(item.get("symbol", "*")),
+                    "trade_date": str(item.get("trade_date", "*")),
+                    "dataset": str(item.get("dataset", "unknown")),
+                })
     return {
         "schema_version": "ml-data-preparation.v1",
         "state": "ready" if ready_count == len(assessments) else "waiting_for_data",
         "partition_count": len(assessments), "ready_partitions": ready_count,
         "required_cell_count": sum(int(item.get("required_cell_count") or 0) for item in assessments),
         "missing_count": sum(int(item.get("missing_count") or 0) for item in assessments),
+        "missing_by_dataset": missing_by_dataset,
+        "missing_sample": missing_sample,
         "ready_input_sha256": (
             ready_hashes[0] if len(ready_hashes) == 1 else content_sha256(ready_hashes)
         ) if ready_count == len(assessments) else None,

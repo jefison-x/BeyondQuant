@@ -175,6 +175,7 @@ from .ml_training import (
     MLTrainingRunStore,
     aggregate_ml_readiness,
 )
+from .task_progress import task_progress
 from .ml_prediction import (
     MLPredictionConflict,
     MLPredictionNotFound,
@@ -701,10 +702,6 @@ def data_center_status(request: Request) -> dict[str, object]:
         readiness_store=market_readiness_store, automation_store=market_automation_store, limit=50,
     ) if role == "admin" else []
     ml_runs = ml_training_store.list_recent(limit=50) if role == "admin" else []
-
-    def task_progress(completed: int, total: int, *, fallback: int = 0, unit: str) -> dict[str, object]:
-        percent = round(completed * 100 / total) if total else fallback
-        return {"completed": completed, "total": total, "percent": max(0, min(100, percent)), "unit": unit}
 
     data_tasks: list[dict[str, object]] = []
     for demand in demands:

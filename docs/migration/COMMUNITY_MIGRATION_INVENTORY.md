@@ -864,6 +864,13 @@ workspace were inspected before accepting ADR-0029.
 | Adjustment-factor share conversion plus corporate actions | Applying both can double count an economic event. | `REFERENCE_ONLY` / `DROP` | Factors affect research prices only; portfolio accounting uses frozen implemented actions only. |
 | Community ORM, SDK, provider registry, mutable replacement cache and VectorBT | No compatible architecture boundary. | `REPLACE` / `DROP` | Keep the Backend adapter, PostgreSQL evidence, Data Worker and deterministic native engine. VectorBT/BaoStock/AKShare remain absent. |
 
+The 2026-08-31 production-repair audit additionally inspected Community
+`providers/tushare.py::fetch_corporate_actions`. Its deterministic collapse of
+repeated `(symbol, end_date, ex_date)` implemented events is classified
+`PORT_LOGIC` / `REFACTOR`: BYQ keeps the latest announcement only when economic
+and settlement fields agree, and continues to fail closed on conflicting rows.
+Community Pandas, mutable cache and Provider runtime remain `DROP`.
+
 No Community source, database, cache, credential, runtime or Git history was
 modified or copied.
 

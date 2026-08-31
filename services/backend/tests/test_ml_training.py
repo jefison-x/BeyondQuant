@@ -114,6 +114,35 @@ def test_single_partition_keeps_existing_frozen_readiness_identity() -> None:
     assert readiness["state"] == "ready"
 
 
+def test_aggregate_readiness_exposes_bounded_missing_dataset_diagnostics() -> None:
+    readiness = aggregate_ml_readiness([
+        {
+            "state": "partial", "required_cell_count": 100, "missing_count": 3,
+            "ready_input_sha256": None,
+            "missing_by_dataset": {"corporate_actions": 2, "stock_daily": 1},
+            "missing": [
+                {"symbol": "*", "trade_date": "20240102", "dataset": "corporate_actions"},
+                {"symbol": "000001.SZ", "trade_date": "20240103", "dataset": "stock_daily"},
+            ],
+        },
+        {
+            "state": "partial", "required_cell_count": 50, "missing_count": 1,
+            "ready_input_sha256": None,
+            "missing_by_dataset": {"corporate_actions": 1},
+            "missing": [
+                {"symbol": "*", "trade_date": "20240201", "dataset": "corporate_actions"},
+            ],
+        },
+    ])
+
+    assert readiness["missing_by_dataset"] == {"corporate_actions": 3, "stock_daily": 1}
+    assert readiness["missing_sample"] == [
+        {"symbol": "*", "trade_date": "20240102", "dataset": "corporate_actions"},
+        {"symbol": "000001.SZ", "trade_date": "20240103", "dataset": "stock_daily"},
+        {"symbol": "*", "trade_date": "20240201", "dataset": "corporate_actions"},
+    ]
+
+
 class FakeTrainer:
     def train(self, feature_snapshot, strategy):
         return {
