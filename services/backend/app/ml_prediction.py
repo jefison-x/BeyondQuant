@@ -199,12 +199,24 @@ def build_ml_signal_snapshot(
             holdings[symbol] = quantity
             signals.append({"symbol": symbol, "trade_date": session, "side": "buy", "quantity": quantity})
     universe_symbols = sorted({str(row["symbol"]) for row in bars})
+    execution_symbols = {str(row["symbol"]) for row in signals}
+    if not execution_symbols and universe_symbols:
+        # A no-trade snapshot still carries one deterministic price path so it
+        # remains a valid, replayable backtest input without freezing the full
+        # research universe.
+        execution_symbols = {universe_symbols[0]}
+    bars = [row for row in bars if str(row["symbol"]) in execution_symbols]
     universe = {
         "universe_id": "ml-frozen-pool", "version_id": stock_pool_snapshot_id,
         "membership_fingerprint": membership_fingerprint(universe_symbols), "symbols": universe_symbols,
     }
     actions = ready_input.get("corporate_actions", [])
-    actions = [dict(row) for row in actions if isinstance(row, dict) and start <= str(row.get("ex_date")) <= end]
+    actions = [
+        dict(row) for row in actions
+        if isinstance(row, dict)
+        and str(row.get("symbol")) in execution_symbols
+        and start <= str(row.get("ex_date")) <= end
+    ]
     return normalize_signal_snapshot(
         {
             "universe": universe, "bars": bars, "signals": signals, "execution": execution,
