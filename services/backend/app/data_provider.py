@@ -1061,9 +1061,32 @@ class TushareProvider:
         actions = tuple(CorporateAction.from_row(fields, row) for row in rows)
         if any(item.ex_date != normalized for item in actions):
             raise ProviderProtocolError("provider returned a corporate-action date outside the request")
-        if len({(item.ts_code, item.end_date, item.ex_date) for item in actions}) != len(actions):
-            raise ProviderProtocolError("provider returned duplicate corporate-action rows")
-        return CorporateActionResult(actions, provenance)
+        canonical: dict[tuple[str, str, str], CorporateAction] = {}
+        for action in actions:
+            key = (action.ts_code, action.end_date, action.ex_date)
+            existing = canonical.get(key)
+            if existing is None:
+                canonical[key] = action
+                continue
+            economic_fields = (
+                "record_date", "pay_date", "share_listing_date",
+                "stock_dividend_per_share", "bonus_share_ratio",
+                "transfer_share_ratio", "cash_dividend_net", "cash_dividend_gross",
+            )
+            if any(getattr(existing, field) != getattr(action, field) for field in economic_fields):
+                raise ProviderProtocolError("provider returned conflicting corporate-action rows")
+            # Tushare can repeat one implemented economic event under an updated
+            # announcement. Preserve the latest disclosed row deterministically;
+            # economic or settlement differences still fail closed above.
+            if (
+                action.announcement_date or "",
+                action.implementation_announcement_date or "",
+            ) >= (
+                existing.announcement_date or "",
+                existing.implementation_announcement_date or "",
+            ):
+                canonical[key] = action
+        return CorporateActionResult(tuple(canonical[key] for key in sorted(canonical)), provenance)
 
     def fetch_index_daily(self, index_symbol: str, start_date: str, end_date: str) -> IndexDailyResult:
         symbol = str(index_symbol).strip().upper()

@@ -972,6 +972,20 @@ class MarketReadinessStore(PgStoreMixin):
                 })
         if not calendar_complete:
             missing.insert(0, {"symbol": "*", "trade_date": "*", "dataset": "trading_calendar"})
+        missing_by_dataset: dict[str, int] = {}
+        for item in missing:
+            dataset = str(item["dataset"])
+            missing_by_dataset[dataset] = missing_by_dataset.get(dataset, 0) + 1
+        full_session_datasets = {"trading_status", "stock_daily", "price_limits", "daily_basic"}
+        full_session_dates = {
+            str(item["trade_date"]) for item in missing
+            if item["dataset"] in full_session_datasets and item["trade_date"] != "*"
+        }
+        supplement_dates = {
+            str(item["trade_date"]) for item in missing
+            if item["dataset"] in {"corporate_actions", "adjustment_factors"}
+            and item["trade_date"] != "*"
+        } - full_session_dates
         state = "ready" if not missing else "missing" if not ready_cells else "partial"
         ready_identity = None if missing else _hash({
             "requirement_sha256": requirement["requirement_sha256"], "cells": ready_cells,
@@ -984,7 +998,12 @@ class MarketReadinessStore(PgStoreMixin):
             "schema_version": "market-data-readiness.v1", "state": state,
             "required_session_count": len(dates), "required_cell_count": len(ready_cells) + len(missing),
             "missing_count": len(missing), "missing": missing[:200],
+            "missing_by_dataset": missing_by_dataset,
             "missing_trade_dates": sorted(missing_dates),
+            "repair_plan": {
+                "session_supplements": sorted(supplement_dates),
+                "full_sessions": sorted(full_session_dates),
+            },
             "calendar_complete": calendar_complete,
             "ready_input_sha256": ready_identity,
         }

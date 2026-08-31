@@ -104,7 +104,23 @@ def test_active_session_without_bar_and_limits_is_repairable_missing() -> None:
     assert assessment["state"] == "missing"
     assert assessment["missing_trade_dates"] == ["20240102"]
     assert {item["dataset"] for item in assessment["missing"]} == {"corporate_actions"}
+    assert assessment["missing_by_dataset"] == {"corporate_actions": 1}
+    assert assessment["repair_plan"] == {
+        "session_supplements": ["20240102"],
+        "full_sessions": [],
+    }
     assert assessment["ready_input_sha256"] is None
+
+    store._execute("""INSERT INTO market_session_supplement_completeness
+        (trade_date,adjustment_complete,corporate_actions_complete,factor_row_count,
+         corporate_action_row_count,content_sha256,provenance_json,verified_at)
+        VALUES ('20240102',TRUE,TRUE,0,0,'supp','{}',now())""")
+    after_supplements = store.assess(requirement)
+    assert after_supplements["missing_by_dataset"] == {"trading_status": 1}
+    assert after_supplements["repair_plan"] == {
+        "session_supplements": [],
+        "full_sessions": ["20240102"],
+    }
 
 
 def test_adjusted_research_view_preserves_raw_execution_and_freezes_actions() -> None:

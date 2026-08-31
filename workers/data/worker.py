@@ -9,7 +9,12 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.credentials import CredentialStore
-from app.market_automation import MarketAutomationStore, run_scheduler_cycle, sync_declared_inputs
+from app.market_automation import (
+    MarketAutomationStore,
+    run_scheduler_cycle,
+    sync_declared_inputs,
+    sync_session_supplements,
+)
 from app.market_data import MarketDataStore
 from app.market_readiness import MarketReadinessStore
 from app.provider_runtime import resolved_tushare_provider
@@ -42,9 +47,17 @@ def main() -> int:
     automation.heartbeat(worker_id)
     next_scheduler_at = 0.0
     next_pool_scheduler_at = 0.0
+    next_repair_reconcile_at = 0.0
 
     try:
         while running:
+            if time.monotonic() >= next_repair_reconcile_at:
+                try:
+                    automation.reconcile_data_repairs(readiness)
+                except Exception as error:
+                    automation.heartbeat(worker_id, last_error=type(error).__name__)
+                finally:
+                    next_repair_reconcile_at = time.monotonic() + poll_seconds
             if time.monotonic() >= next_pool_scheduler_at:
                 try:
                     pool_producers.enqueue_due_dynamic_runs()
@@ -74,10 +87,32 @@ def main() -> int:
                         readiness_store=readiness,
                     )
                     assessment = readiness.assess(dict(repair["requirement_json"]))
-                    automation.enqueue_dates(
-                        list(assessment["missing_trade_dates"]), scheduled_by=str(repair["requested_by"]),
-                    )
-                    automation.complete_data_repair(str(repair["request_id"]))
+                    plan = dict(assessment.get("repair_plan") or {})
+                    supplement_dates = list(plan.get("session_supplements") or [])
+                    if supplement_dates:
+                        sync_session_supplements(
+                            supplement_dates, provider=provider, readiness_store=readiness,
+                        )
+                        assessment = readiness.assess(dict(repair["requirement_json"]))
+                        plan = dict(assessment.get("repair_plan") or {})
+                    full_session_dates = list(plan.get("full_sessions") or [])
+                    if full_session_dates:
+                        automation.enqueue_dates(
+                            full_session_dates,
+                            scheduled_by=str(repair["requested_by"]),
+                            force_completed=True,
+                        )
+                    if assessment.get("state") == "ready":
+                        automation.complete_data_repair(str(repair["request_id"]))
+                    else:
+                        counts = automation.session_job_counts(
+                            list(assessment.get("missing_trade_dates", [])),
+                        )
+                        if counts["queued"] + counts["running"]:
+                            automation.defer_data_repair(str(repair["request_id"]))
+                        else:
+                            error = "session_repair_failed" if counts["failed"] else "readiness_not_satisfied"
+                            automation.complete_data_repair(str(repair["request_id"]), error=error)
                 except Exception as error:
                     automation.complete_data_repair(str(repair["request_id"]), error=type(error).__name__)
                 continue

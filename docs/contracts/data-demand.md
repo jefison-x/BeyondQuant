@@ -19,6 +19,12 @@ Status is derived from fresh readiness assessments and existing worker state:
 - `partial` — processing terminated with some usable coverage and some missing data;
 - `failed` — processing terminated without usable coverage.
 
+Repair coordinator records may additionally remain internally
+`waiting_for_sessions` while durable per-session jobs are queued or running. The public demand
+continues to project this as `syncing`; a repair is `completed` only after a fresh readiness
+assessment is `ready`. Session failures become bounded `partial|failed` diagnostics rather than
+an enqueue-time success.
+
 `byq_data_demand_create` and `byq_data_demand_get` are the MCP surface. Terminal notifications
 are also projected through `byq_agent_context`, allowing Xiaoba to resume research on a later
 turn without Backend injecting an unsolicited DSH prompt. MCP and DSH never receive provider

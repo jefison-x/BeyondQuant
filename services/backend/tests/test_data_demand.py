@@ -120,6 +120,13 @@ def test_data_demand_is_owner_scoped_idempotent_and_readiness_derived() -> None:
     assert syncing["status"] == "syncing"
     assert syncing["progress"]["ready_partitions"] == 1
 
+    waiting_for_sessions = store.refresh(
+        demand["demand_id"], trusted_owner="alice",
+        readiness_store=FakeReadiness(["ready", "missing"]),
+        automation_store=FakeAutomation(repair_status="waiting_for_sessions"),
+    )
+    assert waiting_for_sessions["status"] == "syncing"
+
     ready = store.refresh(
         demand["demand_id"], trusted_owner="alice", readiness_store=FakeReadiness(["ready", "ready"]),
         automation_store=FakeAutomation(),

@@ -10,6 +10,10 @@ from fastapi.testclient import TestClient
 from app import main
 from app.credentials import CredentialCipher, CredentialStore
 from app.data_provider import (
+    AdjustmentFactor,
+    AdjustmentFactorResult,
+    CorporateAction,
+    CorporateActionResult,
     DailyBar,
     DailyResult,
     IndexWeight,
@@ -25,6 +29,7 @@ from app.market_automation import (
     MarketAutomationConflict,
     MarketAutomationStore,
     run_scheduler_cycle,
+    sync_session_supplements,
     sync_supported_index_catalog,
 )
 from app.market_data import MarketDataStore
@@ -143,6 +148,36 @@ def test_sync_job_is_durable_idempotent_and_updates_coverage() -> None:
     assert updated_coverage["symbol_count"] == 2
     assert updated_coverage["date_max"] == "20240103"
     jobs.close()
+    market.close()
+
+
+def test_trusted_repair_replaces_only_non_authoritative_daily_bar() -> None:
+    market = MarketDataStore()
+    fixture = {
+        "symbol": "000001.SZ", "trade_date": "20260106", "open": 10.1,
+        "high": 10.7, "low": 10.0, "close": 10.6, "volume": 100.0,
+        "amount": 1000.0, "adjust": "none", "asset_type": "stock",
+        "data_source": "phase48_fixture", "volume_unit": "lots",
+        "amount_unit": "thousand_cny", "provenance": {"fixture": True},
+    }
+    authoritative = {
+        **fixture, "open": 11.5, "high": 11.8, "low": 11.3, "close": 11.6,
+        "data_source": "tushare", "provenance": {"provider": "tushare"},
+    }
+    market.import_bars([fixture])
+
+    report = market.import_bars([authoritative], replace_non_authoritative=True)
+
+    assert report["replaced"] == 1
+    stored = market.get_bar("000001.SZ", "20260106")
+    assert stored is not None
+    assert stored["data_source"] == "tushare"
+    assert stored["open"] == 11.5
+    replay = market.import_bars(
+        [{**authoritative, "close": 99.0}], replace_non_authoritative=True,
+    )
+    assert replay["replaced"] == 0
+    assert market.get_bar("000001.SZ", "20260106")["close"] == 11.6
     market.close()
 
 
@@ -572,6 +607,141 @@ def test_repair_enqueue_returns_jobs_only_after_transaction_commit() -> None:
         ("20260825", "queued"),
     ]
     assert automation.enqueue_dates(["20260824", "20260825"], scheduled_by="ml-training") == []
+    first_job = created[0]
+    automation._execute(
+        "UPDATE market_session_sync_jobs SET status='completed' WHERE job_id=:id",
+        {"id": first_job["job_id"]},
+    )
+    automation._execute("""INSERT INTO market_session_completeness
+        (trade_date,state,row_count,dataset_sha256,request_fingerprint,verified_at,job_id)
+        VALUES ('20260824','provider_snapshot_with_declared_inputs_complete',2,
+                'data','request',now(),:id)""", {"id": first_job["job_id"]})
+    assert automation.enqueue_dates(["20260824"], scheduled_by="ml-training") == []
+    forced = automation.enqueue_dates(
+        ["20260824"], scheduled_by="ml-training", force_completed=True,
+    )
+    assert [(item["trade_date"], item["status"]) for item in forced] == [
+        ("20260824", "queued"),
+    ]
+    automation.close()
+
+
+class FakeSupplementProvider:
+    def __init__(self) -> None:
+        self.factor_dates: list[str] = []
+        self.action_dates: list[str] = []
+
+    def fetch_adjustment_factors(self, trade_date: str) -> AdjustmentFactorResult:
+        self.factor_dates.append(trade_date)
+        return AdjustmentFactorResult(
+            (AdjustmentFactor("000001.SZ", trade_date, 1.25),),
+            Provenance("tushare", "adj_factor", f"factor-{trade_date}",
+                       "2026-08-31T00:00:00+00:00", False, 1),
+        )
+
+    def fetch_corporate_actions(self, ex_date: str) -> CorporateActionResult:
+        self.action_dates.append(ex_date)
+        return CorporateActionResult(
+            (CorporateAction(
+                "000001.SZ", "20231231", "20240101", "20240102", "20240102",
+                ex_date, ex_date, None, 0, 0, 0, 0.2, 0.25,
+            ),),
+            Provenance("tushare", "dividend", f"action-{ex_date}",
+                       "2026-08-31T00:00:00+00:00", False, 1),
+        )
+
+
+def test_supplement_repair_does_not_redownload_existing_daily_bars() -> None:
+    readiness = MarketReadinessStore()
+    provider = FakeSupplementProvider()
+
+    result = sync_session_supplements(
+        ["20240102"], provider=provider, readiness_store=readiness,
+    )
+
+    assert result == {"sessions": 1, "factors": 1, "corporate_actions": 1}
+    assert provider.factor_dates == ["20240102"]
+    assert provider.action_dates == ["20240102"]
+    completeness = readiness._fetch_one(
+        "SELECT * FROM market_session_supplement_completeness WHERE trade_date='20240102'"
+    )
+    assert completeness is not None
+    assert completeness["adjustment_complete"] is True
+    assert completeness["corporate_actions_complete"] is True
+    readiness.close()
+
+
+def test_repair_waits_for_session_jobs_and_reports_terminal_failure() -> None:
+    automation = MarketAutomationStore()
+    provider = FakeAutomationProvider()
+    automation.refresh_calendar(provider, start_date="20260823", end_date="20260825")
+    requirement = {
+        "requirement_sha256": "f" * 64,
+        "start_date": "20260824", "end_date": "20260824",
+    }
+    repair = automation.request_data_repair(requirement=requirement, requested_by="ml:test")
+    claimed = automation.claim_data_repair()
+    assert claimed is not None and claimed["request_id"] == repair["request_id"]
+    jobs = automation.enqueue_dates(["20260824"], scheduled_by="ml:test")
+    automation.defer_data_repair(repair["request_id"])
+
+    class MissingReadiness:
+        def assess(self, _requirement):
+            return {
+                "state": "partial", "missing_trade_dates": ["20260824"],
+                "missing_count": 1,
+            }
+
+    assert automation.reconcile_data_repairs(MissingReadiness()) == {"completed": 0, "failed": 0}
+    assert automation.get_data_repairs([repair["request_id"]])[0]["status"] == "waiting_for_sessions"
+    automation._execute(
+        "UPDATE market_session_sync_jobs SET status='failed' WHERE job_id=:id",
+        {"id": jobs[0]["job_id"]},
+    )
+    assert automation.reconcile_data_repairs(MissingReadiness()) == {"completed": 0, "failed": 1}
+    failed = automation.get_data_repairs([repair["request_id"]])[0]
+    assert failed["status"] == "failed"
+    assert failed["error_message"] == "session_repair_failed"
+
+    retried = automation.retry_data_repair(repair["request_id"])
+    assert retried["status"] == "queued"
+    assert retried["error_message"] is None
+    automation.close()
+
+
+def test_bad_waiting_repair_does_not_block_following_reconciliation() -> None:
+    automation = MarketAutomationStore()
+    repairs = []
+    for marker in ("a", "b"):
+        repair = automation.request_data_repair(
+            requirement={
+                "requirement_sha256": marker * 64,
+                "start_date": "20260824", "end_date": "20260824",
+                "marker": marker,
+            },
+            requested_by="ml:test",
+        )
+        claimed = automation.claim_data_repair()
+        assert claimed is not None and claimed["request_id"] == repair["request_id"]
+        automation.defer_data_repair(repair["request_id"])
+        repairs.append(repair)
+
+    class IsolatedReadiness:
+        def assess(self, requirement):
+            if requirement["marker"] == "a":
+                raise ValueError("bad fixture requirement")
+            return {"state": "ready", "missing_trade_dates": [], "missing_count": 0}
+
+    assert automation.reconcile_data_repairs(IsolatedReadiness()) == {
+        "completed": 1, "failed": 1,
+    }
+    states = {
+        item["request_id"]: item for item in automation.get_data_repairs(
+            [item["request_id"] for item in repairs]
+        )
+    }
+    assert states[repairs[0]["request_id"]]["error_message"] == "readiness_assessment_failed"
+    assert states[repairs[1]["request_id"]]["status"] == "completed"
     automation.close()
 
 
