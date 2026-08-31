@@ -175,6 +175,27 @@ def test_corporate_actions_distinguish_reporting_periods_on_same_ex_date() -> No
     ]
 
 
+def test_prev_close_adjustment_requires_frozen_corporate_action_on_ex_date() -> None:
+    adjusted_bars = bars()
+    adjusted_bars[1]["prev_close"] = 9.8
+
+    with pytest.raises(ValueError, match="prev_close is inconsistent"):
+        normalized(bars=adjusted_bars)
+
+    payload = normalized(
+        bars=adjusted_bars,
+        corporate_actions=[{
+            "symbol": SYMBOL,
+            "end_date": "2025-12-31",
+            "ex_date": "2026-01-06",
+            "cash_dividend_per_share": 0.2,
+            "share_ratio": 0,
+        }],
+    )
+
+    assert payload["manifest"]["bars"][1]["prev_close"] == 9.8
+
+
 @pytest.mark.skipif(
     not os.environ.get("BYQ_DATABASE_URL"),
     reason="BYQ_DATABASE_URL is not set",

@@ -216,7 +216,11 @@ def _normalize_universe(value: object) -> dict[str, object]:
     }
 
 
-def _normalize_bars(value: object, universe_symbols: set[str]) -> list[dict[str, object]]:
+def _normalize_bars(
+    value: object,
+    universe_symbols: set[str],
+    corporate_action_dates: set[tuple[str, str]] | None = None,
+) -> list[dict[str, object]]:
     if not isinstance(value, list) or not value:
         raise ValueError("bars must be a non-empty list")
     if len(value) > MAX_BARS:
@@ -225,6 +229,7 @@ def _normalize_bars(value: object, universe_symbols: set[str]) -> list[dict[str,
         "symbol", "trade_date", "open", "high", "low", "close", "volume", "prev_close",
         "is_suspended", "suspended", "status", "up_limit", "down_limit",
     }
+    action_dates = corporate_action_dates or set()
     normalized: list[dict[str, object]] = []
     seen: set[tuple[str, str]] = set()
     for index, item in enumerate(value):
@@ -272,7 +277,13 @@ def _normalize_bars(value: object, universe_symbols: set[str]) -> list[dict[str,
         previous: float | None = None
         for row in rows:
             supplied = row.get("prev_close")
-            if supplied is not None and previous is not None and not math.isclose(float(supplied), previous, rel_tol=1e-9, abs_tol=1e-9):
+            action_date = (str(row["symbol"]), str(row["trade_date"]))
+            if (
+                supplied is not None
+                and previous is not None
+                and not math.isclose(float(supplied), previous, rel_tol=1e-9, abs_tol=1e-9)
+                and action_date not in action_dates
+            ):
                 raise ValueError(f"{row['symbol']} {row['trade_date']} prev_close is inconsistent")
             if supplied is None and previous is not None:
                 row["prev_close"] = previous
@@ -477,11 +488,12 @@ def normalize_backtest_request(payload: object, *, strategy_version_artifact_id:
     idempotency_key = _idempotency_key(payload.get("idempotency_key"))
     universe = _normalize_universe(payload.get("universe"))
     symbols = set(universe["symbols"])
-    bars = _normalize_bars(payload.get("bars"), symbols)
+    actions = _normalize_actions(payload.get("corporate_actions"), symbols)
+    action_dates = {(str(item["symbol"]), str(item["ex_date"])) for item in actions}
+    bars = _normalize_bars(payload.get("bars"), symbols, action_dates)
     bar_dates = {str(item["trade_date"]) for item in bars}
     signals = _normalize_signals(payload.get("signals", []), symbols, bar_dates)
     execution = _normalize_execution(payload.get("execution"))
-    actions = _normalize_actions(payload.get("corporate_actions"), symbols)
     benchmark = _normalize_benchmark(payload.get("benchmark"))
     _reject_secret_keys({"universe": universe, "bars": bars, "signals": signals, "execution": execution, "corporate_actions": actions, "benchmark": benchmark})
     manifest = {
@@ -584,11 +596,12 @@ def normalize_signal_snapshot(
     version_id = _text(strategy_version_id, field="strategy_version_id", max_length=128)
     universe = _normalize_universe(payload.get("universe"))
     symbols = set(universe["symbols"])
-    bars = _normalize_bars(payload.get("bars"), symbols)
+    actions = _normalize_actions(payload.get("corporate_actions"), symbols)
+    action_dates = {(str(item["symbol"]), str(item["ex_date"])) for item in actions}
+    bars = _normalize_bars(payload.get("bars"), symbols, action_dates)
     bar_dates = {str(item["trade_date"]) for item in bars}
     signals = _normalize_signals(payload.get("signals", []), symbols, bar_dates)
     execution = _normalize_execution(payload.get("execution"))
-    actions = _normalize_actions(payload.get("corporate_actions"), symbols)
     benchmark = _normalize_benchmark(payload.get("benchmark"))
     _reject_secret_keys(
         {
