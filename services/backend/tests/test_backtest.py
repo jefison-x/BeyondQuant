@@ -196,6 +196,24 @@ def test_prev_close_adjustment_requires_frozen_corporate_action_on_ex_date() -> 
     assert payload["manifest"]["bars"][1]["prev_close"] == 9.8
 
 
+def test_prev_close_adjustment_accepts_a_frozen_factor_change_only() -> None:
+    adjusted_bars = bars()
+    adjusted_bars[0]["adjustment_factor"] = 1.0
+    adjusted_bars[1]["adjustment_factor"] = 1.02
+    adjusted_bars[1]["prev_close"] = 9.8
+    adjusted_bars[2]["adjustment_factor"] = 1.02
+    adjusted_bars[2]["prev_close"] = 9.8
+
+    with pytest.raises(ValueError, match="prev_close is inconsistent"):
+        normalized(bars=adjusted_bars)
+
+    adjusted_bars[2]["prev_close"] = 10.0
+    payload = normalized(bars=adjusted_bars)
+
+    assert payload["manifest"]["bars"][1]["adjustment_factor"] == 1.02
+    assert payload["manifest"]["bars"][1]["prev_close"] == 9.8
+
+
 @pytest.mark.skipif(
     not os.environ.get("BYQ_DATABASE_URL"),
     reason="BYQ_DATABASE_URL is not set",

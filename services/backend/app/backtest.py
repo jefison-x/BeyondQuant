@@ -227,7 +227,7 @@ def _normalize_bars(
         raise BacktestResourceExceeded(f"bars exceeds {MAX_BARS} rows")
     allowed = {
         "symbol", "trade_date", "open", "high", "low", "close", "volume", "prev_close",
-        "is_suspended", "suspended", "status", "up_limit", "down_limit",
+        "is_suspended", "suspended", "status", "up_limit", "down_limit", "adjustment_factor",
     }
     action_dates = corporate_action_dates or set()
     normalized: list[dict[str, object]] = []
@@ -268,6 +268,10 @@ def _normalize_bars(
         for name in ("prev_close", "up_limit", "down_limit"):
             if name in item and item[name] is not None:
                 row[name] = _number(item[name], field=f"bars[{index}].{name}", positive=True)
+        if item.get("adjustment_factor") is not None:
+            row["adjustment_factor"] = _number(
+                item["adjustment_factor"], field=f"bars[{index}].adjustment_factor", positive=True,
+            )
         normalized.append(row)
     normalized.sort(key=lambda row: (str(row["trade_date"]), str(row["symbol"])))
     by_symbol: dict[str, list[dict[str, object]]] = {}
@@ -275,19 +279,32 @@ def _normalize_bars(
         by_symbol.setdefault(str(row["symbol"]), []).append(row)
     for rows in by_symbol.values():
         previous: float | None = None
+        previous_factor: float | None = None
         for row in rows:
             supplied = row.get("prev_close")
             action_date = (str(row["symbol"]), str(row["trade_date"]))
+            factor = float(row["adjustment_factor"]) if row.get("adjustment_factor") is not None else None
+            factor_changed = (
+                factor is not None
+                and previous_factor is not None
+                and not math.isclose(factor, previous_factor, rel_tol=1e-12, abs_tol=1e-12)
+            )
             if (
                 supplied is not None
                 and previous is not None
                 and not math.isclose(float(supplied), previous, rel_tol=1e-9, abs_tol=1e-9)
                 and action_date not in action_dates
+                and not factor_changed
             ):
                 raise ValueError(f"{row['symbol']} {row['trade_date']} prev_close is inconsistent")
             if supplied is None and previous is not None:
-                row["prev_close"] = previous
+                row["prev_close"] = (
+                    previous * previous_factor / factor
+                    if factor_changed and previous_factor is not None and factor is not None
+                    else previous
+                )
             previous = float(row["close"])
+            previous_factor = factor
     return normalized
 
 
