@@ -25,10 +25,12 @@ import type {
 } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import { boundedReadinessSymbols, stockPoolSymbols } from "@/readinessInputs";
+import { mergeDataCenterProgress } from "@/dataCenterProgress";
 
 const auth = useAuthStore();
 
 const loading = ref(true);
+const refreshing = ref(false);
 const busy = ref(false);
 const error = ref("");
 const activeTab = ref("coverage");
@@ -99,31 +101,52 @@ async function loadCatalogue() {
   }
 }
 
-async function load(): Promise<boolean> {
-  loading.value = true;
+function applyProgressStatus(next: DataCenterStatus) {
+  if (!status.value) {
+    status.value = next;
+    return;
+  }
+  status.value = mergeDataCenterProgress(status.value, next);
+}
+
+async function load(options: { progressOnly?: boolean } = {}): Promise<boolean> {
+  const progressOnly = options.progressOnly === true;
+  if (!progressOnly) {
+    if (status.value) refreshing.value = true;
+    else loading.value = true;
+  }
   error.value = "";
   try {
-    status.value = await getDataCenterStatus();
-    Object.assign(automationForm, {
-      enabled: status.value.automation.config.enabled,
-      schedule_time: status.value.automation.config.schedule_time,
-      catchup_days: status.value.automation.config.catchup_days,
-      security_master_enabled: status.value.automation.config.security_master_enabled,
-      version: status.value.automation.config.version,
-    });
+    const next = await getDataCenterStatus();
+    const hadStatus = status.value !== null;
+    if (progressOnly) applyProgressStatus(next);
+    else status.value = next;
+    if (!status.value) return false;
+    if (!progressOnly || !hadStatus) {
+      Object.assign(automationForm, {
+        enabled: status.value.automation.config.enabled,
+        schedule_time: status.value.automation.config.schedule_time,
+        catchup_days: status.value.automation.config.catchup_days,
+        security_master_enabled: status.value.automation.config.security_master_enabled,
+        version: status.value.automation.config.version,
+      });
+    }
     if (selectedJob.value) {
       selectedJob.value = status.value.jobs.find((item) => item.job_id === selectedJob.value?.job_id) ?? selectedJob.value;
     }
     if (selectedSecurityJob.value) {
       selectedSecurityJob.value = status.value.security_master_jobs.find((item) => item.job_id === selectedSecurityJob.value?.job_id) ?? selectedSecurityJob.value;
     }
-    if (status.value.security_master.latest_snapshot) await loadCatalogue();
+    if ((!progressOnly || !hadStatus) && status.value.security_master.latest_snapshot) await loadCatalogue();
     return true;
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "数据中心加载失败";
     return false;
   } finally {
-    loading.value = false;
+    if (!progressOnly) {
+      loading.value = false;
+      refreshing.value = false;
+    }
   }
 }
 
@@ -139,7 +162,7 @@ async function refreshStatus() {
     scheduleRefresh(refreshIntervalMs);
     return;
   }
-  const succeeded = await load();
+  const succeeded = await load({ progressOnly: true });
   refreshFailures = succeeded ? 0 : Math.min(refreshFailures + 1, 4);
   scheduleRefresh(Math.min(refreshIntervalMs * (2 ** refreshFailures), maxRefreshBackoffMs));
 }
@@ -390,13 +413,14 @@ function securityStatusLabel(value: string) {
   <section class="data-center-page">
     <div class="page-heading">
       <div><p class="eyebrow">市场数据</p><h1>数据中心</h1><p>检查研究和回测所需数据是否齐全，并在缺失时继续同步。</p></div>
-      <el-button :loading="loading" @click="load">刷新状态</el-button>
+      <el-button :loading="refreshing" @click="load()">刷新状态</el-button>
     </div>
 
     <div v-if="loading" class="base-loading" role="status" aria-live="polite">正在读取数据平面...</div>
-    <div v-else-if="error" class="base-error" role="alert">{{ error }}</div>
+    <div v-else-if="error && !status" class="base-error" role="alert">{{ error }}</div>
 
     <template v-else-if="status">
+      <el-alert v-if="error" :title="error" type="warning" show-icon :closable="false" />
       <div class="stats-strip">
         <div class="stat-item"><span>数据源</span><strong>Tushare</strong><small>当前唯一支持的数据源</small></div>
         <div class="stat-item"><span>证券目录</span><strong>{{ status.security_master.total.toLocaleString() }}</strong><small>{{ status.security_master.status_counts.L }} 只上市</small></div>

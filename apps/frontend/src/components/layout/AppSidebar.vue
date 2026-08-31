@@ -190,7 +190,7 @@ async function sessionCommand(command: string, session: typeof agent.sessions[nu
 .history-heading-button:hover { background: var(--byq-brand-soft); color: var(--byq-brand-contrast); }
 .history-heading-button:focus-visible { outline: 2px solid var(--byq-brand-contrast); outline-offset: 2px; }
 .history-empty { color: var(--byq-text-soft); font-size: 11px; line-height: 1.45; margin: .2rem .55rem; }
-.history-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: .1rem; scrollbar-gutter: stable; }
+.history-list { align-content: start; flex: 1; grid-auto-rows: max-content; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: .1rem; scrollbar-gutter: stable; }
 .history-row { align-items: center; background: transparent; border-radius: var(--byq-radius-sm); color: var(--byq-text-muted); cursor: pointer; display: flex; font-size: 14px; gap: .5rem; line-height: 1.35; overflow: hidden; padding: .55rem; }
 .history-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-row .el-icon { flex: 0 0 auto; }
