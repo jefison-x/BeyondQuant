@@ -432,7 +432,7 @@ def test_adjustment_and_implemented_action_contracts_are_exact_and_secret_free()
     ], ensure_ascii=False)
 
 
-def test_adjustment_and_corporate_actions_fail_closed() -> None:
+def test_adjustment_actions_fail_closed_and_non_implemented_actions_are_ignored() -> None:
     bad_factor = FakeTransport([TransportResponse(200, envelope(
         [["000001.SZ", "20240103", 0]], fields=["ts_code", "trade_date", "adj_factor"],
     ))])
@@ -446,8 +446,28 @@ def test_adjustment_and_corporate_actions_fail_closed() -> None:
                 "stk_bo_rate", "stk_co_rate", "cash_div", "cash_div_tax",
                 "record_date", "ex_date", "pay_date", "div_listdate", "imp_ann_date"],
     ))])
-    with pytest.raises(ProviderProtocolError, match="non-implemented"):
-        provider(proposal).fetch_corporate_actions("20240103")
+    assert provider(proposal).fetch_corporate_actions("20240103").actions == ()
+
+
+def test_corporate_actions_keep_only_implemented_lifecycle_row() -> None:
+    fields = [
+        "ts_code", "end_date", "ann_date", "div_proc", "stk_div",
+        "stk_bo_rate", "stk_co_rate", "cash_div", "cash_div_tax",
+        "record_date", "ex_date", "pay_date", "div_listdate", "imp_ann_date",
+    ]
+    transport = FakeTransport([TransportResponse(200, envelope([
+        ["601318.SH", "20211231", "20220430", "实施", 0, None, None, 1.5, 1.5,
+         "20220617", "20220620", "20220620", None, "20220610"],
+        ["601318.SH", "20211231", "20220318", "股东大会通过", 0, None, None, 0, 1.5,
+         "20220617", "20220620", "20220620", None, None],
+        ["601318.SH", "20211231", "20220318", "预案", 0, None, None, 0, 1.5,
+         "20220617", "20220620", "20220620", None, None],
+    ], fields=fields))])
+
+    actions = provider(transport).fetch_corporate_actions("20220620").actions
+
+    assert len(actions) == 1
+    assert actions[0].cash_dividend_net == 1.5
 
 
 def test_corporate_actions_canonicalize_duplicate_economic_event() -> None:

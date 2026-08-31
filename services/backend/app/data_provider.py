@@ -1058,7 +1058,18 @@ class TushareProvider:
         fields, rows, provenance = self._fetch_exact_session_dataset(
             "dividend", normalized, CORPORATE_ACTION_FIELDS, parameter="ex_date",
         )
-        actions = tuple(CorporateAction.from_row(fields, row) for row in rows)
+        try:
+            process_index = fields.index("div_proc")
+        except ValueError as error:
+            raise ProviderProtocolError("provider response omitted corporate-action fields") from error
+        # Tushare's ex_date filter can return proposal and shareholder-approved
+        # revisions alongside the implemented event.  Those rows are lifecycle
+        # history, not effective corporate actions for price adjustment.
+        implemented_rows = [
+            row for row in rows
+            if len(row) > process_index and str(row[process_index] or "").strip() == "实施"
+        ]
+        actions = tuple(CorporateAction.from_row(fields, row) for row in implemented_rows)
         if any(item.ex_date != normalized for item in actions):
             raise ProviderProtocolError("provider returned a corporate-action date outside the request")
         canonical: dict[tuple[str, str, str], CorporateAction] = {}
