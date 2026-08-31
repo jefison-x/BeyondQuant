@@ -62,10 +62,10 @@ describe("AppSidebar", () => {
     expect(agent.messages[0]?.text).toBe("旧内容");
   });
 
-  it("lets the conversation history fill all space above the user bar", () => {
+  it("keeps the history scroll region while rows use compact natural height", () => {
     const source = readFileSync(resolve(process.cwd(), "src/components/layout/AppSidebar.vue"), "utf8");
     expect(source).toContain(".sidebar-history { border-top: 1px solid var(--byq-border-subtle); display: flex; flex: 1;");
-    expect(source).toContain(".history-list { flex: 1; min-height: 0; overflow-y: auto;");
+    expect(source).toContain(".history-list { align-content: start; flex: 1; grid-auto-rows: max-content;");
     expect(source).not.toContain("max-height: min(44vh, 420px)");
   });
 
