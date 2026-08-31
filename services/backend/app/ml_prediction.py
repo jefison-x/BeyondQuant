@@ -179,6 +179,7 @@ def build_ml_signal_snapshot(
         by_session.setdefault(str(row["session"]), []).append(row)
     holdings: dict[str, int] = {}
     signals: list[dict[str, object]] = []
+    unfunded_lots_skipped = 0
     top_n = int(policy["top_n"])
     for session in sorted(eligible):
         selected = {
@@ -193,7 +194,8 @@ def build_ml_signal_snapshot(
                 raise ValueError("selected prediction has no frozen execution-price bar")
             quantity = int(allocation / float(bar["close"])) // lot_size * lot_size
             if quantity <= 0:
-                raise ValueError("capital allocation cannot fund one frozen lot")
+                unfunded_lots_skipped += 1
+                continue
             holdings[symbol] = quantity
             signals.append({"symbol": symbol, "trade_date": session, "side": "buy", "quantity": quantity})
     universe_symbols = sorted({str(row["symbol"]) for row in bars})
@@ -209,6 +211,9 @@ def build_ml_signal_snapshot(
             "corporate_actions": actions, "benchmark": ready_input.get("benchmark", []),
             "source": {
                 "producer": "byq-ml-top-n-v1",
+                "selection_constraints": {
+                    "unfunded_lots_skipped": unfunded_lots_skipped,
+                },
                 "data_readiness": {
                     "requirement_sha256": readiness.get("requirement_sha256"),
                     "ready_input_sha256": readiness.get("ready_input_sha256"),

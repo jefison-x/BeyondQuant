@@ -606,7 +606,7 @@ def normalize_signal_snapshot(
     if not isinstance(source, dict):
         raise ValueError("signal snapshot source must be an object")
     _reject_unknown(
-        source, {"producer", "note", "data_readiness", "ml_lineage"},
+        source, {"producer", "note", "data_readiness", "ml_lineage", "selection_constraints"},
         field="signal snapshot source",
     )
     producer = _text(source.get("producer", "keyless-import"), field="source.producer", max_length=64)
@@ -619,6 +619,19 @@ def normalize_signal_snapshot(
     normalized_readiness = {}
     for key, value in data_readiness.items():
         normalized_readiness[key] = _text(value, field=f"source.data_readiness.{key}", max_length=64)
+    selection_constraints = source.get("selection_constraints", {})
+    if not isinstance(selection_constraints, dict):
+        raise ValueError("source.selection_constraints must be an object")
+    _reject_unknown(
+        selection_constraints, {"unfunded_lots_skipped"},
+        field="source.selection_constraints",
+    )
+    skipped = selection_constraints.get("unfunded_lots_skipped")
+    normalized_constraints: dict[str, int] = {}
+    if skipped is not None:
+        if isinstance(skipped, bool) or not isinstance(skipped, int) or skipped < 0:
+            raise ValueError("source.selection_constraints.unfunded_lots_skipped must be a non-negative integer")
+        normalized_constraints["unfunded_lots_skipped"] = skipped
     ml_lineage = source.get("ml_lineage")
     normalized_ml_lineage: dict[str, str] = {}
     if ml_lineage is not None:
@@ -651,6 +664,7 @@ def normalize_signal_snapshot(
         "source": {
             "producer": producer,
             **({"data_readiness": normalized_readiness} if normalized_readiness else {}),
+            **({"selection_constraints": normalized_constraints} if normalized_constraints else {}),
             **({"ml_lineage": normalized_ml_lineage} if normalized_ml_lineage else {}),
         },
     }
