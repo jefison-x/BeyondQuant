@@ -69,6 +69,130 @@ class MarketDataStore(PgStoreMixin):
         CREATE INDEX IF NOT EXISTS market_daily_bars_source_idx
             ON market_daily_bars(data_source)
         """,
+        """
+        CREATE TABLE IF NOT EXISTS market_daily_coverage_totals (
+            projection_key SMALLINT PRIMARY KEY CHECK (projection_key = 1),
+            row_count BIGINT NOT NULL,
+            date_min TEXT,
+            date_max TEXT,
+            source_issues BIGINT NOT NULL,
+            ohlc_issues BIGINT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS market_daily_symbol_coverage (
+            symbol TEXT PRIMARY KEY,
+            row_count BIGINT NOT NULL,
+            date_min TEXT NOT NULL,
+            date_max TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS market_daily_group_symbol_coverage (
+            data_source TEXT NOT NULL,
+            asset_type TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            row_count BIGINT NOT NULL,
+            date_min TEXT NOT NULL,
+            date_max TEXT NOT NULL,
+            PRIMARY KEY (data_source, asset_type, symbol)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS market_daily_projection_state (
+            projection_name TEXT PRIMARY KEY,
+            projection_version INTEGER NOT NULL,
+            rebuilt_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE OR REPLACE FUNCTION update_market_daily_coverage_after_insert()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            INSERT INTO market_daily_coverage_totals
+                (projection_key, row_count, date_min, date_max, source_issues, ohlc_issues)
+            VALUES (
+                1, 1, NEW.trade_date, NEW.trade_date,
+                CASE WHEN NEW.data_source <> 'tushare' THEN 1 ELSE 0 END,
+                CASE WHEN NEW.high < NEW.low OR NEW.open < NEW.low OR NEW.open > NEW.high
+                          OR NEW.close < NEW.low OR NEW.close > NEW.high THEN 1 ELSE 0 END
+            )
+            ON CONFLICT (projection_key) DO UPDATE SET
+                row_count = market_daily_coverage_totals.row_count + 1,
+                date_min = LEAST(market_daily_coverage_totals.date_min, EXCLUDED.date_min),
+                date_max = GREATEST(market_daily_coverage_totals.date_max, EXCLUDED.date_max),
+                source_issues = market_daily_coverage_totals.source_issues + EXCLUDED.source_issues,
+                ohlc_issues = market_daily_coverage_totals.ohlc_issues + EXCLUDED.ohlc_issues;
+
+            INSERT INTO market_daily_symbol_coverage
+                (symbol, row_count, date_min, date_max)
+            VALUES (NEW.symbol, 1, NEW.trade_date, NEW.trade_date)
+            ON CONFLICT (symbol) DO UPDATE SET
+                row_count = market_daily_symbol_coverage.row_count + 1,
+                date_min = LEAST(market_daily_symbol_coverage.date_min, EXCLUDED.date_min),
+                date_max = GREATEST(market_daily_symbol_coverage.date_max, EXCLUDED.date_max);
+
+            INSERT INTO market_daily_group_symbol_coverage
+                (data_source, asset_type, symbol, row_count, date_min, date_max)
+            VALUES (NEW.data_source, NEW.asset_type, NEW.symbol, 1, NEW.trade_date, NEW.trade_date)
+            ON CONFLICT (data_source, asset_type, symbol) DO UPDATE SET
+                row_count = market_daily_group_symbol_coverage.row_count + 1,
+                date_min = LEAST(market_daily_group_symbol_coverage.date_min, EXCLUDED.date_min),
+                date_max = GREATEST(market_daily_group_symbol_coverage.date_max, EXCLUDED.date_max);
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+        """,
+        """
+        DROP TRIGGER IF EXISTS market_daily_coverage_insert_trigger ON market_daily_bars
+        """,
+        """
+        CREATE TRIGGER market_daily_coverage_insert_trigger
+        AFTER INSERT ON market_daily_bars
+        FOR EACH ROW EXECUTE FUNCTION update_market_daily_coverage_after_insert()
+        """,
+        """
+        DO $$
+        BEGIN
+            PERFORM pg_advisory_xact_lock(hashtextextended('byq.market-daily-coverage.v1', 0));
+            IF NOT EXISTS (
+                SELECT 1 FROM market_daily_projection_state
+                WHERE projection_name = 'coverage' AND projection_version = 1
+            ) THEN
+                LOCK TABLE market_daily_bars IN SHARE ROW EXCLUSIVE MODE;
+                TRUNCATE market_daily_coverage_totals,
+                         market_daily_symbol_coverage,
+                         market_daily_group_symbol_coverage;
+
+                INSERT INTO market_daily_coverage_totals
+                    (projection_key, row_count, date_min, date_max, source_issues, ohlc_issues)
+                SELECT 1, COUNT(*)::bigint, MIN(trade_date), MAX(trade_date),
+                       COUNT(*) FILTER (WHERE data_source <> 'tushare')::bigint,
+                       COUNT(*) FILTER (WHERE high < low OR open < low OR open > high
+                         OR close < low OR close > high)::bigint
+                FROM market_daily_bars;
+
+                INSERT INTO market_daily_symbol_coverage
+                    (symbol, row_count, date_min, date_max)
+                SELECT symbol, COUNT(*)::bigint, MIN(trade_date), MAX(trade_date)
+                FROM market_daily_bars GROUP BY symbol;
+
+                INSERT INTO market_daily_group_symbol_coverage
+                    (data_source, asset_type, symbol, row_count, date_min, date_max)
+                SELECT data_source, asset_type, symbol, COUNT(*)::bigint,
+                       MIN(trade_date), MAX(trade_date)
+                FROM market_daily_bars GROUP BY data_source, asset_type, symbol;
+
+                INSERT INTO market_daily_projection_state
+                    (projection_name, projection_version, rebuilt_at)
+                VALUES ('coverage', 1, now())
+                ON CONFLICT (projection_name) DO UPDATE SET
+                    projection_version = EXCLUDED.projection_version,
+                    rebuilt_at = EXCLUDED.rebuilt_at;
+            END IF;
+        END
+        $$
+        """,
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -296,8 +420,10 @@ class MarketDataStore(PgStoreMixin):
 
     def coverage(self) -> dict[str, Any]:
         rows = self._execute(
-            """SELECT data_source, asset_type, COUNT(*) AS row_count, MIN(trade_date) AS date_min,
-                      MAX(trade_date) AS date_max, COUNT(DISTINCT symbol) AS symbol_count
-               FROM market_daily_bars GROUP BY data_source, asset_type ORDER BY data_source, asset_type"""
+            """SELECT data_source, asset_type, SUM(row_count)::bigint AS row_count,
+                      MIN(date_min) AS date_min, MAX(date_max) AS date_max,
+                      COUNT(*)::bigint AS symbol_count
+               FROM market_daily_group_symbol_coverage
+               GROUP BY data_source, asset_type ORDER BY data_source, asset_type"""
         )
         return {"groups": rows}

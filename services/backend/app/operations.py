@@ -125,16 +125,17 @@ class OperationsStore(PgStoreMixin):
                 if market_cache_exists:
                     cache_groups = execute(
                         connection,
-                        """SELECT data_source, asset_type, COUNT(*)::bigint AS row_count,
-                                  COUNT(DISTINCT symbol)::bigint AS symbol_count,
-                                  MIN(trade_date) AS date_min, MAX(trade_date) AS date_max
-                           FROM market_daily_bars
+                        """SELECT data_source, asset_type, SUM(row_count)::bigint AS row_count,
+                                  COUNT(*)::bigint AS symbol_count,
+                                  MIN(date_min) AS date_min, MAX(date_max) AS date_max
+                           FROM market_daily_group_symbol_coverage
                            GROUP BY data_source, asset_type
                            ORDER BY data_source, asset_type LIMIT 50""",
                     )
                     market_bar_count = int((fetch_one(
                         connection,
-                        "SELECT COUNT(*)::bigint AS count FROM market_daily_bars",
+                        """SELECT row_count AS count FROM market_daily_coverage_totals
+                           WHERE projection_key = 1""",
                     ) or {}).get("count") or 0)
                 else:
                     cache_groups = []
