@@ -31,6 +31,24 @@ export function getBacktestResult(jobId: string, token: string): Promise<{ job_i
   return request(`/backtests/${encodeURIComponent(jobId)}/result`, token);
 }
 
+export function getBacktestManifest(jobId: string, token: string): Promise<{ job_id: string; input_manifest: Record<string, unknown> }> {
+  return request(`/backtests/${encodeURIComponent(jobId)}/manifest`, token);
+}
+
+export function getBacktestAnalysis(
+  jobId: string,
+  token: string,
+  options: { section?: string; query?: string; limit?: number; offset?: number } = {},
+): Promise<{ job_id: string; analysis: Record<string, any> }> {
+  const params = new URLSearchParams({
+    section: options.section ?? "summary",
+    query: options.query ?? "",
+    limit: String(options.limit ?? 50),
+    offset: String(options.offset ?? 0),
+  });
+  return request(`/backtests/${encodeURIComponent(jobId)}/analysis?${params.toString()}`, token);
+}
+
 export async function runBacktest(jobId: string, token: string): Promise<BacktestJob> {
   const body = await request<{ job: BacktestJob }>(`/backtests/${encodeURIComponent(jobId)}/run`, token, { method: "POST" });
   return body.job ?? (body as unknown as BacktestJob);
@@ -66,8 +84,17 @@ export function listFactors(token: string): Promise<{ factors: Array<Record<stri
   return request(`/factors`, token);
 }
 
-export function listBacktests(token: string): Promise<{ backtests: Array<Record<string, unknown>> }> {
-  return request(`/backtests`, token);
+export function listBacktests(
+  token: string,
+  options: { query?: string; status?: string; limit?: number; offset?: number } = {},
+): Promise<{ backtests: Array<Record<string, unknown>>; total: number; limit: number; offset: number }> {
+  const params = new URLSearchParams({
+    query: options.query ?? "",
+    status: options.status ?? "",
+    limit: String(options.limit ?? 20),
+    offset: String(options.offset ?? 0),
+  });
+  return request(`/backtests?${params.toString()}`, token);
 }
 
 export function listBacktestOptions(token: string): Promise<{ options: Array<Record<string, unknown>> }> {

@@ -31,7 +31,8 @@ ENGINE_CONTRACT_VERSION = "native-a-share-v1"
 RESULT_SCHEMA_VERSION = "backtest-result-v1"
 ANALYSIS_SCHEMA_VERSION = "backtest-analysis.v1"
 ANALYSIS_SECTIONS = (
-    "summary", "trades", "blocked_trades", "daily_returns", "equity_curve", "logs",
+    "summary", "chart", "trades", "blocked_trades", "corporate_action_events",
+    "daily_positions", "daily_returns", "equity_curve", "logs",
 )
 MAX_BARS = 50_000
 MAX_SIGNALS = 50_000
@@ -1059,7 +1060,7 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
 
 def build_backtest_analysis(
     result: dict[str, object], *, section: str = "summary", limit: int = 50,
-    offset: int = 0, execution: dict[str, object] | None = None,
+    offset: int = 0, query: str = "", execution: dict[str, object] | None = None,
     feature_diagnostics: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Project an immutable result into a bounded Agent-facing analysis view."""
@@ -1069,6 +1070,9 @@ def build_backtest_analysis(
         raise ValueError("limit must be between 1 and 100")
     if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
         raise ValueError("offset must be non-negative")
+    query = str(query or "").strip().lower()
+    if len(query) > 80:
+        raise ValueError("query must be at most 80 characters")
 
     trades = result.get("trades") if isinstance(result.get("trades"), list) else []
     blocked = result.get("blocked_trades") if isinstance(result.get("blocked_trades"), list) else []
@@ -1184,6 +1188,7 @@ def build_backtest_analysis(
         "transaction_cost_total": _money(total_cost),
         "transaction_cost_ratio": None if cost_ratio is None else _money(cost_ratio),
         "blocked_reason_counts": dict(sorted(blocked_reasons.items())),
+        "log_truncated": result.get("log_truncated") is True,
         "execution_assumptions": {
             key: execution.get(key)
             for key in ("initial_capital", "commission_rate", "stamp_tax_rate", "slippage_rate", "lot_size")
@@ -1198,9 +1203,40 @@ def build_backtest_analysis(
         "summary": summary,
         "available_sections": list(ANALYSIS_SECTIONS),
     }
-    if section != "summary":
+    if section == "chart":
+        def bounded_series(name: str, maximum: int = 500) -> list[object]:
+            raw = result.get(name)
+            items = raw if isinstance(raw, list) else []
+            if len(items) <= maximum:
+                return items
+            step = max(1, math.ceil((len(items) - 1) / (maximum - 1)))
+            sampled = items[::step]
+            if sampled[-1] is not items[-1]:
+                sampled.append(items[-1])
+            return sampled[:maximum]
+
+        analysis["series"] = {
+            "equity_curve": bounded_series("equity_curve"),
+            "benchmark_curve": bounded_series("benchmark_curve"),
+            "source_points": {
+                "equity_curve": len(result.get("equity_curve") or []),
+                "benchmark_curve": len(result.get("benchmark_curve") or []),
+            },
+        }
+    elif section != "summary":
         rows = result.get(section)
         items = rows if isinstance(rows, list) else []
+        if section == "daily_positions":
+            returns_by_date = {
+                str(item.get("trade_date")): item.get("daily_return")
+                for item in daily_rows if isinstance(item, dict)
+            }
+            items = [
+                {**item, "daily_return": returns_by_date.get(str(item.get("trade_date")))}
+                for item in items if isinstance(item, dict)
+            ]
+        if query:
+            items = [item for item in items if query in json.dumps(item, ensure_ascii=False, sort_keys=True).lower()]
         analysis["page"] = {
             "items": items[offset:offset + limit],
             "total": len(items),
@@ -1333,6 +1369,75 @@ class BacktestJobStore(PgStoreMixin):
         else:
             rows = self._execute("SELECT * FROM backtest_jobs ORDER BY created_at DESC, job_id DESC LIMIT 200")
         return {"backtests": [self._public(row) for row in rows]}
+
+    def list_backtest_summaries(
+        self, *, owner_principal: str, query: str = "", status: str = "",
+        limit: int = 20, offset: int = 0,
+    ) -> dict[str, object]:
+        """Return a bounded browser catalogue without immutable input manifests."""
+        owner = _text(owner_principal, field="owner_principal", max_length=128)
+        query = str(query or "").strip()[:80]
+        status = str(status or "").strip()
+        if status and status not in {"queued", "running", "completed", "failed", "cancelled"}:
+            raise ValueError("status is invalid")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise ValueError("offset must be non-negative")
+        clauses = ["owner_principal = :owner"]
+        params: dict[str, object] = {"owner": owner, "limit": limit, "offset": offset}
+        if query:
+            clauses.append("job_id ILIKE :query")
+            params["query"] = f"%{query}%"
+        if status:
+            clauses.append("status = :status")
+            params["status"] = status
+        where = " AND ".join(clauses)
+        rows = self._execute(
+            f"""SELECT job_id,task_id,experiment_id,owner_principal,status,input_manifest_id,
+                       strategy_version_artifact_id,approval_artifact_id,attempts,max_attempts,
+                       result_artifact_id,error_code,error_message,created_at,updated_at,finished_at,
+                       summary_json,input_manifest_json->'execution' AS execution,
+                       COALESCE(input_manifest_json->'universe'->>'version_id',
+                                input_manifest_json->>'stock_pool_snapshot_id') AS stock_pool_snapshot_id
+                FROM backtest_jobs WHERE {where}
+                ORDER BY created_at DESC, job_id DESC LIMIT :limit OFFSET :offset""",
+            params,
+        )
+        total_row = self._fetch_one(
+            f"SELECT COUNT(*) AS total FROM backtest_jobs WHERE {where}", params,
+        )
+        return {
+            "backtests": [self._summary_public(row) for row in rows],
+            "total": int(total_row["total"] if total_row else 0),
+            "limit": limit,
+            "offset": offset,
+        }
+
+    def get_backtest_summary(self, job_id: object) -> dict[str, object]:
+        identity = _text(job_id, field="job_id", max_length=64)
+        if JOB_ID_PATTERN.fullmatch(identity) is None:
+            raise ValueError("job_id is not a valid backtest identifier")
+        row = self._fetch_one(
+            """SELECT job_id,task_id,experiment_id,owner_principal,status,input_manifest_id,
+                      strategy_version_artifact_id,approval_artifact_id,attempts,max_attempts,
+                      result_artifact_id,error_code,error_message,created_at,updated_at,finished_at,
+                      summary_json,input_manifest_json->'execution' AS execution,
+                      COALESCE(input_manifest_json->'universe'->>'version_id',
+                               input_manifest_json->>'stock_pool_snapshot_id') AS stock_pool_snapshot_id
+               FROM backtest_jobs WHERE job_id = :job_id""",
+            {"job_id": identity},
+        )
+        if row is None:
+            raise BacktestNotFound("backtest job not found")
+        return self._summary_public(row)
+
+    def get_input_manifest(self, job_id: object) -> dict[str, object]:
+        job = self.get(job_id)
+        manifest = job.get("input_manifest")
+        if not isinstance(manifest, dict):
+            raise BacktestStorageError("backtest input manifest is unavailable")
+        return manifest
 
     def find_by_signal_snapshot(
         self, *, owner_principal: str, signal_snapshot_artifact_id: str
@@ -1528,6 +1633,47 @@ class BacktestJobStore(PgStoreMixin):
         if row["summary_json"]:
             result["summary"] = row["summary_json"]
         return result
+
+    @staticmethod
+    def _summary_public(row: dict[str, Any]) -> dict[str, object]:
+        """Project only fields safe for routine browser list/detail reads."""
+        result: dict[str, object] = {
+            key: row.get(key)
+            for key in (
+                "job_id", "task_id", "experiment_id", "owner_principal", "status",
+                "input_manifest_id", "strategy_version_artifact_id", "approval_artifact_id",
+                "attempts", "max_attempts", "result_artifact_id", "error_code", "error_message",
+                "created_at", "updated_at", "finished_at", "stock_pool_snapshot_id",
+            )
+        }
+        result["summary"] = row.get("summary_json") or {}
+        result["execution"] = row.get("execution") or {}
+        return result
+
+
+def project_backtest_summary(job: dict[str, object]) -> dict[str, object]:
+    """Project an already-loaded job without serializing its large immutable inputs."""
+    manifest = job.get("input_manifest")
+    manifest = manifest if isinstance(manifest, dict) else {}
+    universe = manifest.get("universe")
+    universe = universe if isinstance(universe, dict) else {}
+    result = {
+        key: job.get(key)
+        for key in (
+            "job_id", "task_id", "experiment_id", "owner_principal", "status",
+            "input_manifest_id", "strategy_version_artifact_id", "approval_artifact_id",
+            "attempts", "max_attempts", "result_artifact_id", "error_code", "error_message",
+            "created_at", "updated_at", "finished_at",
+        )
+    }
+    result["summary"] = job.get("summary") or {}
+    result["execution"] = manifest.get("execution") or {}
+    result["stock_pool_snapshot_id"] = (
+        job.get("stock_pool_snapshot_id")
+        or universe.get("stock_pool_snapshot_id")
+        or universe.get("version_id")
+    )
+    return result
 
 
 class LocalObjectStore:

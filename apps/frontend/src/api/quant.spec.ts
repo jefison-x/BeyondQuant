@@ -6,12 +6,15 @@ import {
   createStrategyVersion,
   deleteBacktest,
   deleteStrategyDraft,
+  getBacktestAnalysis,
   getBacktest,
+  getBacktestManifest,
   getBacktestResult,
   getResearchEntity,
   getSignalProducerJob,
   getStrategyBacktestCount,
   getStrategyVersions,
+  listBacktests,
   runBacktest,
   saveStrategyDraft,
 } from "./quant";
@@ -81,6 +84,23 @@ describe("quant api client", () => {
       "/api/product/backtests/job_1/result",
       expect.objectContaining({ credentials: "include" }),
     );
+  });
+
+  it("uses bounded browser backtest projections while retaining explicit manifest access", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: string) => {
+      if (input.includes("/analysis?")) return new Response(JSON.stringify({ job_id: "job_1", analysis: { section: "trades", page: { items: [], total: 0 } } }), { status: 200 });
+      if (input.endsWith("/manifest")) return new Response(JSON.stringify({ job_id: "job_1", input_manifest: { schema_version: "backtest-input-v1" } }), { status: 200 });
+      return new Response(JSON.stringify({ backtests: [], total: 0, limit: 20, offset: 40 }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await listBacktests("test-token", { query: "abc", status: "completed", limit: 20, offset: 40 });
+    await getBacktestAnalysis("job_1", "test-token", { section: "trades", query: "600000", limit: 50, offset: 0 });
+    await getBacktestManifest("job_1", "test-token");
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/product/backtests?query=abc&status=completed&limit=20&offset=40",
+      "/api/product/backtests/job_1/analysis?section=trades&query=600000&limit=50&offset=0",
+      "/api/product/backtests/job_1/manifest",
+    ]);
   });
 
   it("creates an immutable strategy version through the product path", async () => {

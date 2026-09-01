@@ -690,7 +690,8 @@ def product_backtest_options(request: Request) -> dict[str, object]:
 def product_backtest_submit(request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
-        "POST", "/v1/research/backtests", payload, headers=_trusted_agent_headers(request)
+        "POST", "/v1/research/backtests?projection=summary", payload,
+        headers=_trusted_agent_headers(request),
     )
 
 
@@ -699,7 +700,7 @@ def product_backtest_get(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
         "GET",
-        f"/v1/research/backtests/{job_id}",
+        f"/v1/research/backtests/{job_id}/summary",
         headers=_trusted_agent_headers(request),
     )
 
@@ -714,10 +715,38 @@ def product_backtest_result(job_id: str, request: Request) -> dict[str, object]:
     )
 
 
-@router.get("/backtests")
-def product_backtests(request: Request) -> dict[str, object]:
+@router.get("/backtests/{job_id}/manifest")
+def product_backtest_manifest(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", "/v1/research/backtests", headers=_trusted_agent_headers(request))
+    return _backend_request(
+        "GET", f"/v1/research/backtests/{job_id}/manifest",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/backtests/{job_id}/analysis")
+def product_backtest_analysis(
+    job_id: str, request: Request, section: str = "summary", query: str = "",
+    limit: int = 50, offset: int = 0,
+) -> dict[str, object]:
+    _product_principal(request)
+    params = urlencode({"section": section, "query": query, "limit": limit, "offset": offset})
+    return _backend_request(
+        "GET", f"/v1/research/backtests/{job_id}/analysis?{params}",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/backtests")
+def product_backtests(
+    request: Request, query: str = "", status: str = "", limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    _product_principal(request)
+    params = urlencode({"query": query, "status": status, "limit": limit, "offset": offset})
+    return _backend_request(
+        "GET", f"/v1/research/backtests/catalog?{params}",
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.post("/backtests/{job_id}/run")
@@ -725,7 +754,7 @@ def product_backtest_run(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
         "POST",
-        f"/v1/research/backtests/{job_id}/run",
+        f"/v1/research/backtests/{job_id}/run?projection=summary",
         headers=_trusted_agent_headers(request),
     )
 
@@ -735,7 +764,7 @@ def product_backtest_cancel(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
         "POST",
-        f"/v1/research/backtests/{job_id}/cancel",
+        f"/v1/research/backtests/{job_id}/cancel?projection=summary",
         headers=_trusted_agent_headers(request),
     )
 
@@ -744,7 +773,7 @@ def product_backtest_delete(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
         "DELETE",
-        f"/v1/research/backtests/{job_id}",
+        f"/v1/research/backtests/{job_id}?projection=summary",
         headers=_trusted_agent_headers(request),
     )
 

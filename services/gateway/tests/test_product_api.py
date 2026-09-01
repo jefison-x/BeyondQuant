@@ -588,6 +588,50 @@ def test_product_backtest_result_is_owner_scoped(monkeypatch) -> None:
     assert captured["headers"]["x-byq-owner-principal"] == "product-user"
 
 
+def test_product_backtest_browser_reads_use_bounded_projections(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    captured: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+        def raise_for_status(self) -> None:
+            return None
+        def json(self) -> dict[str, object]:
+            return self.payload
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured.append(url)
+        if "/catalog?" in url:
+            return FakeResponse({"backtests": [], "total": 0, "limit": 20, "offset": 0})
+        if url.endswith("/summary"):
+            return FakeResponse({"job": {"job_id": "backtest_1", "status": "completed"}})
+        if "/analysis?" in url:
+            return FakeResponse({"job_id": "backtest_1", "analysis": {"section": "trades", "page": {"items": [], "total": 0}}})
+        return FakeResponse({"job_id": "backtest_1", "input_manifest": {"schema_version": "backtest-input-v1"}})
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    headers = {"Authorization": "Bearer product-test-token"}
+    assert client.get("/api/product/backtests?query=abc&status=completed&limit=20&offset=40", headers=headers).status_code == 200
+    assert client.get("/api/product/backtests/backtest_1", headers=headers).status_code == 200
+    assert client.get("/api/product/backtests/backtest_1/analysis?section=trades&query=600000&limit=50&offset=0", headers=headers).status_code == 200
+    assert client.get("/api/product/backtests/backtest_1/manifest", headers=headers).status_code == 200
+    assert client.post("/api/product/backtests", headers=headers, json={}).status_code == 202
+    assert client.post("/api/product/backtests/backtest_1/run", headers=headers).status_code == 200
+    assert client.post("/api/product/backtests/backtest_1/cancel", headers=headers).status_code == 200
+    assert client.delete("/api/product/backtests/backtest_1", headers=headers).status_code == 200
+    assert any("/v1/research/backtests/catalog?query=abc&status=completed&limit=20&offset=40" in url for url in captured)
+    assert any(url.endswith("/v1/research/backtests/backtest_1/summary") for url in captured)
+    assert any("/v1/research/backtests/backtest_1/analysis?section=trades&query=600000&limit=50&offset=0" in url for url in captured)
+    assert any(url.endswith("/v1/research/backtests/backtest_1/manifest") for url in captured)
+    assert any(url.endswith("/v1/research/backtests?projection=summary") for url in captured)
+    assert any(url.endswith("/v1/research/backtests/backtest_1/run?projection=summary") for url in captured)
+    assert any(url.endswith("/v1/research/backtests/backtest_1/cancel?projection=summary") for url in captured)
+    assert any(url.endswith("/v1/research/backtests/backtest_1?projection=summary") for url in captured)
+
+
 def test_product_strategy_version_create_proxy(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")

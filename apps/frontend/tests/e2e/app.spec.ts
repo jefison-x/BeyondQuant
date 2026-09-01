@@ -521,12 +521,16 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
 
 test("backtest workspace renders backtest result list", async ({ page }) => {
   await mockResearchLists(page);
-  await page.route("**/api/product/backtests", (route) =>
+  let fullResultRequests = 0;
+  await page.route(/\/api\/product\/backtests\?.*limit=20.*offset=0/, (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        backtests: [{ job_id: "backtest_1", status: "completed", summary: { total_return: 0.05, max_drawdown: 0.1, trade_count: 2 }, input_manifest: { execution: {} }, created_at: "2026-08-16T00:00:00+00:00" }],
+        backtests: [{ job_id: "backtest_1", status: "completed", summary: { total_return: 0.05, max_drawdown: 0.1, trade_count: 2 }, execution: { initial_capital: 100000 }, created_at: "2026-08-16T00:00:00+00:00" }],
+        total: 1,
+        limit: 20,
+        offset: 0,
       }),
     }),
   );
@@ -534,27 +538,26 @@ test("backtest workspace renders backtest result list", async ({ page }) => {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ job: { job_id: "backtest_1", status: "completed", summary: { total_return: 0.05, max_drawdown: 0.1, trade_count: 2 }, input_manifest: { execution: { initial_capital: 100000 } } } }),
+      body: JSON.stringify({ job: { job_id: "backtest_1", status: "completed", summary: { total_return: 0.05, max_drawdown: 0.1, trade_count: 2 }, execution: { initial_capital: 100000 } } }),
     }),
   );
-  await page.route("**/api/product/backtests/backtest_1/result", (route) =>
-    route.fulfill({
+  await page.route("**/api/product/backtests/backtest_1/analysis?*", (route) => {
+    const section = new URL(route.request().url()).searchParams.get("section");
+    const analysis = section === "summary"
+      ? { section, summary: { total_return: 0.05, max_drawdown: 0.1, trade_count: 1 } }
+      : section === "chart"
+        ? { section, series: { equity_curve: [{ trade_date: "2026-01-05", equity: 100000 }], benchmark_curve: [] } }
+        : { section, page: { items: [], total: 0, limit: 50, offset: 0 } };
+    return route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({
-        job_id: "backtest_1",
-        result: {
-          total_return: 0.05,
-          max_drawdown: 0.1,
-          trade_count: 1,
-          equity_curve: [{ trade_date: "2026-01-05", equity: 100000, cash: 100000, positions_count: 0 }],
-          trades: [{ timestamp: "2026-01-05", symbol: "000001.SZ", order_type: "buy", quantity: 100, price: 10, commission: 0, tax: 0, realized_pnl: null }],
-          blocked_trades: [],
-          corporate_action_events: [],
-        },
-      }),
-    }),
-  );
+      body: JSON.stringify({ job_id: "backtest_1", analysis }),
+    });
+  });
+  await page.route("**/api/product/backtests/backtest_1/result", (route) => {
+    fullResultRequests += 1;
+    return route.abort();
+  });
   await login(page);
   await page.goto("/backtest?job=backtest_1&from=agent&session=session-1");
   await expect(page.getByRole("heading", { name: "回测管理" })).toBeVisible();
@@ -563,6 +566,7 @@ test("backtest workspace renders backtest result list", async ({ page }) => {
   await expect(page.getByText("回测结果", { exact: true })).toBeVisible();
   await expect(page.getByRole("tab", { name: "权益曲线" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "交易明细" })).toBeVisible();
+  expect(fullResultRequests).toBe(0);
 });
 
 test("my space pages render profile, models, assets, and agent policy", async ({ page }) => {

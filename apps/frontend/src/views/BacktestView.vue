@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import type { EChartsOption } from "echarts";
@@ -7,8 +7,9 @@ import {
   cancelBacktest,
   createSignalProducerJob,
   deleteBacktest,
+  getBacktestAnalysis,
   getBacktest,
-  getBacktestResult,
+  getBacktestManifest,
   getSignalProducerJob,
   listBacktests,
   listBacktestOptions,
@@ -17,7 +18,7 @@ import {
   submitBacktest,
 } from "@/api/quant";
 import { listStockPools } from "@/api/paper";
-import type { BacktestJob, BacktestResult } from "@/api/types";
+import type { BacktestJob } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 import ChartWrapper from "@/components/charts/ChartWrapper.vue";
 import MetricCard from "@/components/ui/MetricCard.vue";
@@ -25,7 +26,6 @@ import { formatChinaTime } from "@/time";
 import { backtestMetricLabel, shortReference, statusLabel } from "@/display";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
-import { useFilteredPagination } from "@/composables/useFilteredPagination";
 import { createRequestId } from "@/utils/requestId";
 
 const auth = useAuthStore();
@@ -34,9 +34,16 @@ const router = useRouter();
 const loading = ref(true);
 const error = ref("");
 const backtests = ref<Array<Record<string, unknown>>>([]);
+const totalBacktests = ref(0);
+const listPage = ref(1);
+const listPageSize = 20;
 const selected = ref<Record<string, unknown> | null>(null);
 const job = ref<BacktestJob | null>(null);
-const result = ref<BacktestResult | null>(null);
+const analysisSummary = ref<Record<string, unknown>>({});
+const manifest = ref<Record<string, unknown> | null>(null);
+const manifestLoading = ref(false);
+const equityCurve = ref<Array<Record<string, any>>>([]);
+const benchmarkCurve = ref<Array<Record<string, any>>>([]);
 const statusFilter = ref("");
 const search = ref("");
 const busy = ref("");
@@ -45,22 +52,24 @@ const showCompare = ref(false);
 const showManifest = ref(false);
 const activeTab = ref("equity");
 
-const filteredBacktests = computed(() =>
-  backtests.value.filter((row) => {
-    const matchesStatus = !statusFilter.value || row.status === statusFilter.value;
-    const matchesSearch = !search.value || String(row.job_id ?? "").includes(search.value);
-    return matchesStatus && matchesSearch;
-  }),
-);
-const backtestPages = useFilteredPagination(filteredBacktests, (row) => String(row.job_id ?? ""), 20);
+type AnalysisPageState = {
+  items: Array<Record<string, any>>; total: number; page: number; pageSize: number;
+  query: string; loading: boolean; requestSerial: number;
+};
+function analysisPage(pageSize = 50): AnalysisPageState {
+  return reactive({ items: [], total: 0, page: 1, pageSize, query: "", loading: false, requestSerial: 0 });
+}
+const tradePage = analysisPage();
+const blockedPage = analysisPage();
+const corporatePage = analysisPage();
+const dailyPage = analysisPage();
+const logPage = analysisPage();
 
 const summary = computed<Record<string, unknown>>(() => {
-  const value = result.value as unknown as Record<string, unknown> | null;
-  return value ?? (job.value?.summary as Record<string, unknown> | undefined) ?? {};
+  return Object.keys(analysisSummary.value).length
+    ? analysisSummary.value
+    : (job.value?.summary as Record<string, unknown> | undefined) ?? {};
 });
-
-const equityCurve = computed(() => result.value?.equity_curve ?? []);
-const benchmarkCurve = computed(() => result.value?.benchmark_curve ?? []);
 
 const equityOption = computed<EChartsOption>(() => ({
   title: { text: "权益曲线" },
@@ -81,7 +90,7 @@ const equityOption = computed<EChartsOption>(() => ({
     },
     ...(benchmarkCurve.value.length
       ? [{
-          name: `基准 ${result.value?.benchmark_symbol ?? ""}`,
+          name: `基准 ${summary.value.benchmark_symbol ?? ""}`,
           type: "line" as const,
           data: benchmarkCurve.value.map((point) => point.value),
           showSymbol: false,
@@ -91,19 +100,9 @@ const equityOption = computed<EChartsOption>(() => ({
   ],
 }));
 
-const trades = computed(() => result.value?.trades ?? []);
-const blockedTrades = computed(() => result.value?.blocked_trades ?? []);
-const corporateEvents = computed(() => result.value?.corporate_action_events ?? []);
-const dailyPositions = computed(() => result.value?.daily_positions ?? []);
-const dailyReturns = computed(() => result.value?.daily_returns ?? []);
-const backtestLogs = computed(() => result.value?.logs ?? []);
-const tradePages = useFilteredPagination(trades, (row) => `${row.symbol ?? ""} ${row.timestamp ?? ""} ${row.order_type ?? ""}`, 50);
-const dailyPages = useFilteredPagination(dailyPositions, (row) => `${row.trade_date ?? ""} ${JSON.stringify(row.positions ?? {})}`, 50);
-const logPages = useFilteredPagination(backtestLogs, (row) => `${row.level ?? ""} ${row.message ?? ""}`, 50);
 const strategySnapshot = computed(() => ({
-  strategy_version_artifact_id: job.value?.strategy_version_artifact_id ?? result.value?.strategy_version_artifact_id ?? null,
-  approval_artifact_id: job.value?.approval_artifact_id ?? result.value?.approval_artifact_id ?? null,
-  input_manifest: job.value?.input_manifest ?? null,
+  strategy_version_artifact_id: job.value?.strategy_version_artifact_id ?? null,
+  approval_artifact_id: job.value?.approval_artifact_id ?? null,
 }));
 
 function formatPercent(value: unknown) {
@@ -128,17 +127,37 @@ function formatPositions(row: Record<string, unknown>): string {
   return positions.map((p: Record<string, unknown>) => `${String(p.symbol)}×${String(p.quantity)}`).join("、");
 }
 
-function dailyReturnFor(tradeDate: unknown): unknown {
-  const rows = dailyReturns.value as Array<Record<string, unknown>>;
-  return rows.find((d) => d.trade_date === tradeDate)?.daily_return;
+let listRequestSerial = 0;
+let detailRequestSerial = 0;
+let listSearchTimer: number | undefined;
+const analysisTimers = new Map<string, number>();
+
+function resetAnalysis() {
+  analysisSummary.value = {};
+  manifest.value = null;
+  equityCurve.value = [];
+  benchmarkCurve.value = [];
+  for (const state of [tradePage, blockedPage, corporatePage, dailyPage, logPage]) {
+    state.items = [];
+    state.total = 0;
+    state.page = 1;
+    state.query = "";
+    state.requestSerial += 1;
+  }
 }
 
 async function loadList() {
+  const requestSerial = ++listRequestSerial;
   loading.value = true;
   error.value = "";
   try {
-    const response = await listBacktests(auth.token);
+    const response = await listBacktests(auth.token, {
+      query: search.value.trim(), status: statusFilter.value,
+      limit: listPageSize, offset: (listPage.value - 1) * listPageSize,
+    });
+    if (requestSerial !== listRequestSerial) return;
     backtests.value = response.backtests;
+    totalBacktests.value = response.total;
     if (backtests.value.length) {
       const requested = typeof route.query.job === "string" ? route.query.job : "";
       const target = requested
@@ -148,21 +167,67 @@ async function loadList() {
           : backtests.value[0];
       if (target) await select(target, false);
     } else {
+      detailRequestSerial += 1;
       selected.value = null;
       job.value = null;
-      result.value = null;
+      resetAnalysis();
     }
   } catch (exc) {
+    if (requestSerial !== listRequestSerial) return;
     error.value = exc instanceof Error ? exc.message : "加载失败";
   } finally {
-    loading.value = false;
+    if (requestSerial === listRequestSerial) loading.value = false;
   }
 }
 
+async function loadAnalysisPage(section: string, state: AnalysisPageState) {
+  const jobId = String(job.value?.job_id ?? "");
+  if (!jobId || job.value?.status !== "completed") return;
+  const requestSerial = ++state.requestSerial;
+  state.loading = true;
+  try {
+    const body = await getBacktestAnalysis(jobId, auth.token, {
+      section, query: state.query.trim(), limit: state.pageSize,
+      offset: (state.page - 1) * state.pageSize,
+    });
+    if (requestSerial !== state.requestSerial || String(job.value?.job_id ?? "") !== jobId) return;
+    const page = body.analysis.page as Record<string, any> | undefined;
+    state.items = Array.isArray(page?.items) ? page.items : [];
+    state.total = Number(page?.total ?? 0);
+  } catch (exc) {
+    if (requestSerial === state.requestSerial) error.value = exc instanceof Error ? exc.message : "读取回测明细失败";
+  } finally {
+    if (requestSerial === state.requestSerial) state.loading = false;
+  }
+}
+
+const sectionByTab: Record<string, { section: string; state: AnalysisPageState }> = {
+  trades: { section: "trades", state: tradePage },
+  blocked: { section: "blocked_trades", state: blockedPage },
+  corporate: { section: "corporate_action_events", state: corporatePage },
+  daily: { section: "daily_positions", state: dailyPage },
+  logs: { section: "logs", state: logPage },
+};
+
+function loadActiveTab() {
+  const target = sectionByTab[activeTab.value];
+  if (target) void loadAnalysisPage(target.section, target.state);
+}
+
+function scheduleAnalysis(section: string, state: AnalysisPageState) {
+  const previous = analysisTimers.get(section);
+  if (previous !== undefined) window.clearTimeout(previous);
+  analysisTimers.set(section, window.setTimeout(() => {
+    analysisTimers.delete(section);
+    if (sectionByTab[activeTab.value]?.section === section) void loadAnalysisPage(section, state);
+  }, 250));
+}
+
 async function select(row: Record<string, unknown>, updateRoute = true) {
+  const requestSerial = ++detailRequestSerial;
   selected.value = row;
   job.value = null;
-  result.value = null;
+  resetAnalysis();
   error.value = "";
   const jobId = row.job_id;
   if (typeof jobId !== "string") {
@@ -170,16 +235,42 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
     return;
   }
   try {
-    job.value = await getBacktest(jobId, auth.token);
-    if (job.value.status === "completed") {
-      const body = await getBacktestResult(jobId, auth.token);
-      result.value = body.result;
+    const nextJob = await getBacktest(jobId, auth.token);
+    if (requestSerial !== detailRequestSerial) return;
+    job.value = nextJob;
+    if (nextJob.status === "completed") {
+      const [summaryBody, chartBody] = await Promise.all([
+        getBacktestAnalysis(jobId, auth.token, { section: "summary", limit: 1 }),
+        getBacktestAnalysis(jobId, auth.token, { section: "chart", limit: 1 }),
+      ]);
+      if (requestSerial !== detailRequestSerial || String(job.value?.job_id ?? "") !== jobId) return;
+      analysisSummary.value = (summaryBody.analysis.summary as Record<string, unknown>) ?? {};
+      const series = chartBody.analysis.series as Record<string, any> | undefined;
+      equityCurve.value = Array.isArray(series?.equity_curve) ? series.equity_curve : [];
+      benchmarkCurve.value = Array.isArray(series?.benchmark_curve) ? series.benchmark_curve : [];
+      loadActiveTab();
     }
     if (updateRoute && route.query.job !== jobId) {
       await router.replace({ path: route.path, query: { ...route.query, job: jobId } });
     }
   } catch (exc) {
-    error.value = exc instanceof Error ? exc.message : "读取回测任务失败";
+    if (requestSerial === detailRequestSerial) {
+      error.value = exc instanceof Error ? exc.message : "读取回测任务失败";
+    }
+  }
+}
+
+async function openManifest() {
+  const jobId = String(job.value?.job_id ?? "");
+  if (!jobId) return;
+  manifestLoading.value = true;
+  try {
+    if (!manifest.value) manifest.value = (await getBacktestManifest(jobId, auth.token)).input_manifest;
+    showManifest.value = true;
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "读取完整输入清单失败");
+  } finally {
+    manifestLoading.value = false;
   }
 }
 
@@ -223,7 +314,7 @@ async function remove(row: Record<string, unknown>) {
     if (selected.value && String(selected.value.job_id) === jobId) {
       selected.value = null;
       job.value = null;
-      result.value = null;
+      resetAnalysis();
     }
     await loadList();
   } catch (exc) {
@@ -262,8 +353,8 @@ const executionRuleRows = computed(() => {
   const rows: Array<{ label: string; a: unknown; b: unknown }> = [];
   const labels = ["initial_capital", "commission_rate", "stamp_tax_rate", "slippage_rate", "lot_size", "max_positions", "a_share_rules", "limit_threshold"];
   for (const label of labels) {
-    const aExecution = (compareJobs.value[0]?.input_manifest as Record<string, unknown> | undefined)?.execution as Record<string, unknown> | undefined;
-    const bExecution = (compareJobs.value[1]?.input_manifest as Record<string, unknown> | undefined)?.execution as Record<string, unknown> | undefined;
+    const aExecution = compareJobs.value[0]?.execution as Record<string, unknown> | undefined;
+    const bExecution = compareJobs.value[1]?.execution as Record<string, unknown> | undefined;
     const a = aExecution?.[label];
     const b = bExecution?.[label];
     rows.push({ label, a, b });
@@ -449,13 +540,28 @@ function nestedReference(value: unknown, keys: string[]): string {
 }
 
 function openPaperTrading() {
-  const manifest = job.value?.input_manifest as Record<string, unknown> | undefined;
-  const universe = manifest?.universe as Record<string, unknown> | undefined;
-  const poolSnapshot = nestedReference(manifest, ["stock_pool_snapshot_id", "pool_snapshot_id"])
-    || (typeof universe?.version_id === "string" ? universe.version_id : "");
+  const poolSnapshot = String((job.value as Record<string, unknown> | null)?.stock_pool_snapshot_id ?? "");
   void router.push({ path: "/paper-trading", query: { ...(poolSnapshot ? { pool_snapshot: poolSnapshot } : {}), from: "backtest", job: String(job.value?.job_id ?? "") } });
 }
 
+watch([search, statusFilter], () => {
+  if (listSearchTimer !== undefined) window.clearTimeout(listSearchTimer);
+  listPage.value = 1;
+  listSearchTimer = window.setTimeout(() => void loadList(), 300);
+});
+watch(listPage, () => void loadList());
+watch(activeTab, () => loadActiveTab());
+for (const { section, state } of Object.values(sectionByTab)) {
+  watch(() => state.query, () => {
+    if (state.page !== 1) state.page = 1;
+    scheduleAnalysis(section, state);
+  });
+  watch(() => state.page, () => scheduleAnalysis(section, state));
+}
+onBeforeUnmount(() => {
+  if (listSearchTimer !== undefined) window.clearTimeout(listSearchTimer);
+  for (const timer of analysisTimers.values()) window.clearTimeout(timer);
+});
 onMounted(async () => { await loadList(); if (typeof route.query.strategy === "string") await openCreate(); });
 </script>
 
@@ -470,7 +576,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
       title="回测任务与完整结果"
       description="沿不可变策略版本、审批与信号快照谱系复核收益、成交和执行假设。"
       catalog-label="回测任务"
-      :count="filteredBacktests.length"
+      :count="totalBacktests"
       @return="returnToConversation"
     >
       <template #return>返回投研对话</template>
@@ -497,11 +603,11 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
             <el-option label="失败" value="failed" />
           </el-select>
         </div>
-        <el-empty v-if="!filteredBacktests.length" description="暂无回测结果" />
-        <ListFilterPagination v-else v-model:page="backtestPages.page.value" query="" :page-size="backtestPages.pageSize.value" :total="backtestPages.total.value" label="回测任务分页" hide-search>
+        <el-empty v-if="!backtests.length" description="暂无回测结果" />
+        <ListFilterPagination v-else v-model:page="listPage" query="" :page-size="listPageSize" :total="totalBacktests" label="回测任务分页" hide-search>
         <el-table
           class="desktop-catalog-table"
-          :data="backtestPages.pageItems.value"
+          :data="backtests"
           highlight-current-row
           @current-change="select"
           @selection-change="onSelectionChange"
@@ -555,7 +661,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
 
         <div class="mobile-list">
           <el-card
-            v-for="row in backtestPages.pageItems.value"
+            v-for="row in backtests"
             :key="String(row.job_id)"
             shadow="never"
             class="mobile-card"
@@ -631,8 +737,8 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
               />
             </el-tab-pane>
             <el-tab-pane label="交易明细" name="trades" lazy>
-              <ListFilterPagination v-model:query="tradePages.query.value" v-model:page="tradePages.page.value" :page-size="tradePages.pageSize.value" :total="tradePages.total.value" placeholder="筛选股票、日期或方向" label="交易明细分页">
-              <el-table :data="tradePages.pageItems.value" size="small" empty-text="暂无交易">
+              <ListFilterPagination v-model:query="tradePage.query" v-model:page="tradePage.page" :page-size="tradePage.pageSize" :total="tradePage.total" placeholder="筛选股票、日期或方向" label="交易明细分页">
+              <el-table v-loading="tradePage.loading" :data="tradePage.items" size="small" empty-text="暂无交易">
                 <el-table-column prop="timestamp" label="日期" width="120" />
                 <el-table-column prop="symbol" label="证券" width="110" />
                 <el-table-column prop="order_type" label="方向" width="80" />
@@ -653,16 +759,19 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
               </ListFilterPagination>
             </el-tab-pane>
             <el-tab-pane label="拦截明细" name="blocked" lazy>
-              <el-table :data="blockedTrades" size="small" empty-text="暂无拦截">
+              <ListFilterPagination v-model:query="blockedPage.query" v-model:page="blockedPage.page" :page-size="blockedPage.pageSize" :total="blockedPage.total" placeholder="筛选股票、日期或原因" label="拦截明细分页">
+              <el-table v-loading="blockedPage.loading" :data="blockedPage.items" size="small" empty-text="暂无拦截">
                 <el-table-column prop="symbol" label="证券" width="110" />
                 <el-table-column prop="trade_date" label="日期" width="120" />
                 <el-table-column prop="side" label="方向" width="80" />
                 <el-table-column prop="reason_code" label="原因码" width="150" />
                 <el-table-column prop="detail" label="说明" min-width="220" show-overflow-tooltip />
               </el-table>
+              </ListFilterPagination>
             </el-tab-pane>
             <el-tab-pane label="公司行动" name="corporate" lazy>
-              <el-table :data="corporateEvents" size="small" empty-text="暂无公司行动">
+              <ListFilterPagination v-model:query="corporatePage.query" v-model:page="corporatePage.page" :page-size="corporatePage.pageSize" :total="corporatePage.total" placeholder="筛选股票或日期" label="公司行动分页">
+              <el-table v-loading="corporatePage.loading" :data="corporatePage.items" size="small" empty-text="暂无公司行动">
                 <el-table-column prop="symbol" label="证券" width="110" />
                 <el-table-column prop="ex_date" label="除权日" width="120" />
                 <el-table-column prop="pay_date" label="派息日" width="120" />
@@ -680,10 +789,11 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
                   <template #default="{ row }">现金{{ row.cash_settled ? '已到账' : '待到账' }} · 股份{{ row.shares_settled ? '已入账' : '待入账' }}</template>
                 </el-table-column>
               </el-table>
+              </ListFilterPagination>
             </el-tab-pane>
             <el-tab-pane label="每日持仓&收益" name="daily" lazy>
-              <ListFilterPagination v-model:query="dailyPages.query.value" v-model:page="dailyPages.page.value" :page-size="dailyPages.pageSize.value" :total="dailyPages.total.value" placeholder="筛选日期或持仓" label="每日持仓分页">
-              <el-table :data="dailyPages.pageItems.value" size="small" empty-text="暂无每日数据">
+              <ListFilterPagination v-model:query="dailyPage.query" v-model:page="dailyPage.page" :page-size="dailyPage.pageSize" :total="dailyPage.total" placeholder="筛选日期或持仓" label="每日持仓分页">
+              <el-table v-loading="dailyPage.loading" :data="dailyPage.items" size="small" empty-text="暂无每日数据">
                 <el-table-column prop="trade_date" label="日期" width="120" />
                 <el-table-column label="持仓" min-width="260">
                   <template #default="{ row }">
@@ -691,15 +801,15 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
                   </template>
                 </el-table-column>
                 <el-table-column label="日收益" width="110" align="right">
-                  <template #default="{ row }">{{ formatPercent(dailyReturnFor(row.trade_date)) }}</template>
+                  <template #default="{ row }">{{ formatPercent(row.daily_return) }}</template>
                 </el-table-column>
               </el-table>
               </ListFilterPagination>
             </el-tab-pane>
             <el-tab-pane label="日志输出" name="logs" lazy>
-              <el-alert v-if="result?.log_truncated" title="日志已截断，仅显示前 500 条" type="warning" :closable="false" class="log-truncated" />
-              <ListFilterPagination v-model:query="logPages.query.value" v-model:page="logPages.page.value" :page-size="logPages.pageSize.value" :total="logPages.total.value" placeholder="筛选日志级别或事件" label="回测日志分页">
-              <el-table :data="logPages.pageItems.value" size="small" empty-text="暂无日志" max-height="420">
+              <el-alert v-if="summary.log_truncated" title="日志已截断，仅显示前 500 条" type="warning" :closable="false" class="log-truncated" />
+              <ListFilterPagination v-model:query="logPage.query" v-model:page="logPage.page" :page-size="logPage.pageSize" :total="logPage.total" placeholder="筛选日志级别或事件" label="回测日志分页">
+              <el-table v-loading="logPage.loading" :data="logPage.items" size="small" empty-text="暂无日志" max-height="420">
                 <el-table-column prop="seq" label="#" width="70" />
                 <el-table-column prop="level" label="级别" width="80" />
                 <el-table-column prop="message" label="事件" min-width="180" />
@@ -721,16 +831,16 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
                   <code>{{ strategySnapshot.approval_artifact_id ?? "-" }}</code>
                 </el-descriptions-item>
               </el-descriptions>
-              <pre class="quant-result">{{ JSON.stringify(strategySnapshot.input_manifest ?? {}, null, 2) }}</pre>
+              <el-button :loading="manifestLoading" @click="openManifest">按需查看完整输入清单</el-button>
             </el-tab-pane>
             <el-tab-pane label="输入就绪检查" name="manifest" lazy>
-              <el-button @click="showManifest = true">查看输入就绪检查</el-button>
-              <pre class="quant-result">{{ JSON.stringify(job.input_manifest, null, 2) }}</pre>
+              <el-alert title="完整输入清单体积较大，仅在明确查看时加载。" type="info" :closable="false" />
+              <el-button :loading="manifestLoading" @click="openManifest">查看输入就绪检查</el-button>
             </el-tab-pane>
           </el-tabs>
 
           <el-dialog v-model="showManifest" title="输入就绪检查摘要" width="720px">
-            <pre class="quant-result">{{ JSON.stringify(job.input_manifest, null, 2) }}</pre>
+            <pre class="quant-result">{{ JSON.stringify(manifest ?? {}, null, 2) }}</pre>
           </el-dialog>
         </template>
       </el-card>

@@ -106,7 +106,12 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
         f"/v1/research/backtests/{job['job_id']}/cancel",
         headers=_owner_headers("other-user"),
     ).status_code == 404
-    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "completed"
+    run_response = client.post(
+        f"/v1/research/backtests/{job['job_id']}/run",
+        params={"projection": "summary"},
+    )
+    assert run_response.json()["job"]["status"] == "completed"
+    assert "input_manifest" not in run_response.json()["job"]
     fetched = client.get(f"/v1/research/backtests/{job['job_id']}")
     assert fetched.status_code == 200
     assert fetched.json()["job"]["result_artifact_id"].startswith("artifact_")
@@ -140,6 +145,17 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     ).json()["analysis"]["page"]
     assert trade_page["total"] == 1
     assert len(trade_page["items"]) == 1
+    chart = client.get(
+        f"/v1/research/backtests/{job['job_id']}/analysis",
+        params={"section": "chart", "limit": 1},
+    ).json()["analysis"]
+    assert chart["series"]["equity_curve"][-1]["trade_date"] == "2026-01-06"
+    daily_page = client.get(
+        f"/v1/research/backtests/{job['job_id']}/analysis",
+        params={"section": "daily_positions", "query": "2026-01-06", "limit": 1},
+    ).json()["analysis"]["page"]
+    assert daily_page["total"] == 1
+    assert "daily_return" in daily_page["items"][0]
 
     denied = client.get(
         f"/v1/research/backtests/{job['job_id']}/result",
@@ -156,8 +172,38 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     )
     assert listed.status_code == 200
     assert listed.json()["backtests"][0]["job_id"] == job["job_id"]
+    jobs._execute(
+        """UPDATE backtest_jobs
+           SET input_manifest_json = input_manifest_json || jsonb_build_object('browser_payload_probe', CAST(:payload AS TEXT))
+           WHERE job_id = :job_id""",
+        {"job_id": job["job_id"], "payload": "x" * 1_000_000},
+    )
+    catalog = client.get(
+        "/v1/research/backtests/catalog",
+        params={"query": job["job_id"][-8:], "status": "completed", "limit": 20, "offset": 0},
+    )
+    assert catalog.status_code == 200, catalog.text
+    assert catalog.json()["total"] == 1
+    catalog_row = catalog.json()["backtests"][0]
+    assert catalog_row["job_id"] == job["job_id"]
+    assert "input_manifest" not in catalog_row and "result_reference" not in catalog_row
+    assert len(catalog.content) < 16_000
+    summary_job = client.get(f"/v1/research/backtests/{job['job_id']}/summary")
+    assert summary_job.status_code == 200
+    assert summary_job.json()["job"]["execution"]["initial_capital"] == 2000
+    assert "input_manifest" not in summary_job.json()["job"] and "result_reference" not in summary_job.json()["job"]
+    manifest = client.get(f"/v1/research/backtests/{job['job_id']}/manifest")
+    assert manifest.status_code == 200
+    assert len(manifest.content) > 1_000_000
+    assert len(manifest.json()["input_manifest"]["bars"]) == len(bars)
+    assert manifest.json()["input_manifest"]["bars"][0]["symbol"] == SYMBOL
+    assert client.get(
+        f"/v1/research/backtests/{job['job_id']}/manifest",
+        headers=_owner_headers("other-user"),
+    ).status_code == 404
     retry = client.post(
         "/v1/research/backtests",
+        params={"projection": "summary"},
         json={
             "task_id": task["task_id"], "strategy_version_artifact_id": version["artifact"]["artifact_id"],
             "approval_artifact_id": approval["artifact"]["artifact_id"], "trace_id": task["trace_id"],
@@ -168,6 +214,8 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     )
     assert retry.status_code == 202
     assert retry.json()["job"]["job_id"] == job["job_id"]
+    assert "input_manifest" not in retry.json()["job"]
+    assert len(retry.content) < 16_000
     denied_delete = client.delete(
         f"/v1/research/backtests/{job['job_id']}",
         headers=_owner_headers("other-user"),
@@ -175,9 +223,11 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     assert denied_delete.status_code == 409
     deleted = client.delete(
         f"/v1/research/backtests/{job['job_id']}",
+        params={"projection": "summary"},
         headers=_owner_headers("product-user"),
     )
     assert deleted.status_code == 200
+    assert "input_manifest" not in deleted.json()["job"]
     assert client.get(f"/v1/research/backtests/{job['job_id']}").status_code == 404
 
     store.close()
