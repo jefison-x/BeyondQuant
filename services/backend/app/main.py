@@ -1864,6 +1864,10 @@ def _ml_agent_artifact_projection(artifact: dict[str, Any]) -> dict[str, object]
             "prediction_split", "runtime_lock", "runtime_identity", "counts",
             "content_sha256",
         },
+        "signal_snapshot": {
+            "schema_version", "strategy_version_id", "strategy_version_artifact_id",
+            "execution", "source", "content_sha256",
+        },
     }
     if kind not in allowed:
         return None
@@ -2290,6 +2294,63 @@ def get_ml_prediction_run(prediction_run_id: str, request: Request) -> dict[str,
             "backtest_task": _ml_backtest_task_view(
                 run, owner_principal=context["owner_principal"]
             ),
+        }
+
+    return _ml_call(operation)
+
+
+@app.get("/v1/research/ml/prediction-runs/{prediction_run_id}/rows")
+def get_ml_prediction_rows(
+    prediction_run_id: str, request: Request, query: str = "", limit: int = 50, offset: int = 0,
+) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        if limit < 1 or limit > 100:
+            raise ValueError("limit must be between 1 and 100")
+        if offset < 0:
+            raise ValueError("offset must be non-negative")
+        if len(query) > 100:
+            raise ValueError("query must not exceed 100 characters")
+        run = ml_prediction_store.get(
+            prediction_run_id, trusted_workspace=context["workspace_id"],
+            trusted_owner=context["owner_principal"],
+        )
+        artifact_id = run.get("prediction_artifact_id")
+        if not isinstance(artifact_id, str):
+            raise MLPredictionNotFound("prediction rows are not available")
+        artifact = research_store.get_artifact(artifact_id)
+        if (
+            artifact.get("kind") != "ml_prediction_snapshot"
+            or artifact.get("owner_principal") != context["owner_principal"]
+            or artifact.get("workspace_id") != context["workspace_id"]
+        ):
+            raise ResearchNotFound("prediction artifact not found")
+        content = artifact.get("content")
+        raw_rows = content.get("rows") if isinstance(content, dict) else None
+        if not isinstance(raw_rows, list):
+            raise ValueError("prediction artifact rows are invalid")
+        needle = query.strip().casefold()
+        total = 0
+        page: list[dict[str, object]] = []
+        for row in raw_rows:
+            if not isinstance(row, dict) or (
+                needle
+                and needle not in f"{row.get('symbol', '')} {row.get('session', '')} {row.get('rank', '')}".casefold()
+            ):
+                continue
+            if offset <= total < offset + limit:
+                page.append({key: row.get(key) for key in ("session", "rank", "symbol", "score")})
+            total += 1
+        return {
+            "schema_version": "ml-prediction-rows.v1",
+            "prediction_run_id": prediction_run_id,
+            "prediction_artifact_id": artifact_id,
+            "rows": page,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + limit < total,
         }
 
     return _ml_call(operation)

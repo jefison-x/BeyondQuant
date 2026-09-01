@@ -123,6 +123,13 @@ paths:
   /api/product/ml/prediction-runs/{run_id}:
     parameters: [{$ref: "#/components/parameters/RunId"}]
     get: {summary: 获取 owner-scoped 样本外预测和冻结信号制品 ID。, responses: *okResponses}
+  /api/product/ml/prediction-runs/{run_id}/rows:
+    parameters:
+      - {$ref: "#/components/parameters/RunId"}
+      - {name: query, in: query, schema: {type: string, maxLength: 100}}
+      - {$ref: "#/components/parameters/Limit"}
+      - {$ref: "#/components/parameters/Offset"}
+    get: {summary: 分页筛选 owner-scoped 样本外预测排名，不返回模型或特征数据。, responses: *okResponses}
   /api/product/factors:
     get: {summary: 列出 owner-scoped factor results., responses: *okResponses}
   /api/product/signal-snapshots:

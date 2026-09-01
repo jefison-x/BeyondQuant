@@ -6,6 +6,7 @@ import queue
 import re
 import shutil
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -60,8 +61,12 @@ class SessionStatus:
 @dataclass(slots=True)
 class ActiveRun:
     run_id: str
+    started_at: float
+    last_public_progress_at: float
     soft_cancel_requested: bool = False
     hard_cancelled: bool = False
+    active_subagent_calls: dict[str, float] = field(default_factory=dict)
+    watchdog_stop: threading.Event = field(default_factory=threading.Event, repr=False)
 
 
 @dataclass(slots=True)
@@ -118,6 +123,15 @@ class RuntimeAdapter:
         self._model_api_key = os.environ.get("DEEPSEEK_API_KEY")
         self._backend_url = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
         self._resolver_token = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
+        self._run_timeout_seconds = self._guard_seconds(
+            "BYQ_DSH_RUN_TIMEOUT_SECONDS", default=300.0,
+        )
+        self._subagent_timeout_seconds = self._guard_seconds(
+            "BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS", default=180.0,
+        )
+        self._no_progress_timeout_seconds = self._guard_seconds(
+            "BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS", default=120.0,
+        )
         self._usage_totals = {
             "input_tokens": 0,
             "output_tokens": 0,
@@ -153,6 +167,11 @@ class RuntimeAdapter:
             "model_provider": self._provider,
             "model": self._model,
             "process_ownership": "one-per-active-session",
+            "run_guards": {
+                "run_timeout_seconds": self._run_timeout_seconds,
+                "subagent_timeout_seconds": self._subagent_timeout_seconds,
+                "no_progress_timeout_seconds": self._no_progress_timeout_seconds,
+            },
             "session_states": [
                 SessionStatus.STARTING,
                 SessionStatus.READY,
@@ -306,7 +325,12 @@ class RuntimeAdapter:
                 raise SessionConflict(
                     f"session {session_id} cannot accept a prompt in state {record.status}"
                 )
-            run = ActiveRun(run_id=uuid.uuid4().hex)
+            now = time.monotonic()
+            run = ActiveRun(
+                run_id=uuid.uuid4().hex,
+                started_at=now,
+                last_public_progress_at=now,
+            )
             effective_content = rehydrated_prompt(record.pending_conversation_context, content)
             record.pending_conversation_context = []
             record.active_run = run
@@ -328,6 +352,13 @@ class RuntimeAdapter:
                     record.status = SessionStatus.FAILED
                     self._emit(record, "session.failed", "runtime-adapter", {"error": "thread-start"})
             raise
+        watchdog = threading.Thread(
+            target=self._watch_run,
+            args=(record, run),
+            name=f"byq-dsh-watchdog-{session_id}",
+            daemon=True,
+        )
+        watchdog.start()
         return run.run_id
 
     def _run_prompt(self, record: RuntimeSession, run: ActiveRun, content: str) -> None:
@@ -341,6 +372,7 @@ class RuntimeAdapter:
                 if record.active_run is not run:
                     return
                 record.active_run = None
+                run.watchdog_stop.set()
                 if run.hard_cancelled or record.status in {SessionStatus.INTERRUPTED, SessionStatus.CLOSED}:
                     return
                 if run.soft_cancel_requested:
@@ -355,6 +387,7 @@ class RuntimeAdapter:
             if record.active_run is not run:
                 return
             record.active_run = None
+            run.watchdog_stop.set()
             if run.hard_cancelled or record.status in {SessionStatus.INTERRUPTED, SessionStatus.CLOSED}:
                 return
             if run.soft_cancel_requested:
@@ -391,6 +424,7 @@ class RuntimeAdapter:
                 record.status = SessionStatus.CANCELLING
             else:
                 run.hard_cancelled = True
+                run.watchdog_stop.set()
                 record.interrupted_run_id = run.run_id
                 record.status = SessionStatus.INTERRUPTED
                 # The owned process is closed synchronously below. Detach the
@@ -521,6 +555,8 @@ class RuntimeAdapter:
             self._sessions.clear()
         for record in records:
             with record.lock:
+                if record.active_run is not None:
+                    record.active_run.watchdog_stop.set()
                 record.active_run = None
                 record.status = SessionStatus.CLOSED
                 self._emit(record, "session.closed", "runtime-adapter", {"reason": "adapter-shutdown"})
@@ -640,8 +676,13 @@ class RuntimeAdapter:
 
     def _on_notification(self, record: RuntimeSession, notification: Notification) -> None:
         with record.lock:
-            if record.status in {SessionStatus.INTERRUPTED, SessionStatus.CLOSED}:
+            if record.status in {
+                SessionStatus.INTERRUPTED, SessionStatus.FAILED, SessionStatus.CLOSED,
+            }:
                 return
+            run = record.active_run
+            if run is not None:
+                self._observe_run_notification(record, run, notification)
             self._record_usage(record, notification)
             events = normalize_dsh_notification(
                 notification,
@@ -651,8 +692,105 @@ class RuntimeAdapter:
                 sequence=record.sequence + 1,
                 state=record.normalization,
             )
+            if run is not None and events and any(
+                event["kind"] in {"agent.activity", "agent.output.delta", "turn.completed"}
+                for event in events
+            ):
+                run.last_public_progress_at = time.monotonic()
             for event in events:
                 self._publish(record, event)
+
+    @staticmethod
+    def _guard_seconds(name: str, *, default: float) -> float:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        try:
+            value = float(raw)
+        except ValueError as exc:
+            raise ValueError(f"{name} must be a number") from exc
+        if not 1.0 <= value <= 3600.0:
+            raise ValueError(f"{name} must be between 1 and 3600 seconds")
+        return value
+
+    def _watch_run(self, record: RuntimeSession, run: ActiveRun) -> None:
+        while not run.watchdog_stop.wait(timeout=1.0):
+            if self._enforce_run_guards(record, run, now=time.monotonic()):
+                return
+
+    def _enforce_run_guards(
+        self, record: RuntimeSession, run: ActiveRun, *, now: float,
+    ) -> bool:
+        with record.lock:
+            if record.active_run is not run or record.status not in SessionStatus.ACTIVE_PROMPT:
+                run.watchdog_stop.set()
+                return False
+            oldest_subagent = min(run.active_subagent_calls.values(), default=None)
+            if (
+                oldest_subagent is not None
+                and now - oldest_subagent > self._subagent_timeout_seconds
+            ):
+                code = "runtime-subagent-timeout"
+            elif now - run.last_public_progress_at > self._no_progress_timeout_seconds:
+                code = "runtime-no-progress-timeout"
+            elif now - run.started_at > self._run_timeout_seconds:
+                code = "runtime-run-timeout"
+            else:
+                return False
+            run.hard_cancelled = True
+            run.watchdog_stop.set()
+            record.interrupted_run_id = run.run_id
+            record.active_run = None
+            record.status = SessionStatus.FAILED
+            failed_harness = record.harness
+            self._emit(
+                record,
+                "session.failed",
+                "runtime-adapter",
+                {"code": code, "retryable": True},
+            )
+        # A session owns its DSH process, so closing it cannot interrupt any
+        # other Product conversation. The detached worker will discard any
+        # late result and resume creates a fresh private generation.
+        failed_harness.close()
+        return True
+
+    @staticmethod
+    def _observe_run_notification(
+        record: RuntimeSession, run: ActiveRun, notification: Notification,
+    ) -> None:
+        if notification.method != "session.event" or not isinstance(notification.payload, dict):
+            return
+        if notification.payload.get("sessionId") != record.runtime_session_id:
+            return
+        raw_event = notification.payload.get("event")
+        if not isinstance(raw_event, dict):
+            return
+        data = raw_event.get("data")
+        if not isinstance(data, dict):
+            return
+        if raw_event.get("type") == "tool/call":
+            call_id = data.get("callId")
+            name = data.get("name")
+            if (
+                isinstance(call_id, str) and call_id
+                and isinstance(name, str)
+                and name.removeprefix("mcp__byq__").startswith("byq_delegate_")
+            ):
+                run.active_subagent_calls[call_id] = time.monotonic()
+            return
+        if raw_event.get("type") != "tool/result":
+            return
+        message = data.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            return
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool-result":
+                continue
+            call_id = block.get("toolCallId")
+            if isinstance(call_id, str):
+                run.active_subagent_calls.pop(call_id, None)
 
     def _record_usage(self, record: RuntimeSession, notification: Notification) -> None:
         """Extract the documented TokenUsage shape without retaining DSH data."""

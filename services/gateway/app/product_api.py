@@ -666,6 +666,18 @@ def product_ml_prediction_get(run_id: str, request: Request) -> dict[str, object
     return _backend_request("GET", f"/v1/research/ml/prediction-runs/{run_id}", headers=_trusted_agent_headers(request))
 
 
+@router.get("/ml/prediction-runs/{run_id}/rows")
+def product_ml_prediction_rows(
+    run_id: str, request: Request, query: str = "", limit: int = 50, offset: int = 0,
+) -> dict[str, object]:
+    _product_principal(request)
+    params = urlencode({"query": query, "limit": limit, "offset": offset})
+    return _backend_request(
+        "GET", f"/v1/research/ml/prediction-runs/{run_id}/rows?{params}",
+        headers=_trusted_agent_headers(request),
+    )
+
+
 @router.get("/backtests/options")
 def product_backtest_options(request: Request) -> dict[str, object]:
     _product_principal(request)

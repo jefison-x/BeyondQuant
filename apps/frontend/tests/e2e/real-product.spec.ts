@@ -258,7 +258,7 @@ test("real Product API Paper Trading settlement, risk, detail, and bundle flow",
 
   await page.goto("/paper-trading");
   await expect(page.getByRole("heading", { name: "模拟账户与交易监督" })).toBeVisible();
-  await page.getByPlaceholder("账户名称").fill(`纸面账户-${suffix}`);
+  await page.getByTestId("paper-account-name").fill(`纸面账户-${suffix}`);
   const createdAccount = page.waitForResponse((response) => response.url().endsWith("/api/product/paper/accounts") && response.request().method() === "POST");
   await page.getByRole("button", { name: "新建账户" }).click();
   expect((await createdAccount).status()).toBe(201);

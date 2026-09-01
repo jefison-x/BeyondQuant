@@ -5,6 +5,7 @@ from datetime import date, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
+from app import main as backend_main
 from app.backtest import LocalObjectStore
 from app.ml_prediction import (
     MLPredictionCoordinator,
@@ -89,6 +90,75 @@ class FakeMarketData:
     def build_partitioned_ready_input(self, requirements):
         self.build_count += 1
         return ready_input()
+
+
+def test_prediction_rows_api_is_owner_scoped_filtered_and_paginated(monkeypatch) -> None:
+    context = trusted_agent_context("ml-prediction-rows-owner")
+    workspace_id = context["x-byq-workspace-id"]
+
+    class Runs:
+        def get(self, run_id, *, trusted_workspace, trusted_owner):
+            assert (run_id, trusted_workspace, trusted_owner) == (
+                "mlpred_rows", workspace_id, "ml-prediction-rows-owner",
+            )
+            return {"prediction_artifact_id": "artifact_rows"}
+
+    class Research:
+        def get_artifact(self, artifact_id):
+            assert artifact_id == "artifact_rows"
+            return {
+                "artifact_id": artifact_id,
+                "kind": "ml_prediction_snapshot",
+                "owner_principal": "ml-prediction-rows-owner",
+                "workspace_id": workspace_id,
+                "content": {"rows": [
+                    {"session": "2024-03-01", "symbol": "000001.SZ", "score": 0.8, "rank": 1, "private": "drop"},
+                    {"session": "2024-03-01", "symbol": "000002.SZ", "score": 0.7, "rank": 2},
+                    {"session": "2024-03-02", "symbol": "000001.SZ", "score": 0.9, "rank": 1},
+                ]},
+            }
+
+    monkeypatch.setattr(backend_main, "ml_prediction_store", Runs())
+    monkeypatch.setattr(backend_main, "research_store", Research())
+    response = TestClient(app).get(
+        "/v1/research/ml/prediction-runs/mlpred_rows/rows?query=000001&limit=1&offset=1",
+        headers=context,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "schema_version": "ml-prediction-rows.v1",
+        "prediction_run_id": "mlpred_rows",
+        "prediction_artifact_id": "artifact_rows",
+        "rows": [{"session": "2024-03-02", "rank": 1, "symbol": "000001.SZ", "score": 0.9}],
+        "total": 2,
+        "limit": 1,
+        "offset": 1,
+        "has_more": False,
+    }
+
+
+def test_ml_workspace_signal_projection_keeps_identity_without_long_rows() -> None:
+    projected = backend_main._ml_agent_artifact_projection({
+        "artifact_id": "artifact_signal",
+        "task_id": "task_signal",
+        "kind": "signal_snapshot",
+        "status": "validated",
+        "content_sha256": "a" * 64,
+        "content": {
+            "schema_version": "signal-snapshot.v1",
+            "strategy_version_id": "ml_strategy_1",
+            "strategy_version_artifact_id": "artifact_strategy",
+            "execution": {"lot_size": 100},
+            "source": {"kind": "ml_prediction"},
+            "signals": [{"symbol": "000001.SZ", "direction": 1}],
+            "bars": [{"symbol": "000001.SZ", "close": 10.0}],
+        },
+    })
+    assert projected is not None
+    assert projected["artifact_id"] == "artifact_signal"
+    assert projected["content"]["source"] == {"kind": "ml_prediction"}
+    assert "signals" not in projected["content"]
+    assert "bars" not in projected["content"]
 
 
 def test_prediction_ranking_is_deterministic_and_rows_never_expose_labels() -> None:
