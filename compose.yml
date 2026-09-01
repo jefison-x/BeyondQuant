@@ -1,6 +1,16 @@
 services:
   postgres:
     image: postgres:16-alpine
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${BYQ_POSTGRES_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${BYQ_POSTGRES_EFFECTIVE_CACHE_SIZE:-4GB}
+      - -c
+      - maintenance_work_mem=${BYQ_POSTGRES_MAINTENANCE_WORK_MEM:-256MB}
+      - -c
+      - work_mem=${BYQ_POSTGRES_WORK_MEM:-4MB}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-byq_domain}
       POSTGRES_USER: ${POSTGRES_USER:-byq_app}
