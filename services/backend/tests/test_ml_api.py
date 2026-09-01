@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from app import main as backend_main
 from app.main import _ml_pool_market_scope, app
 from tests.test_ml_strategy import valid_strategy
 from tests.workspace_helpers import trusted_agent_context
@@ -36,6 +37,36 @@ def test_ml_capabilities_and_workspace_are_closed_safe_projections() -> None:
     assert workspace.json()["prediction_available_via_agent"] is True
     assert workspace.json()["prediction_runs"] == []
     assert "object_reference" not in workspace.text and "rows" not in workspace.text
+
+
+def test_ml_workspace_and_prediction_pages_never_materialise_large_rows() -> None:
+    headers = trusted_agent_context("ml-bounded-owner")
+    task = client.post("/v1/research/tasks", headers=headers, json={
+        "owner_principal": "ml-bounded-owner", "title": "Bounded ML", "objective": "Page rows",
+        "trace_id": "trace-ml-bounded", "idempotency_key": "task-ml-bounded",
+    }).json()
+    artifact = backend_main.research_store.create_artifact({
+        "task_id": task["task_id"], "kind": "ml_prediction_snapshot",
+        "content": {"schema_version": "ml-prediction-snapshot.v1", "rows": [
+            {"session": "2026-01-02", "rank": 1, "symbol": "000001.SZ", "score": 0.9, "private": "drop"},
+            {"session": "2026-01-02", "rank": 2, "symbol": "000002.SZ", "score": 0.8},
+            {"session": "2026-01-03", "rank": 1, "symbol": "000001.SZ", "score": 0.7},
+        ]},
+        "lineage": [], "trace_id": "trace-ml-bounded", "idempotency_key": "artifact-ml-bounded",
+    })
+    projected = backend_main.research_store.list_ml_workspace_artifacts(
+        owner_principal="ml-bounded-owner", workspace_id=headers["x-byq-workspace-id"],
+    )
+    assert projected[0]["artifact_id"] == artifact["artifact_id"]
+    assert "rows" not in projected[0]["content"]
+    page = backend_main.research_store.list_ml_prediction_rows(
+        artifact_id=str(artifact["artifact_id"]), owner_principal="ml-bounded-owner",
+        workspace_id=headers["x-byq-workspace-id"], query="000001", limit=1, offset=1,
+    )
+    assert page == {
+        "rows": [{"session": "2026-01-03", "rank": 1, "symbol": "000001.SZ", "score": 0.7}],
+        "total": 2,
+    }
 
 
 def test_ml_strategy_version_and_human_approval_are_owner_scoped() -> None:

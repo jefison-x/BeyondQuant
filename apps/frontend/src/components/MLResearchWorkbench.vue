@@ -36,6 +36,7 @@ let predictionRowsTimer: number | undefined, predictionRowsRequest = 0;
 async function loadPredictionRows() {
   const runId = predictionRunId.value;
   const requestId = ++predictionRowsRequest;
+  if (activeTab.value !== "prediction") return;
   if (!runId) { predictionRows.value = []; predictionRowsTotal.value = 0; predictionRowsLoading.value = false; return; }
   predictionRowsLoading.value = true;
   try {
@@ -45,10 +46,20 @@ async function loadPredictionRows() {
     if (requestId === predictionRowsRequest) { predictionRows.value = []; predictionRowsTotal.value = 0; error.value = e instanceof Error ? e.message : "预测结果加载失败"; }
   } finally { if (requestId === predictionRowsRequest) predictionRowsLoading.value = false; }
 }
-watch(predictionRunId, () => { predictionRowsQuery.value = ""; predictionRowsPage.value = 1; void loadPredictionRows(); });
+watch(predictionRunId, () => {
+  predictionRowsQuery.value = "";
+  predictionRowsPage.value = 1;
+  predictionRows.value = [];
+  predictionRowsTotal.value = 0;
+  if (activeTab.value === "prediction") void loadPredictionRows();
+});
 watch([predictionRowsQuery, predictionRowsPage], () => {
+  if (activeTab.value !== "prediction") return;
   if (predictionRowsTimer) clearTimeout(predictionRowsTimer);
   predictionRowsTimer = window.setTimeout(() => void loadPredictionRows(), 180);
+});
+watch(activeTab, (tab) => {
+  if (tab === "prediction" && predictionRunId.value) void loadPredictionRows();
 });
 const capability = computed(() => CAPABILITIES.find(c => c.id === form.capability_id) ?? CAPABILITIES[0]);
 const taskId = computed(() => selected.value?.task_id || form.task_id);

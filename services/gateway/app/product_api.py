@@ -600,7 +600,7 @@ def product_ml_workspace(request: Request) -> dict[str, object]:
             _backend_request, "GET", "/v1/research/ml/workspace", headers=headers,
         )
         backtests_future = executor.submit(
-            _backend_request, "GET", "/v1/research/backtests", headers=headers,
+            _backend_request, "GET", "/v1/research/backtests/catalog?limit=100&offset=0", headers=headers,
         )
         workspace = workspace_future.result()
         raw_backtests = backtests_future.result().get("backtests", [])
@@ -788,6 +788,24 @@ def product_strategy_export(artifact_id: str, request: Request) -> dict[str, obj
     )
 
 
+@router.get("/strategies/versions/{artifact_id}/approval")
+def product_strategy_version_approval(artifact_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET",
+        f"/v1/research/strategies/versions/{artifact_id}/approval",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/research/task-options")
+def product_research_task_options(request: Request, limit: int = 50) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET", f"/v1/research/task-options?limit={limit}", headers=_trusted_agent_headers(request)
+    )
+
+
 @router.get("/strategies")
 def product_strategies(
     request: Request, lifecycle: str = "active", limit: int = 50, offset: int = 0
@@ -961,10 +979,12 @@ def product_approval_decision(approval_id: str, request: Request, payload: dict[
 
 
 @router.get("/data-center/status")
-def product_data_center_status(request: Request) -> dict[str, object]:
+def product_data_center_status(request: Request, view: str = "full") -> dict[str, object]:
+    if view not in {"summary", "full"}:
+        raise ProductError(422, "product_data_center_view_invalid", "data-center view is invalid")
     return _backend_request(
         "GET",
-        "/v1/data-center/status",
+        f"/v1/data-center/status?view={view}",
         headers=_data_actor_headers(request),
     )
 

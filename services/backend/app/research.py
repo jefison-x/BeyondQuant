@@ -594,6 +594,107 @@ class ResearchStore(PgStoreMixin):
             rows = self._execute("SELECT * FROM artifacts ORDER BY created_at DESC, artifact_id DESC LIMIT 200")
         return {"artifacts": [self._artifact_row(row) for row in rows]}
 
+    def list_ml_workspace_artifacts(
+        self, *, owner_principal: str, workspace_id: str, limit: int = 200
+    ) -> list[dict[str, object]]:
+        """Return ML workspace metadata without materialising large row payloads."""
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > 200:
+            raise ValueError("limit must be between 1 and 200")
+        rows = self._execute(
+            """SELECT artifact_id, task_id, experiment_id, owner_principal, workspace_id,
+                      kind, status,
+                      content - ARRAY['rows', 'signals', 'bars', 'universe']::text[] AS content,
+                      content_sha256, lineage, trace_id, created_at, updated_at, version
+               FROM artifacts
+               WHERE owner_principal = :owner AND workspace_id = :workspace
+                 AND kind IN ('ml_strategy_version', 'ml_strategy_approval', 'ml_model',
+                              'ml_prediction_snapshot', 'signal_snapshot')
+               ORDER BY created_at DESC, artifact_id DESC LIMIT :limit""",
+            {"owner": owner_principal, "workspace": workspace_id, "limit": limit},
+        )
+        return [self._artifact_row(row) for row in rows]
+
+    def get_strategy_approval(
+        self, *, owner_principal: str, strategy_version_artifact_id: str
+    ) -> dict[str, object] | None:
+        row = self._fetch_one(
+            """SELECT * FROM artifacts
+               WHERE owner_principal = :owner AND kind = 'strategy_approval'
+                 AND content ->> 'strategy_version_artifact_id' = :version_id
+               ORDER BY created_at DESC, artifact_id DESC LIMIT 1""",
+            {"owner": owner_principal, "version_id": strategy_version_artifact_id},
+        )
+        return None if row is None else self._artifact_row(row)
+
+    def get_ml_strategy_approval(
+        self, *, owner_principal: str, workspace_id: str, ml_strategy_artifact_id: str
+    ) -> dict[str, object] | None:
+        row = self._fetch_one(
+            """SELECT * FROM artifacts
+               WHERE owner_principal = :owner AND workspace_id = :workspace
+                 AND kind = 'ml_strategy_approval' AND status = 'validated'
+                 AND content ->> 'ml_strategy_artifact_id' = :strategy_id
+                 AND content ->> 'decision' = 'approved'
+                 AND content ->> 'execution_authorized' = 'true'
+               ORDER BY created_at DESC, artifact_id DESC LIMIT 1""",
+            {"owner": owner_principal, "workspace": workspace_id, "strategy_id": ml_strategy_artifact_id},
+        )
+        return None if row is None else self._artifact_row(row)
+
+    def list_ml_prediction_rows(
+        self, *, artifact_id: str, owner_principal: str, workspace_id: str,
+        query: str, limit: int, offset: int,
+    ) -> dict[str, object]:
+        """Filter and page a prediction JSON array inside PostgreSQL."""
+        artifact = self._fetch_one(
+            """SELECT artifact_id, jsonb_typeof(content -> 'rows') AS rows_type
+               FROM artifacts WHERE artifact_id = :artifact_id AND owner_principal = :owner
+                 AND workspace_id = :workspace AND kind = 'ml_prediction_snapshot'""",
+            {"artifact_id": artifact_id, "owner": owner_principal, "workspace": workspace_id},
+        )
+        if artifact is None:
+            raise ResearchNotFound("prediction artifact not found")
+        if artifact.get("rows_type") != "array":
+            raise ValueError("prediction artifact rows are invalid")
+        escaped = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        needle = f"%{escaped}%"
+        rows = self._execute(
+            """WITH matching AS (
+                   SELECT value, ordinality
+                   FROM artifacts a,
+                        jsonb_array_elements(a.content -> 'rows') WITH ORDINALITY AS item(value, ordinality)
+                   WHERE a.artifact_id = :artifact_id
+                     AND (:query = '' OR concat_ws(' ', value ->> 'symbol', value ->> 'session',
+                                                    value ->> 'rank') ILIKE :needle ESCAPE '\\')
+               ), paged AS (
+                   SELECT jsonb_build_object(
+                       'session', value -> 'session', 'rank', value -> 'rank',
+                       'symbol', value -> 'symbol', 'score', value -> 'score'
+                   ) AS row
+                   FROM matching ORDER BY ordinality LIMIT :limit OFFSET :offset
+               ), total AS (SELECT COUNT(*)::bigint AS count FROM matching)
+               SELECT paged.row, total.count FROM total LEFT JOIN paged ON TRUE""",
+            {
+                "artifact_id": artifact_id, "query": query.strip(), "needle": needle,
+                "limit": limit, "offset": offset,
+            },
+        )
+        total = int(rows[0]["count"] if rows else 0)
+        return {"rows": [row["row"] for row in rows if row.get("row") is not None], "total": total}
+
+    def list_task_options(
+        self, *, owner_principal: str, limit: int = 50
+    ) -> list[dict[str, object]]:
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > 100:
+            raise ValueError("limit must be between 1 and 100")
+        rows = self._execute(
+            """SELECT task_id, title, status, created_at, updated_at
+               FROM research_tasks WHERE owner_principal = :owner
+               ORDER BY created_at DESC, task_id DESC LIMIT :limit""",
+            {"owner": owner_principal, "limit": limit},
+        )
+        return [_row_dict(row) for row in rows]
+
     def list_strategy_artifacts(
         self,
         *,

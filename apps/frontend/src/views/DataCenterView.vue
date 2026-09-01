@@ -26,6 +26,8 @@ import type {
 import { useAuthStore } from "@/stores/auth";
 import { boundedReadinessSymbols, stockPoolSymbols } from "@/readinessInputs";
 import { mergeDataCenterProgress } from "@/dataCenterProgress";
+import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
+import { useFilteredPagination } from "@/composables/useFilteredPagination";
 
 const auth = useAuthStore();
 
@@ -49,6 +51,7 @@ const automationForm = reactive({
 });
 const selectedJob = ref<DataSyncJob | null>(null);
 const selectedSecurityJob = ref<SecurityMasterSyncJob | null>(null);
+const activityLoaded = ref(false);
 const catalogue = ref<SecurityCataloguePage>({ securities: [], total: 0, limit: 50, offset: 0, snapshot: null });
 const catalogueLoading = ref(false);
 const catalogueFilters = reactive({ query: "", statuses: ["L"], exchanges: [] as string[] });
@@ -68,6 +71,12 @@ const readinessForm = reactive({
 });
 
 const credentials = computed(() => status.value?.source.credentials ?? []);
+const coverageRows = computed(() => status.value?.coverage.symbols ?? []);
+const coveragePages = useFilteredPagination(
+  coverageRows,
+  (item) => `${item.symbol} ${item.date_min ?? ""} ${item.date_max ?? ""}`,
+  20,
+);
 const canAddCredential = computed(() => !credentials.value.some((item) => item.status !== "revoked"));
 let refreshTimer: number | undefined;
 let refreshFailures = 0;
@@ -129,7 +138,9 @@ async function load(options: { progressOnly?: boolean } = {}): Promise<boolean> 
   }
   error.value = "";
   try {
-    const next = await getDataCenterStatus();
+    const needsActivity = progressOnly || ["sync", "securities"].includes(activeTab.value);
+    const next = await getDataCenterStatus(needsActivity ? "full" : "summary");
+    activityLoaded.value = needsActivity;
     const hadStatus = status.value !== null;
     if (progressOnly) applyProgressStatus(next);
     else status.value = next;
@@ -197,7 +208,9 @@ onBeforeUnmount(() => {
   if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
 });
 watch(activeTab, (tab) => {
-  if (tab === "securities" && status.value?.security_master.latest_snapshot && !catalogue.value.snapshot) {
+  if (["sync", "securities"].includes(tab) && !activityLoaded.value) {
+    void load();
+  } else if (tab === "securities" && status.value?.security_master.latest_snapshot && !catalogue.value.snapshot) {
     void loadCatalogue();
   }
 });
@@ -671,7 +684,7 @@ function securityStatusLabel(value: string) {
           </el-card>
           <el-alert title="下方全局概览只说明已存数据量，不能代替上面的任务可用性检查。" type="info" show-icon :closable="false" />
           <div class="coverage-grid"><el-card shadow="never"><strong>总体覆盖</strong><el-descriptions :column="1" border><el-descriptions-item label="数据行">{{ status.coverage.row_count.toLocaleString() }}</el-descriptions-item><el-descriptions-item label="标的数">{{ status.coverage.symbol_count }}</el-descriptions-item><el-descriptions-item label="日期范围">{{ status.coverage.date_min ?? "-" }} — {{ status.coverage.date_max ?? "-" }}</el-descriptions-item><el-descriptions-item label="来源问题">{{ status.coverage.source_issues }}</el-descriptions-item><el-descriptions-item label="OHLC 问题">{{ status.coverage.ohlc_issues }}</el-descriptions-item></el-descriptions></el-card><el-card shadow="never"><strong>数据集分组</strong><el-table :data="status.coverage.groups" empty-text="暂无数据"><el-table-column prop="data_source" label="来源" /><el-table-column prop="asset_type" label="资产" /><el-table-column prop="row_count" label="数据行" /><el-table-column prop="symbol_count" label="标的" /></el-table></el-card></div>
-          <el-card shadow="never"><template #header><strong>已同步标的覆盖</strong></template><el-table :data="status.coverage.symbols" empty-text="暂无覆盖记录"><el-table-column prop="symbol" label="股票代码" /><el-table-column prop="row_count" label="数据行" /><el-table-column prop="date_min" label="最早日期" /><el-table-column prop="date_max" label="最晚日期" /></el-table></el-card>
+          <el-card shadow="never"><template #header><strong>已同步标的覆盖</strong></template><ListFilterPagination v-model:query="coveragePages.query.value" v-model:page="coveragePages.page.value" :page-size="coveragePages.pageSize.value" :total="coveragePages.total.value" placeholder="筛选股票代码或日期" label="覆盖记录分页"><el-table :data="coveragePages.pageItems.value" empty-text="暂无覆盖记录"><el-table-column prop="symbol" label="股票代码" /><el-table-column prop="row_count" label="数据行" /><el-table-column prop="date_min" label="最早日期" /><el-table-column prop="date_max" label="最晚日期" /></el-table></ListFilterPagination></el-card>
         </el-tab-pane>
       </el-tabs>
     </template>

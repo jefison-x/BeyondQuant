@@ -100,6 +100,8 @@ paths:
   /api/product/research/tasks:
     get: {summary: 列出 owner-scoped research tasks., responses: *okResponses}
     post: {summary: 创建 an owner-scoped research task with server-owned identity fields., responses: *createdResponses}
+  /api/product/research/task-options:
+    get: {summary: 返回策略编辑器使用的 bounded owner-scoped research task options., responses: *okResponses}
   /api/product/research/experiments:
     get: {summary: 列出 owner-scoped experiments., responses: *okResponses}
   /api/product/research/artifacts:
@@ -194,6 +196,9 @@ paths:
   /api/product/strategies/versions/{artifact_id}/export:
     parameters: [{$ref: "#/components/parameters/ArtifactId"}]
     get: {summary: 导出 one owner-scoped strategy version., responses: *okResponses}
+  /api/product/strategies/versions/{artifact_id}/approval:
+    parameters: [{$ref: "#/components/parameters/ArtifactId"}]
+    get: {summary: 按具体 strategy version 返回 owner-scoped approval；不扫描通用 Artifact 列表。, responses: *okResponses}
   /api/product/strategies/{strategy_id}/versions:
     parameters: [{$ref: "#/components/parameters/StrategyId"}]
     get: {summary: 列出 owner-scoped strategy version history., responses: *okResponses}
