@@ -85,6 +85,7 @@ from .backtest import (
     normalize_backtest_request,
     normalize_signal_snapshot,
     normalize_execution_profile,
+    project_backtest_summary,
     signal_snapshot_content_sha256,
     membership_fingerprint,
 )
@@ -3150,7 +3151,9 @@ def cancel_backtest_task(backtest_task_id: str, request: Request) -> dict[str, o
 
 
 @app.post("/v1/research/backtests", status_code=202)
-def create_backtest_job(payload: dict[str, Any], request: Request) -> dict[str, object]:
+def create_backtest_job(
+    payload: dict[str, Any], request: Request, projection: str = "full",
+) -> dict[str, object]:
     context = _required_agent_context(request)
 
     def operation() -> dict[str, object]:
@@ -3199,7 +3202,7 @@ def create_backtest_job(payload: dict[str, Any], request: Request) -> dict[str, 
                 reference_id=job["job_id"],
                 trusted_owner=context["owner_principal"],
             )
-        return {"job": job}
+        return {"job": project_backtest_summary(job) if projection == "summary" else job}
 
     return _backtest_call(operation)
 
@@ -3255,6 +3258,17 @@ def backtest_options(request: Request) -> dict[str, object]:
     return {"options": options}
 
 
+@app.get("/v1/research/backtests/catalog")
+def list_backtest_catalog(
+    request: Request, query: str = "", status: str = "", limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _backtest_call(lambda: backtest_store.list_backtest_summaries(
+        owner_principal=context["owner_principal"], query=query, status=status,
+        limit=limit, offset=offset,
+    ))
+
+
 @app.get("/v1/research/backtests/{job_id}")
 def get_backtest_job(job_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
@@ -3264,6 +3278,32 @@ def get_backtest_job(job_id: str, request: Request) -> dict[str, object]:
         if job["owner_principal"] != context["owner_principal"]:
             raise BacktestNotFound("backtest job not found")
         return {"job": job}
+
+    return _backtest_call(operation)
+
+
+@app.get("/v1/research/backtests/{job_id}/summary")
+def get_backtest_job_summary(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        job = backtest_store.get_backtest_summary(job_id)
+        if job["owner_principal"] != context["owner_principal"]:
+            raise BacktestNotFound("backtest job not found")
+        return {"job": job}
+
+    return _backtest_call(operation)
+
+
+@app.get("/v1/research/backtests/{job_id}/manifest")
+def get_backtest_job_manifest(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        job = backtest_store.get_backtest_summary(job_id)
+        if job["owner_principal"] != context["owner_principal"]:
+            raise BacktestNotFound("backtest job not found")
+        return {"job_id": job_id, "input_manifest": backtest_store.get_input_manifest(job_id)}
 
     return _backtest_call(operation)
 
@@ -3326,7 +3366,7 @@ def _backtest_feature_diagnostics(
 @app.get("/v1/research/backtests/{job_id}/analysis")
 def get_backtest_analysis(
     job_id: str, request: Request, section: str = "summary", limit: int = 50,
-    offset: int = 0,
+    offset: int = 0, query: str = "",
 ) -> dict[str, object]:
     context = _required_agent_context(request)
 
@@ -3346,7 +3386,7 @@ def get_backtest_analysis(
             signal_snapshot_artifact_id=job.get("signal_snapshot_artifact_id"),
         )
         analysis = build_backtest_analysis(
-            result, section=section, limit=limit, offset=offset,
+            result, section=section, limit=limit, offset=offset, query=query,
             execution=job.get("execution") if isinstance(job.get("execution"), dict) else {},
             feature_diagnostics=diagnostics,
         )
@@ -3362,7 +3402,9 @@ def list_backtest_jobs(request: Request) -> dict[str, object]:
 
 
 @app.post("/v1/research/backtests/{job_id}/run")
-def run_backtest_job(job_id: str, request: Request) -> dict[str, object]:
+def run_backtest_job(
+    job_id: str, request: Request, projection: str = "full",
+) -> dict[str, object]:
     context = _required_agent_context(request)
 
     def operation() -> dict[str, object]:
@@ -3370,30 +3412,36 @@ def run_backtest_job(job_id: str, request: Request) -> dict[str, object]:
         if job["owner_principal"] != context["owner_principal"]:
             raise BacktestNotFound("backtest job not found")
         worker = BacktestWorker(backtest_store, research_store, backtest_objects)
-        return {"job": worker.run_once(job_id)}
+        updated = worker.run_once(job_id)
+        return {"job": project_backtest_summary(updated) if projection == "summary" else updated}
 
     return _backtest_call(operation)
 
 
 @app.post("/v1/research/backtests/{job_id}/cancel")
-def cancel_backtest_job(job_id: str, request: Request) -> dict[str, object]:
+def cancel_backtest_job(
+    job_id: str, request: Request, projection: str = "full",
+) -> dict[str, object]:
     context = _required_agent_context(request)
 
     def operation() -> dict[str, object]:
         job = backtest_store.get(job_id)
         if job["owner_principal"] != context["owner_principal"]:
             raise BacktestNotFound("backtest job not found")
-        return {"job": backtest_store.cancel(job_id)}
+        updated = backtest_store.cancel(job_id)
+        return {"job": project_backtest_summary(updated) if projection == "summary" else updated}
 
     return _backtest_call(operation)
 
 @app.delete("/v1/research/backtests/{job_id}")
-def delete_backtest_job(job_id: str, request: Request) -> dict[str, object]:
+def delete_backtest_job(
+    job_id: str, request: Request, projection: str = "full",
+) -> dict[str, object]:
     context = _required_agent_context(request)
     def operation() -> dict[str, object]:
         deleted = backtest_store.delete(job_id, owner_principal=context["owner_principal"])
         _gc_deleted_backtest_objects(deleted, owner_principal=context["owner_principal"])
-        return {"job": deleted}
+        return {"job": project_backtest_summary(deleted) if projection == "summary" else deleted}
 
     return _backtest_call(operation)
 

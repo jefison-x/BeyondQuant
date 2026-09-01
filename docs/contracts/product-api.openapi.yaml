@@ -142,7 +142,14 @@ paths:
     get: {summary: 获取 one owner-scoped signal-production job status., responses: *okResponses}
 
   /api/product/backtests:
-    get: {summary: 列出 owner-scoped backtest jobs., responses: *okResponses}
+    get:
+      summary: 服务端分页筛选 owner-scoped backtest summaries，不返回 input manifest 或 result object reference.
+      parameters:
+        - {name: query, in: query, schema: {type: string, maxLength: 80}}
+        - {name: status, in: query, schema: {type: string, enum: [queued, running, completed, failed, cancelled]}}
+        - {$ref: "#/components/parameters/Limit"}
+        - {$ref: "#/components/parameters/Offset"}
+      responses: *okResponses
     post: {summary: 提交 an owner-scoped backtest job., responses: *acceptedResponses}
   /api/product/backtests/options:
     get: {summary: 列出 runnable owner-scoped backtest options., responses: *okResponses}
@@ -152,7 +159,18 @@ paths:
     delete: {summary: 删除 one owner-scoped backtest job., responses: *noContentResponses}
   /api/product/backtests/{job_id}/result:
     parameters: [{$ref: "#/components/parameters/JobId"}]
-    get: {summary: 获取 an immutable owner-scoped backtest result., responses: *okResponses}
+    get: {summary: 显式获取完整 immutable owner-scoped backtest result；普通页面加载不得调用。, responses: *okResponses}
+  /api/product/backtests/{job_id}/analysis:
+    parameters:
+      - {$ref: "#/components/parameters/JobId"}
+      - {name: section, in: query, schema: {type: string}}
+      - {name: query, in: query, schema: {type: string, maxLength: 80}}
+      - {$ref: "#/components/parameters/Limit"}
+      - {$ref: "#/components/parameters/Offset"}
+    get: {summary: 获取有界摘要、图表投影或分页回测证据；与 Agent MCP analysis contract 兼容。, responses: *okResponses}
+  /api/product/backtests/{job_id}/manifest:
+    parameters: [{$ref: "#/components/parameters/JobId"}]
+    get: {summary: 仅在用户明确请求时获取完整 immutable input manifest., responses: *okResponses}
   /api/product/backtests/{job_id}/run:
     parameters: [{$ref: "#/components/parameters/JobId"}]
     post: {summary: 运行 one owner-scoped backtest job., responses: *okResponses}
