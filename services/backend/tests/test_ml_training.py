@@ -144,6 +144,24 @@ def test_aggregate_readiness_exposes_bounded_missing_dataset_diagnostics() -> No
     ]
 
 
+def test_recent_training_runs_do_not_materialize_private_training_input(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def execute(_store, sql, params):
+        captured.update({"sql": sql, "params": params})
+        return []
+
+    monkeypatch.setattr(MLTrainingRunStore, "_execute", execute)
+    store = object.__new__(MLTrainingRunStore)
+
+    assert store.list_recent(limit=25) == []
+    query = " ".join(str(captured["sql"]).lower().split())
+    assert "select *" not in query
+    assert "input_json" not in query
+    assert "request_hash" not in query
+    assert captured["params"] == {"limit": 25}
+
+
 class FakeTrainer:
     def train(self, feature_snapshot, strategy):
         return {

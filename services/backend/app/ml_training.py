@@ -431,7 +431,7 @@ class MLTrainingRunStore(PgStoreMixin):
     def list_recent(self, limit: int = 50) -> list[dict[str, object]]:
         if not 1 <= limit <= 100:
             raise ValueError("limit must be between 1 and 100")
-        rows = self._execute("""SELECT * FROM ml_training_runs
+        rows = self._execute(f"""SELECT {self.PUBLIC_COLUMNS} FROM ml_training_runs
             ORDER BY created_at DESC,training_run_id DESC LIMIT :limit""", {"limit": limit})
         return [self._public(row) for row in rows]
 
