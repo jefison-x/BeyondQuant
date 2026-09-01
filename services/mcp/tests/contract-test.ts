@@ -45,6 +45,7 @@ try {
     "byq_backtest_task_prepare",
     "byq_backtest_task_create",
     "byq_backtest_task_get",
+    "byq_backtest_analysis_get",
     "byq_backtest_task_execute",
     "byq_backtest_task_cancel",
   ]) {

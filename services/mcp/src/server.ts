@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { fetchByqHealth } from "./backend-health.js";
 import {
+  fetchByqBacktestAnalysis,
   fetchByqBacktestGet,
   fetchByqBacktestTaskCancel,
   fetchByqBacktestTaskCreate,
@@ -387,6 +388,15 @@ async function byqLessonReview(args: { lesson_id: string; decision: string; rati
 async function byqBacktestGet(args: { job_id: string }, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqBacktestGet(BACKEND_URL, args.job_id, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqBacktestAnalysis(
+  args: { job_id: string; section: string; limit: number; offset: number }, extra: unknown,
+) {
+  const context = completeAgentContext(extra);
+  return context
+    ? fetchByqBacktestAnalysis(BACKEND_URL, args.job_id, args, trustedBackendFetcher(context))
+    : agentContextUnavailable();
 }
 
 async function byqBacktestTaskPrepare(args: BacktestRequest, extra: unknown) {
@@ -892,6 +902,19 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_backtest_get",
     { description: "Read durable BYQ backtest job state and immutable result reference.", inputSchema: { job_id: z.string() } },
     (args) => byqBacktestGet(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_backtest_analysis_get",
+    {
+      description: "Read a bounded, owner-scoped analysis of an immutable completed BYQ backtest. Start with summary, then page only the evidence section needed. This is the Agent analysis channel; it does not expose object-store references or raw result files.",
+      inputSchema: {
+        job_id: z.string().regex(/^backtest_[0-9a-f]{32}$/),
+        section: z.enum(["summary", "trades", "blocked_trades", "daily_returns", "equity_curve", "logs"]).default("summary"),
+        limit: z.number().int().min(1).max(100).default(50),
+        offset: z.number().int().min(0).default(0),
+      },
+    },
+    (args) => byqBacktestAnalysis(args, trustedContext),
   );
   const dateWindowSchema = z.object({
     start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

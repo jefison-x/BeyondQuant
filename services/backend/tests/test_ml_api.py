@@ -2,12 +2,24 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import _ml_pool_market_scope, app
 from tests.test_ml_strategy import valid_strategy
 from tests.workspace_helpers import trusted_agent_context
 
 
 client = TestClient(app)
+
+
+def test_index_ml_pool_freezes_same_index_as_universe_and_benchmark() -> None:
+    declared, membership_mode = _ml_pool_market_scope(
+        {"pool_type": "index"},
+        {"provenance": {"index_symbol": "000300.SH"}},
+    )
+    assert membership_mode == "point_in_time"
+    assert declared == {"index_universe": "000300.SH", "benchmark": "000300.SH"}
+
+    fixed, fixed_mode = _ml_pool_market_scope({"pool_type": "custom"}, {})
+    assert fixed == {} and fixed_mode == "fixed_snapshot"
 
 
 def test_ml_capabilities_and_workspace_are_closed_safe_projections() -> None:

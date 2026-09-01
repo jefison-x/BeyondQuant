@@ -219,7 +219,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
     ),
     AgentRole(
         role_id="backtest_analyst",
-        version="1.1.0",
+        version="1.2.0",
         description="Reviews authorized deterministic backtest jobs and result artifacts.",
         allowed_tools=(
             "byq_agent_context",
@@ -231,6 +231,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_backtest_task_prepare",
             "byq_backtest_task_create",
             "byq_backtest_task_get",
+            "byq_backtest_analysis_get",
             "byq_backtest_task_execute",
             "byq_backtest_task_cancel",
             "byq_evaluation_signal_create",

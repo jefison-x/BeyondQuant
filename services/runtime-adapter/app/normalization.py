@@ -34,6 +34,7 @@ _CAPABILITIES: dict[str, tuple[str, str]] = {
     "byq_backtest_submit": ("backtest", "提交回测"),
     "byq_backtest_run": ("backtest", "运行回测"),
     "byq_backtest_get": ("backtest", "读取回测状态"),
+    "byq_backtest_analysis_get": ("backtest", "读取回测分析证据"),
     "byq_backtest_cancel": ("backtest", "取消回测"),
     "byq_backtest_task_prepare": ("backtest", "准备回测任务"),
     "byq_backtest_task_create": ("backtest", "创建回测任务"),

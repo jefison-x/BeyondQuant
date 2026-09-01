@@ -29,6 +29,10 @@ from .db import PgStoreMixin, execute, fetch_one
 BACKTEST_SCHEMA_VERSION = "backtest-input-v1"
 ENGINE_CONTRACT_VERSION = "native-a-share-v1"
 RESULT_SCHEMA_VERSION = "backtest-result-v1"
+ANALYSIS_SCHEMA_VERSION = "backtest-analysis.v1"
+ANALYSIS_SECTIONS = (
+    "summary", "trades", "blocked_trades", "daily_returns", "equity_curve", "logs",
+)
 MAX_BARS = 50_000
 MAX_SIGNALS = 50_000
 MAX_ACTIONS = 10_000
@@ -1053,6 +1057,160 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
     }
 
 
+def build_backtest_analysis(
+    result: dict[str, object], *, section: str = "summary", limit: int = 50,
+    offset: int = 0, execution: dict[str, object] | None = None,
+    feature_diagnostics: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Project an immutable result into a bounded Agent-facing analysis view."""
+    if section not in ANALYSIS_SECTIONS:
+        raise ValueError(f"section must be one of {', '.join(ANALYSIS_SECTIONS)}")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+        raise ValueError("limit must be between 1 and 100")
+    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+        raise ValueError("offset must be non-negative")
+
+    trades = result.get("trades") if isinstance(result.get("trades"), list) else []
+    blocked = result.get("blocked_trades") if isinstance(result.get("blocked_trades"), list) else []
+    daily_rows = result.get("daily_returns") if isinstance(result.get("daily_returns"), list) else []
+    daily_returns = [
+        float(row["daily_return"])
+        for row in daily_rows
+        if isinstance(row, dict)
+        and isinstance(row.get("daily_return"), (int, float))
+        and not isinstance(row.get("daily_return"), bool)
+        and math.isfinite(float(row["daily_return"]))
+    ]
+    commission = sum(
+        float(row.get("commission", 0)) for row in trades
+        if isinstance(row, dict) and isinstance(row.get("commission", 0), (int, float))
+    )
+    tax = sum(
+        float(row.get("tax", 0)) for row in trades
+        if isinstance(row, dict) and isinstance(row.get("tax", 0), (int, float))
+    )
+    execution = execution if isinstance(execution, dict) else {}
+    slippage_rate = execution.get("slippage_rate")
+    estimated_slippage = 0.0
+    if (
+        isinstance(slippage_rate, (int, float))
+        and not isinstance(slippage_rate, bool)
+        and 0 <= float(slippage_rate) < 1
+    ):
+        rate = float(slippage_rate)
+        for row in trades:
+            if not isinstance(row, dict):
+                continue
+            amount = row.get("amount")
+            side = row.get("order_type")
+            if not isinstance(amount, (int, float)) or isinstance(amount, bool):
+                continue
+            if side == "buy":
+                estimated_slippage += float(amount) * rate / (1 + rate)
+            elif side == "sell":
+                estimated_slippage += float(amount) * rate / (1 - rate)
+    explicit_fees = commission + tax
+    total_cost = explicit_fees + estimated_slippage
+    initial_capital = execution.get("initial_capital")
+    cost_ratio = (
+        total_cost / float(initial_capital)
+        if isinstance(initial_capital, (int, float))
+        and not isinstance(initial_capital, bool)
+        and float(initial_capital) > 0 else None
+    )
+
+    annualized_return = None
+    total_return = result.get("total_return")
+    if (
+        daily_returns
+        and isinstance(total_return, (int, float))
+        and not isinstance(total_return, bool)
+        and float(total_return) > -1
+    ):
+        annualized_return = (1.0 + float(total_return)) ** (252.0 / len(daily_returns)) - 1.0
+    daily_mean = sum(daily_returns) / len(daily_returns) if daily_returns else None
+    daily_variance = (
+        sum((value - daily_mean) ** 2 for value in daily_returns) / (len(daily_returns) - 1)
+        if daily_mean is not None and len(daily_returns) > 1 else None
+    )
+    annualized_volatility = math.sqrt(daily_variance) * math.sqrt(252.0) if daily_variance is not None else None
+    sharpe_ratio = (
+        daily_mean / math.sqrt(daily_variance) * math.sqrt(252.0)
+        if daily_mean is not None and daily_variance is not None and daily_variance > 0 else None
+    )
+    max_drawdown = result.get("max_drawdown")
+    calmar_ratio = (
+        annualized_return / float(max_drawdown)
+        if annualized_return is not None
+        and isinstance(max_drawdown, (int, float))
+        and not isinstance(max_drawdown, bool)
+        and float(max_drawdown) > 0 else None
+    )
+    blocked_reasons: dict[str, int] = {}
+    for row in blocked:
+        if not isinstance(row, dict):
+            continue
+        reason = str(row.get("reason_code") or "unknown")
+        blocked_reasons[reason] = blocked_reasons.get(reason, 0) + 1
+
+    summary = {
+        key: result.get(key)
+        for key in (
+            "final_value", "total_return", "benchmark_symbol", "benchmark_return",
+            "excess_return", "max_drawdown", "trade_count", "blocked_trade_count",
+            "reproducibility",
+        )
+    }
+    benchmark_status = "not_frozen"
+    if result.get("benchmark_symbol"):
+        benchmark_status = (
+            "available"
+            if isinstance(result.get("benchmark_return"), (int, float))
+            and not isinstance(result.get("benchmark_return"), bool)
+            else "frozen_without_aligned_rows"
+        )
+    summary.update({
+        "benchmark_status": benchmark_status,
+        "annualized_return": None if annualized_return is None else _money(annualized_return),
+        "annualized_volatility": None if annualized_volatility is None else _money(annualized_volatility),
+        "sharpe_ratio": None if sharpe_ratio is None else _money(sharpe_ratio),
+        "calmar_ratio": None if calmar_ratio is None else _money(calmar_ratio),
+        "risk_free_rate": 0.0,
+        "periods_per_year": 252,
+        "commission_total": _money(commission),
+        "stamp_tax_total": _money(tax),
+        "explicit_fee_total": _money(explicit_fees),
+        "estimated_slippage_total": _money(estimated_slippage),
+        "transaction_cost_total": _money(total_cost),
+        "transaction_cost_ratio": None if cost_ratio is None else _money(cost_ratio),
+        "blocked_reason_counts": dict(sorted(blocked_reasons.items())),
+        "execution_assumptions": {
+            key: execution.get(key)
+            for key in ("initial_capital", "commission_rate", "stamp_tax_rate", "slippage_rate", "lot_size")
+        },
+    })
+    if feature_diagnostics:
+        summary["feature_diagnostics"] = feature_diagnostics
+
+    analysis: dict[str, object] = {
+        "schema_version": ANALYSIS_SCHEMA_VERSION,
+        "section": section,
+        "summary": summary,
+        "available_sections": list(ANALYSIS_SECTIONS),
+    }
+    if section != "summary":
+        rows = result.get(section)
+        items = rows if isinstance(rows, list) else []
+        analysis["page"] = {
+            "items": items[offset:offset + limit],
+            "total": len(items),
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + limit < len(items),
+        }
+    return analysis
+
+
 def _new_job_id() -> str:
     return f"backtest_{uuid.uuid4().hex}"
 
@@ -1231,6 +1389,22 @@ class BacktestJobStore(PgStoreMixin):
         if row is None:
             raise BacktestNotFound("backtest job not found")
         return row["request_json"]
+
+    def analysis_context(self, job_id: object) -> dict[str, object]:
+        """Read only the small fields required for an Agent analysis projection."""
+        identity = _text(job_id, field="job_id", max_length=64)
+        if JOB_ID_PATTERN.fullmatch(identity) is None:
+            raise ValueError("job_id is not a valid backtest identifier")
+        row = self._fetch_one(
+            """SELECT job_id,owner_principal,status,result_reference_json,
+                      input_manifest_json->'execution' AS execution,
+                      request_json->>'signal_snapshot_artifact_id' AS signal_snapshot_artifact_id
+               FROM backtest_jobs WHERE job_id=:job_id""",
+            {"job_id": identity},
+        )
+        if row is None:
+            raise BacktestNotFound("backtest job not found")
+        return row
 
     def claim(self, job_id: object) -> dict[str, object] | None:
         job_id = _text(job_id, field="job_id", max_length=64)

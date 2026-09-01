@@ -126,11 +126,30 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     assert result_body["result"]["strategy_version_artifact_id"] == version["artifact"]["artifact_id"]
     assert result_body["result"]["approval_artifact_id"] == approval["artifact"]["artifact_id"]
 
+    analysis = client.get(f"/v1/research/backtests/{job['job_id']}/analysis")
+    assert analysis.status_code == 200, analysis.text
+    analysis_body = analysis.json()["analysis"]
+    assert analysis_body["schema_version"] == "backtest-analysis.v1"
+    assert analysis_body["section"] == "summary"
+    assert analysis_body["summary"]["benchmark_status"] == "not_frozen"
+    assert analysis_body["summary"]["transaction_cost_total"] == 0
+    assert "result_reference" not in analysis.text and "object_id" not in analysis.text
+    trade_page = client.get(
+        f"/v1/research/backtests/{job['job_id']}/analysis",
+        params={"section": "trades", "limit": 1, "offset": 0},
+    ).json()["analysis"]["page"]
+    assert trade_page["total"] == 1
+    assert len(trade_page["items"]) == 1
+
     denied = client.get(
         f"/v1/research/backtests/{job['job_id']}/result",
         headers=_owner_headers("other-user"),
     )
     assert denied.status_code == 404
+    assert client.get(
+        f"/v1/research/backtests/{job['job_id']}/analysis",
+        headers=_owner_headers("other-user"),
+    ).status_code == 404
     listed = client.get(
         "/v1/research/backtests",
         headers=_owner_headers("product-user"),
@@ -170,6 +189,41 @@ def _owner_headers(principal: str) -> dict[str, str]:
         principal, trace_id=f"byq-trace-{principal}", session_id=f"byq-session-{principal}",
         dsh_run_id=f"byq-run-{principal}",
     )
+
+
+def test_backtest_feature_diagnostics_follow_safe_ml_lineage(monkeypatch) -> None:
+    artifacts = {
+        "artifact_signal": {
+            "owner_principal": "product-user", "kind": "signal_snapshot",
+            "content": {"source": {"ml_lineage": {
+                "feature_snapshot_artifact_id": "artifact_feature",
+            }}},
+        },
+        "artifact_feature": {
+            "owner_principal": "product-user", "kind": "ml_feature_snapshot",
+            "content": {
+                "coverage": {"usable_rows": 80, "candidate_rows": 100, "usable_ratio": 0.8},
+                "excluded": {"warmup_or_missing": 18, "label_outside_split": 2, "non_finite": 0},
+                "object_reference": {"must": "not leak"},
+            },
+        },
+    }
+
+    class Research:
+        def get_artifact(self, artifact_id):
+            return artifacts[artifact_id]
+
+    monkeypatch.setattr(main, "research_store", Research())
+    diagnostics = main._backtest_feature_diagnostics(
+        owner_principal="product-user", signal_snapshot_artifact_id="artifact_signal",
+    )
+    assert diagnostics is not None
+    assert diagnostics["coverage"]["usable_ratio"] == 0.8
+    assert diagnostics["excluded"]["label_outside_split"] == 2
+    assert "object_reference" not in str(diagnostics)
+    assert main._backtest_feature_diagnostics(
+        owner_principal="other-user", signal_snapshot_artifact_id="artifact_signal",
+    ) is None
 
 
 def _create_completed_backtest(client: TestClient, *, key: str) -> dict[str, object]:

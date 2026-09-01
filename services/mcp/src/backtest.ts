@@ -74,6 +74,25 @@ export function fetchByqBacktestGet(
   return requestBacktest(backendUrl, `/v1/research/backtests/${encodeURIComponent(jobId)}`, { method: "GET" }, fetcher);
 }
 
+export function fetchByqBacktestAnalysis(
+  backendUrl: string,
+  jobId: string,
+  options: { section: string; limit: number; offset: number },
+  fetcher: Fetcher = fetch,
+): Promise<ByqBacktestResult> {
+  const query = new URLSearchParams({
+    section: options.section,
+    limit: String(options.limit),
+    offset: String(options.offset),
+  });
+  return requestBacktest(
+    backendUrl,
+    `/v1/research/backtests/${encodeURIComponent(jobId)}/analysis?${query.toString()}`,
+    { method: "GET" },
+    fetcher,
+  );
+}
+
 export function fetchByqSignalSnapshotGet(
   backendUrl: string,
   artifactId: string,
