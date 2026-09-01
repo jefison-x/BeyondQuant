@@ -1864,6 +1864,10 @@ def _ml_agent_artifact_projection(artifact: dict[str, Any]) -> dict[str, object]
             "prediction_split", "runtime_lock", "runtime_identity", "counts",
             "content_sha256",
         },
+        "signal_snapshot": {
+            "schema_version", "strategy_version_id", "strategy_version_artifact_id",
+            "execution", "source", "content_sha256",
+        },
     }
     if kind not in allowed:
         return None
@@ -2302,8 +2306,8 @@ def get_ml_prediction_rows(
     context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
-        if limit < 1 or limit > 200:
-            raise ValueError("limit must be between 1 and 200")
+        if limit < 1 or limit > 100:
+            raise ValueError("limit must be between 1 and 100")
         if offset < 0:
             raise ValueError("offset must be non-negative")
         if len(query) > 100:

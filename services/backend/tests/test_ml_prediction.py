@@ -137,6 +137,30 @@ def test_prediction_rows_api_is_owner_scoped_filtered_and_paginated(monkeypatch)
     }
 
 
+def test_ml_workspace_signal_projection_keeps_identity_without_long_rows() -> None:
+    projected = backend_main._ml_agent_artifact_projection({
+        "artifact_id": "artifact_signal",
+        "task_id": "task_signal",
+        "kind": "signal_snapshot",
+        "status": "validated",
+        "content_sha256": "a" * 64,
+        "content": {
+            "schema_version": "signal-snapshot.v1",
+            "strategy_version_id": "ml_strategy_1",
+            "strategy_version_artifact_id": "artifact_strategy",
+            "execution": {"lot_size": 100},
+            "source": {"kind": "ml_prediction"},
+            "signals": [{"symbol": "000001.SZ", "direction": 1}],
+            "bars": [{"symbol": "000001.SZ", "close": 10.0}],
+        },
+    })
+    assert projected is not None
+    assert projected["artifact_id"] == "artifact_signal"
+    assert projected["content"]["source"] == {"kind": "ml_prediction"}
+    assert "signals" not in projected["content"]
+    assert "bars" not in projected["content"]
+
+
 def test_prediction_ranking_is_deterministic_and_rows_never_expose_labels() -> None:
     feature = feature_value()
     model = {"content_sha256": "a" * 64, "feature_snapshot_sha256": feature["content_sha256"],
