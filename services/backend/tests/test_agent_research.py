@@ -78,8 +78,10 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
         for role in ("factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher")
     )
     assert ROLE_BY_ID["strategy_researcher"].version == "1.2.0"
-    assert ROLE_BY_ID["backtest_analyst"].version == "1.1.0"
-    assert task_tools <= set(ROLE_BY_ID["backtest_analyst"].allowed_tools)
+    assert ROLE_BY_ID["backtest_analyst"].version == "1.2.0"
+    backtest_tools = set(ROLE_BY_ID["backtest_analyst"].allowed_tools)
+    assert task_tools <= backtest_tools
+    assert "byq_backtest_analysis_get" in backtest_tools
     assert "byq_research_task_create" in strategy_tools
     assert "byq_research_transition" not in strategy_tools
     assert "byq_pool_create" not in strategy_tools

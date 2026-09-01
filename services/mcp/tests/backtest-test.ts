@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  fetchByqBacktestAnalysis,
   fetchByqBacktestCancel,
   fetchByqBacktestGet,
   fetchByqBacktestRun,
@@ -77,6 +78,22 @@ const fetched = await fetchByqBacktestGet("http://backend:8000", jobId, async (u
 });
 assert.equal(fetched.isError, false);
 assert.match(fetched.content[0].text, /completed/);
+
+const analysis = await fetchByqBacktestAnalysis(
+  "http://backend:8000",
+  jobId,
+  { section: "blocked_trades", limit: 25, offset: 50 },
+  async (url, init) => {
+    assert.equal(
+      url,
+      `http://backend:8000/v1/research/backtests/${jobId}/analysis?section=blocked_trades&limit=25&offset=50`,
+    );
+    assert.equal(init?.method, "GET");
+    return new Response(JSON.stringify({ analysis: { schema_version: "backtest-analysis.v1" } }), { status: 200 });
+  },
+);
+assert.equal(analysis.isError, false);
+assert.doesNotMatch(analysis.content[0].text, /object_reference|object_id/);
 
 const run = await fetchByqBacktestRun("http://backend:8000", jobId, async (url, init) => {
   assert.equal(url, `http://backend:8000/v1/research/backtests/${jobId}/run`);

@@ -1069,6 +1069,25 @@ model remains incompatible with BYQ.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+## Post-Phase 82 Agent backtest-analysis maintenance audit（2026-09-01）
+
+The read-only Community `frontend/src/views/BacktestView.vue`,
+`agent-service/app/services/backtest_review_context.py`,
+`backend/app/schemas/backtest.py` and
+`packages/byq-core/src/byq_core/backtest/results.py` were inspected before this
+maintenance change. Community is evidence for analysis UX only; its runtime and
+result contracts are not migrated.
+
+| Community evidence | Reusable invariant / UX | Decision | Maintenance disposition |
+|---|---|---|---|
+| Result overview followed by lazy detail tabs and paginated task lists | An analyst should receive a compact summary first and request only the evidence needed for a conclusion. | `PORT_UX` / `REFACTOR` | Add a versioned, owner-scoped Backend projection and a bounded MCP read with closed paginated sections. |
+| Return/risk/benchmark/trade statistics are derived with the completed result | Analysis needs explicit assumptions and a truthful distinction between a frozen benchmark and no benchmark. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Derive risk and cost evidence from the immutable BYQ result, report `not_frozen` explicitly, and automatically freeze the index as benchmark for new index-universe ML runs. |
+| Optimization context links bounded related events | Agent evidence should be bounded and traceable instead of loading an entire result object into context. | `PORT_LOGIC` / `REFACTOR` | Expose summary, trades, blocked trades, daily returns and equity curve as individually paginated sections; keep object references and raw artifacts private. |
+| Community VectorBT, direct internal API/ORM and raw result-object access | No compatible architecture or authority boundary. | `REFERENCE_ONLY` / `DROP` | Keep DSH → BeyondQuant MCP → Backend, native engine invariants and immutable object storage; copy no Community implementation. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.
+
 ## Phase 70 multi-index catalogue coverage audit
 
 The read-only Community index-weight scheduler, Tushare provider allowlist,

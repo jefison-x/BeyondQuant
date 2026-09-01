@@ -14,6 +14,7 @@ from app.backtest import (
     BacktestWorker,
     LocalObjectStore,
     ObjectIntegrityError,
+    build_backtest_analysis,
     membership_fingerprint,
     normalize_backtest_request,
     run_native_backtest,
@@ -119,6 +120,64 @@ def test_native_engine_reports_frozen_benchmark_and_excess_return() -> None:
     assert result["benchmark_return"] == 0.02
     assert result["excess_return"] == result["total_return"] - 0.02
     assert [row["value"] for row in result["benchmark_curve"]] == [2000.0, 2020.0, 2040.0]
+
+
+def test_agent_analysis_projects_cost_risk_and_bounded_evidence() -> None:
+    result = {
+        "final_value": 1_050.0, "total_return": 0.05, "benchmark_symbol": None,
+        "benchmark_return": None, "excess_return": None, "max_drawdown": 0.1,
+        "trade_count": 2, "blocked_trade_count": 2, "reproducibility": "reproducible",
+        "trades": [
+            {"symbol": SYMBOL, "order_type": "buy", "amount": 1_001.0,
+             "commission": 1.0, "tax": 0.0},
+            {"symbol": SYMBOL, "order_type": "sell", "amount": 999.0,
+             "commission": 1.5, "tax": 2.0},
+        ],
+        "blocked_trades": [
+            {"symbol": SYMBOL, "reason_code": "limit_up"},
+            {"symbol": SYMBOL, "reason_code": "t_plus_one"},
+        ],
+        "daily_returns": [
+            {"trade_date": "2026-01-05", "daily_return": 0.01},
+            {"trade_date": "2026-01-06", "daily_return": -0.005},
+            {"trade_date": "2026-01-07", "daily_return": 0.02},
+        ],
+        "equity_curve": [{"trade_date": "2026-01-05", "equity": 1_010.0}],
+        "logs": [{"level": "info", "code": "backtest_completed"}],
+    }
+    summary = build_backtest_analysis(
+        result,
+        execution={"initial_capital": 1_000.0, "commission_rate": 0.0003,
+                   "stamp_tax_rate": 0.001, "slippage_rate": 0.001, "lot_size": 100},
+        feature_diagnostics={"coverage": {"usable_ratio": 0.8}, "excluded": {"warmup_or_missing": 2}},
+    )["summary"]
+    assert summary["benchmark_status"] == "not_frozen"
+    assert summary["commission_total"] == 2.5
+    assert summary["stamp_tax_total"] == 2.0
+    assert summary["explicit_fee_total"] == 4.5
+    assert summary["estimated_slippage_total"] == 2.0
+    assert summary["transaction_cost_total"] == 6.5
+    assert summary["transaction_cost_ratio"] == 0.0065
+    assert summary["annualized_volatility"] is not None
+    assert summary["sharpe_ratio"] is not None
+    assert summary["calmar_ratio"] is not None
+    assert summary["blocked_reason_counts"] == {"limit_up": 1, "t_plus_one": 1}
+    assert summary["feature_diagnostics"]["excluded"]["warmup_or_missing"] == 2
+
+    page = build_backtest_analysis(result, section="blocked_trades", limit=1, offset=1)["page"]
+    assert page == {
+        "items": [{"symbol": SYMBOL, "reason_code": "t_plus_one"}],
+        "total": 2, "limit": 1, "offset": 1, "has_more": False,
+    }
+    assert build_backtest_analysis(result, section="logs")["page"]["items"] == [
+        {"level": "info", "code": "backtest_completed"},
+    ]
+    frozen_without_rows = build_backtest_analysis({
+        **result, "benchmark_symbol": "000300.SH", "benchmark_return": None,
+    })["summary"]
+    assert frozen_without_rows["benchmark_status"] == "frozen_without_aligned_rows"
+    with pytest.raises(ValueError, match="section must be one of"):
+        build_backtest_analysis(result, section="raw_object")
 
 
 def test_native_engine_blocks_limit_up_and_suspension_with_stable_codes() -> None:

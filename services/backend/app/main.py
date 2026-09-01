@@ -79,6 +79,7 @@ from .backtest import (
     BacktestStorageError,
     BacktestWorker,
     LocalObjectStore,
+    build_backtest_analysis,
     load_result,
     build_manifest,
     normalize_backtest_request,
@@ -973,6 +974,25 @@ def _partition_market_requirements(
     return requirements
 
 
+def _ml_pool_market_scope(
+    pool: dict[str, object], pool_snapshot: dict[str, object],
+) -> tuple[dict[str, object], str]:
+    """Derive immutable optional-data declarations from the frozen ML pool identity."""
+    pool_type = str(pool.get("pool_type"))
+    if pool_type == "index":
+        provenance = pool_snapshot.get("provenance")
+        index_symbol = provenance.get("index_symbol") if isinstance(provenance, dict) else None
+        if not isinstance(index_symbol, str) or not index_symbol:
+            raise ValueError("index stock pool has no canonical index identity")
+        return {
+            "index_universe": index_symbol,
+            "benchmark": index_symbol,
+        }, "point_in_time"
+    if pool_type == "dynamic":
+        raise ValueError("dynamic stock pool historical membership is not supported by Phase 72")
+    return {}, "fixed_snapshot"
+
+
 def _data_demand_requirements(payload: dict[str, Any], context: dict[str, str]) -> tuple[dict[str, object], list[dict[str, object]]]:
     snapshot = paper_store.get_pool_snapshot(
         payload.get("stock_pool_snapshot_id"), trusted_owner=context["owner_principal"],
@@ -1266,6 +1286,8 @@ def _backtest_call(operation: Callable[[], dict[str, object]]) -> dict[str, obje
         raise HTTPException(status_code=404, detail=str(error)) from error
     except BacktestConflict as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+    except ResearchPersistenceError as error:
+        raise HTTPException(status_code=503, detail="research storage is unavailable") from error
     except BacktestStorageError as error:
         raise HTTPException(status_code=503, detail="backtest storage is unavailable") from error
 
@@ -2051,18 +2073,7 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
         symbols = sorted(str(member["symbol"]) for member in pool_snapshot.get("members", []))
         if not symbols or len(symbols) > 1000:
             raise ValueError("ML training stock pool must contain between 1 and 1000 symbols")
-        pool_type = str(pool.get("pool_type"))
-        declared: dict[str, object] = {}
-        membership_mode = "fixed_snapshot"
-        if pool_type == "index":
-            provenance = pool_snapshot.get("provenance")
-            index_symbol = provenance.get("index_symbol") if isinstance(provenance, dict) else None
-            if not isinstance(index_symbol, str) or not index_symbol:
-                raise ValueError("index stock pool has no canonical index identity")
-            declared["index_universe"] = index_symbol
-            membership_mode = "point_in_time"
-        elif pool_type == "dynamic":
-            raise ValueError("dynamic stock pool historical membership is not supported by Phase 72")
+        declared, membership_mode = _ml_pool_market_scope(pool, pool_snapshot)
         master = security_master_store.latest_snapshot()
         if master is None:
             raise ValueError("security master must be synchronized before ML training")
@@ -3210,6 +3221,77 @@ def get_backtest_result(job_id: str, request: Request) -> dict[str, object]:
     except ObjectIntegrityError as error:
         raise HTTPException(status_code=503, detail="backtest result object is unavailable") from error
     return {"job_id": job_id, "result": result}
+
+
+def _backtest_feature_diagnostics(
+    *, owner_principal: str, signal_snapshot_artifact_id: object,
+) -> dict[str, object] | None:
+    if not isinstance(signal_snapshot_artifact_id, str):
+        return None
+    try:
+        snapshot = research_store.get_artifact(signal_snapshot_artifact_id)
+    except ResearchNotFound:
+        return None
+    if snapshot.get("owner_principal") != owner_principal or snapshot.get("kind") != "signal_snapshot":
+        return None
+    content = snapshot.get("content")
+    source = content.get("source") if isinstance(content, dict) else None
+    lineage = source.get("ml_lineage") if isinstance(source, dict) else None
+    feature_id = lineage.get("feature_snapshot_artifact_id") if isinstance(lineage, dict) else None
+    if not isinstance(feature_id, str):
+        return None
+    try:
+        feature = research_store.get_artifact(feature_id)
+    except ResearchNotFound:
+        return None
+    if feature.get("owner_principal") != owner_principal or feature.get("kind") != "ml_feature_snapshot":
+        return None
+    feature_content = feature.get("content")
+    if not isinstance(feature_content, dict):
+        return None
+    coverage = feature_content.get("coverage")
+    excluded = feature_content.get("excluded")
+    return {
+        "coverage": coverage if isinstance(coverage, dict) else {},
+        "excluded": excluded if isinstance(excluded, dict) else {},
+        "reason_definitions": {
+            "warmup_or_missing": "required rolling history is unavailable within the point-in-time universe",
+            "label_outside_split": "future label would cross the declared split boundary",
+            "non_finite": "feature or label is not finite",
+        },
+    }
+
+
+@app.get("/v1/research/backtests/{job_id}/analysis")
+def get_backtest_analysis(
+    job_id: str, request: Request, section: str = "summary", limit: int = 50,
+    offset: int = 0,
+) -> dict[str, object]:
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        job = backtest_store.analysis_context(job_id)
+        if job["owner_principal"] != context["owner_principal"]:
+            raise BacktestNotFound("backtest analysis not found")
+        reference = job.get("result_reference_json")
+        if not isinstance(reference, dict):
+            raise BacktestConflict("backtest job has no result yet")
+        try:
+            result = load_result(backtest_objects, reference)
+        except ObjectIntegrityError as error:
+            raise BacktestStorageError("backtest result object is unavailable") from error
+        diagnostics = _backtest_feature_diagnostics(
+            owner_principal=context["owner_principal"],
+            signal_snapshot_artifact_id=job.get("signal_snapshot_artifact_id"),
+        )
+        analysis = build_backtest_analysis(
+            result, section=section, limit=limit, offset=offset,
+            execution=job.get("execution") if isinstance(job.get("execution"), dict) else {},
+            feature_diagnostics=diagnostics,
+        )
+        return {"job_id": job_id, "analysis": analysis}
+
+    return _backtest_call(operation)
 
 
 @app.get("/v1/research/backtests")

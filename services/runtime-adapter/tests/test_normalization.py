@@ -215,7 +215,10 @@ def test_known_tool_emits_curated_activity_and_proposal_card() -> None:
 
 def test_domain_tool_result_is_only_an_internal_reference_candidate() -> None:
     state = NormalizationState()
-    normalize(notify("tool/call", {"callId": "call-2", "name": "byq_backtest_get"}), state)
+    normalize(
+        notify("tool/call", {"callId": "call-2", "name": "byq_backtest_analysis_get"}),
+        state,
+    )
     events = normalize(
         notify(
             "tool/result",

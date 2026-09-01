@@ -72,8 +72,8 @@
       "keywords": ["回测", "回测任务", "回测结果", "收益", "最大回撤"],
       "prerequisites": ["已批准策略版本", "匹配的冻结信号", "完整市场数据"],
       "support": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE"],
-      "agent_tools": ["byq_backtest_task_prepare", "byq_backtest_task_create", "byq_backtest_task_get", "byq_backtest_task_execute", "byq_backtest_task_cancel"],
-      "limitations": ["仅接收已验证策略、冻结股票池和日期等用户级选择，不接受 raw bars/signals；执行与取消保持审批边界"]
+      "agent_tools": ["byq_backtest_task_prepare", "byq_backtest_task_create", "byq_backtest_task_get", "byq_backtest_analysis_get", "byq_backtest_task_execute", "byq_backtest_task_cancel"],
+      "limitations": ["仅接收已验证策略、冻结股票池和日期等用户级选择，不接受 raw bars/signals；分析读取有界摘要与分页证据，不暴露对象存储引用；执行与取消保持审批边界"]
     },
     {
       "capability_id": "paper-trading",
