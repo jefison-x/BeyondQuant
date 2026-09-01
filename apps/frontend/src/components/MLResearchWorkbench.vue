@@ -118,13 +118,31 @@ async function approveAndTrain() {
     ElMessage.success("训练已提交，可稍后回来查看"); pollTraining();
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : "训练提交失败"); } finally { busy.value = false; }
 }
-function pollTraining() { if (!training.value?.training_run_id || ["completed", "failed", "cancelled"].includes(training.value.status)) { void load(); return; } timer = window.setTimeout(async () => { try { training.value = (await getMLTraining(training.value!.training_run_id!)).training_run; pollTraining(); } catch { void load(); } }, 1200); }
+function pollTraining() {
+  if (!training.value?.training_run_id || ["completed", "failed", "cancelled"].includes(training.value.status)) { void load(); return; }
+  timer = window.setTimeout(async () => {
+    try {
+      const updated = (await getMLTraining(training.value!.training_run_id!)).training_run;
+      if (["completed", "failed", "cancelled"].includes(updated.status)) { await load(); return; }
+      training.value = updated; pollTraining();
+    } catch { void load(); }
+  }, 1200);
+}
 async function predict() {
   if (!training.value?.model_artifact_id || !selectedApproval.value) return; busy.value = true;
   try { prediction.value = (await createMLPrediction({ task_id: taskId.value, model_artifact_id: training.value.model_artifact_id, approval_artifact_id: selectedApproval.value, execution: { initial_capital: form.capital, lot_size: form.lot_size } })).prediction_run; ElMessage.success("样本外预测已提交"); pollPrediction(); }
   catch (e) { ElMessage.error(e instanceof Error ? e.message : "预测失败"); } finally { busy.value = false; }
 }
-function pollPrediction() { if (!prediction.value?.prediction_run_id || ["completed", "failed", "cancelled"].includes(prediction.value.status)) { void load(); return; } timer = window.setTimeout(async () => { try { prediction.value = (await getMLPrediction(prediction.value!.prediction_run_id!)).prediction_run; pollPrediction(); } catch { void load(); } }, 1200); }
+function pollPrediction() {
+  if (!prediction.value?.prediction_run_id || ["completed", "failed", "cancelled"].includes(prediction.value.status)) { void load(); return; }
+  timer = window.setTimeout(async () => {
+    try {
+      const updated = (await getMLPrediction(prediction.value!.prediction_run_id!)).prediction_run;
+      if (["completed", "failed", "cancelled"].includes(updated.status)) { await load(); return; }
+      prediction.value = updated; pollPrediction();
+    } catch { void load(); }
+  }, 1200);
+}
 async function backtestSignal() {
   if (!prediction.value?.signal_artifact_id || !selected.value || !selectedApproval.value) return; busy.value = true;
   try { const rid = `ml-ui-${Date.now()}`; const made: any = await submitBacktest({ task_id: taskId.value, strategy_version_artifact_id: selected.value.artifact_id, approval_artifact_id: selectedApproval.value, signal_snapshot_artifact_id: prediction.value.signal_artifact_id, trace_id: rid, idempotency_key: rid }, ""); const id = made.job.job_id; backtest.value = await runBacktest(id, ""); ElMessage.success("回测已提交"); const watch = async () => { const job: any = await getBacktest(id, ""); backtest.value = job; if (!["completed", "failed", "cancelled"].includes(job.status)) timer = window.setTimeout(watch, 1200); else await load(); }; void watch(); }
