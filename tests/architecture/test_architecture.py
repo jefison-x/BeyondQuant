@@ -640,6 +640,31 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         cleanup = (ROOT / "scripts/ci/cleanup-resources.sh").read_text()
         self.assertIn("docker compose down --rmi local -v --remove-orphans", cleanup)
 
+    def test_postgres_memory_baseline_is_bounded_and_configurable(self) -> None:
+        compose = service_block("postgres")
+        expected = {
+            "shared_buffers=${BYQ_POSTGRES_SHARED_BUFFERS:-1GB}",
+            "effective_cache_size=${BYQ_POSTGRES_EFFECTIVE_CACHE_SIZE:-4GB}",
+            "maintenance_work_mem=${BYQ_POSTGRES_MAINTENANCE_WORK_MEM:-256MB}",
+            "work_mem=${BYQ_POSTGRES_WORK_MEM:-4MB}",
+        }
+        for setting in expected:
+            self.assertIn(setting, compose)
+        self.assertNotIn("max_connections=", compose)
+
+        example = (ROOT / ".env.example").read_text()
+        for variable in (
+            "BYQ_POSTGRES_SHARED_BUFFERS=1GB",
+            "BYQ_POSTGRES_EFFECTIVE_CACHE_SIZE=4GB",
+            "BYQ_POSTGRES_MAINTENANCE_WORK_MEM=256MB",
+            "BYQ_POSTGRES_WORK_MEM=4MB",
+        ):
+            self.assertIn(variable, example)
+
+        runbook = (ROOT / "docs/operations/postgresql-memory-tuning.md").read_text()
+        self.assertIn("pg_stat_database", runbook)
+        self.assertIn("回滚", runbook)
+
         smoke = (ROOT / "tests/smoke/run.sh").read_text()
         self.assertNotIn('gateway = "http://127.0.0.1:8100/internal/runtime"', smoke)
         self.assertNotIn('urlopen("http://127.0.0.1:8100/', smoke)
