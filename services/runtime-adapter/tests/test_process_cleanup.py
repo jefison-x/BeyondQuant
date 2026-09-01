@@ -61,6 +61,9 @@ def adapter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> RuntimeAdapter:
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
+    monkeypatch.setenv("BYQ_DSH_RUN_TIMEOUT_SECONDS", "3600")
+    monkeypatch.setenv("BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS", "3600")
+    monkeypatch.setenv("BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS", "3600")
     return RuntimeAdapter()
 
 
@@ -112,6 +115,108 @@ def test_hard_cancel_closes_runtime_and_rejects_later_prompt(adapter: RuntimeAda
 
     released = adapter.release_session("s-1")
     assert released["status"] == SessionStatus.CLOSED
+
+
+def test_no_progress_watchdog_fails_and_closes_only_the_stuck_runtime(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-stuck", "t-stuck")
+    adapter.submit_prompt("s-stuck", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-stuck")
+    run = record.active_run
+    assert run is not None
+
+    run.last_public_progress_at = 10.0
+    assert adapter._enforce_run_guards(record, run, now=3611.0) is True
+
+    wait_for_status(adapter, "s-stuck", SessionStatus.FAILED)
+    assert FakeHarness.instances[0].closed is True
+    assert record.active_run is None
+    assert record.history[-1]["kind"] == "session.failed"
+    assert record.history[-1]["payload"] == {
+        "code": "runtime-no-progress-timeout",
+        "retryable": True,
+    }
+    history_length = len(record.history)
+    adapter._on_notification(record, Notification(
+        method="session.status",
+        payload={"sessionId": record.runtime_session_id, "status": "idle"},
+    ))
+    assert len(record.history) == history_length
+
+
+def test_subagent_wall_clock_timeout_wins_even_when_public_progress_continues(
+    adapter: RuntimeAdapter,
+) -> None:
+    adapter.create_session("s-child", "t-child")
+    adapter.submit_prompt("s-child", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-child")
+    run = record.active_run
+    assert run is not None
+    run.last_public_progress_at = 3600.0
+    run.active_subagent_calls["delegate-call"] = 10.0
+
+    assert adapter._enforce_run_guards(record, run, now=3611.0) is True
+
+    wait_for_status(adapter, "s-child", SessionStatus.FAILED)
+    assert record.history[-1]["payload"] == {
+        "code": "runtime-subagent-timeout",
+        "retryable": True,
+    }
+
+
+def test_total_run_wall_clock_is_a_final_ceiling(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-run-limit", "t-run-limit")
+    adapter.submit_prompt("s-run-limit", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-run-limit")
+    run = record.active_run
+    assert run is not None
+    run.started_at = 10.0
+    run.last_public_progress_at = 3_610.0
+
+    assert adapter._enforce_run_guards(record, run, now=3_611.0) is True
+
+    wait_for_status(adapter, "s-run-limit", SessionStatus.FAILED)
+    assert record.history[-1]["payload"] == {
+        "code": "runtime-run-timeout",
+        "retryable": True,
+    }
+
+
+def test_delegate_notifications_track_subagent_lifetime_without_exposing_raw_names(
+    adapter: RuntimeAdapter,
+) -> None:
+    adapter.create_session("s-child-events", "t-child-events")
+    adapter.submit_prompt("s-child-events", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-child-events")
+    run = record.active_run
+    assert run is not None
+
+    adapter._on_notification(record, Notification(
+        method="session.event",
+        payload={
+            "sessionId": record.runtime_session_id,
+            "event": {"type": "tool/call", "data": {
+                "callId": "delegate-1", "name": "byq_delegate_backtest_analysis",
+            }},
+        },
+    ))
+    assert set(run.active_subagent_calls) == {"delegate-1"}
+
+    adapter._on_notification(record, Notification(
+        method="session.event",
+        payload={
+            "sessionId": record.runtime_session_id,
+            "event": {"type": "tool/result", "data": {"message": {"content": [{
+                "type": "tool-result", "toolCallId": "delegate-1", "content": [],
+            }]}}},
+        },
+    ))
+    assert run.active_subagent_calls == {}
+    assert "byq_delegate_backtest_analysis" not in str(record.history)
+    adapter.cancel_session("s-child-events", "hard")
 
 
 def test_session_creation_can_continue_a_durable_trace_sequence(adapter: RuntimeAdapter) -> None:

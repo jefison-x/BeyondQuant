@@ -366,6 +366,11 @@ Post-Phase 74 CI Reliability Maintenance 将 PR 检查改为 change-impact selec
 always-cleanup、重型任务锁、内存 preflight 和 zero-resource verification 保证取消/失败后收口。
 该维护不改变 Product、Domain、DSH、MCP 或持久化边界。
 
+Post-Phase 82 Product Agent Runtime Reliability Maintenance 为每个 prompt 增加五分钟总墙钟、
+三分钟子 Agent 和两分钟无公开进度看门狗；超限只关闭该会话独占 DSH process，并保留既有
+fresh-generation resume。回测分析 MCP 对同一会话/任务的五分钟分页读取限制为六次，超过后
+不再访问 Backend。该维护不创建第二 Agent loop，不改变 Domain 数据或当前 Phase 状态。
+
 ## 当前授权边界
 
 - Phase 49-82 与相应 Accepted ADR/计划均已完成。

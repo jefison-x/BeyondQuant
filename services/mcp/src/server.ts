@@ -108,6 +108,7 @@ import {
   fetchByqDataDemandNotifications,
   type DataDemandRequest,
 } from "./data-demand.js";
+import { PageCallBudget, boundedIntegerEnvironment } from "./page-budget.js";
 
 const SERVICE = "beyondquant-mcp";
 const VERSION = "0.1.0";
@@ -115,6 +116,15 @@ const PORT = Number(process.env.PORT ?? "8300");
 const MCP_PATH = "/mcp/v1";
 const BACKEND_URL = process.env.BYQ_BACKEND_URL ?? "http://backend:8000";
 const MCP_TOKEN = process.env.BYQ_MCP_TOKEN;
+const BACKTEST_ANALYSIS_PAGE_LIMIT = boundedIntegerEnvironment(
+  "BYQ_BACKTEST_ANALYSIS_PAGE_CALL_LIMIT", 6, 1, 20,
+);
+const BACKTEST_ANALYSIS_PAGE_WINDOW_MS = boundedIntegerEnvironment(
+  "BYQ_BACKTEST_ANALYSIS_PAGE_WINDOW_MS", 300_000, 1_000, 3_600_000,
+);
+const backtestAnalysisPageBudget = new PageCallBudget(
+  BACKTEST_ANALYSIS_PAGE_LIMIT, BACKTEST_ANALYSIS_PAGE_WINDOW_MS,
+);
 
 const webEvidenceContentSchema = z.object({
   schema_version: z.literal("web-research-evidence.v1"),
@@ -394,9 +404,27 @@ async function byqBacktestAnalysis(
   args: { job_id: string; section: string; limit: number; offset: number }, extra: unknown,
 ) {
   const context = completeAgentContext(extra);
-  return context
-    ? fetchByqBacktestAnalysis(BACKEND_URL, args.job_id, args, trustedBackendFetcher(context))
-    : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  const decision = backtestAnalysisPageBudget.consume([
+    context.workspace_id, context.session_id, context.dsh_run_id, args.job_id,
+  ].join("/"));
+  if (!decision.allowed) {
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify({
+        service: SERVICE,
+        status: "error",
+        backend: {
+          status: "analysis_page_budget_exceeded",
+          retryable: false,
+          limit: decision.limit,
+        },
+      }) }],
+      isError: true,
+    };
+  }
+  return fetchByqBacktestAnalysis(
+    BACKEND_URL, args.job_id, args, trustedBackendFetcher(context),
+  );
 }
 
 async function byqBacktestTaskPrepare(args: BacktestRequest, extra: unknown) {

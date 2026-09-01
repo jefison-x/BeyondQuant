@@ -313,6 +313,18 @@ blocking notification queue 可通过 Adapter-owned 有界桥接线程转入 asy
 - stdout 只用于 JSON-RPC protocol；
 - 面向未来 Approval flow 的 server/client request capability 不完整。
 
+### 2026-09-01 maintenance clarification：有界运行看门狗
+
+Adapter 的 dedicated-process ownership 也承担有界 lifecycle safety：每个 prompt、观察到的
+`byq_delegate_*` 子 Agent 调用以及无公开 WorkflowTrace 进度区间都有 monotonic wall-clock
+上限。超限时 Adapter 原子 detach active run、发出 BYQ-owned 安全失败码并只关闭该 session
+持有的 DSH process；late result 丢弃，既有 failed-session resume 使用新的 private generation。
+这不是第二套 Agent loop，不解析 child hidden state，也不改变 DSH 通用 subagent ownership。
+
+分页类 Agent-to-Domain read 的次数预算由 BeyondQuant MCP Contract 强制，DSH persona 只负责
+选择必要页和在预算错误后停止。具体默认值、稳定失败码与恢复语义见
+`docs/contracts/product-agent-run-guards.md`。
+
 这些是当前限制，不是可用 future feature。Adapter hard-cancel process close 是 BYQ
 ownership policy，并不表示已验证 DSH release 支持 prompt cancellation。
 
