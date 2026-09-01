@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import type { EChartsOption } from "echarts";
@@ -8,6 +8,7 @@ import {
   createSignalProducerJob,
   deleteBacktest,
   getBacktest,
+  getBacktestManifest,
   getBacktestResult,
   getSignalProducerJob,
   listBacktests,
@@ -44,6 +45,13 @@ const compareIds = ref<string[]>([]);
 const showCompare = ref(false);
 const showManifest = ref(false);
 const activeTab = ref("equity");
+const detailLoading = ref(false);
+const manifestLoading = ref(false);
+const fullManifest = ref<Record<string, unknown> | null>(null);
+const compareDetails = ref<Record<string, BacktestJob>>({});
+let selectionSequence = 0;
+let manifestRequest: Promise<void> | null = null;
+let manifestRequestJobId = "";
 
 const filteredBacktests = computed(() =>
   backtests.value.filter((row) => {
@@ -103,8 +111,9 @@ const logPages = useFilteredPagination(backtestLogs, (row) => `${row.level ?? ""
 const strategySnapshot = computed(() => ({
   strategy_version_artifact_id: job.value?.strategy_version_artifact_id ?? result.value?.strategy_version_artifact_id ?? null,
   approval_artifact_id: job.value?.approval_artifact_id ?? result.value?.approval_artifact_id ?? null,
-  input_manifest: job.value?.input_manifest ?? null,
+  input_manifest: fullManifest.value ?? job.value?.input_manifest ?? null,
 }));
+const displayedManifest = computed(() => fullManifest.value ?? job.value?.input_manifest ?? {});
 
 function formatPercent(value: unknown) {
   if (value === null || value === undefined || value === "") return "-";
@@ -146,7 +155,7 @@ async function loadList() {
         : selected.value
           ? backtests.value.find((row) => row.job_id === selected.value?.job_id)
           : backtests.value[0];
-      if (target) await select(target, false);
+      if (target) void select(target, false);
     } else {
       selected.value = null;
       job.value = null;
@@ -161,27 +170,70 @@ async function loadList() {
 
 async function select(row: Record<string, unknown>, updateRoute = true) {
   selected.value = row;
-  job.value = null;
+  job.value = row as unknown as BacktestJob;
   result.value = null;
+  fullManifest.value = null;
+  detailLoading.value = true;
+  const sequence = ++selectionSequence;
   error.value = "";
   const jobId = row.job_id;
   if (typeof jobId !== "string") {
     error.value = "回测结果缺少 job_id";
+    detailLoading.value = false;
     return;
   }
+  if (activeTab.value === "snapshot" || activeTab.value === "manifest") void loadManifest();
   try {
-    job.value = await getBacktest(jobId, auth.token);
-    if (job.value.status === "completed") {
-      const body = await getBacktestResult(jobId, auth.token);
-      result.value = body.result;
-    }
+    const [jobBody, resultBody] = await Promise.all([
+      getBacktest(jobId, auth.token),
+      row.status === "completed" ? getBacktestResult(jobId, auth.token) : Promise.resolve(null),
+    ]);
+    if (sequence !== selectionSequence) return;
+    job.value = jobBody;
+    result.value = resultBody?.result ?? null;
     if (updateRoute && route.query.job !== jobId) {
       await router.replace({ path: route.path, query: { ...route.query, job: jobId } });
     }
   } catch (exc) {
+    if (sequence !== selectionSequence) return;
     error.value = exc instanceof Error ? exc.message : "读取回测任务失败";
+  } finally {
+    if (sequence === selectionSequence) detailLoading.value = false;
   }
 }
+
+function loadManifest(): Promise<void> {
+  const jobId = String(job.value?.job_id ?? "");
+  if (!jobId || fullManifest.value) return Promise.resolve();
+  if (manifestRequest && manifestRequestJobId === jobId) return manifestRequest;
+  manifestLoading.value = true;
+  manifestRequestJobId = jobId;
+  const request = getBacktestManifest(jobId, auth.token)
+    .then((body) => {
+      if (String(job.value?.job_id ?? "") === jobId) fullManifest.value = body.input_manifest;
+    })
+    .catch((exc: unknown) => {
+      ElMessage.error(exc instanceof Error ? exc.message : "加载完整输入快照失败");
+    })
+    .finally(() => {
+      if (manifestRequestJobId === jobId) {
+        manifestLoading.value = false;
+        manifestRequest = null;
+        manifestRequestJobId = "";
+      }
+    });
+  manifestRequest = request;
+  return request;
+}
+
+async function openManifest() {
+  await loadManifest();
+  showManifest.value = true;
+}
+
+watch(activeTab, (tab) => {
+  if (tab === "snapshot" || tab === "manifest") void loadManifest();
+});
 
 async function run(row: Record<string, unknown>) {
   const jobId = String(row.job_id ?? "");
@@ -237,9 +289,20 @@ function onSelectionChange(rows: Array<Record<string, unknown>>) {
   compareIds.value = rows.slice(0, 2).map((row) => String(row.job_id));
 }
 
-const compareJobs = computed(() =>
-  backtests.value.filter((row) => compareIds.value.includes(String(row.job_id))),
-);
+const compareJobs = computed(() => backtests.value
+  .filter((row) => compareIds.value.includes(String(row.job_id)))
+  .map((row) => compareDetails.value[String(row.job_id)] ?? row));
+
+async function openCompare() {
+  if (compareIds.value.length !== 2) return;
+  try {
+    const details = await Promise.all(compareIds.value.map((id) => getBacktest(id, auth.token)));
+    compareDetails.value = Object.fromEntries(details.map((item) => [String(item.job_id), item]));
+    showCompare.value = true;
+  } catch (exc) {
+    ElMessage.error(exc instanceof Error ? exc.message : "加载回测对比失败");
+  }
+}
 
 const metricRows = computed(() => {
   const rows: Array<{ label: string; a: unknown; b: unknown; diff: string }> = [];
@@ -582,7 +645,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
           <el-button
             :disabled="compareIds.length !== 2"
             :loading="false"
-            @click="showCompare = true"
+            @click="openCompare"
           >
             对比所选任务
           </el-button>
@@ -592,7 +655,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
       </template>
 
       <template #detail>
-      <el-card shadow="never" class="backtest-detail-pane">
+      <el-card v-loading="detailLoading" shadow="never" class="backtest-detail-pane">
         <template #header>
           <div class="card-heading">
             <span class="card-title">回测详情</span>
@@ -721,16 +784,16 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
                   <code>{{ strategySnapshot.approval_artifact_id ?? "-" }}</code>
                 </el-descriptions-item>
               </el-descriptions>
-              <pre class="quant-result">{{ JSON.stringify(strategySnapshot.input_manifest ?? {}, null, 2) }}</pre>
+              <div v-loading="manifestLoading"><pre class="quant-result">{{ JSON.stringify(strategySnapshot.input_manifest ?? {}, null, 2) }}</pre></div>
             </el-tab-pane>
             <el-tab-pane label="输入就绪检查" name="manifest" lazy>
-              <el-button @click="showManifest = true">查看输入就绪检查</el-button>
-              <pre class="quant-result">{{ JSON.stringify(job.input_manifest, null, 2) }}</pre>
+              <el-button :loading="manifestLoading" @click="openManifest">查看输入就绪检查</el-button>
+              <div v-loading="manifestLoading"><pre class="quant-result">{{ JSON.stringify(displayedManifest, null, 2) }}</pre></div>
             </el-tab-pane>
           </el-tabs>
 
           <el-dialog v-model="showManifest" title="输入就绪检查摘要" width="720px">
-            <pre class="quant-result">{{ JSON.stringify(job.input_manifest, null, 2) }}</pre>
+            <pre class="quant-result">{{ JSON.stringify(displayedManifest, null, 2) }}</pre>
           </el-dialog>
         </template>
       </el-card>

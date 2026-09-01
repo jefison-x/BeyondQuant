@@ -594,6 +594,22 @@ class ResearchStore(PgStoreMixin):
             rows = self._execute("SELECT * FROM artifacts ORDER BY created_at DESC, artifact_id DESC LIMIT 200")
         return {"artifacts": [self._artifact_row(row) for row in rows]}
 
+    def list_ml_artifacts(
+        self, *, owner_principal: str, workspace_id: str, limit: int = 200
+    ) -> list[dict[str, object]]:
+        """Read only ML workspace artifacts instead of materializing the generic catalog."""
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > 1_000:
+            raise ValueError("limit must be between 1 and 1000")
+        rows = self._execute(
+            """SELECT * FROM artifacts WHERE owner_principal = :owner
+                 AND workspace_id = :workspace_id
+                 AND kind IN ('ml_strategy_version', 'ml_strategy_approval', 'ml_model',
+                              'ml_prediction_snapshot')
+                 ORDER BY created_at DESC, artifact_id DESC LIMIT :limit""",
+            {"owner": owner_principal, "workspace_id": workspace_id, "limit": limit},
+        )
+        return [self._artifact_row(row) for row in rows]
+
     def list_strategy_artifacts(
         self,
         *,
@@ -655,6 +671,19 @@ class ResearchStore(PgStoreMixin):
             {"owner": owner_principal, "limit": limit},
         )
         return [self._artifact_row(row) for row in rows]
+
+    def get_strategy_approval(
+        self, *, owner_principal: str, version_artifact_id: str
+    ) -> dict[str, object] | None:
+        """Resolve the newest approval for one version without scanning every artifact."""
+        row = self._fetch_one(
+            """SELECT * FROM artifacts WHERE owner_principal = :owner
+                 AND kind = 'strategy_approval'
+                 AND content ->> 'strategy_version_artifact_id' = :version_artifact_id
+                 ORDER BY created_at DESC, artifact_id DESC LIMIT 1""",
+            {"owner": owner_principal, "version_artifact_id": version_artifact_id},
+        )
+        return None if row is None else self._artifact_row(row)
 
     def list_validated_strategy_versions(
         self, *, owner_principal: str, limit: int = 10_000

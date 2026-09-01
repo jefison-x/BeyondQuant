@@ -25,8 +25,8 @@ function mountView() {
 
 const listStrategies = vi.fn();
 const listTasks = vi.fn();
-const listArtifacts = vi.fn();
 const getResearchEntity = vi.fn();
+const getStrategyApproval = vi.fn();
 const getStrategyBacktestCount = vi.fn();
 const getStrategyVersions = vi.fn();
 const saveStrategyDraft = vi.fn();
@@ -40,6 +40,7 @@ vi.mock("@/api/quant", () => ({
   deleteStrategyDraft: (...args: unknown[]) => deleteStrategyDraft(...args),
   exportStrategyVersion: vi.fn(),
   getResearchEntity: (...args: unknown[]) => getResearchEntity(...args),
+  getStrategyApproval: (...args: unknown[]) => getStrategyApproval(...args),
   getStrategyBacktestCount: (...args: unknown[]) => getStrategyBacktestCount(...args),
   getStrategyVersions: (...args: unknown[]) => getStrategyVersions(...args),
   saveStrategyDraft: (...args: unknown[]) => saveStrategyDraft(...args),
@@ -48,7 +49,6 @@ vi.mock("@/api/quant", () => ({
 
 vi.mock("@/api/research", () => ({
   listTasks: (...args: unknown[]) => listTasks(...args),
-  listArtifacts: (...args: unknown[]) => listArtifacts(...args),
 }));
 
 describe("StrategyView", () => {
@@ -67,9 +67,10 @@ describe("StrategyView", () => {
       }),
     );
     listTasks.mockResolvedValue({ tasks: [] });
-    listArtifacts.mockResolvedValue({ artifacts: [] });
     getResearchEntity.mockReset();
     getResearchEntity.mockResolvedValue({});
+    getStrategyApproval.mockReset();
+    getStrategyApproval.mockResolvedValue({ approval: null });
     getStrategyBacktestCount.mockReset();
     getStrategyBacktestCount.mockResolvedValue({ backtest_count: 0, version_count: 0 });
     getStrategyVersions.mockReset();

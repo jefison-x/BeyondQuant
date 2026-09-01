@@ -146,6 +146,9 @@ paths:
   /api/product/backtests/{job_id}/result:
     parameters: [{$ref: "#/components/parameters/JobId"}]
     get: {summary: 获取 an immutable owner-scoped backtest result., responses: *okResponses}
+  /api/product/backtests/{job_id}/manifest:
+    parameters: [{$ref: "#/components/parameters/JobId"}]
+    get: {summary: 按需获取完整且不可变的 owner-scoped backtest input manifest., responses: *okResponses}
   /api/product/backtests/{job_id}/run:
     parameters: [{$ref: "#/components/parameters/JobId"}]
     post: {summary: 运行 one owner-scoped backtest job., responses: *okResponses}
@@ -169,6 +172,9 @@ paths:
   /api/product/strategies/versions/{artifact_id}/export:
     parameters: [{$ref: "#/components/parameters/ArtifactId"}]
     get: {summary: 导出 one owner-scoped strategy version., responses: *okResponses}
+  /api/product/strategies/versions/{artifact_id}/approval:
+    parameters: [{$ref: "#/components/parameters/ArtifactId"}]
+    get: {summary: 获取 one owner-scoped strategy version approval., responses: *okResponses}
   /api/product/strategies/{strategy_id}/versions:
     parameters: [{$ref: "#/components/parameters/StrategyId"}]
     get: {summary: 列出 owner-scoped strategy version history., responses: *okResponses}

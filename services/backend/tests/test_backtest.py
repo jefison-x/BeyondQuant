@@ -314,6 +314,12 @@ def test_job_worker_is_idempotent_bounded_and_stores_result_by_reference(tmp_pat
     jobs = BacktestJobStore()
     job = jobs.create(job_request, owner_principal="product-user")
     assert jobs.create(job_request, owner_principal="product-user")["job_id"] == job["job_id"]
+    summaries = jobs.list_backtest_summaries(owner_principal="product-user")["backtests"]
+    assert "input_manifest" not in summaries[0]
+    compact = jobs.get_compact(job["job_id"])
+    assert compact["input_manifest"]["execution"] == job["input_manifest"]["execution"]
+    assert not {"bars", "signals", "corporate_actions"}.intersection(compact["input_manifest"])
+    assert jobs.get_manifest(job["job_id"])["input_manifest"] == job["input_manifest"]
     with pytest.raises(BacktestConflict):
         jobs.create({**job_request, "idempotency_key": job_request["idempotency_key"], "manifest": {**job_request["manifest"], "signals": []}}, owner_principal="product-user")
 

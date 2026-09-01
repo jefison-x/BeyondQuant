@@ -1136,6 +1136,22 @@ were inspected before accepting ADR-0035.
 
 No Community source, data, credential, runtime or Git history was modified or copied.
 
+## Post-Phase 82 research-workspace performance audit（2026-09-01）
+
+The read-only Community `StrategyView.vue`, `BacktestView.vue`, and Operations
+`ModelOperationsView.vue` were inspected before optimizing the BYQ Strategy,
+Model Research, and Backtest loading paths.
+
+| Community evidence | Reusable invariant / UX | Decision | Maintenance disposition |
+|---|---|---|---|
+| Strategy catalogue uses server pagination and loads detail after row selection | Catalogue payloads should remain bounded; source and history are detail concerns. | `PORT_UX` / `REFACTOR` | Keep BYQ immutable draft/version semantics, but replace the generic all-artifact read with selected-version approval and detail projections. |
+| Backtest catalogue is paginated and result tabs are lazy | Heavy result/evidence data should not block the task catalogue. | `PORT_UX` / `PORT_LAYOUT` / `REFACTOR` | Return bounded BYQ job summaries first, load result and full immutable input manifest only for the selected job/evidence tab. |
+| Model Operations separates provider/config/binding surfaces | Distinct data groups should not force unrelated rendering work. | `REFERENCE_ONLY` / `REFACTOR` | Query only BYQ ML artifact kinds needed by Model Research; keep its audited ML workflow and Product contract unchanged. |
+| Community direct service APIs, mutable strategy scripts, legacy result objects and provider/runtime assumptions | No compatible Product/domain boundary. | `REPLACE` / `DROP` | Browser remains on Gateway/Product API; PostgreSQL/object-store invariants stay in BYQ; no Community runtime, storage, provider, or engine code is copied. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.
+
 
 ## Phase 61 real-user journey closure pre-implementation audit
 

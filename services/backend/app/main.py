@@ -1919,8 +1919,9 @@ def get_ml_agent_workspace(request: Request) -> dict[str, object]:
     )["pools"]
     artifacts = [
         projected
-        for artifact in research_store.list_artifacts(owner_principal=context["owner_principal"])["artifacts"]
-        if artifact.get("workspace_id") == context["workspace_id"]
+        for artifact in research_store.list_ml_artifacts(
+            owner_principal=context["owner_principal"], workspace_id=context["workspace_id"]
+        )
         for projected in [_ml_agent_artifact_projection(artifact)]
         if projected is not None
     ]
@@ -2296,6 +2297,20 @@ def get_ml_prediction_run(prediction_run_id: str, request: Request) -> dict[str,
 
 
 _STRATEGY_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{2,63}$")
+
+
+@app.get("/v1/research/strategies/versions/{artifact_id}/approval")
+def strategy_version_approval(artifact_id: str, request: Request) -> dict[str, object]:
+    """Return only the approval associated with the selected strategy version."""
+    context = _required_agent_context(request)
+    artifact = research_store.get_artifact(artifact_id)
+    if artifact["owner_principal"] != context["owner_principal"] or artifact["kind"] != "strategy_version":
+        raise ResearchNotFound("strategy version not found")
+    return {
+        "approval": research_store.get_strategy_approval(
+            owner_principal=context["owner_principal"], version_artifact_id=artifact_id
+        )
+    }
 
 
 @app.get("/v1/research/strategies")
@@ -3195,14 +3210,27 @@ def backtest_options(request: Request) -> dict[str, object]:
 
 
 @app.get("/v1/research/backtests/{job_id}")
-def get_backtest_job(job_id: str, request: Request) -> dict[str, object]:
+def get_backtest_job(job_id: str, request: Request, include_manifest: bool = True) -> dict[str, object]:
     context = _required_agent_context(request)
 
     def operation() -> dict[str, object]:
-        job = backtest_store.get(job_id)
+        job = backtest_store.get(job_id) if include_manifest else backtest_store.get_compact(job_id)
         if job["owner_principal"] != context["owner_principal"]:
             raise BacktestNotFound("backtest job not found")
         return {"job": job}
+
+    return _backtest_call(operation)
+
+
+@app.get("/v1/research/backtests/{job_id}/manifest")
+def get_backtest_manifest(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        manifest = backtest_store.get_manifest(job_id)
+        if manifest["owner_principal"] != context["owner_principal"]:
+            raise BacktestNotFound("backtest job not found")
+        return {"job_id": job_id, "input_manifest": manifest["input_manifest"]}
 
     return _backtest_call(operation)
 
@@ -3295,8 +3323,14 @@ def get_backtest_analysis(
 
 
 @app.get("/v1/research/backtests")
-def list_backtest_jobs(request: Request) -> dict[str, object]:
+def list_backtest_jobs(request: Request, view: str = "full") -> dict[str, object]:
     context = _required_agent_context(request)
+    if view not in {"full", "summary"}:
+        raise HTTPException(status_code=422, detail="backtest view must be full or summary")
+    if view == "summary":
+        return _backtest_call(
+            lambda: backtest_store.list_backtest_summaries(owner_principal=context["owner_principal"])
+        )
     return _backtest_call(lambda: backtest_store.list_backtests(owner_principal=context["owner_principal"]))
 
 

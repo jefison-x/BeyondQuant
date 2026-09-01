@@ -31,6 +31,10 @@ export function getBacktestResult(jobId: string, token: string): Promise<{ job_i
   return request(`/backtests/${encodeURIComponent(jobId)}/result`, token);
 }
 
+export function getBacktestManifest(jobId: string, token: string): Promise<{ job_id: string; input_manifest: Record<string, unknown> }> {
+  return request(`/backtests/${encodeURIComponent(jobId)}/manifest`, token);
+}
+
 export async function runBacktest(jobId: string, token: string): Promise<BacktestJob> {
   const body = await request<{ job: BacktestJob }>(`/backtests/${encodeURIComponent(jobId)}/run`, token, { method: "POST" });
   return body.job ?? (body as unknown as BacktestJob);
@@ -139,6 +143,10 @@ export function getStrategyVersions(strategyId: string, token: string): Promise<
 
 export function getStrategyBacktestCount(strategyId: string, token: string): Promise<Record<string, unknown>> {
   return request(`/strategies/${encodeURIComponent(strategyId)}/backtest-count`, token);
+}
+
+export function getStrategyApproval(artifactId: string, token: string): Promise<{ approval: Record<string, unknown> | null }> {
+  return request(`/strategies/versions/${encodeURIComponent(artifactId)}/approval`, token);
 }
 
 export function createStrategyVersion(payload: Record<string, unknown>, token: string): Promise<Record<string, unknown>> {

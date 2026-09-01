@@ -48,7 +48,7 @@ def test_ml_workspace_projects_safe_artifacts_and_owner_context(monkeypatch) -> 
     assert response.json()["artifacts"][0]["content"] == {"best_iteration": 7}
     assert "object_reference" not in response.text
     assert "ml_feature_snapshot" not in response.text
-    assert {path for path, _ in calls} == {"/v1/research/ml/workspace", "/v1/research/backtests"}
+    assert {path for path, _ in calls} == {"/v1/research/ml/workspace", "/v1/research/backtests?view=summary"}
     assert all(headers["x-byq-owner-principal"] == "product-user" for _, headers in calls)
 
 

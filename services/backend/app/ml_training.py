@@ -313,6 +313,13 @@ def build_feature_snapshot(
 
 
 class MLTrainingRunStore(PgStoreMixin):
+    PUBLIC_COLUMNS = """training_run_id, workspace_id, owner_principal, task_id,
+        experiment_id, ml_strategy_artifact_id, stock_pool_snapshot_id, status,
+        preparation_json, requirement_json, readiness_json, input_sha256, trace_id,
+        idempotency_key, attempt_count, max_attempts, worker_id, lease_expires_at,
+        feature_artifact_id, model_artifact_id, error_code, error_detail, created_at,
+        started_at, finished_at, updated_at"""
+
     SCHEMA_DDL = [
         """
         CREATE TABLE IF NOT EXISTS ml_training_runs (
@@ -415,7 +422,7 @@ class MLTrainingRunStore(PgStoreMixin):
         return self._public(row)
 
     def list_runs(self, *, trusted_workspace: str, trusted_owner: str) -> dict[str, object]:
-        rows = self._execute("""SELECT * FROM ml_training_runs
+        rows = self._execute(f"""SELECT {self.PUBLIC_COLUMNS} FROM ml_training_runs
             WHERE workspace_id=:workspace AND owner_principal=:owner
             ORDER BY created_at DESC,training_run_id DESC LIMIT 100""",
             {"workspace": trusted_workspace, "owner": trusted_owner})

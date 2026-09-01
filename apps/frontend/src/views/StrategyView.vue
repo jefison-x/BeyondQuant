@@ -8,13 +8,14 @@ import {
   deleteStrategyDraft,
   exportStrategyVersion,
   getResearchEntity,
+  getStrategyApproval,
   getStrategyBacktestCount,
   getStrategyVersions,
   listStrategies,
   saveStrategyDraft,
   validateStrategy,
 } from "@/api/quant";
-import { listArtifacts, listTasks } from "@/api/research";
+import { listTasks } from "@/api/research";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import { shortReference, statusLabel } from "@/display";
@@ -31,7 +32,7 @@ const loading = ref(true);
 const error = ref("");
 const busy = ref("");
 const artifacts = ref<Array<Record<string, unknown>>>([]);
-const approvals = ref<Array<Record<string, unknown>>>([]);
+const selectedApproval = ref<Record<string, unknown> | null>(null);
 const tasks = ref<Array<Record<string, unknown>>>([]);
 const selected = ref<Record<string, unknown> | null>(null);
 const detail = ref<Record<string, unknown> | null>(null);
@@ -56,6 +57,8 @@ const versionHistory = ref<Array<Record<string, unknown>>>([]);
 const backtestCount = ref(0);
 const versionCount = ref(0);
 const editorBaseline = ref("");
+const detailLoading = ref(false);
+let selectionSequence = 0;
 
 function editorState() {
   return JSON.stringify({
@@ -150,14 +153,8 @@ const filteredArtifacts = computed(() =>
 );
 
 const approval = computed(() => {
-  if (!selected.value) return null;
-  const id = selected.value.artifact_id;
-  const found = approvals.value.find((row) => {
-    const content = row.content as Record<string, unknown> | undefined;
-    return content?.strategy_version_artifact_id === id;
-  });
-  if (!found) return null;
-  return (found.content as Record<string, unknown>) ?? null;
+  const content = selectedApproval.value?.content;
+  return content && typeof content === "object" ? content as Record<string, unknown> : null;
 });
 
 const isReadonly = computed(() => selected.value?.kind === "strategy_version");
@@ -192,8 +189,11 @@ function openBacktest() {
 
 async function newDraft() {
   if (!confirmDiscard()) return;
+  selectionSequence += 1;
+  detailLoading.value = false;
   selected.value = null;
   detail.value = null;
+  selectedApproval.value = null;
   lifecycle.value = "active";
   filter.value = "draft";
   strategyId.value = "CustomStrategy";
@@ -229,18 +229,16 @@ async function loadList() {
   loading.value = true;
   error.value = "";
   try {
-    const [strategyBody, taskBody, artifactBody] = await Promise.all([
+    const [strategyBody, taskBody] = await Promise.all([
       listStrategies(auth.token, {
         lifecycle: lifecycle.value,
         limit: PAGE_SIZE,
         offset: (page.value - 1) * PAGE_SIZE,
       }),
       listTasks(),
-      listArtifacts(),
     ]);
     artifacts.value = strategyBody.strategies;
     total.value = strategyBody.total ?? artifacts.value.length;
-    approvals.value = artifactBody.artifacts.filter((row) => row.kind === "strategy_approval");
     tasks.value = taskBody.tasks ?? [];
     if (tasks.value.length) {
       taskId.value = String(tasks.value[0].task_id ?? "");
@@ -251,8 +249,8 @@ async function loadList() {
       : selected.value
         ? artifacts.value.find((row) => row.artifact_id === selected.value?.artifact_id)
         : artifacts.value.find((row) => row.kind === "strategy_version") ?? artifacts.value[0];
-    if (target) await select(target, false);
-    else if (requested) await viewHistoryVersion({ artifact_id: requested });
+    if (target) void select(target, false);
+    else if (requested) void viewHistoryVersion({ artifact_id: requested });
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "加载失败";
   } finally {
@@ -281,6 +279,9 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
   if (updateRoute && !confirmDiscard()) return;
   selected.value = row;
   detail.value = null;
+  selectedApproval.value = null;
+  detailLoading.value = true;
+  const sequence = ++selectionSequence;
   error.value = "";
   const content = row.content as Record<string, unknown> | undefined;
   const snapshot = content?.snapshot as Record<string, unknown> | undefined;
@@ -292,14 +293,28 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
   }
   try {
     const id = String(row.artifact_id);
-    detail.value = await getResearchEntity("artifacts", id, auth.token);
-    await refreshStrategyMeta();
+    const sid = String(snapshot?.strategy_id ?? "");
+    const [entity, history, counts, approvalBody] = await Promise.all([
+      getResearchEntity("artifacts", id, auth.token),
+      sid ? getStrategyVersions(sid, auth.token) : Promise.resolve({ versions: [] }),
+      sid ? getStrategyBacktestCount(sid, auth.token) : Promise.resolve({ backtest_count: 0, version_count: 0 }),
+      row.kind === "strategy_version" ? getStrategyApproval(id, auth.token) : Promise.resolve({ approval: null }),
+    ]);
+    if (sequence !== selectionSequence) return;
+    detail.value = entity;
+    versionHistory.value = (history.versions ?? []) as Array<Record<string, unknown>>;
+    backtestCount.value = Number(counts.backtest_count ?? 0);
+    versionCount.value = Number(counts.version_count ?? 0);
+    selectedApproval.value = approvalBody.approval;
     syncEditorBaseline();
     if (updateRoute && route.query.artifact !== id) {
       await router.replace({ path: route.path, query: { ...route.query, artifact: id } });
     }
   } catch (exc) {
+    if (sequence !== selectionSequence) return;
     error.value = exc instanceof Error ? exc.message : "读取失败";
+  } finally {
+    if (sequence === selectionSequence) detailLoading.value = false;
   }
 }
 
@@ -613,7 +628,7 @@ onMounted(loadList);
       </template>
 
       <template #detail>
-      <div class="strategy-detail-column">
+      <div v-loading="detailLoading" class="strategy-detail-column">
         <el-card v-if="!isReadonly" shadow="never" class="strategy-editor-pane">
           <template #header>
             <div class="panel-heading">

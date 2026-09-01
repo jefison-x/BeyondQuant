@@ -600,7 +600,7 @@ def product_ml_workspace(request: Request) -> dict[str, object]:
             _backend_request, "GET", "/v1/research/ml/workspace", headers=headers,
         )
         backtests_future = executor.submit(
-            _backend_request, "GET", "/v1/research/backtests", headers=headers,
+            _backend_request, "GET", "/v1/research/backtests?view=summary", headers=headers,
         )
         workspace = workspace_future.result()
         raw_backtests = backtests_future.result().get("backtests", [])
@@ -687,7 +687,17 @@ def product_backtest_get(job_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
         "GET",
-        f"/v1/research/backtests/{job_id}",
+        f"/v1/research/backtests/{job_id}?include_manifest=false",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/backtests/{job_id}/manifest")
+def product_backtest_manifest(job_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET",
+        f"/v1/research/backtests/{job_id}/manifest",
         headers=_trusted_agent_headers(request),
     )
 
@@ -705,7 +715,7 @@ def product_backtest_result(job_id: str, request: Request) -> dict[str, object]:
 @router.get("/backtests")
 def product_backtests(request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", "/v1/research/backtests", headers=_trusted_agent_headers(request))
+    return _backend_request("GET", "/v1/research/backtests?view=summary", headers=_trusted_agent_headers(request))
 
 
 @router.post("/backtests/{job_id}/run")
@@ -743,6 +753,16 @@ def product_strategy_export(artifact_id: str, request: Request) -> dict[str, obj
     return _backend_request(
         "GET",
         f"/v1/research/strategies/versions/{artifact_id}/export",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/strategies/versions/{artifact_id}/approval")
+def product_strategy_approval_get(artifact_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET",
+        f"/v1/research/strategies/versions/{artifact_id}/approval",
         headers=_trusted_agent_headers(request),
     )
 

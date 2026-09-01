@@ -1255,6 +1255,11 @@ class BacktestJobStore(PgStoreMixin):
         """,
     ]
 
+    SUMMARY_COLUMNS = """job_id, task_id, experiment_id, owner_principal, status,
+        input_manifest_id, strategy_version_artifact_id, approval_artifact_id,
+        attempts, max_attempts, result_artifact_id, error_code, error_message,
+        created_at, updated_at, finished_at, result_reference_json, summary_json"""
+
     def __init__(self, database_url: str | None = None) -> None:
         try:
             super().__init__(database_url)
@@ -1324,6 +1329,34 @@ class BacktestJobStore(PgStoreMixin):
             raise BacktestNotFound("backtest job not found")
         return self._public(row)
 
+    def get_compact(self, job_id: object) -> dict[str, object]:
+        """Return detail metadata while deferring the three potentially huge evidence arrays."""
+        job_id = _text(job_id, field="job_id", max_length=64)
+        if JOB_ID_PATTERN.fullmatch(job_id) is None:
+            raise ValueError("job_id is not a valid backtest identifier")
+        row = self._fetch_one(
+            f"""SELECT {self.SUMMARY_COLUMNS},
+                input_manifest_json - ARRAY['bars', 'signals', 'corporate_actions']::text[]
+                    AS input_manifest_json
+                FROM backtest_jobs WHERE job_id = :job_id""",
+            {"job_id": job_id},
+        )
+        if row is None:
+            raise BacktestNotFound("backtest job not found")
+        return self._public(row)
+
+    def get_manifest(self, job_id: object) -> dict[str, object]:
+        job_id = _text(job_id, field="job_id", max_length=64)
+        if JOB_ID_PATTERN.fullmatch(job_id) is None:
+            raise ValueError("job_id is not a valid backtest identifier")
+        row = self._fetch_one(
+            "SELECT owner_principal, input_manifest_json FROM backtest_jobs WHERE job_id = :job_id",
+            {"job_id": job_id},
+        )
+        if row is None:
+            raise BacktestNotFound("backtest job not found")
+        return {"owner_principal": row["owner_principal"], "input_manifest": row["input_manifest_json"]}
+
     def list_backtests(self, *, owner_principal: str | None = None) -> dict[str, object]:
         if owner_principal:
             rows = self._execute(
@@ -1333,6 +1366,14 @@ class BacktestJobStore(PgStoreMixin):
         else:
             rows = self._execute("SELECT * FROM backtest_jobs ORDER BY created_at DESC, job_id DESC LIMIT 200")
         return {"backtests": [self._public(row) for row in rows]}
+
+    def list_backtest_summaries(self, *, owner_principal: str | None = None) -> dict[str, object]:
+        where = " WHERE owner_principal = :owner_principal" if owner_principal else ""
+        rows = self._execute(
+            f"SELECT {self.SUMMARY_COLUMNS} FROM backtest_jobs{where} ORDER BY created_at DESC, job_id DESC LIMIT 200",
+            {"owner_principal": owner_principal} if owner_principal else None,
+        )
+        return {"backtests": [self._public_summary(row) for row in rows]}
 
     def find_by_signal_snapshot(
         self, *, owner_principal: str, signal_snapshot_artifact_id: str
@@ -1522,6 +1563,22 @@ class BacktestJobStore(PgStoreMixin):
             "result_artifact_id": row["result_artifact_id"], "error_code": row["error_code"], "error_message": row["error_message"],
             "created_at": row["created_at"], "updated_at": row["updated_at"], "finished_at": row["finished_at"],
             "input_manifest": row["input_manifest_json"],
+        }
+        if row["result_reference_json"]:
+            result["result_reference"] = row["result_reference_json"]
+        if row["summary_json"]:
+            result["summary"] = row["summary_json"]
+        return result
+
+    @staticmethod
+    def _public_summary(row: dict[str, Any]) -> dict[str, object]:
+        result: dict[str, object] = {
+            "job_id": row["job_id"], "task_id": row["task_id"], "experiment_id": row["experiment_id"],
+            "owner_principal": row["owner_principal"], "status": row["status"],
+            "input_manifest_id": row["input_manifest_id"], "strategy_version_artifact_id": row["strategy_version_artifact_id"],
+            "approval_artifact_id": row["approval_artifact_id"], "attempts": row["attempts"], "max_attempts": row["max_attempts"],
+            "result_artifact_id": row["result_artifact_id"], "error_code": row["error_code"], "error_message": row["error_message"],
+            "created_at": row["created_at"], "updated_at": row["updated_at"], "finished_at": row["finished_at"],
         }
         if row["result_reference_json"]:
             result["result_reference"] = row["result_reference_json"]

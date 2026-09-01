@@ -7,10 +7,12 @@ import {
   deleteBacktest,
   deleteStrategyDraft,
   getBacktest,
+  getBacktestManifest,
   getBacktestResult,
   getResearchEntity,
   getSignalProducerJob,
   getStrategyBacktestCount,
+  getStrategyApproval,
   getStrategyVersions,
   runBacktest,
   saveStrategyDraft,
@@ -83,6 +85,19 @@ describe("quant api client", () => {
     );
   });
 
+  it("loads the full backtest manifest only through its evidence path", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ job_id: "job_1", input_manifest: { bars: [{ close: 10 }] } }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const body = await getBacktestManifest("job_1", "test-token");
+    expect(body.input_manifest.bars).toEqual([{ close: 10 }]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/backtests/job_1/manifest",
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
   it("creates an immutable strategy version through the product path", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ artifact: { artifact_id: "artifact_version_1", kind: "strategy_version" } }), { status: 201 }),
@@ -111,6 +126,19 @@ describe("quant api client", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/strategies/approvals",
       expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+  });
+
+  it("reads only the selected strategy version approval", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ approval: { artifact_id: "artifact_approval_1" } }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const body = await getStrategyApproval("artifact_version_1", "test-token");
+    expect(body.approval?.artifact_id).toBe("artifact_approval_1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/strategies/versions/artifact_version_1/approval",
+      expect.objectContaining({ credentials: "include" }),
     );
   });
 

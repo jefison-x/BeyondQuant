@@ -164,6 +164,11 @@ def test_strategy_draft_version_export_and_approval_flow(monkeypatch) -> None:
     assert body["approval"]["execution_outcome"] == "not_started"
     assert body["artifact"]["kind"] == "strategy_approval"
     assert body["artifact"]["status"] == "validated"
+    selected_approval = client.get(
+        f"/v1/research/strategies/versions/{version['artifact']['artifact_id']}/approval"
+    )
+    assert selected_approval.status_code == 200
+    assert selected_approval.json()["approval"]["artifact_id"] == body["artifact"]["artifact_id"]
     store.close()
 
 

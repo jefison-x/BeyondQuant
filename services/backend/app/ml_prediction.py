@@ -259,6 +259,13 @@ def build_ml_signal_snapshot(
 
 
 class MLPredictionRunStore(PgStoreMixin):
+    PUBLIC_COLUMNS = """prediction_run_id, workspace_id, owner_principal, task_id,
+        experiment_id, ml_strategy_artifact_id, approval_artifact_id, model_artifact_id,
+        feature_artifact_id, stock_pool_snapshot_id, status, trace_id, idempotency_key,
+        attempt_count, max_attempts, worker_id, lease_expires_at, prediction_artifact_id,
+        signal_artifact_id, error_code, error_detail, created_at, started_at, finished_at,
+        updated_at"""
+
     SCHEMA_DDL = [
         """
         CREATE TABLE IF NOT EXISTS ml_prediction_runs (
@@ -324,7 +331,7 @@ class MLPredictionRunStore(PgStoreMixin):
         return self._public(row)
 
     def list_runs(self, *, trusted_workspace: str, trusted_owner: str) -> dict[str, object]:
-        rows = self._execute("""SELECT * FROM ml_prediction_runs WHERE workspace_id=:workspace AND owner_principal=:owner
+        rows = self._execute(f"""SELECT {self.PUBLIC_COLUMNS} FROM ml_prediction_runs WHERE workspace_id=:workspace AND owner_principal=:owner
             ORDER BY created_at DESC,prediction_run_id DESC LIMIT 100""", {"workspace": trusted_workspace, "owner": trusted_owner})
         return {"runs": [self._public(row) for row in rows]}
 
