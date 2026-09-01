@@ -69,6 +69,22 @@ def test_ml_commands_reject_browser_identity_fields_and_generate_them_server_sid
     assert captured["payload"]["trace_id"] == captured["payload"]["idempotency_key"]
 
 
+def test_ml_prediction_rows_forwards_bounded_page_and_owner_context(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    captured: dict[str, object] = {}
+    def backend(method, path, payload=None, *, headers=None):
+        captured.update(method=method, path=path, headers=headers)
+        return {"rows": [], "total": 0, "limit": 25, "offset": 50}
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).get(
+        "/api/product/ml/prediction-runs/run_1/rows?query=000001.SZ&limit=25&offset=50",
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+    assert response.status_code == 200
+    assert captured["path"] == "/v1/research/ml/prediction-runs/run_1/rows?query=000001.SZ&limit=25&offset=50"
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+
 def test_asset_diagnostics_name_destination_workspace_without_trust_metadata(monkeypatch) -> None:
     workspace = {
         "contract": "personal-workspace.v1",

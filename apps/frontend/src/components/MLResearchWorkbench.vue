@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { approveMLStrategy, createMLPrediction, createMLStrategy, createMLTraining, getMLPrediction, getMLTraining, getMLWorkspace, type MLRun, type MLWorkspace } from "@/api/mlResearch";
+import { approveMLStrategy, createMLPrediction, createMLStrategy, createMLTraining, getMLPrediction, getMLPredictionRows, getMLTraining, getMLWorkspace, type MLRun, type MLWorkspace } from "@/api/mlResearch";
 import { createTask } from "@/api/research";
 import { getBacktest, runBacktest, submitBacktest } from "@/api/quant";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
@@ -29,8 +29,27 @@ const artifacts = (kind: string) => workspace.value.artifacts.filter(a => a.kind
 const artifact = (id?: string) => workspace.value.artifacts.find(a => a.artifact_id === id);
 const model = computed(() => artifact(training.value?.model_artifact_id));
 const signal = computed(() => artifact(prediction.value?.signal_artifact_id));
-const predictionRows = computed(() => (artifact(prediction.value?.prediction_artifact_id)?.content.rows ?? []) as Record<string, any>[]);
-const predictionPages = useFilteredPagination(predictionRows, (row) => `${row.symbol ?? ""} ${row.session ?? ""} ${row.rank ?? ""}`, 50);
+const predictionRows = ref<Record<string, any>[]>([]), predictionRowsTotal = ref(0), predictionRowsLoading = ref(false);
+const predictionRowsQuery = ref(""), predictionRowsPage = ref(1), predictionRowsPageSize = 50;
+const predictionRunId = computed(() => prediction.value?.status === "completed" ? prediction.value.prediction_run_id ?? "" : "");
+let predictionRowsTimer: number | undefined, predictionRowsRequest = 0;
+async function loadPredictionRows() {
+  const runId = predictionRunId.value;
+  const requestId = ++predictionRowsRequest;
+  if (!runId) { predictionRows.value = []; predictionRowsTotal.value = 0; predictionRowsLoading.value = false; return; }
+  predictionRowsLoading.value = true;
+  try {
+    const result = await getMLPredictionRows(runId, predictionRowsQuery.value, predictionRowsPageSize, (predictionRowsPage.value - 1) * predictionRowsPageSize);
+    if (requestId === predictionRowsRequest) { predictionRows.value = result.rows; predictionRowsTotal.value = result.total; }
+  } catch (e) {
+    if (requestId === predictionRowsRequest) { predictionRows.value = []; predictionRowsTotal.value = 0; error.value = e instanceof Error ? e.message : "预测结果加载失败"; }
+  } finally { if (requestId === predictionRowsRequest) predictionRowsLoading.value = false; }
+}
+watch(predictionRunId, () => { predictionRowsQuery.value = ""; predictionRowsPage.value = 1; void loadPredictionRows(); });
+watch([predictionRowsQuery, predictionRowsPage], () => {
+  if (predictionRowsTimer) clearTimeout(predictionRowsTimer);
+  predictionRowsTimer = window.setTimeout(() => void loadPredictionRows(), 180);
+});
 const capability = computed(() => CAPABILITIES.find(c => c.id === form.capability_id) ?? CAPABILITIES[0]);
 const taskId = computed(() => selected.value?.task_id || form.task_id);
 const chosenPool = computed(() => activePools.value.find(p => p.pool_id === form.pool_id));
@@ -60,7 +79,7 @@ async function load() {
   } catch (e) { error.value = e instanceof Error ? e.message : "加载失败"; }
   finally { loading.value = false; }
 }
-onMounted(load); onBeforeUnmount(() => timer && clearTimeout(timer));
+onMounted(load); onBeforeUnmount(() => { if (timer) clearTimeout(timer); if (predictionRowsTimer) clearTimeout(predictionRowsTimer); });
 
 function stage(id: string) {
   const r = related(id);
@@ -181,7 +200,7 @@ const taskTitle = (id: string) => String(workspace.value.tasks.find(t => t.task_
             <section class="content-section"><h4>数据时间窗</h4><p>训练、验证和预测按时间先后隔离，预测区间不包含标签。</p><dl class="periods"><div><dt>学习历史规律</dt><dd>{{ period(content.split?.train) }}</dd></div><div><dt>验证模型表现</dt><dd>{{ period(content.split?.validation) }}</dd></div><div><dt>生成样本外预测</dt><dd>{{ period(content.split?.prediction) }}</dd></div></dl></section>
             <section v-if="model" class="content-section"><h4>训练结果</h4><p>指标只来自验证区间，不代表未来收益承诺。</p><div class="metrics"><div><span>验证误差 RMSE</span><strong>{{ metric(model.content.metrics?.validation_rmse,6) }}</strong></div><div><span>排序相关 Rank IC</span><strong>{{ metric(model.content.metrics?.validation_rank_ic) }}</strong></div><div><span>最佳迭代轮次</span><strong>{{ model.content.best_iteration??'-' }}</strong></div><div><span>验证样本数</span><strong>{{ model.content.counts?.validation_rows??model.content.metrics?.validation_rows??'-' }}</strong></div></div></section>
           </el-tab-pane>
-          <el-tab-pane label="预测结果" name="prediction"><el-empty v-if="!predictionRows.length" description="完成训练后可在这里查看样本外排名"/><template v-else><div class="result-intro"><div><strong>样本外排名</strong><span>共 {{ predictionRows.length }} 条可见记录</span></div><el-tag v-if="signal" type="success">冻结信号已生成</el-tag></div><ListFilterPagination v-model:query="predictionPages.query.value" v-model:page="predictionPages.page.value" :page-size="predictionPages.pageSize.value" :total="predictionPages.total.value" placeholder="筛选股票、交易日或排名" label="模型预测分页"><el-table :data="predictionPages.pageItems.value" max-height="420"><el-table-column prop="session" label="交易日" min-width="120"/><el-table-column prop="rank" label="排名" width="80" align="right"/><el-table-column prop="symbol" label="股票" min-width="120"/><el-table-column label="预测分" min-width="120" align="right"><template #default="{row}">{{ metric(row.score,6) }}</template></el-table-column></el-table></ListFilterPagination></template></el-tab-pane>
+          <el-tab-pane label="预测结果" name="prediction"><div v-if="predictionRowsLoading" class="base-loading" role="status">加载预测排名...</div><el-empty v-else-if="!predictionRowsTotal" description="完成训练后可在这里查看样本外排名"/><template v-else><div class="result-intro"><div><strong>样本外排名</strong><span>共 {{ predictionRowsTotal }} 条记录</span></div><el-tag v-if="signal" type="success">冻结信号已生成</el-tag></div><ListFilterPagination v-model:query="predictionRowsQuery" v-model:page="predictionRowsPage" :page-size="predictionRowsPageSize" :total="predictionRowsTotal" placeholder="筛选股票、交易日或排名" label="模型预测分页"><el-table :data="predictionRows" max-height="420"><el-table-column prop="session" label="交易日" min-width="120"/><el-table-column prop="rank" label="排名" width="80" align="right"/><el-table-column prop="symbol" label="股票" min-width="120"/><el-table-column label="预测分" min-width="120" align="right"><template #default="{row}">{{ metric(row.score,6) }}</template></el-table-column></el-table></ListFilterPagination></template></el-tab-pane>
           <el-tab-pane label="运行记录" name="runs"><div class="run-list"><article v-for="(row,index) in [{name:'可信训练',run:training,hint:'尚未开始'},{name:'样本外预测与信号',run:prediction,hint:'等待训练完成'},{name:'可复现回测',run:backtest,hint:'等待冻结信号'}]" :key="row.name"><b>{{ index+1 }}</b><div><strong>{{ row.name }}</strong><small>{{ row.run?statusLabel(row.run.status):row.hint }}</small></div><el-tag size="small" :type="row.run?.status==='completed'?'success':'info'">{{ row.run?statusLabel(row.run.status):'待执行' }}</el-tag></article></div></el-tab-pane>
           <el-tab-pane label="技术信息" name="technical"><el-alert title="可靠 LightGBM 最小闭环" description="策略、批准、训练、模型、样本外预测和冻结信号均持久化；浏览器看不到模型文件和原始特征样本。" type="info" show-icon :closable="false"/><el-descriptions :column="1" border class="technical"><el-descriptions-item label="研究定义">{{ shortReference(selected.artifact_id) }}</el-descriptions-item><el-descriptions-item label="训练任务">{{ shortReference(training?.training_run_id) }}</el-descriptions-item><el-descriptions-item label="模型制品">{{ shortReference(model?.artifact_id) }}</el-descriptions-item><el-descriptions-item label="预测任务">{{ shortReference(prediction?.prediction_run_id) }}</el-descriptions-item><el-descriptions-item label="信号快照">{{ shortReference(signal?.artifact_id) }}</el-descriptions-item><el-descriptions-item label="运行环境">{{ model?.content.runtime_identity??'训练完成后记录' }}</el-descriptions-item></el-descriptions></el-tab-pane>
         </el-tabs>
