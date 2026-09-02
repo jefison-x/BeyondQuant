@@ -106,6 +106,16 @@ try {
     },
   });
 
+  const invalidAuditRun = await client.callTool({
+    name: "byq_agent_audit_get",
+    arguments: { run_id: "byq-session-not-an-agent-run" },
+  });
+  assert.equal(
+    invalidAuditRun.isError,
+    true,
+    "runtime session IDs must be rejected at the MCP schema boundary",
+  );
+
   const boundedJobId = "backtest_ffffffffffffffffffffffffffffffff";
   for (let pageCall = 0; pageCall < 6; pageCall += 1) {
     const attempted = await client.callTool({

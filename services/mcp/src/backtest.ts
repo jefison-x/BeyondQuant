@@ -81,7 +81,12 @@ export function fetchByqBacktestGet(
   jobId: string,
   fetcher: Fetcher = fetch,
 ): Promise<ByqBacktestResult> {
-  return requestBacktest(backendUrl, `/v1/research/backtests/${encodeURIComponent(jobId)}`, { method: "GET" }, fetcher);
+  return requestBacktest(
+    backendUrl,
+    `/v1/research/backtests/${encodeURIComponent(jobId)}/summary`,
+    { method: "GET" },
+    fetcher,
+  );
 }
 
 export function fetchByqBacktestAnalysis(

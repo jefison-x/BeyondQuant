@@ -62,7 +62,7 @@ class SessionStatus:
 class ActiveRun:
     run_id: str
     started_at: float
-    last_public_progress_at: float
+    last_observed_progress_at: float
     soft_cancel_requested: bool = False
     hard_cancelled: bool = False
     active_subagent_calls: dict[str, float] = field(default_factory=dict)
@@ -329,7 +329,7 @@ class RuntimeAdapter:
             run = ActiveRun(
                 run_id=uuid.uuid4().hex,
                 started_at=now,
-                last_public_progress_at=now,
+                last_observed_progress_at=now,
             )
             effective_content = rehydrated_prompt(record.pending_conversation_context, content)
             record.pending_conversation_context = []
@@ -681,8 +681,11 @@ class RuntimeAdapter:
             }:
                 return
             run = record.active_run
+            answer_stream_progress = False
             if run is not None:
-                self._observe_run_notification(record, run, notification)
+                answer_stream_progress = self._observe_run_notification(
+                    record, run, notification,
+                )
             self._record_usage(record, notification)
             events = normalize_dsh_notification(
                 notification,
@@ -692,11 +695,11 @@ class RuntimeAdapter:
                 sequence=record.sequence + 1,
                 state=record.normalization,
             )
-            if run is not None and events and any(
+            if run is not None and (answer_stream_progress or any(
                 event["kind"] in {"agent.activity", "agent.output.delta", "turn.completed"}
                 for event in events
-            ):
-                run.last_public_progress_at = time.monotonic()
+            )):
+                run.last_observed_progress_at = time.monotonic()
             for event in events:
                 self._publish(record, event)
 
@@ -731,7 +734,7 @@ class RuntimeAdapter:
                 and now - oldest_subagent > self._subagent_timeout_seconds
             ):
                 code = "runtime-subagent-timeout"
-            elif now - run.last_public_progress_at > self._no_progress_timeout_seconds:
+            elif now - run.last_observed_progress_at > self._no_progress_timeout_seconds:
                 code = "runtime-no-progress-timeout"
             elif now - run.started_at > self._run_timeout_seconds:
                 code = "runtime-run-timeout"
@@ -758,17 +761,29 @@ class RuntimeAdapter:
     @staticmethod
     def _observe_run_notification(
         record: RuntimeSession, run: ActiveRun, notification: Notification,
-    ) -> None:
+    ) -> bool:
         if notification.method != "session.event" or not isinstance(notification.payload, dict):
-            return
+            return False
         if notification.payload.get("sessionId") != record.runtime_session_id:
-            return
+            return False
         raw_event = notification.payload.get("event")
         if not isinstance(raw_event, dict):
-            return
+            return False
         data = raw_event.get("data")
         if not isinstance(data, dict):
-            return
+            return False
+        if raw_event.get("type") == "assistant/chunk":
+            # Final-answer text is private until normalization receives the
+            # completed assistant/message, but it is still proof that the run
+            # is making forward progress. Reasoning deltas intentionally do
+            # not refresh this guard.
+            chunk = data.get("chunk")
+            return (
+                isinstance(chunk, dict)
+                and chunk.get("type") == "text-delta"
+                and isinstance(chunk.get("text"), str)
+                and bool(chunk["text"])
+            )
         if raw_event.get("type") == "tool/call":
             call_id = data.get("callId")
             name = data.get("name")
@@ -778,19 +793,20 @@ class RuntimeAdapter:
                 and name.removeprefix("mcp__byq__").startswith("byq_delegate_")
             ):
                 run.active_subagent_calls[call_id] = time.monotonic()
-            return
+            return False
         if raw_event.get("type") != "tool/result":
-            return
+            return False
         message = data.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         if not isinstance(content, list):
-            return
+            return False
         for block in content:
             if not isinstance(block, dict) or block.get("type") != "tool-result":
                 continue
             call_id = block.get("toolCallId")
             if isinstance(call_id, str):
                 run.active_subagent_calls.pop(call_id, None)
+        return False
 
     def _record_usage(self, record: RuntimeSession, notification: Notification) -> None:
         """Extract the documented TokenUsage shape without retaining DSH data."""

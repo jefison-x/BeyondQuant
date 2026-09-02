@@ -73,12 +73,19 @@ assert.equal(submitted.isError, false);
 assert.match(submitted.content[0].text, /queued/);
 
 const fetched = await fetchByqBacktestGet("http://backend:8000", jobId, async (url, init) => {
-  assert.equal(url, `http://backend:8000/v1/research/backtests/${jobId}`);
+  assert.equal(url, `http://backend:8000/v1/research/backtests/${jobId}/summary`);
   assert.equal(init?.method, "GET");
-  return new Response(JSON.stringify({ job: { job_id: jobId, status: "completed" } }), { status: 200 });
+  return new Response(JSON.stringify({ job: {
+    job_id: jobId,
+    status: "completed",
+    result_artifact_id: "artifact_result",
+    summary: { total_return: 0.12 },
+  } }), { status: 200 });
 });
 assert.equal(fetched.isError, false);
 assert.match(fetched.content[0].text, /completed/);
+assert.match(fetched.content[0].text, /artifact_result/);
+assert.doesNotMatch(fetched.content[0].text, /input_manifest|bars|signals|result_reference|object_id/);
 
 const analysis = await fetchByqBacktestAnalysis(
   "http://backend:8000",
