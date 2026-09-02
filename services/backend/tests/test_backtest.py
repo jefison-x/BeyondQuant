@@ -129,9 +129,11 @@ def test_agent_analysis_projects_cost_risk_and_bounded_evidence() -> None:
         "trade_count": 2, "blocked_trade_count": 2, "reproducibility": "reproducible",
         "trades": [
             {"symbol": SYMBOL, "order_type": "buy", "amount": 1_001.0,
-             "commission": 1.0, "tax": 0.0},
+             "commission": 1.0, "tax": 0.0, "timestamp": "2026-01-05",
+             "realized_pnl": None},
             {"symbol": SYMBOL, "order_type": "sell", "amount": 999.0,
-             "commission": 1.5, "tax": 2.0},
+             "commission": 1.5, "tax": 2.0, "timestamp": "2026-01-07",
+             "realized_pnl": 10.0},
         ],
         "blocked_trades": [
             {"symbol": SYMBOL, "reason_code": "limit_up"},
@@ -142,7 +144,11 @@ def test_agent_analysis_projects_cost_risk_and_bounded_evidence() -> None:
             {"trade_date": "2026-01-06", "daily_return": -0.005},
             {"trade_date": "2026-01-07", "daily_return": 0.02},
         ],
-        "equity_curve": [{"trade_date": "2026-01-05", "equity": 1_010.0}],
+        "equity_curve": [
+            {"trade_date": "2026-01-05", "equity": 1_010.0},
+            {"trade_date": "2026-01-06", "equity": 900.0},
+            {"trade_date": "2026-01-07", "equity": 1_020.0},
+        ],
         "logs": [{"level": "info", "code": "backtest_completed"}],
     }
     summary = build_backtest_analysis(
@@ -162,6 +168,39 @@ def test_agent_analysis_projects_cost_risk_and_bounded_evidence() -> None:
     assert summary["sharpe_ratio"] is not None
     assert summary["calmar_ratio"] is not None
     assert summary["blocked_reason_counts"] == {"limit_up": 1, "t_plus_one": 1}
+    assert summary["drawdown_diagnostics"] == {
+        "status": "recovered",
+        "max_drawdown": 0.1089108911,
+        "peak_date": "2026-01-05",
+        "peak_equity": 1_010.0,
+        "trough_date": "2026-01-06",
+        "trough_equity": 900.0,
+        "peak_to_trough_trading_days": 1,
+        "recovery_date": "2026-01-07",
+        "trough_to_recovery_trading_days": 1,
+        "worst_days": [{"trade_date": "2026-01-06", "daily_return": -0.005}],
+    }
+    assert summary["daily_return_diagnostics"]["positive_day_count"] == 2
+    assert summary["daily_return_diagnostics"]["negative_day_count"] == 1
+    assert summary["daily_return_diagnostics"]["worst_days"][0] == {
+        "trade_date": "2026-01-06", "daily_return": -0.005,
+    }
+    assert summary["realized_trade_diagnostics"] == {
+        "closed_trade_count": 1,
+        "winning_closed_trade_count": 1,
+        "losing_closed_trade_count": 0,
+        "flat_closed_trade_count": 0,
+        "closed_trade_win_rate": 1.0,
+        "gross_realized_profit": 10.0,
+        "gross_realized_loss": 0.0,
+        "net_realized_pnl": 10.0,
+        "profit_factor": None,
+        "largest_realized_gains": [{
+            "symbol": SYMBOL, "trade_date": "2026-01-07", "realized_pnl": 10.0,
+        }],
+        "largest_realized_losses": [],
+    }
+    assert summary["causal_attribution"]["status"] == "aggregate_only"
     assert summary["feature_diagnostics"]["excluded"]["warmup_or_missing"] == 2
 
     page = build_backtest_analysis(result, section="blocked_trades", limit=1, offset=1)["page"]
@@ -178,6 +217,34 @@ def test_agent_analysis_projects_cost_risk_and_bounded_evidence() -> None:
     assert frozen_without_rows["benchmark_status"] == "frozen_without_aligned_rows"
     with pytest.raises(ValueError, match="section must be one of"):
         build_backtest_analysis(result, section="raw_object")
+
+
+def test_agent_analysis_diagnostics_are_bounded_and_report_unrecovered_drawdown() -> None:
+    dates = [f"2026-01-{day:02d}" for day in range(1, 11)]
+    result = {
+        "total_return": -0.1,
+        "max_drawdown": 0.2,
+        "equity_curve": [
+            {"trade_date": date, "equity": 100.0 - index * 2.0}
+            for index, date in enumerate(dates)
+        ],
+        "daily_returns": [
+            {"trade_date": date, "daily_return": -0.01 * index}
+            for index, date in enumerate(dates)
+        ],
+        "trades": [],
+        "blocked_trades": [],
+    }
+
+    summary = build_backtest_analysis(result)["summary"]
+
+    assert summary["drawdown_diagnostics"]["status"] == "not_recovered"
+    assert summary["drawdown_diagnostics"]["peak_date"] == "2026-01-01"
+    assert summary["drawdown_diagnostics"]["trough_date"] == "2026-01-10"
+    assert summary["drawdown_diagnostics"]["recovery_date"] is None
+    assert len(summary["drawdown_diagnostics"]["worst_days"]) == 5
+    assert len(summary["daily_return_diagnostics"]["best_days"]) == 5
+    assert len(summary["daily_return_diagnostics"]["worst_days"]) == 5
 
 
 def test_native_engine_blocks_limit_up_and_suspension_with_stable_codes() -> None:

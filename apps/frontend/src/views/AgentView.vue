@@ -47,9 +47,17 @@ const activeSession = computed(() => agent.sessions.find((item) => item.session_
 const userDisplayName = computed(() => auth.user?.display_name?.trim() || "我");
 const activities = computed(() => workflowActivities(agent.events));
 const replayRun = computed(() => workflowRunState(agent.events));
-const runFailureMessage = computed(() => replayRun.value.failed
-  ? "本轮运行未能完成，与你的问题表述无关。对话内容已保留，可以直接重试；若持续失败，请新建对话并联系管理员。"
-  : "");
+const runFailureMessage = computed(() => {
+  if (!replayRun.value.failed) return "";
+  const messages: Record<string, string> = {
+    "runtime-no-progress-timeout": "本轮在较长时间内没有形成可展示的结论，系统为避免持续占用已停止。已完成的读取步骤仍保留，可以直接重试。",
+    "runtime-run-timeout": "本轮总处理时间超过运行上限，系统已停止任务。对话内容已保留，可以直接重试或缩小分析范围。",
+    "runtime-subagent-timeout": "本轮专项分析超过等待上限，系统已停止任务。对话内容已保留，可以直接重试。",
+    "model-run-failed": "模型服务本轮未能完成回答。对话内容已保留，可以直接重试；若持续失败，请联系管理员。",
+  };
+  return messages[replayRun.value.failureCode ?? ""]
+    ?? "本轮运行未能完成。对话内容已保留，可以直接重试；若持续失败，请联系管理员。";
+});
 const activeActivity = computed(() => [...activities.value].reverse().find((item) =>
   item.payload.state === "started" || item.payload.state === "progress" || item.payload.state === "waiting_approval",
 ));

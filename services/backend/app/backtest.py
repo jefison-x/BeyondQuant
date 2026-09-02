@@ -720,6 +720,147 @@ def _money(value: float) -> float:
     return round(float(value), 10)
 
 
+def _finite_result_number(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _drawdown_diagnostics(
+    equity_rows: list[object], daily_rows: list[object],
+) -> dict[str, object]:
+    points = [
+        {
+            "trade_date": str(row.get("trade_date")),
+            "equity": equity,
+        }
+        for row in equity_rows if isinstance(row, dict)
+        and isinstance(row.get("trade_date"), str)
+        and (equity := _finite_result_number(row.get("equity"))) is not None
+        and equity > 0
+    ]
+    if not points:
+        return {"status": "unavailable"}
+
+    peak_index = 0
+    peak_equity = float(points[0]["equity"])
+    max_drawdown = 0.0
+    maximum: dict[str, object] | None = None
+    maximum_peak_equity = peak_equity
+    trough_index = 0
+    for index, point in enumerate(points):
+        equity = float(point["equity"])
+        if equity > peak_equity:
+            peak_index = index
+            peak_equity = equity
+        drawdown = (peak_equity - equity) / peak_equity
+        if drawdown > max_drawdown:
+            max_drawdown = drawdown
+            trough_index = index
+            maximum_peak_equity = peak_equity
+            maximum = {
+                "max_drawdown": _money(drawdown),
+                "peak_date": points[peak_index]["trade_date"],
+                "peak_equity": _money(peak_equity),
+                "trough_date": point["trade_date"],
+                "trough_equity": _money(equity),
+                "peak_to_trough_trading_days": index - peak_index,
+            }
+    if maximum is None:
+        return {"status": "no_drawdown", "max_drawdown": 0.0}
+
+    recovery_index = next(
+        (
+            index for index in range(trough_index + 1, len(points))
+            if float(points[index]["equity"]) >= maximum_peak_equity
+        ),
+        None,
+    )
+    maximum.update({
+        "status": "recovered" if recovery_index is not None else "not_recovered",
+        "recovery_date": points[recovery_index]["trade_date"] if recovery_index is not None else None,
+        "trough_to_recovery_trading_days": recovery_index - trough_index if recovery_index is not None else None,
+    })
+    peak_date = str(maximum["peak_date"])
+    trough_date = str(maximum["trough_date"])
+    window_returns = [
+        {"trade_date": str(row.get("trade_date")), "daily_return": _money(value)}
+        for row in daily_rows if isinstance(row, dict)
+        and isinstance(row.get("trade_date"), str)
+        and peak_date <= str(row["trade_date"]) <= trough_date
+        and (value := _finite_result_number(row.get("daily_return"))) is not None
+        and value < 0
+    ]
+    maximum["worst_days"] = sorted(
+        window_returns, key=lambda row: (float(row["daily_return"]), str(row["trade_date"])),
+    )[:5]
+    return maximum
+
+
+def _daily_return_diagnostics(daily_rows: list[object]) -> dict[str, object]:
+    observations = [
+        {"trade_date": str(row.get("trade_date")), "daily_return": _money(value)}
+        for row in daily_rows if isinstance(row, dict)
+        and isinstance(row.get("trade_date"), str)
+        and (value := _finite_result_number(row.get("daily_return"))) is not None
+    ]
+    if not observations:
+        return {"observation_count": 0}
+    positive = sum(float(row["daily_return"]) > 0 for row in observations)
+    negative = sum(float(row["daily_return"]) < 0 for row in observations)
+    flat = len(observations) - positive - negative
+    return {
+        "observation_count": len(observations),
+        "positive_day_count": positive,
+        "negative_day_count": negative,
+        "flat_day_count": flat,
+        "positive_day_ratio": _money(positive / len(observations)),
+        "best_days": sorted(
+            observations, key=lambda row: (-float(row["daily_return"]), str(row["trade_date"])),
+        )[:5],
+        "worst_days": sorted(
+            observations, key=lambda row: (float(row["daily_return"]), str(row["trade_date"])),
+        )[:5],
+    }
+
+
+def _realized_trade_diagnostics(trades: list[object]) -> dict[str, object]:
+    closed = [
+        {
+            "symbol": str(row.get("symbol")),
+            "trade_date": str(row.get("timestamp")),
+            "realized_pnl": _money(value),
+        }
+        for row in trades if isinstance(row, dict)
+        and isinstance(row.get("symbol"), str)
+        and isinstance(row.get("timestamp"), str)
+        and (value := _finite_result_number(row.get("realized_pnl"))) is not None
+    ]
+    winners = [row for row in closed if float(row["realized_pnl"]) > 0]
+    losers = [row for row in closed if float(row["realized_pnl"]) < 0]
+    flats = len(closed) - len(winners) - len(losers)
+    gross_profit = sum(float(row["realized_pnl"]) for row in winners)
+    gross_loss = -sum(float(row["realized_pnl"]) for row in losers)
+    return {
+        "closed_trade_count": len(closed),
+        "winning_closed_trade_count": len(winners),
+        "losing_closed_trade_count": len(losers),
+        "flat_closed_trade_count": flats,
+        "closed_trade_win_rate": _money(len(winners) / len(closed)) if closed else None,
+        "gross_realized_profit": _money(gross_profit),
+        "gross_realized_loss": _money(gross_loss),
+        "net_realized_pnl": _money(gross_profit - gross_loss),
+        "profit_factor": _money(gross_profit / gross_loss) if gross_loss > 0 else None,
+        "largest_realized_gains": sorted(
+            winners, key=lambda row: (-float(row["realized_pnl"]), str(row["trade_date"]), str(row["symbol"])),
+        )[:5],
+        "largest_realized_losses": sorted(
+            losers, key=lambda row: (float(row["realized_pnl"]), str(row["trade_date"]), str(row["symbol"])),
+        )[:5],
+    }
+
+
 def _limit_state(bar: dict[str, object], threshold: float) -> str | None:
     previous = bar.get("prev_close")
     if previous is None:
@@ -1077,6 +1218,7 @@ def build_backtest_analysis(
     trades = result.get("trades") if isinstance(result.get("trades"), list) else []
     blocked = result.get("blocked_trades") if isinstance(result.get("blocked_trades"), list) else []
     daily_rows = result.get("daily_returns") if isinstance(result.get("daily_returns"), list) else []
+    equity_rows = result.get("equity_curve") if isinstance(result.get("equity_curve"), list) else []
     daily_returns = [
         float(row["daily_return"])
         for row in daily_rows
@@ -1188,6 +1330,13 @@ def build_backtest_analysis(
         "transaction_cost_total": _money(total_cost),
         "transaction_cost_ratio": None if cost_ratio is None else _money(cost_ratio),
         "blocked_reason_counts": dict(sorted(blocked_reasons.items())),
+        "drawdown_diagnostics": _drawdown_diagnostics(equity_rows, daily_rows),
+        "daily_return_diagnostics": _daily_return_diagnostics(daily_rows),
+        "realized_trade_diagnostics": _realized_trade_diagnostics(trades),
+        "causal_attribution": {
+            "status": "aggregate_only",
+            "limitation": "per-position daily profit attribution is not recorded in this result",
+        },
         "log_truncated": result.get("log_truncated") is True,
         "execution_assumptions": {
             key: execution.get(key)

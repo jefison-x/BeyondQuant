@@ -116,17 +116,32 @@ try {
     "runtime session IDs must be rejected at the MCP schema boundary",
   );
 
+  const rawBacktestSeries = await client.callTool({
+    name: "byq_backtest_analysis_get",
+    arguments: {
+      job_id: "backtest_ffffffffffffffffffffffffffffffff",
+      section: "daily_returns",
+      limit: 20,
+      offset: 0,
+    },
+  });
+  assert.equal(
+    rawBacktestSeries.isError,
+    true,
+    "raw daily/equity series must stay outside the Agent analysis surface",
+  );
+
   const boundedJobId = "backtest_ffffffffffffffffffffffffffffffff";
   for (let pageCall = 0; pageCall < 6; pageCall += 1) {
     const attempted = await client.callTool({
       name: "byq_backtest_analysis_get",
-      arguments: { job_id: boundedJobId, section: "daily_returns", limit: 1, offset: pageCall },
+      arguments: { job_id: boundedJobId, section: "summary", limit: 1, offset: 0 },
     });
     assert.equal(attempted.isError, true, "Backend rejection remains a real tool error before budget exhaustion");
   }
   const bounded = await client.callTool({
     name: "byq_backtest_analysis_get",
-    arguments: { job_id: boundedJobId, section: "equity_curve", limit: 1, offset: 0 },
+    arguments: { job_id: boundedJobId, section: "logs", limit: 1, offset: 0 },
   });
   assert.notEqual(bounded.isError, true, "budget exhaustion must remain a normal tool result");
   const boundedText = bounded.content.find((block) => block.type === "text");

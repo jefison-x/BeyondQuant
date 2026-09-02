@@ -920,12 +920,12 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_backtest_analysis_get",
     {
-      description: "Read a bounded, owner-scoped analysis of an immutable completed BYQ backtest. Start with summary, then request only necessary evidence. Every successful result reports remaining page calls. An exhausted budget is a normal stop-and-answer result, never a reason to retry or wait. This Agent channel does not expose object-store references or raw result files.",
+      description: "Read a bounded, owner-scoped analysis of an immutable completed BYQ backtest. The summary already contains deterministic return, drawdown-window, daily-risk, realized-trade, cost, benchmark and blocked-order diagnostics and is sufficient for a normal review. Detail sections provide only a first-page evidence sample; raw daily/equity series and object-store results are intentionally unavailable to the Agent. Every successful result reports remaining calls. Exhaustion is a normal stop-and-answer result, never a reason to retry or wait.",
       inputSchema: {
         job_id: z.string().regex(/^backtest_[0-9a-f]{32}$/),
-        section: z.enum(["summary", "trades", "blocked_trades", "daily_returns", "equity_curve", "logs"]).default("summary"),
-        limit: z.number().int().min(1).max(100).default(50),
-        offset: z.number().int().min(0).default(0),
+        section: z.enum(["summary", "trades", "blocked_trades", "logs"]).default("summary"),
+        limit: z.number().int().min(1).max(20).default(20),
+        offset: z.literal(0).default(0),
       },
     },
     (args) => byqBacktestAnalysis(args, trustedContext),
