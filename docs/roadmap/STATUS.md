@@ -369,7 +369,9 @@ always-cleanup、重型任务锁、内存 preflight 和 zero-resource verificati
 Post-Phase 82 Product Agent Runtime Reliability Maintenance 为每个 prompt 增加五分钟总墙钟、
 三分钟子 Agent 和两分钟无公开进度看门狗；超限只关闭该会话独占 DSH process，并保留既有
 fresh-generation resume。回测分析 MCP 对同一会话/任务的五分钟分页读取限制为六次，超过后
-不再访问 Backend。该维护不创建第二 Agent loop，不改变 Domain 数据或当前 Phase 状态。
+不再访问 Backend。后续生产会话证明将预算耗尽标记为工具错误会使子 Agent 失败且父 Agent
+无法收口；维护修复改为在每次成功读取中返回剩余次数，并将耗尽投影为非错误的有界结束信号，
+要求立即使用已有证据回答。该维护不创建第二 Agent loop，不改变 Domain 数据或当前 Phase 状态。
 
 ## 当前授权边界
 

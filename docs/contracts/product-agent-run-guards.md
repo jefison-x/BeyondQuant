@@ -29,10 +29,20 @@ BeyondQuant MCP allows at most six `byq_backtest_analysis_get` calls for the
 same workspace, Product session, DSH correlation, and Backtest job in a rolling
 five-minute window. The budget is process-local and fail-closed for a request;
 it resets naturally after the window or MCP restart and never changes business
-data. Calls beyond the limit return `analysis_page_budget_exceeded` with
-`retryable=false`; no Backend request is made.
+data. Every successful read includes an `analysis_page_budget` projection with
+the call limit, remaining calls and whether the current response accessed
+Backend. The last allowed read sets `remaining_calls=0` and
+`must_answer_from_collected_evidence=true`.
+
+Calls beyond the limit do not access Backend. They return a normal, non-error
+bounded-completion result with `analysis_page_budget_exceeded`,
+`retryable=false`, `backend_accessed=false` and
+`must_answer_from_collected_evidence=true`. Budget exhaustion is a control
+result that tells the analyst to synthesize the evidence already held; it is
+not a tool failure and must not be retried or waited on.
 
 The analyst must read summary once, select only relevant evidence sections,
-never enumerate `has_more`, and answer from already collected evidence when the
-budget is exhausted. The runtime wall-clock and no-progress guards remain the
-hard process-level ceiling if a child ignores this result.
+never enumerate `has_more`, track the returned remaining-call count, and answer
+from already collected evidence when the budget is exhausted. The runtime
+wall-clock and no-progress guards remain the hard process-level ceiling if a
+child ignores this result.
