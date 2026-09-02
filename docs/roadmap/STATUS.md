@@ -373,6 +373,11 @@ fresh-generation resume。回测分析 MCP 对同一会话/任务的五分钟分
 无法收口；维护修复改为在每次成功读取中返回剩余次数，并将耗尽投影为非错误的有界结束信号，
 要求立即使用已有证据回答。该维护不创建第二 Agent loop，不改变 Domain 数据或当前 Phase 状态。
 
+Post-Phase 82 Benchmark UX Maintenance 将新 Product 策略草稿和小巴策略提案在用户未指定时的
+默认对比基准设为沪深300（`000300.SH`），并在回测向导展示已批准版本实际声明的冻结基准。
+历史无基准版本保持不变。Community 策略/回测页仅作为通用布局参考，分类为 `REFERENCE_ONLY`；
+本维护沿用 ADR-0030 的 declared-data 与 immutable-input 边界，不复制 Community 执行架构。
+
 ## 当前授权边界
 
 - Phase 49-82 与相应 Accepted ADR/计划均已完成。

@@ -42,6 +42,7 @@ const lifecycle = ref<"active" | "superseded">("active");
 const page = ref(1);
 const total = ref(0);
 const PAGE_SIZE = 50;
+const DEFAULT_BENCHMARK_REQUIREMENTS = JSON.stringify({ benchmark: "000300.SH" }, null, 2);
 const search = ref("");
 const script = ref("");
 const strategyId = ref("CustomStrategy");
@@ -49,7 +50,7 @@ const strategyName = ref("自定义策略");
 const description = ref("用户自定义策略");
 const parametersJson = ref("{}");
 const parameterSchemaJson = ref("{}");
-const dataRequirementsJson = ref("{}");
+const dataRequirementsJson = ref(DEFAULT_BENCHMARK_REQUIREMENTS);
 const templateId = ref("");
 const lastDraftId = ref("");
 const saving = ref(false);
@@ -191,7 +192,7 @@ async function newDraft() {
   description.value = "用户自定义策略";
   parametersJson.value = "{}";
   parameterSchemaJson.value = "{}";
-  dataRequirementsJson.value = "{}";
+  dataRequirementsJson.value = DEFAULT_BENCHMARK_REQUIREMENTS;
   script.value = "";
   templateId.value = "";
   lastDraftId.value = "";
@@ -205,6 +206,7 @@ async function newDraft() {
 }
 
 const selectedStrategyId = computed(() => {
+  if (!selected.value) return "";
   const content = selected.value?.content as Record<string, unknown> | undefined;
   const snapshot = content?.snapshot as Record<string, unknown> | undefined;
   strategyId.value = String(snapshot?.strategy_id ?? "CustomStrategy");
@@ -689,6 +691,7 @@ onMounted(loadList);
                 spellcheck="false"
                 placeholder='例如 {"benchmark":"000300.SH","daily_basic":["pe_ttm","pb"]}'
               />
+              <div class="field-hint">新策略默认使用沪深300（000300.SH）作为回测对比基准；如需其他基准，请在版本冻结前修改。</div>
             </el-form-item>
             <el-form-item label="Python 策略脚本">
               <el-input
@@ -783,6 +786,7 @@ onMounted(loadList);
 
 .catalog-field, .template-field { display: grid; gap: 0.3rem; min-width: 0; }
 .field-label { color: var(--byq-text-muted); font-size: 12px; font-weight: 700; }
+.field-hint { color: var(--byq-text-muted); font-size: 12px; margin-top: 0.35rem; }
 .template-field { min-width: min(230px, 100%); }
 .strategy-editor-form { margin-top: 0.75rem; }
 .strategy-editor-form :deep(.el-form-item) { margin-bottom: 0.8rem; }

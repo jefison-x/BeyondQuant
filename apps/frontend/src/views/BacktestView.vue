@@ -376,6 +376,15 @@ const signalQuantity = ref(100);
 const producingSignals = ref(false);
 const producerJob = ref<Record<string, unknown> | null>(null);
 
+const selectedBenchmark = computed(() => {
+  const symbol = selectedOption.value?.benchmark_symbol;
+  if (typeof symbol !== "string" || !symbol) return null;
+  return {
+    symbol,
+    name: symbol === "000300.SH" ? "沪深300" : symbol,
+  };
+});
+
 const matchingSnapshots = computed(() => {
   const versionId = selectedOption.value?.strategy_version_artifact_id;
   if (!versionId) return [];
@@ -886,6 +895,22 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
             />
           </el-select>
         </el-form-item>
+        <el-alert
+          v-if="selectedBenchmark"
+          type="success"
+          :closable="false"
+          show-icon
+          :title="`对比基准：${selectedBenchmark.name}（${selectedBenchmark.symbol}）`"
+          description="该基准来自已批准策略版本，将与行情、信号一起冻结后用于计算基准收益和超额收益。"
+        />
+        <el-alert
+          v-else-if="selectedOption"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="该历史策略版本未声明对比基准"
+          description="新策略默认使用沪深300（000300.SH）；如需基准对比，请先创建并批准包含基准声明的新版本。"
+        />
         <el-form-item label="信号快照（ADR-0017 冻结输入）">
           <el-select
             v-model="selectedSnapshot"

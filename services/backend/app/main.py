@@ -3272,6 +3272,13 @@ def backtest_options(request: Request) -> dict[str, object]:
         content = item["content"]
         if not isinstance(content, dict):
             continue
+        snapshot = content.get("snapshot")
+        data_requirements = (
+            snapshot.get("data_requirements")
+            if isinstance(snapshot, dict) and isinstance(snapshot.get("data_requirements"), dict)
+            else {}
+        )
+        benchmark_symbol = data_requirements.get("benchmark")
         options.append(
             {
                 "strategy_version_artifact_id": version_id,
@@ -3279,6 +3286,7 @@ def backtest_options(request: Request) -> dict[str, object]:
                 "approval_artifact_id": approved_by_version[version_id],
                 "strategy_id": content.get("strategy_id"),
                 "strategy_version_id": content.get("version_id"),
+                "benchmark_symbol": benchmark_symbol if isinstance(benchmark_symbol, str) else None,
             }
         )
     return {"options": options}

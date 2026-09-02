@@ -93,7 +93,7 @@ def test_strategy_draft_version_export_and_approval_flow(monkeypatch) -> None:
         "/v1/research/strategies/validate",
         json={
             "task_id": task["task_id"],
-            "strategy": strategy_payload(),
+            "strategy": strategy_payload(data_requirements={"benchmark": "000300.SH"}),
             "trace_id": "byq-trace-strategy-api",
             "idempotency_key": "strategy-draft-1",
         },
@@ -169,6 +169,16 @@ def test_strategy_draft_version_export_and_approval_flow(monkeypatch) -> None:
     )
     assert exact_approval.status_code == 200
     assert exact_approval.json()["approval"]["artifact_id"] == body["artifact"]["artifact_id"]
+    backtest_options = client.get("/v1/research/backtests/options")
+    assert backtest_options.status_code == 200
+    assert backtest_options.json()["options"] == [{
+        "strategy_version_artifact_id": version["artifact"]["artifact_id"],
+        "task_id": task["task_id"],
+        "approval_artifact_id": body["artifact"]["artifact_id"],
+        "strategy_id": "MomentumStrategy",
+        "strategy_version_id": version_id,
+        "benchmark_symbol": "000300.SH",
+    }]
     denied_approval = client.get(
         f"/v1/research/strategies/versions/{version['artifact']['artifact_id']}/approval",
         headers=_owner_headers("other-user"),
