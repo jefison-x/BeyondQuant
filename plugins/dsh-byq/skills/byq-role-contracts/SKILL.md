@@ -11,6 +11,12 @@ Use the specialized DSH delegation tools for focused work. Start a BYQ agent
 run before domain work, then call `byq_agent_authorize` before a domain action
 and `byq_agent_audit` with the bounded outcome afterward.
 
+A DSH runtime session identifier such as `byq-session-*` is not a BYQ Agent
+run identifier. Only the `agent_run_*` value returned by
+`byq_agent_run_start` may be passed to authorization or audit tools. For a
+read-only answer, do not query an audit merely to reconstruct interrupted tool
+evidence; use only evidence present in the current conversation.
+
 The authorization `action` is always the exact MCP tool name you will call;
 never invent aliases such as `market_daily.read`. Audit every distinct authorized
 domain action separately with its actual success or failure. Authorization is not a

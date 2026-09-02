@@ -125,7 +125,7 @@ def test_no_progress_watchdog_fails_and_closes_only_the_stuck_runtime(adapter: R
     run = record.active_run
     assert run is not None
 
-    run.last_public_progress_at = 10.0
+    run.last_observed_progress_at = 10.0
     assert adapter._enforce_run_guards(record, run, now=3611.0) is True
 
     wait_for_status(adapter, "s-stuck", SessionStatus.FAILED)
@@ -144,6 +144,62 @@ def test_no_progress_watchdog_fails_and_closes_only_the_stuck_runtime(adapter: R
     assert len(record.history) == history_length
 
 
+def test_answer_text_chunks_refresh_liveness_without_crossing_public_boundary(
+    adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter.create_session("s-answer-stream", "t-answer-stream")
+    adapter.submit_prompt("s-answer-stream", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-answer-stream")
+    run = record.active_run
+    assert run is not None
+    run.last_observed_progress_at = 10.0
+    history_length = len(record.history)
+    monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 42.0)
+
+    adapter._on_notification(record, Notification(
+        method="session.event",
+        payload={
+            "sessionId": record.runtime_session_id,
+            "event": {"type": "assistant/chunk", "data": {
+                "turn": 1, "step": 5,
+                "chunk": {"type": "text-delta", "index": 1, "text": "结论"},
+            }},
+        },
+    ))
+
+    assert run.last_observed_progress_at == 42.0
+    assert len(record.history) == history_length
+    adapter.cancel_session("s-answer-stream", "hard")
+
+
+def test_reasoning_chunks_do_not_keep_a_stuck_run_alive(
+    adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter.create_session("s-reasoning-stream", "t-reasoning-stream")
+    adapter.submit_prompt("s-reasoning-stream", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-reasoning-stream")
+    run = record.active_run
+    assert run is not None
+    run.last_observed_progress_at = 10.0
+    monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 42.0)
+
+    adapter._on_notification(record, Notification(
+        method="session.event",
+        payload={
+            "sessionId": record.runtime_session_id,
+            "event": {"type": "assistant/chunk", "data": {
+                "turn": 1, "step": 5,
+                "chunk": {"type": "reasoning-delta", "index": 0, "text": "private"},
+            }},
+        },
+    ))
+
+    assert run.last_observed_progress_at == 10.0
+    adapter.cancel_session("s-reasoning-stream", "hard")
+
+
 def test_subagent_wall_clock_timeout_wins_even_when_public_progress_continues(
     adapter: RuntimeAdapter,
 ) -> None:
@@ -153,7 +209,7 @@ def test_subagent_wall_clock_timeout_wins_even_when_public_progress_continues(
     record = adapter._get("s-child")
     run = record.active_run
     assert run is not None
-    run.last_public_progress_at = 3600.0
+    run.last_observed_progress_at = 3600.0
     run.active_subagent_calls["delegate-call"] = 10.0
 
     assert adapter._enforce_run_guards(record, run, now=3611.0) is True
@@ -173,7 +229,7 @@ def test_total_run_wall_clock_is_a_final_ceiling(adapter: RuntimeAdapter) -> Non
     run = record.active_run
     assert run is not None
     run.started_at = 10.0
-    run.last_public_progress_at = 3_610.0
+    run.last_observed_progress_at = 3_610.0
 
     assert adapter._enforce_run_guards(record, run, now=3_611.0) is True
 

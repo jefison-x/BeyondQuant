@@ -697,7 +697,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       description: "Start an owner-scoped BYQ agent run correlated to the trusted DSH session and trace.",
       inputSchema: {
         role_id: z.enum(["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher"]),
-        parent_run_id: z.string().optional(),
+        parent_run_id: z.string().regex(/^agent_run_[0-9a-f]{32}$/).optional(),
         idempotency_key: z.string(),
       },
     },
@@ -708,7 +708,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     {
       description: "Ask BYQ whether the active role may invoke a domain action; approval-required actions never auto-authorize.",
       inputSchema: {
-        run_id: z.string(),
+        run_id: z.string().regex(/^agent_run_[0-9a-f]{32}$/),
         action: z.string(),
         resource_type: z.string().optional(),
         resource_id: z.string().optional(),
@@ -721,7 +721,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     {
       description: "Append a bounded, owner-scoped audit outcome for a BYQ domain action.",
       inputSchema: {
-        run_id: z.string(),
+        run_id: z.string().regex(/^agent_run_[0-9a-f]{32}$/),
         action: z.string(),
         outcome: z.string(),
         resource_type: z.string().optional(),
@@ -734,8 +734,8 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_agent_audit_get",
     {
-      description: "Read the owner-scoped audit view for one BYQ agent run.",
-      inputSchema: { run_id: z.string() },
+      description: "Read the owner-scoped audit view for one BYQ agent_run_* identifier; a byq-session-* runtime ID is invalid.",
+      inputSchema: { run_id: z.string().regex(/^agent_run_[0-9a-f]{32}$/) },
     },
     (args) => byqAgentAuditGet(args, trustedContext),
   );
@@ -744,7 +744,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     {
       description: "Create a pending BYQ human approval for a consequential agent action.",
       inputSchema: {
-        run_id: z.string(),
+        run_id: z.string().regex(/^agent_run_[0-9a-f]{32}$/),
         action: z.string(),
         reason: z.string(),
         idempotency_key: z.string(),
