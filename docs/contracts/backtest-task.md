@@ -19,6 +19,12 @@ No task tool accepts raw bars, raw signals, arbitrary Python, provider credentia
 references. Existing strategy approval, personal authorization policy, frozen-input validation,
 worker retry, A-share execution and result lineage remain authoritative.
 
+Benchmark selection remains declared strategy domain data, not a mutable BacktestJob option. New
+Product strategy drafts and Xiaoba strategy proposals default the declaration to CSI 300
+(`000300.SH`) when the user has not selected a benchmark. The backtest option projection exposes
+the selected immutable version's benchmark so the browser can show what will actually be frozen.
+Older versions without a declaration remain unchanged and produce no fabricated comparison.
+
 ## Community migration classification
 
 Community preflight, idempotency, progress, cancellation and date-default semantics are `PORT_UX`.

@@ -25,6 +25,11 @@ it may include `description`, `parameters`, `parameter_schema`, and declared
 `data_requirements`. A planned research task is valid input: do not guess or
 transition task/experiment state merely to satisfy validation.
 
+Unless the user explicitly chooses another benchmark or explicitly asks for no
+benchmark comparison, set `data_requirements.benchmark` to `000300.SH` (CSI 300).
+State this default in the user-facing strategy summary. A user-selected
+canonical index takes precedence; never silently replace it.
+
 Call `byq_strategy_validate`, then create a version only from its returned
 validated draft Artifact. On a 422, apply the safe validation message once and
 retry once. If validation still fails, stop and report the remaining contract

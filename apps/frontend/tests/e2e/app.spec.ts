@@ -538,6 +538,7 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
   await page.getByRole("button", { name: "新建策略" }).click();
   await expect(page.getByText("策略编辑器", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "策略名称", exact: true })).toHaveValue("自定义策略");
+  await expect(page.getByRole("textbox", { name: "数据依赖（JSON）", exact: true })).toHaveValue('{\n  "benchmark": "000300.SH"\n}');
 });
 
 test("backtest workspace renders backtest result list", async ({ page }) => {
@@ -579,6 +580,21 @@ test("backtest workspace renders backtest result list", async ({ page }) => {
     fullResultRequests += 1;
     return route.abort();
   });
+  await page.route("**/api/product/backtests/options", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ options: [{
+      strategy_version_artifact_id: "artifact_version_1", task_id: "task_1",
+      approval_artifact_id: "artifact_approval_1", strategy_id: "MomentumStrategy",
+      strategy_version_id: "version-1", benchmark_symbol: "000300.SH",
+    }] }),
+  }));
+  await page.route("**/api/product/signal-snapshots", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ snapshots: [] }),
+  }));
+  await page.route("**/api/product/paper/pools", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ pools: [] }),
+  }));
   await login(page);
   await page.goto("/backtest?job=backtest_1&from=agent&session=session-1");
   await expect(page.getByRole("heading", { name: "回测管理" })).toBeVisible();
@@ -588,6 +604,10 @@ test("backtest workspace renders backtest result list", async ({ page }) => {
   await expect(page.getByRole("tab", { name: "权益曲线" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "交易明细" })).toBeVisible();
   expect(fullResultRequests).toBe(0);
+  await page.getByRole("button", { name: "新建回测" }).click();
+  await page.getByRole("combobox", { name: "已批准策略版本" }).click();
+  await page.getByRole("option", { name: /MomentumStrategy/ }).click();
+  await expect(page.getByText("对比基准：沪深300（000300.SH）", { exact: true })).toBeVisible();
 });
 
 test("my space pages render profile, models, assets, and agent policy", async ({ page }) => {
