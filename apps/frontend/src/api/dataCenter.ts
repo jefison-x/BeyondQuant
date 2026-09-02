@@ -18,8 +18,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function getDataCenterStatus(): Promise<DataCenterStatus> {
-  return request("/status");
+export function getDataCenterStatus(view: "summary" | "full" = "summary"): Promise<DataCenterStatus> {
+  return request(`/status?view=${view}`);
 }
 
 export function queryDataReadiness(payload: {

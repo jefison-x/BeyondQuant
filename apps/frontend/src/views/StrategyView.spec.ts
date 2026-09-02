@@ -24,9 +24,9 @@ function mountView() {
 }
 
 const listStrategies = vi.fn();
-const listTasks = vi.fn();
-const listArtifacts = vi.fn();
+const listTaskOptions = vi.fn();
 const getResearchEntity = vi.fn();
+const getStrategyVersionApproval = vi.fn();
 const getStrategyBacktestCount = vi.fn();
 const getStrategyVersions = vi.fn();
 const saveStrategyDraft = vi.fn();
@@ -41,14 +41,14 @@ vi.mock("@/api/quant", () => ({
   exportStrategyVersion: vi.fn(),
   getResearchEntity: (...args: unknown[]) => getResearchEntity(...args),
   getStrategyBacktestCount: (...args: unknown[]) => getStrategyBacktestCount(...args),
+  getStrategyVersionApproval: (...args: unknown[]) => getStrategyVersionApproval(...args),
   getStrategyVersions: (...args: unknown[]) => getStrategyVersions(...args),
   saveStrategyDraft: (...args: unknown[]) => saveStrategyDraft(...args),
   validateStrategy: vi.fn(),
 }));
 
 vi.mock("@/api/research", () => ({
-  listTasks: (...args: unknown[]) => listTasks(...args),
-  listArtifacts: (...args: unknown[]) => listArtifacts(...args),
+  listTaskOptions: (...args: unknown[]) => listTaskOptions(...args),
 }));
 
 describe("StrategyView", () => {
@@ -66,8 +66,9 @@ describe("StrategyView", () => {
         offset: 0,
       }),
     );
-    listTasks.mockResolvedValue({ tasks: [] });
-    listArtifacts.mockResolvedValue({ artifacts: [] });
+    listTaskOptions.mockResolvedValue({ tasks: [] });
+    getStrategyVersionApproval.mockReset();
+    getStrategyVersionApproval.mockResolvedValue({ approval: null });
     getResearchEntity.mockReset();
     getResearchEntity.mockResolvedValue({});
     getStrategyBacktestCount.mockReset();
@@ -166,7 +167,7 @@ describe("StrategyView", () => {
       content: { snapshot: { strategy_id: "DraftStrategy", script: "class CustomStrategy: pass" } },
     };
     listStrategies.mockResolvedValue({ strategies: [draft], total: 1, limit: 50, offset: 0 });
-    listTasks.mockResolvedValue({ tasks: [{ task_id: "task_1" }] });
+    listTaskOptions.mockResolvedValue({ tasks: [{ task_id: "task_1" }] });
     saveStrategyDraft.mockResolvedValue({ artifact: { artifact_id: "artifact_draft" } });
     deleteStrategyDraft.mockResolvedValue({ artifact: { artifact_id: "artifact_draft", status: "superseded" } });
     const wrapper = mountView();

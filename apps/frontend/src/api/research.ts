@@ -35,6 +35,10 @@ export function listTasks(): Promise<{ tasks: Array<Record<string, unknown>> }> 
   return getJson("/research/tasks");
 }
 
+export function listTaskOptions(limit = 50): Promise<{ tasks: Array<Record<string, unknown>> }> {
+  return getJson(`/research/task-options?limit=${limit}`);
+}
+
 export function createTask(
   title: string,
   objective: string,

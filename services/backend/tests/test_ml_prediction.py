@@ -104,18 +104,14 @@ def test_prediction_rows_api_is_owner_scoped_filtered_and_paginated(monkeypatch)
             return {"prediction_artifact_id": "artifact_rows"}
 
     class Research:
-        def get_artifact(self, artifact_id):
-            assert artifact_id == "artifact_rows"
+        def list_ml_prediction_rows(self, **kwargs):
+            assert kwargs == {
+                "artifact_id": "artifact_rows", "owner_principal": "ml-prediction-rows-owner",
+                "workspace_id": workspace_id, "query": "000001", "limit": 1, "offset": 1,
+            }
             return {
-                "artifact_id": artifact_id,
-                "kind": "ml_prediction_snapshot",
-                "owner_principal": "ml-prediction-rows-owner",
-                "workspace_id": workspace_id,
-                "content": {"rows": [
-                    {"session": "2024-03-01", "symbol": "000001.SZ", "score": 0.8, "rank": 1, "private": "drop"},
-                    {"session": "2024-03-01", "symbol": "000002.SZ", "score": 0.7, "rank": 2},
-                    {"session": "2024-03-02", "symbol": "000001.SZ", "score": 0.9, "rank": 1},
-                ]},
+                "rows": [{"session": "2024-03-02", "symbol": "000001.SZ", "score": 0.9, "rank": 1}],
+                "total": 2,
             }
 
     monkeypatch.setattr(backend_main, "ml_prediction_store", Runs())

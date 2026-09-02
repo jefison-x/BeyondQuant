@@ -48,7 +48,10 @@ def test_ml_workspace_projects_safe_artifacts_and_owner_context(monkeypatch) -> 
     assert response.json()["artifacts"][0]["content"] == {"best_iteration": 7}
     assert "object_reference" not in response.text
     assert "ml_feature_snapshot" not in response.text
-    assert {path for path, _ in calls} == {"/v1/research/ml/workspace", "/v1/research/backtests"}
+    assert {path for path, _ in calls} == {
+        "/v1/research/ml/workspace",
+        "/v1/research/backtests/catalog?limit=100&offset=0",
+    }
     assert all(headers["x-byq-owner-principal"] == "product-user" for _, headers in calls)
 
 
@@ -983,7 +986,11 @@ def test_product_data_center_status_exposes_masked_provider_capability(monkeypat
                 "coverage": {"quality": "empty", "row_count": 0, "symbol_count": 0, "groups": [], "symbols": []},
             }
 
-    monkeypatch.setattr(product_api.httpx, "request", lambda *args, **kwargs: FakeResponse())
+    requested: list[str] = []
+    def fake_request(_method: str, url: str, **_kwargs) -> FakeResponse:
+        requested.append(url)
+        return FakeResponse()
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
     client = TestClient(main.app)
     response = client.get(
         "/api/product/data-center/status",
@@ -994,6 +1001,12 @@ def test_product_data_center_status_exposes_masked_provider_capability(monkeypat
     assert response.json()["source"]["effective_source"] == "credential_store"
     assert "token" not in response.text.lower()
     assert "ciphertext" not in response.text.lower()
+    summary = client.get(
+        "/api/product/data-center/status?view=summary",
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+    assert summary.status_code == 200
+    assert requested[-1].endswith("/v1/data-center/status?view=summary")
 
 
 def test_product_data_readiness_forwards_trusted_identity_and_bounded_request(monkeypatch) -> None:

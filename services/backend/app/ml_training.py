@@ -415,7 +415,10 @@ class MLTrainingRunStore(PgStoreMixin):
         return self._public(row)
 
     def list_runs(self, *, trusted_workspace: str, trusted_owner: str) -> dict[str, object]:
-        rows = self._execute("""SELECT * FROM ml_training_runs
+        rows = self._execute("""SELECT training_run_id,workspace_id,owner_principal,task_id,experiment_id,
+            ml_strategy_artifact_id,stock_pool_snapshot_id,status,readiness_json,input_sha256,trace_id,
+            attempt_count,max_attempts,worker_id,lease_expires_at,feature_artifact_id,model_artifact_id,
+            error_code,error_detail,created_at,started_at,finished_at,updated_at FROM ml_training_runs
             WHERE workspace_id=:workspace AND owner_principal=:owner
             ORDER BY created_at DESC,training_run_id DESC LIMIT 100""",
             {"workspace": trusted_workspace, "owner": trusted_owner})
@@ -424,7 +427,10 @@ class MLTrainingRunStore(PgStoreMixin):
     def list_recent(self, limit: int = 50) -> list[dict[str, object]]:
         if not 1 <= limit <= 100:
             raise ValueError("limit must be between 1 and 100")
-        rows = self._execute("""SELECT * FROM ml_training_runs
+        rows = self._execute("""SELECT training_run_id,workspace_id,owner_principal,task_id,experiment_id,
+            ml_strategy_artifact_id,stock_pool_snapshot_id,status,readiness_json,input_sha256,trace_id,
+            attempt_count,max_attempts,worker_id,lease_expires_at,feature_artifact_id,model_artifact_id,
+            error_code,error_detail,created_at,started_at,finished_at,updated_at FROM ml_training_runs
             ORDER BY created_at DESC,training_run_id DESC LIMIT :limit""", {"limit": limit})
         return [self._public(row) for row in rows]
 

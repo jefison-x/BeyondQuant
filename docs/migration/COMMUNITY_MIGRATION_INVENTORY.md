@@ -112,6 +112,25 @@ policy, and test obligations are in
 | Operations | `frontend/src/views/operations/` | Port read-mostly information architecture; redesign topology, RBAC, secret safety, and controls. |
 | Old coupling | `/agent-api`, raw/legacy Agent payloads, direct internal `/api/v1` calls | `REPLACE`; frontend must call Product API only. |
 
+### Post-Phase 82 bounded workspace performance audit
+
+The read-only Community pages were re-inspected before optimizing the current
+Strategy, ML Research, and Data Center workspaces. No Community file was
+modified.
+
+| Community evidence | Classification | Maintenance disposition |
+|---|---|---|
+| `frontend/src/views/StrategyView.vue` paginated catalogue and row-selected detail | `PORT_UX` | Retain server-paged catalogue and on-demand detail. Replace Community `/api/v1` bindings; the BYQ page must not preload the generic Artifact collection to discover approvals. |
+| `frontend/src/views/system/DataSync.vue` task/progress layout | `PORT_UX` + `REFERENCE_ONLY` | Retain task-oriented progress and lazy tab intent. Drop hard-coded pools, fake progress, TODO APIs, and legacy provider assumptions; BYQ uses durable Product API projections. |
+| `frontend/src/views/system/DataSourceConfig.vue` source configuration states | `PORT_UX` | Retain secret-safe configured/disabled/revoked states; continue using the BYQ encrypted credential and admin boundary. |
+| Community model settings/model management pages | `REFERENCE_ONLY` | They configure credentials/runtime models and are not an auditable ML research workspace. The ADR-0043 ML pipeline remains a BYQ `REPLACE` implementation with bounded metadata and separately paged prediction rows. |
+
+Extracted invariant: catalogues may load bounded summaries, while large
+artifacts, training inputs, prediction rows, synchronization results, and
+coverage rows are loaded only for the selected detail/tab/page. Browser calls
+remain Gateway/Product API only, and Agent-to-Domain analysis remains BeyondQuant
+MCP only.
+
 ## Phase 34 Stock Pool decision audit
 
 The mandatory Phase 34 sequence was completed before implementation:

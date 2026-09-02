@@ -164,6 +164,20 @@ def test_strategy_draft_version_export_and_approval_flow(monkeypatch) -> None:
     assert body["approval"]["execution_outcome"] == "not_started"
     assert body["artifact"]["kind"] == "strategy_approval"
     assert body["artifact"]["status"] == "validated"
+    exact_approval = client.get(
+        f"/v1/research/strategies/versions/{version['artifact']['artifact_id']}/approval"
+    )
+    assert exact_approval.status_code == 200
+    assert exact_approval.json()["approval"]["artifact_id"] == body["artifact"]["artifact_id"]
+    denied_approval = client.get(
+        f"/v1/research/strategies/versions/{version['artifact']['artifact_id']}/approval",
+        headers=_owner_headers("other-user"),
+    )
+    assert denied_approval.status_code == 404
+    task_options = client.get("/v1/research/task-options?limit=10")
+    assert task_options.status_code == 200
+    assert task_options.json()["tasks"][0]["task_id"] == task["task_id"]
+    assert "objective" not in task_options.text
     store.close()
 
 

@@ -27,6 +27,10 @@ describe("data center api client", () => {
     expect(status.source.effective_source).toBe("credential_store");
     expect(JSON.stringify(status)).not.toContain("token");
     expect(JSON.stringify(status)).not.toContain("password");
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/product/data-center/status?view=summary",
+      expect.objectContaining({ credentials: "include" }),
+    );
   });
 
   it("uses only Product API routes for credential, test, and sync writes", async () => {

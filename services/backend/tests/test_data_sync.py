@@ -370,6 +370,15 @@ def test_backend_data_center_routes_are_admin_scoped_and_secret_free(monkeypatch
     assert any(task["kind"] == "manual_sync" for task in status.json()["data_tasks"])
     assert status.json()["security_master"]["total"] == 1
     assert "phase39-secret-token" not in status.text
+    monkeypatch.setattr(
+        main.ml_training_store, "list_recent",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("summary loaded ML runs")),
+    )
+    summary = client.get("/v1/data-center/status?view=summary", headers=admin)
+    assert summary.status_code == 200
+    assert summary.json()["data_tasks"] == []
+    assert summary.json()["automation"]["jobs"] == []
+    assert summary.json()["coverage"]["row_count"] == 1
     config = client.put("/v1/data-sync/automation/config", headers=admin, json={
         "enabled": True, "schedule_time": "18:30", "catchup_days": 7,
         "security_master_enabled": True, "expected_version": 1,

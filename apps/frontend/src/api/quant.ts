@@ -68,6 +68,13 @@ export function exportStrategyVersion(artifactId: string, token: string): Promis
   return request(`/strategies/versions/${encodeURIComponent(artifactId)}/export`, token);
 }
 
+export function getStrategyVersionApproval(
+  artifactId: string,
+  token: string,
+): Promise<{ approval: Record<string, unknown> | null }> {
+  return request(`/strategies/versions/${encodeURIComponent(artifactId)}/approval`, token);
+}
+
 export function listStrategies(
   token: string,
   options: { lifecycle?: "active" | "superseded" | "all"; limit?: number; offset?: number } = {},

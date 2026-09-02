@@ -688,22 +688,25 @@ def _source_credentials(actor: str, role: str) -> list[dict[str, object]]:
 
 
 @app.get("/v1/data-center/status")
-def data_center_status(request: Request) -> dict[str, object]:
+def data_center_status(request: Request, view: str = "full") -> dict[str, object]:
     actor = request.headers.get("x-byq-actor-principal", "").strip()
     role = request.headers.get("x-byq-actor-role", "user").strip()
     if not actor:
         raise HTTPException(status_code=401, detail="actor principal is required")
+    if view not in {"summary", "full"}:
+        raise HTTPException(status_code=422, detail="data-center view is invalid")
+    include_activity = view == "full"
     credentials = _source_credentials(actor, role) if role == "admin" else []
     active = [item for item in credentials if item.get("status") == "active"]
-    jobs = data_sync_store.list_jobs(limit=50) if role == "admin" else []
-    security_jobs = security_master_store.list_sync_jobs(limit=20) if role == "admin" else []
+    jobs = data_sync_store.list_jobs(limit=50) if role == "admin" and include_activity else []
+    security_jobs = security_master_store.list_sync_jobs(limit=20) if role == "admin" and include_activity else []
     security_master = security_master_store.catalogue_status()
     coverage = data_sync_store.coverage_audit(limit=100)
     environment_configured = bool(os.environ.get("TUSHARE_TOKEN", "").strip())
     demands = data_demand_store.refresh_recent(
         readiness_store=market_readiness_store, automation_store=market_automation_store, limit=50,
-    ) if role == "admin" else []
-    ml_runs = ml_training_store.list_recent(limit=50) if role == "admin" else []
+    ) if role == "admin" and include_activity else []
+    ml_runs = ml_training_store.list_recent(limit=50) if role == "admin" and include_activity else []
 
     data_tasks: list[dict[str, object]] = []
     for demand in demands:
@@ -760,6 +763,9 @@ def data_center_status(request: Request) -> dict[str, object]:
             "created_at": run["created_at"], "updated_at": run["updated_at"],
         })
     data_tasks.sort(key=lambda item: (str(item.get("updated_at")), str(item["task_id"])), reverse=True)
+    automation = market_automation_store.status()
+    if not include_activity:
+        automation = {**automation, "jobs": [], "run_requests": [], "index_catalog_sync_runs": []}
     return {
         "schema_version": "data-center.v3",
         "provider": "tushare",
@@ -787,7 +793,7 @@ def data_center_status(request: Request) -> dict[str, object]:
         "security_master_jobs": security_jobs,
         "security_master": security_master,
         "coverage": coverage,
-        "automation": market_automation_store.status(),
+        "automation": automation,
         "index_catalog": stock_pool_producer_store.list_index_catalog(limit=100),
         "migration": "ready" if coverage["row_count"] else "not_started",
         "quality": coverage["quality"],
@@ -1891,19 +1897,12 @@ def _ml_agent_artifact_projection(artifact: dict[str, Any]) -> dict[str, object]
 def _approved_ml_strategy_artifact(
     *, owner_principal: str, workspace_id: str, strategy_artifact_id: str
 ) -> str | None:
-    for artifact in research_store.list_artifacts(owner_principal=owner_principal)["artifacts"]:
-        content = artifact.get("content")
-        if (
-            artifact.get("workspace_id") == workspace_id
-            and artifact.get("kind") == "ml_strategy_approval"
-            and artifact.get("status") == "validated"
-            and isinstance(content, dict)
-            and content.get("ml_strategy_artifact_id") == strategy_artifact_id
-            and content.get("decision") == "approved"
-            and content.get("execution_authorized") is True
-        ):
-            return str(artifact["artifact_id"])
-    return None
+    artifact = research_store.get_ml_strategy_approval(
+        owner_principal=owner_principal,
+        workspace_id=workspace_id,
+        ml_strategy_artifact_id=strategy_artifact_id,
+    )
+    return None if artifact is None else str(artifact["artifact_id"])
 
 
 @app.get("/v1/research/ml/capabilities")
@@ -1919,13 +1918,24 @@ def get_ml_agent_workspace(request: Request) -> dict[str, object]:
         task for task in research_store.list_tasks(owner_principal=context["owner_principal"])["tasks"]
         if task.get("workspace_id") == context["workspace_id"]
     ]
-    pools = paper_store.list_pools(
+    tasks = [
+        {key: task.get(key) for key in ("task_id", "title", "status", "created_at")}
+        for task in tasks
+    ]
+    raw_pools = paper_store.list_pools(
         trusted_owner=context["owner_principal"], limit=100, offset=0
     )["pools"]
+    pools = [
+        {key: pool.get(key) for key in (
+            "pool_id", "name", "pool_type", "status", "current_snapshot_id", "member_count",
+        )}
+        for pool in raw_pools
+    ]
     artifacts = [
         projected
-        for artifact in research_store.list_artifacts(owner_principal=context["owner_principal"])["artifacts"]
-        if artifact.get("workspace_id") == context["workspace_id"]
+        for artifact in research_store.list_ml_workspace_artifacts(
+            owner_principal=context["owner_principal"], workspace_id=context["workspace_id"]
+        )
         for projected in [_ml_agent_artifact_projection(artifact)]
         if projected is not None
     ]
@@ -2320,29 +2330,16 @@ def get_ml_prediction_rows(
         artifact_id = run.get("prediction_artifact_id")
         if not isinstance(artifact_id, str):
             raise MLPredictionNotFound("prediction rows are not available")
-        artifact = research_store.get_artifact(artifact_id)
-        if (
-            artifact.get("kind") != "ml_prediction_snapshot"
-            or artifact.get("owner_principal") != context["owner_principal"]
-            or artifact.get("workspace_id") != context["workspace_id"]
-        ):
-            raise ResearchNotFound("prediction artifact not found")
-        content = artifact.get("content")
-        raw_rows = content.get("rows") if isinstance(content, dict) else None
-        if not isinstance(raw_rows, list):
-            raise ValueError("prediction artifact rows are invalid")
-        needle = query.strip().casefold()
-        total = 0
-        page: list[dict[str, object]] = []
-        for row in raw_rows:
-            if not isinstance(row, dict) or (
-                needle
-                and needle not in f"{row.get('symbol', '')} {row.get('session', '')} {row.get('rank', '')}".casefold()
-            ):
-                continue
-            if offset <= total < offset + limit:
-                page.append({key: row.get(key) for key in ("session", "rank", "symbol", "score")})
-            total += 1
+        result = research_store.list_ml_prediction_rows(
+            artifact_id=artifact_id,
+            owner_principal=context["owner_principal"],
+            workspace_id=context["workspace_id"],
+            query=query,
+            limit=limit,
+            offset=offset,
+        )
+        page = result["rows"]
+        total = int(result["total"])
         return {
             "schema_version": "ml-prediction-rows.v1",
             "prediction_run_id": prediction_run_id,
@@ -2373,6 +2370,35 @@ def list_strategy_artifacts(
             offset=offset,
         )
     )
+
+
+@app.get("/v1/research/strategies/versions/{artifact_id}/approval")
+def get_strategy_version_approval(artifact_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request)
+
+    def operation() -> dict[str, object]:
+        version = research_store.get_artifact(artifact_id)
+        if (
+            version.get("owner_principal") != context["owner_principal"]
+            or version.get("kind") != "strategy_version"
+        ):
+            raise ResearchNotFound("strategy version not found")
+        approval = research_store.get_strategy_approval(
+            owner_principal=context["owner_principal"], strategy_version_artifact_id=artifact_id
+        )
+        return {"approval": approval}
+
+    return _research_call(operation)
+
+
+@app.get("/v1/research/task-options")
+def list_research_task_options(request: Request, limit: int = 50) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _research_call(lambda: {
+        "tasks": research_store.list_task_options(
+            owner_principal=context["owner_principal"], limit=limit
+        )
+    })
 
 
 @app.post("/v1/research/strategies/drafts", status_code=201)

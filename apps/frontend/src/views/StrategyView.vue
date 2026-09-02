@@ -9,12 +9,13 @@ import {
   exportStrategyVersion,
   getResearchEntity,
   getStrategyBacktestCount,
+  getStrategyVersionApproval,
   getStrategyVersions,
   listStrategies,
   saveStrategyDraft,
   validateStrategy,
 } from "@/api/quant";
-import { listArtifacts, listTasks } from "@/api/research";
+import { listTaskOptions } from "@/api/research";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import { shortReference, statusLabel } from "@/display";
@@ -31,8 +32,8 @@ const loading = ref(true);
 const error = ref("");
 const busy = ref("");
 const artifacts = ref<Array<Record<string, unknown>>>([]);
-const approvals = ref<Array<Record<string, unknown>>>([]);
 const tasks = ref<Array<Record<string, unknown>>>([]);
+const approval = ref<Record<string, unknown> | null>(null);
 const selected = ref<Record<string, unknown> | null>(null);
 const detail = ref<Record<string, unknown> | null>(null);
 const taskId = ref("");
@@ -149,17 +150,6 @@ const filteredArtifacts = computed(() =>
   }),
 );
 
-const approval = computed(() => {
-  if (!selected.value) return null;
-  const id = selected.value.artifact_id;
-  const found = approvals.value.find((row) => {
-    const content = row.content as Record<string, unknown> | undefined;
-    return content?.strategy_version_artifact_id === id;
-  });
-  if (!found) return null;
-  return (found.content as Record<string, unknown>) ?? null;
-});
-
 const isReadonly = computed(() => selected.value?.kind === "strategy_version");
 const selectedSnapshot = computed(() => {
   const content = selected.value?.content as Record<string, unknown> | undefined;
@@ -206,6 +196,7 @@ async function newDraft() {
   templateId.value = "";
   lastDraftId.value = "";
   versionHistory.value = [];
+  approval.value = null;
   backtestCount.value = 0;
   versionCount.value = 0;
   syncEditorBaseline();
@@ -229,18 +220,16 @@ async function loadList() {
   loading.value = true;
   error.value = "";
   try {
-    const [strategyBody, taskBody, artifactBody] = await Promise.all([
+    const [strategyBody, taskBody] = await Promise.all([
       listStrategies(auth.token, {
         lifecycle: lifecycle.value,
         limit: PAGE_SIZE,
         offset: (page.value - 1) * PAGE_SIZE,
       }),
-      listTasks(),
-      listArtifacts(),
+      listTaskOptions(PAGE_SIZE),
     ]);
     artifacts.value = strategyBody.strategies;
     total.value = strategyBody.total ?? artifacts.value.length;
-    approvals.value = artifactBody.artifacts.filter((row) => row.kind === "strategy_approval");
     tasks.value = taskBody.tasks ?? [];
     if (tasks.value.length) {
       taskId.value = String(tasks.value[0].task_id ?? "");
@@ -281,6 +270,7 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
   if (updateRoute && !confirmDiscard()) return;
   selected.value = row;
   detail.value = null;
+  approval.value = null;
   error.value = "";
   const content = row.content as Record<string, unknown> | undefined;
   const snapshot = content?.snapshot as Record<string, unknown> | undefined;
@@ -292,8 +282,17 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
   }
   try {
     const id = String(row.artifact_id);
-    detail.value = await getResearchEntity("artifacts", id, auth.token);
-    await refreshStrategyMeta();
+    const [entity, approvalBody] = await Promise.all([
+      getResearchEntity("artifacts", id, auth.token),
+      row.kind === "strategy_version"
+        ? getStrategyVersionApproval(id, auth.token)
+        : Promise.resolve({ approval: null }),
+      refreshStrategyMeta(),
+    ]);
+    detail.value = entity;
+    approval.value = approvalBody.approval
+      ? ((approvalBody.approval.content as Record<string, unknown> | undefined) ?? null)
+      : null;
     syncEditorBaseline();
     if (updateRoute && route.query.artifact !== id) {
       await router.replace({ path: route.path, query: { ...route.query, artifact: id } });
@@ -336,6 +335,12 @@ async function viewHistoryVersion(row: Record<string, unknown>) {
     const entity = await getResearchEntity("artifacts", id, auth.token);
     selected.value = entity;
     detail.value = entity;
+    const approvalBody = entity.kind === "strategy_version"
+      ? await getStrategyVersionApproval(id, auth.token)
+      : { approval: null };
+    approval.value = approvalBody.approval
+      ? ((approvalBody.approval.content as Record<string, unknown> | undefined) ?? null)
+      : null;
     const content = entity.content as Record<string, unknown> | undefined;
     const snapshot = content?.snapshot as Record<string, unknown> | undefined;
     script.value = String(snapshot?.script ?? "");
