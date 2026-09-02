@@ -12,6 +12,16 @@ if (!token) {
 const client = new Client({ name: "byq-mcp-contract-test", version: "0.1.0" });
 const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
   authProvider: { token: async () => token },
+  requestInit: {
+    headers: {
+      "x-byq-workspace-id": "workspace_mcp_contract",
+      "x-byq-owner-principal": "user:mcp-contract",
+      "x-byq-actor-principal": "agent:mcp-contract",
+      "x-byq-trace-id": "trace_mcp_contract",
+      "x-byq-session-id": "session_mcp_contract",
+      "x-byq-dsh-run-id": "dsh_mcp_contract",
+    },
+  },
 });
 
 try {
@@ -95,7 +105,38 @@ try {
       version: "0.1.0",
     },
   });
-  console.log("MCP contract PASS: initialize -> tools/list -> byq_health");
+
+  const boundedJobId = "backtest_ffffffffffffffffffffffffffffffff";
+  for (let pageCall = 0; pageCall < 6; pageCall += 1) {
+    const attempted = await client.callTool({
+      name: "byq_backtest_analysis_get",
+      arguments: { job_id: boundedJobId, section: "daily_returns", limit: 1, offset: pageCall },
+    });
+    assert.equal(attempted.isError, true, "Backend rejection remains a real tool error before budget exhaustion");
+  }
+  const bounded = await client.callTool({
+    name: "byq_backtest_analysis_get",
+    arguments: { job_id: boundedJobId, section: "equity_curve", limit: 1, offset: 0 },
+  });
+  assert.notEqual(bounded.isError, true, "budget exhaustion must remain a normal tool result");
+  const boundedText = bounded.content.find((block) => block.type === "text");
+  if (!boundedText || !("text" in boundedText)) {
+    throw new Error("bounded backtest analysis did not return a text result");
+  }
+  assert.deepEqual(JSON.parse(boundedText.text), {
+    service: "beyondquant-mcp",
+    status: "bounded",
+    analysis_page_budget: {
+      status: "exhausted",
+      call_limit: 6,
+      remaining_calls: 0,
+      backend_accessed: false,
+      must_answer_from_collected_evidence: true,
+      code: "analysis_page_budget_exceeded",
+      retryable: false,
+    },
+  });
+  console.log("MCP contract PASS: initialize, tools, health and normal bounded-analysis completion");
 } finally {
   await client.close();
 }

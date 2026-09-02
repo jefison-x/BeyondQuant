@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { fetchByqHealth } from "./backend-health.js";
 import {
-  fetchByqBacktestAnalysis,
+  fetchBudgetedByqBacktestAnalysis,
   fetchByqBacktestGet,
   fetchByqBacktestTaskCancel,
   fetchByqBacktestTaskCreate,
@@ -408,22 +408,8 @@ async function byqBacktestAnalysis(
   const decision = backtestAnalysisPageBudget.consume([
     context.workspace_id, context.session_id, context.dsh_run_id, args.job_id,
   ].join("/"));
-  if (!decision.allowed) {
-    return {
-      content: [{ type: "text" as const, text: JSON.stringify({
-        service: SERVICE,
-        status: "error",
-        backend: {
-          status: "analysis_page_budget_exceeded",
-          retryable: false,
-          limit: decision.limit,
-        },
-      }) }],
-      isError: true,
-    };
-  }
-  return fetchByqBacktestAnalysis(
-    BACKEND_URL, args.job_id, args, trustedBackendFetcher(context),
+  return fetchBudgetedByqBacktestAnalysis(
+    BACKEND_URL, args.job_id, args, decision, trustedBackendFetcher(context),
   );
 }
 
@@ -934,7 +920,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_backtest_analysis_get",
     {
-      description: "Read a bounded, owner-scoped analysis of an immutable completed BYQ backtest. Start with summary, then page only the evidence section needed. This is the Agent analysis channel; it does not expose object-store references or raw result files.",
+      description: "Read a bounded, owner-scoped analysis of an immutable completed BYQ backtest. Start with summary, then request only necessary evidence. Every successful result reports remaining page calls. An exhausted budget is a normal stop-and-answer result, never a reason to retry or wait. This Agent channel does not expose object-store references or raw result files.",
       inputSchema: {
         job_id: z.string().regex(/^backtest_[0-9a-f]{32}$/),
         section: z.enum(["summary", "trades", "blocked_trades", "daily_returns", "equity_curve", "logs"]).default("summary"),

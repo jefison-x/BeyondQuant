@@ -322,7 +322,8 @@ Adapter 的 dedicated-process ownership 也承担有界 lifecycle safety：每�
 这不是第二套 Agent loop，不解析 child hidden state，也不改变 DSH 通用 subagent ownership。
 
 分页类 Agent-to-Domain read 的次数预算由 BeyondQuant MCP Contract 强制，DSH persona 只负责
-选择必要页和在预算错误后停止。具体默认值、稳定失败码与恢复语义见
+选择必要页，并在剩余次数归零或收到非错误的有界结束信号后立即使用已有证据作答。预算耗尽
+不访问 Backend，也不作为会令子 Agent 失败的工具异常。具体默认值、稳定控制码与恢复语义见
 `docs/contracts/product-agent-run-guards.md`。
 
 这些是当前限制，不是可用 future feature。Adapter hard-cancel process close 是 BYQ
