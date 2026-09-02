@@ -111,12 +111,13 @@ describe("AgentView", () => {
     view.handleEvent({
       trace_id: "trace-1", session_id: "session-1", sequence: 2,
       timestamp: "2026-08-28T00:00:02Z", kind: "session.failed", source: "runtime-adapter",
-      payload: { code: "model-run-failed", retryable: true },
+      payload: { code: "runtime-no-progress-timeout", retryable: true },
     }, 1);
     await flushPromises();
 
     expect(wrapper.find(".assistant-processing").exists()).toBe(false);
-    expect(wrapper.find(".run-failure").text()).toContain("与你的问题表述无关");
+    expect(wrapper.find(".run-failure").text()).toContain("没有形成可展示的结论");
+    expect(wrapper.find(".run-failure").text()).toContain("避免持续占用");
 
     view.prompt = "重试请求";
     await view.send();

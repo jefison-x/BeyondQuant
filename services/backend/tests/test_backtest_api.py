@@ -138,6 +138,12 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     assert analysis_body["section"] == "summary"
     assert analysis_body["summary"]["benchmark_status"] == "not_frozen"
     assert analysis_body["summary"]["transaction_cost_total"] == 0
+    assert analysis_body["summary"]["drawdown_diagnostics"]["status"] in {
+        "no_drawdown", "recovered", "not_recovered",
+    }
+    assert analysis_body["summary"]["daily_return_diagnostics"]["observation_count"] > 0
+    assert "closed_trade_count" in analysis_body["summary"]["realized_trade_diagnostics"]
+    assert analysis_body["summary"]["causal_attribution"]["status"] == "aggregate_only"
     assert "result_reference" not in analysis.text and "object_id" not in analysis.text
     trade_page = client.get(
         f"/v1/research/backtests/{job['job_id']}/analysis",

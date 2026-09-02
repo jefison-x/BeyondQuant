@@ -356,7 +356,7 @@ test("failed agent run unlocks the composer and resumes before retry", async ({ 
       events: [
         { trace_id: "trace-failed", session_id: "session-failed", sequence: 1, timestamp: "2026-08-28T04:02:50Z", kind: "session.started", source: "runtime-adapter", payload: {} },
         { trace_id: "trace-failed", session_id: "session-failed", sequence: 2, timestamp: "2026-08-28T04:02:51Z", kind: "agent.activity", source: "runtime-adapter", payload: { schema_version: "workflow-activity.v1", activity_id: "activity_failed111111111111111111111111", phase: "reason", state: "started", label: "分析市场数据" } },
-        { trace_id: "trace-failed", session_id: "session-failed", sequence: 3, timestamp: "2026-08-28T04:02:53Z", kind: "session.failed", source: "runtime-adapter", payload: { code: "model-run-failed", retryable: true } },
+        { trace_id: "trace-failed", session_id: "session-failed", sequence: 3, timestamp: "2026-08-28T04:02:53Z", kind: "session.failed", source: "runtime-adapter", payload: { code: "runtime-no-progress-timeout", retryable: true } },
       ],
     }),
   }));
@@ -380,7 +380,7 @@ test("failed agent run unlocks the composer and resumes before retry", async ({ 
   }));
 
   await login(page);
-  await expect(page.getByText("本轮运行未能完成，与你的问题表述无关。对话内容已保留，可以直接重试；若持续失败，请新建对话并联系管理员。")).toBeVisible();
+  await expect(page.getByText("本轮在较长时间内没有形成可展示的结论，系统为避免持续占用已停止。已完成的读取步骤仍保留，可以直接重试。")).toBeVisible();
   await expect(page.locator(".assistant-processing")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "发送", exact: true })).toBeDisabled();
   await page.getByPlaceholder("向小巴描述你的投研问题…").fill("重新尝试");
