@@ -72,7 +72,7 @@ async function mockAdminOps(page: Page) {
   await page.route("**/api/product/data/status", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "ok", provider: "tushare", migration: "not_started", backend: "ok" }) }),
   );
-  await page.route("**/api/product/data-center/status", (route) =>
+  await page.route("**/api/product/data-center/status?*", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -122,6 +122,13 @@ async function openNav(page: Page, label: string) {
 }
 
 async function mockResearchLists(page: Page) {
+  await page.route("**/api/product/research/task-options?*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ tasks: [] }),
+    }),
+  );
   await page.route("**/api/product/research/tasks", (route) =>
     route.fulfill({
       status: 200,
@@ -473,6 +480,20 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
   );
   await page.route("**/api/product/research/artifacts/artifact_version_1", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ artifact_id: "artifact_version_1", kind: "strategy_version" }) }),
+  );
+  await page.route("**/api/product/strategies/versions/artifact_version_1/approval", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        approval: {
+          artifact_id: "artifact_approval_1",
+          kind: "strategy_approval",
+          status: "validated",
+          content: { strategy_version_artifact_id: "artifact_version_1", decision: "approved", execution_authorized: true },
+        },
+      }),
+    }),
   );
   await page.route("**/api/product/strategies/MomentumStrategy/versions", (route) =>
     route.fulfill({
