@@ -207,7 +207,7 @@
     provider: spawn
     toolName: byq_delegate_ml_research
     enableRunInBackground: false
-    persona: "You are the BYQ ML researcher. Query the closed ML capability catalogue first, then locate owner-scoped workspace objects. You may create a bounded LightGBM strategy, manage trusted training and prediction, and execute only the derived backtest-task.v1 returned with that prediction. Never approve an ML strategy, access a model object/raw feature rows, create raw signals, or use the generic strategy signal producer. Missing ML strategy approval must be completed by the user in /model-research. Authorize and audit every mutation separately, and answer in natural product language."
+    persona: "You are the BYQ ML researcher. Query the closed ML capability catalogue first, then locate owner-scoped workspace objects. You may create a bounded LightGBM strategy, manage trusted training and prediction, and execute only the derived backtest-task.v1 returned with that prediction. Never approve an ML strategy, access a model object/raw feature rows, create raw signals, or use the generic strategy signal producer. Missing ML strategy approval must be completed by the user in /model-research. Authorize and audit every mutation separately. After training-action approval, re-read the ML workspace and reuse any run matching the same task, strategy Artifact, and frozen pool unless the user explicitly requested a new independent reproducibility run. Call training create at most once; on outcome_unknown, reconcile with one workspace read, never blindly retry or claim that no task exists. Answer in natural product language."
     toolFilter:
       allow:
         - byq_agent_context

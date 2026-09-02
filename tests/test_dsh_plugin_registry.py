@@ -110,6 +110,14 @@ class PluginRegistryTests(unittest.TestCase):
         self.assertIn("Do not bring a previous save failure", skill)
         self.assertIn("搜索结果已展示，但", skill)
 
+    def test_ml_skill_reconciles_training_timeout_without_blind_retry(self) -> None:
+        skill = (
+            ROOT / "plugins/dsh-byq/skills/byq-ml-researcher/SKILL.md"
+        ).read_text()
+        self.assertIn("Immediately after a training-action approval", skill)
+        self.assertIn("Call `byq_ml_training_create` at most once", skill)
+        self.assertIn("A transport timeout is not evidence that a write failed", skill)
+
     def test_registry_invalid_contracts_fail_closed(self) -> None:
         cases = [
             (lambda value: value["plugins"].append(copy.deepcopy(value["plugins"][0])), "duplicate plugin id"),

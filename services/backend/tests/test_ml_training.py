@@ -186,6 +186,15 @@ def test_training_run_creates_immutable_feature_and_model_artifacts(tmp_path) ->
             requirement={"requirement_sha256": "c" * 64}, readiness={"state": "ready"},
             trace_id="trace-ml", idempotency_key="train-1",
         )
+        reconciled = runs.get_by_idempotency(
+            "train-1", trusted_workspace=context["x-byq-workspace-id"],
+            trusted_owner="ml-owner",
+        )
+        assert reconciled["training_run_id"] == run["training_run_id"]
+        with pytest.raises(MLTrainingNotFound):
+            runs.get_by_idempotency(
+                "train-1", trusted_workspace="workspace_other", trusted_owner="ml-owner",
+            )
         runs.promote_ready(str(run["training_run_id"]), feature)
         coordinator = MLTrainingCoordinator(
             runs, research, LocalObjectStore(tmp_path), FakeTrainer(), worker_id="worker-test"

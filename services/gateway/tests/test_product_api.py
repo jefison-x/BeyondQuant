@@ -72,6 +72,34 @@ def test_ml_commands_reject_browser_identity_fields_and_generate_them_server_sid
     assert captured["payload"]["trace_id"] == captured["payload"]["idempotency_key"]
 
 
+def test_ml_training_reconciles_timeout_by_server_generated_idempotency_key(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    calls: list[dict[str, object]] = []
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append({"method": method, "path": path, "payload": payload, "params": params})
+        if method == "POST":
+            raise product_api.ProductError(503, "backend_unavailable", "backend is unavailable")
+        assert path == "/v1/research/ml/training-runs/reconcile"
+        assert params == {"idempotency_key": calls[0]["payload"]["idempotency_key"]}
+        return {"training_run": {"training_run_id": "mlrun_" + "a" * 32, "status": "waiting_for_data"}}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).post(
+        "/api/product/ml/training-runs",
+        headers={"Authorization": "Bearer product-test-token"},
+        json={
+            "task_id": "task_1", "ml_strategy_artifact_id": "artifact_1",
+            "stock_pool_snapshot_id": "snapshot_1",
+        },
+    )
+    assert response.status_code == 202
+    assert response.json()["reconciliation"] == {
+        "status": "confirmed", "reason": "create_response_timeout",
+    }
+    assert [call["method"] for call in calls] == ["POST", "GET"]
+
+
 def test_ml_prediction_rows_forwards_bounded_page_and_owner_context(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     captured: dict[str, object] = {}

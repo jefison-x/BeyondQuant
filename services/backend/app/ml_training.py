@@ -414,6 +414,19 @@ class MLTrainingRunStore(PgStoreMixin):
             raise MLTrainingNotFound("ML training run not found")
         return self._public(row)
 
+    def get_by_idempotency(
+        self, idempotency_key: object, *, trusted_workspace: str, trusted_owner: str,
+    ) -> dict[str, object]:
+        key = _text(idempotency_key, "idempotency_key")
+        row = self._fetch_one(
+            """SELECT * FROM ml_training_runs WHERE workspace_id=:workspace
+               AND owner_principal=:owner AND idempotency_key=:key""",
+            {"workspace": trusted_workspace, "owner": trusted_owner, "key": key},
+        )
+        if row is None:
+            raise MLTrainingNotFound("ML training run not found")
+        return self._public(row)
+
     def list_runs(self, *, trusted_workspace: str, trusted_owner: str) -> dict[str, object]:
         rows = self._execute("""SELECT training_run_id,workspace_id,owner_principal,task_id,experiment_id,
             ml_strategy_artifact_id,stock_pool_snapshot_id,status,readiness_json,input_sha256,trace_id,
