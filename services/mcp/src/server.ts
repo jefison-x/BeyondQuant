@@ -975,7 +975,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_ml_training_create",
-    { description: "Create an approval-gated trusted LightGBM training run from a human-approved ML strategy and frozen stock-pool snapshot.", inputSchema: {
+    { description: "Create an approval-gated trusted LightGBM training run from a human-approved ML strategy and frozen stock-pool snapshot. Call once per approved action; an outcome_unknown result requires read reconciliation and must not be blindly retried.", inputSchema: {
       task_id: z.string(), experiment_id: z.string().optional(), ml_strategy_artifact_id: z.string(),
       stock_pool_snapshot_id: z.string(), idempotency_key: z.string().min(1).max(128),
     } },

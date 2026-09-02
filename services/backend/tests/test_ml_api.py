@@ -39,6 +39,33 @@ def test_ml_capabilities_and_workspace_are_closed_safe_projections() -> None:
     assert "object_reference" not in workspace.text and "rows" not in workspace.text
 
 
+def test_ml_training_reconcile_route_uses_trusted_workspace_and_owner(monkeypatch) -> None:
+    headers = trusted_agent_context("ml-reconcile-owner")
+    captured: dict[str, str] = {}
+
+    def reconcile(key, *, trusted_workspace, trusted_owner):
+        captured.update(
+            key=key, workspace=trusted_workspace, owner=trusted_owner,
+        )
+        return {
+            "training_run_id": "mlrun_" + "a" * 32,
+            "status": "waiting_for_data",
+        }
+
+    monkeypatch.setattr(backend_main.ml_training_store, "get_by_idempotency", reconcile)
+    response = client.get(
+        "/v1/research/ml/training-runs/reconcile",
+        params={"idempotency_key": "training-reconcile-1"}, headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["training_run"]["training_run_id"] == "mlrun_" + "a" * 32
+    assert captured == {
+        "key": "training-reconcile-1",
+        "workspace": headers["x-byq-workspace-id"],
+        "owner": "ml-reconcile-owner",
+    }
+
+
 def test_ml_workspace_and_prediction_pages_never_materialise_large_rows() -> None:
     headers = trusted_agent_context("ml-bounded-owner")
     task = client.post("/v1/research/tasks", headers=headers, json={

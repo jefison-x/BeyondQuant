@@ -620,12 +620,36 @@ def product_ml_workspace(request: Request) -> dict[str, object]:
     }
 
 
-def _ml_command(request: Request, path: str, payload: dict[str, object], fields: set[str], prefix: str) -> dict[str, object]:
+def _ml_command(
+    request: Request, path: str, payload: dict[str, object], fields: set[str], prefix: str,
+    *, reconcile_training: bool = False,
+) -> dict[str, object]:
     _product_principal(request)
     if set(payload) != fields:
         raise ProductError(422, "product_request_invalid", "ML research request has invalid fields")
     trace_id, idempotency_key = _ml_nonce(prefix)
-    return _backend_request("POST", path, {**payload, "trace_id": trace_id, "idempotency_key": idempotency_key}, headers=_trusted_agent_headers(request))
+    headers = _trusted_agent_headers(request)
+    try:
+        return _backend_request(
+            "POST", path,
+            {**payload, "trace_id": trace_id, "idempotency_key": idempotency_key},
+            headers=headers,
+        )
+    except ProductError as error:
+        if not reconcile_training or error.code != "backend_unavailable":
+            raise
+        try:
+            reconciled = _backend_request(
+                "GET",
+                "/v1/research/ml/training-runs/reconcile",
+                headers=headers,
+                params={"idempotency_key": idempotency_key},
+            )
+        except ProductError:
+            raise error
+        return {**reconciled, "reconciliation": {
+            "status": "confirmed", "reason": "create_response_timeout",
+        }}
 
 
 @router.post("/ml/strategies/versions", status_code=201)
@@ -640,7 +664,11 @@ def product_ml_approval(request: Request, payload: dict[str, object]) -> dict[st
 
 @router.post("/ml/training-runs", status_code=202)
 def product_ml_training(request: Request, payload: dict[str, object]) -> dict[str, object]:
-    return _ml_command(request, "/v1/research/ml/training-runs", payload, {"task_id", "ml_strategy_artifact_id", "stock_pool_snapshot_id"}, "training")
+    return _ml_command(
+        request, "/v1/research/ml/training-runs", payload,
+        {"task_id", "ml_strategy_artifact_id", "stock_pool_snapshot_id"}, "training",
+        reconcile_training=True,
+    )
 
 
 @router.get("/ml/training-runs/{run_id}")

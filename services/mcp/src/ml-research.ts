@@ -21,12 +21,13 @@ async function requestMl(
   path: string,
   init: RequestInit,
   fetcher: Fetcher,
+  timeoutMs = BACKEND_TIMEOUT_MS,
 ): Promise<ByqMlResult> {
   try {
     const response = await fetcher(`${backendUrl}${path}`, {
       ...init,
       headers: { "content-type": "application/json", ...(init.headers ?? {}) },
-      signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     let payload: unknown;
     try { payload = await response.json(); } catch { return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true); }
@@ -55,7 +56,55 @@ export function fetchByqMlStrategyCreate(backendUrl: string, request: MlRequest,
 }
 
 export function fetchByqMlTrainingCreate(backendUrl: string, request: MlRequest, fetcher: Fetcher = fetch) {
-  return requestMl(backendUrl, "/v1/research/ml/training-runs", { method: "POST", body: JSON.stringify(request) }, fetcher);
+  return createTrainingWithReconciliation(backendUrl, request, fetcher);
+}
+
+async function createTrainingWithReconciliation(
+  backendUrl: string, request: MlRequest, fetcher: Fetcher,
+): Promise<ByqMlResult> {
+  const created = await requestMl(
+    backendUrl, "/v1/research/ml/training-runs",
+    { method: "POST", body: JSON.stringify(request) }, fetcher,
+  );
+  if (!created.isError) return created;
+  let failureStatus = "";
+  try {
+    const failure = JSON.parse(created.content[0]?.text ?? "{}") as { backend?: { status?: unknown } };
+    failureStatus = typeof failure.backend?.status === "string" ? failure.backend.status : "";
+  } catch {
+    return created;
+  }
+  if (!new Set(["unreachable", "ml_research_unavailable"]).has(failureStatus)) return created;
+  const key = request.idempotency_key;
+  if (typeof key !== "string" || key.length === 0) return created;
+
+  const reconciled = await requestMl(
+    backendUrl,
+    `/v1/research/ml/training-runs/reconcile?${new URLSearchParams({ idempotency_key: key }).toString()}`,
+    { method: "GET" }, fetcher, 2500,
+  );
+  if (!reconciled.isError) {
+    try {
+      const payload = JSON.parse(reconciled.content[0]?.text ?? "{}") as Record<string, unknown>;
+      return result({
+        ...payload,
+        reconciliation: { status: "confirmed", reason: "create_response_timeout" },
+      }, false);
+    } catch {
+      return reconciled;
+    }
+  }
+  return result({
+    service: "beyondquant-mcp",
+    status: "outcome_unknown",
+    operation: "ml_training_create",
+    idempotency_key: key,
+    retryable: false,
+    reconciliation: {
+      status: "not_confirmed",
+      next_action: "Call byq_ml_workspace_get once and match task_id, ml_strategy_artifact_id, and stock_pool_snapshot_id before reporting the outcome.",
+    },
+  }, false);
 }
 
 export function fetchByqMlTrainingGet(backendUrl: string, runId: string, fetcher: Fetcher = fetch) {

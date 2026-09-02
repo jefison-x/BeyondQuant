@@ -45,7 +45,7 @@
       ]
     }
   },
-  "composition_hash": "sha256:d0324ef7624ebe51b5e8f4acd6504949fdb32da95e60a363daff7782e8d980d5",
+  "composition_hash": "sha256:defe85d0372deb33063c1d4daa820bdda897e81ed257fc0b258b4604c4016375",
   "enabled_plugin_ids": [
     "compaction",
     "guard",

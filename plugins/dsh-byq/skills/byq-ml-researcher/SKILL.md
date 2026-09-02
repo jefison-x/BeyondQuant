@@ -32,6 +32,20 @@ Use `byq_ml_training_get` for status and safe metrics; do not request model
 objects, object references, raw feature rows, Provider payloads, PostgreSQL, or
 DSH internals.
 
+Immediately after a training-action approval is granted, call
+`byq_ml_workspace_get` again before creating anything. Match training runs by
+the exact research task, ML strategy Artifact, and frozen stock-pool snapshot.
+If a matching run already exists in any lifecycle state, continue with that run
+and do not create or request approval for a duplicate, unless the user
+explicitly requested a new independent reproducibility run.
+
+Call `byq_ml_training_create` at most once for one approved action. If it returns
+`outcome_unknown`, do not retry the mutation or claim that no task was created.
+Call `byq_ml_workspace_get` exactly once to reconcile the same task, strategy,
+and pool. Report the persisted run when found; otherwise say that submission
+could not yet be confirmed and preserve the same idempotency key for a later
+reconciliation. A transport timeout is not evidence that a write failed.
+
 After a completed training run returns safe model metadata, prediction follows
 a separate sequence. Authorize `byq_ml_prediction_create`, pass the validated
 model Artifact, its matching human approval, and a bounded execution profile,

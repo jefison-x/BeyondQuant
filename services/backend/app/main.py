@@ -2148,6 +2148,18 @@ def list_ml_training_runs(request: Request) -> dict[str, object]:
     ))
 
 
+@app.get("/v1/research/ml/training-runs/reconcile")
+def get_ml_training_run_by_idempotency(
+    idempotency_key: str, request: Request,
+) -> dict[str, object]:
+    """Reconcile an outcome-unknown create without exposing cross-workspace state."""
+    context = _required_agent_context(request, include_workspace=True)
+    return _ml_call(lambda: {"training_run": ml_training_store.get_by_idempotency(
+        idempotency_key, trusted_workspace=context["workspace_id"],
+        trusted_owner=context["owner_principal"],
+    )})
+
+
 @app.get("/v1/research/ml/training-runs/{training_run_id}")
 def get_ml_training_run(training_run_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)

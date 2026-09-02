@@ -40,6 +40,40 @@ const training = await fetchByqMlTrainingCreate(backend, {
 });
 assert.equal(training.isError, false);
 
+let timedOutCalls = 0;
+const reconciledTraining = await fetchByqMlTrainingCreate(backend, {
+  task_id: "task_1", ml_strategy_artifact_id: "artifact_1",
+  stock_pool_snapshot_id: "snapshot_1", trace_id: "trace-1", idempotency_key: "training-timeout-1",
+}, async (url, init) => {
+  timedOutCalls += 1;
+  if (init?.method === "POST") throw new Error("response timed out after commit");
+  assert.equal(
+    url,
+    `${backend}/v1/research/ml/training-runs/reconcile?idempotency_key=training-timeout-1`,
+  );
+  return new Response(JSON.stringify({
+    training_run: { training_run_id: runId, status: "waiting_for_data" },
+  }), { status: 200 });
+});
+assert.equal(timedOutCalls, 2);
+assert.equal(reconciledTraining.isError, false);
+const reconciledPayload = JSON.parse(reconciledTraining.content[0].text);
+assert.equal(reconciledPayload.training_run.training_run_id, runId);
+assert.equal(reconciledPayload.reconciliation.status, "confirmed");
+
+const unknownTraining = await fetchByqMlTrainingCreate(backend, {
+  task_id: "task_1", ml_strategy_artifact_id: "artifact_1",
+  stock_pool_snapshot_id: "snapshot_1", trace_id: "trace-1", idempotency_key: "training-unknown-1",
+}, async (_url, init) => {
+  if (init?.method === "POST") throw new Error("response timed out");
+  return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
+});
+assert.equal(unknownTraining.isError, false);
+const unknownPayload = JSON.parse(unknownTraining.content[0].text);
+assert.equal(unknownPayload.status, "outcome_unknown");
+assert.equal(unknownPayload.retryable, false);
+assert.match(unknownPayload.reconciliation.next_action, /workspace_get once/);
+
 for (const [call, suffix, method] of [
   [fetchByqMlTrainingGet, "", "GET"],
   [fetchByqMlTrainingCancel, "/cancel", "POST"],
