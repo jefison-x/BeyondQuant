@@ -56,6 +56,11 @@ signal snapshot → existing deterministic Backtest
   "learner": {"profile": "byq-lightgbm-cpu-v1", "parameters": {}},
   "regime": {"definition": "hs300-trend-volatility-v1", "enabled": true},
   "routing_policy": {"id": "regime-expert-map-v1", "fallback": "neutral"},
+  "experts": [
+    {"key": "risk_on", "learner": {"profile": "byq-ridge-cpu-v1", "parameters": {"alpha": 0.5}}, "training_regimes": ["risk_on", "neutral", "risk_off"]},
+    {"key": "neutral", "learner": {"profile": "byq-ridge-cpu-v1", "parameters": {"alpha": 1.0}}, "training_regimes": ["risk_on", "neutral", "risk_off"]},
+    {"key": "risk_off", "learner": {"profile": "byq-lightgbm-cpu-v1", "parameters": {}}, "training_regimes": ["risk_on", "neutral", "risk_off"]}
+  ],
   "portfolio_policy": {"id": "top-n-equal-weight-v1", "parameters": {"top_n": 20, "rebalance": "weekly"}},
   "development_window": {"start": "2020-01-01", "end": "2025-12-31"},
   "prediction_window": {"start": "2026-01-01", "end": "2026-06-30"}
@@ -106,6 +111,13 @@ deviation、worst fold 和有效折数。
 和 60 session moving-average distance。阈值来自已批准策略并受注册表范围限制；分类算法和边界值由测试
 冻结。不足 60 个 session 或证据不完整时为 `unknown`。
 
+Phase 85 冻结分类顺序与边界：先以 `return_20 <= risk_off_return_20_max`、
+`volatility_20 >= risk_off_volatility_20_min` 或 `ma_distance_60 <= risk_off_ma_distance_60_max`
+判定 `risk_off`；否则当 `return_60 >= risk_on_return_60_min` 且
+`ma_distance_60 >= risk_on_ma_distance_60_min` 时判定 `risk_on`，其余为 `neutral`。比较均包含边界。
+训练准备额外冻结 development start 前最多 120 个自然日，以取得 60 个 canonical session 暖机数据；
+窗口外数据只参与状态/特征暖机，不产生训练标签。
+
 `ml-model-bundle.v1` 至少包含 `risk_on|neutral|risk_off` 中两个 expert 和一个明确 fallback，最多 4 个
 expert。每个 expert 是独立 ModelArtifact，使用相同 FeatureSet/Target/feature order，但允许不同 qualified
 LearnerProfile 或参数。Bundle 保存 expert map、fold evidence、selection rule、source identities 和 hash。
@@ -113,6 +125,11 @@ LearnerProfile 或参数。Bundle 保存 expert map、fold evidence、selection 
 `regime-expert-map-v1` 只根据冻结 RegimeSnapshot 查表选择 expert；不得访问当前时间、网络、Provider、账户、
 未来收益或 prompt。Prediction row 保存 `regime`、`regime_snapshot_id`、`expert_key`、`model_artifact_id`、
 score 和 rank。每个 session 只在相同 expert 内进行确定性 `(score DESC, symbol ASC)` 排名。
+
+每个 expert 的 `training_regimes` 只能是 `risk_on|neutral|risk_off` 的非空子集；`unknown` 永不成为训练
+条件。expert key 只可为三个已知状态，缺少精确状态 expert 时（包括 `unknown`）只使用已批准
+fallback。一个 TrainingRun 可持久化多个独立 expert ModelArtifact，但其完成引用指向唯一 ModelBundle；
+Bundle、expert、RegimeSnapshot 和 FeatureSnapshot 的 embedded hash/Artifact lineage 任一不一致即拒绝预测。
 
 ## Product、Agent 和性能投影
 

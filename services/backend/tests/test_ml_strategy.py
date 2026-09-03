@@ -51,6 +51,38 @@ def valid_strategy_v2(*, learner: str = "byq-ridge-cpu-v1") -> dict[str, object]
     }
 
 
+def valid_regime_strategy_v2() -> dict[str, object]:
+    value = valid_strategy_v2()
+    value.update({
+        "name": "HS300 regime experts",
+        "regime": {
+            "definition": "hs300-trend-volatility-v1", "enabled": True,
+            "parameters": {},
+        },
+        "routing_policy": {"id": "regime-expert-map-v1", "fallback": "neutral"},
+        "experts": [
+            {
+                "key": "risk_on",
+                "learner": {"profile": "byq-ridge-cpu-v1", "parameters": {"alpha": 0.5}},
+                "training_regimes": ["risk_on", "neutral", "risk_off"],
+            },
+            {
+                "key": "neutral",
+                "learner": {"profile": "byq-ridge-cpu-v1", "parameters": {"alpha": 1.0}},
+                "training_regimes": ["risk_on", "neutral", "risk_off"],
+            },
+            {
+                "key": "risk_off",
+                "learner": {"profile": "byq-lightgbm-cpu-v1", "parameters": {
+                    "num_boost_round": 50, "early_stopping_rounds": 10,
+                }},
+                "training_regimes": ["risk_on", "neutral", "risk_off"],
+            },
+        ],
+    })
+    return value
+
+
 def test_ml_strategy_version_is_content_addressed_and_round_trips() -> None:
     first = normalize_ml_strategy(valid_strategy())
     second = normalize_ml_strategy(copy.deepcopy(valid_strategy()))
@@ -102,6 +134,35 @@ def test_v2_registry_and_strategy_are_content_addressed_and_closed() -> None:
     assert first["runtime_lock"].endswith("ridge-cpu-single-thread")
     assert first["capability_lock"]["content_sha256"]
     assert validate_ml_strategy_version(first) == first
+
+
+def test_regime_strategy_freezes_experts_routing_and_registry_hashes() -> None:
+    normalized = normalize_ml_strategy(valid_regime_strategy_v2())
+    assert normalized["regime"]["definition"] == "hs300-trend-volatility-v1"
+    assert normalized["routing_policy"] == {
+        "id": "regime-expert-map-v1", "fallback": "neutral",
+    }
+    assert [item["key"] for item in normalized["experts"]] == ["neutral", "risk_off", "risk_on"]
+    locked = {item["id"] for item in normalized["capability_lock"]["components"]}
+    assert {"hs300-trend-volatility-v1", "regime-expert-map-v1"}.issubset(locked)
+    assert validate_ml_strategy_version(normalized) == normalized
+
+
+@pytest.mark.parametrize(
+    "mutation,message",
+    [
+        (lambda value: value["routing_policy"].update({"fallback": "missing"}), "fallback"),
+        (lambda value: value.update({"experts": value["experts"][:1]}), "between 2 and 4"),
+        (lambda value: value["experts"][1].update({"key": "risk_on"}), "unique"),
+        (lambda value: value["experts"][0].update({"training_regimes": ["unknown"]}), "trainable"),
+        (lambda value: value["regime"].update({"module": "unsafe"}), "unknown fields"),
+    ],
+)
+def test_regime_strategy_rejects_open_or_incomplete_routing(mutation, message: str) -> None:
+    candidate = valid_regime_strategy_v2()
+    mutation(candidate)
+    with pytest.raises(ValueError, match=message):
+        normalize_ml_strategy(candidate)
 
 
 @pytest.mark.parametrize(

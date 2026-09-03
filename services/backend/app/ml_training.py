@@ -17,7 +17,19 @@ from sqlalchemy.exc import SQLAlchemyError
 from .backtest import LocalObjectStore
 from .db import PgStoreMixin, execute, fetch_one
 from .ml_strategy import FEATURE_ORDER, FEATURE_SET, RUNTIME_LOCK, content_sha256
-from .ml_capabilities import STRATEGY_SCHEMA as ML_V2_SCHEMA, expected_runtime_identity
+from .ml_capabilities import (
+    STRATEGY_SCHEMA as ML_V2_SCHEMA,
+    expected_runtime_identity,
+    learner_profile,
+    model_size_limit_for_profile,
+    runtime_lock_for_profile,
+)
+from .ml_regime import (
+    BUNDLE_SCHEMA,
+    build_regime_snapshot,
+    validate_model_bundle,
+    validate_regime_snapshot,
+)
 from .research import ResearchStore
 
 
@@ -363,6 +375,15 @@ def _build_feature_snapshot_v2(
             "research_view_sha256": ready_input.get("research_view_sha256"),
         },
     }
+    regime = strategy.get("regime")
+    if isinstance(regime, dict) and regime.get("enabled") is True:
+        document["regime_snapshot"] = build_regime_snapshot(
+            strategy=strategy,
+            sessions=[str(row["session"]) for row in rows],
+            benchmark_rows=ready_input.get("benchmark"),
+            ready_input_sha256=readiness.get("ready_input_sha256"),
+        )
+        validate_regime_snapshot(document["regime_snapshot"])
     document["content_sha256"] = content_sha256(document)
     if len(_canonical(document)) > MAX_INPUT_BYTES:
         raise ValueError("ML feature snapshot exceeds 256 MiB")
@@ -802,6 +823,186 @@ class MLTrainingCoordinator:
         self.runs, self.research, self.objects, self.trainer = runs, research, objects, trainer
         self.worker_id = worker_id
 
+    @staticmethod
+    def _encoded_result(
+        result: dict[str, object], strategy: dict[str, object],
+    ) -> tuple[bytes, str, str, str]:
+        model_text = result.pop("model_text", None)
+        model_bytes = result.pop("model_bytes", None)
+        if isinstance(model_text, str) and model_text:
+            encoded_model = model_text.encode("utf-8")
+        elif isinstance(model_bytes, bytes) and model_bytes:
+            encoded_model = model_bytes
+        else:
+            raise ValueError("ML trainer returned no qualified model")
+        if len(encoded_model) > model_size_limit_for_profile(learner_profile(strategy)):
+            raise ValueError("ML trainer model exceeds the qualified size limit")
+        if result.get("runtime_identity") != expected_runtime_identity(strategy):
+            raise ValueError("ML trainer runtime identity does not match the trusted profile")
+        image_identity = result.get("image_identity")
+        if not isinstance(image_identity, str) or not image_identity.strip() or len(image_identity) > 256:
+            raise ValueError("ML trainer image identity is unavailable")
+        metrics = result.get("metrics")
+        if not isinstance(metrics, dict) or any(
+            isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value))
+            for value in metrics.values()
+        ):
+            raise ValueError("ML trainer metrics must be finite numbers")
+        model_format = str(result.get("model_format") or "lightgbm-text-v1")
+        if model_format not in {"lightgbm-text-v1", "ridge-linear-json-v1"}:
+            raise ValueError("ML trainer model format is not qualified")
+        return encoded_model, model_format, image_identity, str(
+            result.get("media_type") or "text/x-lightgbm-model"
+        )
+
+    def _create_validated_artifact(
+        self, *, job: dict[str, object], kind: str, content: dict[str, object],
+        lineage: list[dict[str, object]], key_prefix: str,
+    ) -> dict[str, object]:
+        artifact_hash = content_sha256(content)
+        artifact = self.research.find_artifact_by_content(str(job["task_id"]), kind, artifact_hash)
+        if artifact is None:
+            artifact = self.research.create_artifact({
+                "task_id": job["task_id"], "experiment_id": job.get("experiment_id"),
+                "kind": kind, "content": content, "lineage": lineage,
+                "trace_id": job["trace_id"],
+                "idempotency_key": f"{key_prefix}-{artifact_hash}",
+            })
+        if artifact["status"] == "draft":
+            artifact = self.research.transition(
+                "artifact", artifact["artifact_id"], "validated",
+                f"{key_prefix}-validate-{artifact_hash[:24]}",
+            )
+        return artifact
+
+    def _complete_regime_bundle(
+        self, *, job: dict[str, object], feature: dict[str, object], strategy: dict[str, object],
+        expert_results: list[object],
+    ) -> dict[str, object]:
+        run_id = str(job["training_run_id"])
+        regime = validate_regime_snapshot(feature.get("regime_snapshot"))
+        regime_artifact = self._create_validated_artifact(
+            job=job, kind="ml_regime_snapshot", content=regime,
+            lineage=[
+                {"kind": "artifact", "id": job["ml_strategy_artifact_id"]},
+                {"kind": "stock_pool_snapshot", "id": job["stock_pool_snapshot_id"]},
+                {"kind": "ml_training_run", "id": run_id},
+            ], key_prefix="ml-regime",
+        )
+        stored_feature = store_feature_snapshot(feature, self.objects)
+        feature_hash = str(stored_feature["content_sha256"])
+        feature_artifact = self._create_validated_artifact(
+            job=job, kind="ml_feature_snapshot", content=stored_feature,
+            lineage=[
+                {"kind": "artifact", "id": job["ml_strategy_artifact_id"]},
+                {"kind": "artifact", "id": regime_artifact["artifact_id"]},
+                {"kind": "stock_pool_snapshot", "id": job["stock_pool_snapshot_id"]},
+                {"kind": "ml_training_run", "id": run_id},
+            ], key_prefix="ml-feature",
+        )
+        configured = {
+            str(item["key"]): item for item in strategy.get("experts", []) if isinstance(item, dict)
+        }
+        if not 2 <= len(expert_results) <= 4 or len(expert_results) != len(configured):
+            raise ValueError("ML trainer returned an invalid expert result count")
+        bundle_experts: list[dict[str, object]] = []
+        expert_lineage: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for raw_result in expert_results:
+            if not isinstance(raw_result, dict):
+                raise ValueError("ML trainer expert result is invalid")
+            result = dict(raw_result)
+            key = str(result.pop("expert_key", ""))
+            training_regimes = result.pop("training_regimes", None)
+            expert = configured.get(key)
+            if expert is None or key in seen or training_regimes != expert.get("training_regimes"):
+                raise ValueError("ML trainer expert result does not match the frozen strategy")
+            seen.add(key)
+            expert_strategy = dict(strategy)
+            expert_strategy["learner"] = expert["learner"]
+            profile = str(expert["learner"]["profile"])
+            if result.get("learner_profile") != profile:
+                raise ValueError("ML trainer expert profile does not match the frozen strategy")
+            encoded_model, model_format, image_identity, media_type = self._encoded_result(
+                result, expert_strategy
+            )
+            reference = self.objects.put("ml-models", encoded_model, media_type=media_type)
+            model_content: dict[str, object] = {
+                "schema_version": "ml-model-artifact.v2",
+                "model_format": model_format, "object_reference": reference,
+                "runtime_lock": runtime_lock_for_profile(profile),
+                "runtime_identity": result.get("runtime_identity"), "image_identity": image_identity,
+                "feature_order": result.get("feature_order", FEATURE_ORDER),
+                "target": feature.get("target"), "feature_snapshot_artifact_id": feature_artifact["artifact_id"],
+                "feature_snapshot_sha256": feature_hash,
+                "strategy_version_artifact_id": job["ml_strategy_artifact_id"],
+                "stock_pool_snapshot_id": job["stock_pool_snapshot_id"], "training_run_id": run_id,
+                "learner_profile": profile, "expert_key": key,
+                "training_regimes": training_regimes,
+                "regime_snapshot_artifact_id": regime_artifact["artifact_id"],
+                "regime_snapshot_sha256": regime["content_sha256"],
+                "effective_parameters": result.get("effective_parameters"),
+                "best_iteration": result.get("best_iteration"), "metrics": result.get("metrics"),
+                "validation_plan": feature.get("validation_plan"), "folds": result.get("folds"),
+                "selection_rule": result.get("selection_rule"), "capability_lock": strategy.get("capability_lock"),
+                "development_window": feature.get("development_window"),
+                "prediction_window": feature.get("prediction_window"),
+                "counts": {"rows": feature.get("counts"), "symbols": feature.get("symbol_counts")},
+                "coverage": feature.get("coverage"),
+            }
+            model_content["content_sha256"] = content_sha256(model_content)
+            model_artifact = self._create_validated_artifact(
+                job=job, kind="ml_model", content=model_content,
+                lineage=[
+                    {"kind": "artifact", "id": job["ml_strategy_artifact_id"]},
+                    {"kind": "artifact", "id": feature_artifact["artifact_id"]},
+                    {"kind": "artifact", "id": regime_artifact["artifact_id"]},
+                    {"kind": "stock_pool_snapshot", "id": job["stock_pool_snapshot_id"]},
+                    {"kind": "ml_training_run", "id": run_id},
+                ], key_prefix=f"ml-model-{key}",
+            )
+            expert_lineage.append({"kind": "artifact", "id": model_artifact["artifact_id"]})
+            bundle_experts.append({
+                "key": key, "training_regimes": training_regimes,
+                "model_artifact_id": model_artifact["artifact_id"],
+                "model_content_sha256": model_content["content_sha256"],
+                "learner_profile": profile,
+                "folds_sha256": content_sha256(result.get("folds")),
+            })
+        bundle_experts.sort(key=lambda item: str(item["key"]))
+        bundle_content: dict[str, object] = {
+            "schema_version": BUNDLE_SCHEMA,
+            "strategy_version_artifact_id": job["ml_strategy_artifact_id"],
+            "feature_snapshot_artifact_id": feature_artifact["artifact_id"],
+            "feature_snapshot_sha256": feature_hash,
+            "regime_snapshot_artifact_id": regime_artifact["artifact_id"],
+            "regime_snapshot_sha256": regime["content_sha256"],
+            "stock_pool_snapshot_id": job["stock_pool_snapshot_id"],
+            "training_run_id": run_id,
+            "routing_policy": strategy["routing_policy"],
+            "experts": bundle_experts,
+            "capability_lock": strategy.get("capability_lock"),
+            "prediction_window": feature.get("prediction_window"),
+        }
+        bundle_content["content_sha256"] = content_sha256(bundle_content)
+        validate_model_bundle(bundle_content)
+        bundle_artifact = self._create_validated_artifact(
+            job=job, kind="ml_model_bundle", content=bundle_content,
+            lineage=[
+                {"kind": "artifact", "id": job["ml_strategy_artifact_id"]},
+                {"kind": "artifact", "id": feature_artifact["artifact_id"]},
+                {"kind": "artifact", "id": regime_artifact["artifact_id"]},
+                *expert_lineage,
+                {"kind": "stock_pool_snapshot", "id": job["stock_pool_snapshot_id"]},
+                {"kind": "ml_training_run", "id": run_id},
+            ], key_prefix="ml-bundle",
+        )
+        return self.runs.complete(
+            run_id, feature_artifact_id=str(feature_artifact["artifact_id"]),
+            model_artifact_id=str(bundle_artifact["artifact_id"]),
+            worker_id=str(job["worker_id"]), attempt_count=int(job["attempt_count"]),
+        )
+
     def run_next(self) -> dict[str, object] | None:
         job = self.runs.claim_next(self.worker_id)
         if job is None:
@@ -816,6 +1017,13 @@ class MLTrainingCoordinator:
             if not isinstance(strategy, dict):
                 raise ValueError("ML strategy snapshot is unavailable")
             result = self.trainer.train(feature, strategy)
+            expert_results = result.get("expert_results") if isinstance(result, dict) else None
+            if expert_results is not None:
+                if not isinstance(expert_results, list):
+                    raise ValueError("ML trainer expert results are invalid")
+                return self._complete_regime_bundle(
+                    job=job, feature=feature, strategy=strategy, expert_results=expert_results,
+                )
             model_text = result.pop("model_text", None)
             model_bytes = result.pop("model_bytes", None)
             is_v2 = strategy.get("schema_version") == ML_V2_SCHEMA

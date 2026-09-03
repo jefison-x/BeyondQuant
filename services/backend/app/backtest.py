@@ -676,11 +676,17 @@ def normalize_signal_snapshot(
             "ml_strategy_artifact_id", "ml_strategy_approval_artifact_id", "model_artifact_id",
             "feature_snapshot_artifact_id", "prediction_snapshot_artifact_id",
             "stock_pool_snapshot_id", "policy_sha256",
+            "model_bundle_artifact_id", "regime_snapshot_artifact_id", "routing_policy_sha256",
         }
         _reject_unknown(ml_lineage, allowed_ml_lineage, field="source.ml_lineage")
-        if set(ml_lineage) != allowed_ml_lineage:
+        required_ml_lineage = {
+            "ml_strategy_artifact_id", "ml_strategy_approval_artifact_id", "model_artifact_id",
+            "feature_snapshot_artifact_id", "prediction_snapshot_artifact_id",
+            "stock_pool_snapshot_id", "policy_sha256",
+        }
+        if not required_ml_lineage.issubset(ml_lineage):
             raise ValueError("source.ml_lineage is incomplete")
-        for key in sorted(allowed_ml_lineage):
+        for key in sorted(ml_lineage):
             normalized_ml_lineage[key] = _text(
                 ml_lineage[key], field=f"source.ml_lineage.{key}", max_length=128
             )

@@ -12,6 +12,7 @@ from app.ml_prediction import (
     MLPredictionRunStore,
     build_ml_signal_snapshot,
     build_prediction_snapshot,
+    build_routed_prediction_snapshot,
 )
 from app.ml_strategy import FEATURE_ORDER, normalize_ml_strategy, content_sha256
 from app.ml_training import FEATURE_SCHEMA, MODEL_SCHEMA, RUNTIME_IDENTITY, store_feature_snapshot
@@ -74,6 +75,13 @@ class FakePredictor:
         assert model_text == "tree\ntrusted\n" and best_iteration == 3
         # Tie on day one proves symbol ASC tie breaking; leadership changes on day two.
         return [0.5, 0.5, 0.1, 0.9, 0.8, 0.2]
+
+
+class FakeQualifiedPredictor:
+    def predict_qualified(self, model_format, model_bytes, rows, *, best_iteration):
+        assert model_format in {"ridge-linear-json-v1", "lightgbm-text-v1"}
+        assert model_bytes
+        return [float(index + 1) / 100.0 for index in range(len(rows))]
 
 
 class FakeMarketData:
@@ -178,6 +186,34 @@ def test_prediction_ranking_is_deterministic_and_rows_never_expose_labels() -> N
             feature_artifact_id="artifact_feature", model_artifact_id="artifact_model",
             stock_pool_snapshot_id="snapshot_pool",
         )
+
+
+def test_routed_prediction_ranks_within_expert_and_freezes_route_identity() -> None:
+    snapshot = build_routed_prediction_snapshot(
+        scored_rows=[
+            {"session": "2024-03-01", "symbol": "000002.SZ", "score": 0.5,
+             "regime": "risk_on", "regime_snapshot_id": "artifact_regime",
+             "expert_key": "risk_on", "model_artifact_id": "artifact_growth"},
+            {"session": "2024-03-01", "symbol": "000001.SZ", "score": 0.5,
+             "regime": "risk_on", "regime_snapshot_id": "artifact_regime",
+             "expert_key": "risk_on", "model_artifact_id": "artifact_growth"},
+            {"session": "2024-03-02", "symbol": "000001.SZ", "score": -0.1,
+             "regime": "unknown", "regime_snapshot_id": "artifact_regime",
+             "expert_key": "neutral", "model_artifact_id": "artifact_neutral"},
+        ],
+        feature_artifact_id="artifact_feature", feature_snapshot_sha256="a" * 64,
+        model_bundle_artifact_id="artifact_bundle", model_bundle_sha256="b" * 64,
+        regime_snapshot_artifact_id="artifact_regime", regime_snapshot_sha256="c" * 64,
+        stock_pool_snapshot_id="snapshot_pool",
+        prediction_window={"start": "2024-03-01", "end": "2024-03-02"},
+        capability_lock={"content_sha256": "d" * 64},
+    )
+    assert snapshot["schema_version"] == "ml-prediction-snapshot.v2"
+    assert [(row["symbol"], row["rank"]) for row in snapshot["rows"][:2]] == [
+        ("000001.SZ", 1), ("000002.SZ", 2),
+    ]
+    assert snapshot["rows"][2]["expert_key"] == "neutral"
+    assert snapshot["rows"][2]["regime"] == "unknown"
 
 
 def test_signal_skips_unfunded_lot_and_keeps_affordable_selection() -> None:
@@ -341,4 +377,126 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
     finally:
         pools.close()
         runs.close()
+        research.close()
+
+
+def test_regime_bundle_prediction_freezes_route_and_signal_lineage(tmp_path) -> None:
+    from app.ml_training import MLTrainingCoordinator, MLTrainingRunStore, build_feature_snapshot
+    from tests.test_ml_training import FakeBundleTrainer, regime_feature_input_v2
+
+    context = trusted_agent_context("ml-routed-owner")
+    research, training_runs, prediction_runs, pools = (
+        ResearchStore(), MLTrainingRunStore(), MLPredictionRunStore(), PaperTradingStore()
+    )
+    try:
+        pool = pools.create_pool(
+            {"name": "ML routed pool", "symbols": ["000001.SZ", "000002.SZ"]},
+            trusted_owner="ml-routed-owner",
+        )
+        pool_snapshot_id = pool["snapshot"]["snapshot_id"]
+        task = research.create_task({
+            "owner_principal": "ml-routed-owner", "title": "ML routed prediction",
+            "objective": "Freeze expert routes", "trace_id": "trace-routed",
+            "idempotency_key": "routed-task",
+        })
+        strategy, universe, ready = regime_feature_input_v2()
+        strategy_artifact = research.create_artifact({
+            "task_id": task["task_id"], "kind": "ml_strategy_version", "content": strategy,
+            "lineage": [], "trace_id": "trace-routed", "idempotency_key": "routed-strategy",
+        })
+        strategy_artifact = research.transition(
+            "artifact", strategy_artifact["artifact_id"], "validated", "routed-strategy-valid"
+        )
+        approval = research.create_artifact({
+            "task_id": task["task_id"], "kind": "ml_strategy_approval",
+            "content": {"ml_strategy_artifact_id": strategy_artifact["artifact_id"],
+                        "decision": "approved", "execution_authorized": True},
+            "lineage": [{"kind": "artifact", "id": strategy_artifact["artifact_id"]}],
+            "trace_id": "trace-routed", "idempotency_key": "routed-approval",
+        })
+        approval = research.transition(
+            "artifact", approval["artifact_id"], "validated", "routed-approval-valid"
+        )
+        feature = build_feature_snapshot(
+            strategy=strategy, universe=universe, ready_input=ready,
+            readiness={"ready_input_sha256": "8" * 64},
+        )
+        training = training_runs.create_waiting(
+            workspace_id=context["x-byq-workspace-id"], owner_principal="ml-routed-owner",
+            task_id=task["task_id"], experiment_id=None,
+            ml_strategy_artifact_id=strategy_artifact["artifact_id"],
+            stock_pool_snapshot_id=pool_snapshot_id,
+            preparation={"strategy": strategy, "universe": universe},
+            requirement={"requirement_sha256": "7" * 64}, readiness={"state": "ready"},
+            trace_id="trace-routed", idempotency_key="routed-training",
+        )
+        training_runs.promote_ready(str(training["training_run_id"]), feature)
+        trained = MLTrainingCoordinator(
+            training_runs, research, LocalObjectStore(tmp_path), FakeBundleTrainer(),
+            worker_id="worker-routed-train",
+        ).run_next()
+        assert trained is not None and trained["status"] == "completed"
+        bundle_artifact = research.get_artifact(trained["model_artifact_id"])
+        bundle = bundle_artifact["content"]
+        feature_artifact = research.get_artifact(trained["feature_artifact_id"])
+        regime_artifact = research.get_artifact(bundle["regime_snapshot_artifact_id"])
+        expert_models = {
+            expert["key"]: {
+                "artifact_id": expert["model_artifact_id"],
+                "content": research.get_artifact(expert["model_artifact_id"])["content"],
+            }
+            for expert in bundle["experts"]
+        }
+        prediction_dates = sorted({
+            str(row["session"]) for row in feature["rows"] if row["split"] == "prediction"
+        })
+        signal_bars = []
+        for offset, session in enumerate(prediction_dates):
+            for symbol_offset, symbol in enumerate(("000001.SZ", "000002.SZ")):
+                close = 10.0 + symbol_offset + offset * 0.01
+                signal_bars.append({
+                    "symbol": symbol, "trade_date": session, "open": close,
+                    "high": close + 0.1, "low": close - 0.1, "close": close,
+                    "volume": 1000, "is_suspended": False,
+                })
+        prediction_run = prediction_runs.create(
+            workspace_id=context["x-byq-workspace-id"], owner_principal="ml-routed-owner",
+            task_id=task["task_id"], experiment_id=None,
+            ml_strategy_artifact_id=strategy_artifact["artifact_id"],
+            approval_artifact_id=approval["artifact_id"],
+            model_artifact_id=bundle_artifact["artifact_id"],
+            feature_artifact_id=feature_artifact["artifact_id"],
+            stock_pool_snapshot_id=pool_snapshot_id,
+            input_document={
+                "strategy": strategy, "model": bundle, "feature": feature_artifact["content"],
+                "expert_models": expert_models, "regime_snapshot": regime_artifact["content"],
+                "ready_input": {"bars": signal_bars, "corporate_actions": [], "benchmark": [],
+                                "research_view_sha256": "9" * 64},
+                "readiness": {"requirement_sha256": "7" * 64, "ready_input_sha256": "8" * 64},
+                "execution": {"initial_capital": 100000.0, "lot_size": 100},
+            },
+            trace_id="trace-routed", idempotency_key="routed-prediction",
+        )
+        completed = MLPredictionCoordinator(
+            prediction_runs, research, LocalObjectStore(tmp_path), FakeQualifiedPredictor(),
+            worker_id="worker-routed-predict",
+        ).run_next()
+        assert completed is not None and completed["status"] == "completed"
+        prediction = research.get_artifact(completed["prediction_artifact_id"])["content"]
+        assert prediction["schema_version"] == "ml-prediction-snapshot.v2"
+        assert prediction["mode"] == "regime_routed"
+        assert all(row["regime"] == "risk_on" for row in prediction["rows"])
+        risk_on_model = next(
+            item["model_artifact_id"] for item in bundle["experts"] if item["key"] == "risk_on"
+        )
+        assert all(row["model_artifact_id"] == risk_on_model for row in prediction["rows"])
+        signal = research.get_artifact(completed["signal_artifact_id"])["content"]
+        lineage = signal["source"]["ml_lineage"]
+        assert lineage["model_bundle_artifact_id"] == bundle_artifact["artifact_id"]
+        assert lineage["regime_snapshot_artifact_id"] == regime_artifact["artifact_id"]
+        assert prediction_run["prediction_run_id"] == completed["prediction_run_id"]
+    finally:
+        pools.close()
+        prediction_runs.close()
+        training_runs.close()
         research.close()

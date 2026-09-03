@@ -103,6 +103,33 @@ _COMPONENTS: tuple[dict[str, object], ...] = (
         "qualification": "phase-84-worker-probe",
     },
     {
+        "id": "hs300-trend-volatility-v1", "kind": "regime_definition",
+        "contract_version": "regime-definition.v1", "display_name": "沪深300趋势波动状态",
+        "status": "qualified",
+        "parameters": {
+            "risk_on_return_60_min": {"type": "number", "min": -0.2, "max": 0.3, "default": 0.02},
+            "risk_on_ma_distance_60_min": {"type": "number", "min": -0.1, "max": 0.2, "default": 0.0},
+            "risk_off_return_20_max": {"type": "number", "min": -0.3, "max": 0.1, "default": -0.03},
+            "risk_off_volatility_20_min": {"type": "number", "min": 0.005, "max": 0.1, "default": 0.025},
+            "risk_off_ma_distance_60_max": {"type": "number", "min": -0.2, "max": 0.05, "default": -0.02},
+        },
+        "input_contract": "frozen-hs300-index-daily.v1",
+        "output_contract": "ml-regime-snapshot.v1",
+        "limits": {"benchmark": "000300.SH", "lookback_sessions": 60, "states": 4},
+        "runtime_profile": "byq-regime-builder-v1",
+        "qualification": "phase-85-point-in-time-boundary-suite",
+    },
+    {
+        "id": "regime-expert-map-v1", "kind": "routing_policy",
+        "contract_version": "routing-policy.v1", "display_name": "市场状态专家映射",
+        "status": "qualified", "parameters": {},
+        "input_contract": "ml-regime-snapshot.v1+ml-model-bundle.v1",
+        "output_contract": "routed-prediction.v1",
+        "limits": {"experts": 4, "fallbacks": 1},
+        "runtime_profile": "byq-deterministic-router-v1",
+        "qualification": "phase-85-route-tamper-suite",
+    },
+    {
         "id": "top-n-equal-weight-v1", "kind": "portfolio_policy",
         "contract_version": "portfolio-policy.v1", "display_name": "Top-N 等权", "status": "qualified",
         "parameters": {
@@ -137,7 +164,8 @@ def validate_registry() -> dict[str, object]:
     registry = public_registry()
     seen: set[str] = set()
     allowed_kinds = {
-        "feature_set", "target", "validation_plan", "learner_profile", "portfolio_policy",
+        "feature_set", "target", "validation_plan", "learner_profile", "regime_definition",
+        "routing_policy", "portfolio_policy",
     }
     for component in registry["components"]:
         identity = str(component.get("id"))
@@ -239,7 +267,8 @@ def _reference(value: object, field: str, expected_kind: str) -> tuple[str, dict
 def normalize_ml_strategy_v2(value: object) -> dict[str, object]:
     data = _object(value, "ml_strategy", {
         "schema_version", "name", "feature_set", "target", "validation_plan", "learner",
-        "portfolio_policy", "development_window", "prediction_window",
+        "portfolio_policy", "development_window", "prediction_window", "regime",
+        "routing_policy", "experts",
     })
     if data.get("schema_version") != STRATEGY_SCHEMA:
         raise ValueError("unsupported ML strategy schema")
@@ -265,9 +294,78 @@ def normalize_ml_strategy_v2(value: object) -> dict[str, object]:
     if development["end"] >= prediction["start"]:
         raise ValueError("development_window must end before prediction_window starts")
     resolved = [BY_ID[item] for item in (feature_id, target_id, validation_id, learner_id, portfolio_id)]
+    regime_config: dict[str, object] | None = None
+    routing_config: dict[str, object] | None = None
+    expert_configs: list[dict[str, object]] | None = None
+    if data.get("regime") is not None:
+        regime_raw = _object(data.get("regime"), "regime", {"definition", "parameters", "enabled"})
+        if regime_raw.get("enabled") is not True:
+            raise ValueError("regime.enabled must be true when regime is configured")
+        regime_id = _text(regime_raw.get("definition"), "regime.definition")
+        regime_component = BY_ID.get(regime_id)
+        if regime_component is None or regime_component.get("kind") != "regime_definition" or regime_component.get("status") != "qualified":
+            raise ValueError("regime references an unknown or unavailable regime_definition")
+        regime_parameters = _parameters(regime_id, regime_raw.get("parameters", {}), "regime.parameters")
+        routing_raw = _object(data.get("routing_policy"), "routing_policy", {"id", "fallback"})
+        routing_id = _text(routing_raw.get("id"), "routing_policy.id")
+        routing_component = BY_ID.get(routing_id)
+        if routing_component is None or routing_component.get("kind") != "routing_policy" or routing_component.get("status") != "qualified":
+            raise ValueError("routing_policy references an unknown or unavailable routing_policy")
+        fallback = _text(routing_raw.get("fallback"), "routing_policy.fallback", 32)
+        raw_experts = data.get("experts")
+        if not isinstance(raw_experts, list) or not 2 <= len(raw_experts) <= 4:
+            raise ValueError("experts must contain between 2 and 4 entries")
+        expert_configs = []
+        seen_keys: set[str] = set()
+        allowed_states = {"risk_on", "neutral", "risk_off"}
+        trainable_states = allowed_states
+        for index, raw_expert in enumerate(raw_experts):
+            expert = _object(raw_expert, f"experts[{index}]", {"key", "learner", "training_regimes"})
+            key = _text(expert.get("key"), f"experts[{index}].key", 32)
+            if key not in allowed_states or key in seen_keys:
+                raise ValueError("expert keys must be unique registered regime states")
+            seen_keys.add(key)
+            expert_learner_id, expert_parameters = _reference(
+                expert.get("learner"), f"experts[{index}].learner", "learner_profile"
+            )
+            raw_training_regimes = expert.get("training_regimes")
+            if (
+                not isinstance(raw_training_regimes, list)
+                or not raw_training_regimes
+                or len(raw_training_regimes) > 3
+                or any(item not in trainable_states for item in raw_training_regimes)
+            ):
+                raise ValueError("expert training_regimes must contain registered trainable states")
+            training_regimes = sorted(set(str(item) for item in raw_training_regimes))
+            if len(training_regimes) != len(raw_training_regimes):
+                raise ValueError("expert training_regimes must be unique")
+            expert_configs.append({
+                "key": key,
+                "learner": {"profile": expert_learner_id, "parameters": expert_parameters},
+                "training_regimes": training_regimes,
+            })
+            resolved.append(BY_ID[expert_learner_id])
+        expert_configs.sort(key=lambda item: str(item["key"]))
+        if fallback not in seen_keys:
+            raise ValueError("routing_policy.fallback must reference a configured expert")
+        regime_config = {"definition": regime_id, "parameters": regime_parameters, "enabled": True}
+        routing_config = {"id": routing_id, "fallback": fallback}
+        resolved.extend((regime_component, routing_component))
+    elif data.get("routing_policy") is not None or data.get("experts") is not None:
+        raise ValueError("routing_policy and experts require a configured regime")
+    unique_resolved: list[dict[str, object]] = []
+    seen_resolved: set[str] = set()
+    for item in resolved:
+        identity = str(item["id"])
+        if identity not in seen_resolved:
+            unique_resolved.append(item)
+            seen_resolved.add(identity)
     capability_lock = {
         "registry_schema": REGISTRY_SCHEMA,
-        "components": [{"id": item["id"], "content_sha256": item["content_sha256"]} for item in resolved],
+        "components": [
+            {"id": item["id"], "content_sha256": item["content_sha256"]}
+            for item in unique_resolved
+        ],
         "runtime_lock": BY_ID[learner_id]["runtime_profile"],
     }
     capability_lock["content_sha256"] = content_sha256(capability_lock)
@@ -284,6 +382,12 @@ def normalize_ml_strategy_v2(value: object) -> dict[str, object]:
         "capability_lock": capability_lock,
         "runtime_lock": capability_lock["runtime_lock"],
     }
+    if regime_config is not None and routing_config is not None and expert_configs is not None:
+        snapshot.update({
+            "regime": regime_config,
+            "routing_policy": routing_config,
+            "experts": expert_configs,
+        })
     snapshot["version_id"] = f"ml_strategy_{content_sha256(snapshot)[:32]}"
     return snapshot
 
@@ -297,6 +401,19 @@ def validate_ml_strategy_v2(value: object) -> dict[str, object]:
         if isinstance(item, dict):
             allowed = {"id", "profile", "parameters"}
             source[field] = {key: nested for key, nested in item.items() if key in allowed}
+    experts = source.get("experts")
+    if isinstance(experts, list):
+        source["experts"] = [
+            {
+                **{key: nested for key, nested in item.items() if key in {"key", "training_regimes"}},
+                **({"learner": {
+                    key: nested for key, nested in item.get("learner", {}).items()
+                    if key in {"profile", "parameters"}
+                }} if isinstance(item, dict) and isinstance(item.get("learner"), dict) else {}),
+            }
+            if isinstance(item, dict) else item
+            for item in experts
+        ]
     normalized = normalize_ml_strategy_v2(source)
     if value.get("version_id") != normalized["version_id"]:
         raise ValueError("ML strategy version identity does not match content")
@@ -321,3 +438,19 @@ def learner_profile(strategy: dict[str, object]) -> str:
 
 def expected_runtime_identity(strategy: dict[str, object]) -> str:
     return RIDGE_RUNTIME_IDENTITY if learner_profile(strategy) == "byq-ridge-cpu-v1" else LIGHTGBM_RUNTIME_IDENTITY
+
+
+def runtime_lock_for_profile(profile: str) -> str:
+    component = BY_ID.get(profile)
+    if component is None or component.get("kind") != "learner_profile" or component.get("status") != "qualified":
+        raise ValueError("learner profile runtime is unavailable")
+    return str(component["runtime_profile"])
+
+
+def model_size_limit_for_profile(profile: str) -> int:
+    component = BY_ID.get(profile)
+    limits = component.get("limits") if isinstance(component, dict) else None
+    value = limits.get("model_bytes") if isinstance(limits, dict) else None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError("learner profile model size limit is unavailable")
+    return value

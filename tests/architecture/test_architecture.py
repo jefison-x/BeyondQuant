@@ -62,7 +62,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "84")
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "85")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043", "ADR-0044", "ADR-0048"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
@@ -177,8 +177,31 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn('"numpy', backend_dependencies.lower())
         self.assertNotIn('"lightgbm', backend_dependencies.lower())
         self.assertIn("Phase 84 — Capability registry, Ridge and walk-forward（`COMPLETE`）", plan)
-        self.assertIn("Phase 85 — Regime snapshot, expert bundle and routing（`AUTHORIZED`）", plan)
+        self.assertIn("Phase 85 — Regime snapshot, expert bundle and routing（`COMPLETE`）", plan)
         self.assertIn("v2 prediction fails closed", evidence)
+
+    def test_phase85_freezes_regime_bundle_and_routes_before_backtest(self) -> None:
+        registry = (ROOT / "services/backend/app/ml_capabilities.py").read_text()
+        regime = (ROOT / "services/backend/app/ml_regime.py").read_text()
+        training = (ROOT / "services/backend/app/ml_training.py").read_text()
+        prediction = (ROOT / "services/backend/app/ml_prediction.py").read_text()
+        worker = (ROOT / "workers/ml/worker.py").read_text()
+        plan = (ROOT / "docs/roadmap/MACHINE_LEARNING_EXTENSIBILITY_PLAN.md").read_text()
+        evidence = (ROOT / "docs/evidence/phase-85/README.md").read_text()
+
+        for identity in (
+            "hs300-trend-volatility-v1", "regime-expert-map-v1",
+            "ml-regime-snapshot.v1", "ml-model-bundle.v1",
+            "ml-prediction-snapshot.v2",
+        ):
+            self.assertIn(identity, registry + regime + training + prediction)
+        self.assertIn("class QualifiedPredictor", worker)
+        self.assertIn("RidgePredictor", worker)
+        self.assertNotIn("import lightgbm", prediction.lower())
+        self.assertNotIn("import numpy", prediction.lower())
+        self.assertIn("Phase 85 — Regime snapshot, expert bundle and routing（`COMPLETE`）", plan)
+        self.assertIn("Phase 86 — Product and Xiaoba closure（`AUTHORIZED`）", plan)
+        self.assertIn("Backtest only consumes the frozen signal", evidence)
 
     def test_base_compose_uses_runtime_adapter_as_the_only_product_dsh_path(self) -> None:
         compose = (ROOT / "compose.yml").read_text()

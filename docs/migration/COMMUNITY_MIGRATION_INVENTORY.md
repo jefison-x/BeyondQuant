@@ -149,6 +149,14 @@ MCP only.
 实现和可复现实证。但 package 存在不等于 Product capability，训练缓存不等于不可变 ModelArtifact，多版本
 人工切换也不等于 point-in-time 市场状态路由。
 
+### Phase 85 regime-routing implementation audit
+
+2026-09-03 再次只读检查 Community strategy generation、strategy security、validation runtime 与测试。
+其中任意 sklearn/XGBoost/LightGBM import、回测调用期 `fit/predict`、实例缓存和历史循环训练继续分别分类为
+`REFERENCE_ONLY` 或 `DROP`。Phase 85 未移植 Community source/runtime；只保留“训练不得在每个历史回放日
+无界重复”的资源不变量，并以独立 Worker、冻结 HS300 snapshot、独立 expert Artifact、ModelBundle 和回测前
+确定性路由重新实现。Community 不存在可移植的 point-in-time regime、bundle 或 route test。
+
 ## Phase 34 Stock Pool decision audit
 
 The mandatory Phase 34 sequence was completed before implementation:

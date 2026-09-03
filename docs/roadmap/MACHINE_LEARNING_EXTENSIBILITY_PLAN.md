@@ -20,7 +20,7 @@ worktree、branch、PR，完成自动验证、CI-green squash merge 和生产部
 - 完成 Backend/Worker/PostgreSQL restart、idempotency、tamper、no-look-ahead 和资源上限测试；
 - 不实现 regime、bundle、routing、MCP 或 UI。
 
-## Phase 85 — Regime snapshot, expert bundle and routing（`AUTHORIZED`）
+## Phase 85 — Regime snapshot, expert bundle and routing（`COMPLETE`）
 
 - 实现 frozen HS300 trend/volatility RegimeSnapshot；
 - 实现 bounded expert training、ModelBundle、fallback 和 deterministic router；
@@ -28,7 +28,7 @@ worktree、branch、PR，完成自动验证、CI-green squash merge 和生产部
 - 验证 benchmark 缺失、warmup、阈值边界、route tamper、restart 和 two-user isolation；
 - 不实现 Browser/Agent 入口。
 
-## Phase 86 — Product and Xiaoba closure（`BLOCKED_BY_PHASE_85`）
+## Phase 86 — Product and Xiaoba closure（`AUTHORIZED`）
 
 - Gateway/Product API 提供动态 capability、v2 create/run/detail 和分页结果投影；
 - 模型研究页去除静态能力数组，支持单模型、walk-forward 和市场状态专家方案，保持详情懒加载；
