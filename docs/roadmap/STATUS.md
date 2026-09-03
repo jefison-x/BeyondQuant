@@ -1,21 +1,21 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=83 -->
+<!-- byq:current-completed-phase=84 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 83**——依据 ADR-0048 冻结机器学习 V2 的版本化 capability registry、
-  v1 compatibility、模块化 Feature/Target/Validation/Learner/Portfolio、purged walk-forward、Ridge、
-  沪深300市场状态、专家 ModelBundle 与确定性路由合同；本阶段未修改 runtime/schema/API/MCP/UI。
+- 当前已完成阶段：**Phase 84**——实现代码与 CI 管理的 `ml-capability-registry.v2`、不可变 v2
+  capability lock、purged walk-forward fold manifest、确定性 Ridge JSON 模型和可信 Worker profile
+  dispatch；原 LightGBM v1 训练、预测、冻结信号及回测旅程保持通过，v2 prediction 在 Phase 85 前关闭。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
   验证到 Python `0.1.1rc1` / npm `0.1.1-rc.1`；它是维护历史，不是隐含的 Product Phase。
 - 当前完成范围内没有未决架构决策。
 - Phase 82 已依据 ADR-0047 完成；验收证据位于 `docs/evidence/phase-82/`。
-- Phase 83 已依据 ADR-0048 完成合同基线；Phase 84 已获授权，须在独立 worktree 实现注册表、Ridge
-  与 walk-forward，不得提前实现 regime 或 Product 入口。
+- Phase 84 已依据 ADR-0048 完成；验收证据位于 `docs/evidence/phase-84/`。Phase 85 已获授权，须在独立
+  worktree 实现冻结 HS300 状态、专家 ModelBundle 和确定性路由，不得提前开放 Product/Agent 入口。
 - Phase 61 由维护者于 2026-08-27 授权并完成；规范与证据位于 ADR-0034、验收报告和
   `docs/evidence/phase-61/`。
 
@@ -382,12 +382,12 @@ Post-Phase 82 Benchmark UX Maintenance 将新 Product 策略草稿和小巴策�
 
 ## 当前授权边界
 
-- Phase 49-83 与相应 Accepted ADR/计划均已完成。
+- Phase 49-84 与相应 Accepted ADR/计划均已完成。
 - Phase 82 与 ADR-0047 已完成；50,000 保持原子 readiness 分片上限，不是 Tushare
   额度或完整数据任务上限。
 - ADR-0044 授权的 Phase 75–79、ADR-0045 授权的 Phase 80、ADR-0046 授权的 Phase 81、
-  ADR-0047 授权的 Phase 82 已完成。ADR-0048 已接受并授权 Phase 84；Phase 85/86 仍必须等待前序阶段
-  合并与验收。当前完成范围不包含 HIST、实盘券商、AutoML、GPU、强化学习或在线学习。
+  ADR-0047 授权的 Phase 82 已完成。ADR-0048 的 Phase 83/84 已完成并授权 Phase 85；Phase 86 仍必须
+  等待前序阶段合并与验收。当前完成范围不包含 HIST、实盘券商、AutoML、GPU、强化学习或在线学习。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 

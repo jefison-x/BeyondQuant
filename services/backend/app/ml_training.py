@@ -17,6 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from .backtest import LocalObjectStore
 from .db import PgStoreMixin, execute, fetch_one
 from .ml_strategy import FEATURE_ORDER, FEATURE_SET, RUNTIME_LOCK, content_sha256
+from .ml_capabilities import STRATEGY_SCHEMA as ML_V2_SCHEMA, expected_runtime_identity
 from .research import ResearchStore
 
 
@@ -197,11 +198,186 @@ def _split_for(date: str, split: dict[str, object]) -> str | None:
     return None
 
 
+def generate_walk_forward_folds(
+    sessions: list[str], validation_plan: dict[str, object], *, horizon_sessions: int,
+) -> list[dict[str, object]]:
+    """Resolve a bounded, deterministic purged walk-forward manifest."""
+    parameters = validation_plan.get("parameters")
+    if validation_plan.get("id") != "walk-forward-purged-v1" or not isinstance(parameters, dict):
+        raise ValueError("ML v2 validation plan is unsupported")
+    train_count = int(parameters["train_sessions"])
+    validation_count = int(parameters["validation_sessions"])
+    step_count = int(parameters["step_sessions"])
+    fold_count = int(parameters["folds"])
+    purge_count = int(parameters["purge_sessions"])
+    embargo_count = int(parameters["embargo_sessions"])
+    mode = str(parameters["mode"])
+    if purge_count < horizon_sessions:
+        raise ValueError("walk-forward purge does not cover target horizon")
+    if step_count < validation_count + embargo_count:
+        raise ValueError("walk-forward step does not cover validation and embargo")
+    required = train_count + purge_count + validation_count + step_count * (fold_count - 1)
+    if len(sessions) < required:
+        raise ValueError(
+            f"walk-forward requires {required} development sessions but only {len(sessions)} are available"
+        )
+    selected = sessions[-required:]
+    folds: list[dict[str, object]] = []
+    for index in range(fold_count):
+        validation_start_index = train_count + purge_count + index * step_count
+        validation_end_index = validation_start_index + validation_count - 1
+        train_end_index = validation_start_index - purge_count - 1
+        train_start_index = 0 if mode == "expanding" else train_end_index - train_count + 1
+        if train_start_index < 0 or validation_end_index >= len(selected):
+            raise ValueError("walk-forward fold bounds are invalid")
+        body: dict[str, object] = {
+            "fold_id": f"fold-{index + 1:02d}",
+            "train": {"start": selected[train_start_index], "end": selected[train_end_index]},
+            "purge": {
+                "start": selected[train_end_index + 1],
+                "end": selected[validation_start_index - 1],
+                "sessions": purge_count,
+            },
+            "validation": {
+                "start": selected[validation_start_index], "end": selected[validation_end_index]
+            },
+            "embargo_sessions": embargo_count,
+        }
+        body["content_sha256"] = content_sha256(body)
+        folds.append(body)
+    return folds
+
+
+def _build_feature_snapshot_v2(
+    *, strategy: dict[str, object], universe: dict[str, object], ready_input: dict[str, object],
+    readiness: dict[str, object],
+) -> dict[str, object]:
+    bars = ready_input.get("research_bars")
+    development = strategy.get("development_window")
+    prediction = strategy.get("prediction_window")
+    target = strategy.get("target")
+    validation_plan = strategy.get("validation_plan")
+    if not all(isinstance(item, dict) for item in (development, prediction, target, validation_plan)):
+        raise ValueError("ML v2 feature input is incomplete")
+    if not isinstance(bars, list) or len(bars) > MAX_ROWS:
+        raise ValueError("ML feature input is unavailable or exceeds 2000000 rows")
+    horizon = int(target["parameters"]["horizon_sessions"])
+    by_symbol: dict[str, dict[str, dict[str, object]]] = {}
+    all_dates: set[str] = set()
+    allowed_symbols = set(universe.get("symbols", []))
+    for raw in bars:
+        if not isinstance(raw, dict):
+            raise ValueError("ML research bars must be objects")
+        symbol, session = str(raw.get("symbol")), str(raw.get("trade_date"))
+        if raw.get("is_universe_member") is False or symbol not in allowed_symbols:
+            continue
+        if session in by_symbol.setdefault(symbol, {}):
+            raise ValueError("ML research bars contain duplicate symbol/session")
+        by_symbol[symbol][session] = raw
+        all_dates.add(session)
+    dates = sorted(all_dates)
+    development_sessions = [
+        item for item in dates if str(development["start"]) <= item <= str(development["end"])
+    ]
+    folds = generate_walk_forward_folds(
+        development_sessions, validation_plan, horizon_sessions=horizon
+    )
+    rows: list[dict[str, object]] = []
+    excluded = {"warmup_or_missing": 0, "label_outside_development": 0, "non_finite": 0}
+    for symbol in sorted(by_symbol):
+        symbol_bars = by_symbol[symbol]
+        for index, session in enumerate(dates):
+            split_name = None
+            if str(development["start"]) <= session <= str(development["end"]):
+                split_name = "development"
+            elif str(prediction["start"]) <= session <= str(prediction["end"]):
+                split_name = "prediction"
+            if split_name is None or index < 20:
+                continue
+            required_dates = [dates[index - offset] for offset in range(21)]
+            if any(item not in symbol_bars for item in required_dates):
+                excluded["warmup_or_missing"] += 1
+                continue
+            try:
+                closes = [float(symbol_bars[item]["close"]) for item in required_dates]
+                volumes = [float(symbol_bars[dates[index - offset]].get("volume") or 0) for offset in range(5)]
+                current = closes[0]
+                daily_returns = [closes[offset] / closes[offset + 1] - 1.0 for offset in range(20)]
+                mean_volume = sum(volumes) / len(volumes)
+                features = {
+                    "return_1": current / closes[1] - 1.0,
+                    "return_5": current / closes[5] - 1.0,
+                    "return_20": current / closes[20] - 1.0,
+                    "volatility_20": statistics.pstdev(daily_returns),
+                    "volume_ratio_5": volumes[0] / mean_volume if mean_volume > 0 else 0.0,
+                }
+            except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                excluded["non_finite"] += 1
+                continue
+            if not all(math.isfinite(value) for value in features.values()):
+                excluded["non_finite"] += 1
+                continue
+            row: dict[str, object] = {
+                "session": session, "symbol": symbol, "split": split_name,
+                "feature_as_of": session, "features": features,
+            }
+            if split_name == "development":
+                future_index = index + horizon
+                if (
+                    future_index >= len(dates)
+                    or dates[future_index] > str(development["end"])
+                    or dates[future_index] not in symbol_bars
+                ):
+                    excluded["label_outside_development"] += 1
+                    continue
+                target_value = float(symbol_bars[dates[future_index]]["close"]) / current - 1.0
+                if not math.isfinite(target_value):
+                    excluded["non_finite"] += 1
+                    continue
+                row.update({"target": target_value, "label_end_date": dates[future_index]})
+            rows.append(row)
+    rows.sort(key=lambda item: (str(item["session"]), str(item["symbol"])))
+    counts = {
+        name: sum(row["split"] == name for row in rows) for name in ("development", "prediction")
+    }
+    if counts["development"] < 20 or counts["prediction"] < 1:
+        raise ValueError("ML v2 feature snapshot has insufficient development or prediction rows")
+    candidate_count = len(rows) + sum(excluded.values())
+    document: dict[str, object] = {
+        "schema_version": "ml-feature-snapshot.v2",
+        "feature_set": strategy["feature_set"], "feature_order": FEATURE_ORDER,
+        "target": target, "validation_plan": validation_plan,
+        "development_window": development, "prediction_window": prediction,
+        "folds": folds, "universe": universe, "rows": rows, "counts": counts,
+        "symbol_counts": {
+            name: len({str(row["symbol"]) for row in rows if row["split"] == name})
+            for name in ("development", "prediction")
+        },
+        "coverage": {
+            "usable_rows": len(rows), "candidate_rows": candidate_count,
+            "usable_ratio": len(rows) / candidate_count if candidate_count else 0.0,
+        },
+        "excluded": excluded,
+        "source": {
+            "ready_input_sha256": readiness.get("ready_input_sha256"),
+            "research_view_sha256": ready_input.get("research_view_sha256"),
+        },
+    }
+    document["content_sha256"] = content_sha256(document)
+    if len(_canonical(document)) > MAX_INPUT_BYTES:
+        raise ValueError("ML feature snapshot exceeds 256 MiB")
+    return document
+
+
 def build_feature_snapshot(
     *, strategy: dict[str, object], universe: dict[str, object], ready_input: dict[str, object],
     readiness: dict[str, object],
 ) -> dict[str, object]:
     """Build the closed five-feature panel without crossing split boundaries."""
+    if strategy.get("schema_version") == ML_V2_SCHEMA:
+        return _build_feature_snapshot_v2(
+            strategy=strategy, universe=universe, ready_input=ready_input, readiness=readiness
+        )
     bars = ready_input.get("research_bars")
     split = strategy.get("split")
     target = strategy.get("target")
@@ -641,9 +817,17 @@ class MLTrainingCoordinator:
                 raise ValueError("ML strategy snapshot is unavailable")
             result = self.trainer.train(feature, strategy)
             model_text = result.pop("model_text", None)
-            if not isinstance(model_text, str) or not model_text:
-                raise ValueError("ML trainer returned no native model")
-            if result.get("runtime_identity") != RUNTIME_IDENTITY:
+            model_bytes = result.pop("model_bytes", None)
+            is_v2 = strategy.get("schema_version") == ML_V2_SCHEMA
+            if isinstance(model_text, str) and model_text:
+                encoded_model = model_text.encode("utf-8")
+            elif is_v2 and isinstance(model_bytes, bytes) and model_bytes:
+                encoded_model = model_bytes
+            else:
+                raise ValueError("ML trainer returned no qualified model")
+            if len(encoded_model) > 32 * 1024 * 1024:
+                raise ValueError("ML trainer model exceeds the qualified size limit")
+            if result.get("runtime_identity") != expected_runtime_identity(strategy):
                 raise ValueError("ML trainer runtime identity does not match the trusted profile")
             image_identity = result.get("image_identity")
             if not isinstance(image_identity, str) or not image_identity.strip() or len(image_identity) > 256:
@@ -654,8 +838,12 @@ class MLTrainingCoordinator:
                 for value in metrics.values()
             ):
                 raise ValueError("ML trainer metrics must be finite numbers")
+            model_format = str(result.get("model_format") or "lightgbm-text-v1")
+            if model_format not in {"lightgbm-text-v1", "ridge-linear-json-v1"}:
+                raise ValueError("ML trainer model format is not qualified")
             reference = self.objects.put(
-                "ml-models", model_text.encode("utf-8"), media_type="text/x-lightgbm-model"
+                "ml-models", encoded_model,
+                media_type=str(result.get("media_type") or "text/x-lightgbm-model"),
             )
             stored_feature = store_feature_snapshot(feature, self.objects)
             feature_hash = str(stored_feature["content_sha256"])
@@ -680,13 +868,13 @@ class MLTrainingCoordinator:
                     "artifact", feature_artifact["artifact_id"], "validated", f"ml-feature-validate-{feature_hash[:24]}"
                 )
             model_content: dict[str, object] = {
-                "schema_version": MODEL_SCHEMA,
-                "model_format": "lightgbm-text-v1",
+                "schema_version": "ml-model-artifact.v2" if is_v2 else MODEL_SCHEMA,
+                "model_format": model_format,
                 "object_reference": reference,
-                "runtime_lock": RUNTIME_LOCK,
+                "runtime_lock": strategy.get("runtime_lock") if is_v2 else RUNTIME_LOCK,
                 "runtime_identity": result.get("runtime_identity"),
                 "image_identity": image_identity,
-                "feature_order": FEATURE_ORDER,
+                "feature_order": result.get("feature_order", FEATURE_ORDER),
                 "target": feature.get("target"),
                 "split": feature.get("split"),
                 "feature_snapshot_artifact_id": feature_artifact["artifact_id"],
@@ -703,6 +891,16 @@ class MLTrainingCoordinator:
                 },
                 "coverage": feature.get("coverage"),
             }
+            if is_v2:
+                model_content.update({
+                    "learner_profile": result.get("learner_profile"),
+                    "validation_plan": feature.get("validation_plan"),
+                    "folds": result.get("folds"),
+                    "selection_rule": result.get("selection_rule"),
+                    "capability_lock": strategy.get("capability_lock"),
+                    "development_window": feature.get("development_window"),
+                    "prediction_window": feature.get("prediction_window"),
+                })
             model_hash = content_sha256(model_content)
             model_content["content_sha256"] = model_hash
             model_artifact_hash = content_sha256(model_content)

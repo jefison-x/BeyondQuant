@@ -57,6 +57,7 @@ signal snapshot → existing deterministic Backtest
   "regime": {"definition": "hs300-trend-volatility-v1", "enabled": true},
   "routing_policy": {"id": "regime-expert-map-v1", "fallback": "neutral"},
   "portfolio_policy": {"id": "top-n-equal-weight-v1", "parameters": {"top_n": 20, "rebalance": "weekly"}},
+  "development_window": {"start": "2020-01-01", "end": "2025-12-31"},
   "prediction_window": {"start": "2026-01-01", "end": "2026-06-30"}
 }
 ```
@@ -84,8 +85,9 @@ Backend 解析引用后冻结 `capability_lock`，其中包含每个组件的 id
 trading calendar 生成，训练标签结束日早于 validation start，验证标签结束日不晚于 validation end；最终
 prediction rows 无 target/label。
 
-每折持久化 `fold_id`、窗口、purge/embargo、source identities、eligible/excluded counts、model artifact、
-metrics 和 safe failure。有效折不足计划最小值时整个 run 失败；汇总至少返回 metric median、mean、standard
+每折持久化 `fold_id`、窗口、purge/embargo、source identities、eligible/excluded counts、model identity、
+metrics 和 safe failure；选中模型作为本次 TrainingRun 的不可变 ModelArtifact，其他折保留内容哈希而不重复
+保存大对象。有效折不足计划最小值时整个 run 失败；汇总至少返回 metric median、mean、standard
 deviation、worst fold 和有效折数。
 
 ## Learner profiles 与模型格式
