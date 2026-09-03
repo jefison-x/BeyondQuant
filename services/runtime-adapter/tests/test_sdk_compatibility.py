@@ -64,6 +64,7 @@ def test_product_research_skill_requires_evidence_bound_public_answers() -> None
     market_contract = (skill_root / "byq-market-researcher/SKILL.md").read_text()
     product_guide = (skill_root / "byq-product-guide/SKILL.md").read_text()
     ml_contract = (skill_root / "byq-ml-researcher/SKILL.md").read_text()
+    feedback_contract = (skill_root / "byq-product-feedback/SKILL.md").read_text()
 
     assert "Do not write a preface" in role_contract
     assert "unqueried or unavailable profitability" in role_contract
@@ -83,3 +84,5 @@ def test_product_research_skill_requires_evidence_bound_public_answers() -> None
     assert "never create or decide that" in ml_contract
     assert "byq_ml_prediction_create" in ml_contract
     assert "Only the derived ML backtest task" in ml_contract
+    assert "Do not call submit in this turn" in feedback_contract
+    assert "Never request a GitHub account" in feedback_contract

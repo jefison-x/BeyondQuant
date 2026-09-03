@@ -756,7 +756,7 @@ Chrome/two-user/restart/performance 闭环。
 实现无源码/Git/Docker/数据库/DSH 权限的独立 publisher、固定仓库 GitHub App/单仓库 token、internal
 lease/fence、renderer、reconciliation、有限重试、Compose 与运维；required CI 只使用 fake GitHub。
 
-### Phase 90 — Product UI and Xiaoba closure（`AUTHORIZED`）
+### Phase 90 — Product UI and Xiaoba closure（`COMPLETE`）
 
 实现 owner 反馈工作台、管理员审核、隐私预览/明确提交、MCP/Xiaoba 最小权限能力，以及真实 Product API、
 Chrome desktop/mobile、懒加载分页、two-user/restart/unconfigured publisher 闭环。

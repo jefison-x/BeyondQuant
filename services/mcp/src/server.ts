@@ -111,6 +111,10 @@ import {
   type DataDemandRequest,
 } from "./data-demand.js";
 import { PageCallBudget, boundedIntegerEnvironment } from "./page-budget.js";
+import {
+  fetchByqFeedbackCreate, fetchByqFeedbackGet, fetchByqFeedbackList, fetchByqFeedbackOptions,
+  fetchByqFeedbackPreview, fetchByqFeedbackSubmit, fetchByqFeedbackUpdate,
+} from "./feedback.js";
 
 const SERVICE = "beyondquant-mcp";
 const VERSION = "0.1.0";
@@ -294,6 +298,26 @@ async function byqDataDemandGet(args: { demand_id: string }, extra: unknown) {
     BACKEND_URL, args.demand_id, trustedBackendFetcher(context),
   ) : agentContextUnavailable();
 }
+
+function feedbackFetcher(extra: unknown): typeof fetch | undefined {
+  const context = completeAgentContext(extra);
+  return context ? trustedBackendFetcher(context) : undefined;
+}
+
+const feedbackContentShape = {
+  schema_version: z.literal("product-feedback.v1"),
+  category: z.enum(["bug", "feature", "performance", "usability", "other"]),
+  component: z.enum(["xiaoba", "stock_pool", "strategy", "model_research", "backtest", "data_center", "system_settings", "auth", "runtime", "other"]),
+  title: z.string().min(4).max(160), description: z.string().min(1).max(8000),
+  reproduction_steps: z.array(z.string().min(1).max(500)).max(12),
+  expected_behavior: z.string().max(2000), actual_behavior: z.string().max(2000),
+  severity: z.enum(["low", "normal", "high"]),
+  diagnostics: z.object({
+    include_product_version: z.boolean().optional(), include_deployment_kind: z.boolean().optional(),
+    include_browser_family: z.boolean().optional(), include_os_family: z.boolean().optional(),
+    include_performance_summary: z.boolean().optional(),
+  }).strict(),
+};
 
 async function byqAgentRoles() {
   return fetchByqAgentRoles(BACKEND_URL);
@@ -622,6 +646,50 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       inputSchema: productHelpInputSchema.shape,
     },
     (args) => queryProductHelp(args),
+  );
+  server.registerTool(
+    "byq_feedback_options",
+    { description: "Read privacy rules and bounded choices for owner feedback. No GitHub account is required.", inputSchema: {} },
+    () => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? fetchByqFeedbackOptions(BACKEND_URL, fetcher) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_feedback_list",
+    { description: "List a bounded page of feedback owned by the current trusted workspace.", inputSchema: {
+      status: z.enum(["all", "draft", "submitted", "triaged", "accepted", "rejected", "duplicate", "withdrawn"]).optional(),
+      category: z.enum(["all", "bug", "feature", "performance", "usability", "other"]).optional(),
+      query: z.string().max(80).optional(), limit: z.number().int().min(1).max(20).optional(), offset: z.number().int().min(0).optional(),
+    } },
+    (args) => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? fetchByqFeedbackList(BACKEND_URL, args, fetcher) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_feedback_get",
+    { description: "Read one feedback item owned by the current trusted workspace.", inputSchema: { feedback_id: z.string().regex(/^feedback_[0-9a-f]{32}$/) } },
+    (args) => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? fetchByqFeedbackGet(BACKEND_URL, args.feedback_id, fetcher) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_feedback_create_draft",
+    { description: "Create a private owner-scoped feedback draft. This does not submit or publish it.", inputSchema: { ...feedbackContentShape, idempotency_key: z.string().min(1).max(128) } },
+    (args) => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? fetchByqFeedbackCreate(BACKEND_URL, args, fetcher) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_feedback_update_draft",
+    { description: "Update a private owner-scoped feedback draft. This does not submit or publish it.", inputSchema: {
+      feedback_id: z.string().regex(/^feedback_[0-9a-f]{32}$/), expected_version: z.number().int().positive(), idempotency_key: z.string().min(1).max(128), content: z.object(feedbackContentShape).strict(),
+    } },
+    (args) => { const fetcher = feedbackFetcher(trustedContext); const { feedback_id, ...payload } = args; return fetcher ? fetchByqFeedbackUpdate(BACKEND_URL, feedback_id, payload, fetcher) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_feedback_preview",
+    { description: "Generate the exact privacy-safe public candidate snapshot for a draft. Show it to the user before any submit call.", inputSchema: { feedback_id: z.string().regex(/^feedback_[0-9a-f]{32}$/), expected_version: z.number().int().positive() } },
+    (args) => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? fetchByqFeedbackPreview(BACKEND_URL, args.feedback_id, args.expected_version, fetcher) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_feedback_submit",
+    { description: "Submit a previously previewed draft only after the user explicitly confirms that exact preview. Never infer confirmation from the original request.", inputSchema: {
+      feedback_id: z.string().regex(/^feedback_[0-9a-f]{32}$/), expected_version: z.number().int().positive(), preview_hash: z.string().regex(/^[0-9a-f]{64}$/),
+      disclosure_confirmed: z.literal(true), idempotency_key: z.string().min(1).max(128),
+    } },
+    (args) => { const fetcher = feedbackFetcher(trustedContext); const { feedback_id, ...payload } = args; return fetcher ? fetchByqFeedbackSubmit(BACKEND_URL, feedback_id, payload, fetcher) : agentContextUnavailable(); },
   );
   server.registerTool(
     "byq_workflow_card_propose",

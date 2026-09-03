@@ -1,7 +1,7 @@
 # Product Feedback Contract
 
 本合同落实 ADR-0049。Phase 87 冻结合同；Phase 88 已实现 durable schema、domain 与 Product API；Phase 89
-已实现隔离 trusted publisher。Product UI、MCP 和 Xiaoba 保持为 Phase 90 独立阶段。
+已实现隔离 trusted publisher；Phase 90 已完成 Product UI、MCP 与 Xiaoba 闭环。
 
 ## 1. 身份、所有权与权限
 
@@ -169,8 +169,8 @@ exclude internal lease/fence, request hashes, actor identifiers, raw errors and 
 
 ## 9. MCP 与小巴
 
-Planned Phase 90 tools：`byq_feedback_options`、`byq_feedback_list`、`byq_feedback_get`、
-`byq_feedback_draft`、`byq_feedback_preview`、`byq_feedback_submit`。All use trusted context and the same Backend domain
+Phase 90 tools：`byq_feedback_options`、`byq_feedback_list`、`byq_feedback_get`、
+`byq_feedback_create_draft`、`byq_feedback_update_draft`、`byq_feedback_preview`、`byq_feedback_submit`。All use trusted context and the same Backend domain
 contract. No admin triage/publish/publisher tool is exposed to Product DSH.
 
 Xiaoba may summarize the current user's stated problem into a draft. It must not silently attach conversation content, infer
@@ -225,3 +225,15 @@ attempt。6 次上限仅约束 GitHub 外部副作用重试，不约束用户反
 exact event/snapshot marker 做有界 reconciliation。GitHub App 优先，单仓库 fine-grained token 仅作 fallback。
 Publisher profile 默认关闭；未配置或撤销 credential 时内部反馈保持可用并显示 unconfigured。映射成功后 owner/
 moderator 只获得验证过的 repository、issue number 和 canonical public URL。
+
+## 15. Phase 90 implementation record
+
+Phase 90 在 conversation-first shell 增加 owner 反馈工作台，在 System Settings 增加 admin-only 审核工作台。
+首屏只并发读取 options 与第一摘要页；详情、审计和后续页按用户动作懒加载，筛选由服务端分页执行并取消过期请求。
+用户必须先保存草稿、生成服务端公开候选快照，再通过二次明确确认提交；环境诊断默认不携带。管理员只能看到
+submitted snapshot，可执行分诊、采纳、拒绝和关联重复项，并读取安全 publisher 状态。
+
+BeyondQuant MCP 只注册七个 owner tool，不注册 moderator/publisher/GitHub tool。`byq-product-feedback` skill 固定
+“起草/预览 → 展示精确预览 → 等待后续用户回合明确同意 → 提交”，不得在同一回合自动提交。普通用户仍无需
+GitHub 账号、Token 或仓库配置；publisher 未配置时反馈完整持久化与审核，采纳项明确保持
+`publisher_unconfigured`。

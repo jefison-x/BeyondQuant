@@ -1,6 +1,6 @@
 {
   "schema_version": "product-capability-catalog.v1",
-  "catalog_version": "2026.08.30",
+  "catalog_version": "2026.09.03",
   "support_levels": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE", "UNAVAILABLE"],
   "capabilities": [
     {
@@ -26,6 +26,18 @@
       "support": ["EXPLAIN", "NAVIGATE"],
       "agent_tools": [],
       "limitations": ["工作台摘要不是领域对象的权威编辑入口"]
+    },
+    {
+      "capability_id": "product-feedback",
+      "name": "反馈与建议",
+      "route_id": "/feedback",
+      "audience": "USER",
+      "purpose": "创建私有反馈草稿，检查公开候选快照并明确确认提交。",
+      "keywords": ["反馈", "建议", "报告问题", "缺陷", "性能问题", "功能需求"],
+      "prerequisites": ["已登录并拥有有效个人工作区"],
+      "support": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE"],
+      "agent_tools": ["byq_feedback_options", "byq_feedback_list", "byq_feedback_get", "byq_feedback_create_draft", "byq_feedback_update_draft", "byq_feedback_preview", "byq_feedback_submit"],
+      "limitations": ["提交前必须检查服务端预览并在后续明确确认；小巴不能审核或发布 GitHub Issue；普通用户无需配置 GitHub"]
     },
     {
       "capability_id": "stock-pool-management",
@@ -182,6 +194,18 @@
       "support": ["EXPLAIN", "NAVIGATE", "PROPOSE", "EXECUTE", "READ"],
       "agent_tools": ["byq_data_demand_create", "byq_data_demand_get"],
       "limitations": ["仅管理员工作区可提交有界按需数据请求；Product Agent 不调用 Provider，只有可信 Data Worker 执行同步"]
+    },
+    {
+      "capability_id": "feedback-moderation",
+      "name": "反馈审核",
+      "route_id": "/settings/system/feedback",
+      "audience": "ADMIN",
+      "purpose": "分诊和审核已提交反馈，并查看平台 GitHub 发布服务与队列状态。",
+      "keywords": ["反馈审核", "反馈队列", "GitHub Issue 发布", "分诊"],
+      "prerequisites": ["管理员角色"],
+      "support": ["EXPLAIN", "NAVIGATE"],
+      "agent_tools": [],
+      "limitations": ["管理员审核和 GitHub 发布不开放给小巴；发布凭据只由部署环境配置"]
     },
     {
       "capability_id": "plugin-center",

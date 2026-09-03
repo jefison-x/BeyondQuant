@@ -71,7 +71,7 @@ worktree、branch 和 PR；完成自动验证、CI-green squash merge 和部署�
 - configured/unconfigured/revoked credential operational behavior；
 - formal deploy keeps unrelated Product healthy and PostgreSQL volume intact。
 
-## Phase 90 — Product UI and Xiaoba closure（`AUTHORIZED`）
+## Phase 90 — Product UI and Xiaoba closure（`COMPLETE`）
 
 ### 范围
 

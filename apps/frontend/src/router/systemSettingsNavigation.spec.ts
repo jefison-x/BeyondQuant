@@ -17,6 +17,7 @@ describe("system settings navigation", () => {
     ]);
     expect(systemSettingsItems.map((item) => item.path)).toEqual([
       "/settings/system/overview",
+      "/settings/system/feedback",
       "/settings/system/data",
       "/settings/system/sources",
       "/settings/system/cache",

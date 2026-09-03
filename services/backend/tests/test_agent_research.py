@@ -48,7 +48,9 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_strategy_approve" not in strategy_tools
     assert "byq_backtest_run" not in strategy_tools
     orchestrator = ROLE_BY_ID["quant_orchestrator"]
-    assert orchestrator.version == "1.8.0"
+    assert orchestrator.version == "1.9.0"
+    assert "byq_feedback_preview" in orchestrator.allowed_tools
+    assert "byq_feedback_submit" in orchestrator.allowed_tools
     assert "ml_researcher" in orchestrator.delegate_to
     orchestrator_tools = set(orchestrator.allowed_tools)
     assert {"byq_pool_list", "byq_pool_get", "byq_pool_create"} <= orchestrator_tools
