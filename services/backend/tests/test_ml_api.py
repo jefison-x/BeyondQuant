@@ -174,6 +174,46 @@ def test_ml_v2_strategy_version_and_approval_use_qualified_capability_lock() -> 
     assert approval.json()["approval"]["ml_strategy_version_id"] == content["version_id"]
 
 
+def test_ml_study_catalog_is_paged_and_detail_is_lazy_safe() -> None:
+    headers = trusted_agent_context("ml-catalog-owner", actor="ml-catalog-owner")
+    task = client.post("/v1/research/tasks", headers=headers, json={
+        "owner_principal": "ml-catalog-owner", "title": "状态模型目录",
+        "objective": "Paged study detail", "trace_id": "trace-ml-catalog",
+        "idempotency_key": "task-ml-catalog",
+    }).json()
+    version = client.post("/v1/research/ml/strategies/versions", headers=headers, json={
+        "task_id": task["task_id"], "strategy": valid_strategy_v2(),
+        "trace_id": "trace-ml-catalog", "idempotency_key": "version-ml-catalog",
+    })
+    assert version.status_code == 201, version.text
+    artifact_id = version.json()["artifact"]["artifact_id"]
+
+    options = client.get("/v1/research/ml/options", headers=headers)
+    assert options.status_code == 200
+    assert options.json()["tasks"][0]["task_id"] == task["task_id"]
+    assert "artifacts" not in options.json()
+
+    page = client.get(
+        "/v1/research/ml/studies?query=状态&status=active&limit=1&offset=0",
+        headers=headers,
+    )
+    assert page.status_code == 200, page.text
+    assert page.json()["total"] == 1 and len(page.json()["studies"]) == 1
+    summary = page.json()["studies"][0]
+    assert summary["artifact_id"] == artifact_id
+    assert summary["stage"] == "definition"
+    assert "content" not in summary and "capability_lock" not in page.text
+
+    detail = client.get(f"/v1/research/ml/studies/{artifact_id}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["study"]["content"]["schema_version"] == "ml-strategy-version.v2"
+    assert body["training_runs"]["total"] == 0
+    assert body["prediction_runs"]["total"] == 0
+    assert body["backtests"]["total"] == 0
+    assert "object_reference" not in detail.text and '"rows"' not in detail.text
+
+
 def test_ml_training_requires_separate_human_strategy_approval() -> None:
     headers = trusted_agent_context("ml-training-approval-owner")
     task = client.post("/v1/research/tasks", headers=headers, json={

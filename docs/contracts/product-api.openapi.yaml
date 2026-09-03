@@ -107,19 +107,28 @@ paths:
   /api/product/research/artifacts:
     get: {summary: 列出 owner-scoped artifacts., responses: *okResponses}
   /api/product/ml/workspace:
-    get: {summary: 返回 owner-scoped LightGBM 研究工作区安全投影，不包含模型对象地址或原始特征行。, responses: *okResponses}
+    get: {summary: 返回兼容的 owner-scoped ML 工作区安全投影；新页面使用分页目录与懒加载详情。, responses: *okResponses}
+  /api/product/ml/capabilities:
+    get: {summary: 返回代码管理且已资格验证的动态 ML capability 注册表安全投影。, responses: *okResponses}
+  /api/product/ml/options:
+    get: {summary: 返回创建 ML 研究所需的有界任务和冻结股票池选项。, responses: *okResponses}
+  /api/product/ml/studies:
+    get: {summary: 服务端筛选并分页返回 owner-scoped ML 研究轻量目录。, responses: *okResponses}
+  /api/product/ml/studies/{strategy_artifact_id}:
+    parameters: [{name: strategy_artifact_id, in: path, required: true, schema: {type: string}}]
+    get: {summary: 按需返回一个 ML 研究的有界运行记录和无大行载荷制品元数据。, responses: *okResponses}
   /api/product/ml/strategies/versions:
-    post: {summary: 冻结一个 closed-profile LightGBM 策略版本。, responses: *createdResponses}
+    post: {summary: 冻结一个 closed-profile、注册表解析的 ML 策略版本。, responses: *createdResponses}
   /api/product/ml/strategies/approvals:
-    post: {summary: 记录 LightGBM 策略版本的显式人工批准或拒绝。, responses: *createdResponses}
+    post: {summary: 记录 ML 策略版本的显式人工批准或拒绝。, responses: *createdResponses}
   /api/product/ml/training-runs:
-    post: {summary: 对冻结股票池提交 durable LightGBM 训练。, responses: *acceptedResponses}
+    post: {summary: 对冻结股票池提交 durable qualified-profile ML 训练。, responses: *acceptedResponses}
   /api/product/ml/training-runs/{run_id}:
     parameters: [{$ref: "#/components/parameters/RunId"}]
-    get: {summary: 获取 owner-scoped LightGBM 训练状态和制品 ID。, responses: *okResponses}
+    get: {summary: 获取 owner-scoped ML 训练状态和模型或模型包制品 ID。, responses: *okResponses}
   /api/product/ml/training-runs/{run_id}/cancel:
     parameters: [{$ref: "#/components/parameters/RunId"}]
-    post: {summary: 取消可取消的 owner-scoped LightGBM 训练。, responses: *okResponses}
+    post: {summary: 取消可取消的 owner-scoped ML 训练。, responses: *okResponses}
   /api/product/ml/prediction-runs:
     post: {summary: 提交样本外预测并生成冻结信号。, responses: *acceptedResponses}
   /api/product/ml/prediction-runs/{run_id}:

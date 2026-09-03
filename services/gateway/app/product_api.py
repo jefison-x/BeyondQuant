@@ -564,30 +564,77 @@ def _ml_nonce(prefix: str) -> tuple[str, str]:
 
 def _ml_artifact_projection(artifact: object) -> dict[str, object] | None:
     if not isinstance(artifact, dict) or artifact.get("kind") not in {
-        "ml_strategy_version", "ml_strategy_approval", "ml_model",
+        "ml_strategy_version", "ml_strategy_approval", "ml_model", "ml_model_bundle",
+        "ml_regime_snapshot",
         "ml_prediction_snapshot", "signal_snapshot",
     }:
         return None
     content = artifact.get("content") if isinstance(artifact.get("content"), dict) else {}
     kind = str(artifact["kind"])
     allowed = {
-        "ml_strategy_version": {"schema_version", "version_id", "name", "learner", "feature_set", "target", "split", "learner_parameters", "signal_policy", "runtime_lock"},
+        "ml_strategy_version": {"schema_version", "version_id", "name", "learner", "feature_set", "target", "split", "learner_parameters", "signal_policy", "runtime_lock", "validation_plan", "portfolio_policy", "development_window", "prediction_window", "capability_lock", "regime", "routing_policy", "experts"},
         "ml_strategy_approval": {"schema_version", "ml_strategy_version_id", "ml_strategy_artifact_id", "decision", "rationale", "execution_authorized", "execution_outcome"},
-        "ml_model": {"schema_version", "training_run_id", "strategy_version_artifact_id", "feature_snapshot_artifact_id", "stock_pool_snapshot_id", "split", "feature_order", "best_iteration", "metrics", "counts", "runtime_lock", "runtime_identity", "content_sha256"},
-        "ml_prediction_snapshot": {"schema_version", "model_artifact_id", "stock_pool_snapshot_id", "prediction_split", "runtime_lock", "runtime_identity", "rows", "counts", "content_sha256"},
-        "signal_snapshot": {"schema_version", "strategy_version_id", "strategy_version_artifact_id", "universe", "signals", "execution", "source", "content_sha256"},
+        "ml_model": {"schema_version", "training_run_id", "strategy_version_artifact_id", "feature_snapshot_artifact_id", "stock_pool_snapshot_id", "split", "feature_order", "best_iteration", "metrics", "counts", "runtime_lock", "runtime_identity", "content_sha256", "learner_profile", "validation_plan", "folds", "selection_rule", "development_window", "prediction_window", "expert_key", "training_regimes", "coverage"},
+        "ml_model_bundle": {"schema_version", "strategy_version_artifact_id", "feature_snapshot_artifact_id", "regime_snapshot_artifact_id", "stock_pool_snapshot_id", "training_run_id", "routing_policy", "experts", "prediction_window", "content_sha256"},
+        "ml_regime_snapshot": {"schema_version", "definition", "benchmark_symbol", "lookback_sessions", "counts", "content_sha256"},
+        "ml_prediction_snapshot": {"schema_version", "model_artifact_id", "model_bundle_artifact_id", "regime_snapshot_artifact_id", "stock_pool_snapshot_id", "prediction_split", "prediction_window", "runtime_lock", "runtime_identity", "counts", "mode", "content_sha256"},
+        "signal_snapshot": {"schema_version", "strategy_version_id", "strategy_version_artifact_id", "execution", "source", "content_sha256"},
     }[kind]
     projected = {key: value for key, value in content.items() if key in allowed}
-    if kind == "ml_prediction_snapshot" and isinstance(projected.get("rows"), list):
-        projected["rows"] = projected["rows"][:200]
-    if kind == "signal_snapshot":
-        projected.pop("bars", None)
-        if isinstance(projected.get("signals"), list):
-            projected["signals"] = projected["signals"][:200]
     return {
         "artifact_id": artifact.get("artifact_id"), "task_id": artifact.get("task_id"),
         "kind": kind, "status": artifact.get("status"), "content_sha256": artifact.get("content_sha256"),
         "created_at": artifact.get("created_at"), "content": projected,
+    }
+
+
+@router.get("/ml/capabilities")
+def product_ml_capabilities(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET", "/v1/research/ml/capabilities", headers=_trusted_agent_headers(request)
+    )
+
+
+@router.get("/ml/options")
+def product_ml_options(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET", "/v1/research/ml/options", headers=_trusted_agent_headers(request)
+    )
+
+
+@router.get("/ml/studies")
+def product_ml_studies(
+    request: Request, query: str = "", status: str = "all", limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    _product_principal(request)
+    params = urlencode({"query": query, "status": status, "limit": limit, "offset": offset})
+    return _backend_request(
+        "GET", f"/v1/research/ml/studies?{params}", headers=_trusted_agent_headers(request)
+    )
+
+
+@router.get("/ml/studies/{strategy_artifact_id}")
+def product_ml_study(strategy_artifact_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    detail = _backend_request(
+        "GET", f"/v1/research/ml/studies/{strategy_artifact_id}",
+        headers=_trusted_agent_headers(request),
+    )
+    study = _ml_artifact_projection(detail.get("study"))
+    artifacts = [
+        projected for item in detail.get("artifacts", [])
+        for projected in [_ml_artifact_projection(item)] if projected is not None
+    ] if isinstance(detail.get("artifacts"), list) else []
+    return {
+        "schema_version": "ml-product-study-detail.v1",
+        "study": study,
+        "approval_artifact_id": detail.get("approval_artifact_id"),
+        "training_runs": detail.get("training_runs", {"runs": [], "total": 0}),
+        "prediction_runs": detail.get("prediction_runs", {"runs": [], "total": 0}),
+        "backtests": detail.get("backtests", {"backtests": [], "total": 0}),
+        "artifacts": artifacts,
     }
 
 

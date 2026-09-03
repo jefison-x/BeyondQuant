@@ -1858,6 +1858,7 @@ def _ml_agent_artifact_projection(artifact: dict[str, Any]) -> dict[str, object]
             "schema_version", "version_id", "name", "learner", "feature_set", "target",
             "split", "learner_parameters", "signal_policy", "validation_plan", "portfolio_policy",
             "development_window", "prediction_window", "capability_lock", "runtime_lock",
+            "regime", "routing_policy", "experts",
         },
         "ml_strategy_approval": {
             "schema_version", "ml_strategy_version_id", "ml_strategy_artifact_id",
@@ -1869,11 +1870,22 @@ def _ml_agent_artifact_projection(artifact: dict[str, Any]) -> dict[str, object]
             "feature_order", "best_iteration", "metrics", "counts", "runtime_lock",
             "runtime_identity", "content_sha256", "learner_profile", "validation_plan", "folds",
             "selection_rule", "capability_lock", "development_window", "prediction_window",
+            "expert_key", "training_regimes", "coverage",
+        },
+        "ml_model_bundle": {
+            "schema_version", "strategy_version_artifact_id", "feature_snapshot_artifact_id",
+            "regime_snapshot_artifact_id", "stock_pool_snapshot_id", "training_run_id",
+            "routing_policy", "experts", "prediction_window", "content_sha256",
+        },
+        "ml_regime_snapshot": {
+            "schema_version", "definition", "benchmark_symbol", "lookback_sessions", "counts",
+            "content_sha256",
         },
         "ml_prediction_snapshot": {
             "schema_version", "model_artifact_id", "stock_pool_snapshot_id",
             "prediction_split", "runtime_lock", "runtime_identity", "counts",
-            "content_sha256",
+            "content_sha256", "mode", "model_bundle_artifact_id",
+            "regime_snapshot_artifact_id", "prediction_window",
         },
         "signal_snapshot": {
             "schema_version", "strategy_version_id", "strategy_version_artifact_id",
@@ -1915,26 +1927,130 @@ def get_ml_capabilities(request: Request) -> dict[str, object]:
     return ml_capability_catalog()
 
 
-@app.get("/v1/research/ml/workspace")
-def get_ml_agent_workspace(request: Request) -> dict[str, object]:
-    context = _required_agent_context(request, include_workspace=True)
+def _ml_workspace_options(context: dict[str, str]) -> dict[str, object]:
     tasks = [
         task for task in research_store.list_tasks(owner_principal=context["owner_principal"])["tasks"]
         if task.get("workspace_id") == context["workspace_id"]
     ]
-    tasks = [
-        {key: task.get(key) for key in ("task_id", "title", "status", "created_at")}
-        for task in tasks
-    ]
     raw_pools = paper_store.list_pools(
         trusted_owner=context["owner_principal"], limit=100, offset=0
     )["pools"]
-    pools = [
-        {key: pool.get(key) for key in (
-            "pool_id", "name", "pool_type", "status", "current_snapshot_id", "member_count",
-        )}
-        for pool in raw_pools
-    ]
+    return {
+        "tasks": [
+            {key: task.get(key) for key in ("task_id", "title", "status", "created_at")}
+            for task in tasks[:100]
+        ],
+        "pools": [
+            {key: pool.get(key) for key in (
+                "pool_id", "name", "pool_type", "status", "current_snapshot_id", "member_count",
+            )}
+            for pool in raw_pools
+        ],
+    }
+
+
+@app.get("/v1/research/ml/options")
+def get_ml_options(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return {"schema_version": "ml-options.v1", **_ml_workspace_options(context)}
+
+
+@app.get("/v1/research/ml/studies")
+def list_ml_studies(
+    request: Request, query: str = "", status: str = "all", limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: {
+        "schema_version": "ml-study-catalog.v1",
+        **research_store.list_ml_strategy_catalog(
+            owner_principal=context["owner_principal"], workspace_id=context["workspace_id"],
+            query=query, status=status, limit=limit, offset=offset,
+        ),
+    })
+
+
+@app.get("/v1/research/ml/studies/{strategy_artifact_id}")
+def get_ml_study(strategy_artifact_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        strategy = research_store.get_ml_artifact_metadata(
+            strategy_artifact_id, owner_principal=context["owner_principal"],
+            workspace_id=context["workspace_id"],
+        )
+        if strategy.get("kind") != "ml_strategy_version":
+            raise ResearchNotFound("ML study not found")
+        training_page = ml_training_store.list_runs(
+            trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
+            strategy_artifact_id=strategy_artifact_id, limit=20, offset=0,
+        )
+        prediction_page = ml_prediction_store.list_runs(
+            trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
+            strategy_artifact_id=strategy_artifact_id, limit=20, offset=0,
+        )
+        backtest_page = backtest_store.list_backtest_summaries(
+            owner_principal=context["owner_principal"], strategy_artifact_id=strategy_artifact_id,
+            workspace_id=context["workspace_id"], limit=20, offset=0,
+        )
+        approval = research_store.get_ml_strategy_approval(
+            owner_principal=context["owner_principal"], workspace_id=context["workspace_id"],
+            ml_strategy_artifact_id=strategy_artifact_id,
+        )
+        artifact_ids: set[str] = {strategy_artifact_id}
+        if approval is not None:
+            artifact_ids.add(str(approval["artifact_id"]))
+        for run in training_page["runs"]:
+            for key in ("model_artifact_id",):
+                if isinstance(run.get(key), str):
+                    artifact_ids.add(str(run[key]))
+        for run in prediction_page["runs"]:
+            for key in ("model_artifact_id", "prediction_artifact_id", "signal_artifact_id"):
+                if isinstance(run.get(key), str):
+                    artifact_ids.add(str(run[key]))
+        artifacts: list[dict[str, object]] = []
+        pending = list(sorted(artifact_ids))
+        loaded: set[str] = set()
+        while pending and len(loaded) < 20:
+            identity = pending.pop(0)
+            if identity in loaded:
+                continue
+            artifact = research_store.get_ml_artifact_metadata(
+                identity, owner_principal=context["owner_principal"],
+                workspace_id=context["workspace_id"],
+            )
+            loaded.add(identity)
+            projected = _ml_agent_artifact_projection(artifact)
+            if projected is not None:
+                artifacts.append(projected)
+            content = artifact.get("content")
+            if artifact.get("kind") == "ml_model_bundle" and isinstance(content, dict):
+                regime_id = content.get("regime_snapshot_artifact_id")
+                if isinstance(regime_id, str):
+                    pending.append(regime_id)
+                experts = content.get("experts")
+                if isinstance(experts, list):
+                    pending.extend(
+                        str(item["model_artifact_id"])
+                        for item in experts
+                        if isinstance(item, dict) and isinstance(item.get("model_artifact_id"), str)
+                    )
+        return {
+            "schema_version": "ml-study-detail.v1",
+            "study": _ml_agent_artifact_projection(strategy),
+            "approval_artifact_id": None if approval is None else approval["artifact_id"],
+            "training_runs": training_page,
+            "prediction_runs": prediction_page,
+            "backtests": backtest_page,
+            "artifacts": artifacts,
+        }
+
+    return _research_call(operation)
+
+
+@app.get("/v1/research/ml/workspace")
+def get_ml_agent_workspace(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    options = _ml_workspace_options(context)
     artifacts = [
         projected
         for artifact in research_store.list_ml_workspace_artifacts(
@@ -1951,8 +2067,8 @@ def get_ml_agent_workspace(request: Request) -> dict[str, object]:
     )["runs"]
     return {
         "schema_version": "ml-agent-workspace.v1",
-        "tasks": tasks,
-        "pools": pools,
+        "tasks": options["tasks"],
+        "pools": options["pools"],
         "artifacts": artifacts,
         "training_runs": training_runs,
         "prediction_runs": prediction_runs,
@@ -2153,10 +2269,14 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
 
 
 @app.get("/v1/research/ml/training-runs")
-def list_ml_training_runs(request: Request) -> dict[str, object]:
+def list_ml_training_runs(
+    request: Request, strategy_artifact_id: str | None = None,
+    limit: int = 50, offset: int = 0,
+) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
     return _ml_call(lambda: ml_training_store.list_runs(
-        trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"]
+        trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
+        strategy_artifact_id=strategy_artifact_id, limit=limit, offset=offset,
     ))
 
 
@@ -2345,10 +2465,14 @@ def create_ml_prediction_run(payload: dict[str, Any], request: Request) -> dict[
 
 
 @app.get("/v1/research/ml/prediction-runs")
-def list_ml_prediction_runs(request: Request) -> dict[str, object]:
+def list_ml_prediction_runs(
+    request: Request, strategy_artifact_id: str | None = None,
+    limit: int = 50, offset: int = 0,
+) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
     return _ml_call(lambda: ml_prediction_store.list_runs(
-        trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"]
+        trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
+        strategy_artifact_id=strategy_artifact_id, limit=limit, offset=offset,
     ))
 
 
@@ -2398,7 +2522,10 @@ def get_ml_prediction_rows(
             limit=limit,
             offset=offset,
         )
-        page = result["rows"]
+        page = [
+            {key: value for key, value in row.items() if value is not None}
+            for row in result["rows"] if isinstance(row, dict)
+        ]
         total = int(result["total"])
         return {
             "schema_version": "ml-prediction-rows.v1",
@@ -3356,10 +3483,10 @@ def backtest_options(request: Request) -> dict[str, object]:
 def list_backtest_catalog(
     request: Request, query: str = "", status: str = "", limit: int = 20, offset: int = 0,
 ) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
     return _backtest_call(lambda: backtest_store.list_backtest_summaries(
         owner_principal=context["owner_principal"], query=query, status=status,
-        limit=limit, offset=offset,
+        workspace_id=context["workspace_id"], limit=limit, offset=offset,
     ))
 
 

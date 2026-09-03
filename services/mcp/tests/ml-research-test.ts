@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   fetchByqMlCapabilities, fetchByqMlPredictionCreate, fetchByqMlPredictionGet,
+  fetchByqMlStudies, fetchByqMlStudy,
   fetchByqMlStrategyCreate, fetchByqMlTrainingCancel,
   fetchByqMlTrainingCreate, fetchByqMlTrainingGet, fetchByqMlWorkspace,
 } from "../src/ml-research.js";
@@ -29,6 +30,22 @@ const strategy = await fetchByqMlStrategyCreate(backend, {
   return new Response(JSON.stringify({ artifact: { artifact_id: "artifact_1" } }), { status: 201 });
 });
 assert.equal(strategy.isError, false);
+
+const studies = await fetchByqMlStudies(backend, {
+  query: "状态", status: "active", limit: 10, offset: 20,
+}, async (url, init) => {
+  assert.equal(url, `${backend}/v1/research/ml/studies?query=${encodeURIComponent("状态")}&status=active&limit=10&offset=20`);
+  assert.equal(init?.method, "GET");
+  return new Response(JSON.stringify({ studies: [], total: 0 }), { status: 200 });
+});
+assert.equal(studies.isError, false);
+
+const study = await fetchByqMlStudy(backend, "artifact_0123456789abcdef0123456789abcdef", async (url, init) => {
+  assert.equal(url, `${backend}/v1/research/ml/studies/artifact_0123456789abcdef0123456789abcdef`);
+  assert.equal(init?.method, "GET");
+  return new Response(JSON.stringify({ study: { artifact_id: "artifact_0123456789abcdef0123456789abcdef" } }), { status: 200 });
+});
+assert.equal(study.isError, false);
 
 const training = await fetchByqMlTrainingCreate(backend, {
   task_id: "task_1", ml_strategy_artifact_id: "artifact_1",
