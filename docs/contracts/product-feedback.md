@@ -1,7 +1,7 @@
 # Product Feedback Contract
 
-本合同落实 ADR-0049。Phase 87 冻结合同；Phase 88 已实现 durable schema、domain 与 Product API，保持
-GitHub publisher、Product UI、MCP 和 Xiaoba 为后续独立阶段。
+本合同落实 ADR-0049。Phase 87 冻结合同；Phase 88 已实现 durable schema、domain 与 Product API；Phase 89
+已实现隔离 trusted publisher。Product UI、MCP 和 Xiaoba 保持为 Phase 90 独立阶段。
 
 ## 1. 身份、所有权与权限
 
@@ -214,3 +214,14 @@ transaction；部署未配置 publisher 时，公开状态稳定为 `publisher_u
 Gateway 的 moderator authority 不携带 workspace membership，owner projection 不暴露 actor/workspace，moderator
 projection 只展示用户已确认的 submitted snapshot。Phase 88 runtime 不包含 GitHub client、credential、外部写入、
 frontend 页面或 MCP 工具。
+
+## 14. Phase 89 implementation record
+
+Phase 89 扩展 outbox 为 `queued|publishing|retry_wait|published|failed_terminal`，通过 service-authenticated internal
+API 实现最多 10 条 claim、15–300 秒 lease、单调 fence、过期重领、stale result 拒绝和最多 6 次 publication
+attempt。6 次上限仅约束 GitHub 外部副作用重试，不约束用户反馈、小巴分析、分页或其他领域操作。
+
+独立 publisher 只消费 Backend snapshot，固定调用一个 `owner/repo` 的 issue list/create route；每次 create 前按
+exact event/snapshot marker 做有界 reconciliation。GitHub App 优先，单仓库 fine-grained token 仅作 fallback。
+Publisher profile 默认关闭；未配置或撤销 credential 时内部反馈保持可用并显示 unconfigured。映射成功后 owner/
+moderator 只获得验证过的 repository、issue number 和 canonical public URL。

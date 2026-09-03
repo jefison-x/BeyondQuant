@@ -1,5 +1,6 @@
 import os
 import re
+import secrets
 import time
 from datetime import datetime, timedelta
 
@@ -242,6 +243,7 @@ conversation_store = ConversationCatalogStore.from_env()
 backtest_store = BacktestJobStore.from_env()
 workspace_tenancy_store = WorkspaceTenancyStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
+FEEDBACK_PUBLISHER_TOKEN = os.environ.get("BYQ_FEEDBACK_PUBLISHER_TOKEN")
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
     user_store.ensure_bootstrap_admin(
         os.environ["BYQ_BOOTSTRAP_ADMIN_USERNAME"],
@@ -455,7 +457,7 @@ def _feedback_moderator(request: Request) -> tuple[str, str]:
 @app.get("/v1/feedback/options")
 def feedback_options(request: Request) -> dict[str, object]:
     _feedback_context(request)
-    return feedback_store.options()
+    return feedback_store.public_options()
 
 
 @app.get("/v1/feedback/items")
@@ -575,6 +577,38 @@ def feedback_moderate(feedback_id: str, action: str, payload: dict[str, Any], re
 def feedback_publisher_status(request: Request) -> dict[str, object]:
     _actor, role = _feedback_moderator(request)
     return _feedback_call(lambda: feedback_store.outbox_summary(actor_role=role))
+
+
+def _require_feedback_publisher(request: Request) -> None:
+    supplied = request.headers.get("x-byq-feedback-publisher-token", "")
+    if not FEEDBACK_PUBLISHER_TOKEN:
+        raise HTTPException(status_code=503, detail="feedback publisher endpoint is disabled")
+    if not supplied or not secrets.compare_digest(supplied, FEEDBACK_PUBLISHER_TOKEN):
+        raise HTTPException(status_code=401, detail="feedback publisher authentication failed")
+
+
+@app.post("/internal/feedback-publications/heartbeat")
+def feedback_publisher_heartbeat(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_feedback_publisher(request)
+    return _feedback_call(lambda: feedback_store.publisher_heartbeat(payload))
+
+
+@app.post("/internal/feedback-publications/claim")
+def feedback_publication_claim(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_feedback_publisher(request)
+    return _feedback_call(lambda: feedback_store.claim_publications(payload))
+
+
+@app.post("/internal/feedback-publications/{event_id}/complete")
+def feedback_publication_complete(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_feedback_publisher(request)
+    return _feedback_call(lambda: feedback_store.complete_publication(event_id, payload))
+
+
+@app.post("/internal/feedback-publications/{event_id}/retry")
+def feedback_publication_retry(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_feedback_publisher(request)
+    return _feedback_call(lambda: feedback_store.retry_publication(event_id, payload))
 
 
 @app.get("/v1/operations/overview")

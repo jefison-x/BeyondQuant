@@ -62,7 +62,7 @@ if [ "$VERIFY_ONLY" -eq 0 ]; then
   fi
   (
     cd "$REPO_ROOT"
-    docker compose down --rmi local -v --remove-orphans >/dev/null 2>&1 || true
+    docker compose --profile feedback-publisher down --rmi local -v --remove-orphans >/dev/null 2>&1 || true
   )
   docker rm -f "$BACKEND" >/dev/null 2>&1 || true
   if [ "$KEEP_POSTGRES" -eq 0 ]; then

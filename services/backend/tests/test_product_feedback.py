@@ -133,7 +133,7 @@ def test_feedback_lifecycle_is_workspace_owned_and_accept_enqueues_atomically() 
     )["feedback"]
     assert accepted["status"] == "accepted"
     assert accepted["publication_status"] == "publisher_unconfigured"
-    assert store.outbox_summary(actor_role="admin")["queue"] == {"queued": 1}
+    assert store.outbox_summary(actor_role="admin")["queue"]["queued"] == 1
     publication = store._fetch_one("SELECT snapshot_json FROM product_feedback_publications WHERE feedback_id=:id", {"id": draft["feedback_id"]})
     assert publication["snapshot_json"]["schema_version"] == "feedback-publication.v1"
     outbox = store._fetch_one("SELECT state,destination_key,attempt,lease_owner FROM product_feedback_outbox WHERE feedback_id=:id", {"id": draft["feedback_id"]})
@@ -242,4 +242,69 @@ def test_accept_and_outbox_roll_back_as_one_transaction(monkeypatch) -> None:
     assert current["status"] == "triaged" and current["publication_status"] == "not_queued"
     assert store._fetch_one("SELECT COUNT(*) AS count FROM product_feedback_publications")["count"] == 0
     assert store._fetch_one("SELECT COUNT(*) AS count FROM product_feedback_outbox")["count"] == 0
+    store.close()
+
+
+def test_publisher_lease_fence_retry_reclaim_and_completion_are_bounded() -> None:
+    _admin, alice, _bob = provision()
+    store = ProductFeedbackStore()
+    item = submit(store, create(store, alice), alice)
+    item = store.moderate(
+        item["feedback_id"], "triage",
+        {"expected_version": item["version"], "rationale": "ready to publish", "idempotency_key": "publisher-triage"},
+        trusted_actor="feedback-admin", actor_role="admin",
+    )["feedback"]
+    store.moderate(
+        item["feedback_id"], "accept",
+        {"expected_version": item["version"], "rationale": "approved snapshot", "idempotency_key": "publisher-accept"},
+        trusted_actor="feedback-admin", actor_role="admin",
+    )
+    assert store.claim_publications({"worker_id": "worker-one", "limit": 1, "lease_seconds": 15})["events"] == []
+    store.publisher_heartbeat({"configured": True, "credential_kind": "github_app",
+                               "repository": "jefison-x/BeyondQuant", "worker_version": "test-v1"})
+    event = store.claim_publications({"worker_id": "worker-one", "limit": 1, "lease_seconds": 15})["events"][0]
+    assert event["attempt"] == 1 and event["lease_fence"] == 1
+    with pytest.raises(FeedbackConflict, match="stale"):
+        store.retry_publication(event["event_id"], {"worker_id": "worker-one", "lease_fence": 2,
+            "error_category": "rate_limited", "retry_after_seconds": 5})
+    retry = store.retry_publication(event["event_id"], {"worker_id": "worker-one", "lease_fence": 1,
+        "error_category": "rate_limited", "retry_after_seconds": 5})
+    assert retry["status"] == "retry_wait"
+    store._execute("UPDATE product_feedback_outbox SET next_attempt_at=NOW()-INTERVAL '1 second'")
+    reclaimed = store.claim_publications({"worker_id": "worker-two", "limit": 1, "lease_seconds": 15})["events"][0]
+    assert reclaimed["attempt"] == 2 and reclaimed["lease_fence"] == 2
+    completed = store.complete_publication(reclaimed["event_id"], {
+        "worker_id": "worker-two", "lease_fence": 2, "repository": "jefison-x/BeyondQuant",
+        "issue_number": 321, "html_url": "https://github.com/jefison-x/BeyondQuant/issues/321",
+        "provider_identity": "github-issue-9001",
+    })
+    assert completed["status"] == "published"
+    status = store.outbox_summary(actor_role="admin")
+    assert status["configured"] is True and status["queue"]["published"] == 1
+    owner = store.get_owner(item["feedback_id"], trusted_workspace=workspace(alice))["feedback"]
+    assert owner["publication_status"] == "published"
+    assert owner["github_issue"] == {"repository": "jefison-x/BeyondQuant", "issue_number": 321,
+                                     "html_url": "https://github.com/jefison-x/BeyondQuant/issues/321"}
+    assert store.get_moderation(item["feedback_id"], actor_role="admin")["feedback"]["github_issue"] == owner["github_issue"]
+    store.close()
+
+
+def test_publisher_terminal_error_and_attempt_budget_fail_closed() -> None:
+    _admin, alice, _bob = provision()
+    store = ProductFeedbackStore()
+    item = submit(store, create(store, alice), alice)
+    item = store.moderate(item["feedback_id"], "triage",
+        {"expected_version": item["version"], "rationale": "triaged", "idempotency_key": "terminal-triage"},
+        trusted_actor="feedback-admin", actor_role="admin")["feedback"]
+    store.moderate(item["feedback_id"], "accept",
+        {"expected_version": item["version"], "rationale": "accepted", "idempotency_key": "terminal-accept"},
+        trusted_actor="feedback-admin", actor_role="admin")
+    store.publisher_heartbeat({"configured": True, "credential_kind": "fine_grained_token",
+                               "repository": "jefison-x/BeyondQuant", "worker_version": "test-v1"})
+    event = store.claim_publications({"worker_id": "worker-terminal", "limit": 1, "lease_seconds": 15})["events"][0]
+    result = store.retry_publication(event["event_id"], {"worker_id": "worker-terminal", "lease_fence": 1,
+        "error_category": "permission_denied", "retry_after_seconds": 30})
+    assert result["status"] == "failed_terminal"
+    assert store.claim_publications({"worker_id": "worker-terminal", "limit": 1, "lease_seconds": 15})["events"] == []
+    assert store.outbox_summary(actor_role="admin")["last_error_category"] == "permission_denied"
     store.close()

@@ -44,7 +44,7 @@ worktree、branch 和 PR；完成自动验证、CI-green squash merge 和部署�
 - PostgreSQL restart and migration idempotency；
 - architecture/unit/contract/smoke all green。
 
-## Phase 89 — Trusted GitHub publisher and operations（`AUTHORIZED`）
+## Phase 89 — Trusted GitHub publisher and operations（`COMPLETE`）
 
 ### 范围
 
@@ -71,7 +71,7 @@ worktree、branch 和 PR；完成自动验证、CI-green squash merge 和部署�
 - configured/unconfigured/revoked credential operational behavior；
 - formal deploy keeps unrelated Product healthy and PostgreSQL volume intact。
 
-## Phase 90 — Product UI and Xiaoba closure（`BLOCKED_BY_PHASE_89`）
+## Phase 90 — Product UI and Xiaoba closure（`AUTHORIZED`）
 
 ### 范围
 

@@ -299,6 +299,13 @@ check_backend() {
       -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
       beyondquant-backend python -m pytest -q -p no:cacheprovider >/dev/null 2>&1; then
     ok "backend tests"; else bad "backend tests"; fi
+  if [ -d "$REPO_ROOT/workers/feedback-publisher/tests" ]; then
+    if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
+        -e PYTHONDONTWRITEBYTECODE=1 \
+        -v "$REPO_ROOT/workers/feedback-publisher:/publisher:ro" -w /publisher \
+        beyondquant-backend python -m pytest -q -p no:cacheprovider tests >/dev/null 2>&1; then
+      ok "feedback publisher fake-GitHub tests"; else bad "feedback publisher fake-GitHub tests"; fi
+  fi
 }
 
 check_gateway() {
@@ -379,6 +386,18 @@ check_smoke() {
     return
   fi
   if run_interruptible ./tests/smoke/run.sh; then ok "full smoke"; else bad "full smoke"; fi
+  if [ -f "$REPO_ROOT/workers/feedback-publisher/Dockerfile" ]; then
+    if run_interruptible docker compose --profile feedback-publisher up -d --wait feedback-publisher \
+      && [ "$(docker compose --profile feedback-publisher exec -T feedback-publisher id -u)" = "10006" ] \
+      && docker compose --profile feedback-publisher exec -T feedback-publisher python -c \
+        "import json,urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8700/healthz')); assert data['status']=='ok'" \
+      && docker compose exec -T postgres sh -ec \
+        'test "$(psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT configured FROM product_feedback_publisher_state WHERE destination_key='"'"'github_primary'"'"'")" = f'; then
+      ok "unconfigured non-root feedback publisher"; else bad "unconfigured non-root feedback publisher"; fi
+    # The profile is optional and the rest of the smoke validates the default
+    # Product stack. Do not let its heartbeat alter that test workload.
+    run_interruptible docker compose --profile feedback-publisher stop feedback-publisher >/dev/null 2>&1 || true
+  fi
   if docker compose cp scripts/evidence/phase67-seed.py backend:/tmp/phase67-seed.py >/dev/null \
     && docker compose exec -T backend python /tmp/phase67-seed.py; then
     ok "Phase 67 validated index fixture"; else bad "Phase 67 validated index fixture"; fi
