@@ -608,11 +608,119 @@ class ResearchStore(PgStoreMixin):
                FROM artifacts
                WHERE owner_principal = :owner AND workspace_id = :workspace
                  AND kind IN ('ml_strategy_version', 'ml_strategy_approval', 'ml_model',
+                              'ml_model_bundle', 'ml_regime_snapshot',
                               'ml_prediction_snapshot', 'signal_snapshot')
                ORDER BY created_at DESC, artifact_id DESC LIMIT :limit""",
             {"owner": owner_principal, "workspace": workspace_id, "limit": limit},
         )
         return [self._artifact_row(row) for row in rows]
+
+    def list_ml_strategy_catalog(
+        self, *, owner_principal: str, workspace_id: str, query: str = "",
+        status: str = "all", limit: int = 20, offset: int = 0,
+    ) -> dict[str, object]:
+        """Page lightweight ML studies without materialising immutable artifacts."""
+        owner = _text(owner_principal, field="owner_principal", max_length=128)
+        # Workspace identities are durable UUIDs owned by the tenancy boundary,
+        # not Research domain entity IDs (task_*/artifact_*).
+        workspace = _text(workspace_id, field="workspace_id", max_length=64)
+        needle = str(query or "").strip()
+        if len(needle) > 100:
+            raise ValueError("query must not exceed 100 characters")
+        if status not in {"all", "active", "completed", "failed"}:
+            raise ValueError("status must be all, active, completed, or failed")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise ValueError("offset must be non-negative")
+        params: dict[str, object] = {
+            "owner": owner, "workspace": workspace, "query": f"%{needle}%",
+            "limit": limit, "offset": offset,
+        }
+        status_clause = {
+            "all": "TRUE",
+            "active": "stage NOT IN ('completed', 'failed')",
+            "completed": "stage = 'completed'",
+            "failed": "stage = 'failed'",
+        }[status]
+        catalogue = """
+            WITH base AS (
+                SELECT a.artifact_id, a.task_id, a.status, a.created_at,
+                       t.title AS task_title,
+                       a.content ->> 'schema_version' AS schema_version,
+                       a.content ->> 'name' AS name,
+                       a.content -> 'learner' ->> 'profile' AS learner_profile,
+                       COALESCE((a.content -> 'regime' ->> 'enabled')::boolean, FALSE) AS regime_enabled,
+                       COALESCE(a.content -> 'target' -> 'parameters' ->> 'horizon_sessions',
+                                a.content -> 'target' ->> 'horizon_sessions') AS horizon_sessions,
+                       (SELECT r.status FROM ml_training_runs r
+                        WHERE r.workspace_id=:workspace AND r.owner_principal=:owner
+                          AND r.ml_strategy_artifact_id=a.artifact_id
+                        ORDER BY r.created_at DESC, r.training_run_id DESC LIMIT 1) AS training_status,
+                       (SELECT r.status FROM ml_prediction_runs r
+                        WHERE r.workspace_id=:workspace AND r.owner_principal=:owner
+                          AND r.ml_strategy_artifact_id=a.artifact_id
+                        ORDER BY r.created_at DESC, r.prediction_run_id DESC LIMIT 1) AS prediction_status,
+                       (SELECT r.status FROM backtest_jobs r
+                        WHERE r.workspace_id=:workspace AND r.owner_principal=:owner
+                          AND r.strategy_version_artifact_id=a.artifact_id
+                        ORDER BY r.created_at DESC, r.job_id DESC LIMIT 1) AS backtest_status
+                FROM artifacts a
+                JOIN research_tasks t ON t.task_id=a.task_id
+                WHERE a.owner_principal=:owner AND a.workspace_id=:workspace
+                  AND a.kind='ml_strategy_version'
+                  AND (:query='%%' OR a.artifact_id ILIKE :query
+                       OR a.content ->> 'name' ILIKE :query OR t.title ILIKE :query)
+            ), staged AS (
+                SELECT *, CASE
+                    WHEN backtest_status='completed' THEN 'completed'
+                    WHEN backtest_status IN ('failed','cancelled')
+                      OR prediction_status IN ('failed','cancelled')
+                      OR training_status IN ('failed','cancelled') THEN 'failed'
+                    WHEN backtest_status IS NOT NULL THEN 'backtest'
+                    WHEN prediction_status='completed' THEN 'signal'
+                    WHEN prediction_status IS NOT NULL THEN 'prediction'
+                    WHEN training_status='completed' THEN 'model'
+                    WHEN training_status IS NOT NULL THEN 'training'
+                    ELSE 'definition' END AS stage
+                FROM base
+            )
+        """
+        rows = self._execute(
+            catalogue + f"""SELECT * FROM staged WHERE {status_clause}
+                ORDER BY created_at DESC, artifact_id DESC LIMIT :limit OFFSET :offset""",
+            params,
+        )
+        total_row = self._fetch_one(
+            catalogue + f"SELECT COUNT(*) AS total FROM staged WHERE {status_clause}", params,
+        )
+        return {
+            "studies": [_row_dict(row) for row in rows],
+            "total": int(total_row["total"] if total_row else 0),
+            "limit": limit, "offset": offset,
+            "has_more": offset + limit < int(total_row["total"] if total_row else 0),
+        }
+
+    def get_ml_artifact_metadata(
+        self, artifact_id: object, *, owner_principal: str, workspace_id: str,
+    ) -> dict[str, object]:
+        """Read one ML artifact after stripping every potentially large row array in SQL."""
+        identity = _identifier(artifact_id, field="artifact_id")
+        row = self._fetch_one(
+            """SELECT artifact_id, task_id, experiment_id, owner_principal, workspace_id,
+                      kind, status,
+                      content - ARRAY['rows', 'signals', 'bars', 'universe']::text[] AS content,
+                      content_sha256, lineage, trace_id, created_at, updated_at, version
+               FROM artifacts WHERE artifact_id=:artifact_id AND owner_principal=:owner
+                 AND workspace_id=:workspace
+                 AND kind IN ('ml_strategy_version', 'ml_strategy_approval', 'ml_model',
+                              'ml_model_bundle', 'ml_regime_snapshot',
+                              'ml_prediction_snapshot', 'signal_snapshot')""",
+            {"artifact_id": identity, "owner": owner_principal, "workspace": workspace_id},
+        )
+        if row is None:
+            raise ResearchNotFound("ML artifact not found")
+        return self._artifact_row(row)
 
     def get_strategy_approval(
         self, *, owner_principal: str, strategy_version_artifact_id: str
@@ -667,10 +775,12 @@ class ResearchStore(PgStoreMixin):
                      AND (:query = '' OR concat_ws(' ', value ->> 'symbol', value ->> 'session',
                                                     value ->> 'rank') ILIKE :needle ESCAPE '\\')
                ), paged AS (
-                   SELECT jsonb_build_object(
+                   SELECT jsonb_strip_nulls(jsonb_build_object(
                        'session', value -> 'session', 'rank', value -> 'rank',
-                       'symbol', value -> 'symbol', 'score', value -> 'score'
-                   ) AS row
+                       'symbol', value -> 'symbol', 'score', value -> 'score',
+                       'regime', value -> 'regime', 'expert_key', value -> 'expert_key',
+                       'model_artifact_id', value -> 'model_artifact_id'
+                   )) AS row
                    FROM matching ORDER BY ordinality LIMIT :limit OFFSET :offset
                ), total AS (SELECT COUNT(*)::bigint AS count FROM matching)
                SELECT paged.row, total.count FROM total LEFT JOIN paged ON TRUE""",

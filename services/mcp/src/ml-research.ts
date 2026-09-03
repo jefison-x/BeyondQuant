@@ -51,6 +51,25 @@ export function fetchByqMlWorkspace(backendUrl: string, fetcher: Fetcher = fetch
   return requestMl(backendUrl, "/v1/research/ml/workspace", { method: "GET" }, fetcher);
 }
 
+export function fetchByqMlStudies(
+  backendUrl: string,
+  request: { query?: string; status?: "all" | "active" | "completed" | "failed"; limit?: number; offset?: number },
+  fetcher: Fetcher = fetch,
+) {
+  const params = new URLSearchParams({
+    query: request.query ?? "", status: request.status ?? "all",
+    limit: String(request.limit ?? 20), offset: String(request.offset ?? 0),
+  });
+  return requestMl(backendUrl, `/v1/research/ml/studies?${params.toString()}`, { method: "GET" }, fetcher);
+}
+
+export function fetchByqMlStudy(backendUrl: string, artifactId: string, fetcher: Fetcher = fetch) {
+  return requestMl(
+    backendUrl, `/v1/research/ml/studies/${encodeURIComponent(artifactId)}`,
+    { method: "GET" }, fetcher,
+  );
+}
+
 export function fetchByqMlStrategyCreate(backendUrl: string, request: MlRequest, fetcher: Fetcher = fetch) {
   return requestMl(backendUrl, "/v1/research/ml/strategies/versions", { method: "POST", body: JSON.stringify(request) }, fetcher);
 }

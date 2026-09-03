@@ -389,6 +389,8 @@ class MLPredictionRunStore(PgStoreMixin):
         )
         """,
         "CREATE INDEX IF NOT EXISTS ml_prediction_runs_queue ON ml_prediction_runs(status,created_at)",
+        """CREATE INDEX IF NOT EXISTS ml_prediction_runs_study_catalog
+            ON ml_prediction_runs(workspace_id,owner_principal,ml_strategy_artifact_id,created_at DESC)""",
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -437,14 +439,37 @@ class MLPredictionRunStore(PgStoreMixin):
             raise MLPredictionNotFound("ML prediction run not found")
         return self._public(row)
 
-    def list_runs(self, *, trusted_workspace: str, trusted_owner: str) -> dict[str, object]:
+    def list_runs(
+        self, *, trusted_workspace: str, trusted_owner: str,
+        strategy_artifact_id: str | None = None, limit: int = 100, offset: int = 0,
+    ) -> dict[str, object]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise ValueError("offset must be non-negative")
+        params: dict[str, object] = {
+            "workspace": trusted_workspace, "owner": trusted_owner,
+            "limit": limit, "offset": offset,
+        }
+        strategy_clause = ""
+        if strategy_artifact_id is not None:
+            params["strategy"] = _identifier(strategy_artifact_id, "ml_strategy_artifact_id")
+            strategy_clause = "AND ml_strategy_artifact_id=:strategy"
         rows = self._execute("""SELECT prediction_run_id,workspace_id,owner_principal,task_id,experiment_id,
             ml_strategy_artifact_id,approval_artifact_id,model_artifact_id,feature_artifact_id,
             stock_pool_snapshot_id,status,trace_id,attempt_count,max_attempts,worker_id,lease_expires_at,
             prediction_artifact_id,signal_artifact_id,error_code,error_detail,created_at,started_at,
             finished_at,updated_at FROM ml_prediction_runs WHERE workspace_id=:workspace AND owner_principal=:owner
-            ORDER BY created_at DESC,prediction_run_id DESC LIMIT 100""", {"workspace": trusted_workspace, "owner": trusted_owner})
-        return {"runs": [self._public(row) for row in rows]}
+            """ + strategy_clause + """ ORDER BY created_at DESC,prediction_run_id DESC
+            LIMIT :limit OFFSET :offset""", params)
+        total_row = self._fetch_one(
+            "SELECT COUNT(*) AS total FROM ml_prediction_runs WHERE workspace_id=:workspace "
+            "AND owner_principal=:owner " + strategy_clause,
+            params,
+        )
+        total = int(total_row["total"] if total_row else 0)
+        return {"runs": [self._public(row) for row in rows], "total": total,
+                "limit": limit, "offset": offset, "has_more": offset + limit < total}
 
     def claim_next(self, worker_id: str) -> dict[str, object] | None:
         with self._transaction() as connection:

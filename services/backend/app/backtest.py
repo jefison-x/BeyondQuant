@@ -1444,6 +1444,10 @@ class BacktestJobStore(PgStoreMixin):
         CREATE UNIQUE INDEX IF NOT EXISTS backtest_jobs_idempotency
             ON backtest_jobs(task_id, idempotency_key)
         """,
+        """
+        CREATE INDEX IF NOT EXISTS backtest_jobs_strategy_catalog
+            ON backtest_jobs(owner_principal, strategy_version_artifact_id, created_at DESC)
+        """,
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -1527,7 +1531,8 @@ class BacktestJobStore(PgStoreMixin):
 
     def list_backtest_summaries(
         self, *, owner_principal: str, query: str = "", status: str = "",
-        limit: int = 20, offset: int = 0,
+        limit: int = 20, offset: int = 0, strategy_artifact_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> dict[str, object]:
         """Return a bounded browser catalogue without immutable input manifests."""
         owner = _text(owner_principal, field="owner_principal", max_length=128)
@@ -1541,6 +1546,16 @@ class BacktestJobStore(PgStoreMixin):
             raise ValueError("offset must be non-negative")
         clauses = ["owner_principal = :owner"]
         params: dict[str, object] = {"owner": owner, "limit": limit, "offset": offset}
+        if workspace_id is not None:
+            workspace = _text(workspace_id, field="workspace_id", max_length=64)
+            clauses.append("workspace_id = :workspace_id")
+            params["workspace_id"] = workspace
+        if strategy_artifact_id is not None:
+            strategy = _text(
+                strategy_artifact_id, field="strategy_artifact_id", max_length=64
+            )
+            clauses.append("strategy_version_artifact_id = :strategy_artifact_id")
+            params["strategy_artifact_id"] = strategy
         if query:
             clauses.append("job_id ILIKE :query")
             params["query"] = f"%{query}%"

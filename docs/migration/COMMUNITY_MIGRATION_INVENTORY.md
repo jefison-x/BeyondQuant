@@ -973,6 +973,15 @@ documents were inspected before accepting ADR-0032.
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
 
+## Phase 86 model-research Product closure audit
+
+2026-09-03 只读检查 Community `frontend/src/views/UserModelsView.vue`、
+`frontend/src/api/userModels.js` 和 `frontend/src/views/operations/ModelOperationsView.vue`。这些页面管理
+LLM provider/runtime profile，不是量化机器学习研究，整体为 `REFERENCE_ONLY`；目录/详情信息层级分别为
+`PORT_LAYOUT`/`PORT_UX`，direct legacy API 与 runtime operations 为 `REPLACE`/`DROP`。Phase 86 没有复制
+Community 代码，而是在 BYQ Product API 上实现动态注册表、服务端分页目录、显式懒加载详情和预测行分页。
+Community 仓库、数据库和 Git history 均未修改。
+
 ## Post-Phase 82 frontend list-performance maintenance audit（2026-09-01）
 
 The read-only Community Stock Pool, Backtest, Strategy and Operations surfaces

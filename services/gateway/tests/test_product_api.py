@@ -116,6 +116,61 @@ def test_ml_prediction_rows_forwards_bounded_page_and_owner_context(monkeypatch)
     assert captured["headers"]["x-byq-owner-principal"] == "product-user"
 
 
+def test_ml_dynamic_capabilities_paged_catalog_and_lazy_detail(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    calls: list[str] = []
+
+    def backend(method, path, payload=None, *, headers=None):
+        assert method == "GET"
+        calls.append(path)
+        assert headers["x-byq-owner-principal"] == "product-user"
+        if path == "/v1/research/ml/capabilities":
+            return {"registry": {"schema_version": "ml-capability-registry.v2", "components": []}}
+        if path == "/v1/research/ml/options":
+            return {"schema_version": "ml-options.v1", "tasks": [], "pools": []}
+        if path.startswith("/v1/research/ml/studies?"):
+            return {"schema_version": "ml-study-catalog.v1", "studies": [], "total": 0}
+        assert path == "/v1/research/ml/studies/artifact_" + "a" * 32
+        return {
+            "study": {
+                "artifact_id": "artifact_" + "a" * 32, "task_id": "task_1",
+                "kind": "ml_strategy_version", "status": "validated",
+                "content": {"schema_version": "ml-strategy-version.v2", "name": "状态专家", "python": "drop"},
+            },
+            "approval_artifact_id": None,
+            "training_runs": {"runs": [], "total": 0},
+            "prediction_runs": {"runs": [], "total": 0},
+            "backtests": {"backtests": [], "total": 0},
+            "artifacts": [
+                {"artifact_id": "artifact_model", "task_id": "task_1", "kind": "ml_model_bundle",
+                 "status": "validated", "content": {"schema_version": "ml-model-bundle.v1", "object_reference": "/secret"}},
+                {"artifact_id": "artifact_prediction", "task_id": "task_1", "kind": "ml_prediction_snapshot",
+                 "status": "validated", "content": {"schema_version": "ml-prediction-snapshot.v2", "rows": [{"score": 99}]}},
+                {"artifact_id": "artifact_signal", "task_id": "task_1", "kind": "signal_snapshot",
+                 "status": "validated", "content": {"schema_version": "signal-snapshot.v1", "signals": [{"target_weight": 1}], "universe": ["secret"]}},
+            ],
+        }
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    client = TestClient(main.app)
+    headers = {"Authorization": "Bearer product-test-token"}
+    assert client.get("/api/product/ml/capabilities", headers=headers).status_code == 200
+    assert client.get("/api/product/ml/options", headers=headers).status_code == 200
+    assert client.get(
+        "/api/product/ml/studies?query=状态&status=active&limit=12&offset=24", headers=headers,
+    ).status_code == 200
+    detail = client.get("/api/product/ml/studies/artifact_" + "a" * 32, headers=headers)
+    assert detail.status_code == 200
+    assert detail.json()["study"]["content"] == {
+        "schema_version": "ml-strategy-version.v2", "name": "状态专家",
+    }
+    assert detail.json()["artifacts"][0]["content"] == {"schema_version": "ml-model-bundle.v1"}
+    assert detail.json()["artifacts"][1]["content"] == {"schema_version": "ml-prediction-snapshot.v2"}
+    assert detail.json()["artifacts"][2]["content"] == {"schema_version": "signal-snapshot.v1"}
+    assert all(term not in detail.text for term in ("object_reference", "python", "target_weight", "secret"))
+    assert calls[2] == "/v1/research/ml/studies?query=%E7%8A%B6%E6%80%81&status=active&limit=12&offset=24"
+
+
 def test_asset_diagnostics_name_destination_workspace_without_trust_metadata(monkeypatch) -> None:
     workspace = {
         "contract": "personal-workspace.v1",

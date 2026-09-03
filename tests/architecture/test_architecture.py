@@ -62,7 +62,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "85")
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "86")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043", "ADR-0044", "ADR-0048"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
@@ -200,8 +200,28 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("import lightgbm", prediction.lower())
         self.assertNotIn("import numpy", prediction.lower())
         self.assertIn("Phase 85 — Regime snapshot, expert bundle and routing（`COMPLETE`）", plan)
-        self.assertIn("Phase 86 — Product and Xiaoba closure（`AUTHORIZED`）", plan)
+        self.assertIn("Phase 86 — Product and Xiaoba closure（`COMPLETE`）", plan)
         self.assertIn("Backtest only consumes the frozen signal", evidence)
+
+    def test_phase86_uses_dynamic_paged_product_and_mcp_ml_surfaces(self) -> None:
+        frontend = (ROOT / "apps/frontend/src/components/MLResearchWorkbench.vue").read_text()
+        gateway = (ROOT / "services/gateway/app/product_api.py").read_text()
+        mcp = (ROOT / "services/mcp/src/server.ts").read_text()
+        skill = (ROOT / "plugins/dsh-byq/skills/byq-ml-researcher/SKILL.md").read_text()
+        evidence = (ROOT / "docs/evidence/phase-86/README.md").read_text()
+
+        self.assertIn("getMLCapabilities", frontend)
+        self.assertIn("getMLStudies", frontend)
+        self.assertIn("getMLStudy", frontend)
+        self.assertNotIn("getMLWorkspace", frontend)
+        self.assertIn('@router.get("/ml/studies")', gateway)
+        self.assertIn('@router.get("/ml/studies/{strategy_artifact_id}")', gateway)
+        self.assertIn('"byq_ml_studies"', mcp)
+        self.assertIn('"byq_ml_study_get"', mcp)
+        self.assertIn("system supports", skill)
+        self.assertIn("this study configures", skill)
+        self.assertIn("this run succeeded", skill)
+        self.assertIn("Initial load made no detail or prediction-row request", evidence)
 
     def test_base_compose_uses_runtime_adapter_as_the_only_product_dsh_path(self) -> None:
         compose = (ROOT / "compose.yml").read_text()

@@ -219,6 +219,8 @@
         - byq_research_get
         - byq_ml_capabilities
         - byq_ml_workspace_get
+        - byq_ml_studies
+        - byq_ml_study_get
         - byq_ml_strategy_create
         - byq_ml_training_create
         - byq_ml_training_get

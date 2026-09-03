@@ -27,7 +27,13 @@ def identities(workspace: dict) -> dict[str, str]:
     if not required.issubset(artifact_ids): raise AssertionError("completed ML artifact projection is incomplete")
     serialized = json.dumps(workspace, sort_keys=True)
     if "object_reference" in serialized or "ml_feature_snapshot" in serialized: raise AssertionError("private model/feature material leaked")
-    return {"training_run_id": training["training_run_id"], "model_artifact_id": training["model_artifact_id"], "prediction_run_id": prediction["prediction_run_id"], "prediction_artifact_id": prediction["prediction_artifact_id"], "signal_artifact_id": prediction["signal_artifact_id"]}
+    model = next(item for item in workspace["artifacts"] if item["artifact_id"] == training["model_artifact_id"])
+    result = {"training_run_id": training["training_run_id"], "model_artifact_id": training["model_artifact_id"], "prediction_run_id": prediction["prediction_run_id"], "prediction_artifact_id": prediction["prediction_artifact_id"], "signal_artifact_id": prediction["signal_artifact_id"], "model_kind": model["kind"]}
+    if model["kind"] == "ml_model_bundle":
+        if len(model.get("content", {}).get("experts", [])) != 3:
+            raise AssertionError("Phase 86 model bundle does not contain three bounded experts")
+        result["regime_snapshot_artifact_id"] = model["content"]["regime_snapshot_artifact_id"]
+    return result
 
 def main() -> None:
     parser = argparse.ArgumentParser(); parser.add_argument("manifest"); parser.add_argument("--verify", action="store_true"); args = parser.parse_args()

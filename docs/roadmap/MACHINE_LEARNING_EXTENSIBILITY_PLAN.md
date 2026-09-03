@@ -28,13 +28,17 @@ worktree、branch、PR，完成自动验证、CI-green squash merge 和生产部
 - 验证 benchmark 缺失、warmup、阈值边界、route tamper、restart 和 two-user isolation；
 - 不实现 Browser/Agent 入口。
 
-## Phase 86 — Product and Xiaoba closure（`AUTHORIZED`）
+## Phase 86 — Product and Xiaoba closure（`COMPLETE`）
 
 - Gateway/Product API 提供动态 capability、v2 create/run/detail 和分页结果投影；
 - 模型研究页去除静态能力数组，支持单模型、walk-forward 和市场状态专家方案，保持详情懒加载；
 - BeyondQuant MCP 和 Xiaoba skill 使用最小权限读取/提出/执行，逐动作审批与现有任务合同不变；
 - 完成真实 PostgreSQL/Compose、Worker/Gateway restart、two-user、no-mock Product API、Chrome desktop/mobile、
   same-origin、空 Console、Community checklist 和性能验收。
+
+验收结果位于 `docs/evidence/phase-86/`。Product 首屏只加载动态能力、轻量选项和服务端分页目录；研究详情
+由用户选择后加载，预测行仅在预测标签页按页加载。真实三专家浏览器旅程已贯通冻结沪深300状态、模型包、
+路由预测、信号和回测，并通过 Worker 重启与双用户隔离验证。
 
 ## 非目标
 

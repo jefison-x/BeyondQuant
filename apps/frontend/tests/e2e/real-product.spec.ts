@@ -106,6 +106,44 @@ test("Phase 74 real LightGBM training to frozen-signal backtest journey", async 
   expect([...unexpectedOrigins]).toEqual([]); expect(serverErrors).toEqual([]);
 });
 
+test("Phase 86 real HS300 regime experts to routed frozen-signal backtest journey", async ({ page, baseURL }) => {
+  test.setTimeout(360_000);
+  const username = process.env.BYQ_E2E_ADMIN_USERNAME, password = process.env.BYQ_E2E_ADMIN_PASSWORD;
+  if (!username || !password) throw new Error("BYQ_E2E admin credentials are required");
+  const origin = new URL(baseURL ?? "http://127.0.0.1:18080").origin;
+  const unexpectedOrigins = new Set<string>(), serverErrors: string[] = [];
+  page.on("request", request => { const url = new URL(request.url()); if (["http:", "https:"].includes(url.protocol) && url.origin !== origin) unexpectedOrigins.add(url.origin); });
+  page.on("response", response => { if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`); });
+  await page.goto("/login"); await page.getByLabel("用户名").fill(username); await page.getByLabel("密码").fill(password); await page.getByRole("button", { name: "进入" }).click();
+  await expect(page).toHaveURL(`${origin}/agent`);
+  const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `Phase 86 状态专家池-${Date.now()}`, pool_type: "custom", description: "真实浏览器沪深300状态专家闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
+  expect(poolStatus).toBe(201);
+  await page.goto("/model-research");
+  await expect(page.getByRole("heading", { name: "模型研究目录与实验进程" })).toBeVisible();
+  await page.getByRole("button", { name: "新建模型研究" }).first().click();
+  const dialog = page.getByRole("dialog", { name: "新建模型研究" });
+  await dialog.getByText("市场状态专家", { exact: true }).click();
+  await expect(dialog.getByText("沪深300状态专家", { exact: true })).toBeVisible();
+  await expect(dialog.getByTestId("ml-expert-risk_on")).toBeVisible();
+  await page.getByTestId("ml-save").click();
+  await expect(page.getByText("研究定义已冻结，可以进入训练")).toBeVisible();
+  await page.getByTestId("ml-train").click();
+  await page.getByLabel("确认训练范围").getByRole("button", { name: "批准并开始训练" }).click();
+  await expect(page.getByTestId("ml-predict")).toBeVisible({ timeout: 180_000 });
+  await expect(page.getByText("市场状态专家路由")).toBeVisible();
+  await expect(page.getByText("训练模型").locator("..")).toContainText("3");
+  await page.getByTestId("ml-predict").click();
+  await expect(page.getByTestId("ml-backtest")).toBeVisible({ timeout: 180_000 });
+  await page.getByRole("tab", { name: "预测结果" }).click();
+  await expect(page.getByRole("columnheader", { name: "市场状态" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "使用专家" })).toBeVisible();
+  await page.getByTestId("ml-backtest").click();
+  await expect(page.getByRole("button", { name: "查看完整回测" })).toBeVisible({ timeout: 180_000 });
+  const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
+  if (evidenceDir) { await page.screenshot({ path: `${evidenceDir}/03-regime-experts-desktop.png`, fullPage: true }); await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: `${evidenceDir}/04-regime-experts-mobile.png`, fullPage: true }); }
+  expect([...unexpectedOrigins]).toEqual([]); expect(serverErrors).toEqual([]);
+});
+
 test("real Product API index pool materializes validated point-in-time weights", async ({ page, baseURL }) => {
   const username = process.env.BYQ_E2E_ADMIN_USERNAME;
   const password = process.env.BYQ_E2E_ADMIN_PASSWORD;

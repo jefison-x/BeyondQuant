@@ -836,13 +836,29 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   );
   await mockAdminOps(page);
   await mockResearchLists(page);
-  await page.route("**/api/product/ml/workspace", (route) =>
+  await page.route("**/api/product/ml/capabilities", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ tasks: [], pools: [], artifacts: [], training_runs: [], prediction_runs: [], backtests: [] }),
+      body: JSON.stringify({
+        schema_version: "ml-capabilities.v2",
+        registry: { schema_version: "ml-capability-registry.v2", content_sha256: "a".repeat(64), components: [
+          { id: "price-volume-basic-v1", kind: "feature_set", display_name: "价格成交量基础特征", status: "qualified", parameters: {}, limits: {}, content_sha256: "1".repeat(64) },
+          { id: "forward-return-v1", kind: "target", display_name: "未来收益", status: "qualified", parameters: {}, limits: {}, content_sha256: "2".repeat(64) },
+          { id: "walk-forward-purged-v1", kind: "validation_plan", display_name: "净化走步验证", status: "qualified", parameters: {}, limits: {}, content_sha256: "3".repeat(64) },
+          { id: "byq-lightgbm-cpu-v1", kind: "learner_profile", display_name: "LightGBM CPU", status: "qualified", parameters: {}, limits: {}, content_sha256: "4".repeat(64) },
+          { id: "byq-ridge-cpu-v1", kind: "learner_profile", display_name: "Ridge CPU", status: "qualified", parameters: {}, limits: {}, content_sha256: "5".repeat(64) },
+          { id: "top-n-equal-weight-v1", kind: "portfolio_policy", display_name: "Top-N 等权", status: "qualified", parameters: {}, limits: {}, content_sha256: "6".repeat(64) },
+          { id: "hs300-trend-volatility-v1", kind: "regime_definition", display_name: "沪深300趋势波动状态", status: "qualified", parameters: {}, limits: {}, content_sha256: "7".repeat(64) },
+          { id: "regime-expert-map-v1", kind: "routing_policy", display_name: "市场状态专家路由", status: "qualified", parameters: {}, limits: {}, content_sha256: "8".repeat(64) },
+        ] },
+        capabilities: [{ capability_id: "ml-lightgbm-return-ranking-v1", name: "LightGBM 收益排序", learner: "lightgbm", feature_set: { id: "price-volume-basic-v1" } }],
+        limitations: [],
+      }),
     }),
   );
+  await page.route("**/api/product/ml/options", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ schema_version: "ml-options.v1", tasks: [], pools: [] }) }));
+  await page.route(/\/api\/product\/ml\/studies\?.*$/, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ schema_version: "ml-study-catalog.v1", studies: [], total: 0, limit: 12, offset: 0, has_more: false }) }));
 
   await loginAsAdmin(page);
   const primaryNavigation = page.getByRole("navigation", { name: "产品主导航" });
@@ -871,11 +887,11 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   await expect(page).toHaveURL(/\/model-research$/);
   await expect(page.getByRole("heading", { name: "模型研究", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "模型研究目录与实验进程" })).toBeVisible();
-  await expect(page.getByText("当前仅展示已验证、可审计的模型能力")).toBeVisible();
+  await expect(page.getByText("能力来自运行时注册表；目录与详情均按需加载")).toBeVisible();
   await page.getByRole("button", { name: "新建模型研究" }).first().click();
   await expect(page.getByRole("dialog", { name: "新建模型研究" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "新建模型研究" }).getByText("LightGBM 收益排序", { exact: true })).toBeVisible();
-  await expect(page.getByText("当前只开放通过运行验证的能力。")).toBeVisible();
+  await expect(page.getByText("能力来自已验证注册表")).toBeVisible();
   await page.getByRole("dialog", { name: "新建模型研究" }).getByRole("button", { name: "取消" }).click();
   await openNav(page, "个性化");
   await expect(page.getByRole("heading", { name: "外观与主题" }).first()).toBeVisible();

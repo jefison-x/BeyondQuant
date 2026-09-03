@@ -729,7 +729,19 @@ v1 compatibility、Ridge JSON model 和 purged walk-forward Worker/Artifact；�
 实现冻结沪深300状态、专家模型包、fallback 和确定性路由；扩展 prediction/signal lineage，Backtest 继续
 只消费冻结信号；不提前开放 Browser/Agent。
 
-### Phase 86 — Product and Xiaoba closure（`AUTHORIZED`）
+### Phase 86 — Product and Xiaoba closure（`COMPLETE`）
 
 实现动态 capability Product API、模型研究 UI、MCP/Xiaoba 最小权限能力和真实 PostgreSQL/Compose/
 Chrome/two-user/restart/performance 闭环。
+
+## Built-in Product Feedback Program（Phase 87+）
+
+维护者已授权下一独立阶段先完成内置需求/缺陷反馈能力的架构基线。Phase 87 必须检查 Community 与现有
+Engineering Plane，实现前先接受 ADR、冻结 Product Feedback 合同、隐私/滥用防护、近零用户配置和可信
+GitHub 发布边界；本阶段不得提前写 GitHub Issue、给 Product DSH GitHub 凭据或开放应用源码写权限。
+
+### Phase 87 — Feedback contract and trusted-publisher baseline（`AUTHORIZED`）
+
+形成完整设计档案和后续分阶段 gate：普通用户仅提交 BYQ 内部反馈，部署维护者一次性配置 GitHub App 或
+服务级凭据；BYQ 持久化、去敏、去重、审批/策略和 outbox，独立 Engineering Worker 才可发布到固定仓库。
+小巴只能经 BeyondQuant MCP 提出/查询反馈，不直接访问 GitHub。

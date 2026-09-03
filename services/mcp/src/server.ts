@@ -95,6 +95,8 @@ import {
   fetchByqMlCapabilities,
   fetchByqMlPredictionCreate,
   fetchByqMlPredictionGet,
+  fetchByqMlStudies,
+  fetchByqMlStudy,
   fetchByqMlStrategyCreate,
   fetchByqMlTrainingCancel,
   fetchByqMlTrainingCreate,
@@ -446,6 +448,21 @@ async function byqMlCapabilities(_args: Record<string, never>, extra: unknown) {
 async function byqMlWorkspace(_args: Record<string, never>, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqMlWorkspace(BACKEND_URL, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqMlStudies(
+  args: { query?: string; status?: "all" | "active" | "completed" | "failed"; limit?: number; offset?: number },
+  extra: unknown,
+) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMlStudies(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqMlStudyGet(args: { ml_strategy_artifact_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMlStudy(
+    BACKEND_URL, args.ml_strategy_artifact_id, trustedBackendFetcher(context),
+  ) : agentContextUnavailable();
 }
 
 async function byqMlStrategyCreate(args: MlRequest, extra: unknown) {
@@ -934,6 +951,89 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   }).strict();
+  const lightgbmParametersSchema = z.object({
+    num_leaves: z.number().int().min(2).max(255).optional(),
+    learning_rate: z.number().min(0.001).max(0.5).optional(),
+    max_depth: z.number().int().min(-1).max(32).optional(),
+    min_data_in_leaf: z.number().int().min(5).max(10000).optional(),
+    feature_fraction: z.number().min(0.1).max(1).optional(),
+    bagging_fraction: z.number().min(0.1).max(1).optional(),
+    num_boost_round: z.number().int().min(10).max(2000).optional(),
+    early_stopping_rounds: z.number().int().min(1).max(200).optional(),
+  }).strict();
+  const learnerReferenceSchema = z.union([
+    z.object({ profile: z.literal("byq-lightgbm-cpu-v1"), parameters: lightgbmParametersSchema.optional() }).strict(),
+    z.object({ profile: z.literal("byq-ridge-cpu-v1"), parameters: z.object({
+      alpha: z.number().min(0.000001).max(1000000).optional(),
+      fit_intercept: z.boolean().optional(),
+    }).strict().optional() }).strict(),
+  ]);
+  const v1MlStrategySchema = z.object({
+    schema_version: z.literal("ml-strategy-version.v1"),
+    name: z.string().min(1).max(128),
+    learner: z.object({ kind: z.literal("lightgbm_regression"), profile: z.literal("byq-lightgbm-cpu-v1") }).strict(),
+    feature_set: z.object({ id: z.literal("price-volume-basic-v1") }).strict(),
+    target: z.object({ kind: z.literal("forward_return"), horizon_sessions: z.number().int().min(1).max(20) }).strict(),
+    split: z.object({ train: dateWindowSchema, validation: dateWindowSchema, prediction: dateWindowSchema }).strict(),
+    learner_parameters: lightgbmParametersSchema.optional(),
+    signal_policy: z.object({
+      kind: z.literal("top_n_equal_weight"), top_n: z.number().int().min(1).max(100),
+      rebalance: z.enum(["daily", "weekly", "monthly"]),
+    }).strict(),
+  }).strict();
+  const v2MlBase = {
+    schema_version: z.literal("ml-strategy-version.v2"),
+    name: z.string().min(1).max(128),
+    feature_set: z.object({ id: z.literal("price-volume-basic-v1"), parameters: z.object({}).strict().optional() }).strict(),
+    target: z.object({ id: z.literal("forward-return-v1"), parameters: z.object({
+      horizon_sessions: z.number().int().min(1).max(20).optional(),
+    }).strict().optional() }).strict(),
+    validation_plan: z.object({ id: z.literal("walk-forward-purged-v1"), parameters: z.object({
+      mode: z.enum(["expanding", "rolling"]).optional(),
+      train_sessions: z.number().int().min(60).max(1500).optional(),
+      validation_sessions: z.number().int().min(10).max(250).optional(),
+      step_sessions: z.number().int().min(10).max(250).optional(),
+      folds: z.number().int().min(2).max(12).optional(),
+      purge_sessions: z.number().int().min(1).max(20).optional(),
+      embargo_sessions: z.number().int().min(0).max(20).optional(),
+    }).strict().optional() }).strict(),
+    learner: learnerReferenceSchema,
+    portfolio_policy: z.object({ id: z.literal("top-n-equal-weight-v1"), parameters: z.object({
+      top_n: z.number().int().min(1).max(100).optional(),
+      rebalance: z.enum(["daily", "weekly", "monthly"]).optional(),
+    }).strict().optional() }).strict(),
+    development_window: dateWindowSchema,
+    prediction_window: dateWindowSchema,
+  };
+  const v2SingleMlStrategySchema = z.object(v2MlBase).strict();
+  const expertSchema = z.object({
+    key: z.enum(["risk_on", "neutral", "risk_off"]),
+    learner: learnerReferenceSchema,
+    training_regimes: z.array(z.enum(["risk_on", "neutral", "risk_off"])).min(1).max(3)
+      .refine(items => new Set(items).size === items.length, "training regimes must be unique"),
+  }).strict();
+  const v2RegimeMlStrategySchema = z.object({
+    ...v2MlBase,
+    regime: z.object({
+      definition: z.literal("hs300-trend-volatility-v1"), enabled: z.literal(true),
+      parameters: z.object({
+        risk_on_return_60_min: z.number().min(-0.2).max(0.3).optional(),
+        risk_on_ma_distance_60_min: z.number().min(-0.1).max(0.2).optional(),
+        risk_off_return_20_max: z.number().min(-0.3).max(0.1).optional(),
+        risk_off_volatility_20_min: z.number().min(0.005).max(0.1).optional(),
+        risk_off_ma_distance_60_max: z.number().min(-0.2).max(0.05).optional(),
+      }).strict().optional(),
+    }).strict(),
+    routing_policy: z.object({
+      id: z.literal("regime-expert-map-v1"),
+      fallback: z.enum(["risk_on", "neutral", "risk_off"]),
+    }).strict(),
+    experts: z.array(expertSchema).min(2).max(3),
+  }).strict().superRefine((value, context) => {
+    const keys = value.experts.map(item => item.key);
+    if (new Set(keys).size !== keys.length) context.addIssue({ code: z.ZodIssueCode.custom, message: "expert keys must be unique", path: ["experts"] });
+    if (!keys.includes(value.routing_policy.fallback)) context.addIssue({ code: z.ZodIssueCode.custom, message: "fallback must reference a configured expert", path: ["routing_policy", "fallback"] });
+  });
   server.registerTool(
     "byq_ml_capabilities",
     { description: "Read the closed BYQ machine-learning capability catalogue and bounded parameter limits.", inputSchema: {} },
@@ -945,37 +1045,33 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     (args) => byqMlWorkspace(args, trustedContext),
   );
   server.registerTool(
+    "byq_ml_studies",
+    { description: "Search and page the owner-scoped ML research catalogue without loading study details or result rows.", inputSchema: {
+      query: z.string().max(100).default(""),
+      status: z.enum(["all", "active", "completed", "failed"]).default("all"),
+      limit: z.number().int().min(1).max(20).default(20),
+      offset: z.number().int().min(0).max(10_000).default(0),
+    } },
+    (args) => byqMlStudies(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_ml_study_get",
+    { description: "Read one selected ML study with bounded safe run and artifact metadata; large prediction rows remain separate and unavailable to the Agent.", inputSchema: {
+      ml_strategy_artifact_id: z.string().regex(/^artifact_[0-9a-f]{32}$/),
+    } },
+    (args) => byqMlStudyGet(args, trustedContext),
+  );
+  server.registerTool(
     "byq_ml_strategy_create",
-    { description: "Create a validated closed-profile LightGBM strategy version. Human approval remains a separate Product action.", inputSchema: {
+    { description: "Create a validated closed-profile ML strategy: v1 LightGBM compatibility, v2 purged walk-forward with a qualified learner, or an explicit HS300 regime-expert plan. Human approval remains a separate Product action.", inputSchema: {
       task_id: z.string(), experiment_id: z.string().optional(), idempotency_key: z.string().min(1).max(128),
-      strategy: z.object({
-        schema_version: z.literal("ml-strategy-version.v1"),
-        name: z.string().min(1).max(128),
-        learner: z.object({ kind: z.literal("lightgbm_regression"), profile: z.literal("byq-lightgbm-cpu-v1") }).strict(),
-        feature_set: z.object({ id: z.literal("price-volume-basic-v1") }).strict(),
-        target: z.object({ kind: z.literal("forward_return"), horizon_sessions: z.number().int().min(1).max(20) }).strict(),
-        split: z.object({ train: dateWindowSchema, validation: dateWindowSchema, prediction: dateWindowSchema }).strict(),
-        learner_parameters: z.object({
-          num_leaves: z.number().int().min(2).max(255).optional(),
-          learning_rate: z.number().min(0.001).max(0.5).optional(),
-          max_depth: z.number().int().min(-1).max(32).optional(),
-          min_data_in_leaf: z.number().int().min(5).max(10000).optional(),
-          feature_fraction: z.number().min(0.1).max(1).optional(),
-          bagging_fraction: z.number().min(0.1).max(1).optional(),
-          num_boost_round: z.number().int().min(10).max(2000).optional(),
-          early_stopping_rounds: z.number().int().min(1).max(200).optional(),
-        }).strict().optional(),
-        signal_policy: z.object({
-          kind: z.literal("top_n_equal_weight"), top_n: z.number().int().min(1).max(100),
-          rebalance: z.enum(["daily", "weekly", "monthly"]),
-        }).strict(),
-      }).strict(),
+      strategy: z.union([v1MlStrategySchema, v2RegimeMlStrategySchema, v2SingleMlStrategySchema]),
     } },
     (args) => byqMlStrategyCreate(args, trustedContext),
   );
   server.registerTool(
     "byq_ml_training_create",
-    { description: "Create an approval-gated trusted LightGBM training run from a human-approved ML strategy and frozen stock-pool snapshot. Call once per approved action; an outcome_unknown result requires read reconciliation and must not be blindly retried.", inputSchema: {
+    { description: "Create an approval-gated trusted ML training run from a human-approved closed strategy and frozen stock-pool snapshot. Call once per approved action; an outcome_unknown result requires read reconciliation and must not be blindly retried.", inputSchema: {
       task_id: z.string(), experiment_id: z.string().optional(), ml_strategy_artifact_id: z.string(),
       stock_pool_snapshot_id: z.string(), idempotency_key: z.string().min(1).max(128),
     } },
