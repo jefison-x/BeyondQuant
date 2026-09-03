@@ -18,7 +18,7 @@ from app.ml_training import (
     promote_waiting_training_runs,
 )
 from app.research import ResearchStore
-from tests.test_ml_strategy import valid_strategy, valid_strategy_v2
+from tests.test_ml_strategy import valid_regime_strategy_v2, valid_strategy, valid_strategy_v2
 from tests.workspace_helpers import trusted_agent_context
 
 
@@ -75,6 +75,36 @@ def feature_input_v2() -> tuple[dict[str, object], dict[str, object], dict[str, 
         "symbols": ["000001.SZ", "000002.SZ"], "index_symbol": None,
     }
     return strategy, universe, {"research_bars": bars, "research_view_sha256": "c" * 64}
+
+
+def regime_feature_input_v2() -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    dates = [(date(2023, 10, 1) + timedelta(days=index)).isoformat() for index in range(220)]
+    candidate = valid_regime_strategy_v2()
+    candidate["development_window"] = {"start": dates[80], "end": dates[179]}
+    candidate["prediction_window"] = {"start": dates[180], "end": dates[204]}
+    strategy = normalize_ml_strategy(candidate)
+    bars = []
+    for symbol_offset, symbol in enumerate(("000001.SZ", "000002.SZ")):
+        for index, session in enumerate(dates):
+            bars.append({
+                "symbol": symbol, "trade_date": session,
+                "close": 10.0 + symbol_offset + index * 0.03 + (index % 4) * 0.01,
+                "volume": 2000.0 + index * 7 + symbol_offset,
+                "is_universe_member": True,
+            })
+    benchmark = [
+        {"symbol": "000300.SH", "trade_date": session, "close": 100.0 * (1.001 ** index)}
+        for index, session in enumerate(dates)
+    ]
+    universe = {
+        "membership_mode": "fixed_snapshot", "stock_pool_id": "stock_pool_regime",
+        "stock_pool_snapshot_id": "snapshot_regime", "membership_fingerprint": "membership-regime",
+        "symbols": ["000001.SZ", "000002.SZ"], "index_symbol": None,
+    }
+    return strategy, universe, {
+        "research_bars": bars, "benchmark": benchmark,
+        "research_view_sha256": "9" * 64,
+    }
 
 
 def test_feature_snapshot_is_deterministic_and_never_labels_prediction_rows() -> None:
@@ -225,6 +255,85 @@ class FakeV2Trainer:
             "runtime_identity": "ridge-numpy-2.3.3-python-3.13-linux-cpu-single-thread",
             "image_identity": "byq-ml-worker-v2-test",
         }
+
+
+class FakeBundleTrainer:
+    def train(self, feature_snapshot, strategy):
+        results = []
+        for expert in strategy["experts"]:
+            profile = expert["learner"]["profile"]
+            ridge = profile == "byq-ridge-cpu-v1"
+            results.append({
+                **({"model_bytes": b'{"schema_version":"ridge-linear-json-v1"}'} if ridge else {"model_text": "tree\ntrusted\n"}),
+                "model_format": "ridge-linear-json-v1" if ridge else "lightgbm-text-v1",
+                "media_type": "application/vnd.byq.ridge-model+json" if ridge else "text/x-lightgbm-model",
+                "feature_order": ["return_1", "return_5", "return_20", "volatility_20", "volume_ratio_5"],
+                "learner_profile": profile, "best_iteration": None if ridge else 3,
+                "effective_parameters": expert["learner"]["parameters"],
+                "metrics": {"validation_rmse": 0.01, "validation_rmse_std": 0.001,
+                            "validation_rmse_median": 0.01, "validation_rmse_worst": 0.011,
+                            "validation_rank_ic": 0.2, "valid_folds": 2},
+                "folds": [{"fold_id": "fold-01", "model_sha256": "e" * 64}],
+                "selection_rule": {"kind": "latest-valid-fold-v1", "selected_fold_id": "fold-01"},
+                "runtime_identity": (
+                    "ridge-numpy-2.3.3-python-3.13-linux-cpu-single-thread" if ridge
+                    else "lightgbm-4.7.0-python-3.13-linux-cpu-single-thread"
+                ),
+                "image_identity": "byq-ml-worker-v2-test",
+                "expert_key": expert["key"], "training_regimes": expert["training_regimes"],
+            })
+        return {"expert_results": results}
+
+
+def test_regime_training_persists_snapshot_independent_experts_and_bundle(tmp_path) -> None:
+    context = trusted_agent_context("ml-regime-owner")
+    research, runs = ResearchStore(), MLTrainingRunStore()
+    try:
+        task = research.create_task({
+            "owner_principal": "ml-regime-owner", "title": "ML regime", "objective": "Route experts",
+            "trace_id": "trace-ml-regime", "idempotency_key": "ml-regime-task",
+        })
+        strategy, universe, ready = regime_feature_input_v2()
+        strategy_artifact = research.create_artifact({
+            "task_id": task["task_id"], "kind": "ml_strategy_version", "content": strategy,
+            "lineage": [], "trace_id": "trace-ml-regime", "idempotency_key": "ml-regime-strategy",
+        })
+        strategy_artifact = research.transition(
+            "artifact", strategy_artifact["artifact_id"], "validated", "ml-regime-strategy-valid"
+        )
+        feature = build_feature_snapshot(
+            strategy=strategy, universe=universe, ready_input=ready,
+            readiness={"ready_input_sha256": "8" * 64},
+        )
+        assert feature["regime_snapshot"]["counts"]["risk_on"] > 0
+        run = runs.create_waiting(
+            workspace_id=context["x-byq-workspace-id"], owner_principal="ml-regime-owner",
+            task_id=task["task_id"], experiment_id=None,
+            ml_strategy_artifact_id=strategy_artifact["artifact_id"],
+            stock_pool_snapshot_id="snapshot_regime",
+            preparation={"strategy": strategy, "universe": universe},
+            requirement={"requirement_sha256": "7" * 64}, readiness={"state": "ready"},
+            trace_id="trace-ml-regime", idempotency_key="ml-regime-train",
+        )
+        runs.promote_ready(str(run["training_run_id"]), feature)
+        completed = MLTrainingCoordinator(
+            runs, research, LocalObjectStore(tmp_path), FakeBundleTrainer(), worker_id="worker-regime"
+        ).run_next()
+        assert completed is not None and completed["status"] == "completed"
+        bundle_artifact = research.get_artifact(completed["model_artifact_id"])
+        assert bundle_artifact["kind"] == "ml_model_bundle"
+        bundle = bundle_artifact["content"]
+        assert bundle["schema_version"] == "ml-model-bundle.v1"
+        assert len(bundle["experts"]) == 3
+        assert bundle["routing_policy"]["fallback"] == "neutral"
+        assert research.get_artifact(bundle["regime_snapshot_artifact_id"])["kind"] == "ml_regime_snapshot"
+        for expert in bundle["experts"]:
+            model = research.get_artifact(expert["model_artifact_id"])
+            assert model["kind"] == "ml_model"
+            assert model["content"]["expert_key"] == expert["key"]
+    finally:
+        runs.close()
+        research.close()
 
 
 def test_v2_training_persists_qualified_model_and_fold_evidence(tmp_path) -> None:

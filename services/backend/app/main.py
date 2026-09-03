@@ -171,6 +171,7 @@ from .strategy_artifact import (
 )
 from .ml_strategy import ml_capability_catalog, normalize_ml_strategy, validate_ml_strategy_version
 from .ml_capabilities import STRATEGY_SCHEMA as ML_V2_SCHEMA, strategy_data_window
+from .ml_regime import BENCHMARK_SYMBOL, validate_model_bundle
 from .ml_training import (
     MLTrainingConflict,
     MLTrainingNotFound,
@@ -2092,13 +2093,21 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
         if not symbols or len(symbols) > 1000:
             raise ValueError("ML training stock pool must contain between 1 and 1000 symbols")
         declared, membership_mode = _ml_pool_market_scope(pool, pool_snapshot)
+        regime = strategy.get("regime")
+        if isinstance(regime, dict) and regime.get("enabled") is True:
+            declared = {**declared, "benchmark": BENCHMARK_SYMBOL}
         master = security_master_store.latest_snapshot()
         if master is None:
             raise ValueError("security master must be synchronized before ML training")
         data_start, data_end = strategy_data_window(strategy)
+        requirement_start = datetime.strptime(data_start.replace("-", ""), "%Y%m%d")
+        if isinstance(regime, dict) and regime.get("enabled") is True:
+            # Freeze enough pre-development calendar history for the 60-session
+            # regime warmup. The feature/label windows remain those in strategy.
+            requirement_start -= timedelta(days=120)
         requirements = _partition_market_requirements(
             symbols=symbols,
-            start=datetime.strptime(data_start.replace("-", ""), "%Y%m%d"),
+            start=requirement_start,
             end=datetime.strptime(data_end.replace("-", ""), "%Y%m%d"),
             membership_fingerprint_value=str(pool_snapshot["membership_fingerprint"]),
             security_master_snapshot_id=str(master["snapshot_id"]), declared=declared,
@@ -2203,8 +2212,8 @@ def create_ml_prediction_run(payload: dict[str, Any], request: Request) -> dict[
                 raise ResearchNotFound("ML prediction artifact not found")
         if task["owner_principal"] != context["owner_principal"] or task.get("workspace_id") != context["workspace_id"]:
             raise ResearchNotFound("ML research task not found")
-        if model_artifact["kind"] != "ml_model" or model_artifact["status"] != "validated":
-            raise ValueError("model_artifact_id must reference a validated ML model")
+        if model_artifact["kind"] not in {"ml_model", "ml_model_bundle"} or model_artifact["status"] != "validated":
+            raise ValueError("model_artifact_id must reference a validated ML model or bundle")
         if approval_artifact["kind"] != "ml_strategy_approval" or approval_artifact["status"] != "validated":
             raise ValueError("approval_artifact_id must reference a validated ML strategy approval")
         model = model_artifact.get("content")
@@ -2227,8 +2236,41 @@ def create_ml_prediction_run(payload: dict[str, Any], request: Request) -> dict[
         ):
             raise ValueError("ML strategy is not approved for signal production")
         strategy = validate_ml_strategy_version(strategy_artifact["content"])
-        if strategy.get("schema_version") == ML_V2_SCHEMA:
-            raise ValueError("ML v2 prediction is not enabled until the regime routing phase")
+        bundle = model if model_artifact["kind"] == "ml_model_bundle" else None
+        expert_models: dict[str, dict[str, object]] = {}
+        regime_content: dict[str, object] | None = None
+        if bundle is not None:
+            validate_model_bundle(bundle)
+            if strategy.get("schema_version") != ML_V2_SCHEMA or not isinstance(strategy.get("regime"), dict):
+                raise ValueError("ML model bundle requires an approved regime strategy")
+            for expert in bundle["experts"]:
+                expert_artifact = research_store.get_artifact(expert["model_artifact_id"])
+                if (
+                    expert_artifact["kind"] != "ml_model"
+                    or expert_artifact["status"] != "validated"
+                    or expert_artifact["owner_principal"] != context["owner_principal"]
+                    or expert_artifact.get("workspace_id") != context["workspace_id"]
+                    or expert_artifact["task_id"] != task["task_id"]
+                    or not isinstance(expert_artifact.get("content"), dict)
+                    or expert_artifact["content"].get("content_sha256") != expert["model_content_sha256"]
+                ):
+                    raise ValueError("model bundle expert lineage is invalid")
+                expert_models[str(expert["key"])] = {
+                    "artifact_id": expert_artifact["artifact_id"],
+                    "content": expert_artifact["content"],
+                }
+            regime_artifact = research_store.get_artifact(bundle["regime_snapshot_artifact_id"])
+            if (
+                regime_artifact["kind"] != "ml_regime_snapshot"
+                or regime_artifact["status"] != "validated"
+                or regime_artifact["owner_principal"] != context["owner_principal"]
+                or regime_artifact.get("workspace_id") != context["workspace_id"]
+                or regime_artifact["task_id"] != task["task_id"]
+                or not isinstance(regime_artifact.get("content"), dict)
+                or regime_artifact["content"].get("content_sha256") != bundle["regime_snapshot_sha256"]
+            ):
+                raise ValueError("model bundle regime lineage is invalid")
+            regime_content = regime_artifact["content"]
         feature_artifact = research_store.get_artifact(model.get("feature_snapshot_artifact_id"))
         if (
             feature_artifact["kind"] != "ml_feature_snapshot"
@@ -2279,6 +2321,7 @@ def create_ml_prediction_run(payload: dict[str, Any], request: Request) -> dict[
             feature_artifact_id=feature_artifact["artifact_id"],
             stock_pool_snapshot_id=model.get("stock_pool_snapshot_id"),
             input_document={"strategy": strategy, "model": model, "feature": feature_content,
+                            **({"expert_models": expert_models, "regime_snapshot": regime_content} if bundle is not None else {}),
                             "requirements": requirements, "readiness": {
                                 "requirement_sha256": content_sha256([
                                     item.get("requirement_sha256") for item in requirements

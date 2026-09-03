@@ -35,6 +35,14 @@ def test_ml_capabilities_and_workspace_are_closed_safe_projections() -> None:
         item["id"] == "byq-ridge-cpu-v1" and item["status"] == "qualified"
         for item in body["registry"]["components"]
     )
+    assert any(
+        item["id"] == "hs300-trend-volatility-v1" and item["status"] == "qualified"
+        for item in body["registry"]["components"]
+    )
+    assert any(
+        item["id"] == "regime-expert-map-v1" and item["status"] == "qualified"
+        for item in body["registry"]["components"]
+    )
     assert "xgboost" not in capabilities.text.lower()
     workspace = client.get("/v1/research/ml/workspace", headers=headers)
     assert workspace.status_code == 200

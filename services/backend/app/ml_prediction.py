@@ -14,6 +14,17 @@ from sqlalchemy.exc import SQLAlchemyError
 from .backtest import LocalObjectStore, membership_fingerprint, normalize_signal_snapshot, signal_snapshot_content_sha256
 from .db import PgStoreMixin, execute, fetch_one
 from .ml_strategy import FEATURE_ORDER, RUNTIME_LOCK, content_sha256, validate_ml_strategy_version
+from .ml_capabilities import (
+    STRATEGY_SCHEMA as ML_V2_SCHEMA,
+    expected_runtime_identity,
+    runtime_lock_for_profile,
+)
+from .ml_regime import (
+    BUNDLE_SCHEMA,
+    expert_key_for,
+    validate_model_bundle,
+    validate_regime_snapshot,
+)
 from .ml_training import (
     FEATURE_SCHEMA,
     MODEL_SCHEMA,
@@ -25,6 +36,7 @@ from .research import ResearchStore
 
 
 PREDICTION_SCHEMA = "ml-prediction-snapshot.v1"
+PREDICTION_SCHEMA_V2 = "ml-prediction-snapshot.v2"
 PREDICTION_RUN_SCHEMA = "ml-prediction-run.v1"
 MAX_ATTEMPTS = 3
 
@@ -138,6 +150,95 @@ def build_prediction_snapshot(
     return document
 
 
+def build_routed_prediction_snapshot(
+    *, scored_rows: list[dict[str, object]], feature_artifact_id: str,
+    feature_snapshot_sha256: str, model_bundle_artifact_id: str,
+    model_bundle_sha256: str, regime_snapshot_artifact_id: str,
+    regime_snapshot_sha256: str, stock_pool_snapshot_id: str,
+    prediction_window: dict[str, object], capability_lock: object,
+) -> dict[str, object]:
+    if not scored_rows:
+        raise ValueError("routed prediction has no rows")
+    grouped: dict[tuple[str, str], list[dict[str, object]]] = {}
+    required = {
+        "session", "symbol", "score", "regime", "regime_snapshot_id",
+        "expert_key", "model_artifact_id",
+    }
+    for raw in scored_rows:
+        if set(raw) != required:
+            raise ValueError("routed prediction row contract is invalid")
+        score = raw.get("score")
+        if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(float(score)):
+            raise ValueError("routed prediction score is invalid")
+        grouped.setdefault((str(raw["session"]), str(raw["expert_key"])), []).append(dict(raw))
+    rows: list[dict[str, object]] = []
+    for group in sorted(grouped):
+        ranked = sorted(grouped[group], key=lambda item: (-float(item["score"]), str(item["symbol"])))
+        for rank, row in enumerate(ranked, 1):
+            rows.append({**row, "score": float(row["score"]), "rank": rank})
+    document: dict[str, object] = {
+        "schema_version": PREDICTION_SCHEMA_V2,
+        "mode": "regime_routed",
+        "model_bundle_artifact_id": model_bundle_artifact_id,
+        "model_bundle_sha256": model_bundle_sha256,
+        "regime_snapshot_artifact_id": regime_snapshot_artifact_id,
+        "regime_snapshot_sha256": regime_snapshot_sha256,
+        "feature_snapshot_artifact_id": feature_artifact_id,
+        "feature_snapshot_sha256": feature_snapshot_sha256,
+        "stock_pool_snapshot_id": stock_pool_snapshot_id,
+        "prediction_window": prediction_window,
+        "capability_lock": capability_lock,
+        "rows": rows,
+        "counts": {
+            "rows": len(rows), "sessions": len({str(row["session"]) for row in rows}),
+            "symbols": len({str(row["symbol"]) for row in rows}),
+            "experts": len({str(row["expert_key"]) for row in rows}),
+        },
+    }
+    document["content_sha256"] = content_sha256(document)
+    return document
+
+
+def build_single_prediction_snapshot_v2(
+    *, scores: list[float], prediction_rows: list[dict[str, object]], model: dict[str, object],
+    feature_artifact_id: str, model_artifact_id: str, stock_pool_snapshot_id: str,
+) -> dict[str, object]:
+    if len(scores) != len(prediction_rows) or not scores:
+        raise ValueError("prediction output row count does not match frozen prediction input")
+    grouped: dict[str, list[tuple[str, float]]] = {}
+    for row, raw_score in zip(prediction_rows, scores, strict=True):
+        if set(row) != {"session", "symbol", "split", "feature_as_of", "features"}:
+            raise ValueError("prediction split rows must not contain labels or undeclared fields")
+        if row.get("split") != "prediction" or row.get("feature_as_of") != row.get("session"):
+            raise ValueError("prediction row violates the point-in-time split contract")
+        score = float(raw_score)
+        if not math.isfinite(score):
+            raise ValueError("prediction output contains a non-finite score")
+        grouped.setdefault(str(row["session"]), []).append((str(row["symbol"]), score))
+    rows: list[dict[str, object]] = []
+    for session in sorted(grouped):
+        rows.extend(
+            {"session": session, "symbol": symbol, "score": score, "rank": rank}
+            for rank, (symbol, score) in enumerate(
+                sorted(grouped[session], key=lambda item: (-item[1], item[0])), 1
+            )
+        )
+    document: dict[str, object] = {
+        "schema_version": PREDICTION_SCHEMA_V2, "mode": "single",
+        "model_artifact_id": model_artifact_id, "model_content_sha256": model["content_sha256"],
+        "feature_snapshot_artifact_id": feature_artifact_id,
+        "feature_snapshot_sha256": model["feature_snapshot_sha256"],
+        "stock_pool_snapshot_id": stock_pool_snapshot_id,
+        "prediction_window": model["prediction_window"],
+        "runtime_lock": model["runtime_lock"], "runtime_identity": model["runtime_identity"],
+        "rows": rows,
+        "counts": {"rows": len(rows), "sessions": len(grouped),
+                   "symbols": len({str(row["symbol"]) for row in rows})},
+    }
+    document["content_sha256"] = content_sha256(document)
+    return document
+
+
 def _rebalance_sessions(sessions: list[str], cadence: str) -> list[str]:
     if cadence == "daily":
         return sessions
@@ -155,8 +256,14 @@ def build_ml_signal_snapshot(
     prediction_artifact_id: str, stock_pool_snapshot_id: str, ready_input: dict[str, object],
     execution: dict[str, object], readiness: dict[str, object],
 ) -> dict[str, object]:
-    policy = strategy["signal_policy"]
-    if not isinstance(policy, dict) or policy.get("kind") != "top_n_equal_weight":
+    raw_policy = strategy.get("portfolio_policy") if strategy.get("schema_version") == ML_V2_SCHEMA else strategy.get("signal_policy")
+    if not isinstance(raw_policy, dict):
+        raise ValueError("ML signal policy is unsupported")
+    if raw_policy.get("id") == "top-n-equal-weight-v1" and isinstance(raw_policy.get("parameters"), dict):
+        policy = raw_policy["parameters"]
+    elif raw_policy.get("kind") == "top_n_equal_weight":
+        policy = raw_policy
+    else:
         raise ValueError("ML signal policy is unsupported")
     capital, lot_size = execution.get("initial_capital"), execution.get("lot_size")
     if isinstance(capital, bool) or not isinstance(capital, (int, float)) or not math.isfinite(float(capital)) or float(capital) <= 0:
@@ -167,7 +274,9 @@ def build_ml_signal_snapshot(
     raw_bars = ready_input.get("bars")
     if not isinstance(rows, list) or not isinstance(raw_bars, list):
         raise ValueError("frozen ML prediction or market bars are unavailable")
-    split = prediction["prediction_split"]
+    split = prediction.get("prediction_window", prediction.get("prediction_split"))
+    if not isinstance(split, dict):
+        raise ValueError("ML prediction window is unavailable")
     start, end = str(split["start"]), str(split["end"])
     bars = [dict(row) for row in raw_bars if isinstance(row, dict) and start <= str(row.get("trade_date")) <= end]
     raw_factors = ready_input.get("adjustment_factors", [])
@@ -249,7 +358,12 @@ def build_ml_signal_snapshot(
                     "feature_snapshot_artifact_id": feature_artifact_id,
                     "prediction_snapshot_artifact_id": prediction_artifact_id,
                     "stock_pool_snapshot_id": stock_pool_snapshot_id,
-                    "policy_sha256": content_sha256(policy),
+                    "policy_sha256": content_sha256(raw_policy),
+                    **({
+                        "model_bundle_artifact_id": model_artifact_id,
+                        "regime_snapshot_artifact_id": str(prediction["regime_snapshot_artifact_id"]),
+                        "routing_policy_sha256": content_sha256(strategy["routing_policy"]),
+                    } if prediction.get("mode") == "regime_routed" else {}),
                 },
             },
         },
@@ -423,6 +537,149 @@ class MLPredictionCoordinator:
             raise ValueError("frozen feature source no longer matches market input")
         return ready_input
 
+    def _predict_qualified(
+        self, model: dict[str, object], rows: list[dict[str, object]],
+    ) -> list[float]:
+        method = getattr(self.predictor, "predict_qualified", None)
+        if not callable(method):
+            raise ValueError("qualified v2 predictor is unavailable")
+        payload = self.objects.get(model["object_reference"])
+        return method(
+            str(model.get("model_format")), payload, rows,
+            best_iteration=model.get("best_iteration"),
+        )
+
+    def _predict_v2(
+        self, *, input_document: dict[str, object], strategy: dict[str, object],
+        feature: dict[str, object], model: dict[str, object], job: dict[str, object],
+    ) -> tuple[dict[str, object], list[dict[str, object]]]:
+        feature_hash = _verify_embedded_hash(feature, "feature snapshot")
+        hydrated = load_feature_snapshot(feature, self.objects)
+        if hydrated.get("schema_version") != "ml-feature-snapshot.v2":
+            raise ValueError("ML v2 feature snapshot schema is unsupported")
+        prediction_rows = [
+            row for row in hydrated.get("rows", [])
+            if isinstance(row, dict) and row.get("split") == "prediction"
+        ]
+        if model.get("schema_version") == "ml-model-artifact.v2":
+            _verify_embedded_hash(model, "model artifact")
+            if (
+                model.get("feature_snapshot_sha256") != feature_hash
+                or model.get("feature_snapshot_artifact_id") != job["feature_artifact_id"]
+                or model.get("strategy_version_artifact_id") != job["ml_strategy_artifact_id"]
+                or model.get("stock_pool_snapshot_id") != job["stock_pool_snapshot_id"]
+                or model.get("feature_order") != FEATURE_ORDER
+            ):
+                raise ValueError("ML v2 model lineage or feature contract is invalid")
+            profile = str(model.get("learner_profile"))
+            expert_strategy = dict(strategy)
+            expert_strategy["learner"] = {"profile": profile, "parameters": model.get("effective_parameters", {})}
+            if (
+                model.get("runtime_lock") != runtime_lock_for_profile(profile)
+                or model.get("runtime_identity") != expected_runtime_identity(expert_strategy)
+            ):
+                raise ValueError("ML v2 model runtime is unsupported")
+            scores = self._predict_qualified(model, prediction_rows)
+            prediction = build_single_prediction_snapshot_v2(
+                scores=scores, prediction_rows=prediction_rows, model=model,
+                feature_artifact_id=str(job["feature_artifact_id"]),
+                model_artifact_id=str(job["model_artifact_id"]),
+                stock_pool_snapshot_id=str(job["stock_pool_snapshot_id"]),
+            )
+            return prediction, []
+        if model.get("schema_version") != BUNDLE_SCHEMA:
+            raise ValueError("ML v2 model or bundle schema is unsupported")
+        bundle = validate_model_bundle(model)
+        if (
+            bundle.get("feature_snapshot_sha256") != feature_hash
+            or bundle.get("feature_snapshot_artifact_id") != job["feature_artifact_id"]
+            or bundle.get("strategy_version_artifact_id") != job["ml_strategy_artifact_id"]
+            or bundle.get("stock_pool_snapshot_id") != job["stock_pool_snapshot_id"]
+        ):
+            raise ValueError("model bundle lineage does not match the prediction request")
+        regime = validate_regime_snapshot(input_document.get("regime_snapshot"))
+        if (
+            regime.get("content_sha256") != bundle.get("regime_snapshot_sha256")
+            or bundle.get("regime_snapshot_artifact_id") is None
+        ):
+            raise ValueError("model bundle regime snapshot does not match")
+        state_by_session = {
+            str(row["session"]): str(row["state"])
+            for row in regime["rows"]
+        }
+        raw_models = input_document.get("expert_models")
+        if not isinstance(raw_models, dict):
+            raise ValueError("model bundle expert artifacts are unavailable")
+        model_by_key: dict[str, tuple[str, dict[str, object]]] = {}
+        for expert in bundle["experts"]:
+            key = str(expert["key"])
+            wrapped = raw_models.get(key)
+            if not isinstance(wrapped, dict) or set(wrapped) != {"artifact_id", "content"}:
+                raise ValueError("model bundle expert projection is invalid")
+            content = wrapped.get("content")
+            if not isinstance(content, dict) or content.get("schema_version") != "ml-model-artifact.v2":
+                raise ValueError("model bundle expert model schema is invalid")
+            _verify_embedded_hash(content, "expert model")
+            if (
+                wrapped.get("artifact_id") != expert.get("model_artifact_id")
+                or content.get("content_sha256") != expert.get("model_content_sha256")
+                or content.get("expert_key") != key
+                or content.get("feature_snapshot_artifact_id") != job["feature_artifact_id"]
+                or content.get("regime_snapshot_artifact_id") != bundle.get("regime_snapshot_artifact_id")
+            ):
+                raise ValueError("model bundle expert identity or lineage is invalid")
+            profile = str(content.get("learner_profile"))
+            expert_strategy = dict(strategy)
+            expert_strategy["learner"] = {"profile": profile, "parameters": content.get("effective_parameters", {})}
+            if (
+                content.get("runtime_lock") != runtime_lock_for_profile(profile)
+                or content.get("runtime_identity") != expected_runtime_identity(expert_strategy)
+            ):
+                raise ValueError("model bundle expert runtime is unsupported")
+            model_by_key[key] = (str(wrapped["artifact_id"]), content)
+        if set(model_by_key) != {str(item["key"]) for item in bundle["experts"]}:
+            raise ValueError("model bundle expert set does not match")
+        routed: dict[str, list[tuple[int, dict[str, object]]]] = {}
+        for index, row in enumerate(prediction_rows):
+            session = str(row["session"])
+            state = state_by_session.get(session)
+            if state is None:
+                raise ValueError("prediction session has no frozen regime evidence")
+            key = expert_key_for(state, bundle)
+            routed.setdefault(key, []).append((index, row))
+        scored: list[dict[str, object] | None] = [None] * len(prediction_rows)
+        expert_lineage: list[dict[str, object]] = []
+        for key in sorted(routed):
+            artifact_id, expert_model = model_by_key[key]
+            selected = [item[1] for item in routed[key]]
+            scores = self._predict_qualified(expert_model, selected)
+            if len(scores) != len(selected):
+                raise ValueError("expert prediction row count does not match")
+            expert_lineage.append({"kind": "artifact", "id": artifact_id})
+            for (index, row), score in zip(routed[key], scores, strict=True):
+                session = str(row["session"])
+                scored[index] = {
+                    "session": session, "symbol": str(row["symbol"]), "score": float(score),
+                    "regime": state_by_session[session],
+                    "regime_snapshot_id": bundle["regime_snapshot_artifact_id"],
+                    "expert_key": key, "model_artifact_id": artifact_id,
+                }
+        if any(item is None for item in scored):
+            raise ValueError("routed prediction did not score every row")
+        prediction = build_routed_prediction_snapshot(
+            scored_rows=[item for item in scored if isinstance(item, dict)],
+            feature_artifact_id=str(job["feature_artifact_id"]),
+            feature_snapshot_sha256=feature_hash,
+            model_bundle_artifact_id=str(job["model_artifact_id"]),
+            model_bundle_sha256=str(bundle["content_sha256"]),
+            regime_snapshot_artifact_id=str(bundle["regime_snapshot_artifact_id"]),
+            regime_snapshot_sha256=str(bundle["regime_snapshot_sha256"]),
+            stock_pool_snapshot_id=str(job["stock_pool_snapshot_id"]),
+            prediction_window=bundle["prediction_window"],
+            capability_lock=bundle.get("capability_lock"),
+        )
+        return prediction, expert_lineage
+
     def run_next(self) -> dict[str, object] | None:
         job = self.runs.claim_next(self.worker_id)
         if job is None:
@@ -436,29 +693,38 @@ class MLPredictionCoordinator:
             if not all(isinstance(item, dict) for item in (strategy, feature, model)):
                 raise ValueError("ML prediction artifacts are unavailable")
             strategy = validate_ml_strategy_version(strategy)
-            if feature.get("schema_version") != FEATURE_SCHEMA or model.get("schema_version") != MODEL_SCHEMA:
-                raise ValueError("ML prediction artifact schema is unsupported")
-            feature_hash, model_hash = _verify_embedded_hash(feature, "feature snapshot"), _verify_embedded_hash(model, "model artifact")
-            if model.get("feature_snapshot_sha256") != feature_hash or model.get("feature_snapshot_artifact_id") != job["feature_artifact_id"]:
-                raise ValueError("model does not match the frozen feature snapshot")
-            if model.get("strategy_version_artifact_id") != job["ml_strategy_artifact_id"] or model.get("stock_pool_snapshot_id") != job["stock_pool_snapshot_id"]:
-                raise ValueError("model lineage does not match the prediction request")
-            if model.get("runtime_lock") != RUNTIME_LOCK or model.get("runtime_identity") != RUNTIME_IDENTITY or model.get("feature_order") != FEATURE_ORDER:
-                raise ValueError("model runtime or feature contract is unsupported")
-            model_text = self.objects.get(model["object_reference"]).decode("utf-8")
-            hydrated_feature = load_feature_snapshot(feature, self.objects)
             ready_input = self._ready_input(input_document, feature)
-            prediction_rows = [row for row in hydrated_feature.get("rows", []) if isinstance(row, dict) and row.get("split") == "prediction"]
-            scores = self.predictor.predict(model_text, prediction_rows, best_iteration=int(model["best_iteration"]))
-            prediction = build_prediction_snapshot(scores=scores, prediction_rows=prediction_rows, model=model,
-                feature_artifact_id=str(job["feature_artifact_id"]), model_artifact_id=str(job["model_artifact_id"]),
-                stock_pool_snapshot_id=str(job["stock_pool_snapshot_id"]))
+            expert_lineage: list[dict[str, object]] = []
+            if strategy.get("schema_version") == ML_V2_SCHEMA:
+                prediction, expert_lineage = self._predict_v2(
+                    input_document=input_document, strategy=strategy, feature=feature,
+                    model=model, job=job,
+                )
+            else:
+                if feature.get("schema_version") != FEATURE_SCHEMA or model.get("schema_version") != MODEL_SCHEMA:
+                    raise ValueError("ML prediction artifact schema is unsupported")
+                feature_hash = _verify_embedded_hash(feature, "feature snapshot")
+                _verify_embedded_hash(model, "model artifact")
+                if model.get("feature_snapshot_sha256") != feature_hash or model.get("feature_snapshot_artifact_id") != job["feature_artifact_id"]:
+                    raise ValueError("model does not match the frozen feature snapshot")
+                if model.get("strategy_version_artifact_id") != job["ml_strategy_artifact_id"] or model.get("stock_pool_snapshot_id") != job["stock_pool_snapshot_id"]:
+                    raise ValueError("model lineage does not match the prediction request")
+                if model.get("runtime_lock") != RUNTIME_LOCK or model.get("runtime_identity") != RUNTIME_IDENTITY or model.get("feature_order") != FEATURE_ORDER:
+                    raise ValueError("model runtime or feature contract is unsupported")
+                model_text = self.objects.get(model["object_reference"]).decode("utf-8")
+                hydrated_feature = load_feature_snapshot(feature, self.objects)
+                prediction_rows = [row for row in hydrated_feature.get("rows", []) if isinstance(row, dict) and row.get("split") == "prediction"]
+                scores = self.predictor.predict(model_text, prediction_rows, best_iteration=int(model["best_iteration"]))
+                prediction = build_prediction_snapshot(scores=scores, prediction_rows=prediction_rows, model=model,
+                    feature_artifact_id=str(job["feature_artifact_id"]), model_artifact_id=str(job["model_artifact_id"]),
+                    stock_pool_snapshot_id=str(job["stock_pool_snapshot_id"]))
             prediction_artifact_hash = content_sha256(prediction)
             prediction_artifact = self.research.find_artifact_by_content(str(job["task_id"]), "ml_prediction_snapshot", prediction_artifact_hash)
             if prediction_artifact is None:
                 prediction_artifact = self.research.create_artifact({"task_id": job["task_id"], "experiment_id": job.get("experiment_id"),
                     "kind": "ml_prediction_snapshot", "content": prediction,
                     "lineage": [{"kind": "artifact", "id": job["ml_strategy_artifact_id"]}, {"kind": "artifact", "id": job["model_artifact_id"]},
+                                *expert_lineage,
                                 {"kind": "artifact", "id": job["feature_artifact_id"]}, {"kind": "stock_pool_snapshot", "id": job["stock_pool_snapshot_id"]}],
                     "trace_id": job["trace_id"], "idempotency_key": f"ml-prediction-{prediction_artifact_hash}"})
             if prediction_artifact["status"] == "draft":
@@ -475,7 +741,8 @@ class MLPredictionCoordinator:
                     "kind": "signal_snapshot", "content": signal,
                     "lineage": [{"kind": "artifact", "id": job["ml_strategy_artifact_id"]}, {"kind": "artifact", "id": job["approval_artifact_id"]},
                                 {"kind": "artifact", "id": job["model_artifact_id"]}, {"kind": "artifact", "id": job["feature_artifact_id"]},
-                                {"kind": "artifact", "id": prediction_artifact["artifact_id"]}, {"kind": "stock_pool_snapshot", "id": job["stock_pool_snapshot_id"]}],
+                                {"kind": "artifact", "id": prediction_artifact["artifact_id"]}, *expert_lineage,
+                                {"kind": "stock_pool_snapshot", "id": job["stock_pool_snapshot_id"]}],
                     "trace_id": job["trace_id"], "idempotency_key": f"ml-signal-{signal_hash}"})
             if signal_artifact["status"] == "draft":
                 signal_artifact = self.research.transition("artifact", signal_artifact["artifact_id"], "validated", f"ml-signal-validate-{signal_hash[:24]}")

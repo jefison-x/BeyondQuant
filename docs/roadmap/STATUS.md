@@ -1,21 +1,21 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=84 -->
+<!-- byq:current-completed-phase=85 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 84**——实现代码与 CI 管理的 `ml-capability-registry.v2`、不可变 v2
-  capability lock、purged walk-forward fold manifest、确定性 Ridge JSON 模型和可信 Worker profile
-  dispatch；原 LightGBM v1 训练、预测、冻结信号及回测旅程保持通过，v2 prediction 在 Phase 85 前关闭。
+- 当前已完成阶段：**Phase 85**——在 Phase 84 的受控注册表和 purged walk-forward 基线上，实现冻结
+  `hs300-trend-volatility-v1` 状态快照、2–4 个独立 expert ModelArtifact、不可变 ModelBundle、明确 fallback
+  和逐行冻结 model/expert/regime identity 的确定性路由；Backtest 仍只消费冻结信号，V1 identity 保持兼容。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
   验证到 Python `0.1.1rc1` / npm `0.1.1-rc.1`；它是维护历史，不是隐含的 Product Phase。
 - 当前完成范围内没有未决架构决策。
 - Phase 82 已依据 ADR-0047 完成；验收证据位于 `docs/evidence/phase-82/`。
-- Phase 84 已依据 ADR-0048 完成；验收证据位于 `docs/evidence/phase-84/`。Phase 85 已获授权，须在独立
-  worktree 实现冻结 HS300 状态、专家 ModelBundle 和确定性路由，不得提前开放 Product/Agent 入口。
+- Phase 85 已依据 ADR-0048 完成；验收证据位于 `docs/evidence/phase-85/`。Phase 86 已获授权，须在独立
+  worktree 完成动态 Product API、MCP/Xiaoba 与模型研究 UI 的真实闭环，不得扩大为任意模型代码或上传。
 - Phase 61 由维护者于 2026-08-27 授权并完成；规范与证据位于 ADR-0034、验收报告和
   `docs/evidence/phase-61/`。
 
