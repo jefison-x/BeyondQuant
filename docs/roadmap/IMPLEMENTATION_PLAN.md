@@ -708,3 +708,28 @@ Worker 按配置的 Tushare 2,000 积分预算保守节流。新增由现有持�
 验收必须覆盖 300 只×五年分片、单个坏任务不阻塞队列、重启恢复、额度单元测试、Gateway 安全投影、
 真实 Product API/Chrome 桌面与移动端流程，以及 Community 功能清单。Browser 不得调用 Backend、MCP、
 DSH、PostgreSQL 或 Tushare；Data Worker 仍是唯一 Provider caller。
+
+## Extensible Machine Learning Program（Phase 83–86）
+
+详细合同和逐阶段 gate 位于 `MACHINE_LEARNING_EXTENSIBILITY_PLAN.md`，架构边界由 ADR-0048 固定。
+
+### Phase 83 — Extensibility contract baseline（`COMPLETE`）
+
+检查并分类 Community ML 路径；接受 ADR-0048；冻结 capability registry、v2 strategy、v1 adapter、
+purged walk-forward、Ridge profile、HS300 RegimeSnapshot、ModelBundle、RoutingPolicy 和 Product/Agent
+边界。本阶段不改 runtime/schema/API/MCP/UI。
+
+### Phase 84 — Capability registry, Ridge and walk-forward（`AUTHORIZED`）
+
+实现代码管理与 CI qualification 的注册表、模块化 Feature/Target/Validation/Learner/Portfolio 合同、
+v1 compatibility、Ridge JSON model 和 purged walk-forward Worker/Artifact；不实现 regime、routing 或 UI。
+
+### Phase 85 — Regime snapshot, expert bundle and routing（`BLOCKED_BY_PHASE_84`）
+
+实现冻结沪深300状态、专家模型包、fallback 和确定性路由；扩展 prediction/signal lineage，Backtest 继续
+只消费冻结信号；不提前开放 Browser/Agent。
+
+### Phase 86 — Product and Xiaoba closure（`BLOCKED_BY_PHASE_85`）
+
+实现动态 capability Product API、模型研究 UI、MCP/Xiaoba 最小权限能力和真实 PostgreSQL/Compose/
+Chrome/two-user/restart/performance 闭环。

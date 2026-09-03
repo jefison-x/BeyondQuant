@@ -62,8 +62,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "82")
-        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043", "ADR-0044"):
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "83")
+        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043", "ADR-0044", "ADR-0048"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
 
@@ -98,6 +98,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("Phase 73 — Out-of-sample prediction and signal closure（`COMPLETE`）", plan)
         self.assertIn("Phase 74 — Product closure（`COMPLETE`）", plan)
         self.assertIn("LightGBM golden journey 已通过 Phase 74 验收，但 HIST 尚未授权", plan)
+
         self.assertIn("Phase 71 machine-learning strategy pre-implementation audit", inventory)
         self.assertIn("`REFERENCE_ONLY` / `REPLACE`", inventory)
         self.assertNotIn('"lightgbm', backend_dependencies.lower())
@@ -123,6 +124,34 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("import lightgbm", prediction_source.lower())
         self.assertNotIn("import numpy", prediction_source.lower())
         self.assertIn("class LightGBMPredictor", worker_source)
+
+    def test_phase83_freezes_extensible_ml_without_widening_runtime(self) -> None:
+        adr = (
+            ROOT
+            / "docs/architecture/adr/ADR-0048-extensible-machine-learning-research.md"
+        ).read_text()
+        contract = (ROOT / "docs/contracts/machine-learning-extensibility.md").read_text()
+        plan = (ROOT / "docs/roadmap/MACHINE_LEARNING_EXTENSIBILITY_PLAN.md").read_text()
+        inventory = (ROOT / "docs/migration/COMMUNITY_MIGRATION_INVENTORY.md").read_text()
+
+        self.assertIn("- Status: Accepted", adr)
+        for identity in (
+            "ml-capability-registry.v2",
+            "ml-strategy-version.v2",
+            "walk-forward-purged-v1",
+            "byq-ridge-cpu-v1",
+            "ml-regime-snapshot.v1",
+            "ml-model-bundle.v1",
+            "ml-routing-policy.v1",
+        ):
+            self.assertIn(identity, adr + contract)
+        self.assertIn("v1-compat", contract)
+        self.assertIn("000300.SH", contract)
+        self.assertIn("Phase 83 — Extensibility contract baseline（`COMPLETE`）", plan)
+        self.assertIn("Phase 84 — Capability registry, Ridge and walk-forward（`AUTHORIZED`）", plan)
+        self.assertIn("Phase 83 extensible machine-learning classification", inventory)
+        for prohibited in ("pickle/joblib", "AutoML", "在线学习"):
+            self.assertIn(prohibited, adr)
 
     def test_base_compose_uses_runtime_adapter_as_the_only_product_dsh_path(self) -> None:
         compose = (ROOT / "compose.yml").read_text()

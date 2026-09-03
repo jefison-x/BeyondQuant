@@ -131,6 +131,24 @@ coverage rows are loaded only for the selected detail/tab/page. Browser calls
 remain Gateway/Product API only, and Agent-to-Domain analysis remains BeyondQuant
 MCP only.
 
+### Phase 83 extensible machine-learning classification
+
+2026-09-03 只读复查 Community `agent-service/app/harness/capabilities.py`、`prompts.py`、
+`tool_policy.py`、内置 Python strategy skill、Backend strategy security/validation 和相关测试。Community
+仓库未被修改。
+
+| Community evidence | Classification | Phase 83 disposition |
+|---|---|---|
+| sklearn/XGBoost/LightGBM 可用性说明与需求识别 | `REFERENCE_ONLY` | 保留“先确认真实能力、不得用启发式占位冒充 ML”的产品意图；能力事实改由 BYQ `ml-capability-registry.v2` 提供。 |
+| 回测策略内 `fit/predict` 与实例模型缓存 | `DROP` | 训练、推理和 Backtest 混合，不能证明 fold、制品、时点和路由；继续使用独立 trusted ML Worker 与冻结信号。 |
+| 多个 Python ML package/import allowlist | `DROP` | 不开放任意包、module/class 或用户 source；每个 LearnerProfile 必须逐个资格验证并使用非可执行模型格式。 |
+| Community model/profile settings UI | `REFERENCE_ONLY` | 它管理 LLM/runtime 配置，不是量化 ML 研究；当前 BYQ 模型研究页继续 `REPLACE`，动态读取 Product API capability。 |
+| VectorBT 训练/回测路径 | `DROP` | 不引入 engine、dependency、adapter 或 compatibility path。 |
+
+提取的领域不变量：用户明确要求机器学习时，系统必须诚实区分已支持能力与概念建议；模型训练必须有真实
+实现和可复现实证。但 package 存在不等于 Product capability，训练缓存不等于不可变 ModelArtifact，多版本
+人工切换也不等于 point-in-time 市场状态路由。
+
 ## Phase 34 Stock Pool decision audit
 
 The mandatory Phase 34 sequence was completed before implementation:
