@@ -329,6 +329,19 @@ Adapter 的 dedicated-process ownership 也承担有界 lifecycle safety：每�
 这些是当前限制，不是可用 future feature。Adapter hard-cancel process close 是 BYQ
 ownership policy，并不表示已验证 DSH release 支持 prompt cancellation。
 
+### 2026-09-03 maintenance correction：内部活性与公共进度分离
+
+生产会话证明，固定 DSH `0.1.1-rc.1` 在长推理和子 Agent 工作期间持续产生合法的
+turn/step、reasoning chunk 与 tool lifecycle event，但 ADR-0033 要求其中多数不得公开。
+若无进度看门狗只观察公共 WorkflowTrace，Adapter 会把仍在运行的 DSH 误判为静默并关闭。
+
+因此 `no_progress_timeout_seconds` 观察 Adapter-owned 的私有运行活性，而不是要求产生公共
+进度。只有限定的合法 DSH execution event 可以刷新该 monotonic clock；raw payload、hidden
+reasoning、子会话 identity 与工具参数/结果仍被 normalization 丢弃，不越过 Gateway。活动中的
+delegated child 使用其专用 180 秒边界，不能被更短的 root quiet interval 抢先误标；整个 prompt
+仍受 300 秒绝对上限约束。此修正不新增 heartbeat、不解析推理语义、不实现第二 Agent loop，也
+不改变 DSH pin、MCP、WorkflowTrace 或 Browser Contract。
+
 ## Base Web DSH 决策
 
 旧 Phase 5 Web DSH 从 base production Compose 移除，并保留在

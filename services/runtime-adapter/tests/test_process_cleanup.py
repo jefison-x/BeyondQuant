@@ -125,7 +125,7 @@ def test_no_progress_watchdog_fails_and_closes_only_the_stuck_runtime(adapter: R
     run = record.active_run
     assert run is not None
 
-    run.last_observed_progress_at = 10.0
+    run.last_runtime_activity_at = 10.0
     assert adapter._enforce_run_guards(record, run, now=3611.0) is True
 
     wait_for_status(adapter, "s-stuck", SessionStatus.FAILED)
@@ -153,7 +153,7 @@ def test_answer_text_chunks_refresh_liveness_without_crossing_public_boundary(
     record = adapter._get("s-answer-stream")
     run = record.active_run
     assert run is not None
-    run.last_observed_progress_at = 10.0
+    run.last_runtime_activity_at = 10.0
     history_length = len(record.history)
     monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 42.0)
 
@@ -168,12 +168,12 @@ def test_answer_text_chunks_refresh_liveness_without_crossing_public_boundary(
         },
     ))
 
-    assert run.last_observed_progress_at == 42.0
+    assert run.last_runtime_activity_at == 42.0
     assert len(record.history) == history_length
     adapter.cancel_session("s-answer-stream", "hard")
 
 
-def test_reasoning_chunks_do_not_keep_a_stuck_run_alive(
+def test_reasoning_chunks_refresh_internal_liveness_without_crossing_public_boundary(
     adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter.create_session("s-reasoning-stream", "t-reasoning-stream")
@@ -182,7 +182,8 @@ def test_reasoning_chunks_do_not_keep_a_stuck_run_alive(
     record = adapter._get("s-reasoning-stream")
     run = record.active_run
     assert run is not None
-    run.last_observed_progress_at = 10.0
+    run.last_runtime_activity_at = 10.0
+    history_length = len(record.history)
     monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 42.0)
 
     adapter._on_notification(record, Notification(
@@ -196,8 +197,98 @@ def test_reasoning_chunks_do_not_keep_a_stuck_run_alive(
         },
     ))
 
-    assert run.last_observed_progress_at == 10.0
+    assert run.last_runtime_activity_at == 42.0
+    assert len(record.history) == history_length
+    assert "private" not in str(record.history)
     adapter.cancel_session("s-reasoning-stream", "hard")
+
+
+@pytest.mark.parametrize("event_type", ["step/start", "step/end"])
+def test_step_boundaries_refresh_internal_liveness_without_public_projection(
+    adapter: RuntimeAdapter,
+    monkeypatch: pytest.MonkeyPatch,
+    event_type: str,
+) -> None:
+    adapter.create_session("s-step", "t-step")
+    adapter.submit_prompt("s-step", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-step")
+    run = record.active_run
+    assert run is not None
+    run.last_runtime_activity_at = 10.0
+    history_length = len(record.history)
+    monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 42.0)
+
+    adapter._on_notification(record, Notification(
+        method="session.event",
+        payload={
+            "sessionId": record.runtime_session_id,
+            "event": {"type": event_type, "data": {"turn": 1, "step": 2}},
+        },
+    ))
+
+    assert run.last_runtime_activity_at == 42.0
+    assert len(record.history) == history_length
+    adapter.cancel_session("s-step", "hard")
+
+
+def test_descendant_activity_refreshes_owned_run_without_exposing_private_state(
+    adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter.create_session("s-child-live", "t-child-live")
+    adapter.submit_prompt("s-child-live", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-child-live")
+    run = record.active_run
+    assert run is not None
+    run.last_runtime_activity_at = 10.0
+    history_length = len(record.history)
+    monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 42.0)
+
+    adapter._on_notification(record, Notification(
+        method="session.event",
+        payload={
+            "sessionId": "private-descendant-session",
+            "event": {"type": "assistant/chunk", "data": {
+                "turn": 1, "step": 1,
+                "chunk": {"type": "reasoning-delta", "index": 0, "text": "child-private"},
+            }},
+        },
+    ))
+
+    assert run.last_runtime_activity_at == 42.0
+    assert len(record.history) == history_length
+    assert "private-descendant-session" not in str(record.history)
+    assert "child-private" not in str(record.history)
+    adapter.cancel_session("s-child-live", "hard")
+
+
+def test_unknown_or_malformed_events_do_not_refresh_runtime_liveness(
+    adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter.create_session("s-invalid-live", "t-invalid-live")
+    adapter.submit_prompt("s-invalid-live", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-invalid-live")
+    run = record.active_run
+    assert run is not None
+    run.last_runtime_activity_at = 10.0
+    monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 42.0)
+
+    for raw_event in (
+        {"type": "heartbeat", "data": {}},
+        {"type": "assistant/chunk", "data": {
+            "chunk": {"type": "reasoning-delta", "text": ""},
+        }},
+        {"type": "tool/call", "data": {"callId": "", "name": ""}},
+    ):
+        adapter._on_notification(record, Notification(
+            method="session.event",
+            payload={"sessionId": record.runtime_session_id, "event": raw_event},
+        ))
+
+    assert run.last_runtime_activity_at == 10.0
+    adapter.cancel_session("s-invalid-live", "hard")
 
 
 def test_subagent_wall_clock_timeout_wins_even_when_public_progress_continues(
@@ -209,12 +300,39 @@ def test_subagent_wall_clock_timeout_wins_even_when_public_progress_continues(
     record = adapter._get("s-child")
     run = record.active_run
     assert run is not None
-    run.last_observed_progress_at = 3600.0
+    run.last_runtime_activity_at = 3600.0
     run.active_subagent_calls["delegate-call"] = 10.0
 
     assert adapter._enforce_run_guards(record, run, now=3611.0) is True
 
     wait_for_status(adapter, "s-child", SessionStatus.FAILED)
+    assert record.history[-1]["payload"] == {
+        "code": "runtime-subagent-timeout",
+        "retryable": True,
+    }
+
+
+def test_active_subagent_uses_its_dedicated_timeout_before_no_activity_guard(
+    adapter: RuntimeAdapter,
+) -> None:
+    adapter.create_session("s-child-deadline", "t-child-deadline")
+    adapter.submit_prompt("s-child-deadline", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-child-deadline")
+    run = record.active_run
+    assert run is not None
+    adapter._run_timeout_seconds = 300.0
+    adapter._subagent_timeout_seconds = 180.0
+    adapter._no_progress_timeout_seconds = 120.0
+    run.started_at = 0.0
+    run.last_runtime_activity_at = 10.0
+    run.active_subagent_calls["delegate-call"] = 50.0
+
+    assert adapter._enforce_run_guards(record, run, now=171.0) is False
+    assert record.status == SessionStatus.RUNNING
+    assert adapter._enforce_run_guards(record, run, now=231.0) is True
+
+    wait_for_status(adapter, "s-child-deadline", SessionStatus.FAILED)
     assert record.history[-1]["payload"] == {
         "code": "runtime-subagent-timeout",
         "retryable": True,
@@ -229,7 +347,8 @@ def test_total_run_wall_clock_is_a_final_ceiling(adapter: RuntimeAdapter) -> Non
     run = record.active_run
     assert run is not None
     run.started_at = 10.0
-    run.last_observed_progress_at = 3_610.0
+    run.last_runtime_activity_at = 3_610.0
+    run.active_subagent_calls["delegate-call"] = 3_610.0
 
     assert adapter._enforce_run_guards(record, run, now=3_611.0) is True
 
@@ -241,7 +360,7 @@ def test_total_run_wall_clock_is_a_final_ceiling(adapter: RuntimeAdapter) -> Non
 
 
 def test_delegate_notifications_track_subagent_lifetime_without_exposing_raw_names(
-    adapter: RuntimeAdapter,
+    adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter.create_session("s-child-events", "t-child-events")
     adapter.submit_prompt("s-child-events", "running")
@@ -249,6 +368,8 @@ def test_delegate_notifications_track_subagent_lifetime_without_exposing_raw_nam
     record = adapter._get("s-child-events")
     run = record.active_run
     assert run is not None
+    run.last_runtime_activity_at = 10.0
+    monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 42.0)
 
     adapter._on_notification(record, Notification(
         method="session.event",
@@ -260,7 +381,10 @@ def test_delegate_notifications_track_subagent_lifetime_without_exposing_raw_nam
         },
     ))
     assert set(run.active_subagent_calls) == {"delegate-1"}
+    assert run.active_subagent_calls["delegate-1"] == 42.0
+    assert run.last_runtime_activity_at == 42.0
 
+    monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 43.0)
     adapter._on_notification(record, Notification(
         method="session.event",
         payload={
@@ -271,6 +395,7 @@ def test_delegate_notifications_track_subagent_lifetime_without_exposing_raw_nam
         },
     ))
     assert run.active_subagent_calls == {}
+    assert run.last_runtime_activity_at == 43.0
     assert "byq_delegate_backtest_analysis" not in str(record.history)
     adapter.cancel_session("s-child-events", "hard")
 

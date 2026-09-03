@@ -62,7 +62,7 @@ class SessionStatus:
 class ActiveRun:
     run_id: str
     started_at: float
-    last_observed_progress_at: float
+    last_runtime_activity_at: float
     soft_cancel_requested: bool = False
     hard_cancelled: bool = False
     active_subagent_calls: dict[str, float] = field(default_factory=dict)
@@ -329,7 +329,7 @@ class RuntimeAdapter:
             run = ActiveRun(
                 run_id=uuid.uuid4().hex,
                 started_at=now,
-                last_observed_progress_at=now,
+                last_runtime_activity_at=now,
             )
             effective_content = rehydrated_prompt(record.pending_conversation_context, content)
             record.pending_conversation_context = []
@@ -681,9 +681,9 @@ class RuntimeAdapter:
             }:
                 return
             run = record.active_run
-            answer_stream_progress = False
+            runtime_activity = False
             if run is not None:
-                answer_stream_progress = self._observe_run_notification(
+                runtime_activity = self._observe_run_notification(
                     record, run, notification,
                 )
             self._record_usage(record, notification)
@@ -695,11 +695,8 @@ class RuntimeAdapter:
                 sequence=record.sequence + 1,
                 state=record.normalization,
             )
-            if run is not None and (answer_stream_progress or any(
-                event["kind"] in {"agent.activity", "agent.output.delta", "turn.completed"}
-                for event in events
-            )):
-                run.last_observed_progress_at = time.monotonic()
+            if run is not None and runtime_activity:
+                run.last_runtime_activity_at = time.monotonic()
             for event in events:
                 self._publish(record, event)
 
@@ -729,15 +726,20 @@ class RuntimeAdapter:
                 run.watchdog_stop.set()
                 return False
             oldest_subagent = min(run.active_subagent_calls.values(), default=None)
-            if (
+            if now - run.started_at > self._run_timeout_seconds:
+                code = "runtime-run-timeout"
+            elif (
                 oldest_subagent is not None
                 and now - oldest_subagent > self._subagent_timeout_seconds
             ):
                 code = "runtime-subagent-timeout"
-            elif now - run.last_observed_progress_at > self._no_progress_timeout_seconds:
+            elif oldest_subagent is not None:
+                # A delegated child owns a separate, longer bound. Do not let
+                # the parent's quiet interval mislabel active child work as a
+                # no-progress failure before that dedicated deadline.
+                return False
+            elif now - run.last_runtime_activity_at > self._no_progress_timeout_seconds:
                 code = "runtime-no-progress-timeout"
-            elif now - run.started_at > self._run_timeout_seconds:
-                code = "runtime-run-timeout"
             else:
                 return False
             run.hard_cancelled = True
@@ -764,49 +766,64 @@ class RuntimeAdapter:
     ) -> bool:
         if notification.method != "session.event" or not isinstance(notification.payload, dict):
             return False
-        if notification.payload.get("sessionId") != record.runtime_session_id:
+        notification_session_id = notification.payload.get("sessionId")
+        if not isinstance(notification_session_id, str) or not notification_session_id:
             return False
         raw_event = notification.payload.get("event")
         if not isinstance(raw_event, dict):
             return False
+        event_type = raw_event.get("type")
         data = raw_event.get("data")
-        if not isinstance(data, dict):
+        if not isinstance(event_type, str) or not isinstance(data, dict):
             return False
-        if raw_event.get("type") == "assistant/chunk":
-            # Final-answer text is private until normalization receives the
-            # completed assistant/message, but it is still proof that the run
-            # is making forward progress. Reasoning deltas intentionally do
-            # not refresh this guard.
+
+        # The SDK callback is scoped to this owned process and includes its
+        # discovered descendants. Count only known DSH execution events as
+        # private liveness; normalization below still rejects descendant and
+        # hidden content from the public WorkflowTrace boundary.
+        if event_type == "assistant/chunk":
             chunk = data.get("chunk")
-            return (
+            is_activity = (
                 isinstance(chunk, dict)
-                and chunk.get("type") == "text-delta"
+                and chunk.get("type") in {"text-delta", "reasoning-delta"}
                 and isinstance(chunk.get("text"), str)
                 and bool(chunk["text"])
             )
-        if raw_event.get("type") == "tool/call":
+        elif event_type in {"turn/start", "turn/end", "step/start", "step/end"}:
+            is_activity = True
+        elif event_type == "assistant/message":
+            is_activity = isinstance(data.get("message"), dict)
+        elif event_type == "tool/call":
             call_id = data.get("callId")
             name = data.get("name")
+            is_activity = (
+                isinstance(call_id, str) and bool(call_id)
+                and isinstance(name, str) and bool(name)
+            )
             if (
-                isinstance(call_id, str) and call_id
+                notification_session_id == record.runtime_session_id
+                and isinstance(call_id, str) and call_id
                 and isinstance(name, str)
                 and name.removeprefix("mcp__byq__").startswith("byq_delegate_")
             ):
                 run.active_subagent_calls[call_id] = time.monotonic()
-            return False
-        if raw_event.get("type") != "tool/result":
-            return False
-        message = data.get("message")
-        content = message.get("content") if isinstance(message, dict) else None
-        if not isinstance(content, list):
-            return False
-        for block in content:
-            if not isinstance(block, dict) or block.get("type") != "tool-result":
-                continue
-            call_id = block.get("toolCallId")
-            if isinstance(call_id, str):
-                run.active_subagent_calls.pop(call_id, None)
-        return False
+        elif event_type == "tool/result":
+            message = data.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            is_activity = isinstance(content, list) and any(
+                isinstance(block, dict) and block.get("type") == "tool-result"
+                for block in content
+            )
+            if notification_session_id == record.runtime_session_id and isinstance(content, list):
+                for block in content:
+                    if not isinstance(block, dict) or block.get("type") != "tool-result":
+                        continue
+                    call_id = block.get("toolCallId")
+                    if isinstance(call_id, str):
+                        run.active_subagent_calls.pop(call_id, None)
+        else:
+            is_activity = False
+        return is_activity
 
     def _record_usage(self, record: RuntimeSession, notification: Notification) -> None:
         """Extract the documented TokenUsage shape without retaining DSH data."""
