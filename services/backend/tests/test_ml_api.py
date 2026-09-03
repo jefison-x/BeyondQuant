@@ -79,6 +79,28 @@ def test_ml_training_reconcile_route_uses_trusted_workspace_and_owner(monkeypatc
     }
 
 
+def test_agent_context_inbox_includes_workspace_ml_progress(monkeypatch) -> None:
+    headers = trusted_agent_context("ml-notification-owner")
+    captured: dict[str, str] = {}
+    monkeypatch.setattr(backend_main.data_demand_store, "list_for_session", lambda **_kwargs: [])
+
+    def notifications(*, trusted_workspace, trusted_owner, limit=10):
+        captured.update(workspace=trusted_workspace, owner=trusted_owner)
+        return [{
+            "kind": "ml_training_progress", "notification_id": "ml-training:run:now",
+            "training_run_id": "mlrun_" + "c" * 32, "status": "running",
+            "notification": "模型训练中",
+        }]
+
+    monkeypatch.setattr(backend_main.ml_training_store, "list_agent_notifications", notifications)
+    response = client.get("/v1/agent/data-demand-notifications", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["notifications"][0]["kind"] == "ml_training_progress"
+    assert captured == {
+        "workspace": headers["x-byq-workspace-id"], "owner": "ml-notification-owner",
+    }
+
+
 def test_ml_workspace_and_prediction_pages_never_materialise_large_rows() -> None:
     headers = trusted_agent_context("ml-bounded-owner")
     task = client.post("/v1/research/tasks", headers=headers, json={

@@ -588,6 +588,27 @@ class MLTrainingRunStore(PgStoreMixin):
                 if existing["request_hash"] != request_hash:
                     raise MLTrainingConflict("ML training idempotency key was reused")
                 return self._public(existing)
+            # Serialize equivalent active submissions independently of the caller's
+            # transport idempotency key.  Browser retries and Agent retries may use
+            # different keys after an outcome-unknown timeout, but they must still
+            # converge on one authoritative active run.
+            semantic_lock = "|".join((workspace, owner, task, strategy, pool))
+            execute(
+                connection,
+                "SELECT pg_advisory_xact_lock(hashtext(:semantic_lock))",
+                {"semantic_lock": semantic_lock},
+            )
+            equivalent = fetch_one(connection, """SELECT * FROM ml_training_runs
+                WHERE workspace_id=:workspace AND owner_principal=:owner
+                AND task_id=:task AND ml_strategy_artifact_id=:strategy
+                AND stock_pool_snapshot_id=:pool
+                AND status IN ('waiting_for_data','queued','running')
+                ORDER BY created_at,training_run_id LIMIT 1""", {
+                    "workspace": workspace, "owner": owner, "task": task,
+                    "strategy": strategy, "pool": pool,
+                })
+            if equivalent is not None:
+                return self._public(equivalent)
             run_id, now = f"mlrun_{uuid.uuid4().hex}", _now()
             execute(connection, """INSERT INTO ml_training_runs
                 (training_run_id,workspace_id,owner_principal,task_id,experiment_id,
@@ -667,6 +688,47 @@ class MLTrainingRunStore(PgStoreMixin):
             ORDER BY created_at DESC,training_run_id DESC LIMIT :limit""", {"limit": limit})
         return [self._public(row) for row in rows]
 
+    def list_agent_notifications(
+        self, *, trusted_workspace: str, trusted_owner: str, limit: int = 10,
+    ) -> list[dict[str, object]]:
+        """Return a bounded, row-free progress inbox for the next Agent turn."""
+        if not 1 <= limit <= 20:
+            raise ValueError("limit must be between 1 and 20")
+        rows = self._execute("""SELECT training_run_id,task_id,ml_strategy_artifact_id,
+            stock_pool_snapshot_id,status,attempt_count,max_attempts,error_code,error_detail,
+            model_artifact_id,created_at,started_at,finished_at,updated_at
+            FROM ml_training_runs WHERE workspace_id=:workspace AND owner_principal=:owner
+            ORDER BY updated_at DESC,training_run_id DESC LIMIT :limit""", {
+                "workspace": trusted_workspace, "owner": trusted_owner, "limit": limit,
+            })
+        labels = {
+            "waiting_for_data": "训练数据准备中",
+            "queued": "训练已排队",
+            "running": "模型训练中",
+            "completed": "模型训练已完成",
+            "failed": "模型训练失败",
+            "cancelled": "模型训练已取消",
+        }
+        return [{
+            "kind": "ml_training_progress",
+            "notification_id": f"ml-training:{row['training_run_id']}:{row['updated_at']}",
+            "training_run_id": row["training_run_id"],
+            "task_id": row["task_id"],
+            "ml_strategy_artifact_id": row["ml_strategy_artifact_id"],
+            "stock_pool_snapshot_id": row["stock_pool_snapshot_id"],
+            "status": row["status"],
+            "notification": labels.get(str(row["status"]), "模型训练状态已更新"),
+            "attempt_count": row["attempt_count"],
+            "max_attempts": row["max_attempts"],
+            "model_artifact_id": row.get("model_artifact_id"),
+            "error_code": row.get("error_code"),
+            "safe_error": row.get("error_detail"),
+            "created_at": row["created_at"],
+            "started_at": row.get("started_at"),
+            "finished_at": row.get("finished_at"),
+            "updated_at": row["updated_at"],
+        } for row in rows]
+
     def prediction_material(
         self, run_id: object, *, trusted_workspace: str, trusted_owner: str
     ) -> dict[str, object]:
@@ -705,9 +767,12 @@ class MLTrainingRunStore(PgStoreMixin):
             raise ValueError("ML feature snapshot identity does not match content")
         if len(_canonical(feature_snapshot)) > MAX_INPUT_BYTES:
             raise ValueError("ML training input exceeds 256 MiB")
+        input_sha256 = feature_snapshot.get("snapshot_sha256", expected)
+        if not isinstance(input_sha256, str):
+            raise ValueError("ML training input identity is unavailable")
         self._execute("""UPDATE ml_training_runs SET status='queued',input_json=:input,
             input_sha256=:sha,updated_at=:now WHERE training_run_id=:id AND status='waiting_for_data'""",
-            {"input": feature_snapshot, "sha": expected, "now": _now(), "id": run_id})
+            {"input": feature_snapshot, "sha": input_sha256, "now": _now(), "id": run_id})
         return self.get(run_id)
 
     def claim_next(self, worker_id: str) -> dict[str, object] | None:
@@ -799,7 +864,19 @@ class MLTrainingRunStore(PgStoreMixin):
         return value
 
 
-def promote_waiting_training_runs(store: MLTrainingRunStore, readiness_store: object) -> int:
+def promote_waiting_training_runs(
+    store: MLTrainingRunStore, readiness_store: object,
+    objects: LocalObjectStore | None = None, *, max_promotions: int = 1,
+) -> int:
+    """Prepare at most one large ready run per worker turn.
+
+    Readiness checks stay cheap and bounded, while feature materialisation is
+    deliberately serialized so several waiting runs cannot coexist in memory.
+    When an object store is available only a bounded descriptor is retained in
+    PostgreSQL; the large row payload remains in the immutable ML object store.
+    """
+    if max_promotions < 1:
+        raise ValueError("max_promotions must be positive")
     promoted = 0
     for row in store.list_waiting():
         requirement, preparation = row.get("requirement_json"), row.get("preparation_json")
@@ -828,8 +905,15 @@ def promote_waiting_training_runs(store: MLTrainingRunStore, readiness_store: ob
             feature_snapshot = build_feature_snapshot(
                 strategy=strategy, universe=universe, ready_input=ready_input, readiness=readiness
             )
-            store.promote_ready(run_id, feature_snapshot)
+            del ready_input
+            persisted_input = (
+                store_feature_snapshot(feature_snapshot, objects)
+                if objects is not None else feature_snapshot
+            )
+            store.promote_ready(run_id, persisted_input)
             promoted += 1
+            if promoted >= max_promotions:
+                break
         except Exception as error:
             store.fail_waiting(
                 run_id, "ml_data_preparation_failed",
@@ -1032,10 +1116,11 @@ class MLTrainingCoordinator:
             return None
         run_id = str(job["training_run_id"])
         try:
-            feature = job.get("input")
+            feature_input = job.get("input")
             preparation = job.get("preparation")
-            if not isinstance(feature, dict) or not isinstance(preparation, dict):
+            if not isinstance(feature_input, dict) or not isinstance(preparation, dict):
                 raise ValueError("ML training input is unavailable")
+            feature = load_feature_snapshot(feature_input, self.objects)
             strategy = preparation.get("strategy")
             if not isinstance(strategy, dict):
                 raise ValueError("ML strategy snapshot is unavailable")

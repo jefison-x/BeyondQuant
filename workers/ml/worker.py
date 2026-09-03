@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import hashlib
 import json
 import math
@@ -556,11 +557,21 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     try:
         while running:
-            promote_waiting_training_runs(runs, readiness)
+            # Drain already-queued work before preparing another large feature
+            # panel.  Preparing every waiting run first starved older queued
+            # work and allowed several full panels to coexist in this process.
             trained = coordinator.run_next()
+            if trained is None:
+                promoted = promote_waiting_training_runs(
+                    runs, readiness, objects, max_promotions=1,
+                )
+                gc.collect()
+                if promoted:
+                    trained = coordinator.run_next()
             predicted = prediction_coordinator.run_next()
             if trained is None and predicted is None:
                 time.sleep(poll)
+            gc.collect()
     finally:
         READY_PATH.unlink(missing_ok=True)
         readiness.close()

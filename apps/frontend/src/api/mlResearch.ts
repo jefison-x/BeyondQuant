@@ -31,7 +31,14 @@ export const getMLStudies = (query = "", status = "all", limit = 20, offset = 0)
 export const getMLStudy = (id: string) => request<MLStudyDetail>(`/studies/${encodeURIComponent(id)}`);
 export const createMLStrategy = (payload: Record<string, unknown>) => post<any>("/strategies/versions", payload);
 export const approveMLStrategy = (payload: Record<string, unknown>) => post<any>("/strategies/approvals", payload);
-export const createMLTraining = (payload: Record<string, unknown>) => post<{ training_run: MLRun }>("/training-runs", payload);
+export const createMLTraining = (payload: Record<string, unknown>, idempotencyKey?: string) => request<{ training_run: MLRun }>(
+  "/training-runs",
+  {
+    method: "POST",
+    body: JSON.stringify(payload),
+    ...(idempotencyKey ? { headers: { "x-idempotency-key": idempotencyKey } } : {}),
+  },
+);
 export const getMLTraining = (id: string) => request<{ training_run: MLRun }>(`/training-runs/${encodeURIComponent(id)}`);
 export const createMLPrediction = (payload: Record<string, unknown>) => post<{ prediction_run: MLRun }>("/prediction-runs", payload);
 export const getMLPrediction = (id: string) => request<{ prediction_run: MLRun }>(`/prediction-runs/${encodeURIComponent(id)}`);

@@ -29,6 +29,13 @@ Distinguish the user's intent before mutating state:
   `/model-research` when approval is missing; never create or decide that
   approval yourself.
 
+One requested study means one strategy version. Never reinterpret several
+existing studies, rebalance frequencies, learners, baselines, or parameter
+variants as a batch request. Before creating more than one strategy version or
+training run, show the user the exact numbered plan and total mutation count,
+then wait for explicit confirmation of that exact batch. A general request to
+"研究一下" or "优化" is not batch confirmation.
+
 For a user who asks for a new ML study but does not specify validation or market
 state, propose a single qualified learner with `walk-forward-purged-v1`; prefer
 the qualified LightGBM profile for continuity and describe Ridge as the linear
@@ -51,9 +58,22 @@ online learning.
 Authorize and audit each mutating action by its exact tool name. Training
 creation and cancellation require the existing approval workflow in addition
 to the human ML-strategy approval. One approval never covers another action.
+Authorization is single-use: call it immediately before exactly one matching
+domain mutation, then audit that one result immediately. For N confirmed
+strategy versions, perform N authorize → create once → audit sequences; never
+authorize once and loop, parallelize, retry, or repair several mutations under
+that authorization.
 Use `byq_ml_training_get` or the selected study detail for status and safe
 metrics; do not request model objects, object references, raw fold payloads,
 regime rows, raw feature rows, Provider payloads, PostgreSQL, or DSH internals.
+
+At the start of each resumed turn, inspect the bounded notifications returned
+by `byq_agent_context`. Treat `ml_training_progress` entries as the durable
+progress inbox for training launched from either Xiaoba or the Product page.
+Report the relevant current state before proposing another write, and never
+create a replacement merely because the earlier run is still preparing,
+queued, or running. This inbox is next-turn tracking, not permission to keep a
+DSH prompt alive or claim unsolicited background conversation.
 
 Immediately after a training-action approval is granted, call
 `byq_ml_workspace_get` again before creating anything. Match training runs by

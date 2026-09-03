@@ -160,6 +160,52 @@ def test_ml_training_reconciles_timeout_by_server_generated_idempotency_key(monk
     assert [call["method"] for call in calls] == ["POST", "GET"]
 
 
+def test_ml_training_reuses_browser_idempotency_key_and_waits_for_commit_race(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api.time, "sleep", lambda _delay: None)
+    calls: list[dict[str, object]] = []
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append({"method": method, "path": path, "payload": payload, "params": params})
+        if method == "POST":
+            raise product_api.ProductError(503, "backend_unavailable", "backend is unavailable")
+        if sum(call["method"] == "GET" for call in calls) < 3:
+            raise product_api.ProductError(404, "product_domain_rejected", "not committed yet")
+        return {"training_run": {"training_run_id": "mlrun_" + "b" * 32, "status": "queued"}}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).post(
+        "/api/product/ml/training-runs",
+        headers={
+            "Authorization": "Bearer product-test-token",
+            "x-idempotency-key": "browser-training-12345678",
+        },
+        json={
+            "task_id": "task_1", "ml_strategy_artifact_id": "artifact_1",
+            "stock_pool_snapshot_id": "snapshot_1",
+        },
+    )
+    assert response.status_code == 202
+    assert calls[0]["payload"]["idempotency_key"] == (
+        "product-ml-training-browser-training-12345678"
+    )
+    assert calls[0]["payload"]["trace_id"] == calls[0]["payload"]["idempotency_key"]
+    assert [call["method"] for call in calls] == ["POST", "GET", "GET", "GET"]
+
+
+def test_ml_training_rejects_invalid_browser_idempotency_key(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    response = TestClient(main.app).post(
+        "/api/product/ml/training-runs",
+        headers={"Authorization": "Bearer product-test-token", "x-idempotency-key": "bad key"},
+        json={
+            "task_id": "task_1", "ml_strategy_artifact_id": "artifact_1",
+            "stock_pool_snapshot_id": "snapshot_1",
+        },
+    )
+    assert response.status_code == 422
+
+
 def test_ml_prediction_rows_forwards_bounded_page_and_owner_context(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     captured: dict[str, object] = {}

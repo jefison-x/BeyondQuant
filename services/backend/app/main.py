@@ -1319,7 +1319,15 @@ def get_agent_data_demand_notifications(request: Request) -> dict[str, object]:
             item["demand_id"], trusted_owner=context["owner_principal"],
             readiness_store=market_readiness_store, automation_store=market_automation_store,
         ) for item in demands]
-        return {"notifications": [item for item in refreshed if item["status"] in {"ready", "partial", "failed"}]}
+        data_notifications = [
+            {**item, "kind": "data_demand_progress"}
+            for item in refreshed if item["status"] in {"ready", "partial", "failed"}
+        ]
+        ml_notifications = ml_training_store.list_agent_notifications(
+            trusted_workspace=context["workspace_id"],
+            trusted_owner=context["owner_principal"],
+        )
+        return {"notifications": [*data_notifications, *ml_notifications]}
 
     return _data_demand_call(operation)
 
