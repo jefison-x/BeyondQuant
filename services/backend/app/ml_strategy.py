@@ -8,6 +8,13 @@ import math
 from datetime import datetime
 from typing import Any
 
+from .ml_capabilities import (
+    STRATEGY_SCHEMA as V2_SCHEMA_VERSION,
+    normalize_ml_strategy_v2,
+    public_registry,
+    validate_ml_strategy_v2,
+)
+
 
 SCHEMA_VERSION = "ml-strategy-version.v1"
 EXECUTION_PROFILE = "byq-lightgbm-cpu-v1"
@@ -106,7 +113,7 @@ def _parameters(value: object) -> dict[str, object]:
     return result
 
 
-def normalize_ml_strategy(value: object) -> dict[str, object]:
+def _normalize_ml_strategy_v1(value: object) -> dict[str, object]:
     data = _object(
         value,
         field="ml_strategy",
@@ -164,14 +171,14 @@ def normalize_ml_strategy(value: object) -> dict[str, object]:
     return snapshot
 
 
-def validate_ml_strategy_version(value: object) -> dict[str, object]:
+def _validate_ml_strategy_version_v1(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError("ML strategy version must be an object")
     source = {key: nested for key, nested in value.items() if key not in {"version_id", "runtime_lock"}}
     feature_set = source.get("feature_set")
     if isinstance(feature_set, dict):
         source["feature_set"] = {"id": feature_set.get("id")}
-    normalized = normalize_ml_strategy(source)
+    normalized = _normalize_ml_strategy_v1(source)
     if not isinstance(value, dict) or value.get("version_id") != normalized["version_id"]:
         raise ValueError("ML strategy version identity does not match content")
     if value.get("runtime_lock") != RUNTIME_LOCK:
@@ -180,7 +187,11 @@ def validate_ml_strategy_version(value: object) -> dict[str, object]:
 
 
 def effective_lightgbm_parameters(strategy: dict[str, object]) -> dict[str, object]:
-    supplied = strategy.get("learner_parameters")
+    supplied = (
+        strategy.get("learner", {}).get("parameters")
+        if strategy.get("schema_version") == V2_SCHEMA_VERSION and isinstance(strategy.get("learner"), dict)
+        else strategy.get("learner_parameters")
+    )
     if not isinstance(supplied, dict):
         raise ValueError("ML strategy learner parameters are invalid")
     return {**supplied, **FORCED_PARAMETERS}
@@ -208,9 +219,22 @@ def ml_capability_catalog() -> dict[str, object]:
             },
             "runtime_lock": RUNTIME_LOCK,
         }],
+        "registry": public_registry(),
         "limitations": [
-            "closed LightGBM regression profile only",
-            "chronological train, validation and prediction splits only",
+            "v1 Product flow remains closed LightGBM; v2 training also qualifies Ridge",
+            "v1 uses one chronological split; v2 uses bounded purged walk-forward validation",
             "no Python, SQL, URL, model upload, AutoML, GPU or online learning",
         ],
     }
+
+
+def normalize_ml_strategy(value: object) -> dict[str, object]:
+    if isinstance(value, dict) and value.get("schema_version") == V2_SCHEMA_VERSION:
+        return normalize_ml_strategy_v2(value)
+    return _normalize_ml_strategy_v1(value)
+
+
+def validate_ml_strategy_version(value: object) -> dict[str, object]:
+    if isinstance(value, dict) and value.get("schema_version") == V2_SCHEMA_VERSION:
+        return validate_ml_strategy_v2(value)
+    return _validate_ml_strategy_version_v1(value)

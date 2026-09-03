@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import math
 import os
 import signal
 import time
+from datetime import date, timedelta
 from pathlib import Path
 
 import lightgbm as lgb
@@ -15,6 +18,13 @@ import numpy as np
 from app.backtest import LocalObjectStore
 from app.market_readiness import MarketReadinessStore
 from app.ml_strategy import FEATURE_ORDER, RUNTIME_LOCK, effective_lightgbm_parameters
+from app.ml_capabilities import (
+    RIDGE_RUNTIME_IDENTITY,
+    STRATEGY_SCHEMA as ML_V2_SCHEMA,
+    canonical_json,
+    learner_profile,
+    validate_registry,
+)
 from app.ml_training import (
     MLTrainingCoordinator,
     MLTrainingRunStore,
@@ -43,12 +53,10 @@ class LightGBMTrainer:
         ranks[order] = np.arange(1, len(values) + 1, dtype=float)
         return ranks
 
-    def train(self, feature_snapshot: dict[str, object], strategy: dict[str, object]) -> dict[str, object]:
-        rows = feature_snapshot.get("rows")
-        if not isinstance(rows, list):
-            raise ValueError("feature snapshot rows are unavailable")
-        train_rows = [row for row in rows if isinstance(row, dict) and row.get("split") == "train"]
-        validation_rows = [row for row in rows if isinstance(row, dict) and row.get("split") == "validation"]
+    def fit_rows(
+        self, train_rows: list[dict[str, object]], validation_rows: list[dict[str, object]],
+        strategy: dict[str, object],
+    ) -> dict[str, object]:
         if len(train_rows) < 20 or len(validation_rows) < 5:
             raise ValueError("insufficient train or validation rows")
 
@@ -84,6 +92,10 @@ class LightGBMTrainer:
         model_text = booster.model_to_string(num_iteration=best_iteration)
         return {
             "model_text": model_text,
+            "model_format": "lightgbm-text-v1",
+            "media_type": "text/x-lightgbm-model",
+            "feature_order": list(FEATURE_ORDER),
+            "learner_profile": "byq-lightgbm-cpu-v1",
             "best_iteration": best_iteration,
             "effective_parameters": {**effective, "num_boost_round": num_round,
                                      "early_stopping_rounds": early_stopping_rounds},
@@ -92,6 +104,164 @@ class LightGBMTrainer:
             "runtime_identity": self.runtime_identity,
             "image_identity": self.image_identity,
         }
+
+    def train(self, feature_snapshot: dict[str, object], strategy: dict[str, object]) -> dict[str, object]:
+        rows = feature_snapshot.get("rows")
+        if not isinstance(rows, list):
+            raise ValueError("feature snapshot rows are unavailable")
+        train_rows = [row for row in rows if isinstance(row, dict) and row.get("split") == "train"]
+        validation_rows = [row for row in rows if isinstance(row, dict) and row.get("split") == "validation"]
+        return self.fit_rows(train_rows, validation_rows, strategy)
+
+
+class RidgeTrainer:
+    runtime_identity = RIDGE_RUNTIME_IDENTITY
+
+    def __init__(self, image_identity: str | None = None) -> None:
+        self.image_identity = image_identity or os.environ.get(
+            "BYQ_ML_IMAGE_IDENTITY", "byq-ml-worker-v2-local-build"
+        )
+
+    @staticmethod
+    def _matrix(rows: list[dict[str, object]]) -> tuple[np.ndarray, np.ndarray]:
+        x = np.asarray(
+            [[float(row["features"][name]) for name in FEATURE_ORDER] for row in rows], dtype=np.float64
+        )
+        y = np.asarray([float(row["target"]) for row in rows], dtype=np.float64)
+        if x.ndim != 2 or x.shape[1] != len(FEATURE_ORDER) or not np.isfinite(x).all() or not np.isfinite(y).all():
+            raise ValueError("ridge training matrix is invalid")
+        return x, y
+
+    def fit_rows(
+        self, train_rows: list[dict[str, object]], validation_rows: list[dict[str, object]],
+        strategy: dict[str, object],
+    ) -> dict[str, object]:
+        if len(train_rows) < 20 or len(validation_rows) < 5:
+            raise ValueError("insufficient train or validation rows")
+        parameters = strategy.get("learner", {}).get("parameters", {})
+        if not isinstance(parameters, dict):
+            raise ValueError("ridge parameters are unavailable")
+        alpha = float(parameters.get("alpha", 1.0))
+        fit_intercept = bool(parameters.get("fit_intercept", True))
+        train_x, train_y = self._matrix(train_rows)
+        validation_x, validation_y = self._matrix(validation_rows)
+        mean = train_x.mean(axis=0) if fit_intercept else np.zeros(train_x.shape[1], dtype=np.float64)
+        scale = train_x.std(axis=0)
+        scale = np.where(scale > 1e-12, scale, 1.0)
+        normalized = (train_x - mean) / scale
+        target_mean = float(train_y.mean()) if fit_intercept else 0.0
+        centered_y = train_y - target_mean
+        gram = normalized.T @ normalized + alpha * np.eye(normalized.shape[1], dtype=np.float64)
+        coefficients = np.linalg.solve(gram, normalized.T @ centered_y)
+        predictions = ((validation_x - mean) / scale) @ coefficients + target_mean
+        if not np.isfinite(coefficients).all() or not np.isfinite(predictions).all():
+            raise ValueError("ridge trainer returned non-finite values")
+        rmse = float(np.sqrt(np.mean(np.square(predictions - validation_y))))
+        rank_ic = 0.0
+        if len(predictions) > 1:
+            correlation = np.corrcoef(LightGBMTrainer._rank(predictions), LightGBMTrainer._rank(validation_y))[0, 1]
+            rank_ic = 0.0 if not math.isfinite(float(correlation)) else float(correlation)
+        model = {
+            "schema_version": "ridge-linear-json-v1",
+            "feature_order": list(FEATURE_ORDER),
+            "coefficients": [float(value) for value in coefficients],
+            "intercept": target_mean,
+            "normalization": {
+                "mean": [float(value) for value in mean],
+                "scale": [float(value) for value in scale],
+            },
+            "parameters": {"alpha": alpha, "fit_intercept": fit_intercept},
+            "runtime_identity": self.runtime_identity,
+        }
+        return {
+            "model_bytes": canonical_json(model),
+            "model_format": "ridge-linear-json-v1",
+            "media_type": "application/vnd.byq.ridge-model+json",
+            "feature_order": list(FEATURE_ORDER),
+            "learner_profile": "byq-ridge-cpu-v1",
+            "best_iteration": None,
+            "effective_parameters": model["parameters"],
+            "metrics": {
+                "validation_rmse": rmse, "validation_rank_ic": rank_ic,
+                "train_rows": len(train_rows), "validation_rows": len(validation_rows),
+            },
+            "runtime_identity": self.runtime_identity,
+            "image_identity": self.image_identity,
+        }
+
+
+class QualifiedTrainer:
+    """Dispatch only exact, code-owned learner profile identities."""
+
+    def __init__(self) -> None:
+        self._trainers = {
+            "byq-lightgbm-cpu-v1": LightGBMTrainer(),
+            "byq-ridge-cpu-v1": RidgeTrainer(),
+        }
+
+    @staticmethod
+    def _model_payload(result: dict[str, object]) -> bytes:
+        if isinstance(result.get("model_text"), str):
+            return str(result["model_text"]).encode("utf-8")
+        payload = result.get("model_bytes")
+        if isinstance(payload, bytes):
+            return payload
+        raise ValueError("qualified trainer returned no model payload")
+
+    def train(self, feature_snapshot: dict[str, object], strategy: dict[str, object]) -> dict[str, object]:
+        profile = learner_profile(strategy)
+        trainer = self._trainers.get(profile)
+        if trainer is None:
+            raise ValueError("learner profile is not available in the trusted worker")
+        if strategy.get("schema_version") != ML_V2_SCHEMA:
+            return trainer.train(feature_snapshot, strategy)
+        rows = feature_snapshot.get("rows")
+        folds = feature_snapshot.get("folds")
+        if not isinstance(rows, list) or not isinstance(folds, list) or not folds:
+            raise ValueError("walk-forward feature snapshot is incomplete")
+        development_rows = [
+            row for row in rows if isinstance(row, dict) and row.get("split") == "development"
+        ]
+        trained: list[tuple[dict[str, object], dict[str, object]]] = []
+        for fold in folds:
+            if not isinstance(fold, dict) or not isinstance(fold.get("train"), dict) or not isinstance(fold.get("validation"), dict):
+                raise ValueError("walk-forward fold is invalid")
+            train_window, validation_window = fold["train"], fold["validation"]
+            validation_start = str(validation_window["start"])
+            train_rows = [
+                row for row in development_rows
+                if str(train_window["start"]) <= str(row["session"]) <= str(train_window["end"])
+                and str(row.get("label_end_date", "9999-12-31")) < validation_start
+            ]
+            validation_rows = [
+                row for row in development_rows
+                if str(validation_window["start"]) <= str(row["session"]) <= str(validation_window["end"])
+            ]
+            result = trainer.fit_rows(train_rows, validation_rows, strategy)
+            payload = self._model_payload(result)
+            evidence = {
+                "fold_id": fold.get("fold_id"), "manifest_sha256": fold.get("content_sha256"),
+                "train": train_window, "validation": validation_window,
+                "train_rows": len(train_rows), "validation_rows": len(validation_rows),
+                "metrics": result.get("metrics"), "model_sha256": hashlib.sha256(payload).hexdigest(),
+            }
+            trained.append((result, evidence))
+        selected_result, selected_evidence = trained[-1]
+        rmses = [float(item[1]["metrics"]["validation_rmse"]) for item in trained]
+        rank_ics = [float(item[1]["metrics"]["validation_rank_ic"]) for item in trained]
+        selected_result["metrics"] = {
+            "validation_rmse": float(np.mean(rmses)),
+            "validation_rmse_median": float(np.median(rmses)),
+            "validation_rmse_std": float(np.std(rmses)),
+            "validation_rmse_worst": float(max(rmses)),
+            "validation_rank_ic": float(np.mean(rank_ics)),
+            "valid_folds": len(trained),
+        }
+        selected_result["folds"] = [item[1] for item in trained]
+        selected_result["selection_rule"] = {
+            "kind": "latest-valid-fold-v1", "selected_fold_id": selected_evidence["fold_id"]
+        }
+        return selected_result
 
 
 class LightGBMPredictor:
@@ -158,6 +328,48 @@ def probe() -> int:
     )
     if len(scores) != 3 or not all(math.isfinite(score) for score in scores):
         raise RuntimeError("five-feature LightGBM prediction probe failed")
+    registry = validate_registry()
+    if registry.get("schema_version") != "ml-capability-registry.v2" or not registry.get("content_sha256"):
+        raise RuntimeError("ML capability registry qualification failed")
+    ridge_rows = []
+    for index in range(30):
+        ridge_rows.append({
+            "features": {name: float(index + offset) / 100.0 for offset, name in enumerate(FEATURE_ORDER)},
+            "target": float(index) / 1000.0,
+        })
+    ridge_strategy = {
+        "schema_version": ML_V2_SCHEMA,
+        "learner": {"profile": "byq-ridge-cpu-v1", "parameters": {"alpha": 1.0, "fit_intercept": True}},
+    }
+    ridge = RidgeTrainer().fit_rows(ridge_rows[:24], ridge_rows[24:], ridge_strategy)
+    ridge_payload = ridge.get("model_bytes")
+    if not isinstance(ridge_payload, bytes) or json.loads(ridge_payload)["schema_version"] != "ridge-linear-json-v1":
+        raise RuntimeError("Ridge JSON model qualification failed")
+    walk_rows = []
+    for index in range(45):
+        session = (date(2026, 1, 1) + timedelta(days=index)).isoformat()
+        walk_rows.append({
+            "session": session, "split": "development", "label_end_date": session,
+            "features": {name: float(index + offset) / 100.0 for offset, name in enumerate(FEATURE_ORDER)},
+            "target": float(index) / 1000.0,
+        })
+    walk_strategy = {
+        **ridge_strategy,
+        "learner": {"profile": "byq-ridge-cpu-v1", "parameters": {"alpha": 1.0, "fit_intercept": True}},
+    }
+    walk = QualifiedTrainer().train({
+        "rows": walk_rows,
+        "folds": [
+            {"fold_id": "fold-01", "content_sha256": "a" * 64,
+             "train": {"start": "2026-01-01", "end": "2026-01-20"},
+             "validation": {"start": "2026-01-26", "end": "2026-01-30"}},
+            {"fold_id": "fold-02", "content_sha256": "b" * 64,
+             "train": {"start": "2026-01-01", "end": "2026-01-30"},
+             "validation": {"start": "2026-02-05", "end": "2026-02-09"}},
+        ],
+    }, walk_strategy)
+    if walk.get("learner_profile") != "byq-ridge-cpu-v1" or len(walk.get("folds", [])) != 2:
+        raise RuntimeError("walk-forward learner dispatch qualification failed")
     return 0
 
 
@@ -184,7 +396,7 @@ def main() -> int:
     readiness = MarketReadinessStore.from_env()
     objects = LocalObjectStore(os.environ.get("BYQ_ML_OBJECT_ROOT", "/var/lib/byq/ml-objects"))
     coordinator = MLTrainingCoordinator(
-        runs, research, objects, LightGBMTrainer(),
+        runs, research, objects, QualifiedTrainer(),
         worker_id=os.environ.get("BYQ_ML_WORKER_ID", "ml-worker-1"),
     )
     prediction_coordinator = MLPredictionCoordinator(

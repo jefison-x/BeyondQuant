@@ -719,12 +719,12 @@ DSH、PostgreSQL 或 Tushare；Data Worker 仍是唯一 Provider caller。
 purged walk-forward、Ridge profile、HS300 RegimeSnapshot、ModelBundle、RoutingPolicy 和 Product/Agent
 边界。本阶段不改 runtime/schema/API/MCP/UI。
 
-### Phase 84 — Capability registry, Ridge and walk-forward（`AUTHORIZED`）
+### Phase 84 — Capability registry, Ridge and walk-forward（`COMPLETE`）
 
 实现代码管理与 CI qualification 的注册表、模块化 Feature/Target/Validation/Learner/Portfolio 合同、
 v1 compatibility、Ridge JSON model 和 purged walk-forward Worker/Artifact；不实现 regime、routing 或 UI。
 
-### Phase 85 — Regime snapshot, expert bundle and routing（`BLOCKED_BY_PHASE_84`）
+### Phase 85 — Regime snapshot, expert bundle and routing（`AUTHORIZED`）
 
 实现冻结沪深300状态、专家模型包、fallback 和确定性路由；扩展 prediction/signal lineage，Backtest 继续
 只消费冻结信号；不提前开放 Browser/Agent。

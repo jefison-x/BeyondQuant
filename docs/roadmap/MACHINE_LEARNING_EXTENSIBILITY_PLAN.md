@@ -11,7 +11,7 @@ worktree、branch、PR，完成自动验证、CI-green squash merge 和生产部
   RoutingPolicy 与 Product/Agent 边界；
 - 不修改 runtime、database、API、MCP、frontend 或 Compose。
 
-## Phase 84 — Capability registry, Ridge and walk-forward（`AUTHORIZED`）
+## Phase 84 — Capability registry, Ridge and walk-forward（`COMPLETE`）
 
 - 实现代码管理且 CI qualification 的 `ml-capability-registry.v2` 与安全 Product metadata；
 - 把 FeatureSet、Target、ValidationPlan、LearnerProfile、PortfolioPolicy 从固定 LightGBM 路径解耦；
@@ -20,7 +20,7 @@ worktree、branch、PR，完成自动验证、CI-green squash merge 和生产部
 - 完成 Backend/Worker/PostgreSQL restart、idempotency、tamper、no-look-ahead 和资源上限测试；
 - 不实现 regime、bundle、routing、MCP 或 UI。
 
-## Phase 85 — Regime snapshot, expert bundle and routing（`BLOCKED_BY_PHASE_84`）
+## Phase 85 — Regime snapshot, expert bundle and routing（`AUTHORIZED`）
 
 - 实现 frozen HS300 trend/volatility RegimeSnapshot；
 - 实现 bounded expert training、ModelBundle、fallback 和 deterministic router；

@@ -170,6 +170,7 @@ from .strategy_artifact import (
     validate_version_content,
 )
 from .ml_strategy import ml_capability_catalog, normalize_ml_strategy, validate_ml_strategy_version
+from .ml_capabilities import STRATEGY_SCHEMA as ML_V2_SCHEMA, strategy_data_window
 from .ml_training import (
     MLTrainingConflict,
     MLTrainingNotFound,
@@ -1854,7 +1855,8 @@ def _ml_agent_artifact_projection(artifact: dict[str, Any]) -> dict[str, object]
     allowed = {
         "ml_strategy_version": {
             "schema_version", "version_id", "name", "learner", "feature_set", "target",
-            "split", "learner_parameters", "signal_policy", "runtime_lock",
+            "split", "learner_parameters", "signal_policy", "validation_plan", "portfolio_policy",
+            "development_window", "prediction_window", "capability_lock", "runtime_lock",
         },
         "ml_strategy_approval": {
             "schema_version", "ml_strategy_version_id", "ml_strategy_artifact_id",
@@ -1864,7 +1866,8 @@ def _ml_agent_artifact_projection(artifact: dict[str, Any]) -> dict[str, object]
             "schema_version", "training_run_id", "strategy_version_artifact_id",
             "feature_snapshot_artifact_id", "stock_pool_snapshot_id", "split",
             "feature_order", "best_iteration", "metrics", "counts", "runtime_lock",
-            "runtime_identity", "content_sha256",
+            "runtime_identity", "content_sha256", "learner_profile", "validation_plan", "folds",
+            "selection_rule", "capability_lock", "development_window", "prediction_window",
         },
         "ml_prediction_snapshot": {
             "schema_version", "model_artifact_id", "stock_pool_snapshot_id",
@@ -2092,11 +2095,11 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
         master = security_master_store.latest_snapshot()
         if master is None:
             raise ValueError("security master must be synchronized before ML training")
-        split = strategy["split"]
+        data_start, data_end = strategy_data_window(strategy)
         requirements = _partition_market_requirements(
             symbols=symbols,
-            start=datetime.strptime(str(split["train"]["start"]).replace("-", ""), "%Y%m%d"),
-            end=datetime.strptime(str(split["prediction"]["end"]).replace("-", ""), "%Y%m%d"),
+            start=datetime.strptime(data_start.replace("-", ""), "%Y%m%d"),
+            end=datetime.strptime(data_end.replace("-", ""), "%Y%m%d"),
             membership_fingerprint_value=str(pool_snapshot["membership_fingerprint"]),
             security_master_snapshot_id=str(master["snapshot_id"]), declared=declared,
         )
@@ -2224,6 +2227,8 @@ def create_ml_prediction_run(payload: dict[str, Any], request: Request) -> dict[
         ):
             raise ValueError("ML strategy is not approved for signal production")
         strategy = validate_ml_strategy_version(strategy_artifact["content"])
+        if strategy.get("schema_version") == ML_V2_SCHEMA:
+            raise ValueError("ML v2 prediction is not enabled until the regime routing phase")
         feature_artifact = research_store.get_artifact(model.get("feature_snapshot_artifact_id"))
         if (
             feature_artifact["kind"] != "ml_feature_snapshot"

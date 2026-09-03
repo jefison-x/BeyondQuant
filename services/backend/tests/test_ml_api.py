@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app import main as backend_main
 from app.main import _ml_pool_market_scope, app
-from tests.test_ml_strategy import valid_strategy
+from tests.test_ml_strategy import valid_strategy, valid_strategy_v2
 from tests.workspace_helpers import trusted_agent_context
 
 
@@ -30,6 +30,11 @@ def test_ml_capabilities_and_workspace_are_closed_safe_projections() -> None:
     body = capabilities.json()
     assert body["schema_version"] == "ml-capabilities.v1"
     assert body["capabilities"][0]["learner"]["kind"] == "lightgbm_regression"
+    assert body["registry"]["schema_version"] == "ml-capability-registry.v2"
+    assert any(
+        item["id"] == "byq-ridge-cpu-v1" and item["status"] == "qualified"
+        for item in body["registry"]["components"]
+    )
     assert "xgboost" not in capabilities.text.lower()
     workspace = client.get("/v1/research/ml/workspace", headers=headers)
     assert workspace.status_code == 200
@@ -135,6 +140,30 @@ def test_ml_strategy_endpoint_rejects_open_python_contract() -> None:
     })
     assert response.status_code == 422
     assert "unknown fields" in response.text
+
+
+def test_ml_v2_strategy_version_and_approval_use_qualified_capability_lock() -> None:
+    headers = trusted_agent_context("ml-v2-api-owner", actor="ml-v2-api-owner")
+    task = client.post("/v1/research/tasks", headers=headers, json={
+        "owner_principal": "ml-v2-api-owner", "title": "ML v2 API", "objective": "Walk forward",
+        "trace_id": "trace-ml-v2-api", "idempotency_key": "task-ml-v2-api",
+    }).json()
+    version = client.post("/v1/research/ml/strategies/versions", headers=headers, json={
+        "task_id": task["task_id"], "strategy": valid_strategy_v2(),
+        "trace_id": "trace-ml-v2-api", "idempotency_key": "version-ml-v2-api",
+    })
+    assert version.status_code == 201, version.text
+    content = version.json()["ml_strategy_version"]
+    assert content["schema_version"] == "ml-strategy-version.v2"
+    assert content["capability_lock"]["content_sha256"]
+    approval = client.post("/v1/research/ml/strategies/approvals", headers=headers, json={
+        "task_id": task["task_id"],
+        "ml_strategy_artifact_id": version.json()["artifact"]["artifact_id"],
+        "decision": "approved", "rationale": "qualified baseline",
+        "trace_id": "trace-ml-v2-api", "idempotency_key": "approval-ml-v2-api",
+    })
+    assert approval.status_code == 201, approval.text
+    assert approval.json()["approval"]["ml_strategy_version_id"] == content["version_id"]
 
 
 def test_ml_training_requires_separate_human_strategy_approval() -> None:

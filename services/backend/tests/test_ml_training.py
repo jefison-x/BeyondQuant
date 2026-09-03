@@ -13,11 +13,12 @@ from app.ml_training import (
     MLTrainingRunStore,
     aggregate_ml_readiness,
     build_feature_snapshot,
+    generate_walk_forward_folds,
     load_feature_snapshot,
     promote_waiting_training_runs,
 )
 from app.research import ResearchStore
-from tests.test_ml_strategy import valid_strategy
+from tests.test_ml_strategy import valid_strategy, valid_strategy_v2
 from tests.workspace_helpers import trusted_agent_context
 
 
@@ -53,6 +54,29 @@ def feature_input() -> tuple[dict[str, object], dict[str, object], dict[str, obj
     return strategy, universe, ready
 
 
+def feature_input_v2() -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    dates = [(date(2024, 1, 1) + timedelta(days=index)).isoformat() for index in range(125)]
+    candidate = valid_strategy_v2()
+    candidate["development_window"] = {"start": dates[0], "end": dates[99]}
+    candidate["prediction_window"] = {"start": dates[100], "end": dates[-1]}
+    strategy = normalize_ml_strategy(candidate)
+    bars = []
+    for symbol_offset, symbol in enumerate(("000001.SZ", "000002.SZ")):
+        for index, session in enumerate(dates):
+            bars.append({
+                "symbol": symbol, "trade_date": session,
+                "close": 10.0 + symbol_offset + index * 0.03 + (index % 4) * 0.01,
+                "volume": 2000.0 + index * 7 + symbol_offset,
+                "is_universe_member": True,
+            })
+    universe = {
+        "membership_mode": "fixed_snapshot", "stock_pool_id": "stock_pool_v2",
+        "stock_pool_snapshot_id": "snapshot_v2", "membership_fingerprint": "membership-v2",
+        "symbols": ["000001.SZ", "000002.SZ"], "index_symbol": None,
+    }
+    return strategy, universe, {"research_bars": bars, "research_view_sha256": "c" * 64}
+
+
 def test_feature_snapshot_is_deterministic_and_never_labels_prediction_rows() -> None:
     strategy, universe, ready = feature_input()
     readiness = {"ready_input_sha256": "b" * 64}
@@ -72,6 +96,32 @@ def test_feature_snapshot_is_deterministic_and_never_labels_prediction_rows() ->
         else:
             assert row["label_end_date"] <= strategy["split"][row["split"]]["end"]
     assert not any(row["symbol"] == "000002.SZ" and row["session"] == "2024-02-15" for row in first["rows"])
+
+
+def test_v2_feature_snapshot_freezes_purged_walk_forward_manifest() -> None:
+    strategy, universe, ready = feature_input_v2()
+    snapshot = build_feature_snapshot(
+        strategy=strategy, universe=universe, ready_input=ready,
+        readiness={"ready_input_sha256": "d" * 64},
+    )
+    assert snapshot["schema_version"] == "ml-feature-snapshot.v2"
+    assert len(snapshot["folds"]) == 2
+    assert snapshot["folds"][0]["train"]["end"] < snapshot["folds"][0]["validation"]["start"]
+    assert snapshot["folds"][0]["purge"]["sessions"] == 5
+    assert all("target" not in row for row in snapshot["rows"] if row["split"] == "prediction")
+    assert all(row["label_end_date"] <= strategy["development_window"]["end"] for row in snapshot["rows"] if row["split"] == "development")
+    assert snapshot == build_feature_snapshot(
+        strategy=strategy, universe=universe, ready_input=ready,
+        readiness={"ready_input_sha256": "d" * 64},
+    )
+
+
+def test_walk_forward_rejects_insufficient_sessions() -> None:
+    strategy, _, _ = feature_input_v2()
+    with pytest.raises(ValueError, match="requires"):
+        generate_walk_forward_folds(
+            ["2024-01-01"] * 10, strategy["validation_plan"], horizon_sessions=5
+        )
 
 
 def test_bad_waiting_run_is_isolated_from_following_preparation() -> None:
@@ -154,6 +204,72 @@ class FakeTrainer:
             "runtime_identity": "lightgbm-4.7.0-python-3.13-linux-cpu-single-thread",
             "image_identity": "byq-ml-worker-v1-test",
         }
+
+
+class FakeV2Trainer:
+    def train(self, feature_snapshot, strategy):
+        return {
+            "model_bytes": b'{"schema_version":"ridge-linear-json-v1"}',
+            "model_format": "ridge-linear-json-v1",
+            "media_type": "application/vnd.byq.ridge-model+json",
+            "feature_order": ["return_1", "return_5", "return_20", "volatility_20", "volume_ratio_5"],
+            "learner_profile": "byq-ridge-cpu-v1",
+            "best_iteration": None,
+            "effective_parameters": {"alpha": 1.0, "fit_intercept": True},
+            "metrics": {"validation_rmse": 0.01, "validation_rmse_std": 0.001,
+                        "validation_rmse_median": 0.01, "validation_rmse_worst": 0.011,
+                        "validation_rank_ic": 0.2,
+                        "valid_folds": 2},
+            "folds": [{"fold_id": "fold-01", "model_sha256": "e" * 64}],
+            "selection_rule": {"kind": "latest-valid-fold-v1", "selected_fold_id": "fold-01"},
+            "runtime_identity": "ridge-numpy-2.3.3-python-3.13-linux-cpu-single-thread",
+            "image_identity": "byq-ml-worker-v2-test",
+        }
+
+
+def test_v2_training_persists_qualified_model_and_fold_evidence(tmp_path) -> None:
+    context = trusted_agent_context("ml-v2-owner")
+    research, runs = ResearchStore(), MLTrainingRunStore()
+    try:
+        task = research.create_task({
+            "owner_principal": "ml-v2-owner", "title": "ML v2", "objective": "Walk forward",
+            "trace_id": "trace-ml-v2", "idempotency_key": "ml-v2-task",
+        })
+        strategy, universe, ready = feature_input_v2()
+        strategy_artifact = research.create_artifact({
+            "task_id": task["task_id"], "kind": "ml_strategy_version", "content": strategy,
+            "lineage": [], "trace_id": "trace-ml-v2", "idempotency_key": "ml-v2-strategy",
+        })
+        strategy_artifact = research.transition(
+            "artifact", strategy_artifact["artifact_id"], "validated", "ml-v2-strategy-valid"
+        )
+        feature = build_feature_snapshot(
+            strategy=strategy, universe=universe, ready_input=ready,
+            readiness={"ready_input_sha256": "f" * 64},
+        )
+        run = runs.create_waiting(
+            workspace_id=context["x-byq-workspace-id"], owner_principal="ml-v2-owner",
+            task_id=task["task_id"], experiment_id=None,
+            ml_strategy_artifact_id=strategy_artifact["artifact_id"],
+            stock_pool_snapshot_id="snapshot_v2", preparation={"strategy": strategy, "universe": universe},
+            requirement={"requirement_sha256": "1" * 64}, readiness={"state": "ready"},
+            trace_id="trace-ml-v2", idempotency_key="ml-v2-train",
+        )
+        runs.promote_ready(str(run["training_run_id"]), feature)
+        completed = MLTrainingCoordinator(
+            runs, research, LocalObjectStore(tmp_path), FakeV2Trainer(), worker_id="worker-v2"
+        ).run_next()
+        assert completed is not None and completed["status"] == "completed"
+        model = research.get_artifact(completed["model_artifact_id"])["content"]
+        assert model["schema_version"] == "ml-model-artifact.v2"
+        assert model["model_format"] == "ridge-linear-json-v1"
+        assert model["learner_profile"] == "byq-ridge-cpu-v1"
+        assert model["folds"][0]["fold_id"] == "fold-01"
+        assert model["capability_lock"] == strategy["capability_lock"]
+        assert LocalObjectStore(tmp_path).get(model["object_reference"]).startswith(b'{"schema_version"')
+    finally:
+        runs.close()
+        research.close()
 
 
 def test_training_run_creates_immutable_feature_and_model_artifacts(tmp_path) -> None:
