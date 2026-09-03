@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMLStrategy, getMLPredictionRows, getMLWorkspace } from "./mlResearch";
+import { createMLStrategy, createMLTraining, getMLPredictionRows, getMLWorkspace } from "./mlResearch";
 
 describe("ML research Product API client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -22,5 +22,15 @@ describe("ML research Product API client", () => {
     vi.stubGlobal("fetch", fetchMock);
     await getMLPredictionRows("run /1", "000001.SZ", 50, 50);
     expect(fetchMock.mock.calls[0][0]).toBe("/api/product/ml/prediction-runs/run%20%2F1/rows?query=000001.SZ&limit=50&offset=50");
+  });
+  it("sends a stable transport idempotency key outside the domain payload", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ training_run: { training_run_id: "mlrun_1" } }), { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createMLTraining({
+      task_id: "task_1", ml_strategy_artifact_id: "artifact_1", stock_pool_snapshot_id: "snapshot_1",
+    }, "browser-training-12345678");
+    const init = fetchMock.mock.calls[0][1];
+    expect(init.headers["x-idempotency-key"]).toBe("browser-training-12345678");
+    expect(JSON.parse(init.body)).not.toHaveProperty("idempotency_key");
   });
 });

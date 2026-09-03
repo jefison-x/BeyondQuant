@@ -7,13 +7,20 @@ const getMLOptions = vi.fn();
 const getMLStudies = vi.fn();
 const getMLStudy = vi.fn();
 const getMLPredictionRows = vi.fn();
+const createMLTraining = vi.fn();
+const confirmTraining = vi.fn();
+
+vi.mock("element-plus", () => ({
+  ElMessage: { success: vi.fn(), error: vi.fn() },
+  ElMessageBox: { confirm: (...args: unknown[]) => confirmTraining(...args) },
+}));
 
 vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/api/mlResearch", () => ({
   approveMLStrategy: vi.fn(),
   createMLPrediction: vi.fn(),
   createMLStrategy: vi.fn(),
-  createMLTraining: vi.fn(),
+  createMLTraining: (...args: unknown[]) => createMLTraining(...args),
   getMLPrediction: vi.fn(),
   getMLPredictionRows: (...args: unknown[]) => getMLPredictionRows(...args),
   getMLTraining: vi.fn(),
@@ -53,6 +60,13 @@ describe("MLResearchWorkbench", () => {
       schema_version: "ml-strategy-version.v1", status: "validated", regime_enabled: false, stage: "signal",
     }] });
     getMLStudy.mockReset();
+    createMLTraining.mockReset();
+    createMLTraining.mockResolvedValue({ training_run: {
+      training_run_id: "mlrun_new", ml_strategy_artifact_id: "artifact_strategy",
+      stock_pool_snapshot_id: "snapshot_1", status: "waiting_for_data",
+    } });
+    confirmTraining.mockReset();
+    confirmTraining.mockResolvedValue("confirm");
     getMLStudy.mockResolvedValue({
       schema_version: "ml-product-study-detail.v1",
       study: {
@@ -90,5 +104,32 @@ describe("MLResearchWorkbench", () => {
     await flushPromises();
 
     expect(getMLPredictionRows).toHaveBeenCalledWith("mlpred_1", "", 50, 0);
+  });
+
+  it("latches before confirmation so rapid clicks create only one training run", async () => {
+    getMLOptions.mockResolvedValueOnce({
+      schema_version: "ml-options.v1", tasks: [{ task_id: "task_1", title: "模型研究" }],
+      pools: [{
+        pool_id: "pool_1", name: "沪深300", status: "active", member_count: 300,
+        current_snapshot_id: "snapshot_1",
+      }],
+    });
+    let resolveConfirmation: (value: string) => void = () => undefined;
+    confirmTraining.mockReturnValueOnce(new Promise(resolve => { resolveConfirmation = resolve; }));
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    await vm.selectStudy("artifact_strategy");
+    vm.training = null;
+    vm.form.pool_id = "pool_1";
+
+    const first = vm.approveAndTrain();
+    const second = vm.approveAndTrain();
+    expect(confirmTraining).toHaveBeenCalledTimes(1);
+    resolveConfirmation("confirm");
+    await Promise.all([first, second]);
+
+    expect(createMLTraining).toHaveBeenCalledTimes(1);
+    expect(createMLTraining.mock.calls[0][1]).toMatch(/^[0-9a-f-]{36}$/);
   });
 });

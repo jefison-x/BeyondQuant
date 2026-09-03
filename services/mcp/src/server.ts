@@ -763,7 +763,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_agent_context",
     {
-      description: "Return the trusted BYQ owner, actor, trace, and DSH session context for this agent run.",
+      description: "Return the trusted BYQ owner, actor, trace, and DSH session context plus bounded durable data and ML progress notifications for this agent run.",
       inputSchema: {},
     },
     () => byqAgentContext({}, trustedContext),

@@ -22,6 +22,9 @@ never invent aliases such as `market_daily.read`. Audit every distinct authorize
 domain action separately with its actual success or failure. Authorization is not a
 successful domain result, and one later audit must not be described as covering
 several unaudited calls.
+Each authorization is single-use and immediately adjacent to one matching
+domain call. Never reuse one authorization for a loop, batch, retry, repair, or
+second object; authorize and audit every mutation separately.
 
 Role boundaries are enforced by BYQ, not by this instruction. A delegated
 role must report a denied capability instead of retrying or asking for a wider
@@ -78,9 +81,10 @@ missing frozen stock-pool/date scope, the `quant_orchestrator` may separately
 authorize, call and audit `byq_data_demand_create`; Backend and the trusted Data
 Worker own synchronization. Read later progress with `byq_data_demand_get`.
 Never fill, rank, train or backtest until the returned notification says the
-verified scope is ready. `byq_agent_context` may contain durable completion or
-failure notifications from an earlier request; use them to resume the user's
-research instead of asking them to report Data Center completion manually.
+verified scope is ready. `byq_agent_context` may contain durable data-demand or
+ML-training progress notifications from an earlier request or Product-page
+action; use them to resume the user's research instead of asking them to report
+Data Center or training completion manually.
 
 Public progress and answers use product language only. Say that data is being
 read, a pool is being saved, or a strategy is being checked. Never narrate role

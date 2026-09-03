@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
@@ -600,9 +601,21 @@ def product_research_experiments(request: Request) -> dict[str, object]:
     return _backend_request("GET", "/v1/research/experiments", headers=_trusted_agent_headers(request))
 
 
-def _ml_nonce(prefix: str) -> tuple[str, str]:
-    nonce = uuid.uuid4().hex
-    return f"product-ml-{prefix}-{nonce}", f"product-ml-{prefix}-{nonce}"
+def _ml_nonce(prefix: str, request: Request) -> tuple[str, str]:
+    supplied = request.headers.get("x-idempotency-key")
+    if supplied is not None:
+        supplied = supplied.strip()
+        if not 8 <= len(supplied) <= 96 or not all(
+            character.isalnum() or character in {"-", "_"} for character in supplied
+        ):
+            raise ProductError(
+                422, "product_request_invalid", "ML idempotency key has invalid format",
+            )
+        nonce = supplied
+    else:
+        nonce = uuid.uuid4().hex
+    key = f"product-ml-{prefix}-{nonce}"
+    return key, key
 
 
 def _ml_artifact_projection(artifact: object) -> dict[str, object] | None:
@@ -717,7 +730,7 @@ def _ml_command(
     _product_principal(request)
     if set(payload) != fields:
         raise ProductError(422, "product_request_invalid", "ML research request has invalid fields")
-    trace_id, idempotency_key = _ml_nonce(prefix)
+    trace_id, idempotency_key = _ml_nonce(prefix, request)
     headers = _trusted_agent_headers(request)
     try:
         return _backend_request(
@@ -728,18 +741,27 @@ def _ml_command(
     except ProductError as error:
         if not reconcile_training or error.code != "backend_unavailable":
             raise
-        try:
-            reconciled = _backend_request(
-                "GET",
-                "/v1/research/ml/training-runs/reconcile",
-                headers=headers,
-                params={"idempotency_key": idempotency_key},
-            )
-        except ProductError:
-            raise error
-        return {**reconciled, "reconciliation": {
-            "status": "confirmed", "reason": "create_response_timeout",
-        }}
+        # The Backend may commit just after the Product API's POST timeout.
+        # Reconcile the same browser key for a short bounded window instead of
+        # returning a false failure that encourages a second mutation.
+        for delay in (0.0, 0.25, 0.5, 1.0, 2.0):
+            if delay:
+                time.sleep(delay)
+            try:
+                reconciled = _backend_request(
+                    "GET",
+                    "/v1/research/ml/training-runs/reconcile",
+                    headers=headers,
+                    params={"idempotency_key": idempotency_key},
+                )
+            except ProductError as reconcile_error:
+                if reconcile_error.status_code == 404:
+                    continue
+                raise error
+            return {**reconciled, "reconciliation": {
+                "status": "confirmed", "reason": "create_response_timeout",
+            }}
+        raise error
 
 
 @router.post("/ml/strategies/versions", status_code=201)

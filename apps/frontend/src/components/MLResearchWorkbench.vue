@@ -81,6 +81,25 @@ const predictionRowsLoading = ref(false), predictionRowsQuery = ref(""), predict
 const predictionRowsPageSize = 50;
 const predictionRunId = computed(() => prediction.value?.status === "completed" ? prediction.value.prediction_run_id ?? "" : "");
 
+function trainingSubmissionStorageKey() {
+  return selected.value && chosenPool.value
+    ? `byq:ml-training:${selected.value.task_id}:${selected.value.artifact_id}:${chosenPool.value.current_snapshot_id}`
+    : "";
+}
+function trainingSubmissionId() {
+  const storageKey = trainingSubmissionStorageKey();
+  if (!storageKey) return "";
+  const existing = window.sessionStorage.getItem(storageKey);
+  if (existing) return existing;
+  const created = crypto.randomUUID();
+  window.sessionStorage.setItem(storageKey, created);
+  return created;
+}
+function clearTrainingSubmissionId() {
+  const storageKey = trainingSubmissionStorageKey();
+  if (storageKey) window.sessionStorage.removeItem(storageKey);
+}
+
 function componentLabel(item: MLCapabilityComponent) { return item.display_name || item.id; }
 function initializeCapabilityDefaults() {
   form.capability_id ||= String(legacyCapabilities.value[0]?.capability_id ?? "");
@@ -238,15 +257,26 @@ async function saveStrategy() {
   finally { busy.value = false; }
 }
 async function approveAndTrain() {
-  if (!selected.value || !chosenPool.value) return;
-  await ElMessageBox.confirm(`将使用“${chosenPool.value.name}”的当前冻结快照开始训练。`, "确认训练范围", { type: "warning", confirmButtonText: "批准并开始训练", cancelButtonText: "返回检查" });
+  // Acquire the UI latch before opening the asynchronous confirmation. A
+  // rapid double click must never create two independent confirmation flows.
+  if (busy.value || !selected.value || !chosenPool.value) return;
   busy.value = true;
   try {
-    const approved = await approveMLStrategy({ task_id: selected.value.task_id, ml_strategy_artifact_id: selected.value.artifact_id, decision: "approved", rationale: "用户在模型研究工作台确认范围并批准训练" });
-    selectedApproval.value = approved.artifact.artifact_id;
-    training.value = (await createMLTraining({ task_id: selected.value.task_id, ml_strategy_artifact_id: selected.value.artifact_id, stock_pool_snapshot_id: chosenPool.value.current_snapshot_id })).training_run;
-    ElMessage.success("训练已提交，可稍后回来查看"); pollTraining();
-  } catch (e) { ElMessage.error(e instanceof Error ? e.message : "训练提交失败"); }
+    await ElMessageBox.confirm(`将使用“${chosenPool.value.name}”的当前冻结快照开始训练。`, "确认训练范围", { type: "warning", confirmButtonText: "批准并开始训练", cancelButtonText: "返回检查" });
+    if (!selectedApproval.value) {
+      const approved = await approveMLStrategy({ task_id: selected.value.task_id, ml_strategy_artifact_id: selected.value.artifact_id, decision: "approved", rationale: "用户在模型研究工作台确认范围并批准训练" });
+      selectedApproval.value = approved.artifact.artifact_id;
+    }
+    const submissionId = trainingSubmissionId();
+    training.value = (await createMLTraining(
+      { task_id: selected.value.task_id, ml_strategy_artifact_id: selected.value.artifact_id, stock_pool_snapshot_id: chosenPool.value.current_snapshot_id },
+      submissionId,
+    )).training_run;
+    clearTrainingSubmissionId();
+    ElMessage.success("训练已提交；页面与小巴下次会话会读取同一持久状态"); pollTraining();
+  } catch (e) {
+    if (e !== "cancel" && e !== "close") ElMessage.error(e instanceof Error ? e.message : "训练提交失败；再次提交会自动对账，不会重复创建");
+  }
   finally { busy.value = false; }
 }
 function pollTraining() {

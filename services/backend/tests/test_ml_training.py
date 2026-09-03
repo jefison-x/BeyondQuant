@@ -186,6 +186,52 @@ def test_bad_waiting_run_is_isolated_from_following_preparation() -> None:
     assert runs.updated == ["mlrun_waiting"]
 
 
+def test_waiting_promotion_persists_only_one_bounded_object_descriptor(tmp_path) -> None:
+    strategy, universe, ready_input = feature_input()
+
+    class Runs:
+        promoted: list[tuple[str, dict[str, object]]] = []
+
+        def list_waiting(self):
+            return [{
+                "training_run_id": f"mlrun_{index}",
+                "requirement_json": {"partition": index},
+                "preparation_json": {
+                    "requirements": [{"partition": index}],
+                    "strategy": strategy,
+                    "universe": universe,
+                },
+            } for index in range(2)]
+
+        def update_readiness(self, _run_id, _readiness):
+            return None
+
+        def promote_ready(self, run_id, feature):
+            self.promoted.append((run_id, feature))
+
+        def fail_waiting(self, *_args):
+            pytest.fail("ready preparation must not fail")
+
+    class Readiness:
+        def assess(self, _requirement):
+            return {"state": "ready", "required_cell_count": 1, "missing_count": 0,
+                    "ready_input_sha256": "b" * 64}
+
+        def build_ready_input(self, _requirement):
+            return ready_input
+
+    runs = Runs()
+    objects = LocalObjectStore(tmp_path)
+    assert promote_waiting_training_runs(runs, Readiness(), objects) == 1
+    assert len(runs.promoted) == 1
+    run_id, descriptor = runs.promoted[0]
+    assert run_id == "mlrun_0"
+    assert descriptor["storage_format"] == "gzip-json-v1"
+    assert descriptor["row_count"] > 0
+    assert "rows" not in descriptor
+    assert load_feature_snapshot(descriptor, objects)["rows"]
+
+
 def test_single_partition_keeps_existing_frozen_readiness_identity() -> None:
     readiness = aggregate_ml_readiness([{
         "state": "ready", "required_cell_count": 178, "missing_count": 0,
@@ -416,6 +462,16 @@ def test_training_run_creates_immutable_feature_and_model_artifacts(tmp_path) ->
             trusted_owner="ml-owner",
         )
         assert reconciled["training_run_id"] == run["training_run_id"]
+        duplicate = runs.create_waiting(
+            workspace_id=context["x-byq-workspace-id"], owner_principal="ml-owner",
+            task_id=task["task_id"], experiment_id=None,
+            ml_strategy_artifact_id=strategy_artifact["artifact_id"],
+            stock_pool_snapshot_id="snapshot_test",
+            preparation={"strategy": strategy_value, "universe": universe},
+            requirement={"requirement_sha256": "c" * 64}, readiness={"state": "ready"},
+            trace_id="trace-ml-duplicate", idempotency_key="train-duplicate-key",
+        )
+        assert duplicate["training_run_id"] == run["training_run_id"]
         with pytest.raises(MLTrainingNotFound):
             runs.get_by_idempotency(
                 "train-1", trusted_workspace="workspace_other", trusted_owner="ml-owner",
@@ -426,6 +482,13 @@ def test_training_run_creates_immutable_feature_and_model_artifacts(tmp_path) ->
         )
         completed = coordinator.run_next()
         assert completed is not None and completed["status"] == "completed"
+        notifications = runs.list_agent_notifications(
+            trusted_workspace=context["x-byq-workspace-id"], trusted_owner="ml-owner",
+        )
+        assert notifications[0]["training_run_id"] == run["training_run_id"]
+        assert notifications[0]["kind"] == "ml_training_progress"
+        assert notifications[0]["status"] == "completed"
+        assert "rows" not in notifications[0]
         feature_artifact = research.get_artifact(completed["feature_artifact_id"])
         model_artifact = research.get_artifact(completed["model_artifact_id"])
         assert feature_artifact["status"] == model_artifact["status"] == "validated"
