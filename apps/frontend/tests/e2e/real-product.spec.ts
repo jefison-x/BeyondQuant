@@ -5,6 +5,8 @@ async function openUserDestination(page: Page, label: string) {
   await page.getByRole("menuitem", { name: label }).click();
 }
 
+test("Phase 90 real feedback preview, submission, moderation and unconfigured publication", phase90FeedbackJourney);
+
 test("real Product API login and Stock Pool create flow", async ({ page, baseURL }) => {
   const adminUsername = process.env.BYQ_E2E_ADMIN_USERNAME;
   const adminPassword = process.env.BYQ_E2E_ADMIN_PASSWORD;
@@ -431,3 +433,75 @@ test("real Product API My Space credential, binding, policy, and asset import fl
   expect([...unexpectedOrigins]).toEqual([]);
   expect(serverErrors).toEqual([]);
 });
+
+async function phase90FeedbackJourney({ page, baseURL }: { page: Page; baseURL?: string }) {
+  const username = process.env.BYQ_E2E_ADMIN_USERNAME;
+  const password = process.env.BYQ_E2E_ADMIN_PASSWORD;
+  if (!username || !password) throw new Error("BYQ_E2E admin credentials are required");
+  const origin = new URL(baseURL ?? "http://127.0.0.1:18080").origin;
+  const unexpectedOrigins = new Set<string>();
+  const serverErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const feedbackRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (["http:", "https:"].includes(url.protocol) && url.origin !== origin) unexpectedOrigins.add(url.origin);
+    if (url.pathname.startsWith("/api/product/feedback")) feedbackRequests.push(`${request.method()} ${url.pathname}`);
+  });
+  page.on("response", (response) => { if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`); });
+
+  await page.goto("/login");
+  await page.getByLabel("用户名").fill(username);
+  await page.getByLabel("密码").fill(password);
+  await page.getByRole("button", { name: "进入" }).click();
+  await expect(page).toHaveURL(`${origin}/agent`);
+  page.on("console", (entry) => { if (entry.type() === "error") consoleErrors.push(entry.text()); });
+  await page.goto("/feedback");
+  await expect(page.getByRole("heading", { name: "反馈与建议" })).toBeVisible();
+  await expect(page.getByText(/无需配置 GitHub 账号/)).toBeVisible();
+  await expect.poll(() => feedbackRequests.filter((value) => value.startsWith("GET ")).length).toBe(2);
+  const suffix = Date.now();
+  await page.getByRole("button", { name: "新建" }).click();
+  await page.getByLabel("标题").fill(`Phase90 加载反馈 ${suffix}`);
+  await page.getByLabel("问题或建议描述").fill("真实浏览器验证反馈首屏、隐私预览和审核闭环。 ");
+  await page.getByRole("button", { name: "保存草稿" }).click();
+  await page.getByRole("button", { name: "生成提交预览" }).click();
+  await expect(page.getByRole("heading", { name: "公开候选快照" })).toBeVisible();
+  const submitCount = feedbackRequests.filter((value) => value.endsWith("/submit")).length;
+  expect(submitCount).toBe(0);
+  await page.getByRole("button", { name: "检查无误，确认提交" }).click();
+  await page.getByRole("button", { name: "我已检查并提交" }).click();
+  await expect.poll(() => feedbackRequests.filter((value) => value.endsWith("/submit")).length).toBe(1);
+  const feedbackId = await page.evaluate(async (title) => {
+    const response = await fetch(`/api/product/feedback/items?status=submitted&category=all&query=${encodeURIComponent(title)}&limit=1&offset=0`, { credentials: "include" });
+    return (await response.json()).items[0].feedback_id as string;
+  }, `Phase90 加载反馈 ${suffix}`);
+
+  const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
+  if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/01-feedback-owner-desktop.png`, fullPage: true });
+  await page.goto("/settings/system/feedback");
+  await expect(page.getByText("GitHub 发布服务未配置")).toBeVisible();
+  await page.getByRole("button", { name: new RegExp(`Phase90 加载反馈 ${suffix}`) }).click();
+  await page.getByRole("button", { name: "完成分诊" }).click();
+  await page.getByRole("dialog", { name: "标记已分诊" }).getByRole("textbox").fill("已复核真实浏览器反馈");
+  await page.getByRole("dialog", { name: "标记已分诊" }).getByRole("button", { name: "确定" }).click();
+  await page.getByRole("button", { name: "采纳", exact: true }).click();
+  await page.getByRole("dialog", { name: "采纳并进入发布队列" }).getByRole("textbox").fill("验收通过，进入发布队列");
+  await page.getByRole("dialog", { name: "采纳并进入发布队列" }).getByRole("button", { name: "确定" }).click();
+  await expect(page.getByText("GitHub 发布服务未配置")).toBeVisible();
+  const accepted = await page.evaluate(async (id) => {
+    const response = await fetch(`/api/product/feedback/moderation/items/${id}`, { credentials: "include" });
+    return (await response.json()).feedback;
+  }, feedbackId) as { status: string; publication_status: string };
+  expect(accepted).toMatchObject({ status: "accepted", publication_status: "publisher_unconfigured" });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(page.getByText("GitHub 发布服务未配置")).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+  if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/02-feedback-admin-mobile.png`, fullPage: true });
+  expect([...unexpectedOrigins]).toEqual([]);
+  expect(serverErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+}

@@ -1002,6 +1002,21 @@ credential、workspace、Product API、Product DSH 和 Engineering Plane 边界�
 零 GitHub 配置、部署维护者单仓库一次配置、Product DSH 零 GitHub 权限和 publisher 零源码/Git/数据库权限。
 Community source、database、credential 和 Git history 均未复制、导入或修改。
 
+## Phase 90 Product Feedback frontend closure audit
+
+2026-09-03 在实现 UI 前再次只读检查 Community Issue templates、Agent 入口、系统管理导航与对应前端组件。
+Community 没有内建反馈草稿、服务端公开预览、审核工作台或发布状态页面，因此没有可直接复用的页面。
+
+| Community evidence | Classification | Phase 90 disposition |
+|---|---|---|
+| Reproducible bug template 的结构化问题、复现、预期/实际和环境字段 | `PORT_UX` / `REFACTOR` | 以 BYQ owner draft editor、默认关闭的诊断 opt-in 和服务端公开预览实现；不复制模板或上传能力。 |
+| 私密安全报告入口与敏感信息提示 | `PORT_UX` / `PORT_TESTS` | UI 展示公开边界，Backend 对 security/secret 内容 fail closed；不把聊天、日志或凭据自动加入草稿。 |
+| Agent 页面侧边入口与系统管理分组导航 | `PORT_LAYOUT` / `PORT_UX` / `REFACTOR` | 反馈入口进入 conversation-first dialog/full-screen；审核入口仅置于 admin System Settings。 |
+| 无内建反馈目录、审核、GitHub 状态或跨回合确认能力 | `REPLACE` | 使用 BYQ Product API 的 owner/admin 投影、懒加载分页与小巴最小权限 MCP skill。 |
+| Community raw Agent/internal API/runtime/storage | `DROP` / `REPLACE` | Browser 只访问 same-origin Gateway/Product API；DSH 只经 BeyondQuant MCP，零 GitHub 权限。 |
+
+Community repository、database、credential、runtime 与 Git history 保持只读，未复制或修改。
+
 ## Post-Phase 82 frontend list-performance maintenance audit（2026-09-01）
 
 The read-only Community Stock Pool, Backtest, Strategy and Operations surfaces

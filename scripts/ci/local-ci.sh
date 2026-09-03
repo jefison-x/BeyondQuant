@@ -265,6 +265,18 @@ resolve_ci_compose_urls() {
   printf '    isolated endpoints -> frontend=%s gateway=%s\n' \
     "$BYQ_REAL_BASE_URL" "$BYQ_SMOKE_GATEWAY_URL"
 }
+wait_for_product_ready() {
+  local attempt
+  for attempt in $(seq 1 30); do
+    if curl --fail --silent --show-error --max-time 2 \
+        "$BYQ_SMOKE_GATEWAY_URL/readyz" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "    [FAIL] Product API was not externally ready after backend restart" >&2
+  return 1
+}
 
 # ------------------------------------------------------------------- checks
 check_hygiene() {
@@ -424,6 +436,14 @@ check_smoke() {
     && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
       scripts/evidence/phase74-product-verification.py --verify /tmp/byq-phase74-identities.json; then
     ok "Phase 74 restart persistence and two-user isolation"; else bad "Phase 74 restart persistence and two-user isolation"; fi
+  if BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
+      scripts/evidence/phase90-feedback-verification.py /tmp/byq-phase90-feedback.json \
+    && docker compose restart backend >/dev/null \
+    && docker compose up -d --wait backend >/dev/null \
+    && wait_for_product_ready \
+    && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
+      scripts/evidence/phase90-feedback-verification.py --verify /tmp/byq-phase90-feedback.json; then
+    ok "Phase 90 feedback restart persistence and two-user isolation"; else bad "Phase 90 feedback restart persistence and two-user isolation"; fi
   if docker compose cp scripts/evidence/phase48-seed.py backend:/tmp/phase48-seed.py >/dev/null \
     && docker compose exec -T \
       -e BYQ_GOLDEN_OTHER_USERNAME="$BYQ_GOLDEN_OTHER_USERNAME" \

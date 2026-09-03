@@ -13,6 +13,7 @@ const auth = useAuthStore();
 const isPublicRoute = computed(() => Boolean(route.meta.public));
 const isConversationRoute = computed(() => route.path === "/agent");
 const isSystemSettingsRoute = computed(() => route.path.startsWith("/settings/system"));
+const isOverlayRoute = computed(() => isSystemSettingsRoute.value || route.path === "/feedback");
 const isMobile = ref(false);
 const sidebarCollapsed = ref(false);
 const mobileDrawerOpen = ref(false);
@@ -87,8 +88,8 @@ watch(() => route.fullPath, async () => {
     <template v-else>
       <div
         class="main-content"
-        :inert="isSystemSettingsRoute"
-        :aria-hidden="isSystemSettingsRoute ? 'true' : undefined"
+        :inert="isOverlayRoute"
+        :aria-hidden="isOverlayRoute ? 'true' : undefined"
       >
         <AppSidebar
           v-if="!isMobile"

@@ -85,7 +85,7 @@ class AgentRole:
 ROLE_CATALOG: tuple[AgentRole, ...] = (
     AgentRole(
         role_id="quant_orchestrator",
-        version="1.8.0",
+        version="1.9.0",
         description="Coordinates bounded research hand-offs and explicit owner-scoped domain actions.",
         allowed_tools=(
             "byq_product_help_query",
@@ -103,6 +103,13 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_market_fundamentals",
             "byq_data_demand_create",
             "byq_data_demand_get",
+            "byq_feedback_options",
+            "byq_feedback_list",
+            "byq_feedback_get",
+            "byq_feedback_create_draft",
+            "byq_feedback_update_draft",
+            "byq_feedback_preview",
+            "byq_feedback_submit",
             "byq_pool_list",
             "byq_pool_get",
             "byq_pool_create",

@@ -35,6 +35,9 @@ try {
   assert.ok(listed.tools.some((tool) => tool.name === "byq_market_fundamentals"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_data_demand_create"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_data_demand_get"));
+  for (const name of ["byq_feedback_options", "byq_feedback_list", "byq_feedback_get", "byq_feedback_create_draft", "byq_feedback_update_draft", "byq_feedback_preview", "byq_feedback_submit"]) {
+    assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);
+  }
   assert.ok(listed.tools.some((tool) => tool.name === "byq_factor_compute"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_workflow_card_propose"));
   for (const name of [

@@ -35,6 +35,7 @@ Read only the reference matching the user's request:
 - Model research and Backtest: [references/ml-and-backtest.md](references/ml-and-backtest.md)
 - Paper Trading: [references/paper-trading.md](references/paper-trading.md)
 - Personal settings and assets: [references/user-settings.md](references/user-settings.md)
+- Product feedback and suggestions: use the dedicated `byq-product-feedback` skill.
 - Data Center, Operations and plugins: [references/admin.md](references/admin.md)
 
 Product language distinguishes “模型配置” from “模型研究”: the former configures

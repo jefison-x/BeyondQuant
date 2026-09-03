@@ -1038,6 +1038,39 @@ export interface ProductFeedbackSummary {
   updated_at: string;
 }
 
+export interface ProductFeedbackContent {
+  schema_version: "product-feedback.v1";
+  category: FeedbackCategory;
+  component: FeedbackComponent;
+  title: string;
+  description: string;
+  reproduction_steps: string[];
+  expected_behavior: string;
+  actual_behavior: string;
+  severity: "low" | "normal" | "high";
+  diagnostics: Record<string, boolean>;
+}
+
+export interface ProductFeedbackDetail extends ProductFeedbackSummary {
+  content: ProductFeedbackContent;
+}
+
+export interface ProductFeedbackOptions {
+  schema_version: "product-feedback-options.v1";
+  categories: FeedbackCategory[];
+  components: FeedbackComponent[];
+  severities: Array<"low" | "normal" | "high">;
+  limits: { title: number; description: number; steps: number; request_bytes: number };
+  privacy: {
+    preview_required: boolean;
+    explicit_confirmation_required: boolean;
+    attachments_supported: boolean;
+    security_reports_public: boolean;
+    normal_user_github_configuration: boolean;
+  };
+  publisher: { configured: boolean; status: "ready" | "stale" | "unconfigured" };
+}
+
 export interface ProductFeedbackPage {
   schema_version: "product-feedback-catalog.v1";
   items: ProductFeedbackSummary[];
@@ -1065,4 +1098,38 @@ export interface FeedbackPublisherStatus {
   last_error_category: string | null;
   last_heartbeat_at: string | null;
   last_success_at: string | null;
+}
+
+export interface FeedbackModerationItem {
+  schema_version: "feedback-moderation.v1";
+  feedback_id: string;
+  status: Exclude<FeedbackStatus, "draft" | "withdrawn">;
+  category: FeedbackCategory;
+  component: FeedbackComponent;
+  severity: "low" | "normal" | "high";
+  title: string;
+  version: number;
+  submitted_snapshot: { public_content: Record<string, unknown>; redactions: { categories: string[]; count: number }; preview_hash: string };
+  publication_status: ProductFeedbackSummary["publication_status"];
+  github_issue: ProductFeedbackSummary["github_issue"];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FeedbackModerationPage {
+  schema_version: "feedback-moderation-catalog.v1";
+  items: FeedbackModerationItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export interface FeedbackAuditPage {
+  schema_version: "feedback-moderation-audit.v1";
+  audit: Array<{ audit_id: string; action: string; actor_role: string; from_status: string | null; to_status: string; rationale: string; detail: Record<string, unknown>; created_at: string }>;
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
 }

@@ -40,6 +40,19 @@ class ProductCapabilityCatalogTests(unittest.TestCase):
         self.assertNotIn("signals:", task_registration)
         self.assertIn("not a second workflow", contract)
 
+    def test_feedback_agent_surface_requires_preview_and_has_no_admin_or_publisher_tools(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        mcp = (root / "services/mcp/src/server.ts").read_text()
+        roles = (root / "services/backend/app/agent_research.py").read_text()
+        skill = (root / "plugins/dsh-byq/skills/byq-product-feedback/SKILL.md").read_text()
+        for tool in ("byq_feedback_create_draft", "byq_feedback_update_draft", "byq_feedback_preview", "byq_feedback_submit"):
+            self.assertIn(f'"{tool}"', mcp)
+            self.assertIn(f'"{tool}"', roles)
+        for prohibited in ("byq_feedback_moderate", "byq_feedback_publish", "github_token", "github_repository"):
+            self.assertNotIn(f'"{prohibited}"', mcp)
+        self.assertIn("Do not call submit in this turn", skill)
+        self.assertIn("later confirmation", skill)
+
     def test_ml_agent_surface_is_closed_training_only_and_keeps_human_approval(self) -> None:
         root = Path(__file__).resolve().parents[2]
         mcp = (root / "services/mcp/src/server.ts").read_text()

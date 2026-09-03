@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Bell, CaretBottom, FolderOpened, SetUp, SwitchButton, Tools, User } from "@element-plus/icons-vue";
+import { Bell, CaretBottom, ChatDotRound, FolderOpened, SetUp, SwitchButton, Tools, User } from "@element-plus/icons-vue";
 import { useAuthStore } from "@/stores/auth";
 
 const props = withDefaults(
@@ -68,8 +68,9 @@ async function handleCommand(command: string) {
           <el-dropdown-item command="/user/models"><el-icon><SetUp /></el-icon>模型配置</el-dropdown-item>
           <el-dropdown-item command="/user/agent-policy"><el-icon><SetUp /></el-icon>智能助手偏好</el-dropdown-item>
           <el-dropdown-item command="/user/research"><el-icon><Bell /></el-icon>研究与审批</el-dropdown-item>
+          <el-dropdown-item command="/feedback" divided><el-icon><ChatDotRound /></el-icon>反馈与建议</el-dropdown-item>
           <template v-if="auth.isAdmin">
-            <el-dropdown-item command="system-settings" divided><el-icon><Tools /></el-icon>系统设置</el-dropdown-item>
+            <el-dropdown-item command="system-settings"><el-icon><Tools /></el-icon>系统设置</el-dropdown-item>
           </template>
           <el-dropdown-item command="logout" divided>
             <el-icon><SwitchButton /></el-icon>
