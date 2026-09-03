@@ -124,7 +124,7 @@ class RuntimeAdapter:
         self._backend_url = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
         self._resolver_token = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
         self._run_timeout_seconds = self._guard_seconds(
-            "BYQ_DSH_RUN_TIMEOUT_SECONDS", default=300.0,
+            "BYQ_DSH_RUN_TIMEOUT_SECONDS", default=900.0,
         )
         self._subagent_timeout_seconds = self._guard_seconds(
             "BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS", default=180.0,

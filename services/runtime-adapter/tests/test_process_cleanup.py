@@ -77,6 +77,14 @@ def wait_for_status(adapter: RuntimeAdapter, session_id: str, status: str) -> No
     raise AssertionError(f"session did not reach {status}")
 
 
+def test_default_whole_run_ceiling_allows_bounded_complex_research(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("BYQ_DSH_RUN_TIMEOUT_SECONDS", raising=False)
+
+    assert RuntimeAdapter().readiness()["run_guards"]["run_timeout_seconds"] == 900.0
+
+
 def test_lifecycle_has_single_active_prompt_and_duplicate_create_is_explicit(adapter: RuntimeAdapter) -> None:
     created = adapter.create_session("s-1", "t-1")
     assert created["status"] == SessionStatus.READY

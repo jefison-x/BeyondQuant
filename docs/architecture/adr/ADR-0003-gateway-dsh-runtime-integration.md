@@ -339,8 +339,19 @@ turn/step、reasoning chunk 与 tool lifecycle event，但 ADR-0033 要求其中
 进度。只有限定的合法 DSH execution event 可以刷新该 monotonic clock；raw payload、hidden
 reasoning、子会话 identity 与工具参数/结果仍被 normalization 丢弃，不越过 Gateway。活动中的
 delegated child 使用其专用 180 秒边界，不能被更短的 root quiet interval 抢先误标；整个 prompt
-仍受 300 秒绝对上限约束。此修正不新增 heartbeat、不解析推理语义、不实现第二 Agent loop，也
+仍受有限的绝对上限约束。此修正不新增 heartbeat、不解析推理语义、不实现第二 Agent loop，也
 不改变 DSH pin、MCP、WorkflowTrace 或 Browser Contract。
+
+### 2026-09-03 maintenance correction：复杂任务绝对上限与失败可见性
+
+真实机器学习编排在持续产生合法私有活性、完成多轮工具调用后，可能超过原 300 秒绝对
+上限。默认 whole-run ceiling 调整为 900 秒；120 秒无活动上限与 180 秒 delegated-child
+上限保持不变，因此真实停滞仍会及时终止。该调整只改变 Adapter-owned lifecycle policy，
+不改变 DSH、MCP 或 WorkflowTrace schema。
+
+Runtime 自动重建产生的 `session.ready`/`session.resumed` 只证明新 private generation 可用，
+不证明失败的用户回合已经重试。Frontend 必须保留最后一次 `session.failed`，直到后续
+`session.started` 证明新回合实际开始，避免将真实超时显示为静默空闲。
 
 ## Base Web DSH 决策
 
