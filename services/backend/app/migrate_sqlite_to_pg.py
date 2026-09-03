@@ -25,6 +25,7 @@ from .backtest import BacktestJobStore
 from .engineering import EngineeringTaskStore
 from .learning_loop import LearningLoopStore
 from .paper_trading import PaperTradingStore
+from .product_feedback import ProductFeedbackStore
 from .pg_import import KEEP_NEW, CONFLICT_POLICIES, adapt_export, import_to_pg, verify_import
 from .research import ResearchStore
 from .sqlite_export import build_manifest, export_sqlite, quarantine_rows
@@ -34,6 +35,7 @@ from .user_policy import UserPolicyStore
 
 ALL_SCHEMA_DDL: list[str] = [
     *UserAuthStore.SCHEMA_DDL,
+    *ProductFeedbackStore.SCHEMA_DDL,
     *UserPolicyStore.SCHEMA_DDL,
     *PaperTradingStore.SCHEMA_DDL,
     *BacktestJobStore.SCHEMA_DDL,

@@ -117,6 +117,49 @@ def _data_actor_headers(request: Request, *, require_admin: bool = False) -> dic
     return headers
 
 
+def _feedback_headers(request: Request) -> dict[str, str]:
+    """Normalize coarse, non-identifying client context; never forward User-Agent."""
+    headers = _trusted_agent_headers(request)
+    user_agent = request.headers.get("user-agent", "").lower()
+    if "edg/" in user_agent:
+        browser = "edge"
+    elif "chrome/" in user_agent or "crios/" in user_agent:
+        browser = "chrome"
+    elif "firefox/" in user_agent or "fxios/" in user_agent:
+        browser = "firefox"
+    elif "safari/" in user_agent:
+        browser = "safari"
+    else:
+        browser = "other" if user_agent else "unavailable"
+    if "android" in user_agent:
+        operating_system = "android"
+    elif "iphone" in user_agent or "ipad" in user_agent:
+        operating_system = "ios"
+    elif "windows" in user_agent:
+        operating_system = "windows"
+    elif "mac os" in user_agent or "macintosh" in user_agent:
+        operating_system = "macos"
+    elif "linux" in user_agent:
+        operating_system = "linux"
+    else:
+        operating_system = "other" if user_agent else "unavailable"
+    headers["x-byq-feedback-browser-family"] = browser
+    headers["x-byq-feedback-os-family"] = operating_system
+    return headers
+
+
+def _feedback_moderator_headers(request: Request) -> dict[str, str]:
+    user = resolve_user(request)
+    if user.get("role") != "admin":
+        raise ProductError(403, "product_forbidden", "feedback moderator role required")
+    actor = str(user.get("username") or user.get("user_id") or "")
+    if not actor:
+        raise ProductError(401, "product_authentication_required", "feedback moderator identity required")
+    # Moderator authority is platform-scoped and deliberately does not convey
+    # membership in the moderator's or submitter's personal workspace.
+    return {"x-byq-actor-principal": actor, "x-byq-actor-role": "admin"}
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -320,7 +363,7 @@ def _backend_get(path: str) -> dict[str, object]:
             error_body = {}
         detail = error_body.get("detail") if isinstance(error_body, dict) else None
         message = detail if isinstance(detail, str) else "backend rejected the request"
-        if status not in {400, 401, 403, 404, 409, 422}:
+        if status not in {400, 401, 403, 404, 409, 422, 429}:
             logger.warning(
                 "backend request rejected method=%s path=%s status=%s",
                 "GET", path, status,
@@ -364,7 +407,7 @@ def _backend_request(
             error_body = {}
         detail = error_body.get("detail") if isinstance(error_body, dict) else None
         message = detail if isinstance(detail, str) else "backend rejected the request"
-        if status not in {400, 401, 403, 404, 409, 422}:
+        if status not in {400, 401, 403, 404, 409, 422, 429}:
             logger.warning(
                 "backend request rejected method=%s path=%s status=%s",
                 method, path, status,
@@ -2070,6 +2113,106 @@ def product_paper_export(account_id: str, request: Request) -> dict[str, object]
 def product_paper_import(request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
     return _backend_request("POST", "/v1/paper/accounts/import", payload, headers=_trusted_agent_headers(request))
+
+
+@router.get("/feedback/options")
+def product_feedback_options(request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", "/v1/feedback/options", headers=_feedback_headers(request))
+
+
+@router.get("/feedback/items")
+def product_feedback_items(
+    request: Request, status: str = "all", category: str = "all", query: str = "",
+    limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    _product_principal(request)
+    params = urlencode({"status": status, "category": category, "query": query, "limit": limit, "offset": offset})
+    return _backend_request("GET", f"/v1/feedback/items?{params}", headers=_feedback_headers(request))
+
+
+@router.post("/feedback/items", status_code=201)
+def product_feedback_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("POST", "/v1/feedback/items", payload, headers=_feedback_headers(request))
+
+
+@router.get("/feedback/items/{feedback_id}")
+def product_feedback_get(feedback_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/feedback/items/{feedback_id}", headers=_feedback_headers(request))
+
+
+@router.put("/feedback/items/{feedback_id}")
+def product_feedback_update(feedback_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("PUT", f"/v1/feedback/items/{feedback_id}", payload, headers=_feedback_headers(request))
+
+
+@router.get("/feedback/items/{feedback_id}/revisions")
+def product_feedback_revisions(
+    feedback_id: str, request: Request, limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    _product_principal(request)
+    params = urlencode({"limit": limit, "offset": offset})
+    return _backend_request("GET", f"/v1/feedback/items/{feedback_id}/revisions?{params}", headers=_feedback_headers(request))
+
+
+@router.post("/feedback/items/{feedback_id}/preview")
+def product_feedback_preview(feedback_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("POST", f"/v1/feedback/items/{feedback_id}/preview", payload, headers=_feedback_headers(request))
+
+
+@router.post("/feedback/items/{feedback_id}/submit")
+def product_feedback_submit(feedback_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("POST", f"/v1/feedback/items/{feedback_id}/submit", payload, headers=_feedback_headers(request))
+
+
+@router.post("/feedback/items/{feedback_id}/withdraw")
+def product_feedback_withdraw(feedback_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("POST", f"/v1/feedback/items/{feedback_id}/withdraw", payload, headers=_feedback_headers(request))
+
+
+@router.get("/feedback/moderation/items")
+def product_feedback_moderation_items(
+    request: Request, status: str = "submitted", category: str = "all", query: str = "",
+    limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    headers = _feedback_moderator_headers(request)
+    params = urlencode({"status": status, "category": category, "query": query, "limit": limit, "offset": offset})
+    return _backend_request("GET", f"/v1/feedback/moderation/items?{params}", headers=headers)
+
+
+@router.get("/feedback/moderation/items/{feedback_id}")
+def product_feedback_moderation_get(feedback_id: str, request: Request) -> dict[str, object]:
+    return _backend_request("GET", f"/v1/feedback/moderation/items/{feedback_id}",
+                            headers=_feedback_moderator_headers(request))
+
+
+@router.get("/feedback/moderation/items/{feedback_id}/audit")
+def product_feedback_moderation_audit(
+    feedback_id: str, request: Request, limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    params = urlencode({"limit": limit, "offset": offset})
+    return _backend_request("GET", f"/v1/feedback/moderation/items/{feedback_id}/audit?{params}",
+                            headers=_feedback_moderator_headers(request))
+
+
+@router.post("/feedback/moderation/items/{feedback_id}/{action}")
+def product_feedback_moderate(
+    feedback_id: str, action: str, request: Request, payload: dict[str, object],
+) -> dict[str, object]:
+    return _backend_request("POST", f"/v1/feedback/moderation/items/{feedback_id}/{action}", payload,
+                            headers=_feedback_moderator_headers(request))
+
+
+@router.get("/feedback/moderation/publisher-status")
+def product_feedback_publisher_status(request: Request) -> dict[str, object]:
+    return _backend_request("GET", "/v1/feedback/moderation/publisher-status",
+                            headers=_feedback_moderator_headers(request))
 
 
 @router.get("/operations/status")

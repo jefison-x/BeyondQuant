@@ -28,6 +28,66 @@ def test_product_api_uses_error_envelope_and_auth_boundary(monkeypatch) -> None:
     assert healthy.json()["status"] == "ok"
 
 
+def test_feedback_product_api_is_same_origin_paged_and_forwards_only_coarse_client_context(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    calls: list[dict[str, object]] = []
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append({"method": method, "path": path, "payload": payload, "headers": headers})
+        if path == "/v1/feedback/options":
+            return {"schema_version": "product-feedback-options.v1", "publisher": {"configured": False}}
+        if path.startswith("/v1/feedback/items?"):
+            return {"schema_version": "product-feedback-catalog.v1", "items": [], "total": 0,
+                    "limit": 12, "offset": 24, "has_more": False}
+        return {"feedback": {"feedback_id": "feedback_" + "a" * 32, "status": "draft"}}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    browser = TestClient(main.app)
+    headers = {
+        "Authorization": "Bearer product-test-token",
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit Chrome/125.0 Safari/537.36 raw-fingerprint",
+    }
+    assert browser.get("/api/product/feedback/options", headers=headers).status_code == 200
+    page = browser.get("/api/product/feedback/items?status=all&category=bug&query=slow&limit=12&offset=24", headers=headers)
+    assert page.status_code == 200
+    created = browser.post("/api/product/feedback/items", headers=headers, json={"schema_version": "product-feedback.v1"})
+    assert created.status_code == 201
+    assert calls[1]["path"] == "/v1/feedback/items?status=all&category=bug&query=slow&limit=12&offset=24"
+    for call in calls:
+        forwarded = call["headers"]
+        assert forwarded["x-byq-feedback-browser-family"] == "chrome"
+        assert forwarded["x-byq-feedback-os-family"] == "linux"
+        assert "user-agent" not in forwarded
+
+
+def test_feedback_moderation_requires_admin_session_and_never_forwards_workspace_identity(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+    current = {"role": "user"}
+
+    def user(_request):
+        return {
+            "username": "moderator", "role": current["role"],
+            "_workspace": {"workspace_id": "workspace_personal", "contract": "personal-workspace.v1",
+                           "kind": "personal", "display_name": "Personal", "role": "owner"},
+        }
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append({"method": method, "path": path, "payload": payload, "headers": headers})
+        return {"schema_version": "feedback-moderation-catalog.v1", "items": [], "total": 0}
+
+    monkeypatch.setattr(product_api, "resolve_user", user)
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    browser = TestClient(main.app)
+    browser.cookies.set(product_api.SESSION_COOKIE, "session_moderator")
+    denied = browser.get("/api/product/feedback/moderation/items")
+    assert denied.status_code == 403 and not calls
+    current["role"] = "admin"
+    response = browser.get("/api/product/feedback/moderation/items?limit=10&offset=0")
+    assert response.status_code == 200
+    forwarded = calls[0]["headers"]
+    assert forwarded == {"x-byq-actor-principal": "moderator", "x-byq-actor-role": "admin"}
+
+
 def test_ml_workspace_projects_safe_artifacts_and_owner_context(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")

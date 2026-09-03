@@ -62,7 +62,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "87")
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "88")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043", "ADR-0044", "ADR-0048", "ADR-0049"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
@@ -255,11 +255,48 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("publisher_unconfigured", contract)
         self.assertIn("normal users configure no github", evidence.lower())
         self.assertIn("Phase 87 — Feedback contract and trusted-publisher baseline（`COMPLETE`）", plan)
-        self.assertIn("Phase 88 — Durable feedback domain and Product API（`AUTHORIZED`）", plan)
+        self.assertIn("Phase 88 — Durable feedback domain and Product API（`COMPLETE`）", plan)
         self.assertIn("Phase 87 Product Feedback pre-implementation audit", inventory)
         self.assertIn("`PORT_UX` + `PORT_TESTS`", inventory)
         self.assertIn("## P. Product Feedback 与外部 Issue 发布", architecture)
         self.assertIn("Frontend、Gateway、MCP 和 Backend MUST NOT 持有 GitHub credential", architecture)
+
+    def test_phase88_keeps_feedback_durable_paged_and_github_free(self) -> None:
+        backend = (ROOT / "services/backend/app/product_feedback.py").read_text()
+        backend_api = (ROOT / "services/backend/app/main.py").read_text()
+        gateway = (ROOT / "services/gateway/app/product_api.py").read_text()
+        workspace = (ROOT / "services/backend/app/workspace_tenancy.py").read_text()
+        openapi = (ROOT / "docs/contracts/product-api.openapi.yaml").read_text()
+        status = (ROOT / "docs/roadmap/STATUS.md").read_text()
+        plan = (ROOT / "docs/roadmap/PRODUCT_FEEDBACK_DELIVERY_PLAN.md").read_text()
+        evidence = (ROOT / "docs/evidence/phase-88/README.md").read_text()
+
+        for table in (
+            "product_feedback", "product_feedback_revisions", "product_feedback_audit",
+            "product_feedback_publications", "product_feedback_outbox", "product_feedback_commands",
+        ):
+            self.assertIn(table, backend)
+        self.assertIn("feedback-publication-preview.v1", backend)
+        self.assertIn("submitted-feedback-snapshot.v1", backend)
+        self.assertIn("publisher_unconfigured", backend)
+        self.assertIn("FOR UPDATE", backend)
+        self.assertNotIn("import httpx", backend)
+        self.assertNotIn("import requests", backend)
+        self.assertNotIn("api.github.com", backend)
+        self.assertIn('@app.post("/v1/feedback/items/{feedback_id}/submit")', backend_api)
+        self.assertIn('@app.post("/v1/feedback/moderation/items/{feedback_id}/{action}")', backend_api)
+        self.assertIn('@router.get("/feedback/items")', gateway)
+        self.assertIn('"product_feedback", "product_feedback_revisions", "product_feedback_audit"', workspace)
+        self.assertIn("/api/product/feedback/items:", openapi)
+        self.assertIn("<!-- byq:current-completed-phase=88 -->", status)
+        self.assertIn("Phase 88 — Durable feedback domain and Product API（`COMPLETE`）", plan)
+        self.assertIn("Phase 89 — Trusted GitHub publisher and operations（`AUTHORIZED`）", plan)
+        self.assertIn("transaction rollback", evidence.lower())
+        self.assertIn('@router.get("/feedback/moderation/items")', gateway)
+        self.assertIn("_feedback_moderator_headers", gateway)
+        self.assertIn('"product_feedback", "product_feedback_revisions", "product_feedback_audit"', workspace)
+        self.assertIn("/api/product/feedback/items:", openapi)
+        self.assertIn("/api/product/feedback/moderation/items:", openapi)
 
     def test_base_compose_uses_runtime_adapter_as_the_only_product_dsh_path(self) -> None:
         compose = (ROOT / "compose.yml").read_text()

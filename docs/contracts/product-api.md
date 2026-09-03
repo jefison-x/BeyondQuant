@@ -20,7 +20,7 @@ Messages 安全且有界；不返回 internal exception text 或 storage paths�
 
 ## Bounded list policy
 
-已实现 list routes 返回 resource-specific arrays，例如 `tasks`、`artifacts`、`backtests`、`pools` 和 `accounts`。Backend queries 施加各自 domain bounds，并在定义处使用稳定排序。不存在通用 pagination envelope。Phase 34 Stock Pool catalog/history routes 实现有界 `limit`/`offset`，并返回 `total`、`limit`、`offset`；其他 routes 在实现并测试前不得宣称支持 pagination。
+已实现 list routes 返回 resource-specific arrays，例如 `tasks`、`artifacts`、`backtests`、`pools` 和 `accounts`。Backend queries 施加各自 domain bounds，并在定义处使用稳定排序。不存在通用 pagination envelope。Stock Pool、Backtest、ML study 和 Product Feedback catalog/history routes 实现有界 `limit`/`offset`，并返回 `total`、`limit`、`offset` 和适用时的 `has_more`；其他 routes 在实现并测试前不得宣称支持 pagination。
 
 ## Resource projections
 
@@ -35,5 +35,7 @@ Messages 安全且有界；不返回 internal exception text 或 storage paths�
 - Stock Pool catalog、immutable snapshots、typed provenance、references 和 lifecycle
 - Approval Inbox / Audit
 - Data status / migration status
+- Product Feedback owner catalog/detail/revisions/preview/submit，以及只读取脱敏 submitted snapshot 的 admin
+  moderation inbox；Gateway 不接收 GitHub credential，也不执行 Issue 发布
 
 后续 productization phases 已实现所映射的 resource behavior。新增或移除 browser routes 必须在同一 change 更新 OpenAPI source。

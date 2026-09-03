@@ -1,21 +1,21 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=87 -->
+<!-- byq:current-completed-phase=88 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 87**——已接受内置 Product Feedback 与 trusted GitHub publisher 架构，冻结
-  workspace-owned 反馈、不可变修订/公开快照、预览确认、隐私去敏、去重、审核、transactional outbox、
-  独立固定仓库发布器和近零用户配置合同；本阶段未修改 runtime/schema/API/MCP/UI，也未创建 GitHub Issue。
+- 当前已完成阶段：**Phase 88**——Product Feedback 已实现 PostgreSQL 持久化、workspace 隔离、不可变修订与
+  提交/公开快照、确定性隐私预览、审核状态机、幂等/并发/配额和 transactional outbox，并通过 Gateway
+  Product API 暴露有界分页能力；GitHub publisher、Product UI、MCP 与小巴入口仍由后续阶段实现。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
   验证到 Python `0.1.1rc1` / npm `0.1.1-rc.1`；它是维护历史，不是隐含的 Product Phase。
 - 当前完成范围内没有未决架构决策。
 - Phase 82 已依据 ADR-0047 完成；验收证据位于 `docs/evidence/phase-82/`。
-- Phase 87 已依据 ADR-0049 完成；验收证据位于 `docs/evidence/phase-87/`。维护者已授权下一独立 Phase 88
-  实现 durable Feedback domain、Product API 和审核/outbox；Phase 88 不连接 GitHub、不实现 UI/MCP/Xiaoba。
+- Phase 88 已依据 ADR-0049 完成；验收证据位于 `docs/evidence/phase-88/`。维护者已授权下一独立 Phase 89
+  实现隔离的 trusted GitHub publisher 与运维闭环；Phase 89 不实现 Product UI/MCP/Xiaoba。
 - Phase 61 由维护者于 2026-08-27 授权并完成；规范与证据位于 ADR-0034、验收报告和
   `docs/evidence/phase-61/`。
 
@@ -383,13 +383,13 @@ Post-Phase 82 Benchmark UX Maintenance 将新 Product 策略草稿和小巴策�
 
 ## 当前授权边界
 
-- Phase 49-87 与相应 Accepted ADR/计划均已完成。
+- Phase 49-88 与相应 Accepted ADR/计划均已完成。
 - Phase 82 与 ADR-0047 已完成；50,000 保持原子 readiness 分片上限，不是 Tushare
   额度或完整数据任务上限。
 - ADR-0044 授权的 Phase 75–79、ADR-0045 授权的 Phase 80、ADR-0046 授权的 Phase 81、
-  ADR-0047 授权的 Phase 82 已完成。ADR-0048 的 Phase 83–86 已完成。ADR-0049 的 Phase 87 已完成，
-  Phase 88 已获授权实现 durable Feedback domain、Product API 与审核/outbox；当前完成范围不包含 GitHub
-  Issue 发布实现、Product UI/MCP/Xiaoba、HIST、实盘券商、AutoML、GPU、强化学习或在线学习。
+  ADR-0047 授权的 Phase 82 已完成。ADR-0048 的 Phase 83–86 已完成。ADR-0049 的 Phase 87–88 已完成，
+  Phase 89 已获授权实现 trusted GitHub publisher 与运维闭环；当前完成范围不包含 Product UI/MCP/Xiaoba、
+  HIST、实盘券商、AutoML、GPU、强化学习或在线学习。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 

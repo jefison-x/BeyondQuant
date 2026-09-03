@@ -1,6 +1,7 @@
 # Product Feedback Contract
 
-本合同落实 ADR-0049。Phase 87 冻结合同但不实现 schema、runtime、API、MCP、UI 或 GitHub 写入。
+本合同落实 ADR-0049。Phase 87 冻结合同；Phase 88 已实现 durable schema、domain 与 Product API，保持
+GitHub publisher、Product UI、MCP 和 Xiaoba 为后续独立阶段。
 
 ## 1. 身份、所有权与权限
 
@@ -204,3 +205,12 @@ internal JSON is embedded.
 | Community Agent/API/runtime/storage | `REPLACE` / `DROP` | Implement BYQ Product API + PostgreSQL + trusted publisher; no PydanticAI/Hermes/direct GitHub Agent path. |
 
 Community repository remains read-only and no source, credential, database or Git history is copied or modified.
+
+## 13. Phase 88 implementation record
+
+Phase 88 实现 `product_feedback`、immutable revisions/audit/publications、commands 和 transactional outbox，
+以及 owner/admin 的 Backend 与 Gateway Product API。接受动作与 publication/outbox 写入处于同一 PostgreSQL
+transaction；部署未配置 publisher 时，公开状态稳定为 `publisher_unconfigured`，内部反馈仍可完整流转。
+Gateway 的 moderator authority 不携带 workspace membership，owner projection 不暴露 actor/workspace，moderator
+projection 只展示用户已确认的 submitted snapshot。Phase 88 runtime 不包含 GitHub client、credential、外部写入、
+frontend 页面或 MCP 工具。
