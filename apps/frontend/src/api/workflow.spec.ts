@@ -83,6 +83,13 @@ describe("workflow projections", () => {
     expect(workflowRunState([
       event(3, "session.started", {}), event(7, "session.failed", { code: "model-run-failed", retryable: true }),
       event(8, "session.ready", { status: "ready" }),
-    ])).toEqual(expect.objectContaining({ running: false, failed: false, retryable: false }));
+      event(9, "session.resumed", { status: "ready" }),
+    ])).toEqual(expect.objectContaining({
+      running: false, failed: true, retryable: true, failureCode: "model-run-failed",
+    }));
+    expect(workflowRunState([
+      event(3, "session.started", {}), event(7, "session.failed", { code: "model-run-failed", retryable: true }),
+      event(8, "session.ready", { status: "ready" }), event(9, "session.started", {}),
+    ])).toEqual(expect.objectContaining({ running: true, failed: false, retryable: false }));
   });
 });

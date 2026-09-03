@@ -113,6 +113,11 @@ describe("AgentView", () => {
       timestamp: "2026-08-28T00:00:02Z", kind: "session.failed", source: "runtime-adapter",
       payload: { code: "runtime-no-progress-timeout", retryable: true },
     }, 1);
+    view.handleEvent({
+      trace_id: "trace-1", session_id: "session-1", sequence: 3,
+      timestamp: "2026-08-28T00:00:03Z", kind: "session.ready", source: "runtime-adapter",
+      payload: { status: "ready" },
+    }, 1);
     await flushPromises();
 
     expect(wrapper.find(".assistant-processing").exists()).toBe(false);

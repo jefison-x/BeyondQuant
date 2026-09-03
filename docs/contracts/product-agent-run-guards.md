@@ -8,7 +8,7 @@ BeyondQuant MCP enforces bounded Agent-to-Domain reads.
 
 Each accepted prompt has three monotonic wall-clock limits:
 
-- `run_timeout_seconds` (default 300): maximum duration of the whole prompt;
+- `run_timeout_seconds` (default 900): maximum duration of the whole prompt;
 - `subagent_timeout_seconds` (default 180): maximum duration between an
   observed `byq_delegate_*` call and its matching result;
 - `no_progress_timeout_seconds` (default 120): maximum duration without a
@@ -30,6 +30,11 @@ unknown, empty, or malformed notification never refreshes liveness. Raw
 reasoning, descendant identity, tool arguments/results, and
 unrecognized DSH events remain absent from WorkflowTrace, persistence, and the
 Browser boundary.
+
+The 15-minute ceiling accommodates bounded multi-stage research that continues
+to emit validated private runtime activity. It does not extend either the
+two-minute inactivity deadline or the three-minute delegated-child deadline,
+so an actually stalled run still terminates promptly.
 
 Stable failure codes are `runtime-run-timeout`, `runtime-subagent-timeout`, and
 `runtime-no-progress-timeout`; all are retryable. Raw DSH event, tool argument,
