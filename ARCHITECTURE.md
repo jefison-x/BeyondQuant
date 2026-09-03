@@ -348,6 +348,25 @@ Draft PR
 软件演进 MUST 可验证、可审计、可逆。Engineering learning MUST NOT 绕过 worktree
 isolation、test、review 或 branch protection。
 
+## P. Product Feedback 与外部 Issue 发布
+
+Product Feedback 是 BYQ-owned、workspace-scoped domain record，不是 EngineeringTask，也不授予
+source、Git、PR、CI、merge 或部署权限。Browser MUST 只经 Gateway/Product API 访问反馈；Product
+Agent MUST 只经 BeyondQuant MCP 提出、预览、提交或查询 owner-scoped feedback。
+
+Draft/revision MUST 保持 workspace-private。用户显式提交后，只有经其确认的最小化脱敏 snapshot 可由
+platform feedback moderator 读取；moderator authority 不构成该 workspace membership，也不能读取其他
+workspace resource。
+
+公开 GitHub Issue 是经过用户确认、Backend 脱敏和管理员策略/审核后的外部副作用。Product DSH、
+Frontend、Gateway、MCP 和 Backend MUST NOT 持有 GitHub credential 或直接创建 Issue。唯一 writer
+是 ADR-0049 定义的独立 `feedback-publisher`：它 MUST 只 claim 有界 transactional outbox，只访问
+固定 GitHub origin/repository 的 Issue API，并且 MUST NOT 挂载源码/Git/Docker socket、访问
+PostgreSQL、使用 DSH/Codex 或获得 Contents/Pull requests/Actions 权限。
+
+普通 Product 用户 MUST NOT 被要求提供 GitHub 账号或 credential。Publisher 未配置或不可用时，
+内部 feedback persistence、审核和查询 MUST 继续工作，且不得伪造发布成功。
+
 ## 治理
 
 DSH boundary、MCP boundary、database boundary、WorkflowTrace、authentication、

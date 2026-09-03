@@ -1,21 +1,21 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=86 -->
+<!-- byq:current-completed-phase=87 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 86**——机器学习 V2 已经通过动态 Product API、服务端分页/详情与预测行懒加载、
-  模型研究工作台和 BeyondQuant MCP/Xiaoba 最小权限入口完成产品闭环；真实三专家浏览器旅程已贯通冻结
-  沪深300状态、ModelBundle、确定性路由、冻结信号和 Backtest，并通过重启与双用户隔离。
+- 当前已完成阶段：**Phase 87**——已接受内置 Product Feedback 与 trusted GitHub publisher 架构，冻结
+  workspace-owned 反馈、不可变修订/公开快照、预览确认、隐私去敏、去重、审核、transactional outbox、
+  独立固定仓库发布器和近零用户配置合同；本阶段未修改 runtime/schema/API/MCP/UI，也未创建 GitHub Issue。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
   验证到 Python `0.1.1rc1` / npm `0.1.1-rc.1`；它是维护历史，不是隐含的 Product Phase。
 - 当前完成范围内没有未决架构决策。
 - Phase 82 已依据 ADR-0047 完成；验收证据位于 `docs/evidence/phase-82/`。
-- Phase 86 已依据 ADR-0048 完成；验收证据位于 `docs/evidence/phase-86/`。维护者已授权下一独立 Phase 87
-  先设计并接受内置 Product Feedback/GitHub Issue trusted-publisher 架构，不得在合同基线前发布 Issue。
+- Phase 87 已依据 ADR-0049 完成；验收证据位于 `docs/evidence/phase-87/`。维护者已授权下一独立 Phase 88
+  实现 durable Feedback domain、Product API 和审核/outbox；Phase 88 不连接 GitHub、不实现 UI/MCP/Xiaoba。
 - Phase 61 由维护者于 2026-08-27 授权并完成；规范与证据位于 ADR-0034、验收报告和
   `docs/evidence/phase-61/`。
 
@@ -66,6 +66,7 @@ history 推断项目状态。
 - Durable conversation runtime rehydration：**ADR-0046**
 - Provider-budget-aware data preparation：**ADR-0047**
 - Extensible machine-learning components and regime routing：**ADR-0048**
+- Product Feedback and trusted GitHub Issue publisher：**ADR-0049**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -382,13 +383,13 @@ Post-Phase 82 Benchmark UX Maintenance 将新 Product 策略草稿和小巴策�
 
 ## 当前授权边界
 
-- Phase 49-86 与相应 Accepted ADR/计划均已完成。
+- Phase 49-87 与相应 Accepted ADR/计划均已完成。
 - Phase 82 与 ADR-0047 已完成；50,000 保持原子 readiness 分片上限，不是 Tushare
   额度或完整数据任务上限。
 - ADR-0044 授权的 Phase 75–79、ADR-0045 授权的 Phase 80、ADR-0046 授权的 Phase 81、
-  ADR-0047 授权的 Phase 82 已完成。ADR-0048 的 Phase 83–86 已完成。Phase 87 只获授权建立内置反馈与
-  trusted GitHub publisher 的合同/ADR/计划基线；当前完成范围不包含 Issue 发布实现、HIST、实盘券商、
-  AutoML、GPU、强化学习或在线学习。
+  ADR-0047 授权的 Phase 82 已完成。ADR-0048 的 Phase 83–86 已完成。ADR-0049 的 Phase 87 已完成，
+  Phase 88 已获授权实现 durable Feedback domain、Product API 与审核/outbox；当前完成范围不包含 GitHub
+  Issue 发布实现、Product UI/MCP/Xiaoba、HIST、实盘券商、AutoML、GPU、强化学习或在线学习。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 

@@ -1,0 +1,206 @@
+# Product Feedback Contract
+
+本合同落实 ADR-0049。Phase 87 冻结合同但不实现 schema、runtime、API、MCP、UI 或 GitHub 写入。
+
+## 1. 身份、所有权与权限
+
+- schema family：`product-feedback.v1`、`feedback-publication.v1`、`feedback-outbox.v1`；
+- `feedback_id`：`feedback_` + 32 lowercase hex；revision/outbox/audit 使用独立 opaque id；
+- Feedback 属于 trusted request context 中的 `workspace_id`，`created_by`/`updated_by` 是 actor audit；
+- normal user 只能读写自己的 workspace feedback，不能声明 owner/workspace/role/status/Issue mapping；
+- draft/revision 始终仅 workspace owner 可见；submit 原子生成最小化、脱敏的 immutable
+  `submitted_feedback_snapshot`，作为用户明确披露给 platform feedback moderator 的唯一内容；
+- authenticated admin 只通过专用 moderator route 分诊 submitted snapshot 和 bounded audit，不能读取原始
+  draft/revision、workspace 其他资源或用户身份；该能力不构成 workspace membership；
+- Product Feedback 不授予 EngineeringTask、source、Git、PR、CI、部署或 merge 权限。
+
+## 2. 封闭输入
+
+Draft create/update 只接受：
+
+```json
+{
+  "schema_version": "product-feedback.v1",
+  "category": "bug",
+  "component": "model_research",
+  "title": "模型研究详情加载缓慢",
+  "description": "选择研究后等待时间明显偏长。",
+  "reproduction_steps": ["打开模型研究", "选择一条研究"],
+  "expected_behavior": "详情在可感知等待内出现。",
+  "actual_behavior": "界面长时间处于加载状态。",
+  "severity": "normal",
+  "diagnostics": {
+    "include_product_version": true,
+    "include_deployment_kind": true,
+    "include_browser_family": true,
+    "include_os_family": true,
+    "include_performance_summary": false
+  },
+  "idempotency_key": "feedback-create-01"
+}
+```
+
+Closed enums：
+
+- category：`bug|feature|performance|usability|other`；
+- component：`xiaoba|stock_pool|strategy|model_research|backtest|data_center|system_settings|auth|runtime|other`；
+- severity：`low|normal|high`；security/credential/privacy incident 不在此 enum，必须走 private channel；
+- diagnostic key 只允许上述 booleans，不能接受任意 map、header、environment、file 或 URL。
+
+限制：title 4–160 chars；description 1–8,000；最多 12 steps、每步 500；expected/actual 各 2,000；
+整个 canonical request 不超过 24 KiB。Phase 87–90 不接受附件、截图上传、完整日志、chat export、策略
+源码、SQL、任意 HTML/Markdown image、repository、label、assignee、milestone、endpoint 或 external URL。
+
+## 3. Revision 与 lifecycle
+
+每次 draft update 创建 immutable revision；feedback row 只指向 current revision。
+
+```text
+draft -> submitted -> triaged -> accepted
+   |         |           |         |
+   +-------> withdrawn   +-------> rejected
+                         +-------> duplicate
+```
+
+- 只有 `draft` 可由 owner 更新；submit 要求 `expected_version`、同意 moderator 阅读/可能公开提示和 preview hash；
+- `submitted` 可在 triage 前由 owner withdraw；不能 hard delete；
+- triage/accept/reject/duplicate 只允许 admin，要求 rationale、expected version 和 idempotency key；
+- duplicate 关联同一内部 canonical feedback id；跨 workspace normal projection 不暴露该 id/内容；
+- terminal feedback 保留 revisions/audit，只有 publication lifecycle 可继续；
+- state/version transition 使用 optimistic concurrency；idempotency replay 返回原 projection，payload mismatch
+  返回 conflict。
+
+## 4. 安全预览与 publication snapshot
+
+Submit 前 Gateway 返回由 Backend 生成的 `feedback-publication-preview.v1`，用户确认 exact `preview_hash`。
+Backend 在 submit transaction 中重新生成并比较；过期/内容变化必须重新确认。Preview/publication body 只含：
+
+- fixed BYQ template/schema version；
+- category/component/severity；
+- sanitized title/description/steps/expected/actual；
+- explicitly opted-in coarse product version/deployment/browser/OS/performance summary；
+- stable, non-authorizing public marker derived from outbox event identity。
+
+永不包含：BYQ username/user/workspace/session/trace/conversation ids、email/IP/raw User-Agent、request headers、
+cookies/tokens/passwords/API keys/private keys/connection strings、environment values、internal host/path/stack、raw
+logs/WorkflowTrace/DSH objects/prompts/tool payloads、positions/assets/strategy source、market/provider licensed rows。
+
+Normalization performs Unicode/control-character validation, markdown link/image stripping, fixed newline/section rendering,
+credential/high-confidence identity scanning and maximum byte checks. A detected security report or non-redactable secret
+returns `public_feedback_unsafe`; it is not persisted in a publication snapshot or queued. Redaction must be deterministic and
+record redaction categories/counts, never matched values.
+
+The accepted moderator action creates immutable `feedback-publication.v1` with `snapshot_hash`. Moderator may edit only the
+bounded submitted fields through a new public revision and must preview/confirm it; the workspace draft remains owner-only.
+
+## 5. Fingerprint、rate limits 与 duplicate
+
+`feedback_fingerprint.v1 = sha256(category + component + normalized_title + normalized_reproduction_semantics +
+coarse_product_version)`。Fingerprint is evidence, not automatic cross-workspace disclosure or rejection.
+
+- create/submit rate policy defaults are code-owned and bounded; exact Phase 88 values become versioned configuration；
+- rate limit response returns retry-after/category only, not another user's count/content；
+- same-workspace identical idempotency replays；same fingerprint may suggest an existing own/public issue；
+- moderator may merge to canonical feedback or already-published Issue；publisher never searches arbitrary repositories/content；
+- a public Issue marker can reconcile only an exact outbox id + snapshot hash in the configured repository。
+
+## 6. Transactional outbox 与 publisher lease
+
+Accept + enqueue is atomic. `feedback-outbox.v1` stores event id, feedback/publication ids, snapshot hash, fixed destination
+key, state, attempt, next-attempt time, lease owner/expiry/fence, last safe error category and timestamps. It never stores a
+credential or arbitrary URL.
+
+Internal endpoints are service-authenticated and not Product/OpenAPI/MCP routes：
+
+- `POST /internal/feedback-publications/claim`：publisher claims at most 10 due events with lease/fence；
+- `POST /internal/feedback-publications/{event_id}/complete`：requires matching fence and canonical GitHub mapping；
+- `POST /internal/feedback-publications/{event_id}/retry`：requires matching fence and stable safe error category；
+- expired lease may be reclaimed with a higher fence；stale completion/retry fails closed。
+
+Publication attempts are finite. Exponential backoff includes jitter and honors bounded provider retry hints. Retryable:
+transport ambiguity, `429`, selected `5xx`. Terminal/operator-action: invalid credential/permission, repository/Issues
+unavailable (`404/410`), unsafe payload, validation/spam (`422`) after one reconciliation, and exhausted attempts.
+
+Before retrying an ambiguous create, publisher performs a bounded exact-marker reconciliation in the single configured repo.
+If exactly one matching Issue exists, complete with it; zero retries; multiple matches become terminal conflict. This provides
+effectively-once mapping without claiming GitHub offers an idempotency key.
+
+## 7. GitHub destination 与 credential
+
+Deployment config is operator-owned and fixed at startup：
+
+- `BYQ_FEEDBACK_GITHUB_REPOSITORY`：exact `owner/repo`, validated against deployment allowlist；
+- preferred GitHub App settings：App id, installation id and private key injected only into publisher；
+- fallback fine-grained service token injected only into publisher and limited to that repository；
+- API origin defaults to fixed `https://api.github.com`; non-default origin is test-only unless a future ADR qualifies GitHub
+  Enterprise, and never comes from Browser/feedback/database。
+
+Required permission: repository `Issues: write`; no Contents/Pull requests/Actions/Administration/Secrets/Deployments or
+organization permission. Publisher only performs create Issue plus exact-marker reconciliation reads required by the adapter.
+It does not create labels; renderer uses only deployment allowlisted labels and gracefully omits missing optional labels.
+
+Normal users do not configure or supply GitHub identity/credential. Public projection exposes only：
+
+```json
+{
+  "publication_status": "publisher_unconfigured",
+  "github_issue": null
+}
+```
+
+or, after success, canonical `issue_number` and `html_url` verified against the fixed repository. Admin status exposes
+`configured`, credential kind, fixed repository, queue counts and safe last error category, never secret material.
+
+## 8. Product API projection
+
+Planned Phase 88/90 routes under `/api/product/feedback`：
+
+- `GET /options` — code-owned enums, limits, privacy copy and publisher availability；
+- `GET /items?status=&category=&query=&limit=&offset=` — owner-scoped paged summaries；
+- `POST /items`, `GET/PUT /items/{feedback_id}` — draft/revision；
+- `POST /items/{feedback_id}/preview|submit|withdraw`；
+- admin paged inbox/detail and `triage|accept|reject|duplicate` actions；
+- admin publisher status is read-only; Browser cannot restart worker or set credential/repository。
+
+Initial UI loads options plus first summary page only. Detail/revisions/public preview load on selection; admin audit/outbox
+history loads only when its disclosure/tab opens, always paged. Product responses use the standard safe error envelope and
+exclude internal lease/fence, request hashes, actor identifiers, raw errors and credential state.
+
+## 9. MCP 与小巴
+
+Planned Phase 90 tools：`byq_feedback_options`、`byq_feedback_list`、`byq_feedback_get`、
+`byq_feedback_draft`、`byq_feedback_preview`、`byq_feedback_submit`。All use trusted context and the same Backend domain
+contract. No admin triage/publish/publisher tool is exposed to Product DSH.
+
+Xiaoba may summarize the current user's stated problem into a draft. It must not silently attach conversation content, infer
+consent, submit during an unrelated action, or claim GitHub publication before the persisted status says `published`.
+`preview` must be shown and the user must explicitly confirm the exact draft before `submit`.
+
+## 10. Public Issue renderer
+
+Title prefix is fixed by category (`[Bug]`, `[Feature]`, `[Performance]`, `[UX]`, `[Feedback]`). Body section order is fixed：
+summary → reproduction (when present) → expected → actual → coarse environment (opt-in) → privacy note → BYQ marker.
+Renderer escapes content so user text cannot create hidden HTML, external images or mention-notification storms. No raw
+internal JSON is embedded.
+
+## 11. Required verification
+
+- schema/unknown-field/size/Unicode/secret/security/markdown negative tests；
+- workspace ownership, admin RBAC, optimistic version, idempotency, lifecycle and append-only audit tests；
+- preview hash, immutable publication revision, fingerprint and cross-workspace non-disclosure tests；
+- transaction rollback, lease/fence/reclaim/restart, retry budget and exact-marker reconciliation tests；
+- fake GitHub server contract for 201/ambiguity/403/404/410/422/429/5xx；required CI makes zero real GitHub writes；
+- Compose/image tests prove publisher is non-root, read-only, no source/Git/Docker/DB/DSH and credential isolation；
+- Product API/MCP secret-negative schemas, same-origin frontend, lazy pagination, two-user and Chrome desktop/mobile evidence。
+
+## 12. Community classification
+
+| Community evidence | Classification | Disposition |
+|---|---|---|
+| `.github/ISSUE_TEMPLATE/reproducible_bug.md` bounded environment/minimal fixture/privacy copy | `PORT_UX` + `PORT_TESTS` | Re-express as BYQ fields, preview and safety tests; do not copy free-form upload behavior. |
+| `.github/ISSUE_TEMPLATE/strategy_plugin.md` boundary checklist | `REFERENCE_ONLY` | Preserve no-network/no-token/no-private-data intent; plugin proposal workflow is not Phase 87–90 feedback scope. |
+| `.github/ISSUE_TEMPLATE/config.yml` private security link | `PORT_UX` | Route suspected security reports away from public Issue queue. |
+| Historical GitHub Issue references in requirements docs | `REFERENCE_ONLY` | Evidence that Issues are useful backlog, not a runtime/persistence contract. |
+| Community Agent/API/runtime/storage | `REPLACE` / `DROP` | Implement BYQ Product API + PostgreSQL + trusted publisher; no PydanticAI/Hermes/direct GitHub Agent path. |
+
+Community repository remains read-only and no source, credential, database or Git history is copied or modified.

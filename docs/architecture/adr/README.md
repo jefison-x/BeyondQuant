@@ -67,3 +67,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   与样本外预测制品，以及复用现有冻结信号/Backtest 的顺序门禁。
 - ADR-0044 定义 Phase 75–79 的版本化产品能力目录、产品帮助技能、固定导航、回测任务 facade、
   机器学习 Agent 接入、逐动作审批和不建设第二工作流的边界。
+- ADR-0049 定义 Phase 87–90 workspace-owned Product Feedback、公开预览/隐私去敏、审核与
+  transactional outbox、独立固定仓库 GitHub Issue publisher、最小权限凭据和用户零 GitHub 配置边界。

@@ -982,6 +982,26 @@ LLM provider/runtime profile，不是量化机器学习研究，整体为 `REFER
 Community 代码，而是在 BYQ Product API 上实现动态注册表、服务端分页目录、显式懒加载详情和预测行分页。
 Community 仓库、数据库和 Git history 均未修改。
 
+## Phase 87 Product Feedback pre-implementation audit
+
+2026-09-03 只读检查 Community `.github/ISSUE_TEMPLATE/config.yml`、`reproducible_bug.md`、
+`strategy_plugin.md`、历史需求中的 GitHub Issue 使用和开源架构建议；同时检查当前 BYQ EngineeringTask、
+credential、workspace、Product API、Product DSH 和 Engineering Plane 边界。Community 仓库未被修改。
+
+| Community evidence | Classification | Phase 87 disposition |
+|---|---|---|
+| Reproducible bug template 的环境、最小 fixture、预期/实际结果 | `PORT_UX` + `PORT_TESTS` | 转换为封闭 BYQ draft/preview 字段与验证测试；不允许自由附件、完整日志或供应商数据。 |
+| Template 对 API key、Token、Cookie、密码、用户导出、Prompt 和受限数据的警告 | `PORT_UX` + `PORT_TESTS` | 由 Backend allowlist、secret/identity redaction、公开预览和 fail-closed publication snapshot 强制执行。 |
+| Security advisory contact link | `PORT_UX` | 疑似安全漏洞从 public Issue queue 分流到 private security channel。 |
+| Strategy plugin proposal checklist | `REFERENCE_ONLY` | 保留 no-network/no-token/no-private-data 安全意图；plugin proposal 不是 Phase 87–90 feedback domain。 |
+| 历史 requirements 引用 GitHub Issues | `REFERENCE_ONLY` | 证明公开 backlog 有产品价值，不作为当前状态、身份或运行合同。 |
+| Community Agent/API/runtime/storage | `REPLACE` / `DROP` | 使用 BYQ PostgreSQL/Product API/MCP 与独立 trusted publisher；不复制 PydanticAI/Hermes/direct GitHub 路径。 |
+
+提取的不变量：反馈在公开前必须最小化、可复现、可预览且脱敏；安全/凭据内容不得发布；外部 Issue 是
+审核后的副作用而非产品事实来源。ADR-0049 进一步分离 ProductFeedback 与 EngineeringTask，并固定普通用户
+零 GitHub 配置、部署维护者单仓库一次配置、Product DSH 零 GitHub 权限和 publisher 零源码/Git/数据库权限。
+Community source、database、credential 和 Git history 均未复制、导入或修改。
+
 ## Post-Phase 82 frontend list-performance maintenance audit（2026-09-01）
 
 The read-only Community Stock Pool, Backtest, Strategy and Operations surfaces

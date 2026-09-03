@@ -62,8 +62,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "86")
-        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043", "ADR-0044", "ADR-0048"):
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "87")
+        for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043", "ADR-0044", "ADR-0048", "ADR-0049"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
 
@@ -222,6 +222,44 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("this study configures", skill)
         self.assertIn("this run succeeded", skill)
         self.assertIn("Initial load made no detail or prediction-row request", evidence)
+
+    def test_phase87_freezes_feedback_before_external_publication(self) -> None:
+        adr = (
+            ROOT
+            / "docs/architecture/adr/ADR-0049-product-feedback-trusted-github-publisher.md"
+        ).read_text()
+        contract = (ROOT / "docs/contracts/product-feedback.md").read_text()
+        plan = (ROOT / "docs/roadmap/PRODUCT_FEEDBACK_DELIVERY_PLAN.md").read_text()
+        inventory = (ROOT / "docs/migration/COMMUNITY_MIGRATION_INVENTORY.md").read_text()
+        evidence = (ROOT / "docs/evidence/phase-87/README.md").read_text()
+        architecture = (ROOT / "ARCHITECTURE.md").read_text()
+
+        self.assertIn("- Status: Accepted", adr)
+        for invariant in (
+            "Product Feedback domain",
+            "transactional outbox",
+            "feedback-publisher",
+            "Issues: write",
+            "普通用户永远不填写 GitHub",
+            "Product DSH 不接收 GitHub 凭据",
+        ):
+            self.assertIn(invariant, adr)
+        for schema in (
+            "product-feedback.v1",
+            "feedback-publication.v1",
+            "feedback-outbox.v1",
+            "feedback_fingerprint.v1",
+        ):
+            self.assertIn(schema, contract)
+        self.assertIn("preview_hash", contract)
+        self.assertIn("publisher_unconfigured", contract)
+        self.assertIn("normal users configure no github", evidence.lower())
+        self.assertIn("Phase 87 — Feedback contract and trusted-publisher baseline（`COMPLETE`）", plan)
+        self.assertIn("Phase 88 — Durable feedback domain and Product API（`AUTHORIZED`）", plan)
+        self.assertIn("Phase 87 Product Feedback pre-implementation audit", inventory)
+        self.assertIn("`PORT_UX` + `PORT_TESTS`", inventory)
+        self.assertIn("## P. Product Feedback 与外部 Issue 发布", architecture)
+        self.assertIn("Frontend、Gateway、MCP 和 Backend MUST NOT 持有 GitHub credential", architecture)
 
     def test_base_compose_uses_runtime_adapter_as_the_only_product_dsh_path(self) -> None:
         compose = (ROOT / "compose.yml").read_text()
