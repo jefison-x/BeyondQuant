@@ -736,12 +736,27 @@ Chrome/two-user/restart/performance 闭环。
 
 ## Built-in Product Feedback Program（Phase 87+）
 
-维护者已授权下一独立阶段先完成内置需求/缺陷反馈能力的架构基线。Phase 87 必须检查 Community 与现有
-Engineering Plane，实现前先接受 ADR、冻结 Product Feedback 合同、隐私/滥用防护、近零用户配置和可信
-GitHub 发布边界；本阶段不得提前写 GitHub Issue、给 Product DSH GitHub 凭据或开放应用源码写权限。
+详细合同和逐阶段 gate 位于 `PRODUCT_FEEDBACK_DELIVERY_PLAN.md`，架构边界由 ADR-0049 固定。普通用户
+无需 GitHub 账号或 Token；只有部署维护者为固定仓库进行一次服务级配置。
 
-### Phase 87 — Feedback contract and trusted-publisher baseline（`AUTHORIZED`）
+### Phase 87 — Feedback contract and trusted-publisher baseline（`COMPLETE`）
 
 形成完整设计档案和后续分阶段 gate：普通用户仅提交 BYQ 内部反馈，部署维护者一次性配置 GitHub App 或
-服务级凭据；BYQ 持久化、去敏、去重、审批/策略和 outbox，独立 Engineering Worker 才可发布到固定仓库。
+服务级凭据；BYQ 持久化、去敏、去重、审批/策略和 outbox，独立 trusted publisher worker 才可发布到固定仓库。
 小巴只能经 BeyondQuant MCP 提出/查询反馈，不直接访问 GitHub。
+
+### Phase 88 — Durable feedback domain and Product API（`AUTHORIZED`）
+
+实现 workspace-owned Product Feedback、不可变 revisions/publication snapshot、预览确认、脱敏/去重/配额、
+审核、transactional outbox、分页 Product API 与 PostgreSQL/restart/two-user tests。本阶段不连接 GitHub，
+不实现 publisher、frontend、MCP 或 Xiaoba，也不把反馈转换成 EngineeringTask。
+
+### Phase 89 — Trusted GitHub publisher and operations（`BLOCKED_BY_PHASE_88`）
+
+实现无源码/Git/Docker/数据库/DSH 权限的独立 publisher、固定仓库 GitHub App/单仓库 token、internal
+lease/fence、renderer、reconciliation、有限重试、Compose 与运维；required CI 只使用 fake GitHub。
+
+### Phase 90 — Product UI and Xiaoba closure（`BLOCKED_BY_PHASE_89`）
+
+实现 owner 反馈工作台、管理员审核、隐私预览/明确提交、MCP/Xiaoba 最小权限能力，以及真实 Product API、
+Chrome desktop/mobile、懒加载分页、two-user/restart/unconfigured publisher 闭环。

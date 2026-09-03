@@ -1,11 +1,13 @@
 # BeyondQuant
 
-<!-- byq:current-completed-phase=86 -->
+<!-- byq:current-completed-phase=87 -->
 
 BeyondQuant（BYQ）是一个 AI 原生量化研究平台。当前已完成的项目阶段为
-**Phase 86**：可靠 LightGBM、自动化通道和按需数据准备均已接入小巴；机器学习 V2 已实现可扩展能力
+**Phase 87**：可靠 LightGBM、自动化通道和按需数据准备均已接入小巴；机器学习 V2 已实现可扩展能力
 注册、purged walk-forward、确定性 Ridge JSON、冻结沪深300市场状态、独立专家 ModelBundle、确定性路由，
-以及动态 Product API、分页/懒加载模型研究工作台和小巴最小权限入口。
+以及动态 Product API、分页/懒加载模型研究工作台和小巴最小权限入口。内置 Product Feedback 的反馈修订、
+隐私预览、审核/outbox、独立固定仓库 GitHub publisher 和用户零 GitHub 配置边界已完成设计基线；运行实现
+从 Phase 88 开始串行交付。
 大范围数据准备按原子分片推进，
 后台任务进度可在数据中心持续查看；持久对话在 idle release 或
 服务重启后会用新的私有 DSH generation 恢复已完成的公开上下文，继续追问不再复用冲突的 Runtime
