@@ -11,13 +11,25 @@ Each accepted prompt has three monotonic wall-clock limits:
 - `run_timeout_seconds` (default 300): maximum duration of the whole prompt;
 - `subagent_timeout_seconds` (default 180): maximum duration between an
   observed `byq_delegate_*` call and its matching result;
-- `no_progress_timeout_seconds` (default 120): maximum duration without a new
-  public `agent.activity`, `agent.output.delta`, or `turn.completed` event.
+- `no_progress_timeout_seconds` (default 120): maximum duration without a
+  validated DSH execution activity from the owned root runtime or one of its
+  observed descendants. Activity includes turn/step boundaries, non-empty
+  text or reasoning chunks, committed assistant messages, and valid tool
+  calls/results. This private liveness clock does not make hidden content
+  public.
 
 The first exceeded guard atomically detaches the active run, emits one safe
 `session.failed` event with a stable code, and closes only that session's owned
 DSH process. A late result is discarded. Existing failed-session resume creates
 a fresh private runtime generation and restores only bounded public context.
+
+The whole-run timeout is always the final hard ceiling. While a tracked
+delegated child is active, its dedicated timeout owns the quiet interval so the
+shorter root no-progress guard cannot misclassify legitimate child work. An
+unknown, empty, or malformed notification never refreshes liveness. Raw
+reasoning, descendant identity, tool arguments/results, and
+unrecognized DSH events remain absent from WorkflowTrace, persistence, and the
+Browser boundary.
 
 Stable failure codes are `runtime-run-timeout`, `runtime-subagent-timeout`, and
 `runtime-no-progress-timeout`; all are retryable. Raw DSH event, tool argument,
