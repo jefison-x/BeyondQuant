@@ -1,20 +1,21 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=82 -->
+<!-- byq:current-completed-phase=83 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 82**——大范围数据准备按 <=50,000 单元的 readiness/repair 原子分片推进，
-  该数字不再解释为 Tushare 或完整训练任务上限；Tushare 2,000 积分预算按 0.34 秒最小间隔保守
-  调度。ML 等待任务错误按 run 隔离，数据中心通过 `data-task.v1` 展示同步、按需准备、目录和训练的
-  持久阶段与完成/总单元。真实 Product API、LightGBM→预测→回测、Worker 重启和 Chrome 验收通过。
+- 当前已完成阶段：**Phase 83**——依据 ADR-0048 冻结机器学习 V2 的版本化 capability registry、
+  v1 compatibility、模块化 Feature/Target/Validation/Learner/Portfolio、purged walk-forward、Ridge、
+  沪深300市场状态、专家 ModelBundle 与确定性路由合同；本阶段未修改 runtime/schema/API/MCP/UI。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
   验证到 Python `0.1.1rc1` / npm `0.1.1-rc.1`；它是维护历史，不是隐含的 Product Phase。
 - 当前完成范围内没有未决架构决策。
 - Phase 82 已依据 ADR-0047 完成；验收证据位于 `docs/evidence/phase-82/`。
+- Phase 83 已依据 ADR-0048 完成合同基线；Phase 84 已获授权，须在独立 worktree 实现注册表、Ridge
+  与 walk-forward，不得提前实现 regime 或 Product 入口。
 - Phase 61 由维护者于 2026-08-27 授权并完成；规范与证据位于 ADR-0034、验收报告和
   `docs/evidence/phase-61/`。
 
@@ -64,6 +65,7 @@ history 推断项目状态。
 - Agent 按需数据准备与通知：**ADR-0045**
 - Durable conversation runtime rehydration：**ADR-0046**
 - Provider-budget-aware data preparation：**ADR-0047**
+- Extensible machine-learning components and regime routing：**ADR-0048**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -380,13 +382,12 @@ Post-Phase 82 Benchmark UX Maintenance 将新 Product 策略草稿和小巴策�
 
 ## 当前授权边界
 
-- Phase 49-82 与相应 Accepted ADR/计划均已完成。
+- Phase 49-83 与相应 Accepted ADR/计划均已完成。
 - Phase 82 与 ADR-0047 已完成；50,000 保持原子 readiness 分片上限，不是 Tushare
   额度或完整数据任务上限。
 - ADR-0044 授权的 Phase 75–79、ADR-0045 授权的 Phase 80、ADR-0046 授权的 Phase 81、
-  ADR-0047 授权的 Phase 82 已完成。后续 Product Phase 必须由新的
-  Accepted ADR 与明确授权启动；
-  当前完成范围不包含 HIST、实盘券商、AutoML、GPU 或在线学习。
+  ADR-0047 授权的 Phase 82 已完成。ADR-0048 已接受并授权 Phase 84；Phase 85/86 仍必须等待前序阶段
+  合并与验收。当前完成范围不包含 HIST、实盘券商、AutoML、GPU、强化学习或在线学习。
 - BeyondQuant Next v1.0 正式发布时必须禁用 GitHub auto-merge，并恢复单维护者 Human
   Merge Gate。
 
