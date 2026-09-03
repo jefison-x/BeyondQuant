@@ -113,7 +113,7 @@ paths:
       - {name: action, in: path, required: true, schema: {type: string, enum: [triage, accept, reject, duplicate]}}
     post: {summary: 执行有版本、幂等和审计的封闭 feedback moderation action。, responses: *okResponses}
   /api/product/feedback/moderation/publisher-status:
-    get: {summary: 返回 publisher-unconfigured 与 transactional outbox queue count，不含凭据。, responses: *okResponses}
+    get: {summary: 返回 configured/ready/stale、固定 repository 与各 outbox state count，不含凭据。, responses: *okResponses}
   /api/product/operations/status:
     get: {summary: 返回 the admin-only browser-safe operations projection., responses: *okResponses}
   /api/product/operations/budget:

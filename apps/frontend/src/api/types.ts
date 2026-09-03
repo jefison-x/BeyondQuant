@@ -1032,8 +1032,8 @@ export interface ProductFeedbackSummary {
   title: string;
   version: number;
   current_revision: number;
-  publication_status: "not_queued" | "publisher_unconfigured";
-  github_issue: null;
+  publication_status: "not_queued" | "publisher_unconfigured" | "queued" | "publishing" | "retry_wait" | "published" | "failed_terminal";
+  github_issue: null | { repository: string; issue_number: number; html_url: string };
   created_at: string;
   updated_at: string;
 }
@@ -1053,4 +1053,16 @@ export interface FeedbackPublicationPreview {
   redactions: { categories: string[]; count: number };
   disclosure: string;
   preview_hash: string;
+}
+
+export interface FeedbackPublisherStatus {
+  schema_version: "feedback-publisher-status.v1";
+  configured: boolean;
+  status: "unconfigured" | "ready" | "stale";
+  repository: string | null;
+  credential_kind: "github_app" | "fine_grained_token" | null;
+  queue: Record<"queued" | "publishing" | "retry_wait" | "published" | "failed_terminal", number>;
+  last_error_category: string | null;
+  last_heartbeat_at: string | null;
+  last_success_at: string | null;
 }

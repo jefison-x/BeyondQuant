@@ -5,6 +5,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
+from app import main as main_module
 from app.main import app
 from tests.workspace_helpers import trusted_agent_context
 
@@ -94,3 +95,17 @@ def test_feedback_api_fails_closed_for_cross_workspace_and_unsafe_payload() -> N
     )
     assert unsafe.status_code == 422
     assert "Bearer-secret-value" not in unsafe.text
+
+
+def test_feedback_publisher_internal_routes_require_service_token(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "FEEDBACK_PUBLISHER_TOKEN", "publisher-test-token")
+    assert client.post("/internal/feedback-publications/claim", json={"worker_id": "worker-api"}).status_code == 401
+    headers = {"x-byq-feedback-publisher-token": "publisher-test-token"}
+    heartbeat = client.post("/internal/feedback-publications/heartbeat", headers=headers, json={
+        "configured": True, "credential_kind": "github_app", "repository": "jefison-x/BeyondQuant",
+        "worker_version": "test-v1",
+    })
+    assert heartbeat.status_code == 200 and heartbeat.json()["accepted"] is True
+    claimed = client.post("/internal/feedback-publications/claim", headers=headers,
+                          json={"worker_id": "worker-api", "limit": 1, "lease_seconds": 30})
+    assert claimed.status_code == 200 and claimed.json()["events"] == []

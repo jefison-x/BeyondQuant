@@ -62,7 +62,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "88")
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "89")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043", "ADR-0044", "ADR-0048", "ADR-0049"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
@@ -288,9 +288,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn('@router.get("/feedback/items")', gateway)
         self.assertIn('"product_feedback", "product_feedback_revisions", "product_feedback_audit"', workspace)
         self.assertIn("/api/product/feedback/items:", openapi)
-        self.assertIn("<!-- byq:current-completed-phase=88 -->", status)
+        self.assertIn("<!-- byq:current-completed-phase=89 -->", status)
         self.assertIn("Phase 88 — Durable feedback domain and Product API（`COMPLETE`）", plan)
-        self.assertIn("Phase 89 — Trusted GitHub publisher and operations（`AUTHORIZED`）", plan)
+        self.assertIn("Phase 89 — Trusted GitHub publisher and operations（`COMPLETE`）", plan)
         self.assertIn("transaction rollback", evidence.lower())
         self.assertIn('@router.get("/feedback/moderation/items")', gateway)
         self.assertIn("_feedback_moderator_headers", gateway)
@@ -394,7 +394,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("3080:3080", dev)
 
     def test_dsh_has_no_engineering_credentials_or_web_bypass(self) -> None:
-        compose = (ROOT / "compose.yml").read_text()
+        compose = service_block("runtime-adapter") + service_block("mcp")
         dsh_files = [
             ROOT / "services/dsh/Dockerfile",
             ROOT / "services/dsh/README.md",
@@ -403,6 +403,34 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         contents = compose + "\n" + (ROOT / "compose.dsh-web.yml").read_text() + "\n" + "\n".join(path.read_text() for path in dsh_files)
         self.assertNotRegex(contents, r"(?i)(github_token|gh_token|codex_auth|docker_host)")
         self.assertNotRegex(contents, r"(?i)(socat|nginx|iptables|network namespace|host network)")
+
+    def test_phase89_isolates_the_only_github_credential_in_publisher(self) -> None:
+        compose = (ROOT / "compose.yml").read_text()
+        publisher = service_block("feedback-publisher")
+        worker = (ROOT / "workers/feedback-publisher/publisher.py").read_text()
+        dockerfile = (ROOT / "workers/feedback-publisher/Dockerfile").read_text()
+        plan = (ROOT / "docs/roadmap/PRODUCT_FEEDBACK_DELIVERY_PLAN.md").read_text()
+        evidence = (ROOT / "docs/evidence/phase-89/README.md").read_text()
+        for service in ("frontend", "gateway", "runtime-adapter", "mcp", "backend", "data-worker", "signal-worker", "ml-worker"):
+            self.assertNotRegex(service_block(service), r"(?i)(feedback_github_token|feedback_github_app_private)")
+        self.assertIn("BYQ_FEEDBACK_GITHUB_TOKEN", publisher)
+        self.assertIn("profiles:", publisher)
+        self.assertIn("read_only: true", publisher)
+        self.assertIn("cap_drop:", publisher)
+        self.assertNotIn("BYQ_DATABASE_URL", publisher)
+        self.assertNotIn("volumes:", publisher)
+        self.assertNotRegex(publisher, r"(?i)(docker.sock|/workspace|/src|dsh)")
+        self.assertIn("USER 10006:10006", dockerfile)
+        self.assertNotRegex(worker, r"(?i)(subprocess|os.system|git |docker|postgres|psycopg|sqlalchemy)")
+        self.assertIn("https://api.github.com", worker)
+        self.assertIn("/repos/{config.repository}/issues", worker)
+        self.assertIn("/internal/feedback-publications/claim", worker)
+        self.assertNotIn("/pulls", worker)
+        self.assertNotIn("/contents", worker)
+        self.assertEqual(compose.count("BYQ_FEEDBACK_GITHUB_TOKEN"), 2)
+        self.assertIn("Phase 89 — Trusted GitHub publisher and operations（`COMPLETE`）", plan)
+        self.assertIn("Phase 90 — Product UI and Xiaoba closure（`AUTHORIZED`）", plan)
+        self.assertIn("zero real github writes", evidence.lower())
 
     def test_dsh_version_is_exact_rc6(self) -> None:
         dockerfile = (ROOT / "services/dsh/Dockerfile").read_text()
@@ -812,7 +840,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("npm run test:e2e:real", local_ci)
         self.assertIn("[ -x node_modules/.bin/playwright ] || npm ci", local_ci)
         cleanup = (ROOT / "scripts/ci/cleanup-resources.sh").read_text()
-        self.assertIn("docker compose down --rmi local -v --remove-orphans", cleanup)
+        self.assertIn("docker compose --profile feedback-publisher down --rmi local -v --remove-orphans", cleanup)
 
     def test_postgres_memory_baseline_is_bounded_and_configurable(self) -> None:
         compose = service_block("postgres")

@@ -36,6 +36,7 @@ Messages 安全且有界；不返回 internal exception text 或 storage paths�
 - Approval Inbox / Audit
 - Data status / migration status
 - Product Feedback owner catalog/detail/revisions/preview/submit，以及只读取脱敏 submitted snapshot 的 admin
-  moderation inbox；Gateway 不接收 GitHub credential，也不执行 Issue 发布
+  moderation inbox；publisher status 仅投影 fixed repository、credential kind、heartbeat/error category 和有界 queue
+  counts。Gateway 不接收 GitHub credential，也不执行 Issue 发布
 
 后续 productization phases 已实现所映射的 resource behavior。新增或移除 browser routes 必须在同一 change 更新 OpenAPI source。
