@@ -121,6 +121,15 @@ from .engineering import (
     EngineeringUnauthorized,
     EngineeringTaskStore,
 )
+from .product_feedback import (
+    FeedbackConflict,
+    FeedbackForbidden,
+    FeedbackNotFound,
+    FeedbackPersistenceError,
+    FeedbackRateLimited,
+    FeedbackUnsafe,
+    ProductFeedbackStore,
+)
 from .paper_trading import (
     PaperTradingConflict,
     PaperTradingForbidden,
@@ -215,6 +224,7 @@ engineering_store = EngineeringTaskStore.from_env()
 paper_store = PaperTradingStore.from_env()
 stock_pool_producer_store = StockPoolProducerStore.from_env()
 user_store = UserAuthStore.from_env()
+feedback_store = ProductFeedbackStore.from_env()
 user_policy_store = UserPolicyStore.from_env()
 credential_store = CredentialStore.from_env()
 operations_store = OperationsStore.from_env()
@@ -322,6 +332,23 @@ def _conversation_owner(request: Request) -> str:
     return owner
 
 
+def _feedback_call(call: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return call()
+    except FeedbackNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FeedbackForbidden as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except FeedbackConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FeedbackRateLimited as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except (FeedbackUnsafe, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except FeedbackPersistenceError as exc:
+        raise HTTPException(status_code=503, detail="feedback storage is unavailable") from exc
+
+
 def _conversation_call(call: Callable[[], dict[str, object] | list[dict[str, object]]]) -> Any:
     try:
         return call()
@@ -398,6 +425,156 @@ def delete_conversation(conversation_id: str, request: Request) -> dict[str, obj
     return _conversation_call(lambda: conversation_store.delete(
         _conversation_owner(request), conversation_id
     ))
+
+
+def _feedback_context(request: Request) -> dict[str, str]:
+    return _required_agent_context(request, include_workspace=True)
+
+
+def _feedback_client_context(request: Request) -> tuple[str, str]:
+    browser = request.headers.get("x-byq-feedback-browser-family", "unavailable")
+    operating_system = request.headers.get("x-byq-feedback-os-family", "unavailable")
+    allowed_browsers = {"chrome", "edge", "firefox", "safari", "other", "unavailable"}
+    allowed_systems = {"windows", "macos", "linux", "android", "ios", "other", "unavailable"}
+    return (
+        browser if browser in allowed_browsers else "unavailable",
+        operating_system if operating_system in allowed_systems else "unavailable",
+    )
+
+
+def _feedback_moderator(request: Request) -> tuple[str, str]:
+    actor = request.headers.get("x-byq-actor-principal", "").strip()
+    role = request.headers.get("x-byq-actor-role", "").strip()
+    if not actor:
+        raise HTTPException(status_code=401, detail="actor principal is required")
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="feedback moderator role required")
+    return actor, role
+
+
+@app.get("/v1/feedback/options")
+def feedback_options(request: Request) -> dict[str, object]:
+    _feedback_context(request)
+    return feedback_store.options()
+
+
+@app.get("/v1/feedback/items")
+def feedback_items(
+    request: Request, status: str = "all", category: str = "all", query: str = "",
+    limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    context = _feedback_context(request)
+    return _feedback_call(lambda: feedback_store.list_owner(
+        trusted_workspace=context["workspace_id"], status=status, category=category,
+        query=query, limit=limit, offset=offset,
+    ))
+
+
+@app.post("/v1/feedback/items", status_code=201)
+def feedback_create(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _feedback_context(request)
+    return _feedback_call(lambda: feedback_store.create(
+        payload, trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
+        trusted_actor=context["actor_principal"],
+    ))
+
+
+@app.get("/v1/feedback/items/{feedback_id}")
+def feedback_get(feedback_id: str, request: Request) -> dict[str, object]:
+    context = _feedback_context(request)
+    return _feedback_call(lambda: feedback_store.get_owner(
+        feedback_id, trusted_workspace=context["workspace_id"],
+    ))
+
+
+@app.put("/v1/feedback/items/{feedback_id}")
+def feedback_update(feedback_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _feedback_context(request)
+    return _feedback_call(lambda: feedback_store.update(
+        feedback_id, payload, trusted_workspace=context["workspace_id"],
+        trusted_actor=context["actor_principal"],
+    ))
+
+
+@app.get("/v1/feedback/items/{feedback_id}/revisions")
+def feedback_revisions(
+    feedback_id: str, request: Request, limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    context = _feedback_context(request)
+    return _feedback_call(lambda: feedback_store.list_revisions(
+        feedback_id, trusted_workspace=context["workspace_id"], limit=limit, offset=offset,
+    ))
+
+
+@app.post("/v1/feedback/items/{feedback_id}/preview")
+def feedback_preview(feedback_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    if set(payload) != {"expected_version"}:
+        raise HTTPException(status_code=422, detail="feedback preview request has invalid fields")
+    context = _feedback_context(request)
+    browser, operating_system = _feedback_client_context(request)
+    return _feedback_call(lambda: feedback_store.preview(
+        feedback_id, trusted_workspace=context["workspace_id"], expected_version=payload["expected_version"],
+        browser_family=browser, os_family=operating_system,
+    ))
+
+
+@app.post("/v1/feedback/items/{feedback_id}/submit")
+def feedback_submit(feedback_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _feedback_context(request)
+    browser, operating_system = _feedback_client_context(request)
+    return _feedback_call(lambda: feedback_store.submit(
+        feedback_id, payload, trusted_workspace=context["workspace_id"],
+        trusted_actor=context["actor_principal"], browser_family=browser, os_family=operating_system,
+    ))
+
+
+@app.post("/v1/feedback/items/{feedback_id}/withdraw")
+def feedback_withdraw(feedback_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _feedback_context(request)
+    return _feedback_call(lambda: feedback_store.withdraw(
+        feedback_id, payload, trusted_workspace=context["workspace_id"], trusted_actor=context["actor_principal"],
+    ))
+
+
+@app.get("/v1/feedback/moderation/items")
+def feedback_moderation_items(
+    request: Request, status: str = "submitted", category: str = "all", query: str = "",
+    limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    _actor, role = _feedback_moderator(request)
+    return _feedback_call(lambda: feedback_store.list_moderation(
+        actor_role=role, status=status, category=category, query=query, limit=limit, offset=offset,
+    ))
+
+
+@app.get("/v1/feedback/moderation/items/{feedback_id}")
+def feedback_moderation_get(feedback_id: str, request: Request) -> dict[str, object]:
+    _actor, role = _feedback_moderator(request)
+    return _feedback_call(lambda: feedback_store.get_moderation(feedback_id, actor_role=role))
+
+
+@app.get("/v1/feedback/moderation/items/{feedback_id}/audit")
+def feedback_moderation_audit(
+    feedback_id: str, request: Request, limit: int = 20, offset: int = 0,
+) -> dict[str, object]:
+    _actor, role = _feedback_moderator(request)
+    return _feedback_call(lambda: feedback_store.list_audit(
+        feedback_id, actor_role=role, limit=limit, offset=offset,
+    ))
+
+
+@app.post("/v1/feedback/moderation/items/{feedback_id}/{action}")
+def feedback_moderate(feedback_id: str, action: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    actor, role = _feedback_moderator(request)
+    return _feedback_call(lambda: feedback_store.moderate(
+        feedback_id, action, payload, trusted_actor=actor, actor_role=role,
+    ))
+
+
+@app.get("/v1/feedback/moderation/publisher-status")
+def feedback_publisher_status(request: Request) -> dict[str, object]:
+    _actor, role = _feedback_moderator(request)
+    return _feedback_call(lambda: feedback_store.outbox_summary(actor_role=role))
 
 
 @app.get("/v1/operations/overview")

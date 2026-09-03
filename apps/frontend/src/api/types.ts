@@ -1017,3 +1017,40 @@ export interface DataReadinessResult {
   issues_truncated: boolean;
   checked_against: "persisted_byq";
 }
+
+export type FeedbackCategory = "bug" | "feature" | "performance" | "usability" | "other";
+export type FeedbackComponent = "xiaoba" | "stock_pool" | "strategy" | "model_research" | "backtest" | "data_center" | "system_settings" | "auth" | "runtime" | "other";
+export type FeedbackStatus = "draft" | "submitted" | "triaged" | "accepted" | "rejected" | "duplicate" | "withdrawn";
+
+export interface ProductFeedbackSummary {
+  schema_version: "product-feedback.v1";
+  feedback_id: string;
+  status: FeedbackStatus;
+  category: FeedbackCategory;
+  component: FeedbackComponent;
+  severity: "low" | "normal" | "high";
+  title: string;
+  version: number;
+  current_revision: number;
+  publication_status: "not_queued" | "publisher_unconfigured";
+  github_issue: null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductFeedbackPage {
+  schema_version: "product-feedback-catalog.v1";
+  items: ProductFeedbackSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export interface FeedbackPublicationPreview {
+  schema_version: "feedback-publication-preview.v1";
+  public_content: Record<string, unknown>;
+  redactions: { categories: string[]; count: number };
+  disclosure: string;
+  preview_hash: string;
+}

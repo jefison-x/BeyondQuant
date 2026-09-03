@@ -35,6 +35,7 @@ from app.ml_training import MLTrainingRunStore
 from app.ml_prediction import MLPredictionRunStore
 from app.operations import OperationsStore
 from app.paper_trading import PaperTradingStore
+from app.product_feedback import ProductFeedbackStore
 from app.research import ResearchStore
 from app.security_master import SecurityMasterStore
 from app.signal_producer import SignalJobStore
@@ -50,6 +51,7 @@ TEST_DB_NAME = "byq_domain_test"
 REGISTERED_SCHEMA_DDL: list[str] = [
     *ConversationCatalogStore.SCHEMA_DDL,
     *UserAuthStore.SCHEMA_DDL,
+    *ProductFeedbackStore.SCHEMA_DDL,
     *CredentialStore.SCHEMA_DDL,
     *DataSyncStore.SCHEMA_DDL,
     *DataDemandStore.SCHEMA_DDL,

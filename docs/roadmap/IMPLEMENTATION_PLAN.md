@@ -745,13 +745,13 @@ Chrome/two-user/restart/performance 闭环。
 服务级凭据；BYQ 持久化、去敏、去重、审批/策略和 outbox，独立 trusted publisher worker 才可发布到固定仓库。
 小巴只能经 BeyondQuant MCP 提出/查询反馈，不直接访问 GitHub。
 
-### Phase 88 — Durable feedback domain and Product API（`AUTHORIZED`）
+### Phase 88 — Durable feedback domain and Product API（`COMPLETE`）
 
 实现 workspace-owned Product Feedback、不可变 revisions/publication snapshot、预览确认、脱敏/去重/配额、
 审核、transactional outbox、分页 Product API 与 PostgreSQL/restart/two-user tests。本阶段不连接 GitHub，
 不实现 publisher、frontend、MCP 或 Xiaoba，也不把反馈转换成 EngineeringTask。
 
-### Phase 89 — Trusted GitHub publisher and operations（`BLOCKED_BY_PHASE_88`）
+### Phase 89 — Trusted GitHub publisher and operations（`AUTHORIZED`）
 
 实现无源码/Git/Docker/数据库/DSH 权限的独立 publisher、固定仓库 GitHub App/单仓库 token、internal
 lease/fence、renderer、reconciliation、有限重试、Compose 与运维；required CI 只使用 fake GitHub。

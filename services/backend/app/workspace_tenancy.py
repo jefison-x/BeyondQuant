@@ -89,6 +89,7 @@ WORKSPACE_TABLES = (
     "paper_ledger_entries", "paper_account_snapshots", "paper_account_audit",
     "paper_transfer_audit", "learning_runs", "learning_iterations",
     "evaluation_signals", "lessons", "learning_history",
+    "product_feedback", "product_feedback_revisions", "product_feedback_audit",
 )
 
 DIRECT_OWNER_TABLES: dict[str, tuple[str, ...]] = {
@@ -107,6 +108,7 @@ DIRECT_OWNER_TABLES: dict[str, tuple[str, ...]] = {
     "paper_account_audit": ("audit_id",),
     "paper_transfer_audit": ("transfer_id",),
     "learning_runs": ("learning_run_id",), "lessons": ("lesson_id",),
+    "product_feedback": ("feedback_id",),
 }
 
 INHERITED_TABLES: dict[str, tuple[tuple[str, ...], str, str]] = {
@@ -135,6 +137,12 @@ INHERITED_TABLES: dict[str, tuple[tuple[str, ...], str, str]] = {
         "LEFT JOIN learning_runs lr ON c.entity_type = 'learning_run' AND lr.learning_run_id = c.entity_id "
         "LEFT JOIN lessons le ON c.entity_type = 'lesson' AND le.lesson_id = c.entity_id",
         "COALESCE(lr.workspace_id, le.workspace_id)",
+    ),
+    "product_feedback_revisions": (
+        ("revision_id",), "LEFT JOIN product_feedback p ON p.feedback_id = c.feedback_id", "p.workspace_id",
+    ),
+    "product_feedback_audit": (
+        ("audit_id",), "LEFT JOIN product_feedback p ON p.feedback_id = c.feedback_id", "p.workspace_id",
     ),
 }
 
@@ -179,6 +187,8 @@ RELATION_CHECKS = {
     "lesson_task": "SELECT COUNT(*) AS count FROM lessons c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "learning_history_run": "SELECT COUNT(*) AS count FROM learning_history c JOIN learning_runs p ON c.entity_type='learning_run' AND p.learning_run_id=c.entity_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "learning_history_lesson": "SELECT COUNT(*) AS count FROM learning_history c JOIN lessons p ON c.entity_type='lesson' AND p.lesson_id=c.entity_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
+    "feedback_revision": "SELECT COUNT(*) AS count FROM product_feedback_revisions c JOIN product_feedback p ON p.feedback_id=c.feedback_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
+    "feedback_audit": "SELECT COUNT(*) AS count FROM product_feedback_audit c JOIN product_feedback p ON p.feedback_id=c.feedback_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
 }
 
 
@@ -362,6 +372,8 @@ class WorkspaceTenancyStore(PgStoreMixin):
             "learning_iterations": ("learning_runs", "learning_run_id", "learning_run_id"),
             "evaluation_signals": ("research_tasks", "task_id", "task_id"),
             "lessons": ("research_tasks", "task_id", "task_id"),
+            "product_feedback_revisions": ("product_feedback", "feedback_id", "feedback_id"),
+            "product_feedback_audit": ("product_feedback", "feedback_id", "feedback_id"),
         }
         for table_name, arguments in parent_triggers.items():
             trigger_name = f"{table_name}_workspace_write"

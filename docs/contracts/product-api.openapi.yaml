@@ -78,6 +78,42 @@ paths:
     get: {summary: 返回 an honest audit of persisted observed market-data coverage and quality., responses: *okResponses}
   /api/product/data-center/readiness:
     post: {summary: 检查一个有界研究或回测范围能否使用已持久化 BYQ 行情，并返回缺口和下一步。, responses: *okResponses}
+  /api/product/feedback/options:
+    get: {summary: 返回反馈类别、组件、限制、隐私提示和无密钥 publisher availability。, responses: *okResponses}
+  /api/product/feedback/items:
+    get: {summary: 筛选并分页返回当前 personal workspace 的反馈摘要。, responses: *okResponses}
+    post: {summary: 创建 owner-scoped feedback draft 和首个不可变 revision。, responses: *createdResponses}
+  /api/product/feedback/items/{feedback_id}:
+    parameters: [{$ref: "#/components/parameters/FeedbackId"}]
+    get: {summary: 按需返回一个 owner-scoped feedback detail。, responses: *okResponses}
+    put: {summary: 以 optimistic version 新增 draft revision。, responses: *okResponses}
+  /api/product/feedback/items/{feedback_id}/revisions:
+    parameters: [{$ref: "#/components/parameters/FeedbackId"}]
+    get: {summary: 分页返回 owner-scoped immutable revision metadata。, responses: *okResponses}
+  /api/product/feedback/items/{feedback_id}/preview:
+    parameters: [{$ref: "#/components/parameters/FeedbackId"}]
+    post: {summary: 生成服务端脱敏的 exact public disclosure preview 与 hash。, responses: *okResponses}
+  /api/product/feedback/items/{feedback_id}/submit:
+    parameters: [{$ref: "#/components/parameters/FeedbackId"}]
+    post: {summary: 显式确认 preview 后生成 moderator-visible immutable submitted snapshot。, responses: *okResponses}
+  /api/product/feedback/items/{feedback_id}/withdraw:
+    parameters: [{$ref: "#/components/parameters/FeedbackId"}]
+    post: {summary: 在分诊前撤回已提交反馈，不硬删除 revision/audit。, responses: *okResponses}
+  /api/product/feedback/moderation/items:
+    get: {summary: 管理员专用分页 submitted-snapshot inbox；不读取 workspace drafts 或用户身份。, responses: *okResponses}
+  /api/product/feedback/moderation/items/{feedback_id}:
+    parameters: [{$ref: "#/components/parameters/FeedbackId"}]
+    get: {summary: 返回一个最小化脱敏 submitted snapshot。, responses: *okResponses}
+  /api/product/feedback/moderation/items/{feedback_id}/audit:
+    parameters: [{$ref: "#/components/parameters/FeedbackId"}]
+    get: {summary: 懒加载分页返回 secret-free moderator audit。, responses: *okResponses}
+  /api/product/feedback/moderation/items/{feedback_id}/{action}:
+    parameters:
+      - $ref: "#/components/parameters/FeedbackId"
+      - {name: action, in: path, required: true, schema: {type: string, enum: [triage, accept, reject, duplicate]}}
+    post: {summary: 执行有版本、幂等和审计的封闭 feedback moderation action。, responses: *okResponses}
+  /api/product/feedback/moderation/publisher-status:
+    get: {summary: 返回 publisher-unconfigured 与 transactional outbox queue count，不含凭据。, responses: *okResponses}
   /api/product/operations/status:
     get: {summary: 返回 the admin-only browser-safe operations projection., responses: *okResponses}
   /api/product/operations/budget:
@@ -423,6 +459,7 @@ components:
     RequestId: {name: request_id, in: path, required: true, schema: {type: string}}
     PluginId: {name: plugin_id, in: path, required: true, schema: {type: string, pattern: "^[a-z0-9-]+$"}}
     CredentialId: {name: credential_id, in: path, required: true, schema: {type: string}}
+    FeedbackId: {name: feedback_id, in: path, required: true, schema: {type: string}}
     ArtifactId: {name: artifact_id, in: path, required: true, schema: {type: string}}
     StrategyId: {name: strategy_id, in: path, required: true, schema: {type: string}}
     ApprovalId: {name: approval_id, in: path, required: true, schema: {type: string}}

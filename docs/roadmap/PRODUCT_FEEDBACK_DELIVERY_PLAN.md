@@ -18,7 +18,7 @@ worktree、branch 和 PR；完成自动验证、CI-green squash merge 和部署�
 - 固定用户零 GitHub 配置、operator 一次配置和 publisher-unconfigured 降级；
 - 冻结 Phase 88–90 exit gate；不修改 runtime、database、API、MCP、frontend 或 Compose，不创建真实 Issue。
 
-## Phase 88 — Durable feedback domain and Product API（`AUTHORIZED`）
+## Phase 88 — Durable feedback domain and Product API（`COMPLETE`）
 
 ### 范围
 
@@ -44,7 +44,7 @@ worktree、branch 和 PR；完成自动验证、CI-green squash merge 和部署�
 - PostgreSQL restart and migration idempotency；
 - architecture/unit/contract/smoke all green。
 
-## Phase 89 — Trusted GitHub publisher and operations（`BLOCKED_BY_PHASE_88`）
+## Phase 89 — Trusted GitHub publisher and operations（`AUTHORIZED`）
 
 ### 范围
 
