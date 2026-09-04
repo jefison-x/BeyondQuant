@@ -588,6 +588,22 @@ class MLTrainingRunStore(PgStoreMixin):
                 if existing["request_hash"] != request_hash:
                     raise MLTrainingConflict("ML training idempotency key was reused")
                 return self._public(existing)
+            # Serialize the study lifecycle with a concurrent Product delete and
+            # re-check its current authoritative status inside this transaction.
+            execute(
+                connection,
+                "SELECT pg_advisory_xact_lock(hashtext(:study_lock))",
+                {"study_lock": f"ml-study|{workspace}|{owner}|{strategy}"},
+            )
+            study = fetch_one(
+                connection,
+                """SELECT status FROM artifacts WHERE artifact_id=:strategy
+                   AND owner_principal=:owner AND workspace_id=:workspace
+                   AND kind='ml_strategy_version'""",
+                {"strategy": strategy, "owner": owner, "workspace": workspace},
+            )
+            if study is None or study["status"] != "validated":
+                raise MLTrainingConflict("ML strategy is not available for training")
             # Serialize equivalent active submissions independently of the caller's
             # transport idempotency key.  Browser retries and Agent retries may use
             # different keys after an outcome-unknown timeout, but they must still

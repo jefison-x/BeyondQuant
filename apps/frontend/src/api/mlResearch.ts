@@ -29,6 +29,10 @@ export const getMLStudies = (query = "", status = "all", limit = 20, offset = 0)
   return request<MLStudyPage>(`/studies?${params.toString()}`);
 };
 export const getMLStudy = (id: string) => request<MLStudyDetail>(`/studies/${encodeURIComponent(id)}`);
+export const deleteMLStudy = (id: string) => request<{ schema_version: string; study: MLArtifact; invalidated_approval_ids: string[] }>(
+  `/studies/${encodeURIComponent(id)}`,
+  { method: "DELETE" },
+);
 export const createMLStrategy = (payload: Record<string, unknown>) => post<any>("/strategies/versions", payload);
 export const approveMLStrategy = (payload: Record<string, unknown>) => post<any>("/strategies/approvals", payload);
 export const createMLTraining = (payload: Record<string, unknown>, idempotencyKey?: string) => request<{ training_run: MLRun }>(

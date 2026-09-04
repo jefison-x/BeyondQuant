@@ -669,6 +669,7 @@ class ResearchStore(PgStoreMixin):
                 JOIN research_tasks t ON t.task_id=a.task_id
                 WHERE a.owner_principal=:owner AND a.workspace_id=:workspace
                   AND a.kind='ml_strategy_version'
+                  AND a.status <> 'superseded'
                   AND (:query='%%' OR a.artifact_id ILIKE :query
                        OR a.content ->> 'name' ILIKE :query OR t.title ILIKE :query)
             ), staged AS (
@@ -700,6 +701,109 @@ class ResearchStore(PgStoreMixin):
             "limit": limit, "offset": offset,
             "has_more": offset + limit < int(total_row["total"] if total_row else 0),
         }
+
+    def supersede_unexecuted_ml_study(
+        self, artifact_id: object, *, owner_principal: str, workspace_id: str,
+    ) -> dict[str, object]:
+        """Hide one never-executed ML study while preserving its audit history.
+
+        Training, prediction and Backtest rows are immutable execution evidence.
+        Once any such row exists, the study cannot be deleted.  A safe delete is
+        therefore an atomic status transition for the strategy and every approval
+        that authorized it, never a physical row deletion.
+        """
+        identity = _identifier(artifact_id, field="artifact_id")
+        owner = _text(owner_principal, field="owner_principal", max_length=128)
+        workspace = _text(workspace_id, field="workspace_id", max_length=64)
+        with self._transaction() as connection:
+            execute(
+                connection,
+                "SELECT pg_advisory_xact_lock(hashtext(:study_lock))",
+                {"study_lock": f"ml-study|{workspace}|{owner}|{identity}"},
+            )
+            study = fetch_one(
+                connection,
+                """SELECT * FROM artifacts WHERE artifact_id=:artifact_id
+                   AND owner_principal=:owner AND workspace_id=:workspace
+                   AND kind='ml_strategy_version' FOR UPDATE""",
+                {"artifact_id": identity, "owner": owner, "workspace": workspace},
+            )
+            if study is None:
+                raise ResearchNotFound("ML study not found")
+
+            approvals = execute(
+                connection,
+                """SELECT * FROM artifacts WHERE owner_principal=:owner
+                   AND workspace_id=:workspace AND kind='ml_strategy_approval'
+                   AND content ->> 'ml_strategy_artifact_id'=:artifact_id
+                   ORDER BY created_at,artifact_id FOR UPDATE""",
+                {"artifact_id": identity, "owner": owner, "workspace": workspace},
+            )
+            if study["status"] != "superseded":
+                dependencies = fetch_one(
+                    connection,
+                    """SELECT
+                       (SELECT COUNT(*) FROM ml_training_runs WHERE workspace_id=:workspace
+                         AND owner_principal=:owner AND ml_strategy_artifact_id=:artifact_id) AS training_count,
+                       (SELECT COUNT(*) FROM ml_prediction_runs WHERE workspace_id=:workspace
+                         AND owner_principal=:owner AND ml_strategy_artifact_id=:artifact_id) AS prediction_count,
+                       (SELECT COUNT(*) FROM backtest_jobs WHERE workspace_id=:workspace
+                         AND owner_principal=:owner AND strategy_version_artifact_id=:artifact_id) AS backtest_count""",
+                    {"artifact_id": identity, "owner": owner, "workspace": workspace},
+                )
+                assert dependencies is not None
+                if any(int(dependencies[field]) > 0 for field in (
+                    "training_count", "prediction_count", "backtest_count",
+                )):
+                    raise InvalidTransition(
+                        "ML study with training, prediction, or backtest history cannot be deleted"
+                    )
+
+                targets = [study, *[row for row in approvals if row["status"] != "superseded"]]
+                for row in targets:
+                    current = str(row["status"])
+                    if "superseded" not in ARTIFACT_TRANSITIONS.get(current, set()):
+                        raise InvalidTransition(
+                            f"cannot delete ML study artifact from {current}"
+                        )
+                now = _now()
+                for row in targets:
+                    target_id = str(row["artifact_id"])
+                    execute(
+                        connection,
+                        """UPDATE artifacts SET status='superseded', updated_at=:updated_at,
+                           version=version+1 WHERE artifact_id=:artifact_id""",
+                        {"artifact_id": target_id, "updated_at": now},
+                    )
+                    updated = fetch_one(
+                        connection, "SELECT * FROM artifacts WHERE artifact_id=:artifact_id",
+                        {"artifact_id": target_id},
+                    )
+                    assert updated is not None
+                    result = self._artifact_row(updated)
+                    transition_key = f"ml-study-delete-{identity}-{target_id}"
+                    request_hash = _hash_request({
+                        "entity_type": "artifact", "entity_id": target_id,
+                        "target_status": "superseded",
+                    })
+                    execute(
+                        connection,
+                        """INSERT INTO research_transitions
+                           (entity_type,entity_id,idempotency_key,request_hash,target_status,result_json)
+                           VALUES ('artifact',:entity_id,:idempotency_key,:request_hash,'superseded',:result_json)""",
+                        {"entity_id": target_id, "idempotency_key": transition_key,
+                         "request_hash": request_hash, "result_json": result},
+                    )
+                study = fetch_one(
+                    connection, "SELECT * FROM artifacts WHERE artifact_id=:artifact_id",
+                    {"artifact_id": identity},
+                )
+                assert study is not None
+
+            return {
+                "study": self._artifact_row(study),
+                "invalidated_approval_ids": [str(row["artifact_id"]) for row in approvals],
+            }
 
     def get_ml_artifact_metadata(
         self, artifact_id: object, *, owner_principal: str, workspace_id: str,

@@ -8,6 +8,7 @@ const getMLStudies = vi.fn();
 const getMLStudy = vi.fn();
 const getMLPredictionRows = vi.fn();
 const createMLTraining = vi.fn();
+const deleteMLStudy = vi.fn();
 const confirmTraining = vi.fn();
 
 vi.mock("element-plus", () => ({
@@ -21,6 +22,7 @@ vi.mock("@/api/mlResearch", () => ({
   createMLPrediction: vi.fn(),
   createMLStrategy: vi.fn(),
   createMLTraining: (...args: unknown[]) => createMLTraining(...args),
+  deleteMLStudy: (...args: unknown[]) => deleteMLStudy(...args),
   getMLPrediction: vi.fn(),
   getMLPredictionRows: (...args: unknown[]) => getMLPredictionRows(...args),
   getMLTraining: vi.fn(),
@@ -65,6 +67,12 @@ describe("MLResearchWorkbench", () => {
       training_run_id: "mlrun_new", ml_strategy_artifact_id: "artifact_strategy",
       stock_pool_snapshot_id: "snapshot_1", status: "waiting_for_data",
     } });
+    deleteMLStudy.mockReset();
+    deleteMLStudy.mockResolvedValue({
+      schema_version: "ml-study-delete.v1",
+      study: { artifact_id: "artifact_strategy", status: "superseded" },
+      invalidated_approval_ids: ["artifact_approval"],
+    });
     confirmTraining.mockReset();
     confirmTraining.mockResolvedValue("confirm");
     getMLStudy.mockResolvedValue({
@@ -131,5 +139,32 @@ describe("MLResearchWorkbench", () => {
 
     expect(createMLTraining).toHaveBeenCalledTimes(1);
     expect(createMLTraining.mock.calls[0][1]).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("deletes a never-executed study after confirmation and refreshes the catalog", async () => {
+    getMLStudy.mockResolvedValueOnce({
+      schema_version: "ml-product-study-detail.v1",
+      study: {
+        artifact_id: "artifact_strategy", task_id: "task_1", kind: "ml_strategy_version",
+        status: "validated", content: { name: "待删除研究", schema_version: "ml-strategy-version.v2" },
+      },
+      approval_artifact_id: "artifact_approval",
+      artifacts: [],
+      training_runs: { total: 0, runs: [] },
+      prediction_runs: { total: 0, runs: [] },
+      backtests: { total: 0, backtests: [] },
+    });
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    await vm.selectStudy("artifact_strategy");
+    expect(vm.canDeleteStudy).toBe(true);
+
+    await vm.removeStudy();
+
+    expect(deleteMLStudy).toHaveBeenCalledWith("artifact_strategy");
+    expect(vm.selectedStrategy).toBe("");
+    expect(vm.detail).toBeNull();
+    expect(getMLStudies).toHaveBeenCalledTimes(2);
   });
 });

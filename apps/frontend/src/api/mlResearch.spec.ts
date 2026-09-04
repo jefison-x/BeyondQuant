@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMLStrategy, createMLTraining, getMLPredictionRows, getMLWorkspace } from "./mlResearch";
+import { createMLStrategy, createMLTraining, deleteMLStudy, getMLPredictionRows, getMLWorkspace } from "./mlResearch";
 
 describe("ML research Product API client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -32,5 +32,17 @@ describe("ML research Product API client", () => {
     const init = fetchMock.mock.calls[0][1];
     expect(init.headers["x-idempotency-key"]).toBe("browser-training-12345678");
     expect(JSON.parse(init.body)).not.toHaveProperty("idempotency_key");
+  });
+  it("soft-deletes one encoded study through the Product API", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      schema_version: "ml-study-delete.v1", study: { status: "superseded" },
+      invalidated_approval_ids: [],
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await deleteMLStudy("artifact /1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/ml/studies/artifact%20%2F1",
+      expect.objectContaining({ method: "DELETE", credentials: "include" }),
+    );
   });
 });

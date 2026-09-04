@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   approveMLStrategy, createMLPrediction, createMLStrategy, createMLTraining,
+  deleteMLStudy,
   getMLCapabilities, getMLOptions, getMLPrediction, getMLPredictionRows,
   getMLStudies, getMLStudy, getMLTraining,
   type MLArtifact, type MLCapabilities, type MLCapabilityComponent, type MLRun,
@@ -15,12 +16,13 @@ import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { formatChinaTime } from "@/time";
 import { shortReference, statusLabel } from "@/display";
+import { createRequestId } from "@/utils/requestId";
 
 type StudyMode = "compatible" | "walk_forward" | "regime";
 type ExpertDraft = { key: "risk_on" | "neutral" | "risk_off"; label: string; learner: string };
 
 const router = useRouter();
-const loading = ref(true), catalogLoading = ref(false), detailLoading = ref(false), busy = ref(false);
+const loading = ref(true), catalogLoading = ref(false), detailLoading = ref(false), busy = ref(false), deleting = ref(false);
 const error = ref(""), showCreate = ref(false), activeTab = ref("overview");
 const capabilities = ref<MLCapabilities | null>(null);
 const options = ref<MLOptions>({ schema_version: "ml-options.v1", tasks: [], pools: [] });
@@ -80,6 +82,7 @@ const predictionRows = ref<Record<string, any>[]>([]), predictionRowsTotal = ref
 const predictionRowsLoading = ref(false), predictionRowsQuery = ref(""), predictionRowsPage = ref(1);
 const predictionRowsPageSize = 50;
 const predictionRunId = computed(() => prediction.value?.status === "completed" ? prediction.value.prediction_run_id ?? "" : "");
+const trainingSubmissionCache = new Map<string, string>();
 
 function trainingSubmissionStorageKey() {
   return selected.value && chosenPool.value
@@ -89,15 +92,19 @@ function trainingSubmissionStorageKey() {
 function trainingSubmissionId() {
   const storageKey = trainingSubmissionStorageKey();
   if (!storageKey) return "";
-  const existing = window.sessionStorage.getItem(storageKey);
+  let existing = trainingSubmissionCache.get(storageKey) ?? "";
+  try { existing ||= window.sessionStorage.getItem(storageKey) ?? ""; } catch { /* memory fallback */ }
   if (existing) return existing;
-  const created = crypto.randomUUID();
-  window.sessionStorage.setItem(storageKey, created);
+  const created = createRequestId();
+  trainingSubmissionCache.set(storageKey, created);
+  try { window.sessionStorage.setItem(storageKey, created); } catch { /* memory fallback */ }
   return created;
 }
 function clearTrainingSubmissionId() {
   const storageKey = trainingSubmissionStorageKey();
-  if (storageKey) window.sessionStorage.removeItem(storageKey);
+  if (!storageKey) return;
+  trainingSubmissionCache.delete(storageKey);
+  try { window.sessionStorage.removeItem(storageKey); } catch { /* memory fallback */ }
 }
 
 function componentLabel(item: MLCapabilityComponent) { return item.display_name || item.id; }
@@ -256,10 +263,44 @@ async function saveStrategy() {
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : "研究定义保存失败"); }
   finally { busy.value = false; }
 }
+const canDeleteStudy = computed(() => Boolean(
+  detail.value
+  && detail.value.training_runs.total === 0
+  && detail.value.prediction_runs.total === 0
+  && detail.value.backtests.total === 0
+));
+async function removeStudy() {
+  if (!selected.value || !canDeleteStudy.value || deleting.value) return;
+  const artifactId = selected.value.artifact_id;
+  const name = String(content.value.name || "未命名模型研究");
+  deleting.value = true;
+  try {
+    await ElMessageBox.confirm(
+      `删除“${name}”后，它将从研究目录隐藏，相关审批也会失效。`,
+      "删除未执行的模型研究",
+      { type: "warning", confirmButtonText: "删除研究", cancelButtonText: "取消" },
+    );
+    await deleteMLStudy(artifactId);
+    selectedStrategy.value = "";
+    detail.value = null;
+    training.value = null;
+    prediction.value = null;
+    backtest.value = null;
+    selectedApproval.value = "";
+    await loadCatalog();
+    ElMessage.success("模型研究已删除；审计记录已保留");
+  } catch (e) {
+    if (e !== "cancel" && e !== "close") {
+      ElMessage.error(e instanceof Error ? e.message : "模型研究删除失败");
+    }
+  } finally {
+    deleting.value = false;
+  }
+}
 async function approveAndTrain() {
   // Acquire the UI latch before opening the asynchronous confirmation. A
   // rapid double click must never create two independent confirmation flows.
-  if (busy.value || !selected.value || !chosenPool.value) return;
+  if (busy.value || deleting.value || !selected.value || !chosenPool.value) return;
   busy.value = true;
   try {
     await ElMessageBox.confirm(`将使用“${chosenPool.value.name}”的当前冻结快照开始训练。`, "确认训练范围", { type: "warning", confirmButtonText: "批准并开始训练", cancelButtonText: "返回检查" });
@@ -380,7 +421,7 @@ onBeforeUnmount(() => { if (timer) clearTimeout(timer); if (catalogTimer) clearT
     </template>
     <template #detail>
       <el-card v-if="detailLoading" shadow="never"><div class="base-loading" role="status">按需加载研究详情...</div></el-card>
-      <el-card v-else-if="selected" shadow="never" class="research-detail"><template #header><div class="detail-heading"><div><span>{{ methodLabel(selected) }}</span><h3>{{ content.name || '未命名模型研究' }}</h3><p>{{ selectedSummary?.task_title }}</p></div><el-tag :type="backtest?.status==='completed'?'success':'info'">{{ STAGES[selectedSummary?.stage ?? 'definition'] }}</el-tag></div></template>
+      <el-card v-else-if="selected" shadow="never" class="research-detail"><template #header><div class="detail-heading"><div><span>{{ methodLabel(selected) }}</span><h3>{{ content.name || '未命名模型研究' }}</h3><p>{{ selectedSummary?.task_title }}</p></div><div class="detail-actions"><el-tag :type="backtest?.status==='completed'?'success':'info'">{{ STAGES[selectedSummary?.stage ?? 'definition'] }}</el-tag><el-tooltip :content="canDeleteStudy?'删除未执行的研究':'已有训练、预测或回测记录，需保留审计证据'" placement="bottom"><span><el-button type="danger" plain size="small" :disabled="!canDeleteStudy||busy" :loading="deleting" data-testid="ml-delete" @click="removeStudy">删除</el-button></span></el-tooltip></div></div></template>
         <ol class="pipeline" aria-label="模型研究进度"><li v-for="(step,index) in steps" :key="step.label" :class="`is-${step.state}`"><b>{{ step.state==='completed'?'✓':index+1 }}</b><span><strong>{{ step.label }}</strong><small>{{ step.hint }}</small></span></li></ol>
         <section class="next-step"><div><span>建议下一步</span><strong>{{ next.title }}</strong><p>{{ next.hint }}</p></div><div class="next-actions"><el-select v-if="next.action==='train'" v-model="form.pool_id" aria-label="训练使用的冻结股票池" data-testid="ml-pool" placeholder="选择冻结股票池"><el-option v-for="pool in activePools" :key="pool.pool_id" :label="`${pool.name} · ${pool.member_count}只`" :value="pool.pool_id"/></el-select><el-button type="primary" :disabled="next.action==='wait'||(next.action==='train'&&!chosenPool)" :loading="busy" :data-testid="next.action==='train'?'ml-train':next.action==='predict'?'ml-predict':next.action==='backtest'?'ml-backtest':undefined" @click="runNext">{{ next.label }}</el-button></div></section>
         <el-tabs v-model="activeTab" class="research-tabs">
@@ -418,5 +459,5 @@ onBeforeUnmount(() => { if (timer) clearTimeout(timer); if (catalogTimer) clearT
 </template>
 
 <style scoped>
-.ml-workbench{min-width:0}.research-list{display:grid;gap:9px;margin-top:4px}.research-list-item{background:transparent;border:1px solid var(--byq-border-subtle);border-radius:9px;color:var(--byq-text);cursor:pointer;display:grid;gap:7px;padding:12px;text-align:left;width:100%}.research-list-item:hover{background:var(--byq-surface-subtle)}.research-list-item.active{background:var(--byq-brand-soft);border-color:color-mix(in srgb,var(--byq-brand) 42%,var(--byq-border))}.list-head,.list-meta,.detail-heading,.result-intro{align-items:center;display:flex;gap:8px;justify-content:space-between;min-width:0}.list-head strong,.list-meta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.method,.list-meta,.detail-heading p,.content-section p,.result-intro span,.run-list small,.expert-grid small{color:var(--byq-text-muted);font-size:11px}.detail-heading{align-items:flex-start}.detail-heading>div>span{color:var(--byq-brand);font-size:10px;font-weight:800;letter-spacing:.08em}.detail-heading h3{font-size:19px;margin:3px 0}.detail-heading p,.content-section p{margin:0}.pipeline{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));list-style:none;margin:0 0 16px;padding:0}.pipeline li{align-items:flex-start;display:flex;gap:8px;min-width:0;position:relative}.pipeline li:not(:last-child):after{background:var(--byq-border);content:"";height:1px;left:30px;position:absolute;right:4px;top:13px}.pipeline b,.run-list>article>b{align-items:center;background:var(--byq-surface);border:1px solid var(--byq-border);border-radius:50%;color:var(--byq-text-muted);display:flex;flex:0 0 25px;font-size:11px;height:25px;justify-content:center;position:relative;z-index:1}.pipeline li>span{display:grid;gap:2px;position:relative;z-index:1}.pipeline strong{font-size:12px}.pipeline small{color:var(--byq-text-soft);font-size:10px}.pipeline .is-completed b{background:var(--byq-brand);border-color:var(--byq-brand);color:var(--byq-on-brand)}.pipeline .is-active b{border-color:var(--byq-brand);color:var(--byq-brand);box-shadow:0 0 0 3px var(--byq-brand-soft)}.pipeline .is-failed b{background:var(--byq-danger-soft);color:var(--byq-danger)}.next-step{align-items:center;background:var(--byq-brand-soft);border:1px solid color-mix(in srgb,var(--byq-brand) 24%,var(--byq-border));border-radius:10px;display:flex;gap:16px;justify-content:space-between;padding:14px 16px}.next-step>div:first-child{display:grid;gap:3px}.next-step>div:first-child>span{color:var(--byq-brand);font-size:10px;font-weight:800}.next-step p{color:var(--byq-text-muted);font-size:11px;margin:0}.next-actions{align-items:center;display:flex;gap:8px}.next-actions .el-select{min-width:190px}.research-tabs{margin-top:12px}.summary-grid,.metrics{display:grid;gap:9px;grid-template-columns:repeat(4,minmax(0,1fr))}.summary-grid>div{background:var(--byq-surface-subtle);border:1px solid var(--byq-border-subtle);border-radius:9px;display:grid;gap:5px;padding:12px}.summary-grid span,.metrics span{color:var(--byq-text-muted);font-size:11px}.summary-grid strong{font-size:13px}.summary-grid small{color:var(--byq-text-soft);font-size:10px}.content-section{border-top:1px solid var(--byq-border-subtle);margin-top:18px;padding-top:16px}.content-section h4{font-size:14px;margin:0}.periods{display:grid;gap:8px;grid-template-columns:repeat(3,minmax(0,1fr));margin:12px 0 0}.periods.two{grid-template-columns:repeat(2,minmax(0,1fr))}.periods>div{border-left:2px solid var(--byq-border);display:grid;gap:4px;padding:4px 10px}.periods dt{color:var(--byq-text-muted);font-size:11px}.periods dd{font-size:12px;margin:0}.metrics{margin-top:12px}.metrics>div{display:grid;gap:4px}.metrics strong{font-size:17px}.result-intro{margin-bottom:10px}.result-intro>div{display:grid;gap:3px}.run-list{display:grid;gap:8px}.run-list article{align-items:center;border:1px solid var(--byq-border-subtle);border-radius:9px;display:grid;gap:10px;grid-template-columns:auto minmax(0,1fr) auto;padding:12px}.run-list article>div{display:grid;gap:3px}.technical{margin-top:12px}.technical :deep(.el-descriptions__content){overflow-wrap:anywhere}.create-intro{background:var(--byq-surface-subtle);border-radius:9px;margin-bottom:16px;padding:12px 14px}.create-intro p{color:var(--byq-text-muted);font-size:12px;margin:4px 0}.form-grid,.validation-grid,.expert-grid{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}.form-grid.three,.validation-grid,.expert-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.form-grid :deep(.el-input-number),.form-grid :deep(.el-select),.validation-grid :deep(.el-input-number),.expert-grid :deep(.el-select){width:100%}.dates,.expert-config{border-top:1px solid var(--byq-border-subtle);display:grid;gap:10px;padding-top:14px}.dates>div:first-child,.expert-config>div:first-child{display:flex;justify-content:space-between}.dates>div:first-child span,.expert-config>div:first-child span{color:var(--byq-text-muted);font-size:11px}.date-row{align-items:center;display:grid;gap:9px;grid-template-columns:44px minmax(0,1fr) auto minmax(0,1fr)}.date-row label{color:var(--byq-text-muted);font-size:12px;font-weight:700}.date-row :deep(.el-date-editor){width:100%}.expert-grid article{border:1px solid var(--byq-border-subtle);border-radius:9px;display:grid;gap:5px;padding:11px}.expert-grid article span{font-size:12px}.regime-counts{align-items:center;display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.regime-counts>span{color:var(--byq-text-muted);font-size:11px;margin-right:auto}@media(max-width:1120px){.summary-grid,.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.pipeline small{display:none}}@media(max-width:760px){.next-step,.next-actions{align-items:stretch;flex-direction:column}.next-actions .el-select,.next-actions .el-button{width:100%}.pipeline{gap:4px}.pipeline li{align-items:center;display:grid;gap:5px;justify-items:center;text-align:center}.pipeline li:not(:last-child):after{left:calc(50% + 13px);right:calc(-50% + 13px)}.periods,.periods.two,.form-grid,.form-grid.three,.validation-grid,.expert-grid{grid-template-columns:1fr}.date-row{grid-template-columns:1fr}.date-row>span{display:none}.dates>div:first-child,.expert-config>div:first-child{align-items:flex-start;flex-direction:column}}@media(max-width:480px){.summary-grid,.metrics{grid-template-columns:1fr}.list-meta time{display:none}}
+.ml-workbench{min-width:0}.research-list{display:grid;gap:9px;margin-top:4px}.research-list-item{background:transparent;border:1px solid var(--byq-border-subtle);border-radius:9px;color:var(--byq-text);cursor:pointer;display:grid;gap:7px;padding:12px;text-align:left;width:100%}.research-list-item:hover{background:var(--byq-surface-subtle)}.research-list-item.active{background:var(--byq-brand-soft);border-color:color-mix(in srgb,var(--byq-brand) 42%,var(--byq-border))}.list-head,.list-meta,.detail-heading,.result-intro{align-items:center;display:flex;gap:8px;justify-content:space-between;min-width:0}.list-head strong,.list-meta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.method,.list-meta,.detail-heading p,.content-section p,.result-intro span,.run-list small,.expert-grid small{color:var(--byq-text-muted);font-size:11px}.detail-heading{align-items:flex-start}.detail-actions{align-items:flex-end;display:flex;flex-direction:column;gap:8px}.detail-heading>div>span{color:var(--byq-brand);font-size:10px;font-weight:800;letter-spacing:.08em}.detail-heading h3{font-size:19px;margin:3px 0}.detail-heading p,.content-section p{margin:0}.pipeline{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));list-style:none;margin:0 0 16px;padding:0}.pipeline li{align-items:flex-start;display:flex;gap:8px;min-width:0;position:relative}.pipeline li:not(:last-child):after{background:var(--byq-border);content:"";height:1px;left:30px;position:absolute;right:4px;top:13px}.pipeline b,.run-list>article>b{align-items:center;background:var(--byq-surface);border:1px solid var(--byq-border);border-radius:50%;color:var(--byq-text-muted);display:flex;flex:0 0 25px;font-size:11px;height:25px;justify-content:center;position:relative;z-index:1}.pipeline li>span{display:grid;gap:2px;position:relative;z-index:1}.pipeline strong{font-size:12px}.pipeline small{color:var(--byq-text-soft);font-size:10px}.pipeline .is-completed b{background:var(--byq-brand);border-color:var(--byq-brand);color:var(--byq-on-brand)}.pipeline .is-active b{border-color:var(--byq-brand);color:var(--byq-brand);box-shadow:0 0 0 3px var(--byq-brand-soft)}.pipeline .is-failed b{background:var(--byq-danger-soft);color:var(--byq-danger)}.next-step{align-items:center;background:var(--byq-brand-soft);border:1px solid color-mix(in srgb,var(--byq-brand) 24%,var(--byq-border));border-radius:10px;display:flex;gap:16px;justify-content:space-between;padding:14px 16px}.next-step>div:first-child{display:grid;gap:3px}.next-step>div:first-child>span{color:var(--byq-brand);font-size:10px;font-weight:800}.next-step p{color:var(--byq-text-muted);font-size:11px;margin:0}.next-actions{align-items:center;display:flex;gap:8px}.next-actions .el-select{min-width:190px}.research-tabs{margin-top:12px}.summary-grid,.metrics{display:grid;gap:9px;grid-template-columns:repeat(4,minmax(0,1fr))}.summary-grid>div{background:var(--byq-surface-subtle);border:1px solid var(--byq-border-subtle);border-radius:9px;display:grid;gap:5px;padding:12px}.summary-grid span,.metrics span{color:var(--byq-text-muted);font-size:11px}.summary-grid strong{font-size:13px}.summary-grid small{color:var(--byq-text-soft);font-size:10px}.content-section{border-top:1px solid var(--byq-border-subtle);margin-top:18px;padding-top:16px}.content-section h4{font-size:14px;margin:0}.periods{display:grid;gap:8px;grid-template-columns:repeat(3,minmax(0,1fr));margin:12px 0 0}.periods.two{grid-template-columns:repeat(2,minmax(0,1fr))}.periods>div{border-left:2px solid var(--byq-border);display:grid;gap:4px;padding:4px 10px}.periods dt{color:var(--byq-text-muted);font-size:11px}.periods dd{font-size:12px;margin:0}.metrics{margin-top:12px}.metrics>div{display:grid;gap:4px}.metrics strong{font-size:17px}.result-intro{margin-bottom:10px}.result-intro>div{display:grid;gap:3px}.run-list{display:grid;gap:8px}.run-list article{align-items:center;border:1px solid var(--byq-border-subtle);border-radius:9px;display:grid;gap:10px;grid-template-columns:auto minmax(0,1fr) auto;padding:12px}.run-list article>div{display:grid;gap:3px}.technical{margin-top:12px}.technical :deep(.el-descriptions__content){overflow-wrap:anywhere}.create-intro{background:var(--byq-surface-subtle);border-radius:9px;margin-bottom:16px;padding:12px 14px}.create-intro p{color:var(--byq-text-muted);font-size:12px;margin:4px 0}.form-grid,.validation-grid,.expert-grid{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}.form-grid.three,.validation-grid,.expert-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.form-grid :deep(.el-input-number),.form-grid :deep(.el-select),.validation-grid :deep(.el-input-number),.expert-grid :deep(.el-select){width:100%}.dates,.expert-config{border-top:1px solid var(--byq-border-subtle);display:grid;gap:10px;padding-top:14px}.dates>div:first-child,.expert-config>div:first-child{display:flex;justify-content:space-between}.dates>div:first-child span,.expert-config>div:first-child span{color:var(--byq-text-muted);font-size:11px}.date-row{align-items:center;display:grid;gap:9px;grid-template-columns:44px minmax(0,1fr) auto minmax(0,1fr)}.date-row label{color:var(--byq-text-muted);font-size:12px;font-weight:700}.date-row :deep(.el-date-editor){width:100%}.expert-grid article{border:1px solid var(--byq-border-subtle);border-radius:9px;display:grid;gap:5px;padding:11px}.expert-grid article span{font-size:12px}.regime-counts{align-items:center;display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.regime-counts>span{color:var(--byq-text-muted);font-size:11px;margin-right:auto}@media(max-width:1120px){.summary-grid,.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.pipeline small{display:none}}@media(max-width:760px){.next-step,.next-actions{align-items:stretch;flex-direction:column}.next-actions .el-select,.next-actions .el-button{width:100%}.pipeline{gap:4px}.pipeline li{align-items:center;display:grid;gap:5px;justify-items:center;text-align:center}.pipeline li:not(:last-child):after{left:calc(50% + 13px);right:calc(-50% + 13px)}.periods,.periods.two,.form-grid,.form-grid.three,.validation-grid,.expert-grid{grid-template-columns:1fr}.date-row{grid-template-columns:1fr}.date-row>span{display:none}.dates>div:first-child,.expert-config>div:first-child{align-items:flex-start;flex-direction:column}}@media(max-width:480px){.summary-grid,.metrics{grid-template-columns:1fr}.list-meta time{display:none}}
 </style>

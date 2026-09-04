@@ -277,6 +277,30 @@ def test_ml_dynamic_capabilities_paged_catalog_and_lazy_detail(monkeypatch) -> N
     assert calls[2] == "/v1/research/ml/studies?query=%E7%8A%B6%E6%80%81&status=active&limit=12&offset=24"
 
 
+def test_ml_study_delete_forwards_only_trusted_product_context(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    captured: dict[str, object] = {}
+
+    def backend(method, path, payload=None, *, headers=None):
+        captured.update(method=method, path=path, payload=payload, headers=headers)
+        return {
+            "schema_version": "ml-study-delete.v1",
+            "study": {"artifact_id": "artifact_" + "a" * 32, "status": "superseded"},
+            "invalidated_approval_ids": [],
+        }
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).delete(
+        "/api/product/ml/studies/artifact_" + "a" * 32,
+        headers={"Authorization": "Bearer product-test-token", "x-byq-owner-principal": "spoofed"},
+    )
+    assert response.status_code == 200
+    assert captured["method"] == "DELETE"
+    assert captured["path"] == "/v1/research/ml/studies/artifact_" + "a" * 32
+    assert captured["payload"] is None
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+
 def test_asset_diagnostics_name_destination_workspace_without_trust_metadata(monkeypatch) -> None:
     workspace = {
         "contract": "personal-workspace.v1",

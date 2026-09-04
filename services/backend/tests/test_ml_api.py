@@ -236,6 +236,66 @@ def test_ml_study_catalog_is_paged_and_detail_is_lazy_safe() -> None:
     assert "object_reference" not in detail.text and '"rows"' not in detail.text
 
 
+def test_never_executed_ml_study_can_be_soft_deleted_with_approvals() -> None:
+    headers = trusted_agent_context("ml-delete-owner", actor="ml-delete-owner")
+    task = client.post("/v1/research/tasks", headers=headers, json={
+        "owner_principal": "ml-delete-owner", "title": "Delete pending ML",
+        "objective": "Discard an unexecuted study", "trace_id": "trace-ml-delete",
+        "idempotency_key": "task-ml-delete",
+    }).json()
+    version = client.post("/v1/research/ml/strategies/versions", headers=headers, json={
+        "task_id": task["task_id"], "strategy": valid_strategy_v2(),
+        "trace_id": "trace-ml-delete", "idempotency_key": "version-ml-delete",
+    }).json()
+    artifact_id = version["artifact"]["artifact_id"]
+    approval = client.post("/v1/research/ml/strategies/approvals", headers=headers, json={
+        "task_id": task["task_id"], "ml_strategy_artifact_id": artifact_id,
+        "decision": "approved", "rationale": "approved before browser failure",
+        "trace_id": "trace-ml-delete", "idempotency_key": "approval-ml-delete",
+    }).json()["artifact"]
+
+    deleted = client.delete(f"/v1/research/ml/studies/{artifact_id}", headers=headers)
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["study"]["status"] == "superseded"
+    assert deleted.json()["invalidated_approval_ids"] == [approval["artifact_id"]]
+    assert backend_main.research_store.get_artifact(approval["artifact_id"])["status"] == "superseded"
+    assert client.get(f"/v1/research/ml/studies/{artifact_id}", headers=headers).status_code == 404
+    catalog = client.get("/v1/research/ml/studies", headers=headers).json()
+    assert artifact_id not in {item["artifact_id"] for item in catalog["studies"]}
+
+    repeated = client.delete(f"/v1/research/ml/studies/{artifact_id}", headers=headers)
+    assert repeated.status_code == 200
+    assert repeated.json()["study"]["status"] == "superseded"
+
+
+def test_ml_study_with_execution_history_cannot_be_deleted() -> None:
+    headers = trusted_agent_context("ml-delete-blocked", actor="ml-delete-blocked")
+    task = client.post("/v1/research/tasks", headers=headers, json={
+        "owner_principal": "ml-delete-blocked", "title": "Keep executed ML",
+        "objective": "Preserve execution evidence", "trace_id": "trace-ml-delete-blocked",
+        "idempotency_key": "task-ml-delete-blocked",
+    }).json()
+    version = client.post("/v1/research/ml/strategies/versions", headers=headers, json={
+        "task_id": task["task_id"], "strategy": valid_strategy_v2(),
+        "trace_id": "trace-ml-delete-blocked", "idempotency_key": "version-ml-delete-blocked",
+    }).json()
+    artifact_id = version["artifact"]["artifact_id"]
+    backend_main.ml_training_store.create_waiting(
+        workspace_id=headers["x-byq-workspace-id"], owner_principal="ml-delete-blocked",
+        task_id=task["task_id"], experiment_id=None,
+        ml_strategy_artifact_id=artifact_id,
+        stock_pool_snapshot_id="snapshot_" + "a" * 32,
+        preparation={"schema_version": "test"},
+        requirement={"requirement_sha256": "b" * 64}, readiness={"state": "waiting_for_data"},
+        trace_id="trace-ml-delete-blocked", idempotency_key="training-ml-delete-blocked",
+    )
+
+    response = client.delete(f"/v1/research/ml/studies/{artifact_id}", headers=headers)
+    assert response.status_code == 409
+    assert "cannot be deleted" in response.text
+    assert backend_main.research_store.get_artifact(artifact_id)["status"] == "validated"
+
+
 def test_ml_training_requires_separate_human_strategy_approval() -> None:
     headers = trusted_agent_context("ml-training-approval-owner")
     task = client.post("/v1/research/tasks", headers=headers, json={
