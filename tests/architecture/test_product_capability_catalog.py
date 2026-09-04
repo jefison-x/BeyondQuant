@@ -62,6 +62,7 @@ class ProductCapabilityCatalogTests(unittest.TestCase):
         contract = (root / "docs/contracts/machine-learning-research.md").read_text()
         allowed = (
             "byq_ml_capabilities", "byq_ml_workspace_get", "byq_ml_strategy_create",
+            "byq_ml_strategy_approve",
             "byq_ml_training_create", "byq_ml_training_get", "byq_ml_training_cancel",
             "byq_ml_prediction_create", "byq_ml_prediction_get",
         )
@@ -72,7 +73,7 @@ class ProductCapabilityCatalogTests(unittest.TestCase):
         ml_role = roles.split('role_id="ml_researcher"', 1)[1].split("    ),", 1)[0]
         ml_delegate = composition.split("- id: delegate-ml-research", 1)[1].split("# Qualified", 1)[0]
         for prohibited in (
-            "byq_ml_strategy_approve", "byq_strategy_approve",
+            "byq_strategy_approve",
             "byq_backtest_task_prepare", "byq_backtest_task_create", "byq_artifact_create",
         ):
             self.assertNotIn(prohibited, ml_role)
@@ -80,6 +81,7 @@ class ProductCapabilityCatalogTests(unittest.TestCase):
         registration = mcp[mcp.index('"byq_ml_strategy_create"'):mcp.index('"byq_signal_snapshot_get"')]
         for prohibited in ("python:", "sql:", "url:", "model_object", "object_reference", "feature_rows"):
             self.assertNotIn(prohibited, registration.lower())
-        self.assertIn("never create or decide that", skill)
+        self.assertIn("the user to a business page", skill)
+        self.assertIn("exact Agent approval ID", skill)
         self.assertIn("ML Strategy Approval", contract)
         self.assertIn("backtesttask_ml_", contract)

@@ -21,7 +21,9 @@ from packages.contracts.conversation_rehydration import (
 
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
 from .auth_api import router as auth_router
-from .product_api import ProductError, router as product_router
+from .product_api import (
+    ProductError, _backend_request, _trusted_agent_headers, router as product_router,
+)
 from .pooled_http import pooled_http as httpx
 from .user_session import ProductAuthError, resolve_principal, resolve_user
 from .trace_store import TraceStore
@@ -568,6 +570,56 @@ def _product_session(request: Request, session_id: str) -> ProductSession:
         if exc.status_code != 404:
             raise
         return _restore_product_session(session_id, principal, workspace_id)
+
+
+def continue_approval_conversation(
+    request: Request, conversation_id: str, approval_id: str, decision: str, action: str,
+) -> dict[str, str]:
+    """Submit one server-owned continuation turn for a durable approval decision."""
+    headers = _trusted_agent_headers(request)
+
+    def mark(status: str) -> dict[str, object]:
+        return _backend_request(
+            "POST", f"/v1/agents/approvals/{approval_id}/continuation",
+            {"status": status}, headers=headers,
+        )
+
+    claim = mark("submitting").get("approval")
+    if not isinstance(claim, dict):
+        return {"status": "failed"}
+    if claim.get("continuation_changed") is not True:
+        return {"status": str(claim.get("continuation_status") or "failed")}
+
+    instruction = (
+        "BYQ trusted approval continuation. "
+        f"The human decision for {approval_id} is {decision}. "
+        "Re-read this exact approval through BeyondQuant MCP and re-check current domain state. "
+        + (
+            f"Continue only the already approved action {action}; use its exact bound resource, "
+            "do not request approval for the same action again, avoid duplicate writes, and report "
+            "the authoritative domain outcome before proceeding."
+            if decision == "approved"
+            else "Do not execute the rejected action; explain the rejection briefly and offer a safe next step."
+        )
+    )
+    try:
+        session = _product_session(request, conversation_id)
+        _adapter_post(
+            f"/internal/runtime/sessions/{session.session_id}/prompt",
+            payload={
+                "content": instruction,
+                "require_model_key": True,
+                "idempotency_key": f"approval-continuation-{approval_id}",
+            },
+            timeout=5.0,
+        )
+    except HTTPException:
+        mark("failed")
+        return {"status": "failed"}
+    marked = mark("submitted").get("approval")
+    return {
+        "status": str(marked.get("continuation_status") if isinstance(marked, dict) else "submitted")
+    }
 
 
 @app.post("/v1/agent/sessions", status_code=201)

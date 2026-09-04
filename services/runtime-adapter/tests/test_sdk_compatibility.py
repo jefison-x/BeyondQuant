@@ -81,7 +81,8 @@ def test_product_research_skill_requires_evidence_bound_public_answers() -> None
     assert "首日至末日" in market_contract
     assert "newest listed session" in market_contract
     assert "byq_ml_capabilities" in ml_contract
-    assert "never create or decide that" in ml_contract
+    assert "the user to a business page" in ml_contract
+    assert "exact Agent approval ID" in ml_contract
     assert "byq_ml_prediction_create" in ml_contract
     assert "Only the derived ML backtest task" in ml_contract
     assert "Do not call submit in this turn" in feedback_contract

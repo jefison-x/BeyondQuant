@@ -69,7 +69,7 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
         "/v1/research/strategies/approvals",
         json={
             "task_id": task["task_id"], "strategy_version_artifact_id": version["artifact"]["artifact_id"],
-            "reviewer_principal": "human-owner", "decision": "approved", "trace_id": task["trace_id"],
+            "reviewer_principal": "product-user", "decision": "approved", "trace_id": task["trace_id"],
             "idempotency_key": "approval-backtest-api",
         },
     ).json()
@@ -309,7 +309,7 @@ def _create_completed_backtest(client: TestClient, *, key: str) -> dict[str, obj
         "/v1/research/strategies/approvals",
         json={
             "task_id": task["task_id"], "strategy_version_artifact_id": version["artifact"]["artifact_id"],
-            "reviewer_principal": "human-owner", "decision": "approved", "trace_id": f"byq-trace-{key}",
+            "reviewer_principal": "product-user", "decision": "approved", "trace_id": f"byq-trace-{key}",
             "idempotency_key": f"approval-{key}",
         },
     ).json()
@@ -436,7 +436,7 @@ def _create_strategy_chain(client: TestClient, *, key: str) -> dict[str, object]
         "/v1/research/strategies/approvals",
         json={
             "task_id": task["task_id"], "strategy_version_artifact_id": version["artifact"]["artifact_id"],
-            "reviewer_principal": "human-owner", "decision": "approved", "trace_id": f"byq-trace-{key}",
+            "reviewer_principal": "product-user", "decision": "approved", "trace_id": f"byq-trace-{key}",
             "idempotency_key": f"approval-{key}",
         },
     ).json()
@@ -540,7 +540,7 @@ def test_signal_snapshot_mismatch_rejected(monkeypatch, tmp_path) -> None:
         "/v1/research/strategies/approvals",
         json={
             "task_id": task_id, "strategy_version_artifact_id": version_b["artifact"]["artifact_id"],
-            "reviewer_principal": "human-owner", "decision": "approved",
+            "reviewer_principal": "product-user", "decision": "approved",
             "trace_id": "byq-trace-snapshot-mismatch", "idempotency_key": "approval-mismatch-b",
         },
     ).json()

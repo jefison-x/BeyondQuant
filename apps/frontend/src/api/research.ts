@@ -53,8 +53,18 @@ export function listExperiments(): Promise<{ experiments: Array<Record<string, u
   return getJson("/research/experiments");
 }
 
-export function listApprovals(): Promise<{ approvals: Array<Record<string, unknown>> }> {
-  return getJson("/approvals");
+export function listApprovals(options: { status?: string; limit?: number; offset?: number } = {}): Promise<{
+  approvals: Array<Record<string, unknown>>;
+  total: number;
+  pending_count: number;
+  limit: number;
+  offset: number;
+}> {
+  const params = new URLSearchParams();
+  if (options.status) params.set("status", options.status);
+  params.set("limit", String(options.limit ?? 50));
+  params.set("offset", String(options.offset ?? 0));
+  return getJson(`/approvals?${params.toString()}`);
 }
 
 export function decideApproval(
@@ -66,4 +76,10 @@ export function decideApproval(
     method: "POST",
     body: JSON.stringify({ decision, rationale }),
   });
+}
+
+export function continueApproval(
+  approvalId: string,
+): Promise<{ approval: Record<string, unknown> }> {
+  return getJson(`/approvals/${encodeURIComponent(approvalId)}/continue`, { method: "POST" });
 }

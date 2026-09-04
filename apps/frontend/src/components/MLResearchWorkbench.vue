@@ -328,15 +328,15 @@ async function changeStudyLifecycle(status: "active" | "archived") {
     lifecycleBusy.value = false;
   }
 }
-async function approveAndTrain() {
+async function startTraining() {
   // Acquire the UI latch before opening the asynchronous confirmation. A
   // rapid double click must never create two independent confirmation flows.
   if (busy.value || deleting.value || !selected.value || !chosenPool.value) return;
   busy.value = true;
   try {
-    await ElMessageBox.confirm(`将使用“${chosenPool.value.name}”的当前冻结快照开始训练。`, "确认训练范围", { type: "warning", confirmButtonText: "批准并开始训练", cancelButtonText: "返回检查" });
+    await ElMessageBox.confirm(`将使用“${chosenPool.value.name}”的当前冻结快照开始训练。`, "确认训练范围", { type: "warning", confirmButtonText: "开始训练", cancelButtonText: "返回检查" });
     if (!selectedApproval.value) {
-      const approved = await approveMLStrategy({ task_id: selected.value.task_id, ml_strategy_artifact_id: selected.value.artifact_id, decision: "approved", rationale: "用户在模型研究工作台确认范围并批准训练" });
+      const approved = await approveMLStrategy({ task_id: selected.value.task_id, ml_strategy_artifact_id: selected.value.artifact_id, decision: "approved", rationale: "用户在模型研究工作台主动确认训练范围" });
       selectedApproval.value = approved.artifact.artifact_id;
     }
     const submissionId = trainingSubmissionId();
@@ -396,7 +396,7 @@ const steps = computed(() => [
 ]);
 const next = computed(() => {
   if (!selected.value) return { title: "选择或创建一项模型研究", hint: "目录与详情分开加载，首屏不会下载历史大制品。", action: "create", label: "新建模型研究" };
-  if (!training.value || ["failed", "cancelled"].includes(training.value.status)) return { title: "批准研究并开始训练", hint: "确认冻结股票池后，在可信计算环境中训练。", action: "train", label: training.value ? "重新开始训练" : "批准并开始训练" };
+  if (!training.value || ["failed", "cancelled"].includes(training.value.status)) return { title: "开始可信训练", hint: "确认冻结股票池后，在可信计算环境中训练。", action: "train", label: training.value ? "重新开始训练" : "开始训练" };
   if (training.value.status !== "completed") return { title: "模型正在训练", hint: "完成后即可生成样本外预测。", action: "wait", label: "训练进行中" };
   if (!prediction.value || ["failed", "cancelled"].includes(prediction.value.status)) return { title: "生成样本外预测", hint: isRegime.value ? "每个交易日按冻结的沪深300状态选择专家。" : "使用已验证模型生成排名和冻结信号。", action: "predict", label: prediction.value ? "重新生成预测" : "生成预测与信号" };
   if (prediction.value.status !== "completed") return { title: "正在生成预测与信号", hint: "系统正在完成排名与信号冻结。", action: "wait", label: "预测进行中" };
@@ -406,7 +406,7 @@ const next = computed(() => {
 });
 function runNext() {
   if (next.value.action === "create") showCreate.value = true;
-  else if (next.value.action === "train") void approveAndTrain();
+  else if (next.value.action === "train") void startTraining();
   else if (next.value.action === "predict") void predict();
   else if (next.value.action === "backtest") void backtestSignal();
   else if (next.value.action === "view" && backtest.value?.job_id) void router.push({ path: "/backtest", query: { job: String(backtest.value.job_id) } });

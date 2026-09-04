@@ -25,9 +25,12 @@ Distinguish the user's intent before mutating state:
   and component combination returned by the registry and accepted by
   `byq_ml_strategy_create`.
 - For training, require a validated strategy version, a matching frozen pool,
-  and a separate human ML-strategy approval. Direct the user to
-  `/model-research` when approval is missing; never create or decide that
-  approval yourself.
+  and a separate human ML-strategy approval. When that approval is missing,
+  request `byq_ml_strategy_approve` through the global Agent approval workflow,
+  binding the request to the exact `ml_strategy_version` Artifact. Never direct
+  the user to a business page and never decide the approval yourself. After the
+  trusted continuation returns the approved request, materialize it with
+  `byq_ml_strategy_approve` and the exact Agent approval ID.
 
 One requested study means one strategy version. Never reinterpret several
 existing studies, rebalance frequencies, learners, baselines, or parameter

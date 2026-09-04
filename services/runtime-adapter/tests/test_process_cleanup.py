@@ -109,6 +109,28 @@ def test_lifecycle_has_single_active_prompt_and_duplicate_create_is_explicit(ada
     adapter.release_session("s-1")
 
 
+def test_prompt_idempotency_returns_the_original_run_without_reexecution(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-idempotent", "t-idempotent")
+    first_run = adapter.submit_prompt(
+        "s-idempotent", "continue approval", idempotency_key="approval-continuation-1",
+    )
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    assert adapter.submit_prompt(
+        "s-idempotent", "continue approval", idempotency_key="approval-continuation-1",
+    ) == first_run
+    with pytest.raises(SessionConflict, match="reused"):
+        adapter.submit_prompt(
+            "s-idempotent", "different continuation", idempotency_key="approval-continuation-1",
+        )
+
+    FakeHarness.allow_run.set()
+    wait_for_status(adapter, "s-idempotent", SessionStatus.IDLE)
+    assert adapter.submit_prompt(
+        "s-idempotent", "continue approval", idempotency_key="approval-continuation-1",
+    ) == first_run
+    adapter.release_session("s-idempotent")
+
+
 def test_hard_cancel_closes_runtime_and_rejects_later_prompt(adapter: RuntimeAdapter) -> None:
     adapter.create_session("s-1", "t-1")
     adapter.submit_prompt("s-1", "running")

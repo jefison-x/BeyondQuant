@@ -175,7 +175,8 @@ Phase 78 增加 Product Agent 的最小 ML 创建与训练面。`byq_ml_capabili
 `byq_ml_workspace_get` 只投影 owner/workspace-scoped 任务、股票池、安全 Artifact metadata 与训练状态；
 `byq_ml_strategy_create` 只接受本文冻结的 `ml-strategy-version.v1`；`byq_ml_training_create/get/cancel`
 只管理可信训练生命周期。MCP 自动绑定 trusted trace/owner/workspace，不接受 Python、SQL、URL、模型上传、
-对象引用或 raw feature rows。ML Strategy Approval 仍是模型研究页中的独立人工动作，Agent 无审批工具；
+对象引用或 raw feature rows。ML Strategy Approval 对 Product 页面主动训练由 BYQ 内部记录；Agent 发起时只在
+全局审批中心请求精确资源授权，批准后以 `byq_ml_strategy_approve` 和匹配 Agent approval ID 物化领域审批；
 训练创建与取消另外遵守 Agent action approval。Prediction、冻结信号与 ML Backtest 对话串联保留到
 Phase 79。
 
@@ -192,3 +193,8 @@ Post-Phase 90 lifecycle maintenance 依据 ADR-0050 增加 ML 研究目录归档
 任何训练/模型/预测/信号/回测证据。`status=archived` 目录可分页读取并恢复，默认目录不返回归档项。
 详情 Product projection 返回 `management.lifecycle_status/can_delete/can_archive/can_restore/reason`，Browser
 不得从已加载的局部运行页自行推断。
+
+Phase 91 依据 ADR-0051 将 Agent 人工审批入口收敛到全局审批中心。Agent approval 必须绑定精确的
+`ml_strategy_version` Artifact、原会话和动作；批准后 Gateway 幂等续接原 durable conversation，ML researcher
+重新读取权威状态并通过 MCP 物化领域审批。模型研究页不再显示批准按钮，用户主动点击开始训练时仍由 Product
+按相同领域 invariant 记录必要审批。两个 approval 状态机保持分离，DSH 不获得自批、数据库或 Backend 直连能力。

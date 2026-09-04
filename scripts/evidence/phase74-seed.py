@@ -36,8 +36,8 @@ def main() -> None:
         previous[BENCHMARK] = benchmark_close
         day += timedelta(days=1)
     MarketDataStore.from_env().import_bars(bars)
-    master = SecurityMasterStore.from_env(); retrieved = datetime(2026, 8, 29, 23, tzinfo=timezone.utc)
-    master._execute("""INSERT INTO security_master_snapshots (snapshot_id,provider,endpoint,dataset_id,request_fingerprint,statuses_json,row_count,quarantined_count,retrieved_at,requested_by,created_at) VALUES ('phase74-security','tushare','stock_basic','phase74-security','phase74-request',:statuses,2,0,:at,'phase74-evidence',:at) ON CONFLICT(snapshot_id) DO NOTHING""", {"statuses": ["L"], "at": retrieved})
+    master = SecurityMasterStore.from_env(); retrieved = datetime.now(timezone.utc)
+    master._execute("""INSERT INTO security_master_snapshots (snapshot_id,provider,endpoint,dataset_id,request_fingerprint,statuses_json,row_count,quarantined_count,retrieved_at,requested_by,created_at) VALUES ('phase74-security','tushare','stock_basic','phase74-security','phase74-request',:statuses,2,0,:at,'phase74-evidence',:at) ON CONFLICT(snapshot_id) DO UPDATE SET retrieved_at=excluded.retrieved_at,row_count=excluded.row_count,statuses_json=excluded.statuses_json""", {"statuses": ["L"], "at": retrieved})
     for symbol, exchange in ((SYMBOLS[0], "SZSE"), (SYMBOLS[1], "SSE")):
         master._execute("""INSERT INTO security_master_snapshot_members (snapshot_id,symbol,local_symbol,name,exchange,list_status,list_date,asset_type,content_sha256) VALUES ('phase74-security',:symbol,substring(:symbol,1,6),:symbol,:exchange,'L','19910101','stock',:sha) ON CONFLICT(snapshot_id,symbol) DO NOTHING""", {"symbol": symbol, "exchange": exchange, "sha": f"phase74-member-{symbol}"})
     automation, readiness = MarketAutomationStore.from_env(), MarketReadinessStore.from_env()

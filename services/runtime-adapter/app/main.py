@@ -31,6 +31,7 @@ class ResumeSessionRequest(BaseModel):
 class PromptRequest(BaseModel):
     content: str
     require_model_key: bool = False
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
 
 
 adapter = RuntimeAdapter()
@@ -105,11 +106,14 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
             session_id,
             request.content,
             require_model_key=request.require_model_key,
+            idempotency_key=request.idempotency_key,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ModelCredentialUnavailable as exc:
         raise HTTPException(status_code=503, detail="configured model provider is unavailable") from exc
     return {"accepted": True, "session_id": session_id, "run_id": run_id}

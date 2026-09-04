@@ -62,7 +62,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "90")
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "91")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043", "ADR-0044", "ADR-0048", "ADR-0049"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
@@ -288,7 +288,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn('@router.get("/feedback/items")', gateway)
         self.assertIn('"product_feedback", "product_feedback_revisions", "product_feedback_audit"', workspace)
         self.assertIn("/api/product/feedback/items:", openapi)
-        self.assertIn("<!-- byq:current-completed-phase=90 -->", status)
+        self.assertIn("<!-- byq:current-completed-phase=91 -->", status)
         self.assertIn("Phase 88 — Durable feedback domain and Product API（`COMPLETE`）", plan)
         self.assertIn("Phase 89 — Trusted GitHub publisher and operations（`COMPLETE`）", plan)
         self.assertIn("transaction rollback", evidence.lower())

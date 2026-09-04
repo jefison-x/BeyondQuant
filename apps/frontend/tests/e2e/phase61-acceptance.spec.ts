@@ -132,19 +132,11 @@ test("Phase 61 strategy detail leads with user meaning and hands off to backtest
   await expect(detail.getByText("关键参数", { exact: true })).toBeVisible();
   await expect(detail.getByText("技术与审计详情", { exact: true })).toBeVisible();
   await expect(detail.locator(".quant-result")).toBeHidden();
-  const approve = detail.getByRole("button", { name: "批准此版本" });
-  if (await approve.isVisible()) {
-    const approvalResponse = page.waitForResponse((response) =>
-      response.url().endsWith("/api/product/strategies/approvals") && response.request().method() === "POST",
-    );
-    await approve.click();
-    expect((await approvalResponse).status()).toBe(201);
-  } else {
-    await expect(detail.getByRole("button", { name: "已批准" })).toBeVisible();
-  }
+  await expect(detail.getByRole("button", { name: "批准此版本" })).toHaveCount(0);
   const start = detail.getByRole("button", { name: "开始回测" });
   await expect(start).toBeEnabled();
   await start.click();
+  await page.locator(".el-message-box").getByRole("button", { name: "继续" }).click();
   await expect(page).toHaveURL(/\/backtest\?.*strategy=/);
   await expect(page.getByRole("dialog", { name: "生成信号并新建回测" })).toBeVisible();
 

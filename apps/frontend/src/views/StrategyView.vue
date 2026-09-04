@@ -177,9 +177,39 @@ function rowDescription(row: Record<string, unknown>) {
   return String(rowSnapshot(row).description || "暂无策略说明");
 }
 
-function openBacktest() {
+async function openBacktest() {
   const artifact = String(selected.value?.artifact_id ?? "");
-  if (artifact) void router.push({ path: "/backtest", query: { strategy: artifact } });
+  if (!artifact || selected.value?.kind !== "strategy_version" || busy.value) return;
+  busy.value = "backtest";
+  error.value = "";
+  try {
+    await ElMessageBox.confirm(
+      "将以当前不可变策略版本进入回测，后续计算不会修改该版本。",
+      "开始回测",
+      { type: "warning", confirmButtonText: "继续", cancelButtonText: "取消" },
+    );
+    if (!approval.value?.execution_authorized) {
+      await approveStrategyVersion(
+        {
+          task_id: selected.value.task_id,
+          strategy_version_artifact_id: artifact,
+          decision: "approved",
+          rationale: "策略所有者主动开始此不可变版本的回测流程。",
+          trace_id: `strategy-run-${createRequestId()}`,
+          idempotency_key: createRequestId(),
+        },
+        auth.token,
+      );
+    }
+    await router.push({ path: "/backtest", query: { strategy: artifact } });
+  } catch (exc) {
+    if (exc !== "cancel" && exc !== "close") {
+      error.value = exc instanceof Error ? exc.message : "进入回测失败";
+      ElMessage.error(error.value);
+    }
+  } finally {
+    busy.value = "";
+  }
 }
 
 async function newDraft() {
@@ -504,32 +534,6 @@ async function exportVersion() {
   }
 }
 
-async function approveVersion() {
-  if (!selected.value || selected.value.kind !== "strategy_version") return;
-  busy.value = "approval";
-  error.value = "";
-  try {
-    await approveStrategyVersion(
-      {
-        task_id: selected.value.task_id,
-        strategy_version_artifact_id: selected.value.artifact_id,
-        decision: "approved",
-        rationale: "策略所有者已在产品界面确认该不可变版本用于信号生成与回测。",
-        trace_id: `strategy-approval-${createRequestId()}`,
-        idempotency_key: createRequestId(),
-      },
-      auth.token,
-    );
-    ElMessage.success("策略版本已批准，可进入信号生成与回测");
-    await loadList();
-  } catch (exc) {
-    error.value = exc instanceof Error ? exc.message : "批准失败";
-    ElMessage.error(error.value);
-  } finally {
-    busy.value = "";
-  }
-}
-
 function returnToConversation() {
   const session = typeof route.query.session === "string" ? route.query.session : "";
   void router.push({ path: "/agent", query: session ? { session } : {} });
@@ -742,14 +746,7 @@ onMounted(loadList);
               <el-button type="primary" :loading="busy === 'export'" :disabled="!selected || selected.kind !== 'strategy_version'" @click="exportVersion">
                 导出版本
               </el-button>
-              <el-button
-                :loading="busy === 'approval'"
-                :disabled="!selected || selected.kind !== 'strategy_version' || Boolean(approval)"
-                @click="approveVersion"
-              >
-                {{ approval ? "已批准" : "批准此版本" }}
-              </el-button>
-              <el-button type="primary" :disabled="!approval?.execution_authorized" @click="openBacktest">开始回测</el-button>
+              <el-button type="primary" :loading="busy === 'backtest'" :disabled="!selected || selected.kind !== 'strategy_version'" @click="openBacktest">开始回测</el-button>
             </div>
           </template>
           <div v-if="approval" class="approval-banner">

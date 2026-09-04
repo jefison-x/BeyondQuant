@@ -81,6 +81,7 @@ class RuntimeSession:
     pending_conversation_context: list[ConversationContextMessage] = field(default_factory=list, repr=False)
     status: str = SessionStatus.STARTING
     active_run: ActiveRun | None = None
+    prompt_idempotency: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
     interrupted_run_id: str | None = None
     sequence: int = 0
     normalization: NormalizationState = field(default_factory=NormalizationState)
@@ -316,11 +317,23 @@ class RuntimeAdapter:
             harness.close()
             raise
 
-    def submit_prompt(self, session_id: str, content: str, *, require_model_key: bool = False) -> str:
+    def submit_prompt(
+        self, session_id: str, content: str, *, require_model_key: bool = False,
+        idempotency_key: str | None = None,
+    ) -> str:
         record = self._get(session_id)
         if require_model_key and not record.model_resolution.get("api_key"):
             raise ModelCredentialUnavailable("the configured model provider has no credential")
         with record.lock:
+            if idempotency_key is not None:
+                if not 8 <= len(idempotency_key) <= 128:
+                    raise ValueError("prompt idempotency key has invalid length")
+                existing = record.prompt_idempotency.get(idempotency_key)
+                if existing is not None:
+                    existing_content, existing_run_id = existing
+                    if existing_content != content:
+                        raise SessionConflict("prompt idempotency key was reused with different content")
+                    return existing_run_id
             if record.status not in SessionStatus.PROMPTABLE or record.active_run is not None:
                 raise SessionConflict(
                     f"session {session_id} cannot accept a prompt in state {record.status}"
@@ -335,6 +348,8 @@ class RuntimeAdapter:
             record.pending_conversation_context = []
             record.active_run = run
             record.status = SessionStatus.RUNNING
+            if idempotency_key is not None:
+                record.prompt_idempotency[idempotency_key] = (content, run.run_id)
             self._emit(record, "session.started", "runtime-adapter", {"run_id": run.run_id})
 
         worker = threading.Thread(
@@ -349,6 +364,8 @@ class RuntimeAdapter:
             with record.lock:
                 if record.active_run is run:
                     record.active_run = None
+                    if idempotency_key is not None:
+                        record.prompt_idempotency.pop(idempotency_key, None)
                     record.status = SessionStatus.FAILED
                     self._emit(record, "session.failed", "runtime-adapter", {"error": "thread-start"})
             raise

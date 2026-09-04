@@ -1150,21 +1150,41 @@ def test_product_approval_decision_forwards_owner_headers(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
 
     class FakeResponse:
+        def __init__(self, body: dict[str, object]) -> None:
+            self.body = body
+
         def raise_for_status(self) -> None:
             return None
 
         def json(self) -> dict[str, object]:
-            return {"approval": {"approval_id": "agent_approval_1", "status": "approved"}}
+            return self.body
 
-    captured: dict[str, object] = {}
+    captured: list[dict[str, object]] = []
+    continued: dict[str, str] = {}
 
     def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
-        captured["url"] = url
-        captured["headers"] = kwargs.get("headers", {})
-        captured["payload"] = kwargs.get("json")
-        return FakeResponse()
+        captured.append({
+            "url": url, "headers": kwargs.get("headers", {}), "payload": kwargs.get("json"),
+        })
+        if "/v1/product/conversations/by-runtime/" in url:
+            return FakeResponse({"conversation": {
+                "conversation_id": "conversation_1", "title": "原始研究会话",
+            }})
+        return FakeResponse({"approval": {
+            "approval_id": "agent_approval_1", "status": "approved",
+            "action": "byq_strategy_approve", "continuation_status": "queued",
+            "source_session_id": "byq-session-source",
+        }})
+
+    def continue_conversation(_request, conversation_id, approval_id, decision, action):
+        continued.update({
+            "conversation_id": conversation_id, "approval_id": approval_id,
+            "decision": decision, "action": action,
+        })
+        return {"status": "submitted"}
 
     monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    monkeypatch.setattr(main, "continue_approval_conversation", continue_conversation)
     client = TestClient(main.app)
     response = client.post(
         "/api/product/approvals/agent_approval_1/decision",
@@ -1172,9 +1192,16 @@ def test_product_approval_decision_forwards_owner_headers(monkeypatch) -> None:
         json={"decision": "approved", "rationale": "ok"},
     )
     assert response.status_code == 200
-    assert captured["url"].endswith("/v1/agents/approvals/agent_approval_1/decision")
-    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
-    assert captured["payload"] == {"decision": "approved", "rationale": "ok"}
+    assert captured[0]["url"].endswith("/v1/agents/approvals/agent_approval_1/decision")
+    assert captured[0]["headers"]["x-byq-owner-principal"] == "product-user"
+    assert captured[0]["payload"] == {"decision": "approved", "rationale": "ok"}
+    assert response.json()["approval"]["conversation_id"] == "conversation_1"
+    assert response.json()["approval"]["continuation_status"] == "submitted"
+    assert "source_session_id" not in response.text
+    assert continued == {
+        "conversation_id": "conversation_1", "approval_id": "agent_approval_1",
+        "decision": "approved", "action": "byq_strategy_approve",
+    }
 
 
 def test_product_agent_policy_get_and_update(monkeypatch) -> None:
@@ -1192,8 +1219,8 @@ def test_product_agent_policy_get_and_update(monkeypatch) -> None:
             return self.body
 
     def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
-        if url.endswith("/v1/agents/approvals"):
-            return FakeResponse({"approvals": []})
+        if "/v1/agents/approvals?status=pending&limit=1&offset=0" in url:
+            return FakeResponse({"approvals": [], "pending_count": 0, "total": 0})
         if method == "PUT":
             return FakeResponse({"policy": {"owner_principal": "product-user", "automation_enabled": False, "paused": True, "default_decision_mode": "manual"}})
         return FakeResponse({"policy": {"owner_principal": "product-user", "automation_enabled": True, "default_decision_mode": "manual"}})

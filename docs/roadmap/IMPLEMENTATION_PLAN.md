@@ -760,3 +760,13 @@ lease/fence、renderer、reconciliation、有限重试、Compose 与运维；req
 
 实现 owner 反馈工作台、管理员审核、隐私预览/明确提交、MCP/Xiaoba 最小权限能力，以及真实 Product API、
 Chrome desktop/mobile、懒加载分页、two-user/restart/unconfigured publisher 闭环。
+
+## Agent Approval Continuation（Phase 91）
+
+### Phase 91 — Global approval center and durable conversation continuation（`COMPLETE`）
+
+依据 ADR-0051 将 Agent 批准/拒绝控件收敛到全局审批中心，移除策略和模型研究页的审批步骤；用户主动开始回测或训练
+时仍由 BYQ 记录必要的领域审批。Agent approval 精确绑定资源和原 runtime session，Gateway 映射公开 durable
+conversation 并以幂等 continuation prompt 续接；失败按持久状态恢复而不使用固定调用次数上限。审批列表使用 owner/
+status 服务端分页，铃铛只显示 pending 数，活动角标为中性灰色。验收覆盖 Backend/Gateway/MCP/Runtime/frontend、
+DSH composition、真实 Product API、Chrome desktop/mobile、same-origin、restart 与部署健康。
