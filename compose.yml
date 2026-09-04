@@ -167,6 +167,8 @@ services:
       BYQ_CREDENTIAL_RESOLVER_TOKEN: ${BYQ_CREDENTIAL_RESOLVER_TOKEN:-dev-credential-resolver-change-me}
       BYQ_PLUGIN_DEPLOYMENT_TOKEN: ${BYQ_PLUGIN_DEPLOYMENT_TOKEN:-dev-plugin-deployment-change-me}
       BYQ_FEEDBACK_PUBLISHER_TOKEN: ${BYQ_FEEDBACK_PUBLISHER_TOKEN:-dev-feedback-publisher-change-me}
+      BYQ_FEEDBACK_HUB_RELAY_TOKEN: ${BYQ_FEEDBACK_HUB_RELAY_TOKEN:-dev-feedback-hub-relay-change-me}
+      BYQ_FEEDBACK_HUB_ALLOW_HTTP: ${BYQ_FEEDBACK_HUB_ALLOW_HTTP:-0}
       TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
       TUSHARE_API_URL: ${TUSHARE_API_URL:-http://api.tushare.pro}
     depends_on:
@@ -329,6 +331,46 @@ services:
         - >-
           import urllib.request;
           response = urllib.request.urlopen('http://127.0.0.1:8700/healthz', timeout=3);
+          raise SystemExit(0 if response.status == 200 else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  feedback-hub-relay:
+    build:
+      context: .
+      dockerfile: workers/feedback-hub-relay/Dockerfile
+    environment:
+      BYQ_FEEDBACK_BACKEND_URL: http://backend:8000
+      BYQ_FEEDBACK_HUB_RELAY_TOKEN: ${BYQ_FEEDBACK_HUB_RELAY_TOKEN:-dev-feedback-hub-relay-change-me}
+      BYQ_FEEDBACK_HUB_URL: ${BYQ_FEEDBACK_HUB_URL:-}
+      BYQ_FEEDBACK_HUB_ALLOW_HTTP: ${BYQ_FEEDBACK_HUB_ALLOW_HTTP:-0}
+      BYQ_FEEDBACK_HUB_POLL_SECONDS: ${BYQ_FEEDBACK_HUB_POLL_SECONDS:-15}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 24
+    mem_limit: 64m
+    cpus: 0.25
+    networks:
+      - byq_product
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          response = urllib.request.urlopen('http://127.0.0.1:8750/healthz', timeout=3);
           raise SystemExit(0 if response.status == 200 else 1)
       interval: 10s
       timeout: 5s

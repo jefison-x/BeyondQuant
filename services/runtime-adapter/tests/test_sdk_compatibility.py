@@ -85,5 +85,7 @@ def test_product_research_skill_requires_evidence_bound_public_answers() -> None
     assert "exact Agent approval ID" in ml_contract
     assert "byq_ml_prediction_create" in ml_contract
     assert "Only the derived ML backtest task" in ml_contract
-    assert "Do not call submit in this turn" in feedback_contract
+    assert "request exactly one" in feedback_contract
+    assert "agent_approval_id" in feedback_contract
+    assert "do not submit yet" in feedback_contract
     assert "Never request a GitHub account" in feedback_contract

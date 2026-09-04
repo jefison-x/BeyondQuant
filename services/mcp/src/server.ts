@@ -694,9 +694,9 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_feedback_submit",
-    { description: "Submit a previously previewed draft only after the user explicitly confirms that exact preview. Never infer confirmation from the original request.", inputSchema: {
+    { description: "Submit an exact preview after its product_feedback approval is approved in the global approval center. This resumes the original conversation without another confirmation.", inputSchema: {
       feedback_id: z.string().regex(/^feedback_[0-9a-f]{32}$/), expected_version: z.number().int().positive(), preview_hash: z.string().regex(/^[0-9a-f]{64}$/),
-      disclosure_confirmed: z.literal(true), idempotency_key: z.string().min(1).max(128),
+      disclosure_confirmed: z.literal(true), agent_approval_id: z.string().regex(/^agent_approval_[0-9a-f]{32}$/), idempotency_key: z.string().min(1).max(128),
     } },
     (args) => { const fetcher = feedbackFetcher(trustedContext); const { feedback_id, ...payload } = args; return fetcher ? fetchByqFeedbackSubmit(BACKEND_URL, feedback_id, payload, fetcher) : agentContextUnavailable(); },
   );

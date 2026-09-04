@@ -3,6 +3,7 @@ defineProps<{ approvals: Array<Record<string, unknown>>; total?: number; busyId?
 const emit = defineEmits<{ decide: [approval: Record<string, unknown>, decision: "approved" | "rejected"] }>();
 
 const ACTION_LABELS: Record<string, string> = {
+  byq_feedback_submit: "提交产品反馈",
   byq_strategy_approve: "批准策略版本",
   byq_ml_strategy_approve: "批准机器学习策略",
   byq_ml_training_create: "开始机器学习训练",
@@ -22,7 +23,8 @@ function resourceLabel(item: Record<string, unknown>) {
   const type = String(item.resource_type ?? "");
   const id = String(item.resource_id ?? "");
   if (!type || !id) return "未绑定具体资源";
-  return `${type} · ${id}`;
+  const label = type === "product_feedback" ? "产品反馈" : type;
+  return `${label} · ${id}`;
 }
 </script>
 

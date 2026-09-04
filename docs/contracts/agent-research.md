@@ -10,7 +10,7 @@ Product DSH 仅从经过认证的 Gateway 路径接收 session-scoped context he
 
 版本化 catalogue 由 `byq_agent_roles` 暴露，目前包含：
 
-- `quant_orchestrator`（v1.2.0）：协调 hand-offs 和 consequential decisions；当用户明确要求时，
+- `quant_orchestrator`（v2.0.0）：协调 hand-offs 和 consequential decisions；当用户明确要求时，
   可经 BeyondQuant MCP list/get/create 当前 owner/workspace 的 custom Stock Pool；
 - `market_researcher`（v1.2.0）：提供 normalized market evidence 和冻结的候选列表，
   不创建或修改股票池；

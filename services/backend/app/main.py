@@ -244,6 +244,7 @@ backtest_store = BacktestJobStore.from_env()
 workspace_tenancy_store = WorkspaceTenancyStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 FEEDBACK_PUBLISHER_TOKEN = os.environ.get("BYQ_FEEDBACK_PUBLISHER_TOKEN")
+FEEDBACK_HUB_RELAY_TOKEN = os.environ.get("BYQ_FEEDBACK_HUB_RELAY_TOKEN")
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
     user_store.ensure_bootstrap_admin(
         os.environ["BYQ_BOOTSTRAP_ADMIN_USERNAME"],
@@ -523,9 +524,20 @@ def feedback_preview(feedback_id: str, payload: dict[str, Any], request: Request
 @app.post("/v1/feedback/items/{feedback_id}/submit")
 def feedback_submit(feedback_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _feedback_context(request)
+    submit_payload = dict(payload)
+    approval_id = submit_payload.pop("agent_approval_id", None)
+    if approval_id is not None:
+        try:
+            _approved_agent_domain_request(
+                approval_id, expected_action="byq_feedback_submit",
+                expected_resource_type="product_feedback", expected_resource_id=feedback_id,
+                context=context,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
     browser, operating_system = _feedback_client_context(request)
     return _feedback_call(lambda: feedback_store.submit(
-        feedback_id, payload, trusted_workspace=context["workspace_id"],
+        feedback_id, submit_payload, trusted_workspace=context["workspace_id"],
         trusted_actor=context["actor_principal"], browser_family=browser, os_family=operating_system,
     ))
 
@@ -609,6 +621,50 @@ def feedback_publication_complete(event_id: str, payload: dict[str, Any], reques
 def feedback_publication_retry(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
     _require_feedback_publisher(request)
     return _feedback_call(lambda: feedback_store.retry_publication(event_id, payload))
+
+
+def _require_feedback_hub_relay(request: Request) -> None:
+    supplied = request.headers.get("x-byq-feedback-hub-relay-token", "")
+    if not FEEDBACK_HUB_RELAY_TOKEN:
+        raise HTTPException(status_code=503, detail="feedback hub relay endpoint is disabled")
+    if not supplied or not secrets.compare_digest(supplied, FEEDBACK_HUB_RELAY_TOKEN):
+        raise HTTPException(status_code=401, detail="feedback hub relay authentication failed")
+
+
+@app.post("/internal/feedback-hub/heartbeat")
+def feedback_hub_heartbeat(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_feedback_hub_relay(request)
+    return _feedback_call(lambda: feedback_store.hub_relay_heartbeat(payload))
+
+
+@app.post("/internal/feedback-hub/claim")
+def feedback_hub_claim(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_feedback_hub_relay(request)
+    return _feedback_call(lambda: feedback_store.claim_hub_deliveries(payload))
+
+
+@app.post("/internal/feedback-hub/{event_id}/complete")
+def feedback_hub_complete(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_feedback_hub_relay(request)
+    return _feedback_call(lambda: feedback_store.complete_hub_delivery(event_id, payload))
+
+
+@app.post("/internal/feedback-hub/{event_id}/retry")
+def feedback_hub_retry(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_feedback_hub_relay(request)
+    return _feedback_call(lambda: feedback_store.retry_hub_delivery(event_id, payload))
+
+
+@app.get("/internal/feedback-hub/status-candidates")
+def feedback_hub_status_candidates(request: Request, limit: int = 10) -> dict[str, object]:
+    _require_feedback_hub_relay(request)
+    return _feedback_call(lambda: feedback_store.hub_status_candidates(limit=limit))
+
+
+@app.post("/internal/feedback-hub/{event_id}/status")
+def feedback_hub_status(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_feedback_hub_relay(request)
+    return _feedback_call(lambda: feedback_store.update_hub_status(event_id, payload))
 
 
 @app.get("/v1/operations/overview")

@@ -34,9 +34,14 @@ let filterTimer: number | undefined;
 const categoryLabels: Record<string, string> = { bug: "缺陷", feature: "功能建议", performance: "性能", usability: "易用性", other: "其他" };
 const componentLabels: Record<string, string> = { xiaoba: "小巴", stock_pool: "股票池", strategy: "策略管理", model_research: "模型研究", backtest: "回测管理", data_center: "数据管理", system_settings: "系统设置", auth: "登录与账户", runtime: "运行环境", other: "其他" };
 const statusLabels: Record<string, string> = { draft: "草稿", submitted: "待审核", triaged: "已分诊", accepted: "已采纳", rejected: "未采纳", duplicate: "重复", withdrawn: "已撤回" };
-const publisherHint = computed(() => options.value?.publisher.configured
-  ? "平台发布服务已就绪；采纳后可能同步到项目 GitHub Issue。"
-  : "平台尚未配置 GitHub 发布服务；反馈仍会安全保存并进入审核队列，你无需配置 GitHub 账号。");
+const publisherHint = computed(() => options.value?.central_hub?.configured
+  ? "官方反馈中心已连接；提交后将进入中央审核，采纳后可能同步到 BeyondQuant GitHub Issue。"
+  : "官方反馈中心尚未连接；反馈会安全保存在本机投递队列中，你无需配置 GitHub 账号。");
+const hubStatusLabels: Record<string, string> = {
+  queued: "等待发送", delivering: "正在发送", retry_wait: "等待重试", received: "中央已接收",
+  triaged: "中央已分诊", accepted: "中央已采纳", rejected: "中央未采纳", duplicate: "中央标记重复",
+  publishing: "正在发布 Issue", published: "已发布", failed_terminal: "投递需管理员处理", cancelled: "已撤回",
+};
 
 function resize() { isMobile.value = window.innerWidth <= 767; }
 function close() {
@@ -158,7 +163,8 @@ onBeforeUnmount(() => { window.removeEventListener("resize", resize); listContro
           <div class="section-title"><div><span>{{ statusLabels[selected.status] }}</span><h2>{{ selected.title }}</h2><p>{{ categoryLabels[selected.category] }} · {{ componentLabels[selected.component] }} · 版本 {{ selected.version }}</p></div><el-button v-if="selected.status==='draft'" @click="editDraft">编辑</el-button></div>
           <p class="description">{{ selected.content.description }}</p>
           <dl><template v-if="selected.content.reproduction_steps.length"><dt>复现步骤</dt><dd><ol><li v-for="step in selected.content.reproduction_steps" :key="step">{{ step }}</li></ol></dd></template><dt>期望行为</dt><dd>{{ selected.content.expected_behavior || "未填写" }}</dd><dt>实际行为</dt><dd>{{ selected.content.actual_behavior || "未填写" }}</dd></dl>
-          <el-alert :title="publisherHint" :type="options?.publisher.configured ? 'success' : 'info'" :closable="false"/>
+          <el-alert :title="publisherHint" :type="options?.central_hub?.configured ? 'success' : 'info'" :closable="false"/>
+          <el-tag v-if="selected.central_hub" effect="plain">{{ hubStatusLabels[selected.central_hub.status] || selected.central_hub.status }}</el-tag>
           <template v-if="selected.github_issue"><a class="issue-link" :href="selected.github_issue.html_url" target="_blank" rel="noopener noreferrer">查看 GitHub Issue #{{ selected.github_issue.issue_number }}</a></template>
           <div v-if="selected.status==='draft'" class="submit-zone"><el-button @click="buildPreview">生成提交预览</el-button><section v-if="preview" class="preview"><h3>公开候选快照</h3><pre>{{ JSON.stringify(preview.public_content, null, 2) }}</pre><p>{{ preview.disclosure }}</p><el-button type="primary" @click="confirmSubmit">检查无误，确认提交</el-button></section></div>
           <el-button v-if="selected.status==='submitted'" type="danger" plain @click="withdraw">撤回反馈</el-button>

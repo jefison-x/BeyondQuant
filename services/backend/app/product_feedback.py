@@ -25,6 +25,7 @@ SCHEMA_VERSION = "product-feedback.v1"
 PREVIEW_SCHEMA = "feedback-publication-preview.v1"
 PUBLICATION_SCHEMA = "feedback-publication.v1"
 OUTBOX_SCHEMA = "feedback-outbox.v1"
+HUB_DELIVERY_SCHEMA = "feedback-hub-delivery.v1"
 FINGERPRINT_SCHEMA = "feedback_fingerprint.v1"
 CATEGORIES = ("bug", "feature", "performance", "usability", "other")
 COMPONENTS = (
@@ -42,6 +43,7 @@ CREATE_LIMIT_PER_HOUR = 10
 SUBMIT_LIMIT_PER_HOUR = 6
 DESTINATION_KEY = "github_primary"
 MAX_PUBLICATION_ATTEMPTS = 6
+MAX_HUB_DELIVERY_ATTEMPTS = 8
 PUBLISHER_ERROR_CATEGORIES = (
     "transport_ambiguous", "rate_limited", "provider_unavailable",
     "authentication_failed", "permission_denied", "repository_unavailable",
@@ -51,6 +53,7 @@ TERMINAL_PUBLISHER_ERRORS = {
     "authentication_failed", "permission_denied", "repository_unavailable",
     "issues_disabled", "validation_rejected", "reconciliation_conflict",
 }
+_DEFAULT_HUB_INSTALLATION_ID = f"byq-installation-{uuid.uuid4().hex}"
 
 _ID = re.compile(r"^feedback_[0-9a-f]{32}$")
 _IDEMPOTENCY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
@@ -411,6 +414,44 @@ class ProductFeedbackStore(PgStoreMixin):
             UNIQUE(scope_key, actor_principal, operation, idempotency_key)
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS product_feedback_hub_state (
+            state_key TEXT PRIMARY KEY CHECK (state_key = 'central'),
+            installation_id TEXT NOT NULL UNIQUE,
+            configured BOOLEAN NOT NULL DEFAULT FALSE,
+            hub_origin TEXT,
+            worker_version TEXT,
+            last_heartbeat_at TIMESTAMPTZ,
+            last_success_at TIMESTAMPTZ,
+            last_error_category TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS product_feedback_hub_outbox (
+            event_id TEXT PRIMARY KEY,
+            feedback_id TEXT NOT NULL UNIQUE REFERENCES product_feedback(feedback_id),
+            schema_version TEXT NOT NULL CHECK (schema_version = 'feedback-hub-delivery.v1'),
+            snapshot_json JSONB NOT NULL,
+            snapshot_hash TEXT NOT NULL,
+            state TEXT NOT NULL CHECK (state IN ('queued','delivering','retry_wait','received','triaged','accepted','rejected','duplicate','publishing','published','failed_terminal','cancelled')),
+            attempt INTEGER NOT NULL DEFAULT 0 CHECK (attempt >= 0),
+            next_attempt_at TIMESTAMPTZ NOT NULL,
+            lease_owner TEXT,
+            lease_expires_at TIMESTAMPTZ,
+            lease_fence INTEGER NOT NULL DEFAULT 0 CHECK (lease_fence >= 0),
+            receipt_id TEXT,
+            status_token TEXT,
+            github_repository TEXT,
+            github_issue_number INTEGER,
+            github_html_url TEXT,
+            last_error_category TEXT,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS product_feedback_hub_outbox_due ON product_feedback_hub_outbox(state,next_attempt_at,event_id)",
+        f"""INSERT INTO product_feedback_hub_state (state_key,installation_id,configured)
+            VALUES ('central','{_DEFAULT_HUB_INSTALLATION_ID}',FALSE) ON CONFLICT(state_key) DO NOTHING""",
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -441,8 +482,15 @@ class ProductFeedbackStore(PgStoreMixin):
             WHERE destination_key=:destination""", {"destination": DESTINATION_KEY})
         configured = bool(state and state["configured"])
         fresh = self._publisher_fresh(state)
-        return self.options(publisher_configured=configured,
-                            publisher_status="ready" if configured and fresh else "stale" if configured else "unconfigured")
+        result = self.options(publisher_configured=configured,
+                              publisher_status="ready" if configured and fresh else "stale" if configured else "unconfigured")
+        hub = self._fetch_one("SELECT configured,last_heartbeat_at FROM product_feedback_hub_state WHERE state_key='central'")
+        hub_fresh = self._publisher_fresh(hub)
+        result["central_hub"] = {
+            "configured": bool(hub and hub["configured"]),
+            "status": "ready" if hub and hub["configured"] and hub_fresh else "stale" if hub and hub["configured"] else "unconfigured",
+        }
+        return result
 
     @staticmethod
     def _publisher_fresh(state: dict[str, object] | None) -> bool:
@@ -522,17 +570,27 @@ class ProductFeedbackStore(PgStoreMixin):
 
     @staticmethod
     def _owner_projection(row: dict[str, object], content: dict[str, object] | None = None) -> dict[str, object]:
+        hub_state = row.get("hub_delivery_state")
+        hub_issue = (
+            {"repository": row["hub_github_repository"], "issue_number": row["hub_github_issue_number"],
+             "html_url": row["hub_github_html_url"]}
+            if hub_state == "published" and row.get("hub_github_issue_number") else None
+        )
         result: dict[str, object] = {
             "schema_version": SCHEMA_VERSION, "feedback_id": row["feedback_id"], "status": row["status"],
             "category": row["category"], "component": row["component"], "severity": row["severity"],
             "title": row["title"], "version": row["version"], "current_revision": row["current_revision"],
-            "publication_status": row["publication_status"], "github_issue": (
+            "publication_status": row["publication_status"], "github_issue": hub_issue or (
                 {"repository": row["github_repository"], "issue_number": row["github_issue_number"],
                  "html_url": row["github_html_url"]}
                 if row.get("publication_status") == "published" and row.get("github_issue_number") else None
             ),
             "created_at": row["created_at"], "updated_at": row["updated_at"],
         }
+        result["central_hub"] = (
+            {"status": hub_state, "receipt_id": row.get("hub_receipt_id"), "last_error_category": row.get("hub_last_error_category")}
+            if hub_state else None
+        )
         if content is not None:
             result["content"] = content
         if row.get("canonical_feedback_id"):
@@ -614,8 +672,12 @@ class ProductFeedbackStore(PgStoreMixin):
         joined_where = where.replace("workspace_id", "f.workspace_id").replace("status=:status", "f.status=:status").replace(
             "category=:category", "f.category=:category").replace("(title ILIKE", "(f.title ILIKE").replace(
             "OR component ILIKE", "OR f.component ILIKE")
-        rows = self._execute(f"""SELECT f.*,p.github_repository,p.github_issue_number,p.github_html_url
+        rows = self._execute(f"""SELECT f.*,p.github_repository,p.github_issue_number,p.github_html_url,
+            h.state AS hub_delivery_state,h.receipt_id AS hub_receipt_id,h.last_error_category AS hub_last_error_category,
+            h.github_repository AS hub_github_repository,h.github_issue_number AS hub_github_issue_number,
+            h.github_html_url AS hub_github_html_url
             FROM product_feedback f LEFT JOIN product_feedback_publications p ON p.feedback_id=f.feedback_id
+            LEFT JOIN product_feedback_hub_outbox h ON h.feedback_id=f.feedback_id
             WHERE {joined_where} ORDER BY f.updated_at DESC,f.feedback_id DESC LIMIT :limit OFFSET :offset""", params)
         total = int(count["count"] if count else 0)
         return {"schema_version": "product-feedback-catalog.v1", "items": [self._owner_projection(row) for row in rows],
@@ -623,8 +685,12 @@ class ProductFeedbackStore(PgStoreMixin):
 
     def get_owner(self, feedback_id: object, *, trusted_workspace: str) -> dict[str, object]:
         identity = _feedback_id(feedback_id)
-        row = self._fetch_one("""SELECT f.*,p.github_repository,p.github_issue_number,p.github_html_url
+        row = self._fetch_one("""SELECT f.*,p.github_repository,p.github_issue_number,p.github_html_url,
+            h.state AS hub_delivery_state,h.receipt_id AS hub_receipt_id,h.last_error_category AS hub_last_error_category,
+            h.github_repository AS hub_github_repository,h.github_issue_number AS hub_github_issue_number,
+            h.github_html_url AS hub_github_html_url
             FROM product_feedback f LEFT JOIN product_feedback_publications p ON p.feedback_id=f.feedback_id
+            LEFT JOIN product_feedback_hub_outbox h ON h.feedback_id=f.feedback_id
             WHERE f.feedback_id=:feedback AND f.workspace_id=:workspace""",
                               {"feedback": identity, "workspace": trusted_workspace})
         if row is None:
@@ -742,13 +808,23 @@ class ProductFeedbackStore(PgStoreMixin):
             snapshot = {"schema_version": "submitted-feedback-snapshot.v1", "public_content": preview["public_content"],
                         "redactions": preview["redactions"], "preview_hash": preview_hash}
             snapshot_hash = _hash(snapshot)
+            hub_event_id = _new_id("feedback_hub_event")
             execute(connection, """UPDATE product_feedback SET status='submitted',submitted_snapshot_json=:snapshot,
                 submitted_snapshot_hash=:hash,version=version+1,updated_at=:now WHERE feedback_id=:feedback""",
                 {"snapshot": snapshot, "hash": snapshot_hash, "now": now, "feedback": identity})
+            execute(connection, """INSERT INTO product_feedback_hub_outbox
+                (event_id,feedback_id,schema_version,snapshot_json,snapshot_hash,state,attempt,next_attempt_at,
+                 lease_fence,created_at,updated_at)
+                VALUES (:event,:feedback,:schema,:snapshot,:hash,'queued',0,:now,0,:now,:now)""",
+                {"event": hub_event_id, "feedback": identity, "schema": HUB_DELIVERY_SCHEMA,
+                 "snapshot": snapshot, "hash": snapshot_hash, "now": now})
             row = fetch_one(connection, "SELECT * FROM product_feedback WHERE feedback_id=:feedback", {"feedback": identity})
             assert row is not None
+            row["hub_delivery_state"] = "queued"
+            row["hub_receipt_id"] = None
+            row["hub_last_error_category"] = None
             self._audit(connection, row=row, action="submit", actor=trusted_actor, role="owner", from_status="draft",
-                        to_status="submitted", detail={"snapshot_hash": snapshot_hash}, now=now)
+                        to_status="submitted", detail={"snapshot_hash": snapshot_hash, "hub_event_id": hub_event_id}, now=now)
             result = {"feedback": self._owner_projection(row)}
             self._record_command(connection, scope=trusted_workspace, actor=trusted_actor, operation=f"submit:{identity}", key=key,
                                  request_hash=request_hash, result=result, now=now)
@@ -780,6 +856,10 @@ class ProductFeedbackStore(PgStoreMixin):
                 raise FeedbackConflict("feedback version changed")
             execute(connection, "UPDATE product_feedback SET status=:target,version=version+1,updated_at=:now WHERE feedback_id=:feedback",
                     {"target": target, "now": now, "feedback": identity})
+            if target == "withdrawn":
+                execute(connection, """UPDATE product_feedback_hub_outbox SET state='cancelled',updated_at=:now
+                    WHERE feedback_id=:feedback AND state IN ('queued','retry_wait')""",
+                    {"now": now, "feedback": identity})
             row = fetch_one(connection, "SELECT * FROM product_feedback WHERE feedback_id=:feedback", {"feedback": identity})
             assert row is not None
             self._audit(connection, row=row, action=action, actor=trusted_actor, role="owner", from_status=allowed_from,
@@ -788,6 +868,153 @@ class ProductFeedbackStore(PgStoreMixin):
             self._record_command(connection, scope=trusted_workspace, actor=trusted_actor, operation=operation, key=key,
                                  request_hash=request_hash, result=result, now=now)
             return result
+
+    @staticmethod
+    def _hub_origin(value: object) -> str:
+        if not isinstance(value, str) or len(value) > 240:
+            raise ValueError("central feedback hub origin is invalid")
+        normalized = value.rstrip("/")
+        allow_http = os.environ.get("BYQ_FEEDBACK_HUB_ALLOW_HTTP") == "1"
+        if not normalized.startswith("https://") and not (allow_http and normalized.startswith("http://")):
+            raise ValueError("central feedback hub must use HTTPS")
+        return normalized
+
+    def hub_relay_heartbeat(self, payload: object) -> dict[str, object]:
+        if not isinstance(payload, dict):
+            raise ValueError("feedback hub relay heartbeat must be an object")
+        _reject_unknown(payload, {"configured", "hub_origin", "worker_version"})
+        configured = payload.get("configured")
+        if not isinstance(configured, bool):
+            raise ValueError("feedback hub relay configured must be a boolean")
+        origin = self._hub_origin(payload.get("hub_origin")) if configured else None
+        worker_version = _text(payload.get("worker_version"), field="worker_version", minimum=1, maximum=40)
+        now = _now()
+        self._execute("""UPDATE product_feedback_hub_state SET configured=:configured,hub_origin=:origin,
+            worker_version=:version,last_heartbeat_at=:now WHERE state_key='central'""",
+            {"configured": configured, "origin": origin, "version": worker_version, "now": now})
+        return {"schema_version": "feedback-hub-relay-heartbeat.v1", "accepted": True, "configured": configured}
+
+    def claim_hub_deliveries(self, payload: object) -> dict[str, object]:
+        if not isinstance(payload, dict):
+            raise ValueError("feedback hub delivery claim must be an object")
+        _reject_unknown(payload, {"worker_id", "limit", "lease_seconds"})
+        worker = _text(payload.get("worker_id"), field="worker_id", minimum=3, maximum=80)
+        limit = min(_positive_int(payload.get("limit", 5), field="limit"), 10)
+        lease_seconds = min(max(_positive_int(payload.get("lease_seconds", 60), field="lease_seconds"), 15), 300)
+        now_dt = datetime.now(timezone.utc)
+        now, expiry = now_dt.isoformat(), (now_dt + timedelta(seconds=lease_seconds)).isoformat()
+        with self._transaction() as connection:
+            state = fetch_one(connection, "SELECT * FROM product_feedback_hub_state WHERE state_key='central'")
+            if state is None or not state["configured"]:
+                return {"schema_version": "feedback-hub-relay-claim.v1", "events": []}
+            rows = execute(connection, """SELECT h.* FROM product_feedback_hub_outbox h
+                JOIN product_feedback f ON f.feedback_id=h.feedback_id
+                WHERE f.status IN ('submitted','triaged','accepted') AND
+                (((h.state IN ('queued','retry_wait')) AND h.next_attempt_at <= :now)
+                 OR (h.state='delivering' AND h.lease_expires_at < :now))
+                ORDER BY h.next_attempt_at,h.event_id FOR UPDATE OF h SKIP LOCKED LIMIT :limit""",
+                {"now": now, "limit": limit})
+            events: list[dict[str, object]] = []
+            for row in rows:
+                attempt, fence = int(row["attempt"]) + 1, int(row["lease_fence"]) + 1
+                execute(connection, """UPDATE product_feedback_hub_outbox SET state='delivering',attempt=:attempt,
+                    lease_owner=:worker,lease_expires_at=:expiry,lease_fence=:fence,updated_at=:now WHERE event_id=:event""",
+                    {"attempt": attempt, "worker": worker, "expiry": expiry, "fence": fence, "now": now, "event": row["event_id"]})
+                events.append({
+                    "event_id": row["event_id"], "installation_id": state["installation_id"],
+                    "snapshot_hash": row["snapshot_hash"], "snapshot": row["snapshot_json"],
+                    "attempt": attempt, "lease_fence": fence, "lease_expires_at": expiry,
+                })
+        return {"schema_version": "feedback-hub-relay-claim.v1", "events": events}
+
+    @staticmethod
+    def _hub_leased_row(connection: Any, event_id: str, worker: str, fence: int) -> dict[str, object]:
+        row = fetch_one(connection, "SELECT * FROM product_feedback_hub_outbox WHERE event_id=:event FOR UPDATE", {"event": event_id})
+        if row is None:
+            raise FeedbackNotFound("feedback hub delivery not found")
+        if row["state"] != "delivering" or row["lease_owner"] != worker or int(row["lease_fence"]) != fence:
+            raise FeedbackConflict("feedback hub delivery lease is stale")
+        return row
+
+    def complete_hub_delivery(self, event_id: object, payload: object) -> dict[str, object]:
+        if not isinstance(event_id, str) or re.fullmatch(r"feedback_hub_event_[0-9a-f]{32}", event_id) is None:
+            raise ValueError("feedback hub event id is invalid")
+        if not isinstance(payload, dict):
+            raise ValueError("feedback hub delivery completion must be an object")
+        _reject_unknown(payload, {"worker_id", "lease_fence", "receipt_id", "status_token"})
+        worker = _text(payload.get("worker_id"), field="worker_id", minimum=3, maximum=80)
+        fence = _positive_int(payload.get("lease_fence"), field="lease_fence")
+        receipt = _text(payload.get("receipt_id"), field="receipt_id", minimum=20, maximum=96)
+        token = _text(payload.get("status_token"), field="status_token", minimum=32, maximum=256)
+        now = _now()
+        with self._transaction() as connection:
+            row = self._hub_leased_row(connection, event_id, worker, fence)
+            execute(connection, """UPDATE product_feedback_hub_outbox SET state='received',receipt_id=:receipt,
+                status_token=:token,lease_owner=NULL,lease_expires_at=NULL,last_error_category=NULL,updated_at=:now
+                WHERE event_id=:event""", {"receipt": receipt, "token": token, "now": now, "event": event_id})
+            execute(connection, """UPDATE product_feedback_hub_state SET last_success_at=:now,last_error_category=NULL
+                WHERE state_key='central'""", {"now": now})
+        return {"schema_version": "feedback-hub-relay-result.v1", "status": "received", "receipt_id": receipt}
+
+    def retry_hub_delivery(self, event_id: object, payload: object) -> dict[str, object]:
+        if not isinstance(event_id, str) or re.fullmatch(r"feedback_hub_event_[0-9a-f]{32}", event_id) is None:
+            raise ValueError("feedback hub event id is invalid")
+        if not isinstance(payload, dict):
+            raise ValueError("feedback hub delivery retry must be an object")
+        _reject_unknown(payload, {"worker_id", "lease_fence", "error_category", "retry_after_seconds"})
+        worker = _text(payload.get("worker_id"), field="worker_id", minimum=3, maximum=80)
+        fence = _positive_int(payload.get("lease_fence"), field="lease_fence")
+        category = _text(payload.get("error_category"), field="error_category", minimum=1, maximum=64)
+        retry_after = min(max(_positive_int(payload.get("retry_after_seconds", 30), field="retry_after_seconds"), 5), 3600)
+        now_dt = datetime.now(timezone.utc); now = now_dt.isoformat()
+        with self._transaction() as connection:
+            row = self._hub_leased_row(connection, event_id, worker, fence)
+            terminal = int(row["attempt"]) >= MAX_HUB_DELIVERY_ATTEMPTS or category in {"validation_rejected", "authentication_failed"}
+            target = "failed_terminal" if terminal else "retry_wait"
+            execute(connection, """UPDATE product_feedback_hub_outbox SET state=:state,next_attempt_at=:next,
+                lease_owner=NULL,lease_expires_at=NULL,last_error_category=:category,updated_at=:now WHERE event_id=:event""",
+                {"state": target, "next": (now_dt + timedelta(seconds=retry_after)).isoformat(),
+                 "category": category, "now": now, "event": event_id})
+            execute(connection, "UPDATE product_feedback_hub_state SET last_error_category=:category WHERE state_key='central'",
+                    {"category": category})
+        return {"schema_version": "feedback-hub-relay-result.v1", "status": target, "attempt": int(row["attempt"])}
+
+    def hub_status_candidates(self, *, limit: int = 10) -> dict[str, object]:
+        bounded = min(max(limit, 1), 20)
+        rows = self._execute("""SELECT event_id,receipt_id,status_token FROM product_feedback_hub_outbox
+            WHERE state IN ('received','triaged','accepted','publishing') AND receipt_id IS NOT NULL
+            ORDER BY updated_at,event_id LIMIT :limit""", {"limit": bounded})
+        return {"schema_version": "feedback-hub-status-candidates.v1", "items": rows}
+
+    def update_hub_status(self, event_id: object, payload: object) -> dict[str, object]:
+        if not isinstance(event_id, str) or re.fullmatch(r"feedback_hub_event_[0-9a-f]{32}", event_id) is None:
+            raise ValueError("feedback hub event id is invalid")
+        if not isinstance(payload, dict):
+            raise ValueError("feedback hub status must be an object")
+        _reject_unknown(payload, {"schema_version", "receipt_id", "status", "github_issue"})
+        if payload.get("schema_version") != "central-feedback-status.v1":
+            raise ValueError("feedback hub status schema is invalid")
+        status = _enum(payload.get("status"), field="status", allowed=("received","triaged","accepted","rejected","duplicate","publishing","published"))
+        receipt = _text(payload.get("receipt_id"), field="receipt_id", minimum=20, maximum=96)
+        issue = payload.get("github_issue")
+        repository = number = url = None
+        if status == "published":
+            if not isinstance(issue, dict):
+                raise ValueError("published feedback hub status requires github_issue")
+            repository = self._publisher_repository(issue.get("repository"))
+            number = _positive_int(issue.get("issue_number"), field="issue_number")
+            url = f"https://github.com/{repository}/issues/{number}"
+            if issue.get("html_url") != url:
+                raise ValueError("feedback hub GitHub URL is not canonical")
+        now = _now()
+        with self._transaction() as connection:
+            row = fetch_one(connection, "SELECT receipt_id FROM product_feedback_hub_outbox WHERE event_id=:event FOR UPDATE", {"event": event_id})
+            if row is None or row["receipt_id"] != receipt:
+                raise FeedbackConflict("feedback hub receipt does not match delivery")
+            execute(connection, """UPDATE product_feedback_hub_outbox SET state=:status,github_repository=:repository,
+                github_issue_number=:number,github_html_url=:url,updated_at=:now WHERE event_id=:event""",
+                {"status": status, "repository": repository, "number": number, "url": url, "now": now, "event": event_id})
+        return {"schema_version": "feedback-hub-status-result.v1", "status": status}
 
     @staticmethod
     def _require_moderator(role: str) -> None:
