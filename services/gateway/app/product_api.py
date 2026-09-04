@@ -694,6 +694,15 @@ def product_ml_study(strategy_artifact_id: str, request: Request) -> dict[str, o
     }
 
 
+@router.delete("/ml/studies/{strategy_artifact_id}")
+def product_ml_study_delete(strategy_artifact_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "DELETE", f"/v1/research/ml/studies/{strategy_artifact_id}",
+        headers=_trusted_agent_headers(request),
+    )
+
+
 @router.get("/ml/workspace")
 def product_ml_workspace(request: Request) -> dict[str, object]:
     _product_principal(request)

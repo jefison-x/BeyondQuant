@@ -2197,7 +2197,7 @@ def get_ml_study(strategy_artifact_id: str, request: Request) -> dict[str, objec
             strategy_artifact_id, owner_principal=context["owner_principal"],
             workspace_id=context["workspace_id"],
         )
-        if strategy.get("kind") != "ml_strategy_version":
+        if strategy.get("kind") != "ml_strategy_version" or strategy.get("status") == "superseded":
             raise ResearchNotFound("ML study not found")
         training_page = ml_training_store.list_runs(
             trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
@@ -2264,6 +2264,19 @@ def get_ml_study(strategy_artifact_id: str, request: Request) -> dict[str, objec
         }
 
     return _research_call(operation)
+
+
+@app.delete("/v1/research/ml/studies/{strategy_artifact_id}")
+def delete_ml_study(strategy_artifact_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: {
+        "schema_version": "ml-study-delete.v1",
+        **research_store.supersede_unexecuted_ml_study(
+            strategy_artifact_id,
+            owner_principal=context["owner_principal"],
+            workspace_id=context["workspace_id"],
+        ),
+    })
 
 
 @app.get("/v1/research/ml/workspace")
