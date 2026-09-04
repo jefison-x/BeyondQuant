@@ -11,6 +11,7 @@ import type {
   ProductFeedbackSummary,
 } from "./types";
 import { ProductApiError } from "./client";
+import { createRequestId } from "@/utils/requestId";
 
 const ROOT = "/api/product/feedback";
 
@@ -37,15 +38,15 @@ export const listFeedback = (params: { status: string; category: string; query: 
 export const getFeedback = (id: string, signal?: AbortSignal) =>
   request<{ feedback: ProductFeedbackDetail }>(`/items/${encodeURIComponent(id)}`, { signal });
 export const createFeedback = (content: ProductFeedbackContent) =>
-  request<{ feedback: ProductFeedbackDetail }>("/items", { method: "POST", body: JSON.stringify({ ...content, idempotency_key: crypto.randomUUID() }) });
+  request<{ feedback: ProductFeedbackDetail }>("/items", { method: "POST", body: JSON.stringify({ ...content, idempotency_key: createRequestId() }) });
 export const updateFeedback = (item: ProductFeedbackDetail, content: ProductFeedbackContent) =>
-  request<{ feedback: ProductFeedbackDetail }>(`/items/${encodeURIComponent(item.feedback_id)}`, { method: "PUT", body: JSON.stringify({ content, expected_version: item.version, idempotency_key: crypto.randomUUID() }) });
+  request<{ feedback: ProductFeedbackDetail }>(`/items/${encodeURIComponent(item.feedback_id)}`, { method: "PUT", body: JSON.stringify({ content, expected_version: item.version, idempotency_key: createRequestId() }) });
 export const previewFeedback = (item: ProductFeedbackDetail) =>
   request<FeedbackPublicationPreview>(`/items/${encodeURIComponent(item.feedback_id)}/preview`, { method: "POST", body: JSON.stringify({ expected_version: item.version }) });
 export const submitFeedback = (item: ProductFeedbackDetail, previewHash: string) =>
-  request<{ feedback: ProductFeedbackSummary }>(`/items/${encodeURIComponent(item.feedback_id)}/submit`, { method: "POST", body: JSON.stringify({ expected_version: item.version, preview_hash: previewHash, disclosure_confirmed: true, idempotency_key: crypto.randomUUID() }) });
+  request<{ feedback: ProductFeedbackSummary }>(`/items/${encodeURIComponent(item.feedback_id)}/submit`, { method: "POST", body: JSON.stringify({ expected_version: item.version, preview_hash: previewHash, disclosure_confirmed: true, idempotency_key: createRequestId() }) });
 export const withdrawFeedback = (item: ProductFeedbackSummary) =>
-  request<{ feedback: ProductFeedbackSummary }>(`/items/${encodeURIComponent(item.feedback_id)}/withdraw`, { method: "POST", body: JSON.stringify({ expected_version: item.version, idempotency_key: crypto.randomUUID() }) });
+  request<{ feedback: ProductFeedbackSummary }>(`/items/${encodeURIComponent(item.feedback_id)}/withdraw`, { method: "POST", body: JSON.stringify({ expected_version: item.version, idempotency_key: createRequestId() }) });
 
 export const listFeedbackModeration = (params: { status: string; category: string; query: string; limit: number; offset: number }, signal?: AbortSignal) =>
   request<FeedbackModerationPage>(`/moderation/items${query(params)}`, { signal });
@@ -57,5 +58,5 @@ export const getFeedbackPublisherStatus = (signal?: AbortSignal) => request<Feed
 export const moderateFeedback = (item: FeedbackModerationItem, action: "triage" | "accept" | "reject" | "duplicate", rationale: string, canonicalFeedbackId = "") =>
   request<{ feedback: FeedbackModerationItem }>(`/moderation/items/${encodeURIComponent(item.feedback_id)}/${action}`, {
     method: "POST",
-    body: JSON.stringify({ expected_version: item.version, rationale, idempotency_key: crypto.randomUUID(), ...(action === "duplicate" ? { canonical_feedback_id: canonicalFeedbackId } : {}) }),
+    body: JSON.stringify({ expected_version: item.version, rationale, idempotency_key: createRequestId(), ...(action === "duplicate" ? { canonical_feedback_id: canonicalFeedbackId } : {}) }),
   });

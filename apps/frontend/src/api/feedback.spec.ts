@@ -1,8 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getFeedbackAudit, getFeedbackOptions, listFeedback, submitFeedback } from "./feedback";
+import type { ProductFeedbackContent } from "./types";
+import {
+  createFeedback,
+  getFeedbackAudit,
+  getFeedbackOptions,
+  listFeedback,
+  moderateFeedback,
+  submitFeedback,
+  updateFeedback,
+  withdrawFeedback,
+} from "./feedback";
 
 describe("feedback api", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
   it("loads only explicitly requested bounded resources", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ schema_version: "product-feedback-options.v1", categories: [] }), { status: 200 }));
@@ -23,6 +36,35 @@ describe("feedback api", () => {
     await submitFeedback({ feedback_id: "feedback_" + "a".repeat(32), version: 2 } as never, "b".repeat(64));
     const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(payload).toMatchObject({ expected_version: 2, preview_hash: "b".repeat(64), disclosure_confirmed: true });
+  });
+
+  it("keeps every feedback mutation usable when randomUUID is unavailable", async () => {
+    vi.stubGlobal("crypto", {
+      getRandomValues: (bytes: Uint8Array) => {
+        bytes.fill(0xab);
+        return bytes;
+      },
+    });
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ feedback: {} }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const content: ProductFeedbackContent = {
+      schema_version: "product-feedback.v1", category: "bug", component: "other", severity: "normal",
+      title: "局域网反馈提交", description: "验证普通 HTTP 环境的反馈写操作。", reproduction_steps: [],
+      expected_behavior: "请求成功发送", actual_behavior: "", diagnostics: {},
+    };
+    const item = { feedback_id: `feedback_${"a".repeat(32)}`, version: 2 } as never;
+
+    await createFeedback(content);
+    await updateFeedback(item, content);
+    await submitFeedback(item, "b".repeat(64));
+    await withdrawFeedback(item);
+    await moderateFeedback(item, "triage", "已验证");
+
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(JSON.parse(String(init.body)).idempotency_key).toBe("abababab-abab-4bab-abab-abababababab");
+    }
   });
 
   it("loads audit only through the dedicated lazy endpoint", async () => {
