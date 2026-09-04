@@ -1,7 +1,8 @@
 # Product Feedback Publisher Runbook
 
-The publisher is optional and disabled by default. Normal BYQ users never configure a GitHub account, token, repository, or
-permission. Only a deployment operator performs this one-time setup for the project's fixed repository.
+The local direct publisher is an advanced self-hosted compatibility option and remains disabled by default. The normal open-source
+path is the ADR-0052 Central Feedback Hub; see `central-feedback-hub.md`. Normal BYQ users never configure a GitHub account, token,
+repository, or permission.
 
 ## Preferred GitHub App setup
 

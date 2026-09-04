@@ -237,3 +237,30 @@ BeyondQuant MCP 只注册七个 owner tool，不注册 moderator/publisher/GitHu
 “起草/预览 → 展示精确预览 → 等待后续用户回合明确同意 → 提交”，不得在同一回合自动提交。普通用户仍无需
 GitHub 账号、Token 或仓库配置；publisher 未配置时反馈完整持久化与审核，采纳项明确保持
 `publisher_unconfigured`。
+
+## 16. Phase 92 central Hub contract
+
+Agent 提交改为“起草/预览 → 展示精确预览 → 请求全局审批 → 原会话续接 → 携带
+`agent_approval_id` 提交”。Approval 必须绑定 `byq_feedback_submit`、`product_feedback` 和 exact feedback ID；
+网页用户本人仍可在同一 Product 页面直接确认。两条路径均只提交 exact preview version/hash。
+
+每次 submit 在同一 PostgreSQL transaction 写入 `feedback-hub-delivery.v1` outbox。local relay 的 intake envelope 为：
+
+```json
+{
+  "schema_version": "central-feedback-intake.v1",
+  "installation_id": "byq-installation-<32 hex>",
+  "event_id": "feedback_hub_event_<opaque>",
+  "snapshot_hash": "sha256",
+  "snapshot": {"schema_version": "submitted-feedback-snapshot.v1"}
+}
+```
+
+Hub 返回不可猜的 `central_feedback_*` receipt 与 HMAC status capability。公开 status endpoint 必须同时验证二者，
+且只返回 `received|triaged|accepted|rejected|duplicate|publishing|published` 和最终 canonical Issue link。Hub 不接收
+user/workspace/session/trace、聊天全文、附件或任意 destination。
+
+Hub 对大小、hash、schema、secret/PII/security report 再次 fail closed，按匿名 installation 限制每小时五次 intake，
+并以跨安装 fingerprint 辅助审核去重。中央 `accept` 才创建 `feedback-publication.v1` outbox；publisher route 固定
+`jefison-x/BeyondQuant`。Local relay 最多八次网络投递，GitHub publisher 最多六次外部副作用尝试；两个预算都不限制
+小巴推理、分页或用户新会话。

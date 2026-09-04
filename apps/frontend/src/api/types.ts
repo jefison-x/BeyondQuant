@@ -1033,6 +1033,11 @@ export interface ProductFeedbackSummary {
   version: number;
   current_revision: number;
   publication_status: "not_queued" | "publisher_unconfigured" | "queued" | "publishing" | "retry_wait" | "published" | "failed_terminal";
+  central_hub: null | {
+    status: "queued" | "delivering" | "retry_wait" | "received" | "triaged" | "accepted" | "rejected" | "duplicate" | "publishing" | "published" | "failed_terminal" | "cancelled";
+    receipt_id: string | null;
+    last_error_category: string | null;
+  };
   github_issue: null | { repository: string; issue_number: number; html_url: string };
   created_at: string;
   updated_at: string;
@@ -1069,6 +1074,7 @@ export interface ProductFeedbackOptions {
     normal_user_github_configuration: boolean;
   };
   publisher: { configured: boolean; status: "ready" | "stale" | "unconfigured" };
+  central_hub: { configured: boolean; status: "ready" | "stale" | "unconfigured" };
 }
 
 export interface ProductFeedbackPage {

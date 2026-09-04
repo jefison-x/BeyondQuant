@@ -50,8 +50,9 @@ class ProductCapabilityCatalogTests(unittest.TestCase):
             self.assertIn(f'"{tool}"', roles)
         for prohibited in ("byq_feedback_moderate", "byq_feedback_publish", "github_token", "github_repository"):
             self.assertNotIn(f'"{prohibited}"', mcp)
-        self.assertIn("Do not call submit in this turn", skill)
-        self.assertIn("later confirmation", skill)
+        self.assertIn("global approval", skill)
+        self.assertIn("agent_approval_id", skill)
+        self.assertIn("do not submit yet", skill)
 
     def test_ml_agent_surface_is_closed_training_only_and_keeps_human_approval(self) -> None:
         root = Path(__file__).resolve().parents[2]

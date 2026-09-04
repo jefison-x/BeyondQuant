@@ -770,3 +770,14 @@ Chrome desktop/mobile、懒加载分页、two-user/restart/unconfigured publishe
 conversation 并以幂等 continuation prompt 续接；失败按持久状态恢复而不使用固定调用次数上限。审批列表使用 owner/
 status 服务端分页，铃铛只显示 pending 数，活动角标为中性灰色。验收覆盖 Backend/Gateway/MCP/Runtime/frontend、
 DSH composition、真实 Product API、Chrome desktop/mobile、same-origin、restart 与部署健康。
+
+## Central Feedback Hub（Phase 92）
+
+### Phase 92 — Official central intake and conversation-first submission（`COMPLETE`）
+
+依据 ADR-0052，把开源部署的默认反馈路径改为 local transactional outbox → 无数据库/GitHub 凭据 relay → 中央
+Feedback Hub。Hub 以匿名 installation/event HMAC、双层 schema/secret/PII 校验、限流、capability-token 状态查询、
+中央审核和固定 `jefison-x/BeyondQuant` GitHub App publisher 隔离不可信安装。小巴在会话中生成草稿和公开预览后只请求
+一次精确绑定 `product_feedback` 的全局审批，批准后续接原 durable conversation 并提交同一 version/hash；普通用户不配置
+GitHub 账号、Token、仓库或 Hub secret。验收覆盖 Backend/MCP/skill/frontend、Hub/relay、PostgreSQL、Compose、Chrome
+desktop/mobile、same-origin 与未配置/断网降级。

@@ -73,3 +73,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   回测工作台统一详情管理操作区边界。
 - ADR-0051 定义 Agent 人工审批只在全局中心呈现、精确资源绑定、原 durable conversation 幂等续接，
   以及业务页用户主动操作与 Agent approval 分离的边界。
+- ADR-0052 定义官方中央 Feedback Hub、匿名 installation relay、中央反滥用/审核/固定仓库发布，
+  以及小巴公开预览后只在全局审批中心确认一次并续接原会话的边界。

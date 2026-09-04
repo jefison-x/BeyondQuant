@@ -16,7 +16,7 @@ while IFS= read -r service; do
 done < <("${compose[@]}" config --services)
 
 echo "== non-root runtime users =="
-for service in gateway backend mcp runtime-adapter signal-worker signal-sandbox; do
+for service in gateway backend mcp runtime-adapter signal-worker signal-sandbox feedback-hub-relay; do
   uid=$("${compose[@]}" exec -T "$service" id -u | tr -d '\r')
   test "$uid" != "0"
 done

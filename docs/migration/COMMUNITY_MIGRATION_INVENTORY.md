@@ -1033,6 +1033,21 @@ Community 没有内建反馈草稿、服务端公开预览、审核工作台或�
 
 Community repository、database、credential、runtime 与 Git history 保持只读，未复制或修改。
 
+## Phase 92 Central Feedback Hub audit
+
+2026-09-04 再次只读检查 Community 的 Issue templates、Agent feedback 入口、全局审批组件和系统管理导航。
+Community 没有中央匿名 intake、安装身份、outbox relay、receipt status 或官方仓库 publisher 服务。
+
+| Community evidence | Classification | Phase 92 disposition |
+|---|---|---|
+| 全局审批收件箱、角标与原会话上下文 | `PORT_UX` / `REFACTOR` | 复用 BYQ Phase 91 approval/continuation；feedback 绑定 exact action/resource，不复制 raw Agent API。 |
+| Issue template 的最小复现与敏感内容提示 | `PORT_TESTS` / `PORT_UX` | local Backend 与中央 Hub 双重验证同一 immutable public candidate。 |
+| 用户离开产品到 GitHub 提交 Issue | `REPLACE` | 小巴在会话内起草/预览，只到审批中心确认一次；普通用户零 GitHub/Hub 配置。 |
+| 中央服务、匿名限流、receipt、relay 与固定仓库发布 | `REPLACE` | 新建 BYQ-owned standalone Hub 和隔离 relay；Community 无代码可迁移。 |
+| Community Agent/runtime/direct API | `DROP` | 保持 Browser → Gateway、Agent → MCP → Backend；Hub 不访问 Product DB 或 DSH。 |
+
+Community repository/database/runtime/credential/Git history 均保持只读，没有复制、导入或修改。
+
 ## Post-Phase 82 frontend list-performance maintenance audit（2026-09-01）
 
 The read-only Community Stock Pool, Backtest, Strategy and Operations surfaces

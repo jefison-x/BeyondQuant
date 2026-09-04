@@ -367,6 +367,11 @@ PostgreSQL、使用 DSH/Codex 或获得 Contents/Pull requests/Actions 权限。
 普通 Product 用户 MUST NOT 被要求提供 GitHub 账号或 credential。Publisher 未配置或不可用时，
 内部 feedback persistence、审核和查询 MUST 继续工作，且不得伪造发布成功。
 
+ADR-0052 的默认开源路径使用 local transactional Hub outbox → 独立 HTTPS relay → 官方 Central Feedback Hub。
+Hub 只能接收不可变公开候选快照，并以匿名 installation HMAC 限流/去重；不得接收用户、workspace、session、trace、
+聊天全文或本地数据库访问。中央审核通过后，只有中央隔离 publisher 可写固定 `jefison-x/BeyondQuant` Issues。
+小巴提交必须绑定全局审批中心中的精确 feedback resource；批准后续接原会话，不在业务页重复审批。
+
 ## 治理
 
 DSH boundary、MCP boundary、database boundary、WorkflowTrace、authentication、

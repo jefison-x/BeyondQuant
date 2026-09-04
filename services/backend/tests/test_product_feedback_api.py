@@ -6,7 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main as main_module
+from app.agent_research import AgentResearchStore
 from app.main import app
+from app.product_feedback import ProductFeedbackStore
 from tests.workspace_helpers import trusted_agent_context
 
 
@@ -59,6 +61,12 @@ def test_feedback_api_owner_preview_moderation_and_outbox() -> None:
     )
     assert submitted_response.status_code == 200, submitted_response.text
     submitted = submitted_response.json()["feedback"]
+    assert submitted["central_hub"] == {"status": "queued", "receipt_id": None, "last_error_category": None}
+    hub_outbox = main_module.feedback_store._fetch_one(
+        "SELECT state,snapshot_hash FROM product_feedback_hub_outbox WHERE feedback_id=:feedback",
+        {"feedback": feedback_id},
+    )
+    assert hub_outbox["state"] == "queued" and len(hub_outbox["snapshot_hash"]) == 64
 
     denied = client.get("/v1/feedback/moderation/items", headers={"x-byq-actor-principal": "reader", "x-byq-actor-role": "user"})
     assert denied.status_code == 403
@@ -109,3 +117,41 @@ def test_feedback_publisher_internal_routes_require_service_token(monkeypatch) -
     claimed = client.post("/internal/feedback-publications/claim", headers=headers,
                           json={"worker_id": "worker-api", "limit": 1, "lease_seconds": 30})
     assert claimed.status_code == 200 and claimed.json()["events"] == []
+
+
+def test_agent_feedback_submit_requires_exact_global_approval(monkeypatch) -> None:
+    feedback = ProductFeedbackStore()
+    agents = AgentResearchStore()
+    monkeypatch.setattr(main_module, "feedback_store", feedback)
+    monkeypatch.setattr(main_module, "agent_store", agents)
+    agent_headers = trusted_agent_context(
+        "feedback-agent-owner", actor="byq-product-agent-feedback",
+        trace_id="feedback-agent-trace", session_id="feedback-agent-session", dsh_run_id="feedback-agent-run",
+    )
+    human_headers = trusted_agent_context(
+        "feedback-agent-owner", actor="feedback-agent-owner",
+        trace_id="feedback-agent-trace", session_id="feedback-agent-session", dsh_run_id="feedback-agent-run",
+    )
+    agent = TestClient(app); agent.headers.update(agent_headers)
+    created = agent.post("/v1/feedback/items", json={**draft_payload(), "idempotency_key": "agent-feedback-create"})
+    item = created.json()["feedback"]
+    preview = agent.post(f"/v1/feedback/items/{item['feedback_id']}/preview", json={"expected_version": item["version"]}).json()
+    run = agent.post("/v1/agents/runs", json={"role_id":"quant_orchestrator","idempotency_key":"agent-feedback-run"}).json()["run"]
+    authorization = agent.post("/v1/agents/authorize", json={
+        "run_id":run["run_id"],"action":"byq_feedback_submit","resource_type":"product_feedback","resource_id":item["feedback_id"],
+    })
+    assert authorization.json()["authorization"]["decision"] == "approval_required"
+    approval = agent.post("/v1/agents/approvals", json={
+        "run_id":run["run_id"],"action":"byq_feedback_submit","reason":"Submit the reviewed public candidate.",
+        "resource_type":"product_feedback","resource_id":item["feedback_id"],"idempotency_key":"agent-feedback-approval",
+    }).json()["approval"]
+    decided = agent.post(f"/v1/agents/approvals/{approval['approval_id']}/decision", headers=human_headers,
+                         json={"decision":"approved","rationale":"已检查公开候选内容"})
+    assert decided.status_code == 200
+    submitted = agent.post(f"/v1/feedback/items/{item['feedback_id']}/submit", json={
+        "expected_version":item["version"],"preview_hash":preview["preview_hash"],"disclosure_confirmed":True,
+        "agent_approval_id":approval["approval_id"],"idempotency_key":"agent-feedback-submit",
+    })
+    assert submitted.status_code == 200, submitted.text
+    assert submitted.json()["feedback"]["status"] == "submitted"
+    feedback.close(); agents.close()
