@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import {
   approveStrategyVersion,
   createStrategyVersion,
@@ -22,6 +22,7 @@ import { shortReference, statusLabel } from "@/display";
 import EntityPagination from "@/components/ui/EntityPagination.vue";
 import AppStateBlock from "@/components/ui/AppStateBlock.vue";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
+import ManagementActionBar from "@/components/layout/ManagementActionBar.vue";
 import { useUnsavedChanges } from "@/composables/useUnsavedChanges";
 import { createRequestId } from "@/utils/requestId";
 
@@ -396,11 +397,17 @@ async function removeDraft() {
     return;
   }
   try {
+    await ElMessageBox.confirm(
+      "删除后草稿会从当前目录移入归档；已经生成的不可变策略版本不受影响。",
+      "删除策略草稿",
+      { type: "warning", confirmButtonText: "删除草稿", cancelButtonText: "取消" },
+    );
     await deleteStrategyDraft(lastDraftId.value, auth.token);
     ElMessage.success("草稿已删除");
     lastDraftId.value = "";
     await loadList();
   } catch (exc) {
+    if (exc === "cancel" || exc === "close") return;
     error.value = exc instanceof Error ? exc.message : "删除草稿失败";
     ElMessage.error(error.value);
   }
@@ -640,6 +647,12 @@ onMounted(loadList);
               </div>
             </div>
           </template>
+          <ManagementActionBar description="草稿尚未形成不可变执行版本，可从当前目录移除；已生成的版本、审批和回测证据不受影响。">
+            <template #status><el-tag size="small">可编辑草稿</el-tag></template>
+            <el-button type="danger" plain :disabled="!lastDraftId" @click="removeDraft">
+              删除草稿
+            </el-button>
+          </ManagementActionBar>
           <el-form label-position="top" class="strategy-editor-form">
             <el-form-item label="研究任务">
               <el-select v-model="taskId" aria-label="研究任务" placeholder="选择研究任务" class="task-select" :disabled="isReadonly">
@@ -711,9 +724,6 @@ onMounted(loadList);
             </el-button>
             <el-button :loading="saving" :disabled="isReadonly" @click="saveDraft">
               保存草稿
-            </el-button>
-            <el-button type="danger" plain :disabled="isReadonly || !lastDraftId" @click="removeDraft">
-              删除草稿
             </el-button>
             <el-button :loading="busy === 'version'" :disabled="isReadonly" @click="createVersion">
               创建不可变版本

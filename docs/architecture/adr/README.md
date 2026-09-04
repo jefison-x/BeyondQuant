@@ -69,3 +69,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   机器学习 Agent 接入、逐动作审批和不建设第二工作流的边界。
 - ADR-0049 定义 Phase 87–90 workspace-owned Product Feedback、公开预览/隐私去敏、审核与
   transactional outbox、独立固定仓库 GitHub Issue publisher、最小权限凭据和用户零 GitHub 配置边界。
+- ADR-0050 定义 Post-Phase 90 的 ML 研究可逆归档、运行证据保留，以及股票池、策略、模型研究、
+  回测工作台统一详情管理操作区边界。

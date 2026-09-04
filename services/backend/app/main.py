@@ -2256,6 +2256,11 @@ def get_ml_study(strategy_artifact_id: str, request: Request) -> dict[str, objec
         return {
             "schema_version": "ml-study-detail.v1",
             "study": _ml_agent_artifact_projection(strategy),
+            "management": research_store.get_ml_study_management(
+                strategy_artifact_id,
+                owner_principal=context["owner_principal"],
+                workspace_id=context["workspace_id"],
+            ),
             "approval_artifact_id": None if approval is None else approval["artifact_id"],
             "training_runs": training_page,
             "prediction_runs": prediction_page,
@@ -2264,6 +2269,22 @@ def get_ml_study(strategy_artifact_id: str, request: Request) -> dict[str, objec
         }
 
     return _research_call(operation)
+
+
+@app.post("/v1/research/ml/studies/{strategy_artifact_id}/lifecycle")
+def update_ml_study_lifecycle(
+    strategy_artifact_id: str, payload: dict[str, Any], request: Request,
+) -> dict[str, object]:
+    context = _required_agent_context(request, payload, include_workspace=True)
+    return _research_call(lambda: {
+        "schema_version": "ml-study-lifecycle.v1",
+        **research_store.set_ml_study_lifecycle(
+            strategy_artifact_id,
+            {"status": payload.get("status"), "idempotency_key": payload.get("idempotency_key")},
+            owner_principal=context["owner_principal"],
+            workspace_id=context["workspace_id"],
+        ),
+    })
 
 
 @app.delete("/v1/research/ml/studies/{strategy_artifact_id}")

@@ -301,6 +301,38 @@ def test_ml_study_delete_forwards_only_trusted_product_context(monkeypatch) -> N
     assert captured["headers"]["x-byq-owner-principal"] == "product-user"
 
 
+def test_ml_study_lifecycle_forwards_only_allowlisted_status(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    captured: dict[str, object] = {}
+
+    def backend(method, path, payload=None, *, headers=None):
+        captured.update(method=method, path=path, payload=payload, headers=headers)
+        return {
+            "schema_version": "ml-study-lifecycle.v1",
+            "study": {"artifact_id": "artifact_" + "a" * 32, "status": "archived"},
+            "management": {"lifecycle_status": "archived", "can_restore": True},
+        }
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    browser = TestClient(main.app)
+    response = browser.post(
+        "/api/product/ml/studies/artifact_" + "a" * 32 + "/lifecycle",
+        headers={"Authorization": "Bearer product-test-token", "x-idempotency-key": "archive-request-123"},
+        json={"status": "archived"},
+    )
+    assert response.status_code == 200
+    assert captured["method"] == "POST"
+    assert captured["payload"] == {
+        "status": "archived", "idempotency_key": "product-ml-study-lifecycle-archive-request-123",
+    }
+    denied = browser.post(
+        "/api/product/ml/studies/artifact_" + "a" * 32 + "/lifecycle",
+        headers={"Authorization": "Bearer product-test-token"},
+        json={"status": "archived", "owner_principal": "spoofed"},
+    )
+    assert denied.status_code == 422
+
+
 def test_asset_diagnostics_name_destination_workspace_without_trust_metadata(monkeypatch) -> None:
     workspace = {
         "contract": "personal-workspace.v1",

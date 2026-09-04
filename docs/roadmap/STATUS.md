@@ -380,6 +380,11 @@ Post-Phase 82 Benchmark UX Maintenance 将新 Product 策略草稿和小巴策�
 历史无基准版本保持不变。Community 策略/回测页仅作为通用布局参考，分类为 `REFERENCE_ONLY`；
 本维护沿用 ADR-0030 的 declared-data 与 immutable-input 边界，不复制 Community 执行架构。
 
+Post-Phase 90 Management Action Consistency Maintenance 依据 ADR-0050 将股票池、策略、模型研究和回测
+详情的删除、归档、停用、恢复与取消集中到统一管理操作区，同时保持各自领域状态机。模型研究未执行时仅
+可软删除，产生运行证据后仅可在全部运行终态时归档，并支持恢复；默认目录隐藏归档项，但训练、模型、预测、
+信号和回测证据保持可读、不可变。Browser 只消费 Gateway/Product API 返回的权威 action projection。
+
 ## 当前授权边界
 
 - Phase 49-90 与相应 Accepted ADR/计划均已完成。

@@ -185,3 +185,10 @@ ML Strategy Approval 和封闭 execution profile；可信 ML Worker 继续产生
 `backtest-task.v1` 投影、`byq_backtest_task_get/execute/cancel` 与 BacktestJob，不新增任务表或状态机。
 DSH 不加载模型、不读取 raw feature/prediction rows、不排名、不构造信号；ML Agent 也不能调用通用
 backtest prepare/create 来替换 ML lineage。Prediction 创建、Backtest 执行和取消各自保持独立审批与审计。
+
+Post-Phase 90 lifecycle maintenance 依据 ADR-0050 增加 ML 研究目录归档。没有运行记录的研究可软删除并
+使关联 Approval superseded；存在任何训练、预测或回测记录后不可删除。所有运行均为终态时可归档，活动
+运行必须先结束；归档只改变目录生命周期并阻止新执行，不修改 StrategyVersion 内容/hash、Approval 或
+任何训练/模型/预测/信号/回测证据。`status=archived` 目录可分页读取并恢复，默认目录不返回归档项。
+详情 Product projection 返回 `management.lifecycle_status/can_delete/can_archive/can_restore/reason`，Browser
+不得从已加载的局部运行页自行推断。

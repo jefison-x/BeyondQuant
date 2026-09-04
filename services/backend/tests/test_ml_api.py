@@ -296,6 +296,73 @@ def test_ml_study_with_execution_history_cannot_be_deleted() -> None:
     assert backend_main.research_store.get_artifact(artifact_id)["status"] == "validated"
 
 
+def test_executed_ml_study_can_be_archived_and_restored_without_losing_evidence() -> None:
+    headers = trusted_agent_context("ml-archive-owner", actor="ml-archive-owner")
+    task = client.post("/v1/research/tasks", headers=headers, json={
+        "owner_principal": "ml-archive-owner", "title": "Archive completed ML",
+        "objective": "Keep execution evidence", "trace_id": "trace-ml-archive",
+        "idempotency_key": "task-ml-archive",
+    }).json()
+    version = client.post("/v1/research/ml/strategies/versions", headers=headers, json={
+        "task_id": task["task_id"], "strategy": valid_strategy_v2(),
+        "trace_id": "trace-ml-archive", "idempotency_key": "version-ml-archive",
+    }).json()
+    artifact_id = version["artifact"]["artifact_id"]
+    run = backend_main.ml_training_store.create_waiting(
+        workspace_id=headers["x-byq-workspace-id"], owner_principal="ml-archive-owner",
+        task_id=task["task_id"], experiment_id=None,
+        ml_strategy_artifact_id=artifact_id,
+        stock_pool_snapshot_id="snapshot_" + "c" * 32,
+        preparation={"schema_version": "test"},
+        requirement={"requirement_sha256": "d" * 64}, readiness={"state": "waiting_for_data"},
+        trace_id="trace-ml-archive", idempotency_key="training-ml-archive",
+    )
+
+    blocked = client.post(
+        f"/v1/research/ml/studies/{artifact_id}/lifecycle", headers=headers,
+        json={"status": "archived", "idempotency_key": "archive-while-active"},
+    )
+    assert blocked.status_code == 409
+    assert "进行中" in blocked.text
+
+    backend_main.ml_training_store.cancel(
+        run["training_run_id"], trusted_workspace=headers["x-byq-workspace-id"],
+        trusted_owner="ml-archive-owner",
+    )
+    archived = client.post(
+        f"/v1/research/ml/studies/{artifact_id}/lifecycle", headers=headers,
+        json={"status": "archived", "idempotency_key": "archive-terminal-study"},
+    )
+    assert archived.status_code == 200, archived.text
+    assert archived.json()["study"]["status"] == "archived"
+    assert archived.json()["management"]["can_restore"] is True
+
+    detail = client.get(f"/v1/research/ml/studies/{artifact_id}", headers=headers)
+    assert detail.status_code == 200
+    assert detail.json()["training_runs"]["total"] == 1
+    assert detail.json()["management"]["lifecycle_status"] == "archived"
+    assert artifact_id not in {
+        item["artifact_id"] for item in client.get("/v1/research/ml/studies", headers=headers).json()["studies"]
+    }
+    archived_page = client.get(
+        "/v1/research/ml/studies?status=archived", headers=headers,
+    ).json()
+    assert archived_page["studies"][0]["artifact_id"] == artifact_id
+    assert archived_page["studies"][0]["lifecycle_status"] == "archived"
+
+    restored = client.post(
+        f"/v1/research/ml/studies/{artifact_id}/lifecycle", headers=headers,
+        json={"status": "active", "idempotency_key": "restore-terminal-study"},
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["study"]["status"] == "validated"
+    assert restored.json()["management"]["can_archive"] is True
+    assert backend_main.ml_training_store.get(
+        run["training_run_id"], trusted_workspace=headers["x-byq-workspace-id"],
+        trusted_owner="ml-archive-owner",
+    )["status"] == "cancelled"
+
+
 def test_ml_training_requires_separate_human_strategy_approval() -> None:
     headers = trusted_agent_context("ml-training-approval-owner")
     task = client.post("/v1/research/tasks", headers=headers, json={

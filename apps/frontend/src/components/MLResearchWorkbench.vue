@@ -4,7 +4,7 @@ import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   approveMLStrategy, createMLPrediction, createMLStrategy, createMLTraining,
-  deleteMLStudy,
+  deleteMLStudy, setMLStudyLifecycle,
   getMLCapabilities, getMLOptions, getMLPrediction, getMLPredictionRows,
   getMLStudies, getMLStudy, getMLTraining,
   type MLArtifact, type MLCapabilities, type MLCapabilityComponent, type MLRun,
@@ -13,6 +13,7 @@ import {
 import { createTask } from "@/api/research";
 import { getBacktest, runBacktest, submitBacktest } from "@/api/quant";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
+import ManagementActionBar from "@/components/layout/ManagementActionBar.vue";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { formatChinaTime } from "@/time";
 import { shortReference, statusLabel } from "@/display";
@@ -22,7 +23,7 @@ type StudyMode = "compatible" | "walk_forward" | "regime";
 type ExpertDraft = { key: "risk_on" | "neutral" | "risk_off"; label: string; learner: string };
 
 const router = useRouter();
-const loading = ref(true), catalogLoading = ref(false), detailLoading = ref(false), busy = ref(false), deleting = ref(false);
+const loading = ref(true), catalogLoading = ref(false), detailLoading = ref(false), busy = ref(false), deleting = ref(false), lifecycleBusy = ref(false);
 const error = ref(""), showCreate = ref(false), activeTab = ref("overview");
 const capabilities = ref<MLCapabilities | null>(null);
 const options = ref<MLOptions>({ schema_version: "ml-options.v1", tasks: [], pools: [] });
@@ -263,12 +264,10 @@ async function saveStrategy() {
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : "研究定义保存失败"); }
   finally { busy.value = false; }
 }
-const canDeleteStudy = computed(() => Boolean(
-  detail.value
-  && detail.value.training_runs.total === 0
-  && detail.value.prediction_runs.total === 0
-  && detail.value.backtests.total === 0
-));
+const canDeleteStudy = computed(() => Boolean(detail.value?.management?.can_delete));
+const canArchiveStudy = computed(() => Boolean(detail.value?.management?.can_archive));
+const canRestoreStudy = computed(() => Boolean(detail.value?.management?.can_restore));
+const isArchived = computed(() => detail.value?.management?.lifecycle_status === "archived");
 async function removeStudy() {
   if (!selected.value || !canDeleteStudy.value || deleting.value) return;
   const artifactId = selected.value.artifact_id;
@@ -295,6 +294,38 @@ async function removeStudy() {
     }
   } finally {
     deleting.value = false;
+  }
+}
+async function changeStudyLifecycle(status: "active" | "archived") {
+  if (!selected.value || lifecycleBusy.value) return;
+  if (status === "archived" && !canArchiveStudy.value) return;
+  if (status === "active" && !canRestoreStudy.value) return;
+  const artifactId = selected.value.artifact_id;
+  const name = String(content.value.name || "未命名模型研究");
+  lifecycleBusy.value = true;
+  try {
+    if (status === "archived") {
+      await ElMessageBox.confirm(
+        `归档“${name}”后，它会从当前目录隐藏，但训练、模型、预测、信号和回测证据都会保留。`,
+        "归档模型研究",
+        { type: "warning", confirmButtonText: "归档研究", cancelButtonText: "取消" },
+      );
+    }
+    await setMLStudyLifecycle(artifactId, status);
+    selectedStrategy.value = "";
+    detail.value = null;
+    training.value = null;
+    prediction.value = null;
+    backtest.value = null;
+    selectedApproval.value = "";
+    await loadCatalog();
+    ElMessage.success(status === "archived" ? "模型研究已归档，运行证据已保留" : "模型研究已恢复到当前目录");
+  } catch (e) {
+    if (e !== "cancel" && e !== "close") {
+      ElMessage.error(e instanceof Error ? e.message : status === "archived" ? "模型研究归档失败" : "模型研究恢复失败");
+    }
+  } finally {
+    lifecycleBusy.value = false;
   }
 }
 async function approveAndTrain() {
@@ -412,18 +443,25 @@ onBeforeUnmount(() => { if (timer) clearTimeout(timer); if (catalogTimer) clearT
     <template #catalog>
       <el-card shadow="never" class="research-catalog"><template #header><div class="card-heading"><span class="card-title">研究目录</span><small class="card-sub">服务端筛选与分页</small></div></template>
         <ListFilterPagination v-model:query="catalogQuery" v-model:page="catalogPage" :page-size="pageSize" :total="studiesTotal" placeholder="搜索研究名称或任务" label="模型研究分页">
-          <template #filters><el-select v-model="statusFilter" aria-label="模型研究状态" style="width:130px"><el-option label="全部状态" value="all"/><el-option label="进行中" value="active"/><el-option label="已完成" value="completed"/><el-option label="需处理" value="failed"/></el-select></template>
+          <template #filters><el-select v-model="statusFilter" aria-label="模型研究状态" style="width:130px"><el-option label="全部状态" value="all"/><el-option label="进行中" value="active"/><el-option label="已完成" value="completed"/><el-option label="需处理" value="failed"/><el-option label="已归档" value="archived"/></el-select></template>
           <div v-if="catalogLoading" class="base-loading" role="status">加载目录...</div>
           <el-empty v-else-if="!studies.length" description="暂无模型研究"><el-button type="primary" @click="showCreate = true">创建第一项研究</el-button></el-empty>
-          <div v-else class="research-list"><button v-for="item in studies" :key="item.artifact_id" type="button" class="research-list-item" :class="{active:item.artifact_id===selectedStrategy}" :aria-pressed="item.artifact_id===selectedStrategy" @click="selectStudy(item.artifact_id)"><span class="list-head"><strong>{{ item.name || '未命名模型研究' }}</strong><el-tag size="small" :type="item.stage==='completed'?'success':item.stage==='failed'?'danger':'info'">{{ STAGES[item.stage] ?? item.stage }}</el-tag></span><span class="method">{{ methodLabel(item) }}</span><span class="list-meta"><span>{{ item.task_title }}</span><time>{{ formatChinaTime(item.created_at) }}</time></span></button></div>
+          <div v-else class="research-list"><button v-for="item in studies" :key="item.artifact_id" type="button" class="research-list-item" :class="{active:item.artifact_id===selectedStrategy}" :aria-pressed="item.artifact_id===selectedStrategy" @click="selectStudy(item.artifact_id)"><span class="list-head"><strong>{{ item.name || '未命名模型研究' }}</strong><el-tag size="small" :type="item.lifecycle_status==='archived'?'info':item.stage==='completed'?'success':item.stage==='failed'?'danger':'info'">{{ item.lifecycle_status==='archived'?'已归档':STAGES[item.stage] ?? item.stage }}</el-tag></span><span class="method">{{ methodLabel(item) }}</span><span class="list-meta"><span>{{ item.task_title }}</span><time>{{ formatChinaTime(item.created_at) }}</time></span></button></div>
         </ListFilterPagination>
       </el-card>
     </template>
     <template #detail>
       <el-card v-if="detailLoading" shadow="never"><div class="base-loading" role="status">按需加载研究详情...</div></el-card>
-      <el-card v-else-if="selected" shadow="never" class="research-detail"><template #header><div class="detail-heading"><div><span>{{ methodLabel(selected) }}</span><h3>{{ content.name || '未命名模型研究' }}</h3><p>{{ selectedSummary?.task_title }}</p></div><div class="detail-actions"><el-tag :type="backtest?.status==='completed'?'success':'info'">{{ STAGES[selectedSummary?.stage ?? 'definition'] }}</el-tag><el-tooltip :content="canDeleteStudy?'删除未执行的研究':'已有训练、预测或回测记录，需保留审计证据'" placement="bottom"><span><el-button type="danger" plain size="small" :disabled="!canDeleteStudy||busy" :loading="deleting" data-testid="ml-delete" @click="removeStudy">删除</el-button></span></el-tooltip></div></div></template>
+      <el-card v-else-if="selected" shadow="never" class="research-detail"><template #header><div class="detail-heading"><div><span>{{ methodLabel(selected) }}</span><h3>{{ content.name || '未命名模型研究' }}</h3><p>{{ selectedSummary?.task_title }}</p></div><el-tag :type="isArchived?'info':backtest?.status==='completed'?'success':'info'">{{ isArchived?'已归档':STAGES[selectedSummary?.stage ?? 'definition'] }}</el-tag></div></template>
+        <ManagementActionBar :description="detail?.management?.reason || '生命周期操作由领域层根据运行证据判定。'">
+          <template #status><el-tag size="small">{{ isArchived ? '已归档' : '当前研究' }}</el-tag></template>
+          <el-button v-if="canRestoreStudy" type="primary" :loading="lifecycleBusy" data-testid="ml-restore" @click="changeStudyLifecycle('active')">恢复</el-button>
+          <el-button v-else-if="canArchiveStudy" :loading="lifecycleBusy" data-testid="ml-archive" @click="changeStudyLifecycle('archived')">归档</el-button>
+          <el-tooltip v-else-if="!canDeleteStudy" :content="detail?.management?.reason" placement="bottom"><span><el-button disabled>归档</el-button></span></el-tooltip>
+          <el-button v-if="canDeleteStudy" type="danger" plain :disabled="busy" :loading="deleting" data-testid="ml-delete" @click="removeStudy">删除</el-button>
+        </ManagementActionBar>
         <ol class="pipeline" aria-label="模型研究进度"><li v-for="(step,index) in steps" :key="step.label" :class="`is-${step.state}`"><b>{{ step.state==='completed'?'✓':index+1 }}</b><span><strong>{{ step.label }}</strong><small>{{ step.hint }}</small></span></li></ol>
-        <section class="next-step"><div><span>建议下一步</span><strong>{{ next.title }}</strong><p>{{ next.hint }}</p></div><div class="next-actions"><el-select v-if="next.action==='train'" v-model="form.pool_id" aria-label="训练使用的冻结股票池" data-testid="ml-pool" placeholder="选择冻结股票池"><el-option v-for="pool in activePools" :key="pool.pool_id" :label="`${pool.name} · ${pool.member_count}只`" :value="pool.pool_id"/></el-select><el-button type="primary" :disabled="next.action==='wait'||(next.action==='train'&&!chosenPool)" :loading="busy" :data-testid="next.action==='train'?'ml-train':next.action==='predict'?'ml-predict':next.action==='backtest'?'ml-backtest':undefined" @click="runNext">{{ next.label }}</el-button></div></section>
+        <section class="next-step"><div><span>建议下一步</span><strong>{{ isArchived?'研究已归档':next.title }}</strong><p>{{ isArchived?'恢复后才可发起新的训练或执行动作；历史结果仍可查看。':next.hint }}</p></div><div class="next-actions"><el-select v-if="next.action==='train'" v-model="form.pool_id" :disabled="isArchived" aria-label="训练使用的冻结股票池" data-testid="ml-pool" placeholder="选择冻结股票池"><el-option v-for="pool in activePools" :key="pool.pool_id" :label="`${pool.name} · ${pool.member_count}只`" :value="pool.pool_id"/></el-select><el-button type="primary" :disabled="isArchived||next.action==='wait'||(next.action==='train'&&!chosenPool)" :loading="busy" :data-testid="next.action==='train'?'ml-train':next.action==='predict'?'ml-predict':next.action==='backtest'?'ml-backtest':undefined" @click="runNext">{{ next.label }}</el-button></div></section>
         <el-tabs v-model="activeTab" class="research-tabs">
           <el-tab-pane label="研究概览" name="overview"><div class="summary-grid"><div><span>研究方法</span><strong>{{ methodLabel(selected) }}</strong><small>{{ isV2?'净化走步验证':'兼容单次验证' }}</small></div><div><span>研究范围</span><strong>{{ selectedPool?.name || '训练时选择股票池' }}</strong><small>{{ selectedPool?`${selectedPool.member_count} 只股票`:'使用不可变成员快照' }}</small></div><div><span>预测目标</span><strong>未来 {{ targetHorizon ?? form.horizon }} 个交易日收益</strong><small>样本外预测不包含标签</small></div><div><span>组合规则</span><strong>前 {{ portfolio?.top_n ?? form.top_n }} 名等权</strong><small>{{ rebalance(portfolio?.rebalance ?? form.rebalance) }}调仓</small></div></div>
             <section class="content-section"><h4>数据与验证时间窗</h4><p>{{ isV2?'开发区间内生成有净化间隔的走步折；预测区间位于所有模型选择之后。':'训练、验证和预测按时间先后隔离。' }}</p><dl class="periods" :class="{two:isV2}"><template v-if="isV2"><div><dt>开发与走步验证</dt><dd>{{ period(content.development_window) }}</dd></div><div><dt>生成样本外预测</dt><dd>{{ period(content.prediction_window) }}</dd></div></template><template v-else><div><dt>学习历史规律</dt><dd>{{ period(content.split?.train) }}</dd></div><div><dt>验证模型表现</dt><dd>{{ period(content.split?.validation) }}</dd></div><div><dt>生成样本外预测</dt><dd>{{ period(content.split?.prediction) }}</dd></div></template></dl></section>
