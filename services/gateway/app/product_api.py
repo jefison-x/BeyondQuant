@@ -15,7 +15,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from datetime import datetime, timezone
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -1121,28 +1121,115 @@ def product_factors(request: Request) -> dict[str, object]:
 @router.get("/approvals/{approval_id}")
 def product_approval_get(approval_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request(
+    body = _backend_request(
         "GET",
         f"/v1/agents/approvals/{approval_id}",
         headers=_trusted_agent_headers(request),
     )
+    approval = body.get("approval")
+    return {"approval": _product_approval_projection(request, approval)}
 
 
 @router.get("/approvals")
-def product_approvals(request: Request) -> dict[str, object]:
+def product_approvals(
+    request: Request, status: str | None = None, limit: int = 50, offset: int = 0,
+) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request("GET", "/v1/agents/approvals", headers=_trusted_agent_headers(request))
+    params = urlencode({
+        **({"status": status} if status else {}), "limit": limit, "offset": offset,
+    })
+    body = _backend_request(
+        "GET", f"/v1/agents/approvals?{params}", headers=_trusted_agent_headers(request),
+    )
+    approvals = body.get("approvals")
+    conversation_cache: dict[str, dict[str, object] | None] = {}
+    return {
+        "approvals": [
+            _product_approval_projection(request, item, conversation_cache=conversation_cache)
+            for item in approvals if isinstance(item, dict)
+        ] if isinstance(approvals, list) else [],
+        "total": body.get("total", 0),
+        "pending_count": body.get("pending_count", 0),
+        "limit": body.get("limit", limit),
+        "offset": body.get("offset", offset),
+    }
 
 
 @router.post("/approvals/{approval_id}/decision")
 def product_approval_decision(approval_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request(
+    body = _backend_request(
         "POST",
         f"/v1/agents/approvals/{approval_id}/decision",
         payload,
         headers=_trusted_agent_headers(request),
     )
+    approval = _product_approval_projection(request, body.get("approval"))
+    if approval.get("continuation_status") in {"queued", "failed"} and isinstance(approval.get("conversation_id"), str):
+        from .main import continue_approval_conversation
+
+        continuation = continue_approval_conversation(
+            request, str(approval["conversation_id"]), str(approval.get("approval_id", approval_id)),
+            str(approval.get("status", "")), str(approval.get("action", "")),
+        )
+        approval["continuation_status"] = continuation["status"]
+    return {"approval": approval}
+
+
+@router.post("/approvals/{approval_id}/continue")
+def product_approval_continue(approval_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    body = _backend_request(
+        "GET", f"/v1/agents/approvals/{approval_id}", headers=_trusted_agent_headers(request),
+    )
+    approval = _product_approval_projection(request, body.get("approval"))
+    if approval.get("status") not in {"approved", "rejected"}:
+        raise ProductError(409, "approval_not_decided", "approval has not been decided")
+    if isinstance(approval.get("conversation_id"), str):
+        from .main import continue_approval_conversation
+
+        continuation = continue_approval_conversation(
+            request, str(approval["conversation_id"]), str(approval.get("approval_id", approval_id)),
+            str(approval.get("status", "")), str(approval.get("action", "")),
+        )
+        approval["continuation_status"] = continuation["status"]
+    return {"approval": approval}
+
+
+def _product_approval_projection(
+    request: Request, value: object,
+    *, conversation_cache: dict[str, dict[str, object] | None] | None = None,
+) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise ProductError(502, "backend_invalid_response", "backend returned an invalid approval")
+    projected = {
+        key: value.get(key) for key in (
+            "approval_id", "run_id", "action", "reason", "resource_type", "resource_id",
+            "status", "decision_reason", "execution_outcome", "continuation_status",
+            "created_at", "updated_at",
+        )
+    }
+    source_session_id = value.get("source_session_id")
+    if isinstance(source_session_id, str) and source_session_id:
+        conversation = conversation_cache.get(source_session_id) if conversation_cache is not None else None
+        if conversation_cache is None or source_session_id not in conversation_cache:
+            try:
+                conversation_body = _backend_request(
+                    "GET", f"/v1/product/conversations/by-runtime/{quote(source_session_id, safe='')}",
+                    headers=_trusted_agent_headers(request),
+                )
+                candidate = conversation_body.get("conversation")
+                conversation = candidate if isinstance(candidate, dict) else None
+            except ProductError as exc:
+                if exc.status_code != 404:
+                    raise
+                conversation = None
+            if conversation_cache is not None:
+                conversation_cache[source_session_id] = conversation
+        if isinstance(conversation, dict) and isinstance(conversation.get("conversation_id"), str):
+            projected["conversation_id"] = conversation["conversation_id"]
+            projected["conversation_title"] = conversation.get("title")
+    return projected
 
 
 @router.get("/data-center/status")
@@ -1518,8 +1605,11 @@ def product_model_binding_update(
 @router.get("/settings/agent-policy")
 def product_agent_policy(request: Request) -> dict[str, object]:
     _product_principal(request)
-    approvals = _owner_scoped_list("/v1/agents/approvals", "approvals", _trusted_agent_headers(request))
-    pending = sum(1 for approval in approvals if isinstance(approval, dict) and approval.get("status") == "pending")
+    approval_body = _backend_request(
+        "GET", "/v1/agents/approvals?status=pending&limit=1&offset=0",
+        headers=_trusted_agent_headers(request),
+    )
+    pending = int(approval_body.get("pending_count") or approval_body.get("total") or 0)
     policy_body = _backend_request(
         "GET",
         "/v1/users/agent-policy",

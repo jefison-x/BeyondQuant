@@ -254,8 +254,8 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
     ),
     AgentRole(
         role_id="ml_researcher",
-        version="1.1.0",
-        description="Creates closed-profile ML research, manages trusted training/prediction, and executes derived backtest tasks without approving strategies or accessing model objects.",
+        version="1.2.0",
+        description="Creates closed-profile ML research, materializes exact human-authorized approvals, manages trusted training/prediction, and executes derived backtest tasks without accessing model objects.",
         allowed_tools=(
             "byq_agent_context",
             "byq_agent_run_start",
@@ -267,6 +267,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_ml_capabilities",
             "byq_ml_workspace_get",
             "byq_ml_strategy_create",
+            "byq_ml_strategy_approve",
             "byq_ml_training_create",
             "byq_ml_training_get",
             "byq_ml_training_cancel",
@@ -278,7 +279,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
         ),
         delegate_to=(),
         approval_required_actions=(
-            "byq_ml_training_create", "byq_ml_training_cancel",
+            "byq_ml_strategy_approve", "byq_ml_training_create", "byq_ml_training_cancel",
             "byq_ml_prediction_create", "byq_backtest_task_execute", "byq_backtest_task_cancel",
         ),
         evidence_kinds=(
@@ -440,6 +441,13 @@ class AgentResearchStore(PgStoreMixin):
         CREATE UNIQUE INDEX IF NOT EXISTS agent_approvals_idempotency
             ON agent_approvals(run_id, idempotency_key)
         """,
+        "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS resource_type TEXT",
+        "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS resource_id TEXT",
+        "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS continuation_status TEXT NOT NULL DEFAULT 'not_requested'",
+        """
+        CREATE INDEX IF NOT EXISTS agent_approvals_owner_pending
+            ON agent_approvals(owner_principal, status, created_at DESC)
+        """,
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -587,13 +595,23 @@ class AgentResearchStore(PgStoreMixin):
     def create_approval(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("agent approval request must be an object")
-        allowed = {"run_id", "action", "reason", "idempotency_key"}
+        allowed = {"run_id", "action", "reason", "resource_type", "resource_id", "idempotency_key"}
         unknown = sorted(set(payload) - allowed)
         if unknown:
             raise ValueError(f"agent approval request has unknown fields: {', '.join(unknown)}")
         run_id = _entity_id(payload.get("run_id"), field="run_id", prefix="agent_run")
         action = _text(payload.get("action"), field="action", max_length=128)
         reason = _text(payload.get("reason"), field="reason", max_length=2000)
+        resource_type = (
+            _text(payload.get("resource_type"), field="resource_type", max_length=64)
+            if payload.get("resource_type") is not None else None
+        )
+        resource_id = (
+            _text(payload.get("resource_id"), field="resource_id", max_length=128)
+            if payload.get("resource_id") is not None else None
+        )
+        if (resource_type is None) != (resource_id is None):
+            raise ValueError("resource_type and resource_id must be provided together")
         key = _idempotency(payload.get("idempotency_key"))
         with self._transaction() as connection:
             run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
@@ -603,11 +621,17 @@ class AgentResearchStore(PgStoreMixin):
             role = ROLE_BY_ID[run["role_id"]]
             if action not in role.approval_required_actions:
                 raise AgentForbidden("agent action does not require or support this approval boundary")
-            request = {"run_id": run_id, "action": action, "reason": reason, "idempotency_key": key}
+            request = {
+                "run_id": run_id, "action": action, "reason": reason,
+                "resource_type": resource_type, "resource_id": resource_id,
+                "idempotency_key": key,
+            }
             request_hash = _hash(request)
             existing = fetch_one(
                 connection,
-                "SELECT * FROM agent_approvals WHERE run_id = :run_id AND idempotency_key = :key",
+                """SELECT approvals.*, runs.session_id AS source_session_id
+                   FROM agent_approvals approvals JOIN agent_runs runs ON runs.run_id=approvals.run_id
+                   WHERE approvals.run_id = :run_id AND approvals.idempotency_key = :key""",
                 {"run_id": run_id, "key": key},
             )
             if existing is not None:
@@ -620,15 +644,25 @@ class AgentResearchStore(PgStoreMixin):
                 connection,
                 """INSERT INTO agent_approvals
                 (approval_id, run_id, owner_principal, actor_principal, action, reason,
+                 resource_type, resource_id,
                  status, decision_by, decision_reason, execution_outcome,
-                 idempotency_key, request_hash, created_at, updated_at)
+                 continuation_status, idempotency_key, request_hash, created_at, updated_at)
                 VALUES (:approval_id, :run_id, :owner_principal, :actor_principal, :action, :reason,
-                        'pending', NULL, NULL, 'not_started', :key, :request_hash, :created_at, :updated_at)""",
+                        :resource_type, :resource_id,
+                        'pending', NULL, NULL, 'not_started', 'not_requested',
+                        :key, :request_hash, :created_at, :updated_at)""",
                 {"approval_id": approval_id, "run_id": run_id, "owner_principal": run["owner_principal"],
                  "actor_principal": run["actor_principal"], "action": action, "reason": reason,
+                 "resource_type": resource_type, "resource_id": resource_id,
                  "key": key, "request_hash": request_hash, "created_at": now, "updated_at": now},
             )
-            row = fetch_one(connection, "SELECT * FROM agent_approvals WHERE approval_id = :approval_id", {"approval_id": approval_id})
+            row = fetch_one(
+                connection,
+                """SELECT approvals.*, runs.session_id AS source_session_id
+                   FROM agent_approvals approvals JOIN agent_runs runs ON runs.run_id=approvals.run_id
+                   WHERE approvals.approval_id=:approval_id FOR UPDATE OF approvals""",
+                {"approval_id": approval_id},
+            )
             assert row is not None
             self._record_audit_row(run, action="approval.request", outcome="pending", resource_type="agent_approval", resource_id=approval_id, detail={"action": action}, connection=connection)
         return self._approval_row(row)
@@ -649,7 +683,13 @@ class AgentResearchStore(PgStoreMixin):
         if reviewer is None:
             raise AgentUnauthorized("human approval requires a trusted reviewer principal")
         with self._transaction() as connection:
-            row = fetch_one(connection, "SELECT * FROM agent_approvals WHERE approval_id = :approval_id", {"approval_id": approval_id})
+            row = fetch_one(
+                connection,
+                """SELECT approvals.*, runs.session_id AS source_session_id
+                   FROM agent_approvals approvals JOIN agent_runs runs ON runs.run_id=approvals.run_id
+                   WHERE approvals.approval_id=:approval_id FOR UPDATE OF approvals""",
+                {"approval_id": approval_id},
+            )
             if row is None:
                 raise AgentNotFound("agent approval not found")
             if trusted_owner and row["owner_principal"] != trusted_owner:
@@ -663,10 +703,16 @@ class AgentResearchStore(PgStoreMixin):
             outcome = "authorized" if status == "approved" else "not_authorized"
             execute(
                 connection,
-                "UPDATE agent_approvals SET status = :status, decision_by = :decision_by, decision_reason = :decision_reason, execution_outcome = :execution_outcome, updated_at = :updated_at WHERE approval_id = :approval_id",
+                "UPDATE agent_approvals SET status = :status, decision_by = :decision_by, decision_reason = :decision_reason, execution_outcome = :execution_outcome, continuation_status = 'queued', updated_at = :updated_at WHERE approval_id = :approval_id",
                 {"status": status, "decision_by": reviewer, "decision_reason": rationale, "execution_outcome": outcome, "updated_at": now, "approval_id": approval_id},
             )
-            updated = fetch_one(connection, "SELECT * FROM agent_approvals WHERE approval_id = :approval_id", {"approval_id": approval_id})
+            updated = fetch_one(
+                connection,
+                """SELECT approvals.*, runs.session_id AS source_session_id
+                   FROM agent_approvals approvals JOIN agent_runs runs ON runs.run_id=approvals.run_id
+                   WHERE approvals.approval_id=:approval_id""",
+                {"approval_id": approval_id},
+            )
             assert updated is not None
             run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": row["run_id"]})
             assert run is not None
@@ -675,22 +721,117 @@ class AgentResearchStore(PgStoreMixin):
 
     def get_approval(self, approval_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         approval_id = _entity_id(approval_id, field="approval_id", prefix="agent_approval")
-        row = self._fetch_one("SELECT * FROM agent_approvals WHERE approval_id = :approval_id", {"approval_id": approval_id})
+        row = self._fetch_one(
+            """SELECT approvals.*, runs.session_id AS source_session_id
+               FROM agent_approvals approvals
+               JOIN agent_runs runs ON runs.run_id = approvals.run_id
+               WHERE approvals.approval_id = :approval_id""",
+            {"approval_id": approval_id},
+        )
         if row is None:
             raise AgentNotFound("agent approval not found")
         if trusted_owner and row["owner_principal"] != trusted_owner:
             raise AgentUnauthorized("agent approval is not owned by this principal")
         return self._approval_row(row)
 
-    def list_approvals(self, *, trusted_owner: str | None = None) -> dict[str, object]:
+    def list_approvals(
+        self, *, trusted_owner: str | None = None, status: str | None = None,
+        limit: int = 50, offset: int = 0,
+    ) -> dict[str, object]:
+        if status not in {None, "pending", "approved", "rejected"}:
+            raise ValueError("approval status is invalid")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("approval limit must be between 1 and 100")
+        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 10_000:
+            raise ValueError("approval offset must be between 0 and 10000")
+        clauses: list[str] = []
+        params: dict[str, object] = {"limit": limit, "offset": offset}
         if trusted_owner:
-            rows = self._execute(
-                "SELECT * FROM agent_approvals WHERE owner_principal = :owner_principal ORDER BY created_at DESC, approval_id DESC LIMIT 200",
-                {"owner_principal": trusted_owner},
+            clauses.append("approvals.owner_principal = :owner_principal")
+            params["owner_principal"] = trusted_owner
+        if status:
+            clauses.append("approvals.status = :status")
+            params["status"] = status
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._execute(
+            f"""SELECT approvals.*, runs.session_id AS source_session_id
+                FROM agent_approvals approvals
+                JOIN agent_runs runs ON runs.run_id = approvals.run_id
+                {where}
+                ORDER BY approvals.created_at DESC, approvals.approval_id DESC
+                LIMIT :limit OFFSET :offset""",
+            params,
+        )
+        total_row = self._fetch_one(
+            f"SELECT COUNT(*) AS total FROM agent_approvals approvals {where}", params,
+        )
+        pending_clauses = [clause for clause in clauses if "approvals.status" not in clause]
+        pending_clauses.append("approvals.status = 'pending'")
+        pending_where = f"WHERE {' AND '.join(pending_clauses)}"
+        pending_row = self._fetch_one(
+            f"SELECT COUNT(*) AS total FROM agent_approvals approvals {pending_where}", params,
+        )
+        return {
+            "approvals": [self._approval_row(row) for row in rows],
+            "total": int((total_row or {}).get("total", 0)),
+            "pending_count": int((pending_row or {}).get("total", 0)),
+            "limit": limit,
+            "offset": offset,
+        }
+
+    def set_continuation_status(
+        self, approval_id: object, status: object, *, trusted_owner: str,
+    ) -> dict[str, object]:
+        approval_id = _entity_id(approval_id, field="approval_id", prefix="agent_approval")
+        next_status = _text(status, field="continuation_status", max_length=32)
+        if next_status not in {"submitting", "submitted", "failed"}:
+            raise ValueError("continuation status is invalid")
+        with self._transaction() as connection:
+            row = fetch_one(
+                connection,
+                "SELECT * FROM agent_approvals WHERE approval_id = :approval_id FOR UPDATE",
+                {"approval_id": approval_id},
             )
-        else:
-            rows = self._execute("SELECT * FROM agent_approvals ORDER BY created_at DESC, approval_id DESC LIMIT 200")
-        return {"approvals": [self._approval_row(row) for row in rows]}
+            if row is None:
+                raise AgentNotFound("agent approval not found")
+            if row["owner_principal"] != trusted_owner:
+                raise AgentUnauthorized("agent approval is not owned by this principal")
+            current = str(row.get("continuation_status") or "not_requested")
+            updated_at = row.get("updated_at")
+            stale_submission = False
+            if current == "submitting" and next_status == "submitting":
+                if isinstance(updated_at, str):
+                    try:
+                        updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                    except ValueError:
+                        updated_at = None
+                if isinstance(updated_at, datetime):
+                    if updated_at.tzinfo is None:
+                        updated_at = updated_at.replace(tzinfo=timezone.utc)
+                    stale_submission = (
+                        datetime.now(timezone.utc) - updated_at.astimezone(timezone.utc)
+                    ).total_seconds() >= 30
+            allowed = {
+                "submitting": {"queued", "failed"},
+                "submitted": {"submitting"},
+                "failed": {"submitting"},
+            }
+            changed = current in allowed[next_status] or stale_submission
+            if changed:
+                execute(
+                    connection,
+                    "UPDATE agent_approvals SET continuation_status=:status, updated_at=:updated_at WHERE approval_id=:approval_id",
+                    {"status": next_status, "updated_at": _now(), "approval_id": approval_id},
+                )
+            updated = fetch_one(
+                connection,
+                """SELECT approvals.*, runs.session_id AS source_session_id
+                   FROM agent_approvals approvals JOIN agent_runs runs ON runs.run_id=approvals.run_id
+                   WHERE approvals.approval_id=:approval_id""",
+                {"approval_id": approval_id},
+            )
+            assert updated is not None
+        return {**self._approval_row(updated), "continuation_changed": changed}
 
     def _check_run_access(self, row: dict[str, Any], *, trusted_owner: str | None, trusted_actor: str | None) -> None:
         if trusted_owner and row["owner_principal"] != trusted_owner:

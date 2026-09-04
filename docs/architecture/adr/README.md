@@ -71,3 +71,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   transactional outbox、独立固定仓库 GitHub Issue publisher、最小权限凭据和用户零 GitHub 配置边界。
 - ADR-0050 定义 Post-Phase 90 的 ML 研究可逆归档、运行证据保留，以及股票池、策略、模型研究、
   回测工作台统一详情管理操作区边界。
+- ADR-0051 定义 Agent 人工审批只在全局中心呈现、精确资源绑定、原 durable conversation 幂等续接，
+  以及业务页用户主动操作与 Agent approval 分离的边界。

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   fetchByqMlCapabilities, fetchByqMlPredictionCreate, fetchByqMlPredictionGet,
   fetchByqMlStudies, fetchByqMlStudy,
-  fetchByqMlStrategyCreate, fetchByqMlTrainingCancel,
+  fetchByqMlStrategyApprove, fetchByqMlStrategyCreate, fetchByqMlTrainingCancel,
   fetchByqMlTrainingCreate, fetchByqMlTrainingGet, fetchByqMlWorkspace,
 } from "../src/ml-research.js";
 
@@ -30,6 +30,17 @@ const strategy = await fetchByqMlStrategyCreate(backend, {
   return new Response(JSON.stringify({ artifact: { artifact_id: "artifact_1" } }), { status: 201 });
 });
 assert.equal(strategy.isError, false);
+
+const strategyApproval = await fetchByqMlStrategyApprove(backend, {
+  task_id: "task_1", ml_strategy_artifact_id: "artifact_1", decision: "approved",
+  agent_approval_id: "agent_approval_0123456789abcdef0123456789abcdef",
+  trace_id: "trace-1", idempotency_key: "strategy-approval-1",
+}, async (url, init) => {
+  assert.equal(url, `${backend}/v1/research/ml/strategies/approvals`);
+  assert.match(String(init?.body), /agent_approval_0123456789abcdef0123456789abcdef/);
+  return new Response(JSON.stringify({ approval: { decision: "approved" } }), { status: 201 });
+});
+assert.equal(strategyApproval.isError, false);
 
 const studies = await fetchByqMlStudies(backend, {
   query: "状态", status: "active", limit: 10, offset: 20,

@@ -6,9 +6,10 @@ import StrategyView from "./StrategyView.vue";
 import { useAuthStore } from "@/stores/auth";
 
 const replaceRoute = vi.fn();
+const pushRoute = vi.fn();
 vi.mock("vue-router", () => ({
   useRoute: () => ({ path: "/strategy", query: {} }),
-  useRouter: () => ({ replace: replaceRoute, push: vi.fn() }),
+  useRouter: () => ({ replace: replaceRoute, push: pushRoute }),
   onBeforeRouteLeave: vi.fn(),
 }));
 
@@ -79,6 +80,7 @@ describe("StrategyView", () => {
     deleteStrategyDraft.mockReset();
     approveStrategyVersion.mockReset();
     replaceRoute.mockReset();
+    pushRoute.mockReset();
     vi.spyOn(ElMessageBox, "confirm").mockResolvedValue("confirm" as never);
   });
 
@@ -181,5 +183,28 @@ describe("StrategyView", () => {
     );
     await (wrapper.vm as unknown as { removeDraft: () => Promise<void> }).removeDraft();
     expect(deleteStrategyDraft).toHaveBeenCalledWith("artifact_draft", "strategy-test");
+  });
+
+  it("starts backtesting directly and records the required domain approval internally", async () => {
+    const version = {
+      artifact_id: "artifact_version", task_id: "task_1", kind: "strategy_version", status: "validated",
+      content: { snapshot: { strategy_id: "MomentumStrategy", script: "class CustomStrategy: pass" } },
+    };
+    listStrategies.mockResolvedValue({ strategies: [version], total: 1, limit: 50, offset: 0 });
+    getResearchEntity.mockResolvedValue(version);
+    approveStrategyVersion.mockResolvedValue({ approval: { execution_authorized: true } });
+    const wrapper = mountView();
+    await flushPromises();
+
+    await (wrapper.vm as unknown as { openBacktest: () => Promise<void> }).openBacktest();
+
+    expect(approveStrategyVersion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task_id: "task_1", strategy_version_artifact_id: "artifact_version", decision: "approved",
+      }),
+      "strategy-test",
+    );
+    expect(pushRoute).toHaveBeenCalledWith({ path: "/backtest", query: { strategy: "artifact_version" } });
+    expect(wrapper.text()).not.toContain("批准此版本");
   });
 });

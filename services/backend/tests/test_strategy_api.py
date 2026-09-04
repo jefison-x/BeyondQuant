@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+from app.agent_research import AgentResearchStore
 from app.backtest import BacktestJobStore, LocalObjectStore, membership_fingerprint
 from app.db import execute
 from app.research import ResearchStore
@@ -151,7 +152,7 @@ def test_strategy_draft_version_export_and_approval_flow(monkeypatch) -> None:
         json={
             "task_id": task["task_id"],
             "strategy_version_artifact_id": version["artifact"]["artifact_id"],
-            "reviewer_principal": "human-owner",
+            "reviewer_principal": "product-user",
             "decision": "approved",
             "rationale": "Static contract reviewed.",
             "trace_id": "byq-trace-strategy-api",
@@ -215,6 +216,63 @@ def _owner_headers(principal: str = "product-user") -> dict[str, str]:
         principal, trace_id=f"byq-trace-{principal}", session_id=f"byq-session-{principal}",
         dsh_run_id=f"byq-run-{principal}",
     )
+
+
+def test_agent_strategy_approval_is_bound_to_exact_resource_and_human_decision(monkeypatch) -> None:
+    research = ResearchStore()
+    agents = AgentResearchStore()
+    monkeypatch.setattr(main, "research_store", research)
+    monkeypatch.setattr(main, "agent_store", agents)
+    agent_headers = trusted_agent_context(
+        "approval-owner", actor="byq-product-agent-approval-session",
+        trace_id="approval-trace", session_id="approval-session", dsh_run_id="approval-run",
+    )
+    human_headers = trusted_agent_context(
+        "approval-owner", actor="approval-owner",
+        trace_id="approval-trace", session_id="approval-session", dsh_run_id="approval-run",
+    )
+    client = TestClient(main.app)
+    client.headers.update(agent_headers)
+    task = client.post("/v1/research/tasks", json={
+        "owner_principal": "approval-owner", "title": "Approval binding",
+        "objective": "Verify exact Agent approval binding", "trace_id": "approval-trace",
+        "idempotency_key": "approval-binding-task",
+    }).json()
+    draft = client.post("/v1/research/strategies/validate", json={
+        "task_id": task["task_id"], "strategy": strategy_payload(), "trace_id": "approval-trace",
+        "idempotency_key": "approval-binding-draft",
+    }).json()
+    version = client.post("/v1/research/strategies/versions", json={
+        "task_id": task["task_id"], "draft_artifact_id": draft["artifact"]["artifact_id"],
+        "trace_id": "approval-trace", "idempotency_key": "approval-binding-version",
+    }).json()
+    artifact_id = version["artifact"]["artifact_id"]
+    run = client.post("/v1/agents/runs", json={
+        "role_id": "quant_orchestrator", "idempotency_key": "approval-binding-run",
+    }).json()["run"]
+    pending = client.post("/v1/agents/approvals", json={
+        "run_id": run["run_id"], "action": "byq_strategy_approve",
+        "reason": "Approve this exact immutable strategy version.",
+        "resource_type": "strategy_version", "resource_id": artifact_id,
+        "idempotency_key": "approval-binding-request",
+    }).json()["approval"]
+    decided = client.post(
+        f"/v1/agents/approvals/{pending['approval_id']}/decision",
+        headers=human_headers, json={"decision": "approved", "rationale": "Reviewed."},
+    )
+    assert decided.status_code == 200, decided.text
+
+    materialized = client.post("/v1/research/strategies/approvals", headers=agent_headers, json={
+        "task_id": task["task_id"], "strategy_version_artifact_id": artifact_id,
+        "agent_approval_id": pending["approval_id"], "decision": "approved",
+        "rationale": "Materialized after global approval.", "trace_id": "approval-trace",
+        "idempotency_key": "approval-binding-domain",
+    })
+    assert materialized.status_code == 201, materialized.text
+    assert materialized.json()["approval"]["reviewer_principal"] == "approval-owner"
+
+    research.close()
+    agents.close()
 
 
 def test_strategy_draft_save_tolerates_invalid_and_delete(monkeypatch) -> None:
@@ -297,7 +355,7 @@ def test_strategy_version_history_and_backtest_count(monkeypatch, tmp_path) -> N
         json={
             "task_id": task["task_id"],
             "strategy_version_artifact_id": version["artifact"]["artifact_id"],
-            "reviewer_principal": "human-owner", "decision": "approved",
+            "reviewer_principal": "product-user", "decision": "approved",
             "trace_id": "byq-trace-strategy-p33", "idempotency_key": "strategy-approval-p33-1",
         },
     ).json()

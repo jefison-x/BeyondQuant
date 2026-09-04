@@ -263,6 +263,9 @@ paths:
   /api/product/approvals/{approval_id}/decision:
     parameters: [{$ref: "#/components/parameters/ApprovalId"}]
     post: {summary: 记录 an owner-scoped approval decision., responses: *okResponses}
+  /api/product/approvals/{approval_id}/continue:
+    parameters: [{$ref: "#/components/parameters/ApprovalId"}]
+    post: {summary: 幂等续接 the approval's original durable conversation., responses: *okResponses}
 
   /api/product/profile:
     get: {summary: 返回 the authenticated user profile., responses: *okResponses}

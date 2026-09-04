@@ -106,8 +106,8 @@ async function mockAdminOps(page: Page) {
   await page.route("**/api/product/admin/users", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ users: [] }) }),
   );
-  await page.route("**/api/product/approvals", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ approvals: [] }) }),
+  await page.route(/\/api\/product\/approvals(?:\?.*)?$/, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ approvals: [], total: 0, pending_count: 0 }) }),
   );
 }
 
@@ -143,11 +143,11 @@ async function mockResearchLists(page: Page) {
       body: JSON.stringify({ artifacts: [] }),
     }),
   );
-  await page.route("**/api/product/approvals", (route) =>
+  await page.route(/\/api\/product\/approvals(?:\?.*)?$/, (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ approvals: [] }),
+      body: JSON.stringify({ approvals: [], total: 0, pending_count: 0 }),
     }),
   );
   await page.route("**/api/product/strategies?*", (route) =>
@@ -216,11 +216,11 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
     expect((await route.request().postDataJSON()).content).toBe("快捷发送问题");
     await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ accepted: true }) });
   });
-  await page.route("**/api/product/approvals", (route) =>
+  await page.route(/\/api\/product\/approvals(?:\?.*)?$/, (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ approvals: [{ approval_id: "agent_approval_1", action: "run_backtest", status: "pending" }] }),
+      body: JSON.stringify({ approvals: [{ approval_id: "agent_approval_1", action: "run_backtest", status: "pending" }], total: 1, pending_count: 1 }),
     }),
   );
   await page.route("**/api/product/approvals/agent_approval_1/decision", (route) =>
@@ -270,10 +270,10 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
   await expect(page.getByRole("button", { name: "停止本轮" })).toBeVisible();
   await page.getByRole("button", { name: /^活动/ }).click();
   await expect(page.getByLabel("公开执行进度").getByText("理解请求", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "通过" })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "批准" })).not.toBeVisible();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /待人工审批，1 项/ }).click();
-  await expect(page.getByRole("button", { name: "通过" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "批准" })).toBeVisible();
 });
 
 test("selecting a recent conversation loads its replay without refreshing the page", async ({ page }) => {
@@ -373,10 +373,10 @@ test("failed agent run unlocks the composer and resumes before retry", async ({ 
     requestOrder.push("turn");
     return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ accepted: true }) });
   });
-  await page.route("**/api/product/approvals", (route) => route.fulfill({
+  await page.route(/\/api\/product\/approvals(?:\?.*)?$/, (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ approvals: [] }),
+    body: JSON.stringify({ approvals: [], total: 0, pending_count: 0 }),
   }));
 
   await login(page);
@@ -427,10 +427,10 @@ test("final answer replaces standalone progress before the terminal event arrive
     contentType: "text/event-stream",
     body: ": heartbeat\n\n",
   }));
-  await page.route("**/api/product/approvals", (route) => route.fulfill({
+  await page.route(/\/api\/product\/approvals(?:\?.*)?$/, (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ approvals: [] }),
+    body: JSON.stringify({ approvals: [], total: 0, pending_count: 0 }),
   }));
 
   await login(page);
@@ -533,7 +533,8 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
   await expect(page.getByRole("button", { name: "返回投研对话" })).toBeVisible();
   await expect(page.getByText("策略编辑器", { exact: true })).not.toBeVisible();
   await expect(page.getByText("技术与审计详情", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "已批准" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "已批准" })).toHaveCount(0);
+  await expect(page.getByText("已授权执行", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "开始回测" })).toBeEnabled();
   await page.getByRole("button", { name: "新建策略" }).click();
   await expect(page.getByText("策略编辑器", { exact: true })).toBeVisible();
@@ -666,8 +667,8 @@ test("my space pages render profile, models, assets, and agent policy", async ({
       }),
     }),
   );
-  await page.route("**/api/product/approvals", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ approvals: [] }) }),
+  await page.route(/\/api\/product\/approvals(?:\?.*)?$/, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ approvals: [], total: 0, pending_count: 0 }) }),
   );
 
   await login(page);

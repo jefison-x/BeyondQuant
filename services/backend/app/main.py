@@ -1705,6 +1705,28 @@ def _strategy_payload(payload: object, allowed: set[str]) -> dict[str, Any]:
     return payload
 
 
+def _approved_agent_domain_request(
+    approval_id: object, *, expected_action: str, expected_resource_type: str,
+    expected_resource_id: str, context: dict[str, str],
+) -> dict[str, object]:
+    """Bind an Agent-origin domain approval to one exact owner-scoped resource."""
+    approval = agent_store.get_approval(
+        approval_id, trusted_owner=context["owner_principal"],
+    )
+    if (
+        approval.get("status") != "approved"
+        or approval.get("execution_outcome") != "authorized"
+        or approval.get("action") != expected_action
+        or approval.get("resource_type") != expected_resource_type
+        or approval.get("resource_id") != expected_resource_id
+        or approval.get("actor_principal") != context["actor_principal"]
+        or approval.get("source_session_id") != context["session_id"]
+        or not isinstance(approval.get("decision_by"), str)
+    ):
+        raise ValueError("agent approval does not authorize this exact domain action")
+    return approval
+
+
 def _transition_args(payload: dict[str, Any]) -> tuple[object, object]:
     if set(payload) != {"target_status", "idempotency_key"}:
         raise ValueError("transition request has invalid fields")
@@ -1995,7 +2017,7 @@ def create_strategy_approval(payload: dict[str, Any], http_request: Request) -> 
             payload,
             {
                 "task_id", "experiment_id", "strategy_version_artifact_id", "reviewer_principal",
-                "decision", "rationale", "trace_id", "idempotency_key",
+                "decision", "rationale", "trace_id", "idempotency_key", "agent_approval_id",
             },
         )
         version_artifact = research_store.get_artifact(request.get("strategy_version_artifact_id"))
@@ -2008,12 +2030,26 @@ def create_strategy_approval(payload: dict[str, Any], http_request: Request) -> 
         if version_artifact["status"] != "validated":
             raise ValueError("strategy version must be validated before approval")
         version_content = validate_version_content(version_artifact["content"])
+        agent_approval_id = request.get("agent_approval_id")
         reviewer = request.get("reviewer_principal")
+        if agent_approval_id is not None:
+            linked = _approved_agent_domain_request(
+                agent_approval_id,
+                expected_action="byq_strategy_approve",
+                expected_resource_type="strategy_version",
+                expected_resource_id=str(version_artifact["artifact_id"]),
+                context=context,
+            )
+            reviewer = linked["decision_by"]
+        elif reviewer != context["actor_principal"]:
+            raise ValueError("reviewer_principal must match the trusted product actor")
         if not isinstance(reviewer, str) or not reviewer.strip() or len(reviewer.strip()) > 128:
             raise ValueError("reviewer_principal must be a non-empty string")
         decision = request.get("decision")
         if decision not in {"approved", "rejected"}:
             raise ValueError("decision must be approved or rejected")
+        if agent_approval_id is not None and decision != "approved":
+            raise ValueError("approved Agent request cannot materialize a rejected strategy decision")
         rationale = request.get("rationale", "")
         if not isinstance(rationale, str) or len(rationale) > 4000:
             raise ValueError("rationale must be a string of at most 4000 characters")
@@ -2369,7 +2405,7 @@ def create_ml_strategy_approval(payload: dict[str, Any], request: Request) -> di
         data = _strategy_payload(
             payload,
             {"task_id", "experiment_id", "ml_strategy_artifact_id", "decision", "rationale",
-             "trace_id", "idempotency_key"},
+             "trace_id", "idempotency_key", "agent_approval_id"},
         )
         task = research_store.get_task(data.get("task_id"))
         version = research_store.get_artifact(data.get("ml_strategy_artifact_id"))
@@ -2388,15 +2424,27 @@ def create_ml_strategy_approval(payload: dict[str, Any], request: Request) -> di
         decision = data.get("decision")
         if decision not in {"approved", "rejected"}:
             raise ValueError("decision must be approved or rejected")
+        if data.get("agent_approval_id") is not None and decision != "approved":
+            raise ValueError("approved Agent request cannot materialize a rejected ML strategy decision")
         rationale = data.get("rationale", "")
         if not isinstance(rationale, str) or len(rationale) > 4000:
             raise ValueError("rationale must be a string of at most 4000 characters")
+        reviewer = context["actor_principal"]
+        if data.get("agent_approval_id") is not None:
+            linked = _approved_agent_domain_request(
+                data["agent_approval_id"],
+                expected_action="byq_ml_strategy_approve",
+                expected_resource_type="ml_strategy_version",
+                expected_resource_id=str(version["artifact_id"]),
+                context=context,
+            )
+            reviewer = str(linked["decision_by"])
         content = {
             "schema_version": "ml-strategy-approval.v1",
             "ml_strategy_version_id": normalized["version_id"],
             "ml_strategy_artifact_id": version["artifact_id"],
             "decision": decision,
-            "reviewer_principal": context["actor_principal"],
+            "reviewer_principal": reviewer,
             "rationale": rationale,
             "execution_authorized": decision == "approved",
             "execution_outcome": "not_started",
@@ -4035,9 +4083,13 @@ def get_agent_approval(approval_id: str, request: Request) -> dict[str, object]:
 
 
 @app.get("/v1/agents/approvals")
-def list_agent_approvals(request: Request) -> dict[str, object]:
+def list_agent_approvals(
+    request: Request, status: str | None = None, limit: int = 50, offset: int = 0,
+) -> dict[str, object]:
     context = _required_agent_context(request)
-    return _agent_call(lambda: agent_store.list_approvals(trusted_owner=context["owner_principal"]))
+    return _agent_call(lambda: agent_store.list_approvals(
+        trusted_owner=context["owner_principal"], status=status, limit=limit, offset=offset,
+    ))
 
 
 @app.post("/v1/agents/approvals/{approval_id}/decision")
@@ -4049,6 +4101,20 @@ def decide_agent_approval(approval_id: str, payload: dict[str, Any], request: Re
         request_payload,
         trusted_owner=context["owner_principal"],
         trusted_actor=context["actor_principal"],
+    )})
+
+
+@app.post("/v1/agents/approvals/{approval_id}/continuation")
+def update_agent_approval_continuation(
+    approval_id: str, payload: dict[str, Any], request: Request,
+) -> dict[str, object]:
+    context = _required_agent_context(request, payload)
+    if set(payload) - {
+        "status", "owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id",
+    }:
+        raise HTTPException(status_code=422, detail="continuation request has invalid fields")
+    return _agent_call(lambda: {"approval": agent_store.set_continuation_status(
+        approval_id, payload.get("status"), trusted_owner=context["owner_principal"],
     )})
 
 

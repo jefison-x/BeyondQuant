@@ -113,6 +113,8 @@ describe("MLResearchWorkbench", () => {
     const wrapper = shallowMount(MLResearchWorkbench);
     await flushPromises();
 
+    expect(wrapper.text()).not.toContain("批准并开始训练");
+
     expect(getMLStudy).not.toHaveBeenCalled();
     expect(getMLPredictionRows).not.toHaveBeenCalled();
 
@@ -144,8 +146,8 @@ describe("MLResearchWorkbench", () => {
     vm.training = null;
     vm.form.pool_id = "pool_1";
 
-    const first = vm.approveAndTrain();
-    const second = vm.approveAndTrain();
+    const first = vm.startTraining();
+    const second = vm.startTraining();
     expect(confirmTraining).toHaveBeenCalledTimes(1);
     resolveConfirmation("confirm");
     await Promise.all([first, second]);

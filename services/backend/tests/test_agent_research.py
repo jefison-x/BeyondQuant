@@ -93,14 +93,15 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
         "byq_ml_training_create", "byq_ml_training_get", "byq_ml_training_cancel",
     } <= ml_tools
     assert not {
-        "byq_ml_strategy_approve", "byq_strategy_approve",
+        "byq_strategy_approve",
         "byq_backtest_task_prepare", "byq_backtest_task_create", "byq_artifact_create",
     } & ml_tools
+    assert "byq_ml_strategy_approve" in ml_tools
     assert ROLE_BY_ID["ml_researcher"].approval_required_actions == (
-        "byq_ml_training_create", "byq_ml_training_cancel", "byq_ml_prediction_create",
+        "byq_ml_strategy_approve", "byq_ml_training_create", "byq_ml_training_cancel", "byq_ml_prediction_create",
         "byq_backtest_task_execute", "byq_backtest_task_cancel",
     )
-    assert ROLE_BY_ID["ml_researcher"].version == "1.1.0"
+    assert ROLE_BY_ID["ml_researcher"].version == "1.2.0"
     assert {
         "byq_ml_prediction_create", "byq_ml_prediction_get", "byq_backtest_task_get",
         "byq_backtest_task_execute", "byq_backtest_task_cancel",
@@ -189,6 +190,8 @@ def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> N
             "run_id": run["run_id"],
             "action": "byq_backtest_task_execute",
             "reason": "Run the reviewed deterministic job.",
+            "resource_type": "backtest_task",
+            "resource_id": "backtesttask_1",
             "idempotency_key": "approval-1",
         }
     )
@@ -210,6 +213,24 @@ def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> N
     )
     assert approved["status"] == "approved"
     assert approved["execution_outcome"] == "authorized"
+    assert approved["continuation_status"] == "queued"
+    assert approved["source_session_id"] == "session-agent-1"
+    listed = store.list_approvals(trusted_owner="alice", status="approved", limit=10)
+    assert listed["total"] == 1
+    assert listed["pending_count"] == 0
+    assert listed["approvals"][0]["resource_id"] == "backtesttask_1"
+    claimed = store.set_continuation_status(
+        pending["approval_id"], "submitting", trusted_owner="alice",
+    )
+    assert claimed["continuation_changed"] is True
+    submitted = store.set_continuation_status(
+        pending["approval_id"], "submitted", trusted_owner="alice",
+    )
+    assert submitted["continuation_status"] == "submitted"
+    duplicate = store.set_continuation_status(
+        pending["approval_id"], "submitting", trusted_owner="alice",
+    )
+    assert duplicate["continuation_changed"] is False
 
     audit = store.record_audit(
         {

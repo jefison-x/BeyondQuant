@@ -1,13 +1,12 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=90 -->
+<!-- byq:current-completed-phase=91 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 90**——owner 反馈工作台、admin-only 审核工作台、服务端预览与明确提交、懒加载分页、
-  BeyondQuant MCP owner tools 和小巴跨回合确认 skill 已形成闭环；普通用户无需 GitHub 配置，publisher 未配置时
-  内部反馈、审核与安全排队仍可用。
+- 当前已完成阶段：**Phase 91**——Agent 人工审批只在全局审批中心呈现；decision 精确绑定资源并可靠返回原 durable
+  conversation 续接。业务页只保留用户主动操作，审批铃铛显示实时 pending 数，会话活动角标降为中性状态。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
@@ -15,6 +14,7 @@ history 推断项目状态。
 - 当前完成范围内没有未决架构决策。
 - Phase 82 已依据 ADR-0047 完成；验收证据位于 `docs/evidence/phase-82/`。
 - Phase 90 已依据 ADR-0049 完成；验收证据位于 `docs/evidence/phase-90/`。
+- Phase 91 已依据 ADR-0051 完成；验收证据位于 `docs/evidence/phase-91/`。
 - Phase 61 由维护者于 2026-08-27 授权并完成；规范与证据位于 ADR-0034、验收报告和
   `docs/evidence/phase-61/`。
 
@@ -66,6 +66,8 @@ history 推断项目状态。
 - Provider-budget-aware data preparation：**ADR-0047**
 - Extensible machine-learning components and regime routing：**ADR-0048**
 - Product Feedback and trusted GitHub Issue publisher：**ADR-0049**
+- ML study archive and unified management actions：**ADR-0050**
+- Agent approval center and conversation continuation：**ADR-0051**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -387,7 +389,7 @@ Post-Phase 90 Management Action Consistency Maintenance 依据 ADR-0050 将股�
 
 ## 当前授权边界
 
-- Phase 49-90 与相应 Accepted ADR/计划均已完成。
+- Phase 49-91 与相应 Accepted ADR/计划均已完成。
 - Phase 82 与 ADR-0047 已完成；50,000 保持原子 readiness 分片上限，不是 Tushare
   额度或完整数据任务上限。
 - ADR-0044 授权的 Phase 75–79、ADR-0045 授权的 Phase 80、ADR-0046 授权的 Phase 81、

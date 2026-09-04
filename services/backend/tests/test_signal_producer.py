@@ -200,7 +200,7 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
         json={
             "task_id": task["task_id"],
             "strategy_version_artifact_id": version["artifact"]["artifact_id"],
-            "reviewer_principal": "human-reviewer",
+            "reviewer_principal": "signal-owner",
             "decision": "approved",
             "trace_id": "signal-trace",
             "idempotency_key": "signal-approval-1",

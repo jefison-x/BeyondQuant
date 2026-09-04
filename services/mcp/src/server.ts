@@ -97,6 +97,7 @@ import {
   fetchByqMlPredictionGet,
   fetchByqMlStudies,
   fetchByqMlStudy,
+  fetchByqMlStrategyApprove,
   fetchByqMlStrategyCreate,
   fetchByqMlTrainingCancel,
   fetchByqMlTrainingCreate,
@@ -496,6 +497,14 @@ async function byqMlStrategyCreate(args: MlRequest, extra: unknown) {
   ) : agentContextUnavailable();
 }
 
+async function byqMlStrategyApprove(args: MlRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqMlStrategyApprove(
+    BACKEND_URL, { ...args, decision: "approved", trace_id: context.trace_id },
+    trustedBackendFetcher(context),
+  ) : agentContextUnavailable();
+}
+
 async function byqMlTrainingCreate(args: MlRequest, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqMlTrainingCreate(
@@ -832,6 +841,8 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         run_id: z.string().regex(/^agent_run_[0-9a-f]{32}$/),
         action: z.string(),
         reason: z.string(),
+        resource_type: z.string().max(64).optional(),
+        resource_id: z.string().max(128).optional(),
         idempotency_key: z.string(),
       },
     },
@@ -1138,6 +1149,17 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     (args) => byqMlStrategyCreate(args, trustedContext),
   );
   server.registerTool(
+    "byq_ml_strategy_approve",
+    { description: "Materialize an exact ML strategy approval after the matching human Agent approval has been granted in the Product approval center.", inputSchema: {
+      task_id: z.string(), experiment_id: z.string().optional(),
+      ml_strategy_artifact_id: z.string().regex(/^artifact_[0-9a-f]{32}$/),
+      agent_approval_id: z.string().regex(/^agent_approval_[0-9a-f]{32}$/),
+      rationale: z.string().max(2000).optional(),
+      idempotency_key: z.string().min(1).max(128),
+    } },
+    (args) => byqMlStrategyApprove(args, trustedContext),
+  );
+  server.registerTool(
     "byq_ml_training_create",
     { description: "Create an approval-gated trusted ML training run from a human-approved closed strategy and frozen stock-pool snapshot. Call once per approved action; an outcome_unknown result requires read reconciliation and must not be blindly retried.", inputSchema: {
       task_id: z.string(), experiment_id: z.string().optional(), ml_strategy_artifact_id: z.string(),
@@ -1291,7 +1313,8 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         task_id: z.string(),
         experiment_id: z.string().optional(),
         strategy_version_artifact_id: z.string(),
-        reviewer_principal: z.string(),
+        reviewer_principal: z.string().optional(),
+        agent_approval_id: z.string().regex(/^agent_approval_[0-9a-f]{32}$/).optional(),
         decision: z.enum(["approved", "rejected"]),
         rationale: z.string().optional(),
         trace_id: z.string(),

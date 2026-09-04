@@ -95,8 +95,9 @@ test("Phase 74 real LightGBM training to frozen-signal backtest journey", async 
   await page.goto("/model-research");
   await expect(page.getByRole("heading", { name: "模型研究目录与实验进程" })).toBeVisible();
   await page.getByRole("button", { name: "新建模型研究" }).first().click();
+  await page.getByLabel("研究名称", { exact: true }).fill(`LightGBM 收益排序-${Date.now()}`);
   await page.getByTestId("ml-save").click(); await expect(page.getByText("研究定义已冻结，可以进入训练")).toBeVisible();
-  await page.getByTestId("ml-train").click(); await page.getByLabel("确认训练范围").getByRole("button", { name: "批准并开始训练" }).click();
+  await page.getByTestId("ml-train").click(); await page.getByLabel("确认训练范围").getByRole("button", { name: "开始训练" }).click();
   await expect(page.getByTestId("ml-predict")).toBeVisible({ timeout: 120_000 });
   await expect(page.getByText("训练结果")).toBeVisible();
   await page.getByTestId("ml-predict").click(); await expect(page.getByTestId("ml-backtest")).toBeVisible({ timeout: 120_000 });
@@ -125,12 +126,13 @@ test("Phase 86 real HS300 regime experts to routed frozen-signal backtest journe
   await page.getByRole("button", { name: "新建模型研究" }).first().click();
   const dialog = page.getByRole("dialog", { name: "新建模型研究" });
   await dialog.getByText("市场状态专家", { exact: true }).click();
+  await dialog.getByLabel("研究名称").fill(`沪深300市场状态专家模型-${Date.now()}`);
   await expect(dialog.getByText("沪深300状态专家", { exact: true })).toBeVisible();
   await expect(dialog.getByTestId("ml-expert-risk_on")).toBeVisible();
   await page.getByTestId("ml-save").click();
   await expect(page.getByText("研究定义已冻结，可以进入训练")).toBeVisible();
   await page.getByTestId("ml-train").click();
-  await page.getByLabel("确认训练范围").getByRole("button", { name: "批准并开始训练" }).click();
+  await page.getByLabel("确认训练范围").getByRole("button", { name: "开始训练" }).click();
   await expect(page.getByTestId("ml-predict")).toBeVisible({ timeout: 180_000 });
   await expect(page.getByText("市场状态专家路由")).toBeVisible();
   await expect(page.getByText("训练模型").locator("..")).toContainText("3");

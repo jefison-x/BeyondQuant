@@ -74,6 +74,10 @@ export function fetchByqMlStrategyCreate(backendUrl: string, request: MlRequest,
   return requestMl(backendUrl, "/v1/research/ml/strategies/versions", { method: "POST", body: JSON.stringify(request) }, fetcher);
 }
 
+export function fetchByqMlStrategyApprove(backendUrl: string, request: MlRequest, fetcher: Fetcher = fetch) {
+  return requestMl(backendUrl, "/v1/research/ml/strategies/approvals", { method: "POST", body: JSON.stringify(request) }, fetcher);
+}
+
 export function fetchByqMlTrainingCreate(backendUrl: string, request: MlRequest, fetcher: Fetcher = fetch) {
   return createTrainingWithReconciliation(backendUrl, request, fetcher);
 }

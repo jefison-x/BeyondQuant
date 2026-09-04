@@ -6,6 +6,7 @@ import {
   AgentRequestError, cancelSession, createAgentSession, deleteAgentSession, getAgentSession, listAgentSessions, resumeSession,
   streamWorkflowEvents, submitTurn, updateAgentSession,
 } from "@/api/agent";
+import { continueApproval } from "@/api/research";
 import { foldWorkflowCards, workflowActivities, workflowRunState } from "@/api/workflow";
 import type { AgentReplayMessage, AgentSession, WorkflowCardEvent, WorkflowTraceEvent } from "@/api/types";
 import AgentActivityPanel from "@/components/agent/AgentActivityPanel.vue";
@@ -40,12 +41,17 @@ const starters = ["筛选一组可研究的股票候选", "起草一个可验证
 let conversationGeneration = 0;
 let streamController: AbortController | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
+let approvalContinuationTimer: ReturnType<typeof setTimeout> | null = null;
+let continuationWarningShown = false;
 let reconciliationTimer: ReturnType<typeof setTimeout> | null = null;
 let lastStreamEventAt = 0;
 
 const activeSession = computed(() => agent.sessions.find((item) => item.session_id === agent.activeSessionId));
 const userDisplayName = computed(() => auth.user?.display_name?.trim() || "我");
 const activities = computed(() => workflowActivities(agent.events));
+const activeActivityCount = computed(() => activities.value.filter((item) =>
+  ["started", "progress", "waiting_approval"].includes(item.payload.state),
+).length);
 const replayRun = computed(() => workflowRunState(agent.events));
 const runFailureMessage = computed(() => {
   if (!replayRun.value.failed) return "";
@@ -120,6 +126,9 @@ function handleEvent(event: WorkflowTraceEvent, generation: number) {
   if (generation !== conversationGeneration || event.session_id !== agent.activeSessionId) return;
   if (agent.events.some((current) => current.sequence === event.sequence)) return;
   agent.addEvent(event);
+  if (event.kind === "agent.card.approval") {
+    window.dispatchEvent(new Event("byq:approvals-changed"));
+  }
   if (["session.result", "session.failed", "session.cancelled", "session.result.discarded"].includes(event.kind)) {
     localRunStartedAt.value = "";
     stopping.value = false;
@@ -378,6 +387,33 @@ function applyRouteDraft(value: unknown) {
   prompt.value = value.trim().slice(0, 2000);
 }
 
+async function retryApprovalContinuation(value: unknown) {
+  if (typeof value !== "string" || !value) return;
+  if (approvalContinuationTimer) {
+    clearTimeout(approvalContinuationTimer);
+    approvalContinuationTimer = null;
+  }
+  try {
+    const result = await continueApproval(value);
+    if (result.approval.continuation_status === "submitted" && agent.activeSessionId) {
+      localRunStartedAt.value = new Date().toISOString();
+      scheduleRunReconciliation(agent.activeSessionId, conversationGeneration);
+      continuationWarningShown = false;
+      const { approval: _approval, ...query } = route.query;
+      await router.replace({ path: "/agent", query });
+      return;
+    }
+    const delay = result.approval.continuation_status === "submitting" ? 31_000 : 5_000;
+    approvalContinuationTimer = setTimeout(() => void retryApprovalContinuation(value), delay);
+  } catch {
+    if (!continuationWarningShown) {
+      continuationWarningShown = true;
+      ElMessage.warning("审批已记录，正在等待原会话可继续执行");
+    }
+    approvalContinuationTimer = setTimeout(() => void retryApprovalContinuation(value), 5_000);
+  }
+}
+
 async function stopCurrentRun() {
   if (!agent.activeSessionId || stopping.value || !runActive.value) return;
   stopping.value = true;
@@ -404,6 +440,7 @@ onMounted(async () => {
     else if (requested && agent.sessions.some((item) => item.session_id === requested)) await openSession(requested, false);
     else if (agent.sessions[0]) await openSession(agent.sessions[0].session_id, false);
     else startNewSession(typeof route.query.draft === "string");
+    await retryApprovalContinuation(route.query.approval);
     if (route.query.history) await showHistory();
   } catch (exc) { error.value = exc instanceof Error ? exc.message : "初始化失败"; }
   finally { initialized.value = true; }
@@ -412,13 +449,19 @@ watch(() => route.query.new, (value, previous) => { if (initialized.value && typ
 watch(() => route.query.session, async (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous) await openSession(value, false); });
 watch(() => route.query.history, async (value) => { if (initialized.value && value) await showHistory(); });
 watch(() => route.query.draft, applyRouteDraft);
+watch(() => route.query.approval, retryApprovalContinuation);
 watch(historyOpen, (open) => {
   if (open || !route.query.history) return;
   const { history: _history, ...query } = route.query;
   void router.replace({ path: "/agent", query });
 });
 watch([historyStatus, historySearch], () => { if (historyOpen.value) void loadHistory(); });
-onBeforeUnmount(() => { stopStream(); stopReconciliation(); if (clockTimer) clearInterval(clockTimer); });
+onBeforeUnmount(() => {
+  stopStream();
+  stopReconciliation();
+  if (clockTimer) clearInterval(clockTimer);
+  if (approvalContinuationTimer) clearTimeout(approvalContinuationTimer);
+});
 </script>
 
 <template>
@@ -426,7 +469,7 @@ onBeforeUnmount(() => { stopStream(); stopReconciliation(); if (clockTimer) clea
     <header class="conversation-header">
       <div><strong>{{ activeSession?.title || "小巴投研对话" }}</strong><small>{{ activeSession ? "BYQ 规范化工作流 · 持久会话" : "发送第一条消息后保存" }}</small></div>
       <div class="header-actions">
-        <el-button text @click="activityOpen = true">活动 <el-badge v-if="activities.length" :value="activities.length" /></el-button>
+        <el-button text @click="activityOpen = true">活动 <el-badge v-if="activeActivityCount" :value="activeActivityCount" type="info" /></el-button>
       </div>
     </header>
     <p v-if="error" class="page-error">{{ error }}</p>
