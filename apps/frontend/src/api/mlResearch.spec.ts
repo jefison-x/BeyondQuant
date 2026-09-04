@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMLStrategy, createMLTraining, deleteMLStudy, getMLPredictionRows, getMLWorkspace } from "./mlResearch";
+import { createMLStrategy, createMLTraining, deleteMLStudy, getMLPredictionRows, getMLWorkspace, setMLStudyLifecycle } from "./mlResearch";
 
 describe("ML research Product API client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -44,5 +44,18 @@ describe("ML research Product API client", () => {
       "/api/product/ml/studies/artifact%20%2F1",
       expect.objectContaining({ method: "DELETE", credentials: "include" }),
     );
+  });
+  it("archives a study through the bounded lifecycle command", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      schema_version: "ml-study-lifecycle.v1", study: { status: "archived" },
+      management: { lifecycle_status: "archived", can_restore: true },
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await setMLStudyLifecycle("artifact /1", "archived");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/product/ml/studies/artifact%20%2F1/lifecycle");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ status: "archived" });
+    expect(init.headers["x-idempotency-key"]).toMatch(/^[0-9a-f-]{36}$/);
   });
 });

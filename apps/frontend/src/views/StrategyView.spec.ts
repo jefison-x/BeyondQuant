@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from "pinia";
 import { flushPromises, shallowMount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import ElementPlus from "element-plus";
+import ElementPlus, { ElMessageBox } from "element-plus";
 import StrategyView from "./StrategyView.vue";
 import { useAuthStore } from "@/stores/auth";
 
@@ -79,6 +79,7 @@ describe("StrategyView", () => {
     deleteStrategyDraft.mockReset();
     approveStrategyVersion.mockReset();
     replaceRoute.mockReset();
+    vi.spyOn(ElMessageBox, "confirm").mockResolvedValue("confirm" as never);
   });
 
   it("hides superseded drafts by default and can open the explicit archive view", async () => {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import type { EChartsOption } from "echarts";
 import {
   cancelBacktest,
@@ -25,6 +25,7 @@ import MetricCard from "@/components/ui/MetricCard.vue";
 import { formatChinaTime } from "@/time";
 import { backtestMetricLabel, shortReference, statusLabel } from "@/display";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
+import ManagementActionBar from "@/components/layout/ManagementActionBar.vue";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { createRequestId } from "@/utils/requestId";
 
@@ -307,8 +308,13 @@ async function cancel(row: Record<string, unknown>) {
 async function remove(row: Record<string, unknown>) {
   const jobId = String(row.job_id ?? "");
   if (!jobId) return;
-  busy.value = jobId;
   try {
+    await ElMessageBox.confirm(
+      "删除后任务会从回测目录移除；仍被引用的不可变结果证据会继续保留。",
+      "删除回测任务",
+      { type: "warning", confirmButtonText: "删除任务", cancelButtonText: "取消" },
+    );
+    busy.value = jobId;
     await deleteBacktest(jobId, auth.token);
     ElMessage.success("回测任务已删除");
     if (selected.value && String(selected.value.job_id) === jobId) {
@@ -318,6 +324,7 @@ async function remove(row: Record<string, unknown>) {
     }
     await loadList();
   } catch (exc) {
+    if (exc === "cancel" || exc === "close") return;
     ElMessage.error(exc instanceof Error ? exc.message : "删除回测失败");
   } finally {
     busy.value = "";
@@ -633,39 +640,6 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
           <el-table-column label="创建时间" min-width="170">
             <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="190" fixed="right">
-            <template #default="{ row }">
-              <el-button
-                v-if="row.status === 'queued' || row.status === 'failed'"
-                size="small"
-                type="primary"
-                :loading="busy === row.job_id"
-                @click.stop="run(row)"
-              >
-                运行
-              </el-button>
-              <el-button
-                v-if="row.status === 'queued' || row.status === 'running'"
-                size="small"
-                type="danger"
-                plain
-                :loading="busy === row.job_id"
-                @click.stop="cancel(row)"
-              >
-                取消
-              </el-button>
-              <el-button
-                v-if="['completed', 'cancelled', 'failed'].includes(String(row.status))"
-                size="small"
-                type="danger"
-                link
-                :loading="busy === row.job_id"
-                @click.stop="remove(row)"
-              >
-                删除
-              </el-button>
-            </template>
-          </el-table-column>
         </el-table>
 
         <div class="mobile-list">
@@ -683,11 +657,6 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
             <div class="mobile-card-meta">
               <span>收益 {{ formatPercent(summaryValue(row, "total_return")) }}</span>
               <span>{{ formatChinaTime(row.created_at) }}</span>
-            </div>
-            <div v-if="['completed', 'cancelled', 'failed'].includes(String(row.status))" class="mobile-card-actions">
-              <el-button size="small" type="danger" link :loading="busy === row.job_id" @click.stop="remove(row)">
-                删除
-              </el-button>
             </div>
           </el-card>
         </div>
@@ -717,6 +686,14 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
         <p v-if="error" class="page-error">{{ error }}</p>
         <el-empty v-else-if="!job" description="请选择左侧回测结果" />
         <template v-else>
+          <ManagementActionBar
+            :description="['completed', 'cancelled', 'failed'].includes(String(job.status)) ? '终态任务可以删除目录记录；被其他结果引用的不可变证据仍由领域层保护。' : '运行与取消会改变当前任务状态；运行中的任务必须先取消，不能直接删除。'"
+          >
+            <template #status><el-tag size="small">{{ statusLabel(job.status) }}</el-tag></template>
+            <el-button v-if="job.status === 'queued' || job.status === 'failed'" type="primary" :loading="busy === job.job_id" @click="run(job)">运行</el-button>
+            <el-button v-if="job.status === 'queued' || job.status === 'running'" :loading="busy === job.job_id" @click="cancel(job)">取消</el-button>
+            <el-button v-if="['completed', 'cancelled', 'failed'].includes(String(job.status))" type="danger" plain :loading="busy === job.job_id" @click="remove(job)">删除</el-button>
+          </ManagementActionBar>
           <div v-if="job.status === 'completed'" class="next-actions">
             <div><strong>接下来</strong><span>带着本次结果继续分析、优化，或基于同一股票池开始独立模拟操盘。</span></div>
             <el-button @click="sendBacktestToAgent('analyze')">让小巴分析</el-button>

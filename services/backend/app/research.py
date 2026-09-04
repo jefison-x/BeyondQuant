@@ -627,8 +627,8 @@ class ResearchStore(PgStoreMixin):
         needle = str(query or "").strip()
         if len(needle) > 100:
             raise ValueError("query must not exceed 100 characters")
-        if status not in {"all", "active", "completed", "failed"}:
-            raise ValueError("status must be all, active, completed, or failed")
+        if status not in {"all", "active", "completed", "failed", "archived"}:
+            raise ValueError("status must be all, active, completed, failed, or archived")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
             raise ValueError("limit must be between 1 and 100")
         if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
@@ -642,10 +642,13 @@ class ResearchStore(PgStoreMixin):
             "active": "stage NOT IN ('completed', 'failed')",
             "completed": "stage = 'completed'",
             "failed": "stage = 'failed'",
+            "archived": "TRUE",
         }[status]
+        lifecycle_clause = "a.status = 'archived'" if status == "archived" else "a.status NOT IN ('superseded', 'archived')"
         catalogue = """
             WITH base AS (
                 SELECT a.artifact_id, a.task_id, a.status, a.created_at,
+                       CASE WHEN a.status='archived' THEN 'archived' ELSE 'active' END AS lifecycle_status,
                        t.title AS task_title,
                        a.content ->> 'schema_version' AS schema_version,
                        a.content ->> 'name' AS name,
@@ -669,7 +672,7 @@ class ResearchStore(PgStoreMixin):
                 JOIN research_tasks t ON t.task_id=a.task_id
                 WHERE a.owner_principal=:owner AND a.workspace_id=:workspace
                   AND a.kind='ml_strategy_version'
-                  AND a.status <> 'superseded'
+                  AND {lifecycle_clause}
                   AND (:query='%%' OR a.artifact_id ILIKE :query
                        OR a.content ->> 'name' ILIKE :query OR t.title ILIKE :query)
             ), staged AS (
@@ -686,7 +689,7 @@ class ResearchStore(PgStoreMixin):
                     ELSE 'definition' END AS stage
                 FROM base
             )
-        """
+        """.format(lifecycle_clause=lifecycle_clause)
         rows = self._execute(
             catalogue + f"""SELECT * FROM staged WHERE {status_clause}
                 ORDER BY created_at DESC, artifact_id DESC LIMIT :limit OFFSET :offset""",
@@ -700,6 +703,169 @@ class ResearchStore(PgStoreMixin):
             "total": int(total_row["total"] if total_row else 0),
             "limit": limit, "offset": offset,
             "has_more": offset + limit < int(total_row["total"] if total_row else 0),
+        }
+
+    def get_ml_study_management(
+        self, artifact_id: object, *, owner_principal: str, workspace_id: str,
+    ) -> dict[str, object]:
+        """Return authoritative lifecycle actions for one visible ML study."""
+        identity = _identifier(artifact_id, field="artifact_id")
+        owner = _text(owner_principal, field="owner_principal", max_length=128)
+        workspace = _text(workspace_id, field="workspace_id", max_length=64)
+        with self._transaction() as connection:
+            study = fetch_one(
+                connection,
+                """SELECT status FROM artifacts WHERE artifact_id=:artifact_id
+                   AND owner_principal=:owner AND workspace_id=:workspace
+                   AND kind='ml_strategy_version'""",
+                {"artifact_id": identity, "owner": owner, "workspace": workspace},
+            )
+            if study is None or study["status"] == "superseded":
+                raise ResearchNotFound("ML study not found")
+            return self._ml_study_management_in_transaction(
+                connection, identity=identity, owner=owner, workspace=workspace,
+                study_status=str(study["status"]),
+            )
+
+    def set_ml_study_lifecycle(
+        self, artifact_id: object, payload: object, *, owner_principal: str,
+        workspace_id: str,
+    ) -> dict[str, object]:
+        """Archive or restore an executed study without rewriting its evidence."""
+        if not isinstance(payload, dict):
+            raise ValueError("ML study lifecycle request must be an object")
+        if set(payload) != {"status", "idempotency_key"}:
+            raise ValueError("ML study lifecycle request has invalid fields")
+        identity = _identifier(artifact_id, field="artifact_id")
+        owner = _text(owner_principal, field="owner_principal", max_length=128)
+        workspace = _text(workspace_id, field="workspace_id", max_length=64)
+        requested = _text(payload.get("status"), field="status", max_length=16)
+        if requested not in {"active", "archived"}:
+            raise ValueError("status must be active or archived")
+        key = _idempotency_key(payload.get("idempotency_key"))
+        target = "archived" if requested == "archived" else "validated"
+        request_hash = _hash_request({
+            "entity_type": "ml_study_lifecycle", "entity_id": identity,
+            "target_status": target,
+        })
+        with self._transaction() as connection:
+            execute(
+                connection,
+                "SELECT pg_advisory_xact_lock(hashtext(:study_lock))",
+                {"study_lock": f"ml-study|{workspace}|{owner}|{identity}"},
+            )
+            study = fetch_one(
+                connection,
+                """SELECT * FROM artifacts WHERE artifact_id=:artifact_id
+                   AND owner_principal=:owner AND workspace_id=:workspace
+                   AND kind='ml_strategy_version' FOR UPDATE""",
+                {"artifact_id": identity, "owner": owner, "workspace": workspace},
+            )
+            if study is None or study["status"] == "superseded":
+                raise ResearchNotFound("ML study not found")
+            existing = fetch_one(
+                connection,
+                """SELECT * FROM research_transitions WHERE entity_type='artifact'
+                   AND entity_id=:entity_id AND idempotency_key=:key""",
+                {"entity_id": identity, "key": key},
+            )
+            if existing is not None:
+                if existing["request_hash"] != request_hash:
+                    raise IdempotencyConflict("ML study lifecycle idempotency key was reused")
+                result = existing["result_json"]
+                if not isinstance(result, dict):
+                    raise ResearchPersistenceError("stored ML study lifecycle result is invalid")
+                return result
+
+            current = str(study["status"])
+            if requested == "archived":
+                if current not in {"validated", "archived"}:
+                    raise InvalidTransition(f"cannot archive ML study from {current}")
+                management = self._ml_study_management_in_transaction(
+                    connection, identity=identity, owner=owner, workspace=workspace,
+                    study_status=current,
+                )
+                if current != "archived" and not management["can_archive"]:
+                    raise InvalidTransition(str(management["reason"]))
+            elif current not in {"validated", "archived"}:
+                raise InvalidTransition(f"cannot restore ML study from {current}")
+
+            if current != target:
+                execute(
+                    connection,
+                    """UPDATE artifacts SET status=:status, updated_at=:updated_at,
+                       version=version+1 WHERE artifact_id=:artifact_id""",
+                    {"status": target, "updated_at": _now(), "artifact_id": identity},
+                )
+                study = fetch_one(
+                    connection, "SELECT * FROM artifacts WHERE artifact_id=:artifact_id",
+                    {"artifact_id": identity},
+                )
+                assert study is not None
+            management = self._ml_study_management_in_transaction(
+                connection, identity=identity, owner=owner, workspace=workspace,
+                study_status=str(study["status"]),
+            )
+            result = {"study": self._artifact_row(study), "management": management}
+            execute(
+                connection,
+                """INSERT INTO research_transitions
+                   (entity_type,entity_id,idempotency_key,request_hash,target_status,result_json)
+                   VALUES ('artifact',:entity_id,:key,:request_hash,:target_status,:result_json)""",
+                {"entity_id": identity, "key": key, "request_hash": request_hash,
+                 "target_status": target, "result_json": result},
+            )
+            return result
+
+    @staticmethod
+    def _ml_study_management_in_transaction(
+        connection: Any, *, identity: str, owner: str, workspace: str,
+        study_status: str,
+    ) -> dict[str, object]:
+        counts = fetch_one(
+            connection,
+            """SELECT
+               (SELECT COUNT(*) FROM ml_training_runs WHERE workspace_id=:workspace
+                 AND owner_principal=:owner AND ml_strategy_artifact_id=:artifact_id) AS training_count,
+               (SELECT COUNT(*) FROM ml_prediction_runs WHERE workspace_id=:workspace
+                 AND owner_principal=:owner AND ml_strategy_artifact_id=:artifact_id) AS prediction_count,
+               (SELECT COUNT(*) FROM backtest_jobs WHERE workspace_id=:workspace
+                 AND owner_principal=:owner AND strategy_version_artifact_id=:artifact_id) AS backtest_count,
+               (SELECT COUNT(*) FROM ml_training_runs WHERE workspace_id=:workspace
+                 AND owner_principal=:owner AND ml_strategy_artifact_id=:artifact_id
+                 AND status NOT IN ('completed','failed','cancelled')) AS active_training_count,
+               (SELECT COUNT(*) FROM ml_prediction_runs WHERE workspace_id=:workspace
+                 AND owner_principal=:owner AND ml_strategy_artifact_id=:artifact_id
+                 AND status NOT IN ('completed','failed','cancelled')) AS active_prediction_count,
+               (SELECT COUNT(*) FROM backtest_jobs WHERE workspace_id=:workspace
+                 AND owner_principal=:owner AND strategy_version_artifact_id=:artifact_id
+                 AND status NOT IN ('completed','failed','cancelled')) AS active_backtest_count""",
+            {"artifact_id": identity, "owner": owner, "workspace": workspace},
+        )
+        assert counts is not None
+        history_count = sum(int(counts[field]) for field in (
+            "training_count", "prediction_count", "backtest_count",
+        ))
+        active_count = sum(int(counts[field]) for field in (
+            "active_training_count", "active_prediction_count", "active_backtest_count",
+        ))
+        archived = study_status == "archived"
+        if archived:
+            reason = "研究已归档；全部运行与制品仍可审计，可恢复后继续使用"
+        elif history_count == 0:
+            reason = "尚未执行，可删除研究定义；删除不会物理移除审计记录"
+        elif active_count:
+            reason = "仍有训练、预测或回测任务进行中，结束后才可归档"
+        else:
+            reason = "已产生运行证据，只能归档；模型、预测、信号与回测结果会保留"
+        return {
+            "lifecycle_status": "archived" if archived else "active",
+            "can_delete": not archived and history_count == 0,
+            "can_archive": not archived and history_count > 0 and active_count == 0,
+            "can_restore": archived,
+            "history_count": history_count,
+            "active_run_count": active_count,
+            "reason": reason,
         }
 
     def supersede_unexecuted_ml_study(

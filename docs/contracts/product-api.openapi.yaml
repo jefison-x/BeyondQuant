@@ -154,6 +154,9 @@ paths:
     parameters: [{name: strategy_artifact_id, in: path, required: true, schema: {type: string}}]
     get: {summary: 按需返回一个 ML 研究的有界运行记录和无大行载荷制品元数据。, responses: *okResponses}
     delete: {summary: 软删除没有训练、预测或回测记录的 ML 研究并使相关审批失效。, responses: *noContentResponses}
+  /api/product/ml/studies/{strategy_artifact_id}/lifecycle:
+    parameters: [{name: strategy_artifact_id, in: path, required: true, schema: {type: string}}]
+    post: {summary: 归档或恢复已执行的 ML 研究；保留全部训练、预测、信号与回测证据。, responses: *okResponses}
   /api/product/ml/strategies/versions:
     post: {summary: 冻结一个 closed-profile、注册表解析的 ML 策略版本。, responses: *createdResponses}
   /api/product/ml/strategies/approvals:

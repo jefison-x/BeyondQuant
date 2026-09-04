@@ -131,6 +131,22 @@ coverage rows are loaded only for the selected detail/tab/page. Browser calls
 remain Gateway/Product API only, and Agent-to-Domain analysis remains BeyondQuant
 MCP only.
 
+### Post-Phase 90 management-action consistency audit
+
+2026-09-04 再次只读检查 Community `StockPoolView.vue`、`StrategyView.vue` 和
+`BacktestView.vue`；Community 没有可审计量化 ML 研究工作台，仓库未被修改。
+
+| Community evidence | Classification | Maintenance disposition |
+|---|---|---|
+| 股票池列表行/移动卡片的启用、停用和删除按钮 | `PORT_UX` + `REFACTOR` | 保留状态可见与明确管理动作意图；统一迁入 BYQ 详情管理操作区，并继续使用 ADR-0020 lifecycle/tombstone。 |
+| 策略列表行删除和编辑表单状态开关 | `PORT_UX` + `REPLACE` | 保留“当前对象集中管理”的意图；删除只适用于 BYQ 可编辑草稿，不迁移 Community 物理删除/API。 |
+| 回测列表行运行/删除按钮 | `PORT_UX` + `REPLACE` | 列表只负责选择/比较；运行、取消和终态删除集中到详情管理操作区，继续由 BYQ Backtest 状态机判定。 |
+| Community `/api/v1` lifecycle/delete 与物理数据语义 | `DROP` | Browser 只调用 Gateway/Product API；不可变快照、版本、模型、预测、信号与回测证据不得因目录管理而删除。 |
+| ML 研究归档与恢复 | `REPLACE` | Community 无对应能力；使用 ADR-0050 的 owner/workspace-scoped 专用生命周期合同。 |
+
+提取不变量：操作位置可以统一，但删除、归档、停用和取消不能共享一个伪造的领域语义。Product API 必须返回
+权威可用动作和原因，Browser 只呈现，不从当前页已加载的局部数据推断是否安全。
+
 ### Phase 83 extensible machine-learning classification
 
 2026-09-03 只读复查 Community `agent-service/app/harness/capabilities.py`、`prompts.py`、

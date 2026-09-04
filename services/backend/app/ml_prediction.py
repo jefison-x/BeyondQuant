@@ -423,6 +423,23 @@ class MLPredictionRunStore(PgStoreMixin):
                 if existing["request_hash"] != request_hash:
                     raise MLPredictionConflict("ML prediction idempotency key was reused")
                 return self._public(existing)
+            # Serialize with Product archive/delete and re-check after taking the
+            # lock.  Validation performed by the HTTP boundary before this
+            # transaction cannot close a concurrent lifecycle race by itself.
+            execute(
+                connection,
+                "SELECT pg_advisory_xact_lock(hashtext(:study_lock))",
+                {"study_lock": f"ml-study|{values['workspace']}|{values['owner']}|{values['strategy']}"},
+            )
+            study = fetch_one(
+                connection,
+                """SELECT status FROM artifacts WHERE artifact_id=:strategy
+                   AND owner_principal=:owner AND workspace_id=:workspace
+                   AND kind='ml_strategy_version'""",
+                values,
+            )
+            if study is None or study["status"] != "validated":
+                raise MLPredictionConflict("ML strategy is not available for prediction")
             values.update({"id": f"mlpred_{uuid.uuid4().hex}", "hash": request_hash, "now": _now()})
             execute(connection, """INSERT INTO ml_prediction_runs
                 (prediction_run_id,workspace_id,owner_principal,task_id,experiment_id,ml_strategy_artifact_id,

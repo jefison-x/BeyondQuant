@@ -1471,43 +1471,70 @@ class BacktestJobStore(PgStoreMixin):
         owner = _text(owner_principal, field="owner_principal", max_length=128)
         max_attempts = _integer(manifest["execution"].get("max_attempts", 2) if isinstance(manifest.get("execution"), dict) else 2, field="max_attempts", minimum=1, maximum=3)
         request_hash = self._request_hash(request)
-        existing = self._fetch_one(
-            "SELECT * FROM backtest_jobs WHERE task_id = :task_id AND idempotency_key = :idempotency_key",
-            {"task_id": request["task_id"], "idempotency_key": request["idempotency_key"]},
-        )
-        if existing is not None:
-            if existing["request_hash"] != request_hash:
-                raise BacktestConflict("backtest idempotency key was reused")
-            return self._public(existing)
         now = _now()
         job_id = _new_job_id()
-        self._execute(
-            """INSERT INTO backtest_jobs
-            (job_id, task_id, experiment_id, owner_principal, status, request_json,
-             request_hash, input_manifest_id, input_manifest_json,
-             strategy_version_artifact_id, approval_artifact_id, idempotency_key,
-             attempts, max_attempts, created_at, updated_at)
-            VALUES (:job_id, :task_id, :experiment_id, :owner_principal, 'queued', :request_json,
-                    :request_hash, :input_manifest_id, :input_manifest_json,
-                    :strategy_version_artifact_id, :approval_artifact_id, :idempotency_key,
-                    0, :max_attempts, :created_at, :updated_at)""",
-            {
-                "job_id": job_id,
-                "task_id": request["task_id"],
-                "experiment_id": request.get("experiment_id"),
-                "owner_principal": owner,
-                "request_json": request,
-                "request_hash": request_hash,
-                "input_manifest_id": request["input_manifest_id"],
-                "input_manifest_json": manifest,
-                "strategy_version_artifact_id": request["strategy_version_artifact_id"],
-                "approval_artifact_id": request["approval_artifact_id"],
-                "idempotency_key": request["idempotency_key"],
-                "max_attempts": max_attempts,
-                "created_at": now,
-                "updated_at": now,
-            },
-        )
+        values = {
+            "job_id": job_id,
+            "task_id": request["task_id"],
+            "experiment_id": request.get("experiment_id"),
+            "owner_principal": owner,
+            "request_json": request,
+            "request_hash": request_hash,
+            "input_manifest_id": request["input_manifest_id"],
+            "input_manifest_json": manifest,
+            "strategy_version_artifact_id": request["strategy_version_artifact_id"],
+            "approval_artifact_id": request["approval_artifact_id"],
+            "idempotency_key": request["idempotency_key"],
+            "max_attempts": max_attempts,
+            "created_at": now,
+            "updated_at": now,
+        }
+        with self._transaction() as connection:
+            existing = fetch_one(
+                connection,
+                "SELECT * FROM backtest_jobs WHERE task_id=:task_id AND idempotency_key=:idempotency_key",
+                {"task_id": request["task_id"], "idempotency_key": request["idempotency_key"]},
+            )
+            if existing is not None:
+                if existing["request_hash"] != request_hash:
+                    raise BacktestConflict("backtest idempotency key was reused")
+                return self._public(existing)
+
+            strategy = fetch_one(
+                connection,
+                """SELECT kind,status,to_jsonb(a)->>'workspace_id' AS workspace_id FROM artifacts a
+                   WHERE artifact_id=:artifact_id AND owner_principal=:owner""",
+                {"artifact_id": request["strategy_version_artifact_id"], "owner": owner},
+            )
+            if strategy is not None and strategy["kind"] == "ml_strategy_version":
+                workspace = str(strategy.get("workspace_id") or "")
+                execute(
+                    connection,
+                    "SELECT pg_advisory_xact_lock(hashtext(:study_lock))",
+                    {"study_lock": f"ml-study|{workspace}|{owner}|{request['strategy_version_artifact_id']}"},
+                )
+                strategy = fetch_one(
+                    connection,
+                    """SELECT status FROM artifacts WHERE artifact_id=:artifact_id
+                       AND owner_principal=:owner AND kind='ml_strategy_version'""",
+                    {"artifact_id": request["strategy_version_artifact_id"], "owner": owner},
+                )
+                if strategy is None or strategy["status"] != "validated":
+                    raise BacktestConflict("ML strategy is not available for a new backtest")
+
+            execute(
+                connection,
+                """INSERT INTO backtest_jobs
+                (job_id, task_id, experiment_id, owner_principal, status, request_json,
+                 request_hash, input_manifest_id, input_manifest_json,
+                 strategy_version_artifact_id, approval_artifact_id, idempotency_key,
+                 attempts, max_attempts, created_at, updated_at)
+                VALUES (:job_id, :task_id, :experiment_id, :owner_principal, 'queued', :request_json,
+                        :request_hash, :input_manifest_id, :input_manifest_json,
+                        :strategy_version_artifact_id, :approval_artifact_id, :idempotency_key,
+                        0, :max_attempts, :created_at, :updated_at)""",
+                values,
+            )
         return self.get(job_id)
 
     def get(self, job_id: object) -> dict[str, object]:

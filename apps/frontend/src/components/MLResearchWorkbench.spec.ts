@@ -9,6 +9,7 @@ const getMLStudy = vi.fn();
 const getMLPredictionRows = vi.fn();
 const createMLTraining = vi.fn();
 const deleteMLStudy = vi.fn();
+const setMLStudyLifecycle = vi.fn();
 const confirmTraining = vi.fn();
 
 vi.mock("element-plus", () => ({
@@ -23,6 +24,7 @@ vi.mock("@/api/mlResearch", () => ({
   createMLStrategy: vi.fn(),
   createMLTraining: (...args: unknown[]) => createMLTraining(...args),
   deleteMLStudy: (...args: unknown[]) => deleteMLStudy(...args),
+  setMLStudyLifecycle: (...args: unknown[]) => setMLStudyLifecycle(...args),
   getMLPrediction: vi.fn(),
   getMLPredictionRows: (...args: unknown[]) => getMLPredictionRows(...args),
   getMLTraining: vi.fn(),
@@ -73,6 +75,12 @@ describe("MLResearchWorkbench", () => {
       study: { artifact_id: "artifact_strategy", status: "superseded" },
       invalidated_approval_ids: ["artifact_approval"],
     });
+    setMLStudyLifecycle.mockReset();
+    setMLStudyLifecycle.mockResolvedValue({
+      schema_version: "ml-study-lifecycle.v1",
+      study: { artifact_id: "artifact_strategy", status: "archived" },
+      management: { lifecycle_status: "archived", can_restore: true },
+    });
     confirmTraining.mockReset();
     confirmTraining.mockResolvedValue("confirm");
     getMLStudy.mockResolvedValue({
@@ -82,6 +90,11 @@ describe("MLResearchWorkbench", () => {
         status: "validated", created_at: "2026-09-02T00:00:00Z", content: { name: "测试模型", schema_version: "ml-strategy-version.v1" },
       },
       approval_artifact_id: "artifact_approval",
+      management: {
+        lifecycle_status: "active", can_delete: false, can_archive: true,
+        can_restore: false, history_count: 2, active_run_count: 0,
+        reason: "已产生运行证据，只能归档",
+      },
       tasks: [{ task_id: "task_1", title: "模型研究" }],
       artifacts: [{
         artifact_id: "artifact_signal", task_id: "task_1", kind: "signal_snapshot",
@@ -149,6 +162,11 @@ describe("MLResearchWorkbench", () => {
         status: "validated", content: { name: "待删除研究", schema_version: "ml-strategy-version.v2" },
       },
       approval_artifact_id: "artifact_approval",
+      management: {
+        lifecycle_status: "active", can_delete: true, can_archive: false,
+        can_restore: false, history_count: 0, active_run_count: 0,
+        reason: "尚未执行，可删除",
+      },
       artifacts: [],
       training_runs: { total: 0, runs: [] },
       prediction_runs: { total: 0, runs: [] },
@@ -165,6 +183,21 @@ describe("MLResearchWorkbench", () => {
     expect(deleteMLStudy).toHaveBeenCalledWith("artifact_strategy");
     expect(vm.selectedStrategy).toBe("");
     expect(vm.detail).toBeNull();
+    expect(getMLStudies).toHaveBeenCalledTimes(2);
+  });
+
+  it("archives an executed study and keeps deletion unavailable", async () => {
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    await vm.selectStudy("artifact_strategy");
+    expect(vm.canDeleteStudy).toBe(false);
+    expect(vm.canArchiveStudy).toBe(true);
+
+    await vm.changeStudyLifecycle("archived");
+
+    expect(setMLStudyLifecycle).toHaveBeenCalledWith("artifact_strategy", "archived");
+    expect(vm.selectedStrategy).toBe("");
     expect(getMLStudies).toHaveBeenCalledTimes(2);
   });
 });

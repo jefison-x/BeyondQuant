@@ -31,6 +31,7 @@ import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import { statusLabel } from "@/display";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
+import ManagementActionBar from "@/components/layout/ManagementActionBar.vue";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { useUnsavedChanges } from "@/composables/useUnsavedChanges";
 import { createRequestId } from "@/utils/requestId";
@@ -685,6 +686,15 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
           <small class="card-sub">{{ String(selected.pool_id ?? "") }}</small>
         </div>
       </template>
+      <ManagementActionBar
+        :description="selected.status === 'active' ? '停用后不再接受新的研究、回测或模拟操盘引用；历史快照和已有引用保持可复现。' : '重新启用后可接受新的下游引用；删除仍只建立不可恢复的目录墓碑。'"
+      >
+        <template #status><el-tag size="small">{{ statusLabel(selected.status) }}</el-tag></template>
+        <el-button v-if="selected.pool_type !== 'custom'" :loading="busy" @click="refreshIndexPool">刷新成分</el-button>
+        <el-button v-if="selected.status === 'active'" :disabled="busy" @click="changeLifecycle('inactive')">停用</el-button>
+        <el-button v-else-if="selected.status === 'inactive'" type="primary" :disabled="busy" @click="changeLifecycle('active')">启用</el-button>
+        <el-button type="danger" plain :disabled="busy" @click="removeSelected">删除</el-button>
+      </ManagementActionBar>
       <el-tabs v-model="activeTab">
         <el-tab-pane label="概览" name="overview" lazy>
           <el-descriptions :column="2" border>
@@ -706,10 +716,6 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
             <el-form-item label="说明"><el-input v-model="editDescription" /></el-form-item>
             <span class="edit-state" aria-live="polite">{{ metadataDirty ? "目录信息有未保存更改" : "目录信息已保存" }}</span>
             <el-button :disabled="!metadataDirty || busy" @click="saveMetadata">保存目录信息</el-button>
-            <el-button v-if="selected.status === 'active'" @click="changeLifecycle('inactive')">停用</el-button>
-            <el-button v-else-if="selected.status === 'inactive'" type="primary" @click="changeLifecycle('active')">启用</el-button>
-            <el-button type="danger" plain @click="removeSelected">删除</el-button>
-            <el-button v-if="selected.pool_type !== 'custom'" type="primary" plain :loading="busy" @click="refreshIndexPool">刷新生成成分</el-button>
           </el-form>
           <section v-if="selected.pool_type === 'dynamic' && producer" class="dynamic-definition">
             <h3 class="section-title">封闭动态规则</h3>

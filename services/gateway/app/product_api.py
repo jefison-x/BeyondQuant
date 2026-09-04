@@ -686,12 +686,30 @@ def product_ml_study(strategy_artifact_id: str, request: Request) -> dict[str, o
     return {
         "schema_version": "ml-product-study-detail.v1",
         "study": study,
+        "management": detail.get("management"),
         "approval_artifact_id": detail.get("approval_artifact_id"),
         "training_runs": detail.get("training_runs", {"runs": [], "total": 0}),
         "prediction_runs": detail.get("prediction_runs", {"runs": [], "total": 0}),
         "backtests": detail.get("backtests", {"backtests": [], "total": 0}),
         "artifacts": artifacts,
     }
+
+
+@router.post("/ml/studies/{strategy_artifact_id}/lifecycle")
+def product_ml_study_lifecycle(
+    strategy_artifact_id: str, request: Request, payload: dict[str, object],
+) -> dict[str, object]:
+    _product_principal(request)
+    if set(payload) != {"status"} or payload.get("status") not in {"active", "archived"}:
+        raise ProductError(
+            422, "product_request_invalid", "ML study lifecycle status must be active or archived",
+        )
+    _, idempotency_key = _ml_nonce("study-lifecycle", request)
+    return _backend_request(
+        "POST", f"/v1/research/ml/studies/{strategy_artifact_id}/lifecycle",
+        {"status": payload["status"], "idempotency_key": idempotency_key},
+        headers=_trusted_agent_headers(request),
+    )
 
 
 @router.delete("/ml/studies/{strategy_artifact_id}")
