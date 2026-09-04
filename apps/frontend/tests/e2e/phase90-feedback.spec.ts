@@ -21,6 +21,9 @@ const content = {
 const summary = { ...content, feedback_id: id, status: "draft", version: 1, current_revision: 1, publication_status: "not_queued", github_issue: null, created_at: "2026-09-03T00:00:00Z", updated_at: "2026-09-03T00:00:00Z" };
 
 test("owner feedback uses two-call bootstrap and explicit preview confirmation", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(globalThis.crypto, "randomUUID", { configurable: true, value: undefined });
+  });
   const calls: string[] = [];
   await page.route("**/api/product/feedback/**", async (route) => {
     const url = new URL(route.request().url()); calls.push(`${route.request().method()} ${url.pathname}`);
