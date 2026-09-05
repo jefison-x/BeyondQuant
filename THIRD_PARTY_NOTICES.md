@@ -10,7 +10,7 @@
 | DeepSeek Harness 与当前 `@deepseek-ai/*` closure | MIT；保留包内 LICENSE 和 DeepSeek 等原作者声明 |
 | FastAPI、SQLAlchemy、Vue 等 | 按精确版本随包提供的 MIT 等原许可 |
 | psycopg / psycopg-binary 3.2.6 | LGPLv3；发布包含它们的镜像/二进制时须核对源码、替换及告知义务 |
-| cryptography 45.0.6 | Apache-2.0 OR BSD-3-Clause，按所选择分支履行义务 |
+| cryptography 50.0.1 | Apache-2.0 OR BSD-3-Clause，按所选择分支履行义务 |
 | DOMPurify | MPL-2.0 OR Apache-2.0，按所选择分支履行义务 |
 | Lightning CSS | MPL-2.0；当前为构建依赖，不据此推断它进入前端 bundle |
 | Cloudflare 构建链 sharp/libvips | 含 LGPL；多项为 dev/optional，不等于 Worker 实际包含全部平台二进制 |

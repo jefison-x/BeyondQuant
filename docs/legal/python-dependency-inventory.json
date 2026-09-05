@@ -10,7 +10,7 @@
     {
       "source": "services/backend/pyproject.toml",
       "group": "runtime",
-      "requirement": "cryptography==45.0.6"
+      "requirement": "cryptography==50.0.1"
     },
     {
       "source": "services/backend/pyproject.toml",
@@ -35,7 +35,7 @@
     {
       "source": "services/backend/pyproject.toml",
       "group": "test",
-      "requirement": "pytest==8.4.1"
+      "requirement": "pytest==9.0.3"
     },
     {
       "source": "services/gateway/pyproject.toml",
@@ -60,7 +60,7 @@
     {
       "source": "services/gateway/pyproject.toml",
       "group": "test",
-      "requirement": "pytest==8.4.1"
+      "requirement": "pytest==9.0.3"
     },
     {
       "source": "services/runtime-adapter/pyproject.toml",
@@ -90,7 +90,7 @@
     {
       "source": "services/runtime-adapter/pyproject.toml",
       "group": "test",
-      "requirement": "pytest==8.4.1"
+      "requirement": "pytest==9.0.3"
     },
     {
       "source": "services/signal-sandbox/pyproject.toml",
@@ -135,7 +135,7 @@
     {
       "source": "workers/feedback-publisher/Dockerfile",
       "group": "build-declaration",
-      "requirement": "cryptography==45.0.6"
+      "requirement": "cryptography==50.0.1"
     },
     {
       "source": "workers/ml/Dockerfile",
