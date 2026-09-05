@@ -1,11 +1,11 @@
 # DSH 0.1.2rc1 执行交接与进度
 
-状态：**U0 证据已生成，等待 Draft PR/维护者审查 ADR-0058；未开始 U1 或运行升级**。2026-09-06。
+状态：**U0 VERIFIED，ADR-0058 Accepted；Draft PR 待人工门禁，未开始 U1 或运行升级**。2026-09-06。
 
 ## 1. 下一模型第一步
 
 先读[主方案](DSH_012RC1_UPGRADE_PLAN.md)、[测试矩阵](DSH_012RC1_TEST_MATRIX.md)、
-[发布方案](../operations/DSH_012RC1_ROLLOUT.md)和[ADR 提案](../architecture/adr/ADR-0058-dsh-release-bundles-and-compatibility.md)。
+[发布方案](../operations/DSH_012RC1_ROLLOUT.md)和[ADR-0058](../architecture/adr/ADR-0058-dsh-release-bundles-and-compatibility.md)。
 然后检查 `STATUS.md`、Git/worktree 和用户最新授权。不要凭之前聊天摘要直接替换 DSH 版本。
 
 当前修正版由源码发布准备任务承接治理与规划提交；合并后以最新 main 中本文件为唯一入口。
@@ -19,13 +19,14 @@
 
 ## 2. 授权与状态事实
 
-- 当前用户授权：维护者于 2026-09-06 授权 DSH 0.1.2rc1 U0 开发、push 和创建 Draft PR；不包含
-  merge、生产部署、正式版本切换、付费模型测试或 U1–U8。ADR-0058 最终接受在查看 U0 证据后另行确认。
+- 当前用户授权：维护者于 2026-09-06 授权 DSH 0.1.2rc1 U0 开发、push 和创建 Draft PR，并在审阅
+  U0 证据后明确接受 ADR-0058、授权把 U0 标为 `VERIFIED`；不包含 merge、生产部署、正式版本切换、
+  付费模型测试或 U1–U8，PR 继续保持 Draft。
 - 当前 Product completed phase：97；新 Product phase 未由本方案授权。
 - 当前运行基线：Python `0.1.1rc1` / npm `0.1.1-rc.1`（实施前再次核实）。
 - 目标：Python `0.1.2rc1` / npm `0.1.2-rc.1`，不可擅自追新版本。
-- ADR-0058：Proposed；U0 记录已填，等待维护者明确接受，不能由 Codex 自行改为 Accepted。
-- 当前升级阶段：U0 `IN_PROGRESS`（证据准备完成，等待 Draft PR/决策门禁）；U1 未授权。
+- ADR-0058：Accepted；接受范围是 U0 记录的精确载体与边界，不是候选资格或后续阶段授权。
+- 当前升级阶段：U0 `VERIFIED`；Draft PR 尚未获 merge 授权，U1 未授权。
 - 当前方案不宣称任何新版测试、PR 合并、正式部署或生产观察已完成。
 
 后续实施时在本节记录授权是单阶段还是 U0–U8、是否覆盖 push/PR/merge/deploy/真实付费模型评测/监控。
@@ -44,7 +45,7 @@ ADR-0058 的接受、生产 operator 部署和付费模型评测分别记录精�
 
 | 阶段 | 状态 | 工作树/分支 | 验证证据 | 阻碍/下一动作 |
 |---|---|---|---|---|
-| U0 载体决策 | IN_PROGRESS | `.byq-worktrees/dsh-u0-compatibility-decision` / `docs/dsh-u0-compatibility-decision` | `docs/evidence/dsh-012rc1/u0/`；建议 Option A bundled executable；keyless spike 与旧版回归通过 | 创建 Draft PR；等待维护者审查证据并明确接受 ADR-0058；不启动 U1 |
+| U0 载体决策 | VERIFIED | `.byq-worktrees/dsh-u0-compatibility-decision` / `docs/dsh-u0-compatibility-decision` | `docs/evidence/dsh-012rc1/u0/`；Option A bundled executable 已接受；keyless spike、旧版回归和 required CI 通过 | Draft PR 待人工门禁；merge/U1 未授权，不启动 U1 |
 | U1 版本集中/隔离 | PLANNED | 未创建 | 未运行 | U0 合并后 |
 | U2 provenance 解耦 | PLANNED | 未创建 | 未运行 | U1 合并后 |
 | U3 旧版适配模块 | PLANNED | 未创建 | 未运行 | U2 合并后 |

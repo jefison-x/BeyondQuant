@@ -2,7 +2,7 @@
 
 Date: 2026-09-06
 
-Recommendation pending maintainer acceptance of ADR-0058: **Option A**, the matching official PyPI
+Accepted by the maintainer under ADR-0058: **Option A**, the matching official PyPI
 runtime wheel's bundled executable, launched through the Python SDK's public profile/patch/home
 configuration. Option B (exact official npm `@deepseek-ai/dsh` CLI) is a viable fallback but is not
 selected or retained as an implicit second runtime.

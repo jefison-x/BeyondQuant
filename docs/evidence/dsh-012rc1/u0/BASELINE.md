@@ -7,10 +7,10 @@ Branch/worktree: `docs/dsh-u0-compatibility-decision` in the dedicated U0 worktr
 
 ## Authorization boundary
 
-The maintainer authorized U0 development, push and a Draft PR. Merge, production deployment,
-production/default version switching and paid-model testing were explicitly excluded. Final
-acceptance of ADR-0058 is reserved until the maintainer reviews this evidence. Consequently U0 is
-evidence-ready but remains `IN_PROGRESS`, ADR-0058 remains `Proposed`, and U1 is not authorized.
+The maintainer authorized U0 development, push and a Draft PR. After reviewing this evidence, the
+maintainer explicitly accepted ADR-0058 and authorized recording U0 as `VERIFIED`. Merge,
+production deployment, production/default version switching, paid-model testing and U1 remain
+explicitly unauthorized; PR #250 remains Draft.
 
 ## Old 0.1.1rc1 baseline
 

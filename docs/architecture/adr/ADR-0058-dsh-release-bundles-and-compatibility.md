@@ -1,8 +1,8 @@
 # ADR-0058：DSH 版本制品、兼容适配与可重复升级
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-05
-- Decision scope: 拟议 DSH maintenance U0–U8；不改变 Product Phase 97 的完成状态
+- Decision scope: DSH maintenance U0–U8；不改变 Product Phase 97 的完成状态
 - Related: ADR-0003、0009、0019、0033、0037、0038、0039、0040、0046、0051、0059
 
 ## 背景
@@ -11,11 +11,11 @@ BYQ 使用独立 Runtime Adapter、MCP 和 WorkflowTrace 隔离 DSH，但精确�
 运行代码、依赖、注册表、技能、业务证据 validator 和测试中。0.1.2rc1 删除/替换旧 SDK 配置与 demo
 载体，现有 candidate 脚本不能覆盖包拆分、支撑包升级及新版默认 profile 的权限差异。
 
-维护者要求一份详细升级规划；U0 已完成候选载体的隔离可行性取证，但尚未确认新版可用于生产，
-也未获得维护者对本 ADR 的最终接受。本 ADR 仍是待维护者审查 U0 证据的提案。
+维护者要求一份详细升级规划；U0 已完成候选载体的隔离可行性取证。维护者于 2026-09-06
+审阅 U0 证据后接受本 ADR；该接受确认架构路线，不确认新版已具备生产资格。
 具体事实、官方链接、实施阶段和停止条件见[升级方案](../../roadmap/DSH_012RC1_UPGRADE_PLAN.md)。
 
-## 拟议决策
+## 决策
 
 ### 1. 一个 release 描述，一个部署选择
 
@@ -86,7 +86,7 @@ required CI 使用真实 runtime + scripted provider 和完整隔离 Product 栈
 上游破坏性变化仍需适配和实测，不能承诺任意版本零修改。
 保留上一已认证镜像和有限 compatibility family，避免无限多版本负担。
 
-## U0 决策记录（2026-09-06；等待维护者最终接受）
+## U0 决策记录（2026-09-06；已接受）
 
 - 所选 carrier 及公开启动接口：建议选择 matching Python runtime wheel 的 bundled `dsh`
   executable，通过 SDK 公共 `profile="sdk"`、ordered `patches`、explicit `dsh_home`、`cwd`、
@@ -108,15 +108,13 @@ required CI 使用真实 runtime + scripted provider 和完整隔离 Product 栈
 - 不可避免的 SDK 私有 API 依赖及替代方案：U0 未发现必须接受的私有依赖。启动、receipt、notification、
   root/child relation、finish reason 与 shutdown 均有公共接口；禁止生产依赖 `_launch_args`、`_proc`。
 - 工程实施授权：维护者于 2026-09-06 明确授权 U0 开发、push 和 Draft PR；明确排除 merge、生产部署、
-  正式版本切换和付费模型测试，并保留查看 U0 证据后再最终接受 ADR-0058 的决定。
+  正式版本切换和付费模型测试。维护者随后审阅 U0 证据并明确接受本 ADR，授权把 U0 标为
+  `VERIFIED`；PR 继续保持 Draft，merge 与 U1 仍未授权。
 - 证据：[`UPSTREAM`](../../evidence/dsh-012rc1/u0/UPSTREAM.md)、
   [`COMPATIBILITY`](../../evidence/dsh-012rc1/u0/COMPATIBILITY.md)、
   [`CARRIER`](../../evidence/dsh-012rc1/u0/CARRIER.md)、
   [`BASELINE`](../../evidence/dsh-012rc1/u0/BASELINE.md)。
 
-以上关键项不完整时保持 Proposed。U0 填齐后必须记录维护者对精确载体/边界决策的接受；
-已有授权明确覆盖同一决策时引用原授权，不重复确认。泛化实施授权不是对未知例外的接受，
-实际边界超出本提案时须明确修订并取得方向。ADR-0059 已接受不等于本 ADR 已接受。
-
-本次授权明确把最终接受留到证据审查之后，因此即使上述记录已填齐，状态仍保持 `Proposed`。
-只有维护者明确接受后才能把状态改为 `Accepted`、把 U0 标为 `VERIFIED` 并单独授权/启动 U1。
+维护者接受的是上述精确载体和边界，而不是对未知例外、候选资格、merge、U1、付费模型评测、
+生产部署或正式版本切换的授权。U1 仍需单独授权，并继续受一阶段一工作树/Draft PR 门禁约束；
+后续若实际边界超出本 ADR，必须修订 ADR 并重新取得方向。
