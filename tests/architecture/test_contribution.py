@@ -81,4 +81,3 @@ class ContributionTests(unittest.TestCase):
     def test_bot_cannot_accept_on_behalf_of_individual(self):
         self.comments[0]["user"] = {"login": "contributor", "type": "Bot"}
         self.assertTrue(self.evaluate())
-
