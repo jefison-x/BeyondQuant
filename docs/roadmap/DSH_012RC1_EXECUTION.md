@@ -1,6 +1,6 @@
 # DSH 0.1.2rc1 执行交接与进度
 
-状态：**只有规划文档，尚未开始升级开发**。2026-09-05。
+状态：**U0 证据已生成，等待 Draft PR/维护者审查 ADR-0058；未开始 U1 或运行升级**。2026-09-06。
 
 ## 1. 下一模型第一步
 
@@ -19,13 +19,13 @@
 
 ## 2. 授权与状态事实
 
-- 当前用户授权：合并归档本规划及治理整改，并完成源码许可/仓库公开/托管 CI 迁移；不包含
-  DSH U0–U8 实施、候选或生产 runtime 升级、真实付费模型评测或业务部署。
+- 当前用户授权：维护者于 2026-09-06 授权 DSH 0.1.2rc1 U0 开发、push 和创建 Draft PR；不包含
+  merge、生产部署、正式版本切换、付费模型测试或 U1–U8。ADR-0058 最终接受在查看 U0 证据后另行确认。
 - 当前 Product completed phase：97；新 Product phase 未由本方案授权。
 - 当前运行基线：Python `0.1.1rc1` / npm `0.1.1-rc.1`（实施前再次核实）。
 - 目标：Python `0.1.2rc1` / npm `0.1.2-rc.1`，不可擅自追新版本。
-- ADR-0058：Proposed，U0 完成证据和实施授权记录后才能接受。
-- 当前升级阶段：尚未开始；下一执行任务为 U0。
+- ADR-0058：Proposed；U0 记录已填，等待维护者明确接受，不能由 Codex 自行改为 Accepted。
+- 当前升级阶段：U0 `IN_PROGRESS`（证据准备完成，等待 Draft PR/决策门禁）；U1 未授权。
 - 当前方案不宣称任何新版测试、PR 合并、正式部署或生产观察已完成。
 
 后续实施时在本节记录授权是单阶段还是 U0–U8、是否覆盖 push/PR/merge/deploy/真实付费模型评测/监控。
@@ -40,11 +40,11 @@ ADR-0058 的接受、生产 operator 部署和付费模型评测分别记录精�
 ## 3. 阶段进度表
 
 状态：PLANNED / IN_PROGRESS / VERIFIED / MERGED / DEPLOYED_OBSERVING / COMPLETE / BLOCKED / ROLLED_BACK。
-当前表全部 PLANNED。实现阶段在自己的 PR 更新已验证结果，merge 后从 GitHub 实况确认；不要预填未来完成状态。
+实现阶段在自己的 PR 更新已验证结果，merge 后从 GitHub 实况确认；不要预填未来完成状态。
 
 | 阶段 | 状态 | 工作树/分支 | 验证证据 | 阻碍/下一动作 |
 |---|---|---|---|---|
-| U0 载体决策 | PLANNED | 未创建 | 未运行 | 等待实施授权，先复核上游 artifact |
+| U0 载体决策 | IN_PROGRESS | `.byq-worktrees/dsh-u0-compatibility-decision` / `docs/dsh-u0-compatibility-decision` | `docs/evidence/dsh-012rc1/u0/`；建议 Option A bundled executable；keyless spike 与旧版回归通过 | 创建 Draft PR；等待维护者审查证据并明确接受 ADR-0058；不启动 U1 |
 | U1 版本集中/隔离 | PLANNED | 未创建 | 未运行 | U0 合并后 |
 | U2 provenance 解耦 | PLANNED | 未创建 | 未运行 | U1 合并后 |
 | U3 旧版适配模块 | PLANNED | 未创建 | 未运行 | U2 合并后 |

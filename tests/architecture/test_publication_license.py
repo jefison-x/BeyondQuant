@@ -37,10 +37,12 @@ class PublicationLicenseTests(unittest.TestCase):
         inventory = json.loads((ROOT / "docs/legal/npm-license-inventory.json").read_text())
         self.assertGreater(len(inventory["packages"]), 500)
 
-    def test_dsh_plan_is_not_upgrade_completion(self):
+    def test_dsh_u0_evidence_does_not_claim_upgrade_completion(self):
         text = (ROOT / "docs/roadmap/DSH_012RC1_EXECUTION.md").read_text()
-        self.assertIn("尚未开始升级开发", text)
+        self.assertIn("U0 `IN_PROGRESS`", text)
+        self.assertIn("U1 未授权", text)
         self.assertIn("0.1.1rc1", text)
-        self.assertIn("U0 载体决策 | PLANNED", text)
+        self.assertIn("U0 载体决策 | IN_PROGRESS", text)
         adr = (ROOT / "docs/architecture/adr/ADR-0058-dsh-release-bundles-and-compatibility.md").read_text()
         self.assertIn("Status: Proposed", adr)
+        self.assertIn("等待维护者最终接受", adr)
