@@ -951,7 +951,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             workflow,
         )
         self.assertIn('--all --with-e2e --with-smoke', workflow)
-        self.assertIn('head.repo.full_name != github.repository && \'["ubuntu-latest"]\'', workflow)
+        self.assertEqual(workflow.count('runs-on: ubuntu-24.04'), 3)
+        self.assertNotIn('runs-on: ${{', workflow)
         self.assertIn('test "$CI_RESULT" = success', workflow)
 
         dockerfile = (frontend / "Dockerfile").read_text()

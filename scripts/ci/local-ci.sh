@@ -89,6 +89,11 @@ compute_changed() {
     } | sed '/^$/d' | sort -u)"
   fi
   if [ -z "$CHANGED" ]; then echo "    (no changed files)"; fi
+  local classified
+  if ! classified="$(printf '%s\n' "$CHANGED" | BYQ_CI_DIFF_BASE="$DIFF_BASE" scripts/ci/classify-changes.sh)"; then
+    echo "    [FAIL] change-impact classifier failed; no empty-success fallback" >&2
+    return 1
+  fi
   while IFS='=' read -r key value; do
     case "$key" in
       changed_count|docs|docs_only|architecture|backend|gateway|runtime|mcp|frontend|integration|unknown)
@@ -96,7 +101,7 @@ compute_changed() {
         ;;
       *) echo "    [FAIL] unknown classifier output: $key" >&2; return 1 ;;
     esac
-  done < <(printf '%s\n' "$CHANGED" | BYQ_CI_DIFF_BASE="$DIFF_BASE" scripts/ci/classify-changes.sh)
+  done <<< "$classified"
   printf '    plan -> docs=%s architecture=%s backend=%s gateway=%s runtime=%s mcp=%s frontend=%s integration=%s unknown=%s\n' \
     "$docs" "$architecture" "$backend" "$gateway" "$runtime" "$mcp" "$frontend" "$integration" "$unknown"
 }

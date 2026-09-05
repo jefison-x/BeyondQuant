@@ -27,7 +27,27 @@
 以及 521 次当时可下载 CI 日志。24 条历史规则匹配及 1 条日志匹配经检查为测试/文档，
 未确认真实机密泄露；本地已配置机密精确匹配为零。自动扫描不是不存在隐私/密钥的保证。
 
-最终截图 OCR、独立 review/附件审计、当前候选重扫，以及正式 runner 撤销仍须在公开前完成。
-仓库当前仍 private，尚未声称免费 hosted CI、严格 branch protection 或迁移成功。
-平台操作的实际 PR、head、checks 与一次性例外消耗应在 PR 审计评论记录；后续迁移证据
-更新本节，不将瞬时 SHA/PR 状态写入 STATUS。
+最终公开审计已完成：143 张历史截图本地 OCR 无机密规则/配置值命中；两张无文字截图经人工
+复核，一张截断 PNG 仅可恢复页面顶部且经浏览器人工检查。GitHub Issue/PR、18 条普通评论、
+2 条独立 review 共 4,338 行重扫无命中，未发现附件。最终完整历史仍为 24 条已逐项复核的
+测试假值、幂等键或文档措辞误报；本次新增提交和最终 PR 日志均为零命中。扫描不能保证绝对安全。
+
+唯一 Actions cache（约 32.7 MB、binfmt 构建缓存）已按精确 ID 删除，可由 GitHub 重建；未删除
+源码、日志、提交或生产数据。PR #242 的精确 head、全绿检查、自审和一次性例外消耗已记录在
+该 PR 审计评论，并正常 squash 合并。仓库已公开；Actions 切换期间暂停。正式机 runner 在 idle
+状态停止并禁用，GitHub 注册已撤销，仓库 runner 数为零；生产容器和数据库未重启或修改。
+
+`main` 已配置 strict/up-to-date 的 `local-ci` + `ci-gate`、管理员受约束、PR/线性历史/对话解决、
+禁止 force push/delete。默认 Actions token 为 read，不能批准 PR；所有外部贡献者 workflow 需
+维护者批准。hosted-only PR 仍须实际通过标准 `ubuntu-24.04` 完整 CI 后才算迁移完成；不复用
+一次性例外，也不把瞬时 Git SHA/PR 状态写入 STATUS。
+
+首次 hosted 受控取消验证暴露出 BuildKit 客户端终止后仍可能迟到发布两个精确 run-scoped
+镜像标签，独立清理因此正确失败，未被冒充为成功。修复将清理限定在当前 scope，最多 20 次、
+每次 3 秒，并要求连续两次资源为零；新增竞态回归测试。该修复仍须由更新后精确 head 的
+hosted 完整回归和再次取消验证确认，失败时继续阻止合并。
+
+修复后 hosted 取消验证确认：独立 cleanup 与脱敏证据步骤均 SUCCESS，取消的 `local-ci` 令
+`ci-gate` FAILURE，符合 fail-closed 设计。平台另提示旧 checkout action 的 Node 20 runtime
+已弃用；全部四种官方 Actions 随即更新到 2026-09-05 最新 Node 24-based v7 release 的完整
+提交 SHA，并关闭 setup-node 自动包管理器缓存。更新后的完整 hosted CI 仍是最终合并门禁。

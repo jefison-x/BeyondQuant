@@ -1,6 +1,7 @@
 import importlib.util
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -16,6 +17,30 @@ def module(name):
 
 
 class GovernanceCiTests(unittest.TestCase):
+    def test_classifier_failure_cannot_become_an_empty_successful_plan(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            classifier = folder / "scripts/ci/classify-changes.sh"
+            classifier.parent.mkdir(parents=True)
+            classifier.write_text("#!/bin/bash\nexit 23\n")
+            classifier.chmod(0o755)
+            command = '''source scripts/ci/local-ci.sh
+cd "$FAKE_PLAN_ROOT"
+git() {
+  case "$*" in
+    fetch*) return 0;;
+    rev-parse*|merge-base*) echo base;;
+    diff*) echo README.md;;
+    *) return 2;;
+  esac
+}
+if compute_changed; then exit 99; else exit 0; fi
+'''
+            result = subprocess.run(["bash", "-c", command], cwd=ROOT, capture_output=True, text=True,
+                env={**os.environ, "FAKE_PLAN_ROOT": str(folder), "GITHUB_ACTIONS": "true"})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("classifier failed", result.stderr)
+
     def test_removed_inline_ddl_still_selects_integration(self):
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)
@@ -50,6 +75,33 @@ esac
                         env={**os.environ, "PATH": f"{folder}:{os.environ['PATH']}", "FAKE_DAEMON": mode})
                     self.assertEqual(result.returncode, 1)
                     self.assertIn("cleanup verification failed", result.stderr)
+
+    def test_cleanup_retries_late_run_scoped_image_then_requires_stable_absence(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            docker = folder / "docker"
+            state = folder / "state"
+            docker.write_text('''#!/bin/bash
+case "$*" in
+  info) exit 0;;
+  "image inspect byq-ci-stack-cleanup-race-data-worker")
+    count=0; test -f "$FAKE_STATE" && count="$(cat "$FAKE_STATE")"
+    count=$((count + 1)); echo "$count" > "$FAKE_STATE"
+    test "$count" -le 2;;
+  "image inspect "*) exit 1;;
+  "network inspect "*|"volume inspect "*) exit 1;;
+  "ps "*) exit 0;;
+  *) exit 0;;
+esac
+''')
+            docker.chmod(0o755)
+            result = subprocess.run([str(ROOT / "scripts/ci/cleanup-resources.sh"),
+                "--scope=cleanup-race"], capture_output=True, text=True,
+                env={**os.environ, "PATH": f"{folder}:{os.environ['PATH']}",
+                     "FAKE_STATE": str(state), "BYQ_CI_CLEANUP_MAX_ATTEMPTS": "6",
+                     "BYQ_CI_CLEANUP_RETRY_SECONDS": "0"})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertGreaterEqual(int(state.read_text()), 4)
 
     def test_image_build_failure_never_runs_old_image(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -129,13 +181,31 @@ test -z "$DEEPSEEK_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_
 
     def test_fork_routing_and_non_skippable_aggregate_gate(self):
         workflow = (ROOT / ".github/workflows/ci-selfhosted.yml").read_text()
-        self.assertIn('head.repo.full_name != github.repository && \'["ubuntu-latest"]\'', workflow)
+        self.assertEqual(workflow.count("runs-on: ubuntu-24.04"), 3)
+        self.assertNotIn('"self-hosted"', workflow)
+        self.assertNotIn('runs-on: ${{', workflow)
         self.assertNotIn("pull_request_target:", workflow)
         self.assertIn("persist-credentials: false", workflow)
-        self.assertIn("needs: [local-ci]", workflow)
+        self.assertIn("needs: [local-ci, contribution]", workflow)
         self.assertIn('test "$CI_RESULT" = success', workflow)
+        self.assertIn('test "$CONTRIBUTION_RESULT" = success', workflow)
+        self.assertIn("ref: ${{ github.event.pull_request.base.sha || github.sha }}", workflow)
+        self.assertIn("--expected-head", workflow)
+        self.assertIn("COMPOSE_PARALLEL_LIMIT: '2'", workflow)
+        self.assertIn("BYQ_CI_CLEANUP_MAX_ATTEMPTS: '20'", workflow)
+        self.assertIn("stable_absence", (ROOT / "scripts/ci/cleanup-resources.sh").read_text())
+        self.assertIn("sha256sum --check", workflow)
+        self.assertIn("--redact=100", workflow)
         self.assertIn("python3 scripts/ci/redact-log.py | tee", workflow)
         self.assertIn("actions/upload-artifact@", workflow)
+        self.assertIn("package-manager-cache: false", workflow)
+        action_uses = re.findall(r"uses: actions/[\w-]+@([^\s]+)\s+#\s+(v[^\s]+)", workflow)
+        self.assertEqual(len(action_uses), 5)
+        for revision, release in action_uses:
+            self.assertRegex(revision, r"^[0-9a-f]{40}$")
+            self.assertRegex(release, r"^v7\.")
+        self.assertNotIn("# v4", workflow)
+        self.assertNotIn("# v5", workflow)
 
     def test_worktree_verifier_rejects_primary_unregistered_and_symlink_escape(self):
         verify = module("verify-worktree").verify

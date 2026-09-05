@@ -2,7 +2,9 @@
 """Read-only preflight for ADR-0015 auto-merge; unknown is not permission."""
 import argparse
 import json
+from pathlib import Path
 import subprocess
+import sys
 
 REQUIRED = {"local-ci", "ci-gate"}
 
@@ -65,6 +67,14 @@ def main() -> int:
             return 1
         print(f"Observed PR head: {pr['headRefOid']}; recheck immediately before any authorized merge")
     problems = evaluate(repo, protection, pr)
+    if not problems and pr is not None:
+        try:
+            contribution = subprocess.run([sys.executable, str(Path(__file__).with_name("check-contribution.py")),
+                "--repo", args.repo, "--pr", str(args.pr), "--expected-head", pr["headRefOid"]], timeout=120)
+            if contribution.returncode:
+                problems.append("fresh contribution authorization preflight failed")
+        except (OSError, subprocess.TimeoutExpired):
+            problems.append("fresh contribution authorization preflight unavailable")
     for problem in problems:
         print(f"BLOCKED: {problem}")
     if not problems:

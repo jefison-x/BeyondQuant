@@ -1,15 +1,6 @@
-# BeyondQuant Self-Hosted CI
-#
-# Runs the project's own local CI (scripts/ci/local-ci.sh) on a self-hosted
-# GitHub Actions runner, so checks execute on the local machine instead of
-# GitHub-hosted runners (which require paid billing). The runner must be
-# registered with labels: byq, linux, x64 — see docs/operations/self-hosted-ci.md.
-#
-# This workflow intentionally reuses scripts/ci/local-ci.sh (the same checks
-# that `make local-ci` runs) rather than re-implementing compose steps, so it
-# avoids the shared byq_postgres_data volume and never conflicts with the
-# developer's own `docker compose` stack.
-name: BeyondQuant Self-Hosted CI
+# Filename retained for workflow history; all jobs use standard ephemeral VMs.
+# Production runners must be deregistered, not merely excluded by YAML routing.
+name: BeyondQuant CI
 
 on:
   pull_request:
@@ -36,42 +27,62 @@ permissions:
 
 jobs:
   local-ci:
-    # Fork code never executes on the production-adjacent self-hosted runner.
-    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted","linux","x64","byq"]') }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       # Guard against any future opt-in compose usage colliding with the
       # developer's local stack project name.
       COMPOSE_PROJECT_NAME: byq-ci-runner
+      COMPOSE_PARALLEL_LIMIT: '2'
       # A pull request's base SHA is immutable even if main advances or the PR
-      # is squash-merged while this self-hosted job is queued/running.
+      # is squash-merged while this job is queued/running.
       BYQ_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
       BYQ_CI_SCOPE: ${{ github.run_id }}-${{ github.run_attempt }}
+      # A cancelled parallel BuildKit request may finish publishing an exact
+      # run-scoped tag after the client exits. Cleanup requires two stable,
+      # bounded zero-resource observations.
+      BYQ_CI_CLEANUP_MAX_ATTEMPTS: '20'
+      BYQ_CI_CLEANUP_RETRY_SECONDS: '3'
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Set up fork Node toolchain
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-        uses: actions/setup-node@v4
+      - name: Set up Node toolchain
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
+          package-manager-cache: false
 
-      - name: Set up fork Python toolchain
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-        uses: actions/setup-python@v5
+      - name: Set up Python toolchain
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.13'
 
-      - name: Install fork browser OS dependencies
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+      - name: Inspect ephemeral runner capacity
+        run: |
+          free -m
+          df -h . /var/lib/docker
+          docker version
+          docker compose version
+
+      - name: Install browser OS dependencies
         run: |
           cd apps/frontend
           npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install-deps chromium
+
+      - name: Scan new Git history for secrets
+        run: |
+          audit_dir="$(mktemp -d "$RUNNER_TEMP/byq-gitleaks.XXXXXX")"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            --output "$audit_dir/gitleaks.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $audit_dir/gitleaks.tar.gz" | sha256sum --check
+          tar -xzf "$audit_dir/gitleaks.tar.gz" -C "$audit_dir" gitleaks
+          "$audit_dir/gitleaks" git --redact=100 --no-banner --log-opts="$BYQ_CI_BASE_SHA..HEAD"
 
       - name: Fetch main baseline for path filtering
         run: |
@@ -102,19 +113,47 @@ jobs:
 
       - name: Upload sanitized CI evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-${{ github.run_id }}-${{ github.run_attempt }}
           path: .ci-artifacts/*.log
           retention-days: 7
 
+  contribution:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out trusted base policy only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+      - name: Verify exact-head individual contribution authorization
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -n "$PR_NUMBER" ]; then
+            python3 scripts/ci/check-contribution.py --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --expected-head "$PR_HEAD"
+          else
+            echo 'Scheduled/manual CI has no incoming contribution.'
+          fi
+
   ci-gate:
     if: always()
-    needs: [local-ci]
-    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted","linux","x64","byq"]') }}
+    needs: [local-ci, contribution]
+    runs-on: ubuntu-24.04
     permissions: {}
     steps:
       - name: Require executed checks and cleanup
         env:
           CI_RESULT: ${{ needs.local-ci.result }}
-        run: test "$CI_RESULT" = success
+          CONTRIBUTION_RESULT: ${{ needs.contribution.result }}
+        run: |
+          test "$CI_RESULT" = success
+          test "$CONTRIBUTION_RESULT" = success
