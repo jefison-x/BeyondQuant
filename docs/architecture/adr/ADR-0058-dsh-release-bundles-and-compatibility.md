@@ -1,8 +1,8 @@
 # ADR-0058：DSH 版本制品、兼容适配与可重复升级
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-05
-- Decision scope: 拟议 DSH maintenance U0–U8；不改变 Product Phase 97 的完成状态
+- Decision scope: DSH maintenance U0–U8；不改变 Product Phase 97 的完成状态
 - Related: ADR-0003、0009、0019、0033、0037、0038、0039、0040、0046、0051、0059
 
 ## 背景
@@ -11,10 +11,11 @@ BYQ 使用独立 Runtime Adapter、MCP 和 WorkflowTrace 隔离 DSH，但精确�
 运行代码、依赖、注册表、技能、业务证据 validator 和测试中。0.1.2rc1 删除/替换旧 SDK 配置与 demo
 载体，现有 candidate 脚本不能覆盖包拆分、支撑包升级及新版默认 profile 的权限差异。
 
-维护者要求一份详细升级规划；目前尚未实施、未确认新版可用于生产。本 ADR 是待 U0 验证的提案。
+维护者要求一份详细升级规划；U0 已完成候选载体的隔离可行性取证。维护者于 2026-09-06
+审阅 U0 证据后接受本 ADR；该接受确认架构路线，不确认新版已具备生产资格。
 具体事实、官方链接、实施阶段和停止条件见[升级方案](../../roadmap/DSH_012RC1_UPGRADE_PLAN.md)。
 
-## 拟议决策
+## 决策
 
 ### 1. 一个 release 描述，一个部署选择
 
@@ -85,16 +86,35 @@ required CI 使用真实 runtime + scripted provider 和完整隔离 Product 栈
 上游破坏性变化仍需适配和实测，不能承诺任意版本零修改。
 保留上一已认证镜像和有限 compatibility family，避免无限多版本负担。
 
-## U0 接受前必须填写的决策记录
+## U0 决策记录（2026-09-06；已接受）
 
-- 所选 carrier 及公开启动接口：**待验证**。
-- bundled/local-plugin/module resolution 和 SDK 参数映射证据：**待验证**。
-- 新旧实际 tool roster 差异及权限验证：**待验证**。
-- profile/settings/home/数据路径与凭据继承控制：**待验证**。
-- provenance producer identity 的可信来源及滚动部署矩阵：**待定稿**。
-- 不可避免的 SDK 私有 API 依赖及替代方案：**待审查**。
-- 接受的工程实施授权、日期、证据引用：**尚未记录**。
+- 所选 carrier 及公开启动接口：建议选择 matching Python runtime wheel 的 bundled `dsh`
+  executable，通过 SDK 公共 `profile="sdk"`、ordered `patches`、explicit `dsh_home`、`cwd`、
+  `runtime_cwd` 启动。官方 npm `@deepseek-ai/dsh` 仅为未选 fallback，不形成双载体或隐式回落。
+- bundled/local-plugin/module resolution 和 SDK 参数映射证据：官方 Linux x86-64 wheel 已下载验 hash；
+  bundled executable 已通过 public profile/patch 加载实际 BYQ time plugin、显式 skill root、MCP 和
+  spawn subagent。旧 `cordis/session_root/launch_args_override` 分别迁移为 patch、explicit home 和公共
+  launcher fields；细节见 U0 `UPSTREAM`/`COMPATIBILITY`/`CARRIER` 证据。
+- 新旧实际 tool roster 差异及权限验证：未 patch 的 `sdk` 和名为 minimal 的 preset 均不满足 Product
+  边界。安全 spike 的 root roster 精确为 BYQ delegate、只读 MCP、skill，child 仅只读 MCP；shell、
+  editor、filesystem、jobs、web fetch、plan 等均不可见。U4 仍须对全部角色重新执行 roster/禁止调用测试。
+- profile/settings/home/数据路径与凭据继承控制：每个 release/generation 使用显式 contained
+  `DSH_HOME`，关闭默认 skill discovery/watch 和 telemetry，不读取 `~/.dsh`，不迁移旧 private JSONL；
+  provider/MCP 凭据只由部署注入引用。生产 patch 缺失或 roster 不一致时 fail closed。
+- provenance producer identity 的可信来源及滚动部署矩阵：由 deployment-controlled release
+  descriptor、artifact/image receipt/attestation、installed metadata、active composition/policy hash
+  共同绑定，模型声明不是权威。U2 必须证明 old Runtime + compatibility policy、candidate Runtime +
+  exact candidate identity、candidate 撤回后历史读取，以及 unknown/forged producer 拒绝。
+- 不可避免的 SDK 私有 API 依赖及替代方案：U0 未发现必须接受的私有依赖。启动、receipt、notification、
+  root/child relation、finish reason 与 shutdown 均有公共接口；禁止生产依赖 `_launch_args`、`_proc`。
+- 工程实施授权：维护者于 2026-09-06 明确授权 U0 开发、push 和 Draft PR；明确排除 merge、生产部署、
+  正式版本切换和付费模型测试。维护者随后审阅 U0 证据并明确接受本 ADR，授权把 U0 标为
+  `VERIFIED`；PR 继续保持 Draft，merge 与 U1 仍未授权。
+- 证据：[`UPSTREAM`](../../evidence/dsh-012rc1/u0/UPSTREAM.md)、
+  [`COMPATIBILITY`](../../evidence/dsh-012rc1/u0/COMPATIBILITY.md)、
+  [`CARRIER`](../../evidence/dsh-012rc1/u0/CARRIER.md)、
+  [`BASELINE`](../../evidence/dsh-012rc1/u0/BASELINE.md)。
 
-以上关键项不完整时保持 Proposed。U0 填齐后必须记录维护者对精确载体/边界决策的接受；
-已有授权明确覆盖同一决策时引用原授权，不重复确认。泛化实施授权不是对未知例外的接受，
-实际边界超出本提案时须明确修订并取得方向。ADR-0059 已接受不等于本 ADR 已接受。
+维护者接受的是上述精确载体和边界，而不是对未知例外、候选资格、merge、U1、付费模型评测、
+生产部署或正式版本切换的授权。U1 仍需单独授权，并继续受一阶段一工作树/Draft PR 门禁约束；
+后续若实际边界超出本 ADR，必须修订 ADR 并重新取得方向。

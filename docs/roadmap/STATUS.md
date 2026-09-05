@@ -13,9 +13,11 @@
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
   验证到 Python `0.1.1rc1` / npm `0.1.1-rc.1`；它是维护历史，不是隐含的 Product Phase。
 - 当前完成范围内没有未决架构决策。
-- 下一阶段：**未授权**。必须由维护者明确选择并授权，且继续遵守一阶段一工作树/Draft PR 的合并门禁。
-- 维护规划：[DSH 0.1.2rc1 升级方案](DSH_012RC1_UPGRADE_PLAN.md) 已编写，U0–U8 尚未实施；
-  ADR-0058 保持 Proposed。本次仅规划，不改变 DSH 已认证版本、Product Phase 或生产部署状态。
+- 下一 Product 阶段：**未授权**。必须由维护者明确选择并授权，且继续遵守一阶段一工作树/Draft PR 的合并门禁。
+- 维护执行：[DSH 0.1.2rc1 升级方案](DSH_012RC1_UPGRADE_PLAN.md) 的 U0 已 `VERIFIED`，维护者于
+  2026-09-06 接受 ADR-0058 和官方 matching wheel bundled executable 路线。U0 Draft PR 尚未获
+  merge 授权；U1–U8、生产部署、正式版本切换和付费模型测试均未授权。当前已认证/生产默认仍为
+  0.1.1rc1，Product Phase 97 不变。
 - Phase 82 已依据 ADR-0047 完成；验收证据位于 `docs/evidence/phase-82/`。
 - Phase 90 已依据 ADR-0049 完成；验收证据位于 `docs/evidence/phase-90/`。
 - Phase 91 已依据 ADR-0051 完成；验收证据位于 `docs/evidence/phase-91/`。
