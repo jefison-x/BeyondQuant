@@ -324,14 +324,19 @@ check_backend() {
         beyondquant-backend python -m pytest -q -p no:cacheprovider tests >/dev/null 2>&1; then
       ok "feedback hub relay tests"; else bad "feedback hub relay tests"; fi
   fi
-  if [ -d "$REPO_ROOT/services/feedback-hub/tests" ]; then
-    if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" \
-        -e BYQ_FEEDBACK_HUB_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
-        -e BYQ_FEEDBACK_HUB_STATUS_SECRET=ci-feedback-hub-status-secret-32bytes \
-        -e BYQ_FEEDBACK_GITHUB_REPOSITORY=jefison-x/BeyondQuant -e PYTHONDONTWRITEBYTECODE=1 \
-        -v "$REPO_ROOT/services/feedback-hub:/hub:ro" -w /hub \
-        beyondquant-backend python -m pytest -q -p no:cacheprovider tests >/dev/null 2>&1; then
-      ok "central feedback hub tests"; else bad "central feedback hub tests"; fi
+}
+
+check_cloudflare_feedback_hub() {
+  step "central feedback hub: Cloudflare workerd tests and deploy dry-run"
+  if (
+    cd "$REPO_ROOT/deploy/feedback-hub-cloudflare"
+    npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps >/dev/null 2>&1 \
+      && npm run check >/dev/null 2>&1 \
+      && npm run dry-run >/dev/null 2>&1
+  ); then
+    ok "Cloudflare feedback hub tests and bundles"
+  else
+    bad "Cloudflare feedback hub tests and bundles"
   fi
 }
 
@@ -513,7 +518,10 @@ fi
 check_hygiene
 want docs && check_docs
 want architecture && check_architecture
-want backend && check_backend
+if want backend; then
+  check_backend
+  check_cloudflare_feedback_hub
+fi
 want gateway && check_gateway
 want runtime && check_runtime
 want mcp && check_mcp

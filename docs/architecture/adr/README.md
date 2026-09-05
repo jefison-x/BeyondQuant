@@ -75,3 +75,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   以及业务页用户主动操作与 Agent approval 分离的边界。
 - ADR-0052 定义官方中央 Feedback Hub、匿名 installation relay、中央反滥用/审核/固定仓库发布，
   以及小巴公开预览后只在全局审批中心确认一次并续接原会话的边界。
+- ADR-0053 将官方中央 Hub 部署替换为隔离的 Cloudflare Hub/Publisher Workers、D1 transactional outbox、
+  per-installation/per-receipt Durable Objects、Queue/DLQ 和 Service Binding，同时保持 ADR-0052 wire contract。

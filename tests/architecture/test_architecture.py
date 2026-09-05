@@ -62,7 +62,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "92")
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "93")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043", "ADR-0044", "ADR-0048", "ADR-0049"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
@@ -288,7 +288,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn('@router.get("/feedback/items")', gateway)
         self.assertIn('"product_feedback", "product_feedback_revisions", "product_feedback_audit"', workspace)
         self.assertIn("/api/product/feedback/items:", openapi)
-        self.assertIn("<!-- byq:current-completed-phase=92 -->", status)
+        self.assertIn("<!-- byq:current-completed-phase=93 -->", status)
         self.assertIn("Phase 88 — Durable feedback domain and Product API（`COMPLETE`）", plan)
         self.assertIn("Phase 89 — Trusted GitHub publisher and operations（`COMPLETE`）", plan)
         self.assertIn("transaction rollback", evidence.lower())
@@ -436,9 +436,15 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         adr = (ROOT / "docs/architecture/adr/ADR-0052-central-feedback-hub-and-conversation-submission.md").read_text()
         backend = (ROOT / "services/backend/app/product_feedback.py").read_text()
         backend_api = (ROOT / "services/backend/app/main.py").read_text()
-        hub = (ROOT / "services/feedback-hub/app/main.py").read_text()
+        hub = "\n".join(
+            (ROOT / path).read_text()
+            for path in (
+                "services/feedback-hub-cloudflare/src/index.ts",
+                "services/feedback-hub-cloudflare/src/contracts.ts",
+            )
+        )
         relay = (ROOT / "workers/feedback-hub-relay/relay.py").read_text()
-        deployment = (ROOT / "deploy/feedback-hub/compose.yml").read_text()
+        deployment = (ROOT / "deploy/feedback-hub-cloudflare/wrangler.hub.jsonc").read_text()
         skill = (ROOT / "plugins/dsh-byq/skills/byq-product-feedback/SKILL.md").read_text()
         self.assertIn("- Status: Accepted", adr)
         self.assertIn("product_feedback_hub_outbox", backend)
@@ -451,6 +457,28 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("jefison-x/BeyondQuant", deployment)
         self.assertIn("agent_approval_id", skill)
         self.assertIn("global approval", skill)
+
+    def test_phase93_cloudflare_hub_keeps_github_credentials_in_queue_publisher(self) -> None:
+        adr = (ROOT / "docs/architecture/adr/ADR-0053-cloudflare-native-central-feedback-hub.md").read_text()
+        hub = (ROOT / "services/feedback-hub-cloudflare/src/index.ts").read_text()
+        publisher = (ROOT / "workers/feedback-publisher-cloudflare/src/index.ts").read_text()
+        hub_config = (ROOT / "deploy/feedback-hub-cloudflare/wrangler.hub.jsonc").read_text()
+        publisher_config = (ROOT / "deploy/feedback-hub-cloudflare/wrangler.publisher.jsonc").read_text()
+        migration = (ROOT / "deploy/feedback-hub-cloudflare/migrations/0001_central_feedback.sql").read_text()
+        self.assertIn("- Status: Accepted", adr)
+        self.assertIn('"d1_databases"', hub_config)
+        self.assertIn('"durable_objects"', hub_config)
+        self.assertIn('"producers"', hub_config)
+        self.assertIn('"consumers"', publisher_config)
+        self.assertIn('"dead_letter_queue"', publisher_config)
+        self.assertIn('"workers_dev": false', publisher_config)
+        self.assertNotIn("BYQ_FEEDBACK_GITHUB_APP_PRIVATE_KEY", hub + hub_config)
+        self.assertNotRegex(publisher + publisher_config, r"(?i)(BYQ_DATABASE_URL|postgres|psycopg|sqlalchemy|docker\.sock|/contents|/pulls)")
+        self.assertIn("BYQ_FEEDBACK_GITHUB_APP_PRIVATE_KEY", publisher)
+        self.assertIn("https://api.github.com", publisher)
+        self.assertIn("jefison-x/BeyondQuant", publisher_config)
+        self.assertIn("central_feedback_outbox", migration)
+        self.assertIn("dispatchDue", hub)
 
     def test_dsh_version_is_exact_rc6(self) -> None:
         dockerfile = (ROOT / "services/dsh/Dockerfile").read_text()

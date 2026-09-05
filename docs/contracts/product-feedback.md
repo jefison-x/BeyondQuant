@@ -264,3 +264,20 @@ Hub 对大小、hash、schema、secret/PII/security report 再次 fail closed，
 并以跨安装 fingerprint 辅助审核去重。中央 `accept` 才创建 `feedback-publication.v1` outbox；publisher route 固定
 `jefison-x/BeyondQuant`。Local relay 最多八次网络投递，GitHub publisher 最多六次外部副作用尝试；两个预算都不限制
 小巴推理、分页或用户新会话。
+
+## 17. Phase 93 Cloudflare deployment contract
+
+Phase 92 的 intake/receipt/status/moderation/publication schema 和 URL 保持 wire-compatible。官方中央实现由两个隔离 Worker
+组成：Hub Worker 绑定 D1、`INSTALLATION_GATE`、`FEEDBACK_GATE` 和 Queue producer；Publisher Worker 只绑定主 Queue
+consumer、DLQ、Hub Service Binding 和 GitHub App secrets。Hub 不持有 GitHub credential，Publisher 不绑定 D1 或 Product。
+
+`accept` 必须以 D1 batch 原子写 feedback 状态和 `central_feedback_outbox`。Cron dispatcher 的 Queue envelope 只含：
+
+```json
+{"schema_version":"feedback-publish-queue.v1","event_id":"feedback_outbox_<32 hex>"}
+```
+
+Queue delivery 不授予发布权；Publisher 必须用 service token 回 Hub 对 exact event 执行 lease/fence claim，再使用不可变 snapshot。
+Queue send/ack 可重复，D1 outbox 不可因免费额度、24 小时消息保留、Worker eviction 或 callback failure 删除。GitHub create 前始终
+按 event/snapshot marker reconciliation。只有 Hub complete 写入 fixed repository/number/canonical URL 后，公开 status 才为
+`published`。

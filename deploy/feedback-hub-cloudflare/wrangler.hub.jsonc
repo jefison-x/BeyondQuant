@@ -1,0 +1,40 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "byq-feedback-hub",
+  "main": "../../services/feedback-hub-cloudflare/src/index.ts",
+  "compatibility_date": "2026-09-05",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "vars": {
+    "BYQ_FEEDBACK_GITHUB_REPOSITORY": "jefison-x/BeyondQuant"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "byq-feedback-hub",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "INSTALLATION_GATE", "class_name": "InstallationGate" },
+      { "name": "FEEDBACK_GATE", "class_name": "FeedbackGate" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["InstallationGate", "FeedbackGate"]
+    }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "PUBLISH_QUEUE", "queue": "byq-feedback-publish" }
+    ]
+  },
+  "triggers": {
+    "crons": ["* * * * *"]
+  }
+}

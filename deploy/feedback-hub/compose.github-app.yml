@@ -1,9 +1,0 @@
-services:
-  publisher:
-    volumes:
-      - type: bind
-        source: ${BYQ_FEEDBACK_GITHUB_APP_PRIVATE_KEY_HOST_FILE:?set private-key host path}
-        target: /run/secrets/byq-feedback-github-app.pem
-        read_only: true
-    environment:
-      BYQ_FEEDBACK_GITHUB_APP_PRIVATE_KEY_FILE: /run/secrets/byq-feedback-github-app.pem

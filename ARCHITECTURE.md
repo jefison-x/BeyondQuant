@@ -372,6 +372,11 @@ Hub 只能接收不可变公开候选快照，并以匿名 installation HMAC 限
 聊天全文或本地数据库访问。中央审核通过后，只有中央隔离 publisher 可写固定 `jefison-x/BeyondQuant` Issues。
 小巴提交必须绑定全局审批中心中的精确 feedback resource；批准后续接原会话，不在业务页重复审批。
 
+ADR-0053 的官方 Central Feedback Hub 使用 Cloudflare Hub Worker + D1/分片 Durable Objects/transactional outbox，
+经 Cron/Queue/DLQ 投递给第二个不可公开的 Publisher Worker。Hub MUST NOT 持有 GitHub App credential；Publisher
+MUST NOT 绑定 D1、Product Backend、源码、Git、Docker 或 DSH，只能通过带 service token 的 Worker Service Binding
+claim/complete/retry 固定 outbox。Queue 不是权威状态，免费额度或消息过期不得删除 local/D1 outbox。
+
 ## 治理
 
 DSH boundary、MCP boundary、database boundary、WorkflowTrace、authentication、

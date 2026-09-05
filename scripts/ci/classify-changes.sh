@@ -51,10 +51,13 @@ while IFS= read -r path; do
           ;;
       esac
       ;;
-    services/backend/*)
+    services/backend/*|services/feedback-hub/*|services/feedback-hub-cloudflare/*|deploy/feedback-hub/*|deploy/feedback-hub-cloudflare/*)
       docs_only=no
       backend=yes
       architecture=yes
+      case "$path" in
+        services/feedback-hub/*|services/feedback-hub-cloudflare/*|deploy/feedback-hub/*|deploy/feedback-hub-cloudflare/*) integration=yes ;;
+      esac
       ;;
     services/gateway/*)
       docs_only=no
