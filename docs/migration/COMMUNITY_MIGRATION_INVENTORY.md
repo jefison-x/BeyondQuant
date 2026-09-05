@@ -1064,6 +1064,20 @@ Workers、D1、Durable Objects、Queues、Service Binding 或无服务器 GitHub
 提取不变量没有变化：最小可复现公开内容、secret/PII/security fail-closed、显式用户审批、中央人工采纳、固定仓库、
 effectively-once Issue mapping。Community 仓库、数据库、credential 与 Git history 均保持只读。
 
+## Phase 94 Cloudflare Git deployment audit
+
+2026-09-05 只读核对 Community `.github/workflows/ci.yml`、`.github/workflows/security.yml` 和 Issue templates。Community 没有
+Cloudflare、Wrangler、Workers Builds、D1 migration 或多 Worker deployment 配置。
+
+| Community evidence | Classification | Phase 94 disposition |
+|---|---|---|
+| GitHub CI/security workflow | `REFERENCE_ONLY` | 保持 BYQ required CI 先于 `main` merge；不复制 workflow 或把 Cloudflare token 放入 GitHub。 |
+| Cloudflare Git source/deploy | `REPLACE` | 两个隔离 Workers Builds project 读取同一官方仓库并使用独立 deploy command。 |
+| Account resource/secret setup | `REPLACE` | D1/DO/Queue 自动配置；runtime secret 只在目标 Worker Dashboard 设置。 |
+| Community Agent/API/runtime/storage | `DROP` | 不改 Product/DSH/MCP/PostgreSQL，不引入 Community runtime、credential 或 Git history。 |
+
+本阶段没有可迁移 Community 代码或数据；Community 仓库和数据库保持只读。
+
 ## Post-Phase 82 frontend list-performance maintenance audit（2026-09-01）
 
 The read-only Community Stock Pool, Backtest, Strategy and Operations surfaces

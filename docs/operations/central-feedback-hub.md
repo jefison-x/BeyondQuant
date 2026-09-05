@@ -1,181 +1,214 @@
-# Cloudflare Central Feedback Hub 安装与配置
+# Cloudflare Central Feedback Hub：GitHub 自动部署
 
-本方案只由 `jefison-x/BeyondQuant` 维护者部署一次，适用于 Cloudflare Workers Free。普通 BYQ 用户不需要 Cloudflare 或
-GitHub 账号、Token、仓库、域名或 Hub 凭据；他们在小巴会话中预览反馈，在全局审批中心批准后即可提交。
+本方案只由 `jefison-x/BeyondQuant` 维护者配置一次，适用于 Cloudflare Workers Free。Cloudflare 直接读取 GitHub，后续
+`main` 更新会自动构建并部署，不需要在 BYQ 主机安装 Wrangler。普通 BYQ 用户仍不需要 Cloudflare/GitHub 账号、Token、
+仓库、域名或 Hub credential。
 
-本地 BYQ 的 `feedback-hub-relay` 容器继续运行，它不是中央服务。中央服务由两个 Cloudflare Worker、一个 D1、两个
-SQLite Durable Object namespace、一个主 Queue 和一个 DLQ 组成，不再需要中央主机、PostgreSQL 或 Docker。
+安全边界要求保留两个 Cloudflare project：公网 `byq-feedback-hub` 和私有 Queue Consumer
+`byq-feedback-publisher`。两者连接同一仓库，但使用不同 deploy command 和 runtime secrets。Cloudflare 官方不支持用一个
+Deploy button 同时发布 monorepo 中多个 Worker；不要为了单按钮把它们合并。
 
-## 1. 准备账号和 GitHub App
+## 1. 一次性准备
 
-1. 使用一个 Cloudflare account；Free 计划即可起步。安装 Node.js 22 或更高版本。
-2. 在 GitHub 创建 App，只安装到 `jefison-x/BeyondQuant`：
+1. 使用一个 Cloudflare account，Free 计划即可起步。
+2. 在 GitHub 创建 BYQ Issue Publisher App，只安装到 `jefison-x/BeyondQuant`：
    - Repository permissions：`Issues: Read and write`；
    - 不授予 Contents、Pull requests、Actions、Administration、Secrets 或 Deployments；
-   - App 不需要 webhook URL/secret；
-   - 记录 App ID、installation ID，并下载 private key PEM。
-3. 将 `BYQ_FEEDBACK_HUB_STATUS_SECRET` 另存到密码管理器和加密备份。该值生成历史 receipt capability，丢失或轮换后旧安装
-   无法查询反馈状态。
+   - 不需要 webhook URL/secret；
+   - 保存 App ID、installation ID 和 private key PEM。
+3. 在密码管理器生成并保存三个互不相同的 64 位十六进制随机值：
+   - Hub status secret；
+   - Hub admin token；
+   - Hub/Publisher 共享的 publisher service token。
 
-## 2. 登录并安装锁定依赖
-
-在仓库根目录执行：
-
-```bash
-cd deploy/feedback-hub-cloudflare
-npm ci --ignore-scripts --legacy-peer-deps
-npx wrangler login
-```
-
-依赖已由 `package-lock.json` 精确锁定；不要在正式部署时使用 `latest` 或删除 lockfile。
-
-## 3. 创建 D1 和 Queue
-
-```bash
-npx wrangler d1 create byq-feedback-hub
-npx wrangler queues create byq-feedback-publish
-npx wrangler queues create byq-feedback-publish-dlq
-```
-
-把第一条命令返回的 D1 `database_id` 写入 `wrangler.hub.jsonc`，替换
-`00000000-0000-0000-0000-000000000000`。repository 已固定为 `jefison-x/BeyondQuant`，不要改成用户输入或任意变量。
-
-## 4. 配置隔离 secret
-
-先生成三个互不相同的值并安全保存：
+也可只用下面的命令生成三次；这些值不要写入仓库、GitHub Actions 或 Workers build variables：
 
 ```bash
 openssl rand -hex 32
-openssl rand -hex 32
-openssl rand -hex 32
 ```
 
-分别作为 Hub status secret、Hub admin token，以及 Hub/Publisher 共享的内部 publisher service token。
+Cloudflare 用于 source build/check 的 `Cloudflare Workers and Pages` GitHub App 与上面的 BYQ Issue Publisher App 是两个不同
+主体：前者的 repository access 只选择 `BeyondQuant`，后者只授予固定仓库 Issues read/write。
 
-将 secret 写入 Hub Worker：
+## 2. 从 GitHub 导入 Hub Worker
 
-```bash
-npx wrangler secret put BYQ_FEEDBACK_HUB_STATUS_SECRET --config wrangler.hub.jsonc
-npx wrangler secret put BYQ_FEEDBACK_HUB_ADMIN_TOKEN --config wrangler.hub.jsonc
-npx wrangler secret put BYQ_FEEDBACK_PUBLISHER_TOKEN --config wrangler.hub.jsonc
+在 Cloudflare Dashboard 打开 **Workers & Pages → Create → Import a repository**，授权 Cloudflare GitHub App 时选择
+**Only select repositories → `jefison-x/BeyondQuant`**。使用以下配置：
+
+| 设置 | 值 |
+|---|---|
+| Project/Worker name | `byq-feedback-hub` |
+| Git repository | `jefison-x/BeyondQuant` |
+| Production branch | `main` |
+| Root directory | `deploy/feedback-hub-cloudflare` |
+| Build command | `npm run cloudflare:build` |
+| Deploy command | `npm run cloudflare:deploy:hub` |
+| Non-production branch builds | Disabled |
+| 如果界面必须填写 preview command | `npm run cloudflare:preview` |
+
+首次 build 如果提示缺少 required secrets，是预期的 fail-closed 行为。Project 已创建后，进入
+**Settings → Variables and Secrets → Add → Secret**，添加：
+
+| Hub runtime secret | 值 |
+|---|---|
+| `BYQ_FEEDBACK_HUB_STATUS_SECRET` | 保存的 status secret |
+| `BYQ_FEEDBACK_HUB_ADMIN_TOKEN` | 保存的 admin token |
+| `BYQ_FEEDBACK_PUBLISHER_TOKEN` | 保存的 publisher service token |
+
+保存后回到 **Deployments/Builds** 对失败 build 选择 **Retry**。Hub deploy command 会以 `DB` binding 应用 D1 migration，
+再发布 Worker；Wrangler config 会自动配置 `byq-feedback-hub` D1、两个 SQLite Durable Object namespace 和
+`byq-feedback-publish` Queue。仓库不保存 Cloudflare account id 或 D1 id。
+
+在 **Settings → Builds → Build watch paths** 中设置 include：
+
+```text
+deploy/feedback-hub-cloudflare/*
+services/feedback-hub-cloudflare/*
 ```
 
-将同一个 publisher service token 和 GitHub App 凭据只写入 Publisher Worker：
+## 3. 从同一 GitHub 仓库导入 Publisher Worker
 
-```bash
-npx wrangler secret put BYQ_FEEDBACK_PUBLISHER_TOKEN --config wrangler.publisher.jsonc
-npx wrangler secret put BYQ_FEEDBACK_GITHUB_APP_ID --config wrangler.publisher.jsonc
-npx wrangler secret put BYQ_FEEDBACK_GITHUB_INSTALLATION_ID --config wrangler.publisher.jsonc
-npx wrangler secret put BYQ_FEEDBACK_GITHUB_APP_PRIVATE_KEY --config wrangler.publisher.jsonc < /absolute/path/app.pem
+Hub 首次成功后，再次选择 **Import a repository**，仍连接同一个仓库：
+
+| 设置 | 值 |
+|---|---|
+| Project/Worker name | `byq-feedback-publisher` |
+| Git repository | `jefison-x/BeyondQuant` |
+| Production branch | `main` |
+| Root directory | `deploy/feedback-hub-cloudflare` |
+| Build command | `npm run cloudflare:build` |
+| Deploy command | `npm run cloudflare:deploy:publisher` |
+| Non-production branch builds | Disabled |
+| 如果界面必须填写 preview command | `npm run cloudflare:preview` |
+
+在 Publisher 的 **Settings → Variables and Secrets** 添加：
+
+| Publisher runtime secret | 值 |
+|---|---|
+| `BYQ_FEEDBACK_PUBLISHER_TOKEN` | 与 Hub 完全相同的 publisher service token |
+| `BYQ_FEEDBACK_GITHUB_APP_ID` | GitHub App ID |
+| `BYQ_FEEDBACK_GITHUB_INSTALLATION_ID` | GitHub App installation ID |
+| `BYQ_FEEDBACK_GITHUB_APP_PRIVATE_KEY` | private key PEM 全文 |
+
+然后 Retry build。Publisher config 会绑定已有 `byq-feedback-hub` Service Binding、主 Queue，并自动配置
+`byq-feedback-publish-dlq`。它的 `workers.dev` 与 preview URL 都关闭，且没有 D1、Product Backend、PostgreSQL、源码、Git、
+Docker 或 DSH binding。
+
+Publisher build watch include：
+
+```text
+deploy/feedback-hub-cloudflare/*
+services/feedback-hub-cloudflare/src/contracts.ts
+workers/feedback-publisher-cloudflare/*
 ```
 
-GitHub private key 不得写入 Hub config、`.dev.vars`、D1、日志或仓库。Publisher Worker 未开放 `workers.dev`，并且没有 D1、
-Durable Object、Product Backend 或源码绑定。
+## 4. 验证中央链路
 
-## 5. 验证、迁移并部署
+Hub 首次部署会显示 `workers.dev` HTTPS 地址。打开：
 
-先做完全本地的 workerd/D1/Durable Object/Queue/fake-GitHub 验证：
-
-```bash
-npm run check
-npm run dry-run
+```text
+https://byq-feedback-hub.<你的workers子域>.workers.dev/healthz
 ```
 
-然后应用 D1 migration，并按 Hub → Publisher 顺序部署：
+预期：
 
-```bash
-npx wrangler d1 migrations apply byq-feedback-hub --remote --config wrangler.hub.jsonc
-npx wrangler deploy --config wrangler.hub.jsonc
-npx wrangler deploy --config wrangler.publisher.jsonc
+```json
+{"service":"central-feedback-hub","status":"ok"}
 ```
 
-`wrangler deploy` 会显示 Hub 的 `workers.dev` HTTPS 地址。验证：
+检查 Cloudflare Dashboard：
 
-```bash
-curl -fsS https://byq-feedback-hub.<你的workers子域>.workers.dev/healthz
-```
+- Hub bindings 有 D1、`INSTALLATION_GATE`、`FEEDBACK_GATE` 和 `PUBLISH_QUEUE`；
+- Publisher bindings 只有 Hub Service Binding、Queue Consumer、固定 repository var 和四个加密 secret；
+- D1 migration `0001_central_feedback.sql` 已记录为 applied；
+- 主 Queue 和 DLQ 均存在；
+- GitHub App 仍只有 Issues read/write。
 
-预期为 `{"service":"central-feedback-hub","status":"ok"}`。首次部署不会创建 GitHub Issue；只有中央管理员显式
-`triage` 后再 `accept` 才会进入 D1 outbox。
+首次部署不会创建 GitHub Issue。只有匿名 intake 被中央管理员依次 `triage`、`accept` 后，Publisher 才会创建固定仓库 Issue。
 
-## 6. 自定义域名和访问保护
+## 5. 自定义域名和管理入口
 
-可以先使用 `workers.dev` 地址。准备正式域名后，在 Cloudflare Dashboard 为 `byq-feedback-hub` Worker 添加 Custom Domain，
-例如 `feedback.example.org`，无需自建 TLS 代理。
-
-公网只需要：
+可以先使用 `workers.dev`。准备正式域名后，为 Hub 添加 Custom Domain，例如 `feedback.example.org`。公网只需要：
 
 - `POST /v1/intake`
 - `GET /v1/status/{receipt_id}`
 - `GET /healthz`
 
-为 `/v1/admin/*` 增加 Cloudflare Access application 或等价的维护者访问策略；Worker 内部仍会验证 admin bearer。边缘设置
-32 KiB body limit 和按源 IP 的辅助限速。`/internal/*` 只供 Publisher Service Binding 使用，即使被公网探测也必须通过共享
-service token。
+为 `/v1/admin/*` 叠加 Cloudflare Access 或等价维护者策略；Worker 内仍验证 admin bearer。边缘设置 32 KiB body limit 和按源
+IP 的辅助限速。`/internal/*` 只供 Publisher Service Binding 使用，即使被公网探测仍必须通过 publisher token。
 
-## 7. 中央审核验收
+## 6. 中央审核验收
 
-在当前维护终端临时设置变量，不要写入 shell history 或仓库：
+在当前维护终端临时设置 origin 和 admin token，不要写入仓库或 shell profile：
 
 ```bash
 export BYQ_FEEDBACK_HUB_ORIGIN=https://feedback.example.org
-export BYQ_FEEDBACK_HUB_ADMIN_TOKEN=<刚才保存的admin-token>
+export BYQ_FEEDBACK_HUB_ADMIN_TOKEN=<保存的admin-token>
 ```
 
-分页查看待审核项：
+分页查看并审核一条明确标为安装验收的反馈：
 
 ```bash
 curl -fsS -H "Authorization: Bearer $BYQ_FEEDBACK_HUB_ADMIN_TOKEN" \
   "$BYQ_FEEDBACK_HUB_ORIGIN/v1/admin/feedback?status=received&limit=20&offset=0"
-```
 
-对一条明确标为安装验收的 feedback 依次分诊、采纳：
-
-```bash
-curl -fsS -X POST \
-  -H "Authorization: Bearer $BYQ_FEEDBACK_HUB_ADMIN_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"rationale":"已确认信息完整且不含敏感数据"}' \
+curl -fsS -X POST -H "Authorization: Bearer $BYQ_FEEDBACK_HUB_ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"rationale":"已确认信息完整且不含敏感数据"}' \
   "$BYQ_FEEDBACK_HUB_ORIGIN/v1/admin/feedback/<receipt>/triage"
 
-curl -fsS -X POST \
-  -H "Authorization: Bearer $BYQ_FEEDBACK_HUB_ADMIN_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"rationale":"批准安装验收反馈进入官方Issue队列"}' \
+curl -fsS -X POST -H "Authorization: Bearer $BYQ_FEEDBACK_HUB_ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"rationale":"批准安装验收反馈进入官方Issue队列"}' \
   "$BYQ_FEEDBACK_HUB_ORIGIN/v1/admin/feedback/<receipt>/accept"
 ```
 
-Cron 最迟约一分钟扫描 D1 outbox，Queue Consumer 再创建 Issue。也可使用 `/reject`，或用 `/duplicate` 并附带
-`duplicate_of`。验收结束后在 GitHub 手工关闭测试 Issue；Hub 不自动删除或关闭 Issue。
+Cron 最迟约一分钟扫描 D1 outbox，Queue Consumer 再创建 Issue。验收后手工关闭测试 Issue；Hub 不自动关闭或删除 Issue。
 
-## 8. 连接当前 BYQ 正式环境
+## 7. 连接当前 BYQ 正式环境
 
 中央链路验收后，在 BYQ 根 `.env` 增加：
 
 ```dotenv
 BYQ_FEEDBACK_HUB_URL=https://feedback.example.org
-BYQ_FEEDBACK_HUB_RELAY_TOKEN=<该本地部署独立的随机relay-token>
+BYQ_FEEDBACK_HUB_RELAY_TOKEN=<该BYQ部署独立的随机relay-token>
 ```
 
-relay token 可用 `openssl rand -hex 32` 生成；它只保护本地 Backend/relay internal API，不上传中央 Hub。重建本地组件：
+relay token 只保护本地 Backend/relay internal API，不上传中央 Hub。重建本地组件：
 
 ```bash
 docker compose up -d --build --wait backend feedback-hub-relay
 ```
 
-installation ID 由 Backend 自动生成并持久化。浏览器和小巴看不到 relay token；relay 没有 GitHub credential。若 URL 为空、
-Cloudflare 超免费额度或中央服务不可达，提交仍保存在本地 outbox并重试，不伪造成功。
+installation ID 由 Backend 自动生成并持久化。浏览器、小巴和 relay 都没有 GitHub credential。Cloudflare 不可达或免费额度耗尽
+时，提交继续保存在本地 outbox并重试，不伪造成功。
 
-中央地址稳定后，应把 HTTPS 地址写入后续 BYQ 发行包/安装器默认 `BYQ_FEEDBACK_HUB_URL`。届时普通用户连 Hub URL 都无需
-填写。不要同时把旧 local direct publisher 配置到官方仓库，否则可能产生双出口。
+## 8. 后续自动更新和回滚
 
-## 9. 免费额度、监控和恢复
+- 只有通过仓库 CI 并合并到 `main` 的提交触发生产部署；PR branch 不创建 Cloudflare state；
+- Hub pipeline 在部署新代码前应用尚未执行的 D1 migration；Publisher pipeline 不访问 D1；
+- Dashboard runtime secrets 不会因后续 Wrangler code deploy 被删除；
+- 暂停自动部署：分别进入 Worker **Settings → Builds → Disable builds**；现有 Worker/D1/Queue 继续工作；
+- 回滚代码：通过正常 Git PR revert 并合并到 `main`，不得 force push；
+- D1 schema 只做兼容 forward repair，不自动降级、删表或删除 outbox；
+- 暂停 GitHub 写入：禁用 Publisher Queue Consumer或撤销 BYQ GitHub App，Hub intake/outbox 继续持久化；
+- Cloudflare source GitHub App 只需保留 `BeyondQuant` 仓库访问；断开它不会删除现有 Worker。
 
-- Workers Free、D1、SQLite Durable Objects 和 Queues 都有每日硬额度；超限会失败而不是自动计费；
-- 免费 Queue 的保留期较短，但 Queue 不是事实来源。未完成项持续保存在 D1 outbox，`enqueued`/`dispatching` 超时会重投；
-- 监控 Worker errors、D1 rows read/written、Queue backlog/retries/DLQ 和 GitHub rate limit；
-- 使用 D1 Time Travel/导出能力，并单独加密备份 status secret。只有数据库没有 status secret 不能完整恢复历史状态查询；
-- 暂停发布只需停用 Publisher Queue Consumer，intake/审核和 D1 outbox 继续工作；
-- 暂停某个 BYQ 安装外发只需清空该安装的 `BYQ_FEEDBACK_HUB_URL`，本地队列不丢失；
-- 不要通过删除 receipt/outbox 解决失败。修复 App 权限或 secret 后重新部署 Publisher，让 D1 dispatcher/reconciliation 恢复；
-- Hub 不是 Engineering Plane。采纳反馈不会自动改代码、创建 PR、合并或部署。
+## 9. CLI fallback
+
+Git integration 故障时才使用 CLI。仓库根目录执行：
+
+```bash
+cd deploy/feedback-hub-cloudflare
+npm ci --ignore-scripts --legacy-peer-deps
+npx wrangler login
+npm run cloudflare:build
+```
+
+用 `wrangler secret put --config <对应config>` 配置上表中的 runtime secrets，然后依次运行：
+
+```bash
+npm run cloudflare:deploy:hub
+npm run cloudflare:deploy:publisher
+```
+
+不要把 Cloudflare API token 放进 GitHub Actions，也不要同时启用旧 local direct publisher 指向同一官方仓库。Hub 不是
+Engineering Plane；采纳反馈不会自动改代码、创建 PR、合并或部署 BYQ。

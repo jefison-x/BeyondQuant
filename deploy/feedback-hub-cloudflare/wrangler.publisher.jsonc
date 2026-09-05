@@ -5,6 +5,14 @@
   "compatibility_date": "2026-09-05",
   "workers_dev": false,
   "preview_urls": false,
+  "secrets": {
+    "required": [
+      "BYQ_FEEDBACK_PUBLISHER_TOKEN",
+      "BYQ_FEEDBACK_GITHUB_APP_ID",
+      "BYQ_FEEDBACK_GITHUB_INSTALLATION_ID",
+      "BYQ_FEEDBACK_GITHUB_APP_PRIVATE_KEY"
+    ]
+  },
   "observability": { "enabled": true },
   "vars": {
     "BYQ_FEEDBACK_GITHUB_REPOSITORY": "jefison-x/BeyondQuant"
