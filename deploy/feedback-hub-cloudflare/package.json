@@ -1,0 +1,20 @@
+{
+  "name": "@beyondquant/feedback-hub-cloudflare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --max-workers=1 --no-isolate",
+    "check": "npm run typecheck && npm test",
+    "dry-run": "wrangler deploy --config wrangler.hub.jsonc --dry-run --outdir .byq-build/hub && wrangler deploy --config wrangler.publisher.jsonc --dry-run --outdir .byq-build/publisher"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.1.4",
+    "@cloudflare/workers-types": "5.20260904.1",
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11",
+    "wrangler": "4.129.0"
+  }
+}

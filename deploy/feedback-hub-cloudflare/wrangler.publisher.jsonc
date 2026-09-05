@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "byq-feedback-publisher",
+  "main": "../../workers/feedback-publisher-cloudflare/src/index.ts",
+  "compatibility_date": "2026-09-05",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "vars": {
+    "BYQ_FEEDBACK_GITHUB_REPOSITORY": "jefison-x/BeyondQuant"
+  },
+  "services": [
+    { "binding": "HUB", "service": "byq-feedback-hub" }
+  ],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "byq-feedback-publish",
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        "max_retries": 6,
+        "retry_delay": 60,
+        "dead_letter_queue": "byq-feedback-publish-dlq"
+      }
+    ]
+  }
+}

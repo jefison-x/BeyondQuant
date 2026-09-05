@@ -781,3 +781,13 @@ Feedback Hub。Hub 以匿名 installation/event HMAC、双层 schema/secret/PII 
 一次精确绑定 `product_feedback` 的全局审批，批准后续接原 durable conversation 并提交同一 version/hash；普通用户不配置
 GitHub 账号、Token、仓库或 Hub secret。验收覆盖 Backend/MCP/skill/frontend、Hub/relay、PostgreSQL、Compose、Chrome
 desktop/mobile、same-origin 与未配置/断网降级。
+
+## Cloudflare Central Feedback Hub（Phase 93）
+
+### Phase 93 — Free-plan serverless central Hub（`COMPLETE`）
+
+依据 ADR-0053，在不改变 Phase 92 relay/receipt/status wire contract、会话审批或本地 Product topology 的前提下，将未启用的
+中央 FastAPI/PostgreSQL/Publisher Compose 替换为两个隔离 TypeScript Workers。Hub 使用 D1 transactional outbox、按
+installation/receipt 分片的 SQLite Durable Objects、Cron 和 Queue producer；不可公开的 Publisher 使用 Queue/DLQ、Hub
+Service Binding、WebCrypto GitHub App JWT 和固定 Issue route，且没有 D1/Product/DSH/source/Git/Docker 权限。交付精确依赖
+锁、D1 migration、Free-plan 安装/恢复 runbook、真实 workerd/D1/DO/Queue/fake-GitHub tests 和双 Worker deploy dry-run。

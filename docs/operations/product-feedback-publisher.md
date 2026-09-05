@@ -1,7 +1,7 @@
 # Product Feedback Publisher Runbook
 
 The local direct publisher is an advanced self-hosted compatibility option and remains disabled by default. The normal open-source
-path is the ADR-0052 Central Feedback Hub; see `central-feedback-hub.md`. Normal BYQ users never configure a GitHub account, token,
+path is the ADR-0052/ADR-0053 Cloudflare Central Feedback Hub; see `central-feedback-hub.md`. Normal BYQ users never configure a GitHub account, token,
 repository, or permission.
 
 ## Preferred GitHub App setup

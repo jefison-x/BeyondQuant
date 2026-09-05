@@ -1048,6 +1048,22 @@ Community 没有中央匿名 intake、安装身份、outbox relay、receipt stat
 
 Community repository/database/runtime/credential/Git history 均保持只读，没有复制、导入或修改。
 
+## Phase 93 Cloudflare Central Feedback Hub audit
+
+2026-09-05 再次只读核对 Community Issue templates、Agent 反馈入口、全局审批与系统管理导航。Community 没有 Cloudflare
+Workers、D1、Durable Objects、Queues、Service Binding 或无服务器 GitHub publisher 代码。
+
+| Community evidence | Classification | Phase 93 disposition |
+|---|---|---|
+| 可复现问题字段与敏感信息警告 | `PORT_TESTS` / `PORT_UX` | 保持现有 Phase 92 wire contract 和双层校验；不复制模板实现。 |
+| 全局审批和原会话上下文 | `REFERENCE_ONLY` | Phase 91/92 已实现且本阶段不改 Browser、Gateway、MCP 或 DSH。 |
+| 离开产品后由用户使用 GitHub | `REPLACE` | 继续由中央审核与固定仓库 publisher 代表平台发布，普通用户零 GitHub 配置。 |
+| 中央容器/Cloudflare serverless 能力 | `REPLACE` | Community 无实现；使用 BYQ-owned D1/DO/outbox/Queue 和隔离 Publisher Worker。 |
+| Community Agent/API/runtime/storage | `DROP` | 不迁移 PydanticAI、Hermes、direct GitHub、旧数据库或 raw Agent schema。 |
+
+提取不变量没有变化：最小可复现公开内容、secret/PII/security fail-closed、显式用户审批、中央人工采纳、固定仓库、
+effectively-once Issue mapping。Community 仓库、数据库、credential 与 Git history 均保持只读。
+
 ## Post-Phase 82 frontend list-performance maintenance audit（2026-09-01）
 
 The read-only Community Stock Pool, Backtest, Strategy and Operations surfaces
