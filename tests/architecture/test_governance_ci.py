@@ -75,6 +75,33 @@ esac
                     self.assertEqual(result.returncode, 1)
                     self.assertIn("cleanup verification failed", result.stderr)
 
+    def test_cleanup_retries_late_run_scoped_image_then_requires_stable_absence(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            docker = folder / "docker"
+            state = folder / "state"
+            docker.write_text('''#!/bin/bash
+case "$*" in
+  info) exit 0;;
+  "image inspect byq-ci-stack-cleanup-race-data-worker")
+    count=0; test -f "$FAKE_STATE" && count="$(cat "$FAKE_STATE")"
+    count=$((count + 1)); echo "$count" > "$FAKE_STATE"
+    test "$count" -le 2;;
+  "image inspect "*) exit 1;;
+  "network inspect "*|"volume inspect "*) exit 1;;
+  "ps "*) exit 0;;
+  *) exit 0;;
+esac
+''')
+            docker.chmod(0o755)
+            result = subprocess.run([str(ROOT / "scripts/ci/cleanup-resources.sh"),
+                "--scope=cleanup-race"], capture_output=True, text=True,
+                env={**os.environ, "PATH": f"{folder}:{os.environ['PATH']}",
+                     "FAKE_STATE": str(state), "BYQ_CI_CLEANUP_MAX_ATTEMPTS": "6",
+                     "BYQ_CI_CLEANUP_RETRY_SECONDS": "0"})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertGreaterEqual(int(state.read_text()), 4)
+
     def test_image_build_failure_never_runs_old_image(self):
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)
@@ -164,6 +191,8 @@ test -z "$DEEPSEEK_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_
         self.assertIn("ref: ${{ github.event.pull_request.base.sha || github.sha }}", workflow)
         self.assertIn("--expected-head", workflow)
         self.assertIn("COMPOSE_PARALLEL_LIMIT: '2'", workflow)
+        self.assertIn("BYQ_CI_CLEANUP_MAX_ATTEMPTS: '20'", workflow)
+        self.assertIn("stable_absence", (ROOT / "scripts/ci/cleanup-resources.sh").read_text())
         self.assertIn("sha256sum --check", workflow)
         self.assertIn("--redact=100", workflow)
         self.assertIn("python3 scripts/ci/redact-log.py | tee", workflow)

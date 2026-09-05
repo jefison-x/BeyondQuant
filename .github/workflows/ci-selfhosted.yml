@@ -38,6 +38,11 @@ jobs:
       # is squash-merged while this job is queued/running.
       BYQ_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
       BYQ_CI_SCOPE: ${{ github.run_id }}-${{ github.run_attempt }}
+      # A cancelled parallel BuildKit request may finish publishing an exact
+      # run-scoped tag after the client exits. Cleanup requires two stable,
+      # bounded zero-resource observations.
+      BYQ_CI_CLEANUP_MAX_ATTEMPTS: '20'
+      BYQ_CI_CLEANUP_RETRY_SECONDS: '3'
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

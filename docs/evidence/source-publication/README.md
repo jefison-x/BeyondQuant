@@ -41,3 +41,8 @@
 禁止 force push/delete。默认 Actions token 为 read，不能批准 PR；所有外部贡献者 workflow 需
 维护者批准。hosted-only PR 仍须实际通过标准 `ubuntu-24.04` 完整 CI 后才算迁移完成；不复用
 一次性例外，也不把瞬时 Git SHA/PR 状态写入 STATUS。
+
+首次 hosted 受控取消验证暴露出 BuildKit 客户端终止后仍可能迟到发布两个精确 run-scoped
+镜像标签，独立清理因此正确失败，未被冒充为成功。修复将清理限定在当前 scope，最多 20 次、
+每次 3 秒，并要求连续两次资源为零；新增竞态回归测试。该修复仍须由更新后精确 head 的
+hosted 完整回归和再次取消验证确认，失败时继续阻止合并。

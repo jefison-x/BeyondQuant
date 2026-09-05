@@ -91,6 +91,10 @@ The runner enforces all of the following:
 6. a minimum available-memory preflight before Compose starts;
 7. rejection of `--no-cleanup` inside GitHub Actions.
 
+取消并行 BuildKit 时，客户端退出和最终镜像标签发布可能短暂竞态。独立清理只重试当前
+run/attempt 的精确名称与标签，次数和间隔均有上限，并要求连续两次观察为零才通过；不能
+通过全局 prune、删除其他 job 镜像或忽略第一次失败来掩盖竞态。
+
 Failure diagnostics must be emitted or uploaded before cleanup. A cleanup-verification failure must
 fail CI even if tests passed. Local debug retention is explicit, never automatic, and the operator
 owns its prompt removal.
