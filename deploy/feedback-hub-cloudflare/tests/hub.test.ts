@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import hub, { dispatchDue } from "../../../services/feedback-hub-cloudflare/src/index";
-import { IntakeEnvelope, PublicationEvent, digest, timingSafeEqual } from "../../../services/feedback-hub-cloudflare/src/contracts";
+import { IntakeEnvelope, PublicationEvent, digest, hmacHex, timingSafeEqual } from "../../../services/feedback-hub-cloudflare/src/contracts";
 import publisher, { classifyGitHubStatus, marker, privateKeyDer, render } from "../../../workers/feedback-publisher-cloudflare/src/index";
 
 interface TestEnv {
@@ -68,6 +68,19 @@ async function submit(value: IntakeEnvelope): Promise<{ receipt_id: string; stat
   return response.json();
 }
 
+async function adminSession(token = testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN): Promise<{ response: Response; cookie: string }> {
+  const response = await call("/v1/admin/session", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "origin": "https://hub.example",
+      "x-byq-feedback-admin-request": "ui-v1"
+    },
+    body: JSON.stringify({ token })
+  });
+  return { response, cookie: (response.headers.get("set-cookie") ?? "").split(";", 1)[0]! };
+}
+
 beforeAll(() => {
   expect(testEnv.BYQ_FEEDBACK_GITHUB_REPOSITORY).toBe("jefison-x/BeyondQuant");
 });
@@ -75,6 +88,122 @@ beforeAll(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("Cloudflare central feedback Hub", () => {
+  it("serves a self-contained, non-cacheable central moderation console", async () => {
+    const page = await call("/admin");
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-type")).toContain("text/html");
+    expect(page.headers.get("cache-control")).toBe("no-store");
+    expect(page.headers.get("x-frame-options")).toBe("DENY");
+    expect(page.headers.get("content-security-policy")).toContain("default-src 'none'");
+    expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
+    const html = await page.text();
+    expect(html).toContain("BeyondQuant 中央反馈审核");
+    expect(html).toContain('src="/admin/assets/app.js"');
+    expect(html).not.toContain("BYQ_FEEDBACK_HUB_ADMIN_TOKEN");
+    expect(html).not.toMatch(/<(?:script|link)[^>]+(?:src|href)=["']https?:\/\//i);
+
+    const script = await call("/admin/assets/app.js");
+    expect(script.headers.get("content-type")).toContain("text/javascript");
+    expect(script.headers.get("cache-control")).toBe("no-store");
+    const source = await script.text();
+    expect(source).toContain("textContent");
+    expect(source).not.toContain("innerHTML");
+    expect(source).not.toContain("localStorage");
+    expect(source).not.toContain("sessionStorage");
+    expect(source).not.toContain("BYQ_FEEDBACK_GITHUB_APP_PRIVATE_KEY");
+    expect(source).not.toMatch(/https?:\/\//);
+
+    const styles = await call("/admin/assets/app.css");
+    expect(styles.headers.get("content-type")).toContain("text/css");
+    expect(styles.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("exchanges the admin token for a bounded HttpOnly session without persisting the token", async () => {
+    const wrong = await adminSession("wrong-admin-token-that-is-at-least-32-bytes");
+    expect(wrong.response.status).toBe(401);
+    expect(wrong.response.headers.get("set-cookie")).toBeNull();
+
+    const crossOrigin = await call("/v1/admin/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "origin": "https://attacker.example",
+        "x-byq-feedback-admin-request": "ui-v1"
+      },
+      body: JSON.stringify({ token: testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN })
+    });
+    expect(crossOrigin.status).toBe(403);
+
+    const created = await adminSession();
+    expect(created.response.status).toBe(200);
+    const setCookie = created.response.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain("__Host-byq_feedback_admin=v1.");
+    expect(setCookie).toContain("Max-Age=28800");
+    expect(setCookie).toContain("Secure");
+    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("SameSite=Strict");
+    expect(setCookie).not.toContain(testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN);
+    expect(await created.response.json()).toMatchObject({ authenticated: true });
+
+    const inspected = await call("/v1/admin/session", { headers: { cookie: created.cookie } });
+    expect(await inspected.json()).toMatchObject({ authenticated: true });
+    const tamperedCookie = `${created.cookie.slice(0, -1)}${created.cookie.endsWith("0") ? "1" : "0"}`;
+    expect((await call("/v1/admin/feedback?status=all", { headers: { cookie: tamperedCookie } })).status).toBe(401);
+
+    const expired = Math.floor(Date.now() / 1000) - 1;
+    const expiredSignature = await hmacHex(testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN,
+      `central-feedback-admin-session.v1:${expired}`);
+    const expiredCookie = `__Host-byq_feedback_admin=v1.${expired}.${expiredSignature}`;
+    expect((await call("/v1/admin/feedback?status=all", { headers: { cookie: expiredCookie } })).status).toBe(401);
+
+    const deleted = await call("/v1/admin/session", {
+      method: "DELETE",
+      headers: { origin: "https://hub.example", "x-byq-feedback-admin-request": "ui-v1" }
+    });
+    expect(deleted.status).toBe(200);
+    expect(deleted.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+
+  it("allows cookie moderation only for exact same-origin UI requests", async () => {
+    const receipt = await submit(await envelope());
+    const created = await adminSession();
+    expect(created.response.status).toBe(200);
+
+    const list = await call("/v1/admin/feedback?status=received&limit=1&offset=0", {
+      headers: { cookie: created.cookie }
+    });
+    expect(list.status).toBe(200);
+    expect(await list.json()).toMatchObject({ schema_version: "central-feedback-admin-catalog.v1", limit: 1, offset: 0 });
+
+    const missingGuard = await call(`/v1/admin/feedback/${receipt.receipt_id}/triage`, {
+      method: "POST",
+      headers: { cookie: created.cookie, "content-type": "application/json" },
+      body: JSON.stringify({ rationale: "信息完整" })
+    });
+    expect(missingGuard.status).toBe(403);
+
+    const wrongOrigin = await call(`/v1/admin/feedback/${receipt.receipt_id}/triage`, {
+      method: "POST",
+      headers: {
+        cookie: created.cookie, "content-type": "application/json",
+        origin: "https://attacker.example", "x-byq-feedback-admin-request": "ui-v1"
+      },
+      body: JSON.stringify({ rationale: "信息完整" })
+    });
+    expect(wrongOrigin.status).toBe(403);
+
+    const triaged = await call(`/v1/admin/feedback/${receipt.receipt_id}/triage`, {
+      method: "POST",
+      headers: {
+        cookie: created.cookie, "content-type": "application/json",
+        origin: "https://hub.example", "x-byq-feedback-admin-request": "ui-v1"
+      },
+      body: JSON.stringify({ rationale: "信息完整" })
+    });
+    expect(triaged.status).toBe(200);
+    expect(await triaged.json()).toMatchObject({ status: "triaged" });
+  });
+
   it("compares empty and non-empty capabilities without an empty-buffer edge case", () => {
     expect(timingSafeEqual("", "")).toBe(true);
     expect(timingSafeEqual("", "secret")).toBe(false);

@@ -58,7 +58,8 @@ Cloudflare 用于 source build/check 的 `Cloudflare Workers and Pages` GitHub A
 保存后回到 **Deployments/Builds** 对失败 build 选择 **Retry**。Hub deploy command 会先查询远程 D1；首次缺少
 `byq-feedback-hub` 时创建它，再以 `DB` binding 应用 D1 migration，最后发布 Worker。后续构建复用同一 D1，并继续保持
 migration-first。Wrangler config 自动配置两个 SQLite Durable Object namespace 和 `byq-feedback-publish` Queue。仓库不保存
-Cloudflare account id 或 D1 id。
+Cloudflare account id 或 D1 id。Hub 的 `workers.dev` 和 preview URL 均关闭；正式访问必须使用下面配置的 Custom Domain，
+避免管理员路径通过未受 Access 保护的备用 hostname 暴露。
 
 在 **Settings → Builds → Build watch paths** 中设置 include：
 
@@ -103,12 +104,13 @@ services/feedback-hub-cloudflare/src/contracts.ts
 workers/feedback-publisher-cloudflare/*
 ```
 
-## 4. 验证中央链路
+## 4. 配置自定义域名并验证中央链路
 
-Hub 首次部署会显示 `workers.dev` HTTPS 地址。打开：
+Hub 首次部署成功后，在 **Settings → Domains & Routes → Add → Custom Domain** 添加正式域名，例如
+`feedback.example.org`。Cloudflare 自动创建 DNS 和证书。打开：
 
 ```text
-https://byq-feedback-hub.<你的workers子域>.workers.dev/healthz
+https://feedback.example.org/healthz
 ```
 
 预期：
@@ -127,20 +129,46 @@ https://byq-feedback-hub.<你的workers子域>.workers.dev/healthz
 
 首次部署不会创建 GitHub Issue。只有匿名 intake 被中央管理员依次 `triage`、`accept` 后，Publisher 才会创建固定仓库 Issue。
 
-## 5. 自定义域名和管理入口
+## 5. 保护中央管理入口
 
-可以先使用 `workers.dev`。准备正式域名后，为 Hub 添加 Custom Domain，例如 `feedback.example.org`。公网只需要：
+Custom Domain 上保持以下公开路径可访问：
 
 - `POST /v1/intake`
 - `GET /v1/status/{receipt_id}`
 - `GET /healthz`
 
-为 `/v1/admin/*` 叠加 Cloudflare Access 或等价维护者策略；Worker 内仍验证 admin bearer。边缘设置 32 KiB body limit 和按源
-IP 的辅助限速。`/internal/*` 只供 Publisher Service Binding 使用，即使被公网探测仍必须通过 publisher token。
+进入 **Cloudflare Zero Trust → Access controls → Applications → Create new application → Self-hosted and private**。在同一个
+Access application 添加以下两个 public hostname path；如果当前界面不允许同一 application 添加两个不连续 path，则创建两个
+使用相同策略的 application：
+
+```text
+feedback.example.org/admin*
+feedback.example.org/v1/admin/*
+```
+
+创建 `Allow` policy，只 Include 维护者的精确邮箱或受控 IdP group。不要使用 `Everyone`，也不要只凭“任意有效邮箱/一次性
+PIN”放行。Access session duration 建议不超过 8 小时。不要保护整个 `feedback.example.org`，否则会阻断普通 BYQ 的 intake
+和 status 查询。
+
+Worker 内部仍验证 Admin Token 或短期签名会话，Access 是外层而不是替代品。边缘可继续设置 32 KiB body limit 和按源 IP 的
+辅助限速。`/internal/*` 只供 Publisher Service Binding 使用，即使被公网探测仍必须通过 publisher token。
 
 ## 6. 中央审核验收
 
-在当前维护终端临时设置 origin 和 admin token，不要写入仓库或 shell profile：
+Access 生效后打开：
+
+```text
+https://feedback.example.org/admin
+```
+
+从密码管理器粘贴 `BYQ_FEEDBACK_HUB_ADMIN_TOKEN`。登录交换成功后，原 Token 不会写入 URL、Cookie、D1、`localStorage` 或
+`sessionStorage`；浏览器只保存最长 8 小时的 `Secure`、`HttpOnly`、`SameSite=Strict` 签名 Cookie。页面支持状态过滤、
+服务端分页、公开候选详情、分诊、采纳、拒绝和标记重复。退出会清除 Cookie。
+
+对一条明确标为安装验收的反馈先“完成分诊”，再“采纳并进入发布队列”。采纳是公开副作用：Cron 最迟约一分钟扫描 D1
+outbox，Queue Consumer 再创建固定仓库 Issue。验收后手工关闭测试 Issue；Hub 不自动关闭或删除 Issue。
+
+控制台不可用时才使用 CLI fallback。在当前维护终端临时设置 origin 和 admin token，不要写入仓库或 shell profile：
 
 ```bash
 export BYQ_FEEDBACK_HUB_ORIGIN=https://feedback.example.org
@@ -161,8 +189,6 @@ curl -fsS -X POST -H "Authorization: Bearer $BYQ_FEEDBACK_HUB_ADMIN_TOKEN" \
   -H 'Content-Type: application/json' -d '{"rationale":"批准安装验收反馈进入官方Issue队列"}' \
   "$BYQ_FEEDBACK_HUB_ORIGIN/v1/admin/feedback/<receipt>/accept"
 ```
-
-Cron 最迟约一分钟扫描 D1 outbox，Queue Consumer 再创建 Issue。验收后手工关闭测试 Issue；Hub 不自动关闭或删除 Issue。
 
 ## 7. 连接当前 BYQ 正式环境
 

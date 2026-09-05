@@ -1078,6 +1078,22 @@ Cloudflare、Wrangler、Workers Builds、D1 migration 或多 Worker deployment �
 
 本阶段没有可迁移 Community 代码或数据；Community 仓库和数据库保持只读。
 
+## Phase 95 Central Feedback moderation console audit
+
+2026-09-05 只读复核 Community `.github/ISSUE_TEMPLATE/reproducible_bug.md`、`docs/approval_center.md` 与前端系统管理入口。
+Community 没有中央匿名反馈、Cloudflare Hub operator 身份或固定官方仓库的中央采纳控制台。
+
+| Community evidence | Classification | Phase 95 disposition |
+|---|---|---|
+| 结构化复现、期望/实际与可选环境字段 | `PORT_UX` / `PORT_TESTS` | 只展示中央 Hub 已验证的不可变公开候选，不增加自由 HTML、附件或日志读取。 |
+| 公开 Issue 前的 secret/security 提示 | `PORT_UX` / `PORT_TESTS` | 保留 Hub 二次 fail-closed 校验，并在采纳操作明确提示公开副作用。 |
+| 通用审批目录/详情/人工动作 UX | `REFERENCE_ONLY` | 仅复用用户可理解的交互层级；不复制 Community Agent Service、审批规则或 raw API。 |
+| 中央 operator 控制台与身份 | `REPLACE` | Hub 同源静态页面、服务端分页、短期 HttpOnly session、same-origin mutation 与 Access 双层保护。 |
+| Community runtime/storage/credential | `DROP` | 不迁移旧 Agent runtime、数据库、credential、源码或 Git history。 |
+
+提取不变量不变：最小公开内容、显式人工采纳、状态机/CAS/audit 属于 Hub、Issue 副作用只属于隔离 Publisher。Community
+仓库和数据库保持只读，未修改、导入或复制。
+
 ## Post-Phase 82 frontend list-performance maintenance audit（2026-09-01）
 
 The read-only Community Stock Pool, Backtest, Strategy and Operations surfaces

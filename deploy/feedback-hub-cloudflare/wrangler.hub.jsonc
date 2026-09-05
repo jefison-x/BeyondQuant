@@ -3,7 +3,7 @@
   "name": "byq-feedback-hub",
   "main": "../../services/feedback-hub-cloudflare/src/index.ts",
   "compatibility_date": "2026-09-05",
-  "workers_dev": true,
+  "workers_dev": false,
   "preview_urls": false,
   "secrets": {
     "required": [

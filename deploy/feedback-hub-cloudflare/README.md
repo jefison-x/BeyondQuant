@@ -13,5 +13,9 @@ Production branch is `main`. Disable non-production branch deployment; if the UI
 Import and deploy Hub first. Configure only the runtime secrets declared in each corresponding Wrangler config. Never put runtime secrets in
 Workers build variables, GitHub Actions, `.env`, `.dev.vars`, or this repository.
 
+The Hub serves the maintainer console at `/admin` on its Custom Domain. Production keeps `workers.dev` disabled; protect both `/admin*` and
+`/v1/admin/*` with Cloudflare Access. The console exchanges the existing Hub Admin Token for a short HttpOnly session and never stores that
+token in browser storage.
+
 The complete Dashboard fields, watch paths, secret map, validation and rollback procedure are documented in
 [`../../docs/operations/central-feedback-hub.md`](../../docs/operations/central-feedback-hub.md).

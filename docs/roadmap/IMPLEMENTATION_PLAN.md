@@ -800,3 +800,13 @@ Service Binding、WebCrypto GitHub App JWT 和固定 Issue route，且没有 D1/
 两个隔离 project；只从 `main` 发布，PR 只验证。D1/DO/Queue 使用无账号 ID 的自动配置，Hub deploy 在 code activation 前按
 binding 应用 migration，两个 config 声明不同 required runtime secrets。交付机器可检验 build/deploy contract、monorepo
 root/command/watch-path 清单、首次 secret fail-closed 流程、自动更新/回滚说明和 CLI fallback；不修改 Product runtime。
+
+## Central Feedback Moderation Console（Phase 95）
+
+### Phase 95 — Maintainer operator console（`COMPLETE`）
+
+依据 ADR-0055，在 Hub Worker 内提供维护者中文审核控制台，使用服务端状态过滤/分页和当前页懒加载详情调用既有中央管理合同。
+Admin Token 只做同源 HTTPS session exchange，Hub 签发最长八小时的 Secure/HttpOnly/SameSite=Strict HMAC Cookie；页面不使用
+URL、普通 Cookie、local/session storage 或第三方资源持久 secret。Cookie mutation 还要求 exact Origin 和封闭 UI header；
+Bearer CLI 保持兼容。正式自定义域名关闭 `workers.dev` 备用路由，`/admin*` 与 `/v1/admin/*` 由 Cloudflare Access 外层保护，
+公开 intake/status/health 不受影响。Issue 创建仍只属于隔离 Publisher，不改变 Product/DSH/MCP/PostgreSQL 或反馈 wire contract。
