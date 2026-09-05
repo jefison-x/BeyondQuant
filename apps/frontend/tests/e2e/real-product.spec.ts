@@ -80,6 +80,111 @@ test("real Product API login and Stock Pool create flow", async ({ page, baseURL
   expect(serverErrors).toEqual([]);
 });
 
+test("Phase 97 real backtest readable name persists and remains separate from ID", async ({ page, baseURL }) => {
+  const username = process.env.BYQ_E2E_ADMIN_USERNAME;
+  const password = process.env.BYQ_E2E_ADMIN_PASSWORD;
+  if (!username || !password) throw new Error("BYQ_E2E admin credentials are required");
+  const origin = new URL(baseURL ?? "http://127.0.0.1:18080").origin;
+  const unexpectedOrigins = new Set<string>();
+  const serverErrors: string[] = [];
+  page.on("request", request => {
+    const url = new URL(request.url());
+    if (["http:", "https:"].includes(url.protocol) && url.origin !== origin) unexpectedOrigins.add(url.origin);
+  });
+  page.on("response", response => {
+    if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`);
+  });
+
+  await page.goto("/login");
+  await page.getByLabel("用户名").fill(username);
+  await page.getByLabel("密码").fill(password);
+  await page.getByRole("button", { name: "进入" }).click();
+  await expect(page).toHaveURL(`${origin}/agent`);
+
+  const suffix = Date.now();
+  const readableName = `真实回测目录验收-${suffix}`;
+  const created = await page.evaluate(async ({ suffix: identity, name }) => {
+    async function command(path: string, body: Record<string, unknown>) {
+      const response = await fetch(`/api/product${path}`, {
+        method: "POST", credentials: "include", headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) throw new Error(`${path} failed: ${response.status} ${await response.text()}`);
+      return response.json();
+    }
+    const task = await command("/research/tasks", {
+      title: `Phase 97 回测-${identity}`, objective: "验证可读名称与技术身份分离",
+    });
+    const trace = `phase97-${identity}`;
+    const draft = await command("/strategies/validate", {
+      task_id: task.task_id,
+      strategy: {
+        strategy_id: `Phase97Strategy${identity}`,
+        name: "Phase 97 动量策略",
+        category: "momentum",
+        description: "real Product API browser evidence",
+        parameters: { lookback: 20 },
+        parameter_schema: { lookback: { type: "integer", minimum: 1 } },
+        source_type: "python_script",
+        script: "class CustomStrategy:\n    def generate_signals(self, data, parameters=None):\n        return {}",
+      },
+      trace_id: trace, idempotency_key: `phase97-draft-${identity}`,
+    });
+    const version = await command("/strategies/versions", {
+      task_id: task.task_id, draft_artifact_id: draft.artifact.artifact_id,
+      trace_id: trace, idempotency_key: `phase97-version-${identity}`,
+    });
+    const approval = await command("/strategies/approvals", {
+      task_id: task.task_id, strategy_version_artifact_id: version.artifact.artifact_id,
+      decision: "approved", trace_id: trace, idempotency_key: `phase97-approval-${identity}`,
+    });
+    const backtest = await command("/backtests", {
+      name,
+      task_id: task.task_id,
+      strategy_version_artifact_id: version.artifact.artifact_id,
+      approval_artifact_id: approval.artifact.artifact_id,
+      trace_id: trace,
+      idempotency_key: `phase97-backtest-${identity}`,
+      universe: {
+        universe_id: "phase97-fixture", version_id: "phase97-v1",
+        membership_fingerprint: "49500131961e37a6c97ea664574407d3497371ad68e5b725b95b21dc8706d603",
+        symbols: ["000001.SZ"],
+      },
+      bars: [
+        { symbol: "000001.SZ", trade_date: "2026-01-05", open: 10, high: 10, low: 10, close: 10 },
+        { symbol: "000001.SZ", trade_date: "2026-01-06", open: 10, high: 10, low: 10, close: 10 },
+      ],
+      signals: [{ symbol: "000001.SZ", trade_date: "2026-01-05", side: "buy", quantity: 100 }],
+      execution: { initial_capital: 2000, commission_rate: 0, stamp_tax_rate: 0, lot_size: 100 },
+    });
+    const query = await fetch(`/api/product/backtests?query=${encodeURIComponent(name)}&limit=20&offset=0`, {
+      credentials: "include",
+    });
+    if (!query.ok) throw new Error(`catalog query failed: ${query.status}`);
+    return { job: backtest.job, catalog: await query.json() };
+  }, { suffix, name: readableName }) as {
+    job: { job_id: string; name: string };
+    catalog: { total: number; backtests: Array<{ job_id: string; name: string }> };
+  };
+
+  expect(created.job.name).toBe(readableName);
+  expect(created.catalog.total).toBe(1);
+  expect(created.catalog.backtests[0]).toMatchObject({ job_id: created.job.job_id, name: readableName });
+  await page.goto(`/backtest?job=${encodeURIComponent(created.job.job_id)}`);
+  await expect(page.getByText(readableName, { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("回测 ID", { exact: true }).first()).toBeVisible();
+  await page.getByRole("tab", { name: "技术详情" }).click();
+  await expect(page.getByRole("tabpanel", { name: "技术详情" }).getByText(created.job.job_id, { exact: true })).toBeVisible();
+  const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
+  if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/97-backtest-readable-name-desktop.png`, fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".mobile-list").getByText(readableName, { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  if (evidenceDir) await page.screenshot({ path: `${evidenceDir}/97-backtest-readable-name-mobile.png`, fullPage: true });
+  expect([...unexpectedOrigins]).toEqual([]);
+  expect(serverErrors).toEqual([]);
+});
+
 test("Phase 74 real LightGBM training to frozen-signal backtest journey", async ({ page, baseURL }) => {
   test.setTimeout(240_000);
   const username = process.env.BYQ_E2E_ADMIN_USERNAME, password = process.env.BYQ_E2E_ADMIN_PASSWORD;

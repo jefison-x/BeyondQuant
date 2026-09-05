@@ -120,6 +120,13 @@ def _idempotency_key(value: object) -> str:
     return _text(value, field="idempotency_key", max_length=128)
 
 
+def normalize_backtest_name(value: object | None) -> str:
+    """Normalize user-facing catalogue metadata outside immutable inputs."""
+    if value is None:
+        return "回测任务"
+    return _text(value, field="name", max_length=120)
+
+
 def _date(value: object, *, field: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{field} must be YYYY-MM-DD")
@@ -496,7 +503,7 @@ def normalize_backtest_request(payload: object, *, strategy_version_artifact_id:
     if not isinstance(payload, dict):
         raise ValueError("backtest request must be an object")
     allowed = {
-        "task_id", "experiment_id", "strategy_version_artifact_id", "approval_artifact_id",
+        "name", "task_id", "experiment_id", "strategy_version_artifact_id", "approval_artifact_id",
         "trace_id", "idempotency_key", "universe", "bars", "signals", "execution", "corporate_actions", "benchmark",
     }
     _reject_unknown(payload, allowed, field="backtest request")
@@ -545,6 +552,7 @@ def normalize_backtest_request(payload: object, *, strategy_version_artifact_id:
         execution=execution,
     )
     return {
+        "name": normalize_backtest_name(payload.get("name")),
         "task_id": task_id,
         "experiment_id": experiment_id,
         "strategy_version_artifact_id": version_id,
@@ -1417,6 +1425,7 @@ class BacktestJobStore(PgStoreMixin):
         """
         CREATE TABLE IF NOT EXISTS backtest_jobs (
             job_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL DEFAULT '回测任务',
             task_id TEXT NOT NULL,
             experiment_id TEXT,
             owner_principal TEXT NOT NULL,
@@ -1440,6 +1449,30 @@ class BacktestJobStore(PgStoreMixin):
             finished_at TIMESTAMPTZ
         )
         """,
+        """ALTER TABLE backtest_jobs ADD COLUMN IF NOT EXISTS name TEXT""",
+        """
+        DO $byq$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = current_schema()
+                   AND table_name = 'backtest_jobs'
+                   AND column_name = 'name'
+                   AND is_nullable = 'YES'
+            ) THEN
+                UPDATE backtest_jobs
+                   SET name = CONCAT(
+                       '历史回测 · ',
+                       TO_CHAR(created_at AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD HH24:MI'),
+                       ' · ', RIGHT(job_id, 6)
+                   )
+                 WHERE name IS NULL OR BTRIM(name) = '';
+                ALTER TABLE backtest_jobs ALTER COLUMN name SET NOT NULL;
+            END IF;
+        END
+        $byq$
+        """,
+        """ALTER TABLE backtest_jobs ALTER COLUMN name SET DEFAULT '回测任务'""",
         """
         CREATE UNIQUE INDEX IF NOT EXISTS backtest_jobs_idempotency
             ON backtest_jobs(task_id, idempotency_key)
@@ -1462,7 +1495,10 @@ class BacktestJobStore(PgStoreMixin):
 
     @staticmethod
     def _request_hash(request: dict[str, object]) -> str:
-        return _sha256(_canonical({key: value for key, value in request.items() if key != "idempotency_key"}))
+        return _sha256(_canonical({
+            key: value for key, value in request.items()
+            if key not in {"idempotency_key", "name"}
+        }))
 
     def create(self, request: dict[str, object], *, owner_principal: str) -> dict[str, object]:
         manifest = request.get("manifest")
@@ -1475,6 +1511,7 @@ class BacktestJobStore(PgStoreMixin):
         job_id = _new_job_id()
         values = {
             "job_id": job_id,
+            "name": normalize_backtest_name(request.get("name")),
             "task_id": request["task_id"],
             "experiment_id": request.get("experiment_id"),
             "owner_principal": owner,
@@ -1525,11 +1562,11 @@ class BacktestJobStore(PgStoreMixin):
             execute(
                 connection,
                 """INSERT INTO backtest_jobs
-                (job_id, task_id, experiment_id, owner_principal, status, request_json,
+                (job_id, name, task_id, experiment_id, owner_principal, status, request_json,
                  request_hash, input_manifest_id, input_manifest_json,
                  strategy_version_artifact_id, approval_artifact_id, idempotency_key,
                  attempts, max_attempts, created_at, updated_at)
-                VALUES (:job_id, :task_id, :experiment_id, :owner_principal, 'queued', :request_json,
+                VALUES (:job_id, :name, :task_id, :experiment_id, :owner_principal, 'queued', :request_json,
                         :request_hash, :input_manifest_id, :input_manifest_json,
                         :strategy_version_artifact_id, :approval_artifact_id, :idempotency_key,
                         0, :max_attempts, :created_at, :updated_at)""",
@@ -1584,14 +1621,14 @@ class BacktestJobStore(PgStoreMixin):
             clauses.append("strategy_version_artifact_id = :strategy_artifact_id")
             params["strategy_artifact_id"] = strategy
         if query:
-            clauses.append("job_id ILIKE :query")
+            clauses.append("(name ILIKE :query OR job_id ILIKE :query)")
             params["query"] = f"%{query}%"
         if status:
             clauses.append("status = :status")
             params["status"] = status
         where = " AND ".join(clauses)
         rows = self._execute(
-            f"""SELECT job_id,task_id,experiment_id,owner_principal,status,input_manifest_id,
+            f"""SELECT job_id,name,task_id,experiment_id,owner_principal,status,input_manifest_id,
                        strategy_version_artifact_id,approval_artifact_id,attempts,max_attempts,
                        result_artifact_id,error_code,error_message,created_at,updated_at,finished_at,
                        summary_json,input_manifest_json->'execution' AS execution,
@@ -1616,7 +1653,7 @@ class BacktestJobStore(PgStoreMixin):
         if JOB_ID_PATTERN.fullmatch(identity) is None:
             raise ValueError("job_id is not a valid backtest identifier")
         row = self._fetch_one(
-            """SELECT job_id,task_id,experiment_id,owner_principal,status,input_manifest_id,
+            """SELECT job_id,name,task_id,experiment_id,owner_principal,status,input_manifest_id,
                       strategy_version_artifact_id,approval_artifact_id,attempts,max_attempts,
                       result_artifact_id,error_code,error_message,created_at,updated_at,finished_at,
                       summary_json,input_manifest_json->'execution' AS execution,
@@ -1817,7 +1854,7 @@ class BacktestJobStore(PgStoreMixin):
     @staticmethod
     def _public(row: dict[str, Any]) -> dict[str, object]:
         result: dict[str, object] = {
-            "job_id": row["job_id"], "task_id": row["task_id"], "experiment_id": row["experiment_id"],
+            "job_id": row["job_id"], "name": row["name"], "task_id": row["task_id"], "experiment_id": row["experiment_id"],
             "owner_principal": row["owner_principal"], "status": row["status"],
             "input_manifest_id": row["input_manifest_id"], "strategy_version_artifact_id": row["strategy_version_artifact_id"],
             "approval_artifact_id": row["approval_artifact_id"], "attempts": row["attempts"], "max_attempts": row["max_attempts"],
@@ -1837,7 +1874,7 @@ class BacktestJobStore(PgStoreMixin):
         result: dict[str, object] = {
             key: row.get(key)
             for key in (
-                "job_id", "task_id", "experiment_id", "owner_principal", "status",
+                "job_id", "name", "task_id", "experiment_id", "owner_principal", "status",
                 "input_manifest_id", "strategy_version_artifact_id", "approval_artifact_id",
                 "attempts", "max_attempts", "result_artifact_id", "error_code", "error_message",
                 "created_at", "updated_at", "finished_at", "stock_pool_snapshot_id",
@@ -1857,7 +1894,7 @@ def project_backtest_summary(job: dict[str, object]) -> dict[str, object]:
     result = {
         key: job.get(key)
         for key in (
-            "job_id", "task_id", "experiment_id", "owner_principal", "status",
+            "job_id", "name", "task_id", "experiment_id", "owner_principal", "status",
             "input_manifest_id", "strategy_version_artifact_id", "approval_artifact_id",
             "attempts", "max_attempts", "result_artifact_id", "error_code", "error_message",
             "created_at", "updated_at", "finished_at",

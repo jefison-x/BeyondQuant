@@ -374,6 +374,7 @@ const creating = ref(false);
 const options = ref<Array<Record<string, unknown>>>([]);
 const snapshots = ref<Array<Record<string, unknown>>>([]);
 const selectedOption = ref<Record<string, unknown> | null>(null);
+const backtestName = ref("");
 const selectedSnapshot = ref<Record<string, unknown> | null>(null);
 const pools = ref<Array<Record<string, unknown>>>([]);
 const selectedPool = ref<Record<string, unknown> | null>(null);
@@ -422,6 +423,7 @@ function producerMissing(job: Record<string, unknown>): unknown {
 async function openCreate() {
   showCreate.value = true;
   selectedOption.value = null;
+  backtestName.value = "";
   selectedSnapshot.value = null;
   selectedPool.value = null;
   producerJob.value = null;
@@ -511,6 +513,7 @@ async function submitCreate() {
   try {
     await submitBacktest(
       {
+        name: backtestName.value.trim() || undefined,
         task_id: opt.task_id,
         strategy_version_artifact_id: opt.strategy_version_artifact_id,
         approval_artifact_id: opt.approval_artifact_id,
@@ -610,7 +613,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
           </div>
         </template>
         <div class="list-toolbar">
-          <el-input v-model="search" placeholder="搜索回测任务编号" clearable />
+          <el-input v-model="search" placeholder="搜索回测名称或 ID" clearable />
           <el-select v-model="statusFilter" aria-label="回测状态筛选" placeholder="状态筛选" clearable>
             <el-option label="排队中" value="queued" />
             <el-option label="运行中" value="running" />
@@ -629,7 +632,8 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
           @selection-change="onSelectionChange"
         >
           <el-table-column type="selection" width="42" />
-          <el-table-column label="回测任务" min-width="150"><template #default="{ row }">{{ shortReference(row.job_id) }}</template></el-table-column>
+          <el-table-column label="回测名称" min-width="210"><template #default="{ row }"><strong>{{ row.name || '回测任务' }}</strong></template></el-table-column>
+          <el-table-column label="回测 ID" min-width="140"><template #default="{ row }">{{ shortReference(row.job_id) }}</template></el-table-column>
           <el-table-column label="状态" width="100"><template #default="{ row }">{{ statusLabel(row.status) }}</template></el-table-column>
           <el-table-column label="收益" width="90" align="right">
             <template #default="{ row }">{{ formatPercent(summaryValue(row, "total_return")) }}</template>
@@ -651,11 +655,11 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
             @click="select(row)"
           >
             <div class="mobile-card-head">
-              <strong>回测 {{ shortReference(row.job_id) }}</strong>
+              <strong>{{ row.name || '回测任务' }}</strong>
               <el-tag size="small">{{ statusLabel(row.status) }}</el-tag>
             </div>
             <div class="mobile-card-meta">
-              <span>收益 {{ formatPercent(summaryValue(row, "total_return")) }}</span>
+              <span>ID {{ shortReference(row.job_id) }} · 收益 {{ formatPercent(summaryValue(row, "total_return")) }}</span>
               <span>{{ formatChinaTime(row.created_at) }}</span>
             </div>
           </el-card>
@@ -680,7 +684,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
         <template #header>
           <div class="card-heading">
             <span class="card-title">回测详情</span>
-            <small class="card-sub">{{ selected?.job_id ?? "未选择回测结果" }}</small>
+            <small class="card-sub">{{ job?.name || selected?.name || "未选择回测结果" }}</small>
           </div>
         </template>
         <p v-if="error" class="page-error">{{ error }}</p>
@@ -810,6 +814,9 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
             <el-tab-pane label="技术详情" name="snapshot" lazy>
               <el-alert title="以下内容用于审计和复现，普通分析无需复制内部编号。" type="info" :closable="false" />
               <el-descriptions :column="1" border>
+                <el-descriptions-item label="回测 ID">
+                  <code>{{ job.job_id ?? "-" }}</code>
+                </el-descriptions-item>
                 <el-descriptions-item label="策略版本内部编号">
                   <code>{{ strategySnapshot.strategy_version_artifact_id ?? "-" }}</code>
                 </el-descriptions-item>
@@ -862,6 +869,10 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
     </el-dialog>
     <el-dialog v-model="showCreate" title="生成信号并新建回测" width="min(700px, 94vw)">
       <el-form label-position="top">
+        <el-form-item label="回测名称">
+          <el-input v-model="backtestName" maxlength="120" show-word-limit placeholder="可选；留空时按策略名称与创建时间自动生成" />
+          <div class="wizard-hint">名称用于目录识别，不影响不可变输入、回测结果或幂等身份。</div>
+        </el-form-item>
         <el-form-item label="已批准策略版本">
           <el-select v-model="selectedOption" filterable placeholder="选择已批准的策略版本" style="width: 100%">
             <el-option

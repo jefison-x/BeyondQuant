@@ -84,6 +84,7 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     submit = client.post(
         "/v1/research/backtests",
         json={
+            "name": "沪深300动量验证",
             "task_id": task["task_id"], "strategy_version_artifact_id": version["artifact"]["artifact_id"],
             "approval_artifact_id": approval["artifact"]["artifact_id"], "trace_id": task["trace_id"],
             "idempotency_key": "backtest-api-1", "universe": universe, "bars": bars,
@@ -94,6 +95,7 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     assert submit.status_code == 202, submit.text
     job = submit.json()["job"]
     assert job["status"] == "queued"
+    assert job["name"] == "沪深300动量验证"
     assert client.get(
         f"/v1/research/backtests/{job['job_id']}",
         headers=_owner_headers("other-user"),
@@ -186,14 +188,21 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     )
     catalog = client.get(
         "/v1/research/backtests/catalog",
-        params={"query": job["job_id"][-8:], "status": "completed", "limit": 20, "offset": 0},
+        params={"query": "动量验证", "status": "completed", "limit": 20, "offset": 0},
     )
     assert catalog.status_code == 200, catalog.text
     assert catalog.json()["total"] == 1
     catalog_row = catalog.json()["backtests"][0]
     assert catalog_row["job_id"] == job["job_id"]
+    assert catalog_row["name"] == "沪深300动量验证"
     assert "input_manifest" not in catalog_row and "result_reference" not in catalog_row
     assert len(catalog.content) < 16_000
+    id_catalog = client.get(
+        "/v1/research/backtests/catalog",
+        params={"query": job["job_id"][-8:], "limit": 20, "offset": 0},
+    )
+    assert id_catalog.status_code == 200
+    assert id_catalog.json()["backtests"][0]["job_id"] == job["job_id"]
     summary_job = client.get(f"/v1/research/backtests/{job['job_id']}/summary")
     assert summary_job.status_code == 200
     assert summary_job.json()["job"]["execution"]["initial_capital"] == 2000
@@ -211,6 +220,7 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
         "/v1/research/backtests",
         params={"projection": "summary"},
         json={
+            "name": "不得覆盖首次创建名称",
             "task_id": task["task_id"], "strategy_version_artifact_id": version["artifact"]["artifact_id"],
             "approval_artifact_id": approval["artifact"]["artifact_id"], "trace_id": task["trace_id"],
             "idempotency_key": "backtest-api-1", "universe": universe, "bars": bars,
@@ -220,6 +230,7 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     )
     assert retry.status_code == 202
     assert retry.json()["job"]["job_id"] == job["job_id"]
+    assert retry.json()["job"]["name"] == "沪深300动量验证"
     assert "input_manifest" not in retry.json()["job"]
     assert len(retry.content) < 16_000
     denied_delete = client.delete(

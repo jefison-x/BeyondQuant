@@ -1,9 +1,9 @@
 # BeyondQuant
 
-<!-- byq:current-completed-phase=96 -->
+<!-- byq:current-completed-phase=97 -->
 
 BeyondQuant（BYQ）是一个 AI 原生量化研究平台。当前已完成的项目阶段为
-**Phase 96**：可靠 LightGBM、自动化通道和按需数据准备均已接入小巴；机器学习 V2 已实现可扩展能力
+**Phase 97**：可靠 LightGBM、自动化通道和按需数据准备均已接入小巴；机器学习 V2 已实现可扩展能力
 注册、purged walk-forward、确定性 Ridge JSON、冻结沪深300市场状态、独立专家 ModelBundle、确定性路由，
 以及动态 Product API、分页/懒加载模型研究工作台和小巴最小权限入口。内置 Product Feedback 已完成
 PostgreSQL 反馈修订、隐私预览、审核/outbox 与分页 Product API，以及隔离、固定仓库、有限重试的
@@ -14,6 +14,8 @@ Feedback Hub，中央审核采纳后才发布 Issue；小巴在原会话展示�
 普通用户仍无需 Cloudflare 配置。中央维护者可使用管理员密码直接登录中文审核控制台；按来源 HMAC 分片的持久节流和短期
 HttpOnly 会话保护管理入口，Cloudflare Access 仅作为可选 MFA/IdP 增强。控制台支持分页查看、分诊、采纳、拒绝或标记重复
 反馈；GitHub Issue 仍只由隔离 Publisher 创建。
+回测目录现在以持久化中文名称为主、稳定 Backtest ID 为技术身份；可按名称或 ID 服务端分页搜索，创建向导支持自定义名称，
+小巴未明确命名时由 Backend 根据已验证策略生成默认名称。名称不会改变冻结输入、结果哈希或幂等身份。
 Agent 人工批准/拒绝入口已集中到全局审批中心，决定后会幂等返回原持久会话继续处理；业务页只保留用户主动操作，
 不再要求用户到具体页面批准小巴任务。
 大范围数据准备按原子分片推进，

@@ -83,3 +83,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   same-origin mutation、无持久浏览器 secret 和保持隔离 Publisher 为唯一 Issue writer 的边界。
 - ADR-0056 将 Cloudflare Access 改为可选增强，并定义中央管理员密码直登、按来源 HMAC 分片的持久登录节流、
   v2 session 签名和密码轮换失效边界。
+- ADR-0057 定义回测可读名称与稳定 ID 的分离、PostgreSQL forward repair、名称/ID 双字段目录和
+  名称不进入不可变输入及结果身份的边界。

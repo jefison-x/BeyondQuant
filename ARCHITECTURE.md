@@ -260,6 +260,12 @@ Phase 12 Backtest 使用 BYQ 自有的确定性 signal-snapshot engine。Backtes
 也不访问 provider credential。完整 result 是由 Backend/Domain Plane 持有的不可变
 object reference，而 business job state 留在 BYQ storage。
 
+ADR-0057 的 Backtest 可读名称是 PostgreSQL 中 owner-scoped 的目录元数据；稳定
+`backtest_*` ID 仍是审计、关联和执行身份。名称可以由用户在创建时提供或由 Backend
+生成，但 MUST NOT 进入 signal snapshot、input manifest、request/result hash、Artifact
+identity 或执行规则。Frontend 必须同时展示可读名称和独立 ID，且只能经 Gateway/Product
+API 读取或搜索该字段。
+
 Phase 13 quant role 使用 DSH Preset、Skill 和 official subagent seam。role allowlist、
 owner/actor authorization、approval state、audit record 和 evidence promotion 仍是通过
 MCP 访问的 BYQ 自有 Contract。DSH 不获得 business storage access、provider

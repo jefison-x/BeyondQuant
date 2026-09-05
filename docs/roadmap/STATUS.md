@@ -1,18 +1,19 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=96 -->
+<!-- byq:current-completed-phase=97 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 96**——普通用户的小巴反馈与全局审批流程保持不变；官方中央 Feedback Hub 支持维护者管理员密码
-  直接登录，并以按来源 HMAC 分片的持久登录节流和短期 HttpOnly session 保护管理合同。Cloudflare Access 改为可选增强；隔离
-  Publisher 继续独占固定仓库 Issue 写入。普通用户无需 GitHub 或 Cloudflare 账号、Token、仓库、域名或 Hub 凭据。
+- 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、
+  技术详情和小巴任务投影中分离。名称搜索保持服务端分页，缺省名称来自已验证策略，历史任务由 PostgreSQL 前向修复补齐，
+  且名称不进入 immutable input/result identity 或 idempotency identity。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
   publication 或正式发布。独立的 post-Phase 40 DSH Upgrade Lane 已将 Product Runtime
   验证到 Python `0.1.1rc1` / npm `0.1.1-rc.1`；它是维护历史，不是隐含的 Product Phase。
 - 当前完成范围内没有未决架构决策。
+- 下一阶段：**未授权**。必须由维护者明确选择并授权，且继续遵守一阶段一工作树/Draft PR 的合并门禁。
 - Phase 82 已依据 ADR-0047 完成；验收证据位于 `docs/evidence/phase-82/`。
 - Phase 90 已依据 ADR-0049 完成；验收证据位于 `docs/evidence/phase-90/`。
 - Phase 91 已依据 ADR-0051 完成；验收证据位于 `docs/evidence/phase-91/`。
@@ -25,6 +26,8 @@ history 推断项目状态。
   替代；普通 intake/status/health 路径保持公开。
 - Phase 96 已依据 ADR-0056 完成；验收证据位于 `docs/evidence/phase-96/`。管理员密码直登为默认路径，Cloudflare Access
   仅在需要 MFA/IdP 时作为可选外层；旧 v1 管理会话在部署后失效。
+- Phase 97 已依据 ADR-0057 完成；验收证据位于 `docs/evidence/phase-97/`。GitHub Issue #240 的名称/ID 分离已贯通 Backend、
+  Product API、MCP/任务投影和真实浏览器，历史回测计算身份保持不变。
 - Phase 61 由维护者于 2026-08-27 授权并完成；规范与证据位于 ADR-0034、验收报告和
   `docs/evidence/phase-61/`。
 
@@ -83,6 +86,7 @@ history 推断项目状态。
 - Cloudflare GitHub automatic deployment：**ADR-0054**
 - Central Feedback moderation console：**ADR-0055**
 - Central Feedback direct admin password and login throttling：**ADR-0056**
+- Backtest readable name and catalog identity：**ADR-0057**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -404,7 +408,7 @@ Post-Phase 90 Management Action Consistency Maintenance 依据 ADR-0050 将股�
 
 ## 当前授权边界
 
-- Phase 49-96 与相应 Accepted ADR/计划均已完成。
+- Phase 49-97 与相应 Accepted ADR/计划均已完成；下一阶段尚未授权。
 - Phase 82 与 ADR-0047 已完成；50,000 保持原子 readiness 分片上限，不是 Tushare
   额度或完整数据任务上限。
 - ADR-0044 授权的 Phase 75–79、ADR-0045 授权的 Phase 80、ADR-0046 授权的 Phase 81、

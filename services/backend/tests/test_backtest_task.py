@@ -59,6 +59,7 @@ def test_signal_and_backtest_states_are_derived_not_duplicated():
         signal_job=signal,
         backtest_job={
             "job_id": "backtest_0123456789abcdef0123456789abcdef",
+            "name": "动量策略年度复核",
             "status": "completed",
             "attempts": 1,
             "max_attempts": 2,
@@ -68,6 +69,7 @@ def test_signal_and_backtest_states_are_derived_not_duplicated():
     ))
     assert completed["phase"] == "completed"
     assert completed["references"]["result_artifact_id"] == "artifact_result"
+    assert completed["backtest"]["name"] == "动量策略年度复核"
     assert completed["next_action"] == "review_result"
 
 

@@ -2,7 +2,7 @@ import os
 import re
 import secrets
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import BackgroundTasks, FastAPI
 from fastapi import HTTPException, Request
@@ -84,6 +84,7 @@ from .backtest import (
     load_result,
     build_manifest,
     normalize_backtest_request,
+    normalize_backtest_name,
     normalize_signal_snapshot,
     normalize_execution_profile,
     project_backtest_summary,
@@ -3069,7 +3070,7 @@ def transition_artifact(artifact_id: str, payload: dict[str, Any]) -> dict[str, 
 
 def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
     allowed = {
-        "task_id", "experiment_id", "strategy_version_artifact_id", "approval_artifact_id",
+        "name", "task_id", "experiment_id", "strategy_version_artifact_id", "approval_artifact_id",
         "trace_id", "idempotency_key", "universe", "bars", "signals", "execution", "corporate_actions",
         "signal_snapshot_artifact_id",
     }
@@ -3138,6 +3139,18 @@ def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
             raise ValueError("ML signal lineage does not match the selected approval")
     if validated_version.get("version_id") != version_artifact["content"].get("version_id"):
         raise ValueError("strategy version content is inconsistent")
+    explicit_name = request.get("name")
+    if explicit_name is not None:
+        backtest_name = normalize_backtest_name(explicit_name)
+    else:
+        snapshot = validated_version.get("snapshot")
+        strategy_name = (
+            validated_version.get("name") if is_ml
+            else snapshot.get("name") if isinstance(snapshot, dict) else None
+        )
+        label = str(strategy_name).strip() if isinstance(strategy_name, str) else "回测任务"
+        suffix = f" 回测 · {datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')}"
+        backtest_name = normalize_backtest_name(f"{label[:120 - len(suffix)]}{suffix}")
     task = research_store.get_task(request.get("task_id"))
     experiment_id = request.get("experiment_id")
     if experiment_id is not None:
@@ -3156,6 +3169,7 @@ def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
             execution=snapshot_content["execution"],
         )
         return {
+            "name": backtest_name,
             "task_id": task["task_id"],
             "experiment_id": experiment_id,
             "strategy_version_artifact_id": version_artifact["artifact_id"],
@@ -3166,6 +3180,7 @@ def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
             "input_manifest_id": input_manifest_id,
             "signal_snapshot_artifact_id": snapshot_artifact_id,
         }
+    request["name"] = backtest_name
     return normalize_backtest_request(
         request,
         strategy_version_artifact_id=version_artifact["artifact_id"],
