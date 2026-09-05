@@ -49,10 +49,10 @@ while IFS= read -r path; do
       mark_all_components
       integration=yes
       ;;
-    docs/*|README.md|LICENSE|CHANGELOG.md)
+    docs/*|README.md|LICENSE|CHANGELOG.md|CONTRIBUTING.md|CONTRIBUTOR_LICENSE_AGREEMENT.md|SECURITY.md|THIRD_PARTY_NOTICES.md)
       docs=yes
       case "$path" in
-        docs/architecture/*|docs/contracts/*|docs/roadmap/*|docs/DEVELOPMENT_WORKFLOW.md|docs/operations/ci-policy.md)
+        docs/architecture/*|docs/contracts/*|docs/roadmap/*|docs/DEVELOPMENT_WORKFLOW.md|docs/operations/ci-policy.md|docs/legal/*|LICENSE|README.md|CONTRIBUTING.md|CONTRIBUTOR_LICENSE_AGREEMENT.md|SECURITY.md|THIRD_PARTY_NOTICES.md)
           architecture=yes
           ;;
       esac

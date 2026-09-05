@@ -1,5 +1,15 @@
 # BeyondQuant
 
+> **个人非商业研究源码公开项目，不是 OSI 开源项目。**
+> 仅允许自然人为本人进行非商业学习、研究和模拟测试；**禁止机构使用、商业使用和任何
+> 实盘交易，包括个人自有资金实盘及将软件输出用于真实交易。**
+> 软件和 AI/回测输出不是投资建议或收益保证。在适用法律允许范围内按现状提供、限制责任，
+> 不排除法律规定不得免责的责任。详见 [完整许可](LICENSE) 和 [风险说明](docs/legal/LICENSE_FAQ.md)。
+>
+> 维护者保留对其有权授权部分另行商业/机构授权的权利。贡献者保留版权，但代码合入须有
+> [贡献授权](CONTRIBUTOR_LICENSE_AGREEMENT.md)；[第三方许可](THIRD_PARTY_NOTICES.md)不被覆盖。
+> 授权联系入口：[jefison-x](https://github.com/jefison-x)。
+
 <!-- byq:current-completed-phase=97 -->
 
 BeyondQuant（BYQ）是一个 AI 原生量化研究平台。当前已完成的项目阶段为
@@ -26,6 +36,10 @@ raw features、raw predictions 或 raw signals。
 Product Runtime baseline 仍保持 Python `0.1.1rc1` / npm `0.1.1-rc.1`。
 当前状态以
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) 为准。
+
+DSH `0.1.2rc1` 的[详细升级方案](docs/roadmap/DSH_012RC1_UPGRADE_PLAN.md)、
+[执行表](docs/roadmap/DSH_012RC1_EXECUTION.md)和[测试矩阵](docs/roadmap/DSH_012RC1_TEST_MATRIX.md)
+已作为后续维护规划归档。**方案入库不等于已升级**；当前 runtime 版本仍如上，实施从 U0 开始。
 
 ## 项目定位
 

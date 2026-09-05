@@ -1,0 +1,151 @@
+{
+  "schema_version": "byq-python-declaration-inventory.v1",
+  "scope": "Direct declarations only; installed transitives and binary notices require release SBOM review.",
+  "dependencies": [
+    {
+      "source": "services/backend/pyproject.toml",
+      "group": "runtime",
+      "requirement": "SQLAlchemy==2.0.40"
+    },
+    {
+      "source": "services/backend/pyproject.toml",
+      "group": "runtime",
+      "requirement": "cryptography==45.0.6"
+    },
+    {
+      "source": "services/backend/pyproject.toml",
+      "group": "runtime",
+      "requirement": "fastapi==0.116.1"
+    },
+    {
+      "source": "services/backend/pyproject.toml",
+      "group": "runtime",
+      "requirement": "psycopg[binary]==3.2.6"
+    },
+    {
+      "source": "services/backend/pyproject.toml",
+      "group": "runtime",
+      "requirement": "uvicorn[standard]==0.35.0"
+    },
+    {
+      "source": "services/backend/pyproject.toml",
+      "group": "test",
+      "requirement": "httpx==0.28.1"
+    },
+    {
+      "source": "services/backend/pyproject.toml",
+      "group": "test",
+      "requirement": "pytest==8.4.1"
+    },
+    {
+      "source": "services/gateway/pyproject.toml",
+      "group": "runtime",
+      "requirement": "fastapi==0.116.1"
+    },
+    {
+      "source": "services/gateway/pyproject.toml",
+      "group": "runtime",
+      "requirement": "httpx==0.28.1"
+    },
+    {
+      "source": "services/gateway/pyproject.toml",
+      "group": "runtime",
+      "requirement": "uvicorn[standard]==0.35.0"
+    },
+    {
+      "source": "services/gateway/pyproject.toml",
+      "group": "test",
+      "requirement": "httpx==0.28.1"
+    },
+    {
+      "source": "services/gateway/pyproject.toml",
+      "group": "test",
+      "requirement": "pytest==8.4.1"
+    },
+    {
+      "source": "services/runtime-adapter/pyproject.toml",
+      "group": "runtime",
+      "requirement": "deepseek-harness-runtime-bin==0.1.1rc1"
+    },
+    {
+      "source": "services/runtime-adapter/pyproject.toml",
+      "group": "runtime",
+      "requirement": "deepseek-harness-sdk==0.1.1rc1"
+    },
+    {
+      "source": "services/runtime-adapter/pyproject.toml",
+      "group": "runtime",
+      "requirement": "fastapi==0.116.1"
+    },
+    {
+      "source": "services/runtime-adapter/pyproject.toml",
+      "group": "runtime",
+      "requirement": "httpx==0.28.1"
+    },
+    {
+      "source": "services/runtime-adapter/pyproject.toml",
+      "group": "runtime",
+      "requirement": "uvicorn[standard]==0.35.0"
+    },
+    {
+      "source": "services/runtime-adapter/pyproject.toml",
+      "group": "test",
+      "requirement": "pytest==8.4.1"
+    },
+    {
+      "source": "services/signal-sandbox/pyproject.toml",
+      "group": "runtime",
+      "requirement": "fastapi==0.116.1"
+    },
+    {
+      "source": "services/signal-sandbox/pyproject.toml",
+      "group": "runtime",
+      "requirement": "numpy==2.3.3"
+    },
+    {
+      "source": "services/signal-sandbox/pyproject.toml",
+      "group": "runtime",
+      "requirement": "pandas==2.3.3"
+    },
+    {
+      "source": "services/signal-sandbox/pyproject.toml",
+      "group": "runtime",
+      "requirement": "python-dateutil==2.9.0.post0"
+    },
+    {
+      "source": "services/signal-sandbox/pyproject.toml",
+      "group": "runtime",
+      "requirement": "pytz==2026.3.post1"
+    },
+    {
+      "source": "services/signal-sandbox/pyproject.toml",
+      "group": "runtime",
+      "requirement": "six==1.17.0"
+    },
+    {
+      "source": "services/signal-sandbox/pyproject.toml",
+      "group": "runtime",
+      "requirement": "tzdata==2026.3"
+    },
+    {
+      "source": "services/signal-sandbox/pyproject.toml",
+      "group": "runtime",
+      "requirement": "uvicorn[standard]==0.35.0"
+    },
+    {
+      "source": "workers/feedback-publisher/Dockerfile",
+      "group": "build-declaration",
+      "requirement": "cryptography==45.0.6"
+    },
+    {
+      "source": "workers/ml/Dockerfile",
+      "group": "build-declaration",
+      "requirement": "lightgbm==4.7.0"
+    },
+    {
+      "source": "workers/ml/Dockerfile",
+      "group": "build-declaration",
+      "requirement": "numpy==2.3.3"
+    }
+  ]
+}

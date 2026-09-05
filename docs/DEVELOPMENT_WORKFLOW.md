@@ -78,6 +78,11 @@ ADR-0059 补充：必须有覆盖本任务的 merge 授权，并在动作前运�
 API 403、ruleset-only 尚未验证、设置关闭、skipped/neutral、未知/过期检查时停在 Draft；
 不得使用 `--admin`、取消必需检查或直接即时 merge 作为 fallback。修复平台配置需维护者另行授权。
 
+仅源码公开过渡任务适用 [ADR-0060](architecture/adr/ADR-0060-source-publication-and-hosted-ci.md)
+中已获维护者批准的一次性例外；它不能用于后续 runner PR、DSH 升级或普通开发。
+公开贡献还须遵守根 CONTRIBUTING.md / CONTRIBUTOR_LICENSE_AGREEMENT.md；技术 CI 成功
+不代表权属或贡献授权已完成。
+
 生产部署独立于合并。只有获授权的 Product 外 trusted operator 可按 ADR-0040/0059 的
 runbook 发布指定已验证制品，记录 backup（必要时）、服务范围、readiness、业务 smoke、rollback。
 这不允许 Engineering/Product 自主部署，也不允许自动 destructive migration。

@@ -8,10 +8,10 @@
 [发布方案](../operations/DSH_012RC1_ROLLOUT.md)和[ADR 提案](../architecture/adr/ADR-0058-dsh-release-bundles-and-compatibility.md)。
 然后检查 `STATUS.md`、Git/worktree 和用户最新授权。不要凭之前聊天摘要直接替换 DSH 版本。
 
-当前修正版随 `chore/governance-ci-hardening` 交付，工作树为
-`/home/jefison/projects/.byq-worktrees/governance-ci-hardening`。合并后以最新 main 为准。
+当前修正版由源码发布准备任务承接治理与规划提交；合并后以最新 main 中本文件为唯一入口。
+原治理工作树为 `/home/jefison/projects/.byq-worktrees/governance-ci-hardening`，仅用于历史核对。
 原 `docs/dsh-012rc1-upgrade-plan` / `/tmp/byq-dsh-012rc1-upgrade-plan` 只保留历史，不再是修正版入口。
-工作树不可用时通过 `git show chore/governance-ci-hardening:<path>` 阅读；本地分支不意味着已推送。
+历史分支不意味着已推送或已合并；以 GitHub 和最新 main 核实，不依赖工作树仍然存在。
 
 用户后续明确要求实施时，先完成治理整改/修正版方案的审查合并；
 不要从尚未合并的规划分支直接叠加 U1–U8。文档-only 提交可在新隔离分支 cherry-pick，
@@ -19,7 +19,8 @@
 
 ## 2. 授权与状态事实
 
-- 当前用户授权：治理与 CI 整改、校正规划；不包含 DSH U0–U8 实施、推送、合并或部署。
+- 当前用户授权：合并归档本规划及治理整改，并完成源码许可/仓库公开/托管 CI 迁移；不包含
+  DSH U0–U8 实施、候选或生产 runtime 升级、真实付费模型评测或业务部署。
 - 当前 Product completed phase：97；新 Product phase 未由本方案授权。
 - 当前运行基线：Python `0.1.1rc1` / npm `0.1.1-rc.1`（实施前再次核实）。
 - 目标：Python `0.1.2rc1` / npm `0.1.2-rc.1`，不可擅自追新版本。
@@ -31,6 +32,9 @@
 依据会话已有授权继续，无须对已授权动作逐个重复确认。授权不足只阻止依赖它的步骤，继续可独立完成的工作。
 所有 PR 都要 required CI；预 v1.0 依 ADR-0015/0059 允许 CI-green auto-merge 时仍不能绕过失败检查或 push main。
 U0 前核对 `check-github-gates.py`：auto-merge 关闭/服务器门禁不可验证是合并阻碍，不是 DSH 不兼容。
+ADR-0060 的一次性私有仓库发布过渡例外仅属于源码发布准备，不适用于任何 U0–U8 PR。
+公开后使用标准 GitHub-hosted CI，不重新注册正式机 runner；候选测试依旧是独立资源，
+完整回归/工具能力边界不能因 hosted 容量调整而省略。
 ADR-0058 的接受、生产 operator 部署和付费模型评测分别记录精确授权；不伪造后续完成。
 
 ## 3. 阶段进度表
@@ -110,8 +114,8 @@ Next stage or blocking decision:
 ```text
 按照仓库 docs/roadmap/DSH_012RC1_UPGRADE_PLAN.md 及其测试矩阵、发布方案和执行交接文档，
 开始 BYQ DSH 0.1.2rc1 升级维护。先读取实际文件和当前状态，再从第一个未完成且已授权的阶段继续。
-如果修正版文档尚未合并，先读取 chore/governance-ci-hardening 的治理与规划内容并完成其合并门禁；
-原 docs/dsh-012rc1-upgrade-plan 只作历史。不得从聊天摘要重新猜方案。
+从最新 main 阅读归档的治理与规划；若文档尚未合并，先核实源码发布准备 PR 的状态，不能
+从旧本地规划分支直接开始升级。原 docs/dsh-012rc1-upgrade-plan 只作历史。不得从聊天摘要猜方案。
 
 本次实施授权范围：[填写单阶段或 U0–U8，以及推送/PR/合并/部署、真实模型评测和监控范围]。
 已经授权的动作不重复询问；遇到改变权限/业务语义/目标版本或无法满足硬门禁时说明具体证据。

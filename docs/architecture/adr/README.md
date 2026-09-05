@@ -89,3 +89,7 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
   v2 session 签名和密码轮换失效边界。
 - ADR-0057 定义回测可读名称与稳定 ID 的分离、PostgreSQL forward repair、名称/ID 双字段目录和
   名称不进入不可变输入及结果身份的边界。
+- ADR-0058（Proposed）规划 DSH release bundle 与兼容层；方案归档不代表版本已升级或 ADR 已接受。
+- ADR-0059 定义规则归属、隔离工作树、基于源码的 CI 与精确提交的合并/部署权限门禁。
+- ADR-0060 定义个人非商业研究且禁止实盘的源码公开许可、贡献/第三方权属、GitHub 托管 CI，
+  以及仅用于一次发布准备 PR 的具名过渡例外。

@@ -46,7 +46,9 @@ class CiPolicyTests(unittest.TestCase):
 
     def test_normative_docs_run_architecture_without_compose(self) -> None:
         for path in ("docs/DEVELOPMENT_WORKFLOW.md", "docs/operations/ci-policy.md",
-                     "docs/roadmap/DSH_012RC1_UPGRADE_PLAN.md"):
+                     "docs/roadmap/DSH_012RC1_UPGRADE_PLAN.md", "LICENSE", "README.md",
+                     "CONTRIBUTING.md", "CONTRIBUTOR_LICENSE_AGREEMENT.md", "SECURITY.md",
+                     "THIRD_PARTY_NOTICES.md", "docs/legal/OWNERSHIP.md"):
             with self.subTest(path=path):
                 plan = classify(path)
                 self.assertEqual(plan["architecture"], "yes")
