@@ -19,6 +19,41 @@ def classify(*paths: str) -> dict[str, str]:
 
 
 class CiPolicyTests(unittest.TestCase):
+    def test_inline_schema_and_runtime_protocol_are_integration_risks(self) -> None:
+        for path in ("services/backend/app/backtest.py", "services/backend/app/engineering.py",
+                     "services/backend/app/conversation_catalog.py", "services/runtime-adapter/app/runtime.py"):
+            with self.subTest(path=path):
+                self.assertEqual(classify(path)["integration"], "yes")
+
+    def test_integration_risks_precede_broad_component_and_docs_matches(self) -> None:
+        for path in (
+            "docs/contracts/product-api.openapi.yaml",
+            "docs/contracts/product-capability-catalog.v1.json",
+            "apps/frontend/tests/e2e/real-new.spec.ts",
+            "services/backend/app/main.py",
+            "services/backend/migrations/next.sql",
+            "services/runtime-adapter/runtime/package-lock.json",
+            "services/runtime-adapter/pyproject.toml",
+            "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
+            "scripts/dsh/release.py",
+        ):
+            with self.subTest(path=path):
+                plan = classify(path)
+                self.assertEqual(plan["docs_only"], "no")
+                self.assertEqual(plan["integration"], "yes")
+                for component in ("backend", "gateway", "runtime", "mcp", "frontend"):
+                    self.assertEqual(plan[component], "yes")
+
+    def test_normative_docs_run_architecture_without_compose(self) -> None:
+        for path in ("docs/DEVELOPMENT_WORKFLOW.md", "docs/operations/ci-policy.md",
+                     "docs/roadmap/DSH_012RC1_UPGRADE_PLAN.md", "LICENSE", "README.md",
+                     "CONTRIBUTING.md", "CONTRIBUTOR_LICENSE_AGREEMENT.md", "SECURITY.md",
+                     "THIRD_PARTY_NOTICES.md", "docs/legal/OWNERSHIP.md"):
+            with self.subTest(path=path):
+                plan = classify(path)
+                self.assertEqual(plan["architecture"], "yes")
+                self.assertEqual(plan["integration"], "no")
+
     def test_docs_only_uses_the_lightweight_lane(self) -> None:
         plan = classify("docs/operations/self-hosted-ci.md")
         self.assertEqual(plan["docs_only"], "yes")

@@ -30,4 +30,5 @@ build/
 
 # Local engineering work products
 .byq-worktrees/
+.ci-artifacts/
 coverage/

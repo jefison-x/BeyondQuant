@@ -160,6 +160,7 @@ services:
     environment:
       BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
       BYQ_BACKTEST_OBJECT_ROOT: /var/lib/byq/domain/backtest-objects
+      BYQ_ENGINEERING_WORKTREE_ROOT: ${BYQ_ENGINEERING_WORKTREE_ROOT:-/home/jefison/projects/.byq-worktrees}
       BYQ_BOOTSTRAP_ADMIN_USERNAME: ${BYQ_BOOTSTRAP_ADMIN_USERNAME:-admin}
       BYQ_BOOTSTRAP_ADMIN_PASSWORD: ${BYQ_BOOTSTRAP_ADMIN_PASSWORD:-UIop7890}
       BYQ_CREDENTIAL_KEYRING: ${BYQ_CREDENTIAL_KEYRING:-}

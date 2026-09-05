@@ -36,6 +36,10 @@ PG_NET="byq-ci-network-$SCOPE"
 PG_VOL="byq-ci-postgres-data-$SCOPE"
 
 export COMPOSE_PROJECT_NAME="$PROJECT"
+export COMPOSE_FILE="$REPO_ROOT/compose.yml"
+export COMPOSE_DISABLE_ENV_FILE=1 COMPOSE_ENV_FILES=/dev/null COMPOSE_PROFILES=""
+export BYQ_MCP_TOKEN=ci-mcp-test-only BYQ_PRODUCT_TOKEN=ci-product-test-only
+export BYQ_POSTGRES_VOLUME_EXTERNAL=false
 export BYQ_PRODUCT_NETWORK_NAME="byq-ci-product-$SCOPE"
 export BYQ_SIGNAL_SANDBOX_NETWORK_NAME="byq-ci-signal-sandbox-$SCOPE"
 export BYQ_POSTGRES_VOLUME_NAME="byq-ci-postgres-$SCOPE"
@@ -64,6 +68,10 @@ if [ "$VERIFY_ONLY" -eq 0 ]; then
     cd "$REPO_ROOT"
     docker compose --profile feedback-publisher down --rmi local -v --remove-orphans >/dev/null 2>&1 || true
   )
+  # Component-only runs never create Compose containers; remove their exact tags too.
+  for service in backend gateway runtime-adapter mcp frontend data-worker signal-worker ml-worker signal-sandbox feedback-publisher feedback-hub-relay dsh; do
+    docker image rm "$PROJECT-$service" >/dev/null 2>&1 || true
+  done
   docker rm -f "$BACKEND" >/dev/null 2>&1 || true
   if [ "$KEEP_POSTGRES" -eq 0 ]; then
     docker rm -f "$PG" >/dev/null 2>&1 || true
@@ -73,6 +81,12 @@ if [ "$VERIFY_ONLY" -eq 0 ]; then
 fi
 
 failures=0
+for service in backend gateway runtime-adapter mcp frontend data-worker signal-worker ml-worker signal-sandbox feedback-publisher feedback-hub-relay dsh; do
+  if docker image inspect "$PROJECT-$service" >/dev/null 2>&1; then
+    echo "CI cleanup verification failed: image tag remains: $PROJECT-$service" >&2
+    failures=$((failures + 1))
+  fi
+done
 if [ "$KEEP_POSTGRES" -eq 0 ] && [ -n "$(docker ps -aq --filter "label=byq.ci.scope=$SCOPE")" ]; then
   echo "CI cleanup verification failed: labeled containers remain for $SCOPE" >&2
   failures=$((failures + 1))

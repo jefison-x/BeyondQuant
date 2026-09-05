@@ -277,9 +277,9 @@ provision 并明确 shared-storage semantics。
 
 ## DSH upgrade compatibility
 
-已验证 Product Runtime baseline 为准确 rc.1：
+已验证 Product Runtime baseline 为准确 rc.1（包数以 2026-08-28 ADR-0038 修订为准）：
 
-- 54 个 DSH npm runtime package 全部为 `0.1.1-rc.1`，另加七个准确固定的 supporting
+- 71 个 DSH npm runtime package 全部为 `0.1.1-rc.1`，另加七个准确固定的 supporting
   `@deepseek-ai/*` package；
 - Python `deepseek-harness-sdk==0.1.1rc1`；
 - `deepseek-harness-runtime-bin==0.1.1rc1`。
@@ -397,5 +397,6 @@ no-proxy/no-host-network Web boundary 和全部 Product capability restriction�
 - base Compose 与 diagnostic Web profile check 通过；
 - CI 运行 Phase 5 与 Phase 6 test，并保持 Human Merge Gate。
 
-如果 compatibility evidence 不足或新 DSH behavior 打破该 seam，必须将本 ADR 改为
-Proposed，Phase 6 必须停在已文档化 architecture blocker。
+上述退出标准描述 Phase 6 当时的验收。后续 candidate compatibility evidence 不足时，保持已认证
+旧版与本 Accepted ADR 生效，将候选 successor ADR 保持 Proposed 并暂停候选晋升；不得因候选失败
+撤销旧版资格或把已完成 Phase 6 改为未完成。任务/停止门禁按 ADR-0059。

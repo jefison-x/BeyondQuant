@@ -11,7 +11,7 @@
 #   --base=<sha|ref>   Diff baseline (default: origin/main)
 #   --only=<checks>    Comma list: docs,architecture,backend,gateway,runtime,mcp,frontend
 #   --all              Run every check (ignore path filtering)
-#   --build            docker compose build before service tests (reuse images by default)
+#   --build            Compatibility flag: selected images are always built with Docker cache
 #   --with-e2e         Also run frontend Playwright e2e (needs browsers installed)
 #   --with-smoke       Also run full compose smoke (./tests/smoke/run.sh)
 #   --auto-smoke       Run full compose smoke only for integration-risk changes
@@ -96,7 +96,7 @@ compute_changed() {
         ;;
       *) echo "    [FAIL] unknown classifier output: $key" >&2; return 1 ;;
     esac
-  done < <(printf '%s\n' "$CHANGED" | scripts/ci/classify-changes.sh)
+  done < <(printf '%s\n' "$CHANGED" | BYQ_CI_DIFF_BASE="$DIFF_BASE" scripts/ci/classify-changes.sh)
   printf '    plan -> docs=%s architecture=%s backend=%s gateway=%s runtime=%s mcp=%s frontend=%s integration=%s unknown=%s\n' \
     "$docs" "$architecture" "$backend" "$gateway" "$runtime" "$mcp" "$frontend" "$integration" "$unknown"
 }
@@ -120,6 +120,9 @@ want() { # want <check>
 
 # ------------------------------------------------------------------- postgres
 BYQ_CI_SCOPE="${BYQ_CI_SCOPE:-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-$$}}"
+case "$BYQ_CI_SCOPE" in
+  ''|*[!A-Za-z0-9_.-]*) echo "invalid CI scope" >&2; exit 2 ;;
+esac
 CI_PG="byq-ci-postgres-$BYQ_CI_SCOPE"
 CI_BACKEND="byq-ci-backend-$BYQ_CI_SCOPE"
 CI_PG_NET="byq-ci-network-$BYQ_CI_SCOPE"
@@ -214,7 +217,7 @@ ensure_ci_backend() {
       -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/backend:/app" -w /app \
       -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
-      beyondquant-backend >/dev/null
+      "$(ci_image backend)" >/dev/null
   fi
   for _ in $(seq 1 30); do
     docker exec "$CI_BACKEND" python -c \
@@ -226,6 +229,9 @@ ensure_ci_backend() {
   return 1
 }
 prepare_ci_compose_env() {
+  # Never load the operator's .env/override or inherit production credentials.
+  export COMPOSE_FILE="$REPO_ROOT/compose.yml"
+  export COMPOSE_DISABLE_ENV_FILE=1 COMPOSE_ENV_FILES=/dev/null COMPOSE_PROFILES=""
   export COMPOSE_PROJECT_NAME="byq-ci-stack-$BYQ_CI_SCOPE"
   export BYQ_PRODUCT_NETWORK_NAME="byq-ci-product-$BYQ_CI_SCOPE"
   export BYQ_SIGNAL_SANDBOX_NETWORK_NAME="byq-ci-signal-sandbox-$BYQ_CI_SCOPE"
@@ -238,13 +244,21 @@ prepare_ci_compose_env() {
   # Explicit bindings remain available for local debugging.
   export BYQ_FRONTEND_BIND="${BYQ_CI_FRONTEND_BIND:-127.0.0.1:0}"
   export BYQ_GATEWAY_BIND="${BYQ_CI_GATEWAY_BIND:-127.0.0.1:0}"
-  export BYQ_MCP_TOKEN="${BYQ_MCP_TOKEN:-ci-mcp-test-only}"
-  export BYQ_PRODUCT_TOKEN="${BYQ_PRODUCT_TOKEN:-ci-product-test-only}"
-  if [ -z "${BYQ_CREDENTIAL_KEYRING:-}" ]; then
-    export BYQ_CREDENTIAL_KEYRING='{"ci-v1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}'
-  fi
-  export BYQ_CREDENTIAL_ACTIVE_KEY_ID="${BYQ_CREDENTIAL_ACTIVE_KEY_ID:-ci-v1}"
-  export BYQ_CREDENTIAL_RESOLVER_TOKEN="${BYQ_CREDENTIAL_RESOLVER_TOKEN:-ci-credential-resolver-test-only}"
+  export BYQ_POSTGRES_VOLUME_EXTERNAL=false
+  export POSTGRES_DB=byq_domain POSTGRES_USER=byq_app POSTGRES_PASSWORD=byq-app-dev
+  export BYQ_DATABASE_URL=postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain
+  export BYQ_MCP_TOKEN=ci-mcp-test-only BYQ_PRODUCT_TOKEN=ci-product-test-only
+  export BYQ_CREDENTIAL_KEYRING='{"ci-v1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}'
+  export BYQ_CREDENTIAL_ACTIVE_KEY_ID=ci-v1
+  export BYQ_CREDENTIAL_RESOLVER_TOKEN=ci-credential-resolver-test-only
+  export BYQ_PLUGIN_DEPLOYMENT_TOKEN=ci-plugin-test-only
+  export BYQ_FEEDBACK_PUBLISHER_TOKEN=ci-publisher-test-only BYQ_FEEDBACK_HUB_RELAY_TOKEN=ci-relay-test-only
+  export DEEPSEEK_API_KEY="" TUSHARE_TOKEN=""
+  export BYQ_FEEDBACK_GITHUB_TOKEN="" BYQ_FEEDBACK_GITHUB_APP_ID="" BYQ_FEEDBACK_GITHUB_REPOSITORY=""
+  export BYQ_FEEDBACK_GITHUB_INSTALLATION_ID="" BYQ_FEEDBACK_GITHUB_APP_PRIVATE_KEY_FILE=""
+  export BYQ_FEEDBACK_HUB_URL=""
+  export BYQ_DSH_COMPOSITION_SOURCE=plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml
+  export BYQ_DSH_IDENTITY_SOURCE=plugins/dsh-byq/compositions/byq-product-sdk.identity.json
   export BYQ_BOOTSTRAP_ADMIN_USERNAME="${BYQ_CI_BOOTSTRAP_ADMIN_USERNAME:-ci-admin}"
   export BYQ_BOOTSTRAP_ADMIN_PASSWORD="${BYQ_CI_BOOTSTRAP_ADMIN_PASSWORD:-ci-bootstrap-test-only}"
   export BYQ_E2E_ADMIN_USERNAME="$BYQ_BOOTSTRAP_ADMIN_USERNAME"
@@ -253,6 +267,33 @@ prepare_ci_compose_env() {
   export BYQ_GOLDEN_OWNER_PASSWORD="$BYQ_BOOTSTRAP_ADMIN_PASSWORD"
   export BYQ_GOLDEN_OTHER_USERNAME="${BYQ_CI_GOLDEN_OTHER_USERNAME:-ci-user}"
   export BYQ_GOLDEN_OTHER_PASSWORD="${BYQ_CI_GOLDEN_OTHER_PASSWORD:-ci-user-test-only}"
+}
+
+ci_image() {
+  # Compose's default build image name, scoped to this run/attempt.
+  printf '%s-%s' "$COMPOSE_PROJECT_NAME" "$1"
+}
+
+build_test_images() {
+  local services=() service
+  prepare_ci_compose_env
+  if [ "$WITH_SMOKE" -eq 1 ] || [ "$WITH_DSH_WEB" -eq 1 ]; then
+    services=(backend gateway runtime-adapter mcp frontend data-worker signal-worker ml-worker signal-sandbox feedback-publisher feedback-hub-relay)
+  else
+    if want backend || want mcp; then services+=(backend); fi
+    if want gateway; then services+=(gateway); fi
+    if want runtime; then services+=(runtime-adapter); fi
+    if want mcp; then services+=(mcp); fi
+  fi
+  [ "${#services[@]}" -gt 0 ] || return 0
+  step "build: selected run-scoped images (cache allowed, stale fallback forbidden)"
+  RESOURCES_TOUCHED=1
+  acquire_heavy_capacity || return 1
+  run_interruptible docker compose --profile feedback-publisher build "${services[@]}" || return 1
+  for service in "${services[@]}"; do
+    printf '    image identity -> service=%s tag=%s id=' "$service" "$(ci_image "$service")"
+    docker image inspect "$(ci_image "$service")" --format '{{.Id}}' || return 1
+  done
 }
 resolve_ci_compose_urls() {
   local frontend_address gateway_address
@@ -296,7 +337,7 @@ check_docs() {
 
 check_architecture() {
   step "architecture: unittest"
-  if python3 -m unittest discover -s tests -p 'test_*.py' >/dev/null 2>&1; then
+  if python3 -m unittest discover -s tests -p 'test_*.py'; then
     ok "architecture tests"; else bad "architecture tests"; fi
 }
 
@@ -309,19 +350,19 @@ check_backend() {
       -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/backend:/app" -w /app \
       -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
-      beyondquant-backend python -m pytest -q -p no:cacheprovider >/dev/null 2>&1; then
+      "$(ci_image backend)" python -m pytest -q -p no:cacheprovider; then
     ok "backend tests"; else bad "backend tests"; fi
   if [ -d "$REPO_ROOT/workers/feedback-publisher/tests" ]; then
     if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
         -e PYTHONDONTWRITEBYTECODE=1 \
         -v "$REPO_ROOT/workers/feedback-publisher:/publisher:ro" -w /publisher \
-        beyondquant-backend python -m pytest -q -p no:cacheprovider tests >/dev/null 2>&1; then
+        "$(ci_image backend)" python -m pytest -q -p no:cacheprovider tests; then
       ok "feedback publisher fake-GitHub tests"; else bad "feedback publisher fake-GitHub tests"; fi
   fi
   if [ -d "$REPO_ROOT/workers/feedback-hub-relay/tests" ]; then
     if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
         -e PYTHONDONTWRITEBYTECODE=1 -v "$REPO_ROOT/workers/feedback-hub-relay:/relay:ro" -w /relay \
-        beyondquant-backend python -m pytest -q -p no:cacheprovider tests >/dev/null 2>&1; then
+        "$(ci_image backend)" python -m pytest -q -p no:cacheprovider tests; then
       ok "feedback hub relay tests"; else bad "feedback hub relay tests"; fi
   fi
 }
@@ -329,10 +370,13 @@ check_backend() {
 check_cloudflare_feedback_hub() {
   step "central feedback hub: Cloudflare workerd tests and deploy dry-run"
   if (
+    # Wrangler imports matching process.env keys as bindings. Product's empty
+    # publisher configuration must not override the Hub's fixed repository/test secrets.
+    for name in ${!BYQ_FEEDBACK_@}; do unset "$name"; done
     cd "$REPO_ROOT/deploy/feedback-hub-cloudflare"
-    npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps >/dev/null 2>&1 \
-      && npm run check >/dev/null 2>&1 \
-      && npm run dry-run >/dev/null 2>&1
+    npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps \
+      && npm run check \
+      && npm run dry-run
   ); then
     ok "Cloudflare feedback hub tests and bundles"
   else
@@ -346,7 +390,7 @@ check_gateway() {
   if run_interruptible docker run --rm --name "$CI_GATEWAY_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/gateway:/app" \
       -v "$REPO_ROOT/packages:/app/packages" -w /app \
-      beyondquant-gateway python -m pytest -q -p no:cacheprovider >/dev/null 2>&1; then
+      "$(ci_image gateway)" python -m pytest -q -p no:cacheprovider; then
     ok "gateway tests"; else bad "gateway tests"; fi
 }
 
@@ -359,7 +403,7 @@ check_runtime() {
       -v "$REPO_ROOT/plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml:/opt/byq/compositions/byq-product-sdk.cordis.yml:ro" \
       -v "$REPO_ROOT/plugins/dsh-byq/runtime:/opt/byq/runtime:ro" \
       -v "$REPO_ROOT/plugins/dsh-byq/skills:/opt/dsh/bundles/dsh-byq/skills:ro" \
-      beyondquant-runtime-adapter sh -ec 'node --test /opt/byq/runtime/*.test.js && python3 -m pytest -q -p no:cacheprovider' >/dev/null 2>&1; then
+      "$(ci_image runtime-adapter)" sh -ec 'node --test /opt/byq/runtime/*.test.js && python3 -m pytest -q -p no:cacheprovider'; then
     ok "runtime-adapter tests"; else bad "runtime-adapter tests"; fi
 }
 
@@ -379,7 +423,7 @@ check_mcp() {
       -v "$REPO_ROOT/services/mcp/tests:/app/tests" \
       -v "$REPO_ROOT/services/mcp/package.json:/app/package.json" \
       -v "$REPO_ROOT/services/mcp/tsconfig.json:/app/tsconfig.json" \
-      -w /app beyondquant-mcp \
+      -w /app "$(ci_image mcp)" \
       sh -ec 'npm run build; node dist/src/server.js >/tmp/byq-mcp-server.log 2>&1 & server_pid=$!; trap "kill $server_pid >/dev/null 2>&1 || true" EXIT; sleep 3; npm test'; then
     ok "mcp tests"; else bad "mcp tests"; fi
 }
@@ -408,7 +452,7 @@ check_smoke() {
     return
   fi
   prepare_ci_compose_env
-  if ! run_interruptible docker compose up -d --wait; then
+  if ! run_interruptible docker compose up -d --no-build --wait; then
     docker compose logs --no-color || true
     bad "isolated compose startup"
     return
@@ -419,7 +463,7 @@ check_smoke() {
   fi
   if run_interruptible ./tests/smoke/run.sh; then ok "full smoke"; else bad "full smoke"; fi
   if [ -f "$REPO_ROOT/workers/feedback-publisher/Dockerfile" ]; then
-    if run_interruptible docker compose --profile feedback-publisher up -d --wait feedback-publisher \
+    if run_interruptible docker compose --profile feedback-publisher up -d --no-build --wait feedback-publisher \
       && [ "$(docker compose --profile feedback-publisher exec -T feedback-publisher id -u)" = "10006" ] \
       && docker compose --profile feedback-publisher exec -T feedback-publisher python -c \
         "import json,urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8700/healthz')); assert data['status']=='ok'" \
@@ -449,20 +493,22 @@ check_smoke() {
     npm run test:e2e:real
   ); then
     ok "real Product API browser smoke"; else bad "real Product API browser smoke"; fi
+  local evidence_dir="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE"
+  mkdir -p "$evidence_dir"
   if BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
-      scripts/evidence/phase74-product-verification.py /tmp/byq-phase74-identities.json \
+      scripts/evidence/phase74-product-verification.py "$evidence_dir/phase74-identities.json" \
     && docker compose restart ml-worker >/dev/null \
-    && docker compose up -d --wait ml-worker >/dev/null \
+    && docker compose up -d --no-build --wait ml-worker >/dev/null \
     && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
-      scripts/evidence/phase74-product-verification.py --verify /tmp/byq-phase74-identities.json; then
+      scripts/evidence/phase74-product-verification.py --verify "$evidence_dir/phase74-identities.json"; then
     ok "Phase 74 restart persistence and two-user isolation"; else bad "Phase 74 restart persistence and two-user isolation"; fi
   if BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
-      scripts/evidence/phase90-feedback-verification.py /tmp/byq-phase90-feedback.json \
+      scripts/evidence/phase90-feedback-verification.py "$evidence_dir/phase90-feedback.json" \
     && docker compose restart backend >/dev/null \
-    && docker compose up -d --wait backend >/dev/null \
+    && docker compose up -d --no-build --wait backend >/dev/null \
     && wait_for_product_ready \
     && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
-      scripts/evidence/phase90-feedback-verification.py --verify /tmp/byq-phase90-feedback.json; then
+      scripts/evidence/phase90-feedback-verification.py --verify "$evidence_dir/phase90-feedback.json"; then
     ok "Phase 90 feedback restart persistence and two-user isolation"; else bad "Phase 90 feedback restart persistence and two-user isolation"; fi
   if docker compose cp scripts/evidence/phase48-seed.py backend:/tmp/phase48-seed.py >/dev/null \
     && docker compose exec -T \
@@ -481,17 +527,20 @@ check_dsh_web() {
     bad "heavy-CI resource preflight/lock"
     return
   fi
-  if [ "$DO_BUILD" -eq 1 ]; then
-    run_interruptible docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web build dsh >/dev/null 2>&1 || true
+  if ! run_interruptible docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web build dsh; then
+    bad "dsh-web build; stale fallback forbidden"
+    return
   fi
-  if ! run_interruptible docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web up -d --wait >/dev/null 2>&1; then
+  if ! run_interruptible docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web up -d --no-build --wait; then
     bad "dsh-web startup"
     return
   fi
-  if run_interruptible ./tests/smoke/run-dsh-web.sh >/dev/null 2>&1; then ok "dsh-web smoke"; else bad "dsh-web smoke"; fi
+  if run_interruptible ./tests/smoke/run-dsh-web.sh; then ok "dsh-web smoke"; else bad "dsh-web smoke"; fi
 }
 
 # ------------------------------------------------------------------- main
+# Allow contract tests to exercise functions with fake Docker, without running CI.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 compute_changed
 
 if [ "$AUTO_SMOKE" -eq 1 ] && [ "$integration" = yes ]; then
@@ -504,15 +553,9 @@ if [ "$PLAN_ONLY" -eq 1 ]; then
   exit 0
 fi
 
-if [ "$DO_BUILD" -eq 1 ]; then
-  step "build: isolated docker compose images"
-  RESOURCES_TOUCHED=1
-  prepare_ci_compose_env
-  if acquire_heavy_capacity && run_interruptible docker compose build >/dev/null 2>&1; then
-    ok "compose build"
-  else
-    bad "compose build"
-  fi
+if ! build_test_images; then
+  bad "image build/identity gate; tests must not reuse old images"
+  exit 1
 fi
 
 check_hygiene

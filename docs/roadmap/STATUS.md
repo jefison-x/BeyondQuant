@@ -2,8 +2,8 @@
 
 <!-- byq:current-completed-phase=97 -->
 
-本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
-history 推断项目状态。
+本文档顶部是当前 Phase 状态的事实来源，使新的 Codex session 不会从 commit history 推断状态。
+下方交付历史保留当时配置与验收事实，不作为当前运行参数或通用合并/部署授权；后续具名修订可能已替代它。
 
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、
   技术详情和小巴任务投影中分离。名称搜索保持服务端分页，缺省名称来自已验证策略，历史任务由 PostgreSQL 前向修复补齐，
@@ -14,6 +14,8 @@ history 推断项目状态。
   验证到 Python `0.1.1rc1` / npm `0.1.1-rc.1`；它是维护历史，不是隐含的 Product Phase。
 - 当前完成范围内没有未决架构决策。
 - 下一阶段：**未授权**。必须由维护者明确选择并授权，且继续遵守一阶段一工作树/Draft PR 的合并门禁。
+- 维护规划：[DSH 0.1.2rc1 升级方案](DSH_012RC1_UPGRADE_PLAN.md) 已编写，U0–U8 尚未实施；
+  ADR-0058 保持 Proposed。本次仅规划，不改变 DSH 已认证版本、Product Phase 或生产部署状态。
 - Phase 82 已依据 ADR-0047 完成；验收证据位于 `docs/evidence/phase-82/`。
 - Phase 90 已依据 ADR-0049 完成；验收证据位于 `docs/evidence/phase-90/`。
 - Phase 91 已依据 ADR-0051 完成；验收证据位于 `docs/evidence/phase-91/`。
@@ -32,6 +34,9 @@ history 推断项目状态。
   `docs/evidence/phase-61/`。
 
 ## 生效中的 Accepted ADR
+
+- Development governance / CI integrity maintenance：**ADR-0059**。本次只授权治理、CI 与 DSH 方案修正；
+  不推进 Product Phase，不授权 DSH 实施或生产部署。
 
 - Runtime：**ADR-0003**
 - Phase 7 authentication：**ADR-0004**

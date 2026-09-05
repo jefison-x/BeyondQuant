@@ -17,6 +17,10 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
 每份 ADR 应说明背景、决策、后果、相关备选方案，以及迁移或回滚考虑。任何偏离
 `ARCHITECTURE.md` 的例外都 MUST 在实现前取得 ADR。
 
+Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录维护者对精确 decision scope 的
+接受证据；通用“继续开发”不能接受未说明的新边界。替代旧决策必须声明 Supersedes 的具体条款，
+历史事实保留并标明不再作为当前通用规范。ADR-0059 统一开发权限、任务分流与 CI 证据门禁。
+
 当前与 Phase 相关的 Accepted 决策也列在 `docs/roadmap/STATUS.md` 中：
 
 - ADR-0020 定义 Phase 34 的 Stock Pool identity、不可变 snapshot、lifecycle 和
@@ -85,3 +89,7 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   v2 session 签名和密码轮换失效边界。
 - ADR-0057 定义回测可读名称与稳定 ID 的分离、PostgreSQL forward repair、名称/ID 双字段目录和
   名称不进入不可变输入及结果身份的边界。
+- ADR-0058（Proposed）规划 DSH release bundle 与兼容层；方案归档不代表版本已升级或 ADR 已接受。
+- ADR-0059 定义规则归属、隔离工作树、基于源码的 CI 与精确提交的合并/部署权限门禁。
+- ADR-0060 定义个人非商业研究且禁止实盘的源码公开许可、贡献/第三方权属、GitHub 托管 CI，
+  以及仅用于一次发布准备 PR 的具名过渡例外。

@@ -95,6 +95,10 @@ These rules apply to Codex, DSH engineering agents, and any other AI coding agen
 
 ## Single-maintainer human merge gate
 
+The default gate below is subject only to the explicit pre-release exception and
+ADR-0059 authorization/preflight rules. Historical Phase text does not independently
+grant or revoke merge/deployment authority. Default behavior remains Draft PR.
+
 For a repository with a single human maintainer:
 
 - CI and all required status checks must pass.
@@ -127,7 +131,13 @@ Read all of the following before selecting or implementing work:
 “Continue development” means read `STATUS.md` and execute its `Next phase`
 according to the implementation plan. It does not authorize selecting an
 unrelated task or skipping the workflow. Codex must still use an isolated
-worktree and must not automatically merge `main`.
+worktree and must not automatically merge `main` outside the explicit ADR-0015/0059 gate.
+
+Explicitly requested maintenance, bugfix, dependency qualification, documentation and
+operations tasks use the task routing in `docs/DEVELOPMENT_WORKFLOW.md`; they do not
+advance the Product Phase. Development, push/PR, merge and deployment authorization
+are separate; a maintainer may explicitly grant them together. Never infer production
+deployment from development authorization or give Product DSH Engineering privileges.
 
 `STATUS.md` is the repository phase source of truth, not a Git source of truth:
 it must not hard-code a main SHA or transient PR state. Derive the clean base
