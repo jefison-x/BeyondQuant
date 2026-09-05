@@ -1,0 +1,30 @@
+{
+  "schema_version": "dsh-release.v1",
+  "release_id": "dsh-0.1.2rc1",
+  "compatibility_family": "byq-dsh-sdk-v1",
+  "python": {
+    "sdk": "0.1.2rc1",
+    "runtime_bin": "0.1.2rc1",
+    "sdk_wheel_sha256": "24689eec01e95233feb75ca08a0fe748b491e71682f80d2c04e6f9485f20488a",
+    "linux_x86_64_runtime_wheel_sha256": "670d8af06845cc2fc16738f1b030375321f3f8268837152aa3100e14a7b9887d"
+  },
+  "carrier": {
+    "kind": "python-bundled-executable",
+    "profile": "sdk",
+    "entrypoint": "deepseek-harness-sdk-runtime-linux-x64",
+    "source_tag": "dsh-v0.1.2-rc.1",
+    "source_commit": "a66e4702047846cdaa10c66c9d3df3951f5ea70d",
+    "source_archive_sha256": "adf32f642610e52294ffd823b3ad38b86355d05e4c48280bc77912458df56552",
+    "source_manifest_sha256": "a8cdf98a24c02947a5dfb36eecad1689dd7f1eba62c05996eabcd59530189387",
+    "bundled_package_count": 123
+  },
+  "profile": {
+    "name": "byq-product-candidate",
+    "composition": null,
+    "composition_hash": null,
+    "identity": null
+  },
+  "build_inputs": {
+    "config/dsh/releases/dsh-0.1.2rc1.python.lock": "sha256:c93b829d8db27c2067fbb1fae67707c7f4fe5d04ab99fdf7993a57014e31b5f6"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": "dsh-release.v1",
+  "release_id": "dsh-0.1.1rc1",
+  "compatibility_family": "byq-dsh-sdk-v1",
+  "python": {
+    "sdk": "0.1.1rc1",
+    "runtime_bin": "0.1.1rc1"
+  },
+  "carrier": {
+    "kind": "npm-explicit-cli",
+    "npm_version": "0.1.1-rc.1",
+    "entrypoint": "node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/bin.js",
+    "package": "@deepseek-ai/dsh-sdk-jsonrpc-demo",
+    "integrity": "sha512-CTWwd1g5/AKkNvuSu1lVdbfenhvR9UhuELQm7uhYhRGI3d3tnCnOReky0rbc7VW6tzvllMl8ShA2V5tOMQunEQ=="
+  },
+  "profile": {
+    "name": "research",
+    "composition": "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
+    "composition_hash": "sha256:b8530afdc5b28ee18a132dd1616d841eaa6d803d975e7110e556183b29a214bf",
+    "identity": "plugins/dsh-byq/compositions/byq-product-sdk.identity.json"
+  },
+  "build_inputs": {
+    "services/runtime-adapter/Dockerfile": "sha256:22e90e8fdb5c8d3fd6f5229407f298dc4cd6795bcd434658c9eb157864b5fbbe",
+    "services/runtime-adapter/app/runtime.py": "sha256:b7929394b0dab983a7f374f19805939d4fbe76ff4fe7b0749dd6c8d49a4cd31d",
+    "services/runtime-adapter/pyproject.toml": "sha256:c3623d6287426a44c6423929bfe19390c0e090633005a441e27a63ab710351b4",
+    "services/runtime-adapter/runtime/package.json": "sha256:eb5a91967a22929e0f43b1919f60f785d02046467c5c59d4907af87385dd03bb",
+    "services/runtime-adapter/runtime/package-lock.json": "sha256:c61cd5af35ab95642757ebcd20c4785ffd99e3262501383caaa2eebba3a6907a",
+    "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml": "sha256:d63ccb7ce8d997e5886e47122b1e4759d08008e7206ccfa60a314a2594f5c1d8",
+    "plugins/dsh-byq/compositions/byq-product-sdk.identity.json": "sha256:72d9f44be955c4adf30b380ad29830cac7d25c5dba51e7155ad25c649442b067"
+  }
+}

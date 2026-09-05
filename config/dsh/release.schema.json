@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://beyondquant.dev/schema/dsh-release.v1.json",
+  "title": "BeyondQuant immutable DSH release descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "release_id", "compatibility_family", "python", "carrier", "profile", "build_inputs"],
+  "properties": {
+    "schema_version": {"const": "dsh-release.v1"},
+    "release_id": {"type": "string", "pattern": "^dsh-[0-9]+\\.[0-9]+\\.[0-9]+rc[0-9]+$"},
+    "compatibility_family": {"enum": ["byq-dsh-sdk-v1"]},
+    "python": {
+      "oneOf": [
+        {"$ref": "#/$defs/activePython"},
+        {"$ref": "#/$defs/candidatePython"}
+      ]
+    },
+    "carrier": {
+      "oneOf": [
+        {"$ref": "#/$defs/npmCarrier"},
+        {"$ref": "#/$defs/bundledCarrier"}
+      ]
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "composition", "composition_hash", "identity"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "composition": {"type": ["string", "null"]},
+        "composition_hash": {
+          "type": ["string", "null"],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "identity": {"type": ["string", "null"]}
+      }
+    },
+    "build_inputs": {
+      "type": "object",
+      "propertyNames": {"pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"},
+      "additionalProperties": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+    }
+  },
+  "$defs": {
+    "activePython": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdk", "runtime_bin"],
+      "properties": {
+        "sdk": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+rc[0-9]+$"},
+        "runtime_bin": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+rc[0-9]+$"}
+      }
+    },
+    "candidatePython": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdk", "runtime_bin", "sdk_wheel_sha256", "linux_x86_64_runtime_wheel_sha256"],
+      "properties": {
+        "sdk": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+rc[0-9]+$"},
+        "runtime_bin": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+rc[0-9]+$"},
+        "sdk_wheel_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "linux_x86_64_runtime_wheel_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "npmCarrier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "npm_version", "entrypoint", "package", "integrity"],
+      "properties": {
+        "kind": {"const": "npm-explicit-cli"},
+        "npm_version": {"type": "string"},
+        "entrypoint": {"type": "string"},
+        "package": {"type": "string"},
+        "integrity": {"type": "string", "pattern": "^sha512-"}
+      }
+    },
+    "bundledCarrier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "profile", "entrypoint", "source_tag", "source_commit", "source_archive_sha256", "source_manifest_sha256", "bundled_package_count"],
+      "properties": {
+        "kind": {"const": "python-bundled-executable"},
+        "profile": {"const": "sdk"},
+        "entrypoint": {"type": "string"},
+        "source_tag": {"type": "string"},
+        "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "source_archive_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "bundled_package_count": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

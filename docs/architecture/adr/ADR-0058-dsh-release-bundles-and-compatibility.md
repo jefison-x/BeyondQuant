@@ -115,6 +115,8 @@ required CI 使用真实 runtime + scripted provider 和完整隔离 Product 栈
   [`CARRIER`](../../evidence/dsh-012rc1/u0/CARRIER.md)、
   [`BASELINE`](../../evidence/dsh-012rc1/u0/BASELINE.md)。
 
-维护者接受的是上述精确载体和边界，而不是对未知例外、候选资格、merge、U1、付费模型评测、
-生产部署或正式版本切换的授权。U1 仍需单独授权，并继续受一阶段一工作树/Draft PR 门禁约束；
-后续若实际边界超出本 ADR，必须修订 ADR 并重新取得方向。
+维护者接受的是上述精确载体和边界，而不是对未知例外、候选资格、付费模型评测、生产部署或正式版本
+切换的授权。其后维护者另行授权 PR #250 按 ADR-0015 squash auto-merge，并单独授权开始 U1；这些
+后续授权记录在执行交接中。维护者其后另行明确授权 U1–U8 串行开发、push/Draft PR 和 CI-green
+auto-merge；该授权仍不包含生产部署、正式版本切换或付费模型测试。后续若实际边界超出本 ADR，
+必须修订 ADR 并重新取得方向。
