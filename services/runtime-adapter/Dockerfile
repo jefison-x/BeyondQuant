@@ -6,6 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     BYQ_DSH_RUNTIME_ROOT=/opt/dsh-runtime \
     BYQ_DSH_COMPOSITION=/opt/byq/compositions/byq-product-sdk.cordis.yml \
     BYQ_DSH_COMPOSITION_IDENTITY=/opt/byq/compositions/byq-product-sdk.identity.json \
+    BYQ_DSH_RELEASE_IDENTITY=/opt/byq/releases/deployment.identity.json \
     DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions
 
 RUN apt-get update \
@@ -25,8 +26,10 @@ RUN python3 -m pip install --break-system-packages --no-cache-dir ".[test]"
 
 ARG BYQ_DSH_COMPOSITION_SOURCE=plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml
 ARG BYQ_DSH_IDENTITY_SOURCE=plugins/dsh-byq/compositions/byq-product-sdk.identity.json
+ARG BYQ_DSH_RELEASE_IDENTITY_SOURCE=config/dsh/generated/deployment.identity.json
 COPY ${BYQ_DSH_COMPOSITION_SOURCE} /opt/byq/compositions/byq-product-sdk.cordis.yml
 COPY ${BYQ_DSH_IDENTITY_SOURCE} /opt/byq/compositions/byq-product-sdk.identity.json
+COPY ${BYQ_DSH_RELEASE_IDENTITY_SOURCE} /opt/byq/releases/deployment.identity.json
 COPY plugins/dsh-byq/runtime /opt/byq/runtime
 COPY services/runtime-adapter/runtime/verify-time-context.mjs /opt/dsh-runtime/verify-time-context.mjs
 COPY services/runtime-adapter/runtime/verify-qualified-plugins.mjs /opt/dsh-runtime/verify-qualified-plugins.mjs

@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from importlib.metadata import PackageNotFoundError, version as distribution_version
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -116,6 +117,12 @@ class RuntimeAdapter:
                 "/opt/byq/compositions/byq-product-sdk.identity.json",
             )
         )
+        self._release_identity = Path(
+            os.environ.get(
+                "BYQ_DSH_RELEASE_IDENTITY",
+                "/opt/byq/releases/deployment.identity.json",
+            )
+        )
         self._session_root = Path(
             os.environ.get("DSH_SESSION_ROOT", "/var/lib/byq/dsh-sessions")
         ).expanduser().resolve()
@@ -150,10 +157,17 @@ class RuntimeAdapter:
 
     def readiness(self) -> dict[str, Any]:
         composition_identity = self._safe_composition_identity()
+        release_identity = self._safe_release_identity()
+        adapter_status = (
+            "ready" if release_identity["status"] == "matched"
+            else "release-identity-mismatch"
+        )
         return {
-            "runtime_adapter": "ready",
-            "sdk": "deepseek-harness-sdk==0.1.1rc1",
-            "runtime_bin": "deepseek-harness-runtime-bin==0.1.1rc1",
+            "runtime_adapter": adapter_status,
+            "sdk": f"deepseek-harness-sdk=={release_identity['installed_sdk']}",
+            "runtime_bin": f"deepseek-harness-runtime-bin=={release_identity['installed_runtime_bin']}",
+            "release_id": release_identity["release_id"],
+            "release_identity": release_identity["status"],
             "explicit_runtime": self.runtime_command[1],
             "composition": str(self._composition),
             "composition_exists": self._composition.is_file(),
@@ -198,12 +212,18 @@ class RuntimeAdapter:
                 status_counts[record.status] = status_counts.get(record.status, 0) + 1
                 active_prompts += int(record.active_run is not None)
         composition_identity = self._safe_composition_identity()
+        release_identity = self._safe_release_identity()
         return {
             "schema_version": "runtime-operations.v1",
             "runtime": {
-                "status": "ready",
-                "sdk": "deepseek-harness-sdk==0.1.1rc1",
-                "runtime_bin": "deepseek-harness-runtime-bin==0.1.1rc1",
+                "status": (
+                    "ready" if release_identity["status"] == "matched"
+                    else "release-identity-mismatch"
+                ),
+                "sdk": f"deepseek-harness-sdk=={release_identity['installed_sdk']}",
+                "runtime_bin": f"deepseek-harness-runtime-bin=={release_identity['installed_runtime_bin']}",
+                "release_id": release_identity["release_id"],
+                "release_identity": release_identity["status"],
                 "process_ownership": "one-per-active-session",
                 "provider": self._provider,
                 "model": self._model,
@@ -258,6 +278,39 @@ class RuntimeAdapter:
         ):
             return fallback
         return {"profile": profile, "composition_hash": digest, "enabled_plugin_ids": plugin_ids}
+
+    def _safe_release_identity(self) -> dict[str, str]:
+        """Match deployment-controlled identity to installed distribution metadata."""
+
+        try:
+            installed_sdk = distribution_version("deepseek-harness-sdk")
+            installed_runtime = distribution_version("deepseek-harness-runtime-bin")
+        except PackageNotFoundError:
+            installed_sdk = installed_runtime = "unknown"
+        fallback = {
+            "release_id": "unknown",
+            "installed_sdk": installed_sdk,
+            "installed_runtime_bin": installed_runtime,
+            "status": "unavailable",
+        }
+        try:
+            value = json.loads(self._release_identity.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return fallback
+        if not isinstance(value, dict) or value.get("schema_version") != "dsh-deployment-identity.v1":
+            return fallback
+        release_id = value.get("default_release")
+        expected = value.get("python")
+        if not isinstance(release_id, str) or re.fullmatch(r"dsh-\d+\.\d+\.\d+rc\d+", release_id) is None:
+            return fallback
+        if not isinstance(expected, dict):
+            return fallback
+        matches = expected.get("sdk") == installed_sdk and expected.get("runtime_bin") == installed_runtime
+        return {
+            **fallback,
+            "release_id": release_id,
+            "status": "matched" if matches else "mismatch",
+        }
 
     def create_session(
         self, session_id: str, trace_id: str, owner_principal: str | None = None,

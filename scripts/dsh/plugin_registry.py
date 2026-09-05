@@ -27,6 +27,7 @@ OUTPUT_PATH = ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml"
 IDENTITY_PATH = ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.identity.json"
 MANIFEST_PATH = ROOT / "services/runtime-adapter/runtime/package.json"
 LOCK_PATH = ROOT / "services/runtime-adapter/runtime/package-lock.json"
+DEPLOYMENT_IDENTITY_PATH = ROOT / "config/dsh/generated/deployment.identity.json"
 
 STATES = {"AVAILABLE", "QUALIFIED", "BLOCKED", "REJECTED", "DEPRECATED"}
 RISKS = {"LOW", "MEDIUM", "HIGH", "PROHIBITED"}
@@ -72,13 +73,19 @@ def load_and_validate(*, profile_name: str | None = None) -> dict[str, Any]:
     agents = _load(AGENT_PATH)
     manifest = _load(MANIFEST_PATH)
     lock = _load(LOCK_PATH)
+    deployment_identity = _load(DEPLOYMENT_IDENTITY_PATH)
 
     _require(registry.get("schema_version") == "dsh-plugin-registry.v1", "unknown registry schema")
     baseline = registry.get("runtime_baseline")
     _require(isinstance(baseline, dict), "runtime_baseline is required")
-    _require(baseline.get("python_sdk") == "0.1.1rc1", "unexpected Python SDK baseline")
-    _require(baseline.get("runtime_bin") == "0.1.1rc1", "unexpected runtime-bin baseline")
-    _require(baseline.get("npm_runtime") == "0.1.1-rc.1", "unexpected npm runtime baseline")
+    selected_python = deployment_identity.get("python", {})
+    selected_carrier = deployment_identity.get("carrier", {})
+    _require(baseline.get("python_sdk") == selected_python.get("sdk"),
+             "registry Python SDK does not match selected release")
+    _require(baseline.get("runtime_bin") == selected_python.get("runtime_bin"),
+             "registry runtime-bin does not match selected release")
+    _require(baseline.get("npm_runtime") == selected_carrier.get("npm_version"),
+             "registry npm runtime does not match selected release")
 
     known_agents = agents.get("agents")
     _require(isinstance(known_agents, dict) and known_agents, "agent capability mapping is required")

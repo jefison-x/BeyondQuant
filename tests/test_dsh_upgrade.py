@@ -1,7 +1,10 @@
 import importlib.util
 import json
+import copy
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +44,38 @@ class DshUpgradePreparationTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "closure mismatch|mixed"):
             MODULE.verify_closure(manifest, lock, "0.1.1-rc.1")
+
+    def test_nested_mixed_prerelease_fails_closed(self) -> None:
+        manifest = json.loads(MODULE.RUNTIME_MANIFEST.read_text())
+        lock = json.loads(MODULE.RUNTIME_LOCK.read_text())
+        poisoned = copy.deepcopy(lock)
+        poisoned["packages"][
+            "node_modules/example/node_modules/@deepseek-ai/dsh-agent"
+        ] = {"version": "0.1.2-rc.1"}
+        with self.assertRaisesRegex(ValueError, "nested"):
+            MODULE.verify_closure(manifest, poisoned, "0.1.1-rc.1")
+
+    def test_incompatible_dsh_peer_fails_closed(self) -> None:
+        manifest = json.loads(MODULE.RUNTIME_MANIFEST.read_text())
+        lock = json.loads(MODULE.RUNTIME_LOCK.read_text())
+        poisoned = copy.deepcopy(lock)
+        poisoned["packages"]["node_modules/@deepseek-ai/dsh-agent"][
+            "peerDependencies"
+        ]["@deepseek-ai/dsh-invariants"] = "^0.1.2-rc.1"
+        with self.assertRaisesRegex(ValueError, "peer requirement"):
+            MODULE.verify_closure(manifest, poisoned, "0.1.1-rc.1")
+
+    def test_candidate_failure_cleans_staging_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "candidate"
+            with patch(
+                "sys.argv",
+                [str(SCRIPT), "--release-id", "dsh-0.1.2rc1", "--output", str(output)],
+            ), patch.object(MODULE, "fetch_json", side_effect=RuntimeError("offline")):
+                with self.assertRaisesRegex(RuntimeError, "offline"):
+                    MODULE.main()
+            self.assertFalse(output.exists())
+            self.assertEqual(list(Path(directory).iterdir()), [])
 
 
 if __name__ == "__main__":
