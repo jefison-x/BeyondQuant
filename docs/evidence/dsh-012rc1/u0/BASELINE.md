@@ -56,7 +56,9 @@ deliverables. T31–T40 and all production/live-model checks are `NOT_RUN` at U0
 
 ## Resource and deployment result
 
-The loopback fixture processes and one-off test containers were stopped/removed. The downloaded
-temporary wheels/source checkout are not committed and may be deleted after review. No image,
-volume, network, database, service, credential, Product phase, active release or production default
-was changed. Rollback is therefore not applicable; 0.1.1rc1 remains the deployed/default baseline.
+The loopback fixture processes and one-off test containers were stopped/removed. The exact
+448 MiB U0 temporary directory containing downloaded wheels, extracted runtime, source checkout
+and synthetic logs was deleted after the hashes/results above were recorded; none of it was
+committed. No image, volume, network, database, service, credential, Product phase, active release
+or production default was changed. Rollback is therefore not applicable; 0.1.1rc1 remains the
+deployed/default baseline.
