@@ -46,3 +46,8 @@
 镜像标签，独立清理因此正确失败，未被冒充为成功。修复将清理限定在当前 scope，最多 20 次、
 每次 3 秒，并要求连续两次资源为零；新增竞态回归测试。该修复仍须由更新后精确 head 的
 hosted 完整回归和再次取消验证确认，失败时继续阻止合并。
+
+修复后 hosted 取消验证确认：独立 cleanup 与脱敏证据步骤均 SUCCESS，取消的 `local-ci` 令
+`ci-gate` FAILURE，符合 fail-closed 设计。平台另提示旧 checkout action 的 Node 20 runtime
+已弃用；全部四种官方 Actions 随即更新到 2026-09-05 最新 Node 24-based v7 release 的完整
+提交 SHA，并关闭 setup-node 自动包管理器缓存。更新后的完整 hosted CI 仍是最终合并门禁。

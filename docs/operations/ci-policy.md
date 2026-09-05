@@ -69,7 +69,9 @@ under six minutes for an ordinary service, and under fifteen minutes for Full on
 These are targets, not measured hosted guarantees. Hosted runs record actual memory/disk/tool versions;
 Docker build concurrency is limited to two, Node 24 and Python 3.13 are installed explicitly, and browser
 OS dependencies are installed. Do not remove suites or reconnect production to meet timing targets.
-Actions are pinned to full commit SHA. Gitleaks 8.30.1 is checksum-verified and scans new reachable history
+Actions use their current Node 24-based v7 releases, pinned to verified full commit SHA; setup-node automatic
+package-manager caching is disabled because this workflow does not require a shared dependency cache.
+Gitleaks 8.30.1 is checksum-verified and scans new reachable history
 with full redaction; initial complete-history review is separate publication evidence. Unknown findings block.
 Standard public-repository runners have free execution minutes; larger runners, artifacts and caches have
 separate limits. No larger runner or paid resource is selected by this workflow.

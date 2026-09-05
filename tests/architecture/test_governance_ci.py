@@ -197,6 +197,14 @@ test -z "$DEEPSEEK_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_
         self.assertIn("--redact=100", workflow)
         self.assertIn("python3 scripts/ci/redact-log.py | tee", workflow)
         self.assertIn("actions/upload-artifact@", workflow)
+        self.assertIn("package-manager-cache: false", workflow)
+        action_uses = re.findall(r"uses: actions/[\w-]+@([^\s]+)\s+#\s+(v[^\s]+)", workflow)
+        self.assertEqual(len(action_uses), 5)
+        for revision, release in action_uses:
+            self.assertRegex(revision, r"^[0-9a-f]{40}$")
+            self.assertRegex(release, r"^v7\.")
+        self.assertNotIn("# v4", workflow)
+        self.assertNotIn("# v5", workflow)
 
     def test_worktree_verifier_rejects_primary_unregistered_and_symlink_escape(self):
         verify = module("verify-worktree").verify
