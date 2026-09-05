@@ -35,11 +35,15 @@ source of truth and has architecture tests for representative routes.
 - A merge to `main` does not repeat the same full suite; nightly Full detects cross-change drift.
 - Full CI remains available through `workflow_dispatch` and is mandatory for release candidates.
 - A failing selected check is a failing required check. Selection may not hide an assertion failure.
-- Fork PRs use the same checks on an ephemeral GitHub-hosted runner with read-only token and no
-  production secrets/network. They never run on the self-hosted lane; do not use `pull_request_target`.
+- Every PR (including same-repository), nightly and manual run uses a standard ephemeral GitHub-hosted
+  ubuntu-24.04 VM with read-only token and no production secrets/network. No self-hosted lane remains;
+  the production runner registration must be revoked before visibility changes. Do not use `pull_request_target`.
   Billing/approval/runner unavailability means NOT_RUN, not pass. Runner access restrictions must be
   configured by the owner: workflow YAML alone is not a security boundary against a PR editing YAML.
-- `ci-gate` requires the selected `local-ci` job to finish `success`, including cleanup and log upload.
+- `ci-gate` requires both selected `local-ci` (including cleanup and log upload) and `contribution` to
+  finish `success`. The latter runs the trusted base checker, never PR code with its API token, and checks
+  exact-head CLA plus maintainer review for external contributions. Comment/review changes require a rerun;
+  merge preflight repeats the live authorization read. This is not proof of copyright ownership.
   Configure both as strict required server-side checks. Skipped/neutral/cancelled is not successful testing.
 - Before authorized pre-release auto-merge, use `check-github-gates.py`; configuration disabled or API
   403/unverifiable rules means keep Draft. Never bypass checks with administrative merge.
@@ -62,6 +66,13 @@ For local saved evidence, pipe through the same redactor with shell `pipefail`; 
 
 Target service levels are under one minute for documentation, under four minutes for frontend-only,
 under six minutes for an ordinary service, and under fifteen minutes for Full on the current runner.
+These are targets, not measured hosted guarantees. Hosted runs record actual memory/disk/tool versions;
+Docker build concurrency is limited to two, Node 24 and Python 3.13 are installed explicitly, and browser
+OS dependencies are installed. Do not remove suites or reconnect production to meet timing targets.
+Actions are pinned to full commit SHA. Gitleaks 8.30.1 is checksum-verified and scans new reachable history
+with full redaction; initial complete-history review is separate publication evidence. Unknown findings block.
+Standard public-repository runners have free execution minutes; larger runners, artifacts and caches have
+separate limits. No larger runner or paid resource is selected by this workflow.
 
 ## Resource ownership
 
