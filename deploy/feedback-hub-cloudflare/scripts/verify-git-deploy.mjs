@@ -29,6 +29,9 @@ assert.equal(publisher.queues?.consumers?.[0]?.dead_letter_queue, "byq-feedback-
 assert.deepEqual(publisher.services?.[0], { binding: "HUB", service: "byq-feedback-hub" });
 assert.equal(publisher.workers_dev, false);
 assert.equal(hub.workers_dev, false);
+assert.deepEqual(hub.durable_objects?.bindings?.find((binding) => binding.name === "ADMIN_LOGIN_GATE"),
+  { name: "ADMIN_LOGIN_GATE", class_name: "AdminLoginGate" });
+assert.deepEqual(hub.migrations?.at(-1), { tag: "v2", new_sqlite_classes: ["AdminLoginGate"] });
 assert.equal(hub.vars.BYQ_FEEDBACK_GITHUB_REPOSITORY, "jefison-x/BeyondQuant");
 assert.equal(publisher.vars.BYQ_FEEDBACK_GITHUB_REPOSITORY, "jefison-x/BeyondQuant");
 

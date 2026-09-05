@@ -382,9 +382,11 @@ MUST 保持两个独立 Cloudflare project、独立 runtime secret 集和独立 
 并入公网 Hub。Cloudflare source integration 不得成为 GitHub Issue writer或绕过 `main` 的 PR/CI merge gate，也不授予
 Product、DSH 或 PostgreSQL 权限；runtime secret 不得作为 GitHub/Workers build variable、文件或仓库内容传递。
 
-ADR-0055 的中央审核控制台属于 Hub operator surface，不是 BYQ Product 页面。`/admin*` 与 `/v1/admin/*` MUST 同时受
-Cloudflare Access 和 Hub 自有短期管理员会话/Bearer 双层保护；公开 intake/status/health 不得被 Access 阻断。Admin Token
-MUST NOT 写入前端资源、URL、持久浏览器存储、Cookie 或 D1；Issue 写入仍只能由隔离 Publisher 完成。
+ADR-0055/0056 的中央审核控制台属于 Hub operator surface，不是 BYQ Product 页面。Hub MUST 以加密管理员密码、按
+`CF-Connecting-IP` HMAC 分片且可重启的登录节流，以及短期管理员会话/Bearer 保护 `/v1/admin/*`；Cloudflare Access MAY
+作为 MFA/IdP 外层增强，但不是默认运行依赖，且不得阻断公开 intake/status/health。管理员密码和原始 IP MUST NOT 写入前端
+资源、URL、持久应用浏览器存储、Cookie、D1 或 BYQ application log；session 必须由独立高熵 secret 派生并绑定密码版本。
+Issue 写入仍只能由隔离 Publisher 完成。
 
 ## 治理
 

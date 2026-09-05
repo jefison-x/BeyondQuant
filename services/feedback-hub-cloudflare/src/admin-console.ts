@@ -25,10 +25,10 @@ export const ADMIN_CONSOLE_HTML = `<!doctype html>
       <form id="login-form" class="login-card">
         <p class="eyebrow">BEYONDQUANT OPERATOR</p>
         <h1>中央反馈审核</h1>
-        <p class="muted">请输入 Hub Admin Token。验证后 Token 不会写入 Cookie 或浏览器存储。</p>
-        <label for="admin-token">管理员令牌</label>
-        <input id="admin-token" name="token" type="password" required minlength="32" maxlength="512"
-          autocomplete="off" autocapitalize="off" spellcheck="false">
+        <p class="muted">请输入管理员密码。验证后密码不会写入 Cookie 或应用浏览器存储。</p>
+        <label for="admin-password">管理员密码</label>
+        <input id="admin-password" name="password" type="password" required minlength="16" maxlength="256"
+          autocomplete="current-password" autocapitalize="off" spellcheck="false">
         <button id="login-button" class="primary" type="submit">进入审核台</button>
         <p id="login-error" class="message error" role="alert" hidden></p>
       </form>
@@ -129,7 +129,7 @@ const byId=(id)=>document.getElementById(id);
 const loginView=byId('login-view');
 const consoleView=byId('console-view');
 const loginForm=byId('login-form');
-const tokenInput=byId('admin-token');
+const passwordInput=byId('admin-password');
 const loginButton=byId('login-button');
 const loginError=byId('login-error');
 const consoleMessage=byId('console-message');
@@ -169,7 +169,7 @@ async function request(path,options){
 }
 
 function enterLogin(message){
-  show(consoleView,false);show(loginView,true);state.items=[];state.selected=null;tokenInput.value='';setLoginError(message||'');queueMicrotask(()=>tokenInput.focus());
+  show(consoleView,false);show(loginView,true);state.items=[];state.selected=null;passwordInput.value='';setLoginError(message||'');queueMicrotask(()=>passwordInput.focus());
 }
 function enterConsole(){show(loginView,false);show(consoleView,true);setLoginError('')}
 
@@ -179,9 +179,9 @@ async function checkSession(){
 }
 
 loginForm.addEventListener('submit',async(event)=>{
-  event.preventDefault();setLoginError('');loginButton.disabled=true;let supplied=tokenInput.value;
-  try{await request('/v1/admin/session',{method:'POST',body:JSON.stringify({token:supplied})});tokenInput.value='';supplied='';enterConsole();await loadFeedback()}
-  catch(error){tokenInput.value='';supplied='';setLoginError(error.message);tokenInput.focus()}
+  event.preventDefault();setLoginError('');loginButton.disabled=true;let supplied=passwordInput.value;
+  try{await request('/v1/admin/session',{method:'POST',body:JSON.stringify({password:supplied})});passwordInput.value='';supplied='';enterConsole();await loadFeedback()}
+  catch(error){passwordInput.value='';supplied='';setLoginError(error.message);passwordInput.focus()}
   finally{loginButton.disabled=false}
 });
 
