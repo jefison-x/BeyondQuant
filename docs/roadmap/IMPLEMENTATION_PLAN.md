@@ -820,3 +820,17 @@ Bearer CLI 保持兼容。正式自定义域名关闭 `workers.dev` 备用路由
 按 `CF-Connecting-IP` 的 HMAC key 分片的 SQLite Durable Object：15 分钟内第五次失败锁定来源 15 分钟，成功原子清零，原始
 IP 不持久化，window/lock 到期 alarm 清理废弃状态。v2 HttpOnly session 由高熵 status secret 和密码版本共同签名，密码轮换使
 旧会话失效。保持同源 mutation、`workers.dev` 关闭、D1/outbox 状态机、Publisher-only GitHub writer 和普通用户零配置边界。
+
+## Backtest Readable Catalog Identity（Phase 97）
+
+### Phase 97 — Readable task names and separate Backtest IDs（`COMPLETE`）
+
+依据 ADR-0057 和 GitHub Issue #240，为 `backtest_jobs` 增加 owner-scoped 持久名称及生产 PostgreSQL forward repair；创建请求
+可提供 1–120 字符名称，缺省由 Backend 根据已验证策略生成可读默认值。bounded Backend/Product API/MCP projection 与搜索同时
+保留 `name` 和稳定 `job_id`。桌面目录拆分“任务名称/回测 ID”，移动端名称为主、短 ID 为辅助，创建向导可自定义名称，技术详情
+保留完整 ID。名称不得进入 signal snapshot、input/result hash、Artifact identity、执行规则或 idempotency identity。
+
+验收必须覆盖 fresh schema 与 Phase 96 forward repair、历史 identity 不变、Backend create/get/list/name+ID search/idempotency/
+owner isolation、Backtest task/MCP projection、frontend 单元与 production build、真实 Product API Chrome desktop/mobile、
+same-origin Network、Community checklist、architecture/full CI。不得增加第二 Backtest workflow、浏览器直连 Backend、DSH 数据库
+访问、Community ORM/Agent runtime 或 VectorBT/BaoStock/AKShare compatibility。

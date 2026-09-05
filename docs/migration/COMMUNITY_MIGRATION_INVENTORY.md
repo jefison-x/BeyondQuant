@@ -1318,6 +1318,24 @@ were inspected before accepting ADR-0035.
 
 No Community source, data, credential, runtime or Git history was modified or copied.
 
+## Phase 97 Backtest readable-name pre-implementation audit（2026-09-05）
+
+The read-only Community `frontend/src/views/BacktestView.vue`,
+`backend/app/schemas/backtest.py`, `backend/app/models/backtest.py` and related
+schema tests were inspected before accepting ADR-0057. Community is evidence
+for catalog naming semantics only; its runtime, ORM and provider/engine paths
+are not migrated.
+
+| Community evidence | Reusable invariant / UX | Decision | Phase 97 disposition |
+|---|---|---|---|
+| Persisted `BacktestRun.name` and bounded request/list schema | A task label is durable metadata distinct from its stable execution identity. | `PORT_LOGIC` / `PORT_TESTS` / `REFACTOR` | Add BYQ-owned PostgreSQL `backtest_jobs.name`; keep `job_id` authoritative and exclude the name from immutable hashes. |
+| Create form accepts a readable name and list leads with it | Users should name a task when useful and otherwise receive a readable default. | `PORT_UX` / `PORT_LAYOUT` / `REFACTOR` | Add a Product API-backed name input and Backend-generated fallback; no browser-only labels. |
+| List shows numeric ID separately from name and strategy/date context | Operational identity remains findable without dominating the task title. | `PORT_UX` / `REFACTOR` | Show name and a separate Backtest ID on desktop/mobile; search both through the bounded Backend catalog. |
+| Community ORM, direct internal API, PydanticAI/Hermes and VectorBT/BaoStock/AKShare paths | No compatible architecture or authority boundary. | `DROP` / `REPLACE` | Preserve PostgreSQL Store, Gateway/Product API, DSH → MCP and native frozen-signal Backtest boundaries. |
+
+No Community source, database, cache, credential, runtime or Git history was
+modified, imported or copied.
+
 
 ## Phase 61 real-user journey closure pre-implementation audit
 

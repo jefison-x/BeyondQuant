@@ -151,6 +151,7 @@ def project_backtest_task(
             "error_message": signal_job.get("error_detail"),
         },
         "backtest": None if backtest_job is None else {
+            "name": backtest_job.get("name"),
             "status": backtest_status,
             "attempts": backtest_job.get("attempts"),
             "max_attempts": backtest_job.get("max_attempts"),

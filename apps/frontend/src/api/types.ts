@@ -165,6 +165,7 @@ export interface WorkflowActivityPayload {
 
 export interface BacktestJob {
   job_id?: string;
+  name?: string;
   status?: string;
   summary?: Record<string, unknown>;
   input_manifest?: Record<string, unknown>;

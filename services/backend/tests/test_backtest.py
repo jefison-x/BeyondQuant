@@ -7,6 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import text
 
 from app.backtest import (
     BacktestConflict,
@@ -17,8 +18,10 @@ from app.backtest import (
     build_backtest_analysis,
     membership_fingerprint,
     normalize_backtest_request,
+    normalize_backtest_name,
     run_native_backtest,
 )
+from app.db import run_ddl
 from app.research import ResearchStore
 from app.strategy_artifact import prepare_strategy, strategy_version_content
 
@@ -67,6 +70,53 @@ def normalized(**overrides: object) -> dict[str, object]:
         strategy_version_artifact_id=payload["strategy_version_artifact_id"],
         approval_artifact_id=payload["approval_artifact_id"],
     )
+
+
+def test_backtest_name_is_bounded_catalogue_metadata_not_request_identity() -> None:
+    assert normalize_backtest_name(None) == "回测任务"
+    assert normalize_backtest_name("  沪深300动量验证  ") == "沪深300动量验证"
+    with pytest.raises(ValueError, match="must not be empty"):
+        normalize_backtest_name("  ")
+    with pytest.raises(ValueError, match="exceeds 120"):
+        normalize_backtest_name("回" * 121)
+
+    first = normalized(name="初始名称")
+    renamed = normalized(name="仅展示名称变化")
+    assert first["name"] == "初始名称"
+    assert first["input_manifest_id"] == renamed["input_manifest_id"]
+    assert BacktestJobStore._request_hash(first) == BacktestJobStore._request_hash(renamed)
+
+
+def test_schema_forward_repairs_legacy_backtest_name_without_changing_identity(
+    byq_test_engine,
+) -> None:
+    job_id = "backtest_00000000000000000000000000000001"
+    with byq_test_engine.begin() as connection:
+        connection.execute(text("ALTER TABLE backtest_jobs DROP COLUMN name"))
+        connection.execute(text("""
+            INSERT INTO backtest_jobs (
+                job_id, task_id, owner_principal, status, request_json, request_hash,
+                input_manifest_id, input_manifest_json, strategy_version_artifact_id,
+                approval_artifact_id, idempotency_key, attempts, max_attempts,
+                result_artifact_id, created_at, updated_at
+            ) VALUES (
+                :job_id, 'task_legacy', 'owner:legacy', 'completed', '{}'::jsonb,
+                'request-hash-legacy', 'manifest_legacy', '{}'::jsonb,
+                'artifact_strategy', 'artifact_approval', 'legacy-key', 1, 2,
+                'artifact_result_legacy', '2026-01-05T12:34:00+00:00',
+                '2026-01-05T12:35:00+00:00'
+            )
+        """), {"job_id": job_id})
+        run_ddl(connection, BacktestJobStore.SCHEMA_DDL)
+        row = connection.execute(
+            text("SELECT name, job_id, request_hash, result_artifact_id FROM backtest_jobs WHERE job_id=:job_id"),
+            {"job_id": job_id},
+        ).mappings().one()
+
+    assert row["name"] == "历史回测 · 2026-01-05 20:34 · 000001"
+    assert row["job_id"] == job_id
+    assert row["request_hash"] == "request-hash-legacy"
+    assert row["result_artifact_id"] == "artifact_result_legacy"
 
 
 def test_manifest_is_content_addressed_and_rejects_duplicate_or_bad_bars() -> None:

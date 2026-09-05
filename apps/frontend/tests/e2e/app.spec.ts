@@ -550,7 +550,7 @@ test("backtest workspace renders backtest result list", async ({ page }) => {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        backtests: [{ job_id: "backtest_1", status: "completed", summary: { total_return: 0.05, max_drawdown: 0.1, trade_count: 2 }, execution: { initial_capital: 100000 }, created_at: "2026-08-16T00:00:00+00:00" }],
+        backtests: [{ job_id: "backtest_1", name: "沪深300动量年度复核", status: "completed", summary: { total_return: 0.05, max_drawdown: 0.1, trade_count: 2 }, execution: { initial_capital: 100000 }, created_at: "2026-08-16T00:00:00+00:00" }],
         total: 1,
         limit: 20,
         offset: 0,
@@ -561,7 +561,7 @@ test("backtest workspace renders backtest result list", async ({ page }) => {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ job: { job_id: "backtest_1", status: "completed", summary: { total_return: 0.05, max_drawdown: 0.1, trade_count: 2 }, execution: { initial_capital: 100000 } } }),
+      body: JSON.stringify({ job: { job_id: "backtest_1", name: "沪深300动量年度复核", status: "completed", summary: { total_return: 0.05, max_drawdown: 0.1, trade_count: 2 }, execution: { initial_capital: 100000 } } }),
     }),
   );
   await page.route("**/api/product/backtests/backtest_1/analysis?*", (route) => {
@@ -602,13 +602,23 @@ test("backtest workspace renders backtest result list", async ({ page }) => {
   await expect(page.getByText("回测任务与完整结果", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "返回投研对话" })).toBeVisible();
   await expect(page.getByText("回测结果", { exact: true })).toBeVisible();
+  await expect(page.getByText("沪深300动量年度复核", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("回测 ID", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("tab", { name: "权益曲线" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "交易明细" })).toBeVisible();
   expect(fullResultRequests).toBe(0);
+  await page.getByRole("tab", { name: "技术详情" }).click();
+  await expect(page.getByRole("tabpanel", { name: "技术详情" }).getByText("backtest_1", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "新建回测" }).click();
+  await page.getByRole("textbox", { name: "回测名称", exact: true }).fill("自定义回测名称");
+  await expect(page.getByRole("textbox", { name: "回测名称", exact: true })).toHaveValue("自定义回测名称");
   await page.getByRole("combobox", { name: "已批准策略版本" }).click();
   await page.getByRole("option", { name: /MomentumStrategy/ }).click();
   await expect(page.getByText("对比基准：沪深300（000300.SH）", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".mobile-list").getByText("沪深300动量年度复核", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("my space pages render profile, models, assets, and agent policy", async ({ page }) => {
