@@ -27,6 +27,12 @@ GitHub Issue。不要附上密码、Token、完整对话、真实账户、数据
 第三方代码有独立许可证时，CLA 不会使其消失。机器人不能代表人或机构签署。
 未来商业授权须由有权授权者另行签发；合入 PR 不授予贡献者使用 BYQ 整体经营业务的权利。
 
+维护者可用 `python3 scripts/ci/check-contribution.py --repo jefison-x/BeyondQuant --pr <编号>
+--expected-head <完整SHA>` 只读核验。脚本从 GitHub 获取 base 协议、个人接受评论和当前 head 的
+维护者批准；未知作者、机器人代签、未核验的共同作者声明均阻断。自动核验不能代替真实来源审查。
+共同作者不能只用提交尾注完成授权；遇到无法自动核验的独立书面授权，暂停合入，由维护者先
+审核证据并安排受测的核验方式，不直接跳过门禁。普通 Issue 不受该源码贡献检查影响。
+
 ## 权利和联系
 
 维护者联系入口：[jefison-x](https://github.com/jefison-x)。不要在公开审计记录中添加本机邮箱。
