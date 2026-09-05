@@ -19,14 +19,19 @@ Objects 和 Queues。Cloudflare 官方同时明确：一个 Deploy to Cloudflare
 Community 只读检查没有 Cloudflare、Wrangler、Workers Builds 或等价自动部署实现；其 GitHub Actions 只作为普通 CI
 `REFERENCE_ONLY`。本阶段部署控制面为 `REPLACE`，不复制 Community workflow、runtime、credential 或 Git history。
 
+首次真实 Workers Builds 验证表明，`wrangler d1 migrations apply` 不会在 migration 前触发 deploy-time automatic
+provisioning，而会在空账号中以 `Couldn't find a D1 DB` 失败。因此首次 Hub deploy 必须先用只读 inventory 判定固定名称 D1
+是否存在，仅在缺失时显式创建，再执行 migration 和 code activation；后续 deploy 必须复用同一 D1。
+
 ## 决策
 
 1. Cloudflare 连接同一个官方 GitHub 仓库两次，分别创建 `byq-feedback-hub` 和 `byq-feedback-publisher` project。两个 project
    使用相同 root directory `deploy/feedback-hub-cloudflare`，但使用独立 deploy command。不得合并为一个 Worker。
 2. Production branch 仅为 `main`。非生产分支不上传或激活 Worker，只执行现有 type/workerd/contract/bundle dry-run；GitHub
    required CI 仍是 merge gate。Cloudflare Git connection 不成为 Issue writer，也不得绕过受保护 `main` 的 PR/CI 流程。
-3. Hub build 使用 `npm run cloudflare:build`，deploy 使用 `npm run cloudflare:deploy:hub`；deploy 先按 D1 binding `DB` 应用
-   versioned migration，再部署 Worker。Publisher 使用相同 build command 和 `npm run cloudflare:deploy:publisher`。
+3. Hub build 使用 `npm run cloudflare:build`，deploy 使用 `npm run cloudflare:deploy:hub`；deploy 先列出远程 D1，缺少固定
+   `byq-feedback-hub` 时创建一次，然后按 binding `DB` 应用 versioned migration，最后部署 Worker。已存在时跳过 create，
+   保持 migration-first code activation。Publisher 使用相同 build command 和 `npm run cloudflare:deploy:publisher`。
 4. D1 config 不提交 account-specific `database_id`。Wrangler/Cloudflare 按固定 binding/name 自动创建并保持绑定；Queue、DLQ
    和 Durable Object 同理由 Wrangler config 声明。首次必须先完成 Hub，再连接 Publisher，使 Service Binding 目标存在。
 5. 每个 config 声明自己的 `secrets.required`。Hub 只要求 status/admin/publisher service secret；Publisher 只要求同一 service
@@ -40,7 +45,8 @@ Community 只读检查没有 Cloudflare、Wrangler、Workers Builds 或等价自
 ## 验收
 
 - 无 account id/D1 id 的 Hub config 可由 Wrangler dry-run 打包，并保留固定 D1/DO/Queue identity；
-- 自动部署合同测试检查两个 project 名、required secrets、migration-first command、Service Binding、Queue/DLQ 和固定仓库；
+- 自动部署合同测试检查两个 project 名、required secrets、首次 create → migration → deploy、重复 migration → deploy、Service
+  Binding、Queue/DLQ 和固定仓库；
 - workerd/D1/DO/Queue/fake-GitHub 测试与两个 bundle dry-run 继续通过，且使用的 fake secrets 只存在于运行时临时目录；
 - runbook 从 GitHub import 开始，明确两个 project 的 root/build/deploy/watch-path/branch 设置、首次 fail-closed secret 配置、
   验收、回滚和 CLI fallback；

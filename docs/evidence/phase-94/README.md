@@ -18,4 +18,8 @@ Verified from the isolated `feat/cloudflare-git-deploy` worktree before the Draf
 
 Cloudflare account connection and first production deployment are intentionally maintainer operations. They require access to the Cloudflare account and the dedicated GitHub Issue Publisher App credentials. The exact procedure is in [`docs/operations/central-feedback-hub.md`](../../operations/central-feedback-hub.md).
 
+The first real Workers Builds run exposed that `d1 migrations apply` does not itself trigger deploy-time D1 provisioning. The follow-up repair adds
+a fail-closed, shell-free bootstrap with four Node tests: an empty account plans create → migration → deploy, an existing account skips create,
+execution preserves order, and malformed inventory causes no mutation. No account id or D1 id is persisted in Git.
+
 No Chrome review is required because Phase 94 changes no UI, browser request or Product interaction flow.
