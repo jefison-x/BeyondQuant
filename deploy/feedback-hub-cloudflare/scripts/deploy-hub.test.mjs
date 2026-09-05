@@ -39,4 +39,3 @@ test("invalid inventory fails closed before account mutation", async () => {
   );
   assert.deepEqual(calls, []);
 });
-

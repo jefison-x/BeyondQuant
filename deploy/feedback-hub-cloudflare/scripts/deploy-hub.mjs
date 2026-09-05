@@ -46,4 +46,3 @@ export async function deployHub({ capture = runWrangler, run = runWrangler } = {
 
 const entrypoint = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : "";
 if (entrypoint === import.meta.url) await deployHub();
-
