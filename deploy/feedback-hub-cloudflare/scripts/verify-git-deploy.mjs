@@ -28,6 +28,7 @@ assert.equal(publisher.queues?.consumers?.[0]?.queue, "byq-feedback-publish");
 assert.equal(publisher.queues?.consumers?.[0]?.dead_letter_queue, "byq-feedback-publish-dlq");
 assert.deepEqual(publisher.services?.[0], { binding: "HUB", service: "byq-feedback-hub" });
 assert.equal(publisher.workers_dev, false);
+assert.equal(hub.workers_dev, false);
 assert.equal(hub.vars.BYQ_FEEDBACK_GITHUB_REPOSITORY, "jefison-x/BeyondQuant");
 assert.equal(publisher.vars.BYQ_FEEDBACK_GITHUB_REPOSITORY, "jefison-x/BeyondQuant");
 

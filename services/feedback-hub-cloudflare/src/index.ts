@@ -4,6 +4,7 @@ import {
   PublicationEvent, REPOSITORY, canonical, digest, hmacHex, jsonResponse, randomId,
   timingSafeEqual, validateEnvelope
 } from "./contracts";
+import { adminConsoleAsset } from "./admin-console";
 
 interface HubEnv {
   DB: D1Database;
@@ -51,6 +52,10 @@ interface OutboxRow {
 
 const RECEIPT = /^central_feedback_[0-9a-f]{32}$/;
 const OUTBOX_EVENT = /^feedback_outbox_[0-9a-f]{32}$/;
+const ADMIN_SESSION_COOKIE = "__Host-byq_feedback_admin";
+const ADMIN_SESSION_SECONDS = 8 * 60 * 60;
+const ADMIN_UI_REQUEST_HEADER = "x-byq-feedback-admin-request";
+const ADMIN_UI_REQUEST_VALUE = "ui-v1";
 const PUBLIC_STATUSES = new Set(["received", "triaged", "accepted", "rejected", "duplicate", "publishing", "published"]);
 const TERMINAL_ERRORS = new Set([
   "authentication_failed", "permission_denied", "repository_unavailable", "issues_disabled",
@@ -76,6 +81,85 @@ function configurationError(env: HubEnv): string | null {
 function bearer(request: Request, expected: string): boolean {
   const raw = request.headers.get("authorization") ?? "";
   return raw.startsWith("Bearer ") && timingSafeEqual(raw.slice(7), expected);
+}
+
+function cookieValue(request: Request, name: string): string | null {
+  for (const item of (request.headers.get("cookie") ?? "").split(";")) {
+    const separator = item.indexOf("=");
+    if (separator > 0 && item.slice(0, separator).trim() === name) return item.slice(separator + 1).trim();
+  }
+  return null;
+}
+
+async function adminSessionSignature(env: HubEnv, expires: number): Promise<string> {
+  return hmacHex(env.BYQ_FEEDBACK_HUB_ADMIN_TOKEN, `central-feedback-admin-session.v1:${expires}`);
+}
+
+async function adminSessionAuthenticated(request: Request, env: HubEnv): Promise<boolean> {
+  const value = cookieValue(request, ADMIN_SESSION_COOKIE);
+  if (!value) return false;
+  const match = value.match(/^v1\.(\d{10})\.([0-9a-f]{64})$/);
+  if (!match) return false;
+  const expires = Number(match[1]);
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isInteger(expires) || expires <= now || expires > now + ADMIN_SESSION_SECONDS) return false;
+  return timingSafeEqual(match[2]!, await adminSessionSignature(env, expires));
+}
+
+async function adminAuthentication(request: Request, env: HubEnv): Promise<"bearer" | "session" | null> {
+  if (request.headers.has("authorization")) {
+    return bearer(request, env.BYQ_FEEDBACK_HUB_ADMIN_TOKEN) ? "bearer" : null;
+  }
+  return await adminSessionAuthenticated(request, env) ? "session" : null;
+}
+
+function sameOriginUiRequest(request: Request): boolean {
+  return request.headers.get("origin") === new URL(request.url).origin
+    && request.headers.get(ADMIN_UI_REQUEST_HEADER) === ADMIN_UI_REQUEST_VALUE;
+}
+
+function adminSessionCookie(expires: number, signature: string): string {
+  return `${ADMIN_SESSION_COOKIE}=v1.${expires}.${signature}; Path=/; Max-Age=${ADMIN_SESSION_SECONDS}; Secure; HttpOnly; SameSite=Strict`;
+}
+
+function clearAdminSessionCookie(): string {
+  return `${ADMIN_SESSION_COOKIE}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict`;
+}
+
+async function createAdminSession(request: Request, env: HubEnv): Promise<Response> {
+  if (!sameOriginUiRequest(request)) return jsonResponse({ detail: "admin session origin is invalid" }, 403);
+  const payload = await requestJson(request, 1024);
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)
+      || !hasOnlyKeys(payload as Record<string, unknown>, ["token"])) {
+    return jsonResponse({ detail: "admin session request is invalid" }, 422);
+  }
+  const token = (payload as Record<string, unknown>).token;
+  if (typeof token !== "string" || token.length < 32 || token.length > 512
+      || !timingSafeEqual(token, env.BYQ_FEEDBACK_HUB_ADMIN_TOKEN)) {
+    return jsonResponse({ detail: "administrator token is invalid" }, 401);
+  }
+  const expires = Math.floor(Date.now() / 1000) + ADMIN_SESSION_SECONDS;
+  const response = jsonResponse({
+    schema_version: "central-feedback-admin-session.v1",
+    authenticated: true,
+    expires_at: new Date(expires * 1000).toISOString()
+  });
+  response.headers.set("set-cookie", adminSessionCookie(expires, await adminSessionSignature(env, expires)));
+  return response;
+}
+
+async function inspectAdminSession(request: Request, env: HubEnv): Promise<Response> {
+  return jsonResponse({
+    schema_version: "central-feedback-admin-session.v1",
+    authenticated: await adminSessionAuthenticated(request, env)
+  });
+}
+
+function deleteAdminSession(request: Request): Response {
+  if (!sameOriginUiRequest(request)) return jsonResponse({ detail: "admin session origin is invalid" }, 403);
+  const response = jsonResponse({ schema_version: "central-feedback-admin-session.v1", authenticated: false });
+  response.headers.set("set-cookie", clearAdminSessionCookie());
+  return response;
 }
 
 function publisherAuthenticated(request: Request, env: HubEnv): boolean {
@@ -502,6 +586,8 @@ export async function dispatchDue(env: HubEnv): Promise<void> {
 
 async function route(request: Request, env: HubEnv): Promise<Response> {
   const url = new URL(request.url);
+  const consoleAsset = request.method === "GET" ? adminConsoleAsset(url.pathname) : null;
+  if (consoleAsset) return consoleAsset;
   if (url.pathname === "/healthz" && request.method === "GET") {
     const error = configurationError(env);
     return jsonResponse({ service: "central-feedback-hub", status: error ? "unconfigured" : "ok" }, error ? 503 : 200);
@@ -511,13 +597,20 @@ async function route(request: Request, env: HubEnv): Promise<Response> {
   if (url.pathname === "/v1/intake" && request.method === "POST") return intake(request, env);
   const statusMatch = url.pathname.match(/^\/v1\/status\/(central_feedback_[0-9a-f]{32})$/);
   if (statusMatch && request.method === "GET") return publicStatus(request, env, statusMatch[1]!);
+  if (url.pathname === "/v1/admin/session" && request.method === "POST") return createAdminSession(request, env);
+  if (url.pathname === "/v1/admin/session" && request.method === "GET") return inspectAdminSession(request, env);
+  if (url.pathname === "/v1/admin/session" && request.method === "DELETE") return deleteAdminSession(request);
   if (url.pathname === "/v1/admin/feedback" && request.method === "GET") {
-    if (!bearer(request, env.BYQ_FEEDBACK_HUB_ADMIN_TOKEN)) return jsonResponse({ detail: "feedback administrator authentication failed" }, 401);
+    if (!await adminAuthentication(request, env)) return jsonResponse({ detail: "feedback administrator authentication failed" }, 401);
     return adminList(url, env);
   }
   const adminMatch = url.pathname.match(/^\/v1\/admin\/feedback\/(central_feedback_[0-9a-f]{32})\/(triage|accept|reject|duplicate)$/);
   if (adminMatch && request.method === "POST") {
-    if (!bearer(request, env.BYQ_FEEDBACK_HUB_ADMIN_TOKEN)) return jsonResponse({ detail: "feedback administrator authentication failed" }, 401);
+    const authentication = await adminAuthentication(request, env);
+    if (!authentication) return jsonResponse({ detail: "feedback administrator authentication failed" }, 401);
+    if (authentication === "session" && !sameOriginUiRequest(request)) {
+      return jsonResponse({ detail: "feedback administrator request origin is invalid" }, 403);
+    }
     return moderate(request, env, adminMatch[1]!, adminMatch[2]!);
   }
   if (url.pathname === "/internal/feedback-publications/heartbeat" && request.method === "POST") {

@@ -1,12 +1,12 @@
 # BeyondQuant 状态
 
-<!-- byq:current-completed-phase=94 -->
+<!-- byq:current-completed-phase=95 -->
 
 本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
 history 推断项目状态。
 
-- 当前已完成阶段：**Phase 94**——普通用户的小巴反馈与全局审批流程保持不变；官方中央 Feedback Hub 使用两个相互隔离的
-  Cloudflare Worker，并可由 Cloudflare Workers Builds 直接连接官方 GitHub 仓库、在 `main` 更新后自动迁移并部署。普通用户
+- 当前已完成阶段：**Phase 95**——普通用户的小巴反馈与全局审批流程保持不变；官方中央 Feedback Hub 增加维护者中文审核
+  控制台，以 Cloudflare Access + Hub 短期 HttpOnly session 双层保护，并继续由隔离 Publisher 向固定仓库创建 Issue。普通用户
   无需 GitHub 或 Cloudflare 账号、Token、仓库、域名或 Hub 凭据。
 - 发布状态：**Beta**。维护者于 2026-08-25 明确授权顺序开发 Phase，并依据 ADR-0015
   对 CI-green PR 执行 auto-merge；该授权不包含 release candidate、tag、production
@@ -21,6 +21,8 @@ history 推断项目状态。
   仍按运维 runbook 由维护者一次性配置，不属于普通安装配置。
 - Phase 94 已依据 ADR-0054 完成；验收证据位于 `docs/evidence/phase-94/`。Cloudflare Git source、两个 Worker 的 runtime
   secrets 和首次生产部署仍按运维 runbook 由维护者一次性配置。
+- Phase 95 已依据 ADR-0055 完成；验收证据位于 `docs/evidence/phase-95/`。维护者必须在自定义域名对 `/admin*` 与
+  `/v1/admin/*` 配置 Cloudflare Access；普通 intake/status/health 路径保持公开。
 - Phase 61 由维护者于 2026-08-27 授权并完成；规范与证据位于 ADR-0034、验收报告和
   `docs/evidence/phase-61/`。
 
@@ -77,6 +79,7 @@ history 推断项目状态。
 - Central Feedback Hub and conversation submission：**ADR-0052**
 - Cloudflare-native Central Feedback Hub：**ADR-0053**
 - Cloudflare GitHub automatic deployment：**ADR-0054**
+- Central Feedback moderation console：**ADR-0055**
 
 以上决策的规范文本位于 `docs/architecture/adr/`。ADR-0015 只在 BeyondQuant Next
 v1.0 正式发布边界前有效。ADR-0026 至 ADR-0030 分别对其 Beta Phase 范围生效。
@@ -398,7 +401,7 @@ Post-Phase 90 Management Action Consistency Maintenance 依据 ADR-0050 将股�
 
 ## 当前授权边界
 
-- Phase 49-94 与相应 Accepted ADR/计划均已完成。
+- Phase 49-95 与相应 Accepted ADR/计划均已完成。
 - Phase 82 与 ADR-0047 已完成；50,000 保持原子 readiness 分片上限，不是 Tushare
   额度或完整数据任务上限。
 - ADR-0044 授权的 Phase 75–79、ADR-0045 授权的 Phase 80、ADR-0046 授权的 Phase 81、
