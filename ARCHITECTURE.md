@@ -377,6 +377,11 @@ ADR-0053 的官方 Central Feedback Hub 使用 Cloudflare Hub Worker + D1/分片
 MUST NOT 绑定 D1、Product Backend、源码、Git、Docker 或 DSH，只能通过带 service token 的 Worker Service Binding
 claim/complete/retry 固定 outbox。Queue 不是权威状态，免费额度或消息过期不得删除 local/D1 outbox。
 
+ADR-0054 允许 Cloudflare Workers Builds 直接读取官方 GitHub 仓库并只从 `main` 自动部署这两个 Worker。Hub 与 Publisher
+MUST 保持两个独立 Cloudflare project、独立 runtime secret 集和独立 deploy command；不得为了单按钮部署把 GitHub credential
+并入公网 Hub。Cloudflare source integration 不得成为 GitHub Issue writer或绕过 `main` 的 PR/CI merge gate，也不授予
+Product、DSH 或 PostgreSQL 权限；runtime secret 不得作为 GitHub/Workers build variable、文件或仓库内容传递。
+
 ## 治理
 
 DSH boundary、MCP boundary、database boundary、WorkflowTrace、authentication、

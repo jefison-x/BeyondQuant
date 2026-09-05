@@ -791,3 +791,12 @@ desktop/mobile、same-origin 与未配置/断网降级。
 installation/receipt 分片的 SQLite Durable Objects、Cron 和 Queue producer；不可公开的 Publisher 使用 Queue/DLQ、Hub
 Service Binding、WebCrypto GitHub App JWT 和固定 Issue route，且没有 D1/Product/DSH/source/Git/Docker 权限。交付精确依赖
 锁、D1 migration、Free-plan 安装/恢复 runbook、真实 workerd/D1/DO/Queue/fake-GitHub tests 和双 Worker deploy dry-run。
+
+## Cloudflare Git Delivery（Phase 94）
+
+### Phase 94 — Git-connected automatic Worker deployment（`COMPLETE`）
+
+依据 ADR-0054，将中央 Hub 的维护者部署入口收敛到 Cloudflare Workers Builds 直接读取官方 GitHub 仓库。Hub/Publisher 保持
+两个隔离 project；只从 `main` 发布，PR 只验证。D1/DO/Queue 使用无账号 ID 的自动配置，Hub deploy 在 code activation 前按
+binding 应用 migration，两个 config 声明不同 required runtime secrets。交付机器可检验 build/deploy contract、monorepo
+root/command/watch-path 清单、首次 secret fail-closed 流程、自动更新/回滚说明和 CLI fallback；不修改 Product runtime。

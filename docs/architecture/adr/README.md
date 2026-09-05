@@ -77,3 +77,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   以及小巴公开预览后只在全局审批中心确认一次并续接原会话的边界。
 - ADR-0053 将官方中央 Hub 部署替换为隔离的 Cloudflare Hub/Publisher Workers、D1 transactional outbox、
   per-installation/per-receipt Durable Objects、Queue/DLQ 和 Service Binding，同时保持 ADR-0052 wire contract。
+- ADR-0054 定义中央 Hub 的 Cloudflare Workers Builds/GitHub 自动部署、双 Worker project、自动资源绑定、migration-first
+  发布、required runtime secret 和仅 `main` 生产部署边界。

@@ -5,6 +5,13 @@
   "compatibility_date": "2026-09-05",
   "workers_dev": true,
   "preview_urls": false,
+  "secrets": {
+    "required": [
+      "BYQ_FEEDBACK_HUB_STATUS_SECRET",
+      "BYQ_FEEDBACK_HUB_ADMIN_TOKEN",
+      "BYQ_FEEDBACK_PUBLISHER_TOKEN"
+    ]
+  },
   "observability": { "enabled": true },
   "vars": {
     "BYQ_FEEDBACK_GITHUB_REPOSITORY": "jefison-x/BeyondQuant"
@@ -13,7 +20,6 @@
     {
       "binding": "DB",
       "database_name": "byq-feedback-hub",
-      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
   ],
