@@ -1,6 +1,6 @@
 # DSH 0.1.2rc1 执行交接与进度
 
-状态：**U0 MERGED，ADR-0058 Accepted；U1 VERIFIED，等待 push/Draft PR 授权**。2026-09-06。
+状态：**U0 MERGED，ADR-0058 Accepted；U1 VERIFIED，已授权 push/Draft PR/CI-green auto-merge**。2026-09-06。
 
 ## 1. 下一模型第一步
 
@@ -21,12 +21,13 @@
 
 - 当前用户授权：维护者于 2026-09-06 授权并完成 U0 开发、push、Draft PR、ADR 接受和 U0 验证，
   随后按 ADR-0015 明确授权 PR #250 squash auto-merge；该 PR 已合并。维护者继而授权开始并继续 U1
-  开发。U1 的 push/Draft PR、merge，以及 U2–U8、生产部署、正式版本切换和付费模型测试未授权。
+  开发。维护者其后统一授权 U1–U8 串行开发、自动 push/Draft PR、CI-green 后按 ADR-0015
+  auto-merge，并在无需新决策时直接进入下一阶段。生产部署、正式版本切换和付费模型测试未授权。
 - 当前 Product completed phase：97；新 Product phase 未由本方案授权。
 - 当前运行基线：Python `0.1.1rc1` / npm `0.1.1-rc.1`（实施前再次核实）。
 - 目标：Python `0.1.2rc1` / npm `0.1.2-rc.1`，不可擅自追新版本。
 - ADR-0058：Accepted；接受范围是 U0 记录的精确载体与边界，不是候选资格或后续阶段授权。
-- 当前升级阶段：U0 `MERGED`；U1 `VERIFIED`，等待 push/Draft PR 授权。
+- 当前升级阶段：U0 `MERGED`；U1 `VERIFIED`，准备 push/Draft PR/CI-green auto-merge。
 - 当前方案只宣称 U1 候选物料/identity/隔离准备通过；不宣称新版 Runtime 已适配、QUALIFIED、
   正式部署或生产观察已完成。
 
@@ -47,7 +48,7 @@ ADR-0058 的接受、生产 operator 部署和付费模型评测分别记录精�
 | 阶段 | 状态 | 工作树/分支 | 验证证据 | 阻碍/下一动作 |
 |---|---|---|---|---|
 | U0 载体决策 | MERGED | `.byq-worktrees/dsh-u0-compatibility-decision` / `docs/dsh-u0-compatibility-decision` | `docs/evidence/dsh-012rc1/u0/`；Option A bundled executable 已接受；keyless spike、旧版回归和 required CI 通过 | PR #250 已按 ADR-0015 squash auto-merge |
-| U1 版本集中/隔离 | VERIFIED | `.byq-worktrees/dsh-u1-release-manifest` / `refactor/dsh-u1-release-manifest` | `docs/evidence/dsh-012rc1/u1/VALIDATION.md`；T01–T07、旧版回归、Integration/浏览器 smoke 通过 | 等待 push/Draft PR 授权；不启动 U2 |
+| U1 版本集中/隔离 | VERIFIED | `.byq-worktrees/dsh-u1-release-manifest` / `refactor/dsh-u1-release-manifest` | `docs/evidence/dsh-012rc1/u1/VALIDATION.md`；T01–T07、旧版回归、Integration/浏览器 smoke 通过 | 已授权 push/Draft PR；CI-green 后 auto-merge 并进入 U2 |
 | U2 provenance 解耦 | PLANNED | 未创建 | 未运行 | U1 合并后 |
 | U3 旧版适配模块 | PLANNED | 未创建 | 未运行 | U2 合并后 |
 | U4 新版候选适配 | PLANNED | 未创建 | 未运行 | U3 合并后 |
