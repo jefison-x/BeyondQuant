@@ -26,13 +26,18 @@
   "durable_objects": {
     "bindings": [
       { "name": "INSTALLATION_GATE", "class_name": "InstallationGate" },
-      { "name": "FEEDBACK_GATE", "class_name": "FeedbackGate" }
+      { "name": "FEEDBACK_GATE", "class_name": "FeedbackGate" },
+      { "name": "ADMIN_LOGIN_GATE", "class_name": "AdminLoginGate" }
     ]
   },
   "migrations": [
     {
       "tag": "v1",
       "new_sqlite_classes": ["InstallationGate", "FeedbackGate"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["AdminLoginGate"]
     }
   ],
   "queues": {

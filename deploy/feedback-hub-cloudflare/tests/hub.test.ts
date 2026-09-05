@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import hub, { dispatchDue } from "../../../services/feedback-hub-cloudflare/src/index";
 import { IntakeEnvelope, PublicationEvent, digest, hmacHex, timingSafeEqual } from "../../../services/feedback-hub-cloudflare/src/contracts";
@@ -8,6 +9,7 @@ interface TestEnv {
   DB: D1Database;
   INSTALLATION_GATE: DurableObjectNamespace;
   FEEDBACK_GATE: DurableObjectNamespace;
+  ADMIN_LOGIN_GATE: DurableObjectNamespace;
   PUBLISH_QUEUE: Queue;
   BYQ_FEEDBACK_HUB_STATUS_SECRET: string;
   BYQ_FEEDBACK_HUB_ADMIN_TOKEN: string;
@@ -68,15 +70,19 @@ async function submit(value: IntakeEnvelope): Promise<{ receipt_id: string; stat
   return response.json();
 }
 
-async function adminSession(token = testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN): Promise<{ response: Response; cookie: string }> {
+async function adminSession(
+  password = testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN,
+  source = "198.51.100.10"
+): Promise<{ response: Response; cookie: string }> {
   const response = await call("/v1/admin/session", {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "origin": "https://hub.example",
+      "cf-connecting-ip": source,
       "x-byq-feedback-admin-request": "ui-v1"
     },
-    body: JSON.stringify({ token })
+    body: JSON.stringify({ password })
   });
   return { response, cookie: (response.headers.get("set-cookie") ?? "").split(";", 1)[0]! };
 }
@@ -118,7 +124,7 @@ describe("Cloudflare central feedback Hub", () => {
     expect(styles.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("exchanges the admin token for a bounded HttpOnly session without persisting the token", async () => {
+  it("exchanges the admin password for a bounded HttpOnly session without persisting it", async () => {
     const wrong = await adminSession("wrong-admin-token-that-is-at-least-32-bytes");
     expect(wrong.response.status).toBe(401);
     expect(wrong.response.headers.get("set-cookie")).toBeNull();
@@ -130,14 +136,14 @@ describe("Cloudflare central feedback Hub", () => {
         "origin": "https://attacker.example",
         "x-byq-feedback-admin-request": "ui-v1"
       },
-      body: JSON.stringify({ token: testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN })
+      body: JSON.stringify({ password: testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN })
     });
     expect(crossOrigin.status).toBe(403);
 
     const created = await adminSession();
     expect(created.response.status).toBe(200);
     const setCookie = created.response.headers.get("set-cookie") ?? "";
-    expect(setCookie).toContain("__Host-byq_feedback_admin=v1.");
+    expect(setCookie).toContain("__Host-byq_feedback_admin=v2.");
     expect(setCookie).toContain("Max-Age=28800");
     expect(setCookie).toContain("Secure");
     expect(setCookie).toContain("HttpOnly");
@@ -147,13 +153,26 @@ describe("Cloudflare central feedback Hub", () => {
 
     const inspected = await call("/v1/admin/session", { headers: { cookie: created.cookie } });
     expect(await inspected.json()).toMatchObject({ authenticated: true });
+    const rotatedEnv = new Proxy(testEnv, {
+      get(target, property, receiver) {
+        return property === "BYQ_FEEDBACK_HUB_ADMIN_TOKEN"
+          ? "rotated-admin-password-that-invalidates-old-sessions"
+          : Reflect.get(target, property, receiver);
+      }
+    });
+    const afterRotation = await hub.fetch(new Request("https://hub.example/v1/admin/session", {
+      headers: { cookie: created.cookie }
+    }), rotatedEnv as never);
+    expect(await afterRotation.json()).toMatchObject({ authenticated: false });
     const tamperedCookie = `${created.cookie.slice(0, -1)}${created.cookie.endsWith("0") ? "1" : "0"}`;
     expect((await call("/v1/admin/feedback?status=all", { headers: { cookie: tamperedCookie } })).status).toBe(401);
 
     const expired = Math.floor(Date.now() / 1000) - 1;
-    const expiredSignature = await hmacHex(testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN,
-      `central-feedback-admin-session.v1:${expired}`);
-    const expiredCookie = `__Host-byq_feedback_admin=v1.${expired}.${expiredSignature}`;
+    const passwordVersion = await hmacHex(testEnv.BYQ_FEEDBACK_HUB_STATUS_SECRET,
+      `central-feedback-admin-password.v1:${testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN}`);
+    const expiredSignature = await hmacHex(testEnv.BYQ_FEEDBACK_HUB_STATUS_SECRET,
+      `central-feedback-admin-session.v2:${expired}:${passwordVersion}`);
+    const expiredCookie = `__Host-byq_feedback_admin=v2.${expired}.${expiredSignature}`;
     expect((await call("/v1/admin/feedback?status=all", { headers: { cookie: expiredCookie } })).status).toBe(401);
 
     const deleted = await call("/v1/admin/session", {
@@ -162,6 +181,63 @@ describe("Cloudflare central feedback Hub", () => {
     });
     expect(deleted.status).toBe(200);
     expect(deleted.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+
+  it("rate limits repeated password and bearer failures per hashed client source", async () => {
+    const lockedSource = "203.0.113.91";
+    for (let attempt = 1; attempt < 5; attempt += 1) {
+      expect((await adminSession("incorrect-admin-password", lockedSource)).response.status).toBe(401);
+    }
+    const threshold = await adminSession("incorrect-admin-password", lockedSource);
+    expect(threshold.response.status).toBe(429);
+    expect(threshold.response.headers.get("retry-after")).toBe("900");
+    expect((await adminSession(testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN, lockedSource)).response.status).toBe(429);
+
+    const independent = await adminSession(testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN, "203.0.113.92");
+    expect(independent.response.status).toBe(200);
+
+    const bearerSource = "203.0.113.93";
+    for (let attempt = 1; attempt < 5; attempt += 1) {
+      const response = await call("/v1/admin/feedback?status=all", {
+        headers: { authorization: "Bearer incorrect-admin-password", "cf-connecting-ip": bearerSource }
+      });
+      expect(response.status).toBe(401);
+    }
+    const bearerThreshold = await call("/v1/admin/feedback?status=all", {
+      headers: { authorization: "Bearer incorrect-admin-password", "cf-connecting-ip": bearerSource }
+    });
+    expect(bearerThreshold.status).toBe(429);
+  });
+
+  it("clears source failure state after a successful password login", async () => {
+    const source = "203.0.113.94";
+    for (let attempt = 1; attempt < 5; attempt += 1) {
+      expect((await adminSession("incorrect-admin-password", source)).response.status).toBe(401);
+    }
+    expect((await adminSession(testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN, source)).response.status).toBe(200);
+    for (let attempt = 1; attempt < 5; attempt += 1) {
+      expect((await adminSession("incorrect-admin-password", source)).response.status).toBe(401);
+    }
+    expect((await adminSession(testEnv.BYQ_FEEDBACK_HUB_ADMIN_TOKEN, source)).response.status).toBe(200);
+  });
+
+  it("expires abandoned login failure state through the Durable Object alarm", async () => {
+    const source = "203.0.113.95";
+    expect((await adminSession("incorrect-admin-password", source)).response.status).toBe(401);
+    const sourceHash = await hmacHex(testEnv.BYQ_FEEDBACK_HUB_STATUS_SECRET, `admin-login-source.v1:${source}`);
+    const gate = testEnv.ADMIN_LOGIN_GATE.getByName(sourceHash);
+    const scheduled = await runInDurableObject(gate, async (_instance, state) => ({
+      alarm: await state.storage.getAlarm(),
+      failures: await state.storage.get("login-state")
+    }));
+    expect(scheduled.alarm).not.toBeNull();
+    expect(scheduled.failures).toMatchObject({ failures: 1 });
+    expect(await runDurableObjectAlarm(gate)).toBe(true);
+    const cleared = await runInDurableObject(gate, async (_instance, state) => ({
+      alarm: await state.storage.getAlarm(),
+      failures: await state.storage.get("login-state")
+    }));
+    expect(cleared).toEqual({ alarm: null, failures: undefined });
   });
 
   it("allows cookie moderation only for exact same-origin UI requests", async () => {

@@ -5,6 +5,7 @@
 - Accepted: 2026-09-05
 - Decision scope: 官方 Central Feedback Hub 的维护者审核界面、管理员认证和浏览器安全边界
 - Related: ADR-0015、ADR-0049、ADR-0052、ADR-0053、ADR-0054
+- Superseded in part: Decision 2 的 Cloudflare Access 强制要求由 ADR-0056 改为可选增强
 
 ## 背景
 

@@ -810,3 +810,13 @@ Admin Token 只做同源 HTTPS session exchange，Hub 签发最长八小时的 S
 URL、普通 Cookie、local/session storage 或第三方资源持久 secret。Cookie mutation 还要求 exact Origin 和封闭 UI header；
 Bearer CLI 保持兼容。正式自定义域名关闭 `workers.dev` 备用路由，`/admin*` 与 `/v1/admin/*` 由 Cloudflare Access 外层保护，
 公开 intake/status/health 不受影响。Issue 创建仍只属于隔离 Publisher，不改变 Product/DSH/MCP/PostgreSQL 或反馈 wire contract。
+
+## Central Feedback Direct Admin Login（Phase 96）
+
+### Phase 96 — Direct password login and persistent throttling（`COMPLETE`）
+
+依据 ADR-0056，将 Phase 95 的 Cloudflare Access 强制前置改为可选 MFA/IdP 增强；Hub 默认使用已有加密 admin secret 作为单一
+管理员密码直接登录，不增加用户名、用户表、找回流程或 Product identity。所有 UI password exchange 与 Bearer CLI 认证均经
+按 `CF-Connecting-IP` 的 HMAC key 分片的 SQLite Durable Object：15 分钟内第五次失败锁定来源 15 分钟，成功原子清零，原始
+IP 不持久化，window/lock 到期 alarm 清理废弃状态。v2 HttpOnly session 由高熵 status secret 和密码版本共同签名，密码轮换使
+旧会话失效。保持同源 mutation、`workers.dev` 关闭、D1/outbox 状态机、Publisher-only GitHub writer 和普通用户零配置边界。

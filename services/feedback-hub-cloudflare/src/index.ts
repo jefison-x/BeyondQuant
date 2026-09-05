@@ -10,6 +10,7 @@ interface HubEnv {
   DB: D1Database;
   INSTALLATION_GATE: DurableObjectNamespace<InstallationGate>;
   FEEDBACK_GATE: DurableObjectNamespace<FeedbackGate>;
+  ADMIN_LOGIN_GATE: DurableObjectNamespace<AdminLoginGate>;
   PUBLISH_QUEUE: Queue<{ schema_version: "feedback-publish-queue.v1"; event_id: string }>;
   BYQ_FEEDBACK_HUB_STATUS_SECRET: string;
   BYQ_FEEDBACK_HUB_ADMIN_TOKEN: string;
@@ -50,10 +51,21 @@ interface OutboxRow {
   updated_at: string;
 }
 
+interface AdminLoginState {
+  failures: number;
+  window_started_at: number;
+  locked_until: number;
+}
+
 const RECEIPT = /^central_feedback_[0-9a-f]{32}$/;
 const OUTBOX_EVENT = /^feedback_outbox_[0-9a-f]{32}$/;
 const ADMIN_SESSION_COOKIE = "__Host-byq_feedback_admin";
 const ADMIN_SESSION_SECONDS = 8 * 60 * 60;
+const ADMIN_PASSWORD_MIN_LENGTH = 16;
+const ADMIN_PASSWORD_MAX_LENGTH = 256;
+const ADMIN_LOGIN_MAX_FAILURES = 5;
+const ADMIN_LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const ADMIN_LOGIN_LOCK_MS = 15 * 60 * 1000;
 const ADMIN_UI_REQUEST_HEADER = "x-byq-feedback-admin-request";
 const ADMIN_UI_REQUEST_VALUE = "ui-v1";
 const PUBLIC_STATUSES = new Set(["received", "triaged", "accepted", "rejected", "duplicate", "publishing", "published"]);
@@ -73,7 +85,10 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[])
 function configurationError(env: HubEnv): string | null {
   if (env.BYQ_FEEDBACK_GITHUB_REPOSITORY !== REPOSITORY) return "fixed repository is invalid";
   if ((env.BYQ_FEEDBACK_HUB_STATUS_SECRET ?? "").length < 32) return "status secret is invalid";
-  if ((env.BYQ_FEEDBACK_HUB_ADMIN_TOKEN ?? "").length < 32) return "admin token is invalid";
+  const adminPasswordLength = (env.BYQ_FEEDBACK_HUB_ADMIN_TOKEN ?? "").length;
+  if (adminPasswordLength < ADMIN_PASSWORD_MIN_LENGTH || adminPasswordLength > ADMIN_PASSWORD_MAX_LENGTH) {
+    return "admin password is invalid";
+  }
   if ((env.BYQ_FEEDBACK_PUBLISHER_TOKEN ?? "").length < 32) return "publisher token is invalid";
   return null;
 }
@@ -92,13 +107,20 @@ function cookieValue(request: Request, name: string): string | null {
 }
 
 async function adminSessionSignature(env: HubEnv, expires: number): Promise<string> {
-  return hmacHex(env.BYQ_FEEDBACK_HUB_ADMIN_TOKEN, `central-feedback-admin-session.v1:${expires}`);
+  const passwordVersion = await hmacHex(
+    env.BYQ_FEEDBACK_HUB_STATUS_SECRET,
+    `central-feedback-admin-password.v1:${env.BYQ_FEEDBACK_HUB_ADMIN_TOKEN}`
+  );
+  return hmacHex(
+    env.BYQ_FEEDBACK_HUB_STATUS_SECRET,
+    `central-feedback-admin-session.v2:${expires}:${passwordVersion}`
+  );
 }
 
 async function adminSessionAuthenticated(request: Request, env: HubEnv): Promise<boolean> {
   const value = cookieValue(request, ADMIN_SESSION_COOKIE);
   if (!value) return false;
-  const match = value.match(/^v1\.(\d{10})\.([0-9a-f]{64})$/);
+  const match = value.match(/^v2\.(\d{10})\.([0-9a-f]{64})$/);
   if (!match) return false;
   const expires = Number(match[1]);
   const now = Math.floor(Date.now() / 1000);
@@ -106,11 +128,28 @@ async function adminSessionAuthenticated(request: Request, env: HubEnv): Promise
   return timingSafeEqual(match[2]!, await adminSessionSignature(env, expires));
 }
 
-async function adminAuthentication(request: Request, env: HubEnv): Promise<"bearer" | "session" | null> {
+async function adminPasswordFailure(request: Request, env: HubEnv, password: string): Promise<Response | null> {
+  const source = (request.headers.get("cf-connecting-ip") ?? "missing-client-ip").trim().slice(0, 128);
+  const sourceHash = await hmacHex(env.BYQ_FEEDBACK_HUB_STATUS_SECRET, `admin-login-source.v1:${source}`);
+  const response = await env.ADMIN_LOGIN_GATE.getByName(sourceHash).fetch("https://admin-login-gate/verify", {
+    method: "POST",
+    body: JSON.stringify({ password })
+  });
+  return response.status === 204 ? null : response;
+}
+
+type AdminAuthentication = { kind: "bearer" | "session" } | { error: Response };
+
+async function adminAuthentication(request: Request, env: HubEnv): Promise<AdminAuthentication> {
   if (request.headers.has("authorization")) {
-    return bearer(request, env.BYQ_FEEDBACK_HUB_ADMIN_TOKEN) ? "bearer" : null;
+    const raw = request.headers.get("authorization") ?? "";
+    const password = raw.startsWith("Bearer ") ? raw.slice(7) : "";
+    const error = await adminPasswordFailure(request, env, password);
+    return error ? { error } : { kind: "bearer" };
   }
-  return await adminSessionAuthenticated(request, env) ? "session" : null;
+  return await adminSessionAuthenticated(request, env)
+    ? { kind: "session" }
+    : { error: jsonResponse({ detail: "feedback administrator authentication failed" }, 401) };
 }
 
 function sameOriginUiRequest(request: Request): boolean {
@@ -119,7 +158,7 @@ function sameOriginUiRequest(request: Request): boolean {
 }
 
 function adminSessionCookie(expires: number, signature: string): string {
-  return `${ADMIN_SESSION_COOKIE}=v1.${expires}.${signature}; Path=/; Max-Age=${ADMIN_SESSION_SECONDS}; Secure; HttpOnly; SameSite=Strict`;
+  return `${ADMIN_SESSION_COOKIE}=v2.${expires}.${signature}; Path=/; Max-Age=${ADMIN_SESSION_SECONDS}; Secure; HttpOnly; SameSite=Strict`;
 }
 
 function clearAdminSessionCookie(): string {
@@ -130,14 +169,15 @@ async function createAdminSession(request: Request, env: HubEnv): Promise<Respon
   if (!sameOriginUiRequest(request)) return jsonResponse({ detail: "admin session origin is invalid" }, 403);
   const payload = await requestJson(request, 1024);
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)
-      || !hasOnlyKeys(payload as Record<string, unknown>, ["token"])) {
+      || !hasOnlyKeys(payload as Record<string, unknown>, ["password"])) {
     return jsonResponse({ detail: "admin session request is invalid" }, 422);
   }
-  const token = (payload as Record<string, unknown>).token;
-  if (typeof token !== "string" || token.length < 32 || token.length > 512
-      || !timingSafeEqual(token, env.BYQ_FEEDBACK_HUB_ADMIN_TOKEN)) {
-    return jsonResponse({ detail: "administrator token is invalid" }, 401);
+  const candidate = (payload as Record<string, unknown>).password;
+  if (typeof candidate !== "string" || candidate.length > ADMIN_PASSWORD_MAX_LENGTH) {
+    return jsonResponse({ detail: "admin session request is invalid" }, 422);
   }
+  const failure = await adminPasswordFailure(request, env, candidate);
+  if (failure) return failure;
   const expires = Math.floor(Date.now() / 1000) + ADMIN_SESSION_SECONDS;
   const response = jsonResponse({
     schema_version: "central-feedback-admin-session.v1",
@@ -164,6 +204,58 @@ function deleteAdminSession(request: Request): Response {
 
 function publisherAuthenticated(request: Request, env: HubEnv): boolean {
   return timingSafeEqual(request.headers.get("x-byq-feedback-publisher-token") ?? "", env.BYQ_FEEDBACK_PUBLISHER_TOKEN);
+}
+
+export class AdminLoginGate extends DurableObject<HubEnv> {
+  constructor(ctx: DurableObjectState, env: HubEnv) {
+    super(ctx, env);
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    if (request.method !== "POST") return jsonResponse({ detail: "operation is invalid" }, 405);
+    const body = await request.json() as Record<string, unknown>;
+    const password = typeof body.password === "string" ? body.password : "";
+    const valid = password.length >= ADMIN_PASSWORD_MIN_LENGTH
+      && password.length <= ADMIN_PASSWORD_MAX_LENGTH
+      && timingSafeEqual(password, this.env.BYQ_FEEDBACK_HUB_ADMIN_TOKEN);
+    const now = Date.now();
+    const outcome = await this.ctx.storage.transaction(async (transaction) => {
+      let state = await transaction.get<AdminLoginState>("login-state") ?? {
+        failures: 0,
+        window_started_at: now,
+        locked_until: 0
+      };
+      if (state.locked_until > now) {
+        return { kind: "locked" as const, retry_after: Math.max(1, Math.ceil((state.locked_until - now) / 1000)) };
+      }
+      if (valid) {
+        await transaction.delete("login-state");
+        await transaction.deleteAlarm();
+        return { kind: "accepted" as const };
+      }
+      if (now - state.window_started_at >= ADMIN_LOGIN_WINDOW_MS) {
+        state = { failures: 0, window_started_at: now, locked_until: 0 };
+      }
+      state.failures += 1;
+      if (state.failures >= ADMIN_LOGIN_MAX_FAILURES) state.locked_until = now + ADMIN_LOGIN_LOCK_MS;
+      await transaction.put("login-state", state);
+      await transaction.setAlarm(Math.max(state.window_started_at + ADMIN_LOGIN_WINDOW_MS, state.locked_until));
+      return state.locked_until > now
+        ? { kind: "locked" as const, retry_after: Math.ceil(ADMIN_LOGIN_LOCK_MS / 1000) }
+        : { kind: "rejected" as const };
+    });
+    if (outcome.kind === "accepted") return new Response(null, { status: 204 });
+    if (outcome.kind === "locked") {
+      const response = jsonResponse({ detail: "登录尝试过多，请稍后重试。" }, 429);
+      response.headers.set("retry-after", String(outcome.retry_after));
+      return response;
+    }
+    return jsonResponse({ detail: "管理员密码错误。" }, 401);
+  }
+
+  async alarm(): Promise<void> {
+    await this.ctx.storage.deleteAll();
+  }
 }
 
 async function requestJson(request: Request, limit = MAX_BYTES): Promise<unknown> {
@@ -601,14 +693,15 @@ async function route(request: Request, env: HubEnv): Promise<Response> {
   if (url.pathname === "/v1/admin/session" && request.method === "GET") return inspectAdminSession(request, env);
   if (url.pathname === "/v1/admin/session" && request.method === "DELETE") return deleteAdminSession(request);
   if (url.pathname === "/v1/admin/feedback" && request.method === "GET") {
-    if (!await adminAuthentication(request, env)) return jsonResponse({ detail: "feedback administrator authentication failed" }, 401);
+    const authentication = await adminAuthentication(request, env);
+    if ("error" in authentication) return authentication.error;
     return adminList(url, env);
   }
   const adminMatch = url.pathname.match(/^\/v1\/admin\/feedback\/(central_feedback_[0-9a-f]{32})\/(triage|accept|reject|duplicate)$/);
   if (adminMatch && request.method === "POST") {
     const authentication = await adminAuthentication(request, env);
-    if (!authentication) return jsonResponse({ detail: "feedback administrator authentication failed" }, 401);
-    if (authentication === "session" && !sameOriginUiRequest(request)) {
+    if ("error" in authentication) return authentication.error;
+    if (authentication.kind === "session" && !sameOriginUiRequest(request)) {
       return jsonResponse({ detail: "feedback administrator request origin is invalid" }, 403);
     }
     return moderate(request, env, adminMatch[1]!, adminMatch[2]!);

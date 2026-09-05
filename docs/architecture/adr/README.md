@@ -81,3 +81,5 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
   发布、required runtime secret 和仅 `main` 生产部署边界。
 - ADR-0055 定义中央 Hub operator 审核控制台、Cloudflare Access + Hub session 双层保护、短期 HttpOnly Cookie、
   same-origin mutation、无持久浏览器 secret 和保持隔离 Publisher 为唯一 Issue writer 的边界。
+- ADR-0056 将 Cloudflare Access 改为可选增强，并定义中央管理员密码直登、按来源 HMAC 分片的持久登录节流、
+  v2 session 签名和密码轮换失效边界。

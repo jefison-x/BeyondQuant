@@ -62,7 +62,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("BYQ_CREDENTIAL_ACTIVE_KEY_ID", contract)
         self.assertIn("BYQ_CREDENTIAL_RESOLVER_TOKEN", contract)
         self.assertIn("credential-envelope.v1", contract)
-        self.assertEqual(markdown_marker(status, "current-completed-phase"), "95")
+        self.assertEqual(markdown_marker(status, "current-completed-phase"), "96")
         for adr_id in ("ADR-0024", "ADR-0025", "ADR-0026", "ADR-0027", "ADR-0034", "ADR-0035", "ADR-0037", "ADR-0038", "ADR-0039", "ADR-0040", "ADR-0041", "ADR-0042", "ADR-0043", "ADR-0044", "ADR-0048", "ADR-0049"):
             self.assertRegex(status, rf"(?m)^- .*\*\*{adr_id}\*\*")
         self.assertIn("D-0008", status)
@@ -288,7 +288,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn('@router.get("/feedback/items")', gateway)
         self.assertIn('"product_feedback", "product_feedback_revisions", "product_feedback_audit"', workspace)
         self.assertIn("/api/product/feedback/items:", openapi)
-        self.assertIn("<!-- byq:current-completed-phase=95 -->", status)
+        self.assertIn("<!-- byq:current-completed-phase=96 -->", status)
         self.assertIn("Phase 88 — Durable feedback domain and Product API（`COMPLETE`）", plan)
         self.assertIn("Phase 89 — Trusted GitHub publisher and operations（`COMPLETE`）", plan)
         self.assertIn("transaction rollback", evidence.lower())
@@ -532,6 +532,37 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("api.github.com", publisher)
         self.assertIn("/admin*", runbook)
         self.assertIn("/v1/admin/*", runbook)
+
+    def test_phase96_direct_admin_password_is_throttled_without_making_access_mandatory(self) -> None:
+        adr = (ROOT / "docs/architecture/adr/ADR-0056-direct-admin-password-and-login-throttling.md").read_text()
+        architecture = (ROOT / "ARCHITECTURE.md").read_text()
+        hub = (ROOT / "services/feedback-hub-cloudflare/src/index.ts").read_text()
+        console = (ROOT / "services/feedback-hub-cloudflare/src/admin-console.ts").read_text()
+        hub_config = json.loads((ROOT / "deploy/feedback-hub-cloudflare/wrangler.hub.jsonc").read_text())
+        runbook = (ROOT / "docs/operations/central-feedback-hub.md").read_text()
+        self.assertIn("- Status: Accepted", adr)
+        self.assertIn(
+            {"name": "ADMIN_LOGIN_GATE", "class_name": "AdminLoginGate"},
+            hub_config["durable_objects"]["bindings"],
+        )
+        self.assertEqual(
+            hub_config["migrations"][-1],
+            {"tag": "v2", "new_sqlite_classes": ["AdminLoginGate"]},
+        )
+        self.assertIn("ADMIN_LOGIN_MAX_FAILURES = 5", hub)
+        self.assertIn("ADMIN_LOGIN_WINDOW_MS = 15 * 60 * 1000", hub)
+        self.assertIn("ADMIN_LOGIN_LOCK_MS = 15 * 60 * 1000", hub)
+        self.assertIn("transaction.setAlarm", hub)
+        self.assertIn("async alarm()", hub)
+        self.assertIn('request.headers.get("cf-connecting-ip")', hub)
+        self.assertNotIn("x-forwarded-for", hub.lower())
+        self.assertIn("central-feedback-admin-password.v1", hub)
+        self.assertIn("central-feedback-admin-session.v2", hub)
+        self.assertIn("管理员密码", console)
+        self.assertNotIn("Hub Admin Token", console)
+        self.assertIn("Cloudflare Access/Zero Trust 不是运行必需项", runbook)
+        self.assertIn("Cloudflare Access MAY", architecture)
+        self.assertNotIn("MUST 同时受\nCloudflare Access", architecture)
 
     def test_dsh_version_is_exact_rc6(self) -> None:
         dockerfile = (ROOT / "services/dsh/Dockerfile").read_text()

@@ -16,9 +16,9 @@ Deploy button 同时发布 monorepo 中多个 Worker；不要为了单按钮把�
    - 不授予 Contents、Pull requests、Actions、Administration、Secrets 或 Deployments；
    - 不需要 webhook URL/secret；
    - 保存 App ID、installation ID 和 private key PEM。
-3. 在密码管理器生成并保存三个互不相同的 64 位十六进制随机值：
+3. 在密码管理器生成并保存三个互不相同的 secret：
    - Hub status secret；
-   - Hub admin token；
+   - Hub 管理员密码（兼容变量名仍为 admin token，16–256 字符，推荐使用随机长密码）；
    - Hub/Publisher 共享的 publisher service token。
 
 也可只用下面的命令生成三次；这些值不要写入仓库、GitHub Actions 或 Workers build variables：
@@ -52,14 +52,14 @@ Cloudflare 用于 source build/check 的 `Cloudflare Workers and Pages` GitHub A
 | Hub runtime secret | 值 |
 |---|---|
 | `BYQ_FEEDBACK_HUB_STATUS_SECRET` | 保存的 status secret |
-| `BYQ_FEEDBACK_HUB_ADMIN_TOKEN` | 保存的 admin token |
+| `BYQ_FEEDBACK_HUB_ADMIN_TOKEN` | 保存的管理员密码（兼容变量名） |
 | `BYQ_FEEDBACK_PUBLISHER_TOKEN` | 保存的 publisher service token |
 
 保存后回到 **Deployments/Builds** 对失败 build 选择 **Retry**。Hub deploy command 会先查询远程 D1；首次缺少
 `byq-feedback-hub` 时创建它，再以 `DB` binding 应用 D1 migration，最后发布 Worker。后续构建复用同一 D1，并继续保持
-migration-first。Wrangler config 自动配置两个 SQLite Durable Object namespace 和 `byq-feedback-publish` Queue。仓库不保存
+migration-first。Wrangler config 自动配置三个 SQLite Durable Object namespace 和 `byq-feedback-publish` Queue。仓库不保存
 Cloudflare account id 或 D1 id。Hub 的 `workers.dev` 和 preview URL 均关闭；正式访问必须使用下面配置的 Custom Domain，
-避免管理员路径通过未受 Access 保护的备用 hostname 暴露。
+避免出现未纳入正式域名运维和监控的备用 hostname。
 
 在 **Settings → Builds → Build watch paths** 中设置 include：
 
@@ -121,7 +121,7 @@ https://feedback.example.org/healthz
 
 检查 Cloudflare Dashboard：
 
-- Hub bindings 有 D1、`INSTALLATION_GATE`、`FEEDBACK_GATE` 和 `PUBLISH_QUEUE`；
+- Hub bindings 有 D1、`INSTALLATION_GATE`、`FEEDBACK_GATE`、`ADMIN_LOGIN_GATE` 和 `PUBLISH_QUEUE`；
 - Publisher bindings 只有 Hub Service Binding、Queue Consumer、固定 repository var 和四个加密 secret；
 - D1 migration `0001_central_feedback.sql` 已记录为 applied；
 - 主 Queue 和 DLQ 均存在；
@@ -129,15 +129,25 @@ https://feedback.example.org/healthz
 
 首次部署不会创建 GitHub Issue。只有匿名 intake 被中央管理员依次 `triage`、`accept` 后，Publisher 才会创建固定仓库 Issue。
 
-## 5. 保护中央管理入口
+## 5. 管理员密码直登与可选 Access
 
-Custom Domain 上保持以下公开路径可访问：
+Custom Domain 默认直接提供 `/admin` 管理员密码登录。页面使用已配置的
+`BYQ_FEEDBACK_HUB_ADMIN_TOKEN` 作为管理员密码，但不会把密码写入 URL、Cookie、D1、BYQ application log、`localStorage` 或
+`sessionStorage`。成功后浏览器只保存最长 8 小时的签名 HttpOnly Cookie；更换密码会让旧会话立即失效。
+
+登录失败按 Cloudflare 提供的 client IP 做 HMAC 分片，原始 IP 不落库：15 分钟内连续 5 次错误会把该来源锁定 15 分钟，
+并返回 `429` 与 `Retry-After`。成功登录会清除该来源的失败状态；不同来源互不影响。不要启用移除
+`CF-Connecting-IP` 的 Managed Transform，否则缺失 header 的请求会共享一个 fail-closed bucket。Bearer CLI 使用同一节流门，
+不能绕过限制。
+
+Custom Domain 上始终保持以下公开路径可访问：
 
 - `POST /v1/intake`
 - `GET /v1/status/{receipt_id}`
 - `GET /healthz`
 
-进入 **Cloudflare Zero Trust → Access controls → Applications → Create new application → Self-hosted and private**。在同一个
+Cloudflare Access/Zero Trust 不是运行必需项。如果后续需要 MFA、企业 IdP 或边缘身份审计，可进入
+**Cloudflare Zero Trust → Access controls → Applications → Create new application → Self-hosted and private**，在同一个
 Access application 添加以下两个 public hostname path；如果当前界面不允许同一 application 添加两个不连续 path，则创建两个
 使用相同策略的 application：
 
@@ -150,25 +160,27 @@ feedback.example.org/v1/admin/*
 PIN”放行。Access session duration 建议不超过 8 小时。不要保护整个 `feedback.example.org`，否则会阻断普通 BYQ 的 intake
 和 status 查询。
 
-Worker 内部仍验证 Admin Token 或短期签名会话，Access 是外层而不是替代品。边缘可继续设置 32 KiB body limit 和按源 IP 的
-辅助限速。`/internal/*` 只供 Publisher Service Binding 使用，即使被公网探测仍必须通过 publisher token。
+即使启用 Access，Worker 内部管理员密码、登录节流和短期签名会话也必须保留；Access 是可选外层而不是替代品。边缘可继续设置
+32 KiB body limit。`/internal/*` 只供 Publisher Service Binding 使用，即使被公网探测仍必须通过 publisher token。
 
 ## 6. 中央审核验收
 
-Access 生效后打开：
+直接打开：
 
 ```text
 https://feedback.example.org/admin
 ```
 
-从密码管理器粘贴 `BYQ_FEEDBACK_HUB_ADMIN_TOKEN`。登录交换成功后，原 Token 不会写入 URL、Cookie、D1、`localStorage` 或
-`sessionStorage`；浏览器只保存最长 8 小时的 `Secure`、`HttpOnly`、`SameSite=Strict` 签名 Cookie。页面支持状态过滤、
+输入密码管理器中保存的管理员密码（Cloudflare secret 兼容变量名为 `BYQ_FEEDBACK_HUB_ADMIN_TOKEN`）。登录交换成功后，原密码
+不会写入 URL、Cookie、D1、BYQ application log、`localStorage` 或 `sessionStorage`；浏览器只保存最长 8 小时的
+`Secure`、`HttpOnly`、`SameSite=Strict` v2 签名 Cookie。页面支持状态过滤、
 服务端分页、公开候选详情、分诊、采纳、拒绝和标记重复。退出会清除 Cookie。
 
 对一条明确标为安装验收的反馈先“完成分诊”，再“采纳并进入发布队列”。采纳是公开副作用：Cron 最迟约一分钟扫描 D1
 outbox，Queue Consumer 再创建固定仓库 Issue。验收后手工关闭测试 Issue；Hub 不自动关闭或删除 Issue。
 
-控制台不可用时才使用 CLI fallback。在当前维护终端临时设置 origin 和 admin token，不要写入仓库或 shell profile：
+控制台不可用时才使用 CLI fallback。在当前维护终端临时设置 origin 和管理员密码，不要写入仓库或 shell profile；Bearer
+请求也会按来源计算失败次数：
 
 ```bash
 export BYQ_FEEDBACK_HUB_ORIGIN=https://feedback.example.org

@@ -1094,6 +1094,21 @@ Community 没有中央匿名反馈、Cloudflare Hub operator 身份或固定官�
 提取不变量不变：最小公开内容、显式人工采纳、状态机/CAS/audit 属于 Hub、Issue 副作用只属于隔离 Publisher。Community
 仓库和数据库保持只读，未修改、导入或复制。
 
+## Phase 96 Central Feedback direct admin login audit
+
+2026-09-05 只读复用 Phase 95 对 Community issue template、approval center 和系统管理入口的检查结果。Community 没有中央
+Cloudflare Hub、单维护者密码认证、按来源持久登录节流或可选 Zero Trust 模式；无需重新读取或复制不相关实现。
+
+| Community evidence | Classification | Phase 96 disposition |
+|---|---|---|
+| 标准密码字段的 label/name/autocomplete 语义 | `REUSE_AS_IS` / `PORT_UX` | 使用明确“管理员密码”标签和 `current-password`，认证仍完全属于 Hub。 |
+| 通用审批目录、详情和人工动作 | `REFERENCE_ONLY` | 维持 Phase 95 控制台；本阶段只改变入口认证和防爆破，不改变审核状态机。 |
+| 中央管理员身份、Cloudflare Access 与登录节流 | `REPLACE` | 单一加密 password secret、按 HMAC source key 分片的 SQLite Durable Object、v2 HttpOnly session；Access 可选。 |
+| Community Agent/API/runtime/storage/credential | `DROP` | 不引入旧 runtime、Product identity、数据库、credential、源码或 Git history。 |
+
+提取不变量保持：密码不进入公开资源/持久浏览器存储，成功只获得短期 session，审核 authority 留在 Hub，Issue writer 留在隔离
+Publisher。Community 仓库和数据库保持只读，未修改、导入或复制。
+
 ## Post-Phase 82 frontend list-performance maintenance audit（2026-09-01）
 
 The read-only Community Stock Pool, Backtest, Strategy and Operations surfaces

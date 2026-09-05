@@ -1,9 +1,9 @@
 # BeyondQuant
 
-<!-- byq:current-completed-phase=95 -->
+<!-- byq:current-completed-phase=96 -->
 
 BeyondQuant（BYQ）是一个 AI 原生量化研究平台。当前已完成的项目阶段为
-**Phase 95**：可靠 LightGBM、自动化通道和按需数据准备均已接入小巴；机器学习 V2 已实现可扩展能力
+**Phase 96**：可靠 LightGBM、自动化通道和按需数据准备均已接入小巴；机器学习 V2 已实现可扩展能力
 注册、purged walk-forward、确定性 Ridge JSON、冻结沪深300市场状态、独立专家 ModelBundle、确定性路由，
 以及动态 Product API、分页/懒加载模型研究工作台和小巴最小权限入口。内置 Product Feedback 已完成
 PostgreSQL 反馈修订、隐私预览、审核/outbox 与分页 Product API，以及隔离、固定仓库、有限重试的
@@ -11,8 +11,9 @@ GitHub publisher；Product UI、管理员审核工作台和 MCP 现已闭环。�
 Feedback Hub，中央审核采纳后才发布 Issue；小巴在原会话展示公开预览，只需全局审批中心确认一次，普通用户无需配置 GitHub。
 官方中央 Hub 可用 Cloudflare Workers Free 部署，以 D1、SQLite Durable Objects、Queue/DLQ 和隔离的 GitHub App Publisher
 替代常驻中央主机、PostgreSQL 与 Docker；维护者可让 Cloudflare 直接连接官方 GitHub 仓库并在 `main` 更新后自动部署，
-普通用户仍无需 Cloudflare 配置。中央维护者可在受 Cloudflare Access 与短期 HttpOnly 会话双重保护的中文审核控制台中，
-分页查看、分诊、采纳、拒绝或标记重复反馈；GitHub Issue 仍只由隔离 Publisher 创建。
+普通用户仍无需 Cloudflare 配置。中央维护者可使用管理员密码直接登录中文审核控制台；按来源 HMAC 分片的持久节流和短期
+HttpOnly 会话保护管理入口，Cloudflare Access 仅作为可选 MFA/IdP 增强。控制台支持分页查看、分诊、采纳、拒绝或标记重复
+反馈；GitHub Issue 仍只由隔离 Publisher 创建。
 Agent 人工批准/拒绝入口已集中到全局审批中心，决定后会幂等返回原持久会话继续处理；业务页只保留用户主动操作，
 不再要求用户到具体页面批准小巴任务。
 大范围数据准备按原子分片推进，
