@@ -55,9 +55,10 @@ Cloudflare 用于 source build/check 的 `Cloudflare Workers and Pages` GitHub A
 | `BYQ_FEEDBACK_HUB_ADMIN_TOKEN` | 保存的 admin token |
 | `BYQ_FEEDBACK_PUBLISHER_TOKEN` | 保存的 publisher service token |
 
-保存后回到 **Deployments/Builds** 对失败 build 选择 **Retry**。Hub deploy command 会以 `DB` binding 应用 D1 migration，
-再发布 Worker；Wrangler config 会自动配置 `byq-feedback-hub` D1、两个 SQLite Durable Object namespace 和
-`byq-feedback-publish` Queue。仓库不保存 Cloudflare account id 或 D1 id。
+保存后回到 **Deployments/Builds** 对失败 build 选择 **Retry**。Hub deploy command 会先查询远程 D1；首次缺少
+`byq-feedback-hub` 时创建它，再以 `DB` binding 应用 D1 migration，最后发布 Worker。后续构建复用同一 D1，并继续保持
+migration-first。Wrangler config 自动配置两个 SQLite Durable Object namespace 和 `byq-feedback-publish` Queue。仓库不保存
+Cloudflare account id 或 D1 id。
 
 在 **Settings → Builds → Build watch paths** 中设置 include：
 

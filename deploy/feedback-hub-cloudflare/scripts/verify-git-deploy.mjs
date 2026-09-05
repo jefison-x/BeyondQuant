@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { hubDeploymentCommands } from "./deploy-hub.mjs";
 
 const readJson = async (name) => JSON.parse(await readFile(new URL(`../${name}`, import.meta.url), "utf8"));
 const packageJson = await readJson("package.json");
@@ -31,8 +32,13 @@ assert.equal(hub.vars.BYQ_FEEDBACK_GITHUB_REPOSITORY, "jefison-x/BeyondQuant");
 assert.equal(publisher.vars.BYQ_FEEDBACK_GITHUB_REPOSITORY, "jefison-x/BeyondQuant");
 
 const scripts = packageJson.scripts ?? {};
-assert.match(scripts["cloudflare:deploy:hub"], /d1 migrations apply DB --remote/);
-assert.match(scripts["cloudflare:deploy:hub"], /wrangler deploy --config wrangler\.hub\.jsonc$/);
+assert.equal(scripts["cloudflare:deploy:hub"], "node scripts/deploy-hub.mjs");
+assert.deepEqual(hubDeploymentCommands([]).map((command) => command.slice(0, 3)), [
+  ["d1", "create", "byq-feedback-hub"],
+  ["d1", "migrations", "apply"],
+  ["deploy", "--config", "wrangler.hub.jsonc"]
+]);
+assert.deepEqual(hubDeploymentCommands([{ name: "byq-feedback-hub" }]).map((command) => command[0]), ["d1", "deploy"]);
 assert.equal(scripts["cloudflare:deploy:publisher"], "wrangler deploy --config wrangler.publisher.jsonc");
 for (const command of Object.values(scripts)) {
   assert.doesNotMatch(String(command), /(?:secret put|secret bulk|--secrets-file .*production)/);

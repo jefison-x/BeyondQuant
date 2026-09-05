@@ -10,12 +10,13 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run --max-workers=1 --no-isolate",
+    "test:git-deploy": "node --test scripts/deploy-hub.test.mjs",
     "verify:git-deploy": "node scripts/verify-git-deploy.mjs",
-    "check": "npm run typecheck && npm test && npm run verify:git-deploy",
+    "check": "npm run typecheck && npm test && npm run test:git-deploy && npm run verify:git-deploy",
     "dry-run": "node scripts/dry-run.mjs",
     "cloudflare:build": "npm run check",
     "cloudflare:preview": "npm run dry-run",
-    "cloudflare:deploy:hub": "wrangler d1 migrations apply DB --remote --config wrangler.hub.jsonc && wrangler deploy --config wrangler.hub.jsonc",
+    "cloudflare:deploy:hub": "node scripts/deploy-hub.mjs",
     "cloudflare:deploy:publisher": "wrangler deploy --config wrangler.publisher.jsonc"
   },
   "devDependencies": {
