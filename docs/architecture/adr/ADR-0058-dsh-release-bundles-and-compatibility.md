@@ -3,7 +3,7 @@
 - Status: Proposed
 - Date: 2026-09-05
 - Decision scope: 拟议 DSH maintenance U0–U8；不改变 Product Phase 97 的完成状态
-- Related: ADR-0003、0009、0019、0033、0037、0038、0039、0040、0046、0051
+- Related: ADR-0003、0009、0019、0033、0037、0038、0039、0040、0046、0051、0059
 
 ## 背景
 
@@ -70,7 +70,8 @@ required CI 使用真实 runtime + scripted provider 和完整隔离 Product 栈
 关键场景、Chrome review、old→new→old 恢复演练及授权发布。
 只有 promotion 阶段改变生产默认指针。部署前排空 active turn，保留 pending continuation；仅更新必要服务。
 回滚是旧 runtime image + 已验证兼容准备版本 + private generation/public context，不回滚业务数据库。
-预发布合并遵循 ADR-0015 和实际用户授权，不因 qualification 自动扩展生产部署权限。
+预发布合并遵循 ADR-0015/0059、实际用户授权和可验证服务器门禁；不可用时停在 Draft。
+不因 qualification 自动扩展生产部署权限。通用隔离 CI 复用治理整改；候选选择/attestation 由 U1 新增。
 
 ## 不在范围
 
@@ -94,5 +95,6 @@ required CI 使用真实 runtime + scripted provider 和完整隔离 Product 栈
 - 不可避免的 SDK 私有 API 依赖及替代方案：**待审查**。
 - 接受的工程实施授权、日期、证据引用：**尚未记录**。
 
-以上关键项不完整时保持 Proposed。后续维护者授权实施且 U0 满足这些约束后，可记录证据并接受；
-无需仅因文档原本是 Proposed 就重复询问已覆盖的常规选择。实际边界超出本提案时应明确修订并取得方向。
+以上关键项不完整时保持 Proposed。U0 填齐后必须记录维护者对精确载体/边界决策的接受；
+已有授权明确覆盖同一决策时引用原授权，不重复确认。泛化实施授权不是对未知例外的接受，
+实际边界超出本提案时须明确修订并取得方向。ADR-0059 已接受不等于本 ADR 已接受。

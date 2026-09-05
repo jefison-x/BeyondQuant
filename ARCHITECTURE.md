@@ -161,9 +161,11 @@ Frontend MUST NOT 直接依赖 DSH event schema。
 ```text
 DSH Event
   ↓
-BYQ Gateway
+BYQ Runtime Adapter (normalize raw DSH events)
   ↓
 BYQ WorkflowTrace Contract
+  ↓
+BYQ Gateway (Product projection)
   ↓
 Frontend
 ```
@@ -227,13 +229,18 @@ Engineering Plane MUST NOT：
 
 - 直接 push 到 `main`
 - force push
-- 直接部署到 production
+- 以工程开发权限直接部署到 production（独立授权的 trusted operator 见 ADR-0059）
 - 执行自动 destructive database migration
 - 在初始运行模型下自动 merge
 
 Engineering agent MUST 使用 disposable worktree，例如
 `/home/jefison/projects/.byq-worktrees/`，不得直接修改
 `/home/jefison/projects/BeyondQuant`。
+
+隔离根可按 ADR-0059 通过 `BYQ_ENGINEERING_WORKTREE_ROOT` 配置为专用目录；Backend 只校验
+申报合同，真实路径与 Git 登记由宿主 `scripts/ci/verify-worktree.py` 校验。不得向 Backend 挂载源码。
+EngineeringTask completed 仅表示 tested Draft PR 交付，不表示已合并或部署。预发布合并按
+ADR-0015/0059 的明确授权与平台门禁执行；生产 operator 权限不得传入 Product Plane。
 
 ## K. Agent 与 execution
 

@@ -20,6 +20,10 @@
 
 ### 制品和版本权威（U1）
 
+治理前置（ADR-0059）：先通过通用 CI 的风险分类、run-scoped 镜像、取消清理与实际执行 gate。
+这些证据只证明 CI 可用，不替代下列 release identity、候选兼容性或真实模型资格。U1 复用现有
+隔离 CI 并新增 release selector/attestation；不得重复改回固定 `beyondquant-*` 测试镜像。
+
 | ID | 场景与必须断言 | 最低层次 |
 |---|---|---|
 | T01 | 官方 exact artifact 可下载且 hash/版本/平台一致；SDK 依赖配对；无 unknown release/自动 latest | L0 + 下载验证 |

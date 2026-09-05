@@ -2,7 +2,8 @@
 
 状态：**PLANNED / 尚未实施**。编写日期：2026-09-05。
 
-本次授权是编写详细方案，供后续 GPT-5.6 中等推理模型执行。本文不是已通过的升级认证，也不表示已部署。
+原授权是编写详细方案；2026-09-05 后续授权仅增加治理/CI 整改及本方案校正，供后续模型执行。
+本文不是已通过的升级认证，也不表示已部署；ADR-0059 不授权开始 U0。
 目标准确固定为 Python `0.1.2rc1`、DSH npm `0.1.2-rc.1`、Git tag `dsh-v0.1.2-rc.1`；不得自行换成更新版本。
 当前 Product 完成阶段保持 Phase 97。本工作使用独立维护阶段 U0–U8，不擅自占用 Phase 98 等 Product 编号。
 
@@ -18,13 +19,17 @@
 
 开始任何实施前，完整阅读 `AGENTS.md`、`ARCHITECTURE.md`、`docs/DEVELOPMENT_WORKFLOW.md`、
 `docs/roadmap/STATUS.md`、`docs/roadmap/IMPLEMENTATION_PLAN.md` 和本阶段相关 Accepted ADR。
-核心 ADR：0003、0009、0015、0033、0037、0038、0039、0040、0046、0051。
+核心 ADR：0003、0009、0015、0033、0037、0038、0039、0040、0046、0051、0059。
 涉及模型凭据还读 0019；涉及 ML/Feedback 行为还读 0043/0048、0049/0052。
 ADR-0058 在 U0 通过前保持 Proposed，不得在运行代码中提前实现未接受的边界变化。
 
 每阶段一工作树、一分支、一 Draft PR；前一阶段验证、审查和合并完成后才开始下一阶段。
 当前请求没有要求推送、合并或部署这份方案。后续用户明确要求按方案开发时，将该授权记录到执行表，
-并按会话已有授权和 ADR-0015 处理合并；不要重复询问已经明确授权的动作，也不要从“规划”推断生产部署。
+并按会话已有授权和 ADR-0015/0059 处理合并；不要重复询问已经明确授权的动作，也不要从“规划”推断生产部署。
+治理整改必须先合并，才能以它为升级基线。U0 前只读运行 GitHub preflight；自动合并配置关闭、
+required checks 不可验证时停在 Draft，由维护者处理平台门禁，不临时直接 merge。
+具体载体/例外必须由维护者明确接受 ADR-0058；泛化升级实施授权不能接受尚未发现的新权限需求。
+U7 部署属于独立获授权 trusted operator，不是 Engineering/Product Agent 的自主部署能力。
 
 ## 2. 已核实事实与尚未证明的结论
 
@@ -219,8 +224,9 @@ Runtime Dockerfile/依赖生成、CI 图像选择、readiness 的版本来源及
 6. 保留当前 exact 一致性要求；如上游发布方案要求非同号组件，先明确记录官方配套证据及 ADR，不能静默混用。
 7. 构建后读取 installed metadata，核对 release/lock/profile；错配不得报 Active。前端测试断言版本来自安全响应，
    历史 fixture 可以保留旧具体版本，不能把所有断言都替换为过宽 regex。
-8. 给 CI/candidate 明确 image tag/digest，避免继续复用 `beyondquant-runtime-adapter` 等正式可变 tag。
-   当前 local-ci 有硬编码 image 名，必须同时改造测试容器镜像选择和构建命令，防止测到旧镜像或覆盖回滚 tag。
+8. 复用 ADR-0059 已建立的 run-scoped build/test 镜像路径；不要重复重写通用 CI。
+   本阶段新增的是候选 release 选择、installed metadata 与 image/release attestation 绑定。
+   通用 CI 的构建成功不等于候选资格通过，不能仅传 `--build` 就声称运行了指定 release。
 9. 完整候选栈隔离 project、network、volume、端口、凭据及镜像；未知/缺少选择必须停止，不默默回落旧镜像。
 
 验收：T01–T07；旧版 runtime suite、registry tests、架构/CI policy tests、旧版 initialize/MCP smoke。
@@ -422,8 +428,9 @@ scripts/ci/local-ci.sh --base=origin/main --with-e2e --auto-smoke --plan-only
 ```
 
 按阶段选择实际检查；需要依赖先按 lock 安装，不以缺依赖跳过 gate。
-当前 local-ci 在未加 `--build` 时复用镜像，且 image 名存在硬编码。U1 改造前不能把默认命令用于新版认证。
-U1 完成后同命令必须通过显式 image/release 参数或安全默认构建实际候选；参数名与具体调用在 U1 evidence 定稿。
+治理整改后的 local-ci 默认构建本次 run-scoped 镜像，构建失败停止且不复用正式 tag。
+但它仍测试当前 checkout 的默认 release；U1 必须增加明确候选选择和认证身份，不能把普通 CI 当新版认证。
+候选参数名与具体调用在 U1 evidence 定稿；禁止提前使用尚未实现的参数。
 
 当前全量 CI 入口（U1 后先核对镜像选择，再运行）：
 

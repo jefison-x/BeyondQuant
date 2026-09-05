@@ -36,9 +36,9 @@ permissions:
 
 jobs:
   local-ci:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64, byq]
-    timeout-minutes: 30
+    # Fork code never executes on the production-adjacent self-hosted runner.
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted","linux","x64","byq"]') }}
+    timeout-minutes: 60
     env:
       # Guard against any future opt-in compose usage colliding with the
       # developer's local stack project name.
@@ -52,6 +52,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up fork Node toolchain
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Set up fork Python toolchain
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install fork browser OS dependencies
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          cd apps/frontend
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install-deps chromium
 
       - name: Fetch main baseline for path filtering
         run: |
@@ -63,12 +83,38 @@ jobs:
         env:
           BYQ_CI_PROFILE: ${{ inputs.profile || 'full' }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ] || [ "$BYQ_CI_PROFILE" = "selective" ]; then
-            ./scripts/ci/local-ci.sh --base="$BYQ_CI_BASE_SHA" --with-e2e --auto-smoke
-          else
-            ./scripts/ci/local-ci.sh --base="${BYQ_CI_BASE_SHA:-HEAD^}" --all --with-e2e --with-smoke
-          fi
+          mkdir -p .ci-artifacts
+          set -o pipefail
+          {
+            if [ "${{ github.event_name }}" = "pull_request" ] || [ "$BYQ_CI_PROFILE" = "selective" ]; then
+              ./scripts/ci/local-ci.sh --base="$BYQ_CI_BASE_SHA" --with-e2e --auto-smoke
+            else
+              ./scripts/ci/local-ci.sh --base="${BYQ_CI_BASE_SHA:-HEAD^}" --all --with-e2e --with-smoke
+            fi
+          } 2>&1 | python3 scripts/ci/redact-log.py | tee .ci-artifacts/checks.log
 
       - name: Verify run-scoped resource cleanup
         if: always()
-        run: ./scripts/ci/cleanup-resources.sh --scope="$BYQ_CI_SCOPE"
+        run: |
+          mkdir -p .ci-artifacts
+          set -o pipefail
+          ./scripts/ci/cleanup-resources.sh --scope="$BYQ_CI_SCOPE" 2>&1 | python3 scripts/ci/redact-log.py | tee .ci-artifacts/cleanup.log
+
+      - name: Upload sanitized CI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci-artifacts/*.log
+          retention-days: 7
+
+  ci-gate:
+    if: always()
+    needs: [local-ci]
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted","linux","x64","byq"]') }}
+    permissions: {}
+    steps:
+      - name: Require executed checks and cleanup
+        env:
+          CI_RESULT: ${{ needs.local-ci.result }}
+        run: test "$CI_RESULT" = success

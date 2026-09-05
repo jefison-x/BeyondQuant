@@ -32,7 +32,14 @@ auto-merge，并在发布后提醒关闭 auto-merge。
 - 预发布期间合并的 PR 仍经过 CI 和相同 diff/architecture review evidence，但移除每个
   PR 的 Human merge click。
 - Release boundary 是硬停止点：正式发布后不能继续 auto-merge。
-- 直接写 `main`、production deployment 和合并 failing-check PR 仍被禁止。
+- 直接写 `main`、以 Engineering 开发权限进行 production deployment 和合并 failing-check PR 仍被禁止。
+  ADR-0059 澄清：另行明确授权的 Product 外 trusted operator 可执行既有部署 lane；本合并例外本身不授予部署权。
+
+## 2026-09-05 执行澄清（ADR-0059）
+
+本例外不是自动忽略更严格专项验收或平台设置的授权。动作前验证当前任务的合并授权、
+GitHub auto-merge 与严格 required checks；设置关闭、API 403、检查跳过或不可验证时停在 Draft。
+不得以直接即时 merge/admin bypass 代替不可用的 auto-merge。v1.0 失效边界不变。
 
 ## 拒绝的替代方案
 

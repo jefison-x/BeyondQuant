@@ -3,6 +3,9 @@
 状态：PLANNED。仅在[主方案](../roadmap/DSH_012RC1_UPGRADE_PLAN.md) U6/U7 前置条件满足后执行。
 本文没有部署任何版本，不包含可直接复制的生产容器删除/卷替换命令。
 
+执行身份：ADR-0059 下另行授权的 trusted operator；U0–U6 开发/合并不自动授予生产权限。
+部署前确认本任务授权、平台合并门禁、实际 merged revision 与本次服务白名单，不能沿用失效的历史授权。
+
 ## 1. 发布对象和兼容矩阵
 
 U6 必须根据实际代码把以下组合逐项测试，填入 exact image/release/policy hash：
@@ -24,7 +27,7 @@ Backend 镜像包含 Plugin Registry，MCP 可能包含 provenance projection，
 
 ### 镜像身份
 
-- 当前 local-ci 使用若干 `beyondquant-*` 镜像名，U1 必须改造成显式可选择的隔离镜像。
+- ADR-0059 的 local-ci 已采用 run-scoped build/test 镜像；U1 复用隔离机制并新增 candidate release/attestation 选择。
 - 候选不能覆盖当前/回滚的唯一可用 tag。按 Git revision/release ID 标记构建，记录实际 image ID/digest。
 - 单机尚无远端镜像仓库时，允许受控本地 immutable tag + image ID + 导出校验；不要假称已有 registry digest。
 - 多服务切换保存每服务的旧/新 image reference；部署恢复用保留制品，不在事故中重新解析 npm/PyPI。

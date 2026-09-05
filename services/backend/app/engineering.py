@@ -14,7 +14,7 @@ import os
 import re
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -27,7 +27,23 @@ _ID_PATTERN = re.compile(r"^(?:engineering_task)_[0-9a-f]{32}$")
 _TRACE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 _PRINCIPAL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$")
 _BRANCH_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
-_WORKTREE_PREFIX = "/home/jefison/projects/.byq-worktrees/"
+_DEFAULT_WORKTREE_ROOT = "/home/jefison/projects/.byq-worktrees"
+
+
+def validate_worktree_path(value: str) -> str:
+    """Validate declared host path, not host filesystem (never mounted in Backend)."""
+    root = PurePosixPath(os.environ.get("BYQ_ENGINEERING_WORKTREE_ROOT", _DEFAULT_WORKTREE_ROOT))
+    path = PurePosixPath(value)
+    if (not root.is_absolute() or ".." in root.parts or len(root.parts) < 3
+            or len(root.parts) == 3 and root.parts[1] == "home"
+            or str(root) in {"/var/tmp", "/home/jefison", "/home/jefison/projects"}
+            or root.name in {"BeyondQuant", "BeyondQuant-community", "BeyondQuant-legacy"}):
+        raise ValueError("invalid dedicated BYQ worktree root configuration")
+    if not path.is_absolute() or ".." in path.parts or path == root or not path.is_relative_to(root):
+        raise ValueError("worktree_path must be under the BYQ disposable worktree root")
+    return str(path)
+
+
 _SECRET_KEY_FRAGMENTS = (
     "token",
     "password",
@@ -364,8 +380,8 @@ class EngineeringTaskStore(PgStoreMixin):
                     if payload["worktree_path"]
                     else None
                 )
-                if worktree_path is not None and not worktree_path.startswith(_WORKTREE_PREFIX):
-                    raise ValueError("worktree_path must be under the BYQ disposable worktree root")
+                if worktree_path is not None:
+                    worktree_path = validate_worktree_path(worktree_path)
 
             branch_name = row["branch_name"]
             if "branch_name" in payload:

@@ -2,6 +2,9 @@
 
 这是 autonomous development 的 repository roadmap。普通 phase branch 只能实现当前 phase；后续 phases 是 planning constraints，不授权提前构建 Product scope。
 
+明确指定的维护/bugfix/CI/依赖资格任务按 ADR-0059 与 DEVELOPMENT_WORKFLOW 的独立通道执行，
+不要求伪造新 Product Phase。历史章节保留当时验收语义；当前合并/部署权限以具名生效规则为准。
+
 独立维护规划：[DSH 0.1.2rc1 升级与可维护性改造](DSH_012RC1_UPGRADE_PLAN.md) 定义 U0–U8，
 目前仅为待实施方案，不占用下一 Product Phase，不改变当前 Runtime baseline，也不授权自动生产升级。
 

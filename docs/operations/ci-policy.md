@@ -17,6 +17,12 @@ Path selection is an impact graph, not permission to skip a changed component's 
 | Integration | Compose, migrations, shared contracts, workers, CI, real-browser specifications or unknown executable paths | every affected component plus isolated Compose smoke, real Product API browser journeys, restart and two-user checks |
 | Full | nightly schedule, release candidate or explicit manual dispatch | all components and the complete Integration profile |
 
+Machine-readable contracts under `docs/contracts/` are executable boundaries, not documentation-only.
+Runtime dependency manifests/locks, carriers/compositions/plugins, service dependency manifests,
+schema/bootstrap/migration code and every `real-*.ts` journey trigger Integration before broad path matches.
+Inline Backend DDL is inspected in both current and baseline source so removals also trigger Integration;
+new schema mechanisms must add regression cases in the same PR. Unknown paths fail closed.
+
 Frontend source changes run the complete frontend build, Vitest and mocked Playwright suite but do
 not start PostgreSQL or Compose unless they modify the real Product journey or a shared boundary.
 Unknown source paths fail closed to Integration. `scripts/ci/classify-changes.sh` is the executable
@@ -29,6 +35,30 @@ source of truth and has architecture tests for representative routes.
 - A merge to `main` does not repeat the same full suite; nightly Full detects cross-change drift.
 - Full CI remains available through `workflow_dispatch` and is mandatory for release candidates.
 - A failing selected check is a failing required check. Selection may not hide an assertion failure.
+- Fork PRs use the same checks on an ephemeral GitHub-hosted runner with read-only token and no
+  production secrets/network. They never run on the self-hosted lane; do not use `pull_request_target`.
+  Billing/approval/runner unavailability means NOT_RUN, not pass. Runner access restrictions must be
+  configured by the owner: workflow YAML alone is not a security boundary against a PR editing YAML.
+- `ci-gate` requires the selected `local-ci` job to finish `success`, including cleanup and log upload.
+  Configure both as strict required server-side checks. Skipped/neutral/cancelled is not successful testing.
+- Before authorized pre-release auto-merge, use `check-github-gates.py`; configuration disabled or API
+  403/unverifiable rules means keep Draft. Never bypass checks with administrative merge.
+
+## Build identity and diagnostics
+
+Every selected container suite builds its dependencies from the checked-out tree first, using normal
+Docker layer cache. Images are named `byq-ci-stack-<scope>-<service>` for both component tests and
+Compose; image IDs are printed after build. Build/inspect failure terminates CI before tests; Compose
+uses `--no-build`. `--build` remains a compatible no-op flag, not permission to reuse production tags.
+MCP always builds its live Backend dependency. Integration builds all default and tested optional services.
+Local uncommitted changes are tested as a dirty tree, not claimed as evidence of an immutable commit.
+Candidate release selectors/attestation remain DSH U1 work; this maintenance does not implement them.
+
+CI disables automatic `.env`/Compose override loading and replaces DB/credentials with test-only values.
+Test output must not be discarded. Workflow output passes through `redact-log.py` before console/log
+storage; only sanitized logs are uploaded for seven days, including failure evidence before resources vanish.
+Redaction is defense-in-depth, not permission to print real credentials, raw production logs or entire Env.
+For local saved evidence, pipe through the same redactor with shell `pipefail`; do not persist raw logs.
 
 Target service levels are under one minute for documentation, under four minutes for frontend-only,
 under six minutes for an ordinary service, and under fifteen minutes for Full on the current runner.

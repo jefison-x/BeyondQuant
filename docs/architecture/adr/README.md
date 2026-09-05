@@ -17,6 +17,10 @@ Architecture Decision Record（ADR）记录改变或澄清持久系统边界的�
 每份 ADR 应说明背景、决策、后果、相关备选方案，以及迁移或回滚考虑。任何偏离
 `ARCHITECTURE.md` 的例外都 MUST 在实现前取得 ADR。
 
+Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录维护者对精确 decision scope 的
+接受证据；通用“继续开发”不能接受未说明的新边界。替代旧决策必须声明 Supersedes 的具体条款，
+历史事实保留并标明不再作为当前通用规范。ADR-0059 统一开发权限、任务分流与 CI 证据门禁。
+
 当前与 Phase 相关的 Accepted 决策也列在 `docs/roadmap/STATUS.md` 中：
 
 - ADR-0020 定义 Phase 34 的 Stock Pool identity、不可变 snapshot、lifecycle 和

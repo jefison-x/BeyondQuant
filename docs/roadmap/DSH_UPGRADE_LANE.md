@@ -67,14 +67,14 @@ Compatibility spike 发现 Python `0.1.1rc1` 可 initialize/close，但 npm top-
 
 - 一个命令生成可审查 candidate dependency evidence；
 - 完整 DSH compatibility suite 可在无真实 model key 的 local CI 运行；
-- 可选 credentialed smoke 有文档且不存储 test secret；
+- keyless CI 不依赖真实密钥；一般候选 credentialed smoke 可选，但 0.1.2rc1 生产晋升按专项方案 U5/U6 必须提供独立真实模型报告；
 - 混合 npm/Python release sets fail closed，除非显式接受；
 - Compatible runtime-only upgrade 不改变 Product API/WorkflowTrace contracts；
 - ADR-0003/compatibility matrix 标识 qualified production pin、rollback pin、limitations 和 evidence location。
 
 ## 非目标
 
-- 自动 merge runtime upgrades；
+- 未经维护者授权的自动 runtime upgrade/merge；已授权维护 PR 的合并统一服从 ADR-0015/0059，不豁免专项资格测试；
 - 立即跟随每个 DSH prerelease；
 - 启用 shell、source-write、deployment、raw-event 或 database access；
 - 在无 BYQ-owned public contract 时采用 multimodal payloads；

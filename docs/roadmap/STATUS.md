@@ -2,8 +2,8 @@
 
 <!-- byq:current-completed-phase=97 -->
 
-本文档是 Phase 状态的事实来源。它有意保持精炼，使新的 Codex session 不会从 commit
-history 推断项目状态。
+本文档顶部是当前 Phase 状态的事实来源，使新的 Codex session 不会从 commit history 推断状态。
+下方交付历史保留当时配置与验收事实，不作为当前运行参数或通用合并/部署授权；后续具名修订可能已替代它。
 
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、
   技术详情和小巴任务投影中分离。名称搜索保持服务端分页，缺省名称来自已验证策略，历史任务由 PostgreSQL 前向修复补齐，
@@ -34,6 +34,9 @@ history 推断项目状态。
   `docs/evidence/phase-61/`。
 
 ## 生效中的 Accepted ADR
+
+- Development governance / CI integrity maintenance：**ADR-0059**。本次只授权治理、CI 与 DSH 方案修正；
+  不推进 Product Phase，不授权 DSH 实施或生产部署。
 
 - Runtime：**ADR-0003**
 - Phase 7 authentication：**ADR-0004**

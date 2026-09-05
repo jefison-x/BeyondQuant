@@ -8,19 +8,18 @@
 [发布方案](../operations/DSH_012RC1_ROLLOUT.md)和[ADR 提案](../architecture/adr/ADR-0058-dsh-release-bundles-and-compatibility.md)。
 然后检查 `STATUS.md`、Git/worktree 和用户最新授权。不要凭之前聊天摘要直接替换 DSH 版本。
 
-规划分支名称：`docs/dsh-012rc1-upgrade-plan`。
-本次规划工作树：`/tmp/byq-dsh-012rc1-upgrade-plan`。交接完成前保留，不将它当测试临时目录清理。
-若文档已合并，使用最新主分支中的路径；若未合并，先在该工作树阅读。
-若 `/tmp` 工作树不在，先用 `git branch --list` 和 `git show docs/dsh-012rc1-upgrade-plan:<path>` 恢复阅读，
-不得重新猜方案。规划分支尚未推送时不能假定另一台机器能取得它。
+当前修正版随 `chore/governance-ci-hardening` 交付，工作树为
+`/home/jefison/projects/.byq-worktrees/governance-ci-hardening`。合并后以最新 main 为准。
+原 `docs/dsh-012rc1-upgrade-plan` / `/tmp/byq-dsh-012rc1-upgrade-plan` 只保留历史，不再是修正版入口。
+工作树不可用时通过 `git show chore/governance-ci-hardening:<path>` 阅读；本地分支不意味着已推送。
 
-用户后续明确要求实施时，先把规划文件整合入 U0 分支并提交文档 PR，或先合并独立规划 PR；
+用户后续明确要求实施时，先完成治理整改/修正版方案的审查合并；
 不要从尚未合并的规划分支直接叠加 U1–U8。文档-only 提交可在新隔离分支 cherry-pick，
 但先核查差异/主分支新增 ADR 编号；有冲突先读最新内容，保留用户改动。
 
 ## 2. 授权与状态事实
 
-- 当前用户授权：详细规划，供后续切换模型执行。
+- 当前用户授权：治理与 CI 整改、校正规划；不包含 DSH U0–U8 实施、推送、合并或部署。
 - 当前 Product completed phase：97；新 Product phase 未由本方案授权。
 - 当前运行基线：Python `0.1.1rc1` / npm `0.1.1-rc.1`（实施前再次核实）。
 - 目标：Python `0.1.2rc1` / npm `0.1.2-rc.1`，不可擅自追新版本。
@@ -30,7 +29,9 @@
 
 后续实施时在本节记录授权是单阶段还是 U0–U8、是否覆盖 push/PR/merge/deploy/真实付费模型评测/监控。
 依据会话已有授权继续，无须对已授权动作逐个重复确认。授权不足只阻止依赖它的步骤，继续可独立完成的工作。
-所有 PR 都要 required CI；预 v1.0 依 ADR-0015 允许 CI-green auto-merge 时仍不能绕过失败检查或 push main。
+所有 PR 都要 required CI；预 v1.0 依 ADR-0015/0059 允许 CI-green auto-merge 时仍不能绕过失败检查或 push main。
+U0 前核对 `check-github-gates.py`：auto-merge 关闭/服务器门禁不可验证是合并阻碍，不是 DSH 不兼容。
+ADR-0058 的接受、生产 operator 部署和付费模型评测分别记录精确授权；不伪造后续完成。
 
 ## 3. 阶段进度表
 
@@ -70,12 +71,14 @@ Git SHA、PR 链接、测试运行身份记录在本执行表/分阶段 evidence
 git fetch origin
 git status --short
 git rev-parse origin/main
-git worktree add --no-track -b refactor/dsh-u1-release-manifest /tmp/byq-dsh-u1-release-manifest origin/main
+git worktree add --no-track -b refactor/dsh-u1-release-manifest /home/jefison/projects/.byq-worktrees/dsh-u1-release-manifest origin/main
+python3 scripts/ci/verify-worktree.py /home/jefison/projects/.byq-worktrees/dsh-u1-release-manifest
 ```
 
 若 root main 干净，依仓库流程执行 fast-forward-only 同步；若它有用户修改，不 reset/stash 覆盖，
 直接从已同步 origin/main 创建独立工作树并记录原因。已有同名工作树先检查是否本阶段未完成，不能覆盖。
-仓库标准 `.byq-worktrees` 路径可用时按其使用；文件权限限制时 `/tmp` 工作树是隔离替代，证据和 commit 需保留。
+默认使用标准 `.byq-worktrees`；确需替换时明确配置专用 `BYQ_ENGINEERING_WORKTREE_ROOT`，
+同步宿主与 EngineeringTask 路径合同。无权限先申请，不能自行把整个 `/tmp` 设为根。
 
 ## 5. 每阶段交接模板
 
@@ -107,8 +110,8 @@ Next stage or blocking decision:
 ```text
 按照仓库 docs/roadmap/DSH_012RC1_UPGRADE_PLAN.md 及其测试矩阵、发布方案和执行交接文档，
 开始 BYQ DSH 0.1.2rc1 升级维护。先读取实际文件和当前状态，再从第一个未完成且已授权的阶段继续。
-如果文档尚未合并，先读取 /tmp/byq-dsh-012rc1-upgrade-plan 中的规划；缺失时检查
-docs/dsh-012rc1-upgrade-plan 本地分支。不得从聊天摘要重新猜方案。
+如果修正版文档尚未合并，先读取 chore/governance-ci-hardening 的治理与规划内容并完成其合并门禁；
+原 docs/dsh-012rc1-upgrade-plan 只作历史。不得从聊天摘要重新猜方案。
 
 本次实施授权范围：[填写单阶段或 U0–U8，以及推送/PR/合并/部署、真实模型评测和监控范围]。
 已经授权的动作不重复询问；遇到改变权限/业务语义/目标版本或无法满足硬门禁时说明具体证据。
