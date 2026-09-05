@@ -2,6 +2,10 @@
 
 Status: **QUALIFIED — `0.1.1rc1` / `0.1.1-rc.1` maintenance upgrade**
 
+2026-09-05 后续规划：[DSH 0.1.2rc1 升级与可维护性改造执行方案](DSH_012RC1_UPGRADE_PLAN.md)
+定义 U0–U8 独立维护阶段、测试矩阵、模型交接和发布回滚。它目前是 PLANNED，不改变本文件的
+已认证运行基线；正式新版 qualification/promotion 需按该方案另行完成。
+
 本任务建立可重复、证据驱动的路径，以跟踪 official DeepSeek Harness releases，同时不把 BYQ product contracts 耦合到 DSH internals。它有意安排在当前 product-depth sequence 之后；重大 DSH security advisory 可通过独立 maintenance worktree 和 ADR-0003 compatibility review 提前触发。
 
 ## Qualified stack（2026-08-25）

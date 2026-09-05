@@ -2,6 +2,9 @@
 
 这是 autonomous development 的 repository roadmap。普通 phase branch 只能实现当前 phase；后续 phases 是 planning constraints，不授权提前构建 Product scope。
 
+独立维护规划：[DSH 0.1.2rc1 升级与可维护性改造](DSH_012RC1_UPGRADE_PLAN.md) 定义 U0–U8，
+目前仅为待实施方案，不占用下一 Product Phase，不改变当前 Runtime baseline，也不授权自动生产升级。
+
 从 Phase 9 起，永久 migration source of truth 为 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`。实现 phase 前必须先检查、分类其 Community candidates。可在 BYQ-owned contracts 中重新实现 provider/engine-independent semantics，但不得复制 Community runtime、storage、provider 或 engine architecture。BaoStock、AKShare、VectorBT、PydanticAI 和 Hermes 保持排除，除非未来 Accepted ADR 明确反转。
 
 所有 phases 遵循 `docs/DEVELOPMENT_WORKFLOW.md`：只执行 `STATUS.md` 指定的 next phase；每 phase 使用 isolated worktree/branch/PR；contract/test 优先；保持 Product/Agent/Quant/Data/Engineering boundaries；CI 与 evidence 完成后才进入 merge gate。
