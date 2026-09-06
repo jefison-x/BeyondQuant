@@ -80,15 +80,18 @@ BYQ Agent run remained durably `active` after the runtime process had failed and
 closed, so stale run termination is a second issue. Raw conversation content,
 owner/workspace identifiers and private DSH logs are not committed here.
 
-This is not cleared by healthy containers or zero monitor alerts. U8 cannot become
-COMPLETE until the failed-turn context contract and stale delegated-run lifecycle
-are fixed or otherwise explicitly dispositioned, then requalified. Increasing the
-timeout alone is not an acceptable fix. Rollback is not assumed to solve the issue:
-the BYQ Gateway/adapter resume behavior is shared by the certified old/new builds.
+This is not cleared by healthy containers or zero monitor alerts. The maintainer
+explicitly dispositioned implementation to the unified
+[post-U8 Agent reliability remediation](../../../roadmap/POST_U8_AGENT_RELIABILITY_REMEDIATION.md),
+after U8 observation and merge. U8 may finish its observation/closeout with the
+defect explicitly unresolved, but must not claim semantic stability or that the
+production defect is fixed. Increasing the timeout alone is not acceptable.
+Rollback is not assumed to solve the issue: the BYQ Gateway/adapter resume behavior
+is shared by the certified old/new builds.
 
 ## Pending gates and limitations
 
-Actual 24-hour duration, incident disposition, bounded approval backlog/job
+Actual 24-hour duration, bounded approval backlog/job
 idempotency final review and resource trends remain pending. The first dense period
 had no infrastructure alerts, but the semantic incident above occurred immediately
 after it. Process count is not SDK child ownership state; idle session metadata is

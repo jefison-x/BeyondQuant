@@ -33,7 +33,8 @@
   新版生产安装身份、旧版 G1→新版同公开会话 G5、Chrome 桌面/手机和 Product Plugin Center 核查通过。
   24 小时只读观察于 2026-09-06 23:02:43 UTC 开始；时长达标和最终复核尚未完成，不能标记 COMPLETE。
   观察中确认真实基金研究在子 Agent 超时后以“继续”恢复时丢失未回答主题，并误选同工作区既有 ML/回测对象；
-  未发生新训练/预测/回测写入或跨租户读取，但持久 Agent run 未随超时收口。该缺陷处置及重新资格验证是 U8 完成阻断项。
+  未发生新训练/预测/回测写入或跨租户读取，但持久 Agent run 未随超时收口。维护者决定 U8 完成实际观察和诚实收尾后，
+  在独立 maintenance worktree 统一实施[可靠性修复需求](POST_U8_AGENT_RELIABILITY_REMEDIATION.md)；U8 不得声称该缺陷已解决或语义稳定。
   实际部署与观察证据见 [U8 记录](../evidence/dsh-012rc1/u8/OBSERVATION.md)。
   维护者已授权 U1–U8 串行开发、自动 push/Draft PR，并在 CI-green 后按
   ADR-0015 自动合并和进入下一阶段。维护者另行授权在当前本地环境使用既有凭据链执行必要的
