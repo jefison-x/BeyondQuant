@@ -130,9 +130,16 @@ def validate_release(value: dict[str, Any], *, verify_files: bool) -> None:
     else:
         _require(isinstance(profile["name"], str) and profile["name"],
                  "candidate profile name is required")
-        _require(all(profile[key] is None
-                     for key in ("composition", "composition_hash", "identity")),
-                 "unbuilt candidate profile identity must be null")
+        candidate_values = tuple(
+            profile[key] for key in ("composition", "composition_hash", "identity")
+        )
+        is_unbuilt = all(value is None for value in candidate_values)
+        is_built = all(isinstance(value, str) and bool(value) for value in candidate_values)
+        _require(is_unbuilt or is_built,
+                 "candidate profile identity must be entirely null or complete")
+        if is_built:
+            _require(SHA256.fullmatch(profile["composition_hash"]) is not None,
+                     "invalid candidate composition hash")
     inputs = value["build_inputs"]
     _require(isinstance(inputs, dict), "build_inputs must be an object")
     for relative, expected in inputs.items():

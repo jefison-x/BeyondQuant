@@ -1,0 +1,51 @@
+{
+  "base_profile": "sdk",
+  "composition_hash": "sha256:b18105ecdd0683a13e20bea65f7e7ba927a6ccfc5d97f4aead011e3c494733e2",
+  "delegate_background_mode": "one-shot",
+  "delegate_max_depth": 1,
+  "delegates": [
+    "byq_delegate_market_research",
+    "byq_delegate_factor_research",
+    "byq_delegate_strategy_research",
+    "byq_delegate_backtest_analysis",
+    "byq_delegate_ml_research"
+  ],
+  "enabled_plugin_ids": [
+    "compaction",
+    "guard",
+    "web-search"
+  ],
+  "forbidden_tools": [
+    "bash",
+    "pwsh",
+    "jobs",
+    "fs",
+    "fs_search",
+    "str_replace_editor",
+    "subagent",
+    "subagent_fork",
+    "workflow",
+    "todo_write",
+    "goal",
+    "ralph",
+    "web_fetch",
+    "list_agents",
+    "send_message"
+  ],
+  "mcp": {
+    "fail_on_startup_error": true,
+    "server": "byq"
+  },
+  "patch": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
+  "patch_sha256": "sha256:b18105ecdd0683a13e20bea65f7e7ba927a6ccfc5d97f4aead011e3c494733e2",
+  "permission_mode": "read-only",
+  "profile": "byq-product-candidate",
+  "release_id": "dsh-0.1.2rc1",
+  "schema_version": "dsh-candidate-profile-identity.v1",
+  "skills": {
+    "include_default_roots": false,
+    "root": "/opt/dsh/bundles/dsh-byq/skills",
+    "watch": false
+  },
+  "telemetry": "disabled"
+}

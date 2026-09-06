@@ -1,6 +1,6 @@
 {
   "active_producer": {
-    "attestation_sha256": "sha256:f3b1091d72754dc4a9bafa6c8a731d28af8abda391e4708d0984198ec6d080c3",
+    "attestation_sha256": "sha256:e8486d4803545f23862f0bb8d511a86a1c3f1e3502cb96fdd18023e27c0dee9d",
     "plugin_id": "web-search",
     "plugin_version": "0.1.1-rc.1",
     "qualification_state": "QUALIFIED",
@@ -9,7 +9,7 @@
   "mode": "qualified",
   "recognized_producers": [
     {
-      "attestation_sha256": "sha256:f3b1091d72754dc4a9bafa6c8a731d28af8abda391e4708d0984198ec6d080c3",
+      "attestation_sha256": "sha256:e8486d4803545f23862f0bb8d511a86a1c3f1e3502cb96fdd18023e27c0dee9d",
       "plugin_id": "web-search",
       "plugin_version": "0.1.1-rc.1",
       "qualification_state": "QUALIFIED",

@@ -27,12 +27,21 @@ class DshReleaseTests(unittest.TestCase):
             releases["dsh-0.1.2rc1"]["carrier"]["kind"],
             "python-bundled-executable",
         )
+        self.assertEqual(
+            releases["dsh-0.1.2rc1"]["profile"]["composition"],
+            "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
+        )
         self.assertEqual(MODULE.render(), MODULE.render())
         self.assertEqual(MODULE.OUTPUT_PATH.read_text(), MODULE.render())
         self.assertEqual(
             MODULE.candidate_output_path("dsh-0.1.2rc1").read_text(),
             MODULE.render_release("dsh-0.1.2rc1", deployment, releases),
         )
+        runtime_package = json.loads(
+            (ROOT / "plugins/dsh-byq/runtime/package.json").read_text()
+        )
+        self.assertEqual(runtime_package["name"], "@beyondquant/dsh-runtime-plugins")
+        self.assertRegex(runtime_package["version"], r"^\d+\.\d+\.\d+$")
 
     def test_invalid_release_schema_carrier_and_path_fail_closed(self) -> None:
         release = MODULE.load_json(MODULE.RELEASE_ROOT / "dsh-0.1.1rc1.json")

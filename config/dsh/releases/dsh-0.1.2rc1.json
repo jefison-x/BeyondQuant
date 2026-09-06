@@ -20,11 +20,39 @@
   },
   "profile": {
     "name": "byq-product-candidate",
-    "composition": null,
-    "composition_hash": null,
-    "identity": null
+    "composition": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
+    "composition_hash": "sha256:b18105ecdd0683a13e20bea65f7e7ba927a6ccfc5d97f4aead011e3c494733e2",
+    "identity": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.identity.json"
   },
   "build_inputs": {
-    "config/dsh/releases/dsh-0.1.2rc1.python.lock": "sha256:c93b829d8db27c2067fbb1fae67707c7f4fe5d04ab99fdf7993a57014e31b5f6"
+    "config/dsh/releases/dsh-0.1.2rc1.python.lock": "sha256:c93b829d8db27c2067fbb1fae67707c7f4fe5d04ab99fdf7993a57014e31b5f6",
+    "services/runtime-adapter/requirements.candidate.lock": "sha256:05efaef0fc41946338f5f4f2092a3380f26675f27938f939595eb2340de22d6d",
+    "services/runtime-adapter/Dockerfile.candidate": "sha256:ebf0237c3bc9c28aa8bf6d07125048ad12d510c2233965c4c7cf830deec78c0f",
+    "services/runtime-adapter/app/runtime.py": "sha256:d23b56ab3dbbbdbd074da0ae5a2772e96809907cd8aed137f133f1f027416d7c",
+    "services/runtime-adapter/app/normalization.py": "sha256:ccb80ded8eae12dc3f3599771a5c6c9a3c33f1b08a33d9f1cf1a5c4aa9d0b70c",
+    "services/runtime-adapter/app/compat/__init__.py": "sha256:6a6028129ccd41a899a0dfe58e02d15637d8de47f7b893ccf7e5bb741d3ede9b",
+    "services/runtime-adapter/app/compat/types.py": "sha256:f307b5b2470c5ea996df44f7c2b84b1fff1251258ced5d754e18b1c88e0242e6",
+    "services/runtime-adapter/app/compat/dsh_012.py": "sha256:45f438069aa5d22138a5b80def9ea15b7c1502b4c25aa7794e04fba8bafc29ed",
+    "compose.dsh-candidate.yml": "sha256:e9c462d4ab58eb0c5980874c71605eabb0f3a68e5514b82a1eda1e384e18c28c",
+    "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.template.yml": "sha256:c3b07020072c8f121bc56aa0a3fc9678a395df0ea9a0399f63003889d4058dc0",
+    "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml": "sha256:b18105ecdd0683a13e20bea65f7e7ba927a6ccfc5d97f4aead011e3c494733e2",
+    "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.identity.json": "sha256:99c18d284143568bb9926810c6e6337eeb212ebf92f9e4ace33b558cf5656496",
+    "scripts/dsh/candidate_profile.py": "sha256:fef4be875601ab65cdd74bdcab8a0e5fcd7dacdf3d940fdb5ac88bd6663aa597",
+    "plugins/dsh-byq/runtime/byq-runtime-time-context.js": "sha256:fe18a15e6f35a0b42e185599db24854cc24cbdd4a793af43656651ee0663be72",
+    "plugins/dsh-byq/runtime/package.json": "sha256:4279ea1e6a2409c5ee98eb72dd769139dee4f76a2d47fa6db6eecbf2d81f857e",
+    "plugins/dsh-byq/skills/byq-backtest-analyst/SKILL.md": "sha256:54c8f6623227747becdcbbd3b77fee3f9b76d6d22df82fb3a07e8b19c2919ad2",
+    "plugins/dsh-byq/skills/byq-factor-researcher/SKILL.md": "sha256:2437948c96927d893db2987802927066c946a71a12736f6469a737abeeecacca",
+    "plugins/dsh-byq/skills/byq-market-researcher/SKILL.md": "sha256:16075c9d77d49fdc904d71bdde4f72b96e0c21952c8173fa41a9636597e3a50f",
+    "plugins/dsh-byq/skills/byq-ml-researcher/SKILL.md": "sha256:978ff751afa9ec84aa6ce89f40e305280ef8455ac05a8df38f4560cd07f6a5eb",
+    "plugins/dsh-byq/skills/byq-product-feedback/SKILL.md": "sha256:a0acfbddbc07bc5eeaf31d6bd9e0acf6a8f52593f36f11fe72320c64f9175b3f",
+    "plugins/dsh-byq/skills/byq-product-guide/SKILL.md": "sha256:2b908b5c591f6f9657d698e1d6144c848b4b2605ea6e6c53b49ba995b8ccd3ff",
+    "plugins/dsh-byq/skills/byq-product-guide/references/admin.md": "sha256:5d4704604ffd6ec4a1e9f0060c142363a014bd93840f764aff0e1fa1fb9a3a8f",
+    "plugins/dsh-byq/skills/byq-product-guide/references/ml-and-backtest.md": "sha256:55d78b5ddfbe1fb76eb04292e0a11ae62c0d007378bf7eb3a5596676547ab14c",
+    "plugins/dsh-byq/skills/byq-product-guide/references/paper-trading.md": "sha256:a715cd73d4004568df58513877ce6cc22766488ffc041d96d75881a0c2ebd5af",
+    "plugins/dsh-byq/skills/byq-product-guide/references/pools-and-strategies.md": "sha256:a6aad6aa719d95908bf8dd50e051ca6b143cd5cf9ad4d54a10e5169e1783aa58",
+    "plugins/dsh-byq/skills/byq-product-guide/references/research.md": "sha256:8aa0d677a699c458e92e1b18564c90061998cff0eea745136a56f4513f14f988",
+    "plugins/dsh-byq/skills/byq-product-guide/references/user-settings.md": "sha256:0c8bca7e8bfef5bda78177aa68921337914ecd5d55511b6f6d7fed715d947f58",
+    "plugins/dsh-byq/skills/byq-role-contracts/SKILL.md": "sha256:26d1b9bac137c18131a4d4d687de3b34f8735cf72387434cac8c6d3a441e1139",
+    "plugins/dsh-byq/skills/byq-strategy-researcher/SKILL.md": "sha256:1a3fb3d05e95ce085bb2751866afdba04293e52c5a61b604292e48ce26e5eb2e"
   }
 }

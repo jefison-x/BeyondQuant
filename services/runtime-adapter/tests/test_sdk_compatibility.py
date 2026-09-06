@@ -1,3 +1,4 @@
+import os
 from importlib.metadata import version
 from pathlib import Path
 
@@ -5,16 +6,23 @@ from deepseek_harness import HarnessClient, Notification
 
 
 def test_installed_official_sdk_pair_is_exact_rc1() -> None:
-    assert version("deepseek-harness-sdk") == "0.1.1rc1"
-    assert version("deepseek-harness-runtime-bin") == "0.1.1rc1"
+    expected = (
+        "0.1.2rc1" if os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE") == "dsh-0.1.2rc1"
+        else "0.1.1rc1"
+    )
+    assert version("deepseek-harness-sdk") == expected
+    assert version("deepseek-harness-runtime-bin") == expected
 
 
-def test_runtime_uses_public_rc1_jsonrpc_agent_bin() -> None:
+def test_runtime_uses_release_selected_public_executable() -> None:
     from app.runtime import RuntimeAdapter
 
-    assert RuntimeAdapter().runtime_command[1].endswith(
-        "@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/bin.js"
-    )
+    command = RuntimeAdapter().runtime_command
+    if os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE") == "dsh-0.1.2rc1":
+        assert len(command) == 1
+        assert command[0].endswith("deepseek-harness-sdk-runtime-linux-x64")
+    else:
+        assert command[1].endswith("@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/bin.js")
 
 
 def test_sdk_session_tree_filter_delivers_subagent_lifecycle_and_descendants() -> None:
@@ -30,28 +38,43 @@ def test_sdk_session_tree_filter_delivers_subagent_lifecycle_and_descendants() -
     assert not belongs(Notification(method="session.status", payload={"sessionId": "other"}))
 
 
-def test_product_composition_contains_jsonrpc_and_byq_mcp_without_coding() -> None:
-    candidates = [Path("/opt/byq/compositions/byq-product-sdk.cordis.yml")]
+def test_product_profile_contains_byq_mcp_without_coding() -> None:
+    candidate_release = os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE") == "dsh-0.1.2rc1"
+    candidates = [
+        Path("/opt/byq/profiles/byq-product.patch.yml") if candidate_release
+        else Path("/opt/byq/compositions/byq-product-sdk.cordis.yml")
+    ]
     candidates.extend(
         parent / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml"
         for parent in Path(__file__).resolve().parents
     )
     composition = next(path for path in candidates if path.is_file())
     contents = composition.read_text()
-    assert "@deepseek-ai/dsh-sdk-jsonrpc-server" in contents
-    assert "@deepseek-ai/dsh-mcp-client" in contents
-    assert "@deepseek-ai/dsh-session-checkpoint-policy" in contents
-    assert "@deepseek-ai/dsh-session-persistence-jsonl" in contents
-    assert "@deepseek-ai/dsh-llm-pi-ai" in contents
+    if not candidate_release:
+        assert "@deepseek-ai/dsh-sdk-jsonrpc-server" in contents
+        assert "@deepseek-ai/dsh-mcp-client" in contents
+        assert "@deepseek-ai/dsh-session-checkpoint-policy" in contents
+        assert "@deepseek-ai/dsh-session-persistence-jsonl" in contents
+        assert "@deepseek-ai/dsh-llm-pi-ai" in contents
+    else:
+        assert "invocation patch over the official sdk profile" in contents
+        assert "failOnStartupError: true" in contents
+        assert "backgroundMode: one-shot" in contents
     assert "https://opencode.ai/zen/go/v1" in contents
     assert "https://opencode.ai/zen/v1" in contents
     assert contents.count("apiKeyEnv: OPENCODE_API_KEY") == 6
     assert "baseURL: !!js" not in contents
-    assert "toolBash: false" in contents
-    assert "toolJobs: false" in contents
-    assert "enabled: false" in contents
-    assert "tool-bash" not in contents
-    assert "terminal" not in contents
+    assert "toolBash: false" in contents or "id: tool-bash\n  disabled: true" in contents
+    assert "toolJobs: false" in contents or "id: tool-jobs\n  disabled: true" in contents
+    assert "enabled: false" in contents or "disabled: true" in contents
+    if candidate_release:
+        assert "id: tool-bash\n  disabled: true" in contents
+        assert "id: tool-str-replace-editor\n  disabled: true" in contents
+        for inherited_security_service in ("subprocess", "bash-sandbox", "permission-presets"):
+            assert f"id: {inherited_security_service}\n  disabled: true" not in contents
+    else:
+        assert "tool-bash" not in contents
+        assert "terminal" not in contents
 
 
 def test_product_research_skill_requires_evidence_bound_public_answers() -> None:

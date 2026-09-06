@@ -21,7 +21,7 @@ from packages.contracts.conversation_rehydration import (
 )
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
-from .compat import Dsh011Compatibility, RuntimeCompatibility, RuntimeObservation
+from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_release
 from .identifiers import contained_session_path, validate_identifier
 from .normalization import NormalizationState, normalize_runtime_observation
 
@@ -101,7 +101,9 @@ class RuntimeAdapter:
     """
 
     def __init__(self, compatibility: RuntimeCompatibility | None = None) -> None:
-        self._compatibility = compatibility or Dsh011Compatibility()
+        self._compatibility = compatibility or compatibility_for_release(
+            os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-0.1.1rc1")
+        )
         self._sessions: dict[str, RuntimeSession] = {}
         self._lock = threading.RLock()
         self._runtime_root = Path(os.environ.get("BYQ_DSH_RUNTIME_ROOT", "/opt/dsh-runtime"))
@@ -167,7 +169,7 @@ class RuntimeAdapter:
             "runtime_bin": f"deepseek-harness-runtime-bin=={release_identity['installed_runtime_bin']}",
             "release_id": release_identity["release_id"],
             "release_identity": release_identity["status"],
-            "explicit_runtime": self.runtime_command[1],
+            "explicit_runtime": self.runtime_command[-1],
             "composition": str(self._composition),
             "composition_exists": self._composition.is_file(),
             "plugin_profile": composition_identity["profile"],

@@ -22,6 +22,8 @@ class RuntimeObservation:
     tool_failed: bool = False
     tool_result: dict[str, Any] | None = None
     completed_call_ids: tuple[str, ...] = ()
+    parent_session_id: str | None = None
+    child_session_id: str | None = None
     usage: dict[str, int] = field(default_factory=dict)
 
 

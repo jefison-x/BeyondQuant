@@ -1,6 +1,6 @@
 # DSH 0.1.2rc1 执行交接与进度
 
-状态：**U0、U1、U2 MERGED；U3 VERIFIED；已授权 U1–U8 push/Draft PR/CI-green auto-merge**。2026-09-06。
+状态：**U0–U3 MERGED；U4 VERIFIED locally；已授权 U1–U8 push/Draft PR/CI-green auto-merge**。2026-09-06。
 
 ## 1. 下一模型第一步
 
@@ -29,9 +29,9 @@
 - 当前运行基线：Python `0.1.1rc1` / npm `0.1.1-rc.1`（实施前再次核实）。
 - 目标：Python `0.1.2rc1` / npm `0.1.2-rc.1`，不可擅自追新版本。
 - ADR-0058：Accepted；接受范围是 U0 记录的精确载体与边界，不是候选资格或后续阶段授权。
-- 当前升级阶段：U0、U1、U2 `MERGED`；U3 `VERIFIED`。
-- 当前方案只宣称 U1 候选物料/identity/隔离准备、U2 provenance 解耦与 U3 旧版兼容接口验证通过；不宣称新版 Runtime 已适配、QUALIFIED、
-  正式部署或生产观察已完成。
+- 当前升级阶段：U0–U3 `MERGED`；U4 `VERIFIED locally`，等待 Draft PR/CI/合并。
+- 当前方案只宣称 U1 候选物料/identity/隔离准备、U2 provenance 解耦、U3 旧版兼容接口和 U4
+  新版候选适配验证通过；不宣称候选已 QUALIFIED、正式切换、生产部署或生产观察已完成。
 
 后续实施时在本节记录授权是单阶段还是 U0–U8、是否覆盖 push/PR/merge/deploy/真实付费模型评测/监控。
 依据会话已有授权继续，无须对已授权动作逐个重复确认。授权不足只阻止依赖它的步骤，继续可独立完成的工作。
@@ -52,8 +52,8 @@ ADR-0058 的接受、生产 operator 部署和付费模型评测分别记录精�
 | U0 载体决策 | MERGED | `.byq-worktrees/dsh-u0-compatibility-decision` / `docs/dsh-u0-compatibility-decision` | `docs/evidence/dsh-012rc1/u0/`；Option A bundled executable 已接受；keyless spike、旧版回归和 required CI 通过 | PR #250 已按 ADR-0015 squash auto-merge |
 | U1 版本集中/隔离 | MERGED | `.byq-worktrees/dsh-u1-release-manifest` / `refactor/dsh-u1-release-manifest` | `docs/evidence/dsh-012rc1/u1/VALIDATION.md`；T01–T07、旧版回归、Integration/浏览器 smoke 通过 | PR #251 已按 ADR-0015 squash auto-merge |
 | U2 provenance 解耦 | MERGED | `.byq-worktrees/dsh-u2-evidence-provenance` / `refactor/dsh-u2-evidence-provenance` | `docs/evidence/dsh-012rc1/u2/VALIDATION.md`；T08–T11、完整组件 suite、真实 MCP 保存和浏览器/重启隔离验证通过 | PR #253 已合并 |
-| U3 旧版适配模块 | VERIFIED | `.byq-worktrees/dsh-u3-runtime-compatibility-seam` / `refactor/dsh-u3-runtime-compatibility-seam` | `docs/evidence/dsh-012rc1/u3/VALIDATION.md`；T12–T22、Runtime/Gateway 完整 suite、旧版真实进程 smoke 通过 | push/Draft PR，CI-green 后按 ADR-0015 合并；实际合并后进入 U4 |
-| U4 新版候选适配 | PLANNED | 未创建 | 未运行 | U3 合并后 |
+| U3 旧版适配模块 | MERGED | `.byq-worktrees/dsh-u3-runtime-compatibility-seam` / `refactor/dsh-u3-runtime-compatibility-seam` | `docs/evidence/dsh-012rc1/u3/VALIDATION.md`；T12–T22、Runtime/Gateway 完整 suite、旧版真实进程 smoke 通过 | PR #254 已合并 |
+| U4 新版候选适配 | VERIFIED | `.byq-worktrees/dsh-u4-012rc1-candidate` / `feat/dsh-u4-012rc1-candidate` | `docs/evidence/dsh-012rc1/u4/VALIDATION.md`；候选真实进程/MCP/roster、候选与旧版完整 Runtime suite 通过 | push/Draft PR，CI-green 后按 ADR-0015 合并；实际合并后进入 U5 |
 | U5 完整认证 | PLANNED | 未创建 | 未运行 | U4 合并后 |
 | U6 发布/回滚演练 | PLANNED | 未创建 | 未运行 | U5 合并后 |
 | U7 生产晋升 | PLANNED | 未创建 | 未运行 | U6 合并、发布授权/所有门禁满足后 |
