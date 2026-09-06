@@ -72,6 +72,8 @@ class RehearsalTests(unittest.TestCase):
                    for name in ("G1", "G2", "G3", "G4")]
         with patch.object(runner, "switch") as switch, patch.object(runner, "check"), \
                 patch.object(runner, "drain"), patch("tests.dsh_upgrade.rehearsal.emit"), \
+                patch("tests.dsh_upgrade.rehearsal.live_stack.compose_environment",
+                      return_value={"PATH": "/usr/bin", "DEEPSEEK_API_KEY": "test-sentinel-not-a-secret"}), \
                 patch("tests.dsh_upgrade.rehearsal.subprocess.run", side_effect=outputs) as run:
             runner.qualify_remaining_scenarios()
             self.assertEqual([call.args[0] for call in switch.call_args_list], [NEW, OLD])

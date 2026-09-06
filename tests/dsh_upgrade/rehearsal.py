@@ -333,7 +333,9 @@ class Rehearsal:
                        "--release", NEW, "--stack-file", str(self.files[NEW])]
             if scenario == "G3":
                 command.append("--approve")
-            completed = subprocess.run(command, env=live_stack.compose_environment(),
+            probe_environment = live_stack.compose_environment()
+            probe_environment.pop("DEEPSEEK_API_KEY", None)
+            completed = subprocess.run(command, env=probe_environment,
                 capture_output=True, text=True, timeout=1020, cwd=live_stack.ROOT)
             if completed.returncode:
                 self.result["additional_model_scenarios"].append({"scenario": scenario,
