@@ -1,0 +1,20 @@
+{
+  "active_producer": {
+    "attestation_sha256": "sha256:1e3f9763c784c2f1e7adead8620ee8521fee986f88003a79684ef3afefe6edab",
+    "plugin_id": "web-search",
+    "plugin_version": "0.1.1-rc.1",
+    "qualification_state": "QUALIFIED",
+    "release_id": "dsh-0.1.1rc1"
+  },
+  "mode": "qualified",
+  "recognized_producers": [
+    {
+      "attestation_sha256": "sha256:1e3f9763c784c2f1e7adead8620ee8521fee986f88003a79684ef3afefe6edab",
+      "plugin_id": "web-search",
+      "plugin_version": "0.1.1-rc.1",
+      "qualification_state": "QUALIFIED",
+      "release_id": "dsh-0.1.1rc1"
+    }
+  ],
+  "schema_version": "web-evidence-provenance-policy.v1"
+}

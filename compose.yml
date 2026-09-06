@@ -131,6 +131,7 @@ services:
     environment:
       BYQ_BACKEND_URL: http://backend:8000
       BYQ_MCP_TOKEN: ${BYQ_MCP_TOKEN:?BYQ_MCP_TOKEN must be set}
+      BYQ_WEB_EVIDENCE_PROVENANCE_POLICY: ${BYQ_WEB_EVIDENCE_PROVENANCE_POLICY:-/app/web-evidence-provenance.json}
       BYQ_BACKTEST_ANALYSIS_PAGE_CALL_LIMIT: ${BYQ_BACKTEST_ANALYSIS_PAGE_CALL_LIMIT:-6}
       BYQ_BACKTEST_ANALYSIS_PAGE_WINDOW_MS: ${BYQ_BACKTEST_ANALYSIS_PAGE_WINDOW_MS:-300000}
     networks:
@@ -172,6 +173,7 @@ services:
       BYQ_FEEDBACK_HUB_ALLOW_HTTP: ${BYQ_FEEDBACK_HUB_ALLOW_HTTP:-0}
       TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
       TUSHARE_API_URL: ${TUSHARE_API_URL:-http://api.tushare.pro}
+      BYQ_WEB_EVIDENCE_PROVENANCE_POLICY: ${BYQ_WEB_EVIDENCE_PROVENANCE_POLICY:-/app/web-evidence-provenance.json}
     depends_on:
       postgres:
         condition: service_healthy

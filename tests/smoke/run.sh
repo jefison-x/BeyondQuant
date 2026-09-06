@@ -51,7 +51,10 @@ echo "== Runtime Adapter filesystem permissions =="
   'test -w /var/lib/byq/dsh-sessions && test ! -w /app && test ! -w /opt/dsh-runtime && test ! -w /opt/byq'
 
 echo "== MCP contract and auth wall =="
-"${compose[@]}" exec -T mcp npm test
+contract_workspace="$("${compose[@]}" exec -T backend python -c 'from tests.workspace_helpers import trusted_agent_context; print(trusted_agent_context("mcp-contract")["x-byq-workspace-id"])')"
+"${compose[@]}" exec -T \
+  -e BYQ_MCP_CONTRACT_OWNER=mcp-contract \
+  -e BYQ_MCP_CONTRACT_WORKSPACE="$contract_workspace" mcp npm test
 "${compose[@]}" exec -T mcp node --input-type=module -e \
   "const r=await fetch('http://127.0.0.1:8300/mcp/v1',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}); if(r.status!==401) process.exit(1);"
 

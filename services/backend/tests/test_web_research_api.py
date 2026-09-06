@@ -120,3 +120,80 @@ def test_invalid_web_evidence_record_leaves_no_orphan_task(monkeypatch) -> None:
     assert response.status_code == 422
     assert store.list_tasks(owner_principal="alice") == {"tasks": []}
     store.close()
+
+
+def test_candidate_withdrawal_preserves_history_and_rejects_new_candidate_writes(monkeypatch) -> None:
+    from app.web_evidence_provenance import default_policy_path
+
+    context = trusted_agent_context("alice", trace_id="trace-web-rolling")
+    store = ResearchStore()
+    monkeypatch.setattr(main, "research_store", store)
+    client = TestClient(main.app)
+    default_path = default_policy_path()
+    candidate_path = default_path.with_name("dsh-0.1.2rc1.web-evidence-provenance.json")
+    saved = []
+    with monkeypatch.context() as candidate_context:
+        candidate_context.setenv("BYQ_WEB_EVIDENCE_PROVENANCE_POLICY", str(candidate_path))
+        for version in ("0.1.1-rc.1", "0.1.2-rc.1"):
+            content = evidence_fixture()
+            for source in content["sources"]:
+                source.pop("source_id")
+            content["claims"][0]["source_indexes"] = [0]
+            content["claims"][0].pop("source_ids")
+            content["search"]["plugin_version"] = version
+            request = {
+                "task": {"title": "Rolling producer", "objective": "Preserve immutable research evidence."},
+                "content": content, "lineage": [], "idempotency_key": "rolling-" + version,
+            }
+            response = client.post("/v1/research/web-evidence-records", headers=context, json=request)
+            assert response.status_code == 201, response.text
+            saved.append(response.json()["artifact"])
+
+    # Candidate is no longer recognized for writes. Reads do not revalidate or
+    # rewrite immutable evidence against today's active deployment policy.
+    for artifact in saved:
+        response = client.get("/v1/research/artifacts/" + artifact["artifact_id"], headers=context)
+        assert response.status_code == 200, response.text
+        assert response.json()["content"] == artifact["content"]
+        assert response.json()["content_sha256"] == artifact["content_sha256"]
+        other = client.get(
+            "/v1/research/artifacts/" + artifact["artifact_id"],
+            headers=trusted_agent_context("bob", trace_id="trace-web-other"),
+        )
+        assert other.status_code == 404
+
+    # Request headers cannot select the deployment policy.
+    forged_headers = {**context, "X-BYQ-Web-Evidence-Provenance-Policy": str(candidate_path)}
+    rejected = client.post("/v1/research/web-evidence-records", headers=forged_headers, json=request)
+    assert rejected.status_code == 422
+    assert len(store.list_tasks(owner_principal="alice")["tasks"]) == 2
+    store.close()
+
+
+def test_web_evidence_write_failure_rolls_back_created_task(monkeypatch) -> None:
+    context = trusted_agent_context("alice", trace_id="trace-web-rollback")
+    store = ResearchStore()
+    monkeypatch.setattr(main, "research_store", store)
+
+    attempted = []
+    def fail_artifact(payload):
+        attempted.append(True)
+        raise ValueError("injected artifact validation failure")
+
+    content = evidence_fixture()
+    for source in content["sources"]:
+        source.pop("source_id")
+    content["claims"][0]["source_indexes"] = [0]
+    content["claims"][0].pop("source_ids")
+    monkeypatch.setattr(store, "_artifact_payload", fail_artifact)
+    response = TestClient(main.app).post(
+        "/v1/research/web-evidence-records", headers=context,
+        json={
+            "task": {"title": "Atomic failure", "objective": "No orphan task after artifact failure."},
+            "content": content, "lineage": [], "idempotency_key": "atomic-failure",
+        },
+    )
+    assert attempted == [True]
+    assert response.status_code == 422
+    assert store.list_tasks(owner_principal="alice") == {"tasks": []}
+    store.close()

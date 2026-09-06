@@ -14,8 +14,8 @@ const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
   authProvider: { token: async () => token },
   requestInit: {
     headers: {
-      "x-byq-workspace-id": "workspace_mcp_contract",
-      "x-byq-owner-principal": "user:mcp-contract",
+      "x-byq-workspace-id": process.env.BYQ_MCP_CONTRACT_WORKSPACE ?? "workspace_mcp_contract",
+      "x-byq-owner-principal": process.env.BYQ_MCP_CONTRACT_OWNER ?? "user:mcp-contract",
       "x-byq-actor-principal": "agent:mcp-contract",
       "x-byq-trace-id": "trace_mcp_contract",
       "x-byq-session-id": "session_mcp_contract",
@@ -87,6 +87,13 @@ try {
   ]) {
     assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);
   }
+  const webEvidenceTool = listed.tools.find((tool) => tool.name === "byq_web_evidence_create");
+  const webProperties = webEvidenceTool?.inputSchema?.properties as Record<string, unknown> | undefined;
+  const contentSchema = webProperties?.content as { properties?: Record<string, unknown> } | undefined;
+  const searchSchema = contentSchema?.properties?.search as { properties?: Record<string, unknown>; required?: string[] } | undefined;
+  assert.ok(searchSchema?.properties?.queries, "web evidence search queries schema is missing");
+  assert.ok(!searchSchema?.required?.includes("plugin_id"), "model must not need to construct a producer ID");
+  assert.ok(!searchSchema?.required?.includes("plugin_version"), "model must not need to construct a producer version");
 
   const called = await client.callTool({ name: "byq_health", arguments: {} });
   const textBlock = called.content.find((block) => block.type === "text");
@@ -108,6 +115,72 @@ try {
       version: "0.1.0",
     },
   });
+
+  // Real MCP -> Backend -> PostgreSQL save, with no model-supplied version.
+  const evidenceArgs = {
+    task: { title: "U2 provenance", objective: "Persist bounded evidence through the trusted MCP boundary." },
+    content: {
+      schema_version: "web-research-evidence.v1",
+      research_as_of: "2026-08-28T12:00:00+08:00",
+      market_context: {
+        as_of_date: "20260828", trading_session: null,
+        persisted_data_cutoff: null, calendar_verified: false,
+      },
+      search: {
+        queries: [{ text: "provenance contract fixture", language: "en", purpose: "Verify evidence storage" }],
+        stopped_reason: "EVIDENCE_SUFFICIENT",
+      },
+      sources: [{
+        url: "https://www.csrc.gov.cn/example", title: "Contract fixture", publisher: "Regulator",
+        source_tier: "PRIMARY", published_at: "2026-08-27T09:00:00+08:00",
+        retrieved_at: "2026-08-28T11:30:00+08:00", temporal_status: "WITHIN_AS_OF",
+        query_indexes: [0], summary: "Fixture evidence for storage validation.",
+      }],
+      claims: [{ statement: "Fixture predates the research cutoff.", claim_type: "FACT", state: "SUPPORTED", source_indexes: [0] }],
+      limitations: ["Synthetic fixture; no external search or market-data authority."],
+      usage_policy: { research_only: true, deterministic_input: false, authoritative_market_data: false },
+    },
+    lineage: [], idempotency_key: "u2-mcp-provenance-contract",
+  };
+  const saved = await client.callTool({ name: "byq_web_evidence_create", arguments: evidenceArgs });
+  assert.notEqual(saved.isError, true, JSON.stringify(saved));
+  const savedText = saved.content.find((block) => block.type === "text");
+  assert.ok(savedText && "text" in savedText);
+  const record = JSON.parse(savedText.text);
+  assert.equal(record.record_status, "saved");
+  const artifactId = record.audit_resource.resource_id;
+  const read = await client.callTool({
+    name: "byq_research_get", arguments: { entity_type: "artifact", entity_id: artifactId },
+  });
+  assert.notEqual(read.isError, true, JSON.stringify(read));
+  const readText = read.content.find((block) => block.type === "text");
+  assert.ok(readText && "text" in readText);
+  const stored = JSON.parse(readText.text);
+  assert.equal(stored.content.search.plugin_id, "web-search");
+  assert.equal(stored.content.search.plugin_version, "0.1.1-rc.1");
+  assert.ok(stored.content_sha256);
+  const repeated = await client.callTool({ name: "byq_web_evidence_create", arguments: evidenceArgs });
+  assert.notEqual(repeated.isError, true);
+  const repeatedText = repeated.content.find((block) => block.type === "text");
+  assert.ok(repeatedText && "text" in repeatedText);
+  assert.equal(JSON.parse(repeatedText.text).audit_resource.resource_id, artifactId);
+  const legacy = await client.callTool({
+    name: "byq_web_evidence_create",
+    arguments: {
+      ...evidenceArgs,
+      content: { ...evidenceArgs.content, search: { ...evidenceArgs.content.search, plugin_id: "web-search", plugin_version: "0.1.1-rc.1" } },
+    },
+  });
+  assert.notEqual(legacy.isError, true, "matching legacy commands must remain compatible");
+  const forged = await client.callTool({
+    name: "byq_web_evidence_create",
+    arguments: {
+      ...evidenceArgs,
+      content: { ...evidenceArgs.content, search: { ...evidenceArgs.content.search, plugin_id: "web-search", plugin_version: "9.9.9" } },
+    },
+  });
+  assert.equal(forged.isError, true, "legacy fields cannot select a producer version");
+  console.log("Web evidence MCP live save PASS: trusted version, persisted content/hash, idempotency and legacy compatibility");
 
   const invalidAuditRun = await client.callTool({
     name: "byq_agent_audit_get",

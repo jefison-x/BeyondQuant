@@ -51,8 +51,6 @@ do not add fields:
     "calendar_verified": true
   },
   "search": {
-    "plugin_id": "web-search",
-    "plugin_version": "0.1.1-rc.1",
     "queries": [{"text": "...", "language": "zh|en|mixed", "purpose": "..."}],
     "stopped_reason": "EVIDENCE_SUFFICIENT|NO_RESULTS|BUDGET_EXHAUSTED|CONFLICT_UNRESOLVED|PROVIDER_ERROR"
   },
@@ -84,7 +82,9 @@ do not add fields:
 
 `source_indexes` are zero-based positions in the submitted `sources` array.
 Never invent or send a `source_id`; BYQ generates stable internal source
-identifiers from validated URLs. On a normalized validation failure, repair the
+identifiers from validated URLs. Never invent or send a search plugin ID or
+version; the trusted MCP deployment attaches the actual producer provenance.
+On a normalized validation failure, repair the
 specific field once and retry once; if it still fails, stop instead of looping.
 
 Describe persistence in user language only. On success say that the research

@@ -9,6 +9,8 @@ COPY services/backend/pyproject.toml ./
 COPY services/backend/app ./app
 COPY services/backend/tests ./tests
 COPY plugins/dsh-byq/registry/plugins.json /app/plugin-registry/plugins.json
+COPY config/dsh/generated/web-evidence-provenance.json /app/web-evidence-provenance.json
+COPY config/dsh/generated/dsh-0.1.2rc1.web-evidence-provenance.json /app/dsh-0.1.2rc1.web-evidence-provenance.json
 
 RUN pip install --no-cache-dir ".[test]"
 

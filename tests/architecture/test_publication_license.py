@@ -37,10 +37,10 @@ class PublicationLicenseTests(unittest.TestCase):
         inventory = json.loads((ROOT / "docs/legal/npm-license-inventory.json").read_text())
         self.assertGreater(len(inventory["packages"]), 500)
 
-    def test_dsh_u1_verification_does_not_claim_runtime_upgrade(self):
+    def test_dsh_u2_progress_does_not_claim_runtime_upgrade(self):
         text = (ROOT / "docs/roadmap/DSH_012RC1_EXECUTION.md").read_text()
-        self.assertIn("U0 `MERGED`", text)
-        self.assertIn("U1 `VERIFIED`", text)
+        self.assertIn("U0、U1 `MERGED`", text)
+        self.assertIn("U2 `VERIFIED`", text)
         self.assertIn("U1–U8 串行开发", text)
         self.assertIn("0.1.1rc1", text)
         self.assertIn("U0 载体决策 | MERGED", text)

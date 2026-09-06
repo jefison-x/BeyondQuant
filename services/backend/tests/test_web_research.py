@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
+import os
 import unittest
+from unittest.mock import patch
 
 from app.research import ResearchStore
+from app.web_evidence_provenance import default_policy_path
 from app.web_research import (
     SCHEMA_VERSION,
     normalize_web_research_evidence,
@@ -74,6 +79,33 @@ def evidence_fixture() -> dict[str, object]:
 
 
 class WebResearchEvidenceTests(unittest.TestCase):
+    def test_historical_evidence_bytes_and_hash_remain_unchanged(self) -> None:
+        fixture = evidence_fixture()
+        before = json.dumps(fixture, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        expected_hash = hashlib.sha256(before).hexdigest()
+
+        self.assertIs(validate_web_research_evidence(fixture), fixture)
+
+        after = json.dumps(fixture, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        self.assertEqual(after, before)
+        self.assertEqual(hashlib.sha256(after).hexdigest(), expected_hash)
+
+    def test_default_rejects_unknown_but_candidate_policy_allows_rolling_versions(self) -> None:
+        unknown = evidence_fixture()
+        unknown["search"]["plugin_version"] = "9.9.9"  # type: ignore[index]
+        with self.assertRaisesRegex(ValueError, "producer is not recognized"):
+            validate_web_research_evidence(unknown)
+
+        candidate_policy = default_policy_path().with_name(
+            "dsh-0.1.2rc1.web-evidence-provenance.json"
+        )
+        with patch.dict(os.environ, {"BYQ_WEB_EVIDENCE_PROVENANCE_POLICY": str(candidate_policy)}):
+            old = evidence_fixture()
+            candidate = evidence_fixture()
+            candidate["search"]["plugin_version"] = "0.1.2-rc.1"  # type: ignore[index]
+            validate_web_research_evidence(old)
+            validate_web_research_evidence(candidate)
+
     def test_system_generates_stable_source_ids_and_resolves_claim_indexes(self) -> None:
         fixture = evidence_fixture()
         for source in fixture["sources"]:  # type: ignore[index]

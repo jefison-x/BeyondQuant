@@ -51,6 +51,10 @@ Factor、Strategy、Backtest role 不拥有 Web Search 或 Web Evidence promotio
 qualified rc.1 root seam 可见搜索工具，但必须把专业搜索委派给 Market Research，且不能将结果
 传为 deterministic input。网页结果只有在用户明确要求保存时才通过专用 MCP 晋升到现有
 Artifact；不得通过 generic Artifact payload 绕过 `web-research-evidence.v1` validator。
+模型提交的网页研究内容无需提供插件 ID 或版本。兼容旧命令的可选字段必须与当前可信 producer 完全一致，不能由模型任选已识别版本。MCP 从只读、部署选择的
+`web-evidence-provenance-policy.v1` 注入实际 producer，Backend 只接受该有限策略中的来源。
+默认策略仅承认已资格化的当前版本；隔离候选策略可同时承认旧版和候选版以支持滚动验证，
+但候选来源不会因此获得正式资格。历史 Artifact 保留原始 `plugin_id`、`plugin_version` 和内容哈希。
 Web evidence 422 只向 Agent 暴露固定枚举的安全校验码，不回显原始输入或内部错误；同一保存
 动作最多修正一次，第二次失败必须停止并记录真实 failure。
 网页证据保存使用单一 `byq_web_evidence_create` 原子命令，不先创建 ResearchTask；claim 只提交

@@ -222,6 +222,8 @@ ensure_ci_backend() {
       -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/backend:/app" -w /app \
       -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
+      -e BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/opt/byq-evidence/web-evidence-provenance.json \
+      -v "$REPO_ROOT/config/dsh/generated/web-evidence-provenance.json:/opt/byq-evidence/web-evidence-provenance.json:ro" \
       "$(ci_image backend)" >/dev/null
   fi
   for _ in $(seq 1 30); do
@@ -355,6 +357,9 @@ check_backend() {
       -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/backend:/app" -w /app \
       -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
+      -e BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/opt/byq-evidence/web-evidence-provenance.json \
+      -v "$REPO_ROOT/config/dsh/generated/web-evidence-provenance.json:/opt/byq-evidence/web-evidence-provenance.json:ro" \
+      -v "$REPO_ROOT/config/dsh/generated/dsh-0.1.2rc1.web-evidence-provenance.json:/opt/byq-evidence/dsh-0.1.2rc1.web-evidence-provenance.json:ro" \
       "$(ci_image backend)" python -m pytest -q -p no:cacheprovider; then
     ok "backend tests"; else bad "backend tests"; fi
   if [ -d "$REPO_ROOT/workers/feedback-publisher/tests" ]; then
@@ -416,6 +421,12 @@ check_mcp() {
   step "mcp: npm test (tsc build + in-container server + contract tests)"
   ensure_clean_postgres || { bad "clean postgres for MCP"; return; }
   ensure_ci_backend || { bad "live backend for MCP"; return; }
+  # A successful domain write needs a real isolated user/workspace, not the
+  # deliberately invalid identities used by the original read/error-only tests.
+  local contract_workspace
+  if ! contract_workspace="$(docker exec "$CI_BACKEND" python -c 'from tests.workspace_helpers import trusted_agent_context; print(trusted_agent_context("mcp-contract")["x-byq-workspace-id"])')"; then
+    bad "MCP workspace fixture"; return
+  fi
   # Mount only sources so the image's complete node_modules/dist stay intact;
   # run as root so tsc can rewrite /app/dist; start the MCP server in-container
   # because the contract test connects to a live 127.0.0.1:8300 endpoint.
@@ -424,6 +435,8 @@ check_mcp() {
       -e BYQ_MCP_TOKEN=ci-phase5-test-only \
       -e BYQ_BACKEND_URL=http://backend:8000 \
       -e MCP_URL=http://127.0.0.1:8300/mcp/v1 \
+      -e BYQ_MCP_CONTRACT_OWNER=mcp-contract \
+      -e BYQ_MCP_CONTRACT_WORKSPACE="$contract_workspace" \
       -v "$REPO_ROOT/services/mcp/src:/app/src" \
       -v "$REPO_ROOT/services/mcp/tests:/app/tests" \
       -v "$REPO_ROOT/services/mcp/package.json:/app/package.json" \

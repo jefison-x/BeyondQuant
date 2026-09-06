@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from ipaddress import ip_address
 from urllib.parse import urlsplit
 
+from .web_evidence_provenance import recognized_producer
+
 
 SCHEMA_VERSION = "web-research-evidence.v1"
 MAX_QUERIES = 4
@@ -126,8 +128,8 @@ def _market_context(value: object) -> None:
 def _queries(value: object) -> list[dict[str, object]]:
     search = _object(value, "search")
     _exact(search, {"plugin_id", "plugin_version", "queries", "stopped_reason"})
-    if search["plugin_id"] != "web-search" or search["plugin_version"] != "0.1.1-rc.1":
-        raise ValueError("web evidence must use the qualified search plugin version")
+    if not recognized_producer(search["plugin_id"], search["plugin_version"]):
+        raise ValueError("web evidence producer is not recognized by deployment provenance policy")
     queries = search["queries"]
     if not isinstance(queries, list) or not 1 <= len(queries) <= MAX_QUERIES:
         raise ValueError(f"search.queries must contain 1 to {MAX_QUERIES} entries")
