@@ -67,6 +67,7 @@ class RehearsalTests(unittest.TestCase):
 
     def test_additional_scenarios_are_fixed_bounded_and_fail_without_retry(self):
         runner = Rehearsal(Path("/tmp/byq-u6-abcdefgh"), {})
+        runner.result["domain_fixture"] = {"backtest_job_id": "backtest_" + "a" * 32}
         from types import SimpleNamespace
         outputs = [SimpleNamespace(returncode=0, stdout=json.dumps({"scenario": name, "result": "PASS"}))
                    for name in ("G1", "G2", "G3", "G4")]
@@ -80,6 +81,7 @@ class RehearsalTests(unittest.TestCase):
             self.assertEqual(len(runner.result["additional_model_scenarios"]), 4)
             for index, call in enumerate(run.call_args_list):
                 self.assertEqual("--approve" in call.args[0], index == 2)
+                self.assertEqual("--backtest-id" in call.args[0], index == 1)
                 self.assertEqual(call.kwargs["timeout"], 1020)
                 self.assertNotIn("DEEPSEEK_API_KEY", call.kwargs["env"])
         with patch.object(runner, "switch"), patch.object(runner, "check"), \

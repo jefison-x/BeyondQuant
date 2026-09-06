@@ -93,6 +93,15 @@ timeout; any failure fails the whole run. These additional G3/G4 domain writes a
 separate from the core rollback's unchanged-object assertions. The runner returns
 to the old artifact and drains again before cleanup.
 
+G2 must receive only the unchanged fixed prompt plus a verified synthetic object
+context: its exact completed backtest ID/name/status from Product API. Missing or
+non-synthetic/inaccessible context fails before a paid turn. A public answer and
+unchanged object counts alone are insufficient: Backend access evidence must
+confirm an actual successful summary read for that exact object. `--g2-only` runs
+one isolated candidate case against retained images, then drains and cleans up.
+Its bounded synthetic public answer is retained privately under `backups/` for
+semantic review, not included as raw dialogue in Git.
+
 The runner reuses the closed U5 fixture with a narrowly validated temporary U6
 gate mount. It creates a unique `byq-u5-u6-*` project, exact eight services,
 loopback-only ingress, independent volumes/networks, and distinct release homes.

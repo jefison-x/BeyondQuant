@@ -337,6 +337,8 @@ class Rehearsal:
                        "--release", NEW, "--stack-file", str(self.files[NEW])]
             if scenario == "G3":
                 command.append("--approve")
+            if scenario == "G2":
+                command.extend(["--backtest-id", self.result["domain_fixture"]["backtest_job_id"]])
             probe_environment = live_stack.compose_environment()
             probe_environment.pop("DEEPSEEK_API_KEY", None)
             completed = subprocess.run(command, env=probe_environment,
@@ -353,6 +355,46 @@ class Rehearsal:
         self.drain()
         self.switch(OLD)
         self.drain()
+
+    def g2_only(self):
+        if not self.ci_scope:
+            raise ValueError("targeted G2 requires retained tested artifacts")
+        self.result["mode"] = "targeted-g2-object-context"
+        self.prepare()
+        self.release = NEW
+        emit("building", scope=self.scope, output=str(self.directory))
+        self.reuse_ci_images()
+        self.run_command(self.compose(NEW, "build", "fake-hub"))
+        self.run_command(self.compose(NEW, "up", "-d", "--no-build", "--wait", "--wait-timeout", "240",
+                                      *sorted(live_stack.SERVICES)))
+        self.result["initial"] = self.check()
+        self.seed_domain_fixture()
+        set_state(self.gate, "open")
+        emit("candidate-model-scenario", scenario="G2-with-object-context", scope=self.scope)
+        environment = live_stack.compose_environment()
+        environment.pop("DEEPSEEK_API_KEY", None)
+        completed = subprocess.run([sys.executable, "-m", "tests.dsh_upgrade.live_model_probe", "G2",
+            "--release", NEW, "--stack-file", str(self.files[NEW]), "--backtest-id",
+            self.result["domain_fixture"]["backtest_job_id"]], env=environment, capture_output=True,
+            text=True, timeout=1020, cwd=live_stack.ROOT)
+        if completed.returncode:
+            raise AssertionError("targeted G2 actual-summary qualification failed")
+        result = json.loads(completed.stdout.strip().splitlines()[-1])
+        self.result["g2_context_requalification"] = result
+        if result.get("result") != "PASS" or not result.get("successful_backtest_summary_reads"):
+            raise AssertionError("targeted G2 lacks actual summary evidence")
+        client = Client("http://127.0.0.1:18210", "u5-admin", "U5AdminTestOnly123")
+        answers = assistant_messages(client.call("GET", f"/v1/agent/sessions/{result['session_id']}"))
+        answer = "\n\n".join(answers)
+        if not answer or len(answer) > 100000:
+            raise AssertionError("invalid bounded synthetic public answer")
+        path = self.directory / "backups/g2-public-answer.txt"
+        with path.open("x") as output:
+            os.chmod(path, 0o600)
+            output.write(answer)
+        self.result["public_answer_sha256"] = hashlib.sha256(answer.encode()).hexdigest()
+        self.drain()
+        self.result["result"] = "PASS"
 
     def cleanup(self):
         path = self.files[self.release]
@@ -374,7 +416,10 @@ def main():
     parser.add_argument("--ci-scope", help="reuse exact images from a successful isolated U6 CI run")
     parser.add_argument("--qualify-g1-g4", action="store_true",
                         help="also re-run fixed candidate G1-G4 after the core rollback journey")
+    parser.add_argument("--g2-only", action="store_true", help="one targeted G2 with verified synthetic object context")
     args = parser.parse_args()
+    if args.g2_only and args.qualify_g1_g4:
+        parser.error("targeted G2 cannot also run the full scenario set")
     environment = live_stack.compose_environment()
     environment["DEEPSEEK_API_KEY"] = live_stack.model_key_from_env_file(args.model_key_env_file)
     available = next(int(line.split()[1]) for line in Path("/proc/meminfo").read_text().splitlines() if line.startswith("MemAvailable:"))
@@ -384,7 +429,10 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         rehearsal = Rehearsal(Path(tempfile.mkdtemp(prefix="byq-u6-")), environment, args.ci_scope)
         try:
-            rehearsal.journey(args.browser_window_seconds)
+            if args.g2_only:
+                rehearsal.g2_only()
+            else:
+                rehearsal.journey(args.browser_window_seconds)
             if args.qualify_g1_g4:
                 rehearsal.qualify_remaining_scenarios()
         except BaseException as error:

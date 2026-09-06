@@ -1,0 +1,267 @@
+{
+  "schema_version": "dsh-u6-lifecycle-comparison.v1",
+  "ci_scope": "local-u6-artifacts-20260906",
+  "git_commit": "25ded009dd1decc019e012ac47c0645b9621a2ca",
+  "baseline_image_id": "sha256:32c1ae6a10c1e1f862da29a7450a4c1c00616b94f04af47f8035d3ab4d5f1040",
+  "candidate_image_id": "sha256:067d6aa3b657afd78f51d3bb75d6fd60e4bb81920cbc619cf23ff1e03b94d93d",
+  "baseline": {
+    "cycles": 20,
+    "lingering_threads": 0,
+    "maximum_seconds": 1.034699,
+    "median_seconds": 0.643482,
+    "minimum_seconds": 0.611966,
+    "peak_processes": [
+      {
+        "name": "MainThread",
+        "rss_mib": 172.871
+      },
+      {
+        "name": "python3",
+        "rss_mib": 37.262
+      }
+    ],
+    "peak_rss_mib": 210.133,
+    "release": "0.1.1rc1",
+    "retained_sessions": 0,
+    "runtime_bin": "0.1.1rc1",
+    "sample_count": 20,
+    "samples": [
+      {
+        "cycle": 1,
+        "peak_rss_mib": 203.609,
+        "seconds": 1.034699
+      },
+      {
+        "cycle": 2,
+        "peak_rss_mib": 203.152,
+        "seconds": 0.654527
+      },
+      {
+        "cycle": 3,
+        "peak_rss_mib": 201.988,
+        "seconds": 0.623851
+      },
+      {
+        "cycle": 4,
+        "peak_rss_mib": 206.016,
+        "seconds": 0.630063
+      },
+      {
+        "cycle": 5,
+        "peak_rss_mib": 204.766,
+        "seconds": 0.698149
+      },
+      {
+        "cycle": 6,
+        "peak_rss_mib": 201.27,
+        "seconds": 0.694743
+      },
+      {
+        "cycle": 7,
+        "peak_rss_mib": 203.363,
+        "seconds": 0.646283
+      },
+      {
+        "cycle": 8,
+        "peak_rss_mib": 210.133,
+        "seconds": 0.653767
+      },
+      {
+        "cycle": 9,
+        "peak_rss_mib": 200.828,
+        "seconds": 0.703407
+      },
+      {
+        "cycle": 10,
+        "peak_rss_mib": 202.148,
+        "seconds": 0.637603
+      },
+      {
+        "cycle": 11,
+        "peak_rss_mib": 203.848,
+        "seconds": 0.637493
+      },
+      {
+        "cycle": 12,
+        "peak_rss_mib": 201.77,
+        "seconds": 0.645375
+      },
+      {
+        "cycle": 13,
+        "peak_rss_mib": 203.77,
+        "seconds": 0.63484
+      },
+      {
+        "cycle": 14,
+        "peak_rss_mib": 205.121,
+        "seconds": 0.635837
+      },
+      {
+        "cycle": 15,
+        "peak_rss_mib": 201.352,
+        "seconds": 0.643822
+      },
+      {
+        "cycle": 16,
+        "peak_rss_mib": 204.844,
+        "seconds": 0.623859
+      },
+      {
+        "cycle": 17,
+        "peak_rss_mib": 204.977,
+        "seconds": 0.733563
+      },
+      {
+        "cycle": 18,
+        "peak_rss_mib": 204.531,
+        "seconds": 0.643142
+      },
+      {
+        "cycle": 19,
+        "peak_rss_mib": 206.715,
+        "seconds": 0.611966
+      },
+      {
+        "cycle": 20,
+        "peak_rss_mib": 199.645,
+        "seconds": 0.626315
+      }
+    ],
+    "schema_version": "dsh-runtime-benchmark.v1"
+  },
+  "candidate": {
+    "cycles": 20,
+    "lingering_threads": 0,
+    "maximum_seconds": 1.25614,
+    "median_seconds": 0.968379,
+    "minimum_seconds": 0.905003,
+    "peak_processes": [
+      {
+        "name": "MainThread",
+        "rss_mib": 245.137
+      },
+      {
+        "name": "python3",
+        "rss_mib": 39.242
+      }
+    ],
+    "peak_rss_mib": 284.379,
+    "release": "0.1.2rc1",
+    "retained_sessions": 0,
+    "runtime_bin": "0.1.2rc1",
+    "sample_count": 20,
+    "samples": [
+      {
+        "cycle": 1,
+        "peak_rss_mib": 275.867,
+        "seconds": 0.967847
+      },
+      {
+        "cycle": 2,
+        "peak_rss_mib": 270.105,
+        "seconds": 0.979658
+      },
+      {
+        "cycle": 3,
+        "peak_rss_mib": 277.852,
+        "seconds": 0.959004
+      },
+      {
+        "cycle": 4,
+        "peak_rss_mib": 271.723,
+        "seconds": 0.905003
+      },
+      {
+        "cycle": 5,
+        "peak_rss_mib": 270.605,
+        "seconds": 0.955994
+      },
+      {
+        "cycle": 6,
+        "peak_rss_mib": 274.93,
+        "seconds": 1.25614
+      },
+      {
+        "cycle": 7,
+        "peak_rss_mib": 274.496,
+        "seconds": 1.034765
+      },
+      {
+        "cycle": 8,
+        "peak_rss_mib": 282.691,
+        "seconds": 0.992324
+      },
+      {
+        "cycle": 9,
+        "peak_rss_mib": 276.68,
+        "seconds": 0.984499
+      },
+      {
+        "cycle": 10,
+        "peak_rss_mib": 272.395,
+        "seconds": 0.916366
+      },
+      {
+        "cycle": 11,
+        "peak_rss_mib": 272.773,
+        "seconds": 0.966277
+      },
+      {
+        "cycle": 12,
+        "peak_rss_mib": 284.379,
+        "seconds": 1.052972
+      },
+      {
+        "cycle": 13,
+        "peak_rss_mib": 279.07,
+        "seconds": 1.207818
+      },
+      {
+        "cycle": 14,
+        "peak_rss_mib": 277.555,
+        "seconds": 1.018179
+      },
+      {
+        "cycle": 15,
+        "peak_rss_mib": 272.25,
+        "seconds": 0.968912
+      },
+      {
+        "cycle": 16,
+        "peak_rss_mib": 271.34,
+        "seconds": 0.908624
+      },
+      {
+        "cycle": 17,
+        "peak_rss_mib": 276.352,
+        "seconds": 0.913447
+      },
+      {
+        "cycle": 18,
+        "peak_rss_mib": 271.785,
+        "seconds": 1.027987
+      },
+      {
+        "cycle": 19,
+        "peak_rss_mib": 276.664,
+        "seconds": 0.942168
+      },
+      {
+        "cycle": 20,
+        "peak_rss_mib": 281.18,
+        "seconds": 0.940642
+      }
+    ],
+    "schema_version": "dsh-runtime-benchmark.v1"
+  },
+  "thresholds": {
+    "median_seconds": 1.7721784,
+    "peak_rss_mib": 284.1596
+  },
+  "limitations": [
+    "Scripted local provider; no paid model latency claim.",
+    "Both releases complete 20 cycles with no retained sessions or owned lifecycle threads.",
+    "Candidate RSS exceeds the frozen formula by 0.2194 MiB; explicit exception reasoning is required.",
+    "Earlier removed-image benchmark and threshold excess remain in lifecycle-comparison.json."
+  ]
+}

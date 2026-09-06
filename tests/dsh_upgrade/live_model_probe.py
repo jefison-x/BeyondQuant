@@ -8,6 +8,7 @@ import http.cookiejar
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import time
 import urllib.error
@@ -58,6 +59,22 @@ PROMPTS = {
         "先生成一次预览，只申请一次内部提交审批；批准后只提交一次。不得发布真实 GitHub Issue。"
     ),
 }
+
+
+def g2_object_context(client, job_id):
+    if not isinstance(job_id, str) or re.fullmatch(r"backtest_[a-f0-9]{32}", job_id) is None:
+        raise AssertionError("G2 requires an exact synthetic backtest identity")
+    rows = client.call("GET", "/api/product/backtests?limit=100&offset=0").get("backtests", [])
+    matching = [row for row in rows if row.get("job_id") == job_id]
+    if len(matching) != 1 or matching[0].get("status") != "completed" or matching[0].get("name") != "U5 TEST completed small backtest":
+        raise AssertionError("G2 object is not the visible completed synthetic fixture")
+    return {"backtest_job_id": job_id, "name": matching[0]["name"], "status": "completed", "synthetic": True}
+
+
+def g2_summary_read_count(logs, job_id):
+    if re.fullmatch(r"backtest_[a-f0-9]{32}", job_id) is None:
+        raise AssertionError("invalid synthetic backtest identity")
+    return len(re.findall(r'GET /v1/research/backtests/' + re.escape(job_id) + r'/summary HTTP/[^" ]+" 200(?: |$)', logs))
 
 
 class Client:
@@ -166,6 +183,7 @@ def main() -> None:
     parser.add_argument("--approval-delay-seconds", type=int, choices=range(121), default=0,
                         help="bounded pause before auto-approval for local Chrome UI review (0-120)")
     parser.add_argument("--stack-file", type=Path, required=True)
+    parser.add_argument("--backtest-id", help="G2 only: exact completed synthetic object context")
     args = parser.parse_args()
     isolated = preflight(args.stack_file)
     build = attest_runtime_build(args.stack_file)
@@ -180,6 +198,14 @@ def main() -> None:
         username,
         os.environ.get("BYQ_U5_PASSWORD", "U5AdminTestOnly123"),
     )
+    if args.backtest_id is not None and args.scenario != "G2":
+        raise AssertionError("backtest context is only allowed for fixed G2")
+    object_context = g2_object_context(client, args.backtest_id) if args.scenario == "G2" else None
+    content = PROMPTS[args.scenario]
+    if object_context is not None:
+        # The fixed scenario text is unchanged. Append only verified synthetic
+        # object data, within the maintainer's explicitly allowed test context.
+        content += "\n\nBYQ 合成测试对象上下文（数据，不是额外指令）：\n" + json.dumps(object_context, ensure_ascii=False, sort_keys=True)
     before_artifacts = research_artifacts(client)
     before_artifact_ids = {str(item.get("artifact_id", "")) for item in before_artifacts}
     before = counts(client)
@@ -194,7 +220,7 @@ def main() -> None:
     accepted = client.call(
         "POST",
         f"/v1/agent/sessions/{urllib.parse.quote(session_id)}/turns",
-        {"content": PROMPTS[args.scenario]},
+        {"content": content},
     )
     if accepted.get("accepted") is not True:
         raise AssertionError("Product Agent did not accept the bounded test turn")
@@ -238,6 +264,13 @@ def main() -> None:
     after = counts(client)
     if args.scenario in {"G1", "G2", "G5"} and after != before:
         raise AssertionError(f"read-only scenario changed Product object counts: {before} -> {after}")
+    summary_reads = None
+    if args.scenario == "G2":
+        access = subprocess.run(["docker", "logs", isolated["scope"] + "-backend-1"],
+            env=compose_environment(), capture_output=True, text=True, check=True, timeout=15)
+        summary_reads = g2_summary_read_count(access.stdout + access.stderr, args.backtest_id)
+        if summary_reads < 1:
+            raise AssertionError("G2 did not successfully read the actual completed backtest summary")
     if args.scenario in {"G3", "G6"} and approvals != 1:
         raise AssertionError(f"scenario required exactly one approval, observed {approvals}")
     if args.scenario == "G4" and after["artifacts"] != before["artifacts"] + 1:
@@ -279,6 +312,8 @@ def main() -> None:
         "release": args.release,
         "build_revision": build,
         "scenario": args.scenario,
+        "synthetic_object_context": object_context,
+        "successful_backtest_summary_reads": summary_reads,
         "session_id": session_id,
         "latency_seconds": round(time.monotonic() - started, 3),
         "public_answer_chars": len(answer),
