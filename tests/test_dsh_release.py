@@ -143,6 +143,15 @@ class DshReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(MODULE.ReleaseError, "runtime-bin version mismatch"):
                 MODULE.validate_python_lock(path, "dsh-0.1.2rc1", "0.1.2rc1")
 
+    def test_candidate_root_requires_a_real_approval_record(self) -> None:
+        patch_text = (
+            ROOT
+            / "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml"
+        ).read_text()
+        self.assertIn("approval_required is not a pending", patch_text)
+        self.assertIn("returns an approval_id", patch_text)
+        self.assertIn("state that no approval record exists", patch_text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,11 +16,16 @@
 - 下一 Product 阶段：**未授权**。必须由维护者明确选择并授权，且继续遵守一阶段一工作树/Draft PR 的合并门禁。
 - 维护执行：[DSH 0.1.2rc1 升级方案](DSH_012RC1_UPGRADE_PLAN.md) 的 U0 已 `VERIFIED`，维护者于
   2026-09-06 接受 ADR-0058 和官方 matching wheel bundled executable 路线；U0 已通过 PR #250
-  按 ADR-0015 squash auto-merge。维护者随后授权 U1 开发；U1 的集中 release identity、候选物料
-  与隔离验证已完成；U2 的可信 evidence provenance 解耦已由 PR #253 合并。U3 已在旧版上提取并验证 Runtime
-  compatibility seam，下一维护步骤按执行表完成 U3 合并门禁后进入 U4。维护者已授权 U1–U8 串行开发、自动 push/Draft PR，并在 CI-green 后按
+  按 ADR-0015 squash auto-merge。U1 的集中 release identity、候选物料与隔离验证已完成；U2 的可信
+  evidence provenance 解耦已由 PR #253 合并；U3 的旧版 Runtime compatibility seam 已由 PR #254 合并；
+  U4 的 0.1.2rc1 候选适配已由 PR #255 合并。U5 的真实候选进程/五角色委派、old/new 20-cycle
+  benchmark、完整本地 CI 和模型场景内部断言已通过。授权只读核查确认一条历史 G6 合成反馈误发到正式 Hub，
+  当时为 received、无发布队列或 GitHub Issue；记录保持不变，原认证已撤回并归档。
+  U5 已完成封闭测试栈/假 Hub 隔离整改、old/new G6 重跑和候选 Chrome MCP 桌面/手机审查；
+  最终本地 CI 26/26 通过，T01–T37 PASS，修复后预发布认证恢复。下一步通过远端 CI/合并门禁后
+  进入 U6 发布与回滚演练；T38-T40 留给 U6-U8。维护者已授权 U1–U8 串行开发、自动 push/Draft PR，并在 CI-green 后按
   ADR-0015 自动合并和进入下一阶段。维护者另行授权在当前本地环境使用既有凭据链执行必要的
-  付费模型测试，要求限制调用/费用且不得读取、输出或提交密钥；生产部署和正式版本切换仍未授权。当前已认证/
+  付费模型测试，并精确限制为合成测试用户、固定提示和 BYQ 测试上下文，不含生产数据、真实对话或密钥；生产部署和正式版本切换仍未授权。当前已认证/
   生产默认仍为 0.1.1rc1，Product Phase 97 不变。
 - Phase 82 已依据 ADR-0047 完成；验收证据位于 `docs/evidence/phase-82/`。
 - Phase 90 已依据 ADR-0049 完成；验收证据位于 `docs/evidence/phase-90/`。

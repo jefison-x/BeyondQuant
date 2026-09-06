@@ -32,8 +32,13 @@ BACKEND_TEST="byq-ci-backend-test-$SCOPE"
 GATEWAY_TEST="byq-ci-gateway-test-$SCOPE"
 RUNTIME_TEST="byq-ci-runtime-test-$SCOPE"
 MCP_TEST="byq-ci-mcp-test-$SCOPE"
+MCP_SERVER="byq-ci-mcp-server-$SCOPE"
+RUNTIME_CANDIDATE_TEST="byq-ci-runtime-candidate-test-$SCOPE"
 PG_NET="byq-ci-network-$SCOPE"
 PG_VOL="byq-ci-postgres-data-$SCOPE"
+RUNTIME_CANDIDATE_VOL="byq-ci-runtime-candidate-data-$SCOPE"
+RUNTIME_BASELINE_BENCH_VOL="byq-ci-runtime-baseline-bench-$SCOPE"
+RUNTIME_CANDIDATE_BENCH_VOL="byq-ci-runtime-candidate-bench-$SCOPE"
 
 export COMPOSE_PROJECT_NAME="$PROJECT"
 export COMPOSE_FILE="$REPO_ROOT/compose.yml"
@@ -49,11 +54,12 @@ export BYQ_DSH_SESSIONS_VOLUME_NAME="byq-ci-dsh-sessions-$SCOPE"
 export BYQ_WORKFLOW_TRACES_VOLUME_NAME="byq-ci-workflow-traces-$SCOPE"
 
 image_resources=(backend gateway runtime-adapter mcp frontend data-worker signal-worker ml-worker \
-  signal-sandbox feedback-publisher feedback-hub-relay dsh)
+  signal-sandbox feedback-publisher feedback-hub-relay dsh runtime-candidate)
 network_resources=("$BYQ_PRODUCT_NETWORK_NAME" "$BYQ_SIGNAL_SANDBOX_NETWORK_NAME")
 [ "$KEEP_POSTGRES" -eq 1 ] || network_resources+=("$PG_NET")
 volume_resources=("$BYQ_POSTGRES_VOLUME_NAME" "$BYQ_DOMAIN_VOLUME_NAME" "$BYQ_ML_MODEL_VOLUME_NAME" \
-  "$BYQ_DSH_SESSIONS_VOLUME_NAME" "$BYQ_WORKFLOW_TRACES_VOLUME_NAME")
+  "$BYQ_DSH_SESSIONS_VOLUME_NAME" "$BYQ_WORKFLOW_TRACES_VOLUME_NAME" "$RUNTIME_CANDIDATE_VOL" \
+  "$RUNTIME_BASELINE_BENCH_VOL" "$RUNTIME_CANDIDATE_BENCH_VOL")
 [ "$KEEP_POSTGRES" -eq 1 ] || volume_resources+=("$PG_VOL")
 
 if ! docker info >/dev/null 2>&1; then
@@ -70,6 +76,7 @@ cleanup_exact_resources() {
     fi
   else
     docker rm -f "$BACKEND" "$BACKEND_TEST" "$GATEWAY_TEST" "$RUNTIME_TEST" "$MCP_TEST" \
+      "$MCP_SERVER" "$RUNTIME_CANDIDATE_TEST" \
       >/dev/null 2>&1 || true
   fi
   (
@@ -80,6 +87,8 @@ cleanup_exact_resources() {
   for service in "${image_resources[@]}"; do
     docker image rm "$PROJECT-$service" >/dev/null 2>&1 || true
   done
+  docker volume rm "$RUNTIME_CANDIDATE_VOL" "$RUNTIME_BASELINE_BENCH_VOL" \
+    "$RUNTIME_CANDIDATE_BENCH_VOL" >/dev/null 2>&1 || true
   docker rm -f "$BACKEND" >/dev/null 2>&1 || true
   if [ "$KEEP_POSTGRES" -eq 0 ]; then
     docker rm -f "$PG" >/dev/null 2>&1 || true

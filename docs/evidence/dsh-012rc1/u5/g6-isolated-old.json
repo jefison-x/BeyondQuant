@@ -1,0 +1,17 @@
+{
+  "schema_version": "dsh-u5-live-model-result.v1",
+  "release": "dsh-0.1.1rc1",
+  "scenario": "G6",
+  "session_id": "conversation_59ed93ffdeba4bf7831b128d2c2bf676",
+  "scope": "byq-u5-g6-old-rerun-20260906",
+  "latency_seconds": 43.796,
+  "public_answer_chars": 547,
+  "source_url_present": false,
+  "approvals": 1,
+  "continuation_retries": 1,
+  "before": {"artifacts": 0, "backtests": 0, "feedback": 0, "ml_predictions": 0, "ml_training": 0},
+  "after": {"artifacts": 0, "backtests": 0, "feedback": 1, "ml_predictions": 0, "ml_training": 0},
+  "fake_hub_before": {"attempts": 0, "published": 0, "received": 0, "schema_version": "byq-u5-fake-hub.v1", "snapshot_hashes": []},
+  "fake_hub_after": {"attempts": 1, "published": 0, "received": 1, "schema_version": "byq-u5-fake-hub.v1", "snapshot_hashes": ["ab1cf3fad3f0813b56a635fb6a5e8335a2b26fe80640778477d89f80b717be1f"]},
+  "result": "PASS"
+}

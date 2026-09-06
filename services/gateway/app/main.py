@@ -572,6 +572,16 @@ def _product_session(request: Request, session_id: str) -> ProductSession:
         return _restore_product_session(session_id, principal, workspace_id)
 
 
+def _replace_lost_runtime_session(session: ProductSession) -> ProductSession:
+    """Rehydrate durable context after the Adapter lost only its private state."""
+
+    product_sessions.remove_owned(session.conversation_id, session.principal)
+    trace_store.close(session.session_id)
+    return _restore_product_session(
+        session.conversation_id, session.principal, session.workspace_id
+    )
+
+
 def continue_approval_conversation(
     request: Request, conversation_id: str, approval_id: str, decision: str, action: str,
 ) -> dict[str, str]:
@@ -759,11 +769,22 @@ def submit_product_turn(
         "POST", f"/v1/product/conversations/{session.conversation_id}/messages",
         session.principal, session.workspace_id, payload={"content": request.content},
     )
-    body = _adapter_post(
-        f"/internal/runtime/sessions/{session.session_id}/prompt",
-        payload={"content": request.content, "require_model_key": True},
-        timeout=5.0,
-    )
+    prompt_payload = {"content": request.content, "require_model_key": True}
+    try:
+        body = _adapter_post(
+            f"/internal/runtime/sessions/{session.session_id}/prompt",
+            payload=prompt_payload,
+            timeout=5.0,
+        )
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        session = _replace_lost_runtime_session(session)
+        body = _adapter_post(
+            f"/internal/runtime/sessions/{session.session_id}/prompt",
+            payload=prompt_payload,
+            timeout=5.0,
+        )
     return {
         "accepted": True,
         "session_id": session.conversation_id,
@@ -779,10 +800,20 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
         "GET", f"/v1/product/conversations/{session.conversation_id}",
         session.principal, session.workspace_id,
     )
-    body = _adapter_post(
-        f"/internal/runtime/sessions/{session.session_id}/resume",
-        payload={"conversation_context": _conversation_context(catalog.get("messages"))},
-    )
+    resume_payload = {"conversation_context": _conversation_context(catalog.get("messages"))}
+    try:
+        body = _adapter_post(
+            f"/internal/runtime/sessions/{session.session_id}/resume",
+            payload=resume_payload,
+        )
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        session = _replace_lost_runtime_session(session)
+        body = _adapter_post(
+            f"/internal/runtime/sessions/{session.session_id}/resume",
+            payload=resume_payload,
+        )
     return {
         "session_id": session.conversation_id,
         "trace_id": session.trace_id,
