@@ -64,11 +64,34 @@ Historical Worker restart counters are compared to the deployment baseline.
 Capacity guardrails (1 GiB host memory / 10 GiB disk free) do not change qualification
 thresholds: U7's documented RSS excess of 2.5118 MiB remains an exception, not PASS.
 
+### Production semantic incident (acceptance blocker)
+
+During the observation window, a real research turn delegated bounded market
+research and then failed with `runtime-subagent-timeout`. The user's next short
+continuation resumed into a fresh private DSH generation, but the rehydration
+projection omitted the unanswered trailing user prompt. The new run therefore
+received no subject-bearing public context and selected an unrelated, pre-existing
+ML/backtest object from the same owner/workspace. Its final answer was internally
+consistent with that old object but did not answer the current research subject.
+
+Bounded read-only review found no new Artifact, training, prediction or backtest
+mutation in the incident window and no cross-owner/workspace access. The delegated
+BYQ Agent run remained durably `active` after the runtime process had failed and
+closed, so stale run termination is a second issue. Raw conversation content,
+owner/workspace identifiers and private DSH logs are not committed here.
+
+This is not cleared by healthy containers or zero monitor alerts. U8 cannot become
+COMPLETE until the failed-turn context contract and stale delegated-run lifecycle
+are fixed or otherwise explicitly dispositioned, then requalified. Increasing the
+timeout alone is not an acceptable fix. Rollback is not assumed to solve the issue:
+the BYQ Gateway/adapter resume behavior is shared by the certified old/new builds.
+
 ## Pending gates and limitations
 
-Actual 24-hour duration, first-30-minute review, bounded approval backlog/job
-idempotency review, failure/timeout classification and final resource trends remain
-pending. Process count is not SDK child ownership state; idle session metadata is
+Actual 24-hour duration, incident disposition, bounded approval backlog/job
+idempotency final review and resource trends remain pending. The first dense period
+had no infrastructure alerts, but the semantic incident above occurred immediately
+after it. Process count is not SDK child ownership state; idle session metadata is
 not a leaked running process. Zero traffic/errors cannot prove scenario coverage.
 User feedback has not been inferred from metrics.
 
