@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from importlib.metadata import version
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -55,16 +56,32 @@ class FakeHarness:
         self.__class__.allow_run.set()
 
 
+def release_compatibility(tmp_path: Path) -> object:
+    if version("deepseek-harness-sdk") == "0.1.1rc1":
+        return Dsh011Compatibility(harness_factory=FakeHarness)
+    from app.compat.dsh_012 import Dsh012Compatibility
+
+    executable = tmp_path / "candidate-dsh"
+    executable.write_text("candidate", encoding="utf-8")
+    composition = tmp_path / "composition.yml"
+    composition.write_text("candidate", encoding="utf-8")
+    return Dsh012Compatibility(
+        harness_factory=FakeHarness,
+        runtime_path_factory=lambda: executable,
+    )
+
+
 @pytest.fixture
 def adapter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> RuntimeAdapter:
     FakeHarness.reset()
+    monkeypatch.delenv("BYQ_CREDENTIAL_RESOLVER_TOKEN", raising=False)
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("BYQ_DSH_RUN_TIMEOUT_SECONDS", "3600")
     monkeypatch.setenv("BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS", "3600")
     monkeypatch.setenv("BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS", "3600")
-    return RuntimeAdapter(Dsh011Compatibility(harness_factory=FakeHarness))
+    return RuntimeAdapter(release_compatibility(tmp_path))
 
 
 def wait_for_status(adapter: RuntimeAdapter, session_id: str, status: str) -> None:
@@ -673,7 +690,7 @@ def test_configured_model_credential_is_scoped_to_the_owned_sdk_environment(
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-provider-secret")
 
-    adapter = RuntimeAdapter(Dsh011Compatibility(harness_factory=FakeHarness))
+    adapter = RuntimeAdapter(release_compatibility(tmp_path))
     adapter.create_session("s-1", "t-1")
     sdk_environment = FakeHarness.instances[0].config.env
     assert sdk_environment["DEEPSEEK_API_KEY"] == "test-provider-secret"
@@ -717,7 +734,7 @@ def test_personal_model_binding_is_resolved_directly_without_public_exposure(
         return Response()
 
     monkeypatch.setattr(runtime_module.httpx, "post", post)
-    adapter = RuntimeAdapter(Dsh011Compatibility(harness_factory=FakeHarness))
+    adapter = RuntimeAdapter(release_compatibility(tmp_path))
     adapter.create_session("s-1", "t-1", "alice")
 
     assert captured["url"] == "http://backend.test/internal/credentials/model-resolution"
@@ -749,7 +766,7 @@ def test_opencode_personal_key_is_scoped_to_each_reviewed_runtime_route(
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
-    adapter = RuntimeAdapter(Dsh011Compatibility(harness_factory=FakeHarness))
+    adapter = RuntimeAdapter(release_compatibility(tmp_path))
     harness = adapter._build_harness(
         "s-1",
         tmp_path / "sessions" / "s-1",
@@ -810,7 +827,7 @@ def test_broken_personal_resolution_never_falls_back_to_system_key(
             )
 
     monkeypatch.setattr(runtime_module.httpx, "post", lambda *args, **kwargs: Response())
-    adapter = RuntimeAdapter(Dsh011Compatibility(harness_factory=FakeHarness))
+    adapter = RuntimeAdapter(release_compatibility(tmp_path))
     with pytest.raises(ModelCredentialUnavailable):
         adapter.create_session("s-1", "t-1", "alice")
     assert FakeHarness.instances == []

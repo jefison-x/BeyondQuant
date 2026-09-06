@@ -1,0 +1,7 @@
+annotated-types==0.8.0 --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
+deepseek-harness-runtime-bin==0.1.2rc1 --hash=sha256:670d8af06845cc2fc16738f1b030375321f3f8268837152aa3100e14a7b9887d
+deepseek-harness-sdk==0.1.2rc1 --hash=sha256:24689eec01e95233feb75ca08a0fe748b491e71682f80d2c04e6f9485f20488a
+pydantic==2.13.5 --hash=sha256:346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73
+pydantic-core==2.46.5 --hash=sha256:49776eab08766a08dfff7012f8b422dcd7e25e43b316eedf0477c24fcfa84b7c
+typing-extensions==4.16.0 --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+typing-inspection==0.4.4 --hash=sha256:65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147

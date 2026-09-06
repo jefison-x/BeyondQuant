@@ -1408,8 +1408,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             if "notification.payload" in path.read_text()
         ]
 
-        self.assertEqual(sdk_imports, ["compat/dsh_011.py"])
-        self.assertEqual(raw_payload_readers, ["compat/dsh_011.py"])
+        expected = ["compat/dsh_011.py", "compat/dsh_012.py"]
+        self.assertEqual(sdk_imports, expected)
+        self.assertEqual(raw_payload_readers, expected)
 
 
 if __name__ == "__main__":

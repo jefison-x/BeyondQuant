@@ -14,12 +14,12 @@
   },
   "compatibility_family": "byq-dsh-sdk-v1",
   "default_release": "dsh-0.1.2rc1",
-  "descriptor_hash": "sha256:dc9102f050c8a8d152c47b20294ef1bbb160a61666ac23ba1c82cc80d5507a49",
+  "descriptor_hash": "sha256:2358843b0b9b5a9b4dcdb8128f8ae54d3500387e694c3d74df49ed8cfad07f7a",
   "is_default": false,
   "profile": {
-    "composition": null,
-    "composition_hash": null,
-    "identity": null,
+    "composition": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
+    "composition_hash": "sha256:b18105ecdd0683a13e20bea65f7e7ba927a6ccfc5d97f4aead011e3c494733e2",
+    "identity": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.identity.json",
     "name": "byq-product-candidate"
   },
   "python": {
