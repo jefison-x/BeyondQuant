@@ -17,7 +17,8 @@
 - 维护执行：[DSH 0.1.2rc1 升级方案](DSH_012RC1_UPGRADE_PLAN.md) 的 U0 已 `VERIFIED`，维护者于
   2026-09-06 接受 ADR-0058 和官方 matching wheel bundled executable 路线；U0 已通过 PR #250
   按 ADR-0015 squash auto-merge。维护者随后授权 U1 开发；U1 的集中 release identity、候选物料
-  与隔离验证已完成；U2 的可信 evidence provenance 解耦已验证，历史 identity 保持不变。下一维护步骤按执行表完成 U2 合并门禁后进入 U3。维护者已授权 U1–U8 串行开发、自动 push/Draft PR，并在 CI-green 后按
+  与隔离验证已完成；U2 的可信 evidence provenance 解耦已由 PR #253 合并。U3 已在旧版上提取并验证 Runtime
+  compatibility seam，下一维护步骤按执行表完成 U3 合并门禁后进入 U4。维护者已授权 U1–U8 串行开发、自动 push/Draft PR，并在 CI-green 后按
   ADR-0015 自动合并和进入下一阶段。维护者另行授权在当前本地环境使用既有凭据链执行必要的
   付费模型测试，要求限制调用/费用且不得读取、输出或提交密钥；生产部署和正式版本切换仍未授权。当前已认证/
   生产默认仍为 0.1.1rc1，Product Phase 97 不变。

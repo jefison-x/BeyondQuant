@@ -37,13 +37,14 @@ class PublicationLicenseTests(unittest.TestCase):
         inventory = json.loads((ROOT / "docs/legal/npm-license-inventory.json").read_text())
         self.assertGreater(len(inventory["packages"]), 500)
 
-    def test_dsh_u2_progress_does_not_claim_runtime_upgrade(self):
+    def test_dsh_u3_progress_does_not_claim_candidate_runtime_upgrade(self):
         text = (ROOT / "docs/roadmap/DSH_012RC1_EXECUTION.md").read_text()
-        self.assertIn("U0、U1 `MERGED`", text)
-        self.assertIn("U2 `VERIFIED`", text)
+        self.assertIn("U0、U1、U2 `MERGED`", text)
+        self.assertIn("U3 `VERIFIED`", text)
         self.assertIn("U1–U8 串行开发", text)
         self.assertIn("0.1.1rc1", text)
         self.assertIn("U0 载体决策 | MERGED", text)
+        self.assertIn("不宣称新版 Runtime 已适配", text)
         adr = (ROOT / "docs/architecture/adr/ADR-0058-dsh-release-bundles-and-compatibility.md").read_text()
         self.assertIn("Status: Accepted", adr)
         self.assertIn("仍不包含生产部署、正式版本切换或付费模型测试", adr)

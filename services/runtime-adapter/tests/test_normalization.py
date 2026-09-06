@@ -2,7 +2,11 @@ import json
 
 from deepseek_harness import Notification
 
-from app.normalization import NormalizationState, normalize_dsh_notification
+from app.compat import Dsh011Compatibility
+from app.normalization import NormalizationState, normalize_runtime_observation
+
+
+compatibility = Dsh011Compatibility()
 
 
 def notify(event_type: str, data: dict | None = None) -> Notification:
@@ -13,8 +17,8 @@ def notify(event_type: str, data: dict | None = None) -> Notification:
 
 
 def normalize(notification: Notification, state: NormalizationState | None = None):
-    return normalize_dsh_notification(
-        notification,
+    return normalize_runtime_observation(
+        compatibility.observe(notification, root_session_id="s-1"),
         trace_id="t-1",
         session_id="s-1",
         sequence=4,
@@ -40,14 +44,16 @@ def test_session_status_is_a_byq_owned_event() -> None:
 
 
 def test_resumed_runtime_identity_is_correlated_to_the_stable_byq_session() -> None:
-    events = normalize_dsh_notification(
-        Notification(
-            method="session.status",
-            payload={"sessionId": "s-1-resume-private", "status": "idle"},
+    events = normalize_runtime_observation(
+        compatibility.observe(
+            Notification(
+                method="session.status",
+                payload={"sessionId": "s-1-resume-private", "status": "idle"},
+            ),
+            root_session_id="s-1-resume-private",
         ),
         trace_id="t-1",
         session_id="s-1",
-        runtime_session_id="s-1-resume-private",
         sequence=5,
     )
 

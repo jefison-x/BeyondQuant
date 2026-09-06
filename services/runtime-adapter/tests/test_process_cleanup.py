@@ -9,6 +9,7 @@ import pytest
 from deepseek_harness import Notification
 
 import app.runtime as runtime_module
+from app.compat import Dsh011Compatibility
 from app.identifiers import MAX_IDENTIFIER_LENGTH
 from app.runtime import ModelCredentialUnavailable, RuntimeAdapter, SessionConflict, SessionStatus
 
@@ -57,14 +58,13 @@ class FakeHarness:
 @pytest.fixture
 def adapter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> RuntimeAdapter:
     FakeHarness.reset()
-    monkeypatch.setattr(runtime_module, "DeepSeekHarness", FakeHarness)
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("BYQ_DSH_RUN_TIMEOUT_SECONDS", "3600")
     monkeypatch.setenv("BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS", "3600")
     monkeypatch.setenv("BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS", "3600")
-    return RuntimeAdapter()
+    return RuntimeAdapter(Dsh011Compatibility(harness_factory=FakeHarness))
 
 
 def wait_for_status(adapter: RuntimeAdapter, session_id: str, status: str) -> None:
@@ -231,6 +231,47 @@ def test_reasoning_chunks_refresh_internal_liveness_without_crossing_public_boun
     assert len(record.history) == history_length
     assert "private" not in str(record.history)
     adapter.cancel_session("s-reasoning-stream", "hard")
+
+
+def test_late_notification_from_previous_run_cannot_extend_next_run(
+    adapter: RuntimeAdapter,
+) -> None:
+    adapter.create_session("s-late", "t-late")
+    adapter.submit_prompt("s-late", "first")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-late")
+    first_run = record.active_run
+    assert first_run is not None
+
+    FakeHarness.allow_run.set()
+    wait_for_status(adapter, "s-late", SessionStatus.IDLE)
+    FakeHarness.run_started.clear()
+    FakeHarness.allow_run.clear()
+    adapter.submit_prompt("s-late", "second")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    second_run = record.active_run
+    assert second_run is not None
+    second_run.last_runtime_activity_at = 10.0
+    history_length = len(record.history)
+
+    adapter._on_notification(
+        record,
+        Notification(
+            method="session.event",
+            payload={
+                "sessionId": record.runtime_session_id,
+                "event": {"type": "assistant/chunk", "data": {
+                    "chunk": {"type": "reasoning-delta", "text": "late-private"},
+                }},
+            },
+        ),
+        source_run=first_run,
+        source_runtime_session_id=record.runtime_session_id,
+    )
+
+    assert second_run.last_runtime_activity_at == 10.0
+    assert len(record.history) == history_length
+    adapter.cancel_session("s-late", "hard")
 
 
 @pytest.mark.parametrize("event_type", ["step/start", "step/end"])
@@ -627,13 +668,12 @@ def test_configured_model_credential_is_scoped_to_the_owned_sdk_environment(
     tmp_path: Path,
 ) -> None:
     FakeHarness.reset()
-    monkeypatch.setattr(runtime_module, "DeepSeekHarness", FakeHarness)
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-provider-secret")
 
-    adapter = RuntimeAdapter()
+    adapter = RuntimeAdapter(Dsh011Compatibility(harness_factory=FakeHarness))
     adapter.create_session("s-1", "t-1")
     sdk_environment = FakeHarness.instances[0].config.env
     assert sdk_environment["DEEPSEEK_API_KEY"] == "test-provider-secret"
@@ -647,7 +687,6 @@ def test_personal_model_binding_is_resolved_directly_without_public_exposure(
     tmp_path: Path,
 ) -> None:
     FakeHarness.reset()
-    monkeypatch.setattr(runtime_module, "DeepSeekHarness", FakeHarness)
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
@@ -678,7 +717,7 @@ def test_personal_model_binding_is_resolved_directly_without_public_exposure(
         return Response()
 
     monkeypatch.setattr(runtime_module.httpx, "post", post)
-    adapter = RuntimeAdapter()
+    adapter = RuntimeAdapter(Dsh011Compatibility(harness_factory=FakeHarness))
     adapter.create_session("s-1", "t-1", "alice")
 
     assert captured["url"] == "http://backend.test/internal/credentials/model-resolution"
@@ -707,11 +746,10 @@ def test_opencode_personal_key_is_scoped_to_each_reviewed_runtime_route(
     provider: str,
 ) -> None:
     FakeHarness.reset()
-    monkeypatch.setattr(runtime_module, "DeepSeekHarness", FakeHarness)
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
-    adapter = RuntimeAdapter()
+    adapter = RuntimeAdapter(Dsh011Compatibility(harness_factory=FakeHarness))
     harness = adapter._build_harness(
         "s-1",
         tmp_path / "sessions" / "s-1",
@@ -755,7 +793,6 @@ def test_broken_personal_resolution_never_falls_back_to_system_key(
     tmp_path: Path,
 ) -> None:
     FakeHarness.reset()
-    monkeypatch.setattr(runtime_module, "DeepSeekHarness", FakeHarness)
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
@@ -773,7 +810,7 @@ def test_broken_personal_resolution_never_falls_back_to_system_key(
             )
 
     monkeypatch.setattr(runtime_module.httpx, "post", lambda *args, **kwargs: Response())
-    adapter = RuntimeAdapter()
+    adapter = RuntimeAdapter(Dsh011Compatibility(harness_factory=FakeHarness))
     with pytest.raises(ModelCredentialUnavailable):
         adapter.create_session("s-1", "t-1", "alice")
     assert FakeHarness.instances == []

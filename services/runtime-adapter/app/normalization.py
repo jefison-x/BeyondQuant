@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from deepseek_harness import Notification
-
+from .compat.types import RuntimeObservation
 from .contracts import (
     MAX_ACTIVITIES_PER_TURN,
     MAX_ANSWER_FRAGMENT_BYTES,
@@ -110,10 +108,6 @@ _INTERNAL_CONTROL_CAPABILITIES = frozenset(
 )
 _BACKTEST_TOOLS = frozenset(name for name in _CAPABILITIES if name.startswith("byq_backtest_"))
 _APPROVAL_TOOLS = frozenset(name for name in _CAPABILITIES if name.startswith("byq_agent_approval_"))
-_SESSION_STATUSES = frozenset({"starting", "ready", "idle", "running", "cancelling", "interrupted", "failed", "closed"})
-_TURN_REASONS = frozenset({"completed", "cancelled", "failed", "max_tokens", "tool_use"})
-
-
 @dataclass(slots=True)
 class NormalizationState:
     """Per-session correlation state; counters reset at each DSH turn."""
@@ -136,36 +130,22 @@ class NormalizationState:
         self.turn_activity_id = None
 
 
-def normalize_dsh_notification(
-    notification: Notification,
+def normalize_runtime_observation(
+    observation: RuntimeObservation,
     *,
     trace_id: str,
     session_id: str,
-    runtime_session_id: str | None = None,
     sequence: int,
     state: NormalizationState | None = None,
 ) -> list[WorkflowTraceEvent]:
-    """Return only public, schema-owned events; never forward raw DSH data."""
+    """Project a bounded internal observation into BYQ-owned public events."""
 
     current = state or NormalizationState()
-    payload = notification.payload if isinstance(notification.payload, dict) else {}
-    if payload.get("sessionId") != (runtime_session_id or session_id):
+    if not observation.root_session:
         return []
-    if notification.method == "session.status":
-        status = payload.get("status")
-        if status not in _SESSION_STATUSES:
-            return []
-        return [_event(trace_id, session_id, sequence, "session.status", "dsh", {"status": status})]
-    if notification.method != "session.event":
-        return []
-
-    raw_event = payload.get("event")
-    if not isinstance(raw_event, dict):
-        return []
-    event_type = raw_event.get("type")
-    data = raw_event.get("data") if isinstance(raw_event.get("data"), dict) else {}
-
-    if event_type == "turn/start":
+    if observation.kind == "session.status" and observation.status is not None:
+        return [_event(trace_id, session_id, sequence, "session.status", "dsh", {"status": observation.status})]
+    if observation.kind == "turn.start":
         current.reset_turn()
         current.turn_activity_id = _stable_id("activity", trace_id, str(sequence), "turn")
         return _bounded_activity(
@@ -178,12 +158,8 @@ def normalize_dsh_notification(
             activity_state="started",
             label="理解请求",
         )
-    if event_type == "turn/end":
-        reason = data.get("reason")
-        reason_kind = reason.get("kind") if isinstance(reason, dict) else None
-        safe_reason = "failed" if reason_kind == "error" else (
-            reason_kind if reason_kind in _TURN_REASONS else "failed"
-        )
+    if observation.kind == "turn.end":
+        safe_reason = observation.terminal_reason or "failed"
         events: list[WorkflowTraceEvent] = []
         if current.turn_activity_id is not None:
             events.extend(
@@ -209,45 +185,28 @@ def normalize_dsh_notification(
             )
         )
         return events
-    if event_type == "assistant/message":
-        return _answer_events(current, data, trace_id, session_id, sequence)
-    if event_type == "tool/call":
-        return _tool_call_events(current, data, trace_id, session_id, sequence)
-    if event_type == "tool/result":
-        return _tool_result_events(current, data, trace_id, session_id, sequence)
-    # High-volume chunks, request metadata, user echoes, titles, and unknown
-    # runtime events have no browser-safe semantic projection.
+    if observation.kind == "assistant.message":
+        return _answer_events(current, observation, trace_id, session_id, sequence)
+    if observation.kind == "tool.call":
+        return _tool_call_events(current, observation, trace_id, session_id, sequence)
+    if observation.kind == "tool.result":
+        return _tool_result_events(current, observation, trace_id, session_id, sequence)
     return []
 
 
 def _answer_events(
     state: NormalizationState,
-    data: dict[str, Any],
+    observation: RuntimeObservation,
     trace_id: str,
     session_id: str,
     sequence: int,
 ) -> list[WorkflowTraceEvent]:
-    message = data.get("message")
-    if not isinstance(message, dict):
-        return []
-    message_id = message.get("id")
-    if isinstance(message_id, str):
+    message_id = observation.message_id
+    if message_id is not None:
         if message_id in state.seen_messages:
             return []
         state.seen_messages.add(message_id)
-    content = message.get("content")
-    if not isinstance(content, list):
-        return []
-    # DSH commits one assistant/message per model step. A step containing a
-    # tool-call is operational narration, not the final investment answer.
-    # The later text-only completion anchor is the public answer boundary.
-    if any(isinstance(block, dict) and block.get("type") == "tool-call" for block in content):
-        return []
-    text = "".join(
-        block.get("text", "")
-        for block in content
-        if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)
-    ).strip()
+    text = observation.answer_text or ""
     if not text:
         return []
     text = project_public_answer_text(text)
@@ -272,13 +231,13 @@ def _answer_events(
 
 def _tool_call_events(
     state: NormalizationState,
-    data: dict[str, Any],
+    observation: RuntimeObservation,
     trace_id: str,
     session_id: str,
     sequence: int,
 ) -> list[WorkflowTraceEvent]:
-    call_id = data.get("callId")
-    name = data.get("name")
+    call_id = observation.call_id
+    name = observation.tool_name
     if not isinstance(call_id, str) or not call_id:
         return []
     capability = _canonical_capability(name)
@@ -302,22 +261,19 @@ def _tool_call_events(
 
 def _tool_result_events(
     state: NormalizationState,
-    data: dict[str, Any],
+    observation: RuntimeObservation,
     trace_id: str,
     session_id: str,
     sequence: int,
 ) -> list[WorkflowTraceEvent]:
-    block = _tool_result_block(data)
-    if block is None:
-        return []
-    call_id = block.get("toolCallId")
+    call_id = observation.call_id
     if not isinstance(call_id, str):
         return []
     capability = state.tool_names.pop(call_id, None)
     if capability is None or capability in _INTERNAL_CONTROL_CAPABILITIES:
         return []
     phase, label = _CAPABILITIES.get(capability or "", ("tool", "受控能力已返回"))
-    failed = block.get("isError") is True
+    failed = observation.tool_failed
     events = _bounded_activity(
         state,
         trace_id,
@@ -331,7 +287,7 @@ def _tool_result_events(
     )
     if failed or capability is None:
         return events
-    result = _parse_mcp_result(block)
+    result = observation.tool_result
     candidate = _card_candidate(capability, result, trace_id, sequence)
     if candidate is None:
         return events
@@ -434,33 +390,6 @@ def _bounded_activity(
     event = _event(trace_id, session_id, sequence, "agent.activity", "runtime-adapter", payload)
     validate_workflow_trace_event(event)
     return [event]
-
-
-def _tool_result_block(data: dict[str, Any]) -> dict[str, Any] | None:
-    message = data.get("message")
-    content = message.get("content") if isinstance(message, dict) else None
-    if not isinstance(content, list):
-        return None
-    for block in content:
-        if isinstance(block, dict) and block.get("type") == "tool-result":
-            return block
-    return None
-
-
-def _parse_mcp_result(block: dict[str, Any]) -> dict[str, Any] | None:
-    content = block.get("content")
-    if not isinstance(content, list):
-        return None
-    for item in content:
-        if not isinstance(item, dict) or item.get("type") != "text" or not isinstance(item.get("text"), str):
-            continue
-        try:
-            parsed = json.loads(item["text"])
-        except (json.JSONDecodeError, TypeError):
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    return None
 
 
 def _split_utf8(value: str, maximum: int) -> list[str]:
