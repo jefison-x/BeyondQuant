@@ -11,8 +11,8 @@ Observed base and candidate implementation commit:
 U5 adds fail-closed qualification reporting, real candidate delegate journeys,
 old/new runtime benchmarks, fixed G1-G6 live-model journeys and CI routing. The
 deployment default remains `dsh-0.1.1rc1`; no production deployment or Product
-Phase change was performed. Possible external synthetic feedback delivery is
-unresolved (see below). T38-T40 remain later-stage
+Phase change was performed. One external synthetic G6 feedback delivery has
+been confirmed by an authorized read-only Hub audit (see below). T38-T40 remain later-stage
 gates and are not claimed here.
 
 ## Candidate identity and keyless evidence
@@ -128,7 +128,7 @@ new directory and does not alter the deployment selector.
 The former preproduction report is withdrawn, not a release gate. Its original
 observations are retained in `withdrawn/qualification-report.withdrawn.json`,
 explicitly marked `WITHDRAWN`; its historical PASS rows are not current verdicts.
-The current evidence marks T35 and T36 BLOCKED, so `qualify` must refuse to emit
+The current evidence marks T35 FAIL and T36 BLOCKED, so `qualify` must refuse to emit
 a preproduction report. T38-T40 remain NOT_RUN. The enabled OpenCode protocol
 routes have no configured credential in this
 environment; deterministic route/credential-isolation coverage passed and the
@@ -146,19 +146,21 @@ and formal version switching remain separately unauthorized.
 - `product_feedback.submit` always queues a Hub event; the relay advertises
   itself configured and sends queued snapshots to `/v1/intake` when its URL is
   set. Therefore absence of the local GitHub publisher is insufficient evidence
-  of an isolated external boundary. Delivery was possible, not proven.
+  of an isolated external boundary. Delivery was initially unproven; the
+  subsequently authorized read-only audit below confirmed one matching intake.
 - The isolated containers and database volumes had already been removed, so
   their outbox/receipt evidence is unavailable. A narrowly filtered GitHub
   issue search on 2026-09-06 found no matching Xiaoba issue; this does not prove
-  absence of Hub intake or of differently titled issues. No Hub administrative
-  records have been inspected and no external records have been deleted.
+  absence of Hub intake or of differently titled issues. This initial check was
+  superseded by the narrowly scoped Hub audit below. No external records have
+  been deleted.
 - Retain synthetic G6 data scope: no evidence currently shows production user
   data, real conversations or secrets were in the test feedback. Do not infer
   absence of external delivery from that separate data-scope statement.
 - T35 requires explicit service and credential allowlists, a local fake Hub,
   verified effective endpoints before any submission, and a bounded old/new
-  G6 rerun. Prior delivery uncertainty requires maintainer notification and a
-  narrowly scoped Hub audit; do not silently erase any external records.
+  G6 rerun. The maintainer was notified and the scoped audit is complete for the
+  confirmed record; do not silently erase any external records.
 - T36 also lacks a candidate-specific Chrome MCP desktop/mobile review of
   Xiaoba, approval and Plugin Center. The 9 automated browser tests remain
   valid supporting evidence but cannot replace this mandatory review.
@@ -170,6 +172,41 @@ and formal version switching remain separately unauthorized.
   and isolated-worktree validation passed. A new test proves the current
   evidence cannot generate a preproduction qualification report. PR #256
   remains Draft with auto-merge unset.
+
+## Authorized read-only Hub audit (2026-09-06)
+
+The maintainer explicitly authorized inspection of only this G6 synthetic
+feedback, with no other feedback reads, deletion or publication. They signed
+into Cloudflare in their Ubuntu Chrome and enabled its native debugging
+connection. The selected account's existing dashboard link identified
+`byq-feedback-hub`; an authenticated read-only metadata request confirmed the
+exact database name before querying. No credential or cookie was extracted.
+
+The fixed SELECT constrained intake to 2026-09-06 UTC, U5/G6 markers, Xiaoba
+and the long-task topic. It returned only receipt/status/timestamps and the
+publication-queue projection, not feedback bodies. A second SELECT inspected
+audit actions for the single returned receipt. Both query results reported
+`rows_written=0` and `changed_db=false`.
+
+- Confirmed receipt: `central_feedback_d5afa14dadec452db2d7434403f267c2`.
+- Received: `2026-09-06T08:37:41.165Z` (16:37:41 Asia/Shanghai).
+- Observed state through `2026-09-06T09:55:34Z`: `received`; unchanged since
+  intake. GitHub Issue number: null. Publication outbox row: absent.
+- Audit history: exactly one `receive`, null → `received`, at intake time.
+  No triage, acceptance or publication action was returned.
+- Conclusion: at least one synthetic G6 feedback was accidentally delivered
+  to the real Hub. This is a test-isolation failure, not a hypothetical risk.
+  The confirmed record had not been published to GitHub at inspection time.
+- Limits: the query cannot exclude a different feedback whose generated
+  snapshot omitted the test markers or topic words. It does not establish a
+  global zero-delivery claim or prove the full contents of every test payload.
+- External state was left unchanged. No reject/delete/accept/publish action
+  was taken; any later moderation requires separate authorization.
+
+A general-purpose interactive browser controller was rejected by safety review
+before execution. The accepted alternative used fixed, single-purpose read-only
+requests without an arbitrary-command interface, and disconnected after each
+check without closing the user's Chrome.
 
 ## Commands
 

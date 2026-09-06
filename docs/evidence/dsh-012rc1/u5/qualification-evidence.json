@@ -301,10 +301,10 @@
     {
       "id": "T35",
       "layer": "L1/L2/L3",
-      "result": "BLOCKED",
+      "result": "FAIL",
       "test_name": "traceable Web evidence and approval-gated internal feedback",
       "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
-      "failure_category": "feedback_external_isolation_unproven"
+      "failure_category": "feedback_external_isolation_failed"
     },
     {
       "id": "T36",

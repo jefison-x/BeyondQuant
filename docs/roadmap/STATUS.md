@@ -19,8 +19,9 @@
   按 ADR-0015 squash auto-merge。U1 的集中 release identity、候选物料与隔离验证已完成；U2 的可信
   evidence provenance 解耦已由 PR #253 合并；U3 的旧版 Runtime compatibility seam 已由 PR #254 合并；
   U4 的 0.1.2rc1 候选适配已由 PR #255 合并。U5 的真实候选进程/五角色委派、old/new 20-cycle
-  benchmark、完整本地 CI 和模型场景内部断言已通过；复核发现 G6 Hub 外发隔离未获证明，且缺少候选
-  Chrome MCP 专项审查，故撤回完整认证，T35/T36 BLOCKED。下一步先核查外发风险、修正测试隔离并补齐验证，
+  benchmark、完整本地 CI 和模型场景内部断言已通过；授权只读核查已确认一条 G6 合成反馈误发到正式 Hub，
+  状态为 received、无发布队列或 GitHub Issue，且缺少候选 Chrome MCP 专项审查，故撤回完整认证，
+  T35 FAIL / T36 BLOCKED。下一步修正测试隔离并补齐验证，正式反馈记录保持不变，
   不合并或进入 U6；T38-T40 留给 U6-U8。维护者已授权 U1–U8 串行开发、自动 push/Draft PR，并在 CI-green 后按
   ADR-0015 自动合并和进入下一阶段。维护者另行授权在当前本地环境使用既有凭据链执行必要的
   付费模型测试，并精确限制为合成测试用户、固定提示和 BYQ 测试上下文，不含生产数据、真实对话或密钥；生产部署和正式版本切换仍未授权。当前已认证/

@@ -65,12 +65,13 @@ def valid_evidence(scope: str = "preproduction") -> dict[str, object]:
 
 
 class DshQualificationReportTests(unittest.TestCase):
-    def test_actual_u5_evidence_cannot_qualify_while_isolation_is_unproven(self) -> None:
+    def test_actual_u5_evidence_cannot_qualify_after_external_isolation_failure(self) -> None:
         evidence = MODULE.load_json(
             ROOT / "docs/evidence/dsh-012rc1/u5/qualification-evidence.json"
         )
         self.assertEqual(evidence["checks"][34]["failure_category"],
-                         "feedback_external_isolation_unproven")
+                         "feedback_external_isolation_failed")
+        self.assertEqual(evidence["checks"][34]["result"], "FAIL")
         self.assertEqual(evidence["checks"][35]["failure_category"],
                          "candidate_chrome_mcp_review_missing")
         with self.assertRaisesRegex(MODULE.ReleaseError, "requires T01-T37 PASS"):

@@ -41,7 +41,7 @@ class PublicationLicenseTests(unittest.TestCase):
         text = (ROOT / "docs/roadmap/DSH_012RC1_EXECUTION.md").read_text()
         self.assertIn("U0–U4 `MERGED`", text)
         self.assertIn("U5 `BLOCKED`", text)
-        self.assertIn("T35/T36 BLOCKED", text)
+        self.assertIn("T35 FAIL / T36 BLOCKED", text)
         self.assertIn("U1–U8 串行开发", text)
         self.assertIn("0.1.1rc1", text)
         self.assertIn("U0 载体决策 | MERGED", text)
