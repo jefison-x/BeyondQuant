@@ -1096,9 +1096,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_sdk_runtime_does_not_use_bundled_zero_config(self) -> None:
         adapter = (ROOT / "services/runtime-adapter/app/runtime.py").read_text()
-        self.assertIn("launch_args_override=self.runtime_command", adapter)
-        self.assertIn("cordis=str(self._composition)", adapter)
-        self.assertNotIn("resolve_bundled_launch_args", adapter)
+        compatibility = (ROOT / "services/runtime-adapter/app/compat/dsh_011.py").read_text()
+        self.assertIn("runtime_command=self.runtime_command", adapter)
+        self.assertIn("composition=self._composition", adapter)
+        self.assertIn("launch_args_override=runtime_command", compatibility)
+        self.assertIn("cordis=str(composition)", compatibility)
+        self.assertNotIn("resolve_bundled_launch_args", adapter + compatibility)
 
     def test_runtime_adapter_does_not_bypass_mcp(self) -> None:
         composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
@@ -1390,6 +1393,23 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("/api/product/operations", frontend_api)
         self.assertIn("Redis", contract)
         self.assertIn("raw DSH", contract)
+
+    def test_dsh_sdk_and_raw_schema_are_confined_to_versioned_compatibility(self) -> None:
+        adapter_app = ROOT / "services/runtime-adapter/app"
+        implementation_files = sorted(adapter_app.rglob("*.py"))
+        sdk_imports = [
+            path.relative_to(adapter_app).as_posix()
+            for path in implementation_files
+            if "deepseek_harness" in path.read_text()
+        ]
+        raw_payload_readers = [
+            path.relative_to(adapter_app).as_posix()
+            for path in implementation_files
+            if "notification.payload" in path.read_text()
+        ]
+
+        self.assertEqual(sdk_imports, ["compat/dsh_011.py"])
+        self.assertEqual(raw_payload_readers, ["compat/dsh_011.py"])
 
 
 if __name__ == "__main__":

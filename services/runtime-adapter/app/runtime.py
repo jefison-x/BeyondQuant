@@ -14,8 +14,6 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import httpx
-from deepseek_harness import DeepSeekHarness, DeepSeekHarnessConfig, Notification
-
 from packages.contracts.conversation_rehydration import (
     ConversationContextMessage,
     normalize_conversation_context,
@@ -23,8 +21,9 @@ from packages.contracts.conversation_rehydration import (
 )
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
+from .compat import Dsh011Compatibility, RuntimeCompatibility, RuntimeObservation
 from .identifiers import contained_session_path, validate_identifier
-from .normalization import NormalizationState, normalize_dsh_notification
+from .normalization import NormalizationState, normalize_runtime_observation
 
 
 class SessionConflict(RuntimeError):
@@ -74,7 +73,7 @@ class ActiveRun:
 class RuntimeSession:
     session_id: str
     trace_id: str
-    harness: DeepSeekHarness
+    harness: Any
     runtime_session_id: str
     owner_principal: str | None = None
     workspace_id: str | None = None
@@ -101,7 +100,8 @@ class RuntimeAdapter:
     run and resets to idle when that run settles.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, compatibility: RuntimeCompatibility | None = None) -> None:
+        self._compatibility = compatibility or Dsh011Compatibility()
         self._sessions: dict[str, RuntimeSession] = {}
         self._lock = threading.RLock()
         self._runtime_root = Path(os.environ.get("BYQ_DSH_RUNTIME_ROOT", "/opt/dsh-runtime"))
@@ -152,8 +152,7 @@ class RuntimeAdapter:
     @property
     def runtime_command(self) -> tuple[str, ...]:
         node = shutil.which("node") or "node"
-        runtime = self._runtime_root / "node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/bin.js"
-        return (node, str(runtime))
+        return self._compatibility.runtime_command(self._runtime_root, node)
 
     def readiness(self) -> dict[str, Any]:
         composition_identity = self._safe_composition_identity()
@@ -359,7 +358,7 @@ class RuntimeAdapter:
             self._sessions[session_id] = record
 
         try:
-            harness.start()
+            self._compatibility.start(harness)
             with record.lock:
                 record.status = SessionStatus.READY
                 self._emit(record, "session.ready", "runtime-adapter", {"status": "ready"})
@@ -367,7 +366,7 @@ class RuntimeAdapter:
         except Exception:
             with self._lock:
                 self._sessions.pop(session_id, None)
-            harness.close()
+            self._compatibility.close(harness)
             raise
 
     def submit_prompt(
@@ -432,10 +431,18 @@ class RuntimeAdapter:
         return run.run_id
 
     def _run_prompt(self, record: RuntimeSession, run: ActiveRun, content: str) -> None:
+        runtime_session_id = record.runtime_session_id
         try:
-            result = record.harness.start_session(record.runtime_session_id).run(
+            finish_reason = self._compatibility.prompt(
+                record.harness,
+                runtime_session_id,
                 content,
-                on_notification=lambda notification: self._on_notification(record, notification),
+                lambda notification: self._on_notification(
+                    record,
+                    notification,
+                    source_run=run,
+                    source_runtime_session_id=runtime_session_id,
+                ),
             )
         except Exception as exc:
             with record.lock:
@@ -464,7 +471,7 @@ class RuntimeAdapter:
                 record.status = SessionStatus.IDLE
                 self._emit(record, "session.result.discarded", "runtime-adapter", {"reason": "soft-cancelled"})
                 return
-            if result.finish_reason in {"error", "failed"}:
+            if finish_reason in {"error", "failed"}:
                 record.status = SessionStatus.FAILED
                 self._emit(
                     record,
@@ -478,7 +485,7 @@ class RuntimeAdapter:
                     record,
                     "session.result",
                     "runtime-adapter",
-                    {"finish_reason": result.finish_reason},
+                    {"finish_reason": finish_reason},
                 )
 
     def cancel_session(self, session_id: str, mode: str) -> dict[str, Any]:
@@ -507,7 +514,7 @@ class RuntimeAdapter:
                 {"mode": mode, "persistence": "dsh-owned", "resume": "new-run-after-interrupted"},
             )
         if mode == "hard":
-            record.harness.close()
+            self._compatibility.close(record.harness)
         return self.describe_session(record)
 
     def resume_session(
@@ -537,7 +544,7 @@ class RuntimeAdapter:
             )
 
         if previous_status == SessionStatus.FAILED:
-            previous_harness.close()
+            self._compatibility.close(previous_harness)
         harness = self._build_harness(
             record.session_id,
             contained_session_path(self._session_root, runtime_session_id),
@@ -547,9 +554,9 @@ class RuntimeAdapter:
             model_resolution=record.model_resolution,
         )
         try:
-            harness.start()
+            self._compatibility.start(harness)
         except Exception:
-            harness.close()
+            self._compatibility.close(harness)
             with record.lock:
                 record.status = SessionStatus.FAILED
                 self._emit(record, "session.failed", "runtime-adapter", {"error": "resume-initialize"})
@@ -577,7 +584,7 @@ class RuntimeAdapter:
                 raise SessionConflict(f"session {session_id} has an active prompt")
             record.status = SessionStatus.CLOSED
             self._emit(record, "session.closed", "runtime-adapter", {"reason": "released"})
-        record.harness.close()
+        self._compatibility.close(record.harness)
         with self._lock:
             if self._sessions.get(session_id) is record:
                 del self._sessions[session_id]
@@ -630,7 +637,7 @@ class RuntimeAdapter:
                 record.active_run = None
                 record.status = SessionStatus.CLOSED
                 self._emit(record, "session.closed", "runtime-adapter", {"reason": "adapter-shutdown"})
-            record.harness.close()
+            self._compatibility.close(record.harness)
             with record.lock:
                 for subscriber in record.subscribers:
                     subscriber.put(None)
@@ -651,7 +658,7 @@ class RuntimeAdapter:
         owner_principal: str | None,
         workspace_id: str | None,
         model_resolution: dict[str, object],
-    ) -> DeepSeekHarness:
+    ) -> Any:
         environment = {
             "BYQ_MCP_URL": os.environ.get("BYQ_MCP_URL", "http://mcp:8300/mcp/v1"),
             "BYQ_MCP_TOKEN": os.environ.get("BYQ_MCP_TOKEN", ""),
@@ -679,17 +686,14 @@ class RuntimeAdapter:
                 environment["OPENCODE_API_KEY"] = model_api_key
             else:
                 raise ModelCredentialUnavailable("selected model provider is unavailable")
-        config = DeepSeekHarnessConfig(
+        return self._compatibility.build_harness(
             provider=str(model_resolution.get("provider") or self._provider),
             model=str(model_resolution.get("model") or self._model),
-            cordis=str(self._composition),
-            session_root=str(session_root),
-            launch_args_override=self.runtime_command,
-            env=environment,
-            request_timeout_seconds=15.0,
-            shutdown_timeout_seconds=2.0,
+            composition=self._composition,
+            session_root=session_root,
+            runtime_command=self.runtime_command,
+            environment=environment,
         )
-        return DeepSeekHarness(config=config)
 
     def _resolve_model(
         self,
@@ -744,8 +748,28 @@ class RuntimeAdapter:
             # means no personal selection and permits bootstrap fallback.
             raise ModelCredentialUnavailable("selected model binding is unavailable") from exc
 
-    def _on_notification(self, record: RuntimeSession, notification: Notification) -> None:
+    def _on_notification(
+        self,
+        record: RuntimeSession,
+        notification: object,
+        *,
+        source_run: ActiveRun | None = None,
+        source_runtime_session_id: str | None = None,
+    ) -> None:
         with record.lock:
+            if source_runtime_session_id is not None and source_runtime_session_id != record.runtime_session_id:
+                return
+            if source_run is not None and source_run is not record.active_run:
+                return
+        observation = self._compatibility.observe(
+            notification,
+            root_session_id=record.runtime_session_id,
+        )
+        with record.lock:
+            if source_runtime_session_id is not None and source_runtime_session_id != record.runtime_session_id:
+                return
+            if source_run is not None and source_run is not record.active_run:
+                return
             if record.status in {
                 SessionStatus.INTERRUPTED, SessionStatus.FAILED, SessionStatus.CLOSED,
             }:
@@ -753,15 +777,14 @@ class RuntimeAdapter:
             run = record.active_run
             runtime_activity = False
             if run is not None:
-                runtime_activity = self._observe_run_notification(
-                    record, run, notification,
+                runtime_activity = self._observe_run_observation(
+                    record, run, observation,
                 )
-            self._record_usage(record, notification)
-            events = normalize_dsh_notification(
-                notification,
+            self._record_usage(record, observation)
+            events = normalize_runtime_observation(
+                observation,
                 trace_id=record.trace_id,
                 session_id=record.session_id,
-                runtime_session_id=record.runtime_session_id,
                 sequence=record.sequence + 1,
                 state=record.normalization,
             )
@@ -827,109 +850,42 @@ class RuntimeAdapter:
         # A session owns its DSH process, so closing it cannot interrupt any
         # other Product conversation. The detached worker will discard any
         # late result and resume creates a fresh private generation.
-        failed_harness.close()
+        self._compatibility.close(failed_harness)
         return True
 
     @staticmethod
-    def _observe_run_notification(
-        record: RuntimeSession, run: ActiveRun, notification: Notification,
+    def _observe_run_observation(
+        record: RuntimeSession, run: ActiveRun, observation: RuntimeObservation,
     ) -> bool:
-        if notification.method != "session.event" or not isinstance(notification.payload, dict):
-            return False
-        notification_session_id = notification.payload.get("sessionId")
-        if not isinstance(notification_session_id, str) or not notification_session_id:
-            return False
-        raw_event = notification.payload.get("event")
-        if not isinstance(raw_event, dict):
-            return False
-        event_type = raw_event.get("type")
-        data = raw_event.get("data")
-        if not isinstance(event_type, str) or not isinstance(data, dict):
-            return False
-
-        # The SDK callback is scoped to this owned process and includes its
-        # discovered descendants. Count only known DSH execution events as
-        # private liveness; normalization below still rejects descendant and
-        # hidden content from the public WorkflowTrace boundary.
-        if event_type == "assistant/chunk":
-            chunk = data.get("chunk")
-            is_activity = (
-                isinstance(chunk, dict)
-                and chunk.get("type") in {"text-delta", "reasoning-delta"}
-                and isinstance(chunk.get("text"), str)
-                and bool(chunk["text"])
-            )
-        elif event_type in {"turn/start", "turn/end", "step/start", "step/end"}:
-            is_activity = True
-        elif event_type == "assistant/message":
-            is_activity = isinstance(data.get("message"), dict)
-        elif event_type == "tool/call":
-            call_id = data.get("callId")
-            name = data.get("name")
-            is_activity = (
-                isinstance(call_id, str) and bool(call_id)
-                and isinstance(name, str) and bool(name)
-            )
+        if observation.kind == "tool.call":
+            call_id = observation.call_id
+            name = observation.tool_name
             if (
-                notification_session_id == record.runtime_session_id
+                observation.root_session
                 and isinstance(call_id, str) and call_id
                 and isinstance(name, str)
                 and name.removeprefix("mcp__byq__").startswith("byq_delegate_")
             ):
                 run.active_subagent_calls[call_id] = time.monotonic()
-        elif event_type == "tool/result":
-            message = data.get("message")
-            content = message.get("content") if isinstance(message, dict) else None
-            is_activity = isinstance(content, list) and any(
-                isinstance(block, dict) and block.get("type") == "tool-result"
-                for block in content
-            )
-            if notification_session_id == record.runtime_session_id and isinstance(content, list):
-                for block in content:
-                    if not isinstance(block, dict) or block.get("type") != "tool-result":
-                        continue
-                    call_id = block.get("toolCallId")
-                    if isinstance(call_id, str):
-                        run.active_subagent_calls.pop(call_id, None)
-        else:
-            is_activity = False
-        return is_activity
+        elif observation.kind == "tool.result" and observation.root_session:
+            for call_id in observation.completed_call_ids:
+                run.active_subagent_calls.pop(call_id, None)
+        return observation.runtime_activity
 
-    def _record_usage(self, record: RuntimeSession, notification: Notification) -> None:
-        """Extract the documented TokenUsage shape without retaining DSH data."""
+    def _record_usage(self, record: RuntimeSession, observation: RuntimeObservation) -> None:
+        """Aggregate a bounded compatibility observation without retaining DSH data."""
 
-        if notification.method != "session.event" or not isinstance(notification.payload, dict):
+        if not observation.root_session or observation.kind != "assistant.message":
             return
-        if notification.payload.get("sessionId") != record.runtime_session_id:
-            return
-        raw_event = notification.payload.get("event")
-        if not isinstance(raw_event, dict) or raw_event.get("type") != "assistant/message":
-            return
-        data = raw_event.get("data")
-        if not isinstance(data, dict) or not isinstance(data.get("message"), dict):
-            return
-        message_id = data["message"].get("id")
-        usage = data.get("usage")
-        if not isinstance(message_id, str) or not message_id or not isinstance(usage, dict):
+        message_id = observation.message_id
+        usage = observation.usage
+        if message_id is None or not usage:
             return
         if message_id in record.usage_message_ids:
             return
-        mapping = {
-            "inputTokens": "input_tokens",
-            "outputTokens": "output_tokens",
-            "cacheReadTokens": "cache_read_tokens",
-            "cacheWriteTokens": "cache_write_tokens",
-            "reasoningTokens": "reasoning_tokens",
-        }
-        normalized: dict[str, int] = {}
-        for source, target in mapping.items():
-            value = usage.get(source, 0)
-            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 1_000_000_000:
-                return
-            normalized[target] = value
         record.usage_message_ids.add(message_id)
         with self._lock:
-            for key, value in normalized.items():
+            for key, value in usage.items():
                 self._usage_totals[key] += value
             self._usage_totals["model_calls"] += 1
 

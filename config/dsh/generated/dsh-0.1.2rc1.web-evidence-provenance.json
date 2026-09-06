@@ -9,7 +9,7 @@
   "mode": "candidate",
   "recognized_producers": [
     {
-      "attestation_sha256": "sha256:1e3f9763c784c2f1e7adead8620ee8521fee986f88003a79684ef3afefe6edab",
+      "attestation_sha256": "sha256:f3b1091d72754dc4a9bafa6c8a731d28af8abda391e4708d0984198ec6d080c3",
       "plugin_id": "web-search",
       "plugin_version": "0.1.1-rc.1",
       "qualification_state": "QUALIFIED",

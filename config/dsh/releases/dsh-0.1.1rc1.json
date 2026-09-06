@@ -21,7 +21,11 @@
   },
   "build_inputs": {
     "services/runtime-adapter/Dockerfile": "sha256:22e90e8fdb5c8d3fd6f5229407f298dc4cd6795bcd434658c9eb157864b5fbbe",
-    "services/runtime-adapter/app/runtime.py": "sha256:b7929394b0dab983a7f374f19805939d4fbe76ff4fe7b0749dd6c8d49a4cd31d",
+    "services/runtime-adapter/app/runtime.py": "sha256:afd7aab7aefd87e5ae0ab5a1c53e866629beecfeafb5d02b69bab35d1722a0b4",
+    "services/runtime-adapter/app/normalization.py": "sha256:ccb80ded8eae12dc3f3599771a5c6c9a3c33f1b08a33d9f1cf1a5c4aa9d0b70c",
+    "services/runtime-adapter/app/compat/__init__.py": "sha256:c37c734a7029e7528e3c8299b3b702987d1ae6f2c733eb998e33f8866e987bd9",
+    "services/runtime-adapter/app/compat/types.py": "sha256:2e8ffc1dce1caa4cdd99b6d80396603e67b1367192e0e84cc0abbcd62c134b75",
+    "services/runtime-adapter/app/compat/dsh_011.py": "sha256:231e72f33ca11b686f09acde19c3348cfae92b00c188a9caf6b5f68c6d3d02ca",
     "services/runtime-adapter/pyproject.toml": "sha256:c3623d6287426a44c6423929bfe19390c0e090633005a441e27a63ab710351b4",
     "services/runtime-adapter/runtime/package.json": "sha256:eb5a91967a22929e0f43b1919f60f785d02046467c5c59d4907af87385dd03bb",
     "services/runtime-adapter/runtime/package-lock.json": "sha256:c61cd5af35ab95642757ebcd20c4785ffd99e3262501383caaa2eebba3a6907a",

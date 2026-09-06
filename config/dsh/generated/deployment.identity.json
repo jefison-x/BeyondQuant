@@ -11,7 +11,7 @@
   },
   "compatibility_family": "byq-dsh-sdk-v1",
   "default_release": "dsh-0.1.1rc1",
-  "descriptor_hash": "sha256:b7473abc2d822026c461f081e162015804f8b9ba4061ad9a422cb6b794c33a75",
+  "descriptor_hash": "sha256:d465ba4ca8fa7542de7888ed40a3787c1a531de40b82e39e7480b9a7b333a351",
   "profile": {
     "composition": "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
     "composition_hash": "sha256:b8530afdc5b28ee18a132dd1616d841eaa6d803d975e7110e556183b29a214bf",
