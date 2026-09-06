@@ -140,7 +140,7 @@ try {
       limitations: ["Synthetic fixture; no external search or market-data authority."],
       usage_policy: { research_only: true, deterministic_input: false, authoritative_market_data: false },
     },
-    lineage: [], idempotency_key: "u2-mcp-provenance-contract",
+    lineage: [], idempotency_key: "u2-mcp-provenance-contract", // gitleaks:allow -- synthetic idempotency fixture, not a credential
   };
   const saved = await client.callTool({ name: "byq_web_evidence_create", arguments: evidenceArgs });
   assert.notEqual(saved.isError, true, JSON.stringify(saved));
