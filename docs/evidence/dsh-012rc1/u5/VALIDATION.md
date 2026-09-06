@@ -1,6 +1,10 @@
 # U5 DSH 0.1.2rc1 qualification
 
 Status: BLOCKED — prior preproduction qualification withdrawn. Date: 2026-09-06.
+Remediation update: isolated old/new G6 reruns and candidate Chrome MCP review
+completed; final keyless regression is running. See
+[isolation remediation](ISOLATION_REMEDIATION.md). Qualification remains withdrawn
+until the new evidence and final validation are reconciled.
 Worktree: `/home/jefison/projects/.byq-worktrees/dsh-u5-full-qualification`.
 Branch: `feat/dsh-u5-full-qualification`.
 Observed base and candidate implementation commit:

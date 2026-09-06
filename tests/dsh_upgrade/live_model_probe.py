@@ -7,10 +7,29 @@ import argparse
 import http.cookiejar
 import json
 import os
+from pathlib import Path
+import subprocess
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+try:
+    from .live_stack import preflight, compose_environment
+except ImportError:
+    from live_stack import preflight, compose_environment
+
+
+def fake_hub_evidence(container: str) -> dict:
+    # The fake Hub has no external network or published port. Only the
+    # trusted test operator reads bounded counters inside its exact container.
+    value = json.loads(subprocess.check_output([
+        "docker", "exec", container, "python3", "-c",
+        "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8800/evidence', timeout=5).read().decode())",
+    ], env=compose_environment(), text=True, timeout=10))
+    if value.get("schema_version") != "byq-u5-fake-hub.v1" or value.get("published") != 0:
+        raise AssertionError("isolated fake Hub identity is invalid")
+    return value
 
 
 PROMPTS = {
@@ -61,8 +80,7 @@ class Client:
             with self.opener.open(request, timeout=30) as response:
                 body = json.loads(response.read() or b"{}")
         except urllib.error.HTTPError as error:
-            detail = json.loads(error.read() or b"{}")
-            raise AssertionError(f"{method} {path} failed with {error.code}: {detail}") from error
+            raise AssertionError(f"{method} {path} failed with HTTP {error.code}") from error
         if not isinstance(body, dict):
             raise AssertionError(f"{method} {path} returned a non-object")
         return body
@@ -145,10 +163,20 @@ def main() -> None:
     parser.add_argument("--session-id")
     parser.add_argument("--release", required=True)
     parser.add_argument("--approve", action="store_true")
+    parser.add_argument("--approval-delay-seconds", type=int, choices=range(121), default=0,
+                        help="bounded pause before auto-approval for local Chrome UI review (0-120)")
+    parser.add_argument("--stack-file", type=Path, required=True)
     args = parser.parse_args()
+    isolated = preflight(args.stack_file)
+    if args.release != isolated["release"]:
+        raise AssertionError("probe release differs from the verified stack")
+    username = os.environ.get("BYQ_U5_USERNAME", "u5-admin")
+    if username not in {"u5-admin", "u5-g3b", "u5-g3c"}:
+        raise AssertionError("only fixed synthetic users are allowed")
+    hub_before = fake_hub_evidence(isolated["fake_hub_container"])
     client = Client(
-        os.environ.get("BYQ_U5_BASE_URL", "http://127.0.0.1:18110"),
-        os.environ.get("BYQ_U5_USERNAME", "u5-admin"),
+        isolated["gateway"],
+        username,
         os.environ.get("BYQ_U5_PASSWORD", "U5AdminTestOnly123"),
     )
     before_artifacts = research_artifacts(client)
@@ -177,7 +205,10 @@ def main() -> None:
     answer = ""
     completed = False
     while time.monotonic() < deadline:
-        if args.approve:
+        if args.approve and time.monotonic() - started >= args.approval_delay_seconds:
+            # Verify immutable container environment and actual network
+            # attachments again before approving any domain-side submission.
+            preflight(args.stack_file)
             approvals += approve_for_session(client, session_id, seen)
         replay = client.call("GET", f"/v1/agent/sessions/{urllib.parse.quote(session_id)}")
         answers = assistant_messages(replay)
@@ -232,6 +263,15 @@ def main() -> None:
             raise AssertionError("G4 Web Research Evidence sources are not URL-bearing")
     if args.scenario == "G6" and after["feedback"] != before["feedback"] + 1:
         raise AssertionError("G6 did not submit exactly one feedback item")
+    hub_after = fake_hub_evidence(isolated["fake_hub_container"])
+    if args.scenario == "G6":
+        relay_deadline = time.monotonic() + 30
+        while hub_after["received"] == hub_before["received"] and time.monotonic() < relay_deadline:
+            time.sleep(1)
+            hub_after = fake_hub_evidence(isolated["fake_hub_container"])
+        if hub_after["received"] != hub_before["received"] + 1:
+            raise AssertionError("G6 requires exactly one real relay delivery to the isolated fake Hub")
+    preflight(args.stack_file)
     print(json.dumps({
         "schema_version": "dsh-u5-live-model-result.v1",
         "release": args.release,
@@ -242,8 +282,11 @@ def main() -> None:
         "source_url_present": "http://" in answer or "https://" in answer,
         "approvals": approvals,
         "continuation_retries": continuation_retries,
+        "approval_delay_seconds": args.approval_delay_seconds,
         "before": before,
         "after": after,
+        "fake_hub_before": hub_before,
+        "fake_hub_after": hub_after,
         "result": "PASS",
     }, ensure_ascii=False, sort_keys=True))
 
