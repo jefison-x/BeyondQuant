@@ -157,3 +157,12 @@ the namespace assertion is unchanged. Root 190/190 passed after diagnostic
 retention was added; targeted eight rehearsal tests passed after the startup fix.
 New diagnostic scope `byq-u5-u6-s1nwh9l-` is executing G3. Production core services
 remain healthy on the old version; backup filesystem has about 72 GiB available.
+
+Draft PR #258 was created from commit `9441bee`; remote contribution check passed,
+full CI is pending. No ready/auto-merge action was taken. The independent G3 public
+answer subsequently completed only a validated ML draft, with zero approvals;
+see MODEL_REVIEW.md. This fails the required approval-continuation coverage even
+though draft creation itself is correctly ungated. The fixed paid-prompt scope
+must not be silently expanded to force an approval. A precise G3 clarification
+requires maintainer confirmation; production and U8 remain unchanged. The bounded
+diagnostic runner still awaits its deadline/cleanup, not marked fully complete.
