@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import json
 import re
@@ -32,6 +33,32 @@ BUNDLED_CARRIER_KEYS = {
     "kind", "profile", "entrypoint", "source_tag", "source_commit",
     "source_archive_sha256", "source_manifest_sha256", "bundled_package_count"
 }
+QUALIFICATION_EVIDENCE_PATH = (
+    ROOT / "docs/evidence/dsh-012rc1/u5/qualification-evidence.json"
+)
+QUALIFICATION_KEYS = {
+    "schema_version", "release_id", "baseline_release_id", "git_commit",
+    "image_digest", "artifact_hashes", "composition_hash", "policy_hash",
+    "started_at", "finished_at", "platform",
+    "provider_model_metadata_without_secrets", "checks", "metrics",
+    "capability_diff", "dependency_diff", "limitations", "threshold_exceptions",
+    "qualification_scope",
+}
+QUALIFICATION_CHECK_KEYS = {
+    "id", "layer", "result", "test_name", "evidence_reference", "failure_category",
+}
+QUALIFICATION_RESULTS = {"PASS", "FAIL", "BLOCKED", "NOT_RUN"}
+QUALIFICATION_SCOPES = {"keyless", "preproduction", "production-observed"}
+QUALIFICATION_ARTIFACT_KEYS = {
+    "candidate_descriptor", "baseline_descriptor", "candidate_identity",
+}
+QUALIFICATION_PROVIDER_KEYS = {"provider", "model", "protocol", "runs"}
+SECRET_LIKE = re.compile(
+    r"(?i)(bearer\s+\S+|-----BEGIN [A-Z ]*PRIVATE KEY|sk-[a-z0-9_-]{8,})"
+)
+SECRET_KEY_NAME = re.compile(
+    r"(?i)(?:^|[_-])(?:api[_-]?key|access[_-]?token|password|secret|credential)(?:$|[_-])"
+)
 
 
 class ReleaseError(ValueError):
@@ -245,14 +272,222 @@ def write_new_output(output: Path, filename: str, content: str) -> None:
         raise
 
 
+def _number(value: object, message: str) -> float:
+    _require(not isinstance(value, bool) and isinstance(value, (int, float)), message)
+    number = float(value)
+    _require(number >= 0, message)
+    return number
+
+
+def _timestamp(value: object, field: str) -> dt.datetime:
+    _require(isinstance(value, str) and value.endswith("Z"), f"invalid {field}")
+    try:
+        parsed = dt.datetime.fromisoformat(value.removesuffix("Z") + "+00:00")
+    except ValueError as exc:
+        raise ReleaseError(f"invalid {field}") from exc
+    return parsed
+
+
+def validate_qualification_evidence(
+    value: dict[str, Any], *, release_id: str, baseline_release_id: str,
+) -> None:
+    _require(set(value) == QUALIFICATION_KEYS, "qualification evidence has invalid closed schema")
+    _require(value["schema_version"] == "dsh-qualification-evidence.v1",
+             "unknown qualification evidence schema")
+    _require(
+        value["release_id"] == release_id and value["baseline_release_id"] == baseline_release_id,
+        "qualification release identity mismatch",
+    )
+    _require(re.fullmatch(r"[0-9a-f]{40}", str(value["git_commit"])) is not None,
+             "invalid qualification Git commit")
+    for field in ("image_digest", "composition_hash", "policy_hash"):
+        _require(isinstance(value[field], str) and SHA256.fullmatch(value[field]) is not None,
+                 f"invalid qualification {field}")
+    _, releases = load_all()
+    candidate_release = releases[release_id]
+    baseline_release = releases[baseline_release_id]
+    _require(value["composition_hash"] == candidate_release["profile"]["composition_hash"],
+             "qualification composition hash does not match candidate release")
+    policy_path = CONFIG_ROOT / "generated" / f"{release_id}.web-evidence-provenance.json"
+    _require(policy_path.is_file() and value["policy_hash"] == digest(policy_path),
+             "qualification policy hash does not match generated provenance policy")
+    artifact_hashes = value["artifact_hashes"]
+    _require(isinstance(artifact_hashes, dict)
+             and set(artifact_hashes) == QUALIFICATION_ARTIFACT_KEYS,
+             "qualification artifact hashes have invalid closed schema")
+    _require(all(isinstance(name, str) and name and isinstance(digest_value, str)
+                 and SHA256.fullmatch(digest_value) is not None
+                 for name, digest_value in artifact_hashes.items()),
+             "invalid qualification artifact hash")
+    _require(artifact_hashes["candidate_descriptor"] == digest(RELEASE_ROOT / f"{release_id}.json")
+             and artifact_hashes["baseline_descriptor"] == digest(RELEASE_ROOT / f"{baseline_release_id}.json")
+             and artifact_hashes["candidate_identity"] == digest(candidate_output_path(release_id)),
+             "qualification artifact hashes do not match registered release files")
+    started = _timestamp(value["started_at"], "started_at")
+    finished = _timestamp(value["finished_at"], "finished_at")
+    _require(finished >= started, "qualification finish precedes start")
+    platform = value["platform"]
+    _require(isinstance(platform, dict) and set(platform) == {"os", "arch"}
+             and all(isinstance(item, str) and item for item in platform.values()),
+             "invalid qualification platform")
+    scope = value["qualification_scope"]
+    _require(scope in QUALIFICATION_SCOPES, "invalid qualification scope")
+    checks = value["checks"]
+    _require(isinstance(checks, list) and len(checks) == 40,
+             "qualification checks must contain exactly T01-T40")
+    expected_ids = [f"T{number:02d}" for number in range(1, 41)]
+    _require([item.get("id") if isinstance(item, dict) else None for item in checks] == expected_ids,
+             "qualification checks must contain exactly T01-T40 in order")
+    for item in checks:
+        _require(set(item) == QUALIFICATION_CHECK_KEYS,
+                 f"{item.get('id', 'unknown')} has invalid closed schema")
+        _require(isinstance(item["layer"], str)
+                 and re.fullmatch(r"L[0-4](?:[+/]L[0-4])*", item["layer"]) is not None,
+                 f"{item['id']} has invalid evidence layer")
+        _require(item["result"] in QUALIFICATION_RESULTS,
+                 f"{item['id']} has invalid result")
+        _require(isinstance(item["test_name"], str) and bool(item["test_name"]),
+                 f"{item['id']} test name is required")
+        _require(isinstance(item["evidence_reference"], str)
+                 and bool(item["evidence_reference"])
+                 and not Path(item["evidence_reference"].split("#", 1)[0]).is_absolute()
+                 and ".." not in Path(item["evidence_reference"].split("#", 1)[0]).parts,
+                 f"{item['id']} evidence reference must be repository-relative")
+        evidence_path = ROOT / item["evidence_reference"].split("#", 1)[0]
+        _require(evidence_path.is_file(), f"{item['id']} evidence reference does not exist")
+        if item["result"] == "PASS":
+            _require(item["failure_category"] is None,
+                     f"{item['id']} PASS cannot have a failure category")
+        else:
+            _require(isinstance(item["failure_category"], str)
+                     and bool(item["failure_category"]),
+                     f"{item['id']} non-PASS requires a failure category")
+    pass_through = {"keyless": 30, "preproduction": 37, "production-observed": 40}[scope]
+    _require(all(item["result"] == "PASS" for item in checks[:pass_through]),
+             f"{scope} qualification requires T01-T{pass_through:02d} PASS")
+    if scope != "production-observed":
+        _require(all(item["result"] == "NOT_RUN" for item in checks[pass_through:]),
+                 f"{scope} qualification requires T{pass_through + 1:02d}-T40 NOT_RUN")
+    for field in (
+        "provider_model_metadata_without_secrets", "capability_diff", "dependency_diff",
+        "limitations", "threshold_exceptions",
+    ):
+        _require(isinstance(value[field], list), f"qualification {field} must be an array")
+    if scope in {"preproduction", "production-observed"}:
+        _require(bool(value["provider_model_metadata_without_secrets"]),
+                 "credentialed qualification requires provider/model metadata")
+    for provider in value["provider_model_metadata_without_secrets"]:
+        _require(isinstance(provider, dict) and set(provider) == QUALIFICATION_PROVIDER_KEYS,
+                 "provider/model metadata has invalid closed schema")
+        _require(all(isinstance(provider[field], str) and provider[field]
+                     for field in ("provider", "model", "protocol"))
+                 and isinstance(provider["runs"], int) and provider["runs"] > 0,
+                 "provider/model metadata is invalid")
+    metrics = value["metrics"]
+    _require(isinstance(metrics, dict) and set(metrics) == {
+        "raw_sample_counts", "timing_summary", "peak_rss_mib", "cleanup_counts"
+    }, "qualification metrics have invalid closed schema")
+    samples = metrics["raw_sample_counts"]
+    _require(isinstance(samples, dict), "qualification sample counts are required")
+    if pass_through >= 37:
+        _require(_number(samples.get("baseline_l1"), "baseline sample count is invalid") >= 10
+                 and _number(samples.get("candidate_l1"), "candidate sample count is invalid") >= 10
+                 and _number(samples.get("lifecycle_cycles"), "lifecycle sample count is invalid") >= 20,
+                 "qualification performance/lifecycle sample counts are insufficient")
+    timing = metrics["timing_summary"]
+    _require(isinstance(timing, dict), "qualification timing summary is required")
+    baseline_time = _number(timing.get("baseline_median_seconds"), "baseline latency is invalid")
+    candidate_time = _number(timing.get("candidate_median_seconds"), "candidate latency is invalid")
+    latency_threshold = baseline_time * 1.2 + 1.0
+    rss = metrics["peak_rss_mib"]
+    _require(isinstance(rss, dict), "qualification RSS summary is required")
+    baseline_rss = _number(rss.get("baseline"), "baseline RSS is invalid")
+    candidate_rss = _number(rss.get("candidate"), "candidate RSS is invalid")
+    rss_threshold = baseline_rss * 1.2 + 32.0
+    if pass_through >= 37:
+        exceeded = {}
+        if candidate_time > latency_threshold:
+            exceeded["median_latency_seconds"] = (candidate_time, latency_threshold)
+        if candidate_rss > rss_threshold:
+            exceeded["peak_rss_mib"] = (candidate_rss, rss_threshold)
+        exceptions = value["threshold_exceptions"]
+        _require(len(exceptions) == len(exceeded),
+                 "every exceeded performance threshold requires one explicit exception")
+        seen: set[str] = set()
+        for exception in exceptions:
+            _require(isinstance(exception, dict) and set(exception) == {
+                "metric", "observed", "threshold", "reason"
+            }, "performance threshold exception has invalid closed schema")
+            metric = exception["metric"]
+            _require(metric in exceeded and metric not in seen,
+                     "performance threshold exception does not match an exceeded metric")
+            observed, threshold = exceeded[metric]
+            _require(abs(_number(exception["observed"], "exception observed value is invalid") - observed) < 0.001
+                     and abs(_number(exception["threshold"], "exception threshold is invalid") - threshold) < 0.001,
+                     "performance threshold exception values do not match evidence")
+            _require(isinstance(exception["reason"], str) and len(exception["reason"].strip()) >= 40,
+                     "performance threshold exception requires a specific reason")
+            seen.add(metric)
+    cleanup = metrics["cleanup_counts"]
+    _require(isinstance(cleanup, dict) and set(cleanup) == {
+        "containers", "networks", "volumes", "owned_processes"
+    }, "qualification cleanup counts have invalid closed schema")
+    _require(all(_number(amount, "cleanup count is invalid") == 0 for amount in cleanup.values()),
+             "qualification cleanup counts must be zero")
+    serialized = json.dumps(value, ensure_ascii=False)
+    _require(SECRET_LIKE.search(serialized) is None,
+             "qualification evidence contains secret-like material")
+    def contains_secret_key(item: object) -> bool:
+        if isinstance(item, dict):
+            return any(SECRET_KEY_NAME.search(str(key)) or contains_secret_key(nested)
+                       for key, nested in item.items())
+        if isinstance(item, list):
+            return any(contains_secret_key(nested) for nested in item)
+        return False
+    _require(not contains_secret_key(value),
+             "qualification evidence contains a secret-bearing field name")
+
+
+def render_qualification_report(
+    release_id: str, baseline_release_id: str, evidence: dict[str, Any],
+) -> str:
+    deployment, releases = load_all()
+    _require(release_id in deployment["candidate_releases"],
+             "qualification release must be a registered candidate")
+    _require(baseline_release_id == deployment["default_release"]
+             and baseline_release_id in releases,
+             "qualification baseline must be the current default release")
+    validate_qualification_evidence(
+        evidence, release_id=release_id, baseline_release_id=baseline_release_id,
+    )
+    report = {
+        **evidence,
+        "schema_version": "dsh-qualification-report.v1",
+        "qualification_state": "QUALIFIED",
+    }
+    return json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("inspect", "generate", "check"))
+    parser.add_argument("command", choices=("inspect", "generate", "check", "qualify"))
     parser.add_argument("--release", help="exact registered release id")
+    parser.add_argument("--baseline", help="exact registered baseline release id")
     parser.add_argument("--output", type=Path, help="new output directory")
     args = parser.parse_args()
     deployment, releases = load_all()
-    if args.command == "inspect":
+    if args.command == "qualify":
+        if not args.release or not args.baseline or args.output is None:
+            parser.error("qualify requires --release, --baseline and --output")
+        evidence = load_json(QUALIFICATION_EVIDENCE_PATH)
+        write_new_output(
+            args.output,
+            "qualification-report.json",
+            render_qualification_report(args.release, args.baseline, evidence),
+        )
+    elif args.baseline is not None:
+        parser.error("--baseline is only valid with qualify")
+    elif args.command == "inspect":
         if not args.release or args.output is None:
             parser.error("inspect requires --release and --output")
         write_new_output(

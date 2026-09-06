@@ -1,6 +1,6 @@
 {
   "active_producer": {
-    "attestation_sha256": "sha256:da85caa3b7c463d609fc039bac6516a62d9a60736616f7a87cec3e66cc40abb1",
+    "attestation_sha256": "sha256:a5cc7ede332f1c182f4ff8d2936246c4f3ec4c8ffa0af60930ddd34a68a0322d",
     "plugin_id": "web-search",
     "plugin_version": "0.1.2-rc.1",
     "qualification_state": "CANDIDATE",
@@ -16,7 +16,7 @@
       "release_id": "dsh-0.1.1rc1"
     },
     {
-      "attestation_sha256": "sha256:da85caa3b7c463d609fc039bac6516a62d9a60736616f7a87cec3e66cc40abb1",
+      "attestation_sha256": "sha256:a5cc7ede332f1c182f4ff8d2936246c4f3ec4c8ffa0af60930ddd34a68a0322d",
       "plugin_id": "web-search",
       "plugin_version": "0.1.2-rc.1",
       "qualification_state": "CANDIDATE",

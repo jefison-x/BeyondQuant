@@ -1,0 +1,395 @@
+{
+  "artifact_hashes": {
+    "baseline_descriptor": "sha256:646077dfd55f83933fab9c99e28ba3ee53cbb2c9fa1daee5d1ad51194f5adc8a",
+    "candidate_descriptor": "sha256:ee565e5050ded55cdce2ac9e6fb4bc17a11c60926e9838f526b4eead03bd4724",
+    "candidate_identity": "sha256:da13cd3928bbd82a85aa7e21036f990a5a3cf67ec29d902ea61eaf31c1c3713d"
+  },
+  "baseline_release_id": "dsh-0.1.1rc1",
+  "capability_diff": [
+    "Candidate uses the official bundled executable while preserving the five BYQ delegates and approved MCP-only role ceilings.",
+    "No Product API, public WorkflowTrace vocabulary, approval semantics or default deployment capability changed."
+  ],
+  "checks": [
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u1/VALIDATION.md",
+      "failure_category": null,
+      "id": "T01",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "release descriptor, lock and artifact verification"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u1/VALIDATION.md",
+      "failure_category": null,
+      "id": "T02",
+      "layer": "L0",
+      "result": "PASS",
+      "test_name": "closed release/deployment schema tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u1/VALIDATION.md",
+      "failure_category": null,
+      "id": "T03",
+      "layer": "L0",
+      "result": "PASS",
+      "test_name": "deterministic release generator drift tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u1/VALIDATION.md",
+      "failure_category": null,
+      "id": "T04",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "complete prerelease dependency closure checks"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u4/VALIDATION.md",
+      "failure_category": null,
+      "id": "T05",
+      "layer": "L1",
+      "result": "PASS",
+      "test_name": "installed SDK, carrier and package metadata checks"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u1/VALIDATION.md",
+      "failure_category": null,
+      "id": "T06",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "registry evidence and active-tool binding tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
+      "failure_category": null,
+      "id": "T07",
+      "layer": "L1/L2",
+      "result": "PASS",
+      "test_name": "isolated candidate identity and zero-resource cleanup"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u2/VALIDATION.md",
+      "failure_category": null,
+      "id": "T08",
+      "layer": "L0/L2",
+      "result": "PASS",
+      "test_name": "legacy web-evidence compatibility tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u2/VALIDATION.md",
+      "failure_category": null,
+      "id": "T09",
+      "layer": "L0/L1/L2",
+      "result": "PASS",
+      "test_name": "candidate provenance producer binding tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u2/VALIDATION.md",
+      "failure_category": null,
+      "id": "T10",
+      "layer": "L2",
+      "result": "PASS",
+      "test_name": "rolling provenance policy compatibility tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u2/VALIDATION.md",
+      "failure_category": null,
+      "id": "T11",
+      "layer": "L0/L2",
+      "result": "PASS",
+      "test_name": "web-evidence validation and atomic rollback tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u4/VALIDATION.md",
+      "failure_category": null,
+      "id": "T12",
+      "layer": "L1",
+      "result": "PASS",
+      "test_name": "real SDK start, initialize, prompt and close tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u3/VALIDATION.md",
+      "failure_category": null,
+      "id": "T13",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "single-active-run and idempotency tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u3/VALIDATION.md",
+      "failure_category": null,
+      "id": "T14",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "private progress quiet-window regression tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u3/VALIDATION.md",
+      "failure_category": null,
+      "id": "T15",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "no-progress ownership and public failure tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u3/VALIDATION.md",
+      "failure_category": null,
+      "id": "T16",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "child lifecycle and timeout isolation tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u3/VALIDATION.md",
+      "failure_category": null,
+      "id": "T17",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "trusted descendant activity filtering tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u3/VALIDATION.md",
+      "failure_category": null,
+      "id": "T18",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "whole-run deadline and terminal race tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u3/VALIDATION.md",
+      "failure_category": null,
+      "id": "T19",
+      "layer": "L0/L1/L2",
+      "result": "PASS",
+      "test_name": "bounded public root-only projection tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u3/VALIDATION.md",
+      "failure_category": null,
+      "id": "T20",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "failure and truncation normalization tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u3/VALIDATION.md",
+      "failure_category": null,
+      "id": "T21",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "receipt, attribution and usage deduplication tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u3/VALIDATION.md",
+      "failure_category": null,
+      "id": "T22",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "cancel, crash and bounded cleanup tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u4/VALIDATION.md",
+      "failure_category": null,
+      "id": "T23",
+      "layer": "L1",
+      "result": "PASS",
+      "test_name": "actual candidate root and child roster inspection"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
+      "failure_category": null,
+      "id": "T24",
+      "layer": "L1/L2",
+      "result": "PASS",
+      "test_name": "five real delegate role and cross-role denial journeys"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u4/VALIDATION.md",
+      "failure_category": null,
+      "id": "T25",
+      "layer": "L1/L2",
+      "result": "PASS",
+      "test_name": "real MCP authentication fail-closed test"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u4/VALIDATION.md",
+      "failure_category": null,
+      "id": "T26",
+      "layer": "L1",
+      "result": "PASS",
+      "test_name": "Guard, compaction and fetch-disable qualification"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u4/VALIDATION.md",
+      "failure_category": null,
+      "id": "T27",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "trusted Asia/Shanghai time and fixed skill-root tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u4/VALIDATION.md",
+      "failure_category": null,
+      "id": "T28",
+      "layer": "L1/L2",
+      "result": "PASS",
+      "test_name": "provider route and credential isolation tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u4/VALIDATION.md",
+      "failure_category": null,
+      "id": "T29",
+      "layer": "L0/L1/L2",
+      "result": "PASS",
+      "test_name": "contained home and read-only source boundary tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u4/VALIDATION.md",
+      "failure_category": null,
+      "id": "T30",
+      "layer": "L1/L2",
+      "result": "PASS",
+      "test_name": "telemetry disablement and sentinel non-disclosure tests"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
+      "failure_category": null,
+      "id": "T31",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "bounded live-model backtest analysis, three samples per release"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
+      "failure_category": null,
+      "id": "T32",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "minimal ML object set and authoritative status, three samples per release"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
+      "failure_category": null,
+      "id": "T33",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "real approval record and continued conversation, three samples per release"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
+      "failure_category": null,
+      "id": "T34",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "runtime-only restart and durable session recovery, three samples per release"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
+      "failure_category": null,
+      "id": "T35",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "traceable Web evidence and approval-gated internal feedback"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
+      "failure_category": null,
+      "id": "T36",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "real Product API browser flows and truthful normalized projection"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
+      "failure_category": null,
+      "id": "T37",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "old/new live timing, lifecycle, RSS and retained failure comparison"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
+      "failure_category": "later_stage",
+      "id": "T38",
+      "layer": "L2",
+      "result": "NOT_RUN",
+      "test_name": "U5 live-model or later-stage gate"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
+      "failure_category": "later_stage",
+      "id": "T39",
+      "layer": "L2",
+      "result": "NOT_RUN",
+      "test_name": "U5 live-model or later-stage gate"
+    },
+    {
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
+      "failure_category": "later_stage",
+      "id": "T40",
+      "layer": "L4",
+      "result": "NOT_RUN",
+      "test_name": "U5 live-model or later-stage gate"
+    }
+  ],
+  "composition_hash": "sha256:e584cee23c7e39ffaaf7d4c583d4762556032b4d4d173285c14c038d98ec6f98",
+  "dependency_diff": [
+    "deepseek-harness-sdk 0.1.1rc1 -> 0.1.2rc1",
+    "deepseek-harness-runtime-bin 0.1.1rc1 -> 0.1.2rc1",
+    "npm explicit CLI carrier -> official Python bundled executable carrier"
+  ],
+  "finished_at": "2026-09-06T08:40:47Z",
+  "git_commit": "ce6493f006d9b857f38d81306bbccfcff1a8fbe4",
+  "image_digest": "sha256:42cc13bec3fceaa72131a4af08006f7786f2c55dd25ec5705411527f30f60aff",
+  "limitations": [
+    "OpenCode routes have deterministic protocol coverage but no credential configured in this environment.",
+    "T38-T40 remain reserved for rollout rehearsal and production observation.",
+    "Approval continuations needed one bounded retry after the initial answer was durable; no duplicate approvals, training runs, predictions or feedback items were created."
+  ],
+  "metrics": {
+    "cleanup_counts": {
+      "containers": 0,
+      "networks": 0,
+      "owned_processes": 0,
+      "volumes": 0
+    },
+    "peak_rss_mib": {
+      "baseline": 205.527,
+      "candidate": 279.895
+    },
+    "raw_sample_counts": {
+      "baseline_l1": 20,
+      "candidate_l1": 20,
+      "lifecycle_cycles": 40
+    },
+    "timing_summary": {
+      "baseline_median_seconds": 0.556149,
+      "candidate_median_seconds": 0.837117
+    }
+  },
+  "platform": {
+    "arch": "x86_64",
+    "os": "linux"
+  },
+  "policy_hash": "sha256:2bd150b24423e42bdedb07ac9f2a4496af16f0258bf35e0acadaedea4c0c9103",
+  "provider_model_metadata_without_secrets": [
+    {
+      "model": "deepseek-v4-flash",
+      "protocol": "openai-completions",
+      "provider": "deepseek-official",
+      "runs": 25
+    }
+  ],
+  "qualification_scope": "preproduction",
+  "qualification_state": "QUALIFIED",
+  "release_id": "dsh-0.1.2rc1",
+  "schema_version": "dsh-qualification-report.v1",
+  "started_at": "2026-09-06T06:30:00Z",
+  "threshold_exceptions": [
+    {
+      "metric": "peak_rss_mib",
+      "observed": 279.895,
+      "reason": "The official bundled runtime main process accounts for the bounded 1.263 MiB excess; Adapter child memory and all lifecycle cleanup checks remained stable and zero.",
+      "threshold": 278.6324
+    }
+  ]
+}

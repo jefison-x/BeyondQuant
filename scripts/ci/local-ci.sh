@@ -136,6 +136,11 @@ CI_BACKEND_TEST="byq-ci-backend-test-$BYQ_CI_SCOPE"
 CI_GATEWAY_TEST="byq-ci-gateway-test-$BYQ_CI_SCOPE"
 CI_RUNTIME_TEST="byq-ci-runtime-test-$BYQ_CI_SCOPE"
 CI_MCP_TEST="byq-ci-mcp-test-$BYQ_CI_SCOPE"
+CI_MCP_SERVER="byq-ci-mcp-server-$BYQ_CI_SCOPE"
+CI_CANDIDATE_TEST="byq-ci-runtime-candidate-test-$BYQ_CI_SCOPE"
+CI_CANDIDATE_VOL="byq-ci-runtime-candidate-data-$BYQ_CI_SCOPE"
+CI_BASELINE_BENCH_VOL="byq-ci-runtime-baseline-bench-$BYQ_CI_SCOPE"
+CI_CANDIDATE_BENCH_VOL="byq-ci-runtime-candidate-bench-$BYQ_CI_SCOPE"
 RESOURCES_TOUCHED=0
 ACTIVE_CHILD_PID=""
 HEAVY_LOCK_HELD=0
@@ -233,6 +238,26 @@ ensure_ci_backend() {
     sleep 1
   done
   docker logs "$CI_BACKEND" >&2 || true
+  return 1
+}
+ensure_ci_mcp() {
+  ensure_clean_postgres || return 1
+  ensure_ci_backend || return 1
+  RESOURCES_TOUCHED=1
+  if ! docker inspect "$CI_MCP_SERVER" >/dev/null 2>&1; then
+    docker run -d --name "$CI_MCP_SERVER" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
+      --network "$CI_PG_NET" --network-alias mcp \
+      -e BYQ_MCP_TOKEN=ci-mcp-test-only -e BYQ_BACKEND_URL=http://backend:8000 \
+      -e BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/app/dsh-0.1.2rc1.web-evidence-provenance.json \
+      "$(ci_image mcp)" >/dev/null
+  fi
+  for _ in $(seq 1 30); do
+    docker exec "$CI_MCP_SERVER" node -e \
+      "fetch('http://127.0.0.1:8300/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" \
+      >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  docker logs "$CI_MCP_SERVER" >&2 || true
   return 1
 }
 prepare_ci_compose_env() {
@@ -417,6 +442,46 @@ check_runtime() {
     ok "runtime-adapter tests"; else bad "runtime-adapter tests"; fi
 }
 
+check_dsh_candidate() {
+  step "runtime-adapter: real 0.1.2rc1 candidate qualification"
+  ensure_ci_mcp || { bad "candidate live MCP dependency"; return; }
+  RESOURCES_TOUCHED=1
+  candidate_image="$(ci_image runtime-candidate)"
+  if ! run_interruptible docker build -f services/runtime-adapter/Dockerfile.candidate \
+      -t "$candidate_image" .; then
+    bad "candidate image build"; return
+  fi
+  printf '    candidate image identity -> tag=%s id=' "$candidate_image"
+  docker image inspect "$candidate_image" --format '{{.Id}}' || { bad "candidate image identity"; return; }
+  for volume in "$CI_CANDIDATE_VOL" "$CI_BASELINE_BENCH_VOL" "$CI_CANDIDATE_BENCH_VOL"; do
+    docker volume create --label "byq.ci.scope=$BYQ_CI_SCOPE" "$volume" >/dev/null
+  done
+  common=(--rm --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET"
+    -e BYQ_MCP_TOKEN=ci-mcp-test-only -e BYQ_MCP_URL="http://$CI_MCP_SERVER:8300/mcp/v1"
+    -e BYQ_OWNER_PRINCIPAL=ci-candidate -e BYQ_ACTOR_PRINCIPAL=ci-candidate
+    -e BYQ_WORKSPACE_ID=ci-candidate -e PYTHONDONTWRITEBYTECODE=1)
+  if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
+      -e BYQ_DSH_REAL_PROCESS_TEST=1 -v "$CI_CANDIDATE_VOL:/var/lib/byq/dsh-sessions" \
+      -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$candidate_image" \
+      python3 -m pytest -q -p no:cacheprovider \
+      /app/tests/test_dsh_012_real_process.py /qualification/test_candidate_journeys.py; then
+    bad "candidate real-process/delegate journeys"; return
+  fi
+  if ! run_interruptible docker run --name "$CI_RUNTIME_TEST" "${common[@]}" \
+      -v "$CI_BASELINE_BENCH_VOL:/var/lib/byq/dsh-sessions" \
+      -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$(ci_image runtime-adapter)" \
+      python3 /qualification/runtime_benchmark.py; then
+    bad "baseline lifecycle benchmark"; return
+  fi
+  if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
+      -e BYQ_DSH_REAL_PROCESS_TEST=1 -v "$CI_CANDIDATE_BENCH_VOL:/var/lib/byq/dsh-sessions" \
+      -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$candidate_image" \
+      python3 /qualification/runtime_benchmark.py; then
+    bad "candidate lifecycle benchmark"; return
+  fi
+  ok "candidate real-process, five delegates and old/new lifecycle benchmarks"
+}
+
 check_mcp() {
   step "mcp: npm test (tsc build + in-container server + contract tests)"
   ensure_clean_postgres || { bad "clean postgres for MCP"; return; }
@@ -585,6 +650,7 @@ if want backend; then
 fi
 want gateway && check_gateway
 want runtime && check_runtime
+[ "$integration" = yes ] && want runtime && check_dsh_candidate
 want mcp && check_mcp
 want frontend && check_frontend
 [ "$WITH_SMOKE" -eq 1 ] && check_smoke

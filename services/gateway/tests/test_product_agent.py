@@ -390,3 +390,95 @@ def test_restore_accepts_an_adapter_session_that_survived_gateway_restart(monkey
 
     assert restored.session_id == "runtime-private"
     assert collectors == ["runtime-private"]
+
+
+def test_resume_rehydrates_when_only_runtime_adapter_restarted(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
+    principal = main.Principal(subject=main.PRODUCT_PRINCIPAL)
+    session = main.ProductSession(
+        conversation_id="conversation_1", session_id="runtime-private", trace_id="trace-1",
+        principal=principal, workspace_id="workspace_bootstrap_unresolved",
+    )
+    main.product_sessions.add(session)
+    monkeypatch.setattr(main, "_catalog_request", lambda *_args, **_kwargs: {
+        "conversation": {
+            "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
+            "trace_id": "trace-1", "status": "active",
+        },
+        "messages": [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "answer"},
+        ],
+    })
+    calls: list[str] = []
+
+    def adapter(path, **_kwargs):
+        calls.append(path)
+        if calls == ["/internal/runtime/sessions/runtime-private/resume"]:
+            raise main.HTTPException(status_code=404, detail="lost")
+        return {"status": "ready", "resumed_from_run_id": None}
+
+    monkeypatch.setattr(main, "_adapter_post", adapter)
+    monkeypatch.setattr(main, "_start_trace_collector", lambda _session: None)
+    response = TestClient(main.app).post(
+        "/v1/agent/sessions/conversation_1/resume",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+    )
+    assert response.status_code == 200
+    assert calls == [
+        "/internal/runtime/sessions/runtime-private/resume",
+        "/internal/runtime/sessions",
+        "/internal/runtime/sessions/runtime-private/resume",
+    ]
+
+
+def test_turn_rehydrates_after_runtime_loss_without_duplicating_user_message(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
+    principal = main.Principal(subject=main.PRODUCT_PRINCIPAL)
+    main.product_sessions.add(main.ProductSession(
+        conversation_id="conversation_1", session_id="runtime-private", trace_id="trace-1",
+        principal=principal, workspace_id="workspace_bootstrap_unresolved",
+    ))
+    catalog_writes: list[dict[str, object]] = []
+
+    def catalog(method, _path, _principal, _workspace_id, *, payload=None, params=None):
+        if method == "POST":
+            catalog_writes.append(payload)
+        return {
+            "conversation": {
+                "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
+                "trace_id": "trace-1", "status": "active",
+            },
+            "messages": [{"role": "user", "content": "follow-up"}],
+        }
+
+    monkeypatch.setattr(main, "_catalog_request", catalog)
+    calls: list[str] = []
+
+    def adapter(path, **_kwargs):
+        calls.append(path)
+        if calls == ["/internal/runtime/sessions/runtime-private/prompt"]:
+            raise main.HTTPException(status_code=404, detail="lost")
+        return {"status": "ready", "run_id": "run-rehydrated"}
+
+    monkeypatch.setattr(main, "_adapter_post", adapter)
+    monkeypatch.setattr(main, "_start_trace_collector", lambda _session: None)
+    response = TestClient(main.app).post(
+        "/v1/agent/sessions/conversation_1/turns",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        json={"content": "follow-up"},
+    )
+    assert response.status_code == 202
+    assert response.json()["run_id"] == "run-rehydrated"
+    assert catalog_writes == [{"content": "follow-up"}]
+    assert calls == [
+        "/internal/runtime/sessions/runtime-private/prompt",
+        "/internal/runtime/sessions",
+        "/internal/runtime/sessions/runtime-private/prompt",
+    ]

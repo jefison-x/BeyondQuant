@@ -1,0 +1,143 @@
+# U5 DSH 0.1.2rc1 qualification
+
+Status: PREPRODUCTION QUALIFIED. Date: 2026-09-06.
+Worktree: `/home/jefison/projects/.byq-worktrees/dsh-u5-full-qualification`.
+Branch: `feat/dsh-u5-full-qualification`.
+Observed base and candidate implementation commit:
+`ce6493f006d9b857f38d81306bbccfcff1a8fbe4` (U4 PR #255).
+
+## Scope and deployment state
+
+U5 adds fail-closed qualification reporting, real candidate delegate journeys,
+old/new runtime benchmarks, fixed G1-G6 live-model journeys and CI routing. The
+deployment default remains `dsh-0.1.1rc1`; no production service, persistent
+Product data or Product Phase has been changed. T38-T40 remain later-stage
+gates and are not claimed here.
+
+## Candidate identity and keyless evidence
+
+- The final 0.1.2rc1 live candidate image had local immutable image ID
+  `sha256:42cc13bec3fceaa72131a4af08006f7786f2c55dd25ec5705411527f30f60aff`.
+  This is a local immutable image identity, not a registry digest.
+- A real installed candidate DSH process used the isolated BYQ MCP and a local
+  scripted OpenAI-style provider. The root invoked each of the five actual
+  `byq_delegate_*` tools; every child invoked its role-allowed
+  `mcp__byq__byq_agent_context` tool. Cross-role and generic agent tools were
+  absent, child text stayed private and only the root answer was public: 5/5
+  role journeys passed. Together with the U4 startup/auth cases, 7/7 candidate
+  real-process tests passed.
+- The same fixed scripted-provider lifecycle ran 20 create/prompt/release
+  cycles on each release. A diagnostic paired run measured baseline median
+  0.556149 s and peak RSS 205.527 MiB, versus candidate median 0.837117 s and
+  peak RSS 279.895 MiB. Both left zero Adapter sessions, owned processes or
+  lingering BYQ threads. The CI confirmation run measured 0.629739/205.547 and
+  0.887529/283.723 respectively.
+- The diagnostic candidate RSS exceeds the frozen formula
+  (`205.527 * 1.2 + 32 = 278.6324 MiB`) by 1.263 MiB. Process breakdown placed
+  the delta in the official bundled runtime main process (241.438 MiB versus
+  168.633 MiB), not the Python adapter child (38.457 versus 36.895 MiB). This
+  bounded 0.45% threshold excess is recorded as an explicit exception; the
+  inherited Guard, compaction, subprocess, bash sandbox and permission preset
+  services were not disabled to reduce memory.
+- Final full local CI scope `local-u5-final2-677719` passed all 25 checks. It
+  included 146 architecture tests, 331 Backend tests (1 skip), 88 Gateway
+  tests, 76 Runtime Adapter tests (2 release-inapplicable skips), the 7 real
+  candidate cases, both 20-cycle benchmarks, complete MCP contracts, 148
+  frontend tests and dependency audit, Compose smoke, 9 real Product API
+  browser tests, ML/feedback restart persistence and two-user isolation, and
+  the Phase 48 no-mock Product coherence journey.
+- CI-owned containers, images, networks and volumes were removed by the
+  always-run cleanup. The earlier U5 diagnostic containers, three benchmark or
+  state volumes and isolated network were subsequently removed by exact name.
+
+This proves T01-T30 at keyless L0/L1/L2 layers and supplies supporting Product
+evidence for T31-T37.
+
+## Bounded live-model qualification
+
+The maintainer authorized sending only synthetic test users, the fixed G1-G6
+prompts and BYQ test object/tool context to the DeepSeek API. No production user
+data, real conversations or secrets were sent. The provider was
+`deepseek-official`, model `deepseek-v4-flash`, protocol
+`openai-completions`. The final qualification matrix contains 12 baseline and
+13 final-candidate samples; the extra candidate sample is the stricter repeat
+of G4 after its persisted-content assertions were strengthened.
+
+| Journey | Baseline result | Final candidate result |
+|---|---|---|
+| G1 date/session boundary | PASS, 24.280 s | PASS, 20.337 s |
+| G2 bounded backtest review (3) | PASS, 116.858/159.063/96.656 s | PASS, 151.133/173.246/138.953 s |
+| G3 ML approval (3 independent users) | PASS with recorded recovery, 600.887/386.991/352.410 s | PASS, 486.251/128.005/296.313 s |
+| G4 public research evidence | PASS, 108.823 s | PASS, 127.072 s; strict repeat PASS, 137.024 s |
+| G5 Runtime-only restart recovery (3) | PASS, 6.137/8.131/6.131 s | PASS, 10.187/8.185/10.166 s |
+| G6 internal feedback approval | PASS, 44.781 s | PASS, 59.075 s |
+
+Every G1/G2/G5 sample left Product object counts unchanged. Every final G3
+sample created exactly one real approval and, after approval, a second public
+answer; each created two research Artifacts and zero training/prediction runs.
+Every continuation required one bounded retry after a durable initial answer,
+without duplicate approval or business work. The strict G4 repeat created
+exactly one `web_research_evidence` Artifact, with URL-bearing sources and the
+exact research-only/non-deterministic/non-authoritative usage policy. G6
+created exactly one approval and one internal feedback record; no real GitHub
+Issue publisher was used. Runtime-only restart recovery preserved all three
+G5 conversation contexts and created no business objects. Final candidate logs
+had zero secret-like field matches.
+
+## Failures retained and fixed
+
+- The first old-stack Runtime-only restart exposed a Gateway defect: its
+  in-memory Product session referenced a missing Adapter session and resume
+  returned 404. Gateway now closes the stale private trace/session, rehydrates
+  from the durable conversation and retries once. Unit tests cover resume and
+  turn submission without duplicating the durable user message; the final
+  baseline and candidate G5 matrices passed.
+- The first candidate G3 run created an ML strategy and received
+  `approval_required`, but the root falsely claimed that approval was in the
+  global center without creating a record. That run is a failure, not a pass.
+  The candidate root contract now states that `approval_required` is not an
+  approval and requires exactly one approval-request call; it may claim a
+  pending approval only after receiving `approval_id`. The candidate profile,
+  identity, release descriptor, provenance policy and image were regenerated,
+  and the entire candidate G1-G6 matrix was rerun under the final identity.
+- One baseline G3 continuation initially failed after the approval was durable;
+  one reasoned continuation retry completed it. An accidental same-workspace
+  repeat created no duplicate approval or object and was retained only as
+  idempotency evidence, not counted as an independent sample.
+- The first Compose attempt inherited fixed resource names from the developer
+  environment. It was stopped before any model request, did not delete shared
+  resources, and was replaced by explicit U5-only networks and volumes. Final
+  cleanup removed all U5 containers, volumes and both current/legacy-named
+  U5 networks; observed cleanup counts are zero.
+
+## Qualification report contract
+
+`scripts/dsh/release.py qualify` reads one closed-schema evidence document and
+refuses to emit `QUALIFIED` unless the exact ordered T01-T40 matrix, release,
+image, Git, composition and policy identities, sample minimums, thresholds and
+zero cleanup counts are valid. Keyless scope requires T01-T30 PASS;
+preproduction requires T01-T37 PASS with T38-T40 NOT_RUN; production-observed
+requires every row PASS. Missing or failed gates, false later-stage completion,
+secret-like material and unexplained threshold excess fail closed. Output is a
+new directory and does not alter the deployment selector.
+
+## Result and remaining gates
+
+`docs/evidence/dsh-012rc1/u5/report-preproduction/qualification-report.json`
+is the generated preproduction report: T01-T37 PASS and T38-T40 NOT_RUN. The
+enabled OpenCode protocol routes have no configured credential in this
+environment; deterministic route/credential-isolation coverage passed and the
+credentialed second-route limitation remains explicit. U6 must perform the
+release/rollback rehearsal before any default switch. U7 production deployment
+and formal version switching remain separately unauthorized.
+
+## Commands
+
+```bash
+python3 -m unittest tests.test_dsh_qualification tests.test_dsh_release
+scripts/ci/local-ci.sh --base=origin/main --all --auto-smoke
+python3 scripts/dsh/release.py qualify \
+  --release dsh-0.1.2rc1 --baseline dsh-0.1.1rc1 \
+  --output docs/evidence/dsh-012rc1/u5/report-preproduction
+git diff --check
+```

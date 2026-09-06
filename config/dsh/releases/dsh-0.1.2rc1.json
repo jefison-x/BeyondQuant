@@ -21,7 +21,7 @@
   "profile": {
     "name": "byq-product-candidate",
     "composition": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
-    "composition_hash": "sha256:b18105ecdd0683a13e20bea65f7e7ba927a6ccfc5d97f4aead011e3c494733e2",
+    "composition_hash": "sha256:e584cee23c7e39ffaaf7d4c583d4762556032b4d4d173285c14c038d98ec6f98",
     "identity": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.identity.json"
   },
   "build_inputs": {
@@ -34,9 +34,9 @@
     "services/runtime-adapter/app/compat/types.py": "sha256:f307b5b2470c5ea996df44f7c2b84b1fff1251258ced5d754e18b1c88e0242e6",
     "services/runtime-adapter/app/compat/dsh_012.py": "sha256:45f438069aa5d22138a5b80def9ea15b7c1502b4c25aa7794e04fba8bafc29ed",
     "compose.dsh-candidate.yml": "sha256:e9c462d4ab58eb0c5980874c71605eabb0f3a68e5514b82a1eda1e384e18c28c",
-    "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.template.yml": "sha256:c3b07020072c8f121bc56aa0a3fc9678a395df0ea9a0399f63003889d4058dc0",
-    "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml": "sha256:b18105ecdd0683a13e20bea65f7e7ba927a6ccfc5d97f4aead011e3c494733e2",
-    "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.identity.json": "sha256:99c18d284143568bb9926810c6e6337eeb212ebf92f9e4ace33b558cf5656496",
+    "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.template.yml": "sha256:d275a413b880013935584386155df95dea0486d5037529ec2178aa7a5780b36d",
+    "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml": "sha256:e584cee23c7e39ffaaf7d4c583d4762556032b4d4d173285c14c038d98ec6f98",
+    "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.identity.json": "sha256:dede6d974aeb9c233e4669812b6fd25749195b0a9a297c28cfc1d7accdb7bd08",
     "scripts/dsh/candidate_profile.py": "sha256:fef4be875601ab65cdd74bdcab8a0e5fcd7dacdf3d940fdb5ac88bd6663aa597",
     "plugins/dsh-byq/runtime/byq-runtime-time-context.js": "sha256:fe18a15e6f35a0b42e185599db24854cc24cbdd4a793af43656651ee0663be72",
     "plugins/dsh-byq/runtime/package.json": "sha256:4279ea1e6a2409c5ee98eb72dd769139dee4f76a2d47fa6db6eecbf2d81f857e",
