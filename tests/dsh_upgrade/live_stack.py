@@ -44,11 +44,13 @@ def model_key_from_env_file(path: Path) -> str:
     return values[0]
 
 
-def manifest(scope: str, release: str, port: int, *, rehearsal_gate: str | None = None) -> dict:
+def manifest(scope: str, release: str, port: int, *, rehearsal_gate: str | None = None, promoted: bool = False) -> dict:
     if not re.fullmatch(r"byq-u5-[a-z0-9][a-z0-9-]{2,44}", scope):
         raise ValueError("dedicated byq-u5 scope required")
     if release not in RELEASES or type(port) is not int or not 18000 <= port <= 18990:
         raise ValueError("invalid fixed release or isolated port range")
+    if type(promoted) is not bool:
+        raise ValueError("invalid promotion qualification selector")
     labels = {LABEL: scope}
     result = {"name": scope, "x-byq-release": release, "x-byq-port": port,
               "networks": {"product": {"name": f"{scope}-product", "internal": True, "labels": labels},
@@ -90,7 +92,7 @@ def manifest(scope: str, release: str, port: int, *, rehearsal_gate: str | None 
     backend.update(volumes=["domain:/var/lib/byq/domain"], depends_on={"postgres": {"condition": "service_healthy"}})
     mcp = service("mcp", "services/mcp/Dockerfile", {"BYQ_BACKEND_URL": "http://backend:8000", "BYQ_MCP_TOKEN": "u5-synthetic-mcp-only", "BYQ_WEB_EVIDENCE_PROVENANCE_POLICY": policy}, 8300)
     mcp["depends_on"] = {"backend": {"condition": "service_healthy"}}
-    runtime = service("runtime-adapter", "services/runtime-adapter/Dockerfile.u6-candidate" if release.endswith("2rc1") else "services/runtime-adapter/Dockerfile.u6", {
+    runtime = service("runtime-adapter", build_revision.identity(build_revision.selected_build_id(release))[1], {
         "BYQ_MCP_URL": "http://mcp:8300/mcp/v1", "BYQ_MCP_TOKEN": "u5-synthetic-mcp-only",
         "BYQ_BACKEND_URL": "http://backend:8000", "BYQ_CREDENTIAL_RESOLVER_TOKEN": "u5-synthetic-resolver-only",
         "DEEPSEEK_API_KEY": "${DEEPSEEK_API_KEY:-}", "DSH_SESSION_ROOT": "/var/lib/byq/dsh-sessions",
@@ -129,13 +131,21 @@ def manifest(scope: str, release: str, port: int, *, rehearsal_gate: str | None 
             member["environment"]["BYQ_WEB_EVIDENCE_PROVENANCE_POLICY"] = "/app/dsh-0.1.2rc1.web-evidence-provenance.json"
         runtime["environment"]["DSH_SESSION_ROOT"] = f"/var/lib/byq/dsh-sessions/{release}"
         runtime["image"] = f"{scope}-runtime-adapter-{release}:qualification"
+    if promoted:
+        result['x-byq-promoted'] = True
+        policy = ('/app/qualified-web-evidence-provenance.json' if release.endswith('2rc1')
+                  else '/app/qualified-rollback-web-evidence-provenance.json')
+        for member in (backend, mcp):
+            member['environment']['BYQ_WEB_EVIDENCE_PROVENANCE_POLICY'] = policy
+        backend['environment']['BYQ_PLUGIN_REGISTRY_PATH'] = (
+            '/app/plugin-registry/product-plugins.json' if release.endswith('2rc1') else '/app/plugin-registry/plugins.json')
     return result
 
 
 def validate_manifest(value):
     try:
         expected = manifest(value["name"], value["x-byq-release"], value["x-byq-port"],
-                            rehearsal_gate=value.get("x-byq-rehearsal-gate"))
+                            rehearsal_gate=value.get("x-byq-rehearsal-gate"), promoted=value.get('x-byq-promoted', False))
         if value != expected:
             raise ValueError("test manifest differs from the closed service/resource/credential allowlist")
     except (KeyError, TypeError) as error:
@@ -159,6 +169,37 @@ def attest_runtime_build(path: Path) -> dict:
     if observed != expected:
         raise ValueError("actual image embeds a different or historical build manifest")
     return {"build_id": build_id, "manifest_hash": build_revision.digest(build_revision.BUILDS / f"{build_id}.json")}
+
+
+def attest_promoted_files(path: Path) -> dict:
+    """Read exact non-secret packaged projections, independently of manifest claims."""
+    value = json.loads(path.read_text())
+    validate_manifest(value)
+    if value.get('x-byq-promoted') is not True:
+        raise ValueError('promoted synthetic stack required')
+    release = value['x-byq-release']
+    target = release == 'dsh-0.1.2rc1'
+    policy = 'qualified-web-evidence-provenance.json' if target else 'qualified-rollback-web-evidence-provenance.json'
+    registry = 'config/dsh/generated/product-plugin-registry.json' if target else 'plugins/dsh-byq/registry/plugins.json'
+    identity = 'deployment.identity.json' if target else 'dsh-0.1.1rc1.identity.json'
+    files = [
+        ('runtime-adapter', '/opt/byq/releases/deployment.identity.json', 'config/dsh/generated/' + identity),
+        ('backend', '/app/' + policy, 'config/dsh/generated/' + policy),
+        ('mcp', '/app/' + policy, 'config/dsh/generated/' + policy),
+        ('backend', '/app/plugin-registry/' + ('product-plugins.json' if target else 'plugins.json'), registry),
+    ]
+    result = {}
+    for service, installed, source in files:
+        if service == 'mcp':
+            command = ['node', '-e', "process.stdout.write(require('fs').readFileSync(process.argv[1]))", installed]
+        else:
+            command = ['python3', '-c', 'import pathlib,sys; sys.stdout.buffer.write(pathlib.Path(sys.argv[1]).read_bytes())', installed]
+        observed = subprocess.check_output(['docker', 'exec', value['name'] + '-' + service + '-1', *command],
+                                          env=compose_environment(), timeout=10)
+        if observed != (ROOT / source).read_bytes():
+            raise ValueError('installed promotion projection mismatch: ' + service + '/' + installed)
+        result[service + ':' + installed] = build_revision.digest(ROOT / source)
+    return {'release': release, 'files': result}
 
 
 def preflight(path: Path, *, require_healthy=True) -> dict:

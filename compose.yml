@@ -85,7 +85,7 @@ services:
   runtime-adapter:
     build:
       context: .
-      dockerfile: services/runtime-adapter/Dockerfile.u6
+      dockerfile: ${BYQ_DSH_RUNTIME_DOCKERFILE:-services/runtime-adapter/Dockerfile.u7-candidate}
       args:
         BYQ_DSH_COMPOSITION_SOURCE: ${BYQ_DSH_COMPOSITION_SOURCE:-plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml}
         BYQ_DSH_IDENTITY_SOURCE: ${BYQ_DSH_IDENTITY_SOURCE:-plugins/dsh-byq/compositions/byq-product-sdk.identity.json}
@@ -96,11 +96,12 @@ services:
       BYQ_CREDENTIAL_RESOLVER_TOKEN: ${BYQ_CREDENTIAL_RESOLVER_TOKEN:-dev-credential-resolver-change-me}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       BYQ_DSH_RUNTIME_ROOT: /opt/dsh-runtime
-      BYQ_DSH_COMPOSITION: /opt/byq/compositions/byq-product-sdk.cordis.yml
+      BYQ_DSH_COMPOSITION: ${BYQ_DSH_COMPOSITION:-/opt/byq/profiles/byq-product.patch.yml}
+      BYQ_DSH_COMPATIBILITY_RELEASE: ${BYQ_DSH_COMPATIBILITY_RELEASE:-dsh-0.1.2rc1}
       BYQ_DSH_RUN_TIMEOUT_SECONDS: ${BYQ_DSH_RUN_TIMEOUT_SECONDS:-900}
       BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS: ${BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS:-180}
       BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS: ${BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS:-120}
-      DSH_SESSION_ROOT: /var/lib/byq/dsh-sessions
+      DSH_SESSION_ROOT: ${BYQ_DSH_SESSION_ROOT:-/var/lib/byq/dsh-sessions/dsh-0.1.2rc1}
     volumes:
       - byq_dsh_sessions:/var/lib/byq/dsh-sessions
     networks:
@@ -131,7 +132,7 @@ services:
     environment:
       BYQ_BACKEND_URL: http://backend:8000
       BYQ_MCP_TOKEN: ${BYQ_MCP_TOKEN:?BYQ_MCP_TOKEN must be set}
-      BYQ_WEB_EVIDENCE_PROVENANCE_POLICY: ${BYQ_WEB_EVIDENCE_PROVENANCE_POLICY:-/app/web-evidence-provenance.json}
+      BYQ_WEB_EVIDENCE_PROVENANCE_POLICY: ${BYQ_WEB_EVIDENCE_PROVENANCE_POLICY:-/app/qualified-web-evidence-provenance.json}
       BYQ_BACKTEST_ANALYSIS_PAGE_CALL_LIMIT: ${BYQ_BACKTEST_ANALYSIS_PAGE_CALL_LIMIT:-6}
       BYQ_BACKTEST_ANALYSIS_PAGE_WINDOW_MS: ${BYQ_BACKTEST_ANALYSIS_PAGE_WINDOW_MS:-300000}
     networks:
@@ -173,7 +174,8 @@ services:
       BYQ_FEEDBACK_HUB_ALLOW_HTTP: ${BYQ_FEEDBACK_HUB_ALLOW_HTTP:-0}
       TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
       TUSHARE_API_URL: ${TUSHARE_API_URL:-http://api.tushare.pro}
-      BYQ_WEB_EVIDENCE_PROVENANCE_POLICY: ${BYQ_WEB_EVIDENCE_PROVENANCE_POLICY:-/app/web-evidence-provenance.json}
+      BYQ_WEB_EVIDENCE_PROVENANCE_POLICY: ${BYQ_WEB_EVIDENCE_PROVENANCE_POLICY:-/app/qualified-web-evidence-provenance.json}
+      BYQ_PLUGIN_REGISTRY_PATH: ${BYQ_PLUGIN_REGISTRY_PATH:-/app/plugin-registry/product-plugins.json}
     depends_on:
       postgres:
         condition: service_healthy

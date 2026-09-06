@@ -261,6 +261,8 @@ def generated_outputs() -> dict[Path, str]:
         candidate_output_path(release_id): render_release(release_id, deployment, releases)
         for release_id in deployment["candidate_releases"]
     })
+    if deployment["default_release"] == "dsh-0.1.2rc1":
+        outputs[candidate_output_path("dsh-0.1.1rc1")] = render_release("dsh-0.1.1rc1", deployment, releases)
     return outputs
 
 
@@ -480,11 +482,10 @@ def render_qualification_report(
     release_id: str, baseline_release_id: str, evidence: dict[str, Any],
 ) -> str:
     deployment, releases = load_all()
-    _require(release_id in deployment["candidate_releases"],
-             "qualification release must be a registered candidate")
-    _require(baseline_release_id == deployment["default_release"]
-             and baseline_release_id in releases,
-             "qualification baseline must be the current default release")
+    _require(release_id in releases and release_id != baseline_release_id,
+             "qualification target must be a distinct registered release")
+    _require(baseline_release_id in releases,
+             "qualification baseline must be registered")
     validate_qualification_evidence(
         evidence, release_id=release_id, baseline_release_id=baseline_release_id,
     )

@@ -1,0 +1,27 @@
+{
+  "active_producer": {
+    "attestation_sha256": "sha256:f0f9723866f7f9695e1a7499eb895b60b2d21341e76de999a1142e7dd5ae38bd",
+    "plugin_id": "web-search",
+    "plugin_version": "0.1.2-rc.1",
+    "qualification_state": "QUALIFIED",
+    "release_id": "dsh-0.1.2rc1"
+  },
+  "mode": "qualified",
+  "recognized_producers": [
+    {
+      "attestation_sha256": "sha256:e8486d4803545f23862f0bb8d511a86a1c3f1e3502cb96fdd18023e27c0dee9d",
+      "plugin_id": "web-search",
+      "plugin_version": "0.1.1-rc.1",
+      "qualification_state": "QUALIFIED",
+      "release_id": "dsh-0.1.1rc1"
+    },
+    {
+      "attestation_sha256": "sha256:f0f9723866f7f9695e1a7499eb895b60b2d21341e76de999a1142e7dd5ae38bd",
+      "plugin_id": "web-search",
+      "plugin_version": "0.1.2-rc.1",
+      "qualification_state": "QUALIFIED",
+      "release_id": "dsh-0.1.2rc1"
+    }
+  ],
+  "schema_version": "web-evidence-provenance-policy.v1"
+}

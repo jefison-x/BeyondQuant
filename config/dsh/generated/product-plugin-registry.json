@@ -1,0 +1,486 @@
+{
+  "plugins": [
+    {
+      "agents": {
+        "allowed": [
+          "quant_orchestrator",
+          "market_researcher",
+          "factor_researcher",
+          "strategy_researcher",
+          "backtest_analyst",
+          "ml_researcher"
+        ],
+        "denied": []
+      },
+      "capabilities": {
+        "code_execution": false,
+        "database": false,
+        "filesystem_read": false,
+        "filesystem_write": false,
+        "git": false,
+        "network": false,
+        "persistent_storage": false,
+        "runtime_mutation": false,
+        "shell": false,
+        "subprocess": false,
+        "terminal": false,
+        "user_interaction": false,
+        "web_fetch": false,
+        "web_search": false
+      },
+      "compatibility": {
+        "dsh_runtime": "0.1.2-rc.1",
+        "python_sdk": "0.1.2rc1",
+        "runtime_bin": "0.1.2rc1",
+        "status": "COMPATIBLE"
+      },
+      "composition": {
+        "entries": []
+      },
+      "credentials": {
+        "references": [],
+        "required": false
+      },
+      "description": "自动压缩长对话，并对超大的工具结果进行有界裁剪。",
+      "display_name": "DSH 上下文压缩",
+      "id": "compaction",
+      "packages": [
+        {
+          "integrity": "sha256:670d8af06845cc2fc16738f1b030375321f3f8268837152aa3100e14a7b9887d",
+          "name": "deepseek-harness-runtime-bin",
+          "version": "0.1.2rc1"
+        }
+      ],
+      "product_policy": {
+        "enabled": true
+      },
+      "qualification": {
+        "checks": {
+          "agent_boundary": true,
+          "architecture_tests": true,
+          "capability_audit": true,
+          "composition_initialize": true,
+          "contract_tests": true,
+          "credential_audit": true,
+          "dependency_closure": true,
+          "integrity": true,
+          "lifecycle": true,
+          "mcp_boundary": true,
+          "package": true,
+          "peer_compatibility": true,
+          "secret_leakage": true,
+          "startup": true
+        },
+        "evidence": [
+          "docs/evidence/dsh-012rc1/u6/report-release-ready/qualification-report.json"
+        ],
+        "qualified_at": "2026-09-06T13:58:34Z",
+        "reason": "U6 exact bundled carrier: real capability/lifecycle/MCP and release rehearsal verified.",
+        "state": "QUALIFIED"
+      },
+      "risk": {
+        "level": "LOW",
+        "reasons": [
+          "不具备网络访问或运行时修改能力",
+          "压缩摘要只是非权威的 Agent 上下文"
+        ]
+      },
+      "source": {
+        "kind": "official_python_bundle",
+        "publisher": "deepseek-ai"
+      },
+      "tools": {
+        "exposed": []
+      }
+    },
+    {
+      "agents": {
+        "allowed": [
+          "quant_orchestrator",
+          "market_researcher",
+          "factor_researcher",
+          "strategy_researcher",
+          "backtest_analyst",
+          "ml_researcher"
+        ],
+        "denied": []
+      },
+      "capabilities": {
+        "code_execution": false,
+        "database": false,
+        "filesystem_read": false,
+        "filesystem_write": false,
+        "git": false,
+        "network": false,
+        "persistent_storage": false,
+        "runtime_mutation": false,
+        "shell": false,
+        "subprocess": false,
+        "terminal": false,
+        "user_interaction": false,
+        "web_fetch": false,
+        "web_search": false
+      },
+      "compatibility": {
+        "dsh_runtime": "0.1.2-rc.1",
+        "python_sdk": "0.1.2rc1",
+        "runtime_bin": "0.1.2rc1",
+        "status": "COMPATIBLE"
+      },
+      "composition": {
+        "entries": []
+      },
+      "credentials": {
+        "references": [],
+        "required": false
+      },
+      "description": "对重复工具调用给出提醒，并以协作方式执行单次工具调用超时限制。",
+      "display_name": "DSH 调用防护",
+      "id": "guard",
+      "packages": [
+        {
+          "integrity": "sha256:670d8af06845cc2fc16738f1b030375321f3f8268837152aa3100e14a7b9887d",
+          "name": "deepseek-harness-runtime-bin",
+          "version": "0.1.2rc1"
+        }
+      ],
+      "product_policy": {
+        "enabled": true
+      },
+      "qualification": {
+        "checks": {
+          "agent_boundary": true,
+          "architecture_tests": true,
+          "capability_audit": true,
+          "composition_initialize": true,
+          "contract_tests": true,
+          "credential_audit": true,
+          "dependency_closure": true,
+          "integrity": true,
+          "lifecycle": true,
+          "mcp_boundary": true,
+          "package": true,
+          "peer_compatibility": true,
+          "secret_leakage": true,
+          "startup": true
+        },
+        "evidence": [
+          "docs/evidence/dsh-012rc1/u6/report-release-ready/qualification-report.json"
+        ],
+        "qualified_at": "2026-09-06T13:58:34Z",
+        "reason": "U6 exact bundled carrier: real capability/lifecycle/MCP and release rehearsal verified.",
+        "state": "QUALIFIED"
+      },
+      "risk": {
+        "level": "LOW",
+        "reasons": [
+          "重复调用防护仅提供提醒",
+          "超时控制采用协作方式，不能伪造领域操作成功"
+        ]
+      },
+      "source": {
+        "kind": "official_python_bundle",
+        "publisher": "deepseek-ai"
+      },
+      "tools": {
+        "exposed": []
+      }
+    },
+    {
+      "agents": {
+        "allowed": [
+          "quant_orchestrator"
+        ],
+        "denied": [
+          "market_researcher",
+          "factor_researcher",
+          "strategy_researcher",
+          "backtest_analyst",
+          "ml_researcher"
+        ]
+      },
+      "capabilities": {
+        "code_execution": false,
+        "database": false,
+        "filesystem_read": false,
+        "filesystem_write": false,
+        "git": false,
+        "network": false,
+        "persistent_storage": false,
+        "runtime_mutation": false,
+        "shell": false,
+        "subprocess": false,
+        "terminal": false,
+        "user_interaction": true,
+        "web_fetch": false,
+        "web_search": false
+      },
+      "compatibility": {
+        "dsh_runtime": "0.1.2-rc.1",
+        "python_sdk": "0.1.2rc1",
+        "runtime_bin": "0.1.2rc1",
+        "status": "BLOCKED_BY_SECURITY_BOUNDARY"
+      },
+      "composition": {
+        "entries": []
+      },
+      "credentials": {
+        "references": [],
+        "required": false
+      },
+      "description": "向用户发起结构化问题并接收回答的通用交互服务与模型工具。",
+      "display_name": "DSH 用户提问",
+      "id": "interaction",
+      "packages": [
+        {
+          "integrity": "sha256:670d8af06845cc2fc16738f1b030375321f3f8268837152aa3100e14a7b9887d",
+          "name": "deepseek-harness-runtime-bin",
+          "version": "0.1.2rc1"
+        }
+      ],
+      "product_policy": {
+        "enabled": false
+      },
+      "qualification": {
+        "checks": {
+          "agent_boundary": true,
+          "architecture_tests": true,
+          "capability_audit": true,
+          "composition_initialize": false,
+          "contract_tests": false,
+          "credential_audit": true,
+          "dependency_closure": true,
+          "integrity": true,
+          "lifecycle": false,
+          "mcp_boundary": true,
+          "package": true,
+          "peer_compatibility": true,
+          "secret_leakage": true,
+          "startup": false
+        },
+        "evidence": [
+          "docs/evidence/dsh-012rc1/u6/report-release-ready/qualification-report.json"
+        ],
+        "qualified_at": null,
+        "reason": "Not qualified or enabled in the approved Product profile; no new capability granted.",
+        "state": "BLOCKED"
+      },
+      "risk": {
+        "level": "MEDIUM",
+        "reasons": [
+          "需要可靠且可恢复的人机交互链路",
+          "不能替代 BYQ 业务授权"
+        ]
+      },
+      "source": {
+        "kind": "official_python_bundle",
+        "publisher": "deepseek-ai"
+      },
+      "tools": {
+        "exposed": [
+          "ask_user"
+        ]
+      }
+    },
+    {
+      "agents": {
+        "allowed": [],
+        "denied": [
+          "quant_orchestrator",
+          "market_researcher",
+          "factor_researcher",
+          "strategy_researcher",
+          "backtest_analyst",
+          "ml_researcher"
+        ]
+      },
+      "capabilities": {
+        "code_execution": false,
+        "database": false,
+        "filesystem_read": false,
+        "filesystem_write": true,
+        "git": false,
+        "network": false,
+        "persistent_storage": true,
+        "runtime_mutation": false,
+        "shell": false,
+        "subprocess": false,
+        "terminal": false,
+        "user_interaction": false,
+        "web_fetch": false,
+        "web_search": false
+      },
+      "compatibility": {
+        "dsh_runtime": "0.1.2-rc.1",
+        "python_sdk": "0.1.2rc1",
+        "runtime_bin": "0.1.2rc1",
+        "status": "BLOCKED_BY_SECURITY_BOUNDARY"
+      },
+      "composition": {
+        "entries": []
+      },
+      "credentials": {
+        "references": [],
+        "required": false
+      },
+      "description": "将超大工具结果暂存到本地文件系统的通用能力。",
+      "display_name": "DSH 结果暂存",
+      "id": "spill",
+      "packages": [
+        {
+          "integrity": "sha256:670d8af06845cc2fc16738f1b030375321f3f8268837152aa3100e14a7b9887d",
+          "name": "deepseek-harness-runtime-bin",
+          "version": "0.1.2rc1"
+        }
+      ],
+      "product_policy": {
+        "enabled": false
+      },
+      "qualification": {
+        "checks": {
+          "agent_boundary": true,
+          "architecture_tests": true,
+          "capability_audit": true,
+          "composition_initialize": false,
+          "contract_tests": false,
+          "credential_audit": true,
+          "dependency_closure": true,
+          "integrity": true,
+          "lifecycle": false,
+          "mcp_boundary": true,
+          "package": true,
+          "peer_compatibility": true,
+          "secret_leakage": true,
+          "startup": false
+        },
+        "evidence": [
+          "docs/evidence/dsh-012rc1/u6/report-release-ready/qualification-report.json"
+        ],
+        "qualified_at": null,
+        "reason": "Not qualified or enabled in the approved Product profile; no new capability granted.",
+        "state": "BLOCKED"
+      },
+      "risk": {
+        "level": "HIGH",
+        "reasons": [
+          "会写入本地文件",
+          "rc.1 没有满足要求的生命周期清理机制",
+          "文件定位信息依赖 Product Plane 禁止提供的文件读取工具"
+        ]
+      },
+      "source": {
+        "kind": "official_python_bundle",
+        "publisher": "deepseek-ai"
+      },
+      "tools": {
+        "exposed": []
+      }
+    },
+    {
+      "agents": {
+        "allowed": [
+          "quant_orchestrator",
+          "market_researcher"
+        ],
+        "denied": [
+          "factor_researcher",
+          "strategy_researcher",
+          "backtest_analyst",
+          "ml_researcher"
+        ]
+      },
+      "capabilities": {
+        "code_execution": false,
+        "database": false,
+        "filesystem_read": false,
+        "filesystem_write": false,
+        "git": false,
+        "network": true,
+        "persistent_storage": false,
+        "runtime_mutation": false,
+        "shell": false,
+        "subprocess": false,
+        "terminal": false,
+        "user_interaction": false,
+        "web_fetch": false,
+        "web_search": true
+      },
+      "compatibility": {
+        "dsh_runtime": "0.1.2-rc.1",
+        "python_sdk": "0.1.2rc1",
+        "runtime_bin": "0.1.2rc1",
+        "status": "COMPATIBLE"
+      },
+      "composition": {
+        "entries": []
+      },
+      "credentials": {
+        "references": [
+          "DEEPSEEK_API_KEY"
+        ],
+        "required": true
+      },
+      "description": "由 DeepSeek 提供的结构化网页搜索能力；网页抓取功能保持禁用。",
+      "display_name": "DSH 网页搜索",
+      "id": "web-search",
+      "packages": [
+        {
+          "integrity": "sha256:670d8af06845cc2fc16738f1b030375321f3f8268837152aa3100e14a7b9887d",
+          "name": "deepseek-harness-runtime-bin",
+          "version": "0.1.2rc1"
+        }
+      ],
+      "product_policy": {
+        "enabled": true
+      },
+      "qualification": {
+        "checks": {
+          "agent_boundary": true,
+          "architecture_tests": true,
+          "capability_audit": true,
+          "composition_initialize": true,
+          "contract_tests": true,
+          "credential_audit": true,
+          "dependency_closure": true,
+          "integrity": true,
+          "lifecycle": true,
+          "mcp_boundary": true,
+          "package": true,
+          "peer_compatibility": true,
+          "secret_leakage": true,
+          "startup": true
+        },
+        "evidence": [
+          "docs/evidence/dsh-012rc1/u6/report-release-ready/qualification-report.json"
+        ],
+        "qualified_at": "2026-09-06T13:58:34Z",
+        "reason": "U6 exact bundled carrier: real capability/lifecycle/MCP and release rehearsal verified.",
+        "state": "QUALIFIED"
+      },
+      "risk": {
+        "level": "MEDIUM",
+        "reasons": [
+          "需要外部网络访问和服务商凭证",
+          "网页证据不是确定性的领域输入"
+        ]
+      },
+      "source": {
+        "kind": "official_python_bundle",
+        "publisher": "deepseek-ai"
+      },
+      "tools": {
+        "exposed": [
+          "web_search"
+        ]
+      }
+    }
+  ],
+  "runtime_baseline": {
+    "npm_runtime": "0.1.2-rc.1",
+    "observed_at": "2026-09-06",
+    "python_sdk": "0.1.2rc1",
+    "runtime_bin": "0.1.2rc1",
+    "upstream_latest_observed": "0.1.2-rc.1"
+  },
+  "schema_version": "dsh-plugin-registry.v1"
+}

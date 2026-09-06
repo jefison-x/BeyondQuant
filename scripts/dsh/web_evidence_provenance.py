@@ -13,7 +13,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 GENERATED = ROOT / "config/dsh/generated"
 DEFAULT_OUTPUT = GENERATED / "web-evidence-provenance.json"
-DEPLOYMENT = GENERATED / "deployment.identity.json"
+DEPLOYMENT = ROOT / "config/dsh/releases/dsh-0.1.1rc1.json"
 REGISTRY = ROOT / "plugins/dsh-byq/registry/plugins.json"
 RELEASES = ROOT / "config/dsh/releases"
 
@@ -52,12 +52,12 @@ def _default_producer() -> dict[str, str]:
         raise ProvenanceError("default web-search producer is not enabled and QUALIFIED")
     if len(versions) != 1:
         raise ProvenanceError("default web-search package versions are not exact and uniform")
-    release_id = deployment.get("default_release")
+    release_id = deployment.get("release_id")
     version = next(iter(versions))
     if version != deployment.get("carrier", {}).get("npm_version"):
         raise ProvenanceError("web-search producer version does not match deployment")
     attestation = {
-        "release_descriptor": deployment.get("descriptor_hash"),
+        "release_descriptor": "sha256:" + hashlib.sha256(DEPLOYMENT.read_bytes()).hexdigest(),
         "composition_hash": deployment.get("profile", {}).get("composition_hash"),
         "packages": sorted(
             [
@@ -122,7 +122,9 @@ def render(release_id: str | None = None) -> str:
 def outputs() -> dict[Path, str]:
     deployment = _load(DEPLOYMENT)
     result = {DEFAULT_OUTPUT: render()}
-    for release_id in deployment.get("candidate_releases", []):
+    # Preserve historical old/candidate policies; U7's qualified policy is a
+    # separate projection from exact build-bound qualification (promotion.py).
+    for release_id in ("dsh-0.1.2rc1",):
         result[GENERATED / f"{release_id}.web-evidence-provenance.json"] = render(release_id)
     return result
 

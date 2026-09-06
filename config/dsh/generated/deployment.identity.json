@@ -1,26 +1,29 @@
 {
-  "candidate_releases": [
-    "dsh-0.1.2rc1"
-  ],
+  "candidate_releases": [],
   "carrier": {
-    "entrypoint": "node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/bin.js",
-    "integrity": "sha512-CTWwd1g5/AKkNvuSu1lVdbfenhvR9UhuELQm7uhYhRGI3d3tnCnOReky0rbc7VW6tzvllMl8ShA2V5tOMQunEQ==",
-    "kind": "npm-explicit-cli",
-    "npm_version": "0.1.1-rc.1",
-    "package": "@deepseek-ai/dsh-sdk-jsonrpc-demo"
+    "bundled_package_count": 123,
+    "entrypoint": "deepseek-harness-sdk-runtime-linux-x64",
+    "kind": "python-bundled-executable",
+    "profile": "sdk",
+    "source_archive_sha256": "adf32f642610e52294ffd823b3ad38b86355d05e4c48280bc77912458df56552",
+    "source_commit": "a66e4702047846cdaa10c66c9d3df3951f5ea70d",
+    "source_manifest_sha256": "a8cdf98a24c02947a5dfb36eecad1689dd7f1eba62c05996eabcd59530189387",
+    "source_tag": "dsh-v0.1.2-rc.1"
   },
   "compatibility_family": "byq-dsh-sdk-v1",
-  "default_release": "dsh-0.1.1rc1",
-  "descriptor_hash": "sha256:646077dfd55f83933fab9c99e28ba3ee53cbb2c9fa1daee5d1ad51194f5adc8a",
+  "default_release": "dsh-0.1.2rc1",
+  "descriptor_hash": "sha256:ee565e5050ded55cdce2ac9e6fb4bc17a11c60926e9838f526b4eead03bd4724",
   "profile": {
-    "composition": "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
-    "composition_hash": "sha256:b8530afdc5b28ee18a132dd1616d841eaa6d803d975e7110e556183b29a214bf",
-    "identity": "plugins/dsh-byq/compositions/byq-product-sdk.identity.json",
-    "name": "research"
+    "composition": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
+    "composition_hash": "sha256:e584cee23c7e39ffaaf7d4c583d4762556032b4d4d173285c14c038d98ec6f98",
+    "identity": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.identity.json",
+    "name": "byq-product-candidate"
   },
   "python": {
-    "runtime_bin": "0.1.1rc1",
-    "sdk": "0.1.1rc1"
+    "linux_x86_64_runtime_wheel_sha256": "670d8af06845cc2fc16738f1b030375321f3f8268837152aa3100e14a7b9887d",
+    "runtime_bin": "0.1.2rc1",
+    "sdk": "0.1.2rc1",
+    "sdk_wheel_sha256": "24689eec01e95233feb75ca08a0fe748b491e71682f80d2c04e6f9485f20488a"
   },
   "schema_version": "dsh-deployment-identity.v1"
 }

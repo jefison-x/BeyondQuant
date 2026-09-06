@@ -27,7 +27,9 @@ OUTPUT_PATH = ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml"
 IDENTITY_PATH = ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.identity.json"
 MANIFEST_PATH = ROOT / "services/runtime-adapter/runtime/package.json"
 LOCK_PATH = ROOT / "services/runtime-adapter/runtime/package-lock.json"
-DEPLOYMENT_IDENTITY_PATH = ROOT / "config/dsh/generated/deployment.identity.json"
+# This builder owns the retained npm/old-release composition, not the promoted
+# bundled SDK patch. Its historical output must not drift with deployment choice.
+DEPLOYMENT_IDENTITY_PATH = ROOT / "config/dsh/releases/dsh-0.1.1rc1.json"
 
 STATES = {"AVAILABLE", "QUALIFIED", "BLOCKED", "REJECTED", "DEPRECATED"}
 RISKS = {"LOW", "MEDIUM", "HIGH", "PROHIBITED"}

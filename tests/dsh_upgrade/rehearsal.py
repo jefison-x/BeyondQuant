@@ -20,7 +20,7 @@ import time
 from scripts.dsh.admission import initialize, set_state
 from scripts.dsh.retain_u6_ci_images import load_receipt
 from . import live_stack
-from .live_model_probe import Client, PROMPTS, assistant_messages, counts, fake_hub_evidence
+from .live_model_probe import Client, PROMPTS, assistant_messages, counts, fake_hub_evidence, research_artifacts
 
 OLD, NEW = "dsh-0.1.1rc1", "dsh-0.1.2rc1"
 
@@ -30,19 +30,22 @@ def emit(stage, **values):
 
 
 class Rehearsal:
-    def __init__(self, directory: Path, environment: dict, ci_scope: str | None = None):
+    def __init__(self, directory: Path, environment: dict, ci_scope: str | None = None, *, promoted: bool = False):
         if re.fullmatch(r"/tmp/byq-u6-[a-z0-9_]{8}", str(directory)) is None:
             raise ValueError("only a dedicated synthetic temporary directory is allowed")
         self.directory, self.environment = directory, environment
-        if ci_scope is not None and re.fullmatch(r"local-u6-[a-z0-9-]{3,60}", ci_scope) is None:
+        if ci_scope is not None and re.fullmatch(r"local-u[67]-[a-z0-9-]{3,60}", ci_scope) is None:
             raise ValueError("only an explicit U6 CI image scope is allowed")
         self.ci_scope = ci_scope
+        self.promoted = promoted
         self.scope = "byq-u5-u6-" + directory.name.removeprefix("byq-u6-").replace("_", "-")
         self.gate = directory / "gate" / "admission.state"
         self.release = OLD
         self.files = {release: directory / f"{release}.json" for release in (OLD, NEW)}
         self.result = {"schema_version": "dsh-u6-rehearsal.v1", "scope": self.scope,
                        "result": "IN_PROGRESS", "production_changed": False, "steps": []}
+        if promoted:
+            self.result['qualification_mode'] = 'u7-promoted-and-compatible-rollback'
 
     def prepare(self):
         # The gate is non-secret and must be traversable by container UIDs.
@@ -52,7 +55,7 @@ class Rehearsal:
         (self.directory / "backups").mkdir(mode=0o700)
         initialize(self.gate)
         for release, path in self.files.items():
-            value = live_stack.manifest(self.scope, release, 18210, rehearsal_gate=str(self.gate.parent))
+            value = live_stack.manifest(self.scope, release, 18210, rehearsal_gate=str(self.gate.parent), promoted=self.promoted)
             with path.open("x") as output:
                 json.dump(value, output, indent=2)
 
@@ -66,6 +69,8 @@ class Rehearsal:
     def check(self):
         checked = live_stack.preflight(self.files[self.release])
         checked["build_revision"] = live_stack.attest_runtime_build(self.files[self.release])
+        if self.promoted:
+            checked['promotion_files'] = live_stack.attest_promoted_files(self.files[self.release])
         return checked
 
     def run_command(self, command, *, timeout=900):
@@ -98,22 +103,26 @@ class Rehearsal:
         self.drain()
         previous_release = self.release
         before = self.identities()
+        changed = {'runtime-adapter', 'backend', 'mcp'} if self.promoted else {'runtime-adapter'}
         self.run_command(self.compose(target, "up", "-d", "--no-deps", "--no-build", "--wait",
-                                      "--wait-timeout", "120", "runtime-adapter"), timeout=150)
+                                      "--wait-timeout", "120", *sorted(changed)), timeout=150)
         self.release = target
         checked = self.check()
         # Seal the previous namespace after its process shutdown, so legitimate
         # shutdown writes are not misclassified as writes by the other release.
         self.result.setdefault("namespace_checkpoints", {})[previous_release] = self.namespace_digest(previous_release)
         after = self.identities()
-        for service in live_stack.SERVICES - {"runtime-adapter"}:
+        for service in live_stack.SERVICES - changed:
             if before[service] != after[service]:
-                raise AssertionError("non-runtime service restarted during switch")
+                raise AssertionError("service outside explicit switch allowlist restarted")
         if self.runtime()["runtime"]["release_id"] != target:
             raise AssertionError("installed target identity mismatch")
         self.result["steps"].append({"switched": target, "images": checked["images"],
                                      "build_revision": checked["build_revision"],
-                                     "non_runtime_containers_unchanged": True})
+                                     **({'promotion_files': checked['promotion_files']} if self.promoted else {}),
+                                     "non_runtime_containers_unchanged": not self.promoted,
+                                     "switch_service_allowlist": sorted(changed),
+                                     "other_containers_unchanged": True})
         emit("switched", release=target, scope=self.scope)
         set_state(self.gate, "open")
 
@@ -351,10 +360,38 @@ class Rehearsal:
             if result.get("result") != "PASS" or result.get("scenario") != scenario:
                 raise AssertionError("model probe did not return matching PASS evidence")
             self.result["additional_model_scenarios"].append(result)
+            if self.promoted:
+                # Only the fixed synthetic fixture is reachable from this closed
+                # runner. Retain public answers for semantic review, never raw
+                # DSH reasoning, credentials or production conversation data.
+                client = Client('http://127.0.0.1:18210', 'u5-admin', 'U5AdminTestOnly123')
+                answers = assistant_messages(client.call('GET', '/v1/agent/sessions/' + result['session_id']))
+                if not answers:
+                    raise AssertionError('missing synthetic public answer for semantic review')
+                answer = answers[-1]
+                with (self.directory / ('public-answer-' + scenario + '.txt')).open('x') as output:
+                    output.write(answer)
+                self.result.setdefault('public_answer_sha256', {})[scenario] = hashlib.sha256(answer.encode()).hexdigest()
             emit("candidate-model-scenario-passed", scenario=scenario, scope=self.scope)
+        if self.promoted:
+            evidence_before = research_artifacts(client)
+            evidence_hash = hashlib.sha256(json.dumps(evidence_before, sort_keys=True).encode()).hexdigest()
+            if not any(item.get('kind') == 'web_research_evidence' for item in evidence_before):
+                raise AssertionError('no new web evidence available for rollback read test')
         self.drain()
         self.switch(OLD)
         self.drain()
+        if self.promoted:
+            evidence_after = research_artifacts(client)
+            if hashlib.sha256(json.dumps(evidence_after, sort_keys=True).encode()).hexdigest() != evidence_hash:
+                raise AssertionError('compatible rollback lost or changed saved research evidence')
+            recognized = subprocess.check_output(['docker', 'exec', self.container('backend'), 'python3', '-c',
+                "from app.web_evidence_provenance import recognized_producer; print(recognized_producer('web-search','0.1.2-rc.1'))"],
+                env=self.environment, text=True, timeout=10).strip()
+            if recognized != 'True':
+                raise AssertionError('rollback validator rejects qualified new producer')
+            self.result['rollback_evidence_read'] = {'result': 'PASS', 'artifact_count': len(evidence_after),
+                'sha256': evidence_hash, 'qualified_new_producer_recognized': True, 'domain_rewind': False}
 
     def g2_only(self):
         if not self.ci_scope:
@@ -414,6 +451,7 @@ def main():
     parser.add_argument("--model-key-env-file", type=Path, required=True)
     parser.add_argument("--browser-window-seconds", type=int, choices=range(301), default=180)
     parser.add_argument("--ci-scope", help="reuse exact images from a successful isolated U6 CI run")
+    parser.add_argument("--promoted", action="store_true", help="U7 qualified policy/registry and compatible rollback; still synthetic only")
     parser.add_argument("--qualify-g1-g4", action="store_true",
                         help="also re-run fixed candidate G1-G4 after the core rollback journey")
     parser.add_argument("--g2-only", action="store_true", help="one targeted G2 with verified synthetic object context")
@@ -427,7 +465,7 @@ def main():
         raise ValueError("insufficient memory for isolated rehearsal")
     with open("/tmp/byq-ci-heavy.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        rehearsal = Rehearsal(Path(tempfile.mkdtemp(prefix="byq-u6-")), environment, args.ci_scope)
+        rehearsal = Rehearsal(Path(tempfile.mkdtemp(prefix="byq-u6-")), environment, args.ci_scope, promoted=args.promoted)
         try:
             if args.g2_only:
                 rehearsal.g2_only()
