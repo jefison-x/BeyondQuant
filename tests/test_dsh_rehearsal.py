@@ -9,6 +9,62 @@ from tests.dsh_upgrade.live_stack import validate_manifest
 
 
 class RehearsalTests(unittest.TestCase):
+    def test_failed_promoted_probe_preserves_private_diagnostic_without_retry(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory(prefix='byq-u6-') as temporary:
+            directory = Path(temporary)
+            (directory / 'backups').mkdir(mode=0o700)
+            runner = Rehearsal(directory, {}, promoted=True)
+            diagnostic = 'synthetic-sensitive-sentinel'
+            with patch.object(runner, 'switch'), patch.object(runner, 'check'), \
+                    patch('tests.dsh_upgrade.rehearsal.emit'), \
+                    patch('tests.dsh_upgrade.rehearsal.subprocess.run',
+                          return_value=SimpleNamespace(returncode=1, stderr=diagnostic)) as run:
+                with self.assertRaisesRegex(AssertionError, 'G3 qualification failed'):
+                    runner.qualify_remaining_scenarios(('G3', 'G4'))
+                self.assertEqual(run.call_count, 1)
+                path = directory / 'backups/failed-G3.stderr'
+                self.assertEqual(path.read_text(), diagnostic)
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                self.assertNotIn(diagnostic, json.dumps(runner.result))
+                self.assertEqual(runner.result['additional_model_scenarios'][0]['result'], 'FAIL')
+
+    def test_diagnostic_sets_cannot_expand_paid_scenarios(self):
+        runner = Rehearsal(Path('/tmp/byq-u6-abcdefgh'), {})
+        with patch.object(runner, 'switch') as switch:
+            with self.assertRaises(ValueError):
+                runner.qualify_remaining_scenarios(('custom',))
+            with self.assertRaises(ValueError):
+                runner.g3_g4_only()
+            switch.assert_not_called()
+
+    def test_promoted_rollback_reads_same_evidence_and_retains_public_review_answers(self):
+        from types import SimpleNamespace
+        for tamper in (False, True):
+            with self.subTest(tamper=tamper), tempfile.TemporaryDirectory(prefix='byq-u6-') as temporary:
+                runner = Rehearsal(Path(temporary), {}, promoted=True)
+                runner.result['domain_fixture'] = {'backtest_job_id': 'backtest_' + 'a' * 32}
+                outputs = [SimpleNamespace(returncode=0, stdout=json.dumps({
+                    'scenario': name, 'result': 'PASS', 'session_id': 'conversation-synthetic'}))
+                    for name in ('G1', 'G2', 'G3', 'G4')]
+                evidence = [{'kind': 'web_research_evidence', 'artifact_id': 'synthetic'}]
+                with patch.object(runner, 'switch'), patch.object(runner, 'check'), patch.object(runner, 'drain'), \
+                        patch('tests.dsh_upgrade.rehearsal.emit'), \
+                        patch('tests.dsh_upgrade.rehearsal.Client') as client, \
+                        patch('tests.dsh_upgrade.rehearsal.research_artifacts', side_effect=[evidence, [] if tamper else evidence]), \
+                        patch('tests.dsh_upgrade.rehearsal.subprocess.run', side_effect=outputs), \
+                        patch('tests.dsh_upgrade.rehearsal.subprocess.check_output', return_value='True'):
+                    client.return_value.call.return_value = {'messages': [{'role': 'assistant', 'content': 'Synthetic public answer'}]}
+                    if tamper:
+                        with self.assertRaisesRegex(AssertionError, 'lost or changed saved research evidence'):
+                            runner.qualify_remaining_scenarios()
+                        self.assertNotIn('rollback_evidence_read', runner.result)
+                    else:
+                        runner.qualify_remaining_scenarios()
+                        self.assertEqual(runner.result['rollback_evidence_read']['result'], 'PASS')
+                    self.assertEqual(len(runner.result['public_answer_sha256']), 4)
+                    self.assertEqual(len(list(Path(temporary).glob('public-answer-G*.txt'))), 4)
+
     def test_idle_followup_uses_normal_product_turn_not_resume(self):
         runner = Rehearsal(Path("/tmp/byq-u6-abcdefgh"), {})
         calls = []

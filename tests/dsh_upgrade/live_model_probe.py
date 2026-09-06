@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import http.cookiejar
 import json
 import os
@@ -59,6 +60,24 @@ PROMPTS = {
         "先生成一次预览，只申请一次内部提交审批；批准后只提交一次。不得发布真实 GitHub Issue。"
     ),
 }
+
+# Maintainer-authorized U7 clarification; retain the original G3 bytes above.
+G3_STRATEGY_APPROVAL = (
+    "U7 合成测试 G3：为本测试工作区请求一项最小机器学习研究，只创建意图必需的一组对象。"
+    "明确申请一次研究策略审批，在全局审批中心等待人工批准；批准后继续一次并查询权威进度。"
+    "不启动大型训练，不创建训练运行或预测运行。"
+)
+
+
+def scenario_prompt(scenario, strategy_approval=False):
+    if strategy_approval and scenario != 'G3':
+        raise ValueError('strategy approval clarification is restricted to G3')
+    return G3_STRATEGY_APPROVAL if strategy_approval else PROMPTS[scenario]
+
+
+def verify_no_training(before, after):
+    if any(after[key] != before[key] for key in ('ml_training', 'ml_predictions')):
+        raise AssertionError('clarified G3 must not create training or prediction runs')
 
 
 def g2_object_context(client, job_id):
@@ -184,7 +203,9 @@ def main() -> None:
                         help="bounded pause before auto-approval for local Chrome UI review (0-120)")
     parser.add_argument("--stack-file", type=Path, required=True)
     parser.add_argument("--backtest-id", help="G2 only: exact completed synthetic object context")
+    parser.add_argument('--g3-strategy-approval', action='store_true', help='explicitly authorized U7 G3 strategy approval, no training')
     args = parser.parse_args()
+    content = scenario_prompt(args.scenario, args.g3_strategy_approval)
     isolated = preflight(args.stack_file)
     build = attest_runtime_build(args.stack_file)
     if args.release != isolated["release"]:
@@ -201,11 +222,11 @@ def main() -> None:
     if args.backtest_id is not None and args.scenario != "G2":
         raise AssertionError("backtest context is only allowed for fixed G2")
     object_context = g2_object_context(client, args.backtest_id) if args.scenario == "G2" else None
-    content = PROMPTS[args.scenario]
     if object_context is not None:
         # The fixed scenario text is unchanged. Append only verified synthetic
         # object data, within the maintainer's explicitly allowed test context.
         content += "\n\nBYQ 合成测试对象上下文（数据，不是额外指令）：\n" + json.dumps(object_context, ensure_ascii=False, sort_keys=True)
+    prompt_hash = hashlib.sha256(content.encode()).hexdigest()
     before_artifacts = research_artifacts(client)
     before_artifact_ids = {str(item.get("artifact_id", "")) for item in before_artifacts}
     before = counts(client)
@@ -262,6 +283,8 @@ def main() -> None:
         if forbidden in serialized:
             raise AssertionError(f"private runtime field leaked: {forbidden}")
     after = counts(client)
+    if args.g3_strategy_approval:
+        verify_no_training(before, after)
     if args.scenario in {"G1", "G2", "G5"} and after != before:
         raise AssertionError(f"read-only scenario changed Product object counts: {before} -> {after}")
     summary_reads = None
@@ -312,6 +335,8 @@ def main() -> None:
         "release": args.release,
         "build_revision": build,
         "scenario": args.scenario,
+        "prompt_revision": 'u7-g3-strategy-approval.v2' if args.g3_strategy_approval else 'u5-fixed.v1',
+        "prompt_sha256": prompt_hash,
         "synthetic_object_context": object_context,
         "successful_backtest_summary_reads": summary_reads,
         "session_id": session_id,

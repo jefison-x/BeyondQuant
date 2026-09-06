@@ -1,0 +1,142 @@
+{
+  "additional_model_scenarios": [
+    {
+      "exit_code": 1,
+      "private_diagnostic_sha256": "8681c89372f418031ea40ca6181776758f53364aaac20b8b9b6d8013dab46492",
+      "result": "FAIL",
+      "scenario": "G3"
+    }
+  ],
+  "cleanup": "PASS",
+  "domain_fixture": {
+    "backtest_job_id": "backtest_77cc56b33a7b4467909e3a20cb976e2f",
+    "owner": "u5-admin",
+    "schema_version": "dsh-u5-live-fixture.v1",
+    "status": "completed",
+    "synthetic": true
+  },
+  "failure_type": "AssertionError",
+  "initial": {
+    "build_revision": {
+      "build_id": "dsh-0.1.2rc1-u7.3",
+      "manifest_hash": "sha256:84accb9dd446f62c92c61312cb52436b4f643265917e1fcdf47e2852c8bba0d8"
+    },
+    "fake_hub_container": "byq-u5-u6-s1nwh9l--fake-hub-1",
+    "frontend": "http://127.0.0.1:18210",
+    "gateway": "http://127.0.0.1:18210",
+    "images": {
+      "backend": "sha256:b29ce8388bfec648d8097e81e6f081fe4f9c5a10c7070a8d2ab17f26a5e84679",
+      "fake-hub": "sha256:6d933b88d4d12a7c344af825d72207dcad3891f2db4e17d4c8844498e2367f4b",
+      "feedback-hub-relay": "sha256:2f80b406101cabb256b71cea0ca993a8b94f6558e01ab6d42ac1fdcd0453688b",
+      "frontend": "sha256:67e1bb7ea44f329c466de22cfe25c83ccca8fccf205286bc2f6cccc8d1d687b5",
+      "gateway": "sha256:6cd164db46b40805623d4fad5911def596356eb05f57318e8663454a822a551a",
+      "mcp": "sha256:36abd8158fcf705da7ff27f8e37a308e177cfdf44169adbb3dc50c8342378dbc",
+      "postgres": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "runtime-adapter": "sha256:82cebf2842c01930c50723e8152fa98cab123a9b8741f8c2a040af7531649da4"
+    },
+    "promotion_files": {
+      "files": {
+        "backend:/app/plugin-registry/product-plugins.json": "sha256:58c4b0dfec675efd2f4657afc742cb2c7c0bf7758ddc8eed12146a3b17647270",
+        "backend:/app/qualified-web-evidence-provenance.json": "sha256:76f417b50e554df14ffaeef024cc35fe2e9d77e6c90484ea88301e5ed0228b65",
+        "mcp:/app/qualified-web-evidence-provenance.json": "sha256:76f417b50e554df14ffaeef024cc35fe2e9d77e6c90484ea88301e5ed0228b65",
+        "runtime-adapter:/opt/byq/releases/deployment.identity.json": "sha256:c488f1bc4123159e87b0641b2f6a0ded8714478d0d809cf37ccc7de134b84084"
+      },
+      "release": "dsh-0.1.2rc1"
+    },
+    "release": "dsh-0.1.2rc1",
+    "scope": "byq-u5-u6-s1nwh9l-"
+  },
+  "mode": "targeted-g3-g4-diagnostic",
+  "production_changed": false,
+  "qualification_mode": "u7-promoted-and-compatible-rollback",
+  "result": "FAIL",
+  "retained_ci_artifact": {
+    "archive": {
+      "bytes": 461501440,
+      "name": "images.tar",
+      "sha256": "sha256:3659a109ecbf9a293ef9a2f62b9602606c808694ccfb9a33c0604ef5a3ed9cf6"
+    },
+    "build_revisions": {
+      "dsh-0.1.1rc1": {
+        "build_id": "dsh-0.1.1rc1-u7.3",
+        "manifest_hash": "sha256:d15a2404fea190f41486a18645219e5955789361002fbb82c25e56fe57ee9f70"
+      },
+      "dsh-0.1.2rc1": {
+        "build_id": "dsh-0.1.2rc1-u7.3",
+        "manifest_hash": "sha256:84accb9dd446f62c92c61312cb52436b4f643265917e1fcdf47e2852c8bba0d8"
+      }
+    },
+    "ci_scope": "local-u7-recheck-artifacts-20260906",
+    "images": {
+      "backend": {
+        "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-backend:latest",
+        "image_id": "sha256:b29ce8388bfec648d8097e81e6f081fe4f9c5a10c7070a8d2ab17f26a5e84679",
+        "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-backend:retained"
+      },
+      "feedback-hub-relay": {
+        "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-feedback-hub-relay:latest",
+        "image_id": "sha256:2f80b406101cabb256b71cea0ca993a8b94f6558e01ab6d42ac1fdcd0453688b",
+        "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-feedback-hub-relay:retained"
+      },
+      "frontend": {
+        "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-frontend:latest",
+        "image_id": "sha256:67e1bb7ea44f329c466de22cfe25c83ccca8fccf205286bc2f6cccc8d1d687b5",
+        "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-frontend:retained"
+      },
+      "gateway": {
+        "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-gateway:latest",
+        "image_id": "sha256:6cd164db46b40805623d4fad5911def596356eb05f57318e8663454a822a551a",
+        "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-gateway:retained"
+      },
+      "mcp": {
+        "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-mcp:latest",
+        "image_id": "sha256:36abd8158fcf705da7ff27f8e37a308e177cfdf44169adbb3dc50c8342378dbc",
+        "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-mcp:retained"
+      },
+      "runtime-adapter": {
+        "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-runtime-adapter:latest",
+        "image_id": "sha256:b18dbc0f130ed89402c7e3590fb2812f84dbdf4afef933002103ed75f76ddf87",
+        "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-runtime-adapter:retained"
+      },
+      "runtime-candidate": {
+        "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-runtime-candidate:latest",
+        "image_id": "sha256:82cebf2842c01930c50723e8152fa98cab123a9b8741f8c2a040af7531649da4",
+        "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-runtime-candidate:retained"
+      }
+    },
+    "schema_version": "dsh-u7-retained-artifacts.v1"
+  },
+  "reused_ci_images": {
+    "dsh-0.1.1rc1/backend": {
+      "image_id": "sha256:b29ce8388bfec648d8097e81e6f081fe4f9c5a10c7070a8d2ab17f26a5e84679",
+      "source": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-backend:retained"
+    },
+    "dsh-0.1.1rc1/feedback-hub-relay": {
+      "image_id": "sha256:2f80b406101cabb256b71cea0ca993a8b94f6558e01ab6d42ac1fdcd0453688b",
+      "source": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-feedback-hub-relay:retained"
+    },
+    "dsh-0.1.1rc1/frontend": {
+      "image_id": "sha256:67e1bb7ea44f329c466de22cfe25c83ccca8fccf205286bc2f6cccc8d1d687b5",
+      "source": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-frontend:retained"
+    },
+    "dsh-0.1.1rc1/gateway": {
+      "image_id": "sha256:6cd164db46b40805623d4fad5911def596356eb05f57318e8663454a822a551a",
+      "source": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-gateway:retained"
+    },
+    "dsh-0.1.1rc1/mcp": {
+      "image_id": "sha256:36abd8158fcf705da7ff27f8e37a308e177cfdf44169adbb3dc50c8342378dbc",
+      "source": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-mcp:retained"
+    },
+    "dsh-0.1.1rc1/runtime-adapter": {
+      "image_id": "sha256:b18dbc0f130ed89402c7e3590fb2812f84dbdf4afef933002103ed75f76ddf87",
+      "source": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-runtime-adapter:retained"
+    },
+    "dsh-0.1.2rc1/runtime-adapter": {
+      "image_id": "sha256:82cebf2842c01930c50723e8152fa98cab123a9b8741f8c2a040af7531649da4",
+      "source": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-runtime-candidate:retained"
+    }
+  },
+  "schema_version": "dsh-u6-rehearsal.v1",
+  "scope": "byq-u5-u6-s1nwh9l-",
+  "steps": []
+}

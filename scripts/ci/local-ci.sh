@@ -50,7 +50,7 @@ for arg in "$@"; do
     --with-smoke) WITH_SMOKE=1 ;;
     --auto-smoke) AUTO_SMOKE=1 ;;
     --with-dsh-web) WITH_DSH_WEB=1 ;;
-    --retain-u6-artifacts) RETAIN_U6_ARTIFACTS=1 ;;
+    --retain-u6-artifacts|--retain-dsh-artifacts) RETAIN_U6_ARTIFACTS=1 ;;
     --keep-postgres) KEEP_POSTGRES=1 ;;
     --no-cleanup) NO_CLEANUP=1 ;;
     --plan-only) PLAN_ONLY=1 ;;
@@ -300,6 +300,15 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   export BYQ_DSH_COMPOSITION_SOURCE=plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml
   export BYQ_DSH_IDENTITY_SOURCE=plugins/dsh-byq/compositions/byq-product-sdk.identity.json
+  # Explicit rollback baseline for the legacy full suite. The exact promoted
+  # bundled artifact is separately built and exercised by check_dsh_candidate
+  # and U7's closed Product/model/browser qualification; never silently retag it.
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.u7
+  export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.1rc1
+  export BYQ_DSH_COMPOSITION=/opt/byq/compositions/byq-product-sdk.cordis.yml
+  export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.1rc1
+  export BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/app/web-evidence-provenance.json
+  export BYQ_PLUGIN_REGISTRY_PATH=/app/plugin-registry/plugins.json
   export BYQ_BOOTSTRAP_ADMIN_USERNAME="${BYQ_CI_BOOTSTRAP_ADMIN_USERNAME:-ci-admin}"
   export BYQ_BOOTSTRAP_ADMIN_PASSWORD="${BYQ_CI_BOOTSTRAP_ADMIN_PASSWORD:-ci-bootstrap-test-only}"
   export BYQ_E2E_ADMIN_USERNAME="$BYQ_BOOTSTRAP_ADMIN_USERNAME"
@@ -318,8 +327,8 @@ ci_image() {
 build_test_images() {
   local services=() service
   python3 scripts/dsh/release.py check || return 1
-  python3 scripts/dsh/build_revision.py check --build dsh-0.1.1rc1-u6.3 || return 1
-  python3 scripts/dsh/build_revision.py check --build dsh-0.1.2rc1-u6.3 || return 1
+  python3 scripts/dsh/promotion.py check || return 1
+  python3 -c 'from scripts.dsh import build_revision as b; [b.check(b.selected_build_id(r)) for r in sorted(b.RELEASES)]' || return 1
   prepare_ci_compose_env
   if [ "$WITH_SMOKE" -eq 1 ] || [ "$WITH_DSH_WEB" -eq 1 ]; then
     services=(backend gateway runtime-adapter mcp frontend data-worker signal-worker ml-worker signal-sandbox feedback-publisher feedback-hub-relay)
@@ -461,7 +470,7 @@ check_dsh_candidate() {
   ensure_ci_mcp || { bad "candidate live MCP dependency"; return; }
   RESOURCES_TOUCHED=1
   candidate_image="$(ci_image runtime-candidate)"
-  if ! run_interruptible docker build -f services/runtime-adapter/Dockerfile.u6-candidate \
+  if ! run_interruptible docker build -f services/runtime-adapter/Dockerfile.u7-candidate \
       -t "$candidate_image" .; then
     bad "candidate image build"; return
   fi

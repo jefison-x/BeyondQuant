@@ -1,0 +1,25 @@
+{
+  "candidate_releases": [],
+  "carrier": {
+    "entrypoint": "node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/bin.js",
+    "integrity": "sha512-CTWwd1g5/AKkNvuSu1lVdbfenhvR9UhuELQm7uhYhRGI3d3tnCnOReky0rbc7VW6tzvllMl8ShA2V5tOMQunEQ==",
+    "kind": "npm-explicit-cli",
+    "npm_version": "0.1.1-rc.1",
+    "package": "@deepseek-ai/dsh-sdk-jsonrpc-demo"
+  },
+  "compatibility_family": "byq-dsh-sdk-v1",
+  "default_release": "dsh-0.1.1rc1",
+  "descriptor_hash": "sha256:646077dfd55f83933fab9c99e28ba3ee53cbb2c9fa1daee5d1ad51194f5adc8a",
+  "is_default": false,
+  "profile": {
+    "composition": "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
+    "composition_hash": "sha256:b8530afdc5b28ee18a132dd1616d841eaa6d803d975e7110e556183b29a214bf",
+    "identity": "plugins/dsh-byq/compositions/byq-product-sdk.identity.json",
+    "name": "research"
+  },
+  "python": {
+    "runtime_bin": "0.1.1rc1",
+    "sdk": "0.1.1rc1"
+  },
+  "schema_version": "dsh-deployment-identity.v1"
+}

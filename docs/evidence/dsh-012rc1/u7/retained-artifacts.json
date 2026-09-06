@@ -1,0 +1,56 @@
+{
+  "archive": {
+    "bytes": 461501440,
+    "name": "images.tar",
+    "sha256": "sha256:3659a109ecbf9a293ef9a2f62b9602606c808694ccfb9a33c0604ef5a3ed9cf6"
+  },
+  "build_revisions": {
+    "dsh-0.1.1rc1": {
+      "build_id": "dsh-0.1.1rc1-u7.3",
+      "manifest_hash": "sha256:d15a2404fea190f41486a18645219e5955789361002fbb82c25e56fe57ee9f70"
+    },
+    "dsh-0.1.2rc1": {
+      "build_id": "dsh-0.1.2rc1-u7.3",
+      "manifest_hash": "sha256:84accb9dd446f62c92c61312cb52436b4f643265917e1fcdf47e2852c8bba0d8"
+    }
+  },
+  "ci_scope": "local-u7-recheck-artifacts-20260906",
+  "images": {
+    "backend": {
+      "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-backend:latest",
+      "image_id": "sha256:b29ce8388bfec648d8097e81e6f081fe4f9c5a10c7070a8d2ab17f26a5e84679",
+      "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-backend:retained"
+    },
+    "feedback-hub-relay": {
+      "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-feedback-hub-relay:latest",
+      "image_id": "sha256:2f80b406101cabb256b71cea0ca993a8b94f6558e01ab6d42ac1fdcd0453688b",
+      "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-feedback-hub-relay:retained"
+    },
+    "frontend": {
+      "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-frontend:latest",
+      "image_id": "sha256:67e1bb7ea44f329c466de22cfe25c83ccca8fccf205286bc2f6cccc8d1d687b5",
+      "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-frontend:retained"
+    },
+    "gateway": {
+      "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-gateway:latest",
+      "image_id": "sha256:6cd164db46b40805623d4fad5911def596356eb05f57318e8663454a822a551a",
+      "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-gateway:retained"
+    },
+    "mcp": {
+      "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-mcp:latest",
+      "image_id": "sha256:36abd8158fcf705da7ff27f8e37a308e177cfdf44169adbb3dc50c8342378dbc",
+      "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-mcp:retained"
+    },
+    "runtime-adapter": {
+      "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-runtime-adapter:latest",
+      "image_id": "sha256:b18dbc0f130ed89402c7e3590fb2812f84dbdf4afef933002103ed75f76ddf87",
+      "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-runtime-adapter:retained"
+    },
+    "runtime-candidate": {
+      "ci_tag": "byq-ci-stack-local-u7-recheck-artifacts-20260906-runtime-candidate:latest",
+      "image_id": "sha256:82cebf2842c01930c50723e8152fa98cab123a9b8741f8c2a040af7531649da4",
+      "retained_tag": "byq-u7-artifact-local-u7-recheck-artifacts-20260906-runtime-candidate:retained"
+    }
+  },
+  "schema_version": "dsh-u7-retained-artifacts.v1"
+}

@@ -1,0 +1,125 @@
+{
+  "cycles": 20,
+  "lingering_threads": 0,
+  "maximum_seconds": 1.015008,
+  "median_seconds": 0.63945,
+  "minimum_seconds": 0.593852,
+  "peak_processes": [
+    {
+      "name": "MainThread",
+      "rss_mib": 173.746
+    },
+    {
+      "name": "python3",
+      "rss_mib": 36.68
+    }
+  ],
+  "peak_rss_mib": 210.426,
+  "release": "0.1.1rc1",
+  "retained_sessions": 0,
+  "runtime_bin": "0.1.1rc1",
+  "sample_count": 20,
+  "samples": [
+    {
+      "cycle": 1,
+      "peak_rss_mib": 203.758,
+      "seconds": 1.015008
+    },
+    {
+      "cycle": 2,
+      "peak_rss_mib": 201.152,
+      "seconds": 0.649077
+    },
+    {
+      "cycle": 3,
+      "peak_rss_mib": 203.902,
+      "seconds": 0.62681
+    },
+    {
+      "cycle": 4,
+      "peak_rss_mib": 200.039,
+      "seconds": 0.618955
+    },
+    {
+      "cycle": 5,
+      "peak_rss_mib": 201.758,
+      "seconds": 0.846468
+    },
+    {
+      "cycle": 6,
+      "peak_rss_mib": 204.152,
+      "seconds": 0.905841
+    },
+    {
+      "cycle": 7,
+      "peak_rss_mib": 210.426,
+      "seconds": 0.699396
+    },
+    {
+      "cycle": 8,
+      "peak_rss_mib": 199.488,
+      "seconds": 0.632998
+    },
+    {
+      "cycle": 9,
+      "peak_rss_mib": 199.75,
+      "seconds": 0.662046
+    },
+    {
+      "cycle": 10,
+      "peak_rss_mib": 203.918,
+      "seconds": 0.651368
+    },
+    {
+      "cycle": 11,
+      "peak_rss_mib": 200.551,
+      "seconds": 0.604397
+    },
+    {
+      "cycle": 12,
+      "peak_rss_mib": 198.434,
+      "seconds": 0.642845
+    },
+    {
+      "cycle": 13,
+      "peak_rss_mib": 201.973,
+      "seconds": 0.729808
+    },
+    {
+      "cycle": 14,
+      "peak_rss_mib": 201.293,
+      "seconds": 0.660155
+    },
+    {
+      "cycle": 15,
+      "peak_rss_mib": 203.918,
+      "seconds": 0.605615
+    },
+    {
+      "cycle": 16,
+      "peak_rss_mib": 203.688,
+      "seconds": 0.618088
+    },
+    {
+      "cycle": 17,
+      "peak_rss_mib": 209.242,
+      "seconds": 0.633001
+    },
+    {
+      "cycle": 18,
+      "peak_rss_mib": 202.555,
+      "seconds": 0.602018
+    },
+    {
+      "cycle": 19,
+      "peak_rss_mib": 200.863,
+      "seconds": 0.593852
+    },
+    {
+      "cycle": 20,
+      "peak_rss_mib": 200.676,
+      "seconds": 0.636056
+    }
+  ],
+  "schema_version": "dsh-runtime-benchmark.v1"
+}

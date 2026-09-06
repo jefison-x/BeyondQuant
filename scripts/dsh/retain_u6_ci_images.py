@@ -23,11 +23,17 @@ ROOT = Path(__file__).resolve().parents[2]
 SERVICES = ("backend", "gateway", "runtime-adapter", "runtime-candidate", "mcp", "frontend", "feedback-hub-relay")
 
 
+def stage(scope):
+    matched = re.fullmatch(r"local-(u[67])-[a-z0-9-]{3,60}", scope)
+    if matched is None:
+        raise ValueError("exact local U6/U7 CI scope required")
+    return matched[1]
+
+
 def names(scope):
-    if re.fullmatch(r"local-u6-[a-z0-9-]{3,60}", scope) is None:
-        raise ValueError("exact local U6 CI scope required")
+    lane = stage(scope)
     return {name: {"ci_tag": f"byq-ci-stack-{scope}-{name}:latest",
-                   "retained_tag": f"byq-u6-artifact-{scope}-{name}:retained"} for name in SERVICES}
+                   "retained_tag": f"byq-{lane}-artifact-{scope}-{name}:retained"} for name in SERVICES}
 
 
 def builds():
@@ -55,7 +61,7 @@ def archive_hash(path):
 def retain(scope):
     images = names(scope)
     revisions = builds()
-    directory = ROOT / ".ci-artifacts" / scope / "retained-u6"
+    directory = ROOT / ".ci-artifacts" / scope / ("retained-" + stage(scope))
     if directory.exists() or directory.resolve() != directory:
         raise ValueError("artifact output must be a new canonical directory")
     # Resolve every source and reject any existing artifact target before writing.
@@ -74,7 +80,7 @@ def retain(scope):
     with archive.open("xb") as output:
         subprocess.run(["docker", "image", "save", *[item["retained_tag"] for item in images.values()]],
                        stdout=output, check=True, timeout=300)
-    receipt = {"schema_version": "dsh-u6-retained-artifacts.v1", "ci_scope": scope,
+    receipt = {"schema_version": f"dsh-{stage(scope)}-retained-artifacts.v1", "ci_scope": scope,
                "build_revisions": revisions, "images": images,
                "archive": {"name": "images.tar", "bytes": archive.stat().st_size, "sha256": archive_hash(archive)}}
     with (directory / "receipt.json").open("x") as output:
@@ -85,13 +91,13 @@ def retain(scope):
 
 def load_receipt(scope):
     expected = names(scope)
-    directory = ROOT / ".ci-artifacts" / scope / "retained-u6"
+    directory = ROOT / ".ci-artifacts" / scope / ("retained-" + stage(scope))
     path, archive = directory / "receipt.json", directory / "images.tar"
     if any(p.is_symlink() or not p.is_file() or p.resolve() != p for p in (path, archive)):
         raise ValueError("missing or non-canonical retained artifact")
     receipt = json.loads(path.read_text())
     if (set(receipt) != {"schema_version", "ci_scope", "build_revisions", "images", "archive"}
-            or receipt["schema_version"] != "dsh-u6-retained-artifacts.v1"
+            or receipt["schema_version"] != f"dsh-{stage(scope)}-retained-artifacts.v1"
             or receipt["ci_scope"] != scope or receipt["build_revisions"] != builds()
             or set(receipt["images"]) != set(expected)):
         raise ValueError("retained artifact receipt identity mismatch")
@@ -141,7 +147,7 @@ def validate_archive_metadata(archive, receipt):
 
 def restore(scope):
     receipt = load_receipt(scope)
-    archive = ROOT / ".ci-artifacts" / scope / "retained-u6/images.tar"
+    archive = ROOT / ".ci-artifacts" / scope / ("retained-" + stage(scope)) / "images.tar"
     validate_archive_metadata(archive, receipt)
     missing = False
     for item in receipt["images"].values():
