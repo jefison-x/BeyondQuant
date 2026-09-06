@@ -77,6 +77,15 @@ production images or fetch a floating candidate. Retained artifacts are explicit
 operator evidence, not active test services; keep until U7/U8 review, and do not
 automatically prune or delete them. Archive import is not performed by the runner.
 
+On this host, Compose's OCI image cleanup also removed several artifact aliases;
+the checksummed archive is therefore the durable handoff, not Docker tag survival.
+After CI cleanup, run `python3 scripts/dsh/retain_u6_ci_images.py --scope <exact-scope>
+--restore` before rehearsal. It validates the archive checksum, all seven OCI
+digests and both OCI/Docker tag inventories, rejects links/unknown paths and any
+different existing target image, then loads and checks every original image ID.
+Only exact `byq-u6-artifact-*` references are accepted; no production reference is
+imported and no image is rebuilt. This is an operator action, not a Product API.
+
 Also pass `--qualify-g1-g4` to re-run the other four fixed synthetic scenarios on
 the same candidate artifact after the core old→new→old journey. Only G3 receives
 the existing synthetic approval option. Each scenario runs once with a bounded

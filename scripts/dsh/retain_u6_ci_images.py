@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import tarfile
 
 try:
     from scripts.dsh import build_revision
@@ -105,10 +106,64 @@ def load_receipt(scope):
     return receipt
 
 
+def validate_archive_metadata(archive, receipt):
+    expected = {item["retained_tag"]: item["image_id"] for item in receipt["images"].values()}
+    with tarfile.open(archive, "r:") as source:
+        members = source.getmembers()
+        if len({item.name for item in members}) != len(members):
+            raise ValueError("duplicate archive entry")
+        for item in members:
+            allowed_directory = item.isdir() and item.name.rstrip("/") in {"blobs", "blobs/sha256"}
+            allowed_file = item.isfile() and (item.name in {"index.json", "manifest.json", "oci-layout"}
+                or re.fullmatch(r"blobs/sha256/[a-f0-9]{64}", item.name) is not None)
+            if not (allowed_directory or allowed_file):
+                raise ValueError("unexpected archive path or link")
+        def metadata(name):
+            member = source.getmember(name)
+            if member.size > 2097152:
+                raise ValueError("archive metadata exceeds bound")
+            return json.load(source.extractfile(member))
+        index, legacy = metadata("index.json"), metadata("manifest.json")
+        entries = index.get("manifests", [])
+        observed = {}
+        for item in entries:
+            annotation = item.get("annotations", {})
+            name = annotation.get("io.containerd.image.name", "")
+            if name in observed or annotation.get("org.opencontainers.image.ref.name") != "retained":
+                raise ValueError("unexpected OCI tag")
+            observed[name] = item.get("digest")
+        if observed != {"docker.io/library/" + tag: digest for tag, digest in expected.items()}:
+            raise ValueError("OCI archive identity/tag mismatch")
+        tags = [tag for item in legacy for tag in item.get("RepoTags", [])]
+        if len(tags) != len(expected) or set(tags) != set(expected):
+            raise ValueError("Docker archive tag mismatch")
+
+
+def restore(scope):
+    receipt = load_receipt(scope)
+    archive = ROOT / ".ci-artifacts" / scope / "retained-u6/images.tar"
+    validate_archive_metadata(archive, receipt)
+    missing = False
+    for item in receipt["images"].values():
+        existing = subprocess.check_output(["docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}",
+            "--filter", f"reference={item['retained_tag']}"], text=True).strip()
+        if existing and image_id(item["retained_tag"]) != item["image_id"]:
+            raise ValueError("refusing to overwrite a different retained image")
+        missing |= not bool(existing)
+    if missing:
+        subprocess.run(["docker", "image", "load", "--input", str(archive)], check=True,
+                       stdout=subprocess.DEVNULL, timeout=300)
+    for item in receipt["images"].values():
+        if image_id(item["retained_tag"]) != item["image_id"]:
+            raise ValueError("restored image differs from the tested artifact")
+    return receipt
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scope", required=True)
+    parser.add_argument("--restore", action="store_true", help="restore only a validated exact U6 archive")
     args = parser.parse_args()
-    value = retain(args.scope)
-    print(json.dumps({"stage": "u6-artifacts-retained", "scope": args.scope,
+    value = restore(args.scope) if args.restore else retain(args.scope)
+    print(json.dumps({"stage": "u6-artifacts-restored" if args.restore else "u6-artifacts-retained", "scope": args.scope,
                       "image_count": len(value["images"]), "archive": value["archive"]}))

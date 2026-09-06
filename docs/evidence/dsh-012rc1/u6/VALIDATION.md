@@ -125,6 +125,19 @@ tests cover invalid scope, production-tag substitution, output overwrite, archiv
 drift and partial/hosted CI rejection. Final artifact CI/rehearsal must now use this
 handoff; the earlier removed-image benchmark remains retained history.
 
+The artifact-handoff CI `local-u6-artifacts-20260906` completed 26/26 PASS and
+cleanup verification PASS. It exported seven tested application images to a
+461490176-byte archive, SHA-256
+`c50628332acd52441647e3baba083f5f4b8a206f98a65a1b19d38c8eac781c5a`.
+The next attempt `byq-u5-u6--l4xnnd5` stopped before services/model calls because
+this host's OCI image cleanup also removed the added aliases (the classic
+candidate alias survived). FAIL/cleanup PASS remains at
+`/tmp/byq-u6-_l4xnnd5/result.json`. Unlike the previous attempt, the exact archive
+is intact. Read-only checksum and seven-image OCI/Docker inventory verification
+passed; a narrowly scoped operator restore now validates that archive and every
+original image ID. No re-build or repeated model evaluation is needed for this
+artifact transport correction; no cleanup rule was changed.
+
 Images embed the exact manifest. CI checks source inventory/hashes before building;
 live rehearsal checks the embedded manifest before model calls and switches.
 Negative tests reject missing/extra inputs, drift, cross-release claims and wrong

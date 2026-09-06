@@ -1,9 +1,11 @@
 import copy
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+import tarfile
 import unittest
 from unittest.mock import patch
 
@@ -72,6 +74,49 @@ class RetainedArtifactTests(unittest.TestCase):
                                     capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 2)
             self.assertIn("requires explicit local", result.stderr)
+
+    def test_archive_import_metadata_rejects_production_tags_and_links(self):
+        images = artifacts.names("local-u6-artifact-test")
+        for item in images.values():
+            item["image_id"] = "sha256:" + "a" * 64
+        index = {"manifests": [{"digest": item["image_id"], "annotations": {
+            "io.containerd.image.name": "docker.io/library/" + item["retained_tag"],
+            "org.opencontainers.image.ref.name": "retained"}} for item in images.values()]}
+        legacy = [{"RepoTags": [item["retained_tag"]]} for item in images.values()]
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = Path(temporary) / "images.tar"
+            def write(values, *, link=False):
+                with tarfile.open(archive, "w") as output:
+                    for name, value in values.items():
+                        data = json.dumps(value).encode()
+                        info = tarfile.TarInfo(name)
+                        info.size = len(data)
+                        output.addfile(info, io.BytesIO(data))
+                    if link:
+                        info = tarfile.TarInfo("escape")
+                        info.type, info.linkname = tarfile.SYMTYPE, "/etc"
+                        output.addfile(info)
+            write({"index.json": index, "manifest.json": legacy})
+            artifacts.validate_archive_metadata(archive, {"images": images})
+            forged = copy.deepcopy(index)
+            forged["manifests"][0]["annotations"]["io.containerd.image.name"] = "docker.io/library/beyondquant-backend:latest"
+            for values, link in (({"index.json": forged, "manifest.json": legacy}, False),
+                                 ({"index.json": index, "manifest.json": [{"RepoTags": ["beyondquant:latest"]}]}, False),
+                                 ({"index.json": index, "manifest.json": legacy}, True)):
+                write(values, link=link)
+                with self.assertRaises(ValueError):
+                    artifacts.validate_archive_metadata(archive, {"images": images})
+
+    def test_restore_refuses_different_existing_identity_before_import(self):
+        receipt = {"images": {"runtime-adapter": {"retained_tag": "byq-u6-artifact-test:retained", "image_id": "expected"}}}
+        with patch.object(artifacts, "load_receipt", return_value=receipt), \
+                patch.object(artifacts, "validate_archive_metadata"), \
+                patch.object(artifacts.subprocess, "check_output", return_value="existing"), \
+                patch.object(artifacts, "image_id", return_value="different"), \
+                patch.object(artifacts.subprocess, "run") as run:
+            with self.assertRaises(ValueError):
+                artifacts.restore("local-u6-artifact-test")
+            run.assert_not_called()
 
 
 if __name__ == "__main__":
