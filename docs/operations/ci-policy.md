@@ -67,7 +67,7 @@ For local saved evidence, pipe through the same redactor with shell `pipefail`; 
 Target service levels are under one minute for documentation, under four minutes for frontend-only,
 under six minutes for an ordinary service, and under fifteen minutes for Full on the current runner.
 These are targets, not measured hosted guarantees. Hosted runs record actual memory/disk/tool versions;
-Docker build concurrency is limited to two, Node 24 and Python 3.13 are installed explicitly, and browser
+Docker build concurrency is limited to two, Node 22 and Python 3.13 are installed explicitly, and browser
 OS dependencies are installed. Do not remove suites or reconnect production to meet timing targets.
 Actions use their current Node 24-based v7 releases, pinned to verified full commit SHA; setup-node automatic
 package-manager caching is disabled because this workflow does not require a shared dependency cache.
