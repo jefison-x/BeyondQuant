@@ -2,8 +2,8 @@
   "schema_version": "dsh-qualification-evidence.v1",
   "release_id": "dsh-0.1.2rc1",
   "baseline_release_id": "dsh-0.1.1rc1",
-  "git_commit": "ce6493f006d9b857f38d81306bbccfcff1a8fbe4",
-  "image_digest": "sha256:42cc13bec3fceaa72131a4af08006f7786f2c55dd25ec5705411527f30f60aff",
+  "git_commit": "f2bd9008e0be2a2f0f60e8e2e6c2de3622e1e5c9",
+  "image_digest": "sha256:c7c374ce01725c54e92fe7445f0680513715d8c324a0d3122426e8408d2e1d5e",
   "artifact_hashes": {
     "candidate_descriptor": "sha256:ee565e5050ded55cdce2ac9e6fb4bc17a11c60926e9838f526b4eead03bd4724",
     "baseline_descriptor": "sha256:646077dfd55f83933fab9c99e28ba3ee53cbb2c9fa1daee5d1ad51194f5adc8a",
@@ -12,7 +12,7 @@
   "composition_hash": "sha256:e584cee23c7e39ffaaf7d4c583d4762556032b4d4d173285c14c038d98ec6f98",
   "policy_hash": "sha256:2bd150b24423e42bdedb07ac9f2a4496af16f0258bf35e0acadaedea4c0c9103",
   "started_at": "2026-09-06T06:30:00Z",
-  "finished_at": "2026-09-06T08:40:47Z",
+  "finished_at": "2026-09-06T10:39:35Z",
   "platform": {
     "os": "linux",
     "arch": "x86_64"
@@ -22,7 +22,7 @@
       "provider": "deepseek-official",
       "model": "deepseek-v4-flash",
       "protocol": "openai-completions",
-      "runs": 25
+      "runs": 27
     }
   ],
   "checks": [
@@ -301,18 +301,18 @@
     {
       "id": "T35",
       "layer": "L1/L2/L3",
-      "result": "FAIL",
+      "result": "PASS",
       "test_name": "traceable Web evidence and approval-gated internal feedback",
-      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
-      "failure_category": "feedback_external_isolation_failed"
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/ISOLATION_REMEDIATION.md",
+      "failure_category": null
     },
     {
       "id": "T36",
       "layer": "L1/L2/L3",
-      "result": "BLOCKED",
+      "result": "PASS",
       "test_name": "real Product API browser flows and truthful normalized projection",
-      "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
-      "failure_category": "candidate_chrome_mcp_review_missing"
+      "evidence_reference": "docs/evidence/dsh-012rc1/u5/ISOLATION_REMEDIATION.md",
+      "failure_category": null
     },
     {
       "id": "T37",
@@ -354,12 +354,12 @@
       "lifecycle_cycles": 40
     },
     "timing_summary": {
-      "baseline_median_seconds": 0.556149,
-      "candidate_median_seconds": 0.837117
+      "baseline_median_seconds": 0.656442,
+      "candidate_median_seconds": 0.907235
     },
     "peak_rss_mib": {
-      "baseline": 205.527,
-      "candidate": 279.895
+      "baseline": 206.102,
+      "candidate": 283.293
     },
     "cleanup_counts": {
       "containers": 0,
@@ -380,14 +380,16 @@
   "limitations": [
     "OpenCode routes have deterministic protocol coverage but no credential configured in this environment.",
     "T38-T40 remain reserved for rollout rehearsal and production observation.",
-    "Approval continuations needed one bounded retry after the initial answer was durable; no duplicate approvals, training runs, predictions or feedback items were created."
+    "Approval continuations needed one bounded retry after the initial answer was durable; no duplicate approvals, training runs, predictions or feedback items were created.",
+    "Historical G6 external isolation failure is retained in withdrawn/qualification-evidence.isolation-failure.json; subsequent closed-stack old/new G6 each delivered exactly once to a fake Hub and published zero items.",
+    "Candidate remediation approval was deliberately delayed 120 seconds for Chrome review; these G6 latencies and continuation retries are not paired performance improvement evidence."
   ],
   "threshold_exceptions": [
     {
       "metric": "peak_rss_mib",
-      "observed": 279.895,
-      "threshold": 278.6324,
-      "reason": "The official bundled runtime main process accounts for the bounded 1.263 MiB excess; Adapter child memory and all lifecycle cleanup checks remained stable and zero."
+      "observed": 283.293,
+      "threshold": 279.3224,
+      "reason": "The official bundled runtime main process accounts for the 3.9706 MiB (1.42%) excess above the frozen formula. The Adapter child differs by 1.36 MiB; both releases completed 20 cycles with zero retained sessions or lingering threads. No safety services were disabled."
     }
   ],
   "qualification_scope": "preproduction"

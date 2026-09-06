@@ -1,10 +1,10 @@
 # U5 DSH 0.1.2rc1 qualification
 
-Status: BLOCKED — prior preproduction qualification withdrawn. Date: 2026-09-06.
-Remediation update: isolated old/new G6 reruns and candidate Chrome MCP review
-completed; final keyless regression is running. See
-[isolation remediation](ISOLATION_REMEDIATION.md). Qualification remains withdrawn
-until the new evidence and final validation are reconciled.
+Status: VERIFIED — preproduction qualification restored after isolation remediation.
+Date: 2026-09-06. The historical report remains withdrawn, not rewritten.
+Isolated old/new G6 reruns, candidate Chrome MCP review and final 26/26 keyless
+CI checks passed. See [isolation remediation](ISOLATION_REMEDIATION.md) for current
+results and the latest explicit RSS exception. T38–T40 remain NOT_RUN.
 Worktree: `/home/jefison/projects/.byq-worktrees/dsh-u5-full-qualification`.
 Branch: `feat/dsh-u5-full-qualification`.
 Observed base and candidate implementation commit:
@@ -132,8 +132,11 @@ new directory and does not alter the deployment selector.
 The former preproduction report is withdrawn, not a release gate. Its original
 observations are retained in `withdrawn/qualification-report.withdrawn.json`,
 explicitly marked `WITHDRAWN`; its historical PASS rows are not current verdicts.
-The current evidence marks T35 FAIL and T36 BLOCKED, so `qualify` must refuse to emit
-a preproduction report. T38-T40 remain NOT_RUN. The enabled OpenCode protocol
+The retained failure evidence marks T35 FAIL and T36 BLOCKED, so `qualify` must refuse to emit
+a preproduction report from that archived input. The active remediated evidence
+now records T35/T36 PASS and generated
+`report-preproduction-remediated/qualification-report.json`; T38-T40 remain
+NOT_RUN. The enabled OpenCode protocol
 routes have no configured credential in this
 environment; deterministic route/credential-isolation coverage passed and the
 credentialed second-route limitation remains explicit. U6 must perform the
@@ -141,6 +144,10 @@ release/rollback rehearsal before any default switch. U7 production deployment
 and formal version switching remain separately unauthorized.
 
 ## Post-run isolation audit and required correction
+
+Historical failure assessment below is retained verbatim as incident evidence.
+Its missing-test/merge-blocker statements describe the pre-remediation state;
+the current remediation and gate outcomes are above and in ISOLATION_REMEDIATION.md.
 
 - The final candidate live stack was started using the developer `.env` and an
   unrestricted Compose `up --build`, which also started `feedback-hub-relay`.
@@ -219,6 +226,6 @@ python3 -m unittest tests.test_dsh_qualification tests.test_dsh_release
 scripts/ci/local-ci.sh --base=origin/main --all --auto-smoke
 python3 scripts/dsh/release.py qualify \
   --release dsh-0.1.2rc1 --baseline dsh-0.1.1rc1 \
-  --output docs/evidence/dsh-012rc1/u5/report-preproduction
+  --output <new-output-directory>
 git diff --check
 ```

@@ -65,9 +65,9 @@ def valid_evidence(scope: str = "preproduction") -> dict[str, object]:
 
 
 class DshQualificationReportTests(unittest.TestCase):
-    def test_actual_u5_evidence_cannot_qualify_after_external_isolation_failure(self) -> None:
+    def test_retained_u5_isolation_failure_can_never_qualify(self) -> None:
         evidence = MODULE.load_json(
-            ROOT / "docs/evidence/dsh-012rc1/u5/qualification-evidence.json"
+            ROOT / "docs/evidence/dsh-012rc1/u5/withdrawn/qualification-evidence.isolation-failure.json"
         )
         self.assertEqual(evidence["checks"][34]["failure_category"],
                          "feedback_external_isolation_failed")
@@ -76,7 +76,6 @@ class DshQualificationReportTests(unittest.TestCase):
                          "candidate_chrome_mcp_review_missing")
         with self.assertRaisesRegex(MODULE.ReleaseError, "requires T01-T37 PASS"):
             MODULE.render_qualification_report("dsh-0.1.2rc1", "dsh-0.1.1rc1", evidence)
-        self.assertFalse((ROOT / "docs/evidence/dsh-012rc1/u5/report-preproduction/qualification-report.json").exists())
 
     def test_preproduction_report_requires_exact_complete_matrix(self) -> None:
         evidence = valid_evidence()

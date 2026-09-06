@@ -31,6 +31,15 @@ startup, the bounded G6 journey and finally-cleanup. The observed browser review
 used explicit `up`/probe/`down` diagnostic controls; the new orchestration is
 covered by deterministic failure-injection tests, not an additional paid rerun.
 
+For another explicitly authorized fixed G6 evaluation, create a fresh manifest
+with `live_stack.py render --file <new-file> --scope <new-byq-u5-scope>
+--release dsh-0.1.2rc1`, then use `live_stack.py run --file <new-file>
+--model-key-env-file <authorized-existing-env-file>`. Only the literal model key
+field is read. Do not source the environment file. `up` intentionally retains
+resources for interactive diagnosis and must be paired with `down`; `run` is the
+normal cleanup-on-exit path. Neither command authorizes another paid evaluation
+outside the maintainer's synthetic G1–G6 scope.
+
 The first remediation startup had healthy internal services but Docker did not
 actually publish ports on an internal-only network. The probe failed before login
 or any model request. This scope was removed. The frontend-only ingress network
@@ -62,8 +71,23 @@ These are local immutable image identities, not registry digests.
 Both scopes were removed after evidence capture, each including eight containers,
 four synthetic data volumes and three networks. Cleanup commands exited zero;
 synthetic data volumes are deleted, not recoverable from these scopes. No
-production resources were removed. Final keyless validation remains in progress
-before regenerating qualification.
+production resources were removed. Final keyless CI
+`local-u5-isolation-final-20260906` passed all 26 checks and exited zero after
+automatic cleanup. It included 331 Backend tests (one skip), the full Gateway and
+Runtime suites, seven real candidate process cases, 20 cycles per release, full
+MCP contracts, 148 frontend unit tests, 20 mocked browser journeys, nine real
+Product browser journeys and restart/two-user persistence checks. The final
+architecture-only rerun after adding cleanup coverage passed 154 tests.
+
+The latest paired lifecycle run measured baseline median 0.656442 s / peak RSS
+206.102 MiB, candidate 0.907235 s / 283.293 MiB, with zero retained sessions and
+lingering threads on both releases. Candidate RSS exceeds the frozen formula
+279.3224 MiB by 3.9706 MiB (1.42%). Main-process RSS was 244.820 vs 168.988 MiB;
+Adapter child RSS was 38.473 vs 37.113 MiB. The explicit bounded exception is
+retained for official-runtime overhead, not hidden by removing safety services.
+Historical diagnostic measurements remain in VALIDATION.md; the active report
+uses this latest paired run and does not claim the candidate stayed below the
+reference RSS formula.
 
 ## Candidate Chrome MCP review and Community classification
 

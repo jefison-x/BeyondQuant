@@ -19,10 +19,11 @@
   按 ADR-0015 squash auto-merge。U1 的集中 release identity、候选物料与隔离验证已完成；U2 的可信
   evidence provenance 解耦已由 PR #253 合并；U3 的旧版 Runtime compatibility seam 已由 PR #254 合并；
   U4 的 0.1.2rc1 候选适配已由 PR #255 合并。U5 的真实候选进程/五角色委派、old/new 20-cycle
-  benchmark、完整本地 CI 和模型场景内部断言已通过；授权只读核查已确认一条 G6 合成反馈误发到正式 Hub，
-  状态为 received、无发布队列或 GitHub Issue，且缺少候选 Chrome MCP 专项审查，故撤回完整认证，
-  T35 FAIL / T36 BLOCKED。下一步修正测试隔离并补齐验证，正式反馈记录保持不变，
-  不合并或进入 U6；T38-T40 留给 U6-U8。维护者已授权 U1–U8 串行开发、自动 push/Draft PR，并在 CI-green 后按
+  benchmark、完整本地 CI 和模型场景内部断言已通过。授权只读核查确认一条历史 G6 合成反馈误发到正式 Hub，
+  当时为 received、无发布队列或 GitHub Issue；记录保持不变，原认证已撤回并归档。
+  U5 已完成封闭测试栈/假 Hub 隔离整改、old/new G6 重跑和候选 Chrome MCP 桌面/手机审查；
+  最终本地 CI 26/26 通过，T01–T37 PASS，修复后预发布认证恢复。下一步通过远端 CI/合并门禁后
+  进入 U6 发布与回滚演练；T38-T40 留给 U6-U8。维护者已授权 U1–U8 串行开发、自动 push/Draft PR，并在 CI-green 后按
   ADR-0015 自动合并和进入下一阶段。维护者另行授权在当前本地环境使用既有凭据链执行必要的
   付费模型测试，并精确限制为合成测试用户、固定提示和 BYQ 测试上下文，不含生产数据、真实对话或密钥；生产部署和正式版本切换仍未授权。当前已认证/
   生产默认仍为 0.1.1rc1，Product Phase 97 不变。
