@@ -102,3 +102,58 @@ and its benchmark files remain separate from any later successful certification.
 Additional production read-only check: original SDK/runtime-bin 0.1.1rc1, profile
 research, the same three enabled plugins, zero active prompts/sessions; available
 backup filesystem space about 73 GiB. No real user history or model payload read.
+
+The failed full run finished 25 PASS / 1 FAIL; exact-scope cleanup verified zero.
+Recheck scope `local-u7-recheck-artifacts-20260906` has passed root 188/188 and
+Backend 331 PASS / one existing skip / seven subtests; other checks are pending.
+The successful Backend rerun did not modify or bypass the original failing test.
+
+## Original application recovery archive
+
+Private directory `/home/jefison/backups/byq-dsh-u7/application-20260906T152832Z`
+contains the exact original Backend/MCP/Gateway/Runtime/frontend images, actual
+container configuration and separately identified current main Compose/env files.
+The latter are not assumed identical to the original container configuration.
+Archive `original-images.tar`: 346248704 bytes; SHA-256
+`16c2a178dc77746e36a32cd468481df87c1aeb3747c7380354030d691066f417`.
+Tar inventory readable and contains five images; directory 0700, all configuration
+and archive files 0600. No configuration content, credentials or production data
+are in Git or model payloads. No service changes performed. These B0 images are
+historical recovery evidence, not a substitute for the qualified R1 rollback set
+which must recognize new web evidence. Final drained session/trace backup pending.
+
+## Resumed final acceptance
+
+Automatic tool review temporarily stopped further file work due to account usage
+limits. No bypass was attempted. Maintainer subsequently requested continuation.
+The already-running CI finished successfully: all 26 checks PASS, exit 0; exact
+cleanup verified on continuation. See [CI result](CI_RESULT.md). Seven-image
+archive integrity/build/metadata validation and restore passed; no rebuild used.
+
+Promoted synthetic scope `byq-u5-u6-0tth2mjd` is executing with the authorized
+literal-key bootstrap and fixed G1–G6. The first old→new switch and actual
+desktop/mobile Chrome maintenance/completion/plugin review passed. Main remains
+at the U6 merge; no official release exists. Live runner final result, U7 PR/merge,
+production switch and U8 observation remain pending.
+
+The promoted runner subsequently FAILED at G3 (subprocess exit 1), with exact
+synthetic cleanup PASS. G1/G2 automated and semantic checks passed; core
+old→new→old G6/G5 and namespace checks passed. G4 and final new-evidence rollback
+read did NOT RUN. See `promoted-rehearsal.failed-g3.raw.json`; no aggregate PASS
+or production readiness is inferred. Original runner discarded child stderr,
+so the precise G3 cause is not recoverable from that receipt. Diagnostic retention
+now saves child stderr privately (0600), publishes only its hash and never retries
+within a run. Two new safety tests and the existing targeted suite pass (14 tests).
+Both frozen U7.3 build manifests still validate unchanged. An initial manual build
+check omitted required `--build` and exited with usage error; explicit old/new
+checks then passed. Independent exact-image G3/G4 diagnostic scope
+`byq-u5-u6-344ob6hf` has started; paid G1/G2/G5/G6 are not repeated.
+
+That diagnostic launch failed BEFORE any model scenario: it redundantly switched
+an already-new empty namespace, correctly tripping the existing nonempty-runtime
+namespace assertion. Receipt `diagnostic-launch.failed.raw.json` and cleanup PASS
+are retained. The runner now checks an already-selected target without switching;
+the namespace assertion is unchanged. Root 190/190 passed after diagnostic
+retention was added; targeted eight rehearsal tests passed after the startup fix.
+New diagnostic scope `byq-u5-u6-s1nwh9l-` is executing G3. Production core services
+remain healthy on the old version; backup filesystem has about 72 GiB available.

@@ -330,16 +330,21 @@ class Rehearsal:
                 receipts[f"{release}/{name}"] = {"source": source, "image_id": identity}
         self.result["reused_ci_images"] = receipts
 
-    def qualify_remaining_scenarios(self):
+    def qualify_remaining_scenarios(self, scenarios=("G1", "G2", "G3", "G4")):
         """Re-run fixed G1-G4 on the certified-image candidate, after core rollback.
 
         These authorized synthetic mutations are separate from the core journey's
         unchanged-domain assertions. Probe assertions remain authoritative; there
         are no scenario retries or relaxed success conditions here.
         """
-        self.switch(NEW)
+        if scenarios not in (("G1", "G2", "G3", "G4"), ("G3", "G4")):
+            raise ValueError('only fixed full or diagnostic G3/G4 scenario sets allowed')
+        if self.release != NEW:
+            self.switch(NEW)
+        else:
+            self.check()
         self.result["additional_model_scenarios"] = []
-        for scenario in ("G1", "G2", "G3", "G4"):
+        for scenario in scenarios:
             self.check()
             emit("candidate-model-scenario", scenario=scenario, scope=self.scope)
             command = [sys.executable, "-m", "tests.dsh_upgrade.live_model_probe", scenario,
@@ -355,6 +360,15 @@ class Rehearsal:
             if completed.returncode:
                 self.result["additional_model_scenarios"].append({"scenario": scenario,
                     "result": "FAIL", "exit_code": completed.returncode})
+                if self.promoted:
+                    # Preserve diagnostic output privately, not in public evidence.
+                    # Provider exception text can contain sensitive context.
+                    diagnostic = getattr(completed, 'stderr', '') or ''
+                    path = self.directory / 'backups' / ('failed-' + scenario + '.stderr')
+                    with path.open('x') as output:
+                        os.chmod(path, 0o600)
+                        output.write(diagnostic)
+                    self.result['additional_model_scenarios'][-1]['private_diagnostic_sha256'] = hashlib.sha256(diagnostic.encode()).hexdigest()
                 raise AssertionError(f"bounded candidate {scenario} qualification failed")
             result = json.loads(completed.stdout.strip().splitlines()[-1])
             if result.get("result") != "PASS" or result.get("scenario") != scenario:
@@ -392,6 +406,23 @@ class Rehearsal:
                 raise AssertionError('rollback validator rejects qualified new producer')
             self.result['rollback_evidence_read'] = {'result': 'PASS', 'artifact_count': len(evidence_after),
                 'sha256': evidence_hash, 'qualified_new_producer_recognized': True, 'domain_rewind': False}
+
+    def g3_g4_only(self):
+        if not self.ci_scope or not self.promoted:
+            raise ValueError('targeted G3/G4 requires promoted exact retained artifacts')
+        self.result['mode'] = 'targeted-g3-g4-diagnostic'
+        self.prepare()
+        self.release = NEW
+        emit('building', scope=self.scope, output=str(self.directory))
+        self.reuse_ci_images()
+        self.run_command(self.compose(NEW, 'build', 'fake-hub'))
+        self.run_command(self.compose(NEW, 'up', '-d', '--no-build', '--wait', '--wait-timeout', '240',
+                                      *sorted(live_stack.SERVICES)))
+        self.result['initial'] = self.check()
+        self.seed_domain_fixture()
+        set_state(self.gate, 'open')
+        self.qualify_remaining_scenarios(('G3', 'G4'))
+        self.result['result'] = 'PASS'
 
     def g2_only(self):
         if not self.ci_scope:
@@ -455,9 +486,12 @@ def main():
     parser.add_argument("--qualify-g1-g4", action="store_true",
                         help="also re-run fixed candidate G1-G4 after the core rollback journey")
     parser.add_argument("--g2-only", action="store_true", help="one targeted G2 with verified synthetic object context")
+    parser.add_argument('--g3-g4-only', action='store_true', help='independent promoted G3/G4 diagnosis and evidence rollback; preserves original failures')
     args = parser.parse_args()
-    if args.g2_only and args.qualify_g1_g4:
-        parser.error("targeted G2 cannot also run the full scenario set")
+    if sum((args.g2_only, args.g3_g4_only, args.qualify_g1_g4)) > 1:
+        parser.error("targeted runs cannot also run other scenario sets")
+    if args.g3_g4_only and (not args.promoted or not args.ci_scope):
+        parser.error('G3/G4 diagnosis requires promoted retained artifacts')
     environment = live_stack.compose_environment()
     environment["DEEPSEEK_API_KEY"] = live_stack.model_key_from_env_file(args.model_key_env_file)
     available = next(int(line.split()[1]) for line in Path("/proc/meminfo").read_text().splitlines() if line.startswith("MemAvailable:"))
@@ -467,7 +501,9 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         rehearsal = Rehearsal(Path(tempfile.mkdtemp(prefix="byq-u6-")), environment, args.ci_scope, promoted=args.promoted)
         try:
-            if args.g2_only:
+            if args.g3_g4_only:
+                rehearsal.g3_g4_only()
+            elif args.g2_only:
                 rehearsal.g2_only()
             else:
                 rehearsal.journey(args.browser_window_seconds)
