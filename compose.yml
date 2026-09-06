@@ -85,7 +85,7 @@ services:
   runtime-adapter:
     build:
       context: .
-      dockerfile: services/runtime-adapter/Dockerfile
+      dockerfile: services/runtime-adapter/Dockerfile.u6
       args:
         BYQ_DSH_COMPOSITION_SOURCE: ${BYQ_DSH_COMPOSITION_SOURCE:-plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml}
         BYQ_DSH_IDENTITY_SOURCE: ${BYQ_DSH_IDENTITY_SOURCE:-plugins/dsh-byq/compositions/byq-product-sdk.identity.json}

@@ -76,21 +76,28 @@ def main() -> int:
     os.environ["DEEPSEEK_API_KEY"] = SENTINEL_KEY
     os.environ["DEEPSEEK_BASE_URL"] = f"http://127.0.0.1:{server.server_port}"
     samples: list[float] = []
+    cycle_samples: list[dict[str, object]] = []
+    sample_lock = threading.Lock()
+    cycle_peak = 0.0
     peak_rss, peak_processes = _rss_snapshot()
     stop = threading.Event()
 
     def sample_rss() -> None:
-        nonlocal peak_rss, peak_processes
+        nonlocal peak_rss, peak_processes, cycle_peak
         while not stop.wait(0.02):
-            current, processes = _rss_snapshot()
-            if current > peak_rss:
-                peak_rss = current
-                peak_processes = processes
+            with sample_lock:
+                current, processes = _rss_snapshot()
+                cycle_peak = max(cycle_peak, current)
+                if current > peak_rss:
+                    peak_rss = current
+                    peak_processes = processes
 
     sampler = threading.Thread(target=sample_rss, daemon=True)
     sampler.start()
     try:
         for cycle in range(CYCLES):
+            with sample_lock:
+                cycle_peak = 0.0
             started = time.monotonic()
             adapter = RuntimeAdapter()
             session_id = f"u5-bench-{uuid.uuid4().hex}"
@@ -114,6 +121,9 @@ def main() -> int:
             finally:
                 adapter.close()
             samples.append(time.monotonic() - started)
+            with sample_lock:
+                cycle_samples.append({"cycle": cycle + 1, "seconds": round(samples[-1], 6),
+                                      "peak_rss_mib": round(cycle_peak, 3)})
     finally:
         stop.set()
         sampler.join(timeout=1)
@@ -132,6 +142,7 @@ def main() -> int:
         "runtime_bin": version("deepseek-harness-runtime-bin"),
         "cycles": CYCLES,
         "sample_count": len(samples),
+        "samples": cycle_samples,
         "median_seconds": round(statistics.median(samples), 6),
         "minimum_seconds": round(min(samples), 6),
         "maximum_seconds": round(max(samples), 6),

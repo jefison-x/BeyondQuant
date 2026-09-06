@@ -14,6 +14,11 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts.dsh import build_revision
+except ModuleNotFoundError:
+    import build_revision
+
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_ROOT = ROOT / "config/dsh"
@@ -48,7 +53,7 @@ QUALIFICATION_CHECK_KEYS = {
     "id", "layer", "result", "test_name", "evidence_reference", "failure_category",
 }
 QUALIFICATION_RESULTS = {"PASS", "FAIL", "BLOCKED", "NOT_RUN"}
-QUALIFICATION_SCOPES = {"keyless", "preproduction", "production-observed"}
+QUALIFICATION_SCOPES = {"keyless", "preproduction", "release-ready", "production-observed"}
 QUALIFICATION_ARTIFACT_KEYS = {
     "candidate_descriptor", "baseline_descriptor", "candidate_identity",
 }
@@ -291,8 +296,10 @@ def _timestamp(value: object, field: str) -> dt.datetime:
 def validate_qualification_evidence(
     value: dict[str, Any], *, release_id: str, baseline_release_id: str,
 ) -> None:
-    _require(set(value) == QUALIFICATION_KEYS, "qualification evidence has invalid closed schema")
-    _require(value["schema_version"] == "dsh-qualification-evidence.v1",
+    build_bound = value.get("schema_version") == "dsh-qualification-evidence.v2"
+    _require(set(value) == QUALIFICATION_KEYS | ({"build_revisions"} if build_bound else set()),
+             "qualification evidence has invalid closed schema")
+    _require(value["schema_version"] in {"dsh-qualification-evidence.v1", "dsh-qualification-evidence.v2"},
              "unknown qualification evidence schema")
     _require(
         value["release_id"] == release_id and value["baseline_release_id"] == baseline_release_id,
@@ -332,6 +339,27 @@ def validate_qualification_evidence(
              "invalid qualification platform")
     scope = value["qualification_scope"]
     _require(scope in QUALIFICATION_SCOPES, "invalid qualification scope")
+    _require(scope not in {"release-ready", "production-observed"} or build_bound,
+             "release-ready requires independent build-bound v2 evidence")
+    if build_bound:
+        revisions = value["build_revisions"]
+        _require(isinstance(revisions, dict) and set(revisions) == {"baseline", "candidate"},
+                 "qualification build revisions have invalid closed schema")
+        for role, expected_release in (("baseline", baseline_release_id), ("candidate", release_id)):
+            item = revisions[role]
+            _require(isinstance(item, dict) and set(item) == {"build_id", "manifest_hash", "image_digest"},
+                     "qualification build reference has invalid closed schema")
+            try:
+                built = build_revision.check(item["build_id"])
+                manifest_hash = build_revision.digest(build_revision.BUILDS / f"{item['build_id']}.json")
+            except (ValueError, OSError, TypeError) as error:
+                raise ReleaseError("qualification build manifest is missing or has drift") from error
+            _require(built["release_id"] == expected_release and item["manifest_hash"] == manifest_hash,
+                     "qualification build/release identity mismatch")
+            _require(isinstance(item["image_digest"], str) and SHA256.fullmatch(item["image_digest"]) is not None,
+                     "invalid build image identity")
+            if role == "candidate":
+                _require(item["image_digest"] == value["image_digest"], "candidate build image mismatch")
     checks = value["checks"]
     _require(isinstance(checks, list) and len(checks) == 40,
              "qualification checks must contain exactly T01-T40")
@@ -362,7 +390,7 @@ def validate_qualification_evidence(
             _require(isinstance(item["failure_category"], str)
                      and bool(item["failure_category"]),
                      f"{item['id']} non-PASS requires a failure category")
-    pass_through = {"keyless": 30, "preproduction": 37, "production-observed": 40}[scope]
+    pass_through = {"keyless": 30, "preproduction": 37, "release-ready": 39, "production-observed": 40}[scope]
     _require(all(item["result"] == "PASS" for item in checks[:pass_through]),
              f"{scope} qualification requires T01-T{pass_through:02d} PASS")
     if scope != "production-observed":
@@ -373,7 +401,7 @@ def validate_qualification_evidence(
         "limitations", "threshold_exceptions",
     ):
         _require(isinstance(value[field], list), f"qualification {field} must be an array")
-    if scope in {"preproduction", "production-observed"}:
+    if scope in {"preproduction", "release-ready", "production-observed"}:
         _require(bool(value["provider_model_metadata_without_secrets"]),
                  "credentialed qualification requires provider/model metadata")
     for provider in value["provider_model_metadata_without_secrets"]:
@@ -462,7 +490,8 @@ def render_qualification_report(
     )
     report = {
         **evidence,
-        "schema_version": "dsh-qualification-report.v1",
+        "schema_version": ("dsh-qualification-report.v2" if evidence["schema_version"].endswith(".v2")
+                           else "dsh-qualification-report.v1"),
         "qualification_state": "QUALIFIED",
     }
     return json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -474,12 +503,15 @@ def main() -> int:
     parser.add_argument("--release", help="exact registered release id")
     parser.add_argument("--baseline", help="exact registered baseline release id")
     parser.add_argument("--output", type=Path, help="new output directory")
+    parser.add_argument("--evidence", type=Path, help="explicit qualification evidence; never overwrite historical reports")
     args = parser.parse_args()
+    if args.evidence is not None and args.command != "qualify":
+        parser.error("--evidence is only valid with qualify")
     deployment, releases = load_all()
     if args.command == "qualify":
         if not args.release or not args.baseline or args.output is None:
             parser.error("qualify requires --release, --baseline and --output")
-        evidence = load_json(QUALIFICATION_EVIDENCE_PATH)
+        evidence = load_json(args.evidence or QUALIFICATION_EVIDENCE_PATH)
         write_new_output(
             args.output,
             "qualification-report.json",

@@ -364,15 +364,29 @@ async function send(value = prompt.value) {
   const content = value.trim();
   if (!content || busy.value || runActive.value) return;
   error.value = ""; busy.value = true;
+  let pendingMessage: AgentMessage | undefined;
+  let pendingSession = "";
   try {
     if (!agent.activeSessionId) await persistNewSession();
     if (replayRun.value.failed) await resumeSession(agent.activeSessionId, auth.token);
-    agent.addMessage({ role: "user", text: content, createdAt: new Date().toISOString() });
+    pendingMessage = { role: "user", text: content, createdAt: new Date().toISOString() };
+    pendingSession = agent.activeSessionId;
+    agent.addMessage(pendingMessage);
     localRunStartedAt.value = new Date().toISOString();
     await submitTurn(agent.activeSessionId, content, auth.token);
     scheduleRunReconciliation(agent.activeSessionId, conversationGeneration);
     prompt.value = ""; await refreshCatalog();
-  } catch (exc) { localRunStartedAt.value = ""; error.value = exc instanceof Error ? exc.message : "发送失败"; }
+  } catch (exc) {
+    if (exc instanceof Error && "code" in exc && exc.code === "chat_maintenance"
+        && pendingMessage && agent.activeSessionId === pendingSession) {
+      // This exact Product code guarantees rejection before the durable user
+      // write. Do not roll back optimistic messages for ambiguous network loss.
+      agent.messages = agent.messages.filter(message => !(message.role === "user"
+        && message.createdAt === pendingMessage!.createdAt && message.text === pendingMessage!.text));
+    }
+    localRunStartedAt.value = "";
+    error.value = exc instanceof Error ? exc.message : "发送失败";
+  }
   finally { busy.value = false; }
 }
 

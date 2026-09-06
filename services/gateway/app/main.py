@@ -8,7 +8,7 @@ import uuid
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -18,6 +18,7 @@ from packages.contracts.conversation_rehydration import (
     MAX_REHYDRATION_TOTAL_CHARS,
     ConversationContextMessage,
 )
+from packages.operations.admission import AdmissionClosed, chat_admission
 
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
 from .auth_api import router as auth_router
@@ -41,6 +42,19 @@ BACKEND_URL = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
 PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
 trace_store = TraceStore(os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"))
+
+
+def require_chat_admission():
+    with chat_admission():
+        yield
+
+
+@app.exception_handler(AdmissionClosed)
+async def admission_closed_handler(request: Request, exc: AdmissionClosed) -> JSONResponse:
+    return JSONResponse(status_code=503, headers={"Retry-After": "30"}, content={"error": {
+        "code": "chat_maintenance", "message": "小巴正在维护，输入已保留，请稍后重试。",
+        "request_id": uuid.uuid4().hex,
+    }})
 
 
 @app.exception_handler(ProductError)
@@ -585,6 +599,18 @@ def _replace_lost_runtime_session(session: ProductSession) -> ProductSession:
 def continue_approval_conversation(
     request: Request, conversation_id: str, approval_id: str, decision: str, action: str,
 ) -> dict[str, str]:
+    try:
+        with chat_admission():
+            return _continue_approval_conversation(request, conversation_id, approval_id, decision, action)
+    except AdmissionClosed:
+        # The decision endpoint already durably queued the continuation. Do not
+        # claim it, erase the decision, or manufacture a submitted model turn.
+        return {"status": "queued"}
+
+
+def _continue_approval_conversation(
+    request: Request, conversation_id: str, approval_id: str, decision: str, action: str,
+) -> dict[str, str]:
     """Submit one server-owned continuation turn for a durable approval decision."""
     headers = _trusted_agent_headers(request)
 
@@ -614,15 +640,15 @@ def continue_approval_conversation(
     )
     try:
         session = _product_session(request, conversation_id)
-        _adapter_post(
-            f"/internal/runtime/sessions/{session.session_id}/prompt",
-            payload={
-                "content": instruction,
-                "require_model_key": True,
-                "idempotency_key": f"approval-continuation-{approval_id}",
-            },
-            timeout=5.0,
-        )
+        payload = {"content": instruction, "require_model_key": True,
+                   "idempotency_key": f"approval-continuation-{approval_id}"}
+        try:
+            _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            session = _replace_lost_runtime_session(session)
+            _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
     except HTTPException:
         mark("failed")
         return {"status": "failed"}
@@ -632,7 +658,7 @@ def continue_approval_conversation(
     }
 
 
-@app.post("/v1/agent/sessions", status_code=201)
+@app.post("/v1/agent/sessions", status_code=201, dependencies=[Depends(require_chat_admission)])
 def create_product_session(request: Request) -> dict[str, object]:
     principal, workspace_id = _trusted_request_identity(request)
     session_id = f"byq-session-{uuid.uuid4().hex}"
@@ -758,7 +784,7 @@ def update_product_session(
     }}
 
 
-@app.post("/v1/agent/sessions/{session_id}/turns", status_code=202)
+@app.post("/v1/agent/sessions/{session_id}/turns", status_code=202, dependencies=[Depends(require_chat_admission)])
 def submit_product_turn(
     session_id: str,
     request: ProductPromptRequest,
@@ -793,7 +819,7 @@ def submit_product_turn(
     }
 
 
-@app.post("/v1/agent/sessions/{session_id}/resume")
+@app.post("/v1/agent/sessions/{session_id}/resume", dependencies=[Depends(require_chat_admission)])
 def resume_product_session(session_id: str, request: Request) -> dict[str, object]:
     session = _product_session(request, session_id)
     catalog = _catalog_request(
@@ -932,7 +958,7 @@ def runtime_health() -> dict[str, object]:
     return {"service": SERVICE, "status": "ok", "runtime_adapter": response.json()}
 
 
-@app.post("/internal/runtime/sessions", status_code=201)
+@app.post("/internal/runtime/sessions", status_code=201, dependencies=[Depends(require_chat_admission)])
 def create_runtime_session(request: RuntimeSessionRequest) -> dict[str, object]:
     """Private Phase 6 compatibility seam; product traffic uses /v1/agent."""
 
@@ -942,7 +968,7 @@ def create_runtime_session(request: RuntimeSessionRequest) -> dict[str, object]:
     )
 
 
-@app.post("/internal/runtime/sessions/{session_id}/prompt", status_code=202)
+@app.post("/internal/runtime/sessions/{session_id}/prompt", status_code=202, dependencies=[Depends(require_chat_admission)])
 def submit_runtime_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
     return _adapter_post(
         f"/internal/runtime/sessions/{session_id}/prompt",

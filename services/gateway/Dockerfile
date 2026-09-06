@@ -10,6 +10,7 @@ COPY services/gateway/pyproject.toml ./
 COPY services/gateway/app ./app
 COPY services/gateway/tests ./tests
 COPY packages/contracts ./packages/contracts
+COPY packages/operations ./packages/operations
 
 RUN pip install --no-cache-dir ".[test]"
 

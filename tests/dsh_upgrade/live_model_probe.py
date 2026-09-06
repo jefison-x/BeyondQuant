@@ -15,9 +15,9 @@ import urllib.parse
 import urllib.request
 
 try:
-    from .live_stack import preflight, compose_environment
+    from .live_stack import preflight, compose_environment, attest_runtime_build
 except ImportError:
-    from live_stack import preflight, compose_environment
+    from live_stack import preflight, compose_environment, attest_runtime_build
 
 
 def fake_hub_evidence(container: str) -> dict:
@@ -168,6 +168,7 @@ def main() -> None:
     parser.add_argument("--stack-file", type=Path, required=True)
     args = parser.parse_args()
     isolated = preflight(args.stack_file)
+    build = attest_runtime_build(args.stack_file)
     if args.release != isolated["release"]:
         raise AssertionError("probe release differs from the verified stack")
     username = os.environ.get("BYQ_U5_USERNAME", "u5-admin")
@@ -209,6 +210,7 @@ def main() -> None:
             # Verify immutable container environment and actual network
             # attachments again before approving any domain-side submission.
             preflight(args.stack_file)
+            attest_runtime_build(args.stack_file)
             approvals += approve_for_session(client, session_id, seen)
         replay = client.call("GET", f"/v1/agent/sessions/{urllib.parse.quote(session_id)}")
         answers = assistant_messages(replay)
@@ -275,6 +277,7 @@ def main() -> None:
     print(json.dumps({
         "schema_version": "dsh-u5-live-model-result.v1",
         "release": args.release,
+        "build_revision": build,
         "scenario": args.scenario,
         "session_id": session_id,
         "latency_seconds": round(time.monotonic() - started, 3),

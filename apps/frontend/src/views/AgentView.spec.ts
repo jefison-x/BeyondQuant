@@ -97,6 +97,29 @@ describe("AgentView", () => {
     expect(wrapper.find(".conversation-message.user .message-author").text()).toBe("我");
   });
 
+  it("retains maintenance-rejected input without a phantom run or duplicate bubble", async () => {
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void> };
+    const agent = useAgentStore();
+    const before = [...agent.messages];
+    view.prompt = "维护后继续这个问题";
+    submitTurn.mockRejectedValueOnce(Object.assign(new Error("小巴正在维护，输入已保留，请稍后重试。"), {
+      status: 503, code: "chat_maintenance",
+    }));
+    await view.send();
+    await flushPromises();
+    expect(view.prompt).toBe("维护后继续这个问题");
+    expect(agent.messages).toEqual(before);
+    expect(wrapper.find(".assistant-processing").exists()).toBe(false);
+    expect(wrapper.find(".composer-stop").exists()).toBe(false);
+    expect(wrapper.text()).toContain("输入已保留");
+    await view.send();
+    expect(agent.messages.filter(message => message.text === "维护后继续这个问题")).toHaveLength(1);
+    expect(view.prompt).toBe("");
+    wrapper.unmount();
+  });
+
   it("unlocks a failed run, explains the failure, and resumes before retry", async () => {
     const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
     await flushPromises();

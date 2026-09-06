@@ -11,6 +11,12 @@ import re
 import subprocess
 import sys
 
+try:
+    from scripts.dsh import build_revision
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scripts.dsh import build_revision
+
 ROOT = Path(__file__).resolve().parents[2]
 RELEASES = {"dsh-0.1.1rc1", "dsh-0.1.2rc1"}
 SERVICES = {"postgres", "backend", "mcp", "runtime-adapter", "gateway", "frontend", "fake-hub", "feedback-hub-relay"}
@@ -38,7 +44,7 @@ def model_key_from_env_file(path: Path) -> str:
     return values[0]
 
 
-def manifest(scope: str, release: str, port: int) -> dict:
+def manifest(scope: str, release: str, port: int, *, rehearsal_gate: str | None = None) -> dict:
     if not re.fullmatch(r"byq-u5-[a-z0-9][a-z0-9-]{2,44}", scope):
         raise ValueError("dedicated byq-u5 scope required")
     if release not in RELEASES or type(port) is not int or not 18000 <= port <= 18990:
@@ -84,7 +90,7 @@ def manifest(scope: str, release: str, port: int) -> dict:
     backend.update(volumes=["domain:/var/lib/byq/domain"], depends_on={"postgres": {"condition": "service_healthy"}})
     mcp = service("mcp", "services/mcp/Dockerfile", {"BYQ_BACKEND_URL": "http://backend:8000", "BYQ_MCP_TOKEN": "u5-synthetic-mcp-only", "BYQ_WEB_EVIDENCE_PROVENANCE_POLICY": policy}, 8300)
     mcp["depends_on"] = {"backend": {"condition": "service_healthy"}}
-    runtime = service("runtime-adapter", "services/runtime-adapter/Dockerfile.candidate" if release.endswith("2rc1") else "services/runtime-adapter/Dockerfile", {
+    runtime = service("runtime-adapter", "services/runtime-adapter/Dockerfile.u6-candidate" if release.endswith("2rc1") else "services/runtime-adapter/Dockerfile.u6", {
         "BYQ_MCP_URL": "http://mcp:8300/mcp/v1", "BYQ_MCP_TOKEN": "u5-synthetic-mcp-only",
         "BYQ_BACKEND_URL": "http://backend:8000", "BYQ_CREDENTIAL_RESOLVER_TOKEN": "u5-synthetic-resolver-only",
         "DEEPSEEK_API_KEY": "${DEEPSEEK_API_KEY:-}", "DSH_SESSION_ROOT": "/var/lib/byq/dsh-sessions",
@@ -105,12 +111,31 @@ def manifest(scope: str, release: str, port: int) -> dict:
         "BYQ_FEEDBACK_HUB_URL": "http://fake-hub:8800", "BYQ_FEEDBACK_HUB_ALLOW_HTTP": "1", "BYQ_FEEDBACK_HUB_POLL_SECONDS": "5",
     }, 8750)
     relay.update(read_only=True, depends_on={"backend": {"condition": "service_healthy"}, "fake-hub": {"condition": "service_healthy"}})
+    if rehearsal_gate is not None:
+        # U6 reuses this closed synthetic stack. This is not a general-purpose
+        # bind-mount escape hatch and never accepts a production gate path.
+        if (not scope.startswith("byq-u5-u6-") or not isinstance(rehearsal_gate, str)
+                or re.fullmatch(r"/tmp/byq-u6-[a-z0-9_]{8}/gate", rehearsal_gate) is None):
+            raise ValueError("dedicated U6 temporary gate and scope required")
+        result["x-byq-rehearsal-gate"] = rehearsal_gate
+        for member in (gateway, runtime):
+            member["environment"]["BYQ_CHAT_ADMISSION_FILE"] = "/run/byq-admission/admission.state"
+            member["volumes"].append({"type": "bind", "source": rehearsal_gate,
+                                      "target": "/run/byq-admission", "read_only": True,
+                                      "bind": {"create_host_path": False}})
+        # Keep compatibility preparation services stable while replacing only
+        # Runtime. Both releases retain disjoint homes in the synthetic volume.
+        for member in (backend, mcp):
+            member["environment"]["BYQ_WEB_EVIDENCE_PROVENANCE_POLICY"] = "/app/dsh-0.1.2rc1.web-evidence-provenance.json"
+        runtime["environment"]["DSH_SESSION_ROOT"] = f"/var/lib/byq/dsh-sessions/{release}"
+        runtime["image"] = f"{scope}-runtime-adapter-{release}:qualification"
     return result
 
 
 def validate_manifest(value):
     try:
-        expected = manifest(value["name"], value["x-byq-release"], value["x-byq-port"])
+        expected = manifest(value["name"], value["x-byq-release"], value["x-byq-port"],
+                            rehearsal_gate=value.get("x-byq-rehearsal-gate"))
         if value != expected:
             raise ValueError("test manifest differs from the closed service/resource/credential allowlist")
     except (KeyError, TypeError) as error:
@@ -119,6 +144,21 @@ def validate_manifest(value):
 
 def docker_json(*args):
     return json.loads(subprocess.check_output(["docker", *args], env=compose_environment(), text=True))
+
+
+def attest_runtime_build(path: Path) -> dict:
+    value = json.loads(path.read_text())
+    validate_manifest(value)
+    build_id = build_revision.selected_build_id(value["x-byq-release"])
+    expected = build_revision.check(build_id)
+    container = f"{value['name']}-runtime-adapter-1"
+    observed = json.loads(subprocess.check_output([
+        "docker", "exec", container, "python3", "-c",
+        "from pathlib import Path; print(Path('/opt/byq/builds/build.identity.json').read_text())",
+    ], env=compose_environment(), text=True, timeout=10))
+    if observed != expected:
+        raise ValueError("actual image embeds a different or historical build manifest")
+    return {"build_id": build_id, "manifest_hash": build_revision.digest(build_revision.BUILDS / f"{build_id}.json")}
 
 
 def preflight(path: Path, *, require_healthy=True) -> dict:
@@ -154,9 +194,17 @@ def preflight(path: Path, *, require_healthy=True) -> dict:
         for key, content in actual_env.items():
             if content and re.search(r"TOKEN|SECRET|API_KEY|PRIVATE_KEY|DATABASE_URL|CREDENTIAL_KEYRING", key) and key not in spec.get("environment", {}):
                 raise ValueError(f"unexpected credential field: {name}/{key}")
-        expected_mounts = {(value["volumes"][entry.split(":")[0]]["name"], entry.split(":")[1]) for entry in spec.get("volumes", [])}
+        expected_mounts = {(value["volumes"][entry.split(":")[0]]["name"], entry.split(":")[1])
+                           if isinstance(entry, str) else (None, entry["target"])
+                           for entry in spec.get("volumes", [])}
         if {(mount.get("Name"), mount["Destination"]) for mount in container["Mounts"]} != expected_mounts:
             raise ValueError("unexpected host bind or data volume")
+        for mount in container["Mounts"]:
+            if mount.get("Name") is None:
+                source = value.get("x-byq-rehearsal-gate")
+                if (source is None or mount.get("Type") != "bind" or mount.get("Source") != source
+                        or mount.get("RW") is not False or Path(source).resolve() != Path(source)):
+                    raise ValueError("rehearsal gate mount must be exact, canonical and read-only")
         for bindings in container["NetworkSettings"].get("Ports", {}).values():
             if bindings and any(binding["HostIp"] != "127.0.0.1" for binding in bindings):
                 raise ValueError("non-loopback test port")
@@ -209,9 +257,10 @@ def main():
     parser.add_argument("--release", choices=sorted(RELEASES))
     parser.add_argument("--port", type=int, default=18210)
     parser.add_argument("--model-key-env-file", type=Path)
+    parser.add_argument("--rehearsal-gate")
     args = parser.parse_args()
     if args.action == "render":
-        value = manifest(args.scope, args.release, args.port)
+        value = manifest(args.scope, args.release, args.port, rehearsal_gate=args.rehearsal_gate)
         with args.file.open("x") as output:
             json.dump(value, output, indent=2)
         print(json.dumps({"rendered": str(args.file), "scope": args.scope}))

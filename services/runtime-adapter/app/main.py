@@ -6,11 +6,12 @@ import queue
 import threading
 from collections.abc import AsyncIterator
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from packages.contracts.conversation_rehydration import ConversationContextMessage
+from packages.operations.admission import AdmissionClosed, chat_admission
 
 from .runtime import ModelCredentialUnavailable, RuntimeAdapter, SessionConflict
 
@@ -36,6 +37,16 @@ class PromptRequest(BaseModel):
 
 adapter = RuntimeAdapter()
 app = FastAPI(title="BeyondQuant DSH Runtime Adapter", version="0.1.0")
+
+
+def require_chat_admission():
+    with chat_admission():
+        yield
+
+
+@app.exception_handler(AdmissionClosed)
+async def admission_closed_handler(request, exc: AdmissionClosed):
+    return JSONResponse(status_code=503, content={"detail": "chat maintenance; retry later"})
 
 
 class _AsyncSubscriberBridge:
@@ -84,7 +95,7 @@ def runtime_operations() -> dict[str, object]:
     return adapter.operations_snapshot()
 
 
-@app.post("/internal/runtime/sessions", status_code=201)
+@app.post("/internal/runtime/sessions", status_code=201, dependencies=[Depends(require_chat_admission)])
 def create_session(request: CreateSessionRequest) -> dict[str, object]:
     try:
         return adapter.create_session(
@@ -99,7 +110,7 @@ def create_session(request: CreateSessionRequest) -> dict[str, object]:
         raise HTTPException(status_code=503, detail="DSH runtime failed to initialize") from exc
 
 
-@app.post("/internal/runtime/sessions/{session_id}/prompt", status_code=202)
+@app.post("/internal/runtime/sessions/{session_id}/prompt", status_code=202, dependencies=[Depends(require_chat_admission)])
 def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
     try:
         run_id = adapter.submit_prompt(
@@ -119,7 +130,7 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
     return {"accepted": True, "session_id": session_id, "run_id": run_id}
 
 
-@app.post("/internal/runtime/sessions/{session_id}/resume")
+@app.post("/internal/runtime/sessions/{session_id}/resume", dependencies=[Depends(require_chat_admission)])
 def resume_session(session_id: str, request: ResumeSessionRequest | None = None) -> dict[str, object]:
     try:
         return adapter.resume_session(

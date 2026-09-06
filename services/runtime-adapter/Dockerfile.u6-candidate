@@ -1,0 +1,42 @@
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.2rc1 \
+    BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml \
+    BYQ_DSH_COMPOSITION_IDENTITY=/opt/byq/profiles/byq-product.identity.json \
+    BYQ_DSH_RELEASE_IDENTITY=/opt/byq/releases/deployment.identity.json \
+    DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions \
+    DSH_TELEMETRY_DISABLED=1 \
+    DSH_PERMISSION_MODE=read-only
+
+WORKDIR /app
+COPY services/runtime-adapter/requirements.candidate.lock ./requirements.candidate.lock
+RUN python3 -m pip install --no-cache-dir --require-hashes -r requirements.candidate.lock \
+    && python3 -m pip install --no-cache-dir \
+       fastapi==0.116.1 httpx==0.28.1 'uvicorn[standard]==0.35.0' pytest==9.0.3
+
+COPY services/runtime-adapter/app ./app
+COPY services/runtime-adapter/tests ./tests
+COPY packages/contracts ./packages/contracts
+COPY packages/operations ./packages/operations
+COPY config/dsh/builds/dsh-0.1.2rc1-u6.3.json /opt/byq/builds/build.identity.json
+RUN python3 -m pip check \
+    && python3 -c "from importlib.metadata import version; assert version('deepseek-harness-sdk') == '0.1.2rc1'; assert version('deepseek-harness-runtime-bin') == '0.1.2rc1'"
+
+COPY plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml /opt/byq/profiles/byq-product.patch.yml
+COPY plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.identity.json /opt/byq/profiles/byq-product.identity.json
+COPY config/dsh/generated/dsh-0.1.2rc1.identity.json /opt/byq/releases/deployment.identity.json
+COPY plugins/dsh-byq/runtime /opt/byq/runtime
+COPY plugins/dsh-byq/skills /opt/dsh/bundles/dsh-byq/skills
+
+RUN groupadd --system --gid 10002 byq \
+    && useradd --system --uid 10002 --gid byq --no-create-home \
+       --home-dir /var/lib/byq/dsh-runtime-home --shell /usr/sbin/nologin byq \
+    && mkdir -p /var/lib/byq/dsh-sessions /var/lib/byq/dsh-runtime-home \
+    && chown -R byq:byq /var/lib/byq/dsh-sessions /var/lib/byq/dsh-runtime-home \
+    && chmod -R a-w /app /opt/byq /opt/dsh
+
+USER byq
+
+CMD ["python3", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8400"]
