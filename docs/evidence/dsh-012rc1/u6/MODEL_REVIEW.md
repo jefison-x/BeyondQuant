@@ -1,7 +1,7 @@
 # U6 actual-model evidence interpretation
 
-Status: IN_PROGRESS. Core rollback/Chrome checks passed; G2 requires a targeted
-object-context qualification before T31 or release readiness can pass.
+Status: VERIFIED for the U6.3 isolated candidate. Core rollback/Chrome checks and
+targeted G2 actual-summary plus semantic review passed. Production is NOT_RUN.
 
 Core scope `byq-u5-u6-mr5ccwtq` used the retained exact CI images and completed
 old→new→old, logical backup/actual restore, queued G6 approval continuation and
@@ -33,3 +33,32 @@ not merely an answer or a failed attempted read. Negative tests reject missing,
 inaccessible/non-synthetic/running objects, a wrong job, 404 and non-summary calls.
 One targeted G2 run is authorized by the existing bounded synthetic evaluation
 scope; no unchanged scenario is rerun to improve a reported success rate.
+
+## Targeted G2 requalification
+
+Scope `byq-u5-u6-04ypp2zg`: PASS in 42.771 seconds, zero approvals/retries,
+one successful exact-job summary HTTP 200. Product counts stayed at four artifacts,
+one backtest, zero feedback/training/prediction; fake Hub attempts/intakes remained
+zero. [Raw result](g2-context-requalification.raw.json) binds the same retained
+candidate image and U6.3 manifest. Cleanup and independent exact-label queries
+confirmed zero test containers, networks and volumes.
+
+The private synthetic public answer was manually read after completion. It analyzed
+the completed fixture's 100000→100069.70 capital, 0.0697% total return, one buy and
+zero closed trades across three dates. It explicitly rejected the tiny sample's
+inflated Sharpe and zero drawdown as evidence of strategy quality, identified the
+missing benchmark/attribution and did not rerun or train. This is actual result
+analysis, not an ID request. The answer additionally reports one bounded five-row
+trade-detail read; the hard assertion independently proves the summary read.
+
+Only its SHA-256 is retained in Git:
+`e282c37f8b74a3df01a63092b32b5d9baf760c3b427e7896089c1a93badef149`.
+The 0600 synthetic answer remains under `/tmp/byq-u6-04ypp2zg/backups/` for local
+audit, not as a production backup. No raw dialogue or secret is included in Git.
+
+U6 final-artifact model metadata counts eight logical journeys: G6, two G5
+follow-ups, G1–G4 including rejected G2, and targeted G2. This is not an HTTP-call
+count, a paid token total or a success-rate benchmark. Historical U5 repeated paired
+samples remain historical; U6 reran affected acceptance against the independent
+images and does not label one new sample as three. Earlier U6 diagnostic/model
+attempts remain in VALIDATION.md and are not certification samples.

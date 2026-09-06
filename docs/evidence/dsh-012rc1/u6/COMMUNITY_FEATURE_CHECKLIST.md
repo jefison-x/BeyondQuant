@@ -1,6 +1,6 @@
 # U6 Community review and feature checklist
 
-Status: IN_PROGRESS; no U6 completion or production deployment claimed.
+Status: VERIFIED for U6 isolated acceptance; production deployment is NOT_RUN.
 
 Read-only reference: BeyondQuant-community frontend `AgentView.vue`, composer
 lines 335–375 and `submitMessage` lines 862–918. The Community composer preserves
@@ -16,9 +16,10 @@ BYQ Product contract.
 | Global approval center | PORT_UX, existing Phase 91 classification | Decisions remain durable; maintenance does not claim or submit queued continuation. |
 | Product deployment controls | DROP | No browser/DSH gate writer or deployment button. Operator alone writes gate state. |
 
-Completed partial evidence: unit/API tests; desktop/mobile Chrome MCP maintenance
-review; same-origin request checks; first diagnostic logical backup/actual restore,
-old→new approval continuation and cleanup; corrected full old→new→old journey,
-public follow-ups and namespace integrity. See [validation](VALIDATION.md).
-Still pending: final artifact identity/CI freeze. This checklist does not mark
-U6 complete.
+Final retained-artifact evidence: full CI 26/26, frontend 150 unit / 20 mocked /
+nine real Product browser checks, [actual desktop/mobile Chrome MCP review](CHROME_REVIEW.md),
+maintenance input preservation, same-origin requests, durable approval continuation
+exactly once and truthful Plugin Center active identity. Logical restore, full
+old→new→old and namespace checks passed; [model review](MODEL_REVIEW.md) preserves
+the rejected G2 sample separately from its successful context requalification.
+See [validation](VALIDATION.md). This is not U7 deployment or U8 observation.

@@ -1,7 +1,48 @@
-# U6 validation — in progress
+# U6 validation — independent builds verified
 
-U6 is not release-ready. No production deployment, default switch, production
-database restore, Hub moderation or external publication was performed.
+U6 isolated acceptance is VERIFIED for the independently bound U6.3 artifacts.
+T01–T39 are covered by the new v2 evidence; T40 remains NOT_RUN. No production
+deployment, default switch, production database restore, Hub moderation or external
+publication was performed. Earlier chronological pending statements below record
+their observation time and are superseded only by the final section, not erased.
+
+## Final retained-artifact acceptance
+
+Full artifact-producing CI `local-u6-artifacts-20260906`: 26/26 PASS, exit 0,
+cleanup PASS. [Selected CI result lines](CI_RESULT.md) include Backend 331 PASS /
+1 SKIP / 7 subtests, Gateway 91 PASS, Runtime 77 PASS / 2 SKIP, seven real candidate
+and delegate tests, frontend 150 unit / 20 mocked / nine real Product browser tests,
+full smoke, restart/two-user checks and Product coherence. Skips are not evidence.
+Final root/operator/negative safety tests: 179 PASS at implementation commit
+`dc0b3fa6150b6d43536e87009ac2eb809a7ededa`.
+
+T01–T30 were re-executed by the full root/component, real candidate, MCP and
+integration suites using current bound sources. Historical stage reports describe
+unchanged detailed contracts, but are not used alone to qualify the new images.
+The [retained receipt](retained-artifacts.json), [40 raw lifecycle samples](lifecycle-comparison.retained-artifact.json),
+[final actual Chrome review](CHROME_REVIEW.md), [core raw result](core-rehearsal.raw.json),
+[G2 retest](g2-context-requalification.raw.json) and [semantic review](MODEL_REVIEW.md)
+bind current checks to exact retained artifacts. T31–T36 combine deterministic
+edge-case coverage, real Product API persistence/browser flows and fresh live-model
+journeys, not an assertion that one model sample covers every edge case.
+
+Core scope `byq-u5-u6-mr5ccwtq` completed old→new→old, same-public-conversation
+G5 follow-ups, queued approval continuation exactly once, unchanged non-Runtime
+containers, zero cross-namespace writes and actual logical restore of 105 public
+tables with critical row fingerprints/constraints matching. Its automated raw PASS
+is preserved alongside the semantically rejected original G2 result. Targeted
+G2 `byq-u5-u6-04ypp2zg` then proved the exact successful summary read and actual
+analysis in 42.771 seconds with no business writes, approval or fake-Hub activity.
+Both scopes ended cleanup PASS; independent exact-label queries returned zero
+containers (including stopped), networks and volumes. Private synthetic dumps and
+safe result metadata remain locally retained; no production resource was removed.
+
+T37 records the exact formula, 0.2194-MiB RSS excess and reasoned exception in
+[readiness](READINESS.md); it is not an all-thresholds-pass claim. T38/T39 are the
+executed shared admission/drain/rollback and actual restore checks, not merely a
+runbook. U7 still needs deployment/baseline-restoration authority and a persistent
+private backup path; U8 needs real production observation. Production Phase 97 and
+the old default release remain unchanged.
 
 ## Implemented and tested
 

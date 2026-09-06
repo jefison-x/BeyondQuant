@@ -1,6 +1,6 @@
 # DSH 0.1.2rc1 执行交接与进度
 
-状态：**U0–U5 MERGED；U6 IN_PROGRESS；已授权 U1–U8 push/Draft PR/CI-green auto-merge**。2026-09-06。
+状态：**U0–U5 MERGED；U6 VERIFIED；已授权 U1–U8 push/Draft PR/CI-green auto-merge**。2026-09-06。
 
 ## 1. 下一模型第一步
 
@@ -30,13 +30,17 @@
 - 当前运行基线：Python `0.1.1rc1` / npm `0.1.1-rc.1`（实施前再次核实）。
 - 目标：Python `0.1.2rc1` / npm `0.1.2-rc.1`，不可擅自追新版本。
 - ADR-0058：Accepted；接受范围是 U0 记录的精确载体与边界，不是候选资格或后续阶段授权。
-- 当前升级阶段：U0–U5 `MERGED`；U6 `IN_PROGRESS`。历史 G6 合成反馈误发正式 Hub 的事实和
+- 当前升级阶段：U0–U5 `MERGED`；U6 `VERIFIED`。历史 G6 合成反馈误发正式 Hub 的事实和
   原撤回报告保持归档，正式 Hub 记录未修改。封闭测试隔离整改、old/new 假 Hub G6 重跑、
   候选 Chrome MCP 桌面/手机审查及最终 26/26 本地 CI 已通过；T01–T37 PASS、T38-T40 NOT_RUN。
   当前报告为 `report-preproduction-remediated/qualification-report.json`；PR #256 已在远端 CI 全绿及
   ADR-0015/0059 预检后于 2026-09-06T11:00:59Z 合并，merge commit `243f8ed6487301eae7a9062357d7060896fedf6f`。
-- 当前方案只宣称 U1 候选物料/identity/隔离准备、U2 provenance 解耦、U3 旧版兼容接口、U4
-  新版候选适配和 U5 修复后预发布认证；不宣称正式切换、生产部署或生产观察。
+- U6 现有独立 U6.3 构建、精确保留镜像、完整本地 CI 26/26、179项架构测试、真实模型/Chrome、
+  门禁与 old→new→old/实际恢复证据；新报告 `u6/report-release-ready/qualification-report.json`
+  为 v2 build-bound，T01–T39 PASS、T40 NOT_RUN。历史 U5 报告不覆盖；原 G2 语义失败和
+  独立精确对象补测分别保留，RSS 超限0.2194MiB记录为明确例外。
+- 当前方案不宣称正式切换、生产部署或生产观察。下一动作是 U6 远端 CI/合并门禁；之后 U7
+  必须取得生产基线恢复/部署的精确授权和管理员指定的持久私有备份路径。
 - 2026-09-06 后续整改：封闭测试 Compose、内部网络假 Hub、配置/容器预检和六项隔离回归已实现；
   old/new G6 均观察到一次审批、一次反馈和一次假 Hub 接收，发布数为零。候选 Chrome MCP
   桌面/手机小巴、审批中心和 Plugin Center 审查已完成；专用测试容器/卷/网络已清理。
@@ -66,7 +70,7 @@ ADR-0058 的接受、生产 operator 部署和付费模型评测分别记录精�
 | U3 旧版适配模块 | MERGED | `.byq-worktrees/dsh-u3-runtime-compatibility-seam` / `refactor/dsh-u3-runtime-compatibility-seam` | `docs/evidence/dsh-012rc1/u3/VALIDATION.md`；T12–T22、Runtime/Gateway 完整 suite、旧版真实进程 smoke 通过 | PR #254 已合并 |
 | U4 新版候选适配 | MERGED | `.byq-worktrees/dsh-u4-012rc1-candidate` / `feat/dsh-u4-012rc1-candidate` | `docs/evidence/dsh-012rc1/u4/VALIDATION.md`；候选真实进程/MCP/roster、候选与旧版完整 Runtime suite 通过 | PR #255 已按 ADR-0015 squash auto-merge |
 | U5 完整认证 | MERGED | `.byq-worktrees/dsh-u5-full-qualification` / `feat/dsh-u5-full-qualification` | `docs/evidence/dsh-012rc1/u5/`；隔离整改、Chrome MCP 和最终 26/26 CI 通过，修复后报告 T01–T37 PASS | PR #256 已合并；历史误发证据保留，正式记录不变 |
-| U6 发布/回滚演练 | IN_PROGRESS | `.byq-worktrees/dsh-u6-rollout-rehearsal` / `ops/dsh-u6-rollout-rehearsal` | 门禁/审批恢复、Chrome 桌面手机、逻辑恢复105表、诊断 old→new→old及清理通过；见 `docs/evidence/dsh-012rc1/u6/VALIDATION.md` | 已授权ADR-0061独立构建身份并保留历史不变；171项架构测试通过，U6.3完整CI复验与新镜像认证中；尚无U6 PR |
+| U6 发布/回滚演练 | VERIFIED | `.byq-worktrees/dsh-u6-rollout-rehearsal` / `ops/dsh-u6-rollout-rehearsal` | 独立 U6.3 镜像、26/26 CI、179项架构测试、模型/Chrome、105表实际恢复、old→new→old及清理通过；见 `docs/evidence/dsh-012rc1/u6/VALIDATION.md` | 新 v2 T01–T39认证通过，历史不变；提交 Draft PR并等待远端 CI/合并预检；生产权限仍独立 |
 | U7 生产晋升 | PLANNED | 未创建 | 未运行 | U6 合并、发布授权/所有门禁满足后 |
 | U8 观察/流程复用 | PLANNED | 未创建 | 未运行 | 实际切换后 |
 
