@@ -16,6 +16,7 @@
 #   --with-smoke       Also run full compose smoke (./tests/smoke/run.sh)
 #   --auto-smoke       Run full compose smoke only for integration-risk changes
 #   --with-dsh-web     Also run DSH Web diagnostic profile checks
+#   --retain-u6-artifacts  Local full CI only: retain exact U6 images/archive for rehearsal
 #   --keep-postgres    Keep the local CI postgres container after the run
 #   --no-cleanup       Leave compose/services running (debug)
 #   --plan-only        Print the selected checks without executing them
@@ -34,6 +35,7 @@ WITH_E2E=0
 WITH_SMOKE=0
 AUTO_SMOKE=0
 WITH_DSH_WEB=0
+RETAIN_U6_ARTIFACTS=0
 KEEP_POSTGRES=0
 NO_CLEANUP=0
 PLAN_ONLY=0
@@ -48,6 +50,7 @@ for arg in "$@"; do
     --with-smoke) WITH_SMOKE=1 ;;
     --auto-smoke) AUTO_SMOKE=1 ;;
     --with-dsh-web) WITH_DSH_WEB=1 ;;
+    --retain-u6-artifacts) RETAIN_U6_ARTIFACTS=1 ;;
     --keep-postgres) KEEP_POSTGRES=1 ;;
     --no-cleanup) NO_CLEANUP=1 ;;
     --plan-only) PLAN_ONLY=1 ;;
@@ -55,6 +58,12 @@ for arg in "$@"; do
     *) echo "Unknown option: $arg" >&2; exit 2 ;;
   esac
 done
+
+if [ "$RETAIN_U6_ARTIFACTS" -eq 1 ] && { [ "$ALL" -ne 1 ] || [ "$WITH_E2E" -ne 1 ] \
+    || [ "$WITH_SMOKE" -ne 1 ] || [ "${GITHUB_ACTIONS:-false}" = true ]; }; then
+  echo "U6 artifact handoff requires explicit local --all --with-e2e --with-smoke" >&2
+  exit 2
+fi
 
 PASS=0
 FAIL=0
@@ -475,15 +484,19 @@ check_dsh_candidate() {
   if ! run_interruptible docker run --name "$CI_RUNTIME_TEST" "${common[@]}" \
       -v "$CI_BASELINE_BENCH_VOL:/var/lib/byq/dsh-sessions" \
       -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$(ci_image runtime-adapter)" \
-      python3 /qualification/runtime_benchmark.py | tee "$benchmark_dir/baseline-benchmark.json"; then
+      python3 /qualification/runtime_benchmark.py > "$benchmark_dir/baseline-benchmark.json"; then
+    cat "$benchmark_dir/baseline-benchmark.json" >&2
     bad "baseline lifecycle benchmark"; return
   fi
+  cat "$benchmark_dir/baseline-benchmark.json"
   if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
       -e BYQ_DSH_REAL_PROCESS_TEST=1 -v "$CI_CANDIDATE_BENCH_VOL:/var/lib/byq/dsh-sessions" \
       -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$candidate_image" \
-      python3 /qualification/runtime_benchmark.py | tee "$benchmark_dir/candidate-benchmark.json"; then
+      python3 /qualification/runtime_benchmark.py > "$benchmark_dir/candidate-benchmark.json"; then
+    cat "$benchmark_dir/candidate-benchmark.json" >&2
     bad "candidate lifecycle benchmark"; return
   fi
+  cat "$benchmark_dir/candidate-benchmark.json"
   ok "candidate real-process, five delegates and old/new lifecycle benchmarks"
 }
 
@@ -666,5 +679,8 @@ printf '\n=============================\n'
 if [ "$FAIL" -gt 0 ]; then
   printf 'Local CI: %d passed, %d FAILED\n' "$PASS" "$FAIL"
   exit 1
+fi
+if [ "$RETAIN_U6_ARTIFACTS" -eq 1 ]; then
+  python3 scripts/dsh/retain_u6_ci_images.py --scope "$BYQ_CI_SCOPE" || exit 1
 fi
 printf 'Local CI: all %d checks passed\n' "$PASS"

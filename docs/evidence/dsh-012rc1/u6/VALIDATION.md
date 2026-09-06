@@ -29,7 +29,7 @@ Local results on 2026-09-06:
 | Frontend complete Vitest suite | 150 PASS |
 | Frontend type check and production build | PASS |
 | Full root/architecture suite | Initial 163-test run failed on build-input drift; final independent identity and fixed-scenario safety suite: 171 PASS |
-| Required full CI / U6 PR | Full local CI IN_PROGRESS / not created |
+| Required full CI / U6 PR | `local-u6-verify-20260906`: 26/26 PASS, exit 0; U6 PR not created |
 
 ## Historical identity protection gate
 
@@ -86,6 +86,44 @@ full rerun, `local-u6-verify-20260906`, uses unchanged `u6.3` inputs; its real-b
 output has a separate scope-specific directory so the earlier trace is preserved.
 Lifecycle benchmark JSON is now persisted per scope as well as emitted to stdout;
 the shell retains pipefail, so writing evidence cannot hide a benchmark failure.
+
+The bounded full rerun completed 26/26 PASS with exit 0: Backend 331 PASS / 1
+documented SKIP / 7 subtests, Gateway 91 PASS, Runtime 77 PASS / 2 documented
+SKIP, seven real candidate/role tests PASS, frontend 150 unit / 20 mocked browser /
+nine real Product browser tests PASS, and smoke, restart persistence, two-user
+isolation and cleanup PASS. Separate final root/operator tests: 171 PASS.
+
+[Raw lifecycle comparison](lifecycle-comparison.json) retains all 20 samples per
+release. Baseline/candidate medians are 0.654086/0.955040 seconds; both had zero
+retained sessions and owned lifecycle threads. RSS was 206.270/282.648 MiB against
+the frozen candidate ceiling 279.524 MiB. The 3.124 MiB (1.12%) excess requires an
+explicit release exception, not a claim that the formula passed. Peak process
+breakdown is old/new main 169.219/243.508 MiB and Adapter 37.051/39.141 MiB; the
+official carrier is the dominant difference, consistent with the retained U5
+finding. No safety feature was removed to obtain these results.
+
+Runtime build inputs remain `u6.3`. Implementation commit is
+`3d3e0b82b0241e57a63a1b9965f8f0efe0a8a5c8`; final operator/probe credential
+isolation and raw samples are frozen at `81aceecc6926fed3661a3bf5f4c1e87608e1acb7`.
+The latter changes no bound image source. Final live/Chrome requalification is
+still pending and cannot be inferred from the keyless CI result.
+
+The first final-artifact rehearsal `byq-u5-u6-qmlnn5y-` stopped before service
+startup or paid model calls: the runner incorrectly assumed CI image tags survive
+cleanup. Read-only investigation confirmed `cleanup-resources.sh` intentionally
+removes those exact tags/images. Result remains FAIL, cleanup PASS, at
+`/tmp/byq-u6-qmlnn5y_/result.json`; no replacement image was used. The successful
+CI result remains valid test evidence, but those removed artifacts cannot be
+promoted or used for final live requalification.
+
+The corrected handoff is explicit local `--retain-u6-artifacts`, after all full
+checks pass and before unchanged CI resource cleanup. It retains seven exact
+application images plus a checksummed archive under separate operator artifact
+identities. No production image is retagged; no test cleanup assertion is relaxed.
+The runner validates receipt/build/archive/image equality before use. Negative
+tests cover invalid scope, production-tag substitution, output overwrite, archive
+drift and partial/hosted CI rejection. Final artifact CI/rehearsal must now use this
+handoff; the earlier removed-image benchmark remains retained history.
 
 Images embed the exact manifest. CI checks source inventory/hashes before building;
 live rehearsal checks the embedded manifest before model calls and switches.

@@ -62,9 +62,20 @@ test objects. All external feedback stays in the fake Hub; real Hub/Issue action
 are not available. Use only within the maintainer's bounded evaluation authority.
 
 For final acceptance, pass `--ci-scope` with the exact successful `local-u6-*` CI
-scope. The runner aliases those tested images into its closed test scope, verifies
-identity equality, and starts with `--no-build`; only the fake Hub fixture is
-built separately. It does not retag production images or fetch a floating candidate.
+scope. Run that full local CI with `--retain-u6-artifacts`: only after all checks
+pass, the explicit operator handoff retains seven exact application images under
+new `byq-u6-artifact-*` tags and saves a checksummed archive/receipt in
+`.ci-artifacts/<scope>/retained-u6/`. It refuses existing output or artifact tags.
+Normal CI cleanup still removes all original test tags, containers, networks and
+volumes. CI exit/cleanup must pass independently; the artifact receipt alone is
+not qualification. This opt-in is rejected for partial or GitHub-hosted runs.
+
+The runner verifies the closed receipt, build identities, archive checksum and
+actual retained image IDs before aliasing into its closed test scope. It starts
+with `--no-build`; only the fake Hub fixture is built separately. It does not retag
+production images or fetch a floating candidate. Retained artifacts are explicit
+operator evidence, not active test services; keep until U7/U8 review, and do not
+automatically prune or delete them. Archive import is not performed by the runner.
 
 Also pass `--qualify-g1-g4` to re-run the other four fixed synthetic scenarios on
 the same candidate artifact after the core old→new→old journey. Only G3 receives

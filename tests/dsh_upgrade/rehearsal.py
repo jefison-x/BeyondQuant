@@ -18,6 +18,7 @@ import tempfile
 import time
 
 from scripts.dsh.admission import initialize, set_state
+from scripts.dsh.retain_u6_ci_images import load_receipt
 from . import live_stack
 from .live_model_probe import Client, PROMPTS, assistant_messages, counts, fake_hub_evidence
 
@@ -301,14 +302,17 @@ class Rehearsal:
         # Alias the exact tested artifacts into the closed fixture; never tag a
         # production name or resolve a registry's floating candidate remotely.
         receipts = {}
+        retained = load_receipt(self.ci_scope)
+        self.result["retained_ci_artifact"] = retained
         for release in (OLD, NEW):
             value = json.loads(self.files[release].read_text())
             names = ["runtime-adapter"] if release == NEW else ["runtime-adapter", "backend", "mcp", "gateway", "frontend", "feedback-hub-relay"]
             for name in names:
                 source_name = "runtime-candidate" if release == NEW else name
-                source = f"byq-ci-stack-{self.ci_scope}-{source_name}:latest"
+                tested = retained["images"][source_name]
+                source = tested["retained_tag"]
                 identity = live_stack.docker_json("image", "inspect", source)[0]["Id"]
-                if re.fullmatch(r"sha256:[a-f0-9]{64}", identity) is None:
+                if identity != tested["image_id"]:
                     raise AssertionError("invalid tested image identity")
                 target = value["services"][name]["image"]
                 self.run_command(["docker", "image", "tag", identity, target], timeout=30)
