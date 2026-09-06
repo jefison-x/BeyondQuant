@@ -1,0 +1,56 @@
+{
+  "archive": {
+    "bytes": 461490176,
+    "name": "images.tar",
+    "sha256": "sha256:c50628332acd52441647e3baba083f5f4b8a206f98a65a1b19d38c8eac781c5a"
+  },
+  "build_revisions": {
+    "dsh-0.1.1rc1": {
+      "build_id": "dsh-0.1.1rc1-u6.3",
+      "manifest_hash": "sha256:bc84ddeff4851d90541008a5baf0507840f374cd160bc2b16853b882a6837c1f"
+    },
+    "dsh-0.1.2rc1": {
+      "build_id": "dsh-0.1.2rc1-u6.3",
+      "manifest_hash": "sha256:c76bff7fd0dd4189c02cddf77777d1812a98bf74bd07e630308d8622868bf0a6"
+    }
+  },
+  "ci_scope": "local-u6-artifacts-20260906",
+  "images": {
+    "backend": {
+      "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-backend:latest",
+      "image_id": "sha256:01e799ffc2931239a27059bb959a11ffeb65bdf90c801a1e738d56aaf75f876e",
+      "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-backend:retained"
+    },
+    "feedback-hub-relay": {
+      "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-feedback-hub-relay:latest",
+      "image_id": "sha256:ff0c2f2ea565cfa0bfb0b3d2606f497232f654d5ca2279806280780256eb06a1",
+      "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-feedback-hub-relay:retained"
+    },
+    "frontend": {
+      "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-frontend:latest",
+      "image_id": "sha256:df97e34bff4d2f4b44689be34eb8dacd2ad6cfbfea7674f0b660d03aad4f79df",
+      "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-frontend:retained"
+    },
+    "gateway": {
+      "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-gateway:latest",
+      "image_id": "sha256:da9b09bd41eab7150b9f1c532c1bc03aa2daff50d4a29d8e5e6dbaafcd8c69a1",
+      "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-gateway:retained"
+    },
+    "mcp": {
+      "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-mcp:latest",
+      "image_id": "sha256:4c1ff0e675f19183d01e605217245743b6acd75acfd7df36211c1c965b4823b4",
+      "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-mcp:retained"
+    },
+    "runtime-adapter": {
+      "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-runtime-adapter:latest",
+      "image_id": "sha256:32c1ae6a10c1e1f862da29a7450a4c1c00616b94f04af47f8035d3ab4d5f1040",
+      "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-runtime-adapter:retained"
+    },
+    "runtime-candidate": {
+      "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-runtime-candidate:latest",
+      "image_id": "sha256:067d6aa3b657afd78f51d3bb75d6fd60e4bb81920cbc619cf23ff1e03b94d93d",
+      "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-runtime-candidate:retained"
+    }
+  },
+  "schema_version": "dsh-u6-retained-artifacts.v1"
+}

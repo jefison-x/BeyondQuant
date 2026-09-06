@@ -10,6 +10,42 @@ from tests.dsh_upgrade.fake_hub import Sink, digest
 
 
 class LiveIsolationTests(unittest.TestCase):
+    def test_actual_image_must_embed_exact_new_build_identity(self):
+        value = live_stack.manifest("byq-u5-u6-identity", "dsh-0.1.2rc1", 18210)
+        expected = live_stack.build_revision.check(live_stack.build_revision.selected_build_id("dsh-0.1.2rc1"))
+        with patch.object(Path, "read_text", return_value=json.dumps(value)), \
+                patch.object(live_stack.build_revision, "check", return_value=expected), \
+                patch.object(live_stack.subprocess, "check_output", return_value=json.dumps(expected)) as command:
+            observed = live_stack.attest_runtime_build(Path("synthetic-manifest"))
+            self.assertEqual(observed["build_id"], expected["build_id"])
+            self.assertEqual(command.call_args.args[0][2], "byq-u5-u6-identity-runtime-adapter-1")
+            wrong = copy.deepcopy(expected)
+            wrong["build_id"] = "dsh-0.1.2rc1-u6.1"
+            command.return_value = json.dumps(wrong)
+            with self.assertRaisesRegex(ValueError, "different or historical"):
+                live_stack.attest_runtime_build(Path("synthetic-manifest"))
+
+    def test_rehearsal_reuses_closed_stack_with_only_read_only_scoped_gate(self):
+        gate = "/tmp/byq-u6-abcdefgh/gate"
+        old = live_stack.manifest("byq-u5-u6-test", "dsh-0.1.1rc1", 18210, rehearsal_gate=gate)
+        new = live_stack.manifest("byq-u5-u6-test", "dsh-0.1.2rc1", 18210, rehearsal_gate=gate)
+        for value in (old, new):
+            live_stack.validate_manifest(value)
+            self.assertEqual(set(value["services"]), live_stack.SERVICES)
+            for name in ("gateway", "runtime-adapter"):
+                self.assertTrue(value["services"][name]["volumes"][-1]["read_only"])
+            tampered = copy.deepcopy(value)
+            tampered["services"]["gateway"]["volumes"][-1]["read_only"] = False
+            with self.assertRaises(ValueError):
+                live_stack.validate_manifest(tampered)
+        for name in live_stack.SERVICES - {"runtime-adapter"}:
+            self.assertEqual(old["services"][name], new["services"][name])
+        self.assertNotEqual(old["services"]["runtime-adapter"]["environment"]["DSH_SESSION_ROOT"],
+                            new["services"]["runtime-adapter"]["environment"]["DSH_SESSION_ROOT"])
+        for invalid in ("/", "/home/jefison", "/tmp/byq-u6-abcdefgh/gate/../gate"):
+            with self.assertRaises(ValueError):
+                live_stack.manifest("byq-u5-u6-test", "dsh-0.1.2rc1", 18210, rehearsal_gate=invalid)
+
     def test_bounded_runner_cleans_after_success_startup_or_probe_failure(self):
         value = live_stack.manifest("byq-u5-isolation-test", "dsh-0.1.2rc1", 18210)
         for failure_at in (None, 0, 1):

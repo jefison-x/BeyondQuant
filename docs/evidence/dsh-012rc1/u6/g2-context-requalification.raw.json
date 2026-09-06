@@ -1,0 +1,181 @@
+{
+  "cleanup": "PASS",
+  "domain_fixture": {
+    "backtest_job_id": "backtest_e25307e3ab0f4e59b956be2ca7131bfa",
+    "owner": "u5-admin",
+    "schema_version": "dsh-u5-live-fixture.v1",
+    "status": "completed",
+    "synthetic": true
+  },
+  "g2_context_requalification": {
+    "after": {
+      "artifacts": 4,
+      "backtests": 1,
+      "feedback": 0,
+      "ml_predictions": 0,
+      "ml_training": 0
+    },
+    "approval_delay_seconds": 0,
+    "approvals": 0,
+    "before": {
+      "artifacts": 4,
+      "backtests": 1,
+      "feedback": 0,
+      "ml_predictions": 0,
+      "ml_training": 0
+    },
+    "build_revision": {
+      "build_id": "dsh-0.1.2rc1-u6.3",
+      "manifest_hash": "sha256:c76bff7fd0dd4189c02cddf77777d1812a98bf74bd07e630308d8622868bf0a6"
+    },
+    "continuation_retries": 0,
+    "fake_hub_after": {
+      "attempts": 0,
+      "published": 0,
+      "received": 0,
+      "schema_version": "byq-u5-fake-hub.v1",
+      "snapshot_hashes": []
+    },
+    "fake_hub_before": {
+      "attempts": 0,
+      "published": 0,
+      "received": 0,
+      "schema_version": "byq-u5-fake-hub.v1",
+      "snapshot_hashes": []
+    },
+    "latency_seconds": 42.771,
+    "public_answer_chars": 1476,
+    "release": "dsh-0.1.2rc1",
+    "result": "PASS",
+    "scenario": "G2",
+    "schema_version": "dsh-u5-live-model-result.v1",
+    "session_id": "conversation_fcdb135672384e45bbcc19fb8cfaec7c",
+    "source_url_present": false,
+    "successful_backtest_summary_reads": 1,
+    "synthetic_object_context": {
+      "backtest_job_id": "backtest_e25307e3ab0f4e59b956be2ca7131bfa",
+      "name": "U5 TEST completed small backtest",
+      "status": "completed",
+      "synthetic": true
+    }
+  },
+  "initial": {
+    "build_revision": {
+      "build_id": "dsh-0.1.2rc1-u6.3",
+      "manifest_hash": "sha256:c76bff7fd0dd4189c02cddf77777d1812a98bf74bd07e630308d8622868bf0a6"
+    },
+    "fake_hub_container": "byq-u5-u6-04ypp2zg-fake-hub-1",
+    "frontend": "http://127.0.0.1:18210",
+    "gateway": "http://127.0.0.1:18210",
+    "images": {
+      "backend": "sha256:01e799ffc2931239a27059bb959a11ffeb65bdf90c801a1e738d56aaf75f876e",
+      "fake-hub": "sha256:69c5c0a7c2b44ab85d84d8b5d571175c2b399a1482bb93eb17a0c38615a220a3",
+      "feedback-hub-relay": "sha256:ff0c2f2ea565cfa0bfb0b3d2606f497232f654d5ca2279806280780256eb06a1",
+      "frontend": "sha256:df97e34bff4d2f4b44689be34eb8dacd2ad6cfbfea7674f0b660d03aad4f79df",
+      "gateway": "sha256:da9b09bd41eab7150b9f1c532c1bc03aa2daff50d4a29d8e5e6dbaafcd8c69a1",
+      "mcp": "sha256:4c1ff0e675f19183d01e605217245743b6acd75acfd7df36211c1c965b4823b4",
+      "postgres": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "runtime-adapter": "sha256:067d6aa3b657afd78f51d3bb75d6fd60e4bb81920cbc619cf23ff1e03b94d93d"
+    },
+    "release": "dsh-0.1.2rc1",
+    "scope": "byq-u5-u6-04ypp2zg"
+  },
+  "mode": "targeted-g2-object-context",
+  "production_changed": false,
+  "public_answer_sha256": "e282c37f8b74a3df01a63092b32b5d9baf760c3b427e7896089c1a93badef149",
+  "result": "PASS",
+  "retained_ci_artifact": {
+    "archive": {
+      "bytes": 461490176,
+      "name": "images.tar",
+      "sha256": "sha256:c50628332acd52441647e3baba083f5f4b8a206f98a65a1b19d38c8eac781c5a"
+    },
+    "build_revisions": {
+      "dsh-0.1.1rc1": {
+        "build_id": "dsh-0.1.1rc1-u6.3",
+        "manifest_hash": "sha256:bc84ddeff4851d90541008a5baf0507840f374cd160bc2b16853b882a6837c1f"
+      },
+      "dsh-0.1.2rc1": {
+        "build_id": "dsh-0.1.2rc1-u6.3",
+        "manifest_hash": "sha256:c76bff7fd0dd4189c02cddf77777d1812a98bf74bd07e630308d8622868bf0a6"
+      }
+    },
+    "ci_scope": "local-u6-artifacts-20260906",
+    "images": {
+      "backend": {
+        "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-backend:latest",
+        "image_id": "sha256:01e799ffc2931239a27059bb959a11ffeb65bdf90c801a1e738d56aaf75f876e",
+        "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-backend:retained"
+      },
+      "feedback-hub-relay": {
+        "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-feedback-hub-relay:latest",
+        "image_id": "sha256:ff0c2f2ea565cfa0bfb0b3d2606f497232f654d5ca2279806280780256eb06a1",
+        "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-feedback-hub-relay:retained"
+      },
+      "frontend": {
+        "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-frontend:latest",
+        "image_id": "sha256:df97e34bff4d2f4b44689be34eb8dacd2ad6cfbfea7674f0b660d03aad4f79df",
+        "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-frontend:retained"
+      },
+      "gateway": {
+        "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-gateway:latest",
+        "image_id": "sha256:da9b09bd41eab7150b9f1c532c1bc03aa2daff50d4a29d8e5e6dbaafcd8c69a1",
+        "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-gateway:retained"
+      },
+      "mcp": {
+        "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-mcp:latest",
+        "image_id": "sha256:4c1ff0e675f19183d01e605217245743b6acd75acfd7df36211c1c965b4823b4",
+        "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-mcp:retained"
+      },
+      "runtime-adapter": {
+        "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-runtime-adapter:latest",
+        "image_id": "sha256:32c1ae6a10c1e1f862da29a7450a4c1c00616b94f04af47f8035d3ab4d5f1040",
+        "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-runtime-adapter:retained"
+      },
+      "runtime-candidate": {
+        "ci_tag": "byq-ci-stack-local-u6-artifacts-20260906-runtime-candidate:latest",
+        "image_id": "sha256:067d6aa3b657afd78f51d3bb75d6fd60e4bb81920cbc619cf23ff1e03b94d93d",
+        "retained_tag": "byq-u6-artifact-local-u6-artifacts-20260906-runtime-candidate:retained"
+      }
+    },
+    "schema_version": "dsh-u6-retained-artifacts.v1"
+  },
+  "reused_ci_images": {
+    "dsh-0.1.1rc1/backend": {
+      "image_id": "sha256:01e799ffc2931239a27059bb959a11ffeb65bdf90c801a1e738d56aaf75f876e",
+      "source": "byq-u6-artifact-local-u6-artifacts-20260906-backend:retained"
+    },
+    "dsh-0.1.1rc1/feedback-hub-relay": {
+      "image_id": "sha256:ff0c2f2ea565cfa0bfb0b3d2606f497232f654d5ca2279806280780256eb06a1",
+      "source": "byq-u6-artifact-local-u6-artifacts-20260906-feedback-hub-relay:retained"
+    },
+    "dsh-0.1.1rc1/frontend": {
+      "image_id": "sha256:df97e34bff4d2f4b44689be34eb8dacd2ad6cfbfea7674f0b660d03aad4f79df",
+      "source": "byq-u6-artifact-local-u6-artifacts-20260906-frontend:retained"
+    },
+    "dsh-0.1.1rc1/gateway": {
+      "image_id": "sha256:da9b09bd41eab7150b9f1c532c1bc03aa2daff50d4a29d8e5e6dbaafcd8c69a1",
+      "source": "byq-u6-artifact-local-u6-artifacts-20260906-gateway:retained"
+    },
+    "dsh-0.1.1rc1/mcp": {
+      "image_id": "sha256:4c1ff0e675f19183d01e605217245743b6acd75acfd7df36211c1c965b4823b4",
+      "source": "byq-u6-artifact-local-u6-artifacts-20260906-mcp:retained"
+    },
+    "dsh-0.1.1rc1/runtime-adapter": {
+      "image_id": "sha256:32c1ae6a10c1e1f862da29a7450a4c1c00616b94f04af47f8035d3ab4d5f1040",
+      "source": "byq-u6-artifact-local-u6-artifacts-20260906-runtime-adapter:retained"
+    },
+    "dsh-0.1.2rc1/runtime-adapter": {
+      "image_id": "sha256:067d6aa3b657afd78f51d3bb75d6fd60e4bb81920cbc619cf23ff1e03b94d93d",
+      "source": "byq-u6-artifact-local-u6-artifacts-20260906-runtime-candidate:retained"
+    }
+  },
+  "schema_version": "dsh-u6-rehearsal.v1",
+  "scope": "byq-u5-u6-04ypp2zg",
+  "steps": [
+    {
+      "active_prompts": 0,
+      "drained": "dsh-0.1.2rc1"
+    }
+  ]
+}

@@ -14,7 +14,7 @@ SPEC.loader.exec_module(MODULE)
 
 
 def valid_evidence(scope: str = "preproduction") -> dict[str, object]:
-    pass_through = 37 if scope == "preproduction" else 30 if scope == "keyless" else 40
+    pass_through = {"keyless": 30, "preproduction": 37, "release-ready": 39, "production-observed": 40}[scope]
     checks = []
     for number in range(1, 41):
         passed = number <= pass_through
@@ -26,7 +26,7 @@ def valid_evidence(scope: str = "preproduction") -> dict[str, object]:
             "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
             "failure_category": None if passed else "later_stage",
         })
-    return {
+    value = {
         "schema_version": "dsh-qualification-evidence.v1",
         "release_id": "dsh-0.1.2rc1",
         "baseline_release_id": "dsh-0.1.1rc1",
@@ -62,9 +62,43 @@ def valid_evidence(scope: str = "preproduction") -> dict[str, object]:
         "threshold_exceptions": [],
         "qualification_scope": scope,
     }
+    if scope == "release-ready":
+        value["schema_version"] = "dsh-qualification-evidence.v2"
+        value["build_revisions"] = {
+            role: {"build_id": MODULE.build_revision.selected_build_id(release), "manifest_hash": MODULE.digest(
+                ROOT / "config/dsh/builds" / f"{MODULE.build_revision.selected_build_id(release)}.json"),
+                "image_digest": value["image_digest"] if role == "candidate" else "sha256:" + "c" * 64}
+            for role, release in (("baseline", "dsh-0.1.1rc1"), ("candidate", "dsh-0.1.2rc1"))
+        }
+    return value
 
 
 class DshQualificationReportTests(unittest.TestCase):
+    def test_historical_report_cannot_certify_new_build_readiness(self):
+        evidence = valid_evidence()
+        evidence["qualification_scope"] = "release-ready"
+        with self.assertRaisesRegex(MODULE.ReleaseError, "build-bound v2"):
+            MODULE.render_qualification_report("dsh-0.1.2rc1", "dsh-0.1.1rc1", evidence)
+
+    def test_build_mismatch_cannot_be_hidden_by_green_matrix(self):
+        evidence = valid_evidence("release-ready")
+        evidence["build_revisions"]["candidate"]["manifest_hash"] = "sha256:" + "f" * 64
+        with self.assertRaisesRegex(MODULE.ReleaseError, "build/release identity mismatch"):
+            MODULE.render_qualification_report("dsh-0.1.2rc1", "dsh-0.1.1rc1", evidence)
+
+    def test_release_readiness_requires_rehearsal_but_never_claims_production(self):
+        evidence = valid_evidence("release-ready")
+        report = json.loads(MODULE.render_qualification_report("dsh-0.1.2rc1", "dsh-0.1.1rc1", evidence))
+        self.assertEqual(report["checks"][38]["result"], "PASS")
+        self.assertEqual(report["checks"][39]["result"], "NOT_RUN")
+        evidence["checks"][38].update(result="NOT_RUN", failure_category="not_rehearsed")
+        with self.assertRaisesRegex(MODULE.ReleaseError, "requires T01-T39 PASS"):
+            MODULE.render_qualification_report("dsh-0.1.2rc1", "dsh-0.1.1rc1", evidence)
+        evidence = valid_evidence("release-ready")
+        evidence["checks"][39].update(result="PASS", failure_category=None)
+        with self.assertRaisesRegex(MODULE.ReleaseError, "requires T40-T40 NOT_RUN"):
+            MODULE.render_qualification_report("dsh-0.1.2rc1", "dsh-0.1.1rc1", evidence)
+
     def test_retained_u5_isolation_failure_can_never_qualify(self) -> None:
         evidence = MODULE.load_json(
             ROOT / "docs/evidence/dsh-012rc1/u5/withdrawn/qualification-evidence.isolation-failure.json"

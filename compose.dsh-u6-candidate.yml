@@ -1,0 +1,11 @@
+# Explicit U6 operational build; the historical candidate overlay stays frozen.
+services:
+  runtime-adapter:
+    image: byq-u6-runtime-candidate:local
+    build:
+      dockerfile: services/runtime-adapter/Dockerfile.u6-candidate
+    environment:
+      BYQ_DSH_COMPATIBILITY_RELEASE: dsh-0.1.2rc1
+      BYQ_DSH_COMPOSITION: /opt/byq/profiles/byq-product.patch.yml
+      BYQ_DSH_COMPOSITION_IDENTITY: /opt/byq/profiles/byq-product.identity.json
+      BYQ_DSH_RELEASE_IDENTITY: /opt/byq/releases/deployment.identity.json

@@ -1,0 +1,410 @@
+{
+  "schema_version": "dsh-qualification-evidence.v2",
+  "release_id": "dsh-0.1.2rc1",
+  "baseline_release_id": "dsh-0.1.1rc1",
+  "git_commit": "dc0b3fa6150b6d43536e87009ac2eb809a7ededa",
+  "image_digest": "sha256:067d6aa3b657afd78f51d3bb75d6fd60e4bb81920cbc619cf23ff1e03b94d93d",
+  "artifact_hashes": {
+    "candidate_descriptor": "sha256:ee565e5050ded55cdce2ac9e6fb4bc17a11c60926e9838f526b4eead03bd4724",
+    "baseline_descriptor": "sha256:646077dfd55f83933fab9c99e28ba3ee53cbb2c9fa1daee5d1ad51194f5adc8a",
+    "candidate_identity": "sha256:da13cd3928bbd82a85aa7e21036f990a5a3cf67ec29d902ea61eaf31c1c3713d"
+  },
+  "composition_hash": "sha256:e584cee23c7e39ffaaf7d4c583d4762556032b4d4d173285c14c038d98ec6f98",
+  "policy_hash": "sha256:2bd150b24423e42bdedb07ac9f2a4496af16f0258bf35e0acadaedea4c0c9103",
+  "started_at": "2026-09-06T13:09:30Z",
+  "finished_at": "2026-09-06T13:58:34Z",
+  "platform": {
+    "os": "linux",
+    "arch": "x86_64"
+  },
+  "provider_model_metadata_without_secrets": [
+    {
+      "provider": "deepseek-official",
+      "model": "deepseek-v4-flash",
+      "protocol": "openai-completions",
+      "runs": 8
+    }
+  ],
+  "checks": [
+    {
+      "id": "T01",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "release descriptor, lock and artifact verification",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T02",
+      "layer": "L0",
+      "result": "PASS",
+      "test_name": "closed release/deployment schema tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T03",
+      "layer": "L0",
+      "result": "PASS",
+      "test_name": "deterministic release generator drift tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T04",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "complete prerelease dependency closure checks",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T05",
+      "layer": "L1",
+      "result": "PASS",
+      "test_name": "installed SDK, carrier and package metadata checks",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T06",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "registry evidence and active-tool binding tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T07",
+      "layer": "L1/L2",
+      "result": "PASS",
+      "test_name": "isolated candidate identity and zero-resource cleanup",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T08",
+      "layer": "L0/L2",
+      "result": "PASS",
+      "test_name": "legacy web-evidence compatibility tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T09",
+      "layer": "L0/L1/L2",
+      "result": "PASS",
+      "test_name": "candidate provenance producer binding tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T10",
+      "layer": "L2",
+      "result": "PASS",
+      "test_name": "rolling provenance policy compatibility tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T11",
+      "layer": "L0/L2",
+      "result": "PASS",
+      "test_name": "web-evidence validation and atomic rollback tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T12",
+      "layer": "L1",
+      "result": "PASS",
+      "test_name": "real SDK start, initialize, prompt and close tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T13",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "single-active-run and idempotency tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T14",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "private progress quiet-window regression tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T15",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "no-progress ownership and public failure tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T16",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "child lifecycle and timeout isolation tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T17",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "trusted descendant activity filtering tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T18",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "whole-run deadline and terminal race tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T19",
+      "layer": "L0/L1/L2",
+      "result": "PASS",
+      "test_name": "bounded public root-only projection tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T20",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "failure and truncation normalization tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T21",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "receipt, attribution and usage deduplication tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T22",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "cancel, crash and bounded cleanup tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T23",
+      "layer": "L1",
+      "result": "PASS",
+      "test_name": "actual candidate root and child roster inspection",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T24",
+      "layer": "L1/L2",
+      "result": "PASS",
+      "test_name": "five real delegate role and cross-role denial journeys",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T25",
+      "layer": "L1/L2",
+      "result": "PASS",
+      "test_name": "real MCP authentication fail-closed test",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T26",
+      "layer": "L1",
+      "result": "PASS",
+      "test_name": "Guard, compaction and fetch-disable qualification",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T27",
+      "layer": "L0/L1",
+      "result": "PASS",
+      "test_name": "trusted Asia/Shanghai time and fixed skill-root tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T28",
+      "layer": "L1/L2",
+      "result": "PASS",
+      "test_name": "provider route and credential isolation tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T29",
+      "layer": "L0/L1/L2",
+      "result": "PASS",
+      "test_name": "contained home and read-only source boundary tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T30",
+      "layer": "L1/L2",
+      "result": "PASS",
+      "test_name": "telemetry disablement and sentinel non-disclosure tests",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/VALIDATION.md",
+      "failure_category": null
+    },
+    {
+      "id": "T31",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "actual exact-object bounded backtest summary and semantic answer; retained rejected sample",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/MODEL_REVIEW.md",
+      "failure_category": null
+    },
+    {
+      "id": "T32",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "one minimal persisted ML research object group with authoritative status and no duplicate jobs",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/MODEL_REVIEW.md",
+      "failure_category": null
+    },
+    {
+      "id": "T33",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "durable queued approval across maintenance, one continuation effect and duplicate-request safety",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/MODEL_REVIEW.md",
+      "failure_category": null
+    },
+    {
+      "id": "T34",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "same public conversation contextual follow-ups across candidate and old rollback generations",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/MODEL_REVIEW.md",
+      "failure_category": null
+    },
+    {
+      "id": "T35",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "persisted URL-bearing Web evidence and once-only feedback to isolated fake Hub",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/MODEL_REVIEW.md",
+      "failure_category": null
+    },
+    {
+      "id": "T36",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "actual Chrome MCP desktop/mobile maintenance, approvals, Plugin Center and same-origin traffic",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/CHROME_REVIEW.md",
+      "failure_category": null
+    },
+    {
+      "id": "T37",
+      "layer": "L1/L2/L3",
+      "result": "PASS",
+      "test_name": "exact retained old/new 20-cycle lifecycle samples, raw RSS exception and retained failures",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/READINESS.md",
+      "failure_category": null
+    },
+    {
+      "id": "T38",
+      "layer": "L2",
+      "result": "PASS",
+      "test_name": "shared admission race, drain, input preservation and durable pending continuation",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/READINESS.md",
+      "failure_category": null
+    },
+    {
+      "id": "T39",
+      "layer": "L2",
+      "result": "PASS",
+      "test_name": "exact-artifact old-new-old, logical backup and actual restore, namespace integrity",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/READINESS.md",
+      "failure_category": null
+    },
+    {
+      "id": "T40",
+      "layer": "L4",
+      "result": "NOT_RUN",
+      "test_name": "authorized production promotion, healthy dependencies and real observation window",
+      "evidence_reference": "docs/evidence/dsh-012rc1/u6/READINESS.md",
+      "failure_category": "production_not_authorized_or_deployed"
+    }
+  ],
+  "metrics": {
+    "raw_sample_counts": {
+      "baseline_l1": 20,
+      "candidate_l1": 20,
+      "lifecycle_cycles": 40
+    },
+    "timing_summary": {
+      "baseline_median_seconds": 0.643482,
+      "candidate_median_seconds": 0.968379
+    },
+    "peak_rss_mib": {
+      "baseline": 210.133,
+      "candidate": 284.379
+    },
+    "cleanup_counts": {
+      "containers": 0,
+      "networks": 0,
+      "volumes": 0,
+      "owned_processes": 0
+    }
+  },
+  "capability_diff": [
+    "U6 adds an operator-owned shared admission/drain boundary, durable queued approval rehydration and maintenance input preservation; Product DSH has no deployment or gate-write access.",
+    "Both old and candidate independent BYQ build manifests bind current source and exact tested images without rewriting historical upstream release identity or changing the five approved delegate role ceilings."
+  ],
+  "dependency_diff": [
+    "Upstream baseline/candidate descriptors and dependency qualifications are unchanged; U6 uses separate Dockerfile.u6 and Dockerfile.u6-candidate.",
+    "Candidate remains the official 0.1.2rc1 matching wheel bundled executable, baseline remains 0.1.1rc1; no fork, native-package substitution or main-runtime replacement."
+  ],
+  "limitations": [
+    "This is independent U6 build-bound release readiness, not production deployment, default promotion, U7 completion or T40 observation. Production baseline was observed stopped/unhealthy and requires authorized restoration.",
+    "Model runs counts eight final-artifact logical journeys including the rejected G2 sample, not provider calls or a paired success-rate benchmark. Historical U5 repeated samples remain historical; U6 affected scenarios were refreshed against exact retained artifacts.",
+    "The original G2 answer/count-only automated PASS was semantically rejected. A distinct retest supplied only validated synthetic object context after the unchanged fixed prompt and proved the exact summary read plus result analysis.",
+    "OpenCode protocol routes remain deterministic coverage only; no credentialed OpenCode qualification is claimed.",
+    "G3 needed one bounded continuation retry; browser review deliberately delayed G6 approval. These latencies are not paired performance improvement evidence.",
+    "Earlier failed CI, diagnostic and artifact-handoff attempts and withdrawn U5 isolation evidence remain unchanged; no real Hub mutation or publication occurred during U6.",
+    "Shared filesystem locking is a single-host gate, not a multi-host/NFS admission system. Synthetic temporary backups are not persistent production backups.",
+    "Image identities are validated local Docker IDs backed by a checked OCI/Docker archive, not remote registry digests. Promotion input changes require a new immutable build revision."
+  ],
+  "threshold_exceptions": [
+    {
+      "metric": "peak_rss_mib",
+      "observed": 284.379,
+      "threshold": 284.1596,
+      "reason": "The frozen RSS formula is exceeded by 0.2194 MiB (0.0772%). Actual peak main carrier RSS differs by 72.266 MiB while Adapter differs by 1.980 MiB. Both exact retained releases completed 20 cycles with zero retained sessions or lingering owned threads and no safety services disabled. Earlier larger excesses remain retained; this exception does not prove production long-term stability."
+    }
+  ],
+  "qualification_scope": "release-ready",
+  "build_revisions": {
+    "baseline": {
+      "build_id": "dsh-0.1.1rc1-u6.3",
+      "manifest_hash": "sha256:bc84ddeff4851d90541008a5baf0507840f374cd160bc2b16853b882a6837c1f",
+      "image_digest": "sha256:32c1ae6a10c1e1f862da29a7450a4c1c00616b94f04af47f8035d3ab4d5f1040"
+    },
+    "candidate": {
+      "build_id": "dsh-0.1.2rc1-u6.3",
+      "manifest_hash": "sha256:c76bff7fd0dd4189c02cddf77777d1812a98bf74bd07e630308d8622868bf0a6",
+      "image_digest": "sha256:067d6aa3b657afd78f51d3bb75d6fd60e4bb81920cbc619cf23ff1e03b94d93d"
+    }
+  }
+}

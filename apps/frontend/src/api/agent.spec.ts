@@ -4,6 +4,17 @@ import { AgentRequestError, cancelSession, createAgentSession, deleteAgentSessio
 describe("agent api client", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("preserves the safe maintenance code and message from Product API", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({error: {
+      code: "chat_maintenance", message: "小巴正在维护，输入已保留，请稍后重试。",
+    }}), {status: 503})));
+    const failure = await submitTurn("s1", "保留输入", "").catch(error => error);
+    expect(failure).toBeInstanceOf(AgentRequestError);
+    expect(failure.status).toBe(503);
+    expect(failure.code).toBe("chat_maintenance");
+    expect(failure.message).toContain("输入已保留");
+  });
+
   it("creates a product session with the session cookie", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ session_id: "s1", trace_id: "t1", status: "ready" }), { status: 201 }),

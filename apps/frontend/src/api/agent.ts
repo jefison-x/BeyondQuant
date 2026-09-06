@@ -4,7 +4,7 @@ const AGENT_ROOT = "/v1/agent";
 const WORKFLOW_ROOT = "/v1/workflows";
 
 export class AgentRequestError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly code?: string) {
     super(message);
     this.name = "AgentRequestError";
   }
@@ -20,8 +20,11 @@ async function jsonRequest<T>(path: string, token: string, init: RequestInit = {
     },
   });
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { detail?: string };
-    throw new Error(body.detail ?? "agent request failed");
+    const body = (await response.json().catch(() => ({}))) as { detail?: unknown; error?: { code?: unknown; message?: unknown } };
+    const maintenance = response.status === 503 && body.error?.code === "chat_maintenance";
+    const message = typeof body.error?.message === "string" ? body.error.message
+      : typeof body.detail === "string" ? body.detail : "agent request failed";
+    throw new AgentRequestError(message.slice(0, 500), response.status, maintenance ? "chat_maintenance" : undefined);
   }
   return (await response.json()) as T;
 }

@@ -10,6 +10,7 @@ async function login(page: Page, admin = false) {
   await page.getByLabel("用户名").fill(admin ? "admin" : "owner");
   await page.getByLabel("密码").fill("password123");
   await page.getByRole("button", { name: "进入" }).click();
+  await expect(page).toHaveURL(/\/agent$/);
 }
 
 const id = `feedback_${"a".repeat(32)}`;
