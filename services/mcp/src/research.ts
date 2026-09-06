@@ -1,3 +1,5 @@
+import { bindActiveWebEvidenceProducer } from "./web-evidence-provenance.js";
+
 const BACKEND_TIMEOUT_MS = 8000;
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
@@ -145,6 +147,7 @@ function safeWebEvidenceValidationIssue(payload: unknown): string {
   const rules: Array<[string, string]> = [
     ["missing or unknown fields", "SCHEMA_FIELDS"],
     ["schema_version", "SCHEMA_VERSION"],
+    ["producer is not recognized", "PRODUCER_PROVENANCE"],
     ["qualified search plugin version", "PLUGIN_VERSION"],
     ["search.queries", "QUERY_COUNT"],
     ["duplicate web search query", "DUPLICATE_QUERY"],
@@ -231,10 +234,20 @@ export function fetchByqWebEvidenceCreate(
   request: WebEvidenceCreateRequest,
   fetcher: Fetcher = fetch,
 ): Promise<ByqResearchResult> {
+  let trustedRequest: WebEvidenceCreateRequest;
+  try {
+    trustedRequest = { ...request, content: bindActiveWebEvidenceProducer(request.content) };
+  } catch {
+    return Promise.resolve(result({
+      service: "beyondquant-mcp",
+      status: "error",
+      backend: { status: "research_request_invalid", validation_issue: "PRODUCER_PROVENANCE" },
+    }, true));
+  }
   return requestResearch(
     backendUrl,
     "/v1/research/web-evidence-records",
-    { method: "POST", body: JSON.stringify(request) },
+    { method: "POST", body: JSON.stringify(trustedRequest) },
     fetcher,
     true,
     (payload) => {

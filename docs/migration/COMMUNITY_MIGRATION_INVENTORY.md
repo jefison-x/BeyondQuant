@@ -1374,3 +1374,18 @@ user guide and browser contract plan were inspected before accepting ADR-0033.
 
 No Community source, database, cache, credential, runtime or Git history was
 modified, imported or copied.
+
+
+## DSH U2 Web evidence provenance maintenance audit (2026-09-06)
+
+This is maintenance of ADR-0039 / ADR-0058, not a new Product Phase.
+The read-only Community references were inspected before completing the existing U2 work.
+
+| Inspected Community source | Classification | Decision |
+|---|---|---|
+| `research-agent/tests/test_research_evidence.py` | `REFERENCE_ONLY` | Preserve the existing BYQ requirements for bounded source summaries, source URLs and stable evidence semantics. Do not port the search provider, cache or page-fetch implementation. |
+| `agent-service/app/research/contracts.py` | `REFERENCE_ONLY` | Preserve owner/idempotency/provenance and durable evidence-reference concepts through existing BYQ contracts; do not copy Community runtime or persistence models. |
+
+U2 retains `web-research-evidence.v1`, source/claim/time/usage validation and immutable
+Artifact hashes. Deployment-selected producer provenance is implemented in BYQ's existing
+MCP/Backend boundary. No Community file was changed or copied; generic search remains DSH-owned.
