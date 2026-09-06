@@ -380,7 +380,7 @@
     }
   ],
   "qualification_scope": "preproduction",
-  "qualification_state": "QUALIFIED",
+  "qualification_state": "WITHDRAWN",
   "release_id": "dsh-0.1.2rc1",
   "schema_version": "dsh-qualification-report.v1",
   "started_at": "2026-09-06T06:30:00Z",

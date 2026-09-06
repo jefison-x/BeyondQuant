@@ -37,15 +37,16 @@ class PublicationLicenseTests(unittest.TestCase):
         inventory = json.loads((ROOT / "docs/legal/npm-license-inventory.json").read_text())
         self.assertGreater(len(inventory["packages"]), 500)
 
-    def test_dsh_u5_progress_claims_only_preproduction_qualification(self):
+    def test_dsh_u5_progress_does_not_claim_withdrawn_qualification(self):
         text = (ROOT / "docs/roadmap/DSH_012RC1_EXECUTION.md").read_text()
         self.assertIn("U0–U4 `MERGED`", text)
-        self.assertIn("U5 `VERIFIED`", text)
+        self.assertIn("U5 `BLOCKED`", text)
+        self.assertIn("T35/T36 BLOCKED", text)
         self.assertIn("U1–U8 串行开发", text)
         self.assertIn("0.1.1rc1", text)
         self.assertIn("U0 载体决策 | MERGED", text)
         self.assertIn("不宣称正式切换、生产部署或生产观察", text)
-        self.assertIn("U5 完整认证 | VERIFIED", text)
+        self.assertIn("U5 完整认证 | BLOCKED", text)
         self.assertIn("U6 发布/回滚演练 | PLANNED", text)
         adr = (ROOT / "docs/architecture/adr/ADR-0058-dsh-release-bundles-and-compatibility.md").read_text()
         self.assertIn("Status: Accepted", adr)

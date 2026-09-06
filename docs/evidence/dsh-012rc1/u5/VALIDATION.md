@@ -1,6 +1,6 @@
 # U5 DSH 0.1.2rc1 qualification
 
-Status: PREPRODUCTION QUALIFIED. Date: 2026-09-06.
+Status: BLOCKED — prior preproduction qualification withdrawn. Date: 2026-09-06.
 Worktree: `/home/jefison/projects/.byq-worktrees/dsh-u5-full-qualification`.
 Branch: `feat/dsh-u5-full-qualification`.
 Observed base and candidate implementation commit:
@@ -10,8 +10,9 @@ Observed base and candidate implementation commit:
 
 U5 adds fail-closed qualification reporting, real candidate delegate journeys,
 old/new runtime benchmarks, fixed G1-G6 live-model journeys and CI routing. The
-deployment default remains `dsh-0.1.1rc1`; no production service, persistent
-Product data or Product Phase has been changed. T38-T40 remain later-stage
+deployment default remains `dsh-0.1.1rc1`; no production deployment or Product
+Phase change was performed. Possible external synthetic feedback delivery is
+unresolved (see below). T38-T40 remain later-stage
 gates and are not claimed here.
 
 ## Candidate identity and keyless evidence
@@ -70,7 +71,7 @@ of G4 after its persisted-content assertions were strengthened.
 | G3 ML approval (3 independent users) | PASS with recorded recovery, 600.887/386.991/352.410 s | PASS, 486.251/128.005/296.313 s |
 | G4 public research evidence | PASS, 108.823 s | PASS, 127.072 s; strict repeat PASS, 137.024 s |
 | G5 Runtime-only restart recovery (3) | PASS, 6.137/8.131/6.131 s | PASS, 10.187/8.185/10.166 s |
-| G6 internal feedback approval | PASS, 44.781 s | PASS, 59.075 s |
+| G6 internal feedback approval | Internal assertions passed, 44.781 s; external isolation unproven | Internal assertions passed, 59.075 s; external isolation unproven |
 
 Every G1/G2/G5 sample left Product object counts unchanged. Every final G3
 sample created exactly one real approval and, after approval, a second public
@@ -79,8 +80,9 @@ Every continuation required one bounded retry after a durable initial answer,
 without duplicate approval or business work. The strict G4 repeat created
 exactly one `web_research_evidence` Artifact, with URL-bearing sources and the
 exact research-only/non-deterministic/non-authoritative usage policy. G6
-created exactly one approval and one internal feedback record; no real GitHub
-Issue publisher was used. Runtime-only restart recovery preserved all three
+created exactly one approval and one internal feedback record. No local GitHub
+publisher was started, but that does not prove the separate Hub relay did not
+send feedback externally. Runtime-only restart recovery preserved all three
 G5 conversation contexts and created no business objects. Final candidate logs
 had zero secret-like field matches.
 
@@ -123,13 +125,51 @@ new directory and does not alter the deployment selector.
 
 ## Result and remaining gates
 
-`docs/evidence/dsh-012rc1/u5/report-preproduction/qualification-report.json`
-is the generated preproduction report: T01-T37 PASS and T38-T40 NOT_RUN. The
-enabled OpenCode protocol routes have no configured credential in this
+The former preproduction report is withdrawn, not a release gate. Its original
+observations are retained in `withdrawn/qualification-report.withdrawn.json`,
+explicitly marked `WITHDRAWN`; its historical PASS rows are not current verdicts.
+The current evidence marks T35 and T36 BLOCKED, so `qualify` must refuse to emit
+a preproduction report. T38-T40 remain NOT_RUN. The enabled OpenCode protocol
+routes have no configured credential in this
 environment; deterministic route/credential-isolation coverage passed and the
 credentialed second-route limitation remains explicit. U6 must perform the
 release/rollback rehearsal before any default switch. U7 production deployment
 and formal version switching remain separately unauthorized.
+
+## Post-run isolation audit and required correction
+
+- The final candidate live stack was started using the developer `.env` and an
+  unrestricted Compose `up --build`, which also started `feedback-hub-relay`.
+  A subsequent value-free check confirmed that the referenced environment has
+  both a Hub URL and relay token configured. This was an execution mistake:
+  model-evaluation authorization did not authorize delivery to the real Hub.
+- `product_feedback.submit` always queues a Hub event; the relay advertises
+  itself configured and sends queued snapshots to `/v1/intake` when its URL is
+  set. Therefore absence of the local GitHub publisher is insufficient evidence
+  of an isolated external boundary. Delivery was possible, not proven.
+- The isolated containers and database volumes had already been removed, so
+  their outbox/receipt evidence is unavailable. A narrowly filtered GitHub
+  issue search on 2026-09-06 found no matching Xiaoba issue; this does not prove
+  absence of Hub intake or of differently titled issues. No Hub administrative
+  records have been inspected and no external records have been deleted.
+- Retain synthetic G6 data scope: no evidence currently shows production user
+  data, real conversations or secrets were in the test feedback. Do not infer
+  absence of external delivery from that separate data-scope statement.
+- T35 requires explicit service and credential allowlists, a local fake Hub,
+  verified effective endpoints before any submission, and a bounded old/new
+  G6 rerun. Prior delivery uncertainty requires maintainer notification and a
+  narrowly scoped Hub audit; do not silently erase any external records.
+- T36 also lacks a candidate-specific Chrome MCP desktop/mobile review of
+  Xiaoba, approval and Plugin Center. The 9 automated browser tests remain
+  valid supporting evidence but cannot replace this mandatory review.
+- U5 remains unmerged; U6 cannot start until these gates are satisfied. Existing
+  development/push/PR/CI-green merge authorization remains valid, but CI success
+  alone does not resolve these qualification failures.
+- Corrective evidence checks: 18 targeted qualification/release/publication
+  tests and the complete 147-test architecture suite passed; `git diff --check`
+  and isolated-worktree validation passed. A new test proves the current
+  evidence cannot generate a preproduction qualification report. PR #256
+  remains Draft with auto-merge unset.
 
 ## Commands
 

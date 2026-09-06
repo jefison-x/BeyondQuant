@@ -301,18 +301,18 @@
     {
       "id": "T35",
       "layer": "L1/L2/L3",
-      "result": "PASS",
+      "result": "BLOCKED",
       "test_name": "traceable Web evidence and approval-gated internal feedback",
       "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
-      "failure_category": null
+      "failure_category": "feedback_external_isolation_unproven"
     },
     {
       "id": "T36",
       "layer": "L1/L2/L3",
-      "result": "PASS",
+      "result": "BLOCKED",
       "test_name": "real Product API browser flows and truthful normalized projection",
       "evidence_reference": "docs/evidence/dsh-012rc1/u5/VALIDATION.md",
-      "failure_category": null
+      "failure_category": "candidate_chrome_mcp_review_missing"
     },
     {
       "id": "T37",
