@@ -30,7 +30,7 @@ def emit(stage, **values):
 
 
 class Rehearsal:
-    def __init__(self, directory: Path, environment: dict, ci_scope: str | None = None, *, promoted: bool = False):
+    def __init__(self, directory: Path, environment: dict, ci_scope: str | None = None, *, promoted: bool = False, g3_strategy_approval: bool = False):
         if re.fullmatch(r"/tmp/byq-u6-[a-z0-9_]{8}", str(directory)) is None:
             raise ValueError("only a dedicated synthetic temporary directory is allowed")
         self.directory, self.environment = directory, environment
@@ -38,6 +38,9 @@ class Rehearsal:
             raise ValueError("only an explicit U6 CI image scope is allowed")
         self.ci_scope = ci_scope
         self.promoted = promoted
+        if g3_strategy_approval and not promoted:
+            raise ValueError('clarified G3 requires the promoted U7 lane')
+        self.g3_strategy_approval = g3_strategy_approval
         self.scope = "byq-u5-u6-" + directory.name.removeprefix("byq-u6-").replace("_", "-")
         self.gate = directory / "gate" / "admission.state"
         self.release = OLD
@@ -337,7 +340,7 @@ class Rehearsal:
         unchanged-domain assertions. Probe assertions remain authoritative; there
         are no scenario retries or relaxed success conditions here.
         """
-        if scenarios not in (("G1", "G2", "G3", "G4"), ("G3", "G4")):
+        if scenarios not in (("G1", "G2", "G3", "G4"), ("G3", "G4"), ("G4",)):
             raise ValueError('only fixed full or diagnostic G3/G4 scenario sets allowed')
         if self.release != NEW:
             self.switch(NEW)
@@ -351,6 +354,8 @@ class Rehearsal:
                        "--release", NEW, "--stack-file", str(self.files[NEW])]
             if scenario == "G3":
                 command.append("--approve")
+                if self.g3_strategy_approval:
+                    command.append('--g3-strategy-approval')
             if scenario == "G2":
                 command.extend(["--backtest-id", self.result["domain_fixture"]["backtest_job_id"]])
             probe_environment = live_stack.compose_environment()
@@ -407,10 +412,12 @@ class Rehearsal:
             self.result['rollback_evidence_read'] = {'result': 'PASS', 'artifact_count': len(evidence_after),
                 'sha256': evidence_hash, 'qualified_new_producer_recognized': True, 'domain_rewind': False}
 
-    def g3_g4_only(self):
+    def g3_g4_only(self, scenarios=('G3', 'G4')):
         if not self.ci_scope or not self.promoted:
             raise ValueError('targeted G3/G4 requires promoted exact retained artifacts')
-        self.result['mode'] = 'targeted-g3-g4-diagnostic'
+        if scenarios not in (('G3', 'G4'), ('G4',)):
+            raise ValueError('fixed diagnostic scenarios required')
+        self.result['mode'] = 'targeted-g4-receipt-recheck' if scenarios == ('G4',) else 'targeted-g3-g4-diagnostic'
         self.prepare()
         self.release = NEW
         emit('building', scope=self.scope, output=str(self.directory))
@@ -421,7 +428,7 @@ class Rehearsal:
         self.result['initial'] = self.check()
         self.seed_domain_fixture()
         set_state(self.gate, 'open')
-        self.qualify_remaining_scenarios(('G3', 'G4'))
+        self.qualify_remaining_scenarios(scenarios)
         self.result['result'] = 'PASS'
 
     def g2_only(self):
@@ -487,10 +494,12 @@ def main():
                         help="also re-run fixed candidate G1-G4 after the core rollback journey")
     parser.add_argument("--g2-only", action="store_true", help="one targeted G2 with verified synthetic object context")
     parser.add_argument('--g3-g4-only', action='store_true', help='independent promoted G3/G4 diagnosis and evidence rollback; preserves original failures')
+    parser.add_argument('--g3-strategy-approval', action='store_true', help='maintainer-authorized U7 G3 clarification')
+    parser.add_argument('--g4-only', action='store_true', help='fixed G4 and compatible evidence rollback only')
     args = parser.parse_args()
-    if sum((args.g2_only, args.g3_g4_only, args.qualify_g1_g4)) > 1:
+    if sum((args.g2_only, args.g3_g4_only, args.qualify_g1_g4, args.g4_only)) > 1:
         parser.error("targeted runs cannot also run other scenario sets")
-    if args.g3_g4_only and (not args.promoted or not args.ci_scope):
+    if (args.g3_g4_only or args.g4_only) and (not args.promoted or not args.ci_scope):
         parser.error('G3/G4 diagnosis requires promoted retained artifacts')
     environment = live_stack.compose_environment()
     environment["DEEPSEEK_API_KEY"] = live_stack.model_key_from_env_file(args.model_key_env_file)
@@ -499,9 +508,11 @@ def main():
         raise ValueError("insufficient memory for isolated rehearsal")
     with open("/tmp/byq-ci-heavy.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        rehearsal = Rehearsal(Path(tempfile.mkdtemp(prefix="byq-u6-")), environment, args.ci_scope, promoted=args.promoted)
+        rehearsal = Rehearsal(Path(tempfile.mkdtemp(prefix="byq-u6-")), environment, args.ci_scope, promoted=args.promoted, g3_strategy_approval=args.g3_strategy_approval)
         try:
-            if args.g3_g4_only:
+            if args.g4_only:
+                rehearsal.g3_g4_only(('G4',))
+            elif args.g3_g4_only:
                 rehearsal.g3_g4_only()
             elif args.g2_only:
                 rehearsal.g2_only()

@@ -76,7 +76,7 @@ ADR-0058 的接受、生产 operator 部署和付费模型评测分别记录精�
 | U4 新版候选适配 | MERGED | `.byq-worktrees/dsh-u4-012rc1-candidate` / `feat/dsh-u4-012rc1-candidate` | `docs/evidence/dsh-012rc1/u4/VALIDATION.md`；候选真实进程/MCP/roster、候选与旧版完整 Runtime suite 通过 | PR #255 已按 ADR-0015 squash auto-merge |
 | U5 完整认证 | MERGED | `.byq-worktrees/dsh-u5-full-qualification` / `feat/dsh-u5-full-qualification` | `docs/evidence/dsh-012rc1/u5/`；隔离整改、Chrome MCP 和最终 26/26 CI 通过，修复后报告 T01–T37 PASS | PR #256 已合并；历史误发证据保留，正式记录不变 |
 | U6 发布/回滚演练 | MERGED | `.byq-worktrees/dsh-u6-rollout-rehearsal` / `ops/dsh-u6-rollout-rehearsal` | 独立 U6.3 镜像、26/26 CI、179项架构测试、模型/Chrome、105表实际恢复、old→new→old及清理通过；见 `docs/evidence/dsh-012rc1/u6/VALIDATION.md` | PR #257 远端 CI 全绿并通过预检后合并；历史报告不变 |
-| U7 生产晋升 | IN_PROGRESS | `.byq-worktrees/dsh-u7-promote-012rc1` / `chore/dsh-u7-promote-012rc1` | 原版生产恢复、私有备份及 105 表实际恢复通过；本地 CI 26/26，追加诊断后根测试 190 项通过；Chrome/G1/G2/核心 G5/G6 通过，G3 失败保留并定向诊断；见 `docs/evidence/dsh-012rc1/u7/EXECUTION.md` | G3/G4 与新证据回滚验收、PR 门禁、最终排空备份、受控部署尚待完成 |
+| U7 生产晋升 | IN_PROGRESS | `.byq-worktrees/dsh-u7-promote-012rc1` / `chore/dsh-u7-promote-012rc1` | 原版生产恢复、私有备份及 105 表实际恢复通过；本地 CI 26/26，根测试 197 项通过；Chrome/G1/G2/核心 G5/G6、明确授权澄清后的 G3 和 G4/新证据回滚验收通过，原失败保留；见 `docs/evidence/dsh-012rc1/u7/READINESS.md` | 更新后 PR 门禁、最终排空备份、受控部署尚待完成 |
 | U8 观察/流程复用 | PLANNED | 未创建 | 未运行 | 实际切换后 |
 
 `STATUS.md` 只记录当前维护阶段、资格/部署结果和 Next，不存固定 main SHA 或 transient PR 状态。

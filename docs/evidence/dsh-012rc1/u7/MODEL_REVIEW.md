@@ -1,4 +1,4 @@
-# U7 promoted-image semantic review — IN_PROGRESS
+# U7 promoted-image semantic review — VERIFIED with retained failures
 
 Scope `byq-u5-u6-0tth2mjd`, exact retained U7.3 images, synthetic users and
 fixed G1–G6 only. No production conversation, user data or secret is included.
@@ -53,3 +53,43 @@ approval (without starting large training) would change the authorized fixed
 prompt and therefore requires maintainer confirmation. Existing G1/G2/G5/G6
 successes remain separate; G4/final evidence rollback remain unverified. The
 bounded probe is still awaiting its normal deadline/cleanup at this observation.
+
+## Authorized clarified G3 — PASS
+
+The maintainer explicitly authorized one strategy approval, post-approval progress
+read and no large training. Scope `byq-u5-u6-9upmb408` uses opt-in prompt revision
+`u7-g3-strategy-approval.v2` (hash in raw receipt), not a rewritten historical G3.
+It passed in 141.534 seconds with one approval and one bounded continuation retry.
+Exactly two additional artifacts (strategy version and strategy approval), zero
+training/prediction runs and zero feedback/Hub activity were observed. The public
+answer confirms exact approval/strategy binding, authoritative validated/planned
+states and no derived backtest. Public answer SHA-256:
+`3d152ebc6a0b9862f7760592f465e9ee90eef1e80a2afc9062592bd67aeea9b3`.
+
+The enclosing run remains FAIL: G4 reached final result construction after its
+artifact assertions, but newly added prompt-hash reporting incorrectly called
+`.encode()` on the evidence content dictionary. The private diagnostic identifies
+`AttributeError`, not a provider/Domain failure. Cleanup PASS. The report bug is
+fixed by hashing the submitted prompt before artifact inspection; a mocked full
+G4 main-path regression covers the real dictionary-bearing artifact. No G4 PASS
+receipt or semantic completion is invented. Independent fixed G4/evidence rollback
+scope `byq-u5-u6-vnr1-dgb` is running; G3 is not repeated.
+
+## G4 and compatible evidence rollback — PASS
+
+The independent G4 run completed in 99.380 seconds, saved exactly one
+URL-bearing Web Research Evidence artifact, created no other counted domain
+objects, and left fake Hub counters at zero. Its final public answer links six
+CSRC official-page/PDF sources, distinguishes search date from publication date,
+declines to claim freshness when publication dates are absent, and explicitly
+keeps the material out of factor/strategy/backtest inputs. This is a review of
+the model's public answer and persisted evidence contract, not independent
+verification of every regulatory source's contents.
+
+Actual new→old coordinated Runtime/Backend/MCP rollback preserved the entire
+research-artifact list hash and recognized the qualified new web producer;
+no database rewind occurred. Other containers were unchanged. Final runner and
+exact cleanup both PASS; see `g4-evidence-rollback.raw.json`. Overall U7 synthetic
+acceptance combines the explicitly identified passing components of retained
+core/G3 receipts with this independent G4 receipt. Failed original G3 prompts,
+diagnostic startup and G4 reporting runs remain FAIL, never overwritten.

@@ -166,3 +166,46 @@ though draft creation itself is correctly ungated. The fixed paid-prompt scope
 must not be silently expanded to force an approval. A precise G3 clarification
 requires maintainer confirmation; production and U8 remain unchanged. The bounded
 diagnostic runner still awaits its deadline/cleanup, not marked fully complete.
+
+## Authorized G3 clarification
+
+Maintainer subsequently explicitly requested: “申请一次研究策略审批，批准后查询进度，
+不启动大型训练，再继续验收。” The original fixed prompt remains byte-for-byte in
+`PROMPTS`; an opt-in U7 G3 revision explicitly requests strategy approval and
+forbids creation of training/prediction runs. Added negative tests enforce both
+the G3-only selector and no-training/no-prediction invariant. Prompt revision and
+SHA-256 are recorded in new probe receipts. No application/build input changed;
+U7.3 manifest validation and ten targeted tests PASS.
+
+The previous original-prompt diagnostic finished FAIL with cleanup PASS; its
+receipt is `g3-original-prompt.failed.raw.json`. New clarified G3/G4 scope
+`byq-u5-u6-9upmb408` is running with the exact retained images. No other paid
+scenario is repeated; no production switch or U8 completion is claimed.
+
+Clarified G3 passed with one approval, one bounded continuation retry and no
+training/prediction. The enclosing run failed during G4 report construction due
+to a prompt/evidence variable collision (`dict.encode`), retained in
+`g3-clarified-g4-report-failure.raw.json`; cleanup PASS. Fixed the reporting bug,
+added a complete mocked G4-path regression, and passed eleven targeted tests.
+Independent fixed G4 + evidence rollback scope `byq-u5-u6-vnr1-dgb` is running.
+Remote CI for the earlier `9441bee` head passed all required checks (run
+34061755625); these results do not cover subsequent unpushed test/operator changes.
+
+## Final predeployment handoff
+
+Independent fixed G4 and actual new→R1 evidence read both PASS; exact cleanup PASS.
+See READINESS.md for the explicit component-level evidence combination; historical
+failed aggregates are not relabeled. Latest complete root suite: 197/197 PASS;
+docs and diff checks PASS. All image-bound U7.3 sources remain unchanged.
+
+Private preparation completed without changing production:
+`/home/jefison/backups/byq-dsh-u7/release-20260906T220612Z`.
+The retained seven-image archive is 461501440 bytes, SHA-256
+`3659a109ecbf9a293ef9a2f62b9602606c808694ccfb9a33c0604ef5a3ed9cf6`.
+Private prepare/target/rollback Compose overlay SHA-256 respectively:
+`b4bac2dc8b65db38e64b4e3ef90901def869e82952720b5dd5b325963bafe136`,
+`a768cce8421dd862942a2fdea5189f438ad94eabf44fd754109edf9e8bf69986`,
+`9670010ffb72948a3218dc22136a39542a68274095ae25319217c48dd983a134`.
+Gate is closed but NOT yet mounted in production. Only its dedicated child will
+be mounted read-only, never the backup root. Final writer-stopped session/trace
+backup, current DB coverage, merged-head CI and actual switch remain pending.
