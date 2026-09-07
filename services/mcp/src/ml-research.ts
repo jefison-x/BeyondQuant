@@ -1,3 +1,5 @@
+import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
+
 const BACKEND_TIMEOUT_MS = 8000;
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
@@ -42,9 +44,14 @@ async function requestMl(
       headers: { "content-type": "application/json", ...(init.headers ?? {}) },
       signal: AbortSignal.timeout(timeoutMs),
     });
+    if (isWriteRequest(init) && response.status >= 500) return unknownWriteResult(init);
     let payload: unknown;
-    try { payload = await response.json(); } catch { return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true); }
+    try { payload = await response.json(); } catch {
+      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
+      return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
+    }
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (!response.ok) {
@@ -55,6 +62,7 @@ async function requestMl(
     }
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
+    if (isWriteRequest(init)) return unknownWriteResult(init);
     return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
   }
 }
@@ -105,15 +113,16 @@ async function createTrainingWithReconciliation(
     backendUrl, "/v1/research/ml/training-runs",
     { method: "POST", body: JSON.stringify(request) }, fetcher,
   );
-  if (!created.isError) return created;
   let failureStatus = "";
   try {
-    const failure = JSON.parse(created.content[0]?.text ?? "{}") as { backend?: { status?: unknown } };
-    failureStatus = typeof failure.backend?.status === "string" ? failure.backend.status : "";
+    const failure = JSON.parse(created.content[0]?.text ?? "{}") as { status?: string; backend?: { status?: unknown } };
+    if (!created.isError && failure.status !== "outcome_unknown") return created;
+    failureStatus = failure.status === "outcome_unknown" ? "outcome_unknown"
+      : typeof failure.backend?.status === "string" ? failure.backend.status : "";
   } catch {
     return created;
   }
-  if (!new Set(["unreachable", "ml_research_unavailable", "invalid_response"]).has(failureStatus)) return created;
+  if (!new Set(["outcome_unknown", "unreachable", "ml_research_unavailable", "invalid_response"]).has(failureStatus)) return created;
   const key = request.idempotency_key;
   if (typeof key !== "string" || key.length === 0) return created;
 

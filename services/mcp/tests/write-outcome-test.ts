@@ -7,6 +7,7 @@ import { fetchByqDataDemandCreate, fetchByqDataDemandGet } from "../src/data-dem
 import { fetchByqFeedbackCreate, fetchByqFeedbackGet } from "../src/feedback.js";
 import { fetchByqAgentRunStart, fetchByqAgentRoles } from "../src/agent.js";
 import { fetchByqLearningRunStart, fetchByqLearningRunGet } from "../src/learning.js";
+import { fetchByqMlStrategyCreate, fetchByqMlCapabilities } from "../src/ml-research.js";
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
 const url = "http://synthetic-backend.invalid";
@@ -21,6 +22,7 @@ const writes = [
   (fetcher: Fetcher) => fetchByqFeedbackCreate(url, request, fetcher),
   (fetcher: Fetcher) => fetchByqAgentRunStart(url, request, {}, fetcher),
   (fetcher: Fetcher) => fetchByqLearningRunStart(url, request, {}, fetcher),
+  (fetcher: Fetcher) => fetchByqMlStrategyCreate(url, request, fetcher),
 ];
 const unknownResponses = [
   () => { throw new Error("private transport exception"); },
@@ -54,10 +56,11 @@ const reads = [
   (fetcher: Fetcher) => fetchByqFeedbackGet(url, "feedback-test", fetcher),
   (fetcher: Fetcher) => fetchByqAgentRoles(url, fetcher),
   (fetcher: Fetcher) => fetchByqLearningRunGet(url, "learning-test", {}, fetcher),
+  (fetcher: Fetcher) => fetchByqMlCapabilities(url, fetcher),
 ];
 for (const read of reads) {
   const result = await read(async () => { throw new Error("private transport exception"); });
   assert.equal(result.isError, true);
   assert.equal(JSON.parse(result.content[0].text).backend.status, "unreachable");
 }
-console.log("Write outcome matrix PASS: 8 write families, 5 unknown modes, 6 explicit rejections, 7 read families");
+console.log("Write outcome matrix PASS: 9 write families, 5 unknown modes, 6 explicit rejections, 8 read families");
