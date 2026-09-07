@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   fetchByqPoolCreate,
+  fetchByqIndexPoolCatalog, fetchByqIndexPoolCreate, fetchByqIndexPoolStatus, fetchByqIndexPoolReconcile,
   fetchByqPoolHistory,
   fetchByqPoolLifecycle,
   fetchByqPoolSnapshotReplace,
@@ -40,3 +41,39 @@ assert.equal(headers["x-byq-actor-principal"], "agent-1");
 assert.equal(headers["x-byq-dsh-run-id"], "run-1");
 
 console.log("Stock Pool MCP translation PASS: trusted context, snapshot, history, lifecycle");
+
+await fetchByqIndexPoolCatalog("http://backend", "20240131", context, async (url, init) => {
+  assert.equal(url, "http://backend/v1/paper/index-pools/catalog?requested_as_of=20240131&limit=6&offset=0");
+  assert.equal(init?.method, "GET");
+  return new Response(JSON.stringify({ indices: [] }));
+});
+await fetchByqIndexPoolCreate("http://backend", { index_symbol: "000905.SH", requested_as_of: "20240131", idempotency_key: "index-original" }, context, async (url, init) => {
+  assert.equal(url, "http://backend/v1/paper/index-pools");
+  assert.equal(init?.method, "POST");
+  assert.equal(JSON.parse(String(init?.body)).index_symbol, "000905.SH");
+  return new Response(JSON.stringify({ run: { status: "queued" } }), { status: 202 });
+});
+await fetchByqIndexPoolStatus("http://backend", "stock_pool_123", context, async (url, init) => {
+  assert.equal(url, "http://backend/v1/paper/pools/stock_pool_123/materializations?limit=10&offset=0");
+  assert.equal(init?.method, "GET");
+  return new Response(JSON.stringify({ runs: [] }));
+});
+for (const failure of ["timeout", "invalid", "server"]) {
+  const value = await fetchByqIndexPoolCreate("http://backend", { idempotency_key: "original" }, context, async () => {
+    if (failure === "timeout") throw new Error("secret");
+    return new Response("truncated", { status: failure === "server" ? 503 : 202 });
+  });
+  const payload = JSON.parse(value.content[0].text);
+  assert.equal(payload.status, "outcome_unknown");
+  assert.equal(payload.idempotency_key, "original");
+  assert.equal(payload.retryable, false);
+  assert.doesNotMatch(value.content[0].text, /secret/);
+}
+for (const status of [404, 503]) {
+  const value = await fetchByqIndexPoolReconcile("http://backend", "index-original", context, async (url, init) => {
+    assert.equal(url, "http://backend/v1/paper/index-pools/reconcile?idempotency_key=index-original");
+    assert.equal(init?.method, "GET");
+    return new Response(JSON.stringify({ detail: "not confirmed" }), { status });
+  });
+  assert.equal(JSON.parse(value.content[0].text).status, "outcome_unknown");
+}

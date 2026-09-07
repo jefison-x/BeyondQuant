@@ -60,8 +60,17 @@ candidates, only the `quant_orchestrator` may authorize and call the bounded
 `byq_pool_list`, `byq_pool_get`, or `byq_pool_create` tools. Use the trusted
 owner/workspace context, never invent or request an internal owner identifier,
 never expand the candidate set silently, and audit the actual domain result.
-Pool snapshot, lifecycle, delete, index, and dynamic-pool mutations are not
-Agent capabilities.
+For an explicit index-pool creation request, the coordinator may additionally
+authorize `byq_index_pool_catalog`, `byq_index_pool_create`, and `byq_index_pool_status`.
+Use the user's exact index and date; freeze the original idempotency key. The
+catalogue must prove readiness at or before that date. Never substitute a custom
+pool or today's members for missing historical constituents. Creation accepts a
+tracking definition, not completed membership; query its status and retrieve the
+immutable snapshot before research. New verified imports can update the tracking
+pool, but never the snapshot already referenced by research. Pool snapshot,
+lifecycle, delete, and dynamic-pool mutations remain unavailable to the Agent.
+If creation returns outcome_unknown, use `byq_index_pool_status` with the exact
+original `idempotency_key`; do not recreate the pool or infer absence from a list.
 
 The trusted DSH runtime clock answers natural wall-clock date and time only.
 For whether today is an exchange session or for the latest complete persisted

@@ -432,6 +432,9 @@ export interface StockPoolReadiness {
   latest_run_id?: string | null;
   latest_run_status?: string | null;
   message?: string | null;
+  source_snapshot_date?: string | null;
+  current_snapshot_date?: string | null;
+  updated_at?: string | null;
 }
 
 export interface StockPoolSnapshotDiff {

@@ -702,13 +702,16 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
             <el-descriptions-item label="状态"><el-tag>{{ statusLabel(selected.status) }}</el-tag></el-descriptions-item>
             <el-descriptions-item label="当前版本">{{ selected.version }}</el-descriptions-item>
             <el-descriptions-item label="成员数">{{ selected.member_count }}</el-descriptions-item>
-            <el-descriptions-item label="数据就绪度"><el-tag>{{ readiness?.state ?? "-" }}</el-tag></el-descriptions-item>
+            <el-descriptions-item label="数据就绪度"><el-tag>{{ statusLabel(readiness?.state) }}</el-tag></el-descriptions-item>
             <el-descriptions-item v-if="selected.pool_type !== 'custom'" label="物化状态">
-              <el-tag>{{ materializations[0]?.status ?? "等待任务" }}</el-tag>
+              <el-tag>{{ materializations[0]?.status ? statusLabel(materializations[0].status) : "等待任务" }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item v-if="selected.pool_type === 'index'" label="指数代码">
               {{ producer?.definition?.index_symbol ?? "-" }}
             </el-descriptions-item>
+            <el-descriptions-item v-if="selected.pool_type === 'index'" label="数据中心成分日">{{ readiness?.source_snapshot_date ?? "待验证" }}</el-descriptions-item>
+            <el-descriptions-item v-if="selected.pool_type === 'index'" label="当前池成分日">{{ readiness?.current_snapshot_date ?? "待生成" }}</el-descriptions-item>
+            <el-descriptions-item v-if="selected.pool_type !== 'custom'" label="最近生成时间">{{ readiness?.updated_at ? formatChinaTime(readiness.updated_at) : "尚未完成" }}</el-descriptions-item>
             <el-descriptions-item v-if="selected.pool_type === 'dynamic'" label="规则状态">{{ producer?.status ?? "-" }}</el-descriptions-item>
           </el-descriptions>
           <el-form label-position="top" class="detail-form">

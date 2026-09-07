@@ -172,11 +172,12 @@ class StockPoolProducerStore(PgStoreMixin):
             self.paper_store.close()
         super().close()
 
-    def list_index_catalog(self, *, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    def list_index_catalog(self, *, limit: int = 50, offset: int = 0, requested_as_of: str | None = None) -> dict[str, object]:
         if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > 100:
             raise ValueError("limit must be between 1 and 100")
         if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
             raise ValueError("offset must be non-negative")
+        cutoff = _date(requested_as_of) if requested_as_of is not None else datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d")
         catalog: list[dict[str, object]] = []
         for definition in SUPPORTED_INDEXES:
             symbol = definition["index_symbol"]
@@ -184,9 +185,9 @@ class StockPoolProducerStore(PgStoreMixin):
                 """SELECT index_symbol,snapshot_date AS latest_snapshot_date,member_count,
                           content_sha256 AS completeness_hash,verified_at
                    FROM market_index_weight_snapshots
-                   WHERE index_symbol=:symbol AND status='verified'
+                   WHERE index_symbol=:symbol AND status='verified' AND snapshot_date<=:cutoff
                    ORDER BY snapshot_date DESC LIMIT 1""",
-                {"symbol": symbol},
+                {"symbol": symbol, "cutoff": cutoff},
             )
             catalog.append({
                 **definition,
@@ -201,12 +202,25 @@ class StockPoolProducerStore(PgStoreMixin):
             })
         return {
             "schema_version": INDEX_CATALOG_CONTRACT,
+            "requested_as_of": cutoff,
             "indices": catalog[offset:offset + limit],
             "total": len(SUPPORTED_INDEXES),
             "available_total": sum(1 for item in catalog if item["selectable"]),
             "limit": limit,
             "offset": offset,
         }
+
+    def reconcile_index_creation(self, key: str, *, trusted_owner: str, trusted_workspace: str) -> dict[str, object]:
+        identity = _text(key, "idempotency_key")
+        row = self._fetch_one("""SELECT k.pool_id,k.run_id FROM stock_pool_producer_idempotency k
+            JOIN stock_pool_producer_definitions d ON d.pool_id=k.pool_id
+            WHERE k.workspace_id=:workspace AND k.owner_principal=:owner AND k.idempotency_key=:key
+              AND d.producer_kind='index'""",
+            {"workspace": trusted_workspace, "owner": trusted_owner, "key": identity})
+        if row is None:
+            raise StockPoolProducerNotFound("index creation receipt is not yet confirmed")
+        return {"pool": self.paper_store.get_pool(row["pool_id"], trusted_owner=trusted_owner),
+                "run": self.get_run(row["run_id"], trusted_owner=trusted_owner, trusted_workspace=trusted_workspace)}
 
     def create_index_pool(
         self, payload: object, *, trusted_owner: str, trusted_workspace: str,
@@ -239,6 +253,8 @@ class StockPoolProducerStore(PgStoreMixin):
         }
         now = _now()
         with self._transaction() as connection:
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                    {"scope": f"index-create|{workspace}|{owner}|{key}"})
             previous = fetch_one(connection, """SELECT * FROM stock_pool_producer_idempotency
                 WHERE workspace_id=:workspace AND owner_principal=:owner AND idempotency_key=:key""",
                 {"workspace": workspace, "owner": owner, "key": key})
@@ -565,6 +581,49 @@ class StockPoolProducerStore(PgStoreMixin):
             pool_id, payload, trusted_owner=trusted_owner, trusted_workspace=trusted_workspace,
         )
 
+    def enqueue_validated_index_refreshes(self, *, now: datetime | None = None, limit: int = 100) -> int:
+        """Bounded restart-safe compensation for committed canonical imports.
+
+        No provider work occurs here. The existing materializer owns snapshot
+        validation and atomic promotion; failed imports never become candidates.
+        """
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        cutoff = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d")
+        with self._transaction() as connection:
+            # Serialize the bounded compensator, including concurrent workers.
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext('byq-index-import-compensation'))")
+            candidates = execute(connection, """SELECT d.*, s.snapshot_date,s.content_sha256
+                FROM stock_pool_producer_definitions d
+                JOIN stock_pools p ON p.pool_id=d.pool_id
+                JOIN LATERAL (
+                    SELECT snapshot_date,content_sha256 FROM market_index_weight_snapshots
+                    WHERE index_symbol=d.definition_json->>'index_symbol'
+                      AND status='verified' AND snapshot_date<=:cutoff
+                    ORDER BY snapshot_date DESC LIMIT 1
+                ) s ON TRUE
+                LEFT JOIN stock_pool_snapshots current ON current.snapshot_id=p.current_snapshot_id
+                WHERE d.producer_kind='index' AND d.status='active' AND p.status='active'
+                  AND d.schedule_json->>'cadence'='on_validated_import'
+                  AND (current.snapshot_id IS NULL OR current.effective_trade_date<s.snapshot_date
+                       OR (current.effective_trade_date=s.snapshot_date
+                           AND current.provenance_json->>'dataset_id' IS DISTINCT FROM s.content_sha256))
+                  AND NOT EXISTS (
+                    SELECT 1 FROM stock_pool_materialization_runs r
+                    WHERE r.definition_id=d.definition_id AND r.definition_version=d.version
+                      AND r.requested_as_of=s.snapshot_date
+                      AND r.trigger_identity='validated:' || s.snapshot_date || ':' || s.content_sha256)
+                ORDER BY d.definition_id LIMIT :limit""", {"cutoff": cutoff, "limit": limit})
+            for definition in candidates:
+                self._insert_run(
+                    connection, run_id=_new_id("stock_pool_run"), definition_id=definition["definition_id"],
+                    pool_id=definition["pool_id"], workspace=definition["workspace_id"],
+                    owner=definition["owner_principal"], requested_as_of=definition["snapshot_date"],
+                    trigger_identity=f"validated:{definition['snapshot_date']}:{definition['content_sha256']}",
+                    now=_now(), definition_version=int(definition["version"]),
+                )
+        return len(candidates)
+
     def enqueue_due_dynamic_runs(self, *, now: datetime | None = None) -> int:
         local = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo("Asia/Shanghai"))
         requested = local.strftime("%Y%m%d")
@@ -624,18 +683,29 @@ class StockPoolProducerStore(PgStoreMixin):
         owner = _text(trusted_owner, "owner_principal")
         workspace = _text(trusted_workspace, "workspace_id")
         row = self._fetch_one("""SELECT p.status AS pool_status,p.current_snapshot_id,
+                current.effective_trade_date AS current_snapshot_date,
+                current.provenance_json->>'dataset_id' AS current_source_hash,
+                source.snapshot_date AS source_snapshot_date,source.content_sha256 AS source_hash,
                 d.definition_id,d.version AS definition_version,d.status AS definition_status,
                 r.run_id,r.definition_version AS run_definition_version,r.status AS run_status,
                 r.snapshot_id,r.error_code,r.error_message,r.finished_at
             FROM stock_pools p
             LEFT JOIN stock_pool_producer_definitions d ON d.pool_id=p.pool_id
+            LEFT JOIN stock_pool_snapshots current ON current.snapshot_id=p.current_snapshot_id
+            LEFT JOIN LATERAL (
+                SELECT snapshot_date,content_sha256 FROM market_index_weight_snapshots
+                WHERE d.producer_kind='index' AND index_symbol=d.definition_json->>'index_symbol'
+                  AND status='verified' AND snapshot_date<=:cutoff
+                ORDER BY snapshot_date DESC LIMIT 1
+            ) source ON TRUE
             LEFT JOIN LATERAL (
                 SELECT * FROM stock_pool_materialization_runs candidate
                 WHERE candidate.definition_id=d.definition_id
                 ORDER BY candidate.created_at DESC,candidate.run_id DESC LIMIT 1
             ) r ON TRUE
             WHERE p.pool_id=:pool AND p.owner_principal=:owner AND p.workspace_id=:workspace""",
-            {"pool": pool, "owner": owner, "workspace": workspace})
+            {"pool": pool, "owner": owner, "workspace": workspace,
+             "cutoff": datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d")})
         if row is None:
             raise StockPoolProducerNotFound("stock pool producer not found")
         if row.get("pool_status") != "active" or row.get("definition_status") in {"draft", "paused"}:
@@ -644,6 +714,12 @@ class StockPoolProducerStore(PgStoreMixin):
             state = "waiting_for_data"
         elif row.get("run_status") == "failed":
             state = "failed"
+        elif row.get("source_snapshot_date") and (
+            str(row.get("source_snapshot_date")) > str(row.get("current_snapshot_date") or "")
+            or (row.get("source_snapshot_date") == row.get("current_snapshot_date")
+                and row.get("source_hash") != row.get("current_source_hash"))
+        ):
+            state = "stale"
         elif (
             row.get("current_snapshot_id")
             and row.get("run_status") == "succeeded"
@@ -659,6 +735,8 @@ class StockPoolProducerStore(PgStoreMixin):
             "latest_run_id": row.get("run_id"), "latest_run_status": row.get("run_status"),
             "error_code": row.get("error_code"), "message": row.get("error_message"),
             "updated_at": row.get("finished_at"),
+            "source_snapshot_date": row.get("source_snapshot_date"),
+            "current_snapshot_date": row.get("current_snapshot_date"),
         }
 
     def list_runs(self, pool_id: object, *, trusted_owner: str, trusted_workspace: str,

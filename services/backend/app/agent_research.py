@@ -85,7 +85,7 @@ class AgentRole:
 ROLE_CATALOG: tuple[AgentRole, ...] = (
     AgentRole(
         role_id="quant_orchestrator",
-        version="2.0.0",
+        version="2.1.0",
         description="Coordinates bounded research hand-offs and explicit owner-scoped domain actions.",
         allowed_tools=(
             "byq_product_help_query",
@@ -113,6 +113,9 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_pool_list",
             "byq_pool_get",
             "byq_pool_create",
+            "byq_index_pool_catalog",
+            "byq_index_pool_create",
+            "byq_index_pool_status",
             "byq_factor_compute",
             "byq_research_task_create",
             "byq_research_get",
@@ -549,7 +552,8 @@ class AgentResearchStore(PgStoreMixin):
             raise AgentNotFound("agent run not found")
         self._check_run_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
         role = ROLE_BY_ID[row["role_id"]]
-        if action not in role.allowed_tools:
+        index_action = action in {"byq_index_pool_catalog", "byq_index_pool_create", "byq_index_pool_status"}
+        if action not in role.allowed_tools or (index_action and row["role_version"] != "2.1.0"):
             self._record_audit_row(row, action=action, outcome="denied", resource_type=resource_type, resource_id=resource_id, detail={"reason": "role_tool_not_allowed"})
             raise AgentForbidden("agent role is not authorized for this domain action")
         requires_approval = action in role.approval_required_actions

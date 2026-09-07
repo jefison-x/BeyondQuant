@@ -4,6 +4,9 @@ import { formatCount, statusLabel } from "./display";
 describe("display formatters", () => {
   it("normalizes common Product statuses without inventing unknown labels", () => {
     expect(statusLabel("completed")).toBe("已完成");
+    expect(statusLabel("succeeded")).toBe("已生成");
+    expect(statusLabel("stale")).toBe("待更新");
+    expect(statusLabel("waiting_for_data")).toBe("等待数据");
     expect(statusLabel("domain-specific")).toBe("domain-specific");
     expect(statusLabel(null)).toBe("未知");
   });

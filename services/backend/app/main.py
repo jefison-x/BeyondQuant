@@ -212,6 +212,9 @@ from .plugin_center import (
 )
 
 
+from .ml_validation import MLValidationError
+
+
 SERVICE = "byq-backend"
 VERSION = "0.1.0"
 
@@ -291,6 +294,8 @@ def _plugin_center_call(call: Callable[[], dict[str, object]]) -> dict[str, obje
 def _ml_call(call: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return call()
+    except MLValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.public_problem()) from exc
     except (MLTrainingNotFound, MLPredictionNotFound, ResearchNotFound, PaperTradingNotFound, SecurityMasterNotFound,
             MarketAutomationNotFound) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1550,6 +1555,8 @@ def list_security_master(
 def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return operation()
+    except MLValidationError as error:
+        raise HTTPException(status_code=422, detail=error.public_problem()) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except ResearchNotFound as error:
@@ -4458,9 +4465,10 @@ def create_stock_pool(payload: dict[str, Any], request: Request) -> dict[str, ob
 
 
 @app.get("/v1/paper/index-pools/catalog")
-def list_index_pool_catalog(request: Request, limit: int = 50, offset: int = 0) -> dict[str, object]:
+def list_index_pool_catalog(request: Request, limit: int = 50, offset: int = 0, requested_as_of: str | None = None) -> dict[str, object]:
     _required_agent_context(request)
-    return _stock_pool_producer_call(lambda: stock_pool_producer_store.list_index_catalog(limit=limit, offset=offset))
+    return _stock_pool_producer_call(lambda: stock_pool_producer_store.list_index_catalog(
+        limit=limit, offset=offset, requested_as_of=requested_as_of))
 
 
 @app.post("/v1/paper/index-pools", status_code=202)
@@ -4468,6 +4476,14 @@ def create_index_pool(payload: dict[str, Any], request: Request) -> dict[str, ob
     context = _required_agent_context(request, payload, include_workspace=True)
     return _stock_pool_producer_call(lambda: stock_pool_producer_store.create_index_pool(
         payload, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+    ))
+
+
+@app.get("/v1/paper/index-pools/reconcile")
+def reconcile_index_pool_creation(request: Request, idempotency_key: str) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _stock_pool_producer_call(lambda: stock_pool_producer_store.reconcile_index_creation(
+        idempotency_key, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
     ))
 
 

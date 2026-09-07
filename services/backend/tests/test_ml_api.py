@@ -216,7 +216,9 @@ def test_ml_strategy_endpoint_rejects_open_python_contract() -> None:
         "idempotency_key": "version-ml-reject",
     })
     assert response.status_code == 422
-    assert "unknown fields" in response.text
+    assert response.json()["detail"]["code"] == "unknown_fields"
+    assert response.json()["detail"]["field"] == "strategy"
+    assert "import lightgbm" not in response.text
 
 
 def test_ml_v2_strategy_version_and_approval_use_qualified_capability_lock() -> None:

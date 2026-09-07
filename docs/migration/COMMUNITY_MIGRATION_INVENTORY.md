@@ -35,6 +35,17 @@ must require confirmation. No Community code, database or runtime is copied or m
 
 ## Audit scope 与 evidence
 
+Post-U8 S1/S2: Community `backend/app/services/stock_pool_service.py` was inspected
+read-only. Owner-isolated creation and frozen membership-version references remain
+`REFERENCE_ONLY` / `PORT_TESTS`. Anonymous legacy visibility, mutable member lists,
+ORM architecture and deletion paths are `DROP`. BYQ reuses its existing index
+producer/materializer and adds bounded canonical-import compensation, never a new
+Provider fetch path or a Community storage migration.
+The Community `frontend/src/views/StockPoolView.vue` index summary, effective-date
+and history panels were also inspected. Explicit effective dates and maintenance
+semantics are `PORT_UX`; direct legacy APIs and global mutable index state are
+`DROP`. Current BYQ UI consumes only Product readiness/source/current-date fields.
+
 Post-U8 F1/F2 follow-up: read-only Community `backend/app/ops/sync_jobs.py`,
 strategy-validation and capability implementations were inspected. Durable receipt,
 stable request identity and claim/lease semantics are `REFERENCE_ONLY` / `PORT_TESTS`;

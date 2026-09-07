@@ -9,6 +9,21 @@ import {
 const backend = "http://backend:8000";
 const runId = "mlrun_0123456789abcdef0123456789abcdef";
 
+for (const field of ["validation_plan.parameters.folds", "learner.parameters.alpha"]) {
+  const value = await fetchByqMlStrategyCreate(backend, {}, async () => new Response(JSON.stringify({ detail: {
+    schema_version: "ml-validation-problem.v1", field, code: "out_of_range", message: "secret must never pass",
+    repair_limit: 999, allowed_values: ["private-input"],
+  } }), { status: 422 }));
+  const payload = JSON.parse(value.content[0].text);
+  assert.equal(payload.backend.validation.field, field);
+  assert.equal(payload.backend.validation.repair_limit, 1);
+  assert.doesNotMatch(value.content[0].text, /secret|private-input|999/);
+}
+for (const detail of ["token=secret", { schema_version: "ml-validation-problem.v1", field: "secret", code: "out_of_range" }]) {
+  const value = await fetchByqMlStrategyCreate(backend, {}, async () => new Response(JSON.stringify({ detail }), { status: 422 }));
+  assert.equal(JSON.parse(value.content[0].text).backend.validation, undefined);
+}
+
 for (const [call, path] of [
   [fetchByqMlCapabilities, "/v1/research/ml/capabilities"],
   [fetchByqMlWorkspace, "/v1/research/ml/workspace"],

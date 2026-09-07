@@ -6,6 +6,8 @@ identities below and never imports a client-supplied module or class name.
 
 from __future__ import annotations
 
+from .ml_validation import MLValidationError
+
 import hashlib
 import json
 import math
@@ -188,16 +190,16 @@ def validate_registry() -> dict[str, object]:
 
 def _object(value: object, field: str, allowed: set[str]) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise ValueError(f"{field} must be an object")
+        raise MLValidationError(f"{field} must be an object", field=field, code="object_required")
     unknown = sorted(set(value) - allowed)
     if unknown:
-        raise ValueError(f"{field} has unknown fields: {', '.join(unknown)}")
+        raise MLValidationError(f"{field} has unknown fields: {', '.join(unknown)}", field=field, code="unknown_fields")
     return value
 
 
 def _text(value: object, field: str, maximum: int = 128) -> str:
     if not isinstance(value, str) or not value.strip() or len(value.strip()) > maximum:
-        raise ValueError(f"{field} must be a non-empty string of at most {maximum} characters")
+        raise MLValidationError(f"{field} must be a non-empty string of at most {maximum} characters", field=field, code="text_required")
     return value.strip()
 
 
@@ -206,7 +208,7 @@ def _date(value: object, field: str) -> str:
     try:
         return datetime.strptime(normalized, "%Y-%m-%d").strftime("%Y-%m-%d")
     except ValueError as error:
-        raise ValueError(f"{field} must be YYYY-MM-DD") from error
+        raise MLValidationError(f"{field} must be YYYY-MM-DD", field=field, code="date_format") from error
 
 
 def _window(value: object, field: str) -> dict[str, str]:
@@ -233,21 +235,21 @@ def _parameters(component_id: str, value: object, field: str) -> dict[str, objec
         kind = raw_rule.get("type")
         if kind == "integer":
             if isinstance(raw, bool) or not isinstance(raw, int):
-                raise ValueError(f"{field}.{name} must be an integer")
+                raise MLValidationError(f"{field}.{name} must be an integer", field=f"{field}.{name}", code="integer_required")
         elif kind == "number":
             if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(float(raw)):
-                raise ValueError(f"{field}.{name} must be a finite number")
+                raise MLValidationError(f"{field}.{name} must be a finite number", field=f"{field}.{name}", code="number_required")
             raw = float(raw)
         elif kind == "boolean":
             if not isinstance(raw, bool):
-                raise ValueError(f"{field}.{name} must be a boolean")
+                raise MLValidationError(f"{field}.{name} must be a boolean", field=f"{field}.{name}", code="boolean_required")
         elif kind == "enum":
             if raw not in raw_rule.get("values", []):
-                raise ValueError(f"{field}.{name} has an unsupported value")
+                raise MLValidationError(f"{field}.{name} has an unsupported value", field=f"{field}.{name}", code="unsupported_value")
         else:
             raise ValueError(f"{field}.{name} capability metadata is invalid")
         if kind in {"integer", "number"} and not float(raw_rule["min"]) <= float(raw) <= float(raw_rule["max"]):
-            raise ValueError(f"{field}.{name} is outside the qualified range")
+            raise MLValidationError(f"{field}.{name} is outside the qualified range", field=f"{field}.{name}", code="out_of_range")
         result[name] = raw
     return result
 

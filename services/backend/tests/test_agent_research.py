@@ -48,13 +48,18 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_strategy_approve" not in strategy_tools
     assert "byq_backtest_run" not in strategy_tools
     orchestrator = ROLE_BY_ID["quant_orchestrator"]
-    assert orchestrator.version == "2.0.0"
+    assert orchestrator.version == "2.1.0"
     assert "byq_feedback_preview" in orchestrator.allowed_tools
     assert "byq_feedback_submit" in orchestrator.allowed_tools
     assert "byq_feedback_submit" in orchestrator.approval_required_actions
     assert "ml_researcher" in orchestrator.delegate_to
     orchestrator_tools = set(orchestrator.allowed_tools)
     assert {"byq_pool_list", "byq_pool_get", "byq_pool_create"} <= orchestrator_tools
+    index_tools = {"byq_index_pool_catalog", "byq_index_pool_create", "byq_index_pool_status"}
+    assert index_tools <= orchestrator_tools
+    for role_id, role in ROLE_BY_ID.items():
+        if role_id != "quant_orchestrator":
+            assert not index_tools.intersection(role.allowed_tools)
     assert {"byq_market_valuation", "byq_market_fundamentals"} <= orchestrator_tools
     assert "byq_market_session_context" in orchestrator_tools
     assert {"byq_data_demand_create", "byq_data_demand_get"} <= orchestrator_tools
@@ -107,6 +112,18 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
         "byq_ml_prediction_create", "byq_ml_prediction_get", "byq_backtest_task_get",
         "byq_backtest_task_execute", "byq_backtest_task_cancel",
     } <= ml_tools
+
+
+def test_old_run_does_not_gain_index_tools_after_role_upgrade() -> None:
+    store = AgentResearchStore()
+    try:
+        run = start(store)
+        assert store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_create"})["authorized"]
+        store._execute("UPDATE agent_runs SET role_version='2.0.0' WHERE run_id=:id", {"id": run["run_id"]})
+        with pytest.raises(AgentForbidden):
+            store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_create"})
+    finally:
+        store.close()
 
 
 def test_pool_creation_is_orchestrator_only_and_not_approval_gated() -> None:

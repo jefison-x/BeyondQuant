@@ -2,6 +2,17 @@
 
 本 contract 落实 ADR-0041；Phase 66 只冻结契约，不声称 runtime 已实现。
 
+## Post-U8 本地修订（ADR-0062；未认证部署）
+
+- 目录接受 `requested_as_of`，只返回不晚于指定日的 verified 权重。MCP 固定最多六个 canonical 指数。
+- 指数创建固定日期和幂等键，并发相同键受事务锁保护；`index-pools/reconcile` 按可信 owner/workspace
+  与原键精确查回回执。404 不证明写入没有发生，不能用列表第一页推断不存在。
+- 既有 Data Worker 每轮调度补扫最多 100 个活动跟踪池：从已经提交的 verified 权重派生稳定刷新身份，
+  重复检查、并发和重启不重复排队。不重启失败任务、不激活停用池、不调用 Provider。
+- `stock-pool-readiness.v1` 补充 `source_snapshot_date`、`current_snapshot_date`；源领先或同日内容变更时
+  显示 stale。Product 页面显示两个日期、最近生成时间和中文状态。历史快照保持冻结。
+- 历史成分需求排队及全包资格验证仍待完成，不能将这些本地切片当成 S1–S3 全部验收。
+
 ## `stock-pool-producer.v1`
 
 ### Definition

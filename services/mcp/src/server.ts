@@ -67,6 +67,7 @@ import {
   fetchByqPoolHistory,
   fetchByqPoolLifecycle,
   fetchByqPoolList,
+  fetchByqIndexPoolCatalog, fetchByqIndexPoolCreate, fetchByqIndexPoolStatus, fetchByqIndexPoolReconcile,
   fetchByqPoolSnapshotReplace,
 } from "./stock-pool.js";
 import {
@@ -712,6 +713,38 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     proposeWorkflowCard,
   );
   const poolContext = () => completeAgentContext(trustedContext);
+  server.registerTool(
+    "byq_index_pool_catalog",
+    { description: "Read the closed six-index catalogue and verified constituent readiness at or before an explicit research date. This never downloads provider data.", inputSchema: {
+      requested_as_of: z.string().regex(/^\d{8}$/),
+    } },
+    (args) => { const context = poolContext(); return context ? fetchByqIndexPoolCatalog(BACKEND_URL, args.requested_as_of, context) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_index_pool_create",
+    { description: "Create an explicitly requested owner-scoped tracking index pool from verified canonical weights. Returns an accepted materialization job, not completed members. Freeze the original date and idempotency key; historical research must reference an immutable snapshot.", inputSchema: {
+      index_symbol: z.enum(["000016.SH", "000300.SH", "000688.SH", "000905.SH", "000852.SH", "399006.SZ"]),
+      requested_as_of: z.string().regex(/^\d{8}$/), name: z.string().min(1).max(128).optional(),
+      description: z.string().max(2000).optional(), idempotency_key: z.string().min(1).max(128),
+    } },
+    (args) => { const context = poolContext(); return context ? fetchByqIndexPoolCreate(BACKEND_URL, args, context) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_index_pool_status",
+    { description: "Supply exactly one identity: pool_id reads the last ten materializations; the original idempotency_key precisely reconciles an unknown creation. An unconfirmed receipt is unknown, not absent. A pool is usable only after materialization succeeds and an immutable snapshot exists.", inputSchema: {
+      pool_id: z.string().regex(/^stock_pool_[0-9a-f]{32}$/).optional(),
+      idempotency_key: z.string().min(1).max(128).optional(),
+    } },
+    (args) => {
+      const context = poolContext();
+      if (!context) return agentContextUnavailable();
+      if (Boolean(args.pool_id) === Boolean(args.idempotency_key)) return {
+        content: [{ type: "text" as const, text: JSON.stringify({ status: "error", code: "exactly_one_pool_identity_required" }) }], isError: true,
+      };
+      return args.pool_id ? fetchByqIndexPoolStatus(BACKEND_URL, args.pool_id, context)
+        : fetchByqIndexPoolReconcile(BACKEND_URL, args.idempotency_key!, context);
+    },
+  );
   server.registerTool(
     "byq_pool_list",
     { description: "List owner-scoped BYQ Stock Pools.", inputSchema: {} },
