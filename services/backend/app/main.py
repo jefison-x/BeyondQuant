@@ -1819,7 +1819,11 @@ def _research_transition(
         entity = _owned_research_entity(entity_type, entity_id, context)
         if entity_type == "artifact" and entity.get("kind") in PRODUCER_OWNED_ARTIFACT_KINDS:
             raise HTTPException(status_code=403, detail="artifact lifecycle requires its typed domain producer")
-        return research_store.transition(entity_type, entity_id, *_transition_args(payload))
+        transition_payload = {key: value for key, value in payload.items() if key != "progress"}
+        return research_store.transition(
+            entity_type, entity_id, *_transition_args(transition_payload),
+            progress=payload.get("progress"), require_completion_evidence=True,
+        )
     return _research_call(operation)
 
 

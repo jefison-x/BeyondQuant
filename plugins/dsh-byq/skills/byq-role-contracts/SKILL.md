@@ -7,6 +7,18 @@ disable-model-invocation: false
 
 # BYQ role contract
 
+For multi-stage research, the coordinator persists a `research-progress.v1` checkpoint through
+`byq_research_transition` on the original task before waiting or returning control.
+Record the actual stage, exact task-owned Artifact/Experiment references, next
+action and blocker. Read that same task on continuation; never replace it with a
+workspace's latest object. A checkpoint is not authorization to execute its next
+action. Before marking a task completed, attach validated same-task report/result
+Artifact IDs as completion evidence, clear blockers/next actions, and verify that
+the user's actual objective is satisfied. A model turn ending is not that proof.
+Missing results or unfinished domain jobs must keep the task incomplete.
+Specialist roles without `byq_research_transition` return the exact checkpoint
+facts to the coordinator; they must not call a tool outside their allowlist.
+
 Use the specialized DSH delegation tools for focused work. Start a BYQ agent
 run before domain work, then call `byq_agent_authorize` before a domain action
 and `byq_agent_audit` with the bounded outcome afterward.

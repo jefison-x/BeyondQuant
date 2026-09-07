@@ -1396,12 +1396,20 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_research_transition",
     {
-      description: "Apply one owner-scoped, idempotent generic research-domain transition. Typed strategy, approval, model, signal and result artifacts require their dedicated BYQ producer and cannot be validated here.",
+      description: "Persist an owner-scoped research transition and optional task checkpoint. Keep exact task, stage, linked objects, next action and blocker across model turns. Task completion requires validated same-task evidence and no unfinished domain jobs. Typed domain artifacts require their dedicated producer, not generic validation.",
       inputSchema: {
         entity_type: z.enum(["research_task", "experiment", "artifact"]),
         entity_id: z.string(),
         target_status: z.string(),
         idempotency_key: z.string(),
+        progress: z.object({
+          schema_version: z.literal("research-progress.v1"),
+          stage: z.enum(["planning", "data_preparation", "research", "strategy", "approval", "training", "prediction", "backtest", "comparison", "blocked", "completed"]),
+          next_action: z.string().min(1).max(160).nullable(),
+          blocked_reason: z.string().min(1).max(160).nullable(),
+          linked_objects: z.array(z.object({ kind: z.enum(["artifact", "experiment"]), id: z.string() }).strict()).max(16),
+          completion_evidence: z.array(z.string()).max(16),
+        }).strict().optional(),
       },
     },
     (args) => byqResearchTransition(args, trustedContext),

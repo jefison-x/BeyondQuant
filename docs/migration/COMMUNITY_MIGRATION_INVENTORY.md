@@ -11,6 +11,13 @@ BeyondQuant architecture 的内容。
 
 ## Post-U8 R1 historical outcome audit（2026-09-07）
 
+Post-U8 F4 checkpoints: Community research/contracts.py and the complete frontend
+AgentThinking.vue were read-only inspected. Persisted goal, stage, exact evidence
+and blocker semantics are `REFERENCE_ONLY` / `PORT_TESTS`; concise Chinese stage
+labels are `PORT_UX`. Raw thought/tool events and default “step completed” are
+`DROP`. The existing BYQ ResearchTask transition and Product research table are
+extended; no Community workflow or execution graph is copied.
+
 Post-U8 generic research boundary: Community `agent-service/app/research/contracts.py`
 inspected read-only. Owner identity, explicit evidence references and completion
 evidence are `REFERENCE_ONLY` / `PORT_TESTS`; permissive client-supplied state and

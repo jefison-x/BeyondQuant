@@ -43,6 +43,33 @@ ARTIFACT_TRANSITIONS = {
     "superseded": {"superseded"},
 }
 
+PROGRESS_STAGES = frozenset({"planning", "data_preparation", "research", "strategy", "approval",
+                            "training", "prediction", "backtest", "comparison", "blocked", "completed"})
+
+
+def _progress_payload(value: object) -> dict[str, Any]:
+    fields = {"schema_version", "stage", "next_action", "blocked_reason", "linked_objects", "completion_evidence"}
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError("research progress has invalid fields")
+    if (value["schema_version"] != "research-progress.v1" or not isinstance(value["stage"], str)
+            or value["stage"] not in PROGRESS_STAGES):
+        raise ValueError("research progress schema or stage is invalid")
+    result = dict(value)
+    for field in ("next_action", "blocked_reason"):
+        if result[field] is not None:
+            result[field] = _text(result[field], field=f"progress.{field}", max_length=160)
+    references, _ = _lineage(value["linked_objects"])
+    if len(references) > 16 or any(ref["kind"] not in {"artifact", "experiment"} for ref in references):
+        raise ValueError("research progress references are invalid")
+    evidence = value["completion_evidence"]
+    if not isinstance(evidence, list) or len(evidence) > 16:
+        raise ValueError("research completion evidence is invalid")
+    result["linked_objects"] = references
+    result["completion_evidence"] = [_identifier(item, field="completion_evidence") for item in evidence]
+    if result["stage"] == "blocked" and result["blocked_reason"] is None:
+        raise ValueError("blocked research progress requires a reason")
+    return result
+
 _SECRET_KEY_FRAGMENTS = (
     "token",
     "password",
@@ -235,6 +262,7 @@ class ResearchStore(PgStoreMixin):
         CREATE UNIQUE INDEX IF NOT EXISTS research_tasks_idempotency
             ON research_tasks(owner_principal, idempotency_key)
         """,
+        "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS progress JSONB",
         """
         CREATE TABLE IF NOT EXISTS experiments (
             experiment_id TEXT PRIMARY KEY,
@@ -1208,6 +1236,7 @@ class ResearchStore(PgStoreMixin):
         entity_id: object,
         target_status: object,
         idempotency_key: object,
+        *, progress: object = None, require_completion_evidence: bool = False,
     ) -> dict[str, object]:
         entity_type = _text(entity_type, field="entity_type", max_length=32)
         entity_id = _identifier(entity_id, field="entity_id")
@@ -1221,17 +1250,21 @@ class ResearchStore(PgStoreMixin):
         if config is None:
             raise ValueError("entity_type must be research_task, experiment, or artifact")
         table, transitions, row_mapper = config
-        request_hash = _hash_request(
-            {
+        if progress is not None and entity_type != "research_task":
+            raise ValueError("progress is only supported for research tasks")
+        checkpoint = _progress_payload(progress) if progress is not None else None
+        request_data = {
                 "entity_type": entity_type,
                 "entity_id": entity_id,
                 "target_status": target_status,
             }
-        )
+        if checkpoint is not None:
+            request_data["progress"] = checkpoint
+        request_hash = _hash_request(request_data)
         with self._transaction() as connection:
             row = fetch_one(
                 connection,
-                f"SELECT * FROM {table} WHERE {self._id_column(entity_type)} = :entity_id",
+                f"SELECT * FROM {table} WHERE {self._id_column(entity_type)} = :entity_id FOR UPDATE",
                 {"entity_id": entity_id},
             )
             if row is None:
@@ -1250,11 +1283,44 @@ class ResearchStore(PgStoreMixin):
                     raise ResearchPersistenceError("stored transition result is invalid")
                 return result
             current = row["status"]
+            if checkpoint is not None and current in {"completed", "failed", "cancelled"}:
+                raise InvalidTransition("terminal research checkpoint cannot be changed")
+            if checkpoint is not None:
+                references = checkpoint["linked_objects"] + [
+                    {"kind": "artifact", "id": identity} for identity in checkpoint["completion_evidence"]]
+                for reference in references:
+                    ref_table, column = {"artifact": ("artifacts", "artifact_id"),
+                                         "experiment": ("experiments", "experiment_id")}[reference["kind"]]
+                    linked = fetch_one(connection, f"SELECT * FROM {ref_table} WHERE {column}=:identity",
+                                       {"identity": reference["id"]})
+                    if (linked is None or linked["task_id"] != entity_id
+                            or linked["owner_principal"] != row["owner_principal"]
+                            or linked.get("workspace_id") != row.get("workspace_id")):
+                        raise ResearchNotFound("research checkpoint reference not found")
+                    if reference["id"] in checkpoint["completion_evidence"] and (
+                        linked["status"] != "validated" or linked.get("kind") not in
+                        (PRODUCER_OWNED_ARTIFACT_KINDS - {"strategy_draft", "strategy_approval", "ml_strategy_approval"}
+                         | {"research_report", "evidence"})
+                    ):
+                        raise InvalidTransition("research completion evidence is not validated")
+                if checkpoint["stage"] == "completed" and target_status != "completed":
+                    raise InvalidTransition("completed checkpoint requires completed task status")
+            if entity_type == "research_task" and target_status == "completed" and require_completion_evidence:
+                proof = checkpoint or row.get("progress")
+                if (not proof or proof["stage"] != "completed" or not proof["completion_evidence"]
+                        or proof["next_action"] is not None or proof["blocked_reason"] is not None):
+                    raise InvalidTransition("research completion requires an explicit validated evidence checkpoint")
+                for job_table in ("experiments", "ml_training_runs", "ml_prediction_runs", "backtest_jobs"):
+                    active = fetch_one(connection,
+                        f"SELECT COUNT(*) AS count FROM {job_table} WHERE task_id=:task AND status NOT IN ('completed','failed','cancelled')",
+                        {"task": entity_id})
+                    if active and active["count"]:
+                        raise InvalidTransition("research still has unfinished domain work")
             if target_status not in transitions[current]:
                 raise InvalidTransition(
                     f"cannot transition {entity_type} from {current} to {target_status}"
                 )
-            if target_status == current:
+            if target_status == current and checkpoint is None:
                 result = row_mapper(row)
                 execute(
                     connection,
@@ -1266,6 +1332,9 @@ class ResearchStore(PgStoreMixin):
                 )
                 return result
             now = _now()
+            if checkpoint is not None:
+                execute(connection, "UPDATE research_tasks SET progress=:progress WHERE task_id=:task",
+                        {"progress": checkpoint, "task": entity_id})
             execute(
                 connection,
                 f"UPDATE {table} SET status = :status, updated_at = :updated_at, version = version + 1 WHERE {self._id_column(entity_type)} = :entity_id",

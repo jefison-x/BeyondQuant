@@ -238,6 +238,19 @@ needs_attention，既不宣称失败也不宣称已提交。原“只核对”�
 
 ### F8 业务指令与接口一致性（2026-09-07）
 
+F4 持久阶段切片：原API无证据completed返回200，阶段字段被422拒绝，2项失败测试复现。
+现有ResearchTask新增可空progress字段；原transition记录stage/next_action/blocker、同任务
+Artifact/Experiment引用及validated完成证据。终态不能新写阶段；未知/跨任务引用拒绝；
+未完成Experiment/ML训练/预测/回测阻止generic API完成。模型回合终态不修改研究状态。
+原记录不追溯变更；此证据校验不等于证明投资结论语义或完整用户目标已经达成。
+MCP传输与协调角色指令已更新，专业子角色仍不得越过allowlist。
+
+F4验证：受影响Backend23项通过；新隔离Backend制品完整359通过、1跳过、7 subtests通过
+（399.07秒）。MCP构建/研究契约通过；Frontend53文件164项通过、类型/构建通过。
+Chrome18261经真实Product GET读取合成blocked阶段和下一动作，刷新后保留，桌面和390×844
+无页面溢出、Console error/warn为空。该夹具不启动模型、审批、训练或回测；生产未部署。
+F4任务到conversation自动绑定、端到端模型遵循、F6受限主动续接和R4持久终态仍未关闭。
+
 来源引用追加切片：原通用接口按dict读取、合同实际为list，导致股票池登记不执行；
 四类跨owner引用也未校验。纠正workspace夹具后，5项失败测试完整复现。
 现在在单一事务验证固定领域引用、登记多个股票池快照、保存Artifact，原键认领串行化。

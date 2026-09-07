@@ -231,3 +231,73 @@ def test_generic_artifact_registers_pool_lineage_atomically(monkeypatch) -> None
     assert {ref["snapshot_id"] for ref in references} == {pool["current_snapshot_id"], second_pool["current_snapshot_id"]}
     store.close()
     pools.close()
+
+
+def test_task_cannot_be_completed_from_a_model_turn_without_evidence(monkeypatch) -> None:
+    headers = _owner_headers()
+    store = ResearchStore()
+    monkeypatch.setattr(main, "research_store", store)
+    task = store.create_task(task_body())
+    store.transition("research_task", task["task_id"], "running", "start-research")
+    response = TestClient(main.app).post(f"/v1/research/tasks/{task['task_id']}/transitions", headers=headers,
+        json={"target_status": "completed", "idempotency_key": "model-turn-done"})
+    assert response.status_code == 409
+    assert store.get_task(task["task_id"])["status"] == "running"
+    store.close()
+
+
+def test_task_checkpoint_survives_restart_and_requires_exact_completion_evidence(monkeypatch) -> None:
+    headers = _owner_headers()
+    store = ResearchStore()
+    monkeypatch.setattr(main, "research_store", store)
+    task = store.create_task(task_body())
+    artifact = store.create_artifact({"task_id": task["task_id"], "kind": "research_report", "content": {"synthetic": True},
+                                      "lineage": [], "trace_id": "checkpoint", "idempotency_key": "checkpoint-report"})
+    progress = {"schema_version": "research-progress.v1", "stage": "research", "next_action": "review_report",
+                "blocked_reason": None, "linked_objects": [{"kind": "artifact", "id": artifact["artifact_id"]}],
+                "completion_evidence": []}
+    payload = {"target_status": "running", "idempotency_key": "checkpoint-running", "progress": progress}
+    path = f"/v1/research/tasks/{task['task_id']}/transitions"
+    client = TestClient(main.app)
+    accepted = client.post(path, headers=headers, json=payload)
+    assert accepted.status_code == 200
+    assert accepted.json()["progress"] == progress
+    store.close()
+    store = ResearchStore()
+    monkeypatch.setattr(main, "research_store", store)
+    assert store.get_task(task["task_id"])["progress"] == progress
+    assert client.post(path, headers=headers, json=payload).json() == accepted.json()
+    complete = {**payload, "target_status": "completed", "idempotency_key": "checkpoint-complete",
+                "progress": {**progress, "stage": "completed", "next_action": None,
+                             "completion_evidence": [artifact["artifact_id"]]}}
+    assert client.post(path, headers=headers, json=complete).status_code == 409
+    store.transition("artifact", artifact["artifact_id"], "validated", "review-report")
+    from tests.test_research import experiment_payload
+    unfinished = store.create_experiment(experiment_payload(task["task_id"]))
+    assert client.post(path, headers=headers, json=complete).status_code == 409
+    store.transition("experiment", unfinished["experiment_id"], "cancelled", "stop-unused-experiment")
+    assert client.post(path, headers=headers, json=complete).status_code == 200
+    changed = {**complete, "idempotency_key": "rewrite-terminal", "progress": {**progress, "stage": "research"}}
+    assert client.post(path, headers=headers, json=changed).status_code == 409
+    store.close()
+
+
+def test_task_checkpoint_rejects_wrong_task_and_malformed_stage(monkeypatch) -> None:
+    headers = _owner_headers()
+    store = ResearchStore()
+    monkeypatch.setattr(main, "research_store", store)
+    task = store.create_task(task_body())
+    other = store.create_task({**task_body(), "idempotency_key": "other-same-owner-task"})
+    artifact = store.create_artifact({"task_id": other["task_id"], "kind": "evidence", "content": {},
+        "lineage": [], "trace_id": "checkpoint", "idempotency_key": "other-task-artifact"})
+    progress = {"schema_version": "research-progress.v1", "stage": "research", "next_action": "review_report",
+        "blocked_reason": None, "linked_objects": [{"kind": "artifact", "id": artifact["artifact_id"]}],
+        "completion_evidence": []}
+    client = TestClient(main.app)
+    path = f"/v1/research/tasks/{task['task_id']}/transitions"
+    payload = {"target_status": "running", "idempotency_key": "wrong-task-checkpoint", "progress": progress}
+    assert client.post(path, headers=headers, json=payload).status_code == 404
+    assert client.post(path, headers=headers, json={**payload, "progress": {**progress, "stage": []}}).status_code == 422
+    assert store.get_task(task["task_id"])["status"] == "planned"
+    assert store.get_task(task["task_id"])["progress"] is None
+    store.close()

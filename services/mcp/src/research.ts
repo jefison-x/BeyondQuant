@@ -22,6 +22,14 @@ export type ResearchTransitionRequest = {
   entity_id: string;
   target_status: string;
   idempotency_key: string;
+  progress?: {
+    schema_version: "research-progress.v1";
+    stage: string;
+    next_action: string | null;
+    blocked_reason: string | null;
+    linked_objects: Array<{ kind: "artifact" | "experiment"; id: string }>;
+    completion_evidence: string[];
+  };
 };
 
 export type ExperimentCreateRequest = {
@@ -216,7 +224,8 @@ export function fetchByqResearchTransition(
   return postResearch(
     backendUrl,
     `/v1/research/${collection}/${encodeURIComponent(request.entity_id)}/transitions`,
-    { target_status: request.target_status, idempotency_key: request.idempotency_key },
+    { target_status: request.target_status, idempotency_key: request.idempotency_key,
+      ...(request.progress ? { progress: request.progress } : {}) },
     fetcher,
   );
 }

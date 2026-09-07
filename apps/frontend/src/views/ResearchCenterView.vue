@@ -4,6 +4,7 @@ import { createTask, getApproval, getResearchEntity, listApprovals, listArtifact
 import { beginTaskSubmission, finishTaskSubmission, readTaskSubmission, type TaskSubmission } from "@/api/taskSubmission";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
+import { researchProgress } from "@/researchProgress";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { useFilteredPagination } from "@/composables/useFilteredPagination";
 
@@ -149,6 +150,14 @@ onMounted(async () => {
             <el-table-column prop="title" label="任务名称" min-width="180" />
             <el-table-column prop="objective" label="研究目标" min-width="300" show-overflow-tooltip />
             <el-table-column prop="status" label="状态" width="120" />
+            <el-table-column label="研究阶段与下一步" min-width="280">
+              <template #default="{ row }">
+                <div>{{ researchProgress(row.progress).stage }}</div>
+                <div>下一步：{{ researchProgress(row.progress).next }}</div>
+                <div v-if="researchProgress(row.progress).blocker">阻塞：{{ researchProgress(row.progress).blocker }}</div>
+                <div v-if="researchProgress(row.progress).evidence">完成证据：{{ researchProgress(row.progress).evidence }} 项</div>
+              </template>
+            </el-table-column>
             <el-table-column prop="task_id" label="Task ID" min-width="260" show-overflow-tooltip />
           </el-table>
           </ListFilterPagination>

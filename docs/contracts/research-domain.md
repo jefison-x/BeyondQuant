@@ -21,6 +21,23 @@ and returns the original immutable receipt; historical records are not rewritten
 
 ### ResearchTask
 
+Post-U8 task checkpoints use the existing transition endpoint, with optional
+`progress` on ResearchTask only: schema `research-progress.v1`, a closed `stage`,
+`next_action`, optional `blocked_reason`, up to 16 exact `linked_objects` (Artifact
+or Experiment), and up to 16 Artifact IDs in `completion_evidence`. References
+must belong to the task and its owner/workspace; no latest-object fallback.
+Stages are planning, data_preparation, research, strategy, approval, training,
+prediction, backtest, comparison, blocked and completed. Progress is a durable
+domain checkpoint, not an execution plan or permission grant. Job identities
+remain discoverable through their exact typed Artifact lineage, not guessed.
+Same-key retries return the original checkpoint; changed checkpoints need a new
+key. Terminal tasks cannot acquire a new checkpoint. Generic API completion
+requires a completed checkpoint, no next action/blocker, and validated same-task
+result/report evidence. This checks persisted evidence, not the semantic quality
+of an investment conclusion. A model-turn terminal event never completes a task.
+Historical tasks are not rewritten or resumed. Automatic checkpoint updates and
+authorized background continuation require their separate acceptance evidence.
+
 `ResearchTask` 是 root research intent：
 
 ```text

@@ -7,6 +7,7 @@ import { bindActiveWebEvidenceProducer, loadWebEvidencePolicy } from "../src/web
 import {
   fetchByqArtifactCreate,
   fetchByqResearchTaskCreate,
+  fetchByqResearchTransition,
   fetchByqWebEvidenceCreate,
 } from "../src/research.js";
 
@@ -42,6 +43,23 @@ const task = await fetchByqResearchTaskCreate(
 assert.equal(task.isError, false);
 assert.match(task.content[0].text, /task_0123456789abcdef/);
 assert.doesNotMatch(task.content[0].text, /request_hash|sqlite/);
+
+const checkpoint = {
+  schema_version: "research-progress.v1" as const, stage: "blocked", next_action: "review_report",
+  blocked_reason: "等待研究证据", linked_objects: [], completion_evidence: [],
+};
+const checkpointResult = await fetchByqResearchTransition("http://backend:8000", {
+  entity_type: "research_task", entity_id: "task_0123456789abcdef0123456789abcdef",
+  target_status: "running", idempotency_key: "checkpoint-original-key", progress: checkpoint,
+}, async (url, init) => {
+  assert.match(url, /tasks\/task_0123456789abcdef0123456789abcdef\/transitions$/);
+  assert.deepEqual(JSON.parse(String(init?.body)), {
+    target_status: "running", idempotency_key: "checkpoint-original-key", progress: checkpoint,
+  });
+  return new Response(JSON.stringify({ status: "running", progress: checkpoint }), { status: 200 });
+});
+assert.equal(checkpointResult.isError, false);
+assert.match(checkpointResult.content[0].text, /research-progress.v1/);
 
 const conflict = await fetchByqArtifactCreate(
   "http://backend:8000",
