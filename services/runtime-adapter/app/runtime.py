@@ -500,7 +500,10 @@ class RuntimeAdapter:
                 record.status = SessionStatus.IDLE
                 self._emit(record, "session.result.discarded", "runtime-adapter", {"reason": "soft-cancelled", "run_id": run.run_id})
                 return
-            if finish_reason in {"error", "failed"}:
+            # A returned SDK call is not necessarily a completed model run.
+            # Token exhaustion, cancellation and unknown reasons must not
+            # resolve the user's unanswered request as a successful result.
+            if finish_reason != "completed":
                 record.status = SessionStatus.FAILED
                 self._emit(
                     record,

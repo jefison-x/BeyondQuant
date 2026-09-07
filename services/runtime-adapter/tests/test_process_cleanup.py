@@ -95,6 +95,28 @@ def wait_for_status(adapter: RuntimeAdapter, session_id: str, status: str) -> No
     raise AssertionError(f"session did not reach {status}")
 
 
+@pytest.mark.parametrize("finish_reason", ["max-tokens", "aborted", "future-unknown"])
+def test_incomplete_model_finish_is_never_a_success_result(adapter: RuntimeAdapter, finish_reason: str) -> None:
+    if version("deepseek-harness-sdk") == "0.1.1rc1":
+        finish_reason = {"max-tokens": "max_tokens", "aborted": "cancelled"}.get(finish_reason, finish_reason)
+    FakeHarness.finish_reason = finish_reason
+    try:
+        adapter.create_session("incomplete", "incomplete-trace")
+        receipt = adapter.submit_prompt("incomplete", "synthetic incomplete outcome")
+        FakeHarness.allow_run.set()
+        deadline = time.monotonic() + 2.0
+        record = adapter._get("incomplete")
+        while record.active_run is not None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert record.status == SessionStatus.FAILED
+        terminal = [item for item in record.history if item["kind"] in {"session.result", "session.failed"}]
+        assert len(terminal) == 1
+        assert terminal[0]["kind"] == "session.failed"
+        assert terminal[0]["payload"]["run_id"] == receipt
+    finally:
+        adapter.close()
+
+
 def test_default_whole_run_ceiling_allows_bounded_complex_research(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
