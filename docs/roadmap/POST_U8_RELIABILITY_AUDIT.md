@@ -238,6 +238,18 @@ needs_attention，既不宣称失败也不宣称已提交。原“只核对”�
 
 ### F8 业务指令与接口一致性（2026-09-07）
 
+F3普通消息回执追加：原普通回合接口不检查accepted/有效run ID就返回accepted=true，且
+保存消息缺少稳定identity仍启动Runtime。5项无效/丢失回执失败测试与1项缺少消息identity
+失败测试复现。现在无消息identity先停止；无效或不明prompt回执仅精确GET一次原消息键，
+确认后返回原run，否则安全中文prompt_outcome_unknown，绝不重复POST。
+审批续接共用run ID校验。Gateway完整134项通过（1.20秒）；前端API/AgentView23项通过，
+证明未知结果保留原问题、区别于维护拒绝且不自动重发。未执行真实模型或生产请求。
+
+当前仍为IN_PROGRESS：R4/F10逐回合持久AgentRun绑定与收口、F6任务绑定受限主动续接、
+非ML持久未知结果核对、全路径持久纠错预算、S3历史需求排队及缓存迁移、独立构建认证和
+真实模型完整旅程仍需收口。Process generation不能代替root turn，不按session或时间猜测关闭
+历史AgentRun。新增Post-U8合成提示不在原固定G1–G6付费许可内，尚未调用；生产保持不变。
+
 S3历史模式切片：新增明确的historical_snapshot创建模式，原请求日期写入定义并使用once调度；
 新成分不会自动推进，也不能通过手动刷新改成另一日期。readiness按冻结日期核对，避免误报
 “当前成分落后”。默认follow_index和原请求哈希兼容，既有池不追溯改变。

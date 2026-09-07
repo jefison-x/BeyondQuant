@@ -161,6 +161,23 @@ describe("AgentView", () => {
     wrapper.unmount();
   });
 
+  it("keeps an unconfirmed original message and never automatically submits it again", async () => {
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void> };
+    view.prompt = "核对这个原始研究问题";
+    submitTurn.mockRejectedValueOnce(Object.assign(new Error("请先核对原会话，勿重复发送。"), {
+      status: 502, code: "prompt_outcome_unknown",
+    }));
+    await view.send();
+    await flushPromises();
+    expect(view.prompt).toBe("核对这个原始研究问题");
+    expect(useAgentStore().messages.filter(message => message.text === "核对这个原始研究问题")).toHaveLength(1);
+    expect(submitTurn).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("勿重复发送");
+    wrapper.unmount();
+  });
+
   it("unlocks a failed run, explains the failure, and resumes before retry", async () => {
     const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
     await flushPromises();

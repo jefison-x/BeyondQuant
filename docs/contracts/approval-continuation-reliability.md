@@ -5,6 +5,15 @@ Status: Post-U8 implementation slice under Accepted ADR-0062; not full F5/F6 acc
 The approval decision, continuation transport receipt, domain action and user goal
 are separate facts. `submitted` means a valid Adapter acceptance receipt only.
 
+Normal user turns now use the same acceptance standard: a durable original message
+identity is required before model submission; malformed/missing message receipts
+stop before Runtime. A valid prompt receipt requires literal accepted=true and a
+bounded nonblank run identity. After an uncertain POST, one exact original-key
+receipt GET may confirm acceptance, but never repeats the POST. Otherwise Product
+returns `prompt_outcome_unknown` (502), preserving the user's original message and
+asking for reconciliation, not automatic resubmission. This is not durable Adapter
+receipt storage and does not resolve receipts lost across an Adapter restart.
+
 - Backend persists the continuation attempt before Gateway sends a prompt. Exact
   attempt matching fences every acknowledgement. At most eight attempts known to
   have been unaccepted may be dispatched; exhaustion is `needs_attention`.

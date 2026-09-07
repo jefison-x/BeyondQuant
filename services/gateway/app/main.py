@@ -376,6 +376,10 @@ def _adapter_post(path: str, *, payload: dict[str, object] | None = None, timeou
     return body
 
 
+def _valid_prompt_run_id(value: object) -> bool:
+    return isinstance(value, str) and 1 <= len(value) <= 128 and value.strip() == value and bool(value.strip())
+
+
 def _adapter_prompt_receipt(session_id: str, key: str, content: str) -> dict[str, object] | None:
     """One exact read; missing ephemeral state is unknown, never resubmit permission."""
     try:
@@ -385,7 +389,7 @@ def _adapter_prompt_receipt(session_id: str, key: str, content: str) -> dict[str
         response.raise_for_status()
         body = response.json()
         if (isinstance(body, dict) and body.get("schema_version") == "prompt-receipt.v1"
-                and body.get("state") == "accepted" and isinstance(body.get("run_id"), str) and body["run_id"]):
+                and body.get("state") == "accepted" and _valid_prompt_run_id(body.get("run_id"))):
             return body
     except (httpx.HTTPError, ValueError):
         pass
@@ -680,7 +684,7 @@ def _continue_approval_conversation(
                 raise
             session = _replace_lost_runtime_session(session)
             receipt = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
-        if not isinstance(receipt, dict) or receipt.get("accepted") is not True or not isinstance(receipt.get("run_id"), str) or not receipt["run_id"]:
+        if not isinstance(receipt, dict) or receipt.get("accepted") is not True or not _valid_prompt_run_id(receipt.get("run_id")):
             raise HTTPException(status_code=502, detail="continuation receipt is unconfirmed")
     except HTTPException as error:
         state = "outcome_unknown" if prompt_attempted and error.status_code >= 500 else "failed"
@@ -835,23 +839,35 @@ def submit_product_turn(
     prompt_payload = {"content": request.content, "require_model_key": True}
     persisted_message = persisted.get("message")
     message_id = persisted_message.get("message_id") if isinstance(persisted_message, dict) else None
-    if isinstance(message_id, str) and 8 <= len(message_id) <= 128:
-        prompt_payload["idempotency_key"] = message_id
+    if not isinstance(message_id, str) or not 8 <= len(message_id) <= 128 or message_id.strip() != message_id:
+        raise ProductError(502, "prompt_outcome_unknown",
+                           "原消息的保存回执尚未确认，本次未启动模型；请先核对原会话。")
+    prompt_payload["idempotency_key"] = message_id
     try:
-        body = _adapter_post(
-            f"/internal/runtime/sessions/{session.session_id}/prompt",
-            payload=prompt_payload,
-            timeout=5.0,
-        )
+        try:
+            body = _adapter_post(
+                f"/internal/runtime/sessions/{session.session_id}/prompt",
+                payload=prompt_payload, timeout=5.0,
+            )
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            session = _replace_lost_runtime_session(session)
+            body = _adapter_post(
+                f"/internal/runtime/sessions/{session.session_id}/prompt",
+                payload=prompt_payload, timeout=5.0,
+            )
+        if not isinstance(body, dict) or body.get("accepted") is not True or not _valid_prompt_run_id(body.get("run_id")):
+            raise HTTPException(status_code=502, detail="prompt receipt is unconfirmed")
     except HTTPException as exc:
-        if exc.status_code != 404:
+        key = prompt_payload.get("idempotency_key")
+        if exc.status_code < 500 or not isinstance(key, str):
             raise
-        session = _replace_lost_runtime_session(session)
-        body = _adapter_post(
-            f"/internal/runtime/sessions/{session.session_id}/prompt",
-            payload=prompt_payload,
-            timeout=5.0,
-        )
+        receipt = _adapter_prompt_receipt(session.session_id, key, request.content)
+        if receipt is None:
+            raise ProductError(502, "prompt_outcome_unknown",
+                               "本次消息的接收结果尚未确认；请先核对原会话，勿重复发送。") from exc
+        body = receipt
     return {
         "accepted": True,
         "session_id": session.conversation_id,

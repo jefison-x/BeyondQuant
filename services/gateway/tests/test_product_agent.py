@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import threading
+from types import SimpleNamespace
+import pytest
+from starlette.requests import Request
 
 from fastapi.testclient import TestClient
 
@@ -10,6 +13,56 @@ from app.trace_store import TraceStore
 
 
 TOKEN = "phase7-product-token"
+
+
+@pytest.mark.parametrize("receipt", [{}, {"accepted": False, "run_id": "run-1"},
+                                     {"accepted": True}, {"accepted": True, "run_id": " "}])
+def test_normal_turn_never_claims_acceptance_from_an_invalid_receipt(monkeypatch, receipt) -> None:
+    session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
+                              principal=None, workspace_id="workspace-1")
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"message": {"message_id": "message_original"}})
+    calls = []
+    monkeypatch.setattr(main, "_adapter_post", lambda *args, **kwargs: calls.append((args, kwargs)) or receipt)
+    monkeypatch.setattr(main, "_adapter_prompt_receipt", lambda *_: None)
+    with pytest.raises(main.ProductError) as raised:
+        main.submit_product_turn("conversation-1", main.ProductPromptRequest(content="synthetic original"), Request({"type": "http"}))
+    assert raised.value.status_code == 502
+    assert raised.value.code == "prompt_outcome_unknown"
+    assert len(calls) == 1
+
+
+def test_normal_turn_reconciles_original_receipt_without_repeating_prompt(monkeypatch) -> None:
+    session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
+                              principal=None, workspace_id="workspace-1")
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"message": {"message_id": "message_original"}})
+    writes = []
+    def lost_ack(*args, **kwargs):
+        writes.append((args, kwargs))
+        raise main.HTTPException(status_code=504, detail="synthetic lost ack")
+    def reconcile(session_id, key, content):
+        assert (session_id, key, content) == ("runtime-1", "message_original", "synthetic original")
+        return {"schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": "run-original"}
+    monkeypatch.setattr(main, "_adapter_post", lost_ack)
+    monkeypatch.setattr(main, "_adapter_prompt_receipt", reconcile)
+    result = main.submit_product_turn("conversation-1", main.ProductPromptRequest(content="synthetic original"), Request({"type": "http"}))
+    assert result["accepted"] is True
+    assert result["run_id"] == "run-original"
+    assert len(writes) == 1
+
+
+def test_turn_requires_a_durable_message_identity_before_runtime_submission(monkeypatch) -> None:
+    session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
+                              principal=None, workspace_id="workspace-1")
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"message": {"sequence": 1}})
+    writes = []
+    monkeypatch.setattr(main, "_adapter_post", lambda *args, **kwargs: writes.append(args) or {"accepted": True, "run_id": "run-1"})
+    with pytest.raises(main.ProductError) as raised:
+        main.submit_product_turn("conversation-1", main.ProductPromptRequest(content="synthetic original"), Request({"type": "http"}))
+    assert raised.value.code == "prompt_outcome_unknown"
+    assert writes == []
 
 
 def test_product_api_requires_bearer_auth(monkeypatch) -> None:
@@ -33,7 +86,7 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
             return {"conversation": {"conversation_id": "conversation_1", "title": "新投研对话", "status": "active"}}
         if path.endswith("/messages"):
             messages.append(str(payload["content"]))
-            return {"message": {"sequence": 1}}
+            return {"message": {"sequence": 1, "message_id": "message_original"}}
         raise AssertionError((method, path, params))
 
     monkeypatch.setattr(main, "_catalog_request", fake_catalog)
@@ -46,7 +99,7 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
             return None
 
         def json(self) -> dict[str, object]:
-            return {"status": "ready"} if len(calls) == 1 else {"run_id": "run-1"}
+            return {"status": "ready"} if len(calls) == 1 else {"accepted": True, "run_id": "run-1"}
 
     def fake_post(url: str, *, json: dict[str, object] | None, timeout: float) -> FakeResponse:
         calls.append((url, json))
@@ -69,6 +122,7 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
     assert calls[1][1] == {
         "content": "summarize the health contract",
         "require_model_key": True,
+        "idempotency_key": "message_original",
     }
     assert calls[0][1]["owner_principal"] == main.PRODUCT_PRINCIPAL
     assert messages == ["summarize the health contract"]
@@ -474,7 +528,7 @@ def test_turn_rehydrates_after_runtime_loss_without_duplicating_user_message(
             assert _kwargs["payload"]["idempotency_key"] == "message_stable_retry"
         if calls == ["/internal/runtime/sessions/runtime-private/prompt"]:
             raise main.HTTPException(status_code=404, detail="lost")
-        return {"status": "ready", "run_id": "run-rehydrated"}
+        return {"status": "ready", "accepted": True, "run_id": "run-rehydrated"}
 
     monkeypatch.setattr(main, "_adapter_post", adapter)
     monkeypatch.setattr(main, "_start_trace_collector", lambda _session: None)
