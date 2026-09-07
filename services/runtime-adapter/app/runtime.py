@@ -437,7 +437,7 @@ class RuntimeAdapter:
                     if idempotency_key is not None:
                         record.prompt_idempotency.pop(idempotency_key, None)
                     record.status = SessionStatus.FAILED
-                    self._emit(record, "session.failed", "runtime-adapter", {"error": "thread-start"})
+                    self._emit(record, "session.failed", "runtime-adapter", {"error": "thread-start", "run_id": run.run_id})
             raise
         watchdog = threading.Thread(
             target=self._watch_run,
@@ -483,10 +483,10 @@ class RuntimeAdapter:
                     return
                 if run.soft_cancel_requested:
                     record.status = SessionStatus.IDLE
-                    self._emit(record, "session.result.discarded", "runtime-adapter", {"reason": "soft-cancelled"})
+                    self._emit(record, "session.result.discarded", "runtime-adapter", {"reason": "soft-cancelled", "run_id": run.run_id})
                     return
                 record.status = SessionStatus.FAILED
-                self._emit(record, "session.failed", "runtime-adapter", {"error": type(exc).__name__})
+                self._emit(record, "session.failed", "runtime-adapter", {"error": type(exc).__name__, "run_id": run.run_id})
             return
 
         with record.lock:
@@ -498,7 +498,7 @@ class RuntimeAdapter:
                 return
             if run.soft_cancel_requested:
                 record.status = SessionStatus.IDLE
-                self._emit(record, "session.result.discarded", "runtime-adapter", {"reason": "soft-cancelled"})
+                self._emit(record, "session.result.discarded", "runtime-adapter", {"reason": "soft-cancelled", "run_id": run.run_id})
                 return
             if finish_reason in {"error", "failed"}:
                 record.status = SessionStatus.FAILED
@@ -506,7 +506,7 @@ class RuntimeAdapter:
                     record,
                     "session.failed",
                     "runtime-adapter",
-                    {"code": "model-run-failed", "retryable": True},
+                    {"code": "model-run-failed", "retryable": True, "run_id": run.run_id},
                 )
             else:
                 record.status = SessionStatus.IDLE
@@ -514,7 +514,7 @@ class RuntimeAdapter:
                     record,
                     "session.result",
                     "runtime-adapter",
-                    {"finish_reason": finish_reason},
+                    {"finish_reason": finish_reason, "run_id": run.run_id},
                 )
 
     def cancel_session(self, session_id: str, mode: str) -> dict[str, Any]:
@@ -540,7 +540,7 @@ class RuntimeAdapter:
                 record,
                 "session.cancelled",
                 "runtime-adapter",
-                {"mode": mode, "persistence": "dsh-owned", "resume": "new-run-after-interrupted"},
+                {"mode": mode, "persistence": "dsh-owned", "resume": "new-run-after-interrupted", "run_id": run.run_id},
             )
         if mode == "hard":
             self._compatibility.close(record.harness)
@@ -665,11 +665,14 @@ class RuntimeAdapter:
             self._sessions.clear()
         for record in records:
             with record.lock:
+                closing_run = record.active_run
                 if record.active_run is not None:
                     record.active_run.watchdog_stop.set()
                 record.active_run = None
                 record.status = SessionStatus.CLOSED
-                self._emit(record, "session.closed", "runtime-adapter", {"reason": "adapter-shutdown"})
+                self._emit(record, "session.closed", "runtime-adapter", {
+                    "reason": "adapter-shutdown", **({"run_id": closing_run.run_id} if closing_run is not None else {}),
+                })
             self._compatibility.close(record.harness)
             with record.lock:
                 for subscriber in record.subscribers:
@@ -895,7 +898,7 @@ class RuntimeAdapter:
                 record,
                 "session.failed",
                 "runtime-adapter",
-                {"code": code, "retryable": True},
+                {"code": code, "retryable": True, "run_id": run.run_id},
             )
         # A session owns its DSH process, so closing it cannot interrupt any
         # other Product conversation. The detached worker will discard any

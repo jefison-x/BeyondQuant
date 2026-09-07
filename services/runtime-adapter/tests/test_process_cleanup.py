@@ -175,6 +175,58 @@ def test_hard_cancel_closes_runtime_and_rejects_later_prompt(adapter: RuntimeAda
     assert released["status"] == SessionStatus.CLOSED
 
 
+@pytest.mark.parametrize("outcome", ["completed", "error", "hard_cancel", "soft_cancel", "timeout", "shutdown"])
+def test_terminal_events_identify_the_exact_submitted_root_run(adapter: RuntimeAdapter, outcome: str) -> None:
+    adapter.create_session("s-terminal", "t-terminal")
+    run_id = adapter.submit_prompt("s-terminal", "synthetic lifecycle")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-terminal")
+    try:
+        if outcome in {"completed", "error"}:
+            FakeHarness.finish_reason = outcome
+            FakeHarness.allow_run.set()
+            wait_for_status(adapter, "s-terminal", SessionStatus.IDLE if outcome == "completed" else SessionStatus.FAILED)
+        elif outcome in {"hard_cancel", "soft_cancel"}:
+            adapter.cancel_session("s-terminal", "hard" if outcome == "hard_cancel" else "soft")
+            if outcome == "soft_cancel":
+                FakeHarness.allow_run.set()
+                wait_for_status(adapter, "s-terminal", SessionStatus.IDLE)
+                discarded = [event for event in record.history if event["kind"] == "session.result.discarded"]
+                assert discarded[0]["payload"]["run_id"] == run_id
+        elif outcome == "timeout":
+            run = record.active_run
+            assert run is not None
+            assert adapter._enforce_run_guards(record, run, now=run.started_at + 3601)
+        else:
+            adapter.close()
+        terminals = [event for event in record.history if event["kind"] in
+                     {"session.result", "session.failed", "session.cancelled", "session.closed"}]
+        assert len(terminals) == 1
+        assert terminals[0]["payload"].get("run_id") == run_id
+        started = next(event for event in record.history if event["kind"] == "session.started")
+        assert started["payload"]["run_id"] == run_id
+        assert run_id != record.session_id
+    finally:
+        adapter.close()
+
+
+def test_two_turns_in_one_process_keep_distinct_terminal_identities(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-two-turns", "t-two-turns")
+    FakeHarness.allow_run.set()
+    try:
+        first = adapter.submit_prompt("s-two-turns", "first synthetic question")
+        wait_for_status(adapter, "s-two-turns", SessionStatus.IDLE)
+        second = adapter.submit_prompt("s-two-turns", "second synthetic question")
+        wait_for_status(adapter, "s-two-turns", SessionStatus.IDLE)
+        assert first != second
+        results = [event["payload"]["run_id"] for event in adapter._get("s-two-turns").history
+                   if event["kind"] == "session.result"]
+        assert results == [first, second]
+        assert len(FakeHarness.instances) == 1
+    finally:
+        adapter.close()
+
+
 def test_no_progress_watchdog_fails_and_closes_only_the_stuck_runtime(adapter: RuntimeAdapter) -> None:
     adapter.create_session("s-stuck", "t-stuck")
     adapter.submit_prompt("s-stuck", "running")
@@ -193,6 +245,7 @@ def test_no_progress_watchdog_fails_and_closes_only_the_stuck_runtime(adapter: R
     assert record.history[-1]["payload"] == {
         "code": "runtime-no-progress-timeout",
         "retryable": True,
+        "run_id": run.run_id,
     }
     history_length = len(record.history)
     adapter._on_notification(record, Notification(
@@ -408,6 +461,7 @@ def test_subagent_wall_clock_timeout_wins_even_when_public_progress_continues(
     assert record.history[-1]["payload"] == {
         "code": "runtime-subagent-timeout",
         "retryable": True,
+        "run_id": run.run_id,
     }
 
 
@@ -435,6 +489,7 @@ def test_active_subagent_uses_its_dedicated_timeout_before_no_activity_guard(
     assert record.history[-1]["payload"] == {
         "code": "runtime-subagent-timeout",
         "retryable": True,
+        "run_id": run.run_id,
     }
 
 
@@ -476,6 +531,7 @@ def test_total_run_wall_clock_is_a_final_ceiling(adapter: RuntimeAdapter) -> Non
     assert record.history[-1]["payload"] == {
         "code": "runtime-run-timeout",
         "retryable": True,
+        "run_id": run.run_id,
     }
 
 
@@ -657,7 +713,7 @@ def test_error_finish_reason_is_failed_and_can_resume_with_fresh_runtime(adapter
     FakeHarness.finish_reason = "error"
     FakeHarness.allow_run.set()
     adapter.create_session("s-1", "t-1")
-    adapter.submit_prompt("s-1", "fails")
+    run_id = adapter.submit_prompt("s-1", "fails")
     wait_for_status(adapter, "s-1", SessionStatus.FAILED)
 
     record = adapter._get("s-1")
@@ -665,6 +721,7 @@ def test_error_finish_reason_is_failed_and_can_resume_with_fresh_runtime(adapter
     assert record.history[-1]["payload"] == {
         "code": "model-run-failed",
         "retryable": True,
+        "run_id": run_id,
     }
     assert "error" not in str(record.history[-1]["payload"]).lower()
 

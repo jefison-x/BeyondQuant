@@ -22,6 +22,15 @@ Runtime 在下一次 prompt 分区注入一次恢复事实，不生成虚假 ass
 Gateway 使用已持久化当前消息 ID 作为同一次适配器提交重试的幂等键。
 这不是跨 HTTP 请求或跨进程的持久领域幂等实现；ADR-0062 的提交回执整改仍独立待完成。
 
+## 单轮终态身份
+
+Runtime 对已捕获 ActiveRun 产生的完成、失败、软/硬取消、超时、关闭活动进程以及
+软取消后的丢弃结果事件，显式携带原始 `payload.run_id`，与该轮 `session.started` 一致。
+同一 session/process 内的下一轮使用不同身份；消费者不得以 session ID 代替单轮身份。
+没有活动轮次的空闲关闭或初始化失败不猜测历史 run ID。既有迟到回调隔离保持不变。
+Gateway TraceStore 持久化并重放该公开字段，不从时间或“最新一轮”推断归属。
+这是精确收口的事件前置条件，尚不表示 Backend AgentRun 已完成持久绑定和终态收口。
+
 ## 本地组件验证（2026-09-07）
 
 - Gateway 完整 suite：103 passed；1项依赖弃用警告。
