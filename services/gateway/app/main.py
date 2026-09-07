@@ -616,11 +616,12 @@ def _continue_approval_conversation(
 ) -> dict[str, str]:
     """Submit one server-owned continuation turn for a durable approval decision."""
     headers = _trusted_agent_headers(request)
+    claim_attempt: int | None = None
 
     def mark(status: str) -> dict[str, object]:
         return _backend_request(
             "POST", f"/v1/agents/approvals/{approval_id}/continuation",
-            {"status": status}, headers=headers,
+            {"status": status, **({"expected_attempt": claim_attempt} if status != "submitting" else {})}, headers=headers,
         )
 
     claim = mark("submitting").get("approval")
@@ -628,6 +629,11 @@ def _continue_approval_conversation(
         return {"status": "failed"}
     if claim.get("continuation_changed") is not True:
         return {"status": str(claim.get("continuation_status") or "failed")}
+    claim_attempt = claim.get("continuation_attempt")
+    if type(claim_attempt) is not int or claim_attempt < 1:
+        # An old or malformed Backend cannot provide a trustworthy claim.
+        # Fail closed before submitting a model turn.
+        return {"status": "failed"}
 
     instruction = (
         "BYQ trusted approval continuation. "

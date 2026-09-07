@@ -197,6 +197,33 @@ def test_runs_are_owner_scoped_idempotent_and_delegation_is_allowlisted(tmp_path
     store.close()
 
 
+def test_approval_continuation_claim_fences_late_ack_across_restart() -> None:
+    store = AgentResearchStore()
+    run = start(store)
+    approval = store.create_approval({"run_id": run["run_id"], "action": "byq_backtest_task_execute",
+        "reason": "Synthetic", "resource_type": "backtest_task", "resource_id": "backtesttask_1", "idempotency_key": "fenced-approval"})
+    store.decide_approval({"approval_id": approval["approval_id"], "decision": "approved"},
+                          trusted_owner="alice", trusted_actor="human-reviewer")
+    first = store.set_continuation_status(approval["approval_id"], "submitting", trusted_owner="alice")
+    assert first["continuation_attempt"] == 1
+    store._execute("UPDATE agent_approvals SET updated_at=now()-interval '31 seconds' WHERE approval_id=:id", {"id": approval["approval_id"]})
+    store.close()
+    restarted = AgentResearchStore()
+    try:
+        second = restarted.set_continuation_status(approval["approval_id"], "submitting", trusted_owner="alice")
+        assert second["continuation_attempt"] == 2 and second["continuation_changed"]
+        for status in ("submitted", "failed"):
+            late = restarted.set_continuation_status(approval["approval_id"], status, trusted_owner="alice", expected_attempt=1)
+            assert not late["continuation_changed"] and late["continuation_status"] == "submitting"
+        with pytest.raises(ValueError):
+            restarted.set_continuation_status(approval["approval_id"], "submitted", trusted_owner="alice")
+        confirmed = restarted.set_continuation_status(approval["approval_id"], "submitted", trusted_owner="alice", expected_attempt=2)
+        assert confirmed["continuation_changed"] and confirmed["continuation_status"] == "submitted"
+        assert confirmed["execution_outcome"] == "authorized"  # transport ack is not business success
+    finally:
+        restarted.close()
+
+
 def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> None:
     store = AgentResearchStore()
     run = start(store)
@@ -243,6 +270,7 @@ def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> N
     assert claimed["continuation_changed"] is True
     submitted = store.set_continuation_status(
         pending["approval_id"], "submitted", trusted_owner="alice",
+        expected_attempt=claimed["continuation_attempt"],
     )
     assert submitted["continuation_status"] == "submitted"
     duplicate = store.set_continuation_status(

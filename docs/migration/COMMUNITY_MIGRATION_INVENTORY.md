@@ -1437,3 +1437,10 @@ The read-only Community references were inspected before completing the existing
 U2 retains `web-research-evidence.v1`, source/claim/time/usage validation and immutable
 Artifact hashes. Deployment-selected producer provenance is implemented in BYQ's existing
 MCP/Backend boundary. No Community file was changed or copied; generic search remains DSH-owned.
+# Post-U8 审批认领隔离补充
+
+- 只读检查 Community `agent-service/app/services/approval_executor.py` 与
+  `agent-service/tests/test_approval_workflow_recovery.py`。
+- “审批授权与领域执行结果分离”不变量为 `REFERENCE_ONLY`；旧自动续跑工作流、
+  状态混合与原始异常传播为 `DROP`。不复制旧执行器或引入第二通用 harness。
+- BYQ 在现有审批表及 Gateway 续接协议中增加事务化认领序号，测试重启与迟到回执。

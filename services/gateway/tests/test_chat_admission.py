@@ -45,7 +45,9 @@ def test_approval_continuation_rehydrates_exact_session_after_adapter_restart(mo
 
     def backend(method, path, payload, **kwargs):
         states.append(payload["status"])
-        return {"approval": {"continuation_changed": True, "continuation_status": payload["status"]}}
+        if payload["status"] != "submitting":
+            assert payload["expected_attempt"] == 3
+        return {"approval": {"continuation_changed": True, "continuation_status": payload["status"], "continuation_attempt": 3}}
 
     def adapter(path, **kwargs):
         prompts.append((path, kwargs["payload"]))
@@ -63,3 +65,13 @@ def test_approval_continuation_rehydrates_exact_session_after_adapter_restart(mo
     assert prompts[1][0].endswith("new-runtime/prompt")
     assert prompts[0][1] == prompts[1][1]
     assert prompts[1][1]["idempotency_key"] == "approval-continuation-approval"
+
+
+def test_approval_continuation_refuses_a_claim_without_fence(monkeypatch):
+    monkeypatch.delenv("BYQ_CHAT_ADMISSION_FILE", raising=False)
+    monkeypatch.setattr(main, "_trusted_agent_headers", lambda _: {})
+    monkeypatch.setattr(main, "_backend_request", lambda *args, **kwargs: {
+        "approval": {"continuation_changed": True, "continuation_status": "submitting"},
+    })
+    monkeypatch.setattr(main, "_product_session", lambda *_: (_ for _ in ()).throw(AssertionError("unfenced prompt")))
+    assert main.continue_approval_conversation(None, "conversation", "approval", "approved", "action") == {"status": "failed"}

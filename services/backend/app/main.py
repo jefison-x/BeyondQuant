@@ -4183,11 +4183,12 @@ def update_agent_approval_continuation(
 ) -> dict[str, object]:
     context = _required_agent_context(request, payload)
     if set(payload) - {
-        "status", "owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id",
+        "status", "expected_attempt", "owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id",
     }:
         raise HTTPException(status_code=422, detail="continuation request has invalid fields")
     return _agent_call(lambda: {"approval": agent_store.set_continuation_status(
         approval_id, payload.get("status"), trusted_owner=context["owner_principal"],
+        expected_attempt=payload.get("expected_attempt"),
     )})
 
 

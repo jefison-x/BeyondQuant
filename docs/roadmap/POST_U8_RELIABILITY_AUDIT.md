@@ -86,6 +86,17 @@ Backend ML/data-sync/data-demand 50 项、Gateway 完整 122 项及 MCP ML 编�
 
 ## Community检查与分类
 
+### F5 审批续接认领隔离（2026-09-07）
+
+审批续接的30秒过期认领原先没有代次隔离，旧请求迟到的提交/失败回执可以覆盖
+重新认领后的状态。现由Backend在事务锁内递增持久`continuation_attempt`；Gateway
+必须持有本次认领序号才能确认提交或失败，缺失序号在启动续接前拒绝，旧序号无权更新。
+序号只用于内部协议，不进入Product审批投影。`submitted`仍不等于领域动作完成。
+
+隔离验证：Gateway全套123项通过；Backend agent research/API 8项通过，包含存储重启、
+过期重新认领、旧成功/失败回执、缺失认领序号与授权状态不误标完成。
+这仅关闭认领覆盖缺陷，不关闭Adapter重启后的提示幂等、持久结果核对、F4/F6或完整F5验收。
+
 只读检查 `BeyondQuant-community/agent-service/app/harness/workflow.py`：
 保留“阶段从持久artifact/approval派生”语义为REFERENCE_ONLY；不复用旧repository/runtime。
 其失败后 `retry_with_new_idempotency_key` 不适合unknown outcome，分类DROP；

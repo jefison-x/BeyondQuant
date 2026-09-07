@@ -448,6 +448,7 @@ class AgentResearchStore(PgStoreMixin):
         "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS resource_type TEXT",
         "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS resource_id TEXT",
         "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS continuation_status TEXT NOT NULL DEFAULT 'not_requested'",
+        "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS continuation_attempt INTEGER NOT NULL DEFAULT 0",
         """
         CREATE INDEX IF NOT EXISTS agent_approvals_owner_pending
             ON agent_approvals(owner_principal, status, created_at DESC)
@@ -785,12 +786,14 @@ class AgentResearchStore(PgStoreMixin):
         }
 
     def set_continuation_status(
-        self, approval_id: object, status: object, *, trusted_owner: str,
+        self, approval_id: object, status: object, *, trusted_owner: str, expected_attempt: int | None = None,
     ) -> dict[str, object]:
         approval_id = _entity_id(approval_id, field="approval_id", prefix="agent_approval")
         next_status = _text(status, field="continuation_status", max_length=32)
         if next_status not in {"submitting", "submitted", "failed"}:
             raise ValueError("continuation status is invalid")
+        if next_status != "submitting" and (type(expected_attempt) is not int or expected_attempt < 1):
+            raise ValueError("continuation completion requires its claimed attempt")
         with self._transaction() as connection:
             row = fetch_one(
                 connection,
@@ -822,11 +825,14 @@ class AgentResearchStore(PgStoreMixin):
                 "failed": {"submitting"},
             }
             changed = current in allowed[next_status] or stale_submission
+            if next_status != "submitting" and expected_attempt != int(row.get("continuation_attempt") or 0):
+                changed = False
             if changed:
+                attempt = int(row.get("continuation_attempt") or 0) + (1 if next_status == "submitting" else 0)
                 execute(
                     connection,
-                    "UPDATE agent_approvals SET continuation_status=:status, updated_at=:updated_at WHERE approval_id=:approval_id",
-                    {"status": next_status, "updated_at": _now(), "approval_id": approval_id},
+                    "UPDATE agent_approvals SET continuation_status=:status, continuation_attempt=:attempt, updated_at=:updated_at WHERE approval_id=:approval_id",
+                    {"status": next_status, "attempt": attempt, "updated_at": _now(), "approval_id": approval_id},
                 )
             updated = fetch_one(
                 connection,
