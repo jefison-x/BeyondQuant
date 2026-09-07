@@ -1,12 +1,35 @@
 """Qualify official SDK max_tokens with a loopback-only synthetic Provider."""
 import json
 import os
+import re
+import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
 pytestmark = pytest.mark.skipif(os.environ.get("BYQ_BUDGET_SEMANTICS_TEST") != "1", reason="explicit loopback qualification")
+
+
+def test_locked_product_composition_has_meter_but_no_agent_budget(tmp_path):
+    """Inventory evidence only: this is not proof that every extension lacks a guard."""
+    from importlib.metadata import version
+    from deepseek_harness_runtime import bundled_runtime_path
+
+    assert version("deepseek-harness-sdk") == "0.1.2rc1"
+    assert version("deepseek-harness-runtime-bin") == "0.1.2rc1"
+    result = subprocess.run(
+        [str(bundled_runtime_path()), "--profile", "sdk", "--patch",
+         "/opt/byq/profiles/byq-product.patch.yml", "--dump-config"],
+        cwd=tmp_path, env={"PATH": os.defpath, "DSH_HOME": str(tmp_path),
+                          "DSH_TELEMETRY_DISABLED": "1"},
+        capture_output=True, text=True, timeout=15, check=True,
+    )
+    names = set(re.findall(r"^  name: '([^']+)'$", result.stdout, re.MULTILINE))
+    assert {"@deepseek-ai/dsh-token-meter", "@deepseek-ai/dsh-llm-retry",
+            "@deepseek-ai/dsh-compaction-basic", "@deepseek-ai/dsh-web-search-deepseek",
+            "@deepseek-ai/dsh-tool-subagent"} <= names
+    assert "@deepseek-ai/dsh-agent-budget" not in names
 
 
 def test_sdk_max_tokens_does_not_bound_whole_multistep_turn(tmp_path):
