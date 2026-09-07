@@ -62,8 +62,14 @@ pending/unknown不能审批或执行领域动作；新回合不得复用已终�
 
 ## 保留的异常边界
 
-Adapter 整体崩溃而未产生终态、用户/工作区禁用后的收尾、以及历史无绑定记录仍需独立验证；
-当前 workspace write trigger 要求 active owner，不能将禁用后的终态清理假定为已解决。
+按 ADR-0063，禁用 user/workspace/membership 后，可信内部消费者仍可关闭精确匹配的既有 root
+及其已绑定 AgentRun，并原子追加对应审计/回执。持久 personal owner/membership 关系仍必须
+存在且完全匹配；验证事务锁定身份行，避免检查与禁用交错。不能创建 root、补绑定或创建 run。
+普通 API、MCP 注册/授权及研究续接仍要求 active 身份。数据库例外只允许匹配终态 root 的
+既有 run 修改 status/version/updated_at，以及精确匹配的 runtime_turn_binding 审计 INSERT。
+没有通用绕过标志，不临时启用账号，不修改业务任务/审批。重复终态回执不会重复追加审计。
+
+Adapter 整体崩溃而未产生终态、以及历史无绑定记录仍需独立验证；
 缺失绑定或回执不得靠同会话最新对象、当前进程下所有历史记录或时间猜测。
 收尾是异步最终一致性，不承诺终态发生瞬间Backend即已更新；所有模型入口的跨轮收尾
 确认屏障仍属独立流程整改。不能将持久投递实现解释为这些故障窗口已全部消除。

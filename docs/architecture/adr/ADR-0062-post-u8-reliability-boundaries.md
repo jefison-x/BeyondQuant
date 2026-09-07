@@ -17,6 +17,8 @@ user turn、公开 failure code、稳定 turn/run identity。Runtime 在新 gene
 
 ## 2. 活动与生命周期
 
+禁用身份后的受限内部终态清理按 [ADR-0063](ADR-0063-disabled-owner-terminal-cleanup.md) 执行，不恢复研究或用户权限。
+
 BYQ public activity 增加可关联回合及 unknown/waiting/cancelled 等必要状态，历史失败可重放。
 60秒等待提示只表示系统等待，不续租；同一child的可证明新活动续租180秒 inactivity lease，
 child硬上限600秒、根回合900秒。无法关联的事件不得续租。兼容层只读取事件时间和identity，

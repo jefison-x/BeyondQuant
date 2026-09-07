@@ -425,7 +425,12 @@ def append_conversation_message(conversation_id: str, payload: dict[str, Any], r
 
 @app.post("/internal/agent-lifecycle/{conversation_id}")
 def consume_agent_lifecycle(conversation_id: str, payload: dict[str, Any], request: Request) -> dict:
-    owner = _conversation_owner(request)
+    # ADR-0063: this private consumer alone may close existing disabled-owner
+    # roots. The store validates durable ownership and terminal-only authority.
+    # Ordinary conversation and Agent APIs retain active-context validation.
+    owner = request.headers.get("x-byq-owner-principal")
+    if not owner:
+        raise HTTPException(status_code=401, detail="trusted workspace context required")
     if request.headers.get("x-byq-actor-principal") != owner:
         raise HTTPException(status_code=403, detail="trusted catalog consumer required")
     conversation = _conversation_call(lambda: conversation_store.get(owner, conversation_id))

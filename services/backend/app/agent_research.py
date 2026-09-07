@@ -593,15 +593,20 @@ class AgentResearchStore(PgStoreMixin):
         execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))", {"key": key})
 
     @staticmethod
-    def _require_lifecycle_workspace(connection: Any, owner: str, workspace: str) -> None:
-        match = fetch_one(connection, """SELECT w.workspace_id FROM workspaces w
+    def _require_lifecycle_workspace(connection: Any, owner: str, workspace: str,
+                                     *, terminal_cleanup: bool = False) -> bool:
+        match = fetch_one(connection, """SELECT w.workspace_id,
+                (w.status='active' AND m.status='active' AND u.status='active') AS active
+            FROM workspaces w
             JOIN workspace_memberships m ON m.workspace_id=w.workspace_id
             JOIN users u ON u.user_id=m.user_id
             WHERE w.workspace_id=:workspace AND u.username=:owner
-              AND w.status='active' AND m.status='active' AND u.status='active' AND m.role='owner'""",
+              AND w.owner_user_id=u.user_id AND w.kind='personal' AND m.role='owner'
+            FOR SHARE OF w, m, u""",
             {"workspace": workspace, "owner": owner})
-        if match is None:
+        if match is None or (not match["active"] and not terminal_cleanup):
             raise AgentUnauthorized("runtime lifecycle workspace does not match its owner")
+        return bool(match["active"])
 
     def _record_runtime_binding_audit(self, connection: Any, run: dict, root: dict) -> None:
         self._record_audit_row(run, action="runtime_turn_binding", outcome=run["status"],
@@ -610,12 +615,14 @@ class AgentResearchStore(PgStoreMixin):
             connection=connection)
 
     def consume_runtime_lifecycle_event(self, event: object, **context: str) -> dict:
+        event = validate_lifecycle_event(event)
         receipt = lifecycle_receipt(event)
         params = {"owner": context["trusted_owner"], "workspace": context["trusted_workspace"],
                   "session": context["trusted_session_id"], "trace": context["trusted_trace_id"],
                   "sequence": receipt["sequence"]}
         with self._transaction() as connection:
-            self._require_lifecycle_workspace(connection, params["owner"], params["workspace"])
+            self._require_lifecycle_workspace(connection, params["owner"], params["workspace"],
+                                              terminal_cleanup=event["outcome"] != "active")
             self._lifecycle_lock(connection, "receipt:" + json.dumps(params, sort_keys=True))
             existing = fetch_one(connection, """SELECT * FROM agent_runtime_receipts WHERE
                 owner_principal=:owner AND workspace_id=:workspace AND session_id=:session AND sequence=:sequence""", params)
@@ -654,12 +661,15 @@ class AgentResearchStore(PgStoreMixin):
         root_id, outcome = event["root_run_id"], event["outcome"]
         fingerprint = event.get("registration_fingerprint")
         with (nullcontext(_connection) if _connection is not None else self._transaction()) as connection:
-            self._require_lifecycle_workspace(connection, owner, workspace)
+            active_identity = self._require_lifecycle_workspace(connection, owner, workspace,
+                                                               terminal_cleanup=outcome != "active")
             self._lifecycle_lock(connection, "root:" + root_id)
             root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id", {"id": root_id})
             if root and (root["owner_principal"], root["workspace_id"], root["session_id"], root["trace_id"]) != (owner, workspace, session, trace):
                 raise AgentUnauthorized("runtime root does not match trusted context")
             if root is None:
+                if not active_identity:
+                    raise AgentUnauthorized("disabled identity cannot create a runtime root")
                 execute(connection, """INSERT INTO agent_runtime_turns
                     (root_run_id, owner_principal, workspace_id, session_id, trace_id, status, created_at, updated_at)
                     VALUES (:id,:owner,:workspace,:session,:trace,'active',:now,:now)""",

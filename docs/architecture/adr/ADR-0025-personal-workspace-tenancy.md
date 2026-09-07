@@ -6,6 +6,7 @@
 - Decision scope: personal workspace identity、resource ownership、trusted request context、
   compatibility migration 与 future team extension
 - Related: ADR-0003、ADR-0012、ADR-0014、ADR-0016、ADR-0018、ADR-0019、ADR-0024
+- Amendment: [ADR-0063](ADR-0063-disabled-owner-terminal-cleanup.md) 仅为决策第 6 条增加禁用后的可信终态清理例外；普通访问仍拒绝。
 
 ## 背景
 

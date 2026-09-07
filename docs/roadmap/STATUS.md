@@ -68,6 +68,8 @@
 
 ## 生效中的 Accepted ADR
 
+- [ADR-0063](../architecture/adr/ADR-0063-disabled-owner-terminal-cleanup.md)：维护者已接受禁用身份后既有 AgentRun 的受限终态清理；本地实现及 Backend 完整回归已通过，未部署。历史未绑定记录及其他 Post-U8 流程整改仍未关闭。
+
 - Post-U8 reliability maintenance：**ADR-0062**，具名修订ADR-0045/0046；不授权生产部署或数据扩容。
 
 - Development governance / CI integrity maintenance：**ADR-0059**。本次只授权治理、CI 与 DSH 方案修正；
