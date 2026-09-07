@@ -118,6 +118,8 @@ class NormalizationState:
     tool_names: dict[str, str] = field(default_factory=dict)
     seen_messages: set[str] = field(default_factory=set)
     activity_count: int = 0
+    visible_activity_ids: set[str] = field(default_factory=set)
+    open_activity_ids: set[str] = field(default_factory=set)
     card_count: int = 0
     activity_truncated: bool = False
     card_truncated: bool = False
@@ -128,6 +130,8 @@ class NormalizationState:
         self.tool_names.clear()
         self.seen_messages.clear()
         self.activity_count = 0
+        self.visible_activity_ids.clear()
+        self.open_activity_ids.clear()
         self.card_count = 0
         self.activity_truncated = False
         self.card_truncated = False
@@ -151,10 +155,12 @@ def normalize_runtime_observation(
     if observation.kind == "session.status" and observation.status is not None:
         return [_event(trace_id, session_id, sequence, "session.status", "dsh", {"status": observation.status})]
     if observation.kind == "turn.start":
+        events = close_public_activities(current, trace_id, session_id, sequence, "unknown")
+        sequence += len(events)
         current.reset_turn()
         current.turn_activity_id = _stable_id("activity", trace_id, str(sequence), "turn")
         current.activity_scope = str(sequence)
-        return _bounded_activity(
+        events.extend(_bounded_activity(
             current,
             trace_id,
             session_id,
@@ -163,7 +169,8 @@ def normalize_runtime_observation(
             phase="understand",
             activity_state="started",
             label="理解请求",
-        )
+        ))
+        return events
     if observation.kind == "turn.end":
         safe_reason = observation.terminal_reason or "failed"
         events: list[WorkflowTraceEvent] = []
@@ -226,10 +233,10 @@ def close_public_activities(state: NormalizationState, trace_id: str, session_id
     state.tool_names.clear()
     state.turn_activity_id = None
     for identity, phase, label in pending:
-        events.append(_event(trace_id, session_id, sequence + len(events), "agent.activity", "runtime-adapter", {
-            "schema_version": WORKFLOW_ACTIVITY_VERSION, "activity_id": identity,
-            "phase": phase, "state": outcome, "label": label,
-        }))
+        events.extend(_bounded_activity(
+            state, trace_id, session_id, sequence + len(events),
+            activity_id=identity, phase=phase, activity_state=outcome, label=label,
+        ))
     return events
 
 
@@ -431,11 +438,22 @@ def _bounded_activity(
     plugin_label: str | None = None,
     skill_label: str | None = None,
 ) -> list[WorkflowTraceEvent]:
-    if state.activity_count >= MAX_ACTIVITIES_PER_TURN:
-        if state.activity_truncated:
+    if activity_state == "started":
+        if activity_id in state.visible_activity_ids:
             return []
-        state.activity_truncated = True
-        return [_progress(trace_id, session_id, sequence, "activity-limit", True)]
+        # Every visible start reserves one eventual result/closure event.
+        # Limiting starts without this reservation strands already shown steps.
+        if state.activity_count + len(state.open_activity_ids) + 2 > MAX_ACTIVITIES_PER_TURN:
+            if state.activity_truncated:
+                return []
+            state.activity_truncated = True
+            return [_progress(trace_id, session_id, sequence, "activity-limit", True)]
+        state.visible_activity_ids.add(activity_id)
+        state.open_activity_ids.add(activity_id)
+    else:
+        if activity_id not in state.open_activity_ids:
+            return []
+        state.open_activity_ids.remove(activity_id)
     state.activity_count += 1
     payload: dict[str, Any] = {
         "schema_version": WORKFLOW_ACTIVITY_VERSION,

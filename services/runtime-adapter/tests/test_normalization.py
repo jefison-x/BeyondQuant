@@ -51,6 +51,59 @@ def test_batched_tool_results_close_each_exact_activity(family: str) -> None:
     assert project("tool/result", {"message": {"content": results}}, 7) == []
 
 
+@pytest.mark.parametrize("terminal", ["result", "cancelled"])
+def test_activity_limit_reserves_closure_for_visible_steps(terminal: str) -> None:
+    from app.compat.types import RuntimeObservation
+    from app.contracts import MAX_ACTIVITIES_PER_TURN
+    from app.normalization import close_public_activities
+
+    state = NormalizationState()
+    events = []
+    for index in range(MAX_ACTIVITIES_PER_TURN + 5):
+        events.extend(normalize_runtime_observation(
+            RuntimeObservation(kind="tool.call", root_session=True, call_id=f"call-{index}",
+                               tool_name="byq_market_daily"),
+            trace_id="t", session_id="s", sequence=len(events) + 1, state=state,
+        ))
+    if terminal == "result":
+        for index in range(MAX_ACTIVITIES_PER_TURN + 5):
+            events.extend(normalize_runtime_observation(
+                RuntimeObservation(kind="tool.result", root_session=True, call_id=f"call-{index}",
+                                   tool_result={"status": "ok"}),
+                trace_id="t", session_id="s", sequence=len(events) + 1, state=state,
+            ))
+    else:
+        events.extend(close_public_activities(state, "t", "s", len(events) + 1, "cancelled"))
+    activities = [item["payload"] for item in events if item["kind"] == "agent.activity"]
+    started = [item["activity_id"] for item in activities if item["state"] == "started"]
+    ended = [item["activity_id"] for item in activities if item["state"] != "started"]
+    assert started
+    assert ended == started
+    assert len(activities) <= MAX_ACTIVITIES_PER_TURN
+    assert [item["sequence"] for item in events] == list(range(1, len(events) + 1))
+    assert close_public_activities(state, "t", "s", len(events) + 1, "failed") == []
+
+
+def test_next_turn_does_not_forget_a_tool_with_no_result() -> None:
+    from app.compat.types import RuntimeObservation
+
+    state = NormalizationState()
+
+    def project(observation, sequence):
+        return normalize_runtime_observation(observation, trace_id="t", session_id="s",
+                                             sequence=sequence, state=state)
+
+    project(RuntimeObservation(kind="turn.start", root_session=True), 1)
+    started = project(RuntimeObservation(kind="tool.call", root_session=True, call_id="lost",
+                                       tool_name="byq_market_daily"), 2)
+    project(RuntimeObservation(kind="turn.end", root_session=True, terminal_reason="completed"), 3)
+    next_turn = project(RuntimeObservation(kind="turn.start", root_session=True), 5)
+    assert next_turn[0]["payload"]["activity_id"] == started[0]["payload"]["activity_id"]
+    assert next_turn[0]["payload"]["state"] == "unknown"
+    assert next_turn[1]["payload"]["state"] == "started"
+    assert [item["sequence"] for item in next_turn] == [5, 6]
+
+
 def notify(event_type: str, data: dict | None = None) -> Notification:
     return Notification(
         method="session.event",
