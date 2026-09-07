@@ -263,6 +263,7 @@ class ResearchStore(PgStoreMixin):
             ON research_tasks(owner_principal, idempotency_key)
         """,
         "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS progress JSONB",
+        "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS conversation_id TEXT",
         """
         CREATE TABLE IF NOT EXISTS experiments (
             experiment_id TEXT PRIMARY KEY,
@@ -338,10 +339,28 @@ class ResearchStore(PgStoreMixin):
     def from_env(cls) -> "ResearchStore":
         return cls()
 
-    def create_task(self, payload: object) -> dict[str, object]:
+    def create_task(self, payload: object, *, trusted_context: dict[str, str] | None = None) -> dict[str, object]:
         data = self._task_payload(payload)
         request_hash = _hash_request(data)
         with self._transaction() as connection:
+            conversation_id = None
+            if trusted_context is not None:
+                if trusted_context["owner_principal"] != data["owner_principal"]:
+                    raise ValueError("research owner does not match trusted context")
+                conversation = fetch_one(connection, """SELECT * FROM product_conversations
+                    WHERE runtime_session_id = :session_id FOR SHARE""", {"session_id": trusted_context["session_id"]})
+                product_actor = trusted_context["actor_principal"] == f"byq-product-agent-{trusted_context['session_id']}"
+                if conversation is None:
+                    if product_actor:
+                        raise ValueError("research requires its original conversation")
+                else:
+                    if (conversation["owner_principal"] != data["owner_principal"]
+                            or conversation["workspace_id"] != trusted_context["workspace_id"]
+                            or conversation["trace_id"] != trusted_context["trace_id"]
+                            or data["trace_id"] != trusted_context["trace_id"]
+                            or conversation["status"] != "active"):
+                        raise ValueError("research conversation identity is invalid")
+                    conversation_id = conversation["conversation_id"]
             execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {
                 "scope": f"research-task|{data['owner_principal']}|{data['idempotency_key']}",
             })
@@ -353,6 +372,8 @@ class ResearchStore(PgStoreMixin):
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise IdempotencyConflict("research task idempotency key was reused")
+                if existing.get("conversation_id") != conversation_id:
+                    raise IdempotencyConflict("research task conversation cannot be rebound")
                 return self._task_row(existing)
             now = _now()
             task_id = _new_id("task")
@@ -360,13 +381,13 @@ class ResearchStore(PgStoreMixin):
                 connection,
                 """INSERT INTO research_tasks
                 (task_id, owner_principal, title, objective, status, trace_id,
-                 idempotency_key, request_hash, created_at, updated_at, version)
+                 idempotency_key, request_hash, created_at, updated_at, version, conversation_id)
                 VALUES (:task_id, :owner_principal, :title, :objective, 'planned', :trace_id,
-                        :idempotency_key, :request_hash, :created_at, :updated_at, 1)""",
+                        :idempotency_key, :request_hash, :created_at, :updated_at, 1, :conversation_id)""",
                 {"task_id": task_id, "owner_principal": data["owner_principal"], "title": data["title"],
                  "objective": data["objective"], "trace_id": data["trace_id"],
                  "idempotency_key": data["idempotency_key"], "request_hash": request_hash,
-                 "created_at": now, "updated_at": now},
+                 "created_at": now, "updated_at": now, "conversation_id": conversation_id},
             )
         return self.get_task(task_id)
 

@@ -1410,6 +1410,7 @@ def get_agent_data_demand_notifications(request: Request) -> dict[str, object]:
         ml_notifications = ml_training_store.list_agent_notifications(
             trusted_workspace=context["workspace_id"],
             trusted_owner=context["owner_principal"],
+            trusted_session=context["session_id"], trusted_trace=context["trace_id"],
         )
         return {"notifications": [*data_notifications, *ml_notifications]}
 
@@ -1850,12 +1851,12 @@ def _research_transition(
 
 @app.post("/v1/research/tasks", status_code=201)
 def create_research_task(payload: dict[str, Any], request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         if payload.get("owner_principal") != context["owner_principal"]:
             raise ValueError("research task owner must match trusted context")
-        return research_store.create_task(payload)
+        return research_store.create_task(payload, trusted_context=context)
 
     return _research_call(operation)
 

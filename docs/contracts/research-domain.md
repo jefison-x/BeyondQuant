@@ -21,6 +21,14 @@ and returns the original immutable receipt; historical records are not rewritten
 
 ### ResearchTask
 
+Post-U8 F4：通用任务创建入口从 trusted runtime context 查找精确 Product conversation，
+在同一数据库事务内核对 owner/workspace/session/trace 和 active 状态并保存 `conversation_id`。
+Product Agent 缺失目录时拒绝创建；模型 payload 不能指定 conversation_id。原幂等键不允许
+跨会话重绑，历史无绑定任务保持 null，不按 trace/最新对象补绑。非会话领域生产器仍可创建
+无绑定任务；本切片不自动授予后台续接，也不代表所有专用生产器已接通会话关联。
+Agent ML 通知必须在 SQL 分页前按该关联核对会话、trace、owner/workspace 和 active 目录；
+其他会话及无绑定历史训练不进入当前会话 inbox。普通领域查询不因此失去既有授权访问。
+
 Post-U8 task checkpoints use the existing transition endpoint, with optional
 `progress` on ResearchTask only: schema `research-progress.v1`, a closed `stage`,
 `next_action`, optional `blocked_reason`, up to 16 exact `linked_objects` (Artifact

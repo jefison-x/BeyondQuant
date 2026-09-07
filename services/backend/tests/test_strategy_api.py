@@ -231,6 +231,8 @@ def test_agent_strategy_approval_is_bound_to_exact_resource_and_human_decision(m
         "approval-owner", actor="approval-owner",
         trace_id="approval-trace", session_id="approval-session", dsh_run_id="approval-run",
     )
+    from app.conversation_catalog import ConversationCatalogStore
+    ConversationCatalogStore().create("approval-owner", "approval-session", "approval-trace")
     client = TestClient(main.app)
     client.headers.update(agent_headers)
     task = client.post("/v1/research/tasks", json={

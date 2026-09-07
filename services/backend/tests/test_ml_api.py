@@ -204,13 +204,13 @@ def test_ml_training_reconcile_route_uses_trusted_workspace_and_owner(monkeypatc
     }
 
 
-def test_agent_context_inbox_includes_workspace_ml_progress(monkeypatch) -> None:
+def test_agent_context_inbox_requires_exact_session_ml_progress(monkeypatch) -> None:
     headers = trusted_agent_context("ml-notification-owner")
     captured: dict[str, str] = {}
     monkeypatch.setattr(backend_main.data_demand_store, "list_for_session", lambda **_kwargs: [])
 
-    def notifications(*, trusted_workspace, trusted_owner, limit=10):
-        captured.update(workspace=trusted_workspace, owner=trusted_owner)
+    def notifications(*, trusted_workspace, trusted_owner, trusted_session, trusted_trace, limit=10):
+        captured.update(workspace=trusted_workspace, owner=trusted_owner, session=trusted_session, trace=trusted_trace)
         return [{
             "kind": "ml_training_progress", "notification_id": "ml-training:run:now",
             "training_run_id": "mlrun_" + "c" * 32, "status": "running",
@@ -223,6 +223,7 @@ def test_agent_context_inbox_includes_workspace_ml_progress(monkeypatch) -> None
     assert response.json()["notifications"][0]["kind"] == "ml_training_progress"
     assert captured == {
         "workspace": headers["x-byq-workspace-id"], "owner": "ml-notification-owner",
+        "session": headers["x-byq-session-id"], "trace": headers["x-byq-trace-id"],
     }
 
 

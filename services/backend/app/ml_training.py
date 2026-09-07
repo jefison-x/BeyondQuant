@@ -890,6 +890,7 @@ class MLTrainingRunStore(PgStoreMixin):
 
     def list_agent_notifications(
         self, *, trusted_workspace: str, trusted_owner: str, limit: int = 10,
+        trusted_session: str | None = None, trusted_trace: str | None = None,
     ) -> list[dict[str, object]]:
         """Return a bounded, row-free progress inbox for the next Agent turn."""
         if not 1 <= limit <= 20:
@@ -898,8 +899,17 @@ class MLTrainingRunStore(PgStoreMixin):
             stock_pool_snapshot_id,status,attempt_count,max_attempts,error_code,error_detail,
             model_artifact_id,created_at,started_at,finished_at,updated_at
             FROM ml_training_runs WHERE workspace_id=:workspace AND owner_principal=:owner
+            AND (CAST(:session AS TEXT) IS NULL OR EXISTS (
+                SELECT 1 FROM research_tasks task JOIN product_conversations conversation
+                    ON conversation.conversation_id=task.conversation_id
+                WHERE task.task_id=ml_training_runs.task_id
+                    AND task.owner_principal=:owner AND task.workspace_id=:workspace
+                    AND conversation.owner_principal=:owner AND conversation.workspace_id=:workspace
+                    AND conversation.runtime_session_id=:session AND conversation.trace_id=:trace
+                    AND conversation.status='active'))
             ORDER BY updated_at DESC,training_run_id DESC LIMIT :limit""", {
                 "workspace": trusted_workspace, "owner": trusted_owner, "limit": limit,
+                "session": trusted_session, "trace": trusted_trace,
             })
         labels = {
             "waiting_for_data": "训练数据准备中",

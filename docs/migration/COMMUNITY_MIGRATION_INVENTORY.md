@@ -1501,3 +1501,10 @@ MCP/Backend boundary. No Community file was changed or copied; generic search re
 - “审批授权与领域执行结果分离”不变量为 `REFERENCE_ONLY`；旧自动续跑工作流、
   状态混合与原始异常传播为 `DROP`。不复制旧执行器或引入第二通用 harness。
 - BYQ 在现有审批表及 Gateway 续接协议中增加事务化认领序号，测试重启与迟到回执。
+
+## Post-U8 F4 任务会话关联（2026-09-08）
+
+只读检查 Community `agent-service/app/research/contracts.py` 及 `repository.py` 的
+`create_task_for_run`：owner/request/session 的持久关联语义为 `REFERENCE_ONLY`；
+Agent 直写数据库、回合重试重开研究任务和旧状态机耦合为 `DROP`。在 BYQ ResearchStore
+中独立实现可信会话目录校验、原子创建关联和禁止幂等重绑，不复制旧实现。
