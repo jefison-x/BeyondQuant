@@ -167,3 +167,67 @@ def test_generic_artifact_api_cannot_forge_domain_producer_results(monkeypatch) 
             assert store.get_artifact(artifact["artifact_id"])["status"] == "draft"
     finally:
         store.close()
+
+
+@pytest.mark.parametrize("reference_kind", ["research_task", "experiment", "artifact", "stock_pool_snapshot"])
+def test_generic_artifact_lineage_rejects_foreign_objects(monkeypatch, reference_kind) -> None:
+    from app.paper_trading import PaperTradingStore
+    from tests.test_research import experiment_payload
+    headers = _owner_headers()
+    _owner_headers("other-user")
+    store = ResearchStore()
+    pools = PaperTradingStore()
+    monkeypatch.setattr(main, "research_store", store)
+    task = store.create_task(task_body())
+    other = store.create_task({**task_body(), "owner_principal": "other-user"})
+    experiment = store.create_experiment(experiment_payload(other["task_id"]))
+    artifact = store.create_artifact({"task_id": other["task_id"], "kind": "evidence", "content": {},
+                                      "lineage": [], "trace_id": "foreign", "idempotency_key": "foreign-artifact"})
+    pool = pools.create_pool({"name": "foreign synthetic pool", "symbols": ["000001.SZ"],
+                              "provenance": {"source": "unit-test"}}, trusted_owner="other-user")
+    references = {"research_task": other["task_id"], "experiment": experiment["experiment_id"],
+                  "artifact": artifact["artifact_id"], "stock_pool_snapshot": pool["current_snapshot_id"]}
+    response = TestClient(main.app).post("/v1/research/artifacts", headers=headers, json={
+        "task_id": task["task_id"], "kind": "evidence", "content": {}, "trace_id": "lineage-test",
+        "lineage": [{"kind": reference_kind, "id": references[reference_kind]}],
+        "idempotency_key": "foreign-reference"})
+    assert response.status_code == 404
+    assert store._fetch_one("SELECT COUNT(*) AS count FROM artifacts WHERE task_id=:task",
+                            {"task": task["task_id"]})["count"] == 0
+    store.close()
+    pools.close()
+
+
+def test_generic_artifact_registers_pool_lineage_atomically(monkeypatch) -> None:
+    from app.paper_trading import PaperTradingStore, PaperTradingConflict
+    headers = _owner_headers()
+    store = ResearchStore()
+    pools = PaperTradingStore()
+    monkeypatch.setattr(main, "research_store", store)
+    task = store.create_task(task_body())
+    pool = pools.create_pool({"name": "synthetic lineage pool", "symbols": ["000001.SZ"],
+                             "provenance": {"source": "unit-test"}}, trusted_owner="product-user")
+    second_pool = pools.create_pool({"name": "second synthetic lineage pool", "symbols": ["000002.SZ"],
+                                    "provenance": {"source": "unit-test"}}, trusted_owner="product-user")
+    payload = {"task_id": task["task_id"], "kind": "evidence", "content": {}, "trace_id": "lineage-test",
+               "lineage": [{"kind": "stock_pool_snapshot", "id": pool["current_snapshot_id"]},
+                           {"kind": "stock_pool_snapshot", "id": second_pool["current_snapshot_id"]}],
+               "idempotency_key": "atomic-reference"}
+    client = TestClient(main.app)
+    original = PaperTradingStore.record_pool_reference_in_transaction
+    def fail_after_insert(*args, **kwargs):
+        original(*args, **kwargs)
+        raise PaperTradingConflict("synthetic reference failure")
+    monkeypatch.setattr(PaperTradingStore, "record_pool_reference_in_transaction", staticmethod(fail_after_insert))
+    assert client.post("/v1/research/artifacts", headers=_owner_headers(), json=payload).status_code == 409
+    assert store._fetch_one("SELECT COUNT(*) AS count FROM artifacts WHERE task_id=:task", {"task": task["task_id"]})["count"] == 0
+    assert store._fetch_one("SELECT COUNT(*) AS count FROM stock_pool_domain_references", {})["count"] == 0
+    monkeypatch.setattr(PaperTradingStore, "record_pool_reference_in_transaction", staticmethod(original))
+    accepted = client.post("/v1/research/artifacts", headers=_owner_headers(), json=payload)
+    assert accepted.status_code == 201
+    assert client.post("/v1/research/artifacts", headers=_owner_headers(), json=payload).json() == accepted.json()
+    references = store._execute("SELECT * FROM stock_pool_domain_references", {})
+    assert len(references) == 2
+    assert {ref["snapshot_id"] for ref in references} == {pool["current_snapshot_id"], second_pool["current_snapshot_id"]}
+    store.close()
+    pools.close()

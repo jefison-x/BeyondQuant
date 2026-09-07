@@ -520,12 +520,21 @@ class ResearchStore(PgStoreMixin):
             rows = self._execute("SELECT * FROM experiments ORDER BY created_at DESC, experiment_id DESC LIMIT 200")
         return {"experiments": [self._experiment_row(row) for row in rows]}
 
-    def create_artifact(self, payload: object) -> dict[str, object]:
+    def create_artifact(
+        self, payload: object, *, trusted_owner: str | None = None,
+        trusted_workspace: str | None = None,
+    ) -> dict[str, object]:
         data = self._artifact_payload(payload)
         request_hash = _hash_request(data)
         with self._transaction() as connection:
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                    {"scope": f"research-artifact|{data['task_id']}|{data['idempotency_key']}"})
             task = fetch_one(connection, "SELECT * FROM research_tasks WHERE task_id = :task_id", {"task_id": data["task_id"]})
             if task is None:
+                raise ResearchNotFound("research task not found")
+            if trusted_owner is not None and (
+                task["owner_principal"] != trusted_owner or task.get("workspace_id") != trusted_workspace
+            ):
                 raise ResearchNotFound("research task not found")
             experiment_id = data["experiment_id"]
             if experiment_id is not None:
@@ -548,8 +557,43 @@ class ResearchStore(PgStoreMixin):
                 if existing["request_hash"] != request_hash:
                     raise IdempotencyConflict("artifact idempotency key was reused")
                 return self._artifact_row(existing)
+            if trusted_owner is not None:
+                # Only closed domain reference kinds confer a verified association.
+                tables = {"research_task": ("research_tasks", "task_id"),
+                          "experiment": ("experiments", "experiment_id"),
+                          "artifact": ("artifacts", "artifact_id")}
+                for reference in lineage:
+                    target = tables.get(reference["kind"])
+                    if target is None:
+                        continue
+                    table, column = target
+                    linked = fetch_one(connection,
+                        f"SELECT owner_principal, workspace_id FROM {table} WHERE {column}=:identity",
+                        {"identity": reference["id"]})
+                    if linked is None or linked["owner_principal"] != trusted_owner or linked["workspace_id"] != trusted_workspace:
+                        raise ResearchNotFound("research lineage reference not found")
             now = _now()
             artifact_id = _new_id("artifact")
+            if trusted_owner is not None:
+                from .paper_trading import PaperTradingStore, PaperTradingNotFound, PaperTradingConflict
+                for snapshot in sorted({ref["id"] for ref in lineage if ref["kind"] == "stock_pool_snapshot"}):
+                    scoped = fetch_one(connection,
+                        "SELECT snapshot_id FROM stock_pool_snapshots WHERE snapshot_id=:snapshot AND workspace_id=:workspace",
+                        {"snapshot": snapshot, "workspace": trusted_workspace})
+                    if scoped is None:
+                        raise ResearchNotFound("research lineage reference not found")
+                    # One artifact can cite multiple frozen pools. Deterministic, bounded
+                    # identities preserve every reference without last-reference overwrite.
+                    reference_id = artifact_id + ":" + hashlib.sha256(snapshot.encode()).hexdigest()
+                    try:
+                        PaperTradingStore.record_pool_reference_in_transaction(
+                            connection, snapshot, domain="research", reference_id=reference_id,
+                            trusted_owner=trusted_owner,
+                        )
+                    except PaperTradingNotFound as error:
+                        raise ResearchNotFound("research lineage reference not found") from error
+                    except PaperTradingConflict as error:
+                        raise InvalidTransition("research stock pool reference is unavailable") from error
             execute(
                 connection,
                 """INSERT INTO artifacts

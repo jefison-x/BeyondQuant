@@ -6,6 +6,19 @@
 
 ## Entities
 
+### Post-U8 generic lineage boundary
+
+Generic Artifact creation validates `research_task`, `experiment` and `artifact`
+lineage references against trusted owner/workspace inside the receipt transaction.
+`stock_pool_snapshot` references must resolve to owned, active frozen snapshots;
+each distinct snapshot is registered atomically with the Artifact. The reference
+identity is the Artifact ID plus a SHA-256 of the snapshot ID, supporting multiple
+pools without overwriting earlier references. No additional reference grants execution.
+Other provenance labels are descriptive, not verified domain authority. A missing
+or foreign reference returns 404; an unavailable pool returns 409. A registration
+failure rolls back the Artifact and all references. Same-key creation is serialized
+and returns the original immutable receipt; historical records are not rewritten.
+
 ### ResearchTask
 
 `ResearchTask` 是 root research intent：

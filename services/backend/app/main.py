@@ -1899,20 +1899,9 @@ def create_artifact(payload: dict[str, Any], request: Request) -> dict[str, obje
         _owned_research_entity("research_task", payload.get("task_id"), context)
         if isinstance(payload.get("kind"), str) and payload["kind"].strip() in PRODUCER_OWNED_ARTIFACT_KINDS:
             raise HTTPException(status_code=403, detail="artifact kind requires its typed domain producer")
-        lineage = payload.get("lineage")
-        snapshot_id = lineage.get("stock_pool_snapshot_id") if isinstance(lineage, dict) else None
-        owner = context["owner_principal"]
-        if snapshot_id is not None:
-            if not isinstance(owner, str) or not owner:
-                raise ValueError("stock pool lineage requires owner_principal")
-            paper_store.get_pool_snapshot(snapshot_id, trusted_owner=owner)
-        artifact = research_store.create_artifact(payload)
-        if snapshot_id is not None:
-            paper_store.record_pool_reference(
-                snapshot_id, domain="research", reference_id=artifact["artifact_id"],
-                trusted_owner=artifact["owner_principal"],
-            )
-        return artifact
+        return research_store.create_artifact(
+            payload, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        )
     return _research_call(operation)
 
 
