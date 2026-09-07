@@ -105,6 +105,45 @@ def test_product_api_requires_bearer_auth(monkeypatch) -> None:
     assert TOKEN not in response.text
 
 
+@pytest.mark.parametrize("catalog_failure", [False, True])
+def test_collector_retries_durable_answers_without_runtime_history(monkeypatch, tmp_path, catalog_failure):
+    from contextlib import contextmanager
+
+    store = TraceStore(tmp_path)
+    first = {"trace_id": "trace-reconnect", "session_id": "session-reconnect", "sequence": 1,
+             "timestamp": "2026-09-07T00:00:00+00:00", "kind": "agent.output.delta",
+             "source": "runtime-adapter", "payload": {
+                 "schema_version": "workflow-answer.v1", "channel": "answer",
+                 "delta": "original durable answer", "truncated": False}}
+    store.append(first)
+    store.append({**first, "sequence": 2, "trace_id": "foreign-trace"})
+    store.append({**first, "sequence": 3})
+    calls = []
+
+    def catalog(method, path, principal, workspace, *, payload):
+        assert (method, path, principal.subject, workspace) == (
+            "POST", "/v1/product/conversations/conversation-reconnect/messages", "owner-1", "workspace-1")
+        calls.append(payload)
+        if catalog_failure:
+            raise main.HTTPException(status_code=503)
+        return {"message": {"workflow_sequence": payload["workflow_sequence"]}}
+
+    @contextmanager
+    def missing_runtime(*args, **kwargs):
+        yield SimpleNamespace(status_code=404)
+
+    monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))  # process restart
+    monkeypatch.setattr(main, "_catalog_request", catalog)
+    monkeypatch.setattr(main.httpx, "stream", missing_runtime)
+    session = main.ProductSession(
+        conversation_id="conversation-reconnect", session_id="session-reconnect", trace_id="trace-reconnect",
+        principal=main.Principal(subject="owner-1"), workspace_id="workspace-1")
+    main._collect_trace(session)
+    assert [call["workflow_sequence"] for call in calls] == ([1] if catalog_failure else [1, 3])
+    assert all(call["content"] == "original durable answer" for call in calls)
+    assert store.read(session.session_id) == main.trace_store.read(session.session_id)
+
+
 def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
@@ -359,12 +398,13 @@ def test_projected_answer_is_persisted_and_filtered_from_durable_replay(monkeypa
     assert response.json()["events"] == []
 
 
+@pytest.mark.parametrize("failure", [main.HTTPException(status_code=503), ValueError("invalid JSON")])
 def test_answer_trace_remains_available_when_catalog_persistence_is_temporarily_unavailable(
-    monkeypatch, tmp_path: Path,
+    monkeypatch, tmp_path: Path, failure,
 ) -> None:
     monkeypatch.setattr(
         main, "_catalog_request",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(main.HTTPException(status_code=503)),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(failure),
     )
     session = main.ProductSession(
         conversation_id="conversation_1", session_id="runtime-private", trace_id="trace-1",
@@ -375,7 +415,7 @@ def test_answer_trace_remains_available_when_catalog_persistence_is_temporarily_
         "payload": {"delta": "仍由执行记录回放"},
     }
 
-    main._persist_projected_answer(session, event)
+    assert main._persist_projected_answer(session, event) is False
 
 
 def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(monkeypatch, tmp_path: Path) -> None:

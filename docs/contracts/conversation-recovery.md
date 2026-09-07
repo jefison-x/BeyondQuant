@@ -42,6 +42,12 @@ SDK 返回本身不代表成功：仅规范化 finish_reason=completed 发出 se
 
 Gateway 重连采集器只接受当前 session/trace 的事件；跳过已持久化序号，不重新投影旧卡片，
 保持 TraceStore 原有乱序/间隙写入保护。已保存历史之后的新事件继续落盘。
+采集器启动时先从持久化 BYQ 投影补存公开回答，使用原 workflow_sequence 及原内容，
+不依赖 Runtime 仍保留旧会话或重复发送旧事件。只补存同 session/trace 的记录；
+目录请求失败或返回无法解析的内容时停止该次历史补存，记录仍保留，后续重启可重试。
+Backend 既有 conversation/workflow_sequence 唯一约束保证重复补存不增加消息。
+此路径尚无持久化投递游标，会重新核对历史答案；不保证长连接期间目录恢复即主动补存，
+也不解决迟到答案的目录排序。持久 ack、独立有界重试及排序整改仍须另行验收。
 领域持久关联组件及尚未接通的消费门禁见 [AgentRun lifecycle](agent-run-lifecycle.md)。
 
 ## 本地组件验证（2026-09-07）

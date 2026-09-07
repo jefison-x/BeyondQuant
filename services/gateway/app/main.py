@@ -411,6 +411,14 @@ def _collect_trace(session: ProductSession) -> None:
 
     persisted = trace_store.read(session.session_id)
     cursor = max((event["sequence"] for event in persisted), default=0)
+    # Delivery to the conversation catalog is independent of SSE ingestion.
+    # Retry the durable BYQ projection even if the adapter has lost this session
+    # or no longer replays its old events. Backend deduplicates workflow_sequence.
+    for event in persisted:
+        if (event.get("session_id") == session.session_id
+                and event.get("trace_id") == session.trace_id):
+            if not _persist_projected_answer(session, event):
+                break
     try:
         with httpx.stream(
             "GET",
@@ -457,15 +465,15 @@ def _collect_trace(session: ProductSession) -> None:
             trace_store.close(session.session_id)
 
 
-def _persist_projected_answer(session: ProductSession, event: dict[str, object]) -> None:
+def _persist_projected_answer(session: ProductSession, event: dict[str, object]) -> bool:
     if event.get("kind") != "agent.output.delta":
-        return
+        return True
     payload = event.get("payload")
     sequence = event.get("sequence")
     if not isinstance(payload, dict) or not isinstance(payload.get("delta"), str):
-        return
+        return True
     if isinstance(sequence, bool) or not isinstance(sequence, int):
-        return
+        return True
     try:
         _catalog_request(
             "POST",
@@ -478,10 +486,12 @@ def _persist_projected_answer(session: ProductSession, event: dict[str, object])
                 "workflow_sequence": sequence,
             },
         )
-    except HTTPException:
+    except (HTTPException, ValueError):
         # WorkflowTrace remains the replay source when the durable catalog is
-        # temporarily unavailable; an adapter replay can retry this idempotent write.
-        return
+        # temporarily unavailable, including a malformed/lost catalog response.
+        # A collector restart retries from this projection, not raw adapter data.
+        return False
+    return True
 
 
 def _domain_get(path: str, session: ProductSession) -> dict[str, object]:
