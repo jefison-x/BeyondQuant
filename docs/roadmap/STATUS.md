@@ -68,6 +68,10 @@
 
 ## 生效中的 Accepted ADR
 
+当前 F6 维护新增决策待办：[ADR-0065](../architecture/adr/ADR-0065-task-continuation-budget-admission.md)
+为 Proposed。已证实 SDK 单次 max_tokens 不等于任务累计预算；后台续接的累计预算准入与
+官方接口资格方案待维护者确认，未启用后台执行，不改变 Product Phase 97 完成范围。
+
 - [ADR-0064](../architecture/adr/ADR-0064-runtime-crash-recovery-evidence.md)：已接受并完成首版本地崩溃证据恢复；仅原本地卷、同次主机启动且原排他锁身份可证时收尾，不续跑模型。主机重启/复制卷/无日志保留不可判定。验证见 `docs/evidence/post-u8-r1/ADR-0064-VERIFICATION.md`，未部署，其他 Post-U8 整改未全部关闭。
 
 - [ADR-0063](../architecture/adr/ADR-0063-disabled-owner-terminal-cleanup.md)：维护者已接受禁用身份后既有 AgentRun 的受限终态清理；本地实现及 Backend 完整回归已通过，未部署。历史未绑定记录及其他 Post-U8 流程整改仍未关闭。
