@@ -443,6 +443,27 @@ paths:
     get: {summary: 重放 owner-scoped user messages and normalized WorkflowTrace events., responses: *okResponses}
     patch: {summary: 重命名、置顶、归档或恢复 an owner-scoped conversation., responses: *okResponses}
     delete: {summary: 归档并释放 an owner-scoped Product Agent session., responses: *noContentResponses}
+  /v1/agent/sessions/{session_id}/lifecycle-delivery:
+    parameters: [{$ref: '#/components/parameters/SessionId'}]
+    get:
+      summary: 只读查询当前用户会话的 AgentRun 终态投递状态，不启动模型或重置预算。
+      responses:
+        '200':
+          description: 投递进度不是研究目标完成证明；超限或无效事件需要人工核查。
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [schema_version, state, pending_events, exhausted_events, rejected_events, max_attempts, deadline_seconds]
+                properties:
+                  schema_version: {type: string, enum: [agent-run-delivery-status.v1]}
+                  state: {type: string, enum: [not_registered, pending, up_to_date, attention_required, unavailable]}
+                  pending_events: {type: integer, minimum: 0}
+                  exhausted_events: {type: integer, minimum: 0}
+                  rejected_events: {type: integer, minimum: 0}
+                  max_attempts: {type: integer, enum: [8]}
+                  deadline_seconds: {type: integer, enum: [86400]}
   /v1/agent/sessions/{session_id}/turns:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
     post: {summary: 提交 a turn to an owner-scoped Product Agent session., responses: *acceptedResponses}

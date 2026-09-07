@@ -30,6 +30,35 @@ const start = await fetchByqAgentRunStart(
 );
 assert.equal(start.isError, false);
 
+const registrationCalls: string[] = [];
+const bound = await fetchByqAgentRunStart("http://backend:8000",
+  { role_id: "market_researcher", idempotency_key: "original key" }, context,
+  async (url, init) => {
+    registrationCalls.push(String(init?.method));
+    if (init?.method === "POST") return new Response(JSON.stringify({ run: { run_id: "agent_run_original", status: "pending_binding" } }));
+    assert.equal(url, "http://backend:8000/v1/agents/runs/registration-receipt?idempotency_key=original%20key");
+    assert.equal(init?.body, undefined);
+    return new Response(JSON.stringify({ run: { run_id: "agent_run_original", status: "active" } }));
+  });
+assert.deepEqual(registrationCalls, ["POST", "GET"]);
+assert.equal(JSON.parse(bound.content[0].text).run.status, "active");
+await fetchByqAgentRunStart("http://backend:8000",
+  { role_id: "market_researcher", idempotency_key: "original key", receipt_only: true }, context,
+  async (_url, init) => {
+    assert.equal(init?.method, "GET");
+    assert.equal(init?.body, undefined);
+    return new Response(JSON.stringify({ run: { status: "pending_binding" } }));
+  });
+let boundedCalls = 0;
+const pending = await fetchByqAgentRunStart("http://backend:8000",
+  { role_id: "market_researcher", idempotency_key: "same-key" }, context,
+  async () => {
+    boundedCalls++;
+    return new Response(JSON.stringify({ run: { run_id: "agent_run_original", status: "pending_binding" } }));
+  });
+assert.equal(boundedCalls, 4);
+assert.equal(JSON.parse(pending.content[0].text).run.status, "pending_binding");
+
 const authorized = await fetchByqAgentAuthorize(
   "http://backend:8000",
   { run_id: "agent_run_0123456789abcdef0123456789abcdef", action: "byq_market_daily" },

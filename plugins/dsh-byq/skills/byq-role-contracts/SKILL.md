@@ -23,6 +23,14 @@ Use the specialized DSH delegation tools for focused work. Start a BYQ agent
 run before domain work, then call `byq_agent_authorize` before a domain action
 and `byq_agent_audit` with the bounded outcome afterward.
 
+Registration may return `pending_binding`; it is not an active authorization.
+For pending or unknown registration outcomes, query `byq_agent_run_start` with
+`receipt_only=true` and the ORIGINAL idempotency key. This mode is read-only.
+Never replace the key or start another run to evade a pending/unknown receipt.
+If it remains pending, report the wait and stop; do not poll indefinitely.
+Each new runtime turn needs its own registration; a previous terminal run cannot
+authorize new work. Domain jobs and approvals remain independent of run closure.
+
 A DSH runtime session identifier such as `byq-session-*` is not a BYQ Agent
 run identifier. Only the `agent_run_*` value returned by
 `byq_agent_run_start` may be passed to authorization or audit tools. For a

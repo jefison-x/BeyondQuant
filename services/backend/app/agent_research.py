@@ -13,6 +13,7 @@ import json
 import os
 import re
 import uuid
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,7 +21,7 @@ from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from packages.contracts.agent_run_lifecycle import registration_fingerprint, validate_lifecycle_event
+from packages.contracts.agent_run_lifecycle import registration_fingerprint, validate_lifecycle_event, lifecycle_receipt
 
 from .db import PgStoreMixin, execute, fetch_one
 
@@ -419,6 +420,11 @@ class AgentResearchStore(PgStoreMixin):
             root_run_id TEXT NOT NULL REFERENCES agent_runtime_turns(root_run_id)
         )""",
         "CREATE INDEX IF NOT EXISTS agent_runtime_registrations_root ON agent_runtime_registrations(root_run_id)",
+        """CREATE TABLE IF NOT EXISTS agent_runtime_receipts (
+            owner_principal TEXT NOT NULL, workspace_id TEXT NOT NULL, session_id TEXT NOT NULL,
+            trace_id TEXT NOT NULL, sequence BIGINT NOT NULL, receipt_json JSONB NOT NULL,
+            PRIMARY KEY (owner_principal, workspace_id, session_id, sequence)
+        )""",
         "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS root_run_id TEXT REFERENCES agent_runtime_turns(root_run_id)",
         "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS runtime_registration_fingerprint TEXT",
         "CREATE INDEX IF NOT EXISTS agent_runs_runtime_registration ON agent_runs(runtime_registration_fingerprint)",
@@ -603,8 +609,38 @@ class AgentResearchStore(PgStoreMixin):
             detail={"root_run_id": root["root_run_id"], "terminal_sequence": root["terminal_sequence"]},
             connection=connection)
 
+    def consume_runtime_lifecycle_event(self, event: object, **context: str) -> dict:
+        receipt = lifecycle_receipt(event)
+        params = {"owner": context["trusted_owner"], "workspace": context["trusted_workspace"],
+                  "session": context["trusted_session_id"], "trace": context["trusted_trace_id"],
+                  "sequence": receipt["sequence"]}
+        with self._transaction() as connection:
+            self._require_lifecycle_workspace(connection, params["owner"], params["workspace"])
+            self._lifecycle_lock(connection, "receipt:" + json.dumps(params, sort_keys=True))
+            existing = fetch_one(connection, """SELECT * FROM agent_runtime_receipts WHERE
+                owner_principal=:owner AND workspace_id=:workspace AND session_id=:session AND sequence=:sequence""", params)
+            if existing:
+                if existing["trace_id"] != params["trace"] or existing["receipt_json"] != receipt:
+                    raise AgentConflict("runtime sequence conflicts with its durable receipt")
+                return receipt
+            self.apply_runtime_lifecycle_event(event, **context, _connection=connection)
+            execute(connection, """INSERT INTO agent_runtime_receipts
+                (owner_principal,workspace_id,session_id,trace_id,sequence,receipt_json)
+                VALUES (:owner,:workspace,:session,:trace,:sequence,CAST(:receipt AS jsonb))""",
+                {**params, "receipt": json.dumps(receipt)})
+        return receipt
+
+    def registration_receipt(self, key: str, **context: str) -> dict:
+        key = _idempotency(key)
+        row = self._fetch_one("SELECT * FROM agent_runs WHERE owner_principal=:owner AND idempotency_key=:key",
+                              {"owner": context["owner_principal"], "key": key})
+        if row is None or any(row[field] != context[field] for field in (
+                "workspace_id", "actor_principal", "session_id", "trace_id", "dsh_run_id")):
+            raise AgentNotFound("exact agent registration not found")
+        return self._run_row(row)
+
     def apply_runtime_lifecycle_event(self, event: object, *, trusted_owner: str, trusted_workspace: str,
-                                     trusted_session_id: str, trusted_trace_id: str) -> dict[str, object]:
+                                     trusted_session_id: str, trusted_trace_id: str, _connection=None) -> dict[str, object]:
         """Consume only a trusted BYQ projection; not a Product/model command.
 
         Terminal receipt, bindings, AgentRun updates and audits share one
@@ -617,7 +653,7 @@ class AgentResearchStore(PgStoreMixin):
         trace = _trace(trusted_trace_id, field="trace_id")
         root_id, outcome = event["root_run_id"], event["outcome"]
         fingerprint = event.get("registration_fingerprint")
-        with self._transaction() as connection:
+        with (nullcontext(_connection) if _connection is not None else self._transaction()) as connection:
             self._require_lifecycle_workspace(connection, owner, workspace)
             self._lifecycle_lock(connection, "root:" + root_id)
             root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id", {"id": root_id})
@@ -1052,6 +1088,7 @@ class AgentResearchStore(PgStoreMixin):
         result = dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
+        result.pop("runtime_registration_fingerprint", None)
         return result
 
     @staticmethod

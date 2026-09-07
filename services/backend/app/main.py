@@ -423,6 +423,22 @@ def append_conversation_message(conversation_id: str, payload: dict[str, Any], r
     return _conversation_call(lambda: (_ for _ in ()).throw(ValueError("role must be user or assistant")))
 
 
+@app.post("/internal/agent-lifecycle/{conversation_id}")
+def consume_agent_lifecycle(conversation_id: str, payload: dict[str, Any], request: Request) -> dict:
+    owner = _conversation_owner(request)
+    if request.headers.get("x-byq-actor-principal") != owner:
+        raise HTTPException(status_code=403, detail="trusted catalog consumer required")
+    conversation = _conversation_call(lambda: conversation_store.get(owner, conversation_id))
+    if (set(payload) != {"session_id", "trace_id", "event"}
+            or payload["session_id"] != conversation["runtime_session_id"]
+            or payload["trace_id"] != conversation["trace_id"]
+            or conversation["workspace_id"] != request.headers.get("x-byq-workspace-id")):
+        raise HTTPException(status_code=422, detail="lifecycle conversation identity mismatch")
+    return _agent_call(lambda: {"receipt": agent_store.consume_runtime_lifecycle_event(
+        payload["event"], trusted_owner=owner, trusted_workspace=conversation["workspace_id"],
+        trusted_session_id=conversation["runtime_session_id"], trusted_trace_id=conversation["trace_id"])})
+
+
 @app.patch("/v1/product/conversations/{conversation_id}")
 def update_conversation(conversation_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
     return _conversation_call(lambda: {"conversation": conversation_store.update(
@@ -4120,7 +4136,15 @@ def start_agent_run(payload: dict[str, Any], request: Request) -> dict[str, obje
         request_payload,
         trusted_owner=context["owner_principal"],
         trusted_actor=context["actor_principal"],
+        trusted_workspace=request.headers.get("x-byq-workspace-id"),
+        require_runtime_binding=context["actor_principal"] == f"byq-product-agent-{context['session_id']}",
     )})
+
+
+@app.get("/v1/agents/runs/registration-receipt")
+def get_agent_registration_receipt(request: Request, idempotency_key: str) -> dict:
+    context = _required_agent_context(request, include_workspace=True)
+    return _agent_call(lambda: {"run": agent_store.registration_receipt(idempotency_key, **context)})
 
 
 @app.post("/v1/agents/authorize")

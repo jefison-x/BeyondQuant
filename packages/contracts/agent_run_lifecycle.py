@@ -40,3 +40,33 @@ def validate_lifecycle_event(value: object) -> dict:
     elif "registration_fingerprint" in value:
         raise ValueError("terminal events cannot register a new agent")
     return dict(value)
+
+
+def lifecycle_receipt(event: object) -> dict:
+    event = validate_lifecycle_event(event)
+    digest = hashlib.sha256(json.dumps(event, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return {"schema_version": "agent-run-lifecycle-receipt.v1", "sequence": event["sequence"],
+            "root_run_id": event["root_run_id"], "event_sha256": digest}
+
+
+def project_lifecycle_event(event: dict, session_id: str, trace_id: str) -> dict | None:
+    if (event.get("session_id"), event.get("trace_id"), event.get("source")) != (session_id, trace_id, "runtime-adapter"):
+        return None
+    payload = event.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    kind = event.get("kind")
+    outcomes = {"session.result": "completed", "session.failed": "failed",
+                "session.cancelled": "cancelled", "session.closed": "interrupted"}
+    if kind != "agent.run.registration" and kind not in outcomes:
+        return None
+    if "run_id" not in payload:  # idle close/startup failure has no exact turn
+        return None
+    value = {"schema_version": "agent-run-lifecycle.v1", "root_run_id": payload["run_id"],
+             "sequence": event.get("sequence"), "outcome": outcomes.get(kind, "active")}
+    if kind == "agent.run.registration":
+        if (set(payload) != {"schema_version", "run_id", "registration_fingerprint"}
+                or payload.get("schema_version") != "agent-run-registration-observed.v1"):
+            raise ValueError("invalid observed registration")
+        value["registration_fingerprint"] = payload["registration_fingerprint"]
+    return validate_lifecycle_event(value)

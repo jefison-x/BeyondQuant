@@ -8,6 +8,7 @@ import threading
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -31,11 +32,21 @@ from .user_session import ProductAuthError, resolve_principal, resolve_user
 from .trace_store import TraceStore
 from .conversation_recovery import project_recovery
 from .workflow_projection import project_workflow_event
+from .agent_lifecycle_delivery import LifecycleDelivery
 
 
 SERVICE = "byq-gateway"
 VERSION = "0.1.0"
-app = FastAPI(title="BeyondQuant Gateway", version=VERSION)
+@asynccontextmanager
+async def lifespan(app):
+    lifecycle_delivery.start()
+    try:
+        yield
+    finally:
+        lifecycle_delivery.close()
+
+
+app = FastAPI(title="BeyondQuant Gateway", version=VERSION, lifespan=lifespan)
 app.include_router(product_router)
 app.include_router(auth_router)
 RUNTIME_ADAPTER_URL = os.environ.get("BYQ_RUNTIME_ADAPTER_URL", "http://runtime-adapter:8400")
@@ -44,6 +55,16 @@ BACKEND_URL = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
 PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
 trace_store = TraceStore(os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"))
+
+
+def _send_agent_lifecycle(context, event):
+    return _catalog_request("POST", f"/internal/agent-lifecycle/{context['conversation_id']}",
+        Principal(subject=context["owner"]), context["workspace_id"], payload={
+            "session_id": context["session_id"], "trace_id": context["trace_id"], "event": event})
+
+
+lifecycle_delivery = LifecycleDelivery(
+    os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), trace_store, _send_agent_lifecycle)
 
 
 def require_chat_admission():
@@ -397,6 +418,7 @@ def _adapter_prompt_receipt(session_id: str, key: str, content: str) -> dict[str
 
 
 def _start_trace_collector(session: ProductSession) -> None:
+    lifecycle_delivery.register(session)
     thread = threading.Thread(
         target=_collect_trace,
         args=(session,),
@@ -824,6 +846,17 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
         "updated_at": conversation.get("updated_at"),
     }
     return {"conversation": public, "messages": messages, "events": events}
+
+
+@app.get("/v1/agent/sessions/{session_id}/lifecycle-delivery")
+def get_agent_lifecycle_delivery(session_id: str, request: Request) -> dict:
+    principal, workspace_id = _trusted_request_identity(request)
+    body = _catalog_request("GET", f"/v1/product/conversations/{session_id}", principal, workspace_id)
+    conversation = body.get("conversation")
+    if not isinstance(conversation, dict):
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    return lifecycle_delivery.status({"conversation_id": session_id, "session_id": conversation["runtime_session_id"],
+        "trace_id": conversation["trace_id"], "workspace_id": workspace_id, "owner": principal.subject})
 
 
 @app.patch("/v1/agent/sessions/{session_id}")

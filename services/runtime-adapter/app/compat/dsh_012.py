@@ -194,6 +194,8 @@ def _registration_key(name: object, arguments: object) -> str | None:
     except (ValueError, TypeError, RecursionError):
         return None
     key = payload.get("idempotency_key") if isinstance(payload, dict) else None
+    if isinstance(payload, dict) and payload.get("receipt_only") is True:
+        return None
     if not isinstance(key, str) or not 1 <= len(key.strip()) <= 128:
         return None
     return key.strip()

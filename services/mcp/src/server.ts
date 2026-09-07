@@ -825,11 +825,12 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_agent_run_start",
     {
-      description: "Start an owner-scoped BYQ agent run correlated to the trusted DSH session and trace.",
+      description: "Register an owner-scoped AgentRun. pending_binding cannot authorize actions. For pending or unknown outcomes query the ORIGINAL idempotency_key with receipt_only=true; never mint a replacement key or assume success.",
       inputSchema: {
         role_id: z.enum(["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher"]),
         parent_run_id: z.string().regex(/^agent_run_[0-9a-f]{32}$/).optional(),
         idempotency_key: z.string(),
+        receipt_only: z.boolean().optional(),
       },
     },
     (args) => byqAgentRunStart(args, trustedContext),

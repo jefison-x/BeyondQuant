@@ -250,6 +250,16 @@ def test_agent_strategy_approval_is_bound_to_exact_resource_and_human_decision(m
     run = client.post("/v1/agents/runs", json={
         "role_id": "quant_orchestrator", "idempotency_key": "approval-binding-run",
     }).json()["run"]
+    assert run["status"] == "pending_binding"
+    from packages.contracts.agent_run_lifecycle import registration_fingerprint
+    agents.consume_runtime_lifecycle_event({
+        "schema_version": "agent-run-lifecycle.v1", "root_run_id": "a" * 32, "sequence": 1,
+        "outcome": "active", "registration_fingerprint": registration_fingerprint(*[
+            agent_headers[f"x-byq-{field}"] for field in (
+                "owner-principal", "workspace-id", "actor-principal", "trace-id", "session-id", "dsh-run-id")
+        ], "approval-binding-run"),
+    }, trusted_owner="approval-owner", trusted_workspace=agent_headers["x-byq-workspace-id"],
+        trusted_session_id="approval-session", trusted_trace_id="approval-trace")
     pending = client.post("/v1/agents/approvals", json={
         "run_id": run["run_id"], "action": "byq_strategy_approve",
         "reason": "Approve this exact immutable strategy version.",

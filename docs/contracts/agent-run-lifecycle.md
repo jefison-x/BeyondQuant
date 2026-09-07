@@ -30,15 +30,43 @@ owner/workspace/session/trace 由可信调用方单独传入，不能由模型�
 锁顺序为 root → registration digest；start_run 只锁 registration digest → 原 owner/key，不反向锁 root。
 这使并发插入和终态更新不遗留 active 行。注入审计失败时，根终态和 AgentRun 同步回滚。
 
-## 当前接入限制
+## 跨服务消费与回执
 
-已实现并验证 Store 合同和 Runtime 来源投影，尚未启用 Product API 的强制 pending_binding 路径。
-`require_runtime_binding` 不是公开模型参数；现有请求路径不因这个组件提交而被静默切换。
-Gateway 的可靠消费、持久 ack/重放、Backend 可信接收端、MCP 精确 pending 回执查询仍待接通。
-不得向 Product/模型开放“任意关闭 AgentRun”工具来绕过这一步。
+Gateway 在启动采集器前固定会话目录身份，在现有 WorkflowTrace 卷保存专用投递账本。
+启动时独立扫描已登记会话，不要求用户重新打开会话，不依赖 Runtime 仍存活。
+先持久化规范化 trace，再扫描入账；两步之间崩溃可从 trace 恢复。不读取 DSH 日志。
+账本使用原子替换、文件及目录fsync、跨进程文件锁；不新增领域数据库或通用任务队列。
+扫描每次最多处理256条新事件，每会话每次最多发送16条。未变化的历史不反复重读/落盘。
+
+只有当前session/trace、runtime-adapter来源、带精确root的注册与终态可消费；空闲关闭无root时忽略。
+同root首个终态为权威，软取消后的重复/丢弃结果不覆盖它；迟到注册仍须送达并按原终态关闭。
+Backend内部 `POST /internal/agent-lifecycle/{conversation_id}` 重新核对目录owner/workspace/session/trace，
+只接受可信Gateway目录消费者，未向Browser或MCP开放收尾写工具。Agent-to-Domain仍经MCP。
+`agent_runtime_receipts` 与状态/审计同事务提交，按owner/workspace/session/sequence唯一保存
+`agent-run-lifecycle-receipt.v1`，含原root/sequence及规范事件SHA-256；序号内容冲突拒绝覆盖。
+Gateway只确认完整匹配的回执。响应丢失、损坏或写ack前崩溃，均保留原事件重投；Backend幂等重放。
+
+每份事件最多8次发送、首次入账起24小时截止；退避依次为2/5/15/60/300/900/3600秒。
+次数和下一次时间在请求前持久化，重启不得重置；超限保留exhausted，不伪造成功或重新发起模型/业务动作。
+一份事件耗尽不阻止其他root终态投递。只读Product接口
+`GET /v1/agent/sessions/{conversation_id}/lifecycle-delivery` 显示pending、exhausted和invalid计数，
+不返回注册摘要/原始参数。`up_to_date`只表示投递账本跟上当前trace，不代表研究目标完成。
+损坏账本显示unavailable；超限显示attention_required。当前不提供自动重置预算或人工重投写接口。
+
+可信Product DSH actor（`byq-product-agent-{session_id}`）的运行注册启用强制pending_binding。
+这个actor来自进程可信header，不可用模型参数覆盖；既有非Product内部调用保留兼容路径。
+MCP `byq_agent_run_start` 对pending最多额外查询3次（250/500/750ms等待），不重复POST。
+显式 `receipt_only=true` 使用原role_id/idempotency_key做一次GET；Backend精确核对owner、workspace、
+actor、session、trace和generation。旧generation或其他身份查询返回404，不借此授权新写入。
+pending/unknown不能审批或执行领域动作；新回合不得复用已终态AgentRun。
+
+## 保留的异常边界
 
 Adapter 整体崩溃而未产生终态、用户/工作区禁用后的收尾、以及历史无绑定记录仍需独立验证；
 当前 workspace write trigger 要求 active owner，不能将禁用后的终态清理假定为已解决。
 缺失绑定或回执不得靠同会话最新对象、当前进程下所有历史记录或时间猜测。
+收尾是异步最终一致性，不承诺终态发生瞬间Backend即已更新；所有模型入口的跨轮收尾
+确认屏障仍属独立流程整改。不能将持久投递实现解释为这些故障窗口已全部消除。
 
-此组件通过不等于 R4/F10 全部完成，不授权生产部署、历史研究续跑或模型训练。
+本合同覆盖有精确规范化注册/终态的跨服务投递、收尾和回执。不等于上述无终态事故、R4/F10
+全部需求或独立发布认证完成，不授权生产部署、历史研究续跑或模型训练。
