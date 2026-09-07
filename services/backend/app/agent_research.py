@@ -515,6 +515,9 @@ class AgentResearchStore(PgStoreMixin):
                 parent = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :parent_run_id", {"parent_run_id": parent_run_id})
                 if parent is None or parent["owner_principal"] != owner:
                     raise AgentForbidden("parent agent run is not owned by this principal")
+                if (parent["status"] != "active" or parent["actor_principal"] != actor
+                        or parent["session_id"] != session_id or parent["dsh_run_id"] != dsh_run_id):
+                    raise AgentForbidden("parent agent run does not belong to this active runtime context")
                 parent_role = ROLE_BY_ID[parent["role_id"]]
                 if role_id not in parent_role.delegate_to:
                     raise AgentForbidden("parent role is not authorized to delegate to this role")
@@ -537,7 +540,8 @@ class AgentResearchStore(PgStoreMixin):
         assert row is not None
         return self._run_row(row)
 
-    def authorize(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None) -> dict[str, object]:
+    def authorize(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None,
+                  trusted_session_id: str | None = None, trusted_dsh_run_id: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("agent authorization request must be an object")
         allowed = {"run_id", "action", "resource_type", "resource_id"}
@@ -552,6 +556,7 @@ class AgentResearchStore(PgStoreMixin):
         if row is None:
             raise AgentNotFound("agent run not found")
         self._check_run_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
+        self._check_runtime_context(row, trusted_session_id, trusted_dsh_run_id)
         role = ROLE_BY_ID[row["role_id"]]
         index_action = action in {"byq_index_pool_catalog", "byq_index_pool_create", "byq_index_pool_status"}
         if action not in role.allowed_tools or (index_action and row["role_version"] != "2.1.0"):
@@ -598,7 +603,8 @@ class AgentResearchStore(PgStoreMixin):
         )
         return {"run": self._run_row(run), "events": [self._audit_row(row) for row in rows]}
 
-    def create_approval(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None) -> dict[str, object]:
+    def create_approval(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None,
+                        trusted_session_id: str | None = None, trusted_dsh_run_id: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("agent approval request must be an object")
         allowed = {"run_id", "action", "reason", "resource_type", "resource_id", "idempotency_key"}
@@ -624,6 +630,7 @@ class AgentResearchStore(PgStoreMixin):
             if run is None:
                 raise AgentNotFound("agent run not found")
             self._check_run_access(run, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
+            self._check_runtime_context(run, trusted_session_id, trusted_dsh_run_id)
             role = ROLE_BY_ID[run["role_id"]]
             if action not in role.approval_required_actions:
                 raise AgentForbidden("agent action does not require or support this approval boundary")
@@ -843,6 +850,12 @@ class AgentResearchStore(PgStoreMixin):
             )
             assert updated is not None
         return {**self._approval_row(updated), "continuation_changed": changed}
+
+    @staticmethod
+    def _check_runtime_context(row: dict[str, Any], session_id: str | None, generation_id: str | None) -> None:
+        if ((session_id is not None and row["session_id"] != session_id)
+                or (generation_id is not None and row["dsh_run_id"] != generation_id)):
+            raise AgentForbidden("agent run does not belong to this runtime context")
 
     def _check_run_access(self, row: dict[str, Any], *, trusted_owner: str | None, trusted_actor: str | None) -> None:
         if trusted_owner and row["owner_principal"] != trusted_owner:

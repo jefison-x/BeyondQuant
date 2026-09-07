@@ -619,6 +619,10 @@ def test_hard_cancel_resume_uses_a_new_owned_runtime(adapter: RuntimeAdapter) ->
     assert FakeHarness.instances[0].closed is True
     record = adapter._get("s-1")
     assert record.runtime_session_id != "s-1"
+    old_generation = FakeHarness.instances[0].config.env["BYQ_DSH_RUN_ID"]
+    new_generation = FakeHarness.instances[1].config.env["BYQ_DSH_RUN_ID"]
+    assert old_generation != new_generation
+    assert new_generation != record.runtime_session_id
     adapter.release_session("s-1")
 
 
@@ -894,7 +898,8 @@ def test_product_context_is_scoped_to_the_owned_sdk_environment(adapter: Runtime
     assert sdk_environment["BYQ_ACTOR_PRINCIPAL"] == "byq-product-agent-s-1"
     assert sdk_environment["BYQ_TRACE_ID"] == "t-1"
     assert sdk_environment["BYQ_SESSION_ID"] == "s-1"
-    assert sdk_environment["BYQ_DSH_RUN_ID"] == "s-1"
+    assert sdk_environment["BYQ_DSH_RUN_ID"].startswith("generation-")
+    assert sdk_environment["BYQ_DSH_RUN_ID"] not in str(adapter.describe_session(adapter._get("s-1")))
     adapter.release_session("s-1")
 
 

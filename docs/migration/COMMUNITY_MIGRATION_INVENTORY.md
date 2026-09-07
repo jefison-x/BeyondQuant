@@ -11,6 +11,12 @@ BeyondQuant architecture 的内容。
 
 ## Post-U8 R1 historical outcome audit（2026-09-07）
 
+Post-U8 runtime-context isolation: Community `agent-service/app/harness/roles.py`
+and `workflows/contracts.py` inspected read-only. Role/parent identity and explicit
+terminal status are `REFERENCE_ONLY`; old generic graph topology/executor is
+`DROP` for migration. BYQ extends existing AgentResearchStore checks and the
+official SDK Adapter environment, without copying graph execution or model binding.
+
 Post-U8 F8 instruction follow-up: read-only inspection of
 `agent-service/app/skills/builtin/python_strategy_generation/SKILL.md` retains
 “validate the strategy and never claim a backtest passed from generation alone”

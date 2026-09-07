@@ -691,9 +691,11 @@ class RuntimeAdapter:
             "BYQ_ACTOR_PRINCIPAL": f"byq-product-agent-{session_id}" if owner_principal else "",
             "BYQ_TRACE_ID": trace_id,
             "BYQ_SESSION_ID": session_id,
-            # The adapter uses the durable session as the stable DSH
-            # correlation when DSH does not expose a per-MCP-call header.
-            "BYQ_DSH_RUN_ID": session_id,
+            # Official MCP headers are process-scoped, not root-turn-scoped.
+            # Give each owned process a BYQ identity so resumed generations
+            # cannot authorize against an earlier process's AgentRun. This is
+            # deliberately distinct from both the public session and DSH ID.
+            "BYQ_DSH_RUN_ID": f"generation-{uuid.uuid4().hex}",
         }
         # The provider credential enters only the adapter-owned SDK child
         # environment. It is never returned in readiness, lifecycle responses,

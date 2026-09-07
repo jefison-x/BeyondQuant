@@ -197,6 +197,23 @@ def test_runs_are_owner_scoped_idempotent_and_delegation_is_allowlisted(tmp_path
     store.close()
 
 
+def test_delegation_rejects_another_session_generation_actor_or_terminal_parent() -> None:
+    store = AgentResearchStore()
+    try:
+        parent = start(store)
+        for index, override in enumerate(({"session_id": "session-other"},
+                                          {"dsh_run_id": "generation-other"},
+                                          {"actor_principal": "another-actor"})):
+            with pytest.raises(AgentForbidden, match="runtime context"):
+                start(store, role_id="market_researcher", parent_run_id=parent["run_id"],
+                      idempotency_key=f"stale-child-{index}", **override)
+        store._execute("UPDATE agent_runs SET status='cancelled' WHERE run_id=:id", {"id": parent["run_id"]})
+        with pytest.raises(AgentForbidden, match="runtime context"):
+            start(store, role_id="market_researcher", parent_run_id=parent["run_id"], idempotency_key="terminal-child")
+    finally:
+        store.close()
+
+
 def test_approval_continuation_claim_fences_late_ack_across_restart() -> None:
     store = AgentResearchStore()
     run = start(store)

@@ -173,6 +173,20 @@ Gateway完整123通过、Backend research/API 9通过（含独立store并发）�
 
 ## 架构门禁
 
+### R4/F10 恢复进程的权限隔离前置切片（2026-09-07）
+
+官方已安装0.1.2rc1 `Session.run(input, on_notification=...)`未提供逐回合MCP header参数。
+此前BYQ_DSH_RUN_ID固定为整个会话ID；现改为每个owned process新建的BYQ generation identity，
+与DSH私有session ID分离、不进入公开Runtime响应。Backend授权/新审批必须匹配可信会话和generation；
+子运行还必须匹配活动父运行的actor/session/generation，不能跨恢复进程继承旧父运行。
+既有审批的人工决定和精确读取仍允许在恢复后查询，不把旧授权自动扩展给新动作。
+
+验证：Backend agent API/领域9项通过，Runtime完整86通过5跳过；开启真实官方进程和本地脚本
+Provider的恢复/工具边界/子角色检查11项通过，无付费模型调用。首次Runtime测试因只读父挂载内
+缺少子挂载目录未启动，改为各目录单独只读挂载后运行通过。
+此identity是process generation而非root turn，尚不能据此关闭同进程中全部历史AgentRun。
+逐回合终态持久化、迟到ack和F4/F6仍待实现；不把这项前置隔离宣称为R4/F10完整修复。
+
 ### F2 ML 持久回执核对切片（2026-09-07）
 
 MCP/Gateway 在训练写请求前登记绑定 owner/workspace、原幂等键和固定研究对象的核对记录。

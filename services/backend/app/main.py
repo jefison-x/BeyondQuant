@@ -4123,6 +4123,8 @@ def authorize_agent_action(payload: dict[str, Any], request: Request) -> dict[st
             clean_payload,
             trusted_owner=context["owner_principal"],
             trusted_actor=context["actor_principal"],
+            trusted_session_id=context["session_id"],
+            trusted_dsh_run_id=context["dsh_run_id"],
         )
         effective = user_policy_store.evaluate_authorization(context["owner_principal"], base)
         if effective.get("decision") == "policy_denied":
@@ -4169,6 +4171,8 @@ def create_agent_approval(payload: dict[str, Any], request: Request) -> dict[str
         {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
         trusted_owner=context["owner_principal"],
         trusted_actor=context["actor_principal"],
+        trusted_session_id=context["session_id"],
+        trusted_dsh_run_id=context["dsh_run_id"],
     )})
 
 
