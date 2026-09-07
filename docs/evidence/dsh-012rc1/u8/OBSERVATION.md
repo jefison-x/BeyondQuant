@@ -1,7 +1,53 @@
-# U8 — DEPLOYED_OBSERVING
+# U8 — CLOSED_EARLY_REMEDIATION_REQUIRED
 
-U8 is NOT COMPLETE. Product Phase 97 remains unchanged. Production deployment
-and observation completion are separate gates; no release/tag is authorized here.
+U8 observation is closed early by maintainer decision on 2026-09-07. It is NOT a
+24-hour acceptance PASS or a semantic stability certification. Product Phase 97
+remains unchanged; no release/tag is authorized here.
+
+## Final disposition — 2026-09-07
+
+The maintainer explicitly requested stopping observation, inventorying failures,
+and proceeding with post-U8 reliability and stock-pool remediation. Data Center
+dataset expansion is deferred. Current DSH 0.1.2rc1 stays deployed; no rollback.
+This decision supersedes the earlier requirement to wait for 24 hours before
+starting remediation. U8 closeout/merge may proceed with failed acceptance intact.
+
+The user-level unit `byq-u8-observe-20260906T2303.service` was stopped explicitly;
+confirmed inactive/dead with success. All 11 production containers remain running.
+No production process, business record, backup or raw observation file was deleted.
+The observer checkpoint intentionally retains its last OBSERVING value: it is an
+unaltered historical sample, not the final disposition. No window-result.json exists.
+
+- 78 samples, 15,900 monotonic seconds (4h25m), zero failed samples or infrastructure
+  alerts; maximum sample gap 300.000323 seconds. Last sample began 03:27:43 UTC and
+  checkpoint completed 03:27:45 UTC. The remaining 24-hour duration gate is waived
+  for early closure, NOT passed. No post-fix observation may reuse this elapsed time.
+- Runtime process count 2–4; session disk 27,272–117,912 KiB; available host memory
+  minimum 3,676,400 KiB; available disk minimum 74,151,657,472 bytes. Runtime container
+  memory first/last 245.4/273.5 MiB; final active prompts zero, two idle session records.
+  These aggregates do not prove leak absence or SDK child ownership.
+- Final read-only domain inventory: four newly created Agent runs still active
+  (one orchestrator, two market researchers, one ML researcher); one approved approval
+  continuation submitted; one training completed; zero new prediction/backtest jobs.
+- Confirmed failures: fixed child timeout; missing unanswered subject during resume;
+  unrelated same-workspace research selected; service health incorrectly used to deny
+  a recorded timeout; stale Agent lifecycle; ML create timeout before durable receipt;
+  late successful training without prediction/backtest continuation; misleading activity
+  completion/failed labels; wrong strategy-type tool and insufficient validation feedback.
+- Existing index-pool audit additionally found missing import-triggered refresh wiring
+  and absent Agent index creation access. These are BYQ remediation scope, not claims
+  that DSH upgrade introduced them.
+- Unique-key/semantic duplication and every child ownership path are not certified
+  by the aggregate inventory. They remain explicit regression/audit requirements.
+
+Same-release regeneration/operator checks already recorded below remain valid for
+their narrow scope. Production semantic acceptance remains failed; T40 must not be
+promoted to an unconditional PASS. Historical reports and failures remain unchanged.
+Post-U8 repair must use new worktrees/build identities and repeat affected business
+journeys plus a fresh deployment observation window after separately authorized rollout.
+
+The sections below preserve the original observation setup and pending-gate record;
+this final disposition governs their current status.
 
 ## Authorization and actual deployment
 
