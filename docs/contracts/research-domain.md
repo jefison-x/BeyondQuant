@@ -42,6 +42,19 @@ created_at, updated_at, version
 
 ## Mutation semantics
 
+Post-U8 boundary correction (ADR-0062): every generic create/transition API
+requires trusted owner/workspace context and checks the referenced entity before
+writing. Missing identity is 401; another owner's entity is 404. Task ownership
+is not inferred from a caller-supplied task ID alone.
+
+Domain-produced Artifact kinds (rule/ML strategies and approvals, models,
+features, regimes, predictions, signals, backtest/factor results and web research
+evidence) cannot be created or transitioned through the generic Artifact API.
+Use the existing typed validator, approval or trusted Worker producer. A generic
+`validated` transition is not proof of approval, computation or research success.
+Generic research notes/evidence remain available; internal trusted producers
+retain their existing Store contracts. Historical rows are not rewritten.
+
 Create/transition requests 需要 caller 提供 `idempotency_key`，按 entity 和 owner scoped。相同 key 与相同 canonical request 返回原结果，不创建第二 entity；相同 key 搭配不同 input 返回 conflict。
 
 所有 strings 都有显式 length bounds，JSON payloads 有限且有界；MCP schema boundary 拒绝未知 fields。Backend 返回 domain validation errors，不暴露 SQL、filesystem paths 或 internal exceptions。

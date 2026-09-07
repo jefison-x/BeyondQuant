@@ -112,3 +112,58 @@ def test_research_task_creation_rejects_owner_spoofing(monkeypatch) -> None:
     assert response.status_code == 422
     assert store.list_tasks(owner_principal="product-user")["tasks"] == []
     store.close()
+
+
+@pytest.mark.parametrize("operation", ["task_transition", "experiment_create", "experiment_transition", "artifact_create", "artifact_transition"])
+def test_all_generic_research_writes_require_the_resource_owner(monkeypatch, operation) -> None:
+    from tests.test_research import experiment_payload
+    owner = _owner_headers("product-user")
+    other = _owner_headers("other-user")
+    store = ResearchStore()
+    monkeypatch.setattr(main, "research_store", store)
+    try:
+        task = store.create_task(task_body())
+        experiment = store.create_experiment(experiment_payload(task["task_id"]))
+        artifact_body = {"task_id": task["task_id"], "kind": "evidence", "content": {"synthetic": True},
+                         "lineage": [], "trace_id": "scope-test", "idempotency_key": "scope-artifact"}
+        artifact = store.create_artifact(artifact_body)
+        transition = {"target_status": "running", "idempotency_key": "scope-transition"}
+        paths = {
+            "task_transition": (f"/v1/research/tasks/{task['task_id']}/transitions", transition),
+            "experiment_create": ("/v1/research/experiments", experiment_payload(task["task_id"], idempotency_key="scope-experiment-new")),
+            "experiment_transition": (f"/v1/research/experiments/{experiment['experiment_id']}/transitions", transition),
+            "artifact_create": ("/v1/research/artifacts", {**artifact_body, "idempotency_key": "scope-artifact-new"}),
+            "artifact_transition": (f"/v1/research/artifacts/{artifact['artifact_id']}/transitions", {**transition, "target_status": "validated"}),
+        }
+        path, payload = paths[operation]
+        client = TestClient(main.app)
+        assert client.post(path, headers=other, json=payload).status_code == 404
+        assert client.post(path, json=payload).status_code == 401
+        assert client.post(path, headers=owner, json=payload).status_code in {200, 201}
+    finally:
+        store.close()
+
+
+def test_generic_artifact_api_cannot_forge_domain_producer_results(monkeypatch) -> None:
+    owner = _owner_headers("product-user")
+    store = ResearchStore()
+    monkeypatch.setattr(main, "research_store", store)
+    try:
+        task = store.create_task(task_body())
+        client = TestClient(main.app)
+        for kind in ("strategy_draft", "strategy_version", "strategy_approval", "ml_strategy_version",
+                     "ml_strategy_approval", "ml_model", "ml_model_bundle", "ml_regime_snapshot",
+                     "ml_feature_snapshot", "ml_prediction_snapshot", "signal_snapshot", "backtest_result",
+                     "factor_result", "web_research_evidence", " strategy_approval "):
+            payload = {"task_id": task["task_id"], "kind": kind, "content": {"synthetic": True},
+                       "lineage": [], "trace_id": "producer-test", "idempotency_key": f"producer-{kind.strip()}"}
+            assert client.post("/v1/research/artifacts", headers=owner, json=payload).status_code == 403
+            if kind == "web_research_evidence" or kind != kind.strip():
+                continue
+            # Trusted producer fixture, not a real approval/model/result.
+            artifact = store.create_artifact(payload)
+            assert client.post(f"/v1/research/artifacts/{artifact['artifact_id']}/transitions", headers=owner,
+                               json={"target_status": "validated", "idempotency_key": "generic-validate"}).status_code == 403
+            assert store.get_artifact(artifact["artifact_id"])["status"] == "draft"
+    finally:
+        store.close()

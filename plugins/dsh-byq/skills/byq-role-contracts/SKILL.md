@@ -31,6 +31,12 @@ role must report a denied capability instead of retrying or asking for a wider
 tool scope. Research evidence remains a BYQ Artifact; DSH workflow state and
 raw DSH events are not business evidence.
 
+The generic `byq_artifact_create` and `byq_research_transition` tools cannot
+manufacture or validate typed strategies, approvals, models, features, signals,
+computed results or web evidence. Use the corresponding BYQ domain producer.
+A generic Artifact labelled as validated is never proof of human approval or
+successful computation. Do not try another kind name to bypass a producer denial.
+
 Web search is a Market Research specialization. The coordinator delegates it
 to the market researcher and does not pass web results to Factor, Strategy, or
 Backtest roles as deterministic input. Although the current qualified rc.1 root

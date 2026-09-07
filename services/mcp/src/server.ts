@@ -1396,7 +1396,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_research_transition",
     {
-      description: "Apply one validated, idempotent BYQ research-domain state transition.",
+      description: "Apply one owner-scoped, idempotent generic research-domain transition. Typed strategy, approval, model, signal and result artifacts require their dedicated BYQ producer and cannot be validated here.",
       inputSchema: {
         entity_type: z.enum(["research_task", "experiment", "artifact"]),
         entity_id: z.string(),

@@ -62,6 +62,8 @@ function result(payload: unknown, isError: boolean): ByqResearchResult {
 }
 
 function errorStatus(status: number): string {
+  if (status === 401) return "research_unauthorized";
+  if (status === 403) return "research_forbidden";
   if (status === 404) return "research_not_found";
   if (status === 409) return "research_conflict";
   if (status === 422) return "research_request_invalid";

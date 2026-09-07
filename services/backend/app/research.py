@@ -19,6 +19,13 @@ MAX_JSON_BYTES = 64 * 1024
 MAX_ARTIFACT_JSON_BYTES = 32 * 1024 * 1024
 MAX_SOURCES = 64
 MAX_LINEAGE = 64
+# These kinds carry domain validation/approval/execution authority. Only the
+# typed BYQ producer may create or transition them, never the generic API.
+PRODUCER_OWNED_ARTIFACT_KINDS = frozenset({
+    "strategy_draft", "strategy_version", "strategy_approval", "factor_result", "web_research_evidence",
+    "ml_strategy_version", "ml_strategy_approval", "ml_feature_snapshot", "ml_model", "ml_model_bundle",
+    "ml_regime_snapshot", "ml_prediction_snapshot", "signal_snapshot", "backtest_result",
+})
 _ID_PATTERN = re.compile(r"^(?:task|experiment|artifact)_[0-9a-f]{32}$")
 _TRACE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 

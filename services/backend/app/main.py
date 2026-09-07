@@ -164,6 +164,7 @@ from .user_policy import (
     public_policy,
 )
 from .research import (
+    PRODUCER_OWNED_ARTIFACT_KINDS,
     IdempotencyConflict,
     InvalidTransition,
     ResearchNotFound,
@@ -1797,18 +1798,29 @@ def _transition_args(payload: dict[str, Any]) -> tuple[object, object]:
     return payload["target_status"], payload["idempotency_key"]
 
 
+def _owned_research_entity(entity_type: str, entity_id: object, context: dict[str, str]) -> dict[str, object]:
+    reader = {"research_task": research_store.get_task, "experiment": research_store.get_experiment,
+              "artifact": research_store.get_artifact}[entity_type]
+    entity = reader(entity_id)
+    if (entity.get("owner_principal") != context["owner_principal"]
+            or entity.get("workspace_id") != context["workspace_id"]):
+        raise ResearchNotFound("research entity not found")
+    return entity
+
+
 def _research_transition(
     entity_type: str,
     entity_id: str,
     payload: dict[str, Any],
+    request: Request,
 ) -> dict[str, object]:
-    return _research_call(
-        lambda: research_store.transition(
-            entity_type,
-            entity_id,
-            *_transition_args(payload),
-        )
-    )
+    context = _required_agent_context(request, include_workspace=True)
+    def operation() -> dict[str, object]:
+        entity = _owned_research_entity(entity_type, entity_id, context)
+        if entity_type == "artifact" and entity.get("kind") in PRODUCER_OWNED_ARTIFACT_KINDS:
+            raise HTTPException(status_code=403, detail="artifact lifecycle requires its typed domain producer")
+        return research_store.transition(entity_type, entity_id, *_transition_args(payload))
+    return _research_call(operation)
 
 
 @app.post("/v1/research/tasks", status_code=201)
@@ -1843,13 +1855,17 @@ def list_research_tasks(request: Request) -> dict[str, object]:
 
 
 @app.post("/v1/research/tasks/{task_id}/transitions")
-def transition_research_task(task_id: str, payload: dict[str, Any]) -> dict[str, object]:
-    return _research_transition("research_task", task_id, payload)
+def transition_research_task(task_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    return _research_transition("research_task", task_id, payload, request)
 
 
 @app.post("/v1/research/experiments", status_code=201)
-def create_experiment(payload: dict[str, Any]) -> dict[str, object]:
-    return _research_call(lambda: research_store.create_experiment(payload))
+def create_experiment(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    def operation() -> dict[str, object]:
+        _owned_research_entity("research_task", payload.get("task_id"), context)
+        return research_store.create_experiment(payload)
+    return _research_call(operation)
 
 
 @app.get("/v1/research/experiments/{experiment_id}")
@@ -1872,16 +1888,20 @@ def list_experiments(request: Request) -> dict[str, object]:
 
 
 @app.post("/v1/research/experiments/{experiment_id}/transitions")
-def transition_experiment(experiment_id: str, payload: dict[str, Any]) -> dict[str, object]:
-    return _research_transition("experiment", experiment_id, payload)
+def transition_experiment(experiment_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    return _research_transition("experiment", experiment_id, payload, request)
 
 
 @app.post("/v1/research/artifacts", status_code=201)
-def create_artifact(payload: dict[str, Any]) -> dict[str, object]:
+def create_artifact(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
     def operation() -> dict[str, object]:
+        _owned_research_entity("research_task", payload.get("task_id"), context)
+        if isinstance(payload.get("kind"), str) and payload["kind"].strip() in PRODUCER_OWNED_ARTIFACT_KINDS:
+            raise HTTPException(status_code=403, detail="artifact kind requires its typed domain producer")
         lineage = payload.get("lineage")
         snapshot_id = lineage.get("stock_pool_snapshot_id") if isinstance(lineage, dict) else None
-        owner = payload.get("owner_principal")
+        owner = context["owner_principal"]
         if snapshot_id is not None:
             if not isinstance(owner, str) or not owner:
                 raise ValueError("stock pool lineage requires owner_principal")
@@ -3092,8 +3112,8 @@ def strategy_backtest_count(strategy_id: str, request: Request) -> dict[str, obj
 
 
 @app.post("/v1/research/artifacts/{artifact_id}/transitions")
-def transition_artifact(artifact_id: str, payload: dict[str, Any]) -> dict[str, object]:
-    return _research_transition("artifact", artifact_id, payload)
+def transition_artifact(artifact_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    return _research_transition("artifact", artifact_id, payload, request)
 
 
 def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:

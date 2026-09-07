@@ -11,6 +11,13 @@ BeyondQuant architecture 的内容。
 
 ## Post-U8 R1 historical outcome audit（2026-09-07）
 
+Post-U8 generic research boundary: Community `agent-service/app/research/contracts.py`
+inspected read-only. Owner identity, explicit evidence references and completion
+evidence are `REFERENCE_ONLY` / `PORT_TESTS`; permissive client-supplied state and
+old orchestration are `REPLACE` / `DROP`. BYQ checks trusted owner/workspace and
+reserves authoritative Artifact kinds for existing typed domain producers.
+No Community code, database or runtime is copied or modified.
+
 Post-U8 runtime-context isolation: Community `agent-service/app/harness/roles.py`
 and `workflows/contracts.py` inspected read-only. Role/parent identity and explicit
 terminal status are `REFERENCE_ONLY`; old generic graph topology/executor is
