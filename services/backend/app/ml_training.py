@@ -41,6 +41,8 @@ MODEL_SCHEMA = "ml-model-artifact.v1"
 MAX_INPUT_BYTES = 256 * 1024 * 1024
 MAX_ROWS = 2_000_000
 MAX_ATTEMPTS = 3
+PREPARATION_FENCE = """((preparation_claim IS NULL AND CAST(:claim AS TEXT) IS NULL)
+    OR (preparation_claim=CAST(:claim AS TEXT) AND preparation_lease_expires_at>now()))"""
 RUNTIME_IDENTITY = "lightgbm-4.7.0-python-3.13-linux-cpu-single-thread"
 
 
@@ -546,6 +548,9 @@ class MLTrainingRunStore(PgStoreMixin):
         )
         """,
         """CREATE INDEX IF NOT EXISTS ml_training_runs_queue ON ml_training_runs(status, created_at)""",
+        "ALTER TABLE ml_training_runs ADD COLUMN IF NOT EXISTS preparation_claim TEXT",
+        "ALTER TABLE ml_training_runs ADD COLUMN IF NOT EXISTS preparation_lease_expires_at TIMESTAMPTZ",
+        "ALTER TABLE ml_training_runs ADD COLUMN IF NOT EXISTS preparation_recovery_count INTEGER NOT NULL DEFAULT 0",
         """CREATE INDEX IF NOT EXISTS ml_training_runs_study_catalog
             ON ml_training_runs(workspace_id, owner_principal, ml_strategy_artifact_id, created_at DESC)""",
         """CREATE TABLE IF NOT EXISTS ml_training_submission_keys (
@@ -811,27 +816,58 @@ class MLTrainingRunStore(PgStoreMixin):
 
     def list_waiting(self, limit: int = 20) -> list[dict[str, object]]:
         return self._execute("""SELECT * FROM ml_training_runs WHERE status='waiting_for_data'
+            AND (preparation_claim IS NULL OR preparation_lease_expires_at<=now())
             ORDER BY created_at,training_run_id LIMIT :limit""", {"limit": limit})
 
-    def update_readiness(self, run_id: str, readiness: dict[str, object]) -> None:
-        self._execute("""UPDATE ml_training_runs SET readiness_json=:readiness,updated_at=:now
-            WHERE training_run_id=:id AND status='waiting_for_data'""",
-            {"readiness": readiness, "now": _now(), "id": run_id})
+    def claim_preparation(self, run_id: str) -> str | None:
+        token = uuid.uuid4().hex
+        with self._transaction() as connection:
+            execute(connection, """UPDATE ml_training_runs SET status='failed',
+                error_code='ml_preparation_recovery_exhausted',
+                error_detail='Preparation lease recovery budget exhausted; explicit retry is required.',
+                finished_at=now(),updated_at=now()
+                WHERE training_run_id=:id AND status='waiting_for_data'
+                AND preparation_claim IS NOT NULL AND preparation_lease_expires_at<=now()
+                AND preparation_recovery_count>=2""", {"id": run_id})
+            rows = execute(connection, """UPDATE ml_training_runs SET
+                preparation_recovery_count=preparation_recovery_count+CASE WHEN preparation_claim IS NULL THEN 0 ELSE 1 END,
+                preparation_claim=:claim, preparation_lease_expires_at=now()+interval '10 minutes'
+                WHERE training_run_id=:id AND status='waiting_for_data'
+                AND (preparation_claim IS NULL OR preparation_lease_expires_at<=now()) RETURNING training_run_id""",
+                {"claim": token, "id": run_id})
+        return token if rows else None
 
-    def record_preparation_repairs(self, run_id: str, request_ids: list[str]) -> None:
-        self._execute("""UPDATE ml_training_runs
-            SET preparation_json=jsonb_set(preparation_json,'{repair_request_ids}',:ids), updated_at=:now
-            WHERE training_run_id=:id AND status='waiting_for_data'""",
-            {"ids": request_ids, "now": _now(), "id": run_id})
+    def renew_preparation(self, run_id: str, claim: str) -> bool:
+        return bool(self._execute("""UPDATE ml_training_runs
+            SET preparation_lease_expires_at=now()+interval '10 minutes'
+            WHERE training_run_id=:id AND status='waiting_for_data' AND preparation_claim=:claim
+            AND preparation_lease_expires_at>now() RETURNING training_run_id""", {"id": run_id, "claim": claim}))
 
-    def fail_waiting(self, run_id: str, code: str, detail: str) -> None:
-        self._execute("""UPDATE ml_training_runs SET status='failed',error_code=:code,
+    def release_preparation(self, run_id: str, claim: str) -> None:
+        self._execute("""UPDATE ml_training_runs SET preparation_claim=NULL, preparation_lease_expires_at=NULL
+            WHERE training_run_id=:id AND preparation_claim=:claim
+            AND (preparation_lease_expires_at>now() OR status<>'waiting_for_data')""",
+            {"id": run_id, "claim": claim})
+
+    def update_readiness(self, run_id: str, readiness: dict[str, object], *, claim: str | None = None) -> None:
+        self._execute(f"""UPDATE ml_training_runs SET readiness_json=:readiness,updated_at=:now
+            WHERE training_run_id=:id AND status='waiting_for_data' AND {PREPARATION_FENCE}""",
+            {"readiness": readiness, "now": _now(), "id": run_id, "claim": claim})
+
+    def record_preparation_repairs(self, run_id: str, request_ids: list[str], *, claim: str | None = None) -> None:
+        self._execute(f"""UPDATE ml_training_runs
+            SET preparation_json=jsonb_set(preparation_json,'{{repair_request_ids}}',:ids), updated_at=:now
+            WHERE training_run_id=:id AND status='waiting_for_data' AND {PREPARATION_FENCE}""",
+            {"ids": request_ids, "now": _now(), "id": run_id, "claim": claim})
+
+    def fail_waiting(self, run_id: str, code: str, detail: str, *, claim: str | None = None) -> None:
+        self._execute(f"""UPDATE ml_training_runs SET status='failed',error_code=:code,
             error_detail=:detail,finished_at=now(),updated_at=now()
-            WHERE training_run_id=:id AND status='waiting_for_data'""",
+            WHERE training_run_id=:id AND status='waiting_for_data' AND {PREPARATION_FENCE}""",
             {"code": _text(code, "error_code", 64),
-             "detail": _text(detail, "error_detail", 500), "id": run_id})
+             "detail": _text(detail, "error_detail", 500), "id": run_id, "claim": claim})
 
-    def promote_ready(self, run_id: str, feature_snapshot: dict[str, object]) -> dict[str, object]:
+    def promote_ready(self, run_id: str, feature_snapshot: dict[str, object], *, claim: str | None = None) -> dict[str, object]:
         expected = feature_snapshot.get("content_sha256")
         body = dict(feature_snapshot)
         body.pop("content_sha256", None)
@@ -842,9 +878,12 @@ class MLTrainingRunStore(PgStoreMixin):
         input_sha256 = feature_snapshot.get("snapshot_sha256", expected)
         if not isinstance(input_sha256, str):
             raise ValueError("ML training input identity is unavailable")
-        self._execute("""UPDATE ml_training_runs SET status='queued',input_json=:input,
-            input_sha256=:sha,updated_at=:now WHERE training_run_id=:id AND status='waiting_for_data'""",
-            {"input": feature_snapshot, "sha": input_sha256, "now": _now(), "id": run_id})
+        changed = self._execute(f"""UPDATE ml_training_runs SET status='queued',input_json=:input,
+            input_sha256=:sha,updated_at=:now WHERE training_run_id=:id AND status='waiting_for_data'
+            AND {PREPARATION_FENCE} RETURNING training_run_id""",
+            {"input": feature_snapshot, "sha": input_sha256, "now": _now(), "id": run_id, "claim": claim})
+        if claim is not None and not changed:
+            raise MLTrainingConflict("ML preparation claim is no longer active")
         return self.get(run_id)
 
     def claim_next(self, worker_id: str) -> dict[str, object] | None:
@@ -920,7 +959,8 @@ class MLTrainingRunStore(PgStoreMixin):
     @staticmethod
     def _public(row: dict[str, Any]) -> dict[str, object]:
         value = dict(row)
-        for field in ("preparation_json", "requirement_json", "input_json", "request_hash"):
+        for field in ("preparation_json", "requirement_json", "input_json", "request_hash",
+                      "preparation_claim", "preparation_lease_expires_at", "preparation_recovery_count"):
             value.pop(field, None)
         value["readiness"] = value.pop("readiness_json", {})
         return value
@@ -952,31 +992,45 @@ def promote_waiting_training_runs(
     promoted = 0
     for row in store.list_waiting():
         requirement, preparation = row.get("requirement_json"), row.get("preparation_json")
-        if not isinstance(requirement, dict) or not isinstance(preparation, dict):
-            continue
         run_id = str(row["training_run_id"])
+        claim = store.claim_preparation(run_id)
+        if claim is None:
+            continue
         try:
+            if not isinstance(requirement, dict) or not isinstance(preparation, dict):
+                raise ValueError("ML preparation snapshot is invalid")
             raw_requirements = preparation.get("requirements", [requirement])
             if not isinstance(raw_requirements, list) or not raw_requirements or any(
                 not isinstance(item, dict) for item in raw_requirements
             ):
                 raise ValueError("ML data preparation partition plan is invalid")
             requirements = [dict(item) for item in raw_requirements]
-            assessments = [readiness_store.assess(item) for item in requirements]
+            assessments = []
+            for item in requirements:
+                if not store.renew_preparation(run_id, claim):
+                    raise MLTrainingConflict("ML preparation claim is no longer active")
+                assessments.append(readiness_store.assess(item))
             readiness = aggregate_ml_readiness(assessments)
-            store.update_readiness(run_id, readiness)
+            store.update_readiness(run_id, readiness, claim=claim)
             if readiness["state"] != "ready":
                 if preparation.get("receipt_version") == "ml-training-submit.v2":
                     if repair_store is None:
                         raise ValueError("ML data preparation repair service is unavailable")
-                    repairs = [repair_store.request_data_repair(
-                        requirement=item, requested_by=f"ml:{row['owner_principal']}", retry_terminal=False,
-                    ) for item, assessment in zip(requirements, assessments, strict=True)
-                        if assessment.get("state") != "ready"]
-                    store.record_preparation_repairs(run_id, [str(item["request_id"]) for item in repairs])
+                    repairs = []
+                    for item, assessment in zip(requirements, assessments, strict=True):
+                        if assessment.get("state") == "ready":
+                            continue
+                        if not store.renew_preparation(run_id, claim):
+                            raise MLTrainingConflict("ML preparation claim is no longer active")
+                        repairs.append(repair_store.request_data_repair(
+                            requirement=item, requested_by=f"ml:{row['owner_principal']}", retry_terminal=False,
+                        ))
+                    store.record_preparation_repairs(run_id, [str(item["request_id"]) for item in repairs], claim=claim)
                     if any(item.get("status") in {"failed", "completed"} for item in repairs):
                         store.fail_waiting(run_id, "ml_data_repair_not_ready",
-                                           "Data repair ended without satisfying current readiness; explicit retry is required.")
+                                           "Data repair ended without satisfying current readiness; explicit retry is required.", claim=claim)
+                continue
+            if not store.renew_preparation(run_id, claim):
                 continue
             ready_input = (
                 readiness_store.build_partitioned_ready_input(requirements)
@@ -985,15 +1039,19 @@ def promote_waiting_training_runs(
             strategy, universe = preparation.get("strategy"), preparation.get("universe")
             if not isinstance(strategy, dict) or not isinstance(universe, dict):
                 raise ValueError("ML preparation snapshot is invalid")
+            if not store.renew_preparation(run_id, claim):
+                continue
             feature_snapshot = build_feature_snapshot(
                 strategy=strategy, universe=universe, ready_input=ready_input, readiness=readiness
             )
             del ready_input
+            if not store.renew_preparation(run_id, claim):
+                continue
             persisted_input = (
                 store_feature_snapshot(feature_snapshot, objects)
                 if objects is not None else feature_snapshot
             )
-            store.promote_ready(run_id, persisted_input)
+            store.promote_ready(run_id, persisted_input, claim=claim)
             promoted += 1
             if promoted >= max_promotions:
                 break
@@ -1001,7 +1059,10 @@ def promote_waiting_training_runs(
             store.fail_waiting(
                 run_id, "ml_data_preparation_failed",
                 str(error)[:500] or "ML data preparation failed",
+                claim=claim,
             )
+        finally:
+            store.release_preparation(run_id, claim)
     return promoted
 
 

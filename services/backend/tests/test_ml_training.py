@@ -154,8 +154,19 @@ def test_walk_forward_rejects_insufficient_sessions() -> None:
         )
 
 
+class PreparationClaimsFake:
+    def claim_preparation(self, run_id):
+        return "synthetic-claim"
+
+    def renew_preparation(self, run_id, claim):
+        return True
+
+    def release_preparation(self, run_id, claim):
+        pass
+
+
 def test_bad_waiting_run_is_isolated_from_following_preparation() -> None:
-    class Runs:
+    class Runs(PreparationClaimsFake):
         def __init__(self) -> None:
             self.failed: list[str] = []
             self.updated: list[str] = []
@@ -168,10 +179,10 @@ def test_bad_waiting_run_is_isolated_from_following_preparation() -> None:
                  "preparation_json": {"requirements": [{"bad": False}]}},
             ]
 
-        def fail_waiting(self, run_id, code, detail):
+        def fail_waiting(self, run_id, code, detail, **kwargs):
             self.failed.append(run_id)
 
-        def update_readiness(self, run_id, readiness):
+        def update_readiness(self, run_id, readiness, **kwargs):
             self.updated.append(run_id)
 
     class Readiness:
@@ -188,16 +199,16 @@ def test_bad_waiting_run_is_isolated_from_following_preparation() -> None:
 
 def test_accepted_receipt_schedules_repairs_in_worker_without_retrying_terminal_repairs():
     calls = []
-    class Runs:
+    class Runs(PreparationClaimsFake):
         def list_waiting(self):
             return [{"training_run_id": "accepted", "owner_principal": "owner",
                      "requirement_json": {"requirement_sha256": "a" * 64},
                      "preparation_json": {"receipt_version": "ml-training-submit.v2"}}]
-        def update_readiness(self, run_id, readiness):
+        def update_readiness(self, run_id, readiness, **kwargs):
             calls.append(("assessed", run_id))
-        def record_preparation_repairs(self, run_id, identities):
+        def record_preparation_repairs(self, run_id, identities, **kwargs):
             calls.append(("linked", identities))
-        def fail_waiting(self, run_id, code, detail):
+        def fail_waiting(self, run_id, code, detail, **kwargs):
             calls.append(("failed", code))
     class Readiness:
         def assess(self, requirement):
@@ -219,7 +230,7 @@ def test_accepted_receipt_schedules_repairs_in_worker_without_retrying_terminal_
 def test_waiting_promotion_persists_only_one_bounded_object_descriptor(tmp_path) -> None:
     strategy, universe, ready_input = feature_input()
 
-    class Runs:
+    class Runs(PreparationClaimsFake):
         promoted: list[tuple[str, dict[str, object]]] = []
 
         def list_waiting(self):
@@ -233,13 +244,13 @@ def test_waiting_promotion_persists_only_one_bounded_object_descriptor(tmp_path)
                 },
             } for index in range(2)]
 
-        def update_readiness(self, _run_id, _readiness):
+        def update_readiness(self, _run_id, _readiness, **kwargs):
             return None
 
-        def promote_ready(self, run_id, feature):
+        def promote_ready(self, run_id, feature, **kwargs):
             self.promoted.append((run_id, feature))
 
-        def fail_waiting(self, *_args):
+        def fail_waiting(self, *_args, **kwargs):
             pytest.fail("ready preparation must not fail")
 
     class Readiness:
@@ -587,11 +598,18 @@ def test_training_run_creates_immutable_feature_and_model_artifacts(tmp_path) ->
             requirement={"requirement_sha256": "c" * 64}, readiness={"state": "waiting_for_data"},
             trace_id="trace-ml", idempotency_key="train-cancel",
         )
+        cancelled_claim = runs.claim_preparation(cancellable["training_run_id"])
+        assert cancelled_claim is not None
         cancelled = runs.cancel(
             cancellable["training_run_id"], trusted_workspace=context["x-byq-workspace-id"],
             trusted_owner="ml-owner",
         )
         assert cancelled["status"] == "cancelled"
+        assert not runs.renew_preparation(cancellable["training_run_id"], cancelled_claim)
+        with pytest.raises(MLTrainingConflict):
+            runs.promote_ready(cancellable["training_run_id"], feature, claim=cancelled_claim)
+        runs.fail_waiting(cancellable["training_run_id"], "late", "late failure", claim=cancelled_claim)
+        assert runs.get(cancellable["training_run_id"])["status"] == "cancelled"
         with pytest.raises(MLTrainingConflict):
             runs.cancel(
                 cancelled["training_run_id"], trusted_workspace=context["x-byq-workspace-id"],
@@ -605,7 +623,30 @@ def test_training_run_creates_immutable_feature_and_model_artifacts(tmp_path) ->
             requirement={"requirement_sha256": "c" * 64}, readiness={"state": "ready"},
             trace_id="trace-ml", idempotency_key="train-fence",
         )
-        runs.promote_ready(str(fenced["training_run_id"]), feature)
+        preparation_id = str(fenced["training_run_id"])
+        old_preparation = runs.claim_preparation(preparation_id)
+        assert old_preparation is not None
+        assert not any(key.startswith("preparation_") for key in runs.get(preparation_id))
+        assert runs.claim_preparation(preparation_id) is None
+        assert all(item["training_run_id"] != preparation_id for item in runs.list_waiting())
+        runs._execute("UPDATE ml_training_runs SET preparation_lease_expires_at=now()-interval '1 second' WHERE training_run_id=:id",
+                      {"id": preparation_id})
+        runs.close()
+        runs = MLTrainingRunStore()
+        new_preparation = runs.claim_preparation(preparation_id)
+        assert new_preparation is not None and new_preparation != old_preparation
+        assert not runs.renew_preparation(preparation_id, old_preparation)
+        runs.update_readiness(preparation_id, {"state": "stale-writer"}, claim=old_preparation)
+        runs.record_preparation_repairs(preparation_id, ["stale-repair"], claim=old_preparation)
+        runs.fail_waiting(preparation_id, "stale", "late failure", claim=old_preparation)
+        runs.release_preparation(preparation_id, old_preparation)
+        assert runs.get(preparation_id)["status"] == "waiting_for_data"
+        assert runs.get(preparation_id)["readiness"]["state"] == "ready"
+        assert runs.renew_preparation(preparation_id, new_preparation)
+        with pytest.raises(MLTrainingConflict):
+            runs.promote_ready(preparation_id, feature, claim=old_preparation)
+        runs.promote_ready(preparation_id, feature, claim=new_preparation)
+        runs.release_preparation(preparation_id, new_preparation)
         first_claim = runs.claim_next("worker-old")
         assert first_claim is not None
         runs._execute(
@@ -625,6 +666,25 @@ def test_training_run_creates_immutable_feature_and_model_artifacts(tmp_path) ->
             worker_id="worker-new", attempt_count=2,
         )
         assert current_result["status"] == "failed" and current_result["error_code"] == "expected"
+        exhausted = runs.create_waiting(
+            workspace_id=context["x-byq-workspace-id"], owner_principal="ml-owner",
+            task_id=task["task_id"], experiment_id=None,
+            ml_strategy_artifact_id=strategy_artifact["artifact_id"],
+            stock_pool_snapshot_id="snapshot_test", preparation={"strategy": strategy_value, "universe": universe},
+            requirement={"requirement_sha256": "c" * 64}, readiness={"state": "ready"},
+            trace_id="trace-ml", idempotency_key="preparation-budget",
+        )
+        for _ in range(3):
+            expired_claim = runs.claim_preparation(exhausted["training_run_id"])
+            assert expired_claim is not None
+            runs._execute("UPDATE ml_training_runs SET preparation_lease_expires_at=now()-interval '1 second' WHERE training_run_id=:id",
+                          {"id": exhausted["training_run_id"]})
+            runs.release_preparation(exhausted["training_run_id"], expired_claim)
+            runs.close()
+            runs = MLTrainingRunStore()
+        assert runs.claim_preparation(exhausted["training_run_id"]) is None
+        assert runs.get(exhausted["training_run_id"])["status"] == "failed"
+        assert runs.get(exhausted["training_run_id"])["error_code"] == "ml_preparation_recovery_exhausted"
     finally:
         runs.close()
         research.close()
