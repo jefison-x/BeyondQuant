@@ -6,6 +6,13 @@ from typing import Any, Callable, Protocol
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeToolResult:
+    call_id: str
+    failed: bool
+    result: dict[str, Any] | None
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeObservation:
     """Bounded Adapter-internal view of one release-specific notification."""
 
@@ -22,6 +29,7 @@ class RuntimeObservation:
     tool_name: str | None = None
     tool_failed: bool = False
     tool_result: dict[str, Any] | None = None
+    tool_results: tuple[RuntimeToolResult, ...] = ()
     completed_call_ids: tuple[str, ...] = ()
     parent_session_id: str | None = None
     child_session_id: str | None = None

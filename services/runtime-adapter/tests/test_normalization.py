@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from deepseek_harness import Notification
 
 from app.compat import Dsh011Compatibility
@@ -7,6 +9,46 @@ from app.normalization import NormalizationState, normalize_runtime_observation
 
 
 compatibility = Dsh011Compatibility()
+
+
+@pytest.mark.parametrize("family", ["dsh-0.1.1", "dsh-0.1.2"])
+def test_batched_tool_results_close_each_exact_activity(family: str) -> None:
+    adapter = (pytest.importorskip("app.compat.dsh_012").Dsh012Compatibility()
+               if family == "dsh-0.1.2" else Dsh011Compatibility())
+    state = NormalizationState()
+
+    def project(kind: str, data: dict, sequence: int):
+        return normalize_runtime_observation(
+            adapter.observe(notify(kind, data), root_session_id="s-1"),
+            trace_id="t-1", session_id="s-1", sequence=sequence, state=state,
+        )
+
+    started = []
+    for index, call_id in enumerate(("first", "second", "third"), 1):
+        started.extend(project("tool/call", {"callId": call_id, "name": "byq_market_daily"}, index))
+    results = [
+        {"type": "tool-result", "toolCallId": call_id, "isError": failed,
+         "content": [{"type": "text", "text": json.dumps({"status": status, "private": "not-public"})}]}
+        for call_id, failed, status in [
+            ("first", False, "ok"), ("second", True, "error"), ("third", False, "outcome_unknown"),
+        ]
+    ]
+    # A hidden control result and malformed/duplicate blocks must not hide
+    # later public results or allocate duplicate terminal events.
+    project("tool/call", {"callId": "control", "name": "byq_agent_authorize"}, 4)
+    results = [
+        {"type": "text", "text": "private-not-a-result"},
+        {"type": "tool-result", "toolCallId": "", "content": []},
+        {"type": "tool-result", "toolCallId": "control", "content": []},
+        results[0], results[0], *results[1:],
+    ]
+    events = project("tool/result", {"message": {"content": results}}, 4)
+    assert [item["payload"]["state"] for item in events] == ["completed", "failed", "unknown"]
+    assert [item["payload"]["activity_id"] for item in events] == [item["payload"]["activity_id"] for item in started]
+    assert [item["sequence"] for item in events] == [4, 5, 6]
+    assert state.tool_names == {}
+    assert "not-public" not in json.dumps(events)
+    assert project("tool/result", {"message": {"content": results}}, 7) == []
 
 
 def notify(event_type: str, data: dict | None = None) -> Notification:

@@ -10,7 +10,7 @@ from typing import Any, Callable
 from deepseek_harness import DeepSeekHarness, DeepSeekHarnessConfig, Notification
 from deepseek_harness_runtime import bundled_runtime_path
 
-from .types import RuntimeObservation
+from .types import RuntimeObservation, RuntimeToolResult
 
 
 _SESSION_STATUSES = frozenset({
@@ -207,6 +207,7 @@ def _tool_result_observation(data: dict[str, Any], *, session_id: str, is_root: 
     if not isinstance(content, list):
         return RuntimeObservation(kind="ignored", session_id=session_id, root_session=is_root)
     completed: list[str] = []
+    results: list[RuntimeToolResult] = []
     selected: dict[str, Any] | None = None
     for block in content:
         if not isinstance(block, dict) or block.get("type") != "tool-result":
@@ -214,6 +215,7 @@ def _tool_result_observation(data: dict[str, Any], *, session_id: str, is_root: 
         call_id = block.get("toolCallId")
         if isinstance(call_id, str) and call_id:
             completed.append(call_id)
+            results.append(RuntimeToolResult(call_id, block.get("isError") is True, _parse_tool_result(block)))
             if selected is None:
                 selected = block
     if selected is None:
@@ -224,6 +226,7 @@ def _tool_result_observation(data: dict[str, Any], *, session_id: str, is_root: 
         call_id=call_id if isinstance(call_id, str) else None,
         tool_failed=selected.get("isError") is True, tool_result=_parse_tool_result(selected),
         completed_call_ids=tuple(completed),
+        tool_results=tuple(results),
     )
 
 

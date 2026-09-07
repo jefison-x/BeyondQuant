@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from .compat.types import RuntimeObservation
@@ -197,6 +197,16 @@ def normalize_runtime_observation(
     if observation.kind == "tool.call":
         return _tool_call_events(current, observation, trace_id, session_id, sequence)
     if observation.kind == "tool.result":
+        if observation.tool_results:
+            events = []
+            for result in observation.tool_results:
+                events.extend(_tool_result_events(
+                    current,
+                    replace(observation, call_id=result.call_id, tool_failed=result.failed,
+                            tool_result=result.result, tool_results=()),
+                    trace_id, session_id, sequence + len(events),
+                ))
+            return events
         return _tool_result_events(current, observation, trace_id, session_id, sequence)
     return []
 
