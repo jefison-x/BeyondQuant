@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { ElMessage } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 import { Bell, CaretBottom, ChatDotRound, FolderOpened, SetUp, SwitchButton, Tools, User } from "@element-plus/icons-vue";
 import { useAuthStore } from "@/stores/auth";
@@ -28,8 +29,12 @@ const avatarText = computed(() => displayName.value.slice(0, 1).toUpperCase() ||
 
 async function handleCommand(command: string) {
   if (command === "logout") {
-    await auth.logout();
-    await router.push({ name: "login" });
+    try {
+      await auth.logout();
+      await router.push({ name: "login" });
+    } catch {
+      ElMessage.error("注销结果尚未确认，请重试退出登录。");
+    }
     return;
   }
   if (command === "system-settings") {

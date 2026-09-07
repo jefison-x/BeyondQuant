@@ -511,8 +511,9 @@ def product_logout(request: Request) -> dict[str, object]:
     if session_id:
         try:
             logout_user(session_id)
-        except ProductAuthError:
-            pass
+        except ProductAuthError as exc:
+            return JSONResponse(status_code=exc.status_code,
+                content={"error": {"code": exc.code, "message": exc.message}})
     response = JSONResponse(content={"status": "ok"})
     response.delete_cookie(SESSION_COOKIE, path="/")
     return response
@@ -591,6 +592,40 @@ def product_artifacts(request: Request) -> dict[str, object]:
 def product_research_tasks(request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request("GET", "/v1/research/tasks", headers=_trusted_agent_headers(request))
+
+
+def _continuation_permission_headers(request: Request) -> dict[str, str]:
+    # A deployment token or model-provided owner is never human consent.
+    if SESSION_COOKIE not in request.cookies:
+        raise ProductError(401, "product_authentication_required", "请先登录个人账号。")
+    if request.method != "GET" and request.headers.get("x-byq-continuation-confirmation") != "v1":
+        raise ProductError(403, "product_confirmation_required", "请明确确认任务续接许可操作。")
+    if request.headers.get("sec-fetch-site") == "cross-site":
+        raise ProductError(403, "product_forbidden", "不允许跨站许可操作。")
+    return _trusted_agent_headers(request)
+
+
+@router.get("/research/tasks/{task_id}/continuation-permission")
+def product_get_continuation_permission(task_id: str, request: Request) -> dict[str, object]:
+    return _backend_request("GET", f"/v1/research/tasks/{quote(task_id, safe='')}/continuation-permission",
+                            headers=_continuation_permission_headers(request))
+
+
+@router.post("/research/tasks/{task_id}/continuation-permission", status_code=201)
+def product_create_continuation_permission(task_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    headers = _continuation_permission_headers(request)
+    allowed = {"idempotency_key", "token_limit", "confirmed_artifact_ids", "max_turns", "valid_seconds", "turn_timeout_seconds"}
+    if set(payload) - allowed:
+        raise ProductError(422, "product_request_invalid", "续接许可包含不支持的字段。")
+    return _backend_request("POST", f"/v1/research/tasks/{quote(task_id, safe='')}/continuation-permission", payload, headers=headers)
+
+
+@router.post("/research/tasks/{task_id}/continuation-permission/revoke")
+def product_revoke_continuation_permission(task_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    headers = _continuation_permission_headers(request)
+    if set(payload) != {"grant_version"}:
+        raise ProductError(422, "product_request_invalid", "撤销需要原许可版本。")
+    return _backend_request("POST", f"/v1/research/tasks/{quote(task_id, safe='')}/continuation-permission/revoke", payload, headers=headers)
 
 
 @router.post("/research/tasks", status_code=201)

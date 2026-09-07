@@ -42,10 +42,12 @@ VERSION = "0.1.0"
 @asynccontextmanager
 async def lifespan(app):
     lifecycle_delivery.start()
+    answer_delivery.start()
     try:
         yield
     finally:
         lifecycle_delivery.close()
+        answer_delivery.close()
 
 
 app = FastAPI(title="BeyondQuant Gateway", version=VERSION, lifespan=lifespan)
@@ -113,6 +115,19 @@ def _recover_agent_lifecycle(context):
 lifecycle_delivery = LifecycleDelivery(
     os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), trace_store, _send_agent_lifecycle,
     recover=_recover_agent_lifecycle)
+
+
+def _send_owned_answer(context, event):
+    session = ProductSession(conversation_id=context["conversation_id"], session_id=context["session_id"],
+        trace_id=context["trace_id"], principal=Principal(subject=context["owner"]), workspace_id=context["workspace_id"])
+    if not _persist_projected_answer(session, {"kind": "agent.output.delta", "sequence": event["sequence"],
+                                              "payload": {"delta": event["content"]}}):
+        raise ValueError("public answer persistence remains unconfirmed")
+    return {"receipt": answer_delivery.receipt(event)}
+
+
+answer_delivery = LifecycleDelivery(
+    os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), trace_store, _send_owned_answer, answers=True)
 
 
 def require_chat_admission():
@@ -467,6 +482,7 @@ def _adapter_prompt_receipt(session_id: str, key: str, content: str) -> dict[str
 
 def _start_trace_collector(session: ProductSession) -> None:
     lifecycle_delivery.register(session)
+    _register_answer_delivery(session)
     thread = threading.Thread(
         target=_collect_trace,
         args=(session,),
@@ -484,11 +500,7 @@ def _collect_trace(session: ProductSession) -> None:
     # Delivery to the conversation catalog is independent of SSE ingestion.
     # Retry the durable BYQ projection even if the adapter has lost this session
     # or no longer replays its old events. Backend deduplicates workflow_sequence.
-    for event in persisted:
-        if (event.get("session_id") == session.session_id
-                and event.get("trace_id") == session.trace_id):
-            if not _persist_projected_answer(session, event):
-                break
+    _register_answer_delivery(session)
     try:
         with httpx.stream(
             "GET",
@@ -523,7 +535,6 @@ def _collect_trace(session: ProductSession) -> None:
                     )
                     trace_store.append(projected)
                     cursor = sequence
-                    _persist_projected_answer(session, projected)
                 except (ValueError, TypeError, json.JSONDecodeError):
                     # The adapter is the only producer. Invalid data is not
                     # persisted or reflected to the product client.
@@ -533,6 +544,15 @@ def _collect_trace(session: ProductSession) -> None:
     finally:
         if session.released:
             trace_store.close(session.session_id)
+
+
+def _register_answer_delivery(session: ProductSession) -> None:
+    try:
+        answer_delivery.register(session)
+    except (OSError, ValueError, KeyError, TypeError):
+        # Keep collecting durable projections. Never reset a damaged ledger or
+        # turn storage failure into an uncharged direct catalog retry.
+        pass
 
 
 def _persist_projected_answer(session: ProductSession, event: dict[str, object]) -> bool:
@@ -545,7 +565,7 @@ def _persist_projected_answer(session: ProductSession, event: dict[str, object])
     if isinstance(sequence, bool) or not isinstance(sequence, int):
         return True
     try:
-        _catalog_request(
+        reply = _catalog_request(
             "POST",
             f"/v1/product/conversations/{session.conversation_id}/messages",
             session.principal,
@@ -556,6 +576,15 @@ def _persist_projected_answer(session: ProductSession, event: dict[str, object])
                 "workflow_sequence": sequence,
             },
         )
+        message = reply.get("message")
+        if (not isinstance(message, dict)
+                or type(message.get("workflow_sequence")) is not int
+                or message["workflow_sequence"] != sequence
+                or message.get("role") != "assistant"
+                or message.get("content") != payload["delta"].strip()
+                or not isinstance(message.get("message_id"), str) or not message["message_id"].strip()
+                or type(message.get("sequence")) is not int or message["sequence"] < 1):
+            raise ValueError("projected answer receipt does not match")
     except (HTTPException, ValueError):
         # WorkflowTrace remains the replay source when the durable catalog is
         # temporarily unavailable, including a malformed/lost catalog response.
@@ -904,6 +933,17 @@ def get_agent_lifecycle_delivery(session_id: str, request: Request) -> dict:
     if not isinstance(conversation, dict):
         raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
     return lifecycle_delivery.status({"conversation_id": session_id, "session_id": conversation["runtime_session_id"],
+        "trace_id": conversation["trace_id"], "workspace_id": workspace_id, "owner": principal.subject})
+
+
+@app.get("/v1/agent/sessions/{session_id}/answer-delivery")
+def get_answer_delivery(session_id: str, request: Request) -> dict:
+    principal, workspace_id = _trusted_request_identity(request)
+    body = _catalog_request("GET", f"/v1/product/conversations/{session_id}", principal, workspace_id)
+    conversation = body.get("conversation")
+    if not isinstance(conversation, dict):
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    return answer_delivery.status({"conversation_id": session_id, "session_id": conversation["runtime_session_id"],
         "trace_id": conversation["trace_id"], "workspace_id": workspace_id, "owner": principal.subject})
 
 

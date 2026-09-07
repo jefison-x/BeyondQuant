@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import tempfile
@@ -18,12 +19,37 @@ BACKOFF_SECONDS = (2, 5, 15, 60, 300, 900, 3600, 3600)
 
 
 class LifecycleDelivery:
-    def __init__(self, root, traces, send, *, clock=time.time, recover=None):
+    def __init__(self, root, traces, send, *, clock=time.time, recover=None, answers=False):
         self.root = Path(root)
         self.traces, self.send, self.clock = traces, send, clock
         self.stop = threading.Event()
         self.thread = None
         self.recover = recover
+        self.answers = answers
+        self.suffix = "answers" if answers else "lifecycle"
+
+    def _project(self, source, context):
+        if not self.answers:
+            return project_lifecycle_event(source, context["session_id"], context["trace_id"])
+        if (source.get("session_id"), source.get("trace_id"), source.get("kind"), source.get("source")) != (
+                context["session_id"], context["trace_id"], "agent.output.delta", "runtime-adapter"):
+            return None
+        payload = source.get("payload", {})
+        if (payload.get("schema_version") != "workflow-answer.v1" or payload.get("channel") != "answer"
+                or not isinstance(payload.get("delta"), str) or not payload["delta"].strip()):
+            raise ValueError("invalid public answer projection")
+        return {"schema_version": "public-answer-delivery.v1", "sequence": source["sequence"],
+                "content": payload["delta"].strip()}
+
+    def receipt(self, event):
+        if not self.answers:
+            return lifecycle_receipt(event)
+        return {"schema_version": "public-answer-receipt.v1", "workflow_sequence": event["sequence"],
+                "content_sha256": hashlib.sha256(event["content"].encode()).hexdigest()}
+
+    def deliver_session(self, session):
+        self.register(session)
+        self.drain(self.root / f"{session.session_id}.{self.suffix}.json")
 
     def register(self, session):
         # Reuse the trace filename validator; no paths come from event payloads.
@@ -32,7 +58,7 @@ class LifecycleDelivery:
                    "conversation_id": session.conversation_id, "workspace_id": session.workspace_id,
                    "owner": session.principal.subject}
         self.root.mkdir(parents=True, exist_ok=True)
-        path = self.root / f"{session.session_id}.lifecycle.json"
+        path = self.root / f"{session.session_id}.{self.suffix}.json"
         with path.with_suffix(".lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             if path.exists():
@@ -103,12 +129,12 @@ class LifecycleDelivery:
                        if modified != state.get("trace_mtime_ns") else [])
             for source in sources[:256]:
                 try:
-                    event = project_lifecycle_event(source, ctx["session_id"], ctx["trace_id"])
+                    event = self._project(source, ctx)
                 except ValueError:
                     # Preserve a visible local rejection, not a fabricated ack.
                     state["pending"][str(source["sequence"])] = {"status": "invalid_event"}
                     event = None
-                if event and event["outcome"] != "active":
+                if event and not self.answers and event["outcome"] != "active":
                     terminals = state.setdefault("terminal_events", {})
                     if event["root_run_id"] in terminals:
                         # Soft cancellation can later emit a discarded-result
@@ -125,17 +151,23 @@ class LifecycleDelivery:
                 state["trace_mtime_ns"] = modified if len(sources) <= 256 else None
                 self._save(path, state)
             budget = 16
-            for key, item in list(state["pending"].items()):
+            for key, item in sorted(state["pending"].items(), key=lambda pair: int(pair[0])):
                 if self.stop.is_set() or budget == 0:
                     break
                 if item["status"] != "pending":
+                    if self.answers:
+                        break  # Never overtake a rejected/exhausted earlier answer.
                     continue
                 now = self.clock()
                 if item["attempts"] >= MAX_ATTEMPTS or now >= item["created_at"] + DEADLINE_SECONDS:
                     item["status"] = "exhausted"
                     self._save(path, state)
+                    if self.answers:
+                        break
                     continue
                 if now < item["next_at"]:
+                    if self.answers:
+                        break
                     continue
                 budget -= 1
                 item["attempts"] += 1
@@ -143,18 +175,20 @@ class LifecycleDelivery:
                 self._save(path, state)
                 try:
                     reply = self.send(ctx, item["event"])
-                    if reply != {"receipt": lifecycle_receipt(item["event"])}:
+                    if reply != {"receipt": self.receipt(item["event"])}:
                         raise ValueError("lifecycle receipt mismatch")
                 except Exception:
                     # All failures consume the same durable, finite budget.
                     # No raw error/credential is persisted; never dispatch DSH.
+                    if self.answers:
+                        break
                     continue
                 state["last_receipt"] = reply["receipt"]
                 del state["pending"][key]
                 self._save(path, state)
 
     def run_once(self):
-        for path in sorted(self.root.glob("*.lifecycle.json")):
+        for path in sorted(self.root.glob(f"*.{self.suffix}.json")):
             if self.stop.is_set():
                 break
             try:
@@ -165,8 +199,8 @@ class LifecycleDelivery:
 
     def status(self, context):
         self.traces._path(context["session_id"])
-        path = self.root / f"{context['session_id']}.lifecycle.json"
-        result = {"schema_version": "agent-run-delivery-status.v1", "state": "not_registered",
+        path = self.root / f"{context['session_id']}.{self.suffix}.json"
+        result = {"schema_version": "public-answer-delivery-status.v1" if self.answers else "agent-run-delivery-status.v1", "state": "not_registered",
                   "pending_events": 0, "exhausted_events": 0, "rejected_events": 0,
                   "max_attempts": MAX_ATTEMPTS, "deadline_seconds": DEADLINE_SECONDS}
         if not path.exists():
@@ -194,7 +228,7 @@ class LifecycleDelivery:
             while not self.stop.is_set():
                 self.run_once()
                 self.stop.wait(1.0)
-        self.thread = threading.Thread(target=work, name="byq-agent-lifecycle-delivery", daemon=True)
+        self.thread = threading.Thread(target=work, name=f"byq-{self.suffix}-delivery", daemon=True)
         self.thread.start()
 
     def close(self):

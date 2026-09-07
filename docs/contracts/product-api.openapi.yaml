@@ -133,6 +133,53 @@ paths:
       - $ref: "#/components/parameters/EntityType"
       - $ref: "#/components/parameters/EntityId"
     get: {summary: 获取 one owner-scoped research entity., responses: *okResponses}
+  /api/product/research/tasks/{task_id}/continuation-permission:
+    parameters:
+      - {name: task_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: 个人登录查询原任务的续接许可；当前执行资格未通过，can_start 始终为 false。
+      security: [{sessionCookie: []}]
+      responses: *okResponses
+    post:
+      summary: 明确确认 token 额度与原任务制品；持久幂等，不授予模型执行或金额保证。
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: x-byq-continuation-confirmation, in: header, required: true, schema: {type: string, enum: [v1]}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [idempotency_key, token_limit, confirmed_artifact_ids]
+              properties:
+                idempotency_key: {type: string, minLength: 1, maxLength: 128}
+                token_limit: {type: integer, minimum: 1, maximum: 9007199254740991}
+                confirmed_artifact_ids: {type: array, minItems: 1, maxItems: 16, uniqueItems: true, items: {type: string, maxLength: 64}}
+                max_turns: {type: integer, minimum: 1, maximum: 8, default: 8}
+                valid_seconds: {type: integer, minimum: 1, maximum: 86400, default: 86400}
+                turn_timeout_seconds: {type: integer, minimum: 1, maximum: 900, default: 900}
+      responses: *createdResponses
+  /api/product/research/tasks/{task_id}/continuation-permission/revoke:
+    parameters:
+      - {name: task_id, in: path, required: true, schema: {type: string}}
+    post:
+      summary: 个人登录撤销精确许可版本；重复撤销不复活或重置预算。
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: x-byq-continuation-confirmation, in: header, required: true, schema: {type: string, enum: [v1]}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [grant_version]
+              properties:
+                grant_version: {type: integer, minimum: 1}
+      responses: *okResponses
   /api/product/research/tasks:
     get: {summary: 列出 owner-scoped research tasks., responses: *okResponses}
     post:
@@ -443,6 +490,11 @@ paths:
     get: {summary: 重放 owner-scoped user messages and normalized WorkflowTrace events., responses: *okResponses}
     patch: {summary: 重命名、置顶、归档或恢复 an owner-scoped conversation., responses: *okResponses}
     delete: {summary: 归档并释放 an owner-scoped Product Agent session., responses: *noContentResponses}
+  /v1/agent/sessions/{session_id}/answer-delivery:
+    parameters: [{$ref: '#/components/parameters/SessionId'}]
+    get:
+      summary: 只读查询当前用户会话的公开回答投递状态；不重置重试预算或启动模型。
+      responses: *okResponses
   /v1/agent/sessions/{session_id}/lifecycle-delivery:
     parameters: [{$ref: '#/components/parameters/SessionId'}]
     get:

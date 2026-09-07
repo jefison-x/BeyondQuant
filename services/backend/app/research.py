@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from .db import PgStoreMixin, ensure_column, execute, fetch_one
 from .web_research import normalize_web_research_evidence, validate_web_research_evidence
+from .research_continuation import ResearchContinuationMixin
 
 
 MAX_JSON_BYTES = 64 * 1024
@@ -239,7 +240,7 @@ def _row_dict(row: dict[str, Any]) -> dict[str, object]:
     return dict(row)
 
 
-class ResearchStore(PgStoreMixin):
+class ResearchStore(ResearchContinuationMixin, PgStoreMixin):
     """Backend-owned durable repository for Phase 9 business entities (ADR-0016 PG)."""
 
     SCHEMA_DDL: list[str] = [
@@ -264,6 +265,7 @@ class ResearchStore(PgStoreMixin):
         """,
         "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS progress JSONB",
         "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS conversation_id TEXT",
+        "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS continuation_permission JSONB",
         """
         CREATE TABLE IF NOT EXISTS experiments (
             experiment_id TEXT PRIMARY KEY,
@@ -1449,6 +1451,7 @@ class ResearchStore(PgStoreMixin):
     @staticmethod
     def _task_row(row: dict[str, Any]) -> dict[str, object]:
         result = _row_dict(row)
+        result.pop("continuation_permission", None)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
         return result

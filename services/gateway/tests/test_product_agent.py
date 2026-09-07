@@ -92,6 +92,7 @@ def test_collector_reconnect_preserves_history_and_accepts_only_its_session(monk
     monkeypatch.setattr(main, "trace_store", store)
     monkeypatch.setattr(main.httpx, "stream", stream)
     monkeypatch.setattr(main, "_persist_projected_answer", lambda *_: None)
+    monkeypatch.setattr(main, "answer_delivery", SimpleNamespace(register=lambda *_: None))
     main._collect_trace(SimpleNamespace(session_id="session-reconnect", trace_id="trace-reconnect", released=False))
     assert store.read("session-reconnect") == [first, second, third]
     assert store.read("another-session") == []
@@ -126,7 +127,8 @@ def test_collector_retries_durable_answers_without_runtime_history(monkeypatch, 
         calls.append(payload)
         if catalog_failure:
             raise main.HTTPException(status_code=503)
-        return {"message": {"workflow_sequence": payload["workflow_sequence"]}}
+        return {"message": {"workflow_sequence": payload["workflow_sequence"], "role": "assistant",
+                            "content": payload["content"], "message_id": "synthetic-message", "sequence": 1}}
 
     @contextmanager
     def missing_runtime(*args, **kwargs):
@@ -135,10 +137,14 @@ def test_collector_retries_durable_answers_without_runtime_history(monkeypatch, 
     monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))  # process restart
     monkeypatch.setattr(main, "_catalog_request", catalog)
     monkeypatch.setattr(main.httpx, "stream", missing_runtime)
+    from app.agent_lifecycle_delivery import LifecycleDelivery
+    monkeypatch.setattr(main, "answer_delivery", LifecycleDelivery(tmp_path, main.trace_store, main._send_owned_answer, answers=True))
     session = main.ProductSession(
         conversation_id="conversation-reconnect", session_id="session-reconnect", trace_id="trace-reconnect",
         principal=main.Principal(subject="owner-1"), workspace_id="workspace-1")
     main._collect_trace(session)
+    assert calls == []  # Catalog I/O cannot delay or stop SSE collection.
+    main.answer_delivery.run_once()
     assert [call["workflow_sequence"] for call in calls] == ([1] if catalog_failure else [1, 3])
     assert all(call["content"] == "original durable answer" for call in calls)
     assert store.read(session.session_id) == main.trace_store.read(session.session_id)
@@ -366,7 +372,8 @@ def test_projected_answer_is_persisted_and_filtered_from_durable_replay(monkeypa
     def fake_catalog(method, path, _principal, _workspace_id, *, payload=None, params=None):
         calls.append((method, path, payload))
         if method == "POST":
-            return {"message": {"workflow_sequence": 8}}
+            return {"message": {"workflow_sequence": 8, "role": "assistant", "content": "持久化回答",
+                                "message_id": "message-1", "sequence": 1}}
         return {
             "conversation": {
                 "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
@@ -416,6 +423,19 @@ def test_answer_trace_remains_available_when_catalog_persistence_is_temporarily_
     }
 
     assert main._persist_projected_answer(session, event) is False
+
+
+@pytest.mark.parametrize("change", [{"workflow_sequence": True}, {"workflow_sequence": 9},
+    {"role": "user"}, {"content": "different answer"}, {"message_id": ""}, {"sequence": False},
+    {"sequence": 0}])
+def test_answer_receipt_must_match_exact_durable_fragment(monkeypatch, change):
+    message = {"message_id": "synthetic-message", "sequence": 1, "role": "assistant",
+               "content": "synthetic answer", "workflow_sequence": 8, **change}
+    monkeypatch.setattr(main, "_catalog_request", lambda *args, **kwargs: {"message": message})
+    session = main.ProductSession(conversation_id="synthetic-conversation", session_id="synthetic-session",
+                                  trace_id="synthetic-trace", principal=main.Principal(subject="synthetic-user"))
+    assert main._persist_projected_answer(session, {"kind": "agent.output.delta", "sequence": 8,
+        "payload": {"delta": "synthetic answer"}}) is False
 
 
 def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(monkeypatch, tmp_path: Path) -> None:

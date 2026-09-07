@@ -1508,3 +1508,19 @@ MCP/Backend boundary. No Community file was changed or copied; generic search re
 `create_task_for_run`：owner/request/session 的持久关联语义为 `REFERENCE_ONLY`；
 Agent 直写数据库、回合重试重开研究任务和旧状态机耦合为 `DROP`。在 BYQ ResearchStore
 中独立实现可信会话目录校验、原子创建关联和禁止幂等重绑，不复制旧实现。
+
+## Post-U8 F6 首版任务许可（2026-09-08）
+
+沿用已只读检查的 Community `agent-service/app/research/contracts.py`、`repository.py`
+及审批执行器分类：持久 owner/task/session 关联、固定证据引用为 `REFERENCE_ONLY`；
+Agent 直写业务数据库、自动重开旧任务及旧工作流执行器为 `DROP`。
+在 BYQ 原 ResearchTask 中独立保存明确的人类许可、确认制品摘要、幂等身份及撤销事实；
+不复制 Community 代码，不将原研究状态机或审批批准视为模型预算许可。
+
+## Post-U8 注销回执与界面（2026-09-08）
+
+实现前只读检查 Community `frontend/src/components/layout/UserSettingsMenu.vue` 和
+`frontend/src/auth/session.js`：用户菜单的明确退出操作为 `REFERENCE_ONLY`，保持现有 BYQ
+视觉与 Product API；旧 token 存储、直接旧 API、finally 无条件清理身份为 `DROP`。
+BYQ 独立校验注销回执，未知时保留原 cookie 供幂等重试，显示错误且不导航为已注销。
+没有复制旧 UI/认证代码或修改 Community。

@@ -1874,6 +1874,28 @@ def get_research_task(task_id: str, request: Request) -> dict[str, object]:
     return _research_call(operation)
 
 
+@app.get("/v1/research/tasks/{task_id}/continuation-permission")
+def get_research_continuation_permission(task_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.get_continuation_permission(task_id, trusted_context=context))
+
+
+@app.post("/v1/research/tasks/{task_id}/continuation-permission", status_code=201)
+def create_research_continuation_permission(task_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.create_continuation_permission(task_id, payload, trusted_context=context))
+
+
+@app.post("/v1/research/tasks/{task_id}/continuation-permission/revoke")
+def revoke_research_continuation_permission(task_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    def operation():
+        if set(payload) != {"grant_version"}:
+            raise ValueError("exact continuation grant version required")
+        return research_store.revoke_continuation_permission(task_id, grant_version=payload["grant_version"], trusted_context=context)
+    return _research_call(operation)
+
+
 @app.get("/v1/research/tasks")
 def list_research_tasks(request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
@@ -4882,7 +4904,10 @@ def login(payload: dict[str, Any]) -> dict[str, object]:
 
 @app.post("/v1/auth/logout")
 def logout(payload: dict[str, Any]) -> dict[str, object]:
-    return _user_call(lambda: user_store.logout(payload.get("session_id")))
+    def operation() -> dict[str, object]:
+        user_store.logout(payload.get("session_id"))
+        return {"status": "ok"}
+    return _user_call(operation)
 
 
 @app.get("/v1/auth/session")

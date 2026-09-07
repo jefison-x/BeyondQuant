@@ -539,6 +539,21 @@ Runtime 120 通过、11 跳过；架构 83 通过、3 subtests 通过。仅本�
 没有付费 API、生产数据、训练、远端 CI 或部署。细节见
 `docs/evidence/post-u8-r1/ADR-0065-QUALIFICATION.md`。F6 仍未关闭，不将批准或合同计为完成。
 
+## 2026-09-08 许可基础、持久回答与注销修复
+
+新增精确 ResearchTask continuation permission 的持久化、个人会话确认/撤销 API，
+同一幂等键不能变更额度、确认产物或会话。首版每任务只有一个不可变许可；
+所有 can_start 仍为 false。尚无执行预留/结算、财务额度、续期或后台消费者，F6 未关闭。
+许可验证见 `docs/evidence/post-u8-r1/CONTINUATION-PERMISSION.md`。
+
+回答投递现独立于 SSE，先计次后发送、核对精确消息回执，未知提交跨进程保留并幂等补齐；
+真实子进程在 Backend 提交后退出的演练已通过。演练还发现注销删除成功却返回 500、
+Gateway/前端吞错，已修复三个边界并完成桌面/手机 Chrome 审查。
+最终 Backend 414 通过/1 跳过、Gateway 175 通过、Frontend 170 通过及类型检查/构建通过，
+架构合同 83 通过。详见 `docs/evidence/post-u8-r1/ANSWER-DELIVERY-AND-LOGOUT.md`。
+均为隔离合成测试，无付费调用、生产部署或历史研究执行；不把这些切片标作全部整改完成。
+下一项继续核查 F7 持久纠错次数及无进展停止边界。
+
 ## 本次交付授权与顺序（历史记录）
 
 2026-09-07，维护者在“先合并U8收尾，再合并ADR与审计记录，再从更新后的main建立修复分支”
