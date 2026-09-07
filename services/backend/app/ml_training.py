@@ -547,6 +547,12 @@ class MLTrainingRunStore(PgStoreMixin):
         """CREATE INDEX IF NOT EXISTS ml_training_runs_queue ON ml_training_runs(status, created_at)""",
         """CREATE INDEX IF NOT EXISTS ml_training_runs_study_catalog
             ON ml_training_runs(workspace_id, owner_principal, ml_strategy_artifact_id, created_at DESC)""",
+        """CREATE TABLE IF NOT EXISTS ml_training_submission_keys (
+            workspace_id TEXT NOT NULL, owner_principal TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL, request_hash TEXT NOT NULL,
+            training_run_id TEXT NOT NULL REFERENCES ml_training_runs(training_run_id),
+            PRIMARY KEY (workspace_id, owner_principal, idempotency_key)
+        )""",
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -580,13 +586,35 @@ class MLTrainingRunStore(PgStoreMixin):
             "stock_pool_snapshot_id": pool, "preparation": preparation,
             "requirement_sha256": requirement.get("requirement_sha256"), "trace_id": trace,
         }
+        receipt_v2 = preparation.get("receipt_version") == "ml-training-submit.v2"
+        if receipt_v2:
+            # Immutable artifact/pool identities define the request. Mutable
+            # coverage, repair state and current master snapshot do not.
+            request = {field: request[field] for field in (
+                "workspace_id", "owner_principal", "task_id", "experiment_id",
+                "ml_strategy_artifact_id", "stock_pool_snapshot_id",
+            )}
         request_hash = hashlib.sha256(_canonical(request)).hexdigest()
         with self._transaction() as connection:
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {
+                "scope": f"ml-submit|{workspace}|{owner}|{key}",
+            })
+            alias = fetch_one(connection, """SELECT * FROM ml_training_submission_keys
+                WHERE workspace_id=:workspace AND owner_principal=:owner AND idempotency_key=:key""",
+                {"workspace": workspace, "owner": owner, "key": key})
+            if alias is not None:
+                if alias["request_hash"] != request_hash:
+                    raise MLTrainingConflict("ML training idempotency key was reused")
+                existing = fetch_one(connection, "SELECT * FROM ml_training_runs WHERE training_run_id=:id",
+                                     {"id": alias["training_run_id"]})
+                return self._public(existing)
             existing = fetch_one(connection, """SELECT * FROM ml_training_runs
                 WHERE workspace_id=:workspace AND idempotency_key=:key""", {"workspace": workspace, "key": key})
             if existing is not None:
-                if existing["request_hash"] != request_hash:
+                same_legacy_request = receipt_v2 and all(existing.get(field) == value for field, value in request.items())
+                if existing["request_hash"] != request_hash and not same_legacy_request:
                     raise MLTrainingConflict("ML training idempotency key was reused")
+                self._bind_submission(connection, workspace, owner, key, request_hash, existing["training_run_id"])
                 return self._public(existing)
             # Serialize the study lifecycle with a concurrent Product delete and
             # re-check its current authoritative status inside this transaction.
@@ -624,6 +652,9 @@ class MLTrainingRunStore(PgStoreMixin):
                     "strategy": strategy, "pool": pool,
                 })
             if equivalent is not None:
+                if equivalent.get("experiment_id") != experiment:
+                    raise MLTrainingConflict("equivalent active training belongs to a different experiment")
+                self._bind_submission(connection, workspace, owner, key, request_hash, equivalent["training_run_id"])
                 return self._public(equivalent)
             run_id, now = f"mlrun_{uuid.uuid4().hex}", _now()
             execute(connection, """INSERT INTO ml_training_runs
@@ -639,7 +670,16 @@ class MLTrainingRunStore(PgStoreMixin):
                 "preparation": preparation, "requirement": requirement, "readiness": readiness,
                 "trace": trace, "key": key, "request_hash": request_hash, "now": now,
             })
+            self._bind_submission(connection, workspace, owner, key, request_hash, run_id)
         return self.get(run_id, trusted_workspace=workspace, trusted_owner=owner)
+
+    @staticmethod
+    def _bind_submission(connection, workspace, owner, key, request_hash, run_id):
+        execute(connection, """INSERT INTO ml_training_submission_keys
+            (workspace_id,owner_principal,idempotency_key,request_hash,training_run_id)
+            VALUES (:workspace,:owner,:key,:hash,:run)""", {
+            "workspace": workspace, "owner": owner, "key": key, "hash": request_hash, "run": run_id,
+        })
 
     def get(self, run_id: object, *, trusted_workspace: str | None = None, trusted_owner: str | None = None) -> dict[str, object]:
         identity = _identifier(run_id, "training_run_id")
@@ -654,6 +694,11 @@ class MLTrainingRunStore(PgStoreMixin):
         self, idempotency_key: object, *, trusted_workspace: str, trusted_owner: str,
     ) -> dict[str, object]:
         key = _text(idempotency_key, "idempotency_key")
+        alias = self._fetch_one("""SELECT training_run_id FROM ml_training_submission_keys
+            WHERE workspace_id=:workspace AND owner_principal=:owner AND idempotency_key=:key""",
+            {"workspace": trusted_workspace, "owner": trusted_owner, "key": key})
+        if alias is not None:
+            return self.get(alias["training_run_id"], trusted_workspace=trusted_workspace, trusted_owner=trusted_owner)
         row = self._fetch_one(
             """SELECT * FROM ml_training_runs WHERE workspace_id=:workspace
                AND owner_principal=:owner AND idempotency_key=:key""",
@@ -767,6 +812,12 @@ class MLTrainingRunStore(PgStoreMixin):
         self._execute("""UPDATE ml_training_runs SET readiness_json=:readiness,updated_at=:now
             WHERE training_run_id=:id AND status='waiting_for_data'""",
             {"readiness": readiness, "now": _now(), "id": run_id})
+
+    def record_preparation_repairs(self, run_id: str, request_ids: list[str]) -> None:
+        self._execute("""UPDATE ml_training_runs
+            SET preparation_json=jsonb_set(preparation_json,'{repair_request_ids}',:ids), updated_at=:now
+            WHERE training_run_id=:id AND status='waiting_for_data'""",
+            {"ids": request_ids, "now": _now(), "id": run_id})
 
     def fail_waiting(self, run_id: str, code: str, detail: str) -> None:
         self._execute("""UPDATE ml_training_runs SET status='failed',error_code=:code,
@@ -882,7 +933,7 @@ class MLTrainingRunStore(PgStoreMixin):
 
 def promote_waiting_training_runs(
     store: MLTrainingRunStore, readiness_store: object,
-    objects: LocalObjectStore | None = None, *, max_promotions: int = 1,
+    objects: LocalObjectStore | None = None, *, max_promotions: int = 1, repair_store: object | None = None,
 ) -> int:
     """Prepare at most one large ready run per worker turn.
 
@@ -910,6 +961,17 @@ def promote_waiting_training_runs(
             readiness = aggregate_ml_readiness(assessments)
             store.update_readiness(run_id, readiness)
             if readiness["state"] != "ready":
+                if preparation.get("receipt_version") == "ml-training-submit.v2":
+                    if repair_store is None:
+                        raise ValueError("ML data preparation repair service is unavailable")
+                    repairs = [repair_store.request_data_repair(
+                        requirement=item, requested_by=f"ml:{row['owner_principal']}", retry_terminal=False,
+                    ) for item, assessment in zip(requirements, assessments, strict=True)
+                        if assessment.get("state") != "ready"]
+                    store.record_preparation_repairs(run_id, [str(item["request_id"]) for item in repairs])
+                    if any(item.get("status") in {"failed", "completed"} for item in repairs):
+                        store.fail_waiting(run_id, "ml_data_repair_not_ready",
+                                           "Data repair ended without satisfying current readiness; explicit retry is required.")
                 continue
             ready_input = (
                 readiness_store.build_partitioned_ready_input(requirements)

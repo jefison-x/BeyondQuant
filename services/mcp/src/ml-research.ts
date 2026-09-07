@@ -97,7 +97,7 @@ async function createTrainingWithReconciliation(
   } catch {
     return created;
   }
-  if (!new Set(["unreachable", "ml_research_unavailable"]).has(failureStatus)) return created;
+  if (!new Set(["unreachable", "ml_research_unavailable", "invalid_response"]).has(failureStatus)) return created;
   const key = request.idempotency_key;
   if (typeof key !== "string" || key.length === 0) return created;
 
@@ -125,12 +125,24 @@ async function createTrainingWithReconciliation(
     retryable: false,
     reconciliation: {
       status: "not_confirmed",
-      next_action: "Call byq_ml_workspace_get once and match task_id, ml_strategy_artifact_id, and stock_pool_snapshot_id before reporting the outcome.",
+      next_action: "Call byq_ml_training_get with this same idempotency_key to reconcile the exact submission. A not-yet-visible receipt remains unknown; never infer absence from a workspace list or repeat the write.",
     },
   }, false);
 }
 
-export function fetchByqMlTrainingGet(backendUrl: string, runId: string, fetcher: Fetcher = fetch) {
+export async function fetchByqMlTrainingGet(backendUrl: string, runId: string | { idempotency_key: string }, fetcher: Fetcher = fetch) {
+  if (typeof runId !== "string") {
+    const key = runId.idempotency_key;
+    const reconciled = await requestMl(backendUrl,
+      `/v1/research/ml/training-runs/reconcile?${new URLSearchParams({ idempotency_key: key })}`,
+      { method: "GET" }, fetcher, 2500);
+    const payload = JSON.parse(reconciled.content[0]?.text ?? "{}");
+    if (reconciled.isError && ["ml_resource_not_found", "unreachable", "ml_research_unavailable", "invalid_response"].includes(payload.backend?.status)) {
+      return result({ service: "beyondquant-mcp", status: "outcome_unknown", idempotency_key: key,
+        retryable: false, reconciliation: { status: "not_confirmed", next_action: "Preserve this key for later exact read reconciliation; do not repeat the write." } }, false);
+    }
+    return reconciled;
+  }
   return requestMl(backendUrl, `/v1/research/ml/training-runs/${encodeURIComponent(runId)}`, { method: "GET" }, fetcher);
 }
 

@@ -35,6 +35,13 @@ must require confirmation. No Community code, database or runtime is copied or m
 
 ## Audit scope 与 evidence
 
+Post-U8 F1/F2 follow-up: read-only Community `backend/app/ops/sync_jobs.py`,
+strategy-validation and capability implementations were inspected. Durable receipt,
+stable request identity and claim/lease semantics are `REFERENCE_ONLY` / `PORT_TESTS`;
+training inside request/backtest processing and retry-with-new-key after unknown outcome
+are `DROP`. BYQ extends its existing ML store/Worker and exact MCP reads; no Community
+runtime, provider adapter or database is copied or modified.
+
 Post-U8 R3/R4/R5 follow-up: read-only Community AgentView/AgentThinking and
 `backend/app/ops/sync_jobs.py` were inspected. Honest waiting/terminal labels and
 separate lease/hard-bound semantics are `PORT_UX` / `REFERENCE_ONLY`; copying

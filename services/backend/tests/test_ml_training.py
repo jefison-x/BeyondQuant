@@ -186,6 +186,36 @@ def test_bad_waiting_run_is_isolated_from_following_preparation() -> None:
     assert runs.updated == ["mlrun_waiting"]
 
 
+def test_accepted_receipt_schedules_repairs_in_worker_without_retrying_terminal_repairs():
+    calls = []
+    class Runs:
+        def list_waiting(self):
+            return [{"training_run_id": "accepted", "owner_principal": "owner",
+                     "requirement_json": {"requirement_sha256": "a" * 64},
+                     "preparation_json": {"receipt_version": "ml-training-submit.v2"}}]
+        def update_readiness(self, run_id, readiness):
+            calls.append(("assessed", run_id))
+        def record_preparation_repairs(self, run_id, identities):
+            calls.append(("linked", identities))
+        def fail_waiting(self, run_id, code, detail):
+            calls.append(("failed", code))
+    class Readiness:
+        def assess(self, requirement):
+            return {"state": "missing"}
+    class Repairs:
+        status = "queued"
+        def request_data_repair(self, **kwargs):
+            assert kwargs["retry_terminal"] is False
+            calls.append(("repair", kwargs["requested_by"]))
+            return {"request_id": "repair-1", "status": self.status}
+    repairs = Repairs()
+    assert promote_waiting_training_runs(Runs(), Readiness(), repair_store=repairs) == 0
+    assert calls == [("assessed", "accepted"), ("repair", "ml:owner"), ("linked", ["repair-1"])]
+    repairs.status = "failed"
+    promote_waiting_training_runs(Runs(), Readiness(), repair_store=repairs)
+    assert calls[-1] == ("failed", "ml_data_repair_not_ready")
+
+
 def test_waiting_promotion_persists_only_one_bounded_object_descriptor(tmp_path) -> None:
     strategy, universe, ready_input = feature_input()
 
@@ -472,6 +502,23 @@ def test_training_run_creates_immutable_feature_and_model_artifacts(tmp_path) ->
             trace_id="trace-ml-duplicate", idempotency_key="train-duplicate-key",
         )
         assert duplicate["training_run_id"] == run["training_run_id"]
+        runs.record_preparation_repairs(str(run["training_run_id"]), ["datarepair_synthetic"])
+        restarted = MLTrainingRunStore()
+        try:
+            recovered = restarted.get_by_idempotency(
+                "train-duplicate-key", trusted_workspace=context["x-byq-workspace-id"], trusted_owner="ml-owner",
+            )
+            assert recovered["training_run_id"] == run["training_run_id"]
+            assert "preparation" not in recovered
+            persisted = restarted._fetch_one("SELECT preparation_json FROM ml_training_runs WHERE training_run_id=:id",
+                                              {"id": run["training_run_id"]})
+            assert persisted["preparation_json"]["repair_request_ids"] == ["datarepair_synthetic"]
+            with pytest.raises(MLTrainingNotFound):
+                restarted.get_by_idempotency(
+                    "train-duplicate-key", trusted_workspace=context["x-byq-workspace-id"], trusted_owner="other-owner",
+                )
+        finally:
+            restarted.close()
         with pytest.raises(MLTrainingNotFound):
             runs.get_by_idempotency(
                 "train-1", trusted_workspace="workspace_other", trusted_owner="ml-owner",

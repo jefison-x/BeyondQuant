@@ -32,6 +32,17 @@ TypeScript handlers需人工补齐后才能声明全量。不得将发现数量�
 
 ## 已确认及修复优先级
 
+第三批本地切片：ML 提交先保存 `ml-training-submit.v2` 回执，再由既有 ML Worker
+执行覆盖评估和补齐排队。不可变请求语义排除 readiness、修复结果及最新证券主数据身份；
+去重后的第二请求键有持久关联，重启后可精确查询，跨 owner/workspace 拒绝。
+补齐轮询不重置 failed/completed 修复请求；并发相同需求返回同一修复身份。
+MCP training_get 支持原幂等键精确核对，404 仍为 unknown；损坏回执也触发核对。
+Gateway 写请求断连、5xx、损坏回执均投影 operation_outcome_unknown，显式 4xx 拒绝保持不变。
+Backend ML/data-sync/data-demand 50 项、Gateway 完整 122 项及 MCP ML 编译/翻译测试通过。
+其中测试准备阶段曾发生容器构建权限及未配置契约服务错误，不能算完整 MCP suite 通过。
+持久退避核对、任务续接、提交与股票池引用的原子性、Worker 准备领取租约仍待关闭；
+本条不代表 F1/F2/F10 完成，也不代表新构建认证或部署完成。
+
 | 顺序 | 缺陷 | 代码证据 | 计划 |
 |---|---|---|---|
 | 1 | 未回答主题丢弃 | Gateway `_conversation_context`；ADR-0046 原 §2 | R2；ADR-0062已接受，待合同优先修复 |

@@ -87,8 +87,9 @@ explicitly requested a new independent reproducibility run.
 
 Call `byq_ml_training_create` at most once for one approved action. If it returns
 `outcome_unknown`, do not retry the mutation or claim that no task was created.
-Call `byq_ml_workspace_get` exactly once to reconcile the same task, strategy,
-and pool. Report the persisted run when found; otherwise say that submission
+Call `byq_ml_training_get` with the exact original `idempotency_key` to reconcile
+the submission (do not also supply a run ID). Do not use a bounded workspace
+list to prove absence. Report the persisted run when found; otherwise say that submission
 could not yet be confirmed and preserve the same idempotency key for a later
 reconciliation. A transport timeout is not evidence that a write failed.
 

@@ -377,7 +377,10 @@ def _backend_get(path: str) -> dict[str, object]:
             "GET", path, type(exc).__name__,
         )
         raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
-    body = response.json()
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise ProductError(502, "backend_invalid_response", "backend returned an invalid response") from exc
     if not isinstance(body, dict):
         raise ProductError(502, "backend_invalid_response", "backend returned an invalid response")
     return body
@@ -390,6 +393,10 @@ def _backend_request(
     headers: dict[str, str] | None = None,
     params: dict[str, str] | None = None,
 ) -> dict[str, object]:
+    mutating = method.upper() not in {"GET", "HEAD", "OPTIONS"}
+    def unknown() -> ProductError:
+        return ProductError(503, "operation_outcome_unknown",
+                            "操作结果尚未确认，请核对原任务；不要重新创建任务。")
     try:
         response = httpx.request(
             method,
@@ -413,6 +420,8 @@ def _backend_request(
                 "backend request rejected method=%s path=%s status=%s",
                 method, path, status,
             )
+            if mutating:
+                raise unknown() from exc
             raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
         raise ProductError(status, "product_domain_rejected", message) from exc
     except httpx.HTTPError as exc:
@@ -420,9 +429,18 @@ def _backend_request(
             "backend request failed method=%s path=%s error_type=%s",
             method, path, type(exc).__name__,
         )
+        if mutating:
+            raise unknown() from exc
         raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
-    body = response.json()
+    try:
+        body = response.json()
+    except ValueError as exc:
+        if mutating:
+            raise unknown() from exc
+        raise ProductError(502, "backend_invalid_response", "backend returned an invalid response") from exc
     if not isinstance(body, dict):
+        if mutating:
+            raise unknown()
         raise ProductError(502, "backend_invalid_response", "backend returned an invalid response")
     return body
 
@@ -766,7 +784,7 @@ def _ml_command(
             headers=headers,
         )
     except ProductError as error:
-        if not reconcile_training or error.code != "backend_unavailable":
+        if not reconcile_training or error.code not in {"backend_unavailable", "operation_outcome_unknown"}:
             raise
         # The Backend may commit just after the Product API's POST timeout.
         # Reconcile the same browser key for a short bounded window instead of

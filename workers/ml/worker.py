@@ -18,6 +18,7 @@ import numpy as np
 
 from app.backtest import LocalObjectStore
 from app.market_readiness import MarketReadinessStore
+from app.market_automation import MarketAutomationStore
 from app.ml_strategy import FEATURE_ORDER, RUNTIME_LOCK, effective_lightgbm_parameters
 from app.ml_capabilities import (
     RIDGE_RUNTIME_IDENTITY,
@@ -535,6 +536,7 @@ def main() -> int:
     prediction_runs = MLPredictionRunStore.from_env()
     research = ResearchStore.from_env()
     readiness = MarketReadinessStore.from_env()
+    repairs = MarketAutomationStore()
     objects = LocalObjectStore(os.environ.get("BYQ_ML_OBJECT_ROOT", "/var/lib/byq/ml-objects"))
     coordinator = MLTrainingCoordinator(
         runs, research, objects, QualifiedTrainer(),
@@ -563,7 +565,7 @@ def main() -> int:
             trained = coordinator.run_next()
             if trained is None:
                 promoted = promote_waiting_training_runs(
-                    runs, readiness, objects, max_promotions=1,
+                    runs, readiness, objects, max_promotions=1, repair_store=repairs,
                 )
                 gc.collect()
                 if promoted:
@@ -574,6 +576,7 @@ def main() -> int:
             gc.collect()
     finally:
         READY_PATH.unlink(missing_ok=True)
+        repairs.close()
         readiness.close()
         research.close()
         prediction_runs.close()

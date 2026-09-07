@@ -512,10 +512,13 @@ async function byqMlTrainingCreate(args: MlRequest, extra: unknown) {
   ) : agentContextUnavailable();
 }
 
-async function byqMlTrainingGet(args: { training_run_id: string }, extra: unknown) {
+async function byqMlTrainingGet(args: { training_run_id?: string; idempotency_key?: string }, extra: unknown) {
   const context = completeAgentContext(extra);
+  if (Boolean(args.training_run_id) === Boolean(args.idempotency_key)) {
+    return { content: [{ type: "text" as const, text: JSON.stringify({ status: "error", code: "exactly_one_training_identity_required" }) }], isError: true };
+  }
   return context ? fetchByqMlTrainingGet(
-    BACKEND_URL, args.training_run_id, trustedBackendFetcher(context),
+    BACKEND_URL, args.training_run_id ?? { idempotency_key: args.idempotency_key! }, trustedBackendFetcher(context),
   ) : agentContextUnavailable();
 }
 
@@ -1169,8 +1172,9 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_ml_training_get",
-    { description: "Read one owner-scoped trusted ML training lifecycle and safe result metadata.", inputSchema: {
-      training_run_id: z.string().regex(/^mlrun_[0-9a-f]{32}$/),
+    { description: "Read one owner-scoped training run, or reconcile an unknown submission by its exact original idempotency key. Supply exactly one identity. An unconfirmed receipt is unknown, not proof of absence.", inputSchema: {
+      training_run_id: z.string().regex(/^mlrun_[0-9a-f]{32}$/).optional(),
+      idempotency_key: z.string().min(1).max(128).optional(),
     } },
     (args) => byqMlTrainingGet(args, trustedContext),
   );

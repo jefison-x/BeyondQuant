@@ -718,6 +718,31 @@ def test_repair_waits_for_session_jobs_and_reports_terminal_failure() -> None:
     automation.close()
 
 
+def test_concurrent_repair_requests_share_identity_and_do_not_restart_terminal_work() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    stores = [MarketAutomationStore(), MarketAutomationStore()]
+    barrier = Barrier(2)
+    requirement = {"requirement_sha256": "e" * 64, "start_date": "20260824", "end_date": "20260824"}
+    try:
+        def submit(store):
+            barrier.wait(timeout=5)
+            return store.request_data_repair(requirement=requirement, requested_by="ml:synthetic", retry_terminal=False)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(submit, stores))
+        identity = results[0]["request_id"]
+        assert results[1]["request_id"] == identity
+        for status in ("failed", "completed"):
+            stores[0]._execute("UPDATE market_data_repair_requests SET status=:status WHERE request_id=:id",
+                               {"status": status, "id": identity})
+            observed = stores[1].request_data_repair(requirement=requirement, requested_by="ml:synthetic", retry_terminal=False)
+            assert observed["request_id"] == identity and observed["status"] == status
+    finally:
+        for store in stores:
+            store.close()
+
+
 def test_bad_waiting_repair_does_not_block_following_reconciliation() -> None:
     automation = MarketAutomationStore()
     repairs = []

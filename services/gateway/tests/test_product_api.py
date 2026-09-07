@@ -3,12 +3,51 @@ from __future__ import annotations
 from threading import Barrier
 
 import pytest
+import httpx
 
 from fastapi.testclient import TestClient
 
 from app import main
 from app import product_api
 from app import user_session
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+@pytest.mark.parametrize("failure", ["timeout", "server", "json", "shape"])
+def test_mutation_transport_or_receipt_failure_remains_unknown(monkeypatch, method, failure):
+    def transport(*args, **kwargs):
+        if failure == "timeout":
+            raise httpx.ReadTimeout("synthetic secret must not be exposed")
+        return httpx.Response(503 if failure == "server" else 202,
+                              text="invalid" if failure == "json" else "[]",
+                              request=httpx.Request(method, "http://backend/test"))
+    monkeypatch.setattr(product_api.httpx, "request", transport)
+    with pytest.raises(product_api.ProductError) as caught:
+        product_api._backend_request(method, "/synthetic", {"idempotency_key": "stable"})
+    assert caught.value.code == "operation_outcome_unknown"
+    assert "synthetic secret" not in str(caught.value)
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_explicit_domain_rejection_is_not_unknown(monkeypatch, method):
+    monkeypatch.setattr(product_api.httpx, "request", lambda *args, **kwargs:
+                        httpx.Response(409, json={"detail": "conflict"},
+                                       request=httpx.Request(method, "http://backend/test")))
+    with pytest.raises(product_api.ProductError) as caught:
+        product_api._backend_request(method, "/synthetic")
+    assert caught.value.code == "product_domain_rejected"
+    assert caught.value.status_code == 409
+
+
+def test_malformed_read_response_is_closed_error(monkeypatch):
+    response = httpx.Response(200, text="truncated", request=httpx.Request("GET", "http://backend/test"))
+    monkeypatch.setattr(product_api.httpx, "request", lambda *args, **kwargs: response)
+    monkeypatch.setattr(product_api.httpx, "get", lambda *args, **kwargs: response)
+    for read in (lambda: product_api._backend_request("GET", "/synthetic"),
+                 lambda: product_api._backend_get("/synthetic")):
+        with pytest.raises(product_api.ProductError) as caught:
+            read()
+        assert caught.value.code == "backend_invalid_response"
 
 
 def test_product_api_uses_error_envelope_and_auth_boundary(monkeypatch) -> None:

@@ -179,6 +179,11 @@ def test_unknown_submission_is_not_completed_and_unclosed_steps_are_closed():
                                         tool_result={"status": "outcome_unknown"}), 3)
     assert result[0]["payload"]["state"] == "unknown"
     assert result[0]["payload"]["activity_id"] == started[0]["payload"]["activity_id"]
+    project(RuntimeObservation(kind="tool.call", root_session=True, call_id="accepted",
+                               tool_name="byq_ml_training_create"), 4)
+    accepted = project(RuntimeObservation(kind="tool.result", root_session=True, call_id="accepted",
+                                          tool_result={"status": "ok", "training_run": {"status": "waiting_for_data"}}), 5)
+    assert accepted[0]["payload"]["state"] == "waiting"
     project(RuntimeObservation(kind="tool.call", root_session=True, call_id="pending",
                                tool_name="byq_ml_training_create"), 4)
     closures = close_public_activities(state, "t", "s", 5, "cancelled")

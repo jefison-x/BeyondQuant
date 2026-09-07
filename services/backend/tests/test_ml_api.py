@@ -11,6 +11,53 @@ from tests.workspace_helpers import trusted_agent_context
 client = TestClient(app)
 
 
+def test_training_receipt_precedes_coverage_scan_and_repair_and_retries_stay_stable(monkeypatch):
+    owner = "ml-receipt-owner"
+    headers = trusted_agent_context(owner)
+    task = backend_main.research_store.create_task({
+        "owner_principal": owner, "title": "Receipt", "objective": "Synthetic acceptance",
+        "trace_id": "receipt-trace", "idempotency_key": "receipt-task",
+    })
+    artifact = backend_main.research_store.create_artifact({
+        "task_id": task["task_id"], "kind": "ml_strategy_version", "content": backend_main.normalize_ml_strategy(valid_strategy()),
+        "lineage": [], "trace_id": "receipt-trace", "idempotency_key": "receipt-strategy",
+    })
+    backend_main.research_store.transition("artifact", artifact["artifact_id"], "validated", "receipt-validate")
+    monkeypatch.setattr(backend_main, "_approved_ml_strategy_artifact", lambda **kwargs: artifact)
+    monkeypatch.setattr(backend_main.paper_store, "get_pool_snapshot", lambda identity, **kwargs: {
+        "snapshot_id": identity, "pool_id": "pool_receipt", "membership_fingerprint": "a" * 64,
+        "members": [{"symbol": "000001.SZ"}],
+    })
+    monkeypatch.setattr(backend_main.paper_store, "get_pool", lambda *args, **kwargs: {"status": "active", "pool_type": "custom"})
+    monkeypatch.setattr(backend_main.paper_store, "record_pool_reference", lambda *args, **kwargs: None)
+    monkeypatch.setattr(backend_main.security_master_store, "latest_snapshot", lambda: {"snapshot_id": "master_original"})
+    def forbidden(*args, **kwargs):
+        raise AssertionError("expensive preparation ran before durable receipt")
+    monkeypatch.setattr(backend_main.market_readiness_store, "assess", forbidden)
+    monkeypatch.setattr(backend_main.market_automation_store, "request_data_repair", forbidden)
+    payload = {"task_id": task["task_id"], "ml_strategy_artifact_id": artifact["artifact_id"],
+               "stock_pool_snapshot_id": "snapshot_receipt", "trace_id": "receipt-trace", "idempotency_key": "receipt-1"}
+    response = client.post("/v1/research/ml/training-runs", headers=headers, json=payload)
+    assert response.status_code == 202, response.text
+    run = response.json()["training_run"]
+    assert run["status"] == "waiting_for_data"
+    assert run["readiness"]["state"] == "pending"
+    monkeypatch.setattr(backend_main.security_master_store, "latest_snapshot", lambda: {"snapshot_id": "master_new"})
+    retry = client.post("/v1/research/ml/training-runs", headers=headers, json=payload)
+    assert retry.status_code == 202, retry.text
+    assert retry.json()["training_run"]["training_run_id"] == run["training_run_id"]
+    alias = client.post("/v1/research/ml/training-runs", headers=headers, json={**payload, "idempotency_key": "receipt-2"})
+    assert alias.status_code == 202, alias.text
+    assert alias.json()["training_run"]["training_run_id"] == run["training_run_id"]
+    reconciled = client.get("/v1/research/ml/training-runs/reconcile", headers=headers,
+                            params={"idempotency_key": "receipt-2"})
+    assert reconciled.status_code == 200
+    assert reconciled.json()["training_run"]["training_run_id"] == run["training_run_id"]
+    conflict = client.post("/v1/research/ml/training-runs", headers=headers,
+                           json={**payload, "stock_pool_snapshot_id": "snapshot_other"})
+    assert conflict.status_code == 409
+
+
 def test_index_ml_pool_freezes_same_index_as_universe_and_benchmark() -> None:
     declared, membership_mode = _ml_pool_market_scope(
         {"pool_type": "index"},

@@ -312,6 +312,18 @@ def _tool_result_events(
         activity_state = "unknown"
     elif status in ("accepted", "queued", "running", "waiting_for_data"):
         activity_state = "waiting"
+    elif status in ("error", "failed"):
+        activity_state = "failed"
+    elif status == "ok" and capability.endswith(("_create", "_execute", "_submit", "_run")):
+        for field in ("training_run", "prediction_run", "task", "job", "run", "demand"):
+            domain = result.get(field)
+            domain_status = domain.get("status") if isinstance(domain, dict) else None
+            if domain_status in ("accepted", "queued", "running", "waiting_for_data", "preparing"):
+                activity_state = "waiting"
+                break
+            if domain_status in ("failed", "cancelled"):
+                activity_state = domain_status
+                break
     events = _bounded_activity(
         state,
         trace_id,

@@ -100,7 +100,28 @@ assert.equal(unknownTraining.isError, false);
 const unknownPayload = JSON.parse(unknownTraining.content[0].text);
 assert.equal(unknownPayload.status, "outcome_unknown");
 assert.equal(unknownPayload.retryable, false);
-assert.match(unknownPayload.reconciliation.next_action, /workspace_get once/);
+assert.match(unknownPayload.reconciliation.next_action, /byq_ml_training_get.*idempotency_key/);
+
+const invalidReceipt = await fetchByqMlTrainingCreate(backend, {
+  task_id: "task_1", ml_strategy_artifact_id: "artifact_1", stock_pool_snapshot_id: "snapshot_1",
+  trace_id: "trace-1", idempotency_key: "training-invalid-receipt",
+}, async (_url, init) => init?.method === "POST"
+  ? new Response("truncated receipt", { status: 202 })
+  : new Response(JSON.stringify({ training_run: { training_run_id: runId } }), { status: 200 }));
+assert.equal(JSON.parse(invalidReceipt.content[0].text).training_run.training_run_id, runId);
+assert.equal(JSON.parse(invalidReceipt.content[0].text).reconciliation.status, "confirmed");
+
+for (const status of [404, 503]) {
+  const unknown = await fetchByqMlTrainingGet(backend, { idempotency_key: "unknown-key" }, async (url, init) => {
+    assert.equal(url, `${backend}/v1/research/ml/training-runs/reconcile?idempotency_key=unknown-key`);
+    assert.equal(init?.method, "GET");
+    return new Response(JSON.stringify({ detail: "not yet visible" }), { status });
+  });
+  assert.equal(JSON.parse(unknown.content[0].text).status, "outcome_unknown");
+}
+const lateReceipt = await fetchByqMlTrainingGet(backend, { idempotency_key: "unknown-key" }, async () =>
+  new Response(JSON.stringify({ training_run: { training_run_id: runId } }), { status: 200 }));
+assert.equal(JSON.parse(lateReceipt.content[0].text).training_run.training_run_id, runId);
 
 for (const [call, suffix, method] of [
   [fetchByqMlTrainingGet, "", "GET"],

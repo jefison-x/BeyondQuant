@@ -2586,20 +2586,15 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
             membership_fingerprint_value=str(pool_snapshot["membership_fingerprint"]),
             security_master_snapshot_id=str(master["snapshot_id"]), declared=declared,
         )
-        assessments = [market_readiness_store.assess(requirement) for requirement in requirements]
-        readiness = aggregate_ml_readiness(assessments)
-        repair_request_ids = []
-        for requirement, assessment in zip(requirements, assessments, strict=True):
-            if assessment.get("state") == "ready":
-                continue
-            repair = market_automation_store.request_data_repair(
-                requirement=requirement, requested_by=f"ml:{context['owner_principal']}"
-            )
-            repair_request_ids.append(str(repair["request_id"]))
+        # Pure, bounded requirement validation precedes acceptance. Coverage
+        # scans and repair scheduling run in the existing trusted ML Worker.
+        readiness = {"schema_version": "ml-data-preparation.v1", "state": "pending",
+                     "reason": "assessment_pending", "partition_count": len(requirements)}
         preparation = {
+            "receipt_version": "ml-training-submit.v2",
             "strategy": strategy,
             "requirements": requirements,
-            "repair_request_ids": repair_request_ids,
+            "repair_request_ids": [],
             "universe": {
                 "membership_mode": membership_mode,
                 "stock_pool_id": pool_snapshot["pool_id"],
