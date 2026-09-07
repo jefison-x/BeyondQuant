@@ -388,6 +388,9 @@ test("failed agent run unlocks the composer and resumes before retry", async ({ 
   await page.getByRole("button", { name: "发送", exact: true }).click();
   await expect.poll(() => requestOrder).toEqual(["resume", "turn"]);
   await expect(page.getByRole("button", { name: "停止本轮" })).toBeVisible();
+  await expect(page.locator(".run-failure")).toHaveCount(1);
+  await expect(page.locator(".run-failure")).toContainText("没有形成可展示的结论");
+  await expect(page.locator(".run-failure .message-author")).toHaveText("运行记录");
 });
 
 test("final answer replaces standalone progress before the terminal event arrives", async ({ page }) => {

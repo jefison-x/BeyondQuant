@@ -7,7 +7,7 @@ import {
   streamWorkflowEvents, submitTurn, updateAgentSession,
 } from "@/api/agent";
 import { continueApproval } from "@/api/research";
-import { foldWorkflowCards, workflowActivities, workflowRunState } from "@/api/workflow";
+import { foldWorkflowCards, workflowActivities, workflowOutcomes, workflowRunState } from "@/api/workflow";
 import type { AgentReplayMessage, AgentSession, WorkflowCardEvent, WorkflowTraceEvent } from "@/api/types";
 import AgentActivityPanel from "@/components/agent/AgentActivityPanel.vue";
 import RichMessage from "@/components/agent/RichMessage.vue";
@@ -53,17 +53,7 @@ const activeActivityCount = computed(() => activities.value.filter((item) =>
   ["started", "progress", "waiting_approval"].includes(item.payload.state),
 ).length);
 const replayRun = computed(() => workflowRunState(agent.events));
-const runFailureMessage = computed(() => {
-  if (!replayRun.value.failed) return "";
-  const messages: Record<string, string> = {
-    "runtime-no-progress-timeout": "本轮在较长时间内没有形成可展示的结论，系统为避免持续占用已停止。已完成的读取步骤仍保留，可以直接重试。",
-    "runtime-run-timeout": "本轮总处理时间超过运行上限，系统已停止任务。对话内容已保留，可以直接重试或缩小分析范围。",
-    "runtime-subagent-timeout": "本轮专项分析超过等待上限，系统已停止任务。对话内容已保留，可以直接重试。",
-    "model-run-failed": "模型服务本轮未能完成回答。对话内容已保留，可以直接重试；若持续失败，请联系管理员。",
-  };
-  return messages[replayRun.value.failureCode ?? ""]
-    ?? "本轮运行未能完成。对话内容已保留，可以直接重试；若持续失败，请联系管理员。";
-});
+const outcomes = computed(() => workflowOutcomes(agent.events, agent.activeSessionId));
 const activeActivity = computed(() => [...activities.value].reverse().find((item) =>
   item.payload.state === "started" || item.payload.state === "progress" || item.payload.state === "waiting_approval",
 ));
@@ -85,6 +75,7 @@ const cards = computed(() => foldWorkflowCards(agent.events));
 const timeline = computed(() => [
   ...agent.messages.map((message, index) => ({ type: "message" as const, at: message.createdAt ?? "", key: `message-${index}`, message })),
   ...cards.value.map((card) => ({ type: "card" as const, at: card.timestamp, key: `card-${card.payload.card_id}`, card })),
+  ...outcomes.value.map((outcome) => ({ type: "outcome" as const, at: outcome.timestamp, key: `outcome-${outcome.key}`, outcome })),
 ].sort((left, right) => left.at.localeCompare(right.at)));
 
 function replayMessages(messages: AgentReplayMessage[], events: WorkflowTraceEvent[]): AgentMessage[] {
@@ -503,6 +494,13 @@ onBeforeUnmount(() => {
               <template v-else>{{ item.message.text }}</template>
             </div>
           </article>
+          <article v-else-if="item.type === 'outcome'" class="conversation-message run-failure" aria-label="历史运行记录">
+            <span class="message-author">运行记录</span>
+            <div class="message-body">
+              <div>{{ item.outcome.message }}</div>
+              <small><time :datetime="item.outcome.timestamp">{{ new Date(item.outcome.timestamp).toLocaleString() }}</time><span v-if="item.outcome.laterTurnStarted"> · 后续已发起新一轮（不表示原任务已完成）</span></small>
+            </div>
+          </article>
           <WorkflowCard v-else :event="item.card" @navigate="navigateCard" />
         </template>
         <article v-if="processingVisible" class="conversation-message agent assistant-processing" role="status" aria-live="polite">
@@ -515,10 +513,6 @@ onBeforeUnmount(() => {
             </button>
             <small>查看小巴正在进行的公开步骤</small>
           </div>
-        </article>
-        <article v-else-if="runFailureMessage" class="conversation-message agent run-failure" role="alert">
-          <span class="message-author">小巴</span>
-          <div class="message-body">{{ runFailureMessage }}</div>
         </article>
       </div>
     </main>

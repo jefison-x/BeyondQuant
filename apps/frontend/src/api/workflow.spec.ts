@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foldWorkflowCards, workflowActivities, workflowRunState } from "./workflow";
+import { foldWorkflowCards, workflowActivities, workflowOutcomes, workflowRunState } from "./workflow";
 import type { WorkflowTraceEvent } from "./types";
 
 function event(sequence: number, kind: string, payload: Record<string, unknown>): WorkflowTraceEvent {
@@ -15,6 +15,27 @@ function event(sequence: number, kind: string, payload: Record<string, unknown>)
 }
 
 describe("workflow projections", () => {
+  it("replays every historical outcome after later success without raw errors or duplicates", () => {
+    const failure = event(2, "session.failed", { code: "runtime-subagent-timeout", error: "private-secret" });
+    const events = [
+      event(1, "session.started", {}), failure, event(3, "session.ready", {}),
+      event(4, "session.started", {}), event(5, "session.cancelled", {}),
+      event(6, "session.result.discarded", { reason: "private-secret" }),
+      event(7, "session.started", {}), event(8, "session.result", {}), failure,
+      { ...event(9, "session.failed", {}), session_id: "other-session" },
+    ];
+    const outcomes = workflowOutcomes([...events].reverse(), "session-1");
+    expect(outcomes.map(item => item.sequence)).toEqual([2, 5, 6]);
+    expect(outcomes.every(item => item.laterTurnStarted)).toBe(true);
+    expect(outcomes[0].message).toContain("专项分析");
+    expect(JSON.stringify(outcomes)).not.toContain("private-secret");
+    expect(workflowOutcomes(events, "missing-session")).toEqual([]);
+    expect(workflowOutcomes([failure, event(3, "session.resumed", {})], "session-1")[0].laterTurnStarted).toBe(false);
+    for (const code of ["unknown-private-secret", "constructor", "__proto__"]) {
+      expect(workflowOutcomes([event(2, "session.failed", { code })], "session-1")[0].message).toContain("本轮运行未能完成");
+    }
+  });
+
   it("folds cards by stable identity and highest revision", () => {
     const common = {
       schema_version: "workflow-card.v1",

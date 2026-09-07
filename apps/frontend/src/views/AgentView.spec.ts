@@ -151,6 +151,21 @@ describe("AgentView", () => {
     await view.send();
     expect(resumeSession).toHaveBeenCalledWith("session-1", "");
     expect(submitTurn).toHaveBeenLastCalledWith("session-1", "重试请求", "");
+    view.handleEvent({
+      trace_id: "trace-1", session_id: "session-1", sequence: 4,
+      timestamp: "2026-08-28T00:00:04Z", kind: "session.started", source: "runtime-adapter", payload: {},
+    }, 1);
+    await flushPromises();
+    expect(wrapper.find(".run-failure").text()).toContain("没有形成可展示的结论");
+    expect(wrapper.find(".run-failure").text()).toContain("后续已发起新一轮");
+    view.handleEvent({
+      trace_id: "trace-1", session_id: "session-1", sequence: 5,
+      timestamp: "2026-08-28T00:00:05Z", kind: "session.result", source: "runtime-adapter", payload: {},
+    }, 1);
+    await flushPromises();
+    expect(wrapper.findAll(".run-failure")).toHaveLength(1);
+    expect(useAgentStore().messages.every(message => !message.text.includes("没有形成可展示的结论"))).toBe(true);
+    wrapper.unmount();
   });
 
   it("does not duplicate output when replay overlaps the live stream", async () => {

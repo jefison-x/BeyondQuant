@@ -9,6 +9,21 @@ BeyondQuant architecture 的内容。
 > 记录，以确保与只读 Community evidence 可逐项核对；这些内容不是复制旧实现
 > 的授权。
 
+## Post-U8 R1 historical outcome audit（2026-09-07）
+
+Read-only inspection covered Community `frontend/src/views/AgentView.vue`
+(`submitMessage`, `openSession`) and the complete `components/agent/AgentThinking.vue`.
+Existing Phase 43/60 classifications remain in force; this slice changes only BYQ rendering.
+
+| Community behavior | Classification | BYQ decision / regression |
+|---|---|---|
+| Failed runs remain discoverable after reopening a session | `PORT_UX` / `PORT_TESTS` / `REFACTOR` | Replay normalized terminal events as distinct history records after later turns and restarts. |
+| Failure represented as an assistant message | `DROP` | Render operational outcomes separately; never append them to assistant messages or model history. |
+| Raw tool/error/reasoning fields and latest-artifact inference | `DROP` | Closed error labels only; historical outcome rendering neither selects a research object nor executes a retry. |
+
+No Community source or persistence was modified or copied. The first regression
+failed on the original BYQ view after a later `session.started`; the fixed view retains it.
+
 ## Audit scope 与 evidence
 
 - Local reference: `/home/jefison/projects/BeyondQuant-community`.
