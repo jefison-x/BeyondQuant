@@ -9,8 +9,9 @@ U8收尾后使用新隔离工作树实施；保持当前DSH，不回退。Tushar
 记录runtime-subagent-timeout；续接不得用服务健康否认会话超时，也不得将其替换为
 旧LightGBM/月频/近一年研究。核验原始需求约束与目标对象关联，纳入R2/F8/F9验收。
 
-状态：**PLANNED — 等待 U8 完成并合并后实施**  
-类型：独立 maintenance package，不是 U9，不推进 Product Phase 97。  
+状态：**PLANNED — 等待 U8 提前收尾并合并后实施**
+
+类型：独立 maintenance package，不是 U9，不推进 Product Phase 97。
 建议分支：`fix/agent-reliability-post-u8`；必须从 U8 合并后的最新 `origin/main` 创建隔离工作树。
 
 登记范围：第 1–11 节为 R1–R5 会话可靠性包；第 12 节登记独立的 S1–S3 指数股票池修复包。
