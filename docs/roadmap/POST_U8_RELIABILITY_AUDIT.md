@@ -353,6 +353,11 @@ Gateway重连补充：2项失败测试分别复现跨session事件落盘与旧�
 现核对当前session/trace并跳过已有序号，新事件继续落盘；原TraceStore顺序约束不放宽。
 Gateway完整137通过（2.20秒）。没有生产访问或领域写入。
 
+本批验证结束后，已按精确Compose项目byq-ci-r2-recovery-20260907执行down --volumes
+--remove-orphans --rmi local；复核该项目容器、卷、网络均为零。清理的是6个合成测试服务、
+4个临时卷、5个测试镜像及测试网络，未保留这些临时卷备份；后续测试须重新生成合成夹具。
+正式beyondquant服务、生产数据库、历史U7/U8证据及私有备份未改动。
+
 R1/R4 非完成终态切片：原 Runtime 仅将error/failed判为失败，max_tokens及cancelled反而发
 session.result，可能使恢复逻辑认为需求已经回答。修复为仅completed成功，显式取消原路径不变。
 最初3项失败中1项为测试错误地将字符串回执当dict；纠正后2失败1通过，明确复现业务缺陷。
