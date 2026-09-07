@@ -223,15 +223,19 @@ def test_approval_continuation_claim_fences_late_ack_across_restart() -> None:
                           trusted_owner="alice", trusted_actor="human-reviewer")
     first = store.set_continuation_status(approval["approval_id"], "submitting", trusted_owner="alice")
     assert first["continuation_attempt"] == 1
-    store._execute("UPDATE agent_approvals SET updated_at=now()-interval '31 seconds' WHERE approval_id=:id", {"id": approval["approval_id"]})
+    store.set_continuation_status(approval["approval_id"], "failed", trusted_owner="alice", expected_attempt=1)
     store.close()
     restarted = AgentResearchStore()
     try:
         second = restarted.set_continuation_status(approval["approval_id"], "submitting", trusted_owner="alice")
         assert second["continuation_attempt"] == 2 and second["continuation_changed"]
+        restarted._execute("UPDATE agent_approvals SET updated_at=now()-interval '31 seconds' WHERE approval_id=:id", {"id": approval["approval_id"]})
+        expired = restarted.set_continuation_status(approval["approval_id"], "submitting", trusted_owner="alice")
+        assert not expired["continuation_changed"] and expired["continuation_attempt"] == 2
+        assert expired["continuation_status"] == "outcome_unknown"
         for status in ("submitted", "failed"):
             late = restarted.set_continuation_status(approval["approval_id"], status, trusted_owner="alice", expected_attempt=1)
-            assert not late["continuation_changed"] and late["continuation_status"] == "submitting"
+            assert not late["continuation_changed"] and late["continuation_status"] == "outcome_unknown"
         with pytest.raises(ValueError):
             restarted.set_continuation_status(approval["approval_id"], "submitted", trusted_owner="alice")
         confirmed = restarted.set_continuation_status(approval["approval_id"], "submitted", trusted_owner="alice", expected_attempt=2)
@@ -239,6 +243,27 @@ def test_approval_continuation_claim_fences_late_ack_across_restart() -> None:
         assert confirmed["execution_outcome"] == "authorized"  # transport ack is not business success
     finally:
         restarted.close()
+
+
+def test_known_unaccepted_continuations_have_a_persistent_retry_limit() -> None:
+    store = AgentResearchStore()
+    try:
+        run = start(store)
+        approval = store.create_approval({"run_id": run["run_id"], "action": "byq_backtest_task_execute",
+            "reason": "Synthetic", "resource_type": "backtest_task", "resource_id": "backtesttask_1", "idempotency_key": "limited-approval"})
+        store.decide_approval({"approval_id": approval["approval_id"], "decision": "approved"},
+                              trusted_owner="alice", trusted_actor="human-reviewer")
+        for attempt in range(1, 9):
+            claim = store.set_continuation_status(approval["approval_id"], "submitting", trusted_owner="alice")
+            assert claim["continuation_attempt"] == attempt and claim["continuation_changed"]
+            store.set_continuation_status(approval["approval_id"], "failed", trusted_owner="alice", expected_attempt=attempt)
+        store.close()
+        store = AgentResearchStore()
+        exhausted = store.set_continuation_status(approval["approval_id"], "submitting", trusted_owner="alice")
+        assert exhausted["continuation_status"] == "needs_attention"
+        assert not exhausted["continuation_changed"] and exhausted["continuation_attempt"] == 8
+    finally:
+        store.close()
 
 
 def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> None:

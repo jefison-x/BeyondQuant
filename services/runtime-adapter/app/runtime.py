@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import queue
 import re
@@ -446,6 +447,17 @@ class RuntimeAdapter:
         )
         watchdog.start()
         return run.run_id
+
+    def reconcile_prompt(self, session_id: str, idempotency_key: str, content_sha256: str) -> dict[str, object]:
+        record = self._get(session_id)
+        with record.lock:
+            existing = record.prompt_idempotency.get(idempotency_key)
+            if existing is None:
+                return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
+            content, run_id = existing
+            if hashlib.sha256(content.encode("utf-8")).hexdigest() != content_sha256:
+                raise SessionConflict("prompt receipt identity conflicts with original content")
+            return {"schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": run_id}
 
     def _run_prompt(self, record: RuntimeSession, run: ActiveRun, content: str) -> None:
         runtime_session_id = record.runtime_session_id

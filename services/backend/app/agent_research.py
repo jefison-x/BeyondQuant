@@ -797,7 +797,7 @@ class AgentResearchStore(PgStoreMixin):
     ) -> dict[str, object]:
         approval_id = _entity_id(approval_id, field="approval_id", prefix="agent_approval")
         next_status = _text(status, field="continuation_status", max_length=32)
-        if next_status not in {"submitting", "submitted", "failed"}:
+        if next_status not in {"submitting", "submitted", "failed", "outcome_unknown"}:
             raise ValueError("continuation status is invalid")
         if next_status != "submitting" and (type(expected_attempt) is not int or expected_attempt < 1):
             raise ValueError("continuation completion requires its claimed attempt")
@@ -828,10 +828,21 @@ class AgentResearchStore(PgStoreMixin):
                     ).total_seconds() >= 30
             allowed = {
                 "submitting": {"queued", "failed"},
-                "submitted": {"submitting"},
+                "submitted": {"submitting", "outcome_unknown"},
                 "failed": {"submitting"},
+                "outcome_unknown": {"submitting"},
             }
-            changed = current in allowed[next_status] or stale_submission
+            # Expiry proves the caller disappeared, not that the prompt was
+            # never accepted. Do not reclaim and potentially execute twice.
+            blocked_state = None
+            if stale_submission:
+                blocked_state = "outcome_unknown"
+            elif next_status == "submitting" and current in {"queued", "failed"} and int(row.get("continuation_attempt") or 0) >= 8:
+                blocked_state = "needs_attention"
+            if blocked_state:
+                execute(connection, "UPDATE agent_approvals SET continuation_status=:status,updated_at=:now WHERE approval_id=:id",
+                        {"status": blocked_state, "now": _now(), "id": approval_id})
+            changed = current in allowed[next_status] and blocked_state is None
             if next_status != "submitting" and expected_attempt != int(row.get("continuation_attempt") or 0):
                 changed = False
             if changed:

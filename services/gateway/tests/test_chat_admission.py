@@ -53,7 +53,7 @@ def test_approval_continuation_rehydrates_exact_session_after_adapter_restart(mo
         prompts.append((path, kwargs["payload"]))
         if len(prompts) == 1:
             raise main.HTTPException(status_code=404, detail="missing")
-        return {"run_id": "one-run"}
+        return {"accepted": True, "run_id": "one-run"}
 
     monkeypatch.setattr(main, "_backend_request", backend)
     monkeypatch.setattr(main, "_adapter_post", adapter)
@@ -67,6 +67,52 @@ def test_approval_continuation_rehydrates_exact_session_after_adapter_restart(mo
     assert prompts[1][1]["idempotency_key"] == "approval-continuation-approval"
 
 
+def test_approval_continuation_preserves_unknown_receipts_without_resubmission(monkeypatch):
+    monkeypatch.delenv("BYQ_CHAT_ADMISSION_FILE", raising=False)
+    session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="synthetic"))
+    monkeypatch.setattr(main, "_trusted_agent_headers", lambda _: {})
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    monkeypatch.setattr(main, "_adapter_prompt_receipt", lambda *args: None)
+    for mode in ("timeout", "malformed", "rejected"):
+        states, calls = [], []
+        def backend(method, path, payload, **kwargs):
+            states.append(payload["status"])
+            return {"approval": {"continuation_changed": True, "continuation_status": payload["status"], "continuation_attempt": 1}}
+        def adapter(*args, **kwargs):
+            calls.append(1)
+            if mode == "malformed":
+                return {"accepted": True}
+            raise main.HTTPException(status_code=503 if mode == "timeout" else 409, detail="synthetic")
+        monkeypatch.setattr(main, "_backend_request", backend)
+        monkeypatch.setattr(main, "_adapter_post", adapter)
+        expected = "failed" if mode == "rejected" else "outcome_unknown"
+        assert main.continue_approval_conversation(None, "conversation", "approval", "approved", "action") == {"status": expected}
+        assert states == ["submitting", expected] and len(calls) == 1
+
+
+def test_approval_continuation_reconciles_the_original_accepted_prompt(monkeypatch):
+    monkeypatch.delenv("BYQ_CHAT_ADMISSION_FILE", raising=False)
+    session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="synthetic"))
+    monkeypatch.setattr(main, "_trusted_agent_headers", lambda _: {})
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    states, writes, reads = [], [], []
+    def backend(method, path, payload, **kwargs):
+        states.append(payload["status"])
+        return {"approval": {"continuation_changed": True, "continuation_status": payload["status"], "continuation_attempt": 1}}
+    def submit(*args, **kwargs):
+        writes.append(kwargs["payload"])
+        raise main.HTTPException(status_code=503, detail="lost response")
+    def lookup(session_id, key, content):
+        reads.append((session_id, key, content))
+        return {"schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": "original-run"}
+    monkeypatch.setattr(main, "_backend_request", backend)
+    monkeypatch.setattr(main, "_adapter_post", submit)
+    monkeypatch.setattr(main, "_adapter_prompt_receipt", lookup)
+    assert main.continue_approval_conversation(None, "conversation", "approval", "approved", "action") == {"status": "submitted"}
+    assert states == ["submitting", "submitted"] and len(writes) == len(reads) == 1
+    assert reads[0] == ("runtime", writes[0]["idempotency_key"], writes[0]["content"])
+
+
 def test_approval_continuation_refuses_a_claim_without_fence(monkeypatch):
     monkeypatch.delenv("BYQ_CHAT_ADMISSION_FILE", raising=False)
     monkeypatch.setattr(main, "_trusted_agent_headers", lambda _: {})
@@ -75,3 +121,17 @@ def test_approval_continuation_refuses_a_claim_without_fence(monkeypatch):
     })
     monkeypatch.setattr(main, "_product_session", lambda *_: (_ for _ in ()).throw(AssertionError("unfenced prompt")))
     assert main.continue_approval_conversation(None, "conversation", "approval", "approved", "action") == {"status": "failed"}
+
+
+def test_prompt_receipt_lookup_is_exact_and_never_sends_prompt_text(monkeypatch):
+    calls = []
+    def lookup(url, **kwargs):
+        calls.append((url, kwargs))
+        return main.httpx.Response(200, request=main.httpx.Request("GET", url), json={
+            "schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": "original-run"})
+    monkeypatch.setattr(main.httpx, "get", lookup)
+    assert main._adapter_prompt_receipt("original-session", "original-key", "synthetic private instruction")["run_id"] == "original-run"
+    assert calls[0][0].endswith("/original-session/prompts/reconcile")
+    assert calls[0][1]["params"]["idempotency_key"] == "original-key"
+    assert len(calls[0][1]["params"]["content_sha256"]) == 64
+    assert "synthetic private instruction" not in str(calls)

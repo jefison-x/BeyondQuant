@@ -173,6 +173,26 @@ Gateway完整123通过、Backend research/API 9通过（含独立store并发）�
 
 ## 架构门禁
 
+### F5 续接未知结果不重发与有界核对（2026-09-07）
+
+进一步审计发现：旧submitting认领过期可重领、Gateway超时标failed以及页面无限重试组合，
+可能在Adapter重启丢失内存幂等记录后重复执行。现30秒失联只转outcome_unknown且不重领；
+明确未接收的重试最多8次并持久计数，耗尽needs_attention。相同attempt的真实迟到ack仍可确认，
+旧attempt不能覆盖。此条修订本记录早前“过期重新认领”切片，保留此前测试历史，不追改证据。
+
+Gateway要求有效accepted/run_id回执；5xx/损坏响应先精确查询原session/key/content摘要，
+找到才标submitted，否则保留unknown。Runtime新只读prompt-receipt.v1不返回原文本；重建或缺失
+内存记录只表示unknown，绝不证明未执行。页面最多8次检查，unknown/exhausted立即停止重发，
+会话切换或卸载后不应用迟到结果。细则见[approval continuation reliability](../contracts/approval-continuation-reliability.md)。
+
+Backend agent10项、Gateway完整128项、Runtime完整86通过5跳过；Frontend完整52文件160项，
+追加卸载测试后AgentView13项通过，类型检查/构建通过。隔离Backend/Gateway/Frontend构建通过。
+Chrome使用隔离库“已拒绝动作+unknown续接”夹具，不授予动作、不调用模型：真实Product继续
+请求只返回unknown，不发起Runtime prompt；页面显示不会自动重发，跨多次检查continue请求总数
+保持1，desktop/390×844无溢出，Console为空。未执行生产审批或训练。
+接口枚举418 routes、81 MCP tools、4 Workers；新增1个Runtime只读回执路由。
+持久Adapter回执、F4目标阶段/关联对象、任务绑定F6及完整F5/F10仍未完成，未宣称整体验收。
+
 ### R4/F10 恢复进程的权限隔离前置切片（2026-09-07）
 
 官方已安装0.1.2rc1 `Session.run(input, on_notification=...)`未提供逐回合MCP header参数。

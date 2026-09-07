@@ -14,6 +14,9 @@ const createAgentSession = vi.fn();
 const deleteAgentSession = vi.fn();
 const listAgentSessions = vi.fn();
 const updateAgentSession = vi.fn();
+const continueApproval = vi.fn();
+
+vi.mock("@/api/research", () => ({ continueApproval: (...args: unknown[]) => continueApproval(...args) }));
 
 vi.mock("vue-router", () => ({
   useRoute: () => ({ path: "/agent", query: {} }),
@@ -34,6 +37,7 @@ vi.mock("@/api/agent", () => ({
 
 describe("AgentView", () => {
   beforeEach(() => {
+    continueApproval.mockReset();
     setActivePinia(createPinia());
     useAuthStore().setUser({
       subject: "alice",
@@ -69,6 +73,43 @@ describe("AgentView", () => {
     });
     updateAgentSession.mockReset();
     updateAgentSession.mockResolvedValue({ session: {} });
+  });
+
+  it("stops unknown approval continuation instead of retrying a write", async () => {
+    continueApproval.mockResolvedValue({ approval: { continuation_status: "outcome_unknown" } });
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    await vm.retryApprovalContinuation("approval-synthetic");
+    expect(continueApproval).toHaveBeenCalledTimes(1);
+    expect(vm.error).toContain("不会自动重发");
+    expect(vm.approvalContinuationTimer).toBeNull();
+    wrapper.unmount();
+  });
+
+  it("bounds approval polling even when the service keeps returning queued", async () => {
+    continueApproval.mockResolvedValue({ approval: { continuation_status: "queued" } });
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    for (let attempt = 0; attempt < 10; attempt++) await vm.retryApprovalContinuation("approval-synthetic");
+    expect(continueApproval).toHaveBeenCalledTimes(8);
+    expect(vm.error).toContain("核对次数已用尽");
+    wrapper.unmount();
+  });
+
+  it("ignores approval acknowledgements after the view is unmounted", async () => {
+    let resolveReceipt: (value: unknown) => void = () => undefined;
+    continueApproval.mockReturnValue(new Promise(resolve => { resolveReceipt = resolve; }));
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    const pending = vm.retryApprovalContinuation("approval-synthetic");
+    wrapper.unmount();
+    resolveReceipt({ approval: { continuation_status: "outcome_unknown" } });
+    await pending;
+    expect(vm.error).not.toContain("续接结果尚未确认");
+    expect(vm.approvalContinuationTimer).toBeNull();
   });
 
   it("shows the personalized nickname and sends with Ctrl+Enter", async () => {

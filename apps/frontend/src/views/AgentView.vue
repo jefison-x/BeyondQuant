@@ -43,6 +43,8 @@ let streamController: AbortController | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 let approvalContinuationTimer: ReturnType<typeof setTimeout> | null = null;
 let continuationWarningShown = false;
+const approvalContinuationChecks = new Map<string, number>();
+let viewDisposed = false;
 let reconciliationTimer: ReturnType<typeof setTimeout> | null = null;
 let lastStreamEventAt = 0;
 
@@ -394,13 +396,26 @@ function applyRouteDraft(value: unknown) {
 }
 
 async function retryApprovalContinuation(value: unknown) {
-  if (typeof value !== "string" || !value) return;
+  if (viewDisposed || typeof value !== "string" || !value) return;
+  const generation = conversationGeneration;
+  const stillCurrent = () => !viewDisposed && generation === conversationGeneration;
   if (approvalContinuationTimer) {
     clearTimeout(approvalContinuationTimer);
     approvalContinuationTimer = null;
   }
+  const checks = approvalContinuationChecks.get(value) ?? 0;
+  if (checks >= 8) {
+    error.value = "审批决定已保存，自动续接核对次数已用尽，请检查原任务状态。";
+    return;
+  }
+  approvalContinuationChecks.set(value, checks + 1);
   try {
     const result = await continueApproval(value);
+    if (!stillCurrent()) return;
+    if (["outcome_unknown", "needs_attention"].includes(String(result.approval.continuation_status))) {
+      error.value = "审批决定已保存，但续接结果尚未确认；不会自动重发，请检查原任务状态。";
+      return;
+    }
     if (result.approval.continuation_status === "submitted" && agent.activeSessionId) {
       localRunStartedAt.value = new Date().toISOString();
       scheduleRunReconciliation(agent.activeSessionId, conversationGeneration);
@@ -410,13 +425,14 @@ async function retryApprovalContinuation(value: unknown) {
       return;
     }
     const delay = result.approval.continuation_status === "submitting" ? 31_000 : 5_000;
-    approvalContinuationTimer = setTimeout(() => void retryApprovalContinuation(value), delay);
+    approvalContinuationTimer = setTimeout(() => { if (stillCurrent()) void retryApprovalContinuation(value); }, delay);
   } catch {
+    if (!stillCurrent()) return;
     if (!continuationWarningShown) {
       continuationWarningShown = true;
       ElMessage.warning("审批已记录，正在等待原会话可继续执行");
     }
-    approvalContinuationTimer = setTimeout(() => void retryApprovalContinuation(value), 5_000);
+    approvalContinuationTimer = setTimeout(() => { if (stillCurrent()) void retryApprovalContinuation(value); }, 5_000);
   }
 }
 
@@ -463,6 +479,7 @@ watch(historyOpen, (open) => {
 });
 watch([historyStatus, historySearch], () => { if (historyOpen.value) void loadHistory(); });
 onBeforeUnmount(() => {
+  viewDisposed = true;
   stopStream();
   stopReconciliation();
   if (clockTimer) clearInterval(clockTimer);

@@ -47,7 +47,11 @@ async function decide(item: Record<string, unknown>, decision: "approved" | "rej
     window.dispatchEvent(new Event("byq:approvals-changed"));
     const conversationId = String(result.approval.conversation_id ?? "");
     const continuationStatus = String(result.approval.continuation_status ?? "");
-    ElMessage.success(decision === "approved" ? "已批准，正在返回原会话继续" : "已拒绝，正在返回原会话");
+    if (["outcome_unknown", "needs_attention"].includes(continuationStatus)) {
+      ElMessage.warning("审批决定已保存，续接结果尚未确认；不会自动重发，请检查原任务状态。");
+    } else {
+      ElMessage.success(decision === "approved" ? "已批准，正在返回原会话核对后续动作" : "已拒绝，正在返回原会话");
+    }
     if (conversationId) {
       await router.push({
         path: "/agent",

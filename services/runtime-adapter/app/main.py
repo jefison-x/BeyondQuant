@@ -151,6 +151,19 @@ def resume_session(session_id: str, request: ResumeSessionRequest | None = None)
         raise HTTPException(status_code=503, detail="DSH runtime failed to resume") from exc
 
 
+@app.get("/internal/runtime/sessions/{session_id}/prompts/reconcile")
+def reconcile_prompt_receipt(
+    session_id: str, idempotency_key: str = Query(min_length=8, max_length=128),
+    content_sha256: str = Query(pattern="^[0-9a-f]{64}$"),
+) -> dict[str, object]:
+    try:
+        return adapter.reconcile_prompt(session_id, idempotency_key, content_sha256)
+    except KeyError:
+        return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
+    except SessionConflict as exc:
+        raise HTTPException(status_code=409, detail="prompt receipt identity conflicts") from exc
+
+
 @app.post("/internal/runtime/sessions/{session_id}/cancel")
 def cancel_session(session_id: str, mode: str = Query("hard")) -> dict[str, object]:
     try:

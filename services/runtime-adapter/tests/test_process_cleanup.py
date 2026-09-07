@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import hashlib
 import time
 from importlib.metadata import version
 from pathlib import Path
@@ -135,6 +136,13 @@ def test_prompt_idempotency_returns_the_original_run_without_reexecution(adapter
     assert adapter.submit_prompt(
         "s-idempotent", "continue approval", idempotency_key="approval-continuation-1",
     ) == first_run
+    digest = hashlib.sha256(b"continue approval").hexdigest()
+    receipt = adapter.reconcile_prompt("s-idempotent", "approval-continuation-1", digest)
+    assert receipt == {"schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": first_run}
+    assert "continue approval" not in str(receipt)
+    assert adapter.reconcile_prompt("s-idempotent", "missing-key", digest)["state"] == "outcome_unknown"
+    with pytest.raises(SessionConflict):
+        adapter.reconcile_prompt("s-idempotent", "approval-continuation-1", "0" * 64)
     with pytest.raises(SessionConflict, match="reused"):
         adapter.submit_prompt(
             "s-idempotent", "different continuation", idempotency_key="approval-continuation-1",
@@ -145,6 +153,9 @@ def test_prompt_idempotency_returns_the_original_run_without_reexecution(adapter
     assert adapter.submit_prompt(
         "s-idempotent", "continue approval", idempotency_key="approval-continuation-1",
     ) == first_run
+    adapter.release_session("s-idempotent")
+    adapter.create_session("s-idempotent", "t-recreated")
+    assert adapter.reconcile_prompt("s-idempotent", "approval-continuation-1", digest)["state"] == "outcome_unknown"
     adapter.release_session("s-idempotent")
 
 

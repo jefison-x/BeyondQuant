@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import asyncio
 import threading
@@ -366,10 +367,29 @@ def _adapter_post(path: str, *, payload: dict[str, object] | None = None, timeou
         raise HTTPException(status_code=status, detail=detail) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="runtime adapter unavailable") from exc
-    body = response.json()
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="runtime adapter returned an invalid response") from exc
     if not isinstance(body, dict):
         raise HTTPException(status_code=502, detail="runtime adapter returned an invalid response")
     return body
+
+
+def _adapter_prompt_receipt(session_id: str, key: str, content: str) -> dict[str, object] | None:
+    """One exact read; missing ephemeral state is unknown, never resubmit permission."""
+    try:
+        response = httpx.get(f"{RUNTIME_ADAPTER_URL}/internal/runtime/sessions/{session_id}/prompts/reconcile",
+            params={"idempotency_key": key, "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest()},
+            timeout=2.0)
+        response.raise_for_status()
+        body = response.json()
+        if (isinstance(body, dict) and body.get("schema_version") == "prompt-receipt.v1"
+                and body.get("state") == "accepted" and isinstance(body.get("run_id"), str) and body["run_id"]):
+            return body
+    except (httpx.HTTPError, ValueError):
+        pass
+    return None
 
 
 def _start_trace_collector(session: ProductSession) -> None:
@@ -647,20 +667,28 @@ def _continue_approval_conversation(
             else "Do not execute the rejected action; explain the rejection briefly and offer a safe next step."
         )
     )
+    prompt_attempted = False
     try:
         session = _product_session(request, conversation_id)
         payload = {"content": instruction, "require_model_key": True,
                    "idempotency_key": f"approval-continuation-{approval_id}"}
         try:
-            _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
+            prompt_attempted = True
+            receipt = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
             session = _replace_lost_runtime_session(session)
-            _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
-    except HTTPException:
-        mark("failed")
-        return {"status": "failed"}
+            receipt = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
+        if not isinstance(receipt, dict) or receipt.get("accepted") is not True or not isinstance(receipt.get("run_id"), str) or not receipt["run_id"]:
+            raise HTTPException(status_code=502, detail="continuation receipt is unconfirmed")
+    except HTTPException as error:
+        state = "outcome_unknown" if prompt_attempted and error.status_code >= 500 else "failed"
+        if state == "outcome_unknown" and _adapter_prompt_receipt(session.session_id, str(payload["idempotency_key"]), instruction) is not None:
+            confirmed = mark("submitted").get("approval")
+            return {"status": str(confirmed.get("continuation_status") if isinstance(confirmed, dict) else "outcome_unknown")}
+        mark(state)
+        return {"status": state}
     marked = mark("submitted").get("approval")
     return {
         "status": str(marked.get("continuation_status") if isinstance(marked, dict) else "submitted")
