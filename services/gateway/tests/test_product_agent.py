@@ -65,6 +65,38 @@ def test_turn_requires_a_durable_message_identity_before_runtime_submission(monk
     assert writes == []
 
 
+@pytest.mark.parametrize("persisted_count", [1, 2])
+def test_collector_reconnect_preserves_history_and_accepts_only_its_session(monkeypatch, tmp_path, persisted_count):
+    import json
+    from contextlib import contextmanager
+
+    store = TraceStore(tmp_path)
+    first = {"trace_id": "trace-reconnect", "session_id": "session-reconnect", "sequence": 1,
+             "timestamp": "2026-09-07T00:00:00+00:00", "kind": "session.ready",
+             "source": "runtime-adapter", "payload": {"status": "ready"}}
+    second = {**first, "sequence": 2, "kind": "session.started", "payload": {"run_id": "a" * 32}}
+    third = {**second, "sequence": 3, "kind": "session.result"}
+    store.append(first)
+    if persisted_count == 2:
+        store.append(second)
+
+    @contextmanager
+    def stream(*args, **kwargs):
+        yield SimpleNamespace(status_code=200, iter_lines=lambda: iter([
+            "data: " + json.dumps(first),
+            "data: " + json.dumps(second),
+            "data: " + json.dumps({**third, "session_id": "another-session"}),
+            "data: " + json.dumps(third),
+        ]))
+
+    monkeypatch.setattr(main, "trace_store", store)
+    monkeypatch.setattr(main.httpx, "stream", stream)
+    monkeypatch.setattr(main, "_persist_projected_answer", lambda *_: None)
+    main._collect_trace(SimpleNamespace(session_id="session-reconnect", trace_id="trace-reconnect", released=False))
+    assert store.read("session-reconnect") == [first, second, third]
+    assert store.read("another-session") == []
+
+
 def test_product_api_requires_bearer_auth(monkeypatch) -> None:
     monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
     response = TestClient(main.app).post("/v1/agent/sessions")

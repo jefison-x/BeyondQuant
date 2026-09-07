@@ -21,6 +21,7 @@ from packages.contracts.conversation_rehydration import (
     rehydrated_prompt,
 )
 from packages.contracts.conversation_recovery import normalize_recovery
+from packages.contracts.agent_run_lifecycle import registration_fingerprint
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
 from .child_lease import ChildLease
@@ -73,6 +74,7 @@ class ActiveRun:
     child_leases: dict[str, ChildLease] = field(default_factory=dict)
     finished_children: set[str] = field(default_factory=set)
     last_root_sequence: int = -1
+    observed_registrations: set[str] = field(default_factory=set, repr=False)
     last_wait_notice_at: float = 0.0
     watchdog_stop: threading.Event = field(default_factory=threading.Event, repr=False)
 
@@ -83,6 +85,7 @@ class RuntimeSession:
     trace_id: str
     harness: Any
     runtime_session_id: str
+    runtime_generation: str = field(default="", repr=False)
     owner_principal: str | None = None
     workspace_id: str | None = None
     model_resolution: dict[str, object] = field(default_factory=dict, repr=False)
@@ -352,6 +355,7 @@ class RuntimeAdapter:
         with self._lock:
             if session_id in self._sessions:
                 raise SessionConflict(f"BYQ session already exists: {session_id}")
+            runtime_generation = f"generation-{uuid.uuid4().hex}"
             harness = self._build_harness(
                 session_id,
                 session_root,
@@ -359,12 +363,14 @@ class RuntimeAdapter:
                 owner_principal=owner_principal,
                 workspace_id=workspace_id,
                 model_resolution=model_resolution,
+                runtime_generation=runtime_generation,
             )
             record = RuntimeSession(
                 session_id=session_id,
                 trace_id=trace_id,
                 harness=harness,
                 runtime_session_id=runtime_session_id,
+                runtime_generation=runtime_generation,
                 owner_principal=owner_principal,
                 workspace_id=workspace_id,
                 model_resolution=model_resolution,
@@ -580,6 +586,7 @@ class RuntimeAdapter:
 
         if previous_status == SessionStatus.FAILED:
             self._compatibility.close(previous_harness)
+        runtime_generation = f"generation-{uuid.uuid4().hex}"
         harness = self._build_harness(
             record.session_id,
             contained_session_path(self._session_root, runtime_session_id),
@@ -587,6 +594,7 @@ class RuntimeAdapter:
             owner_principal=record.owner_principal,
             workspace_id=record.workspace_id,
             model_resolution=record.model_resolution,
+            runtime_generation=runtime_generation,
         )
         try:
             self._compatibility.start(harness)
@@ -600,6 +608,7 @@ class RuntimeAdapter:
         with record.lock:
             record.harness = harness
             record.runtime_session_id = runtime_session_id
+            record.runtime_generation = runtime_generation
             record.pending_conversation_context = context
             record.pending_conversation_recovery = recovery
             record.normalization = NormalizationState()
@@ -697,6 +706,7 @@ class RuntimeAdapter:
         owner_principal: str | None,
         workspace_id: str | None,
         model_resolution: dict[str, object],
+        runtime_generation: str,
     ) -> Any:
         environment = {
             "BYQ_MCP_URL": os.environ.get("BYQ_MCP_URL", "http://mcp:8300/mcp/v1"),
@@ -713,7 +723,7 @@ class RuntimeAdapter:
             # Give each owned process a BYQ identity so resumed generations
             # cannot authorize against an earlier process's AgentRun. This is
             # deliberately distinct from both the public session and DSH ID.
-            "BYQ_DSH_RUN_ID": f"generation-{uuid.uuid4().hex}",
+            "BYQ_DSH_RUN_ID": runtime_generation,
         }
         # The provider credential enters only the adapter-owned SDK child
         # environment. It is never returned in readiness, lifecycle responses,
@@ -821,6 +831,18 @@ class RuntimeAdapter:
                 runtime_activity = self._observe_run_observation(
                     record, run, observation,
                 )
+                if (runtime_activity and observation.registration_key and record.owner_principal
+                        and record.workspace_id and record.runtime_generation):
+                    fingerprint = registration_fingerprint(
+                        record.owner_principal, record.workspace_id, f"byq-product-agent-{record.session_id}",
+                        record.trace_id, record.session_id, record.runtime_generation, observation.registration_key,
+                    )
+                    if fingerprint not in run.observed_registrations and len(run.observed_registrations) < 128:
+                        run.observed_registrations.add(fingerprint)
+                        self._emit(record, "agent.run.registration", "runtime-adapter", {
+                            "schema_version": "agent-run-registration-observed.v1",
+                            "run_id": run.run_id, "registration_fingerprint": fingerprint,
+                        })
             self._record_usage(record, observation)
             events = normalize_runtime_observation(
                 observation,

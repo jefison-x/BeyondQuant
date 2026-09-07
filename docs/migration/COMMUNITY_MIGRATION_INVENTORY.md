@@ -11,6 +11,14 @@ BeyondQuant architecture 的内容。
 
 ## Post-U8 R1 historical outcome audit（2026-09-07）
 
+Post-U8 durable AgentRun closure: re-inspected Community
+`agent-service/app/workflows/contracts.py` GraphRun/GraphNode status and request/run
+identity read-only. Exact identity, terminal immutability and independent evidence
+are `REFERENCE_ONLY` / `PORT_TESTS`. Graph snapshots, executor, workflow persistence
+and old runtime coupling remain `DROP`; no code is copied. BYQ extends its existing
+AgentResearchStore and observes the qualified official SDK notification seam.
+The new store/observer components do not yet close the cross-service delivery gate.
+
 Post-U8 S3 historical membership: read-only Community `backend/app/models/market_data.py`
 IndexConstituentWeight/IndexWeightSyncState, `_run_index_weight_sync` and repository
 index month freshness/replacement/as-of selection were inspected. Date-bounded

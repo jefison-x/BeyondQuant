@@ -177,10 +177,26 @@ class Dsh012Compatibility:
                 kind="tool.call" if valid else "ignored", session_id=session_id, root_session=is_root,
                 runtime_activity=valid, call_id=call_id if isinstance(call_id, str) else None,
                 tool_name=name if isinstance(name, str) else None,
+                registration_key=_registration_key(name, data.get("arguments")) if valid else None,
             )
         if event_type == "tool/result":
             return _tool_result_observation(data, session_id=session_id, is_root=is_root)
         return RuntimeObservation(kind="ignored", session_id=session_id, root_session=is_root)
+
+
+def _registration_key(name: object, arguments: object) -> str | None:
+    # Official 0.1.2 tool/call arguments are JSON text, verified with a real
+    # local process. Only this exact BYQ control capability is inspected.
+    if name != "mcp__byq__byq_agent_run_start" or not isinstance(arguments, str) or len(arguments) > 4096:
+        return None
+    try:
+        payload = json.loads(arguments)
+    except (ValueError, TypeError, RecursionError):
+        return None
+    key = payload.get("idempotency_key") if isinstance(payload, dict) else None
+    if not isinstance(key, str) or not 1 <= len(key.strip()) <= 128:
+        return None
+    return key.strip()
 
 
 def _assistant_observation(data: dict[str, Any], *, session_id: str, is_root: bool) -> RuntimeObservation:

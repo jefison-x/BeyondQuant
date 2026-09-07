@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import json
 import hashlib
 import time
 from importlib.metadata import version
@@ -113,6 +114,41 @@ def test_incomplete_model_finish_is_never_a_success_result(adapter: RuntimeAdapt
         assert len(terminal) == 1
         assert terminal[0]["kind"] == "session.failed"
         assert terminal[0]["payload"]["run_id"] == receipt
+    finally:
+        adapter.close()
+
+
+def test_registration_observation_uses_captured_turn_without_exposing_arguments(adapter: RuntimeAdapter):
+    if version("deepseek-harness-sdk") != "0.1.2rc1":
+        pytest.skip("requires qualified 0.1.2 notification carrier")
+    from packages.contracts.agent_run_lifecycle import registration_fingerprint
+
+    try:
+        adapter.create_session("binding", "binding-trace", "alice", "workspace_alice")
+        root_id = adapter.submit_prompt("binding", "synthetic registration")
+        record = adapter._get("binding")
+        run = record.active_run
+        notice = Notification(method="session.event", payload={"sessionId": record.runtime_session_id,
+            "event": {"type": "tool/call", "seq": 1, "data": {
+                "callId": "register", "name": "mcp__byq__byq_agent_run_start",
+                "arguments": json.dumps({"idempotency_key": "private-registration-key", "role_id": "quant_orchestrator"}),
+            }}})
+        for _ in range(2):
+            adapter._on_notification(record, notice, source_run=run, source_runtime_session_id=record.runtime_session_id)
+        bindings = [item for item in record.history if item["kind"] == "agent.run.registration"]
+        assert len(bindings) == 1
+        assert bindings[0]["payload"] == {
+            "schema_version": "agent-run-registration-observed.v1", "run_id": root_id,
+            "registration_fingerprint": registration_fingerprint(
+                "alice", "workspace_alice", "byq-product-agent-binding", "binding-trace", "binding",
+                FakeHarness.instances[0].config.env["BYQ_DSH_RUN_ID"], "private-registration-key"),
+        }
+        serialized = json.dumps(record.history)
+        assert "private-registration-key" not in serialized
+        assert record.runtime_generation not in serialized
+        adapter.cancel_session("binding", "hard")
+        adapter._on_notification(record, notice, source_run=run, source_runtime_session_id=record.runtime_session_id)
+        assert len([item for item in record.history if item["kind"] == "agent.run.registration"]) == 1
     finally:
         adapter.close()
 
@@ -920,6 +956,7 @@ def test_opencode_personal_key_is_scoped_to_each_reviewed_runtime_route(
         trace_id="t-1",
         owner_principal="alice",
         workspace_id="workspace_alice",
+        runtime_generation="generation-provider-test",
         model_resolution={
             "provider": provider,
             "model": "catalog-model",
@@ -944,6 +981,7 @@ def test_unreviewed_runtime_provider_cannot_receive_a_personal_key(
             trace_id="t-1",
             owner_principal="alice",
             workspace_id="workspace_alice",
+            runtime_generation="generation-provider-test",
             model_resolution={
                 "provider": "browser-controlled-provider",
                 "model": "arbitrary-model",

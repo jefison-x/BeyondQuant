@@ -27,6 +27,7 @@ class RuntimeObservation:
     answer_text: str | None = None
     call_id: str | None = None
     tool_name: str | None = None
+    registration_key: str | None = field(default=None, repr=False)
     tool_failed: bool = False
     tool_result: dict[str, Any] | None = None
     tool_results: tuple[RuntimeToolResult, ...] = ()

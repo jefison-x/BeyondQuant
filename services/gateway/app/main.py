@@ -409,6 +409,8 @@ def _start_trace_collector(session: ProductSession) -> None:
 def _collect_trace(session: ProductSession) -> None:
     """Persist only the adapter's BYQ event envelopes for this product session."""
 
+    persisted = trace_store.read(session.session_id)
+    cursor = max((event["sequence"] for event in persisted), default=0)
     try:
         with httpx.stream(
             "GET",
@@ -425,6 +427,14 @@ def _collect_trace(session: ProductSession) -> None:
                     continue
                 try:
                     event = json.loads(line[6:])
+                    if (not isinstance(event, dict) or event.get("session_id") != session.session_id
+                            or event.get("trace_id") != session.trace_id):
+                        continue
+                    sequence = event.get("sequence")
+                    if type(sequence) is not int or sequence <= cursor:
+                        # Existing BYQ projections remain authoritative. Do not
+                        # rehydrate old cards or append an older replay again.
+                        continue
                     projected = project_workflow_event(
                         event,
                         backend_get=lambda path: _domain_get(path, session),
@@ -434,6 +444,7 @@ def _collect_trace(session: ProductSession) -> None:
                         ),
                     )
                     trace_store.append(projected)
+                    cursor = sequence
                     _persist_projected_answer(session, projected)
                 except (ValueError, TypeError, json.JSONDecodeError):
                     # The adapter is the only producer. Invalid data is not

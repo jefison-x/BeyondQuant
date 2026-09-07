@@ -40,6 +40,10 @@ Gateway TraceStore 持久化并重放该公开字段，不从时间或“最新�
 SDK 返回本身不代表成功：仅规范化 finish_reason=completed 发出 session.result；额度耗尽、
 运行自行中止或未知终止原因均保留失败事实，不关闭未回答需求。显式软/硬取消路径保持独立。
 
+Gateway 重连采集器只接受当前 session/trace 的事件；跳过已持久化序号，不重新投影旧卡片，
+保持 TraceStore 原有乱序/间隙写入保护。已保存历史之后的新事件继续落盘。
+领域持久关联组件及尚未接通的消费门禁见 [AgentRun lifecycle](agent-run-lifecycle.md)。
+
 ## 本地组件验证（2026-09-07）
 
 - Gateway 完整 suite：103 passed；1项依赖弃用警告。
