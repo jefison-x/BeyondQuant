@@ -227,7 +227,7 @@ class StockPoolProducerStore(PgStoreMixin):
     ) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("index pool request must be an object")
-        unknown = set(payload) - {"name", "description", "index_symbol", "requested_as_of", "idempotency_key"}
+        unknown = set(payload) - {"name", "description", "index_symbol", "requested_as_of", "idempotency_key", "tracking_mode"}
         if unknown:
             raise ValueError(f"index pool request has unknown fields: {', '.join(sorted(unknown))}")
         owner = _text(trusted_owner, "owner_principal")
@@ -244,6 +244,11 @@ class StockPoolProducerStore(PgStoreMixin):
         key = _text(payload.get("idempotency_key"), "idempotency_key")
         requested_as_of = _date(payload.get("requested_as_of") or datetime.now(timezone.utc).strftime("%Y%m%d"))
         request = {"name": name, "description": description, "index_symbol": symbol, "requested_as_of": requested_as_of}
+        mode = _text(payload.get("tracking_mode", "follow_index"), "tracking_mode")
+        if mode not in {"follow_index", "historical_snapshot"}:
+            raise ValueError("tracking_mode must be follow_index or historical_snapshot")
+        if mode == "historical_snapshot":
+            request["tracking_mode"] = mode
         request_hash = _hash(request)
         definition = {
             "index_symbol": symbol,
@@ -251,6 +256,9 @@ class StockPoolProducerStore(PgStoreMixin):
             "refresh_policy": "on_validated_import",
             "weight_mode": "provider_weight",
         }
+        if mode == "historical_snapshot":
+            definition.update({"refresh_policy": "once", "frozen_as_of": requested_as_of,
+                               "tracking_mode": mode})
         now = _now()
         with self._transaction() as connection:
             execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
@@ -290,7 +298,7 @@ class StockPoolProducerStore(PgStoreMixin):
                 VALUES (:definition,:pool,:workspace,:owner,'index','stock-pool-producer.v1',1,
                         :document,:schedule,'active',:fingerprint,:now,:now)""",
                 {"definition": definition_id, "pool": pool_id, "workspace": workspace, "owner": owner,
-                 "document": definition, "schedule": {"cadence": "on_validated_import"},
+                 "document": definition, "schedule": {"cadence": definition["refresh_policy"]},
                  "fingerprint": fingerprint, "now": now})
             self._insert_run(connection, run_id=run_id, definition_id=definition_id, pool_id=pool_id,
                              workspace=workspace, owner=owner, requested_as_of=requested_as_of,
@@ -523,6 +531,8 @@ class StockPoolProducerStore(PgStoreMixin):
                 {"pool": pool, "owner": owner, "workspace": workspace})
             if definition is None:
                 raise StockPoolProducerNotFound("index pool definition not found")
+            if definition["definition_json"].get("tracking_mode") == "historical_snapshot":
+                raise StockPoolProducerConflict("historical snapshot pools cannot be refreshed; create a separate dated pool")
             existing = fetch_one(connection, """SELECT * FROM stock_pool_materialization_runs
                 WHERE definition_id=:definition AND definition_version=:version
                   AND requested_as_of=:requested AND trigger_identity=:trigger""",
@@ -695,7 +705,7 @@ class StockPoolProducerStore(PgStoreMixin):
             LEFT JOIN LATERAL (
                 SELECT snapshot_date,content_sha256 FROM market_index_weight_snapshots
                 WHERE d.producer_kind='index' AND index_symbol=d.definition_json->>'index_symbol'
-                  AND status='verified' AND snapshot_date<=:cutoff
+                  AND status='verified' AND snapshot_date<=COALESCE(d.definition_json->>'frozen_as_of',:cutoff)
                 ORDER BY snapshot_date DESC LIMIT 1
             ) source ON TRUE
             LEFT JOIN LATERAL (

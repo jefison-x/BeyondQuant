@@ -238,6 +238,13 @@ needs_attention，既不宣称失败也不宣称已提交。原“只核对”�
 
 ### F8 业务指令与接口一致性（2026-09-07）
 
+S3历史模式切片：新增明确的historical_snapshot创建模式，原请求日期写入定义并使用once调度；
+新成分不会自动推进，也不能通过手动刷新改成另一日期。readiness按冻结日期核对，避免误报
+“当前成分落后”。默认follow_index和原请求哈希兼容，既有池不追溯改变。
+失败优先1项复现模式缺失；生产器/股票池闭环/动态存储7项通过（10.33秒），MCP构建及股票池/
+研究合同通过。没有Provider调用。历史数据需求排队、Community缓存实际证据检查与逻辑迁移、
+页面明确模式展示及合成完整旅程仍未完成，本项不代表S3整体完成。
+
 F4 持久阶段切片：原API无证据completed返回200，阶段字段被422拒绝，2项失败测试复现。
 现有ResearchTask新增可空progress字段；原transition记录stage/next_action/blocker、同任务
 Artifact/Experiment引用及validated完成证据。终态不能新写阶段；未知/跨任务引用拒绝；

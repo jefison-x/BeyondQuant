@@ -11,6 +11,15 @@ BeyondQuant architecture 的内容。
 
 ## Post-U8 R1 historical outcome audit（2026-09-07）
 
+Post-U8 S3 historical membership: read-only Community `backend/app/models/market_data.py`
+IndexConstituentWeight/IndexWeightSyncState, `_run_index_weight_sync` and repository
+index month freshness/replacement/as-of selection were inspected. Date-bounded
+selection and explicit units/source are `REFERENCE_ONLY` / `PORT_TESTS`; destructive
+monthly replacement and “synced month implies complete” are `DROP`. No live cache
+rows have been certified by this inspection; it does not authorize migration or
+claim historical coverage. BYQ adds explicit once-only versus tracking identity
+to its existing index producer, not a new synchronization engine.
+
 Post-U8 F4 checkpoints: Community research/contracts.py and the complete frontend
 AgentThinking.vue were read-only inspected. Persisted goal, stage, exact evidence
 and blocker semantics are `REFERENCE_ONLY` / `PORT_TESTS`; concise Chinese stage

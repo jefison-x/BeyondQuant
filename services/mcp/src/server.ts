@@ -722,10 +722,11 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_index_pool_create",
-    { description: "Create an explicitly requested owner-scoped tracking index pool from verified canonical weights. Returns an accepted materialization job, not completed members. Freeze the original date and idempotency key; historical research must reference an immutable snapshot.", inputSchema: {
+    { description: "Create an explicitly requested owner-scoped index pool from verified canonical weights. Choose historical_snapshot for a one-time past-date pool; follow_index tracks new constituents. One snapshot is not a multi-year membership series. Returns an accepted materialization job, not completed members. Freeze original date, mode and idempotency key.", inputSchema: {
       index_symbol: z.enum(["000016.SH", "000300.SH", "000688.SH", "000905.SH", "000852.SH", "399006.SZ"]),
       requested_as_of: z.string().regex(/^\d{8}$/), name: z.string().min(1).max(128).optional(),
       description: z.string().max(2000).optional(), idempotency_key: z.string().min(1).max(128),
+      tracking_mode: z.enum(["follow_index", "historical_snapshot"]).optional(),
     } },
     (args) => { const context = poolContext(); return context ? fetchByqIndexPoolCreate(BACKEND_URL, args, context) : agentContextUnavailable(); },
   );

@@ -47,10 +47,11 @@ await fetchByqIndexPoolCatalog("http://backend", "20240131", context, async (url
   assert.equal(init?.method, "GET");
   return new Response(JSON.stringify({ indices: [] }));
 });
-await fetchByqIndexPoolCreate("http://backend", { index_symbol: "000905.SH", requested_as_of: "20240131", idempotency_key: "index-original" }, context, async (url, init) => {
+await fetchByqIndexPoolCreate("http://backend", { index_symbol: "000905.SH", requested_as_of: "20240131", tracking_mode: "historical_snapshot", idempotency_key: "index-original" }, context, async (url, init) => {
   assert.equal(url, "http://backend/v1/paper/index-pools");
   assert.equal(init?.method, "POST");
   assert.equal(JSON.parse(String(init?.body)).index_symbol, "000905.SH");
+  assert.equal(JSON.parse(String(init?.body)).tracking_mode, "historical_snapshot");
   return new Response(JSON.stringify({ run: { status: "queued" } }), { status: 202 });
 });
 await fetchByqIndexPoolStatus("http://backend", "stock_pool_123", context, async (url, init) => {

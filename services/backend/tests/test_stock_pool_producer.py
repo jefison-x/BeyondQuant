@@ -136,6 +136,35 @@ def test_index_catalog_rejects_month_only_evidence_without_verified_snapshot() -
     paper.close()
 
 
+def test_historical_index_pool_never_follows_later_constituents() -> None:
+    from datetime import datetime, timezone
+    from app.stock_pool_producer import StockPoolProducerConflict
+    headers = trusted_agent_context("historical-index")
+    store = StockPoolProducerStore()
+    _seed_index(store)
+    context = {"trusted_owner": "historical-index", "trusted_workspace": headers["x-byq-workspace-id"]}
+    payload = {"index_symbol": "000300.SH", "requested_as_of": "20240131",
+               "tracking_mode": "historical_snapshot", "idempotency_key": "historical-index-once"}
+    created = store.create_index_pool(payload, **context)
+    claim = store.claim_next_run(worker_id="historical-worker")
+    assert claim is not None
+    store.materialize_claimed_index(claim, worker_id="historical-worker")
+    before = store.paper_store.get_pool(created["pool"]["pool_id"], trusted_owner="historical-index")
+    assert before["snapshot"]["effective_trade_date"] == "20240102"
+    readiness = store.get_readiness(before["pool_id"], **context)
+    assert readiness["state"] == "current"
+    assert readiness["source_snapshot_date"] == "20240102"
+    assert store.enqueue_validated_index_refreshes(now=datetime(2024, 3, 1, tzinfo=timezone.utc)) == 0
+    with pytest.raises(StockPoolProducerConflict):
+        store.enqueue_index_refresh(created["pool"]["pool_id"],
+            {"requested_as_of": "20240215", "idempotency_key": "wrong-historical-refresh"}, **context)
+    assert store.create_index_pool(payload, **context)["pool"]["pool_id"] == before["pool_id"]
+    with pytest.raises(StockPoolProducerConflict):
+        store.create_index_pool({**payload, "tracking_mode": "follow_index"}, **context)
+    assert store.paper_store.get_pool(before["pool_id"], trusted_owner="historical-index")["current_snapshot_id"] == before["current_snapshot_id"]
+    store.close()
+
+
 def test_validated_index_import_compensation_is_bounded_restart_safe_and_frozen() -> None:
     from concurrent.futures import ThreadPoolExecutor
     from datetime import datetime, timezone
