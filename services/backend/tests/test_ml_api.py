@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app import main as backend_main
 from app.main import _ml_pool_market_scope, app
@@ -24,24 +25,40 @@ def test_training_receipt_precedes_coverage_scan_and_repair_and_retries_stay_sta
     })
     backend_main.research_store.transition("artifact", artifact["artifact_id"], "validated", "receipt-validate")
     monkeypatch.setattr(backend_main, "_approved_ml_strategy_artifact", lambda **kwargs: artifact)
-    monkeypatch.setattr(backend_main.paper_store, "get_pool_snapshot", lambda identity, **kwargs: {
-        "snapshot_id": identity, "pool_id": "pool_receipt", "membership_fingerprint": "a" * 64,
-        "members": [{"symbol": "000001.SZ"}],
-    })
-    monkeypatch.setattr(backend_main.paper_store, "get_pool", lambda *args, **kwargs: {"status": "active", "pool_type": "custom"})
-    monkeypatch.setattr(backend_main.paper_store, "record_pool_reference", lambda *args, **kwargs: None)
+    pool = backend_main.paper_store.create_pool(
+        {"name": "Receipt synthetic pool", "symbols": ["000001.SZ"]}, trusted_owner=owner,
+    )
     monkeypatch.setattr(backend_main.security_master_store, "latest_snapshot", lambda: {"snapshot_id": "master_original"})
     def forbidden(*args, **kwargs):
         raise AssertionError("expensive preparation ran before durable receipt")
     monkeypatch.setattr(backend_main.market_readiness_store, "assess", forbidden)
     monkeypatch.setattr(backend_main.market_automation_store, "request_data_repair", forbidden)
     payload = {"task_id": task["task_id"], "ml_strategy_artifact_id": artifact["artifact_id"],
-               "stock_pool_snapshot_id": "snapshot_receipt", "trace_id": "receipt-trace", "idempotency_key": "receipt-1"}
+               "stock_pool_snapshot_id": pool["current_snapshot_id"], "trace_id": "receipt-trace", "idempotency_key": "receipt-1"}
+    # A failure after inserting the reference must roll back the run and alias too.
+    from app.paper_trading import PaperTradingStore
+    original = PaperTradingStore.record_pool_reference_in_transaction
+    def fail_after_reference(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("synthetic transaction interruption")
+    with monkeypatch.context() as patch:
+        patch.setattr(PaperTradingStore, "record_pool_reference_in_transaction", staticmethod(fail_after_reference))
+        with pytest.raises(RuntimeError, match="synthetic transaction interruption"):
+            client.post("/v1/research/ml/training-runs", headers=headers, json=payload)
+    assert backend_main.ml_training_store._fetch_one(
+        "SELECT COUNT(*) AS n FROM ml_training_runs WHERE owner_principal=:owner", {"owner": owner},
+    )["n"] == 0
+    assert backend_main.ml_training_store._fetch_one(
+        "SELECT COUNT(*) AS n FROM ml_training_submission_keys WHERE owner_principal=:owner", {"owner": owner},
+    )["n"] == 0
+    assert backend_main.paper_store.pool_references(pool["pool_id"], trusted_owner=owner)["references"] == []
     response = client.post("/v1/research/ml/training-runs", headers=headers, json=payload)
     assert response.status_code == 202, response.text
     run = response.json()["training_run"]
     assert run["status"] == "waiting_for_data"
     assert run["readiness"]["state"] == "pending"
+    references = backend_main.paper_store.pool_references(pool["pool_id"], trusted_owner=owner)["references"]
+    assert len(references) == 1 and references[0]["reference_count"] == 1
     monkeypatch.setattr(backend_main.security_master_store, "latest_snapshot", lambda: {"snapshot_id": "master_new"})
     retry = client.post("/v1/research/ml/training-runs", headers=headers, json=payload)
     assert retry.status_code == 202, retry.text
@@ -53,8 +70,11 @@ def test_training_receipt_precedes_coverage_scan_and_repair_and_retries_stay_sta
                             params={"idempotency_key": "receipt-2"})
     assert reconciled.status_code == 200
     assert reconciled.json()["training_run"]["training_run_id"] == run["training_run_id"]
+    other_pool = backend_main.paper_store.create_pool(
+        {"name": "Other receipt pool", "symbols": ["600000.SH"]}, trusted_owner=owner,
+    )
     conflict = client.post("/v1/research/ml/training-runs", headers=headers,
-                           json={**payload, "stock_pool_snapshot_id": "snapshot_other"})
+                           json={**payload, "stock_pool_snapshot_id": other_pool["current_snapshot_id"]})
     assert conflict.status_code == 409
 
 

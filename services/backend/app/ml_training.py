@@ -31,6 +31,7 @@ from .ml_regime import (
     validate_regime_snapshot,
 )
 from .research import ResearchStore
+from .paper_trading import PaperTradingStore
 
 
 TRAINING_SCHEMA = "ml-training-run.v1"
@@ -671,6 +672,10 @@ class MLTrainingRunStore(PgStoreMixin):
                 "trace": trace, "key": key, "request_hash": request_hash, "now": now,
             })
             self._bind_submission(connection, workspace, owner, key, request_hash, run_id)
+            if receipt_v2:
+                PaperTradingStore.record_pool_reference_in_transaction(
+                    connection, pool, domain="ml_training", reference_id=run_id, trusted_owner=owner,
+                )
         return self.get(run_id, trusted_workspace=workspace, trusted_owner=owner)
 
     @staticmethod

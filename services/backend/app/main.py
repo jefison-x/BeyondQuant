@@ -2619,10 +2619,6 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
             requirement=requirements[0], readiness=readiness, trace_id=data.get("trace_id"),
             idempotency_key=data.get("idempotency_key"),
         )
-        paper_store.record_pool_reference(
-            pool_snapshot["snapshot_id"], domain="ml_training", reference_id=run["training_run_id"],
-            trusted_owner=context["owner_principal"],
-        )
         return {"training_run": run}
 
     return _ml_call(operation)
