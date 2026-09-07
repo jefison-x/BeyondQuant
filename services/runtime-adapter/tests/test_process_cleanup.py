@@ -225,6 +225,50 @@ def test_terminal_receipt_http_is_closed_and_exact_session_scoped(adapter, monke
         adapter.close()
 
 
+def test_recovery_and_durable_prompt_lookup_never_construct_or_run_a_harness(adapter):
+    from app.lifecycle_journal import LifecycleJournal
+    from app.contracts import make_workflow_trace_event
+    ctx = {"session_id": "orphan", "trace_id": "orphan-trace", "owner": "alice", "workspace_id": "workspace_alice"}
+    journal = LifecycleJournal.claim(adapter._session_root / "byq-lifecycle-evidence", ctx, create=True)
+    content = "synthetic private prompt not stored"
+    root = "a" * 32
+    journal.observe(make_workflow_trace_event(session_id="orphan", trace_id="orphan-trace", sequence=4,
+        kind="session.started", source="runtime-adapter", payload={"run_id": root}),
+        generation="old-generation", prompt=("original-prompt", hashlib.sha256(content.encode()).hexdigest()))
+    assert adapter.recover_evidence(ctx)["state"] == "owned"
+    journal.close()
+    recovered = adapter.recover_evidence(ctx)
+    assert [e["kind"] for e in recovered["events"]] == ["session.started", "session.closed"]
+    assert adapter.recover_evidence(ctx, after_sequence=5)["events"] == []
+    assert adapter.reconcile_prompt("orphan", "original-prompt", hashlib.sha256(content.encode()).hexdigest())["run_id"] == root
+    assert FakeHarness.instances == []
+    assert content not in journal.path.read_text()
+    with pytest.raises(ValueError):
+        adapter.recover_evidence({**ctx, "owner": "bob"})
+    try:
+        adapter.create_session("orphan", "orphan-trace", "alice", "workspace_alice")
+        assert adapter.submit_prompt("orphan", content, idempotency_key="original-prompt") == root
+        assert FakeHarness.instances[0].run_count == 0
+        assert adapter._get("orphan").sequence > 5
+    finally:
+        adapter.close()
+
+
+def test_failed_journal_write_prevents_model_start_and_shutdown_still_closes_process(adapter, monkeypatch):
+    adapter.create_session("disk-failure", "disk-trace", "alice", "workspace_alice")
+    record = adapter._get("disk-failure")
+    def fail(*args, **kwargs):
+        raise OSError("synthetic evidence storage failure")
+    monkeypatch.setattr(record.journal, "_save", fail)
+    with pytest.raises(OSError):
+        adapter.submit_prompt("disk-failure", "must not execute", idempotency_key="disk-failure-key")
+    assert FakeHarness.instances[0].run_count == 0
+    with pytest.raises(OSError):
+        adapter.close()
+    assert FakeHarness.instances[0].closed
+    assert record.journal.lock is None
+
+
 def test_default_whole_run_ceiling_allows_bounded_complex_research(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

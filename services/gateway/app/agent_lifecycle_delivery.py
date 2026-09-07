@@ -18,11 +18,12 @@ BACKOFF_SECONDS = (2, 5, 15, 60, 300, 900, 3600, 3600)
 
 
 class LifecycleDelivery:
-    def __init__(self, root, traces, send, *, clock=time.time):
+    def __init__(self, root, traces, send, *, clock=time.time, recover=None):
         self.root = Path(root)
         self.traces, self.send, self.clock = traces, send, clock
         self.stop = threading.Event()
         self.thread = None
+        self.recover = recover
 
     def register(self, session):
         # Reuse the trace filename validator; no paths come from event payloads.
@@ -37,6 +38,10 @@ class LifecycleDelivery:
             if path.exists():
                 if json.loads(path.read_text())["context"] != context:
                     raise ValueError("lifecycle delivery context cannot change")
+                state = json.loads(path.read_text())
+                if state.get("recovery_done"):
+                    state["recovery_done"] = False
+                    self._save(path, state)
             else:
                 self._save(path, {"context": context, "cursor": 0, "pending": {}})
 
@@ -66,6 +71,31 @@ class LifecycleDelivery:
                 return
             state = json.loads(path.read_text())
             ctx = state["context"]
+            if (self.recover is not None and not state.get("recovery_done") and not state.get("recovery_exhausted")
+                    and self.clock() >= state.get("next_recovery_at", 0)):
+                # Passive evidence recovery, never a prompt/job retry. Throttle
+                # before HTTP, including across Gateway restarts.
+                failures = state.get("recovery_failures", 0)
+                if failures >= MAX_ATTEMPTS or self.clock() >= state.get("recovery_failure_since", self.clock()) + DEADLINE_SECONDS:
+                    state["recovery_exhausted"] = True
+                    state["recovery_unavailable"] = True
+                else:
+                    failures += 1
+                    state["recovery_failures"] = failures
+                    state.setdefault("recovery_failure_since", self.clock())
+                    state["next_recovery_at"] = self.clock() + max(30, BACKOFF_SECONDS[failures - 1])
+                    self._save(path, state)
+                    try:
+                        state["recovery_done"] = self.recover(ctx)
+                        state["recovery_unavailable"] = False
+                        state["next_recovery_at"] = self.clock() + 30
+                        state.pop("recovery_failures", None)
+                        state.pop("recovery_failure_since", None)
+                    except Exception:
+                        state["recovery_unavailable"] = True
+                        if failures >= MAX_ATTEMPTS:
+                            state["recovery_exhausted"] = True
+                self._save(path, state)
             # Recovers the crash gap between trace fsync and delivery bookkeeping.
             trace_path = self.traces._path(ctx["session_id"])
             modified = trace_path.stat().st_mtime_ns if trace_path.exists() else 0
@@ -152,6 +182,8 @@ class LifecycleDelivery:
             changed = trace_path.exists() and trace_path.stat().st_mtime_ns != state.get("trace_mtime_ns")
             result["state"] = ("attention_required" if result["exhausted_events"] or result["rejected_events"] else
                                "pending" if result["pending_events"] or changed else "up_to_date")
+            if state.get("recovery_unavailable"):
+                result["state"] = "unavailable"
         except (OSError, ValueError, KeyError, TypeError):
             result["state"] = "unavailable"
         return result

@@ -33,7 +33,8 @@ from .trace_store import TraceStore
 from .conversation_recovery import project_recovery
 from .workflow_projection import project_workflow_event
 from .agent_lifecycle_delivery import LifecycleDelivery
-from packages.contracts.agent_run_lifecycle import lifecycle_receipt
+from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
+from packages.contracts.workflow_trace import validate_workflow_trace_event
 
 
 SERVICE = "byq-gateway"
@@ -80,8 +81,38 @@ def _send_agent_lifecycle(context, event):
     return reply
 
 
+def _recover_agent_lifecycle(context):
+    cursor = max((e["sequence"] for e in trace_store.read(context["session_id"])), default=0)
+    reply = _adapter_post(f"/internal/runtime/sessions/{context['session_id']}/recover-evidence", payload={
+        "trace_id": context["trace_id"], "owner": context["owner"], "workspace_id": context["workspace_id"],
+        "after_sequence": cursor}, timeout=5.0)
+    if (set(reply) != {"state", "events", "more"} or reply["state"] not in {"owned", "unknown", "recovered"}
+            or not isinstance(reply["events"], list) or len(reply["events"]) > 256 or type(reply["more"]) is not bool):
+        raise ValueError("invalid recovery receipt")
+    previous = cursor
+    if reply["state"] != "recovered" and (reply["events"] or reply["more"]):
+        raise ValueError("unproven recovery cannot carry events")
+    if reply["state"] == "unknown":
+        raise ValueError("no durable recovery evidence; retain unknown state")
+    for event in reply["events"]:
+        validate_workflow_trace_event(event)
+        if (event["session_id"], event["trace_id"], event["source"]) != (
+                context["session_id"], context["trace_id"], "runtime-adapter") or event["sequence"] <= previous:
+            raise ValueError("foreign or unordered recovery event")
+        if event["kind"] == "session.started":
+            if set(event["payload"]) != {"run_id"}:
+                raise ValueError("invalid recovered root")
+        elif project_lifecycle_event(event, context["session_id"], context["trace_id"]) is None:
+            raise ValueError("non-lifecycle recovery event")
+        previous = event["sequence"]
+    for event in reply["events"]:
+        trace_store.append(event)
+    return reply["state"] == "recovered" and not reply["more"]
+
+
 lifecycle_delivery = LifecycleDelivery(
-    os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), trace_store, _send_agent_lifecycle)
+    os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), trace_store, _send_agent_lifecycle,
+    recover=_recover_agent_lifecycle)
 
 
 def require_chat_admission():

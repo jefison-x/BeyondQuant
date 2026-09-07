@@ -24,6 +24,7 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
 当前与 Phase 相关的 Accepted 决策也列在 `docs/roadmap/STATUS.md` 中：
 
 - ADR-0063 允许禁用身份后对精确绑定的既有 AgentRun 做可信终态清理及原子审计/回执，不恢复普通访问或业务续接。
+- ADR-0064 允许持久化最小 BYQ 执行证据，并仅在原执行者失效可证明时恢复收尾；不恢复模型或研究。
 
 - ADR-0020 定义 Phase 34 的 Stock Pool identity、不可变 snapshot、lifecycle 和
   cross-domain reference 边界。

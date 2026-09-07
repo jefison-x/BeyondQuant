@@ -28,6 +28,7 @@ from .child_lease import ChildLease
 from .normalization import close_public_activities
 from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_release
 from .identifiers import contained_session_path, validate_identifier
+from .lifecycle_journal import LifecycleJournal, JournalBusy
 from .normalization import NormalizationState, normalize_runtime_observation
 
 
@@ -96,6 +97,7 @@ class RuntimeSession:
     prompt_idempotency: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
     terminal_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
     pending_terminal_receipts: set[str] = field(default_factory=set, repr=False)
+    journal: Any = field(default=None, repr=False)
     interrupted_run_id: str | None = None
     sequence: int = 0
     normalization: NormalizationState = field(default_factory=NormalizationState)
@@ -357,16 +359,28 @@ class RuntimeAdapter:
         with self._lock:
             if session_id in self._sessions:
                 raise SessionConflict(f"BYQ session already exists: {session_id}")
+            journal = None
+            if workspace_id:
+                try:
+                    journal = LifecycleJournal.claim(self._session_root / "byq-lifecycle-evidence",
+                        {"session_id": session_id, "trace_id": trace_id, "owner": owner_principal,
+                         "workspace_id": workspace_id}, create=True)
+                except JournalBusy as exc:
+                    raise SessionConflict("runtime evidence is owned by another executor") from exc
+                initial_sequence = max(initial_sequence, journal.state["sequence"])
+                if journal.state["sequence"]:
+                    runtime_session_id = f"resume-{uuid.uuid4().hex}"
+                    session_root = contained_session_path(self._session_root, runtime_session_id)
             runtime_generation = f"generation-{uuid.uuid4().hex}"
-            harness = self._build_harness(
-                session_id,
-                session_root,
-                trace_id=trace_id,
-                owner_principal=owner_principal,
-                workspace_id=workspace_id,
-                model_resolution=model_resolution,
-                runtime_generation=runtime_generation,
-            )
+            try:
+                harness = self._build_harness(
+                    session_id, session_root, trace_id=trace_id, owner_principal=owner_principal,
+                    workspace_id=workspace_id, model_resolution=model_resolution,
+                    runtime_generation=runtime_generation)
+            except BaseException:
+                if journal:
+                    journal.close()
+                raise
             record = RuntimeSession(
                 session_id=session_id,
                 trace_id=trace_id,
@@ -379,7 +393,13 @@ class RuntimeAdapter:
                 pending_conversation_context=context,
                 pending_conversation_recovery=recovery,
                 sequence=initial_sequence,
+                journal=journal,
+                history=[] if journal is None else list(journal.state["events"]),
             )
+            for event in record.history:
+                terminal = project_lifecycle_event(event, session_id, trace_id)
+                if terminal and terminal["outcome"] != "active":
+                    record.terminal_receipts.setdefault(terminal["root_run_id"], lifecycle_receipt(terminal))
             self._sessions[session_id] = record
 
         try:
@@ -391,7 +411,11 @@ class RuntimeAdapter:
         except Exception:
             with self._lock:
                 self._sessions.pop(session_id, None)
-            self._compatibility.close(harness)
+            try:
+                self._compatibility.close(harness)
+            finally:
+                if journal:
+                    journal.close()
             raise
 
     def submit_prompt(
@@ -405,6 +429,13 @@ class RuntimeAdapter:
             if idempotency_key is not None:
                 if not 8 <= len(idempotency_key) <= 128:
                     raise ValueError("prompt idempotency key has invalid length")
+                if record.journal is not None:
+                    try:
+                        durable = record.journal.receipt(idempotency_key, hashlib.sha256(content.encode()).hexdigest())
+                    except ValueError as exc:
+                        raise SessionConflict("prompt receipt identity conflicts") from exc
+                    if durable["state"] == "accepted":
+                        return durable["run_id"]
                 existing = record.prompt_idempotency.get(idempotency_key)
                 if existing is not None:
                     existing_content, existing_run_id = existing
@@ -430,7 +461,14 @@ class RuntimeAdapter:
             record.status = SessionStatus.RUNNING
             if idempotency_key is not None:
                 record.prompt_idempotency[idempotency_key] = (content, run.run_id)
-            self._emit(record, "session.started", "runtime-adapter", {"run_id": run.run_id})
+            try:
+                self._emit(record, "session.started", "runtime-adapter", {"run_id": run.run_id})
+            except BaseException:
+                record.active_run = None
+                record.status = SessionStatus.FAILED
+                if idempotency_key:
+                    record.prompt_idempotency.pop(idempotency_key, None)
+                raise
 
         worker = threading.Thread(
             target=self._run_prompt,
@@ -459,8 +497,26 @@ class RuntimeAdapter:
         return run.run_id
 
     def reconcile_prompt(self, session_id: str, idempotency_key: str, content_sha256: str) -> dict[str, object]:
-        record = self._get(session_id)
+        try:
+            record = self._get(session_id)
+        except KeyError:
+            validate_identifier(session_id, field="session_id")
+            try:
+                state = LifecycleJournal.read(self._session_root / "byq-lifecycle-evidence" / f"{session_id}.json")
+            except FileNotFoundError:
+                return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
+            if state["context"]["session_id"] != session_id:
+                raise SessionConflict("durable prompt session identity conflicts")
+            try:
+                return LifecycleJournal.lookup(state, idempotency_key, content_sha256)
+            except ValueError as exc:
+                raise SessionConflict("prompt receipt identity conflicts") from exc
         with record.lock:
+            if record.journal:
+                try:
+                    return record.journal.receipt(idempotency_key, content_sha256)
+                except ValueError as exc:
+                    raise SessionConflict("prompt receipt identity conflicts") from exc
             existing = record.prompt_idempotency.get(idempotency_key)
             if existing is None:
                 return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
@@ -559,6 +615,30 @@ class RuntimeAdapter:
             self._compatibility.close(record.harness)
         return self.describe_session(record)
 
+    def recover_evidence(self, context: dict, after_sequence: int = 0) -> dict:
+        """Replays BYQ evidence only. Never constructs a harness or runs a model."""
+        LifecycleJournal._context(context)
+        if type(after_sequence) is not int or after_sequence < 0:
+            raise ValueError("invalid recovery cursor")
+        with self._lock:
+            if context["session_id"] in self._sessions:
+                record = self._sessions[context["session_id"]]
+                if (record.trace_id, record.owner_principal, record.workspace_id) != (
+                        context["trace_id"], context["owner"], context["workspace_id"]):
+                    raise ValueError("recovery identity mismatch")
+                return {"state": "owned", "events": [], "more": False}
+            try:
+                journal = LifecycleJournal.claim(self._session_root / "byq-lifecycle-evidence", context)
+            except JournalBusy:
+                return {"state": "owned", "events": [], "more": False}
+            except FileNotFoundError:
+                return {"state": "unknown", "events": [], "more": False}
+            try:
+                events = [e for e in journal.state["events"] if e["sequence"] > after_sequence]
+                return {"state": "recovered", "events": events[:256], "more": len(events) > 256}
+            finally:
+                journal.close()
+
     def acknowledge_terminal(self, session_id: str, receipt: object) -> dict:
         """Private Gateway acknowledgement of an exact Backend terminal receipt.
 
@@ -650,14 +730,21 @@ class RuntimeAdapter:
             if record.active_run is not None or record.status in SessionStatus.ACTIVE_PROMPT:
                 raise SessionConflict(f"session {session_id} has an active prompt")
             record.status = SessionStatus.CLOSED
-            self._emit(record, "session.closed", "runtime-adapter", {"reason": "released"})
-        self._compatibility.close(record.harness)
-        with self._lock:
-            if self._sessions.get(session_id) is record:
-                del self._sessions[session_id]
-        with record.lock:
-            for subscriber in list(record.subscribers):
-                subscriber.put(None)
+        try:
+            with record.lock:
+                self._emit(record, "session.closed", "runtime-adapter", {"reason": "released"})
+        finally:
+            try:
+                self._compatibility.close(record.harness)
+            finally:
+                if record.journal:
+                    record.journal.close()
+                with self._lock:
+                    if self._sessions.get(session_id) is record:
+                        del self._sessions[session_id]
+                with record.lock:
+                    for subscriber in list(record.subscribers):
+                        subscriber.put(None)
         return self.describe_session(record)
 
     def subscribe(self, session_id: str, *, replay: bool = False) -> queue.Queue[WorkflowTraceEvent | None]:
@@ -697,20 +784,33 @@ class RuntimeAdapter:
         with self._lock:
             records = list(self._sessions.values())
             self._sessions.clear()
+        failure = None
         for record in records:
-            with record.lock:
-                closing_run = record.active_run
-                if record.active_run is not None:
-                    record.active_run.watchdog_stop.set()
-                record.active_run = None
-                record.status = SessionStatus.CLOSED
-                self._emit(record, "session.closed", "runtime-adapter", {
-                    "reason": "adapter-shutdown", **({"run_id": closing_run.run_id} if closing_run is not None else {}),
-                })
-            self._compatibility.close(record.harness)
-            with record.lock:
-                for subscriber in record.subscribers:
-                    subscriber.put(None)
+            try:
+                with record.lock:
+                    closing_run = record.active_run
+                    if record.active_run is not None:
+                        record.active_run.watchdog_stop.set()
+                    record.active_run = None
+                    record.status = SessionStatus.CLOSED
+                    self._emit(record, "session.closed", "runtime-adapter", {
+                        "reason": "adapter-shutdown", **({"run_id": closing_run.run_id} if closing_run is not None else {}),
+                    })
+            except Exception as exc:
+                failure = exc
+            finally:
+                try:
+                    self._compatibility.close(record.harness)
+                except Exception as exc:
+                    failure = exc
+                finally:
+                    if record.journal:
+                        record.journal.close()
+                    with record.lock:
+                        for subscriber in record.subscribers:
+                            subscriber.put(None)
+        if failure is not None:
+            raise failure
 
     def _get(self, session_id: str) -> RuntimeSession:
         with self._lock:
@@ -1041,6 +1141,14 @@ class RuntimeAdapter:
 
         record.sequence += 1
         ordered_event = {**event, "sequence": record.sequence}
+        if record.journal:
+            prompt = None
+            if event["kind"] == "session.started":
+                for key, (content, root) in record.prompt_idempotency.items():
+                    if root == event["payload"]["run_id"]:
+                        prompt = (key, hashlib.sha256(content.encode()).hexdigest())
+                        break
+            record.journal.observe(ordered_event, generation=record.runtime_generation, prompt=prompt)
         if record.workspace_id:
             terminal = project_lifecycle_event(ordered_event, record.session_id, record.trace_id)
             if terminal and terminal["outcome"] != "active":

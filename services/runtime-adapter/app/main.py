@@ -163,6 +163,17 @@ def acknowledge_terminal(session_id: str, payload: dict) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@app.post("/internal/runtime/sessions/{session_id}/recover-evidence")
+def recover_evidence(session_id: str, payload: dict) -> dict:
+    if set(payload) != {"trace_id", "owner", "workspace_id", "after_sequence"}:
+        raise HTTPException(status_code=422, detail="exact recovery context required")
+    try:
+        return adapter.recover_evidence({"session_id": session_id, **{k: payload[k]
+            for k in ("trace_id", "owner", "workspace_id")}}, payload["after_sequence"])
+    except (ValueError, OSError, TypeError, KeyError) as exc:
+        raise HTTPException(status_code=409, detail="runtime recovery evidence is unavailable or unproven") from exc
+
+
 @app.get("/internal/runtime/sessions/{session_id}/prompts/reconcile")
 def reconcile_prompt_receipt(
     session_id: str, idempotency_key: str = Query(min_length=8, max_length=128),

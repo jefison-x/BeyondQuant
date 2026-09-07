@@ -75,6 +75,74 @@ def test_gateway_only_releases_runtime_barrier_after_exact_backend_receipt(monke
                 main._send_agent_lifecycle(context, value)
 
 
+def test_recovery_poll_is_throttled_durable_and_stops_after_recovered(tmp_path):
+    traces, session, now, delivery = fixture(tmp_path, lambda ctx, value: {"receipt": lifecycle_receipt(value)})
+    calls = []
+    def recover(ctx):
+        calls.append(ctx)
+        if len(calls) == 1:
+            raise OSError("synthetic restart")
+        traces.append(event())
+        return True
+    delivery.recover = recover
+    delivery.run_once()
+    restarted = LifecycleDelivery(tmp_path, traces, delivery.send, clock=lambda: now[0], recover=recover)
+    restarted.run_once()
+    assert len(calls) == 1
+    now[0] += 30
+    restarted.run_once()
+    assert len(calls) == 2
+    now[0] += 30
+    restarted.run_once()
+    assert len(calls) == 2
+    assert json.loads((tmp_path / "session-one.lifecycle.json").read_text())["pending"] == {}
+
+
+def test_recovery_failure_budget_survives_restart(tmp_path):
+    traces, session, now, delivery = fixture(tmp_path, lambda *args: None)
+    calls = []
+    def recover(ctx):
+        calls.append(1)
+        raise ValueError("unproven or unavailable evidence")
+    for _ in range(MAX_ATTEMPTS + 2):
+        delivery = LifecycleDelivery(tmp_path, traces, delivery.send, clock=lambda: now[0], recover=recover)
+        delivery.run_once()
+        now[0] += 3600
+    assert len(calls) == MAX_ATTEMPTS
+    assert json.loads((tmp_path / "session-one.lifecycle.json").read_text())["recovery_exhausted"] is True
+
+
+def test_recovery_attempt_is_charged_before_process_loss(tmp_path):
+    traces, session, now, delivery = fixture(tmp_path, lambda *args: None)
+    calls = []
+    def crash(ctx):
+        calls.append(1)
+        raise SystemExit("synthetic Gateway death after request admission")
+    for _ in range(MAX_ATTEMPTS):
+        delivery = LifecycleDelivery(tmp_path, traces, delivery.send, clock=lambda: now[0], recover=crash)
+        with pytest.raises(SystemExit):
+            delivery.run_once()
+        now[0] += 3600
+    delivery.run_once()
+    assert len(calls) == MAX_ATTEMPTS
+    assert json.loads((tmp_path / "session-one.lifecycle.json").read_text())["recovery_exhausted"] is True
+
+
+def test_recovery_import_rejects_foreign_and_non_lifecycle_data(tmp_path, monkeypatch):
+    from app import main
+    traces, session, now, delivery = fixture(tmp_path, lambda *a: None)
+    monkeypatch.setattr(main, "trace_store", traces)
+    ctx = json.loads((tmp_path / "session-one.lifecycle.json").read_text())["context"]
+    for value in [event(trace_id="foreign"), event(kind="agent.output.delta", payload={"text": "private"})]:
+        monkeypatch.setattr(main, "_adapter_post", lambda *a, **k: {"state": "recovered", "events": [value], "more": False})
+        with pytest.raises(ValueError):
+            main._recover_agent_lifecycle(ctx)
+    assert traces.read(session.session_id) == []
+    monkeypatch.setattr(main, "_adapter_post", lambda *a, **k: {"state": "recovered", "events": [event()], "more": False})
+    assert main._recover_agent_lifecycle(ctx) is True
+    assert len(traces.read(session.session_id)) == 1
+
+
 @pytest.mark.parametrize("failure", ["transport", "wrong_ack"])
 def test_retry_budget_is_durable_and_does_not_block_other_terminal(tmp_path, failure):
     writes = []
