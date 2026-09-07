@@ -48,6 +48,33 @@ def test_lost_ack_restarts_with_same_event_and_then_stops(tmp_path):
     assert state["last_receipt"] == lifecycle_receipt(writes[0][1])
 
 
+def test_gateway_only_releases_runtime_barrier_after_exact_backend_receipt(monkeypatch):
+    from app import main
+    from fastapi import HTTPException
+    value = project_lifecycle_event(event(), "session-one", "trace-one")
+    context = {"conversation_id": "conversation-one", "session_id": "session-one",
+               "workspace_id": "workspace-one", "owner": "alice", "trace_id": "trace-one"}
+    reply = {"receipt": lifecycle_receipt(value)}
+    calls = []
+    monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: {})
+    monkeypatch.setattr(main, "_adapter_post", lambda *a, **k: calls.append(k) or reply)
+    with pytest.raises(ValueError):
+        main._send_agent_lifecycle(context, value)
+    assert calls == []
+    monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: reply)
+    assert main._send_agent_lifecycle(context, value) == reply
+    assert calls == [{"payload": reply, "timeout": 5.0}]
+    for status in [404, 409, 503]:
+        def fail(*a, **k):
+            raise HTTPException(status_code=status)
+        monkeypatch.setattr(main, "_adapter_post", fail)
+        if status == 404:
+            assert main._send_agent_lifecycle(context, value) == reply
+        else:
+            with pytest.raises(HTTPException):
+                main._send_agent_lifecycle(context, value)
+
+
 @pytest.mark.parametrize("failure", ["transport", "wrong_ack"])
 def test_retry_budget_is_durable_and_does_not_block_other_terminal(tmp_path, failure):
     writes = []

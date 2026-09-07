@@ -33,6 +33,7 @@ from .trace_store import TraceStore
 from .conversation_recovery import project_recovery
 from .workflow_projection import project_workflow_event
 from .agent_lifecycle_delivery import LifecycleDelivery
+from packages.contracts.agent_run_lifecycle import lifecycle_receipt
 
 
 SERVICE = "byq-gateway"
@@ -58,9 +59,25 @@ trace_store = TraceStore(os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-wor
 
 
 def _send_agent_lifecycle(context, event):
-    return _catalog_request("POST", f"/internal/agent-lifecycle/{context['conversation_id']}",
+    reply = _catalog_request("POST", f"/internal/agent-lifecycle/{context['conversation_id']}",
         Principal(subject=context["owner"]), context["workspace_id"], payload={
             "session_id": context["session_id"], "trace_id": context["trace_id"], "event": event})
+    if reply != {"receipt": lifecycle_receipt(event)}:
+        raise ValueError("lifecycle receipt mismatch")
+    if event["outcome"] != "active":
+        try:
+            acknowledged = _adapter_post(
+                f"/internal/runtime/sessions/{context['session_id']}/terminal-receipt",
+                payload=reply, timeout=5.0)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            # No reusable old process remains. A new Adapter generation cannot
+            # authorize an old AgentRun; Backend's receipt is still durable.
+        else:
+            if acknowledged != reply:
+                raise ValueError("runtime terminal acknowledgement mismatch")
+    return reply
 
 
 lifecycle_delivery = LifecycleDelivery(

@@ -14,7 +14,7 @@ import httpx
 import pytest
 import uvicorn
 
-from app.runtime import RuntimeAdapter
+from app.runtime import RuntimeAdapter, SessionConflict
 
 pytestmark = pytest.mark.skipif(os.environ.get("BYQ_LIFECYCLE_WIRE_TEST") != "1",
                               reason="requires synthetic Backend/MCP and read-only Gateway source")
@@ -136,6 +136,15 @@ def test_official_registration_gateway_http_delivery_and_restart(monkeypatch, tm
     traces = TraceStore(tmp_path)
     monkeypatch.setattr(gateway, "trace_store", traces)
     lost_ack = threading.Event()
+    blocked_ack = threading.Event()
+    original_post = gateway._adapter_post
+    def postpone_first_ack(path, **kwargs):
+        if not paid and path.endswith("/terminal-receipt") and not blocked_ack.is_set():
+            from fastapi import HTTPException
+            blocked_ack.set()
+            raise HTTPException(status_code=503, detail="synthetic terminal ack unavailable")
+        return original_post(path, **kwargs)
+    monkeypatch.setattr(gateway, "_adapter_post", postpone_first_ack)
     terminals = []
     def send(context, event):
         result = gateway._send_agent_lifecycle(context, event)
@@ -175,6 +184,11 @@ def test_official_registration_gateway_http_delivery_and_restart(monkeypatch, tm
         if outcome == "cancelled":
             adapter.cancel_session(session_id, "hard")
             allow_answer.set()
+        if not paid:
+            assert blocked_ack.wait(20)
+            assert httpx.get(receipt_url, headers=context).json()["run"]["status"] == outcome
+            with pytest.raises(SessionConflict, match="cleanup"):
+                adapter.submit_prompt(session_id, "must not execute before cleanup acknowledgement")
         assert lost_ack.wait(60 if paid else 20)
         assert httpx.get(receipt_url, headers=context).json()["run"]["status"] == outcome
         delivery.close()
@@ -192,6 +206,7 @@ def test_official_registration_gateway_http_delivery_and_restart(monkeypatch, tm
         result = httpx.get(receipt_url, headers=context).json()["run"]
         assert result["root_run_id"] == terminals[0]["root_run_id"]
         assert result["status"] == outcome
+        assert not record.pending_terminal_receipts
         if paid:
             assert len(paid_calls) == 2
     finally:

@@ -447,6 +447,39 @@ AgentUnauthorized 合同为 401；修正断言后 29 通过（41.46秒），没�
 历史无绑定记录仍不猜测清理；Adapter 无终态崩溃、跨轮收尾确认及其他 F4/F6/F10 流程仍是
 独立待办。此例外实现不等于全部 Post-U8 整改或研究语义验收完成。
 
+## 同进程跨轮收尾确认（2026-09-07）
+
+已确认源码缺口：Runtime 将根回合置为 idle 后，Backend 的异步终态投递可能仍未确认；
+同一 DSH process generation 下一轮可在这一窗口复用旧 active AgentRun。本批在所有
+submit_prompt 入口共用的 Runtime 会话锁中增加终态确认屏障，不在各个业务工具复制检查。
+原 prompt 幂等重放只返回原 run，不执行模型；旧轮、错误摘要/序号、浮点序号或跨会话
+回执不能清除当前轮屏障。首终态为准，软取消后迟到通知不重新设置已经确认的旧屏障。
+
+Gateway 先验证 Backend 完整持久终态回执，再经私有 terminal-receipt 入口通知 Runtime；
+通知失败保留原投递和既有 8 次/24 小时预算，重启按原 root/sequence 重投。已释放会话
+404 不再需要放行旧进程，其余错误不当作成功。真正重建 DSH 进程后使用新 generation，
+旧 AgentRun 继续由 Backend 的精确 generation 检查拒绝；不以新 generation 猜测关闭历史 run。
+这不是新 Agent harness，不修改 DSH、不增加 MCP/Browser 写权限或生产操作。
+
+验证：Gateway 完整 149 通过（1.36秒）；最终 Runtime 完整 111 通过、9 跳过（0.81秒）；
+架构/共享合同 83 通过、3 subtests 通过（3.00秒）。新增保护没有记录修复前红灯，不虚构
+红绿证据。官方 DSH 0.1.2rc1 +真实 MCP/Backend/PostgreSQL +Gateway HTTP 联测 2 通过
+（21.75秒）：正常完成/硬取消均注入 Backend 已提交但 Runtime 通知失败，确认新 prompt
+被拒绝且未执行；再注入 ACK 后响应丢失并重启消费者，精确重放后账本清空、屏障解除。
+本轮仅 scripted Provider 和合成 AgentRun 注册，付费场景未选择，无研究/训练/回测或生产数据。
+
+仍未关闭：Adapter 整体崩溃且没有任何终态的持久恢复、历史无绑定记录盘点，以及其他
+F4/F6/F10 业务续接整改。当前屏障解决同一存活进程的跨轮复用窗口，不宣称崩溃恢复、
+新构建认证、全部接口验收、远端 CI 或生产发布已完成。
+
+本批验证后已清理 3 个隔离服务容器、2 个合成数据卷、4 个测试镜像和1个网络；项目资源
+复核为零，合成数据未备份但可重建。正式服务、私有备份和历史认证均未改动。
+
+下一项源码核查：Runtime 的 sessions、prompt_idempotency 和 history 没有持久崩溃证据。
+因此提出 [ADR-0064](../architecture/adr/ADR-0064-runtime-crash-recovery-evidence.md)，仅允许
+在可证明原执行者失效时，从 BYQ 持久身份生成精确中断收尾证据。该新增可信恢复来源为
+Proposed，等待维护者对精确范围接受；没有实施，不把普通“继续”视为新架构授权。
+
 ## 本次交付授权与顺序
 
 2026-09-07，维护者在“先合并U8收尾，再合并ADR与审计记录，再从更新后的main建立修复分支”

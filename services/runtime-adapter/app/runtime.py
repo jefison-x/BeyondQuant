@@ -21,7 +21,7 @@ from packages.contracts.conversation_rehydration import (
     rehydrated_prompt,
 )
 from packages.contracts.conversation_recovery import normalize_recovery
-from packages.contracts.agent_run_lifecycle import registration_fingerprint
+from packages.contracts.agent_run_lifecycle import registration_fingerprint, lifecycle_receipt, project_lifecycle_event
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
 from .child_lease import ChildLease
@@ -94,6 +94,8 @@ class RuntimeSession:
     status: str = SessionStatus.STARTING
     active_run: ActiveRun | None = None
     prompt_idempotency: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
+    terminal_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
+    pending_terminal_receipts: set[str] = field(default_factory=set, repr=False)
     interrupted_run_id: str | None = None
     sequence: int = 0
     normalization: NormalizationState = field(default_factory=NormalizationState)
@@ -409,6 +411,8 @@ class RuntimeAdapter:
                     if existing_content != content:
                         raise SessionConflict("prompt idempotency key was reused with different content")
                     return existing_run_id
+            if record.workspace_id and record.pending_terminal_receipts:
+                raise SessionConflict("previous turn domain cleanup is not yet acknowledged")
             if record.status not in SessionStatus.PROMPTABLE or record.active_run is not None:
                 raise SessionConflict(
                     f"session {session_id} cannot accept a prompt in state {record.status}"
@@ -555,6 +559,21 @@ class RuntimeAdapter:
             self._compatibility.close(record.harness)
         return self.describe_session(record)
 
+    def acknowledge_terminal(self, session_id: str, receipt: object) -> dict:
+        """Private Gateway acknowledgement of an exact Backend terminal receipt.
+
+        This opens no domain capability: it only permits reuse of this private
+        process after its previous BYQ root has been durably closed.
+        """
+        record = self._get(session_id)
+        with record.lock:
+            root = receipt.get("root_run_id") if isinstance(receipt, dict) else None
+            if (not isinstance(root, str) or type(receipt.get("sequence")) is not int
+                    or record.terminal_receipts.get(root) != receipt):
+                raise SessionConflict("terminal receipt does not match this runtime turn")
+            record.pending_terminal_receipts.discard(root)
+            return {"receipt": dict(receipt)}
+
     def resume_session(
         self, session_id: str, *, conversation_context: object = None,
         conversation_recovery: object = None,
@@ -609,6 +628,9 @@ class RuntimeAdapter:
             record.harness = harness
             record.runtime_session_id = runtime_session_id
             record.runtime_generation = runtime_generation
+            # The old process has been closed. A fresh generation cannot use
+            # old AgentRuns under Backend's existing exact-generation guard.
+            record.pending_terminal_receipts.clear()
             record.pending_conversation_context = context
             record.pending_conversation_recovery = recovery
             record.normalization = NormalizationState()
@@ -1019,6 +1041,13 @@ class RuntimeAdapter:
 
         record.sequence += 1
         ordered_event = {**event, "sequence": record.sequence}
+        if record.workspace_id:
+            terminal = project_lifecycle_event(ordered_event, record.session_id, record.trace_id)
+            if terminal and terminal["outcome"] != "active":
+                root = terminal["root_run_id"]
+                if root not in record.terminal_receipts:
+                    record.terminal_receipts[root] = lifecycle_receipt(terminal)
+                    record.pending_terminal_receipts.add(root)
         record.history.append(ordered_event)
         for subscriber in list(record.subscribers):
             subscriber.put(ordered_event)

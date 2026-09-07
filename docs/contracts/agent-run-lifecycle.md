@@ -60,6 +60,21 @@ MCP `byq_agent_run_start` 对pending最多额外查询3次（250/500/750ms等待
 actor、session、trace和generation。旧generation或其他身份查询返回404，不借此授权新写入。
 pending/unknown不能审批或执行领域动作；新回合不得复用已终态AgentRun。
 
+## 同进程跨轮确认
+
+对具备 workspace 的 Product Runtime，首个规范化终态在同一会话锁内设置待确认标记。
+只有 Backend 精确终态回执提交后，Gateway 才经私有
+`POST /internal/runtime/sessions/{session_id}/terminal-receipt` 回送原回执。
+Runtime 核对 root/sequence/digest 与自身首终态完全一致后清除对应标记；错误类型、额外字段、
+跨会话或旧轮回执不能放行当前轮。所有调用 submit_prompt 的入口共用此检查，不能绕到审批
+续接或内部兼容入口复用尚未关闭的旧 AgentRun。原 prompt 幂等查询仍可返回原 run，不执行模型。
+
+Backend 已提交但 Runtime ACK 失败时，Gateway 保留原投递，继续原 8 次/24 小时预算，重启
+不重置；Backend 重放不重复审计。Runtime 会话已不存在时，不存在可复用旧进程，Backend
+回执仍可确认；其他错误不能当作成功。硬取消/失败后真正重建进程会生成新的可信 generation，
+Backend 原有 generation 检查拒绝新进程使用旧 AgentRun，因此不继承旧进程复用屏障。
+此标记是 BYQ 领域收尾确认，不复制 DSH 编排，不开放 MCP/Browser 清理能力。
+
 ## 保留的异常边界
 
 按 ADR-0063，禁用 user/workspace/membership 后，可信内部消费者仍可关闭精确匹配的既有 root
@@ -71,8 +86,8 @@ pending/unknown不能审批或执行领域动作；新回合不得复用已终�
 
 Adapter 整体崩溃而未产生终态、以及历史无绑定记录仍需独立验证；
 缺失绑定或回执不得靠同会话最新对象、当前进程下所有历史记录或时间猜测。
-收尾是异步最终一致性，不承诺终态发生瞬间Backend即已更新；所有模型入口的跨轮收尾
-确认屏障仍属独立流程整改。不能将持久投递实现解释为这些故障窗口已全部消除。
+收尾是异步最终一致性，不承诺终态发生瞬间Backend即已更新；同进程跨轮复用受上述确认
+屏障保护。完全崩溃没有终态证据时仍不能靠404、时间或最新任务猜测清理历史记录。
 
 本合同覆盖有精确规范化注册/终态的跨服务投递、收尾和回执。不等于上述无终态事故、R4/F10
 全部需求或独立发布认证完成，不授权生产部署、历史研究续跑或模型训练。

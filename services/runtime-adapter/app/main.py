@@ -151,6 +151,18 @@ def resume_session(session_id: str, request: ResumeSessionRequest | None = None)
         raise HTTPException(status_code=503, detail="DSH runtime failed to resume") from exc
 
 
+@app.post("/internal/runtime/sessions/{session_id}/terminal-receipt")
+def acknowledge_terminal(session_id: str, payload: dict) -> dict:
+    if set(payload) != {"receipt"}:
+        raise HTTPException(status_code=422, detail="exact terminal receipt required")
+    try:
+        return adapter.acknowledge_terminal(session_id, payload["receipt"])
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="runtime session not found") from exc
+    except SessionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @app.get("/internal/runtime/sessions/{session_id}/prompts/reconcile")
 def reconcile_prompt_receipt(
     session_id: str, idempotency_key: str = Query(min_length=8, max_length=128),

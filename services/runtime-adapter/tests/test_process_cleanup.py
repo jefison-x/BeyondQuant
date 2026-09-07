@@ -153,6 +153,78 @@ def test_registration_observation_uses_captured_turn_without_exposing_arguments(
         adapter.close()
 
 
+def test_product_process_cannot_start_next_turn_until_exact_terminal_ack(adapter):
+    from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
+    try:
+        adapter.create_session("ack-barrier", "ack-trace", "alice", "workspace_alice")
+        first = adapter.submit_prompt("ack-barrier", "first", idempotency_key="original-prompt")
+        FakeHarness.allow_run.set()
+        wait_for_status(adapter, "ack-barrier", SessionStatus.IDLE)
+        record = adapter._get("ack-barrier")
+        terminal = next(item for item in record.history if item["kind"] == "session.result")
+        receipt = lifecycle_receipt(project_lifecycle_event(terminal, "ack-barrier", "ack-trace"))
+        with pytest.raises(SessionConflict, match="cleanup"):
+            adapter.submit_prompt("ack-barrier", "second")
+        assert adapter.submit_prompt("ack-barrier", "first", idempotency_key="original-prompt") == first
+        assert FakeHarness.instances[0].run_count == 1
+        for invalid in ({**receipt, "event_sha256": "0" * 64}, {**receipt, "sequence": receipt["sequence"] + 1},
+                        {**receipt, "root_run_id": "f" * 32}, {**receipt, "extra": True},
+                        {**receipt, "sequence": float(receipt["sequence"])}):
+            with pytest.raises(SessionConflict):
+                adapter.acknowledge_terminal("ack-barrier", invalid)
+        assert adapter.acknowledge_terminal("ack-barrier", receipt) == {"receipt": receipt}
+        assert adapter.acknowledge_terminal("ack-barrier", receipt) == {"receipt": receipt}
+        second = adapter.submit_prompt("ack-barrier", "second")
+        assert second != first
+        wait_for_status(adapter, "ack-barrier", SessionStatus.IDLE)
+        adapter.acknowledge_terminal("ack-barrier", receipt)
+        with pytest.raises(SessionConflict, match="cleanup"):
+            adapter.submit_prompt("ack-barrier", "third")
+    finally:
+        adapter.close()
+
+
+def test_new_process_generation_does_not_inherit_old_ack_barrier(adapter):
+    try:
+        adapter.create_session("new-generation", "generation-trace", "alice", "workspace_alice")
+        adapter.submit_prompt("new-generation", "first")
+        assert FakeHarness.run_started.wait(1)
+        record = adapter._get("new-generation")
+        previous = record.runtime_generation
+        adapter.cancel_session("new-generation", "hard")
+        assert record.pending_terminal_receipts
+        adapter.resume_session("new-generation")
+        assert record.runtime_generation != previous
+        assert not record.pending_terminal_receipts
+        adapter.submit_prompt("new-generation", "new generation")
+    finally:
+        adapter.close()
+
+
+def test_terminal_receipt_http_is_closed_and_exact_session_scoped(adapter, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    monkeypatch.setattr(main, "adapter", adapter)
+    client = TestClient(main.app)
+    try:
+        adapter.create_session("receipt-http", "receipt-trace", "alice", "workspace_alice")
+        adapter.create_session("other-http", "other-trace", "bob", "workspace_bob")
+        adapter.submit_prompt("receipt-http", "first")
+        FakeHarness.allow_run.set()
+        wait_for_status(adapter, "receipt-http", SessionStatus.IDLE)
+        receipt = next(iter(adapter._get("receipt-http").terminal_receipts.values()))
+        path = "/internal/runtime/sessions/receipt-http/terminal-receipt"
+        assert client.post(path, json={"receipt": receipt, "bypass": True}).status_code == 422
+        assert client.post(path, json={"receipt": {}}).status_code == 409
+        assert client.post("/internal/runtime/sessions/other-http/terminal-receipt",
+                           json={"receipt": receipt}).status_code == 409
+        assert client.post("/internal/runtime/sessions/missing/terminal-receipt",
+                           json={"receipt": receipt}).status_code == 404
+        assert client.post(path, json={"receipt": receipt}).json() == {"receipt": receipt}
+    finally:
+        adapter.close()
+
+
 def test_default_whole_run_ceiling_allows_bounded_complex_research(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

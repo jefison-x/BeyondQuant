@@ -1,0 +1,36 @@
+# ADR-0064：Runtime 崩溃恢复的受限持久证据
+
+- Status: Proposed
+- Date: 2026-09-07
+- Scope: 没有规范终态事件的 Adapter 崩溃；新增 BYQ-owned 持久执行身份与可信恢复证据来源。
+- Related: ADR-0062 §2/§3、ADR-0063。现有开发授权不视为本项架构接受。
+- Acceptance: Pending maintainer decision；此记录不授权实现新恢复来源、部署或历史研究续跑。
+
+## 现有证据与缺口
+
+RuntimeSession 的 prompt_idempotency/history 和 Adapter 的 sessions 均为内存状态。
+Gateway 现有持久账本能重投已经收到的规范事件，不能恢复从未收到的终态。
+存活进程的跨轮确认屏障已另行实现；generation 隔离不等于旧 run 已持久收尾。
+HTTP 404、网络超时、同会话最新对象及时间相近均不能证明某个精确执行者已死亡。
+
+## 提议决策
+
+1. 在既有 Runtime 持久卷内使用独立 BYQ 元数据命名空间，保存最小 owner/workspace/
+   session/trace/root/generation、原提交身份、事件序号与收尾证据；先原子持久化并 fsync，
+   再启动对应模型回合或确认接收。不得复制 DSH 私有状态、推理、密钥或应用源码。
+2. 使用可验证的执行者排他所有权及恢复代际，防止多个恢复者同时接管。只有能证明原
+   BYQ 执行者已失效且记录归属完全一致时，可信恢复路径才可产生精确 root 的 interrupted
+   证据；不能用单次404、进程PID相似或超时猜测，不按PID猜测杀进程。
+3. 恢复证据仍经 Gateway/BYQ 合同到 Backend，复用原子 AgentRun/审计/回执及有界投递。
+   不授予 DSH PostgreSQL 访问，不增加 MCP/model 清理工具，不由 Backend 启动 DSH。
+   已存在终态优先且不可被恢复覆盖；序号不冲突、迟到事件不重开已关闭 root。
+4. 恢复只重放证据、核对原提交或关闭孤立的 AgentRun，不重投 prompt、不恢复研究目标、
+   不训练/回测，不修改业务 Job/Approval。禁用身份继续受 ADR-0063 精确限制。
+5. 历史无日志、身份不明、损坏记录或执行者仍可能存活时保持 unknown/隔离，不自动归属。
+   不增加通用工作流、通用任务队列或第二套 Agent harness。
+
+## 接受后的验收要求
+
+仅在隔离合成栈验证：启动/确认前后各崩溃点、真实进程强杀、卷恢复、两个恢复者竞争、
+首终态后崩溃、丢回执、序号去重、迟到通知、跨身份/禁用身份、日志损坏和不可证明所有权。
+必须证明恢复没有额外模型/业务调用，且不影响原独立业务任务。生产及历史记录保持不变。
