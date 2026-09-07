@@ -33,6 +33,14 @@ TypeScript handlers需人工补齐后才能声明全量。不得将发现数量�
 所有其他接口的8秒等待只是审计线索，尚未断言存在同样缺陷。读写授权、幂等、超时、
 业务状态、通知及恢复逐项检查；后续批次在此记录VERIFIED_OK或CONFIRMED_DEFECT的证据。
 
+第二轮源码审查新增两项CONFIRMED_DEFECT（代码路径证据，尚无本次生产重复写入证明）：
+
+- Gateway `product_create_research_task` 每次POST新建UUID并用作幂等键，忽略调用者稳定请求身份。
+  同一用户请求在响应丢失后重试会变成新的后端身份，需补稳定客户端请求键及scope/冲突测试。
+- Gateway `_backend_request` 把所有transport errors合并为503 backend_unavailable，不区分读请求失败
+  与写请求结果未知；且成功响应的JSON解码不在异常处理范围内。需闭合unknown与invalid-response投影，
+  不能向用户暗示写入未发生。Factor MCP也有无结果核对的写超时路径，领域副作用需继续检查。
+
 ## Community检查与分类
 
 只读检查 `BeyondQuant-community/agent-service/app/harness/workflow.py`：
