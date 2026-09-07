@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
+
 const BACKEND_TIMEOUT_MS = 8000;
 const MAX_VALIDATION_DETAIL_CHARACTERS = 1200;
 
@@ -78,13 +80,16 @@ async function requestStrategy(
       headers: { "content-type": "application/json", ...(init.headers ?? {}) },
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
+    if (isWriteRequest(init) && response.status >= 500) return unknownWriteResult(init);
     let payload: unknown;
     try {
       payload = await response.json();
     } catch {
+      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (!response.ok) {
@@ -106,6 +111,7 @@ async function requestStrategy(
     }
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
+    if (isWriteRequest(init)) return unknownWriteResult(init);
     return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
   }
 }
