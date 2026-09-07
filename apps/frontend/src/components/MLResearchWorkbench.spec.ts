@@ -210,6 +210,14 @@ describe("MLResearchWorkbench", () => {
     expect(confirmTraining).not.toHaveBeenCalled();
     expect(vm.receiptWatch.state).toBe("awaiting_receipt");
     expect(vm.next.label).toBe("核对原提交");
+    await vm.reconcileOriginalSubmission();
+    const reads = getMLTrainingSubmission.mock.calls.length;
+    localStorage.clear(); sessionStorage.clear();
+    await vm.reconcileOriginalSubmission();
+    await vm.startTraining();
+    expect(getMLTrainingSubmission).toHaveBeenCalledTimes(reads);
+    expect(createMLTraining).not.toHaveBeenCalled();
+    expect(confirmTraining).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 

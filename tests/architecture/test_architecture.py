@@ -1172,7 +1172,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("/v1/data/research/fundamentals", translator)
         self.assertNotIn("tushare", translator.lower())
         self.assertIn('role_id="market_researcher"', roles)
-        self.assertIn('version="2.0.0"', roles)
+        market_role = roles.split('role_id="market_researcher"', 1)[1].split("    ),", 1)[0]
+        self.assertIn('version="1.4.0"', market_role)
         self.assertIn("coverage.usable", skill)
         self.assertIn("Status: Accepted", adr)
         for prohibited in ("BaoStock", "AKShare", "VectorBT", "PydanticAI", "Hermes"):

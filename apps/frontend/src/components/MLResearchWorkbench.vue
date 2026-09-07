@@ -136,6 +136,20 @@ async function checkTrainingSubmission(key = existingTrainingSubmissionId()) {
   }
 }
 
+async function reconcileOriginalSubmission() {
+  if (busy.value) return;
+  busy.value = true;
+  try {
+    const key = existingTrainingSubmissionId();
+    if (!key || receiptWatchScope.value !== trainingSubmissionStorageKey()) {
+      throw new Error("原提交身份或股票池已变化，请先人工核查；不会发起训练。");
+    }
+    await checkTrainingSubmission(key);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "原提交暂时无法核对；不会发起训练。");
+  } finally { busy.value = false; }
+}
+
 function componentLabel(item: MLCapabilityComponent) { return item.display_name || item.id; }
 function initializeCapabilityDefaults() {
   form.capability_id ||= String(legacyCapabilities.value[0]?.capability_id ?? "");
@@ -376,6 +390,9 @@ async function startTraining() {
       throw new Error("请恢复原股票池后核对原提交，不会将旧提交关联到新对象。");
     }
     if (originalKey) { await checkTrainingSubmission(originalKey); return; }
+    if (receiptWatch.value && receiptWatch.value.state !== "confirmed") {
+      throw new Error("原提交身份缺失，请先人工核查；不会发起训练。");
+    }
     await ElMessageBox.confirm(`将使用“${poolName}”的当前冻结快照开始训练。`, "确认训练范围", { type: "warning", confirmButtonText: "开始训练", cancelButtonText: "返回检查" });
     if (trainingSubmissionStorageKey() !== scope) throw new Error("研究对象已变化，本次未提交训练，请重新确认。");
     if (!selectedApproval.value) {
@@ -526,7 +543,7 @@ onBeforeUnmount(() => { if (timer) clearTimeout(timer); if (catalogTimer) clearT
         </ManagementActionBar>
         <ol class="pipeline" aria-label="模型研究进度"><li v-for="(step,index) in steps" :key="step.label" :class="`is-${step.state}`"><b>{{ step.state==='completed'?'✓':index+1 }}</b><span><strong>{{ step.label }}</strong><small>{{ step.hint }}</small></span></li></ol>
         <el-alert v-if="receiptWatch" title="训练提交核对" :description="`${receiptWatchLabel}；已核对 ${receiptWatch.check_count}/${receiptWatch.check_limit} 次。`" type="warning" :closable="false" show-icon />
-        <el-button v-if="receiptWatch && receiptWatch.state !== 'confirmed'" :disabled="busy" @click="startTraining">核对原提交（不重新训练）</el-button>
+        <el-button v-if="receiptWatch && receiptWatch.state !== 'confirmed'" :disabled="busy" @click="reconcileOriginalSubmission">核对原提交（不重新训练）</el-button>
         <el-button v-if="receiptWatch?.state === 'rejected'" :disabled="busy" @click="acknowledgeRejectedSubmission">检查后准备重新提交</el-button>
         <section class="next-step"><div><span>建议下一步</span><strong>{{ isArchived?'研究已归档':next.title }}</strong><p>{{ isArchived?'恢复后才可发起新的训练或执行动作；历史结果仍可查看。':next.hint }}</p></div><div class="next-actions"><el-select v-if="next.action==='train'" v-model="form.pool_id" :disabled="isArchived" aria-label="训练使用的冻结股票池" data-testid="ml-pool" placeholder="选择冻结股票池"><el-option v-for="pool in activePools" :key="pool.pool_id" :label="`${pool.name} · ${pool.member_count}只`" :value="pool.pool_id"/></el-select><el-button type="primary" :disabled="isArchived||next.action==='wait'||(next.action==='train'&&!chosenPool)" :loading="busy" :data-testid="next.action==='train'?'ml-train':next.action==='predict'?'ml-predict':next.action==='backtest'?'ml-backtest':undefined" @click="runNext">{{ next.label }}</el-button></div></section>
         <el-tabs v-model="activeTab" class="research-tabs">

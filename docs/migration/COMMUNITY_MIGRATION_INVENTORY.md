@@ -11,6 +11,13 @@ BeyondQuant architecture 的内容。
 
 ## Post-U8 R1 historical outcome audit（2026-09-07）
 
+Post-U8 F8 instruction follow-up: read-only inspection of
+`agent-service/app/skills/builtin/python_strategy_generation/SKILL.md` retains
+“validate the strategy and never claim a backtest passed from generation alone”
+as `PORT_TESTS` / `REFERENCE_ONLY`. Its old publication workflow is `REPLACE`:
+new BYQ instructions use authoritative rule/ML Artifact kinds, exact original
+submission receipts and existing MCP authorization; no legacy harness is copied.
+
 Read-only inspection covered Community `frontend/src/views/AgentView.vue`
 (`submitMessage`, `openSession`) and the complete `components/agent/AgentThinking.vue`.
 Existing Phase 43/60 classifications remain in force; this slice changes only BYQ rendering.

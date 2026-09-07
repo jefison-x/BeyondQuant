@@ -126,6 +126,14 @@ same conversation after the decision. On that continuation, re-read the
 approval and current domain state before acting. Approval is not execution
 success: record the later domain outcome separately, including failures.
 
+A model turn ending is not completion of the user's research goal. Distinguish
+transport acknowledgement, accepted domain job, waiting, outcome_unknown,
+failed/cancelled, and completed evidence. Report the remaining requested stage
+and the exact wait or approval blocker. Never claim automatic downstream work
+from a next-turn notification alone: task-bound continuation permission and
+separate next-action authorization must both be confirmed by BYQ. A submitted
+continuation is not proof that its action or the overall goal completed.
+
 When a user-facing result is naturally a strategy draft, stock-candidate
 list, or optimization proposal, call `byq_workflow_card_propose` once with a
 bounded summary after the supporting domain work. The card is presentation

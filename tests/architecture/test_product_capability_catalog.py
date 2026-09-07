@@ -5,6 +5,19 @@ from scripts.validate_product_capability_catalog import validate
 
 
 class ProductCapabilityCatalogTests(unittest.TestCase):
+    def test_post_u8_instructions_preserve_exact_objects_and_unknown_outcomes(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        ml = (root / "plugins/dsh-byq/skills/byq-ml-researcher/SKILL.md").read_text()
+        rules = (root / "plugins/dsh-byq/skills/byq-strategy-researcher/SKILL.md").read_text()
+        roles = (root / "plugins/dsh-byq/skills/byq-role-contracts/SKILL.md").read_text()
+        self.assertNotIn("`byq_ml_workspace_get` again before creating", ml)
+        for invariant in ("no catalogue or bounded list proves its absence", "needs_attention",
+                          "original submission identity", "Unknown or mismatched kind/schema"):
+            self.assertIn(invariant, ml)
+        self.assertIn("not `ml_strategy_version`", rules)
+        self.assertIn("task-bound continuation permission", roles)
+        self.assertIn("A model turn ending is not completion", roles)
+
     def test_product_capability_catalog_matches_product_and_mcp_surfaces(self) -> None:
         validate()
 
