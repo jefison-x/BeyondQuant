@@ -31,6 +31,14 @@ def common(**extra: object) -> dict[str, object]:
 
 
 class WorkflowTraceProjectionTests(unittest.TestCase):
+    def test_waiting_notice_is_closed_and_not_a_progress_event(self) -> None:
+        payload = {"run_id": "run-1", "elapsed_seconds": 60, "last_activity_seconds": 20}
+        validate_workflow_trace_event(event("session.waiting", payload))
+        for patch in ({"raw": "private"}, {"elapsed_seconds": True}, {"last_activity_seconds": -1}):
+            with self.assertRaises(ValueError):
+                validate_workflow_trace_event(event("session.waiting", {**payload, **patch}))
+        with self.assertRaises(ValueError):
+            validate_workflow_trace_event(event("session.waiting", payload, source="dsh"))
     def test_proposal_cards_accept_only_exact_bounded_shapes(self) -> None:
         cases = [
             (

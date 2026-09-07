@@ -320,7 +320,7 @@ def test_step_boundaries_refresh_internal_liveness_without_public_projection(
     adapter.cancel_session("s-step", "hard")
 
 
-def test_descendant_activity_refreshes_owned_run_without_exposing_private_state(
+def test_unassociated_descendant_cannot_refresh_owned_run(
     adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter.create_session("s-child-live", "t-child-live")
@@ -344,7 +344,7 @@ def test_descendant_activity_refreshes_owned_run_without_exposing_private_state(
         },
     ))
 
-    assert run.last_runtime_activity_at == 42.0
+    assert run.last_runtime_activity_at == 10.0
     assert len(record.history) == history_length
     assert "private-descendant-session" not in str(record.history)
     assert "child-private" not in str(record.history)
@@ -425,6 +425,27 @@ def test_active_subagent_uses_its_dedicated_timeout_before_no_activity_guard(
         "code": "runtime-subagent-timeout",
         "retryable": True,
     }
+
+
+def test_wait_notices_are_bounded_do_not_renew_and_stop_with_run(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-wait", "t-wait")
+    adapter.submit_prompt("s-wait", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-wait")
+    run = record.active_run
+    run.started_at = 0
+    run.last_runtime_activity_at = 10
+    adapter._emit_wait_notice(record, run, now=59)
+    assert not any(e["kind"] == "session.waiting" for e in record.history)
+    adapter._emit_wait_notice(record, run, now=60)
+    adapter._emit_wait_notice(record, run, now=61)
+    notices = [e for e in record.history if e["kind"] == "session.waiting"]
+    assert len(notices) == 1
+    assert notices[0]["payload"] == {"run_id": run.run_id, "elapsed_seconds": 60, "last_activity_seconds": 50}
+    assert run.last_runtime_activity_at == 10
+    adapter.cancel_session("s-wait", "hard")
+    adapter._emit_wait_notice(record, run, now=120)
+    assert len([e for e in record.history if e["kind"] == "session.waiting"]) == 1
 
 
 def test_total_run_wall_clock_is_a_final_ceiling(adapter: RuntimeAdapter) -> None:
@@ -526,6 +547,38 @@ def test_recreated_runtime_uses_private_generation_and_bounded_public_context(
     assert "[CURRENT_USER_MESSAGE]\n第二轮追问" in harness.last_content
     assert record.pending_conversation_context == []
     adapter.release_session("s-durable")
+
+
+def test_recovery_reaches_fresh_runtime_once(adapter: RuntimeAdapter) -> None:
+    FakeHarness.allow_run.set()
+    subject = "沪深300近三年周频双均线，凯利仓位"
+    recovery = {
+        "schema_version": "conversation-recovery.v2", "session_id": "s-recovery",
+        "trace_id": "t-recovery", "status": "resolved",
+        "unanswered_turn": {"message_id": "m-original", "content": subject},
+        "failure": {"sequence": 9, "run_id": "run-original", "code": "runtime-subagent-timeout"},
+    }
+    adapter.create_session("s-recovery", "t-recovery", initial_sequence=9, conversation_recovery=recovery)
+    adapter.submit_prompt("s-recovery", subject)
+    wait_for_status(adapter, "s-recovery", SessionStatus.IDLE)
+    assert FakeHarness.instances[0].last_content.count(subject) == 1
+    assert "runtime-subagent-timeout" in FakeHarness.instances[0].last_content
+    assert adapter._get("s-recovery").pending_conversation_recovery is None
+    adapter.release_session("s-recovery")
+
+
+def test_ambiguous_recovery_does_not_start_run(adapter: RuntimeAdapter) -> None:
+    recovery = {
+        "schema_version": "conversation-recovery.v2", "session_id": "s-ambiguous",
+        "trace_id": "t-ambiguous", "status": "needs_confirmation", "unanswered_turn": None,
+        "failure": {"sequence": 9, "run_id": None, "code": "unknown"},
+    }
+    adapter.create_session("s-ambiguous", "t-ambiguous", initial_sequence=9, conversation_recovery=recovery)
+    with pytest.raises(ValueError, match="请明确"):
+        adapter.submit_prompt("s-ambiguous", "继续")
+    assert FakeHarness.instances[0].run_count == 0
+    assert adapter._get("s-ambiguous").pending_conversation_recovery == recovery
+    adapter.release_session("s-ambiguous")
 
 
 def test_conversation_context_rejects_private_or_unbounded_shapes(adapter: RuntimeAdapter) -> None:

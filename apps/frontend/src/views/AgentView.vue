@@ -7,7 +7,7 @@ import {
   streamWorkflowEvents, submitTurn, updateAgentSession,
 } from "@/api/agent";
 import { continueApproval } from "@/api/research";
-import { foldWorkflowCards, workflowActivities, workflowOutcomes, workflowRunState } from "@/api/workflow";
+import { foldWorkflowCards, workflowActivities, workflowOutcomes, workflowRunState, workflowWaiting } from "@/api/workflow";
 import type { AgentReplayMessage, AgentSession, WorkflowCardEvent, WorkflowTraceEvent } from "@/api/types";
 import AgentActivityPanel from "@/components/agent/AgentActivityPanel.vue";
 import RichMessage from "@/components/agent/RichMessage.vue";
@@ -54,6 +54,7 @@ const activeActivityCount = computed(() => activities.value.filter((item) =>
 ).length);
 const replayRun = computed(() => workflowRunState(agent.events));
 const outcomes = computed(() => workflowOutcomes(agent.events, agent.activeSessionId));
+const waiting = computed(() => workflowWaiting(agent.events, agent.activeSessionId));
 const activeActivity = computed(() => [...activities.value].reverse().find((item) =>
   item.payload.state === "started" || item.payload.state === "progress" || item.payload.state === "waiting_approval",
 ));
@@ -514,6 +515,10 @@ onBeforeUnmount(() => {
             <small>查看小巴正在进行的公开步骤</small>
           </div>
         </article>
+        <p v-if="runActive && waiting" role="status" aria-live="polite" class="waiting-notice">
+          系统仍在等待处理：已用时 {{ waiting.elapsed }} 秒，最近可信活动距提示时 {{ waiting.quiet }} 秒。
+          此提示不代表取得新的研究进展，也不会延长执行时限。
+        </p>
       </div>
     </main>
     <footer class="composer-wrap">

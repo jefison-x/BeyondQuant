@@ -155,7 +155,7 @@ export interface WorkflowActivityPayload {
   schema_version: "workflow-activity.v1";
   activity_id: string;
   phase: "understand" | "select" | "strategy" | "backtest" | "review" | "tool";
-  state: "started" | "progress" | "completed" | "failed" | "waiting_approval";
+  state: "started" | "progress" | "completed" | "failed" | "waiting_approval" | "unknown" | "cancelled" | "waiting";
   label: string;
   capability?: string;
   agent_label?: string;

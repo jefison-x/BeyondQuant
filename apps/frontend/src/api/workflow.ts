@@ -42,7 +42,7 @@ export function workflowActivities(events: WorkflowTraceEvent[]): Array<{
     timestamp: string;
     payload: WorkflowActivityPayload;
   }>();
-  for (const event of events
+  for (const event of [...events].sort((a, b) => a.sequence - b.sequence)
     .filter(
       (event) => event.kind === "agent.activity"
         && event.payload?.schema_version === "workflow-activity.v1"
@@ -55,15 +55,15 @@ export function workflowActivities(events: WorkflowTraceEvent[]): Array<{
       payload: event.payload as unknown as WorkflowActivityPayload,
     });
   }
-  const terminalSequence = events.reduce(
-    (maximum, event) => TERMINAL_RUN_EVENTS.has(event.kind) ? Math.max(maximum, event.sequence) : maximum,
-    -1,
-  );
   return [...latest.values()]
-    .map((activity) => terminalSequence > activity.sequence
-      && ["started", "progress", "waiting_approval"].includes(activity.payload.state)
-      ? { ...activity, payload: { ...activity.payload, state: "failed" as const } }
-      : activity)
+    .map((activity) => {
+      const terminal = [...events].sort((a, b) => a.sequence - b.sequence).find(event =>
+        TERMINAL_RUN_EVENTS.has(event.kind) && event.sequence > activity.sequence);
+      if (!terminal || !["started", "progress"].includes(activity.payload.state)) return activity;
+      const state: WorkflowActivityPayload["state"] = terminal.kind === "session.cancelled" ? "cancelled"
+        : terminal.kind === "session.failed" ? "failed" : "unknown";
+      return { ...activity, payload: { ...activity.payload, state } };
+    })
     .sort((left, right) => left.sequence - right.sequence)
     .slice(-20);
 }
@@ -71,6 +71,27 @@ export function workflowActivities(events: WorkflowTraceEvent[]): Array<{
 const TERMINAL_RUN_EVENTS = new Set([
   "session.result", "session.failed", "session.cancelled", "session.result.discarded",
 ]);
+
+export function workflowWaiting(events: WorkflowTraceEvent[], sessionId: string) {
+  let waiting: { elapsed: number; quiet: number } | null = null;
+  let active = false;
+  let runId: unknown = null;
+  for (const event of [...events].filter(item => item.session_id === sessionId)
+    .sort((a, b) => a.sequence - b.sequence)) {
+    if (event.kind === "session.started" || TERMINAL_RUN_EVENTS.has(event.kind)) {
+      waiting = null;
+      active = event.kind === "session.started";
+      runId = active ? event.payload.run_id : null;
+    }
+    else if (active && event.kind === "session.waiting" && event.source === "runtime-adapter"
+      && (typeof runId !== "string" || runId === event.payload.run_id)
+      && Number.isInteger(event.payload.elapsed_seconds) && Number.isInteger(event.payload.last_activity_seconds)
+      && Number(event.payload.elapsed_seconds) >= 0 && Number(event.payload.last_activity_seconds) >= 0) {
+      waiting = { elapsed: Number(event.payload.elapsed_seconds), quiet: Number(event.payload.last_activity_seconds) };
+    }
+  }
+  return waiting;
+}
 
 const FAILURE_MESSAGES: Record<string, string> = {
   "runtime-no-progress-timeout": "本轮在较长时间内没有形成可展示的结论，系统为避免持续占用已停止。已完成的读取步骤仍保留，可以直接重试。",

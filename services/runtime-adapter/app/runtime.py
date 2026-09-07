@@ -19,8 +19,11 @@ from packages.contracts.conversation_rehydration import (
     normalize_conversation_context,
     rehydrated_prompt,
 )
+from packages.contracts.conversation_recovery import normalize_recovery
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
+from .child_lease import ChildLease
+from .normalization import close_public_activities
 from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_release
 from .identifiers import contained_session_path, validate_identifier
 from .normalization import NormalizationState, normalize_runtime_observation
@@ -66,6 +69,10 @@ class ActiveRun:
     soft_cancel_requested: bool = False
     hard_cancelled: bool = False
     active_subagent_calls: dict[str, float] = field(default_factory=dict)
+    child_leases: dict[str, ChildLease] = field(default_factory=dict)
+    finished_children: set[str] = field(default_factory=set)
+    last_root_sequence: int = -1
+    last_wait_notice_at: float = 0.0
     watchdog_stop: threading.Event = field(default_factory=threading.Event, repr=False)
 
 
@@ -79,6 +86,7 @@ class RuntimeSession:
     workspace_id: str | None = None
     model_resolution: dict[str, object] = field(default_factory=dict, repr=False)
     pending_conversation_context: list[ConversationContextMessage] = field(default_factory=list, repr=False)
+    pending_conversation_recovery: dict | None = field(default=None, repr=False)
     status: str = SessionStatus.STARTING
     active_run: ActiveRun | None = None
     prompt_idempotency: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
@@ -138,6 +146,9 @@ class RuntimeAdapter:
         )
         self._subagent_timeout_seconds = self._guard_seconds(
             "BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS", default=180.0,
+        )
+        self._subagent_hard_cap_seconds = self._guard_seconds(
+            "BYQ_DSH_SUBAGENT_HARD_CAP_SECONDS", default=600.0,
         )
         self._no_progress_timeout_seconds = self._guard_seconds(
             "BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS", default=120.0,
@@ -317,12 +328,14 @@ class RuntimeAdapter:
         self, session_id: str, trace_id: str, owner_principal: str | None = None,
         workspace_id: str | None = None, initial_sequence: int = 0,
         conversation_context: object = None,
+        conversation_recovery: object = None,
     ) -> dict[str, Any]:
         validate_identifier(session_id, field="session_id")
         validate_identifier(trace_id, field="trace_id")
         if isinstance(initial_sequence, bool) or not isinstance(initial_sequence, int) or initial_sequence < 0:
             raise ValueError("initial_sequence must be a non-negative integer")
         context = normalize_conversation_context([] if conversation_context is None else conversation_context)
+        recovery = normalize_recovery(conversation_recovery, session_id, trace_id)
         # The official rc.1 JSON-RPC carrier creates sessions but exposes no
         # persisted-session resume operation. Never recreate a released DSH
         # session over its append-only identity; use a fresh private generation
@@ -355,6 +368,7 @@ class RuntimeAdapter:
                 workspace_id=workspace_id,
                 model_resolution=model_resolution,
                 pending_conversation_context=context,
+                pending_conversation_recovery=recovery,
                 sequence=initial_sequence,
             )
             self._sessions[session_id] = record
@@ -398,8 +412,9 @@ class RuntimeAdapter:
                 started_at=now,
                 last_runtime_activity_at=now,
             )
-            effective_content = rehydrated_prompt(record.pending_conversation_context, content)
+            effective_content = rehydrated_prompt(record.pending_conversation_context, content, record.pending_conversation_recovery)
             record.pending_conversation_context = []
+            record.pending_conversation_recovery = None
             record.active_run = run
             record.status = SessionStatus.RUNNING
             if idempotency_key is not None:
@@ -521,12 +536,15 @@ class RuntimeAdapter:
 
     def resume_session(
         self, session_id: str, *, conversation_context: object = None,
+        conversation_recovery: object = None,
     ) -> dict[str, Any]:
         record = self._get(session_id)
         context = normalize_conversation_context([] if conversation_context is None else conversation_context)
+        recovery = normalize_recovery(conversation_recovery, record.session_id, record.trace_id)
         with record.lock:
             if record.status == SessionStatus.READY and record.active_run is None:
                 record.pending_conversation_context = context
+                record.pending_conversation_recovery = recovery
                 return {**self.describe_session(record), "resumed_from_run_id": None}
             if record.status not in {SessionStatus.INTERRUPTED, SessionStatus.FAILED} or record.active_run is not None:
                 raise SessionConflict(f"session {session_id} cannot be resumed")
@@ -568,6 +586,7 @@ class RuntimeAdapter:
             record.harness = harness
             record.runtime_session_id = runtime_session_id
             record.pending_conversation_context = context
+            record.pending_conversation_recovery = recovery
             record.normalization = NormalizationState()
             record.interrupted_run_id = None
             record.status = SessionStatus.READY
@@ -810,8 +829,22 @@ class RuntimeAdapter:
 
     def _watch_run(self, record: RuntimeSession, run: ActiveRun) -> None:
         while not run.watchdog_stop.wait(timeout=1.0):
-            if self._enforce_run_guards(record, run, now=time.monotonic()):
+            now = time.monotonic()
+            if self._enforce_run_guards(record, run, now=now):
                 return
+            self._emit_wait_notice(record, run, now=now)
+
+    def _emit_wait_notice(self, record: RuntimeSession, run: ActiveRun, *, now: float) -> None:
+        with record.lock:
+            if (record.active_run is not run or record.status != SessionStatus.RUNNING
+                    or now - max(run.started_at, run.last_wait_notice_at) < 60):
+                return
+            run.last_wait_notice_at = now
+            self._emit(record, "session.waiting", "runtime-adapter", {
+                "run_id": run.run_id,
+                "elapsed_seconds": max(0, int(now - run.started_at)),
+                "last_activity_seconds": max(0, int(now - run.last_runtime_activity_at)),
+            })
 
     def _enforce_run_guards(
         self, record: RuntimeSession, run: ActiveRun, *, now: float,
@@ -824,11 +857,12 @@ class RuntimeAdapter:
             if now - run.started_at > self._run_timeout_seconds:
                 code = "runtime-run-timeout"
             elif (
-                oldest_subagent is not None
-                and now - oldest_subagent > self._subagent_timeout_seconds
+                (oldest_subagent is not None and now - oldest_subagent > self._subagent_timeout_seconds)
+                or any(child.expired(now, self._subagent_timeout_seconds, self._subagent_hard_cap_seconds)
+                       for child in run.child_leases.values())
             ):
                 code = "runtime-subagent-timeout"
-            elif oldest_subagent is not None:
+            elif oldest_subagent is not None or run.child_leases:
                 # A delegated child owns a separate, longer bound. Do not let
                 # the parent's quiet interval mislabel active child work as a
                 # no-progress failure before that dedicated deadline.
@@ -859,6 +893,35 @@ class RuntimeAdapter:
     def _observe_run_observation(
         record: RuntimeSession, run: ActiveRun, observation: RuntimeObservation,
     ) -> bool:
+        now = time.monotonic()
+        if observation.kind == "subagent.started":
+            child_id = observation.child_session_id
+            # The official notification has no call ID. Only a unique pending
+            # root delegation can be associated; ambiguity never renews a lease.
+            if (observation.parent_session_id != record.runtime_session_id or not child_id
+                    or child_id in run.child_leases or child_id in run.finished_children
+                    or len(run.active_subagent_calls) != 1):
+                return False
+            call_id, started_at = next(iter(run.active_subagent_calls.items()))
+            run.child_leases[child_id] = ChildLease(
+                record.runtime_session_id, child_id, call_id, started_at, now,
+            )
+            run.active_subagent_calls.pop(call_id)
+            return True
+        if observation.kind == "subagent.finished":
+            child_id = observation.child_session_id
+            if observation.parent_session_id != record.runtime_session_id or child_id not in run.child_leases:
+                return False
+            run.child_leases.pop(child_id)
+            run.finished_children.add(child_id)
+            return True
+        if not observation.root_session:
+            child = run.child_leases.get(observation.session_id)
+            return bool(child and observation.runtime_activity and child.observe(observation.event_sequence, now))
+        if observation.runtime_activity and observation.event_sequence is not None:
+            if observation.event_sequence <= run.last_root_sequence:
+                return False
+            run.last_root_sequence = observation.event_sequence
         if observation.kind == "tool.call":
             call_id = observation.call_id
             name = observation.tool_name
@@ -868,7 +931,7 @@ class RuntimeAdapter:
                 and isinstance(name, str)
                 and name.removeprefix("mcp__byq__").startswith("byq_delegate_")
             ):
-                run.active_subagent_calls[call_id] = time.monotonic()
+                run.active_subagent_calls.setdefault(call_id, now)
         elif observation.kind == "tool.result" and observation.root_session:
             for call_id in observation.completed_call_ids:
                 run.active_subagent_calls.pop(call_id, None)
@@ -901,6 +964,11 @@ class RuntimeAdapter:
             payload=payload,
         )
         with record.lock:
+            if kind in {"session.result", "session.failed", "session.cancelled", "session.closed"}:
+                outcome = {"session.failed": "failed", "session.cancelled": "cancelled"}.get(kind, "unknown")
+                for closure in close_public_activities(record.normalization, record.trace_id,
+                                                       record.session_id, record.sequence + 1, outcome):
+                    self._publish(record, closure)
             self._publish(record, event)
 
     @staticmethod

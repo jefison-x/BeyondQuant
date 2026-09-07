@@ -6,6 +6,7 @@ import json
 from typing import Literal, cast
 
 from typing_extensions import TypedDict
+from .conversation_recovery import recovery_prompt_parts
 
 
 CONVERSATION_REHYDRATION_VERSION = "conversation-rehydration.v1"
@@ -46,11 +47,12 @@ def normalize_conversation_context(value: object) -> list[ConversationContextMes
     return normalized
 
 
-def rehydrated_prompt(messages: list[ConversationContextMessage], current: str) -> str:
+def rehydrated_prompt(messages: list[ConversationContextMessage], current: str, recovery: dict | None = None) -> str:
     """Compose one bounded prompt without pretending to restore private DSH state."""
 
-    if not messages:
+    if not messages and recovery is None:
         return current
+    recovery_section, current = recovery_prompt_parts(recovery, current)
     transcript = json.dumps(messages, ensure_ascii=False, separators=(",", ":"))
     return (
         "[BYQ_CONVERSATION_REHYDRATION]\n"
@@ -59,6 +61,7 @@ def rehydrated_prompt(messages: list[ConversationContextMessage], current: str) 
         "仅用它延续对话语义；当前用户消息优先。不要重复执行历史操作，也不要声称恢复了未显示的内部状态。\n"
         f"{transcript}\n"
         "[/BYQ_CONVERSATION_REHYDRATION]\n"
+        f"{recovery_section}"
         "[CURRENT_USER_MESSAGE]\n"
         f"{current}\n"
         "[/CURRENT_USER_MESSAGE]"

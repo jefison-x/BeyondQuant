@@ -24,7 +24,22 @@ Existing Phase 43/60 classifications remain in force; this slice changes only BY
 No Community source or persistence was modified or copied. The first regression
 failed on the original BYQ view after a later `session.started`; the fixed view retains it.
 
+## Post-U8 R2 recovery audit（2026-09-07）
+
+Read-only Community `frontend/src/views/AgentView.vue` `openSession` was inspected:
+recovering the failed run's original request via `retry_content` is `REFERENCE_ONLY` /
+`PORT_TESTS`; BYQ derives a bounded public request and stable failure identity instead.
+Synthetic assistant failure messages and `fallbackBacktestId` / `inferBacktestId` /
+latest-artifact selection are `DROP` for task recovery. Missing or ambiguous subject
+must require confirmation. No Community code, database or runtime is copied or modified.
+
 ## Audit scope 与 evidence
+
+Post-U8 R3/R4/R5 follow-up: read-only Community AgentView/AgentThinking and
+`backend/app/ops/sync_jobs.py` were inspected. Honest waiting/terminal labels and
+separate lease/hard-bound semantics are `PORT_UX` / `REFERENCE_ONLY`; copying
+Community scheduler, ORM, raw Agent events or heartbeat-as-work renewal is `DROP`.
+BYQ uses only official DSH scheduling and its own normalized public projections.
 
 - Local reference: `/home/jefison/projects/BeyondQuant-community`.
 - Local reference revision: `58dd99d` on `agent/workspace-community`; the

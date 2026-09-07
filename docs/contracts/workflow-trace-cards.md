@@ -83,7 +83,12 @@ Artifact ID token 的回答 fail closed，不保留原文。
 {"schema_version":"workflow-activity.v1","activity_id":"activity_<hex>","phase":"strategy","state":"started","label":"校验策略草稿","agent_label":"量化研究 Agent","plugin_label":"BeyondQuant MCP","skill_label":"策略研究 Skill"}
 ```
 
-`phase` 为 `understand|select|strategy|backtest|review|tool`；`state` 为
+ADR-0062 追加 `unknown`（结果待核实）、`waiting`（等待业务结果）、`cancelled`（本轮取消）；
+它们不代表领域 job 成功或被取消。运行终态关闭未收口的公开步骤，不重写已知业务结果。
+`session.waiting` 只由 Runtime Adapter 每60秒生成，封闭字段为 `run_id`、`elapsed_seconds`、
+`last_activity_seconds`；不进入模型历史，不续租。工具 activity identity 按回合隔离。
+
+`phase` 为 `understand|select|strategy|backtest|review|tool`；既有 `state` 为
 `started|progress|completed|failed|waiting_approval`；`label` 为 1–240 characters。
 可选 `capability` 只为历史 v1 replay compatibility 保留；Phase 60 Adapter 不再生成该
 field。可选 `agent_label`、`plugin_label`、`skill_label` 只能由 Adapter 根据已观察到的

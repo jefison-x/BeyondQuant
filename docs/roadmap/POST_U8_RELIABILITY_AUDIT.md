@@ -14,6 +14,11 @@
 
 ## 发现方式与覆盖
 
+第二批本地实现已覆盖 R2 恢复、R3 子会话租约、R5 等待提示及 R4/F3 公开状态切片。
+组件与当前 DSH 的 scripted integration、Chrome Product API 投影检查已通过；
+持久领域 AgentRun 收口、提交回执/未知结果核对及授权后台续接仍待修复，不关闭整体需求。
+详见[本地切片证据](../evidence/POST_U8_RUNTIME_RECOVERY.md)。历史认证构建门禁仍未通过。
+
 `python3 scripts/ci/inventory-reliability.py` 从源码枚举Python routes、MCP tools、Worker入口，
 所有项目默认NEEDS_EVIDENCE。挂载路由、动态路由、Gateway catch-all实际映射和Cloudflare
 TypeScript handlers需人工补齐后才能声明全量。不得将发现数量当作验证数量。
@@ -59,6 +64,13 @@ TypeScript handlers需人工补齐后才能声明全量。不得将发现数量�
 后续涉及具体领域或UI前继续检查对应实现并更新正式migration inventory。
 
 ## 架构门禁
+
+2026-09-07 R2 本地切片：Gateway 已分离未回答主题与失败事实，Runtime 新 generation
+一次性消费、同文去重、明确新指令优先，歧义短续接在启动前拒绝。
+Gateway 103项通过；当前 DSH Runtime 默认 suite 79项通过、2项真实 MCP 进程测试未启用。
+合同及限制见 [conversation recovery](../contracts/conversation-recovery.md)。
+状态为 COMPONENT_VERIFIED_INTEGRATION_PENDING，未部署、未认证发布制品；
+R2 端到端模型语义、R3–R5、S1–S3及领域提交/续接整改不能据此关闭。
 
 2026-09-07，维护者明确确认ADR-0062，并要求同步修订ADR-0046和ADR-0045。
 ADR-0062现为Accepted：ADR-0046原先的未回答消息丢弃规则已被保留、分区恢复与去重规则替代；

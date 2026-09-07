@@ -23,10 +23,12 @@ class CreateSessionRequest(BaseModel):
     owner_principal: str | None = None
     initial_sequence: int = 0
     conversation_context: list[ConversationContextMessage] = Field(default_factory=list)
+    conversation_recovery: dict[str, object] | None = None
 
 
 class ResumeSessionRequest(BaseModel):
     conversation_context: list[ConversationContextMessage] = Field(default_factory=list)
+    conversation_recovery: dict[str, object] | None = None
 
 
 class PromptRequest(BaseModel):
@@ -101,6 +103,7 @@ def create_session(request: CreateSessionRequest) -> dict[str, object]:
         return adapter.create_session(
             request.session_id, request.trace_id, request.owner_principal, request.workspace_id,
             request.initial_sequence, request.conversation_context,
+            request.conversation_recovery,
         )
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -136,11 +139,14 @@ def resume_session(session_id: str, request: ResumeSessionRequest | None = None)
         return adapter.resume_session(
             session_id,
             conversation_context=[] if request is None else request.conversation_context,
+            conversation_recovery=None if request is None else request.conversation_recovery,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail="DSH runtime failed to resume") from exc
 

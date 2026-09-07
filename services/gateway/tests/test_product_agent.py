@@ -327,6 +327,12 @@ def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(mon
         "session_id": "runtime-private", "trace_id": "trace-1",
         "workspace_id": "workspace_bootstrap_unresolved", "owner_principal": main.PRODUCT_PRINCIPAL,
         "initial_sequence": 7,
+        "conversation_recovery": {
+            "schema_version": "conversation-recovery.v2",
+            "session_id": "runtime-private", "trace_id": "trace-1",
+            "status": "needs_confirmation", "unanswered_turn": None,
+            "failure": {"sequence": 7, "run_id": None, "code": "model-run-failed"},
+        },
         "conversation_context": [
             {"role": "user", "content": "第一轮问题"},
             {"role": "assistant", "content": "第一轮回答"},
@@ -456,6 +462,7 @@ def test_turn_rehydrates_after_runtime_loss_without_duplicating_user_message(
                 "trace_id": "trace-1", "status": "active",
             },
             "messages": [{"role": "user", "content": "follow-up"}],
+            "message": {"message_id": "message_stable_retry"},
         }
 
     monkeypatch.setattr(main, "_catalog_request", catalog)
@@ -463,6 +470,8 @@ def test_turn_rehydrates_after_runtime_loss_without_duplicating_user_message(
 
     def adapter(path, **_kwargs):
         calls.append(path)
+        if path.endswith("/prompt"):
+            assert _kwargs["payload"]["idempotency_key"] == "message_stable_retry"
         if calls == ["/internal/runtime/sessions/runtime-private/prompt"]:
             raise main.HTTPException(status_code=404, detail="lost")
         return {"status": "ready", "run_id": "run-rehydrated"}

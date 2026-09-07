@@ -28,6 +28,7 @@ from .product_api import (
 from .pooled_http import pooled_http as httpx
 from .user_session import ProductAuthError, resolve_principal, resolve_user
 from .trace_store import TraceStore
+from .conversation_recovery import project_recovery
 from .workflow_projection import project_workflow_event
 
 
@@ -514,7 +515,8 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
     )
     persisted_events = trace_store.read(session.session_id)
     initial_sequence = max((event["sequence"] for event in persisted_events), default=0)
-    conversation_context = _conversation_context(body.get("messages"))
+    public_messages, recovery = project_recovery(body.get("messages"), persisted_events, session.session_id, session.trace_id)
+    conversation_context = _conversation_context(public_messages)
     try:
         _adapter_post(
             "/internal/runtime/sessions",
@@ -525,6 +527,7 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
                 "owner_principal": session.principal.subject,
                 "initial_sequence": initial_sequence,
                 "conversation_context": conversation_context,
+                **({"conversation_recovery": recovery} if recovery is not None else {}),
             },
         )
     except HTTPException as exc:
@@ -556,8 +559,8 @@ def _conversation_context(value: object) -> list[ConversationContextMessage]:
         bounded = content[:MAX_REHYDRATION_MESSAGE_CHARS]
         public.append({"role": role, "content": bounded})
 
-    # A trailing user turn has no completed public answer. It may be the failed
-    # prompt that the browser is about to retry, so do not replay it twice.
+    # This v1 section contains completed history only. Unanswered demands and
+    # failure evidence travel separately in the versioned recovery section.
     last_assistant = max(
         (index for index, item in enumerate(public) if item["role"] == "assistant"),
         default=-1,
@@ -791,11 +794,15 @@ def submit_product_turn(
     http_request: Request,
 ) -> dict[str, object]:
     session = _product_session(http_request, session_id)
-    _catalog_request(
+    persisted = _catalog_request(
         "POST", f"/v1/product/conversations/{session.conversation_id}/messages",
         session.principal, session.workspace_id, payload={"content": request.content},
     )
     prompt_payload = {"content": request.content, "require_model_key": True}
+    persisted_message = persisted.get("message")
+    message_id = persisted_message.get("message_id") if isinstance(persisted_message, dict) else None
+    if isinstance(message_id, str) and 8 <= len(message_id) <= 128:
+        prompt_payload["idempotency_key"] = message_id
     try:
         body = _adapter_post(
             f"/internal/runtime/sessions/{session.session_id}/prompt",
@@ -826,7 +833,12 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
         "GET", f"/v1/product/conversations/{session.conversation_id}",
         session.principal, session.workspace_id,
     )
-    resume_payload = {"conversation_context": _conversation_context(catalog.get("messages"))}
+    public_messages, recovery = project_recovery(
+        catalog.get("messages"), trace_store.read(session.session_id), session.session_id, session.trace_id,
+    )
+    resume_payload = {"conversation_context": _conversation_context(public_messages)}
+    if recovery is not None:
+        resume_payload["conversation_recovery"] = recovery
     try:
         body = _adapter_post(
             f"/internal/runtime/sessions/{session.session_id}/resume",

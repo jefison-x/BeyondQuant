@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foldWorkflowCards, workflowActivities, workflowOutcomes, workflowRunState } from "./workflow";
+import { foldWorkflowCards, workflowActivities, workflowOutcomes, workflowRunState, workflowWaiting } from "./workflow";
 import type { WorkflowTraceEvent } from "./types";
 
 function event(sequence: number, kind: string, payload: Record<string, unknown>): WorkflowTraceEvent {
@@ -15,6 +15,14 @@ function event(sequence: number, kind: string, payload: Record<string, unknown>)
 }
 
 describe("workflow projections", () => {
+  it("shows bounded waiting separately and clears it on terminal or next turn", () => {
+    const wait = event(2, "session.waiting", { run_id: "run", elapsed_seconds: 60, last_activity_seconds: 20 });
+    expect(workflowWaiting([event(1, "session.started", {}), wait], "session-1")).toEqual({ elapsed: 60, quiet: 20 });
+    expect(workflowWaiting([wait], "other")).toBeNull();
+    expect(workflowWaiting([wait, event(3, "session.result", {})], "session-1")).toBeNull();
+    expect(workflowWaiting([wait, event(3, "session.started", {})], "session-1")).toBeNull();
+    expect(workflowWaiting([event(2, "session.waiting", { elapsed_seconds: -1, last_activity_seconds: 20 })], "session-1")).toBeNull();
+  });
   it("replays every historical outcome after later success without raw errors or duplicates", () => {
     const failure = event(2, "session.failed", { code: "runtime-subagent-timeout", error: "private-secret" });
     const events = [

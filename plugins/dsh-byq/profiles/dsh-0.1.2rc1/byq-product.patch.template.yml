@@ -2,6 +2,9 @@
 # This is an invocation patch over the official sdk profile. It is not a full
 # Cordis composition and never replaces the SDK application's safe lifecycle.
 
+- id: agent-loop
+  config:
+    maxParallelToolCalls: 1
 - id: session-title-llm
   disabled: true
 - id: settings

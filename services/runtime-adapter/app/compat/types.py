@@ -13,6 +13,7 @@ class RuntimeObservation:
     session_id: str | None = None
     root_session: bool = False
     runtime_activity: bool = False
+    event_sequence: int | None = None
     status: str | None = None
     terminal_reason: str | None = None
     message_id: str | None = None

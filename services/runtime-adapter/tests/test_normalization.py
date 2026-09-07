@@ -166,6 +166,31 @@ def test_final_answer_translates_raw_research_terms_and_preserves_evidence() -> 
     assert "-2.31%" in answer
 
 
+def test_unknown_submission_is_not_completed_and_unclosed_steps_are_closed():
+    from app.compat.types import RuntimeObservation
+    from app.normalization import close_public_activities, normalize_runtime_observation
+    state = NormalizationState()
+    def project(observation, sequence):
+        return normalize_runtime_observation(observation, trace_id="t", session_id="s", sequence=sequence, state=state)
+    project(RuntimeObservation(kind="turn.start", root_session=True), 1)
+    started = project(RuntimeObservation(kind="tool.call", root_session=True, call_id="call",
+                                         tool_name="byq_ml_training_create"), 2)
+    result = project(RuntimeObservation(kind="tool.result", root_session=True, call_id="call",
+                                        tool_result={"status": "outcome_unknown"}), 3)
+    assert result[0]["payload"]["state"] == "unknown"
+    assert result[0]["payload"]["activity_id"] == started[0]["payload"]["activity_id"]
+    project(RuntimeObservation(kind="tool.call", root_session=True, call_id="pending",
+                               tool_name="byq_ml_training_create"), 4)
+    closures = close_public_activities(state, "t", "s", 5, "cancelled")
+    assert len(closures) == 2
+    assert all(event["payload"]["state"] == "cancelled" for event in closures)
+    assert close_public_activities(state, "t", "s", 7, "failed") == []
+    project(RuntimeObservation(kind="turn.start", root_session=True), 8)
+    later = project(RuntimeObservation(kind="tool.call", root_session=True, call_id="call",
+                                       tool_name="byq_ml_training_create"), 9)
+    assert later[0]["payload"]["activity_id"] != started[0]["payload"]["activity_id"]
+
+
 def test_known_tool_emits_curated_activity_and_proposal_card() -> None:
     state = NormalizationState()
     started = normalize(

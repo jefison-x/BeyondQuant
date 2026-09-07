@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -101,6 +102,16 @@ class Dsh012Compatibility:
 
     @staticmethod
     def observe(notification: object, *, root_session_id: str) -> RuntimeObservation:
+        observation = Dsh012Compatibility._observe(notification, root_session_id=root_session_id)
+        if isinstance(notification, Notification) and isinstance(notification.payload, dict):
+            event = notification.payload.get("event")
+            seq = event.get("seq") if isinstance(event, dict) else None
+            if type(seq) is int and seq >= 0:
+                return replace(observation, event_sequence=seq)
+        return observation
+
+    @staticmethod
+    def _observe(notification: object, *, root_session_id: str) -> RuntimeObservation:
         if not isinstance(notification, Notification) or not isinstance(notification.payload, dict):
             return RuntimeObservation(kind="ignored")
         payload = notification.payload
