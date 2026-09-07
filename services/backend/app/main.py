@@ -2621,7 +2621,37 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
         )
         return {"training_run": run}
 
+    try:
+        return _ml_call(operation)
+    except HTTPException as error:
+        key = payload.get("idempotency_key")
+        if 400 <= error.status_code < 500 and isinstance(key, str) and 1 <= len(key) <= 128:
+            ml_training_store.reject_receipt_watch(
+                payload, trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
+            )
+        raise
+
+
+@app.post("/v1/research/ml/training-submissions", status_code=202)
+def register_ml_training_submission(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    def operation() -> dict[str, object]:
+        data = _strategy_payload(payload, {
+            "task_id", "experiment_id", "ml_strategy_artifact_id", "stock_pool_snapshot_id",
+            "trace_id", "idempotency_key",
+        })
+        return {"receipt_watch": ml_training_store.register_receipt_watch(
+            data, trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
+        )}
     return _ml_call(operation)
+
+
+@app.get("/v1/research/ml/training-submissions/reconcile")
+def get_ml_training_submission(idempotency_key: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _ml_call(lambda: {"receipt_watch": ml_training_store.get_receipt_watch(
+        idempotency_key, trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
+    )})
 
 
 @app.get("/v1/research/ml/training-runs")

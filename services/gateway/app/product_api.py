@@ -628,8 +628,8 @@ def product_research_experiments(request: Request) -> dict[str, object]:
     return _backend_request("GET", "/v1/research/experiments", headers=_trusted_agent_headers(request))
 
 
-def _ml_nonce(prefix: str, request: Request) -> tuple[str, str]:
-    supplied = request.headers.get("x-idempotency-key")
+def _ml_nonce(prefix: str, request: Request, *, supplied_key: str | None = None) -> tuple[str, str]:
+    supplied = supplied_key if supplied_key is not None else request.headers.get("x-idempotency-key")
     if supplied is not None:
         supplied = supplied.strip()
         if not 8 <= len(supplied) <= 96 or not all(
@@ -786,6 +786,18 @@ def _ml_command(
         raise ProductError(422, "product_request_invalid", "ML research request has invalid fields")
     trace_id, idempotency_key = _ml_nonce(prefix, request)
     headers = _trusted_agent_headers(request)
+    if reconcile_training:
+        registration = _backend_request("POST", "/v1/research/ml/training-submissions",
+            {**payload, "trace_id": trace_id, "idempotency_key": idempotency_key}, headers=headers)
+        watch = registration.get("receipt_watch")
+        if not isinstance(watch, dict) or not isinstance(watch.get("watch_id"), str):
+            raise ProductError(503, "operation_outcome_unknown", "提交登记结果尚未确认，训练请求未继续发送。")
+        if watch.get("state") == "confirmed" and isinstance(watch.get("training_run_id"), str):
+            return _backend_request("GET", f"/v1/research/ml/training-runs/{quote(watch['training_run_id'], safe='')}", headers=headers)
+        if watch.get("state") == "rejected":
+            raise ProductError(409, "ml_submission_rejected", "原训练提交已被明确拒绝，请检查权限和输入后再提交。")
+        if watch.get("registration_created") is not True or watch.get("state") != "awaiting_receipt":
+            raise ProductError(503, "operation_outcome_unknown", "原训练提交仍在核对中；不会重复发送训练请求。")
     try:
         return _backend_request(
             "POST", path,
@@ -816,6 +828,14 @@ def _ml_command(
                 "status": "confirmed", "reason": "create_response_timeout",
             }}
         raise error
+
+
+@router.get("/ml/training-submissions/reconcile")
+def product_ml_training_submission(request: Request, idempotency_key: str) -> dict[str, object]:
+    _product_principal(request)
+    _, key = _ml_nonce("training", request, supplied_key=idempotency_key)
+    return _backend_request("GET", "/v1/research/ml/training-submissions/reconcile",
+        params={"idempotency_key": key}, headers=_trusted_agent_headers(request))
 
 
 @router.post("/ml/strategies/versions", status_code=201)

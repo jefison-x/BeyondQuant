@@ -559,6 +559,8 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     try:
         while running:
+            # Read-only receipt reconciliation never re-dispatches training.
+            runs.reconcile_receipt_watches(limit=20)
             # Drain already-queued work before preparing another large feature
             # panel.  Preparing every waiting run first starved older queued
             # work and allowed several full panels to coexist in this process.

@@ -173,6 +173,27 @@ Gateway完整123通过、Backend research/API 9通过（含独立store并发）�
 
 ## 架构门禁
 
+### F2 ML 持久回执核对切片（2026-09-07）
+
+MCP/Gateway 在训练写请求前登记绑定 owner/workspace、原幂等键和固定研究对象的核对记录。
+登记结果不明则不发送训练；已登记但未确认则只查询原结果，不再次发送训练。既有 ML Worker
+负责精确数据库查询，最多8次、持久退避和24小时截止；重启不清预算，耗尽显示需要人工检查，
+不能宣称任务不存在。真正训练回执提交与核对确认在同一事务；迟到回执仍可确认。
+明确4xx拒绝必须匹配原固定请求身份，不允许换对象的失败请求误标原提交。
+页面持久保存原提交键，恢复时只核对；确认框期间切换研究/股票池会阻止写入。
+
+组件证据：Gateway125项、Frontend52文件158项、MCP训练/预测与9类写结果矩阵通过；
+Backend ML API/训练26项通过，追加身份拒绝隔离后重跑26项通过（31.39秒）。
+Backend/Gateway/Frontend/MCP隔离构建通过。重新枚举417 routes：Backend230、Gateway175、
+Runtime Adapter10、Signal Sandbox2；81 MCP tools、4 Worker入口。枚举仍不是全量验收。
+
+Chrome只在18261合成栈通过Product API创建未批准的策略定义，目录刷新与390×844布局通过，
+无页面溢出、Console error/warn为空。尝试通过未审批训练请求验证拒绝回执时被安全审查拦截，
+未执行该请求、未绕过、未启动训练；所以不得把本次浏览器检查作为回执恢复完整验收。
+真实回执持久化、并发、重启和预算测试使用隔离测试数据库；浏览器恢复验收仍待授权安全路径。
+其他领域未知结果核对、完整Worker制品、F4/F6、R4持久AgentRun及新构建认证仍未完成。
+合同见[ML submission reconciliation](../contracts/ml-submission-reconciliation.md)。
+
 2026-09-07 R2 本地切片：Gateway 已分离未回答主题与失败事实，Runtime 新 generation
 一次性消费、同文去重、明确新指令优先，歧义短续接在启动前拒绝。
 Gateway 103项通过；当前 DSH Runtime 默认 suite 79项通过、2项真实 MCP 进程测试未启用。

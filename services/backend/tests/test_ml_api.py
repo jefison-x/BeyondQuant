@@ -35,6 +35,44 @@ def test_training_receipt_precedes_coverage_scan_and_repair_and_retries_stay_sta
     monkeypatch.setattr(backend_main.market_automation_store, "request_data_repair", forbidden)
     payload = {"task_id": task["task_id"], "ml_strategy_artifact_id": artifact["artifact_id"],
                "stock_pool_snapshot_id": pool["current_snapshot_id"], "trace_id": "receipt-trace", "idempotency_key": "receipt-1"}
+    registered = client.post("/v1/research/ml/training-submissions", headers=headers, json=payload)
+    assert registered.status_code == 202, registered.text
+    watch = registered.json()["receipt_watch"]
+    assert watch["registration_created"] is True and watch["state"] == "awaiting_receipt"
+    duplicate_watch = client.post("/v1/research/ml/training-submissions", headers=headers, json=payload).json()["receipt_watch"]
+    assert duplicate_watch["watch_id"] == watch["watch_id"] and duplicate_watch["registration_created"] is False
+    assert client.post("/v1/research/ml/training-submissions", headers=headers,
+                       json={**payload, "experiment_id": "experiment_changed"}).status_code == 409
+    assert "identity_json" not in watch and "request_hash" not in watch
+    for mismatched in ({**payload, "stock_pool_snapshot_id": "snapshot_other"},
+                       {**payload, "unexpected": "invalid"}):
+        backend_main.ml_training_store.reject_receipt_watch(
+            mismatched, trusted_workspace=headers["x-byq-workspace-id"], trusted_owner=owner)
+        assert backend_main.ml_training_store.get_receipt_watch(
+            "receipt-1", trusted_workspace=headers["x-byq-workspace-id"], trusted_owner=owner,
+        )["state"] == "awaiting_receipt"
+    other_headers = trusted_agent_context("receipt-other-owner")
+    assert client.get("/v1/research/ml/training-submissions/reconcile", headers=other_headers,
+                      params={"idempotency_key": "receipt-1"}).status_code == 404
+    # Bound scheduled exact reads; restarting the store cannot reset the budget.
+    from app.ml_training import MLTrainingRunStore
+    for attempt in range(1, 9):
+        restarted = MLTrainingRunStore()
+        restarted._execute("UPDATE ml_training_receipt_watches SET next_check_at=now()-interval '1 second' WHERE watch_id=:id",
+                           {"id": watch["watch_id"]})
+        if attempt == 1:
+            from concurrent.futures import ThreadPoolExecutor
+            concurrent = MLTrainingRunStore()
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                assert sum(executor.map(lambda store: store.reconcile_receipt_watches(), [restarted, concurrent])) == 1
+            concurrent.close()
+        else:
+            assert restarted.reconcile_receipt_watches() == 1
+        current_watch = restarted.get_receipt_watch("receipt-1", trusted_workspace=headers["x-byq-workspace-id"], trusted_owner=owner)
+        assert current_watch["check_count"] == attempt
+        assert restarted.reconcile_receipt_watches() == 0
+        restarted.close()
+    assert current_watch["state"] == "needs_attention"
     # A failure after inserting the reference must roll back the run and alias too.
     from app.paper_trading import PaperTradingStore
     original = PaperTradingStore.record_pool_reference_in_transaction
@@ -57,6 +95,11 @@ def test_training_receipt_precedes_coverage_scan_and_repair_and_retries_stay_sta
     run = response.json()["training_run"]
     assert run["status"] == "waiting_for_data"
     assert run["readiness"]["state"] == "pending"
+    confirmed_watch = client.get("/v1/research/ml/training-submissions/reconcile", headers=headers,
+                                 params={"idempotency_key": "receipt-1"}).json()["receipt_watch"]
+    assert confirmed_watch["state"] == "confirmed"
+    assert confirmed_watch["training_run_id"] == run["training_run_id"]
+    assert confirmed_watch["check_count"] == 8
     references = backend_main.paper_store.pool_references(pool["pool_id"], trusted_owner=owner)["references"]
     assert len(references) == 1 and references[0]["reference_count"] == 1
     monkeypatch.setattr(backend_main.security_master_store, "latest_snapshot", lambda: {"snapshot_id": "master_new"})
@@ -76,6 +119,21 @@ def test_training_receipt_precedes_coverage_scan_and_repair_and_retries_stay_sta
     conflict = client.post("/v1/research/ml/training-runs", headers=headers,
                            json={**payload, "stock_pool_snapshot_id": other_pool["current_snapshot_id"]})
     assert conflict.status_code == 409
+    rejected_payload = {**payload, "idempotency_key": "rejected-submission"}
+    assert client.post("/v1/research/ml/training-submissions", headers=headers, json=rejected_payload).status_code == 202
+    with monkeypatch.context() as patch:
+        patch.setattr(backend_main, "_approved_ml_strategy_artifact", lambda **kwargs: None)
+        assert client.post("/v1/research/ml/training-runs", headers=headers, json=rejected_payload).status_code == 422
+    rejection = client.get("/v1/research/ml/training-submissions/reconcile", headers=headers,
+                           params={"idempotency_key": "rejected-submission"}).json()["receipt_watch"]
+    assert rejection["state"] == "rejected"
+    deadline_payload = {**payload, "idempotency_key": "deadline-submission"}
+    assert client.post("/v1/research/ml/training-submissions", headers=headers, json=deadline_payload).status_code == 202
+    backend_main.ml_training_store._execute("""UPDATE ml_training_receipt_watches
+        SET deadline_at=now()-interval '1 second' WHERE idempotency_key='deadline-submission'""")
+    deadline = client.get("/v1/research/ml/training-submissions/reconcile", headers=headers,
+                          params={"idempotency_key": "deadline-submission"}).json()["receipt_watch"]
+    assert deadline["state"] == "needs_attention" and deadline["check_count"] == 0
 
 
 def test_index_ml_pool_freezes_same_index_as_universe_and_benchmark() -> None:

@@ -35,6 +35,12 @@ must require confirmation. No Community code, database or runtime is copied or m
 
 ## Audit scope 与 evidence
 
+Post-U8 ML receipt-watch UI: read-only Community `frontend/src/views/BacktestView.vue`
+task-state display and selection refresh were inspected. Showing persisted task state is
+`PORT_UX`; fallback-to-first strategy/pool after an async selection change is `DROP` for
+an unresolved submission. BYQ fixes the original immutable identities, exposes bounded
+receipt-watch status through Product API, and never re-dispatches from a read action.
+
 Post-U8 research task submission: Community has no corresponding standalone research
 task page. Read-only `frontend/src/views/StrategyView.vue` save flow was inspected:
 disable-while-saving and preserve-form-on-failure are `PORT_UX`; raw API calls,

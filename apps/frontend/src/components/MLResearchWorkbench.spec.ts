@@ -8,6 +8,7 @@ const getMLStudies = vi.fn();
 const getMLStudy = vi.fn();
 const getMLPredictionRows = vi.fn();
 const createMLTraining = vi.fn();
+const getMLTrainingSubmission = vi.fn();
 const deleteMLStudy = vi.fn();
 const setMLStudyLifecycle = vi.fn();
 const confirmTraining = vi.fn();
@@ -28,6 +29,7 @@ vi.mock("@/api/mlResearch", () => ({
   getMLPrediction: vi.fn(),
   getMLPredictionRows: (...args: unknown[]) => getMLPredictionRows(...args),
   getMLTraining: vi.fn(),
+  getMLTrainingSubmission: (...args: unknown[]) => getMLTrainingSubmission(...args),
   getMLCapabilities: (...args: unknown[]) => getMLCapabilities(...args),
   getMLOptions: (...args: unknown[]) => getMLOptions(...args),
   getMLStudies: (...args: unknown[]) => getMLStudies(...args),
@@ -40,6 +42,11 @@ vi.mock("@/api/quant", () => ({
 
 describe("MLResearchWorkbench", () => {
   beforeEach(() => {
+    localStorage.clear(); sessionStorage.clear();
+    getMLTrainingSubmission.mockReset();
+    getMLTrainingSubmission.mockResolvedValue({ receipt_watch: {
+      watch_id: "mlwatch_test", state: "awaiting_receipt", check_count: 1, check_limit: 8,
+    } });
     getMLPredictionRows.mockReset();
     getMLPredictionRows.mockResolvedValue({ rows: [], total: 0, limit: 50, offset: 0 });
     getMLCapabilities.mockReset();
@@ -186,6 +193,43 @@ describe("MLResearchWorkbench", () => {
     expect(vm.selectedStrategy).toBe("");
     expect(vm.detail).toBeNull();
     expect(getMLStudies).toHaveBeenCalledTimes(2);
+  });
+
+  it("restores an unconfirmed submission and only reads its original receipt", async () => {
+    getMLOptions.mockResolvedValue({ schema_version: "ml-options.v1", tasks: [], pools: [
+      { pool_id: "pool_1", name: "Synthetic", status: "active", current_snapshot_id: "snapshot_1", member_count: 1 },
+    ] });
+    localStorage.setItem("byq:ml-training:task_1:artifact_strategy:snapshot_1", "original-training-key");
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    await vm.selectStudy("artifact_strategy");
+    await vm.startTraining();
+    expect(getMLTrainingSubmission).toHaveBeenCalledWith("original-training-key");
+    expect(createMLTraining).not.toHaveBeenCalled();
+    expect(confirmTraining).not.toHaveBeenCalled();
+    expect(vm.receiptWatch.state).toBe("awaiting_receipt");
+    expect(vm.next.label).toBe("核对原提交");
+    wrapper.unmount();
+  });
+
+  it("does not apply a training confirmation to a newly selected pool", async () => {
+    getMLOptions.mockResolvedValue({ schema_version: "ml-options.v1", tasks: [], pools: [
+      { pool_id: "pool_1", name: "Original", status: "active", current_snapshot_id: "snapshot_1", member_count: 1 },
+      { pool_id: "pool_2", name: "Other", status: "active", current_snapshot_id: "snapshot_2", member_count: 1 },
+    ] });
+    let resolveConfirmation: (value: string) => void = () => undefined;
+    confirmTraining.mockReturnValueOnce(new Promise(resolve => { resolveConfirmation = resolve; }));
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    await vm.selectStudy("artifact_strategy");
+    const started = vm.startTraining();
+    vm.form.pool_id = "pool_2";
+    resolveConfirmation("confirm");
+    await started;
+    expect(createMLTraining).not.toHaveBeenCalled();
+    wrapper.unmount();
   });
 
   it("archives an executed study and keeps deletion unavailable", async () => {

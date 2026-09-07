@@ -177,6 +177,8 @@ def test_ml_training_reconciles_timeout_by_server_generated_idempotency_key(monk
 
     def backend(method, path, payload=None, *, headers=None, params=None):
         calls.append({"method": method, "path": path, "payload": payload, "params": params})
+        if path == "/v1/research/ml/training-submissions":
+            return {"receipt_watch": {"watch_id": "mlwatch_test", "state": "awaiting_receipt", "registration_created": True}}
         if method == "POST":
             raise product_api.ProductError(503, "backend_unavailable", "backend is unavailable")
         assert path == "/v1/research/ml/training-runs/reconcile"
@@ -196,7 +198,7 @@ def test_ml_training_reconciles_timeout_by_server_generated_idempotency_key(monk
     assert response.json()["reconciliation"] == {
         "status": "confirmed", "reason": "create_response_timeout",
     }
-    assert [call["method"] for call in calls] == ["POST", "GET"]
+    assert [call["method"] for call in calls] == ["POST", "POST", "GET"]
 
 
 def test_ml_training_reuses_browser_idempotency_key_and_waits_for_commit_race(monkeypatch) -> None:
@@ -206,6 +208,8 @@ def test_ml_training_reuses_browser_idempotency_key_and_waits_for_commit_race(mo
 
     def backend(method, path, payload=None, *, headers=None, params=None):
         calls.append({"method": method, "path": path, "payload": payload, "params": params})
+        if path == "/v1/research/ml/training-submissions":
+            return {"receipt_watch": {"watch_id": "mlwatch_test", "state": "awaiting_receipt", "registration_created": True}}
         if method == "POST":
             raise product_api.ProductError(503, "backend_unavailable", "backend is unavailable")
         if sum(call["method"] == "GET" for call in calls) < 3:
@@ -229,7 +233,7 @@ def test_ml_training_reuses_browser_idempotency_key_and_waits_for_commit_race(mo
         "product-ml-training-browser-training-12345678"
     )
     assert calls[0]["payload"]["trace_id"] == calls[0]["payload"]["idempotency_key"]
-    assert [call["method"] for call in calls] == ["POST", "GET", "GET", "GET"]
+    assert [call["method"] for call in calls] == ["POST", "POST", "GET", "GET", "GET"]
 
 
 def test_ml_training_rejects_invalid_browser_idempotency_key(monkeypatch) -> None:
@@ -243,6 +247,35 @@ def test_ml_training_rejects_invalid_browser_idempotency_key(monkeypatch) -> Non
         },
     )
     assert response.status_code == 422
+
+
+def test_ml_training_does_not_resubmit_an_existing_unconfirmed_watch(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    calls = []
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append(path)
+        assert path == "/v1/research/ml/training-submissions"
+        return {"receipt_watch": {"watch_id": "mlwatch_test", "state": "awaiting_receipt", "registration_created": False}}
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).post("/api/product/ml/training-runs",
+        headers={"Authorization": "Bearer product-test-token", "x-idempotency-key": "original-key-123"},
+        json={"task_id": "task_1", "ml_strategy_artifact_id": "artifact_1", "stock_pool_snapshot_id": "snapshot_1"})
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "operation_outcome_unknown"
+    assert len(calls) == 1
+
+
+def test_ml_receipt_watch_query_uses_the_original_browser_key_namespace(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        assert method == "GET" and path == "/v1/research/ml/training-submissions/reconcile"
+        assert params == {"idempotency_key": "product-ml-training-original-key-123"}
+        return {"receipt_watch": {"state": "needs_attention", "check_count": 8}}
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).get("/api/product/ml/training-submissions/reconcile",
+        headers={"Authorization": "Bearer product-test-token"}, params={"idempotency_key": "original-key-123"})
+    assert response.status_code == 200
+    assert response.json()["receipt_watch"]["state"] == "needs_attention"
 
 
 def test_ml_prediction_rows_forwards_bounded_page_and_owner_context(monkeypatch) -> None:

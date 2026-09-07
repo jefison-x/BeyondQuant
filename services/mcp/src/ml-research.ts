@@ -109,6 +109,29 @@ export function fetchByqMlTrainingCreate(backendUrl: string, request: MlRequest,
 async function createTrainingWithReconciliation(
   backendUrl: string, request: MlRequest, fetcher: Fetcher,
 ): Promise<ByqMlResult> {
+  const registered = await requestMl(backendUrl, "/v1/research/ml/training-submissions",
+    { method: "POST", body: JSON.stringify(request) }, fetcher);
+  if (registered.isError) return registered;
+  const registration = JSON.parse(registered.content[0]?.text ?? "{}");
+  const watch = registration.receipt_watch;
+  if (registration.status === "outcome_unknown" || !watch || typeof watch.watch_id !== "string"
+      || typeof watch.registration_created !== "boolean") {
+    return result({ service: "beyondquant-mcp", status: "outcome_unknown", retryable: false,
+      idempotency_key: request.idempotency_key, training_submit_attempted: false,
+      reconciliation: { status: "registration_not_confirmed", next_action: "Read byq_ml_training_get with the same idempotency_key; do not create a replacement submission." } }, false);
+  }
+  if (watch.state === "confirmed" && typeof watch.training_run_id === "string") {
+    return fetchByqMlTrainingGet(backendUrl, watch.training_run_id, fetcher);
+  }
+  if (watch.state === "rejected") {
+    return result({ service: "beyondquant-mcp", status: "error", backend: { status: "ml_submission_rejected" },
+      receipt_watch: watch }, true);
+  }
+  if (!watch.registration_created || watch.state !== "awaiting_receipt") {
+    return result({ service: "beyondquant-mcp", status: "outcome_unknown", retryable: false,
+      idempotency_key: request.idempotency_key, receipt_watch: watch,
+      reconciliation: { status: "not_confirmed", next_action: "Read byq_ml_training_get with this idempotency_key. Persistent receipt checks never resubmit training." } }, false);
+  }
   const created = await requestMl(
     backendUrl, "/v1/research/ml/training-runs",
     { method: "POST", body: JSON.stringify(request) }, fetcher,
@@ -163,7 +186,16 @@ export async function fetchByqMlTrainingGet(backendUrl: string, runId: string | 
       { method: "GET" }, fetcher, 2500);
     const payload = JSON.parse(reconciled.content[0]?.text ?? "{}");
     if (reconciled.isError && ["ml_resource_not_found", "unreachable", "ml_research_unavailable", "invalid_response"].includes(payload.backend?.status)) {
+      const watched = await requestMl(backendUrl,
+        `/v1/research/ml/training-submissions/reconcile?${new URLSearchParams({ idempotency_key: key })}`,
+        { method: "GET" }, fetcher, 2500);
+      const watchPayload = JSON.parse(watched.content[0]?.text ?? "{}");
+      if (!watched.isError && watchPayload.receipt_watch?.state === "rejected") {
+        return result({ service: "beyondquant-mcp", status: "error", backend: { status: "ml_submission_rejected" },
+          receipt_watch: watchPayload.receipt_watch }, true);
+      }
       return result({ service: "beyondquant-mcp", status: "outcome_unknown", idempotency_key: key,
+        ...(!watched.isError && watchPayload.receipt_watch ? { receipt_watch: watchPayload.receipt_watch } : {}),
         retryable: false, reconciliation: { status: "not_confirmed", next_action: "Preserve this key for later exact read reconciliation; do not repeat the write." } }, false);
     }
     return reconciled;

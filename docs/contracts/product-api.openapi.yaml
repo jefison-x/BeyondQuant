@@ -171,6 +171,15 @@ paths:
     post: {summary: 记录 ML 策略版本的显式人工批准或拒绝。, responses: *createdResponses}
   /api/product/ml/training-runs:
     post: {summary: 对冻结股票池提交 durable qualified-profile ML 训练。, responses: *acceptedResponses}
+  /api/product/ml/training-submissions/reconcile:
+    get:
+      summary: 按原浏览器提交键读取持久核对状态；不重新提交训练。
+      parameters:
+        - name: idempotency_key
+          in: query
+          required: true
+          schema: {type: string, minLength: 8, maxLength: 96}
+      responses: *okResponses
   /api/product/ml/training-runs/{run_id}:
     parameters: [{$ref: "#/components/parameters/RunId"}]
     get: {summary: 获取 owner-scoped ML 训练状态和模型或模型包制品 ID。, responses: *okResponses}

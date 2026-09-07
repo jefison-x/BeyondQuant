@@ -9,7 +9,7 @@ import json
 import math
 import statistics
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -41,6 +41,7 @@ MODEL_SCHEMA = "ml-model-artifact.v1"
 MAX_INPUT_BYTES = 256 * 1024 * 1024
 MAX_ROWS = 2_000_000
 MAX_ATTEMPTS = 3
+RECEIPT_CHECK_DELAYS = (5, 15, 60, 180, 600, 1800, 3600)
 PREPARATION_FENCE = """((preparation_claim IS NULL AND CAST(:claim AS TEXT) IS NULL)
     OR (preparation_claim=CAST(:claim AS TEXT) AND preparation_lease_expires_at>now()))"""
 RUNTIME_IDENTITY = "lightgbm-4.7.0-python-3.13-linux-cpu-single-thread"
@@ -559,6 +560,17 @@ class MLTrainingRunStore(PgStoreMixin):
             training_run_id TEXT NOT NULL REFERENCES ml_training_runs(training_run_id),
             PRIMARY KEY (workspace_id, owner_principal, idempotency_key)
         )""",
+        """CREATE TABLE IF NOT EXISTS ml_training_receipt_watches (
+            watch_id TEXT NOT NULL UNIQUE, workspace_id TEXT NOT NULL, owner_principal TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL, request_hash TEXT NOT NULL, identity_json JSONB NOT NULL,
+            state TEXT NOT NULL DEFAULT 'awaiting_receipt', training_run_id TEXT,
+            check_count INTEGER NOT NULL DEFAULT 0, next_check_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            deadline_at TIMESTAMPTZ NOT NULL DEFAULT now()+interval '24 hours',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY(workspace_id,owner_principal,idempotency_key)
+        )""",
+        """CREATE INDEX IF NOT EXISTS ml_receipt_watches_due ON ml_training_receipt_watches(next_check_at)
+            WHERE state='awaiting_receipt'""",
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -570,6 +582,119 @@ class MLTrainingRunStore(PgStoreMixin):
     @classmethod
     def from_env(cls) -> "MLTrainingRunStore":
         return cls()
+
+    @staticmethod
+    def _watch_public(row: dict[str, Any]) -> dict[str, object]:
+        value = {key: row.get(key) for key in (
+            "watch_id", "idempotency_key", "state", "training_run_id", "check_count",
+            "next_check_at", "deadline_at", "created_at", "updated_at",
+        )} | {"schema_version": "ml-receipt-watch.v1", "check_limit": 8}
+        if value["state"] == "awaiting_receipt" and datetime.now(timezone.utc) >= datetime.fromisoformat(str(value["deadline_at"])):
+            value["state"] = "needs_attention"
+        return value
+
+    @staticmethod
+    def _watched_receipt(connection, workspace, owner, key):
+        return fetch_one(connection, """SELECT * FROM ml_training_runs WHERE workspace_id=:workspace
+            AND owner_principal=:owner AND training_run_id=COALESCE(
+                (SELECT training_run_id FROM ml_training_submission_keys WHERE workspace_id=:workspace
+                 AND owner_principal=:owner AND idempotency_key=:key),
+                (SELECT training_run_id FROM ml_training_runs WHERE workspace_id=:workspace
+                 AND owner_principal=:owner AND idempotency_key=:key))""",
+            {"workspace": workspace, "owner": owner, "key": key})
+
+    def register_receipt_watch(self, payload: dict[str, object], *, trusted_workspace: str, trusted_owner: str) -> dict[str, object]:
+        workspace = _identifier(trusted_workspace, "workspace_id")
+        owner = _text(trusted_owner, "owner_principal")
+        key = _text(payload.get("idempotency_key"), "idempotency_key")
+        identity = {"workspace_id": workspace, "owner_principal": owner,
+                    **{field: _identifier(payload.get(field), field) for field in (
+                        "task_id", "ml_strategy_artifact_id", "stock_pool_snapshot_id")},
+                    "experiment_id": None if payload.get("experiment_id") is None
+                    else _identifier(payload["experiment_id"], "experiment_id")}
+        digest = hashlib.sha256(_canonical(identity)).hexdigest()
+        params = {"workspace": workspace, "owner": owner, "key": key}
+        with self._transaction() as connection:
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                    {"scope": f"ml-watch|{workspace}|{owner}|{key}"})
+            existing = fetch_one(connection, """SELECT * FROM ml_training_receipt_watches
+                WHERE workspace_id=:workspace AND owner_principal=:owner AND idempotency_key=:key""", params)
+            if existing is not None:
+                if existing["request_hash"] != digest:
+                    raise MLTrainingConflict("ML receipt watch identity was reused")
+                return {**self._watch_public(existing), "registration_created": False}
+            owned = fetch_one(connection, """SELECT t.task_id FROM research_tasks t
+                JOIN artifacts a ON a.task_id=t.task_id AND a.artifact_id=:strategy
+                JOIN stock_pool_snapshots s ON s.snapshot_id=:snapshot
+                JOIN stock_pools p ON p.pool_id=s.pool_id
+                WHERE t.task_id=:task AND t.workspace_id=:workspace AND t.owner_principal=:owner
+                  AND a.workspace_id=:workspace AND a.owner_principal=:owner
+                  AND a.kind='ml_strategy_version' AND p.owner_principal=:owner""",
+                {**params, "strategy": identity["ml_strategy_artifact_id"],
+                 "snapshot": identity["stock_pool_snapshot_id"], "task": identity["task_id"]})
+            if owned is None:
+                raise MLTrainingNotFound("ML receipt watch resources not found")
+            if identity["experiment_id"] is not None and fetch_one(connection,
+                "SELECT experiment_id FROM experiments WHERE experiment_id=:experiment AND task_id=:task",
+                {"experiment": identity["experiment_id"], "task": identity["task_id"]}) is None:
+                raise MLTrainingNotFound("ML receipt watch experiment not found")
+            receipt = self._watched_receipt(connection, workspace, owner, key)
+            if receipt is not None and any(receipt.get(field) != value for field, value in identity.items()):
+                raise MLTrainingConflict("ML receipt watch identity conflicts with existing submission")
+            rows = execute(connection, """INSERT INTO ml_training_receipt_watches
+                (watch_id,workspace_id,owner_principal,idempotency_key,request_hash,identity_json,state,training_run_id)
+                VALUES (:id,:workspace,:owner,:key,:hash,:identity,:state,:run) RETURNING *""",
+                {**params, "id": f"mlwatch_{uuid.uuid4().hex}", "hash": digest, "identity": identity,
+                 "state": "confirmed" if receipt else "awaiting_receipt",
+                 "run": receipt["training_run_id"] if receipt else None})
+            return {**self._watch_public(rows[0]), "registration_created": True}
+
+    def get_receipt_watch(self, key: object, *, trusted_workspace: str, trusted_owner: str) -> dict[str, object]:
+        row = self._fetch_one("""SELECT * FROM ml_training_receipt_watches
+            WHERE workspace_id=:workspace AND owner_principal=:owner AND idempotency_key=:key""",
+            {"workspace": trusted_workspace, "owner": trusted_owner, "key": _text(key, "idempotency_key")})
+        if row is None:
+            raise MLTrainingNotFound("ML receipt watch not found")
+        return self._watch_public(row)
+
+    def reject_receipt_watch(self, payload: dict[str, object], *, trusted_workspace: str, trusted_owner: str) -> None:
+        # A rejected *different* request reusing the key says nothing about the
+        # original request's outcome. Fence rejection by its frozen identity.
+        allowed = {"task_id", "experiment_id", "ml_strategy_artifact_id", "stock_pool_snapshot_id",
+                   "trace_id", "idempotency_key"}
+        if set(payload) - allowed:
+            return
+        identity = {"workspace_id": trusted_workspace, "owner_principal": trusted_owner,
+                    **{field: payload.get(field) for field in (
+                        "task_id", "experiment_id", "ml_strategy_artifact_id", "stock_pool_snapshot_id")}}
+        self._execute("""UPDATE ml_training_receipt_watches SET state='rejected',updated_at=now()
+            WHERE workspace_id=:workspace AND owner_principal=:owner AND idempotency_key=:key
+            AND request_hash=:hash AND state='awaiting_receipt' AND training_run_id IS NULL""",
+            {"workspace": trusted_workspace, "owner": trusted_owner, "key": payload.get("idempotency_key"),
+             "hash": hashlib.sha256(_canonical(identity)).hexdigest()})
+
+    def reconcile_receipt_watches(self, limit: int = 20) -> int:
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("ML receipt reconciliation limit is invalid")
+        with self._transaction() as connection:
+            rows = execute(connection, """SELECT * FROM ml_training_receipt_watches
+                WHERE state='awaiting_receipt' AND next_check_at<=now()
+                ORDER BY next_check_at,watch_id LIMIT :limit FOR UPDATE SKIP LOCKED""", {"limit": limit})
+            now = datetime.fromisoformat(fetch_one(connection, "SELECT now() AS at")["at"])
+            for row in rows:
+                receipt = self._watched_receipt(connection, row["workspace_id"], row["owner_principal"], row["idempotency_key"])
+                confirmed = receipt is not None and all(receipt.get(field) == value for field, value in row["identity_json"].items())
+                attempts = int(row["check_count"]) + 1
+                exhausted = attempts >= 8 or now >= datetime.fromisoformat(row["deadline_at"])
+                execute(connection, """UPDATE ml_training_receipt_watches SET state=:state,
+                    training_run_id=:run,check_count=:attempts,next_check_at=:next,updated_at=:now
+                    WHERE watch_id=:id""", {
+                    "state": "confirmed" if confirmed else "needs_attention" if exhausted else "awaiting_receipt",
+                    "run": receipt["training_run_id"] if confirmed else None, "attempts": attempts,
+                    "next": (now + timedelta(seconds=RECEIPT_CHECK_DELAYS[min(attempts-1, 6)])).isoformat(),
+                    "now": now.isoformat(), "id": row["watch_id"],
+                })
+        return len(rows)
 
     def create_waiting(
         self, *, workspace_id: object, owner_principal: object, task_id: object,
@@ -690,6 +815,10 @@ class MLTrainingRunStore(PgStoreMixin):
             VALUES (:workspace,:owner,:key,:hash,:run)""", {
             "workspace": workspace, "owner": owner, "key": key, "hash": request_hash, "run": run_id,
         })
+        execute(connection, """UPDATE ml_training_receipt_watches SET state='confirmed',
+            training_run_id=:run,updated_at=now() WHERE workspace_id=:workspace
+            AND owner_principal=:owner AND idempotency_key=:key AND request_hash=:hash""",
+            {"workspace": workspace, "owner": owner, "key": key, "hash": request_hash, "run": run_id})
 
     def get(self, run_id: object, *, trusted_workspace: str | None = None, trusted_owner: str | None = None) -> dict[str, object]:
         identity = _identifier(run_id, "training_run_id")
