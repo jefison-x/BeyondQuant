@@ -1,5 +1,9 @@
 const ROOT = "/api/product";
 
+export class ResearchRequestError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
 async function getJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${ROOT}${path}`, {
     ...init,
@@ -11,7 +15,7 @@ async function getJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
-    throw new Error(body.error?.message ?? "research request failed");
+    throw new ResearchRequestError(body.error?.message ?? "research request failed", response.status);
   }
   return (await response.json()) as T;
 }
@@ -39,14 +43,21 @@ export function listTaskOptions(limit = 50): Promise<{ tasks: Array<Record<strin
   return getJson(`/research/task-options?limit=${limit}`);
 }
 
-export function createTask(
+export async function createTask(
   title: string,
   objective: string,
+  idempotencyKey?: string,
 ): Promise<Record<string, unknown>> {
-  return getJson("/research/tasks", {
-    method: "POST",
-    body: JSON.stringify({ title, objective }),
-  });
+  try {
+    return await getJson("/research/tasks", {
+      method: "POST",
+      ...(idempotencyKey ? { headers: { "x-idempotency-key": idempotencyKey } } : {}),
+      body: JSON.stringify({ title, objective }),
+    });
+  } catch (error) {
+    if (error instanceof ResearchRequestError) throw error;
+    throw new ResearchRequestError("提交结果尚未确认，请核对本次提交；不要新建任务。", 503);
+  }
 }
 
 export function listExperiments(): Promise<{ experiments: Array<Record<string, unknown>> }> {

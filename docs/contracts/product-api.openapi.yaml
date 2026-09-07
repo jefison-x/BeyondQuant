@@ -135,7 +135,15 @@ paths:
     get: {summary: 获取 one owner-scoped research entity., responses: *okResponses}
   /api/product/research/tasks:
     get: {summary: 列出 owner-scoped research tasks., responses: *okResponses}
-    post: {summary: 创建 an owner-scoped research task with server-owned identity fields., responses: *createdResponses}
+    post:
+      summary: 创建研究任务；同一提交重试保留身份，服务端绑定 owner/workspace。
+      parameters:
+        - name: x-idempotency-key
+          in: header
+          required: false
+          description: 浏览器须为一次提交持久保留此键，结果未知时不得换键。省略仅为旧客户端兼容，不保证重试去重。
+          schema: {type: string, minLength: 8, maxLength: 96, pattern: '^[A-Za-z0-9_-]+$'}
+      responses: *createdResponses
   /api/product/research/task-options:
     get: {summary: 返回策略编辑器使用的 bounded owner-scoped research task options., responses: *okResponses}
   /api/product/research/experiments:

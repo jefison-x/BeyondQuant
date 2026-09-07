@@ -1542,3 +1542,15 @@ def test_product_research_task_creation_owns_identity_fields(monkeypatch) -> Non
         json={"title": "bad", "objective": "bad", "owner_principal": "other-user"},
     )
     assert invalid.status_code == 422
+
+    stable_headers = {"Authorization": "Bearer product-test-token", "x-idempotency-key": "stable-task-request-1"}
+    body = {"title": "Momentum research", "objective": "Evaluate the signal"}
+    assert client.post("/api/product/research/tasks", headers=stable_headers, json=body).status_code == 201
+    original_request = dict(captured["json"])
+    assert client.post("/api/product/research/tasks", headers=stable_headers, json=body).status_code == 201
+    assert captured["json"] == original_request
+    monkeypatch.setenv("BYQ_PRODUCT_WORKSPACE_ID", "workspace_other")
+    assert client.post("/api/product/research/tasks", headers=stable_headers, json=body).status_code == 201
+    assert captured["json"]["idempotency_key"] != original_request["idempotency_key"]
+    for invalid_key in ("tiny", "bad key with spaces", "界" * 12, "x" * 97):
+        assert client.post("/api/product/research/tasks", headers={**stable_headers, "x-idempotency-key": invalid_key.encode("utf-8")}, json=body).status_code == 422

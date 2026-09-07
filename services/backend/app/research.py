@@ -307,6 +307,9 @@ class ResearchStore(PgStoreMixin):
         data = self._task_payload(payload)
         request_hash = _hash_request(data)
         with self._transaction() as connection:
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {
+                "scope": f"research-task|{data['owner_principal']}|{data['idempotency_key']}",
+            })
             existing = fetch_one(
                 connection,
                 "SELECT * FROM research_tasks WHERE owner_principal = :owner_principal AND idempotency_key = :idempotency_key",

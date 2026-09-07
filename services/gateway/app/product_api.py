@@ -598,7 +598,16 @@ def product_create_research_task(request: Request, payload: dict[str, object]) -
     principal = _product_principal(request)
     if set(payload) != {"title", "objective"}:
         raise ProductError(422, "product_request_invalid", "research task request has invalid fields")
-    nonce = uuid.uuid4().hex
+    supplied = request.headers.get("x-idempotency-key")
+    if supplied is not None and (
+        not 8 <= len(supplied) <= 96
+        or not all(character.isascii() and (character.isalnum() or character in {"-", "_"}) for character in supplied)
+    ):
+        raise ProductError(422, "product_request_invalid", "research idempotency key has invalid format")
+    headers = _trusted_agent_headers(request)
+    nonce = hashlib.sha256(json.dumps([
+        headers["x-byq-workspace-id"], principal.subject, supplied or uuid.uuid4().hex,
+    ], separators=(",", ":")).encode()).hexdigest()[:40]
     return _backend_request(
         "POST",
         "/v1/research/tasks",
@@ -609,7 +618,7 @@ def product_create_research_task(request: Request, payload: dict[str, object]) -
             "trace_id": f"product-task-{nonce}",
             "idempotency_key": f"product-task-{nonce}",
         },
-        headers=_trusted_agent_headers(request),
+        headers=headers,
     )
 
 

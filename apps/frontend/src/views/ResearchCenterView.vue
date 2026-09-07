@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { createTask, getApproval, getResearchEntity, listApprovals, listArtifacts, listTasks } from "@/api/research";
+import { createTask, getApproval, getResearchEntity, listApprovals, listArtifacts, listTasks, ResearchRequestError } from "@/api/research";
+import { beginTaskSubmission, finishTaskSubmission, readTaskSubmission, type TaskSubmission } from "@/api/taskSubmission";
+import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { useFilteredPagination } from "@/composables/useFilteredPagination";
@@ -17,6 +19,12 @@ const approvals = ref<Array<Record<string, unknown>>>([]);
 const tasks = ref<Array<Record<string, unknown>>>([]);
 const taskTitle = ref("");
 const taskObjective = ref("");
+const auth = useAuthStore();
+const pendingSubmission = ref<TaskSubmission | null>(null);
+function submissionScope(): string {
+  if (!auth.user?.workspace?.workspace_id) throw new Error("请先登录并选择工作区");
+  return JSON.stringify([auth.user.subject, auth.user.workspace.workspace_id]);
+}
 const taskPages = useFilteredPagination(computed(() => tasks.value), (row) => `${row.title ?? ""} ${row.objective ?? ""} ${row.status ?? ""}`, 20);
 const artifactPages = useFilteredPagination(computed(() => artifacts.value), (row) => `${row.kind ?? ""} ${row.artifact_id ?? ""} ${row.status ?? ""}`, 20);
 const approvalPages = useFilteredPagination(computed(() => approvals.value), (row) => `${row.approval_id ?? ""} ${row.action ?? ""} ${row.status ?? ""}`, 20);
@@ -34,6 +42,7 @@ async function loadTasks() {
 }
 
 async function submitTask() {
+  if (busy.value) return;
   if (!taskTitle.value.trim() || !taskObjective.value.trim()) {
     error.value = "请填写任务名称和研究目标";
     return;
@@ -41,11 +50,21 @@ async function submitTask() {
   busy.value = true;
   error.value = "";
   try {
-    await createTask(taskTitle.value.trim(), taskObjective.value.trim());
+    const scope = submissionScope();
+    const pending = beginTaskSubmission(scope, taskTitle.value.trim(), taskObjective.value.trim());
+    pendingSubmission.value = pending;
+    const task = await createTask(pending.title, pending.objective, pending.key);
+    if (typeof task.task_id !== "string" || !task.task_id) throw new Error("提交结果尚未确认，请核对本次提交。");
+    finishTaskSubmission(scope, pending.key);
+    pendingSubmission.value = null;
     taskTitle.value = "";
     taskObjective.value = "";
     await loadTasks();
   } catch (exc) {
+    if (exc instanceof ResearchRequestError && [400, 422].includes(exc.status) && pendingSubmission.value) {
+      finishTaskSubmission(submissionScope(), pendingSubmission.value.key);
+      pendingSubmission.value = null;
+    }
     error.value = exc instanceof Error ? exc.message : "创建失败";
   } finally {
     busy.value = false;
@@ -101,6 +120,16 @@ async function loadApproval() {
 }
 
 onMounted(async () => {
+  try {
+    pendingSubmission.value = readTaskSubmission(submissionScope());
+    if (pendingSubmission.value) {
+      taskTitle.value = pendingSubmission.value.title;
+      taskObjective.value = pendingSubmission.value.objective;
+    }
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : "读取上次提交失败";
+    return;
+  }
   await Promise.allSettled([loadTasks(), loadAssets(), loadInbox()]);
 });
 </script>
@@ -111,19 +140,19 @@ onMounted(async () => {
       <el-tabs v-model="tab">
         <el-tab-pane label="研究任务" name="tasks" lazy>
           <div class="quant-panel">
-            <el-input v-model="taskTitle" placeholder="任务名称" maxlength="200" style="width: 240px" />
-            <el-input v-model="taskObjective" placeholder="研究目标" maxlength="4000" style="width: 420px" />
-            <el-button type="primary" :loading="busy" @click="submitTask">创建任务</el-button>
+            <el-input v-model="taskTitle" :disabled="!!pendingSubmission || busy" placeholder="任务名称" maxlength="200" style="width: 240px" />
+            <el-input v-model="taskObjective" :disabled="!!pendingSubmission || busy" placeholder="研究目标" maxlength="4000" style="width: 420px" />
+            <el-button type="primary" :loading="busy" @click="submitTask">{{ pendingSubmission ? "核对本次提交" : "创建任务" }}</el-button>
           </div>
           <ListFilterPagination v-model:query="taskPages.query.value" v-model:page="taskPages.page.value" :page-size="taskPages.pageSize.value" :total="taskPages.total.value" placeholder="筛选任务名称、目标或状态" label="研究任务分页">
-          <el-table :data="taskPages.pageItems.value" v-loading="busy">
+          <el-table :data="taskPages.pageItems.value" v-loading="busy" :empty-text="pendingSubmission ? '提交结果尚未确认，请核对本次提交' : '暂无研究任务'">
             <el-table-column prop="title" label="任务名称" min-width="180" />
             <el-table-column prop="objective" label="研究目标" min-width="300" show-overflow-tooltip />
             <el-table-column prop="status" label="状态" width="120" />
             <el-table-column prop="task_id" label="Task ID" min-width="260" show-overflow-tooltip />
           </el-table>
           </ListFilterPagination>
-          <el-empty v-if="!tasks.length && !busy" description="暂无研究任务，请先创建一个任务" />
+          <el-empty v-if="!tasks.length && !busy && !pendingSubmission" description="暂无研究任务，请先创建一个任务" />
         </el-tab-pane>
 
         <el-tab-pane label="研究资产" name="assets" lazy>

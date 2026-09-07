@@ -26,6 +26,10 @@ TypeScript handlers需人工补齐后才能声明全量。不得将发现数量�
 初始基线枚举结果：413个路由（Backend 227、Gateway 174、Runtime Adapter 10、Signal Sandbox 2），
 78个MCP工具、4个Worker入口。全量接口的正确性结论仍为NEEDS_EVIDENCE。
 
+2026-09-07新增指数入口后重新枚举：414个路由（Backend 228、Gateway 174、
+Runtime Adapter 10、Signal Sandbox 2）、81个MCP工具、4个Worker入口。
+增加的3个指数工具和1个精确核对路由已纳入本次切片检查；枚举仍不等于全量验收。
+
 首轮测试审查发现 `services/mcp/tests/ml-research-test.ts` 明确断言unknownTraining.isError=false，
 并只覆盖“提交超时后立即查到”与“立即404”两种结果，未覆盖晚于回合结束才落库和训练完成后的续接。
 因此旧测试绿色并不能证明本次链路正确；新增回归必须覆盖迟到commit → 原identity核对 → 下游推进。
@@ -85,6 +89,29 @@ Backend ML/data-sync/data-demand 50 项、Gateway 完整 122 项及 MCP ML 编�
   不能向用户暗示写入未发生。Factor MCP也有无结果核对的写超时路径，领域副作用需继续检查。
 
 ## Community检查与分类
+
+### 研究任务创建的稳定请求身份（2026-09-07）
+
+Gateway接收有界ASCII `x-idempotency-key`，与可信owner/workspace派生稳定Backend身份；
+相同请求重试不再生成新UUID。Backend任务创建加事务认领锁，跨进程同键提交返回同一任务，
+同键不同内容继续拒绝。未带键的旧客户端保留兼容，不宣称其可以安全盲重试。
+研究页面在首次提交前持久保存本用户/工作区的原请求及随机键；unknown期间不允许换对象，
+刷新恢复原字段，“核对本次提交”复用原键；显式输入拒绝可修正，未知结果不清空记录。
+浏览器记录不代替Backend任务或全服务持久核对台账。
+
+Gateway完整123通过、Backend research/API 9通过（含独立store并发）、Frontend52files/156tests
+与类型/构建通过。Chrome使用18261隔离合成账户，真实Product POST完成后故意丢失回执；
+刷新恢复原请求，同键核对得到原`task_8cd1ae8c3d664f47b5389efd0de4267f`且列表精确计数1。
+浏览器发现unknown期间的空态仍鼓励创建，已改为未知提示；网络原始错误改为封闭中文文案。
+首次浏览器路径误用`/research`为404页面，未创建任务；正确路径为`/user/research`。
+
+集中Backend完整回归：342通过、1跳过、7subtests通过，1项失败为Phase58旧角色版本
+固定断言2.0.0，与本次已接受的协调角色2.1.0不符；更新当前合同断言后需单独复验。
+此处保留失败事实，不将这次完整回归标为全绿，不修改历史认证报告。
+后续Phase58领域流程和Agent研究/API定向复验9项通过。
+最终浏览器构建再次注入回执丢失，封闭中文提示生效；刷新后原请求恢复，精确任务计数1、
+确认后本地pending清除。桌面和390×844无页面溢出，最终Console为空，12个请求均为
+同源Gateway/Product API（含Gateway会话兼容路由），没有Backend/MCP直连或模型调用。
 
 ### F1 训练回执与股票池引用原子性（2026-09-07）
 

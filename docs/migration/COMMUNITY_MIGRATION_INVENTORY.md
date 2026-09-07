@@ -35,6 +35,13 @@ must require confirmation. No Community code, database or runtime is copied or m
 
 ## Audit scope 与 evidence
 
+Post-U8 research task submission: Community has no corresponding standalone research
+task page. Read-only `frontend/src/views/StrategyView.vue` save flow was inspected:
+disable-while-saving and preserve-form-on-failure are `PORT_UX`; raw API calls,
+raw errors and treating every failed response as a rejected write are `DROP`.
+BYQ preserves an unresolved task's scoped request identity across reload and uses
+only Product API; no legacy frontend component is copied.
+
 Post-U8 S1/S2: Community `backend/app/services/stock_pool_service.py` was inspected
 read-only. Owner-isolated creation and frozen membership-version references remain
 `REFERENCE_ONLY` / `PORT_TESTS`. Anonymous legacy visibility, mutable member lists,

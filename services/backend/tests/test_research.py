@@ -124,6 +124,18 @@ def test_create_and_transition_are_idempotent_and_conflicts_are_rejected() -> No
     store.close()
 
 
+def test_concurrent_task_submission_converges_across_store_instances() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    stores = [ResearchStore(), ResearchStore()]
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda store: store.create_task(task_payload()), stores))
+        assert results[0]["task_id"] == results[1]["task_id"]
+    finally:
+        for store in stores:
+            store.close()
+
+
 def test_experiment_requires_phase8_provenance_and_artifact_rejects_secrets() -> None:
     store = ResearchStore()
     task = store.create_task(task_payload())
