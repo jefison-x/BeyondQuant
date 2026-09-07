@@ -4,6 +4,9 @@
 - Date: 2026-08-30
 - Decision owners: BeyondQuant Product and Data Planes
 - Phase: 80
+- Amended: 2026-09-07 by maintainer-accepted
+  [ADR-0062](ADR-0062-post-u8-reliability-boundaries.md), introducing only the
+  task-bound background continuation exception below.
 
 ## Context
 
@@ -70,6 +73,21 @@ runtime events, or Browser calling MCP.
 The Product Data Center lists the same durable status. Notifications contain no
 raw rows, Provider payload, credentials, internal paths, or DSH event schema.
 
+The default remains delivery on the next user/resumed turn. ADR-0062 permits a
+bounded background turn only with a durable grant for an explicitly requested
+compound research task, bound to owner/workspace/conversation/task and confirmed
+artifact lineage. The default limit is 24 hours and eight background model turns;
+each turn retains the 900-second hard limit and existing token/cost budgets.
+Restart must not reset these limits. Cancellation, revocation, user disablement
+or expiry prevents new turns; users can inspect and cancel the grant.
+
+Trusted domain notifications may trigger a leased, idempotent continuation intent
+through Gateway's existing Runtime seam, never a direct Backend/Worker DSH call.
+Each next domain action still requires its own authorization under existing BYQ
+policy; a strategy approval is not blanket training/prediction/backtest consent.
+Unknown outcomes must be reconciled before another action. Existing tasks receive
+no retrospective grant, and this decision does not restart production research.
+
 ### 4. Repair delegated tool filtering at the composition boundary
 
 Every MCP entry in a DSH child `toolFilter` uses the runtime-qualified
@@ -87,8 +105,9 @@ drift fails CI before deployment.
   produce `ready`.
 - Non-admin Product users receive a stable forbidden result and can ask an
   administrator to submit the same bounded demand.
-- Proactive model execution while the user is absent is out of scope. The
-  durable notification is consumed on the next/resumed Agent turn.
+- Without the explicit task-bound ADR-0062 grant, proactive model execution while
+  the user is absent remains prohibited. Durable notifications wait for the next
+  user/resumed Agent turn; the exception does not authorize unrestricted execution.
 
 ## Rejected alternatives
 
@@ -97,6 +116,7 @@ drift fails CI before deployment.
 - Reuse `data_sync_jobs` alone: it cannot prove the declared readiness needed by
   strategy, backtest and ML.
 - Push an unsolicited Backend prompt into DSH: introduces reverse runtime
-  coupling and can execute research without an active user turn.
+  coupling and unauthorized research. ADR-0062's Gateway-mediated, task-authorized
+  continuation does not relax this prohibition.
 - Copy Community Agent/DataSync code: it is incomplete and coupled to deprecated
   runtime, database and Provider architecture.

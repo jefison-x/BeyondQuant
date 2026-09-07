@@ -20,7 +20,7 @@ TypeScript handlers需人工补齐后才能声明全量。不得将发现数量�
 
 | 顺序 | 缺陷 | 代码证据 | 计划 |
 |---|---|---|---|
-| 1 | 未回答主题丢弃 | Gateway `_conversation_context`；ADR-0046 §2 | R2；待ADR-0062接受 |
+| 1 | 未回答主题丢弃 | Gateway `_conversation_context`；ADR-0046 原 §2 | R2；ADR-0062已接受，待合同优先修复 |
 | 1 | 活动失败/未知误标 | AgentActivityPanel、ml-research outcome_unknown isError=false | R1/F3；合同与UI联测 |
 | 1 | 固定child截止、领域active不收尾 | Runtime `_enforce_run_guards`、生产盘点 | R3/R4/F10 |
 | 2 | ML准备先执行、提交后落库 | Backend `create_ml_training_run` | F1；异步化并先登记identity |
@@ -51,6 +51,8 @@ TypeScript handlers需人工补齐后才能声明全量。不得将发现数量�
 
 ## 架构门禁
 
-ADR-0062 Proposed给出可审阅的恢复、异步提交、有限后台续接及index能力边界。
-尤其ADR-0046明确要求丢弃未回答消息，ADR-0045明确排除无人回合自动执行；普通修复
-授权不能静默改写这两个Accepted规则。先完成可独立审计与复现，取得精确接受后实现。
+2026-09-07，维护者明确确认ADR-0062，并要求同步修订ADR-0046和ADR-0045。
+ADR-0062现为Accepted：ADR-0046原先的未回答消息丢弃规则已被保留、分区恢复与去重规则替代；
+ADR-0045仅增加有任务绑定许可、24小时/8次回合预算和逐动作授权的后台续接例外。
+其余MCP、Provider、身份与审批边界不变，不追溯授权既有生产研究，不授权部署或数据扩容。
+架构接受门禁已解除；下一步为失败合同测试与分批实现，尚未宣称代码修复或验收完成。

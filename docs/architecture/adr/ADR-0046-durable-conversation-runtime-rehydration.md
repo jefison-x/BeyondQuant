@@ -4,6 +4,8 @@
 - Date: 2026-08-30
 - Decision scope: Phase 81 Product conversation lifecycle and WorkflowTrace failure projection
 - Related: ADR-0003、ADR-0024、ADR-0033
+- Amended: 2026-09-07，维护者接受 [ADR-0062](ADR-0062-post-u8-reliability-boundaries.md)，
+  替代 §2 丢弃未回答消息的规则及对应验收；其他隔离和安全边界不变。
 
 ## 背景
 
@@ -23,12 +25,16 @@ JSON-RPC protocol、长期保留无界 idle process，或让 Gateway/Browser 读
 1. 稳定的 BYQ session/trace identity 与每个 DSH process generation 的私有 session identity
    分离。fresh conversation 首代可以共用 identity；当 normalized WorkflowTrace 已有 sequence
    时，重建 process 必须使用新的 `resume-<uuid>` 私有 identity 和独立 session directory。
-2. Gateway 只从 BYQ durable Product conversation catalog 投影已经完成、用户可见的
-   `user`/`assistant` 消息。未得到 assistant answer 的尾部 user turn 不进入恢复上下文，避免
-   retry 时重复注入。
+2. Gateway 从 BYQ durable Product conversation catalog 投影已经完成、用户可见的
+   `user`/`assistant` 消息，并按 ADR-0062 分区提供最近未回答的 user turn、公开失败事实和
+   稳定 turn/run identity。不得仅因没有 assistant answer 丢弃原始需求；重试通过稳定身份
+   和同文去重避免重复注入。失败事实来自规范化 WorkflowTrace，不冒充 assistant answer。
+   当前明确新指令优先；无法唯一恢复主题时要求确认，不得以工作区最新对象替代原目标。
 3. `conversation-rehydration.v1` 最多保留最近 20 条消息、单条 6,000 字符、总计 24,000
    字符。Gateway 从最近消息向前取完整有界窗口；Runtime Adapter 再次严格验证字段、角色与
    上限。raw DSH event、tool argument、reasoning、credential、domain private state 均不得进入。
+   ADR-0062 新增的恢复分区须以版本化合同明确独立上限并由两端验证，不得静默改变 v1 的含义
+   或借新增字段绕过有界上下文约束。
 4. 新 generation 的第一次 prompt 将该公开历史作为明确标记的只读对话上下文，并把当前
    user message 标为优先输入。它恢复 Product conversation semantics，不声称恢复 DSH
    hidden state、tool cache、subagent 或未完成操作。
@@ -51,7 +57,8 @@ JSON-RPC protocol、长期保留无界 idle process，或让 Gateway/Browser 读
 ## 验收
 
 - Runtime contract 证明已有 sequence 使用新的私有 generation，公开 identity 不变。
-- Gateway contract 证明只发送 bounded completed public turns，并丢弃未回答的尾部 user turn。
+- Gateway contract 证明 completed public turns 有界，并按 ADR-0062 保留最近未回答需求及公开
+  失败事实；覆盖同文重试去重、当前新指令优先、主题歧义拒绝猜测、跨 owner/workspace 拒绝。
 - 首轮完成 → idle release → reopen → contextual follow-up 通过真实 Compose/Product API/Chrome。
 - DSH error reason 投影为 failed，Frontend 不再要求用户调整问题。
 - cleanup、owner/workspace、MCP-only domain、secret/raw-event boundary 和现有 cancellation tests
