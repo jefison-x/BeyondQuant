@@ -40,6 +40,9 @@
   在独立 maintenance worktree 统一实施[可靠性修复需求](POST_U8_AGENT_RELIABILITY_REMEDIATION.md)；U8 不得声称该缺陷已解决或语义稳定。
   下一维护任务：已授权开展R1–R5、S1–S3、F1–F10审计及修复；保持DSH 0.1.2rc1，
   数据中心Tushare数据扩容暂缓。开发授权不自动扩大为生产部署或新架构边界授权。
+  维护者已明确接受[ADR-0062](../architecture/adr/ADR-0062-post-u8-reliability-boundaries.md)，
+  同步修订ADR-0045/0046；按[审计执行记录](POST_U8_RELIABILITY_AUDIT.md)先合并收尾与规范，
+  再从更新主线分批修复。架构接受不代表实现完成，也不自动续跑历史研究。
   实际部署与观察证据见 [U8 记录](../evidence/dsh-012rc1/u8/OBSERVATION.md)。
   维护者已授权 U1–U8 串行开发、自动 push/Draft PR，并在 CI-green 后按
   ADR-0015 自动合并和进入下一阶段。维护者另行授权在当前本地环境使用既有凭据链执行必要的
@@ -64,6 +67,8 @@
   `docs/evidence/phase-61/`。
 
 ## 生效中的 Accepted ADR
+
+- Post-U8 reliability maintenance：**ADR-0062**，具名修订ADR-0045/0046；不授权生产部署或数据扩容。
 
 - Development governance / CI integrity maintenance：**ADR-0059**。本次只授权治理、CI 与 DSH 方案修正；
   不推进 Product Phase，不授权 DSH 实施或生产部署。
