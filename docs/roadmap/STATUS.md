@@ -80,17 +80,25 @@ Post-U8 交付授权（2026-09-08）：维护者明确允许新增独立构建�
 
 F7 当前维护决策：[ADR-0066](../architecture/adr/ADR-0066-domain-validation-call-admission.md)
 已于 2026-09-08 获维护者回复“批准。”接受，状态为 Accepted；先隔离验证，再接入首批两工具。
-仅 AgentRun 引用/进程 generation 不足以作为该凭证；资格验证与持久准入尚未完成，不把 F7 标为完成。
+仅 AgentRun 引用/进程 generation 不足以作为该凭证；首批两工具的持久准入已本地验证，
+其余 F7 验收矩阵仍未全部关闭，不把 F7 标为完成。
 
 后续真实 HTTP 资格核查确认官方 MCP 请求缺少 Adapter 可关联的逐调用根身份，输入摘要
 匹配不能单独关闭此门禁。[ADR-0067](../architecture/adr/ADR-0067-root-scoped-runtime-call-identity.md)
 提出每根回合独立进程与可信根 header，已于 2026-09-08 获维护者批准，状态为 Accepted；
-隔离实现及验证进行中，未改变生产拓扑，不计作 F7 已完成。
+隔离实现已通过下述本地验证，未改变生产拓扑，不计作 F7 全项完成。
 
 当前已接入逐根进程、公开上下文恢复、私有调用证据投递与两工具持久纠错准入，
-两工具真实 native stop 首次失败已定位并通过定向重测，完整跨服务/child 资格、
-独立构建和最终全栈认证仍未完成；不得部署或关闭 F7。
+两工具真实 native stop 首次失败已定位并通过定向重测。独立 post-u8.10 构建的本地 CI
+26/26 项通过；真实 Chrome desktop/mobile、两工具跨服务 schema-stop、持久纠错回执及
+Backend/Gateway 重启恢复验证通过，未调用付费 Provider。完整自然语言研究语义及
+multi-child/迟到 HTTP/撤销矩阵仍有仅组件级证据的项目；不得部署或关闭 F7。
 具体通过/失败边界见[纠错台账实现切片](../evidence/post-u8-r1/F7-CORRECTION-LEDGER.md)。
+
+S3 历史成分准备继续隔离整改：明确日期的封闭准备范围及指数入库防错、旧覆盖防丢失、
+同日冲突保护已通过合成定向测试。真实 Community 缓存尚缺只读来源，未认证历史覆盖，
+专用 data-demand/Worker/Product 闭环尚未接入；不计作 S3 完成，不进行数据扩容。
+详见[历史成分准备记录](../evidence/post-u8-r1/S3-HISTORICAL-PREPARATION.md)。
 
 - [ADR-0064](../architecture/adr/ADR-0064-runtime-crash-recovery-evidence.md)：已接受并完成首版本地崩溃证据恢复；仅原本地卷、同次主机启动且原排他锁身份可证时收尾，不续跑模型。主机重启/复制卷/无日志保留不可判定。验证见 `docs/evidence/post-u8-r1/ADR-0064-VERIFICATION.md`，未部署，其他 Post-U8 整改未全部关闭。
 
