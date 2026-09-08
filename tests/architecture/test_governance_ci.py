@@ -207,6 +207,18 @@ test -z "$DEEPSEEK_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_
         self.assertNotIn("# v4", workflow)
         self.assertNotIn("# v5", workflow)
 
+    def test_ci_upload_is_explicit_and_missing_evidence_fails(self):
+        workflow = (ROOT / ".github/workflows/ci-selfhosted.yml").read_text()
+        upload = workflow.split("- name: Upload sanitized CI evidence\n", 1)[1].split("\n  contribution:", 1)[0]
+        self.assertIn("if: always()", upload)
+        self.assertIn("include-hidden-files: true", upload)
+        self.assertIn("if-no-files-found: error", upload)
+        self.assertIn("path: |\n            .ci-artifacts/checks.log\n            .ci-artifacts/cleanup.log", upload)
+        self.assertNotIn("*.log", upload)
+        self.assertIn("retention-days: 7", upload)
+        for name in ("checks", "cleanup"):
+            self.assertIn(f"python3 scripts/ci/redact-log.py | tee .ci-artifacts/{name}.log", workflow)
+
     def test_worktree_verifier_rejects_primary_unregistered_and_symlink_escape(self):
         verify = module("verify-worktree").verify
         with tempfile.TemporaryDirectory() as temp:
