@@ -473,6 +473,17 @@ def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(mon
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
     store = TraceStore(tmp_path)
     monkeypatch.setattr(main, "trace_store", store)
+    # Completed history requires evidence from its original turn, not merely
+    # an assistant row that may have arrived after another user message.
+    for sequence, kind, payload in [
+        (4, "session.started", {"run_id": "old-run"}),
+        (5, "agent.output.delta", {"schema_version": "workflow-answer.v1", "channel": "answer",
+                                    "delta": "第一轮回答", "truncated": False}),
+        (6, "session.result", {}),
+    ]:
+        store.append({"trace_id": "trace-1", "session_id": "runtime-private", "sequence": sequence,
+                      "timestamp": f"2026-08-23T00:00:0{sequence}+00:00", "kind": kind,
+                      "source": "runtime-adapter", "payload": payload})
     store.append({
         "trace_id": "trace-1", "session_id": "runtime-private", "sequence": 7,
         "timestamp": "2026-08-24T00:00:00+00:00", "kind": "session.failed",
@@ -482,8 +493,8 @@ def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(mon
         "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
         "trace_id": "trace-1", "status": "active",
     }, "messages": [
-        {"role": "user", "content": "第一轮问题"},
-        {"role": "assistant", "content": "第一轮回答"},
+        {"role": "user", "content": "第一轮问题", "created_at": "2026-08-23T00:00:00+00:00"},
+        {"role": "assistant", "content": "第一轮回答", "workflow_sequence": 5},
         {"role": "user", "content": "失败后待重试的问题"},
     ]})
     adapter_calls: list[tuple[str, dict[str, object] | None]] = []
