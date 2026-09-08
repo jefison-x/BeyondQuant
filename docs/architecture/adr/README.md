@@ -23,6 +23,9 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
 
 当前与 Phase 相关的 Accepted 决策也列在 `docs/roadmap/STATUS.md` 中：
 
+维护提案：[ADR-0066](ADR-0066-domain-validation-call-admission.md) 处于 Proposed，
+拟为 F7 增加精确领域调用归属与持久纠错准入；未取得接受前不实施该新边界，不推进 Product Phase。
+
 - ADR-0063 允许禁用身份后对精确绑定的既有 AgentRun 做可信终态清理及原子审计/回执，不恢复普通访问或业务续接。
 - ADR-0064 允许持久化最小 BYQ 执行证据，并仅在原执行者失效可证明时恢复收尾；不恢复模型或研究。
 

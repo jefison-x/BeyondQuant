@@ -2,6 +2,10 @@
 
 状态：设计核查，尚未实现。不得据此关闭 F7。
 
+后续核查：仅传入 AgentRun 引用不足以证明当前调用的根归属。下述实现计划必须结合
+[ADR-0066 提案](../../architecture/adr/ADR-0066-domain-validation-call-admission.md)
+的逐调用可信证明；提案未接受前不将该引用当作新的准入授权。
+
 ## 已有能力与缺口
 
 - `services/backend/app/agent_research.py` 已有 `agent_runtime_turns`、
