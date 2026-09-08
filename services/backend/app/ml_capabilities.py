@@ -237,9 +237,8 @@ def _parameters(component_id: str, value: object, field: str) -> dict[str, objec
             if isinstance(raw, bool) or not isinstance(raw, int):
                 raise MLValidationError(f"{field}.{name} must be an integer", field=f"{field}.{name}", code="integer_required")
         elif kind == "number":
-            if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(float(raw)):
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)) or (isinstance(raw, float) and not math.isfinite(raw)):
                 raise MLValidationError(f"{field}.{name} must be a finite number", field=f"{field}.{name}", code="number_required")
-            raw = float(raw)
         elif kind == "boolean":
             if not isinstance(raw, bool):
                 raise MLValidationError(f"{field}.{name} must be a boolean", field=f"{field}.{name}", code="boolean_required")
@@ -248,8 +247,10 @@ def _parameters(component_id: str, value: object, field: str) -> dict[str, objec
                 raise MLValidationError(f"{field}.{name} has an unsupported value", field=f"{field}.{name}", code="unsupported_value")
         else:
             raise ValueError(f"{field}.{name} capability metadata is invalid")
-        if kind in {"integer", "number"} and not float(raw_rule["min"]) <= float(raw) <= float(raw_rule["max"]):
+        if kind in {"integer", "number"} and not raw_rule["min"] <= raw <= raw_rule["max"]:
             raise MLValidationError(f"{field}.{name} is outside the qualified range", field=f"{field}.{name}", code="out_of_range")
+        if kind == "number":
+            raw = float(raw)
         result[name] = raw
     return result
 
@@ -322,22 +323,23 @@ def normalize_ml_strategy_v2(value: object) -> dict[str, object]:
         allowed_states = {"risk_on", "neutral", "risk_off"}
         trainable_states = allowed_states
         for index, raw_expert in enumerate(raw_experts):
-            expert = _object(raw_expert, f"experts[{index}]", {"key", "learner", "training_regimes"})
-            key = _text(expert.get("key"), f"experts[{index}].key", 32)
+            expert = _object(raw_expert, f"experts.{index}", {"key", "learner", "training_regimes"})
+            key = _text(expert.get("key"), f"experts.{index}.key", 32)
             if key not in allowed_states or key in seen_keys:
                 raise ValueError("expert keys must be unique registered regime states")
             seen_keys.add(key)
             expert_learner_id, expert_parameters = _reference(
-                expert.get("learner"), f"experts[{index}].learner", "learner_profile"
+                expert.get("learner"), f"experts.{index}.learner", "learner_profile"
             )
             raw_training_regimes = expert.get("training_regimes")
             if (
                 not isinstance(raw_training_regimes, list)
                 or not raw_training_regimes
                 or len(raw_training_regimes) > 3
-                or any(item not in trainable_states for item in raw_training_regimes)
+                or any(not isinstance(item, str) or item not in trainable_states for item in raw_training_regimes)
             ):
-                raise ValueError("expert training_regimes must contain registered trainable states")
+                raise MLValidationError("expert training_regimes must contain registered trainable states",
+                    field=f"experts.{index}.training_regimes", code="unsupported_value")
             training_regimes = sorted(set(str(item) for item in raw_training_regimes))
             if len(training_regimes) != len(raw_training_regimes):
                 raise ValueError("expert training_regimes must be unique")

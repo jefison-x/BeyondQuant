@@ -9,7 +9,7 @@ import {
 const backend = "http://backend:8000";
 const runId = "mlrun_0123456789abcdef0123456789abcdef";
 
-for (const field of ["validation_plan.parameters.folds", "learner.parameters.alpha"]) {
+for (const field of ["validation_plan.parameters.folds", "learner.parameters.alpha", "experts.0.learner.parameters.alpha", "experts.0.training_regimes"]) {
   const value = await fetchByqMlStrategyCreate(backend, {}, async () => new Response(JSON.stringify({ detail: {
     schema_version: "ml-validation-problem.v1", field, code: "out_of_range", message: "secret must never pass",
     repair_limit: 999, allowed_values: ["private-input"],

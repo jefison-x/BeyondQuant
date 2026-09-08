@@ -1524,3 +1524,10 @@ Agent 直写业务数据库、自动重开旧任务及旧工作流执行器为 `
 视觉与 Product API；旧 token 存储、直接旧 API、finally 无条件清理身份为 `DROP`。
 BYQ 独立校验注销回执，未知时保留原 cookie 供幂等重试，显示错误且不导航为已注销。
 没有复制旧 UI/认证代码或修改 Community。
+
+## Post-U8 F7 ML 输入校验（2026-09-08）
+
+只读检查 Community `backend/app/services/strategy_validation.py`：执行前校验、有限数值和
+可识别错误为 `REFERENCE_ONLY`；原 Python 脚本执行器、multiprocessing harness 及直接
+返回异常字符串为 `DROP`。BYQ 保留封闭 ML schema/registry，独立修复非法 JSON 类型、
+超大整数及嵌套字段定位，不引入旧执行栈；本切片不代表持久纠错计次已经实现。

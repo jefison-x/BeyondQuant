@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 from datetime import datetime
 from typing import Any
 from .ml_validation import MLValidationError
@@ -102,14 +101,16 @@ def _parameters(value: object) -> dict[str, object]:
     for name, raw in supplied.items():
         expected, minimum, maximum = PARAMETER_RULES[name]
         if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-            raise ValueError(f"learner_parameters.{name} must be numeric")
+            raise MLValidationError(f"learner_parameters.{name} must be numeric", field=f"learner_parameters.{name}", code="number_required")
         if expected is int and not isinstance(raw, int):
-            raise ValueError(f"learner_parameters.{name} must be an integer")
-        normalized = int(raw) if expected is int else float(raw)
-        if not math.isfinite(float(normalized)) or not minimum <= normalized <= maximum:
-            raise ValueError(
-                f"learner_parameters.{name} must be between {minimum:g} and {maximum:g}"
+            raise MLValidationError(f"learner_parameters.{name} must be an integer", field=f"learner_parameters.{name}", code="integer_required")
+        # Compare before float conversion: finite JSON integers can exceed float range.
+        if not minimum <= raw <= maximum:
+            raise MLValidationError(
+                f"learner_parameters.{name} must be between {minimum:g} and {maximum:g}",
+                field=f"learner_parameters.{name}", code="out_of_range",
             )
+        normalized = int(raw) if expected is int else float(raw)
         result[name] = normalized
     return result
 
@@ -152,8 +153,8 @@ def _normalize_ml_strategy_v1(value: object) -> dict[str, object]:
     ):
         raise ValueError("ML strategy splits must be chronological and non-overlapping")
     policy = _object(data.get("signal_policy"), field="signal_policy", allowed={"kind", "top_n", "rebalance"})
-    if policy.get("kind") != "top_n_equal_weight" or policy.get("rebalance") not in {"daily", "weekly", "monthly"}:
-        raise ValueError("unsupported ML signal policy")
+    if policy.get("kind") != "top_n_equal_weight" or policy.get("rebalance") not in ("daily", "weekly", "monthly"):
+        raise MLValidationError("unsupported ML signal policy", field="signal_policy", code="unsupported_value")
     top_n = _integer(policy.get("top_n"), field="signal_policy.top_n", minimum=1, maximum=100)
     snapshot: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
