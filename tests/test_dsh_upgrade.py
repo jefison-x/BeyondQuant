@@ -66,12 +66,15 @@ class DshUpgradePreparationTests(unittest.TestCase):
             MODULE.verify_closure(manifest, poisoned, "0.1.1-rc.1")
 
     def test_candidate_failure_cleans_staging_directory(self) -> None:
+        # Exercise offline cleanup using verified history; production stays strict.
+        archived = MODULE.RELEASE_MODULE.load_all(historical_inputs=True)
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "candidate"
             with patch(
                 "sys.argv",
                 [str(SCRIPT), "--release-id", "dsh-0.1.2rc1", "--output", str(output)],
-            ), patch.object(MODULE, "fetch_json", side_effect=RuntimeError("offline")):
+            ), patch.object(MODULE, "fetch_json", side_effect=RuntimeError("offline")), \
+                    patch.object(MODULE.RELEASE_MODULE, "load_all", return_value=archived):
                 with self.assertRaisesRegex(RuntimeError, "offline"):
                     MODULE.main()
             self.assertFalse(output.exists())

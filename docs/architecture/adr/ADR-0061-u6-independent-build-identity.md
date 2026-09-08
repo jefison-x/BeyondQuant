@@ -34,3 +34,20 @@ checks; add negative tests for build drift and reuse of old evidence.
 Re-run affected builds, CI and isolated acceptance flows against these explicit
 artifacts. Do not copy U5 QUALIFIED onto the U6 image. Production deployment,
 default release promotion and observation remain separate authorization gates.
+
+## Post-U8 scoped extension (2026-09-08)
+
+The maintainer explicitly approved retaining historical records unchanged, adding
+an independent Post-U8 build identity and requalifying the repair branch, then
+pushing it to `jefison-x/BeyondQuant` and creating a Draft PR. This authorization
+does **not** include merge, production deployment, release/tag creation, or
+resuming historical research. Product Phase 97 and the deployed DSH version are
+unchanged.
+
+Apply the same two-layer verification to new `post-u8` operational revisions for
+the compatibility baseline and current runtime. Historical descriptors, U6/U7
+manifests, Dockerfiles and reports remain immutable. Verify historical inputs
+against their exact archived Git source and current inputs against a new complete
+manifest; missing history or current-source drift must fail closed. Historical
+qualification is not qualification of the new image. Report incomplete Post-U8
+business acceptance separately from build and deterministic test results.

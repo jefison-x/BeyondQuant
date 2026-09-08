@@ -303,7 +303,7 @@ prepare_ci_compose_env() {
   # Explicit rollback baseline for the legacy full suite. The exact promoted
   # bundled artifact is separately built and exercised by check_dsh_candidate
   # and U7's closed Product/model/browser qualification; never silently retag it.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.u7
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.1rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/compositions/byq-product-sdk.cordis.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.1rc1
@@ -326,7 +326,7 @@ ci_image() {
 
 build_test_images() {
   local services=() service
-  python3 scripts/dsh/release.py check || return 1
+  python3 scripts/dsh/release.py check --historical-inputs || return 1
   python3 scripts/dsh/promotion.py check || return 1
   python3 -c 'from scripts.dsh import build_revision as b; [b.check(b.selected_build_id(r)) for r in sorted(b.RELEASES)]' || return 1
   prepare_ci_compose_env
@@ -470,7 +470,7 @@ check_dsh_candidate() {
   ensure_ci_mcp || { bad "candidate live MCP dependency"; return; }
   RESOURCES_TOUCHED=1
   candidate_image="$(ci_image runtime-candidate)"
-  if ! run_interruptible docker build -f services/runtime-adapter/Dockerfile.u7-candidate \
+  if ! run_interruptible docker build -f services/runtime-adapter/Dockerfile.post-u8-candidate \
       -t "$candidate_image" .; then
     bad "candidate image build"; return
   fi

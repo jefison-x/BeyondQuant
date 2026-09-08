@@ -15,9 +15,10 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from scripts.dsh import build_revision
+    from scripts.dsh import build_revision, historical_inputs as archived_inputs
 except ModuleNotFoundError:
     import build_revision
+    import historical_inputs as archived_inputs
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -196,7 +197,9 @@ def validate_release(value: dict[str, Any], *, verify_files: bool) -> None:
         validate_python_lock(lock_paths[0], release_id, python["sdk"])
 
 
-def load_all(*, verify_files: bool = True) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+def load_all(*, verify_files: bool = True, historical_inputs: bool = False) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    if historical_inputs and not verify_files:
+        raise ReleaseError("historical verification cannot disable input checks")
     deployment = load_json(DEPLOYMENT_PATH)
     _require(set(deployment) == DEPLOYMENT_KEYS, "deployment selector has invalid closed schema")
     _require(deployment["schema_version"] == "dsh-deployment.v1", "unknown deployment schema")
@@ -204,7 +207,12 @@ def load_all(*, verify_files: bool = True) -> tuple[dict[str, Any], dict[str, di
     releases: dict[str, dict[str, Any]] = {}
     for path in files:
         value = load_json(path)
-        validate_release(value, verify_files=verify_files)
+        validate_release(value, verify_files=verify_files and not historical_inputs)
+        if historical_inputs:
+            try:
+                archived_inputs.verify(value)
+            except ValueError as exc:
+                raise ReleaseError(str(exc)) from exc
         _require(path.stem == value["release_id"], "release filename/id mismatch")
         _require(value["release_id"] not in releases, "duplicate release id")
         releases[value["release_id"]] = value
@@ -234,8 +242,8 @@ def render_release(release_id: str, deployment: dict[str, Any], releases: dict[s
     return json.dumps(output, indent=2, sort_keys=True) + "\n"
 
 
-def render() -> str:
-    deployment, releases = load_all()
+def render(*, historical_inputs: bool = False) -> str:
+    deployment, releases = load_all(historical_inputs=historical_inputs)
     selected = releases[deployment["default_release"]]
     output = {
         "schema_version": "dsh-deployment-identity.v1",
@@ -254,9 +262,9 @@ def candidate_output_path(release_id: str) -> Path:
     return CONFIG_ROOT / "generated" / f"{release_id}.identity.json"
 
 
-def generated_outputs() -> dict[Path, str]:
-    deployment, releases = load_all()
-    outputs = {OUTPUT_PATH: render()}
+def generated_outputs(*, historical_inputs: bool = False) -> dict[Path, str]:
+    deployment, releases = load_all(historical_inputs=historical_inputs)
+    outputs = {OUTPUT_PATH: render(historical_inputs=historical_inputs)}
     outputs.update({
         candidate_output_path(release_id): render_release(release_id, deployment, releases)
         for release_id in deployment["candidate_releases"]
@@ -312,7 +320,7 @@ def validate_qualification_evidence(
     for field in ("image_digest", "composition_hash", "policy_hash"):
         _require(isinstance(value[field], str) and SHA256.fullmatch(value[field]) is not None,
                  f"invalid qualification {field}")
-    _, releases = load_all()
+    _, releases = load_all(historical_inputs=True)
     candidate_release = releases[release_id]
     baseline_release = releases[baseline_release_id]
     _require(value["composition_hash"] == candidate_release["profile"]["composition_hash"],
@@ -481,7 +489,7 @@ def validate_qualification_evidence(
 def render_qualification_report(
     release_id: str, baseline_release_id: str, evidence: dict[str, Any],
 ) -> str:
-    deployment, releases = load_all()
+    deployment, releases = load_all(historical_inputs=True)
     _require(release_id in releases and release_id != baseline_release_id,
              "qualification target must be a distinct registered release")
     _require(baseline_release_id in releases,
@@ -501,6 +509,8 @@ def render_qualification_report(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=("inspect", "generate", "check", "qualify"))
+    parser.add_argument("--historical-inputs", action="store_true",
+                        help="verify immutable release inputs in pinned Git trees; not current build qualification")
     parser.add_argument("--release", help="exact registered release id")
     parser.add_argument("--baseline", help="exact registered baseline release id")
     parser.add_argument("--output", type=Path, help="new output directory")
@@ -508,7 +518,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.evidence is not None and args.command != "qualify":
         parser.error("--evidence is only valid with qualify")
-    deployment, releases = load_all()
+    deployment, releases = load_all(historical_inputs=args.historical_inputs or args.command == "qualify")
     if args.command == "qualify":
         if not args.release or not args.baseline or args.output is None:
             parser.error("qualify requires --release, --baseline and --output")
@@ -541,11 +551,11 @@ def main() -> int:
     elif args.output is not None:
         parser.error("--output requires --release")
     elif args.command == "generate":
-        for path, rendered in generated_outputs().items():
+        for path, rendered in generated_outputs(historical_inputs=args.historical_inputs).items():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(rendered, encoding="utf-8")
     else:
-        for path, rendered in generated_outputs().items():
+        for path, rendered in generated_outputs(historical_inputs=args.historical_inputs).items():
             if not path.is_file() or path.read_text(encoding="utf-8") != rendered:
                 raise SystemExit(
                     f"generated DSH identity is stale: {path}; "

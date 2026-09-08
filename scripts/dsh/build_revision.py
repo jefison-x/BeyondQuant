@@ -28,6 +28,8 @@ FIXED_INPUTS = (
     "services/runtime-adapter/pyproject.toml", "services/runtime-adapter/requirements.candidate.lock",
     "services/runtime-adapter/runtime/package.json", "services/runtime-adapter/runtime/package-lock.json",
     "scripts/dsh/build_revision.py",
+    "scripts/dsh/historical_inputs.py", "scripts/dsh/release.py",
+    "scripts/ci/local-ci.sh", "compose.yml",
     ".dockerignore", "services/mcp/tsconfig.json", "apps/frontend/nginx.conf",
     "apps/frontend/index.html", "apps/frontend/vite.config.ts", "apps/frontend/tsconfig.app.json",
     "apps/frontend/tsconfig.json", "apps/frontend/tsconfig.node.json",
@@ -49,15 +51,15 @@ def digest(path):
 def selected_build_id(release):
     if release not in RELEASES:
         raise ValueError("unregistered release")
-    return release + "-u7.3"
+    return release + "-post-u8.1"
 
 
 def identity(build_id):
-    match = re.fullmatch(r"(dsh-0\.1\.[12]rc1)-u(6|7)\.([1-9][0-9]*)", str(build_id))
+    match = re.fullmatch(r"(dsh-0\.1\.[12]rc1)-(u6|u7|post-u8)\.([1-9][0-9]*)", str(build_id))
     if not match:
-        raise ValueError("exact registered release and U6/U7 build revision required")
+        raise ValueError("exact registered release and U6/U7/Post-U8 build revision required")
     release = match[1]
-    dockerfile = "services/runtime-adapter/Dockerfile.u" + match[2] + ("-candidate" if release.endswith("2rc1") else "")
+    dockerfile = "services/runtime-adapter/Dockerfile." + match[2] + ("-candidate" if release.endswith("2rc1") else "")
     return release, dockerfile
 
 
