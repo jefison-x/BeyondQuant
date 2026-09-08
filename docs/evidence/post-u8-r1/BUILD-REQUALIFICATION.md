@@ -1,6 +1,6 @@
 # Post-U8 independent build requalification
 
-Date: 2026-09-08. Status: IN_PROGRESS; not release-ready, merged or deployed.
+Date: 2026-09-08. Status: KEYLESS_CI_VERIFIED; not release-ready, merged or deployed.
 
 ## Authority and immutable history
 
@@ -96,7 +96,7 @@ keyless failure. Independent cleanup verification confirmed zero `.2` resources.
 Logs and browser traces remain in `.ci-artifacts/post-u8-qual-20260908-2*` locally.
 This image is not certified; the fixes require a new immutable build revision.
 
-## Third build identities — verification pending
+## Third build identities — local keyless CI VERIFIED
 
 | Build | Manifest SHA-256 | Bound inputs |
 | --- | --- | --- |
@@ -106,8 +106,29 @@ This image is not certified; the fixes require a new immutable build revision.
 Gateway full regression including exact/forged rejection and approval-continuation
 cases: 183 passed, 1.68 seconds. Repository architecture/governance: 214 passed,
 10.325 seconds. The isolated rejection-test image was removed and its scope
-`post-u8-rejection-20260908` independently verified clean. Full keyless CI uses
-`post-u8-qual-20260908-3`; final image/acceptance/cleanup results are pending.
+`post-u8-rejection-20260908` independently verified clean.
+
+Full keyless CI `post-u8-qual-20260908-3` completed with exit 0 and **26/26 checks
+passed**. Backend 421 passed/1 skipped/7 subtests (458.74 seconds), Gateway 183
+passed, Runtime regular 119 passed/14 skipped, candidate real-process/delegates
+12 passed, MCP complete suite, frontend build and 172 unit tests passed. Browser
+results: 20 mocked journeys and 9 real Product API journeys passed. Both previous
+integration failures passed on the new revision. Runtime lifecycle loops,
+restart persistence, feedback boundaries and two-user Product coherence passed.
+
+Both Runtime images were run without network and read-only to verify their exact
+embedded manifest hashes and installed SDK/runtime-bin versions. Source inputs
+match commit `ca82e19ce46f64accf9b54553be6d8c452f839c8`; local CI began before
+that commit was made, so this is inventory-bound local evidence, not a claim that
+the run began on a clean commit. Remote exact-head CI is a separate gate.
+
+Independent `cleanup-resources.sh --scope=post-u8-qual-20260908-3 --verify-only`
+passed after CI exit. The run's containers, image tags, volumes and networks are
+gone; synthetic test data is rebuildable and was not backed up. Production and
+Community data were untouched. The [keyless build receipt](keyless-build-receipt.json)
+records all 12 image IDs, both exact build identities, benchmark samples and hashes
+of the three retained sanitized logs. Deprecation and transient dev-server
+ResizeObserver warnings are retained, not silently removed from the log.
 
 ## Not implied
 

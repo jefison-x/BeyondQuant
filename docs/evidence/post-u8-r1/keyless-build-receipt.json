@@ -1,0 +1,374 @@
+{
+  "schema_version": "byq-post-u8-keyless-build-receipt.v1",
+  "status": "KEYLESS_CI_VERIFIED",
+  "qualification_scope": "local-keyless-ci-only",
+  "source_commit": "ca82e19ce46f64accf9b54553be6d8c452f839c8",
+  "ci_scope": "post-u8-qual-20260908-3",
+  "checked_at_utc": "2026-09-08 01:35:49 UTC",
+  "local_ci": {
+    "exit_code": 0,
+    "checks_passed": 26,
+    "checks_failed": 0,
+    "architecture_tests": 214,
+    "backend_passed": 421,
+    "backend_skipped": 1,
+    "backend_subtests_passed": 7,
+    "gateway_passed": 183,
+    "runtime_passed": 119,
+    "runtime_skipped": 14,
+    "candidate_real_process_passed": 12,
+    "frontend_unit_passed": 172,
+    "mocked_browser_passed": 20,
+    "real_product_browser_passed": 9
+  },
+  "build_revisions": {
+    "baseline": {
+      "build_id": "dsh-0.1.1rc1-post-u8.3",
+      "manifest_hash": "sha256:4162c8d16c1672831fe160d8b86f06cfbd8938e214b20c2109f04c28c969001b",
+      "embedded_identity_verified": true,
+      "sdk": "0.1.1rc1",
+      "runtime_bin": "0.1.1rc1"
+    },
+    "candidate": {
+      "build_id": "dsh-0.1.2rc1-post-u8.3",
+      "manifest_hash": "sha256:070df99a554521c26afed72fe541b1c234efbeecba00da72f0f3099407530ede",
+      "embedded_identity_verified": true,
+      "sdk": "0.1.2rc1",
+      "runtime_bin": "0.1.2rc1"
+    }
+  },
+  "images": {
+    "backend": {
+      "tag": "byq-ci-stack-post-u8-qual-20260908-3-backend",
+      "image_id": "sha256:445a74d799791088a619b0e94a7438ad83db9aa4d8ea6be93de94e64d6524fdc"
+    },
+    "gateway": {
+      "tag": "byq-ci-stack-post-u8-qual-20260908-3-gateway",
+      "image_id": "sha256:fc0fcfc52863665bf2663e0507959381df45fd5db4c6b5a8866926104beb8892"
+    },
+    "runtime-adapter": {
+      "tag": "byq-ci-stack-post-u8-qual-20260908-3-runtime-adapter",
+      "image_id": "sha256:e15bcb76688e6cb8458e20f29bbd554fc6936f0492e76cc370d2269813dae903"
+    },
+    "mcp": {
+      "tag": "byq-ci-stack-post-u8-qual-20260908-3-mcp",
+      "image_id": "sha256:e167789bb4d401044573c31b536b01cec1947ed9741ff220f4d3d71bfec16d9e"
+    },
+    "frontend": {
+      "tag": "byq-ci-stack-post-u8-qual-20260908-3-frontend",
+      "image_id": "sha256:87cea6a4e2af57849a1c6a3b8586d2d49c5a7a61c2fdd060343a99e49cf9213b"
+    },
+    "data-worker": {
+      "tag": "byq-ci-stack-post-u8-qual-20260908-3-data-worker",
+      "image_id": "sha256:c373952ad3713bebe10813312692d914e5cf33e56913c4a4a50e0d41870d7fb8"
+    },
+    "signal-worker": {
+      "tag": "byq-ci-stack-post-u8-qual-20260908-3-signal-worker",
+      "image_id": "sha256:22426f2cf072acf94e4e7f76b4118031eb9f481aba52a4ed4f7820b05db40732"
+    },
+    "ml-worker": {
+      "tag": "byq-ci-stack-post-u8-qual-20260908-3-ml-worker",
+      "image_id": "sha256:3c319538937dd1af4f6d0d92c757e6b7e9e1d7874fbdf930a5d54a376bb35fe5"
+    },
+    "signal-sandbox": {
+      "tag": "byq-ci-stack-post-u8-qual-20260908-3-signal-sandbox",
+      "image_id": "sha256:dbcaa17dfe6cfe0489e93ff4c50503240f2f6f70fd020ebbd4e895e18fbd63f8"
+    },
+    "feedback-publisher": {
+      "tag": "byq-ci-stack-post-u8-qual-20260908-3-feedback-publisher",
+      "image_id": "sha256:e14ed0ecfdc6ed1154197ca6d97daf8c1d11f5e42e7a71fbdb4b3df41373d1b6"
+    },
+    "feedback-hub-relay": {
+      "tag": "byq-ci-stack-post-u8-qual-20260908-3-feedback-hub-relay",
+      "image_id": "sha256:6b3a805771cca95b9244cd6828c14bb58d54c7b4b59643a1d370386dd6fbf96e"
+    },
+    "runtime-candidate": {
+      "tag": "byq-ci-stack-post-u8-qual-20260908-3-runtime-candidate",
+      "image_id": "sha256:d44260b90dc6ff0b15997169a3f17e9b104aa0983a08465e3488529a2b1bac6c"
+    }
+  },
+  "benchmarks": {
+    "baseline": {
+      "cycles": 20,
+      "lingering_threads": 0,
+      "maximum_seconds": 1.264157,
+      "median_seconds": 0.674275,
+      "minimum_seconds": 0.596178,
+      "peak_processes": [
+        {
+          "name": "MainThread",
+          "rss_mib": 169.102
+        },
+        {
+          "name": "python3",
+          "rss_mib": 37.129
+        }
+      ],
+      "peak_rss_mib": 206.23,
+      "release": "0.1.1rc1",
+      "retained_sessions": 0,
+      "runtime_bin": "0.1.1rc1",
+      "sample_count": 20,
+      "samples": [
+        {
+          "cycle": 1,
+          "peak_rss_mib": 199.141,
+          "seconds": 0.998619
+        },
+        {
+          "cycle": 2,
+          "peak_rss_mib": 202.535,
+          "seconds": 0.654991
+        },
+        {
+          "cycle": 3,
+          "peak_rss_mib": 203.984,
+          "seconds": 0.676371
+        },
+        {
+          "cycle": 4,
+          "peak_rss_mib": 202.828,
+          "seconds": 0.704061
+        },
+        {
+          "cycle": 5,
+          "peak_rss_mib": 200.914,
+          "seconds": 0.839726
+        },
+        {
+          "cycle": 6,
+          "peak_rss_mib": 203.281,
+          "seconds": 0.648214
+        },
+        {
+          "cycle": 7,
+          "peak_rss_mib": 206.223,
+          "seconds": 0.670468
+        },
+        {
+          "cycle": 8,
+          "peak_rss_mib": 203.398,
+          "seconds": 0.72486
+        },
+        {
+          "cycle": 9,
+          "peak_rss_mib": 199.152,
+          "seconds": 0.649608
+        },
+        {
+          "cycle": 10,
+          "peak_rss_mib": 203.98,
+          "seconds": 1.264157
+        },
+        {
+          "cycle": 11,
+          "peak_rss_mib": 201.66,
+          "seconds": 0.707813
+        },
+        {
+          "cycle": 12,
+          "peak_rss_mib": 202.25,
+          "seconds": 0.725382
+        },
+        {
+          "cycle": 13,
+          "peak_rss_mib": 202.691,
+          "seconds": 0.645075
+        },
+        {
+          "cycle": 14,
+          "peak_rss_mib": 204.352,
+          "seconds": 0.596178
+        },
+        {
+          "cycle": 15,
+          "peak_rss_mib": 201.676,
+          "seconds": 0.75355
+        },
+        {
+          "cycle": 16,
+          "peak_rss_mib": 202.398,
+          "seconds": 0.61946
+        },
+        {
+          "cycle": 17,
+          "peak_rss_mib": 203.926,
+          "seconds": 0.670478
+        },
+        {
+          "cycle": 18,
+          "peak_rss_mib": 201.977,
+          "seconds": 0.672179
+        },
+        {
+          "cycle": 19,
+          "peak_rss_mib": 206.23,
+          "seconds": 0.627897
+        },
+        {
+          "cycle": 20,
+          "peak_rss_mib": 199.527,
+          "seconds": 0.686064
+        }
+      ],
+      "schema_version": "dsh-runtime-benchmark.v1"
+    },
+    "candidate": {
+      "cycles": 20,
+      "lingering_threads": 0,
+      "maximum_seconds": 1.316043,
+      "median_seconds": 1.01756,
+      "minimum_seconds": 0.90514,
+      "peak_processes": [
+        {
+          "name": "MainThread",
+          "rss_mib": 245.121
+        },
+        {
+          "name": "python3",
+          "rss_mib": 39.242
+        }
+      ],
+      "peak_rss_mib": 284.363,
+      "release": "0.1.2rc1",
+      "retained_sessions": 0,
+      "runtime_bin": "0.1.2rc1",
+      "sample_count": 20,
+      "samples": [
+        {
+          "cycle": 1,
+          "peak_rss_mib": 269.473,
+          "seconds": 0.934521
+        },
+        {
+          "cycle": 2,
+          "peak_rss_mib": 281.082,
+          "seconds": 1.051208
+        },
+        {
+          "cycle": 3,
+          "peak_rss_mib": 274.508,
+          "seconds": 1.05304
+        },
+        {
+          "cycle": 4,
+          "peak_rss_mib": 278.672,
+          "seconds": 0.925661
+        },
+        {
+          "cycle": 5,
+          "peak_rss_mib": 270.676,
+          "seconds": 1.003162
+        },
+        {
+          "cycle": 6,
+          "peak_rss_mib": 277.113,
+          "seconds": 1.022969
+        },
+        {
+          "cycle": 7,
+          "peak_rss_mib": 278.93,
+          "seconds": 1.316043
+        },
+        {
+          "cycle": 8,
+          "peak_rss_mib": 277.637,
+          "seconds": 1.260028
+        },
+        {
+          "cycle": 9,
+          "peak_rss_mib": 275.586,
+          "seconds": 1.040182
+        },
+        {
+          "cycle": 10,
+          "peak_rss_mib": 277.707,
+          "seconds": 0.984674
+        },
+        {
+          "cycle": 11,
+          "peak_rss_mib": 269.703,
+          "seconds": 0.90514
+        },
+        {
+          "cycle": 12,
+          "peak_rss_mib": 271.523,
+          "seconds": 1.104565
+        },
+        {
+          "cycle": 13,
+          "peak_rss_mib": 274.332,
+          "seconds": 0.951764
+        },
+        {
+          "cycle": 14,
+          "peak_rss_mib": 280.191,
+          "seconds": 1.018259
+        },
+        {
+          "cycle": 15,
+          "peak_rss_mib": 284.363,
+          "seconds": 1.061421
+        },
+        {
+          "cycle": 16,
+          "peak_rss_mib": 282.953,
+          "seconds": 0.975653
+        },
+        {
+          "cycle": 17,
+          "peak_rss_mib": 278.02,
+          "seconds": 0.981697
+        },
+        {
+          "cycle": 18,
+          "peak_rss_mib": 270.836,
+          "seconds": 1.00367
+        },
+        {
+          "cycle": 19,
+          "peak_rss_mib": 272.121,
+          "seconds": 1.121356
+        },
+        {
+          "cycle": 20,
+          "peak_rss_mib": 270.297,
+          "seconds": 1.016861
+        }
+      ],
+      "schema_version": "dsh-runtime-benchmark.v1"
+    }
+  },
+  "local_log_hashes": [
+    {
+      "path": ".ci-artifacts/post-u8-qual-20260908-1.log",
+      "sha256": "f1f003ecb37bf6a8cb3672f59b40da68774fb53917fc759f67ca5177a63eeab1"
+    },
+    {
+      "path": ".ci-artifacts/post-u8-qual-20260908-2.log",
+      "sha256": "00191b754b489e0a6bf88c07c54f0408470f4a03e57415f9e9998f5523409a90"
+    },
+    {
+      "path": ".ci-artifacts/post-u8-qual-20260908-3.log",
+      "sha256": "61613ddc6199e187760e2c370f221df0437a377aed13171d81cb5dd5f008ab22"
+    }
+  ],
+  "cleanup": {
+    "independently_verified": true,
+    "containers": 0,
+    "image_tags": 0,
+    "volumes": 0,
+    "networks": 0
+  },
+  "paid_model_calls": 0,
+  "release_ready": false,
+  "production_deployed": false,
+  "full_business_remediation_complete": false,
+  "limitations": [
+    "Local CI began with uncommitted revision-3 changes; the bound inventory matches the recorded source commit. Remote exact-head CI is separate.",
+    "Historical release-ready reports are not reused.",
+    "F6 cumulative budget enforcement, F7 correction ledger, remaining S3 historical demand/cache proof and complete semantic research journeys remain open.",
+    "U8 remains closed early with remediation required.",
+    "Dependency deprecation and dev-server ResizeObserver warnings remain in the retained log."
+  ]
+}
