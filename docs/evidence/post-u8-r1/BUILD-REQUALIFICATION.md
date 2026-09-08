@@ -55,8 +55,21 @@ not changed by the CI build selection.
   Review found that the inherited inventory omitted changed data/ML workers.
   The trial was deliberately cancelled via its own TERM handler; it is not PASS.
   Revision `.1` is retained unqualified. A new revision must include worker and
-  supporting runtime inputs before full certification. Cleanup verification is
-  still pending at this checkpoint.
+  supporting runtime inputs before full certification. The process exited 143;
+  independent `cleanup-resources.sh --scope=post-u8-qual-20260908-1 --verify-only`
+  confirmed no scoped containers, image tags, volumes or networks remain.
+
+## Second build identities — verification pending
+
+| Build | Manifest SHA-256 | Bound inputs |
+| --- | --- | --- |
+| dsh-0.1.1rc1-post-u8.2 | 52ac2740e59668d1417053b155067f38a4d48e9e0de290642e72bc548f0abbcc | 537 |
+| dsh-0.1.2rc1-post-u8.2 | 92960468c2212b6b45a6371c9997f17dbc80b27077ea0192b446f3e6d51efccf | 539 |
+
+The second revision additionally binds all worker sources, signal sandbox,
+PostgreSQL initialization, engineering/acceptance scripts, repository tests and
+CI/browser configuration. Regression assertions require these inputs and reject
+missing or modified worker entries. The first revision is retained unchanged.
 
 ## Not implied
 

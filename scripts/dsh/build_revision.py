@@ -19,6 +19,8 @@ SOURCE_ROOTS = (
     "services/runtime-adapter/tests", "services/runtime-adapter/runtime",
     "services/gateway/tests", "services/backend/tests", "services/mcp/tests",
     "apps/frontend/tests",
+    "workers", "services/signal-sandbox", "infra/postgres/init",
+    "scripts", "tests",
 )
 FIXED_INPUTS = (
     "services/gateway/Dockerfile", "services/gateway/pyproject.toml",
@@ -33,6 +35,8 @@ FIXED_INPUTS = (
     ".dockerignore", "services/mcp/tsconfig.json", "apps/frontend/nginx.conf",
     "apps/frontend/index.html", "apps/frontend/vite.config.ts", "apps/frontend/tsconfig.app.json",
     "apps/frontend/tsconfig.json", "apps/frontend/tsconfig.node.json",
+    "apps/frontend/vitest.config.ts", "apps/frontend/playwright.config.ts",
+    "apps/frontend/playwright.real.config.ts", ".github/workflows/ci-selfhosted.yml",
     "docs/contracts/product-capability-catalog.v1.json",
     "config/dsh/generated/web-evidence-provenance.json",
     "config/dsh/deployment.json", "config/dsh/generated/dsh-0.1.1rc1.identity.json",
@@ -51,7 +55,7 @@ def digest(path):
 def selected_build_id(release):
     if release not in RELEASES:
         raise ValueError("unregistered release")
-    return release + "-post-u8.1"
+    return release + "-post-u8.2"
 
 
 def identity(build_id):
