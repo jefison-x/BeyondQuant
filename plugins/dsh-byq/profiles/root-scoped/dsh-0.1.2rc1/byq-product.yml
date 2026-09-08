@@ -143,6 +143,9 @@
         apiKeyEnv: OPENCODE_API_KEY
         api: openai-responses
         baseURL: https://opencode.ai/zen/go/v1
+        headers:
+          x-opencode-session: !!js process.env.BYQ_PROVIDER_SESSION_ID
+          User-Agent: BeyondQuant/1.0 (strategy-research-agent)
         models:
           - id: gpt-5.6-luna
           - id: grok-4.6
@@ -151,6 +154,9 @@
         apiKeyEnv: OPENCODE_API_KEY
         api: openai-completions
         baseURL: https://opencode.ai/zen/go/v1
+        headers:
+          x-opencode-session: !!js process.env.BYQ_PROVIDER_SESSION_ID
+          User-Agent: BeyondQuant/1.0 (strategy-research-agent)
         models:
           - id: deepseek-v4-flash
           - id: deepseek-v4-pro
@@ -161,6 +167,9 @@
         apiKeyEnv: OPENCODE_API_KEY
         api: anthropic-messages
         baseURL: https://opencode.ai/zen/go/v1
+        headers:
+          x-opencode-session: !!js process.env.BYQ_PROVIDER_SESSION_ID
+          User-Agent: BeyondQuant/1.0 (strategy-research-agent)
         models:
           - id: minimax-m3
           - id: qwen3.8-max

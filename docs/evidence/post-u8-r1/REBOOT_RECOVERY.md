@@ -93,3 +93,17 @@ local to the isolated branch; no push, PR merge or main edit occurred.
 
 A second full host reboot remains maintainer-controlled and unverified. Do not
 report automatic host-boot acceptance until it actually occurs.
+
+## Subsequent verification — 2026-09-09
+
+The maintainer subsequently rebooted the host. Observed boot time was
+2026-09-09 05:23:09 Asia/Shanghai, boot ID
+`dca1f725-824b-4565-a2e9-0e23423016de`, different from the recovery boot above.
+All 11 containers automatically started with their persisted restart policies;
+the nine healthchecked containers were healthy. The read-only synthetic
+persistence verification passed without paid calls or research replay.
+This supersedes only the preceding pending-second-reboot status, not its history.
+
+The later F7 postdeployment repair request explicitly authorizes development,
+push/merge and production redeployment. Its independent `.17` identity and
+pending release evidence are tracked in [provider routing repair](PROVIDER_ROUTING_REPAIR.md).

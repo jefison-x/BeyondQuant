@@ -1367,6 +1367,15 @@ def test_opencode_personal_key_is_scoped_to_each_reviewed_runtime_route(
 
     assert harness.config.provider == provider
     assert harness.config.env["OPENCODE_API_KEY"] == "opencode-personal-secret"
+    routing_id = harness.config.env["BYQ_PROVIDER_SESSION_ID"]
+    assert len(routing_id) == 36
+    assert "alice" not in routing_id and "s-1" not in routing_id
+    for session, generation, same in (("s-1", "generation-next-root", True), ("s-2", "generation-other", False)):
+        other = adapter._build_harness(session, tmp_path / "sessions" / session,
+            trace_id="t-other", owner_principal="alice", workspace_id="workspace_alice",
+            runtime_generation=generation,
+            model_resolution={"provider": provider, "model": "catalog-model", "api_key": "synthetic"})
+        assert (other.config.env["BYQ_PROVIDER_SESSION_ID"] == routing_id) is same
     assert "DEEPSEEK_API_KEY" not in harness.config.env
     assert "opencode-personal-secret" not in str(adapter.readiness())
 

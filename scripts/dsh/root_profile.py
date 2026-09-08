@@ -43,6 +43,14 @@ def render(source: str, identity: dict, release: str) -> tuple[str, dict]:
     line = matching[0]
     indent = line[:len(line) - len(line.lstrip())]
     result = source.replace(line, line + "\n" + indent + "X-BYQ-Root-Run-ID: !!js process.env.BYQ_ROOT_RUN_ID")
+    # Official provider configuration, not a runtime patch. The operator
+    # authorized this opaque conversation routing metadata on 2026-09-09.
+    endpoint = "        baseURL: https://opencode.ai/zen/go/v1"
+    if result.count(endpoint) != 3:
+        raise ValueError("expected all three qualified OpenCode Go routes")
+    result = result.replace(endpoint, endpoint + "\n        headers:\n"
+        "          x-opencode-session: !!js process.env.BYQ_PROVIDER_SESSION_ID\n"
+        "          User-Agent: BeyondQuant/1.0 (strategy-research-agent)")
     digest = "sha256:" + hashlib.sha256(result.encode()).hexdigest()
     derived = dict(identity)
     derived.update({

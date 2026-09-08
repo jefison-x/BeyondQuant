@@ -79,6 +79,8 @@ class ActiveRun:
     observed_registrations: set[str] = field(default_factory=set, repr=False)
     domain_calls: set[str] = field(default_factory=set, repr=False)
     domain_stop_code: str | None = field(default=None, repr=False)
+    model_failure_code: str | None = None
+    model_failure_retryable: bool = False
     domain_stop_dispatched: bool = field(default=False, repr=False)
     last_wait_notice_at: float = 0.0
     watchdog_stop: threading.Event = field(default_factory=threading.Event, repr=False)
@@ -660,7 +662,9 @@ class RuntimeAdapter:
                     record,
                     "session.failed",
                     "runtime-adapter",
-                    {"code": run.domain_stop_code or "model-run-failed", "retryable": not bool(run.domain_stop_code), "run_id": run.run_id},
+                    {"code": run.domain_stop_code or run.model_failure_code or "model-run-failed",
+                     "retryable": False if run.domain_stop_code else (
+                         run.model_failure_retryable if run.model_failure_code else True), "run_id": run.run_id},
                 )
             else:
                 record.status = SessionStatus.IDLE
@@ -1003,6 +1007,10 @@ class RuntimeAdapter:
             "BYQ_ACTOR_PRINCIPAL": f"byq-product-agent-{session_id}" if owner_principal else "",
             "BYQ_TRACE_ID": trace_id,
             "BYQ_SESSION_ID": session_id,
+            # Stable across root process changes; no owner or public ID is
+            # exposed in the explicitly authorized provider routing header.
+            "BYQ_PROVIDER_SESSION_ID": str(uuid.uuid5(uuid.NAMESPACE_URL,
+                "beyondquant:provider-session:" + session_id)),
             # Official MCP headers are process-scoped, not root-turn-scoped.
             # Give each owned process a BYQ identity so resumed generations
             # cannot authorize against an earlier process's AgentRun. This is
@@ -1113,6 +1121,9 @@ class RuntimeAdapter:
             run = record.active_run
             runtime_activity = False
             if run is not None:
+                if observation.root_session and observation.kind == "turn.end" and observation.failure_code:
+                    run.model_failure_code = observation.failure_code
+                    run.model_failure_retryable = observation.failure_retryable
                 runtime_activity = self._observe_run_observation(
                     record, run, observation,
                 )

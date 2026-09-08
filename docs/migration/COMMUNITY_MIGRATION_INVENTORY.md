@@ -11,6 +11,13 @@ BeyondQuant architecture 的内容。
 
 ## Post-U8 R1 historical outcome audit（2026-09-07）
 
+F7 postdeployment provider rejection repair (2026-09-09): re-inspected Community
+`frontend/src/components/agent/XiaobaAssistantDrawer.vue` request catch and error
+alert. Persistent visible failure is `PORT_UX`; direct provider/error-message
+echo is `DROP`. BYQ retains its existing normalized WorkflowTrace surface and
+adds a closed non-retryable request-rejection label. No legacy API, raw runtime
+schema, credential handling or component code is copied.
+
 Post-U8 durable AgentRun closure: re-inspected Community
 `agent-service/app/workflows/contracts.py` GraphRun/GraphNode status and request/run
 identity read-only. Exact identity, terminal immutability and independent evidence

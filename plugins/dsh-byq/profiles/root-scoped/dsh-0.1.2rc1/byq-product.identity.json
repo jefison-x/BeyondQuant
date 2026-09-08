@@ -1,6 +1,6 @@
 {
   "base_profile": "sdk",
-  "composition_hash": "sha256:007558b147f1daa01fc6a462f8818d347287f80aac4c3f3fc27480e66e3ab20e",
+  "composition_hash": "sha256:3eef3d742d3343003d876d50284cc8b540e3a03ccbcddb6303abb706110b4fcc",
   "delegate_background_mode": "one-shot",
   "delegate_max_depth": 1,
   "delegates": [
@@ -37,7 +37,7 @@
     "server": "byq"
   },
   "patch": "plugins/dsh-byq/profiles/root-scoped/dsh-0.1.2rc1/byq-product.yml",
-  "patch_sha256": "sha256:007558b147f1daa01fc6a462f8818d347287f80aac4c3f3fc27480e66e3ab20e",
+  "patch_sha256": "sha256:3eef3d742d3343003d876d50284cc8b540e3a03ccbcddb6303abb706110b4fcc",
   "permission_mode": "read-only",
   "process_ownership": "one-per-root-turn",
   "profile": "byq-product-candidate",

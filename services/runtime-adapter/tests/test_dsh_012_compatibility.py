@@ -17,6 +17,24 @@ def notification(event_type: str, data: dict, *, session_id: str = "root") -> No
     )
 
 
+def test_provider_rejection_is_permanent_and_private_message_is_discarded():
+    observation = Dsh012Compatibility().observe(notification("turn/end", {
+        "reason": {"kind": "error", "error": {"code": "INVALID_REQUEST",
+            "message": "400 MissingSessionID private-key-and-request-body"}}}), root_session_id="root")
+    assert observation.failure_code == "model-request-rejected"
+    assert observation.failure_retryable is False
+    assert observation.terminal_reason == "failed"
+    assert "private-key" not in repr(observation)
+
+
+@pytest.mark.parametrize("error", [None, "private", {}, {"code": "unqualified", "message": "secret"}])
+def test_unqualified_provider_errors_do_not_leak_or_invent_classifications(error):
+    observation = Dsh012Compatibility().observe(notification("turn/end", {
+        "reason": {"kind": "error", "error": error}}), root_session_id="root")
+    assert observation.failure_code is None
+    assert "secret" not in repr(observation)
+
+
 def test_candidate_uses_only_public_sdk_configuration(tmp_path: Path) -> None:
     executable = tmp_path / "dsh"
     executable.write_text("candidate", encoding="utf-8")

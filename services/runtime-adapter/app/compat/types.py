@@ -23,6 +23,8 @@ class RuntimeObservation:
     event_sequence: int | None = None
     status: str | None = None
     terminal_reason: str | None = None
+    failure_code: str | None = None
+    failure_retryable: bool = False
     message_id: str | None = None
     answer_text: str | None = None
     call_id: str | None = None

@@ -62,7 +62,7 @@ def backup(directory):
         scope = 'byq-u7-volume-backup-' + uuid.uuid4().hex[:12]
         with path.open('xb') as output:
             os.chmod(path, 0o600)
-            run(['docker', 'run', '--rm', '--name', scope, '--label', 'byq.u7.volume-backup=' + scope,
+            run(['docker', 'run', '--rm', '--log-driver', 'none', '--name', scope, '--label', 'byq.u7.volume-backup=' + scope,
                  '--network', 'none', '--read-only', '--user', '0:0', '--cap-drop', 'ALL',
                  '--cap-add', 'DAC_OVERRIDE', '--security-opt', 'no-new-privileges',
                  '--mount', 'type=volume,source=' + identity['volume'] + ',target=/source,readonly',

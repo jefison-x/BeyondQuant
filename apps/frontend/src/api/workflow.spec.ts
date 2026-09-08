@@ -15,6 +15,15 @@ function event(sequence: number, kind: string, payload: Record<string, unknown>)
 }
 
 describe("workflow projections", () => {
+  it("shows provider rejection without exposing upstream details or suggesting blind retry", () => {
+    const events = [event(1, "session.started", {}), event(2, "session.failed", {
+      code: "model-request-rejected", retryable: false, error: "secret upstream body",
+    })];
+    const message = workflowOutcomes(events, "session-1")[0].message;
+    expect(message).toContain("检查模型接入配置");
+    expect(message).not.toContain("secret");
+    expect(workflowRunState(events).retryable).toBe(false);
+  });
   it.each(["domain-correction-stopped", "domain-call-reference-unproven", "domain-call-retention-bound"])(
     "keeps %s as a stopped outcome without blind retry", code => {
       const events = [event(1, "session.started", {}), event(2, "session.failed", { code, retryable: false })];
