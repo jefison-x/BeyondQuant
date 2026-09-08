@@ -559,6 +559,18 @@ TypeError/OverflowError，并保留专家嵌套字段定位。最终 ML 策略/�
 MCP 17 项本地脚本通过；独立证据见 `docs/evidence/post-u8-r1/ML-VALIDATION-BOUNDARIES.md`。
 尚未完成持久纠错计次；runtime generation 会跨回合复用，不可直接作为纠错回合身份。
 
+S3 界面切片：明确历史快照/持续跟踪选择及历史必选日期，详情读取持久定义，禁止历史池或
+未确认定义的刷新。Frontend 54 文件/172 项通过、类型检查/构建通过；Chrome 桌面/手机
+经真实 Product API 分别创建两种合成池，领域物化及导入补偿后仅跟踪池推进至新日期，
+历史池不变。详见 `docs/evidence/post-u8-r1/INDEX-MODES-UI.md`；数据扩容未实施，历史需求
+排队、缓存证明/迁移及全部研究语义旅程仍未关闭。当前修复均未推送或部署。
+
+本批交付门禁复核：架构/共享合同 83 通过。扩展治理测试暴露构建前置校验仍指向冻结
+旧输入；release.py check 报 Runtime build input drift，build_revision.check 也拒绝，
+promotion.py check 通过。未将其隐藏为测试成功，未刷新旧 release/build 摘要或认证报告。
+下一交付步骤需明确授权新增 Post-U8 独立构建身份及重新认证、当前修复分支 push/Draft PR；
+旧 U1–U8 的推送/发布授权不自动扩大到本轮。生产部署及历史研究续跑保持未授权。
+
 ## 本次交付授权与顺序（历史记录）
 
 2026-09-07，维护者在“先合并U8收尾，再合并ADR与审计记录，再从更新后的main建立修复分支”

@@ -74,7 +74,7 @@ export function listIndexPoolCatalog(token: string): Promise<{
 }
 
 export function createIndexStockPool(
-  payload: { index_symbol: string; name?: string; description?: string; requested_as_of?: string },
+  payload: { index_symbol: string; name?: string; description?: string; requested_as_of?: string; tracking_mode?: "follow_index" | "historical_snapshot" },
   token: string,
 ): Promise<{ pool: StockPool; run: StockPoolMaterializationRun }> {
   return request("/index-pools", token, {

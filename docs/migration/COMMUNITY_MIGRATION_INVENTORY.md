@@ -1531,3 +1531,11 @@ BYQ 独立校验注销回执，未知时保留原 cookie 供幂等重试，显�
 可识别错误为 `REFERENCE_ONLY`；原 Python 脚本执行器、multiprocessing harness 及直接
 返回异常字符串为 `DROP`。BYQ 保留封闭 ML schema/registry，独立修复非法 JSON 类型、
 超大整数及嵌套字段定位，不引入旧执行栈；本切片不代表持久纠错计次已经实现。
+
+## Post-U8 S3 指数池更新方式界面（2026-09-08）
+
+实现前只读检查 Community `frontend/src/components/stocks/StockPoolDialog.vue` 全文与
+`frontend/src/views/StockPoolView.vue` 的指数成分/历史快照区：明确提交、有效日期、历史
+快照分离及移动端布局为 `REFERENCE_ONLY`；手工指定池身份和直接旧 API 为 `DROP`。
+旧页面没有本次固定历史/持续跟踪的明确创建选择，采用 `REPLACE`，在现有 BYQ 视觉和
+Product API 上独立实现模式选择、日期确认及只读定义展示，不复制旧组件/Provider 路径。
