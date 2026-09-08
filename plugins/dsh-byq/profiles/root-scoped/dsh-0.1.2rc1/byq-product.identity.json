@@ -1,0 +1,54 @@
+{
+  "base_profile": "sdk",
+  "composition_hash": "sha256:007558b147f1daa01fc6a462f8818d347287f80aac4c3f3fc27480e66e3ab20e",
+  "delegate_background_mode": "one-shot",
+  "delegate_max_depth": 1,
+  "delegates": [
+    "byq_delegate_market_research",
+    "byq_delegate_factor_research",
+    "byq_delegate_strategy_research",
+    "byq_delegate_backtest_analysis",
+    "byq_delegate_ml_research"
+  ],
+  "enabled_plugin_ids": [
+    "compaction",
+    "guard",
+    "web-search"
+  ],
+  "forbidden_tools": [
+    "bash",
+    "pwsh",
+    "jobs",
+    "fs",
+    "fs_search",
+    "str_replace_editor",
+    "subagent",
+    "subagent_fork",
+    "workflow",
+    "todo_write",
+    "goal",
+    "ralph",
+    "web_fetch",
+    "list_agents",
+    "send_message"
+  ],
+  "mcp": {
+    "fail_on_startup_error": true,
+    "server": "byq"
+  },
+  "patch": "plugins/dsh-byq/profiles/root-scoped/dsh-0.1.2rc1/byq-product.yml",
+  "patch_sha256": "sha256:007558b147f1daa01fc6a462f8818d347287f80aac4c3f3fc27480e66e3ab20e",
+  "permission_mode": "read-only",
+  "process_ownership": "one-per-root-turn",
+  "profile": "byq-product-candidate",
+  "release_id": "dsh-0.1.2rc1",
+  "root_identity_contract": "byq-root-process.v1",
+  "schema_version": "dsh-candidate-profile-identity.v1",
+  "skills": {
+    "include_default_roots": false,
+    "root": "/opt/dsh/bundles/dsh-byq/skills",
+    "watch": false
+  },
+  "source_composition_hash": "sha256:7896626a01577a0b07d33540e69ae149748718ddd8fc9363fbd822100797f498",
+  "telemetry": "disabled"
+}

@@ -483,6 +483,17 @@ check_dsh_candidate() {
     -e BYQ_MCP_TOKEN=ci-mcp-test-only -e BYQ_MCP_URL="http://$CI_MCP_SERVER:8300/mcp/v1"
     -e BYQ_OWNER_PRINCIPAL=ci-candidate -e BYQ_ACTOR_PRINCIPAL=ci-candidate
     -e BYQ_WORKSPACE_ID=ci-candidate -e PYTHONDONTWRITEBYTECODE=1)
+  # Compatibility unit fixtures explicitly exercise session mode; root-mode
+  # tests opt into their independently verified profile. Real candidate
+  # journeys below retain the image's actual root-turn default.
+  if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
+      -e BYQ_DSH_PROCESS_OWNERSHIP=session -e BYQ_DOMAIN_CALL_WIRE_TEST=1 \
+      -e BYQ_ROOT_PROFILE_ROOT=/qualification-root-profiles \
+      -v "$REPO_ROOT/plugins/dsh-byq/profiles/root-scoped:/qualification-root-profiles:ro" \
+      -v "$CI_CANDIDATE_VOL:/var/lib/byq/dsh-sessions" "$candidate_image" \
+      python3 -m pytest -q -p no:cacheprovider /app/tests; then
+    bad "candidate complete unit and root wire suite"; return
+  fi
   if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
       -e BYQ_DSH_REAL_PROCESS_TEST=1 -v "$CI_CANDIDATE_VOL:/var/lib/byq/dsh-sessions" \
       -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$candidate_image" \

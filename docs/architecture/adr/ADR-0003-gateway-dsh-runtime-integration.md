@@ -5,6 +5,13 @@
 - Decision scope: Phase 6 Product Plane / Agent Plane runtime seam
 - Supersedes: Phase 5 的 `NO DECISION YET` Gateway integration placeholder
 
+## 2026-09-08 根回合身份修订
+
+维护者接受 ADR-0067：以下历史拓扑中“同一公开 session 跨根回合复用 process”被根回合
+独立 process/generation 替代。公开 conversation/session/trace 不变；Adapter 仍独占官方
+SDK 和进程所有权。每根启动前持久登记身份，终态关闭原进程；新的根仍受精确 Backend
+终态回执屏障约束。实现与资格验证不等于部署，其他 MCP 和 Product/Engineering 边界不变。
+
 ## 2026-08-25 qualified-pin 修订
 
 正式 DSH Upgrade Lane 将 Product Runtime 验证到 Python

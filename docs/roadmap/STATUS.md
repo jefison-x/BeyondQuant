@@ -84,7 +84,13 @@ F7 当前维护决策：[ADR-0066](../architecture/adr/ADR-0066-domain-validatio
 
 后续真实 HTTP 资格核查确认官方 MCP 请求缺少 Adapter 可关联的逐调用根身份，输入摘要
 匹配不能单独关闭此门禁。[ADR-0067](../architecture/adr/ADR-0067-root-scoped-runtime-call-identity.md)
-提出每根回合独立进程与可信根 header，状态为 Proposed，需另行接受；未改变生产拓扑。
+提出每根回合独立进程与可信根 header，已于 2026-09-08 获维护者批准，状态为 Accepted；
+隔离实现及验证进行中，未改变生产拓扑，不计作 F7 已完成。
+
+当前已接入逐根进程、公开上下文恢复、私有调用证据投递与两工具持久纠错准入，
+两工具真实 native stop 首次失败已定位并通过定向重测，完整跨服务/child 资格、
+独立构建和最终全栈认证仍未完成；不得部署或关闭 F7。
+具体通过/失败边界见[纠错台账实现切片](../evidence/post-u8-r1/F7-CORRECTION-LEDGER.md)。
 
 - [ADR-0064](../architecture/adr/ADR-0064-runtime-crash-recovery-evidence.md)：已接受并完成首版本地崩溃证据恢复；仅原本地卷、同次主机启动且原排他锁身份可证时收尾，不续跑模型。主机重启/复制卷/无日志保留不可判定。验证见 `docs/evidence/post-u8-r1/ADR-0064-VERIFICATION.md`，未部署，其他 Post-U8 整改未全部关闭。
 

@@ -114,6 +114,11 @@ def ensure_column(connection: Connection, table: str, column: str, definition: s
     connection.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}"))
 
 
+def schema_bootstrap_lock(connection: Connection) -> None:
+    """Serialize DDL transactions, including store-specific column upgrades."""
+    connection.execute(text("SELECT pg_advisory_xact_lock(hashtextextended('byq-schema-bootstrap.v1',0))"))
+
+
 class PgStoreMixin:
     """Small shared PostgreSQL engine/lock/query surface for BYQ domain stores.
 
@@ -140,6 +145,10 @@ class PgStoreMixin:
 
     def bootstrap_schema(self) -> None:
         with self.engine.begin() as connection:
+            # Independent workers can otherwise both upgrade a relation lock
+            # while adding the same already-existing FK column and deadlock.
+            # This serializes schema bootstrap only, never domain operations.
+            schema_bootstrap_lock(connection)
             run_ddl(connection, self.SCHEMA_DDL)
 
     def _execute(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:

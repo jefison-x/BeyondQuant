@@ -15,6 +15,54 @@ from app.trace_store import TraceStore
 TOKEN = "phase7-product-token"
 
 
+def test_new_turn_projects_failed_subject_before_persisting_continue(monkeypatch, tmp_path):
+    session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="alice"))
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    for sequence, kind, payload in [(1, "session.started", {"run_id": "a" * 32}),
+                                    (2, "session.failed", {"run_id": "a" * 32, "code": "runtime-subagent-timeout"})]:
+        store.append({"session_id": "runtime", "trace_id": "trace", "sequence": sequence,
+            "timestamp": "2026-09-08T01:01:00Z", "source": "runtime-adapter", "kind": kind, "payload": payload})
+    calls = []
+    def catalog(method, *args, **kwargs):
+        calls.append(method)
+        if method == "GET":
+            return {"messages": [{"message_id": "original-subject", "role": "user",
+                "content": "沪深300近三年每周调仓，先研究凯利仓位", "created_at": "2026-09-08T01:00:00Z"}]}
+        return {"message": {"message_id": "continue-message"}}
+    def prompt(path, **kwargs):
+        calls.append("prompt")
+        payload = kwargs["payload"]
+        assert payload["content"] == "继续"
+        assert payload["conversation_context"] == []
+        assert payload["conversation_recovery"]["unanswered_turn"]["message_id"] == "original-subject"
+        assert payload["conversation_recovery"]["failure"]["code"] == "runtime-subagent-timeout"
+        return {"accepted": True, "run_id": "new-root"}
+    monkeypatch.setattr(main, "_catalog_request", catalog)
+    monkeypatch.setattr(main, "_adapter_post", prompt)
+    main.submit_product_turn("conversation", main.ProductPromptRequest(content="继续"), Request({"type": "http"}))
+    assert calls == ["GET", "POST", "prompt"]
+
+
+def test_new_root_waits_for_previous_public_answer_to_be_durable(monkeypatch, tmp_path):
+    session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="alice"))
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    for sequence, kind, payload in [(1, "session.started", {"run_id": "a" * 32}),
+        (2, "agent.output.delta", {"schema_version": "workflow-answer.v1", "channel": "answer", "delta": "凯利仓位研究方案", "truncated": False}),
+        (3, "session.result", {"run_id": "a" * 32})]:
+        store.append({"session_id": "runtime", "trace_id": "trace", "sequence": sequence,
+            "timestamp": "2026-09-08T01:01:00Z", "source": "runtime-adapter", "kind": kind, "payload": payload})
+    messages = [{"role": "user", "content": "研究凯利仓位"}]
+    monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: {"messages": messages})
+    with pytest.raises(main.HTTPException) as raised:
+        main._runtime_recovery_payload(session)
+    assert raised.value.status_code == 503
+    messages.append({"role": "assistant", "content": "凯利仓位研究方案", "workflow_sequence": 2})
+    assert main._runtime_recovery_payload(session)["conversation_context"][-1]["content"] == "凯利仓位研究方案"
+
+
 @pytest.mark.parametrize("mutation", [None, {"session_id": "other-session"},
     {"idempotency_key": "other-message"}, {"content_sha256": "0" * 64},
     {"accepted": True}, {"accepted": 0}, {"extra": "untrusted"}, {"code": "some-server-error"}])
@@ -25,7 +73,7 @@ def test_only_exact_pre_admission_rejection_is_known_not_accepted(monkeypatch, m
     session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
                               principal=None, workspace_id="workspace-1")
     monkeypatch.setattr(main, "_product_session", lambda *_: session)
-    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"message": {"message_id": "message_original"}})
+    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"messages": [], "message": {"message_id": "message_original"}})
     detail = {"schema_version": "prompt-rejection.v1", "code": "model_credentials_unavailable",
               "accepted": False, "session_id": "runtime-1", "idempotency_key": "message_original",
               "content_sha256": hashlib.sha256(b"synthetic original").hexdigest()}
@@ -52,7 +100,7 @@ def test_normal_turn_never_claims_acceptance_from_an_invalid_receipt(monkeypatch
     session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
                               principal=None, workspace_id="workspace-1")
     monkeypatch.setattr(main, "_product_session", lambda *_: session)
-    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"message": {"message_id": "message_original"}})
+    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"messages": [], "message": {"message_id": "message_original"}})
     calls = []
     monkeypatch.setattr(main, "_adapter_post", lambda *args, **kwargs: calls.append((args, kwargs)) or receipt)
     monkeypatch.setattr(main, "_adapter_prompt_receipt", lambda *_: None)
@@ -67,7 +115,7 @@ def test_normal_turn_reconciles_original_receipt_without_repeating_prompt(monkey
     session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
                               principal=None, workspace_id="workspace-1")
     monkeypatch.setattr(main, "_product_session", lambda *_: session)
-    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"message": {"message_id": "message_original"}})
+    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"messages": [], "message": {"message_id": "message_original"}})
     writes = []
     def lost_ack(*args, **kwargs):
         writes.append((args, kwargs))
@@ -87,7 +135,7 @@ def test_turn_requires_a_durable_message_identity_before_runtime_submission(monk
     session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
                               principal=None, workspace_id="workspace-1")
     monkeypatch.setattr(main, "_product_session", lambda *_: session)
-    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"message": {"sequence": 1}})
+    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"messages": [], "message": {"sequence": 1}})
     writes = []
     monkeypatch.setattr(main, "_adapter_post", lambda *args, **kwargs: writes.append(args) or {"accepted": True, "run_id": "run-1"})
     with pytest.raises(main.ProductError) as raised:
@@ -192,6 +240,8 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
         assert workspace_id == "workspace_bootstrap_unresolved"
         if method == "POST" and path == "/v1/product/conversations":
             return {"conversation": {"conversation_id": "conversation_1", "title": "新投研对话", "status": "active"}}
+        if method == "GET" and path == "/v1/product/conversations/conversation_1":
+            return {"messages": []}
         if path.endswith("/messages"):
             messages.append(str(payload["content"]))
             return {"message": {"sequence": 1, "message_id": "message_original"}}
@@ -231,6 +281,7 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
         "content": "summarize the health contract",
         "require_model_key": True,
         "idempotency_key": "message_original",
+        "conversation_context": [],
     }
     assert calls[0][1]["owner_principal"] == main.PRODUCT_PRINCIPAL
     assert messages == ["summarize the health contract"]

@@ -22,6 +22,7 @@ from packages.contracts.conversation_rehydration import (
 )
 from packages.contracts.conversation_recovery import normalize_recovery
 from packages.contracts.agent_run_lifecycle import registration_fingerprint, lifecycle_receipt, project_lifecycle_event
+from packages.contracts.domain_call_admission import request_evidence
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
 from .child_lease import ChildLease
@@ -76,6 +77,9 @@ class ActiveRun:
     finished_children: set[str] = field(default_factory=set)
     last_root_sequence: int = -1
     observed_registrations: set[str] = field(default_factory=set, repr=False)
+    domain_calls: set[str] = field(default_factory=set, repr=False)
+    domain_stop_code: str | None = field(default=None, repr=False)
+    domain_stop_dispatched: bool = field(default=False, repr=False)
     last_wait_notice_at: float = 0.0
     watchdog_stop: threading.Event = field(default_factory=threading.Event, repr=False)
 
@@ -87,6 +91,9 @@ class RuntimeSession:
     harness: Any
     runtime_session_id: str
     runtime_generation: str = field(default="", repr=False)
+    process_root_id: str = field(default="", repr=False)
+    process_used: bool = field(default=False, repr=False)
+    process_closed: bool = field(default=False, repr=False)
     owner_principal: str | None = None
     workspace_id: str | None = None
     model_resolution: dict[str, object] = field(default_factory=dict, repr=False)
@@ -97,6 +104,7 @@ class RuntimeSession:
     prompt_idempotency: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
     terminal_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
     pending_terminal_receipts: set[str] = field(default_factory=set, repr=False)
+    process_closing: bool = field(default=False, repr=False)
     journal: Any = field(default=None, repr=False)
     interrupted_run_id: str | None = None
     sequence: int = 0
@@ -141,6 +149,17 @@ class RuntimeAdapter:
                 "/opt/byq/releases/deployment.identity.json",
             )
         )
+        ownership = os.environ.get("BYQ_DSH_PROCESS_OWNERSHIP", "session")
+        if ownership not in {"session", "root-turn"}:
+            raise ValueError("unsupported runtime process ownership")
+        self._root_scoped = ownership == "root-turn"
+        if self._root_scoped:
+            identity = json.loads(self._composition_identity.read_text())
+            composition = self._composition.read_text()
+            if (not isinstance(identity, dict) or identity.get("root_identity_contract") != "byq-root-process.v1"
+                    or identity.get("composition_hash") != "sha256:" + hashlib.sha256(composition.encode()).hexdigest()
+                    or composition.count("X-BYQ-Root-Run-ID: !!js process.env.BYQ_ROOT_RUN_ID") != 1):
+                raise ValueError("root-scoped runtime requires its independent verified configuration")
         self._session_root = Path(
             os.environ.get("DSH_SESSION_ROOT", "/var/lib/byq/dsh-sessions")
         ).expanduser().resolve()
@@ -201,7 +220,7 @@ class RuntimeAdapter:
             ),
             "model_provider": self._provider,
             "model": self._model,
-            "process_ownership": "one-per-active-session",
+            "process_ownership": "one-per-root-turn" if self._root_scoped else "one-per-active-session",
             "run_guards": {
                 "run_timeout_seconds": self._run_timeout_seconds,
                 "subagent_timeout_seconds": self._subagent_timeout_seconds,
@@ -244,7 +263,7 @@ class RuntimeAdapter:
                 "runtime_bin": f"deepseek-harness-runtime-bin=={release_identity['installed_runtime_bin']}",
                 "release_id": release_identity["release_id"],
                 "release_identity": release_identity["status"],
-                "process_ownership": "one-per-active-session",
+                "process_ownership": "one-per-root-turn" if self._root_scoped else "one-per-active-session",
                 "provider": self._provider,
                 "model": self._model,
                 "plugin_profile": composition_identity["profile"],
@@ -372,11 +391,12 @@ class RuntimeAdapter:
                     runtime_session_id = f"resume-{uuid.uuid4().hex}"
                     session_root = contained_session_path(self._session_root, runtime_session_id)
             runtime_generation = f"generation-{uuid.uuid4().hex}"
+            process_root_id = uuid.uuid4().hex if self._root_scoped else ""
             try:
                 harness = self._build_harness(
                     session_id, session_root, trace_id=trace_id, owner_principal=owner_principal,
                     workspace_id=workspace_id, model_resolution=model_resolution,
-                    runtime_generation=runtime_generation)
+                    runtime_generation=runtime_generation, root_run_id=process_root_id)
             except BaseException:
                 if journal:
                     journal.close()
@@ -387,6 +407,7 @@ class RuntimeAdapter:
                 harness=harness,
                 runtime_session_id=runtime_session_id,
                 runtime_generation=runtime_generation,
+                process_root_id=process_root_id,
                 owner_principal=owner_principal,
                 workspace_id=workspace_id,
                 model_resolution=model_resolution,
@@ -400,17 +421,22 @@ class RuntimeAdapter:
                 terminal = project_lifecycle_event(event, session_id, trace_id)
                 if terminal and terminal["outcome"] != "active":
                     record.terminal_receipts.setdefault(terminal["root_run_id"], lifecycle_receipt(terminal))
+                    if journal and terminal["root_run_id"] not in journal.state["terminal_acks"]:
+                        record.pending_terminal_receipts.add(terminal["root_run_id"])
             self._sessions[session_id] = record
 
         try:
             self._compatibility.start(harness)
             with record.lock:
+                if record.status != SessionStatus.STARTING:
+                    raise SessionConflict("session closed during initialization")
                 record.status = SessionStatus.READY
                 self._emit(record, "session.ready", "runtime-adapter", {"status": "ready"})
             return self.describe_session(record)
         except Exception:
             with self._lock:
-                self._sessions.pop(session_id, None)
+                if self._sessions.get(session_id) is record:
+                    del self._sessions[session_id]
             try:
                 self._compatibility.close(harness)
             finally:
@@ -421,6 +447,8 @@ class RuntimeAdapter:
     def submit_prompt(
         self, session_id: str, content: str, *, require_model_key: bool = False,
         idempotency_key: str | None = None,
+        conversation_context: object = None,
+        conversation_recovery: object = None,
     ) -> str:
         record = self._get(session_id)
         with record.lock:
@@ -450,13 +478,41 @@ class RuntimeAdapter:
                 raise SessionConflict(
                     f"session {session_id} cannot accept a prompt in state {record.status}"
                 )
+            # A Gateway-owned projection can refresh a new root without a
+            # separate resume race. Omission retains the prepared create/resume
+            # context; an explicit empty list intentionally clears it.
+            context = record.pending_conversation_context
+            recovery = record.pending_conversation_recovery
+            if conversation_context is not None:
+                context = normalize_conversation_context(conversation_context)
+                recovery = normalize_recovery(conversation_recovery, record.session_id, record.trace_id)
+            elif conversation_recovery is not None:
+                raise ValueError("conversation recovery requires an explicit context projection")
+            effective_content = rehydrated_prompt(context, content, recovery)
+            if self._root_scoped and record.process_used:
+                if record.workspace_id and conversation_context is None:
+                    raise SessionConflict("new root requires a fresh public conversation projection")
+                if record.process_closing or not record.process_closed:
+                    raise SessionConflict("previous runtime process cleanup is not complete")
+                private_session = f"root-{uuid.uuid4().hex}"
+                generation = f"generation-{uuid.uuid4().hex}"
+                root_id = uuid.uuid4().hex
+                harness = self._build_harness(record.session_id,
+                    contained_session_path(self._session_root, private_session),
+                    trace_id=record.trace_id, owner_principal=record.owner_principal,
+                    workspace_id=record.workspace_id, model_resolution=record.model_resolution,
+                    runtime_generation=generation, root_run_id=root_id)
+                record.harness = harness
+                record.runtime_session_id = private_session
+                record.runtime_generation = generation
+                record.process_root_id = root_id
+                record.process_closed = False
+                record.normalization = NormalizationState()
+                record.usage_message_ids.clear()
             now = time.monotonic()
-            run = ActiveRun(
-                run_id=uuid.uuid4().hex,
-                started_at=now,
-                last_runtime_activity_at=now,
-            )
-            effective_content = rehydrated_prompt(record.pending_conversation_context, content, record.pending_conversation_recovery)
+            run = ActiveRun(run_id=record.process_root_id if self._root_scoped else uuid.uuid4().hex,
+                            started_at=now, last_runtime_activity_at=now)
+            record.process_used = True
             record.pending_conversation_context = []
             record.pending_conversation_recovery = None
             record.active_run = run
@@ -472,9 +528,13 @@ class RuntimeAdapter:
                     record.prompt_idempotency.pop(idempotency_key, None)
                 raise
 
+            # Capture the execution owner while admission is still locked.
+            # A worker may be scheduled only after cancellation and resume.
+            prompt_harness = record.harness
+            prompt_runtime_session_id = record.runtime_session_id
         worker = threading.Thread(
             target=self._run_prompt,
-            args=(record, run, effective_content),
+            args=(record, run, effective_content, prompt_harness, prompt_runtime_session_id),
             name=f"byq-dsh-session-{session_id}",
             daemon=True,
         )
@@ -527,24 +587,47 @@ class RuntimeAdapter:
                 raise SessionConflict("prompt receipt identity conflicts with original content")
             return {"schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": run_id}
 
-    def _run_prompt(self, record: RuntimeSession, run: ActiveRun, content: str) -> None:
-        runtime_session_id = record.runtime_session_id
+    def _run_prompt(
+        self, record: RuntimeSession, run: ActiveRun, content: str,
+        harness: Any, runtime_session_id: str,
+    ) -> None:
         try:
-            finish_reason = self._compatibility.prompt(
-                record.harness,
-                runtime_session_id,
-                content,
-                lambda notification: self._on_notification(
-                    record,
-                    notification,
-                    source_run=run,
-                    source_runtime_session_id=runtime_session_id,
-                ),
-            )
+            with record.lock:
+                if record.active_run is not run or record.harness is not harness:
+                    return
+                # The official start_session may start a closed process. Fence
+                # that operation with cancellation; Session.run only sends to
+                # the existing transport and cannot restart it after close.
+                prepared = self._compatibility.prepare_prompt(harness, runtime_session_id)
+            try:
+                finish_reason = self._compatibility.run_prepared_prompt(
+                    prepared, content,
+                    lambda notification: self._on_notification(record, notification,
+                        source_run=run, source_runtime_session_id=runtime_session_id),
+                )
+            finally:
+                if self._root_scoped:
+                    with record.lock:
+                        if record.harness is harness and not record.process_closing and not record.process_closed:
+                            record.process_closing = True
+                            self._compatibility.close(harness)
+                            record.process_closed = True
+                            record.process_closing = False
         except Exception as exc:
             with record.lock:
                 if record.active_run is not run:
                     return
+                if self._root_scoped and not record.process_closed and not record.process_closing:
+                    record.process_closing = True
+                    try:
+                        self._compatibility.close(harness)
+                    except Exception:
+                        # Keep admission fenced when process cleanup itself is
+                        # unconfirmed. Never replace that process speculatively.
+                        pass
+                    else:
+                        record.process_closed = True
+                        record.process_closing = False
                 record.active_run = None
                 run.watchdog_stop.set()
                 if run.hard_cancelled or record.status in {SessionStatus.INTERRUPTED, SessionStatus.CLOSED}:
@@ -571,13 +654,13 @@ class RuntimeAdapter:
             # A returned SDK call is not necessarily a completed model run.
             # Token exhaustion, cancellation and unknown reasons must not
             # resolve the user's unanswered request as a successful result.
-            if finish_reason != "completed":
+            if finish_reason != "completed" or run.domain_stop_code:
                 record.status = SessionStatus.FAILED
                 self._emit(
                     record,
                     "session.failed",
                     "runtime-adapter",
-                    {"code": "model-run-failed", "retryable": True, "run_id": run.run_id},
+                    {"code": run.domain_stop_code or "model-run-failed", "retryable": not bool(run.domain_stop_code), "run_id": run.run_id},
                 )
             else:
                 record.status = SessionStatus.IDLE
@@ -607,6 +690,8 @@ class RuntimeAdapter:
                 # The owned process is closed synchronously below. Detach the
                 # run now so no post-close result can be accepted or emitted.
                 record.active_run = None
+                record.process_closing = True
+                cancelled_harness = record.harness
             self._emit(
                 record,
                 "session.cancelled",
@@ -614,7 +699,10 @@ class RuntimeAdapter:
                 {"mode": mode, "persistence": "dsh-owned", "resume": "new-run-after-interrupted", "run_id": run.run_id},
             )
         if mode == "hard":
-            self._compatibility.close(record.harness)
+            self._compatibility.close(cancelled_harness)
+            with record.lock:
+                record.process_closing = False
+                record.process_closed = True
         return self.describe_session(record)
 
     def recover_evidence(self, context: dict, after_sequence: int = 0) -> dict:
@@ -641,18 +729,67 @@ class RuntimeAdapter:
             finally:
                 journal.close()
 
+    def domain_call_evidence(self, context: dict, after_sequence: int = 0) -> dict:
+        """Private bounded control evidence, never a public trace/replay source."""
+        LifecycleJournal._context(context)
+        if type(after_sequence) is not int or not 0 <= after_sequence < 2**63:
+            raise ValueError("invalid private evidence cursor")
+
+        def page(state):
+            if state["context"] != context:
+                raise ValueError("private evidence context mismatch")
+            rows = state["calls"][after_sequence:after_sequence + 256]
+            return {"schema_version": "domain-call-page.v1", "events": [dict(row) for row in rows],
+                    "more": len(state["calls"]) > after_sequence + len(rows), "idle": state["open_root"] is None}
+
+        try:
+            record = self._get(context["session_id"])
+        except KeyError:
+            journal = LifecycleJournal.claim(self._session_root / "byq-lifecycle-evidence", context)
+            try:
+                return page(journal.state)
+            finally:
+                journal.close()
+        with record.lock:
+            if record.journal is None:
+                raise ValueError("private evidence requires durable owned context")
+            return page(record.journal.state)
+
     def acknowledge_terminal(self, session_id: str, receipt: object) -> dict:
         """Private Gateway acknowledgement of an exact Backend terminal receipt.
 
-        This opens no domain capability: it only permits reuse of this private
-        process after its previous BYQ root has been durably closed.
+        This opens no domain capability: it permits the next root only after
+        the previous BYQ root has been durably closed, including across restart.
         """
-        record = self._get(session_id)
+        try:
+            record = self._get(session_id)
+        except KeyError:
+            validate_identifier(session_id, field="session_id")
+            root_path = self._session_root / "byq-lifecycle-evidence"
+            try:
+                state = LifecycleJournal.read(root_path / f"{session_id}.json")
+            except FileNotFoundError as exc:
+                raise KeyError(f"no durable terminal evidence for {session_id}") from exc
+            if state["context"]["session_id"] != session_id:
+                raise SessionConflict("terminal evidence session identity conflicts")
+            try:
+                journal = LifecycleJournal.claim(root_path, state["context"])
+            except JournalBusy as exc:
+                raise SessionConflict("terminal evidence is still owned by another executor") from exc
+            try:
+                journal.acknowledge_terminal(receipt)
+            except ValueError as exc:
+                raise SessionConflict("terminal receipt does not match durable evidence") from exc
+            finally:
+                journal.close()
+            return {"receipt": dict(receipt)}
         with record.lock:
             root = receipt.get("root_run_id") if isinstance(receipt, dict) else None
             if (not isinstance(root, str) or type(receipt.get("sequence")) is not int
                     or record.terminal_receipts.get(root) != receipt):
                 raise SessionConflict("terminal receipt does not match this runtime turn")
+            if record.journal is not None:
+                record.journal.acknowledge_terminal(receipt)
             record.pending_terminal_receipts.discard(root)
             return {"receipt": dict(receipt)}
 
@@ -664,6 +801,8 @@ class RuntimeAdapter:
         context = normalize_conversation_context([] if conversation_context is None else conversation_context)
         recovery = normalize_recovery(conversation_recovery, record.session_id, record.trace_id)
         with record.lock:
+            if record.process_closing:
+                raise SessionConflict("previous runtime process cleanup is not complete")
             if record.status == SessionStatus.READY and record.active_run is None:
                 record.pending_conversation_context = context
                 record.pending_conversation_recovery = recovery
@@ -685,34 +824,47 @@ class RuntimeAdapter:
                 {"resumed_from_run_id": resumed_from_run_id},
             )
 
-        if previous_status == SessionStatus.FAILED:
-            self._compatibility.close(previous_harness)
         runtime_generation = f"generation-{uuid.uuid4().hex}"
-        harness = self._build_harness(
-            record.session_id,
-            contained_session_path(self._session_root, runtime_session_id),
-            trace_id=record.trace_id,
-            owner_principal=record.owner_principal,
-            workspace_id=record.workspace_id,
-            model_resolution=record.model_resolution,
-            runtime_generation=runtime_generation,
-        )
+        process_root_id = uuid.uuid4().hex if self._root_scoped else ""
+        harness = None
         try:
+            if previous_status == SessionStatus.FAILED:
+                self._compatibility.close(previous_harness)
+            harness = self._build_harness(
+                record.session_id,
+                contained_session_path(self._session_root, runtime_session_id),
+                trace_id=record.trace_id,
+                owner_principal=record.owner_principal,
+                workspace_id=record.workspace_id,
+                model_resolution=record.model_resolution,
+                runtime_generation=runtime_generation,
+                root_run_id=process_root_id,
+            )
             self._compatibility.start(harness)
         except Exception:
-            self._compatibility.close(harness)
-            with record.lock:
-                record.status = SessionStatus.FAILED
-                self._emit(record, "session.failed", "runtime-adapter", {"error": "resume-initialize"})
+            try:
+                if harness is not None:
+                    self._compatibility.close(harness)
+            finally:
+                with record.lock:
+                    if record.status == SessionStatus.STARTING:
+                        record.status = SessionStatus.FAILED
+                        self._emit(record, "session.failed", "runtime-adapter", {"error": "resume-initialize"})
             raise
 
         with record.lock:
+            if record.status != SessionStatus.STARTING:
+                self._compatibility.close(harness)
+                raise SessionConflict("session closed during resume initialization")
             record.harness = harness
             record.runtime_session_id = runtime_session_id
             record.runtime_generation = runtime_generation
-            # The old process has been closed. A fresh generation cannot use
-            # old AgentRuns under Backend's existing exact-generation guard.
-            record.pending_terminal_receipts.clear()
+            record.process_root_id = process_root_id
+            record.process_used = False
+            record.process_closed = False
+            # ADR-0067: closing a process is not evidence that its domain
+            # operations were settled. Only the exact Backend terminal receipt
+            # may release the previous root's admission barrier.
             record.pending_conversation_context = context
             record.pending_conversation_recovery = recovery
             record.normalization = NormalizationState()
@@ -729,7 +881,12 @@ class RuntimeAdapter:
     def release_session(self, session_id: str) -> dict[str, Any]:
         record = self._get(session_id)
         with record.lock:
-            if record.active_run is not None or record.status in SessionStatus.ACTIVE_PROMPT:
+            # Creation/resumption publishes the record before SDK initialize
+            # completes outside this lock. Releasing it in that interval would
+            # detach the process that the initializer is still acquiring.
+            if record.status == SessionStatus.STARTING:
+                raise SessionConflict(f"session {session_id} is still initializing")
+            if record.process_closing or record.active_run is not None or record.status in SessionStatus.ACTIVE_PROMPT:
                 raise SessionConflict(f"session {session_id} has an active prompt")
             record.status = SessionStatus.CLOSED
         try:
@@ -831,7 +988,10 @@ class RuntimeAdapter:
         workspace_id: str | None,
         model_resolution: dict[str, object],
         runtime_generation: str,
+        root_run_id: str = "",
     ) -> Any:
+        if self._root_scoped and re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
+            raise ValueError("root-scoped process requires a reserved root identity")
         environment = {
             "BYQ_MCP_URL": os.environ.get("BYQ_MCP_URL", "http://mcp:8300/mcp/v1"),
             "BYQ_MCP_TOKEN": os.environ.get("BYQ_MCP_TOKEN", ""),
@@ -848,6 +1008,7 @@ class RuntimeAdapter:
             # cannot authorize against an earlier process's AgentRun. This is
             # deliberately distinct from both the public session and DSH ID.
             "BYQ_DSH_RUN_ID": runtime_generation,
+            "BYQ_ROOT_RUN_ID": root_run_id,
         }
         # The provider credential enters only the adapter-owned SDK child
         # environment. It is never returned in readiness, lifecycle responses,
@@ -955,6 +1116,42 @@ class RuntimeAdapter:
                 runtime_activity = self._observe_run_observation(
                     record, run, observation,
                 )
+                if self._root_scoped and source_run is run and runtime_activity:
+                    if observation.kind == "tool.call" and observation.tool_name in {
+                            "mcp__byq__byq_strategy_validate", "mcp__byq__byq_ml_strategy_create"}:
+                        if (len(run.domain_calls) >= 1024
+                                or record.journal is not None and len(record.journal.state["calls"]) >= 1024):
+                            run.domain_stop_code = "domain-call-retention-bound"
+                        else:
+                            run.domain_calls.add(observation.call_id)
+                        try:
+                            request_evidence(observation.tool_name.removeprefix("mcp__byq__"),
+                                observation.domain_arguments, trace_id=record.trace_id)
+                        except ValueError:
+                            run.domain_stop_code = "domain-call-reference-unproven"
+                    for result in observation.tool_results:
+                        if result.call_id in run.domain_calls and result.failed and self._domain_stop_result(result.result):
+                            run.domain_stop_code = "domain-correction-stopped"
+                    if run.domain_stop_code and not run.domain_stop_dispatched and not run.watchdog_stop.is_set():
+                        run.domain_stop_dispatched = True
+                        # Use the existing owned-process guard/official close,
+                        # outside the SDK notification reader to avoid deadlock.
+                        threading.Thread(target=self._enforce_run_guards,
+                            args=(record, run), kwargs={"now": time.monotonic()}, daemon=True,
+                            name="byq-domain-stop").start()
+                if (self._root_scoped and source_run is run and runtime_activity and not run.domain_stop_code
+                        and observation.domain_arguments is not None and observation.event_sequence is not None
+                        and record.journal is not None and record.process_root_id == run.run_id):
+                    try:
+                        evidence = request_evidence(observation.tool_name.removeprefix("mcp__byq__"),
+                            observation.domain_arguments, trace_id=record.trace_id)
+                    except ValueError:
+                        evidence = None
+                    if evidence is not None:
+                        record.journal.observe_call({"schema_version": "domain-call-observed.v1",
+                            "sequence": len(record.journal.state["calls"]) + 1,
+                            "root_run_id": run.run_id, "generation": record.runtime_generation,
+                            "call_id": observation.call_id, **evidence})
                 if (runtime_activity and observation.registration_key and record.owner_principal
                         and record.workspace_id and record.runtime_generation):
                     fingerprint = registration_fingerprint(
@@ -979,6 +1176,22 @@ class RuntimeAdapter:
                 run.last_runtime_activity_at = time.monotonic()
             for event in events:
                 self._publish(record, event)
+
+    @staticmethod
+    def _domain_stop_result(value):
+        if not isinstance(value, dict) or value.get("service") != "beyondquant-mcp" or value.get("status") != "error":
+            return False
+        backend = value.get("backend")
+        admission = backend.get("admission") if isinstance(backend, dict) else None
+        if (not isinstance(admission, dict) or admission.get("schema_version") != "domain-call-admission.v1"
+                or admission.get("stop") is not True):
+            return False
+        if admission.get("state") == "unknown":
+            return set(admission) == {"schema_version", "state", "stop"}
+        return (set(admission) == {"schema_version", "state", "stop", "reason"}
+            and admission.get("state") in {"blocked", "correctable_failure"}
+            and admission.get("reason") in {"call_evidence_pending", "prior_call_outcome_unknown", "unchanged_failed_input",
+                "correction_budget_exhausted", "call_retention_bound", "correction_failed"})
 
     @staticmethod
     def _guard_seconds(name: str, *, default: float) -> float:
@@ -1020,7 +1233,9 @@ class RuntimeAdapter:
                 run.watchdog_stop.set()
                 return False
             oldest_subagent = min(run.active_subagent_calls.values(), default=None)
-            if now - run.started_at > self._run_timeout_seconds:
+            if run.domain_stop_code:
+                code = run.domain_stop_code
+            elif now - run.started_at > self._run_timeout_seconds:
                 code = "runtime-run-timeout"
             elif (
                 (oldest_subagent is not None and now - oldest_subagent > self._subagent_timeout_seconds)
@@ -1043,16 +1258,22 @@ class RuntimeAdapter:
             record.active_run = None
             record.status = SessionStatus.FAILED
             failed_harness = record.harness
+            needs_close = not record.process_closed and not record.process_closing
+            record.process_closing = needs_close or record.process_closing
             self._emit(
                 record,
                 "session.failed",
                 "runtime-adapter",
-                {"code": code, "retryable": True, "run_id": run.run_id},
+                {"code": code, "retryable": not bool(run.domain_stop_code), "run_id": run.run_id},
             )
         # A session owns its DSH process, so closing it cannot interrupt any
         # other Product conversation. The detached worker will discard any
         # late result and resume creates a fresh private generation.
-        self._compatibility.close(failed_harness)
+        if needs_close:
+            self._compatibility.close(failed_harness)
+            with record.lock:
+                record.process_closing = False
+                record.process_closed = True
         return True
 
     @staticmethod

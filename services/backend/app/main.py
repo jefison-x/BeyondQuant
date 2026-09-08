@@ -8,6 +8,7 @@ from fastapi import BackgroundTasks, FastAPI
 from fastapi import HTTPException, Request
 from collections.abc import Callable
 from typing import Any
+from .domain_call_admission import DomainValidationRejected
 
 from .data_provider import (
     DAILY_BASIC_FIELDS,
@@ -442,6 +443,26 @@ def consume_agent_lifecycle(conversation_id: str, payload: dict[str, Any], reque
     return _agent_call(lambda: {"receipt": agent_store.consume_runtime_lifecycle_event(
         payload["event"], trusted_owner=owner, trusted_workspace=conversation["workspace_id"],
         trusted_session_id=conversation["runtime_session_id"], trusted_trace_id=conversation["trace_id"])})
+
+
+@app.post("/internal/domain-call-evidence/{conversation_id}")
+def consume_domain_call_evidence(conversation_id: str, payload: dict[str, Any], request: Request) -> dict:
+    # Private Gateway consumer. Never exposed through Product API or MCP.
+    owner = request.headers.get("x-byq-owner-principal")
+    if not owner:
+        raise HTTPException(status_code=401, detail="trusted workspace context required")
+    if request.headers.get("x-byq-actor-principal") != owner:
+        raise HTTPException(status_code=403, detail="trusted catalog consumer required")
+    conversation = _conversation_call(lambda: conversation_store.get(owner, conversation_id))
+    if (set(payload) != {"session_id", "trace_id", "event"}
+            or payload["session_id"] != conversation["runtime_session_id"]
+            or payload["trace_id"] != conversation["trace_id"]
+            or conversation["workspace_id"] != request.headers.get("x-byq-workspace-id")):
+        raise HTTPException(status_code=422, detail="private call conversation identity mismatch")
+    return _agent_call(lambda: {"receipt": agent_store.consume_domain_call_evidence(
+        payload["event"], trusted_owner=owner, trusted_workspace=conversation["workspace_id"],
+        trusted_session_id=conversation["runtime_session_id"], trusted_trace_id=conversation["trace_id"],
+        conversation_id=conversation_id)})
 
 
 @app.patch("/v1/product/conversations/{conversation_id}")
@@ -2038,19 +2059,54 @@ def compute_research_factor(payload: dict[str, Any]) -> dict[str, object]:
     return _research_call(operation)
 
 
+def _domain_validation_operation(request, payload, context, action, operation):
+    if context["actor_principal"] == context["owner_principal"]:
+        # Existing human Product path: no invented AgentRun or correction debit.
+        return operation(payload, None)
+    if context["actor_principal"] != "byq-product-agent-" + context["session_id"]:
+        raise HTTPException(status_code=403, detail="registered Product agent required")
+    claim = _agent_call(lambda: agent_store.claim_domain_call(action, payload,
+        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        trusted_session_id=context["session_id"], trusted_trace_id=context["trace_id"],
+        trusted_generation=context["dsh_run_id"], trusted_root=request.headers.get("x-byq-root-run-id")))
+    data = {key: value for key, value in payload.items() if key != "agent_run_id"}
+    data["trace_id"] = context["trace_id"]
+    result = _agent_call(lambda: agent_store.execute_domain_call(claim, lambda connection: operation(data, connection)))
+    if result["state"] == "succeeded":
+        return result["result"]
+    pending = result.get("reason") == "call_evidence_pending"
+    raise HTTPException(status_code=425 if pending else 422 if result["state"] == "correctable_failure" else 409,
+        detail={"schema_version": "domain-call-admission.v1", **result})
+
+
+@app.post("/internal/domain-validation/schema-rejection")
+def record_domain_schema_rejection(payload: dict[str, Any], request: Request):
+    context = _required_agent_context(request, include_workspace=True)
+    if (set(payload) != {"action", "arguments"} or context["actor_principal"] == context["owner_principal"]):
+        raise HTTPException(status_code=422, detail="private agent schema rejection required")
+    def rejected(data, connection):
+        raise DomainValidationRejected("official MCP schema rejected this request")
+    return _domain_validation_operation(request, payload["arguments"], context, payload["action"], rejected)
+
+
 @app.post("/v1/research/strategies/validate", status_code=201)
 def validate_strategy_draft(payload: dict[str, Any], http_request: Request) -> dict[str, object]:
-    context = _required_agent_context(http_request)
+    context = _required_agent_context(http_request, include_workspace=True)
 
-    def operation() -> dict[str, object]:
+    def operation(data, connection) -> dict[str, object]:
         strategy_request = _strategy_payload(
-            payload,
+            data,
             {"task_id", "experiment_id", "strategy", "trace_id", "idempotency_key"},
         )
         task = research_store.get_task(strategy_request.get("task_id"))
         if task["owner_principal"] != context["owner_principal"]:
             raise ResearchNotFound("research task not found")
-        prepared = prepare_strategy(strategy_request.get("strategy"))
+        try:
+            prepared = prepare_strategy(strategy_request.get("strategy"))
+        except ValueError as error:
+            if connection is not None:
+                raise DomainValidationRejected("strategy validation failed") from error
+            raise
         artifact = research_store.create_artifact(
             {
                 "task_id": strategy_request.get("task_id"),
@@ -2060,7 +2116,7 @@ def validate_strategy_draft(payload: dict[str, Any], http_request: Request) -> d
                 "lineage": [],
                 "trace_id": strategy_request.get("trace_id"),
                 "idempotency_key": strategy_request.get("idempotency_key"),
-            }
+            }, _connection=connection,
         )
         if artifact["status"] == "draft":
             artifact = research_store.transition(
@@ -2068,10 +2124,12 @@ def validate_strategy_draft(payload: dict[str, Any], http_request: Request) -> d
                 artifact["artifact_id"],
                 "validated",
                 f"strategy-draft-validate-{prepared['version_id']}",
+                _connection=connection,
             )
         return {"strategy": prepared["snapshot"], "validation": prepared["validation"], "artifact": artifact}
 
-    return _research_call(operation)
+    return _research_call(lambda: _domain_validation_operation(http_request, payload, context,
+        "byq_strategy_validate", operation))
 
 
 @app.post("/v1/research/strategies/versions", status_code=201)
@@ -2490,14 +2548,19 @@ def get_ml_agent_workspace(request: Request) -> dict[str, object]:
 def create_ml_strategy_version(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
 
-    def operation() -> dict[str, object]:
+    def operation(payload, connection) -> dict[str, object]:
         data = _strategy_payload(
             payload, {"task_id", "experiment_id", "strategy", "trace_id", "idempotency_key"}
         )
         task = research_store.get_task(data.get("task_id"))
         if task["owner_principal"] != context["owner_principal"] or task.get("workspace_id") != context["workspace_id"]:
             raise ResearchNotFound("research task not found")
-        normalized = normalize_ml_strategy(data.get("strategy"))
+        try:
+            normalized = normalize_ml_strategy(data.get("strategy"))
+        except ValueError as error:
+            if connection is not None:
+                raise DomainValidationRejected("ML strategy validation failed") from error
+            raise
         fingerprint = content_sha256(normalized)
         artifact = research_store.find_artifact_by_content(
             str(task["task_id"]), "ml_strategy_version", fingerprint
@@ -2507,15 +2570,17 @@ def create_ml_strategy_version(payload: dict[str, Any], request: Request) -> dic
                 "task_id": task["task_id"], "experiment_id": data.get("experiment_id"),
                 "kind": "ml_strategy_version", "content": normalized, "lineage": [],
                 "trace_id": data.get("trace_id"), "idempotency_key": data.get("idempotency_key"),
-            })
+            }, _connection=connection)
         if artifact["status"] == "draft":
             artifact = research_store.transition(
                 "artifact", artifact["artifact_id"], "validated",
                 f"ml-strategy-validate-{str(normalized['version_id'])[-24:]}",
+                _connection=connection,
             )
         return {"ml_strategy_version": normalized, "artifact": artifact}
 
-    return _research_call(operation)
+    return _research_call(lambda: _domain_validation_operation(request, payload, context,
+        "byq_ml_strategy_create", operation))
 
 
 @app.post("/v1/research/ml/strategies/approvals", status_code=201)

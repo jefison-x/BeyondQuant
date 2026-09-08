@@ -1545,6 +1545,12 @@ ADR-0066 接受后的调用准入资格切片：再次只读检查同一 Communi
 逐调用可信根身份和私有规范输入摘要采用 `REPLACE`，独立定义 BYQ 合同及失败测试，
 不把旧策略验证成功或 model 自报 AgentRun 当作可信调用来源，不复制旧 harness。
 
+Post-U8 F7 停止原因补充：实现前只读检查 Community `AgentThinking.vue` 全文及
+`AgentView.vue` 顶部 errorContract/retryable 区。明确区分执行状态、阻断与可重试行为为
+`REFERENCE_ONLY`；raw tool/thinking、旧错误合同和直接重发为 `DROP`/`REPLACE`。
+BYQ 仅为规范化 WorkflowTrace 的封闭停止码增加中文说明，保留 `retryable=false`，
+不把失败状态当回答，不展示私有调用摘要，也不自动续接或重跑。
+
 ## Post-U8 S3 指数池更新方式界面（2026-09-08）
 
 实现前只读检查 Community `frontend/src/components/stocks/StockPoolDialog.vue` 全文与

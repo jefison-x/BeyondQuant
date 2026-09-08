@@ -6,6 +6,9 @@
 - Related: ADR-0003、ADR-0024、ADR-0033
 - Amended: 2026-09-07，维护者接受 [ADR-0062](ADR-0062-post-u8-reliability-boundaries.md)，
   替代 §2 丢弃未回答消息的规则及对应验收；其他隔离和安全边界不变。
+- Amended: 2026-09-08，维护者接受 ADR-0067；每个新根回合使用独立 process/generation，
+  正常连续回合也必须提供本 ADR/ADR-0062 的有界公开恢复上下文。§5 的 ready 幂等刷新
+  只适用于尚未提交根回合的预备进程，不授权复用已执行过上一根的 process。
 
 ## 背景
 

@@ -135,6 +135,61 @@ def test_each_delegate_executes_its_real_mcp_ceiling(
     _run_delegate_journey(delegate, monkeypatch)
 
 
+@pytest.mark.parametrize("delegate,action", [
+    ("byq_delegate_strategy_research", "byq_strategy_validate"),
+    ("byq_delegate_ml_research", "byq_ml_strategy_create"),
+])
+def test_unproven_child_domain_call_closes_its_root_process(delegate, action, monkeypatch):
+    if os.environ.get("BYQ_DSH_PROCESS_OWNERSHIP") != "root-turn":
+        pytest.skip("requires independently identified root-scoped build")
+    calls = []
+    class Provider(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+            calls.append(body)
+            if len(calls) > 4:
+                self.send_error(429, "synthetic cap")
+                return
+            tools = {item["function"]["name"] for item in body.get("tools", [])}
+            is_root = delegate in tools
+            payload = _tool_response(delegate if is_root else "mcp__byq__" + action,
+                "root-delegate" if is_root else "child-missing-ref",
+                {"prompt": "synthetic invalid domain reference", "description": "bounded stop qualification"}
+                if is_root else {"task_id": "unproven", "strategy": {}})
+            self.send_response(200)
+            self.send_header("content-type", "text/event-stream")
+            self.send_header("content-length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Provider)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "synthetic-child-stop-only")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", f"http://127.0.0.1:{server.server_port}")
+    adapter = RuntimeAdapter()
+    session = "child-stop-" + uuid.uuid4().hex
+    try:
+        adapter.create_session(session, "synthetic-child-stop-trace")
+        adapter.submit_prompt(session, "synthetic child stop qualification")
+        record = adapter._get(session)
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            with record.lock:
+                if record.active_run is None and record.process_closed:
+                    break
+            time.sleep(0.02)
+        assert record.status == SessionStatus.FAILED and record.process_closed
+        assert any(event["payload"].get("code") == "domain-call-reference-unproven" for event in record.history)
+        assert 2 <= len(calls) <= 3
+    finally:
+        adapter.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def _run_delegate_journey(delegate, monkeypatch, expected_requests=4):
     DelegateProvider.target = delegate
     DelegateProvider.requests.clear()

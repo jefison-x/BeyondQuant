@@ -24,6 +24,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from packages.contracts.agent_run_lifecycle import registration_fingerprint, validate_lifecycle_event, lifecycle_receipt
 
 from .db import PgStoreMixin, execute, fetch_one
+from .domain_call_admission import DomainCallEvidenceMixin, DOMAIN_CALL_DDL
 
 
 MAX_DETAIL_BYTES = 16 * 1024
@@ -382,7 +383,7 @@ def role_catalog() -> list[dict[str, object]]:
     return [role.as_dict() for role in ROLE_CATALOG]
 
 
-class AgentResearchStore(PgStoreMixin):
+class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
     """Durable BYQ store for agent runs, approvals, and bounded audit events (ADR-0016 PG)."""
 
     SCHEMA_DDL: list[str] = [
@@ -477,6 +478,8 @@ class AgentResearchStore(PgStoreMixin):
             ON agent_approvals(owner_principal, status, created_at DESC)
         """,
     ]
+
+    SCHEMA_DDL = SCHEMA_DDL + DOMAIN_CALL_DDL
 
     def __init__(self, database_url: str | None = None) -> None:
         try:

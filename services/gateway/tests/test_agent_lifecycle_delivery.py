@@ -48,6 +48,43 @@ def test_lost_ack_restarts_with_same_event_and_then_stops(tmp_path):
     assert state["last_receipt"] == lifecycle_receipt(writes[0][1])
 
 
+def test_legacy_delivered_terminal_receipt_is_reconciled_once(tmp_path):
+    writes = []
+    traces, session, now, delivery = fixture(tmp_path, lambda ctx, value:
+        writes.append(value) or {"receipt": lifecycle_receipt(value)})
+    traces.append(event())
+    delivery.run_once()
+    path = tmp_path / "session-one.lifecycle.json"
+    state = json.loads(path.read_text())
+    for key in list(state):
+        if key.startswith("terminal_ack_migration_") or key == "durable_terminal_ack_migrated":
+            del state[key]
+    path.write_text(json.dumps(state))
+    delivery.run_once()
+    assert writes == [writes[0], writes[0]]
+    delivery.run_once()
+    assert len(writes) == 2
+    assert json.loads(path.read_text())["durable_terminal_ack_migrated"] is True
+
+
+def test_legacy_ack_migration_preserves_exhausted_retry_budget(tmp_path):
+    writes = []
+    traces, session, now, delivery = fixture(tmp_path, lambda ctx, value: writes.append(value))
+    traces.append(event())
+    delivery.run_once()
+    path = tmp_path / "session-one.lifecycle.json"
+    state = json.loads(path.read_text())
+    for key in list(state):
+        if key.startswith("terminal_ack_migration_") or key == "durable_terminal_ack_migrated":
+            del state[key]
+    state["pending"]["1"]["attempts"] = MAX_ATTEMPTS
+    state["pending"]["1"]["status"] = "exhausted"
+    path.write_text(json.dumps(state))
+    delivery.run_once()
+    assert len(writes) == 1
+    assert json.loads(path.read_text())["pending"]["1"]["attempts"] == MAX_ATTEMPTS
+
+
 def test_gateway_only_releases_runtime_barrier_after_exact_backend_receipt(monkeypatch):
     from app import main
     from fastapi import HTTPException
@@ -68,11 +105,8 @@ def test_gateway_only_releases_runtime_barrier_after_exact_backend_receipt(monke
         def fail(*a, **k):
             raise HTTPException(status_code=status)
         monkeypatch.setattr(main, "_adapter_post", fail)
-        if status == 404:
-            assert main._send_agent_lifecycle(context, value) == reply
-        else:
-            with pytest.raises(HTTPException):
-                main._send_agent_lifecycle(context, value)
+        with pytest.raises(HTTPException):
+            main._send_agent_lifecycle(context, value)
 
 
 def test_recovery_poll_is_throttled_durable_and_stops_after_recovered(tmp_path):

@@ -235,8 +235,10 @@ class WorkspaceTenancyStore(PgStoreMixin):
             raise RuntimeError("workspace tenancy storage is unavailable") from exc
 
     def bootstrap_schema(self) -> None:
+        from .db import schema_bootstrap_lock
         super().bootstrap_schema()
         with self.engine.begin() as connection:
+            schema_bootstrap_lock(connection)
             for table_name in WORKSPACE_TABLES:
                 exists = connection.execute(text("SELECT to_regclass(:table)"), {"table": table_name}).scalar()
                 if exists is None:

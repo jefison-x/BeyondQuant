@@ -1,4 +1,5 @@
 import json
+import hashlib
 import subprocess
 import sys
 
@@ -6,6 +7,7 @@ import pytest
 
 from app.lifecycle_journal import LifecycleJournal, JournalBusy
 from app.contracts import make_workflow_trace_event
+from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
 
 
 CTX = {"session_id": "journal-session", "trace_id": "journal-trace",
@@ -15,6 +17,48 @@ CTX = {"session_id": "journal-session", "trace_id": "journal-trace",
 def event(sequence, kind="session.started", **payload):
     return make_workflow_trace_event(session_id=CTX["session_id"], trace_id=CTX["trace_id"],
         sequence=sequence, kind=kind, source="runtime-adapter", payload={"run_id": "a" * 32, **payload})
+
+
+def test_terminal_ack_is_exact_durable_and_not_a_public_event(tmp_path):
+    journal = LifecycleJournal.claim(tmp_path, CTX, create=True)
+    try:
+        journal.observe(event(1), generation="one")
+        terminal = event(2, "session.result")
+        journal.observe(terminal, generation="one")
+        receipt = lifecycle_receipt(project_lifecycle_event(terminal, CTX["session_id"], CTX["trace_id"]))
+        for invalid in ({**receipt, "sequence": 3}, {**receipt, "sequence": 2.0},
+                        {**receipt, "event_sha256": "0" * 64}, {**receipt, "extra": True}):
+            with pytest.raises(ValueError):
+                journal.acknowledge_terminal(invalid)
+            assert journal.state["terminal_acks"] == {}
+        journal.acknowledge_terminal(receipt)
+        journal.acknowledge_terminal(receipt)
+        assert len(journal.state["events"]) == 2
+        assert journal.state["sequence"] == 2
+        path = journal.path
+    finally:
+        journal.close()
+    assert LifecycleJournal.read(path)["terminal_acks"] == {"a" * 32: receipt}
+
+
+def test_v1_migration_does_not_invent_acknowledgements(tmp_path):
+    journal = LifecycleJournal.claim(tmp_path, CTX, create=True)
+    journal.observe(event(1), generation="one")
+    journal.observe(event(2, "session.result"), generation="one")
+    path = journal.path
+    journal.close()
+    envelope = json.loads(path.read_text())
+    del envelope["state"]["terminal_acks"]
+    del envelope["state"]["calls"]
+    envelope["schema_version"] = "byq-lifecycle-journal.v1"
+    envelope["sha256"] = hashlib.sha256(json.dumps(envelope["state"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    path.write_text(json.dumps(envelope))
+    assert LifecycleJournal.read(path)["terminal_acks"] == {}
+    # A malformed v2 may not silently use the legacy migration path.
+    envelope["schema_version"] = "byq-lifecycle-journal.v2"
+    path.write_text(json.dumps(envelope))
+    with pytest.raises(ValueError):
+        LifecycleJournal.read(path)
 
 
 def test_exclusive_owner_and_recovery_preserve_exact_root(tmp_path):

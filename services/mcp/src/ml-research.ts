@@ -1,4 +1,5 @@
 import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
+import { safeDomainAdmission } from "./domain-admission.js";
 
 const BACKEND_TIMEOUT_MS = 8000;
 
@@ -55,8 +56,10 @@ async function requestMl(
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (!response.ok) {
+      const admission = safeDomainAdmission(payload);
       const validation = response.status === 422 ? safeValidation(payload as Record<string, unknown>) : undefined;
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: errorStatus(response.status), http_status: response.status,
+        ...(admission ? { admission } : {}),
         ...(validation ? { validation } : {}),
       } }, true);
     }

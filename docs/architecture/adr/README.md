@@ -26,8 +26,8 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
 维护决策：[ADR-0066](ADR-0066-domain-validation-call-admission.md) 已于 2026-09-08 获维护者接受，
 为 F7 增加精确领域调用归属与持久纠错准入；先完成隔离资格验证再接入首批两工具，不推进 Product Phase。
 
-后续维护提案：[ADR-0067](ADR-0067-root-scoped-runtime-call-identity.md) 为 Proposed，
-针对官方 MCP 缺少逐调用根身份提出根回合隔离进程；未接受前不改变跨根进程复用与恢复方式。
+后续维护决策：[ADR-0067](ADR-0067-root-scoped-runtime-call-identity.md) 已于 2026-09-08 获维护者接受，
+针对官方 MCP 缺少逐调用根身份采用根回合隔离进程；实现、连续对话及生命周期资格仍需验证。
 
 - ADR-0063 允许禁用身份后对精确绑定的既有 AgentRun 做可信终态清理及原子审计/回执，不恢复普通访问或业务续接。
 - ADR-0064 允许持久化最小 BYQ 执行证据，并仅在原执行者失效可证明时恢复收尾；不恢复模型或研究。

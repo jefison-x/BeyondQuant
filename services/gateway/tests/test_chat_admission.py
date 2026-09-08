@@ -35,6 +35,7 @@ def test_maintenance_preserves_queued_approval_without_claiming(monkeypatch, tmp
 
 
 def test_approval_continuation_rehydrates_exact_session_after_adapter_restart(monkeypatch):
+    monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: {"messages": []})
     monkeypatch.delenv("BYQ_CHAT_ADMISSION_FILE", raising=False)
     old = main.ProductSession("conversation", "old-runtime", "trace", main.Principal(subject="synthetic"))
     restored = main.ProductSession("conversation", "new-runtime", "trace", old.principal)
@@ -68,6 +69,7 @@ def test_approval_continuation_rehydrates_exact_session_after_adapter_restart(mo
 
 
 def test_approval_continuation_preserves_unknown_receipts_without_resubmission(monkeypatch):
+    monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: {"messages": []})
     monkeypatch.delenv("BYQ_CHAT_ADMISSION_FILE", raising=False)
     session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="synthetic"))
     monkeypatch.setattr(main, "_trusted_agent_headers", lambda _: {})
@@ -93,6 +95,7 @@ def test_approval_continuation_preserves_unknown_receipts_without_resubmission(m
 
 
 def test_approval_continuation_reconciles_the_original_accepted_prompt(monkeypatch):
+    monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: {"messages": []})
     monkeypatch.delenv("BYQ_CHAT_ADMISSION_FILE", raising=False)
     session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="synthetic"))
     monkeypatch.setattr(main, "_trusted_agent_headers", lambda _: {})

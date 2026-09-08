@@ -112,9 +112,14 @@ def test_official_registration_notification_has_exact_request_identity(monkeypat
         adapter.submit_prompt(session_id, "合成接口核查，不执行研究")
         record = adapter._get(session_id)
         deadline = time.monotonic() + 20
-        while record.status == SessionStatus.RUNNING and time.monotonic() < deadline:
+        while (record.status == SessionStatus.RUNNING or record.process_closing) and time.monotonic() < deadline:
             time.sleep(0.05)
-        assert record.status == SessionStatus.IDLE
+        if adapter._root_scoped and tool_name != "byq_agent_run_start":
+            assert record.status == SessionStatus.FAILED
+            assert any(event["payload"].get("code") == "domain-call-reference-unproven" for event in record.history)
+            assert record.process_closed
+        else:
+            assert record.status == SessionStatus.IDLE
         calls = [item for item in captured if item.get("name") == "mcp__byq__" + tool_name]
         assert len(calls) == 1
         assert isinstance(calls[0].get("arguments"), str)

@@ -11,6 +11,7 @@ from deepseek_harness import DeepSeekHarness, DeepSeekHarnessConfig, Notificatio
 from deepseek_harness_runtime import bundled_runtime_path
 
 from .types import RuntimeObservation, RuntimeToolResult
+from packages.contracts.domain_call_admission import ACTIONS, parse_observed_arguments
 
 
 _SESSION_STATUSES = frozenset({
@@ -92,7 +93,16 @@ class Dsh012Compatibility:
 
     @staticmethod
     def prompt(harness: Any, session_id: str, content: str, on_notification: Callable[[object], None]) -> str:
-        result = harness.start_session(session_id).run(content, on_notification=on_notification)
+        return Dsh012Compatibility.run_prepared_prompt(
+            Dsh012Compatibility.prepare_prompt(harness, session_id), content, on_notification)
+
+    @staticmethod
+    def prepare_prompt(harness: Any, session_id: str) -> Any:
+        return harness.start_session(session_id)
+
+    @staticmethod
+    def run_prepared_prompt(session: Any, content: str, on_notification: Callable[[object], None]) -> str:
+        result = session.run(content, on_notification=on_notification)
         reason = getattr(result, "finish_reason", None)
         return _FINISH_REASONS.get(reason, "failed")
 
@@ -178,10 +188,22 @@ class Dsh012Compatibility:
                 runtime_activity=valid, call_id=call_id if isinstance(call_id, str) else None,
                 tool_name=name if isinstance(name, str) else None,
                 registration_key=_registration_key(name, data.get("arguments")) if valid else None,
+                domain_arguments=_domain_arguments(name, data.get("arguments")) if valid else None,
             )
         if event_type == "tool/result":
             return _tool_result_observation(data, session_id=session_id, is_root=is_root)
         return RuntimeObservation(kind="ignored", session_id=session_id, root_session=is_root)
+
+
+def _domain_arguments(name: str, arguments: object) -> dict | None:
+    if name not in {"mcp__byq__" + action for action in ACTIONS}:
+        return None
+    try:
+        return parse_observed_arguments(arguments)
+    except ValueError:
+        # Unprovable input receives no observation credential. The admission
+        # boundary must reject it; do not repair or truncate model arguments.
+        return None
 
 
 def _registration_key(name: object, arguments: object) -> str | None:
@@ -258,7 +280,27 @@ def _parse_tool_result(block: dict[str, Any]) -> dict[str, Any] | None:
         try:
             value = json.loads(item["text"])
         except (json.JSONDecodeError, TypeError):
-            continue
+            # Qualified 0.1.2rc1 MCP failures are thrown as Error(text), and the
+            # official tool-result retains "Error: " before the first JSON
+            # line. Recognize only BYQ's closed admission marker here, never
+            # scrape arbitrary diagnostics or alter the original public error.
+            raw = item["text"]
+            if block.get("isError") is not True or not raw.startswith("Error: "):
+                continue
+            end = raw.find("\n", 0, 4096)
+            if end < 0:
+                end = len(raw)
+            if end > 4096:
+                continue
+            try:
+                value = json.loads(raw[7:end])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if (not isinstance(value, dict) or value.get("service") != "beyondquant-mcp"
+                    or value.get("status") != "error" or not isinstance(value.get("backend"), dict)
+                    or not isinstance(value["backend"].get("admission"), dict)
+                    or value["backend"]["admission"].get("schema_version") != "domain-call-admission.v1"):
+                continue
         if isinstance(value, dict):
             return value
     return None

@@ -13,10 +13,12 @@ import uuid
 
 from .contracts import make_workflow_trace_event, validate_workflow_trace_event
 from .identifiers import validate_identifier
-from packages.contracts.agent_run_lifecycle import project_lifecycle_event
+from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
+from packages.contracts.domain_call_admission import validate_call_evidence
 
 
 MAX_BYTES = 8 * 1024 * 1024
+MAX_PRIVATE_CALLS = 1024
 
 
 class JournalBusy(RuntimeError):
@@ -86,7 +88,7 @@ class LifecycleJournal:
                         generation=obj.state["open_root"]["generation"])
             elif create:
                 obj.state = {"context": dict(context), "sequence": 0, "open_root": None,
-                             "events": [], "prompts": {}, "lease_identity": obj.lease_identity}
+                             "events": [], "prompts": {}, "terminal_acks": {}, "calls": [], "lease_identity": obj.lease_identity}
                 obj._save(obj.state)
             else:
                 raise FileNotFoundError("no durable runtime evidence")
@@ -104,21 +106,32 @@ class LifecycleJournal:
             raise ValueError("journal exceeds recovery bound")
         envelope = json.loads(data)
         if (not isinstance(envelope, dict) or set(envelope) != {"schema_version", "state", "sha256"}
-                or envelope["schema_version"] != "byq-lifecycle-journal.v1"):
+                or envelope["schema_version"] not in {"byq-lifecycle-journal.v1", "byq-lifecycle-journal.v2", "byq-lifecycle-journal.v3"}):
             raise ValueError("invalid journal envelope")
         state = envelope["state"]
         digest = hashlib.sha256(json.dumps(state, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if envelope["sha256"] != digest:
             raise ValueError("journal integrity mismatch")
+        # Verify historical bytes before the explicit, fail-closed migration.
+        # A v1 journal proves no terminal acknowledgements, never implicit ACK.
+        if envelope["schema_version"] == "byq-lifecycle-journal.v1":
+            if not isinstance(state, dict) or "terminal_acks" in state:
+                raise ValueError("invalid historical journal state")
+            state["terminal_acks"] = {}
+        if envelope["schema_version"] != "byq-lifecycle-journal.v3":
+            if not isinstance(state, dict) or "calls" in state:
+                raise ValueError("invalid historical private evidence state")
+            state["calls"] = []
         return LifecycleJournal.validate(state)
 
     @staticmethod
     def validate(state):
-        if not isinstance(state, dict) or set(state) != {"context", "sequence", "open_root", "events", "prompts", "lease_identity"}:
+        if not isinstance(state, dict) or set(state) != {"context", "sequence", "open_root", "events", "prompts", "terminal_acks", "calls", "lease_identity"}:
             raise ValueError("invalid journal state")
         if not isinstance(state["lease_identity"], str) or re.fullmatch("[0-9a-f]{64}", state["lease_identity"]) is None:
             raise ValueError("invalid owner lock identity")
-        if not isinstance(state["events"], list) or not isinstance(state["prompts"], dict):
+        if (not isinstance(state["events"], list) or not isinstance(state["prompts"], dict)
+                or not isinstance(state["terminal_acks"], dict)):
             raise ValueError("invalid journal collections")
         LifecycleJournal._context(state["context"])
         if type(state["sequence"]) is not int or not 0 <= state["sequence"] < 2**63 - 1:
@@ -126,6 +139,7 @@ class LifecycleJournal:
         opened = None
         previous = 0
         roots = set()
+        terminal_receipts = {}
         for event in state["events"]:
             validate_workflow_trace_event(event)
             if not previous < event["sequence"] <= state["sequence"]:
@@ -154,6 +168,7 @@ class LifecycleJournal:
                     if opened != root:
                         raise ValueError("contradictory journal terminal")
                     opened = None
+                    terminal_receipts[root] = lifecycle_receipt(projected)
         current = state["open_root"]
         if opened is None:
             if current is not None:
@@ -169,12 +184,22 @@ class LifecycleJournal:
                     or not isinstance(receipt["content_sha256"], str)
                     or re.fullmatch("[0-9a-f]{64}", receipt["content_sha256"]) is None):
                 raise ValueError("invalid durable prompt receipt")
+        for root, receipt in state["terminal_acks"].items():
+            if (not isinstance(receipt, dict) or type(receipt.get("sequence")) is not int
+                    or root not in terminal_receipts or receipt != terminal_receipts[root]):
+                raise ValueError("invalid durable terminal acknowledgement")
+        if not isinstance(state["calls"], list) or len(state["calls"]) > MAX_PRIVATE_CALLS:
+            raise ValueError("private call evidence exceeds retention bound")
+        for index, evidence in enumerate(state["calls"], 1):
+            validate_call_evidence(evidence)
+            if evidence["sequence"] != index or evidence["root_run_id"] not in roots:
+                raise ValueError("private call evidence has no matching journal root")
         return state
 
     def _save(self, state):
         self.validate(state)
         encoded = json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
-        data = json.dumps({"schema_version": "byq-lifecycle-journal.v1", "state": state,
+        data = json.dumps({"schema_version": "byq-lifecycle-journal.v3", "state": state,
                           "sha256": hashlib.sha256(encoded).hexdigest()},
                           sort_keys=True, separators=(",", ":")).encode()
         if len(data) > MAX_BYTES:
@@ -222,6 +247,28 @@ class LifecycleJournal:
                 elif state["open_root"] and state["open_root"]["root_run_id"] == projected["root_run_id"]:
                     state["open_root"] = None
                     state["events"].append({**event, "payload": {"run_id": projected["root_run_id"]}})
+        self._save(state)
+        self.state = state
+
+    def observe_call(self, evidence):
+        validate_call_evidence(evidence)
+        opened = self.state["open_root"]
+        if (opened is None or evidence["root_run_id"] != opened["root_run_id"]
+                or evidence["generation"] != opened["generation"]
+                or evidence["sequence"] != len(self.state["calls"]) + 1):
+            raise ValueError("private call evidence does not belong to the open root")
+        state = copy.deepcopy(self.state)
+        state["calls"].append(dict(evidence))
+        self._save(state)
+        self.state = state
+
+    def acknowledge_terminal(self, receipt):
+        root = receipt.get("root_run_id") if isinstance(receipt, dict) else None
+        if not isinstance(root, str):
+            raise ValueError("invalid terminal acknowledgement root")
+        state = copy.deepcopy(self.state)
+        state["terminal_acks"][root] = receipt
+        # Validation binds the closed receipt to the exact persisted terminal.
         self._save(state)
         self.state = state
 

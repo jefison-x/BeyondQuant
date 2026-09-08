@@ -52,7 +52,16 @@ class Dsh011Compatibility:
 
     @staticmethod
     def prompt(harness: Any, session_id: str, content: str, on_notification: Callable[[object], None]) -> str:
-        result = harness.start_session(session_id).run(content, on_notification=on_notification)
+        return Dsh011Compatibility.run_prepared_prompt(
+            Dsh011Compatibility.prepare_prompt(harness, session_id), content, on_notification)
+
+    @staticmethod
+    def prepare_prompt(harness: Any, session_id: str) -> Any:
+        return harness.start_session(session_id)
+
+    @staticmethod
+    def run_prepared_prompt(session: Any, content: str, on_notification: Callable[[object], None]) -> str:
+        result = session.run(content, on_notification=on_notification)
         reason = getattr(result, "finish_reason", None)
         return reason if isinstance(reason, str) and reason in _TURN_REASONS | {"error"} else "failed"
 

@@ -1,11 +1,11 @@
 # ADR-0067：根回合隔离的 Runtime 调用身份
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-08
 - Scope: 补齐 ADR-0066 两工具准入在当前官方 DSH 0.1.2rc1 下缺少 HTTP 根归属的问题。
 - Related: ADR-0003、ADR-0046、ADR-0062、ADR-0064、ADR-0066。
-- Acceptance: 未接受；只允许文档、只读核查和隔离资格测试，不实施本拓扑变化。
-- Supersedes: 接受后具名修订 ADR-0003 的“同一 active BYQ session 跨根回合复用 process”及
+- Acceptance: 2026-09-08，维护者明确回复“批准”，接受本决策并授权隔离实现及资格验证；不授权 push/merge、生产部署或历史研究续跑。
+- Supersedes: 具名修订 ADR-0003 的“同一 active BYQ session 跨根回合复用 process”及
   ADR-0046 的“ready runtime resume 不新建 process”；其他安全、恢复、审批和预算约束不变。
 
 ## 已验证的缺口
@@ -22,7 +22,7 @@
 独立精确请求归属证明，不能对“旧未消费凭证 + 新请求先到”的一般并发准入宣称已验证。
 不能猜 MCP 自增 id 与 callId 的关系、信任 model 自报 root，或按最新 active root 查询归属。
 
-## 拟接受的决策
+## 接受的决策
 
 1. 保留公开 conversation/session/trace identity；每个新根回合使用独立官方 DSH process 和
    generation。只调整既有 Adapter 的 process 所有权粒度，不增加第二 harness、代理或队列，
@@ -51,6 +51,11 @@
 记录相对现有基线的初始化延迟、RSS、20-cycle 泄漏及实际上下文差异。资格失败不能发布。
 
 新增独立构建/配置身份，保留历史清单和失败报告，不将旧认证套用于新拓扑。
+终态 ACK 沿原生命周期日志持久化（v2 首批；追加 ADR-0066 私有调用证据后的当前实现为 v3）；
+v1/v2 仅在验证原摘要后显式迁移，未记录的 ACK/调用不作已确认推断。
+Gateway 仅按原有有界投递机制重新确认精确终态回执，不续跑任何历史研究。
+联合升级须验证日志版本与两服务协议；旧应用不能直接读取 v3 状态，不将混版本运行当作
+已验证兼容路径。本次隔离实现不授权生产日志迁移。
 本方案不解决 F6 的全路径累计模型费用限制；后台续接仍保持关闭，直至 ADR-0065 门禁通过。
 
 ## 未选择的替代方式

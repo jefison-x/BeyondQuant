@@ -5,6 +5,7 @@ import json
 import os
 import re
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 
 from .db import PgStoreMixin, ensure_column, execute, fetch_one
+from .db import schema_bootstrap_lock
 from .web_research import normalize_web_research_evidence, validate_web_research_evidence
 from .research_continuation import ResearchContinuationMixin
 
@@ -335,6 +337,7 @@ class ResearchStore(ResearchContinuationMixin, PgStoreMixin):
         super().bootstrap_schema()
         # Column back-migration parity with the former SQLite schema.
         with self.engine.begin() as connection:
+            schema_bootstrap_lock(connection)
             ensure_column(connection, "research_transitions", "result_json", "JSONB")
 
     @classmethod
@@ -573,11 +576,11 @@ class ResearchStore(ResearchContinuationMixin, PgStoreMixin):
 
     def create_artifact(
         self, payload: object, *, trusted_owner: str | None = None,
-        trusted_workspace: str | None = None,
+        trusted_workspace: str | None = None, _connection=None,
     ) -> dict[str, object]:
         data = self._artifact_payload(payload)
         request_hash = _hash_request(data)
-        with self._transaction() as connection:
+        with (nullcontext(_connection) if _connection is not None else self._transaction()) as connection:
             execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
                     {"scope": f"research-artifact|{data['task_id']}|{data['idempotency_key']}"})
             task = fetch_one(connection, "SELECT * FROM research_tasks WHERE task_id = :task_id", {"task_id": data["task_id"]})
@@ -660,6 +663,9 @@ class ResearchStore(ResearchContinuationMixin, PgStoreMixin):
                  "idempotency_key": data["idempotency_key"], "request_hash": request_hash,
                  "created_at": now, "updated_at": now},
             )
+            if _connection is not None:
+                return self._artifact_row(fetch_one(connection,
+                    "SELECT * FROM artifacts WHERE artifact_id=:id", {"id": artifact_id}))
         return self.get_artifact(artifact_id)
 
     def get_artifact(self, artifact_id: object) -> dict[str, object]:
@@ -1259,7 +1265,7 @@ class ResearchStore(ResearchContinuationMixin, PgStoreMixin):
         entity_id: object,
         target_status: object,
         idempotency_key: object,
-        *, progress: object = None, require_completion_evidence: bool = False,
+        *, progress: object = None, require_completion_evidence: bool = False, _connection=None,
     ) -> dict[str, object]:
         entity_type = _text(entity_type, field="entity_type", max_length=32)
         entity_id = _identifier(entity_id, field="entity_id")
@@ -1284,7 +1290,7 @@ class ResearchStore(ResearchContinuationMixin, PgStoreMixin):
         if checkpoint is not None:
             request_data["progress"] = checkpoint
         request_hash = _hash_request(request_data)
-        with self._transaction() as connection:
+        with (nullcontext(_connection) if _connection is not None else self._transaction()) as connection:
             row = fetch_one(
                 connection,
                 f"SELECT * FROM {table} WHERE {self._id_column(entity_type)} = :entity_id FOR UPDATE",
