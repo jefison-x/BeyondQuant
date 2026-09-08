@@ -55,7 +55,7 @@ def digest(path):
 def selected_build_id(release):
     if release not in RELEASES:
         raise ValueError("unregistered release")
-    return release + "-post-u8.3"
+    return release + "-post-u8.5"
 
 
 def identity(build_id):

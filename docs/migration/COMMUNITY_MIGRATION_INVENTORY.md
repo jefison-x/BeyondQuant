@@ -1525,6 +1525,14 @@ Agent 直写业务数据库、自动重开旧任务及旧工作流执行器为 `
 BYQ 独立校验注销回执，未知时保留原 cookie 供幂等重试，显示错误且不导航为已注销。
 没有复制旧 UI/认证代码或修改 Community。
 
+## Post-U8 迟到回答恢复（2026-09-08）
+
+Post-U8 迟到回答恢复补充（2026-09-08）：实现前只读检查 Community
+`frontend/src/views/AgentView.vue` 的 `openSession`（按 run 恢复消息、补失败记录、
+按 created_at 排序）。稳定回答/回合关联为 `REFERENCE_ONLY`，按到达时间推断回答对象
+为 `REPLACE`；旧 run API、raw events 和 Agent runtime 为 `DROP`。BYQ 独立使用
+已有规范化 trace 的回答序号与原回合起点进行保守恢复，不复制旧实现、不修改消息历史。
+
 ## Post-U8 F7 ML 输入校验（2026-09-08）
 
 只读检查 Community `backend/app/services/strategy_validation.py`：执行前校验、有限数值和
