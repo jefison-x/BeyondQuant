@@ -4,6 +4,18 @@
 
 ## F7 调用归属准入决策（2026-09-08）
 
+继续整改后的资格发现：两工具各执行同 generation 两根回合的 loopback 官方进程探针，
+2 项通过但证明了关联缺口：MCP 自增请求 id 不在 Adapter 通知中，headers/相同参数无法
+独立区分根回合。固定官方源码证实静态 headers 和仅 name/arguments 的工具桥。
+尚未实施新准入路径；新增 ADR-0067（Proposed）请求决定根回合独立进程方案，保留现有
+终态屏障，不声称生产已经发生越权。私有摘要原型 7 项测试通过，仍不计作 F7 完成。
+详细证据与原架构检查失败见 [F7 调用观察](../evidence/post-u8-r1/F7-CALL-OBSERVATION.md)。
+
+后续接受记录：维护者回复“批准。”，ADR-0066 转为 Accepted。授权先隔离资格验证，
+通过后实现 `byq_strategy_validate`、`byq_ml_strategy_create` 的最小内部合同、持久台账与准入。
+不授权生产部署、历史研究续跑、数据扩容或本分支 push/merge；不计作 F7 完成。
+以下保留提案切片的历史记录，其“待接受”描述不再代表当前决策状态。
+
 从合并后的主线建立 `fix/post-u8-correction-ledger` 隔离工作树。核查确认进程 generation
 不能作为每次写调用的根身份；AgentRun 注册关联也不等于后续任意写请求的归属证明。
 直接在现有请求上加计数器不能诚实关闭 F7。新增

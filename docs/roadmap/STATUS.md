@@ -79,8 +79,12 @@ Post-U8 交付授权（2026-09-08）：维护者明确允许新增独立构建�
 后台执行保持关闭，不将 ADR 接受或合同存在计作 F6 完成，不改变 Product Phase 97。
 
 F7 当前维护决策：[ADR-0066](../architecture/adr/ADR-0066-domain-validation-call-admission.md)
-为 Proposed，待维护者明确接受每次领域校验调用的内部归属凭证和持久纠错准入边界。
-仅 AgentRun 引用/进程 generation 不足以作为该凭证；当前只做核查与规划，不把 F7 标为完成。
+已于 2026-09-08 获维护者回复“批准。”接受，状态为 Accepted；先隔离验证，再接入首批两工具。
+仅 AgentRun 引用/进程 generation 不足以作为该凭证；资格验证与持久准入尚未完成，不把 F7 标为完成。
+
+后续真实 HTTP 资格核查确认官方 MCP 请求缺少 Adapter 可关联的逐调用根身份，输入摘要
+匹配不能单独关闭此门禁。[ADR-0067](../architecture/adr/ADR-0067-root-scoped-runtime-call-identity.md)
+提出每根回合独立进程与可信根 header，状态为 Proposed，需另行接受；未改变生产拓扑。
 
 - [ADR-0064](../architecture/adr/ADR-0064-runtime-crash-recovery-evidence.md)：已接受并完成首版本地崩溃证据恢复；仅原本地卷、同次主机启动且原排他锁身份可证时收尾，不续跑模型。主机重启/复制卷/无日志保留不可判定。验证见 `docs/evidence/post-u8-r1/ADR-0064-VERIFICATION.md`，未部署，其他 Post-U8 整改未全部关闭。
 

@@ -1,10 +1,10 @@
 # ADR-0066：领域校验调用归属与持久纠错准入
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-08
 - Scope: Post-U8 F7；首批限定 `byq_strategy_validate`、`byq_ml_strategy_create`。
 - Related: ADR-0003、ADR-0031、ADR-0062、ADR-0064。
-- Acceptance: 尚未取得维护者对本决策的接受。只允许只读核查、文档和隔离资格验证，不授权新准入路径上线。
+- Acceptance: 2026-09-08，维护者回复“批准。”接受本决策；授权先进行隔离资格验证，通过后实现首批两工具的最小合同、持久纠错台账与准入接入。接受不等于资格验证通过，不授权生产上线、push 或 merge。
 - Supersedes: 不撤销既有安全边界；补充 ADR-0031 的“一次修正”和 ADR-0062 的根回合绑定。
 
 ## 已确认事实与证据边界
@@ -23,7 +23,7 @@
 5. 现有 `repair_limit: 1` 为提示。仅在 Backend 计数还可能漏掉 MCP schema 提前拒绝的请求。
    这不证明官方 SDK 没有合格接口；必须检查所锁版本并做失败测试。
 
-## 拟接受的决策
+## 接受的决策
 
 ### 1. 最小内部调用凭证
 

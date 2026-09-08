@@ -2,9 +2,17 @@
 
 状态：设计核查，尚未实现。不得据此关闭 F7。
 
+当前安全接入门禁：同 generation 两根回合的真实 HTTP 探针确认缺少可独立关联的根身份。
+[ADR-0067](../../architecture/adr/ADR-0067-root-scoped-runtime-call-identity.md) 提出根回合隔离方案，
+待接受。已有摘要合同为未接入原型，不是可信执行许可；不能跳过该门禁直接部署 Backend 计数器。
+
+接受后的首轮实测见 [官方调用观察资格切片](F7-CALL-OBSERVATION.md)：7 项观察探针通过，
+Runtime 132 passed/7 skipped；构建身份漂移导致架构检查未全绿，仍未完成持久准入。
+
 后续核查：仅传入 AgentRun 引用不足以证明当前调用的根归属。下述实现计划必须结合
-[ADR-0066 提案](../../architecture/adr/ADR-0066-domain-validation-call-admission.md)
-的逐调用可信证明；提案未接受前不将该引用当作新的准入授权。
+[ADR-0066](../../architecture/adr/ADR-0066-domain-validation-call-admission.md)
+的逐调用可信证明；维护者于 2026-09-08 批准该决策，先隔离资格验证再实施。
+接受不代表工具观察、schema 拒绝覆盖或持久准入已通过，不将 AgentRun 引用本身当作调用凭证。
 
 ## 已有能力与缺口
 

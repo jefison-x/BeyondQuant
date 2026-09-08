@@ -1540,6 +1540,11 @@ Post-U8 迟到回答恢复补充（2026-09-08）：实现前只读检查 Communi
 返回异常字符串为 `DROP`。BYQ 保留封闭 ML schema/registry，独立修复非法 JSON 类型、
 超大整数及嵌套字段定位，不引入旧执行栈；本切片不代表持久纠错计次已经实现。
 
+ADR-0066 接受后的调用准入资格切片：再次只读检查同一 Community 校验器的有限数值、
+输入与错误分离语义，分类仍为 `REFERENCE_ONLY`；旧执行器与 runtime 继续 `DROP`。
+逐调用可信根身份和私有规范输入摘要采用 `REPLACE`，独立定义 BYQ 合同及失败测试，
+不把旧策略验证成功或 model 自报 AgentRun 当作可信调用来源，不复制旧 harness。
+
 ## Post-U8 S3 指数池更新方式界面（2026-09-08）
 
 实现前只读检查 Community `frontend/src/components/stocks/StockPoolDialog.vue` 全文与
