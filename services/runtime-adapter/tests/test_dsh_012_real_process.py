@@ -12,6 +12,7 @@ import pytest
 from deepseek_harness.errors import JsonRpcError, TransportClosedError
 
 from app.runtime import RuntimeAdapter, SessionStatus
+from pathlib import Path
 
 
 pytestmark = pytest.mark.skipif(
@@ -19,6 +20,94 @@ pytestmark = pytest.mark.skipif(
     or os.environ.get("BYQ_DSH_REAL_PROCESS_TEST") != "1",
     reason="requires the isolated 0.1.2 candidate stack and real BYQ MCP",
 )
+
+
+@pytest.mark.parametrize("route,model", [
+    ("opencode-go-chat", "deepseek-v4-pro"),
+    ("opencode-go-responses", "gpt-5.6-luna"),
+    ("opencode-go-messages", "minimax-m3"),
+])
+def test_go_routing_headers_on_official_protocol_and_permanent_rejection(monkeypatch, tmp_path, route, model):
+    """Actual pinned binary and production-derived profile, loopback provider only."""
+    captured = []
+    class Mcp(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+            if "id" not in body:
+                self.send_response(202)
+                self.end_headers()
+                return
+            result = ({"protocolVersion": "2025-03-26", "capabilities": {"tools": {}},
+                "serverInfo": {"name": "synthetic", "version": "1"}}
+                if body.get("method") == "initialize" else {"tools": []})
+            encoded = json.dumps({"jsonrpc": "2.0", "id": body["id"], "result": result}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+    class Rejection(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("content-length", "0")))
+            captured.append((self.headers.get("x-opencode-session"), self.headers.get("user-agent")))
+            body = b'{"error":{"message":"synthetic invalid request","type":"invalid_request_error"}}'
+            self.send_response(400)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Rejection)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    mcp = ThreadingHTTPServer(("127.0.0.1", 0), Mcp)
+    mcp_thread = threading.Thread(target=mcp.serve_forever, daemon=True)
+    mcp_thread.start()
+    monkeypatch.setenv("BYQ_MCP_URL", f"http://127.0.0.1:{mcp.server_port}/mcp/v1")
+    monkeypatch.setenv("BYQ_MCP_TOKEN", "synthetic-only")
+    adapter = None
+    try:
+        source = Path(os.environ["BYQ_DSH_COMPOSITION"]).read_text()
+        assert source.count("x-opencode-session:") == 3
+        patch = tmp_path / "provider-wire.yml"
+        patch.write_text(source.replace("https://opencode.ai/zen/go/v1", f"http://127.0.0.1:{server.server_port}/v1"))
+        adapter = RuntimeAdapter()
+        adapter._composition = patch
+        monkeypatch.setattr(adapter, "_resolve_model", lambda *args, **kwargs: {
+            "provider": route, "model": model, "api_key": "synthetic-only"})
+        session_id = "go-wire-" + uuid.uuid4().hex
+        adapter.create_session(session_id, "synthetic-provider-trace", "synthetic-owner", "synthetic-workspace")
+        record = adapter._get(session_id)
+        adapter.submit_prompt(session_id, "Synthetic provider rejection check only.")
+        deadline = time.monotonic() + 20
+        while record.active_run is not None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert record.active_run is None
+        assert record.status == SessionStatus.FAILED
+        assert len(captured) == 1, "a permanent 400 must not be retried"
+        expected = str(uuid.uuid5(uuid.NAMESPACE_URL, "beyondquant:provider-session:" + session_id))
+        assert captured[0][0] == expected
+        assert captured[0][1] and "python" not in captured[0][1].lower()
+        failures = [event["payload"] for event in record.history if event["kind"] == "session.failed"]
+        assert failures[-1]["code"] == "model-request-rejected"
+        assert failures[-1]["retryable"] is False
+        assert "synthetic invalid request" not in json.dumps(record.history)
+    finally:
+        if adapter is not None:
+            adapter.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+        mcp.shutdown()
+        mcp.server_close()
+        mcp_thread.join(timeout=2)
 
 
 class ScriptedProvider(BaseHTTPRequestHandler):

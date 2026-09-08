@@ -1,5 +1,6 @@
 services:
   postgres:
+    restart: unless-stopped
     image: postgres:16-alpine
     command:
       - postgres
@@ -30,6 +31,7 @@ services:
       start_period: 5s
 
   frontend:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: apps/frontend/Dockerfile
@@ -43,7 +45,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - wget -q -O - http://127.0.0.1/ >/dev/null || exit 1
+        - wget -T 2 -q -O - http://127.0.0.1/ >/dev/null && wget -T 2 -q -O - http://gateway:8100/readyz >/dev/null || exit 1
       interval: 5s
       timeout: 5s
       retries: 12
@@ -73,16 +75,24 @@ services:
         - CMD
         - python
         - -c
-        - >-
-          import urllib.request;
-          response = urllib.request.urlopen('http://127.0.0.1:8100/readyz', timeout=3);
-          raise SystemExit(0 if response.status == 200 else 1)
+        - |-
+          import json, sys, urllib.request
+          try:
+              for url in ('http://127.0.0.1:8100/readyz', 'http://backend:8000/readyz', 'http://mcp:8300/healthz'):
+                  with urllib.request.urlopen(url, timeout=1) as response:
+                      assert response.status == 200
+              with urllib.request.urlopen('http://runtime-adapter:8400/readyz', timeout=1) as response:
+                  assert response.status == 200
+                  assert json.load(response)['runtime_adapter'] == 'ready'
+          except Exception:
+              sys.exit(1)
       interval: 5s
       timeout: 5s
       retries: 12
       start_period: 5s
 
   runtime-adapter:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: ${BYQ_DSH_RUNTIME_DOCKERFILE:-services/runtime-adapter/Dockerfile.u7-candidate}
@@ -126,6 +136,7 @@ services:
       start_period: 10s
 
   mcp:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/mcp/Dockerfile
@@ -154,6 +165,7 @@ services:
       start_period: 5s
 
   backend:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/backend/Dockerfile
@@ -186,10 +198,18 @@ services:
         - CMD
         - python
         - -c
-        - >-
-          import urllib.request;
-          response = urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3);
-          raise SystemExit(0 if response.status == 200 else 1)
+        - |-
+          import os, sys, urllib.request
+          from sqlalchemy import create_engine, text
+          try:
+              with urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=1) as response:
+                  assert response.status == 200
+              engine = create_engine(os.environ['BYQ_DATABASE_URL'], connect_args={'connect_timeout': 2, 'options': '-c statement_timeout=1000'})
+              with engine.connect() as connection:
+                  assert connection.execute(text('SELECT 1')).scalar() == 1
+              engine.dispose()
+          except Exception:
+              sys.exit(1)
       interval: 5s
       timeout: 5s
       retries: 12
@@ -268,6 +288,7 @@ services:
     cpus: 2.0
 
   signal-sandbox:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/signal-sandbox/Dockerfile

@@ -32,6 +32,20 @@ _USAGE_FIELDS = {
 }
 
 
+def _provider_failure(error: object) -> tuple[str | None, bool]:
+    """Reduce private upstream errors to closed, credential-free categories.
+
+    Never forward provider messages: they can contain request bodies or keys.
+    Only the observed permanent invalid-request code is classified here;
+    unqualified upstream codes retain the existing generic failure behavior.
+    """
+    if not isinstance(error, dict):
+        return None, False
+    if error.get("code") == "INVALID_REQUEST":
+        return "model-request-rejected", False
+    return None, False
+
+
 class Dsh012Compatibility:
     """Use only the 0.1.2rc1 public SDK and bundled executable surfaces."""
 
@@ -174,9 +188,12 @@ class Dsh012Compatibility:
         if event_type == "turn/end":
             reason = data.get("reason")
             value = reason.get("kind") if isinstance(reason, dict) else None
+            error = reason.get("error") if isinstance(reason, dict) and value == "error" else None
+            code, retryable = _provider_failure(error)
             return RuntimeObservation(
                 kind="turn.end", session_id=session_id, root_session=is_root,
                 runtime_activity=True, terminal_reason=_FINISH_REASONS.get(value, "failed"),
+                failure_code=code, failure_retryable=retryable,
             )
         if event_type == "assistant/message":
             return _assistant_observation(data, session_id=session_id, is_root=is_root)

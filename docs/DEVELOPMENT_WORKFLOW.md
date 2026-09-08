@@ -89,6 +89,12 @@ runbook 发布指定已验证制品，记录 backup（必要时）、服务范�
 
 ## 证据要求
 
+浏览器验证不绑定工具：按 ADR-0059 的 2026-09-09 修订，使用 Playwright 管理的
+Chromium 等测试浏览器即可，不要求 Chrome MCP、系统安装的 Chrome 或维护者个人浏览器。
+真实 Product API、持久化、隔离以及按影响要求的桌面/移动端、网络/Console、视觉检查仍须验证；
+不能仅凭 mock 页面或 HTTP 200 宣称完成。历史文件中的 Chrome MCP 专属门禁不再生效，
+历史实际使用该工具的证据保持不变。
+
 架构变更需要新增 ADR 或更新相关 Accepted ADR。集成边界需要 framework-neutral
 Contract 和 translation test。外部依赖必须有准确的 metadata/version 证据。
 Runtime 变更需要 lifecycle 和 cleanup 证据。Product/Engineering 能力变更需要
@@ -140,8 +146,8 @@ review 而 blocked。
 
 - 每个隔离 worktree/branch/Draft PR 只处理一个 Phase；
 - 默认在 Draft PR 创建且 CI 通过后停止，ready/merge 仅适用当前具名例外；
-- Product UI Phase 必须具备 Chrome MCP browser evidence 和 Community feature
+- Product UI Phase 必须具备真实浏览器/Product API evidence 和 Community feature
   checklist，才能视为完成；
 - PR body 必须包含 Product Evidence：已检查的 Community reference、已测试的 browser
-  journey、Chrome MCP review、frontend test、backend/Product API test、已完成的
+  journey、所用测试浏览器及审查结果、frontend test、backend/Product API test、已完成的
   screen/surface，以及仍缺失的项目。

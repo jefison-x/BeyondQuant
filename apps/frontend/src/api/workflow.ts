@@ -94,6 +94,7 @@ export function workflowWaiting(events: WorkflowTraceEvent[], sessionId: string)
 }
 
 const FAILURE_MESSAGES: Record<string, string> = {
+  "model-request-rejected": "模型服务拒绝了本轮请求，系统不会自动重试。请联系管理员检查模型接入配置；对话内容已保留。",
   "domain-correction-stopped": "本轮策略校验已停止，系统不会继续重复调用。请核对当前方案和已有结果后，再发起新的请求。",
   "domain-call-reference-unproven": "本轮调用缺少可核验的任务关联，系统已停止执行且不会自动重试。请确认研究对象后，再发起新的请求。",
   "domain-call-retention-bound": "本轮已达到调用记录上限，系统已停止继续调用。请检查已有结果并缩小后续研究范围。",

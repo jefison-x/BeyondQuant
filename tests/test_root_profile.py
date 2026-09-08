@@ -11,13 +11,18 @@ SPEC.loader.exec_module(profile)
 
 
 class RootProfileTests(unittest.TestCase):
-    def test_derivation_changes_only_trusted_header_and_new_identity(self):
+    def test_derivation_changes_only_authorized_headers_and_new_identity(self):
         for release, (source_path, identity_path) in profile.PROFILES.items():
             with self.subTest(release=release):
                 source = (ROOT / source_path).read_text()
                 original = json.loads((ROOT / identity_path).read_text())
                 rendered, identity = profile.render(source, original, release)
-                self.assertEqual("\n".join(line for line in rendered.splitlines()
+                provider_headers = ("        headers:\n"
+                    "          x-opencode-session: !!js process.env.BYQ_PROVIDER_SESSION_ID\n"
+                    "          User-Agent: BeyondQuant/1.0 (strategy-research-agent)\n")
+                self.assertEqual(rendered.count(provider_headers), 3)
+                stripped = rendered.replace(provider_headers, "")
+                self.assertEqual("\n".join(line for line in stripped.splitlines()
                     if "X-BYQ-Root-Run-ID:" not in line) + "\n", source)
                 self.assertEqual(identity["composition_hash"], "sha256:" + hashlib.sha256(rendered.encode()).hexdigest())
                 self.assertEqual(identity["source_composition_hash"], original["composition_hash"])

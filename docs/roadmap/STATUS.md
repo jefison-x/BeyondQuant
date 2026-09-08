@@ -5,6 +5,10 @@
 本文档顶部是当前 Phase 状态的事实来源，使新的 Codex session 不会从 commit history 推断状态。
 下方交付历史保留当时配置与验收事实，不作为当前运行参数或通用合并/部署授权；后续具名修订可能已替代它。
 
+浏览器验收现行规则：依据 ADR-0059 的 2026-09-09 维护者授权修订，取消 Chrome MCP
+专属要求，使用测试框架管理的真实浏览器即可；不依赖系统 Chrome 或个人浏览器调试连接。
+真实 Product API、业务断言及按影响要求的浏览器证据仍必须满足。以下历史工具记录不改写。
+
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、
   技术详情和小巴任务投影中分离。名称搜索保持服务端分页，缺省名称来自已验证策略，历史任务由 PostgreSQL 前向修复补齐，
   且名称不进入 immutable input/result identity 或 idempotency identity。

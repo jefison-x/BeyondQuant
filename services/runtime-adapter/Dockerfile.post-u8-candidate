@@ -21,7 +21,7 @@ COPY services/runtime-adapter/app ./app
 COPY services/runtime-adapter/tests ./tests
 COPY packages/contracts ./packages/contracts
 COPY packages/operations ./packages/operations
-COPY config/dsh/builds/dsh-0.1.2rc1-post-u8.15.json /opt/byq/builds/build.identity.json
+COPY config/dsh/builds/dsh-0.1.2rc1-post-u8.17.json /opt/byq/builds/build.identity.json
 RUN python3 -m pip check \
     && python3 -c "from importlib.metadata import version; assert version('deepseek-harness-sdk') == '0.1.2rc1'; assert version('deepseek-harness-runtime-bin') == '0.1.2rc1'"
 

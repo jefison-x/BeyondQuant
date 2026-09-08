@@ -10,6 +10,13 @@ Path selection is an impact graph, not permission to skip a changed component's 
 
 ## Profiles
 
+Browser verification is tool-neutral (ADR-0059, 2026-09-09 amendment).
+Use the test framework's managed browser, such as Playwright Chromium; neither
+Chrome MCP nor a system-installed Google Chrome is a prerequisite or extra gate.
+Keep real Gateway/Product API journeys, persistence/isolation assertions and
+impact-required desktop/mobile, network/console and visual checks. Mocked UI
+tests alone are not real Product verification. Preserve historical tool evidence.
+
 | Profile | Trigger | Required checks |
 |---|---|---|
 | Documentation | Markdown/evidence only | diff hygiene, changed-document links and architecture tests when normative architecture/contract/roadmap files change |
