@@ -63,7 +63,7 @@ test("real Product API login and Stock Pool create flow", async ({ page, baseURL
   expect(replaceStatus).toBe(200);
   await page.goto(`/stock-pool?pool=${created.pool.pool_id}`);
   await expect(page.getByText(poolName, { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("current", { exact: true })).toBeVisible();
+  await expect(page.getByRole("row", { name: "数据就绪度 已就绪" })).toBeVisible();
   await page.getByRole("tab", { name: "成员与权重" }).click();
   await expect(page.getByText("000001.SZ", { exact: true }).first()).toBeVisible();
   await page.getByRole("tab", { name: "快照历史" }).click();

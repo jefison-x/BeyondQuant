@@ -916,6 +916,18 @@ def test_product_turn_requires_a_model_credential_without_exposing_it(adapter: R
     adapter.release_session("s-1")
 
 
+def test_existing_prompt_receipt_precedes_missing_credential_rejection(adapter: RuntimeAdapter):
+    adapter.create_session("s-1", "t-1")
+    record = adapter._get("s-1")
+    record.prompt_idempotency["message_original"] = ("synthetic original", "original-run")
+    assert adapter.submit_prompt("s-1", "synthetic original", require_model_key=True,
+                                 idempotency_key="message_original") == "original-run"
+    with pytest.raises(SessionConflict):
+        adapter.submit_prompt("s-1", "different content", require_model_key=True,
+                              idempotency_key="message_original")
+    adapter.release_session("s-1")
+
+
 def test_operations_snapshot_normalizes_and_deduplicates_dsh_usage(adapter: RuntimeAdapter) -> None:
     adapter.create_session("s-1", "t-1")
     record = adapter._get("s-1")

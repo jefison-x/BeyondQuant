@@ -21,6 +21,7 @@ from packages.contracts.conversation_rehydration import (
     ConversationContextMessage,
 )
 from packages.operations.admission import AdmissionClosed, chat_admission
+from packages.contracts.prompt_rejection import matches_credential_rejection
 
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
 from .auth_api import router as auth_router
@@ -433,6 +434,10 @@ def _trusted_request_identity(request: Request) -> tuple[Principal, str]:
     )
 
 
+class PromptAdmissionRejected(HTTPException):
+    """Only constructed after checking an exact Runtime pre-admission receipt."""
+
+
 def _adapter_post(path: str, *, payload: dict[str, object] | None = None, timeout: float = 20.0) -> dict[str, object]:
     try:
         response = httpx.post(
@@ -448,6 +453,17 @@ def _adapter_post(path: str, *, payload: dict[str, object] | None = None, timeou
             detail = "runtime session is not available for this operation"
         elif status == 503:
             detail = "product model is unavailable"
+            prefix = "/internal/runtime/sessions/"
+            if (path.startswith(prefix) and path.endswith("/prompt") and isinstance(payload, dict)
+                    and payload.get("require_model_key") is True):
+                try:
+                    rejected = exc.response.json()
+                except ValueError:
+                    rejected = None
+                if (isinstance(rejected, dict) and set(rejected) == {"detail"}
+                        and matches_credential_rejection(rejected["detail"], path[len(prefix):-len("/prompt")],
+                            payload.get("idempotency_key"), payload.get("content"))):
+                    raise PromptAdmissionRejected(status_code=503, detail=detail) from exc
         raise HTTPException(status_code=status, detail=detail) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="runtime adapter unavailable") from exc
@@ -807,7 +823,8 @@ def _continue_approval_conversation(
         if not isinstance(receipt, dict) or receipt.get("accepted") is not True or not _valid_prompt_run_id(receipt.get("run_id")):
             raise HTTPException(status_code=502, detail="continuation receipt is unconfirmed")
     except HTTPException as error:
-        state = "outcome_unknown" if prompt_attempted and error.status_code >= 500 else "failed"
+        state = "outcome_unknown" if (prompt_attempted and error.status_code >= 500
+                                      and not isinstance(error, PromptAdmissionRejected)) else "failed"
         if state == "outcome_unknown" and _adapter_prompt_receipt(session.session_id, str(payload["idempotency_key"]), instruction) is not None:
             confirmed = mark("submitted").get("approval")
             return {"status": str(confirmed.get("continuation_status") if isinstance(confirmed, dict) else "outcome_unknown")}
@@ -1003,7 +1020,7 @@ def submit_product_turn(
             raise HTTPException(status_code=502, detail="prompt receipt is unconfirmed")
     except HTTPException as exc:
         key = prompt_payload.get("idempotency_key")
-        if exc.status_code < 500 or not isinstance(key, str):
+        if isinstance(exc, PromptAdmissionRejected) or exc.status_code < 500 or not isinstance(key, str):
             raise
         receipt = _adapter_prompt_receipt(session.session_id, key, request.content)
         if receipt is None:

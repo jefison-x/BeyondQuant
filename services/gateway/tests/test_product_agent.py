@@ -15,6 +15,37 @@ from app.trace_store import TraceStore
 TOKEN = "phase7-product-token"
 
 
+@pytest.mark.parametrize("mutation", [None, {"session_id": "other-session"},
+    {"idempotency_key": "other-message"}, {"content_sha256": "0" * 64},
+    {"accepted": True}, {"accepted": 0}, {"extra": "untrusted"}, {"code": "some-server-error"}])
+def test_only_exact_pre_admission_rejection_is_known_not_accepted(monkeypatch, mutation):
+    import hashlib
+    import httpx
+
+    session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
+                              principal=None, workspace_id="workspace-1")
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"message": {"message_id": "message_original"}})
+    detail = {"schema_version": "prompt-rejection.v1", "code": "model_credentials_unavailable",
+              "accepted": False, "session_id": "runtime-1", "idempotency_key": "message_original",
+              "content_sha256": hashlib.sha256(b"synthetic original").hexdigest()}
+    detail.update(mutation or {})
+    monkeypatch.setattr(main.httpx, "post", lambda url, **_: httpx.Response(
+        503, json={"detail": detail}, request=httpx.Request("POST", url)))
+    reads = []
+    monkeypatch.setattr(main, "_adapter_prompt_receipt", lambda *args: reads.append(args))
+    if mutation is None:
+        with pytest.raises(main.HTTPException) as raised:
+            main.submit_product_turn("conversation-1", main.ProductPromptRequest(content="synthetic original"), Request({"type": "http"}))
+        assert raised.value.status_code == 503
+        assert reads == []
+    else:
+        with pytest.raises(main.ProductError) as raised:
+            main.submit_product_turn("conversation-1", main.ProductPromptRequest(content="synthetic original"), Request({"type": "http"}))
+        assert raised.value.code == "prompt_outcome_unknown"
+        assert len(reads) == 1
+
+
 @pytest.mark.parametrize("receipt", [{}, {"accepted": False, "run_id": "run-1"},
                                      {"accepted": True}, {"accepted": True, "run_id": " "}])
 def test_normal_turn_never_claims_acceptance_from_an_invalid_receipt(monkeypatch, receipt) -> None:

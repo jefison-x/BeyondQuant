@@ -423,8 +423,6 @@ class RuntimeAdapter:
         idempotency_key: str | None = None,
     ) -> str:
         record = self._get(session_id)
-        if require_model_key and not record.model_resolution.get("api_key"):
-            raise ModelCredentialUnavailable("the configured model provider has no credential")
         with record.lock:
             if idempotency_key is not None:
                 if not 8 <= len(idempotency_key) <= 128:
@@ -442,6 +440,10 @@ class RuntimeAdapter:
                     if existing_content != content:
                         raise SessionConflict("prompt idempotency key was reused with different content")
                     return existing_run_id
+            # An accepted original receipt remains authoritative even if model
+            # credentials are subsequently absent. Reject only a new admission.
+            if require_model_key and not record.model_resolution.get("api_key"):
+                raise ModelCredentialUnavailable("the configured model provider has no credential")
             if record.workspace_id and record.pending_terminal_receipts:
                 raise SessionConflict("previous turn domain cleanup is not yet acknowledged")
             if record.status not in SessionStatus.PROMPTABLE or record.active_run is not None:

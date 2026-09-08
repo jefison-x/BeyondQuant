@@ -59,7 +59,7 @@ not changed by the CI build selection.
   independent `cleanup-resources.sh --scope=post-u8-qual-20260908-1 --verify-only`
   confirmed no scoped containers, image tags, volumes or networks remain.
 
-## Second build identities — verification pending
+## Second build identities — FAILED integration
 
 | Build | Manifest SHA-256 | Bound inputs |
 | --- | --- | --- |
@@ -70,6 +70,44 @@ The second revision additionally binds all worker sources, signal sandbox,
 PostgreSQL initialization, engineering/acceptance scripts, repository tests and
 CI/browser configuration. Regression assertions require these inputs and reject
 missing or modified worker entries. The first revision is retained unchanged.
+
+Full isolated CI (`post-u8-qual-20260908-2`) finished with **24 passed, 2 failed**.
+Backend: 421 passed/1 skipped/7 subtests, 459.70 seconds; Gateway: 175 passed;
+Runtime regular: 117 passed/14 skipped; candidate real process/delegates: 12 passed.
+Both lifecycle benchmarks completed 20 cycles with zero lingering threads and
+retained sessions. MCP complete suite, frontend build and 54 files/172 unit tests
+passed. Restart/two-user Product checks passed. The two failures were:
+
+1. Keyless Product prompt: expected 503, received 502 `prompt_outcome_unknown`.
+   Gateway treated Runtime's known credential pre-admission failure as an unknown
+   server outcome. New exact `prompt-rejection.v1` binds session/message/content
+   digest; only this closed receipt retains 503. Ordinary/forged/mismatched server
+   failures remain unknown. Approval continuation uses the same distinction.
+   Runtime checks accepted idempotent receipts before credential rejection, so
+   later credential loss cannot negate prior acceptance.
+2. Real stock-pool browser test: creation succeeded, but its locator expected the
+   old English `current` after the UI adopted Chinese `已就绪`. The assertion now
+   checks the readiness row, without relaxing creation or persistence assertions.
+
+The new Gateway counterexample first failed (1 failed/6 passed); initial full
+Gateway regression after the fix passed 182 tests. Additional integer-false and
+approval-continuation cases were then added. No paid API was used to bypass the
+keyless failure. Independent cleanup verification confirmed zero `.2` resources.
+Logs and browser traces remain in `.ci-artifacts/post-u8-qual-20260908-2*` locally.
+This image is not certified; the fixes require a new immutable build revision.
+
+## Third build identities — verification pending
+
+| Build | Manifest SHA-256 | Bound inputs |
+| --- | --- | --- |
+| dsh-0.1.1rc1-post-u8.3 | 4162c8d16c1672831fe160d8b86f06cfbd8938e214b20c2109f04c28c969001b | 539 |
+| dsh-0.1.2rc1-post-u8.3 | 070df99a554521c26afed72fe541b1c234efbeecba00da72f0f3099407530ede | 541 |
+
+Gateway full regression including exact/forged rejection and approval-continuation
+cases: 183 passed, 1.68 seconds. Repository architecture/governance: 214 passed,
+10.325 seconds. The isolated rejection-test image was removed and its scope
+`post-u8-rejection-20260908` independently verified clean. Full keyless CI uses
+`post-u8-qual-20260908-3`; final image/acceptance/cleanup results are pending.
 
 ## Not implied
 

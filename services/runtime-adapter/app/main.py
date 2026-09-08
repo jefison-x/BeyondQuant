@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from packages.contracts.conversation_rehydration import ConversationContextMessage
 from packages.operations.admission import AdmissionClosed, chat_admission
+from packages.contracts.prompt_rejection import credential_rejection
 
 from .runtime import ModelCredentialUnavailable, RuntimeAdapter, SessionConflict
 
@@ -129,6 +130,13 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ModelCredentialUnavailable as exc:
+        if request.idempotency_key is not None:
+            try:
+                rejection = credential_rejection(session_id, request.idempotency_key, request.content)
+            except ValueError:
+                rejection = None
+            if rejection is not None:
+                raise HTTPException(status_code=503, detail=rejection) from exc
         raise HTTPException(status_code=503, detail="configured model provider is unavailable") from exc
     return {"accepted": True, "session_id": session_id, "run_id": run_id}
 

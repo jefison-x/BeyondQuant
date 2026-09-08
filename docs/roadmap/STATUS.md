@@ -68,6 +68,11 @@
 
 ## 生效中的 Accepted ADR
 
+Post-U8 交付授权（2026-09-08）：维护者明确允许新增独立构建身份、重新认证，并将当前
+修复分支推送至 `jefison-x/BeyondQuant` 创建 Draft PR；不合并、不部署。ADR-0061 已补充
+本次范围，构建验证见[独立认证记录](../evidence/post-u8-r1/BUILD-REQUALIFICATION.md)。
+这不代表剩余整改全部完成，不改变 U8 提前结束结论或 Product Phase 97。
+
 当前 F6 维护决策：[ADR-0065](../architecture/adr/ADR-0065-task-continuation-budget-admission.md)
 已于 2026-09-08 获维护者明确批准，状态为 Accepted。已证实 SDK 单次 max_tokens 不等于
 任务累计预算；预算账本合同及官方接口资格核查继续进行。接口全调用覆盖尚未通过资格验证，

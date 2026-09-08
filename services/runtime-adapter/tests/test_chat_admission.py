@@ -6,6 +6,21 @@ from fastapi.testclient import TestClient
 from app import main
 
 
+def test_missing_credentials_return_an_exact_pre_admission_rejection(monkeypatch):
+    import hashlib
+    monkeypatch.delenv("BYQ_CHAT_ADMISSION_FILE", raising=False)
+    def reject(*args, **kwargs):
+        raise main.ModelCredentialUnavailable("synthetic secret must not be exposed")
+    monkeypatch.setattr(main.adapter, "submit_prompt", reject)
+    response = TestClient(main.app).post("/internal/runtime/sessions/synthetic/prompt",
+        json={"content": "synthetic original", "require_model_key": True, "idempotency_key": "message_original"})
+    assert response.status_code == 503
+    assert response.json() == {"detail": {
+        "schema_version": "prompt-rejection.v1", "code": "model_credentials_unavailable", "accepted": False,
+        "session_id": "synthetic", "idempotency_key": "message_original",
+        "content_sha256": hashlib.sha256(b"synthetic original").hexdigest(),
+    }}
+
 def test_runtime_maintenance_blocks_admission_but_keeps_release_and_events(monkeypatch, tmp_path: Path):
     gate = tmp_path / "admission.state"
     gate.write_text("closed\n")

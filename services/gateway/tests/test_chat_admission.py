@@ -73,7 +73,7 @@ def test_approval_continuation_preserves_unknown_receipts_without_resubmission(m
     monkeypatch.setattr(main, "_trusted_agent_headers", lambda _: {})
     monkeypatch.setattr(main, "_product_session", lambda *_: session)
     monkeypatch.setattr(main, "_adapter_prompt_receipt", lambda *args: None)
-    for mode in ("timeout", "malformed", "rejected"):
+    for mode in ("timeout", "malformed", "rejected", "credential-rejected"):
         states, calls = [], []
         def backend(method, path, payload, **kwargs):
             states.append(payload["status"])
@@ -82,10 +82,12 @@ def test_approval_continuation_preserves_unknown_receipts_without_resubmission(m
             calls.append(1)
             if mode == "malformed":
                 return {"accepted": True}
+            if mode == "credential-rejected":
+                raise main.PromptAdmissionRejected(status_code=503, detail="product model is unavailable")
             raise main.HTTPException(status_code=503 if mode == "timeout" else 409, detail="synthetic")
         monkeypatch.setattr(main, "_backend_request", backend)
         monkeypatch.setattr(main, "_adapter_post", adapter)
-        expected = "failed" if mode == "rejected" else "outcome_unknown"
+        expected = "failed" if mode in {"rejected", "credential-rejected"} else "outcome_unknown"
         assert main.continue_approval_conversation(None, "conversation", "approval", "approved", "action") == {"status": expected}
         assert states == ["submitting", expected] and len(calls) == 1
 
