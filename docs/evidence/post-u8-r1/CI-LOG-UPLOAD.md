@@ -1,6 +1,6 @@
 # CI 脱敏日志附件修复（2026-09-08）
 
-状态：本地验证通过；维护者已授权顺序推送/PR/CI-green 合并，远端附件实测待执行。
+状态：本地与远端验证通过；PR #264 已按授权合并，远端附件实测通过。
 未部署，不关闭 Post-U8 业务整改。
 
 ## 前一分支交付事实
@@ -52,3 +52,22 @@
 `fix/post-u8-ci-log-evidence`、`test/post-u8-late-http`，按 ADR-0015/0059
 精确 head 门禁顺序 squash auto-merge；不授权生产部署、release/tag 或历史研究续跑。
 DSH 0.1.2rc1、Product Phase 97、U8 提前结束及 F6 后台关闭结论不变；无付费 API。
+
+## 远端交付结果
+
+[PR #264](https://github.com/jefison-x/BeyondQuant/pull/264) 精确 head
+`f9449e3773e7faddc9ed80621c38041dc60d53b1` 的
+[run 34223807427](https://github.com/jefison-x/BeyondQuant/actions/runs/34223807427)
+全部检查 success：local-ci 20m18s、contribution 1m5s、ci-gate 3s。
+实际下载附件验证两份非空文件 `checks.log`、`cleanup.log`；前者记录 26/26 checks
+passed，后者记录 `CI cleanup verified: 34223807427-1`。
+Backend 490 passed / 1 skipped / 7 subtests（623.48 秒），架构225项通过。
+
+附件 `ci-34223807427-1`，ID `10055578714`，44506 bytes，API 报告 SHA-256
+`fb350928de1915379184b4f278d502e4f51fcd669bf5501999276cf7b74a4a84`。
+这里只记录 API 报告的 archive digest，不冒称本地再次计算了 archive hash；本地实际读取了
+解压后的两个日志并确认测试与清理结论。七天保留期不等于永久存档。
+
+贡献和服务器保护 preflight 对该精确 head 通过后，按 ADR-0015/0059 squash auto-merge，
+2026-09-08 12:24:50 UTC 合并为 `5bacb7e6171f93126078f831d925e6f68ead9d8d`。
+主工作区随后 fast-forward；第二批迟到 HTTP 证据分支从新主线同步，不覆盖任何历史构建身份。
