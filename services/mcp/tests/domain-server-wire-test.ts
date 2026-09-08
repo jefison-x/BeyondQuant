@@ -9,12 +9,15 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 const root = "a".repeat(32);
 const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
 let schemaCalls = 0;
+const researchContext = { schema_version: "research-task-context.v1", status: "available", has_more: false,
+  tasks: [{ task_id: "task_" + "c".repeat(32), title: "原会话研究", objective_excerpt: "不使用其他会话的最新任务",
+    objective_truncated: false, status: "planned", version: 1, stage: null, next_action: null, blocked_reason: null }] };
 const backend = createServer(async (req, res) => {
   if (req.method === "GET") {
-    assert.match(req.url ?? "", /notifications/);
+    assert.ok(["/v1/agent/data-demand-notifications", "/v1/agent/research-context"].includes(req.url ?? ""));
     assert.equal(req.headers["x-byq-root-run-id"], undefined); // private header is limited to the two admitted actions
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ notifications: [] }));
+    res.end(JSON.stringify(req.url === "/v1/agent/research-context" ? researchContext : { notifications: [] }));
     return;
   }
   const chunks: Buffer[] = [];
@@ -70,6 +73,7 @@ try {
   const context = await client.callTool({ name: "byq_agent_context", arguments: {} });
   assert.ok(!JSON.stringify(context).includes(root));
   assert.ok(!JSON.stringify(context).includes("root_run_id"));
+  assert.deepEqual(JSON.parse((context.content as Array<{ text: string }>)[0].text).research_context, researchContext);
   const args = { task_id: "task-wire", agent_run_id: "run-wire", trace_id: "model-supplied-trace",
     idempotency_key: "same-request", strategy: { strategy_id: "synthetic", name: "合成", category: "custom", script: "pass" } };
   const reply = await client.callTool({ name: "byq_strategy_validate", arguments: args });

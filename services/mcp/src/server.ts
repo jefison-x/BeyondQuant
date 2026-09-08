@@ -6,6 +6,7 @@ import { z } from "zod";
 import { domainValidationSchemas } from "./domain-validation-schema.js";
 import { evidenceBoundedFetcher, safeDomainAdmission } from "./domain-admission.js";
 import { observeDomainSchemaFailures } from "./domain-schema-observation.js";
+import { fetchResearchContext } from "./research-context.js";
 
 import { fetchByqHealth } from "./backend-health.js";
 import {
@@ -281,7 +282,10 @@ function trustedBackendFetcher(context: Required<AgentContext>): typeof fetch {
 async function byqAgentContext(_args: Record<string, never>, extra: unknown) {
   const context = completeAgentContext(extra);
   if (!context) return agentContextUnavailable();
-  const inbox = await fetchByqDataDemandNotifications(BACKEND_URL, trustedBackendFetcher(context));
+  const [inbox, researchContext] = await Promise.all([
+    fetchByqDataDemandNotifications(BACKEND_URL, trustedBackendFetcher(context)),
+    fetchResearchContext(BACKEND_URL, trustedBackendFetcher(context)),
+  ]);
   let notifications: unknown[] = [];
   if (!inbox.isError) {
     try {
@@ -290,7 +294,8 @@ async function byqAgentContext(_args: Record<string, never>, extra: unknown) {
     } catch { notifications = []; }
   }
   return {
-    content: [{ type: "text" as const, text: JSON.stringify({ service: SERVICE, status: "ok", context, notifications }) }],
+    content: [{ type: "text" as const, text: JSON.stringify({ service: SERVICE, status: "ok", context, notifications,
+      research_context: researchContext }) }],
     isError: false,
   };
 }
@@ -820,7 +825,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_agent_context",
     {
-      description: "Return the trusted BYQ owner, actor, trace, and DSH session context plus bounded durable data and ML progress notifications for this agent run.",
+      description: "Return trusted BYQ identity, bounded data/ML notifications and original-conversation research task candidates. Candidates are not automatic task selection; read the exact task before continuing and ask when ambiguous. Unavailable or none_bound is not proof that no previous task exists.",
       inputSchema: {},
     },
     () => byqAgentContext({}, trustedContext),

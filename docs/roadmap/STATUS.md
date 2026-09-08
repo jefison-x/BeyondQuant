@@ -100,6 +100,12 @@ S3 历史成分准备继续隔离整改：明确日期的封闭准备范围及�
 专用 data-demand/Worker/Product 闭环尚未接入；不计作 S3 完成，不进行数据扩容。
 详见[历史成分准备记录](../evidence/post-u8-r1/S3-HISTORICAL-PREPARATION.md)。
 
+原会话任务发现缺口已补只读 Backend/MCP 上下文，禁止工作区最新任务回退和隐式重建。
+独立 `.12` 构建的架构 224 项、MCP 全套及 Backend 490 项（1 skipped）通过；三根真实
+Product/官方进程的合成恢复探针通过：原目标保留、经 MCP 找回原任务、明确新指令送达。
+该脚本不代替真实模型研究语义验收，F7/S3/F6 仍未全部关闭；未部署。
+见[原任务发现证据](../evidence/post-u8-r1/ORIGINAL-TASK-DISCOVERY.md)。
+
 - [ADR-0064](../architecture/adr/ADR-0064-runtime-crash-recovery-evidence.md)：已接受并完成首版本地崩溃证据恢复；仅原本地卷、同次主机启动且原排他锁身份可证时收尾，不续跑模型。主机重启/复制卷/无日志保留不可判定。验证见 `docs/evidence/post-u8-r1/ADR-0064-VERIFICATION.md`，未部署，其他 Post-U8 整改未全部关闭。
 
 - [ADR-0063](../architecture/adr/ADR-0063-disabled-owner-terminal-cleanup.md)：维护者已接受禁用身份后既有 AgentRun 的受限终态清理；本地实现及 Backend 完整回归已通过，未部署。历史未绑定记录及其他 Post-U8 流程整改仍未关闭。

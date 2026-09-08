@@ -1438,6 +1438,14 @@ def get_agent_data_demand_notifications(request: Request) -> dict[str, object]:
     return _data_demand_call(operation)
 
 
+@app.get("/v1/agent/research-context")
+def get_agent_research_context(request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    if request.query_params:
+        raise HTTPException(status_code=422, detail="research context does not accept scope parameters")
+    return _research_call(lambda: research_store.get_agent_task_context(trusted_context=context))
+
+
 @app.get("/v1/data-sync/jobs")
 def list_data_sync_jobs(request: Request, limit: int = 50) -> dict[str, object]:
     _require_data_admin(request)

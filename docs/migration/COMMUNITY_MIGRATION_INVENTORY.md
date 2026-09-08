@@ -42,6 +42,14 @@ old orchestration are `REPLACE` / `DROP`. BYQ checks trusted owner/workspace and
 reserves authoritative Artifact kinds for existing typed domain producers.
 No Community code, database or runtime is copied or modified.
 
+Post-U8 original-task discovery: re-inspected Community ResearchTaskCreateRequest/
+ResearchTaskRecord session/request/task identity, owner_subject and goal/stage fields.
+Exact original identity and bounded progress are `REFERENCE_ONLY` / `PORT_TESTS`;
+client-selected session/run identity, optional ownership and arbitrary plan/conclusion
+objects are `DROP` for context recovery. BYQ will read its existing durable
+conversation binding through MCP context, never pick a workspace-latest task or
+copy private DSH state. Legacy unbound tasks remain unbound.
+
 Post-U8 runtime-context isolation: Community `agent-service/app/harness/roles.py`
 and `workflows/contracts.py` inspected read-only. Role/parent identity and explicit
 terminal status are `REFERENCE_ONLY`; old generic graph topology/executor is

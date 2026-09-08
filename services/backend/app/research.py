@@ -22,6 +22,8 @@ MAX_JSON_BYTES = 64 * 1024
 MAX_ARTIFACT_JSON_BYTES = 32 * 1024 * 1024
 MAX_SOURCES = 64
 MAX_LINEAGE = 64
+MAX_AGENT_TASK_CANDIDATES = 20
+MAX_AGENT_OBJECTIVE_EXCERPT = 400
 # These kinds carry domain validation/approval/execution authority. Only the
 # typed BYQ producer may create or transition them, never the generic API.
 PRODUCER_OWNED_ARTIFACT_KINDS = frozenset({
@@ -268,6 +270,8 @@ class ResearchStore(ResearchContinuationMixin, PgStoreMixin):
         "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS progress JSONB",
         "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS conversation_id TEXT",
         "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS continuation_permission JSONB",
+        """CREATE INDEX IF NOT EXISTS research_tasks_conversation_context
+            ON research_tasks(conversation_id,owner_principal,created_at,task_id)""",
         """
         CREATE TABLE IF NOT EXISTS experiments (
             experiment_id TEXT PRIMARY KEY,
@@ -522,6 +526,42 @@ class ResearchStore(ResearchContinuationMixin, PgStoreMixin):
         else:
             rows = self._execute("SELECT * FROM research_tasks ORDER BY created_at DESC, task_id DESC LIMIT 200")
         return {"tasks": [self._task_row(row) for row in rows]}
+
+    def get_agent_task_context(self, *, trusted_context: dict[str, str]) -> dict[str, object]:
+        """Read original-conversation candidates, never choose or resume a task."""
+        required = ("owner_principal", "workspace_id", "session_id", "trace_id", "actor_principal")
+        if any(not isinstance(trusted_context.get(key), str) or not trusted_context[key].strip() for key in required):
+            raise ResearchNotFound("original research context is unavailable")
+        if trusted_context["actor_principal"] != "byq-product-agent-" + trusted_context["session_id"]:
+            raise ResearchNotFound("original research context is unavailable")
+        params = {"owner": trusted_context["owner_principal"], "workspace": trusted_context["workspace_id"],
+                  "session": trusted_context["session_id"], "trace": trusted_context["trace_id"]}
+        with self._transaction() as connection:
+            conversation = fetch_one(connection, """SELECT c.conversation_id FROM product_conversations c
+                JOIN workspaces w ON w.workspace_id=c.workspace_id
+                JOIN users u ON u.user_id=w.owner_user_id
+                JOIN workspace_memberships m ON m.workspace_id=w.workspace_id AND m.user_id=u.user_id
+                WHERE c.runtime_session_id=:session AND c.trace_id=:trace AND c.owner_principal=:owner
+                  AND c.workspace_id=:workspace AND c.status='active' AND w.status='active'
+                  AND w.kind='personal' AND u.username=:owner AND u.status='active'
+                  AND m.status='active' AND m.role='owner' FOR SHARE OF c,w,u,m""", params)
+            if conversation is None:
+                raise ResearchNotFound("original research context is unavailable")
+            rows = execute(connection, """SELECT task_id,title,objective,status,version,progress FROM research_tasks
+                WHERE conversation_id=:conversation AND owner_principal=:owner AND workspace_id=:workspace
+                  AND trace_id=:trace ORDER BY created_at,task_id LIMIT :limit""",
+                {**params, "conversation": conversation["conversation_id"], "limit": MAX_AGENT_TASK_CANDIDATES + 1})
+        tasks = []
+        for row in rows[:MAX_AGENT_TASK_CANDIDATES]:
+            progress = _progress_payload(row["progress"]) if row["progress"] is not None else {}
+            tasks.append({"task_id": row["task_id"], "title": row["title"],
+                "objective_excerpt": row["objective"][:MAX_AGENT_OBJECTIVE_EXCERPT],
+                "objective_truncated": len(row["objective"]) > MAX_AGENT_OBJECTIVE_EXCERPT,
+                "status": row["status"], "version": row["version"],
+                "stage": progress.get("stage"), "next_action": progress.get("next_action"),
+                "blocked_reason": progress.get("blocked_reason")})
+        return {"schema_version": "research-task-context.v1", "status": "available" if tasks else "none_bound",
+                "tasks": tasks, "has_more": len(rows) > MAX_AGENT_TASK_CANDIDATES}
 
     def create_experiment(self, payload: object) -> dict[str, object]:
         data = self._experiment_payload(payload)
