@@ -2113,7 +2113,7 @@ def validate_strategy_draft(payload: dict[str, Any], http_request: Request) -> d
             prepared = prepare_strategy(strategy_request.get("strategy"))
         except ValueError as error:
             if connection is not None:
-                raise DomainValidationRejected("strategy validation failed") from error
+                raise DomainValidationRejected("strategy validation failed", validation_error=error) from error
             raise
         artifact = research_store.create_artifact(
             {
@@ -2567,7 +2567,7 @@ def create_ml_strategy_version(payload: dict[str, Any], request: Request) -> dic
             normalized = normalize_ml_strategy(data.get("strategy"))
         except ValueError as error:
             if connection is not None:
-                raise DomainValidationRejected("ML strategy validation failed") from error
+                raise DomainValidationRejected("ML strategy validation failed", validation_error=error) from error
             raise
         fingerprint = content_sha256(normalized)
         artifact = research_store.find_artifact_by_content(

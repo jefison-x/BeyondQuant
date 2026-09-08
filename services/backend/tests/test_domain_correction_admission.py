@@ -58,6 +58,79 @@ def test_failed_input_new_key_never_runs_and_one_repair_survives_restart(observe
         reopened.close()
 
 
+@pytest.mark.parametrize("action,path", [
+    ("byq_strategy_validate", "/v1/research/strategies/validate"),
+    ("byq_ml_strategy_create", "/v1/research/ml/strategies/versions"),
+])
+def test_cancel_waits_for_inflight_atomic_artifact_commit(observed, monkeypatch, action, path):
+    from threading import Event
+    import time
+    from fastapi.testclient import TestClient
+    from app import main
+    from test_strategy_artifact import strategy_payload
+    from tests.test_ml_strategy import valid_strategy
+    from tests.test_agent_run_lifecycle import start
+
+    store, evidence, scope, ctx = observed
+    if action == "byq_ml_strategy_create":
+        apply(store, ctx, evidence["root_run_id"], key="ml-agent", sequence=2)
+        run = start(store, ctx, "ml-agent", role_id="ml_researcher")
+        evidence = {**evidence, "agent_run_id": run["run_id"]}
+    payload = {"task_id": evidence["task_id"], "agent_run_id": evidence["agent_run_id"],
+        "idempotency_key": "inflight-commit", "trace_id": "trace-test",
+        "strategy": strategy_payload() if action == "byq_strategy_validate" else valid_strategy()}
+    store.consume_domain_call_evidence({**evidence,
+        **request_evidence(action, payload, trace_id="trace-test"), "sequence": 3}, **scope)
+    headers = {**ctx, "x-byq-root-run-id": evidence["root_run_id"]}
+    written, release = Event(), Event()
+    original = AgentResearchStore.execute_domain_call
+
+    def pause_before_commit(self, admission, operation):
+        def paused(connection):
+            result = operation(connection)
+            written.set()
+            assert release.wait(15), "test did not release the synthetic transaction"
+            return result
+        return original(self, admission, paused)
+
+    monkeypatch.setattr(AgentResearchStore, "execute_domain_call", pause_before_commit)
+    terminal_store = AgentResearchStore()
+    try:
+        with ThreadPoolExecutor(2) as executor:
+            write = executor.submit(lambda: TestClient(main.app).post(path, json=payload, headers=headers))
+            try:
+                assert written.wait(10), "domain operation never reached its commit boundary"
+                # Another connection cannot observe an uncommitted Artifact.
+                assert store._fetch_one("SELECT count(*) AS n FROM artifacts")["n"] == 0
+                cancel = executor.submit(apply, terminal_store, ctx, evidence["root_run_id"],
+                    outcome="cancelled", sequence=5)
+                deadline = time.monotonic() + 5
+                blocked = False
+                while time.monotonic() < deadline:
+                    blocked = store._fetch_one("""SELECT EXISTS (
+                        SELECT 1 FROM pg_stat_activity WHERE datname=current_database()
+                        AND wait_event='advisory' AND cardinality(pg_blocking_pids(pid)) > 0
+                    ) AS blocked""")["blocked"]
+                    if blocked:
+                        break
+                    time.sleep(0.02)
+                assert blocked, "no actual PostgreSQL advisory-lock contention observed"
+                assert not cancel.done()
+            finally:
+                release.set()
+            response = write.result(timeout=10)
+            assert response.status_code == 201, response.text
+            cancel.result(timeout=10)
+        assert store._fetch_one("SELECT count(*) AS n FROM artifacts")["n"] == 1
+        receipt = store._fetch_one("SELECT result_json FROM agent_domain_call_claims")["result_json"]
+        assert receipt == {"state": "succeeded", "result": response.json()}
+        assert store._fetch_one("SELECT status FROM agent_runtime_turns")["status"] == "cancelled"
+        assert TestClient(main.app).post(path, json=payload, headers=headers).json() == response.json()
+    finally:
+        release.set()
+        terminal_store.close()
+
+
 def test_second_failure_cannot_reset_budget_and_same_key_changed_input_conflicts(observed):
     store = observed[0]
     store.execute_domain_call(claim(observed), invalid)
@@ -209,3 +282,118 @@ def test_private_replay_cannot_change_catalog_binding(observed):
     store.consume_domain_call_evidence(evidence, **scope)
     with pytest.raises(AgentUnauthorized):
         store.consume_domain_call_evidence(evidence, **{**scope, "conversation_id": "conversation_foreign"})
+
+
+def test_agent_ml_correction_keeps_safe_field_problem_in_durable_receipt(observed):
+    from fastapi.testclient import TestClient
+    from app import main
+    from tests.test_ml_strategy import valid_strategy
+    from tests.test_agent_run_lifecycle import start
+    store, evidence, scope, ctx = observed
+    apply(store, ctx, evidence["root_run_id"], key="ml-problem", sequence=2)
+    run = start(store, ctx, "ml-problem", role_id="ml_researcher")
+    strategy = valid_strategy()
+    strategy["target"]["horizon_sessions"] = "synthetic-private-value"
+    payload = {"task_id": evidence["task_id"], "agent_run_id": run["run_id"],
+        "idempotency_key": "safe-problem", "strategy": strategy}
+    store.consume_domain_call_evidence({**evidence,
+        **request_evidence("byq_ml_strategy_create", payload, trace_id="trace-test"), "sequence": 3}, **scope)
+    client = TestClient(main.app)
+    headers = {**ctx, "x-byq-root-run-id": evidence["root_run_id"]}
+    reply = client.post("/v1/research/ml/strategies/versions", json=payload, headers=headers)
+    assert reply.status_code == 422, reply.text
+    detail = reply.json()["detail"]
+    assert detail["reason"] == "domain_validation_failed"
+    assert detail["validation"]["field"] == "target.horizon_sessions"
+    assert detail["validation"]["code"] == "integer_required"
+    assert "synthetic-private-value" not in reply.text
+    apply(store, ctx, evidence["root_run_id"], outcome="cancelled", sequence=5)
+    assert client.post("/v1/research/ml/strategies/versions", json=payload, headers=headers).json() == reply.json()
+    persisted = store._fetch_one("SELECT result_json FROM agent_domain_call_claims")["result_json"]
+    assert persisted["validation"] == detail["validation"]
+    assert "synthetic-private-value" not in str(persisted)
+
+
+def test_agent_strategy_static_rejection_has_value_free_diagnostic(observed):
+    from fastapi.testclient import TestClient
+    from app import main
+    from test_strategy_artifact import strategy_payload
+    store, evidence, scope, ctx = observed
+    payload = {"task_id": evidence["task_id"], "agent_run_id": evidence["agent_run_id"],
+        "idempotency_key": "static-problem", "strategy": strategy_payload(script="import synthetic_private_module")}
+    store.consume_domain_call_evidence({**evidence,
+        **request_evidence("byq_strategy_validate", payload, trace_id="trace-test"), "sequence": 3}, **scope)
+    response = TestClient(main.app).post("/v1/research/strategies/validate", json=payload,
+        headers={**ctx, "x-byq-root-run-id": evidence["root_run_id"]})
+    assert response.status_code == 422
+    problem = response.json()["detail"]["validation"]
+    assert problem["field"] == "strategy.script"
+    assert problem["code"] == "static_validation_failed"
+    assert "synthetic_private_module" not in response.text
+
+
+@pytest.mark.parametrize("action,path", [
+    ("byq_strategy_validate", "/v1/research/strategies/validate"),
+    ("byq_ml_strategy_create", "/v1/research/ml/strategies/versions"),
+])
+@pytest.mark.parametrize("cancel_first", [False, True])
+def test_valid_write_response_loss_and_terminal_replay(observed, action, path, cancel_first):
+    """Backend ASGI fault boundary, not a real MCP/socket-loss qualification."""
+    from fastapi.testclient import TestClient
+    from app import main
+    from test_strategy_artifact import strategy_payload
+    from tests.test_ml_strategy import valid_strategy
+    from tests.test_agent_run_lifecycle import start
+
+    store, evidence, scope, ctx = observed
+    if action == "byq_ml_strategy_create":
+        apply(store, ctx, evidence["root_run_id"], key="ml-agent", sequence=2)
+        run = start(store, ctx, "ml-agent", role_id="ml_researcher")
+        evidence = {**evidence, "agent_run_id": run["run_id"]}
+    payload = {"task_id": evidence["task_id"], "agent_run_id": evidence["agent_run_id"],
+        "idempotency_key": "lost-response", "trace_id": "trace-test",
+        "strategy": strategy_payload() if action == "byq_strategy_validate" else valid_strategy()}
+    proof = {**evidence, **request_evidence(action, payload, trace_id="trace-test"), "sequence": 3}
+    store.consume_domain_call_evidence(proof, **scope)
+    headers = {**ctx, "x-byq-root-run-id": evidence["root_run_id"]}
+    client = TestClient(main.app)
+    if cancel_first:
+        apply(store, ctx, evidence["root_run_id"], outcome="cancelled", sequence=5)
+        response = client.post(path, json=payload, headers=headers)
+        assert response.status_code == 409, response.text
+        assert store._fetch_one("SELECT count(*) AS n FROM artifacts")["n"] == 0
+        assert store._fetch_one("SELECT count(*) AS n FROM agent_domain_call_claims")["n"] == 0
+        return
+
+    class LostResponse(RuntimeError):
+        pass
+
+    async def lose_response(asgi_scope, receive, send):
+        async def cut(message):
+            if message["type"] == "http.response.start":
+                assert message["status"] == 201
+                # The handler has committed, but no response reaches the caller.
+                raise LostResponse("synthetic post-commit response loss")
+            await send(message)
+        await main.app(asgi_scope, receive, cut)
+
+    with pytest.raises(LostResponse):
+        TestClient(lose_response).post(path, json=payload, headers=headers)
+    committed = store._fetch_one("SELECT result_json FROM agent_domain_call_claims")["result_json"]
+    assert committed["state"] == "succeeded"
+    apply(store, ctx, evidence["root_run_id"], outcome="cancelled", sequence=5)
+    for _ in range(2):
+        replay = client.post(path, json=payload, headers=headers)
+        assert replay.status_code == 201, replay.text
+        assert replay.json() == committed["result"]
+    # An independent DB client sees the original receipt after terminalization.
+    reopened = AgentResearchStore()
+    try:
+        context = {key: value for key, value in scope.items() if key != "conversation_id"}
+        assert reopened.claim_domain_call(action, payload, **context,
+            trusted_generation=evidence["generation"], trusted_root=evidence["root_run_id"]) == committed
+        assert reopened._fetch_one("SELECT count(*) AS n FROM artifacts")["n"] == 1
+        assert reopened._fetch_one("SELECT count(*) AS n FROM agent_domain_call_claims")["n"] == 1
+        assert reopened._fetch_one("SELECT status FROM agent_runtime_turns")["status"] == "cancelled"
+    finally:
+        reopened.close()

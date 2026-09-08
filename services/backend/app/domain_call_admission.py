@@ -9,6 +9,18 @@ from .db import execute, fetch_one
 class DomainValidationRejected(ValueError):
     """Only a trusted domain/schema validator may classify a repairable failure."""
 
+    def __init__(self, message, *, validation_error=None):
+        from .ml_validation import MLValidationError
+        from .strategy_artifact import StrategyValidationError
+        super().__init__(message)
+        # Never accept an arbitrary diagnostic dict or serialize exception text.
+        self.validation = (MLValidationError("", field=validation_error.field,
+            code=validation_error.code).public_problem()
+            if isinstance(validation_error, MLValidationError) else None)
+        if isinstance(validation_error, StrategyValidationError):
+            self.validation = StrategyValidationError("", field=validation_error.field,
+                code=validation_error.code).public_problem()
+
 
 DOMAIN_CALL_DDL = [
     """CREATE TABLE IF NOT EXISTS agent_domain_call_evidence (
@@ -169,7 +181,7 @@ class DomainCallEvidenceMixin:
                 execute(connection, "UPDATE agent_domain_call_claims SET status='succeeded',result_json=CAST(:result AS jsonb) WHERE claim_id=:id",
                         {"id": claim["claim_id"], "result": json.dumps(result, allow_nan=False)})
             return result
-        except DomainValidationRejected:
+        except DomainValidationRejected as error:
             # The failed artifact transaction has rolled back. Persist only a
             # closed error; raw Python/schema diagnostics never enter the ledger.
             with self._transaction() as connection:
@@ -182,6 +194,8 @@ class DomainCallEvidenceMixin:
                     {"root": row["root_run_id"], "task": row["task_id"], "action": row["action"]})
                 result = {"state": "correctable_failure",
                     "reason": "correction_failed" if bucket["repair_used"] else "domain_validation_failed"}
+                if error.validation is not None:
+                    result["validation"] = error.validation
                 execute(connection, """UPDATE agent_domain_correction_buckets SET failed_input_sha256=COALESCE(failed_input_sha256,:input)
                     WHERE root_run_id=:root AND task_id=:task AND action=:action""",
                     {"root": row["root_run_id"], "task": row["task_id"], "action": row["action"], "input": row["input_sha256"]})

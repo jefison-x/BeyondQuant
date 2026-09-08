@@ -24,12 +24,18 @@ const VALIDATION_CODES = new Set(["object_required", "unknown_fields", "text_req
 function safeValidation(payload: Record<string, unknown>) {
   const detail = payload.detail;
   if (!detail || typeof detail !== "object" || Array.isArray(detail)) return undefined;
-  const value = detail as Record<string, unknown>;
+  const envelope = detail as Record<string, unknown>;
+  const candidate = envelope.schema_version === "domain-call-admission.v1"
+    && envelope.state === "correctable_failure" ? envelope.validation : envelope;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return undefined;
+  const value = candidate as Record<string, unknown>;
   if (value.schema_version !== "ml-validation-problem.v1" || typeof value.field !== "string"
       || value.field.split(".").length > 6 || !value.field.split(".").every(part => VALIDATION_FIELDS.has(part))
       || typeof value.code !== "string" || !VALIDATION_CODES.has(value.code)) return undefined;
   return { schema_version: "ml-validation-problem.v1", field: value.field, code: value.code, repair_limit: 1,
-    next_action: "Read byq_ml_capabilities for qualified types, ranges and allowed values; correct once with a distinct request identity. Stop if the same error recurs without progress." };
+    next_action: envelope.schema_version === "domain-call-admission.v1" && envelope.reason === "correction_failed"
+      ? "Stop: the correction failed; do not submit another repair in this root."
+      : "Read byq_ml_capabilities for qualified types, ranges and allowed values; correct once with a distinct request identity. Stop if the same error recurs without progress." };
 }
 
 async function requestMl(

@@ -54,6 +54,17 @@ Backend `POST /internal/domain-call-evidence/{conversation_id}` 仅接受可信�
 结果最多重送 4 次，等待 250/500/1000/2000 毫秒，仍受外层超时约束；超时、409、5xx
 及不匹配的 425 不重试。API 成功继续返回既有领域结果，不暴露内部 claim 能力。
 
+ML 领域校验的 correctable_failure 可附带 `validation`：只允许由 BYQ
+MLValidationError 白名单投影得到的 `ml-validation-problem.v1`，包含封闭字段路径、
+类别及固定修正指引，不保存异常文本、输入值或动态允许值。它随失败回执持久保存，
+精确重放返回原提示；历史无提示回执保持不变，不据此重新执行。
+MCP 单独白名单投影该提示，native-stop admission 标记仍只含原有状态/原因/stop；
+提示不能改变第二次失败停止或预算耗尽决定，unknown/blocked 不携带校验提示。
+普通策略对应 `strategy-validation-problem.v1`，字段限定 strategy 及其公开 schema 字段，
+类别限定类型/长度/格式/未知字段/不支持值/凭据字段禁止/静态校验失败等封闭枚举。
+静态错误仅报告 strategy.script + static_validation_failed，不保存源码、导入名或异常文本。
+无法分类的 StrategyValidationError 降为 strategy + invalid_strategy；不从异常字符串猜字段。
+
 SDK schema 拒绝通过私有 `/internal/domain-validation/schema-rejection` 接入同一台账；
 SDK 仍执行原校验。需要停止时保留原错误，并增加封闭 BYQ admission 标记，仍为 tool error。
 Adapter 验证官方调用归属及标记后关闭其所属官方进程，使用规范化失败码向用户说明；

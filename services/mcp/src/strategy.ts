@@ -69,6 +69,25 @@ function safeValidationMessage(payload: unknown): string | undefined {
   return message;
 }
 
+function safeStructuredValidation(payload: Record<string, unknown>) {
+  const detail = payload.detail;
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) return undefined;
+  const envelope = detail as Record<string, unknown>;
+  if (envelope.schema_version !== "domain-call-admission.v1" || envelope.state !== "correctable_failure") return undefined;
+  const candidate = envelope.validation;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return undefined;
+  const value = candidate as Record<string, unknown>;
+  const fields = new Set(["strategy", ...["strategy_id", "name", "category", "description", "parameters",
+    "parameter_schema", "data_requirements", "source_type", "script"].map(field => `strategy.${field}`),
+    ...["benchmark", "index_universe", "daily_basic", "fundamentals"].map(field => `strategy.data_requirements.${field}`)]);
+  const codes = new Set(["invalid_strategy", "text_required", "object_required", "unknown_fields", "too_large",
+    "invalid_json", "unsupported_value", "invalid_format", "credential_fields_forbidden", "static_validation_failed"]);
+  if (value.schema_version !== "strategy-validation-problem.v1" || typeof value.field !== "string"
+    || !fields.has(value.field) || typeof value.code !== "string" || !codes.has(value.code)) return undefined;
+  return { schema_version: value.schema_version, field: value.field, code: value.code, repair_limit: 1,
+    next_action: envelope.reason === "correction_failed" ? "stop_correction_failed" : "read_strategy_contract_then_correct_once" };
+}
+
 async function requestStrategy(
   backendUrl: string,
   path: string,
@@ -96,6 +115,7 @@ async function requestStrategy(
     if (!response.ok) {
       const admission = safeDomainAdmission(payload);
       const validationMessage = response.status === 422 ? safeValidationMessage(payload) : undefined;
+      const validation = response.status === 422 ? safeStructuredValidation(payload as Record<string, unknown>) : undefined;
       return result(
         {
           service: "beyondquant-mcp",
@@ -104,7 +124,7 @@ async function requestStrategy(
             status: errorStatus(response.status),
             http_status: response.status,
             ...(admission ? { admission } : {}),
-            ...(validationMessage
+            ...(validation ? { validation } : validationMessage
               ? { validation: { message: validationMessage, repair_limit: 1 } }
               : {}),
           },

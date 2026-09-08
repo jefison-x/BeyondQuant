@@ -12,6 +12,20 @@ import {
 
 const taskId = "task_0123456789abcdef0123456789abcdef";
 const artifactId = "artifact_0123456789abcdef0123456789abcdef";
+for (const reason of ["domain_validation_failed", "correction_failed"]) {
+  for (const field of ["strategy.script", "private-source-field"]) {
+    const response = await fetchByqStrategyValidate("http://backend:8000", {}, async () => Response.json({ detail: {
+      schema_version: "domain-call-admission.v1", state: "correctable_failure", reason,
+      validation: { schema_version: "strategy-validation-problem.v1", field, code: "static_validation_failed",
+        message: "private-source-value", allowed_values: ["private-source-value"] },
+    } }, { status: 422 }));
+    const value = JSON.parse(response.content[0].text).backend;
+    assert.equal(value.admission.stop, reason === "correction_failed");
+    assert.equal(value.admission.validation, undefined);
+    assert.equal(value.validation?.field, field === "strategy.script" ? field : undefined);
+    assert.doesNotMatch(response.content[0].text, /private-source/);
+  }
+}
 const request = {
   task_id: taskId,
   trace_id: "byq-trace-strategy-mcp",
