@@ -145,7 +145,7 @@ ML study、Backtest、Strategy 或其他工作区对象。金融结果必须绑�
 - 使用新 build identity，重新生成/绑定镜像和报告；不得修改 U7/U8 历史报告；
 - 真实模型只允许既有授权范围内的合成用户、固定/经明确批准的合成提示和测试对象；
   不得发送本次生产对话、生产用户数据、真实对象内容或密钥；
-- Chrome MCP 在真实 Product API 上验证 desktop/mobile：进度心跳、持久失败节点、继续承接主题、
+- 使用测试框架管理的真实浏览器在 Product API 上验证 desktop/mobile：进度心跳、持久失败节点、继续承接主题、
   新主题不串线、最终答案和刷新重放；
 - 故障注入验证 60/180/600/900 时钟可用虚拟单调时钟完成，CI 不以真实长 sleep 充当证据；
 - 全量 local CI、required remote CI 和 ADR-0015/0059 当时仍有效的合并门禁全部通过。
@@ -246,7 +246,7 @@ ML study、Backtest、Strategy 或其他工作区对象。金融结果必须绑�
    commit 后崩溃、重启补偿、inactive/deleted、旧引用不变及当前版本不倒退。
 4. 用合成历史夹具验证截至日期选择、未来数据拒绝、历史数据缺口、准备进度和恢复幂等；
    实际历史数据尚未取得时保持待验收，不用最新500只代替。
-5. 真实 Product API 与 Chrome MCP desktop/mobile 验证创建、日期选择、刷新历史、源/池日期及状态；
+5. 真实 Product API 与测试浏览器 desktop/mobile 验证创建、日期选择、刷新历史、源/池日期及状态；
    Browser 仅走 Gateway/Product API，Agent 仅走 MCP，Provider 仅由可信 Data Worker 调用。
 6. 合成模型评测提示、Provider 访问、历史回填及生产部署按各自授权执行；此次只授权登记需求。
    不修改 U8 运行代码、历史报告或生产业务数据。
@@ -359,7 +359,7 @@ data-demand、agent、paper-trading、research；这是必须逐个检查的线�
   重启、迟到/重复通知、授权撤销/过期、分页遗漏、类型不匹配及安全422。
 - 为每项写操作给出至多一次领域效果或明确的幂等/补偿语义；读超时不能误投影为数据不存在。
 - 使用当前 DSH 的合成用户/对象做完整改进策略 → 审批 → 训练 → 预测 → 回测 → 新旧比较旅程，
-  加上其他受影响流程的真实 Product API、PostgreSQL、Worker 和 Chrome MCP 验证。
+  加上其他受影响流程的真实 Product API、PostgreSQL、Worker 和真实浏览器验证。
   未获授权的模型付费、生产数据使用、外部投递或大训练不因本需求自动获准；优先使用小规模隔离测试。
 - 首次审计必须提交阶段耗时数据，以确定各接口响应预算；后续测试验证有界响应与恢复，不以无限延时
   或无限轮询充当修复。Browser/日志/evidence 不包含 secret、raw DSH schema 或私有推理。

@@ -69,8 +69,10 @@ These rules apply to Codex, DSH engineering agents, and any other AI coding agen
     placeholder existence. Required features must work through Product API,
     real browser flows, persistence where required, and feature checklist
     evidence.
-36. Product phases affecting UI require a Chrome MCP browser review and a
-    Community feature checklist before the phase may be marked complete.
+36. Product phases affecting UI require real-browser verification through
+    Gateway/Product API and a Community feature checklist before completion.
+    Playwright-managed Chromium is sufficient; Chrome MCP and a system-installed
+    Chrome are not required. Mock-only tests do not replace real Product API flows.
 37. Community frontend remains READ ONLY and is the Product reference
     baseline. Inspect feature-by-feature before port/redesign/rewrite; do not
     copy the Community repository.

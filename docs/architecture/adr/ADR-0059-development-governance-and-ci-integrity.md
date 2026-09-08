@@ -45,3 +45,21 @@ DSH ADR-0058 保持 Proposed；治理整改不接受候选运行时。DSH 升级
 
 必须验证风险分类负例、镜像构建失败禁止继续、fork lane/gate、日志脱敏、资源清理和 worktree 逃逸。
 不依赖真实模型 key、GitHub 写权限或生产数据库。治理/CI 回滚通过新 PR，不恢复漏测为临时部署捷径。
+
+## Accepted amendment — 2026-09-09：浏览器验证不绑定 Chrome MCP
+
+- Acceptance：维护者明确要求“直接去除掉chrome MCP 测试要求，后续我都准备将系统中安装的chrome 删除掉。”
+- Scope：当前及后续 Product、维护修复和发布中的浏览器工具选择；不改变产品架构、测试覆盖或发布授权。
+- Supersedes：AGENTS 第36条、DEVELOPMENT_WORKFLOW Product Completion 门禁，以及
+  ADR-0018/0019/0022/0044 和历史 Phase、DSH 升级、Post-U8 计划中对 Chrome MCP 的
+  专属工具要求。仅替代工具限定，不取消各项验收的业务断言和证据要求。
+
+真实浏览器验证可以使用 Playwright 管理的 Chromium 或其他适合目标环境的测试浏览器。
+不再要求 Chrome MCP、系统安装的 Google Chrome、个人登录浏览器或人工开启调试端口。
+工具缺失本身不阻塞交付；缺失真实 Product API、持久化、两用户隔离或受影响页面的
+桌面/移动端、网络/Console、视觉证据仍须补验。Mock-only、静态页和单纯 HTTP 200 不算完成。
+
+历史报告保留原工具和失败事实；不得将旧 Chrome MCP 失败改写为成功。已有且覆盖当前
+修改的真实浏览器证据可按内容采纳，不为补工具名称而重复整套测试。记录工具、受测版本、
+范围、结果和限制。此修订不卸载软件、不修改个人浏览器或插件配置，也不绕过远端 CI、
+合并 preflight、部署和付费评测的独立授权门禁。

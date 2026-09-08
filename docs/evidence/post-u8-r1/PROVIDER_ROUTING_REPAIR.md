@@ -64,3 +64,11 @@ Backend 499 pass / 1 skip / 7 subtests；Gateway 202；兼容基线 Runtime 149 
 这些结果取代上文相应的“运行中/待 wire”状态，但 **Chrome MCP 复核仍 BLOCKED**。
 Playwright 通过不是 Chrome MCP 审查。维护者恢复 Ubuntu Chrome 调试连接后继续；
 此前不推送合并或部署。真实付费模型调用为零；不得声称付费 OpenCode Go 回答验收通过。
+
+## 维护者取消工具专属门禁 — 2026-09-09
+
+维护者明确取消 Chrome MCP 测试要求；ADR-0059、AGENTS、开发流程及 CI 政策已同步修订。
+上文 Chrome 连接失败仍是历史事实，但不再构成独立发布阻塞。已通过的真实 Product API
+Playwright 浏览器证据按其实际覆盖采纳；不会声称执行过 Chrome MCP 或付费模型验收。
+本次仅规范文档变更，不改变 `.17` 制品输入；远端 CI、合并和生产部署仍需实际执行和核验，
+不得因取消工具限定而宣称新镜像已经上线。未卸载系统 Chrome 或修改插件配置。
