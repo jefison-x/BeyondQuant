@@ -3,12 +3,51 @@ from __future__ import annotations
 from threading import Barrier
 
 import pytest
+import httpx
 
 from fastapi.testclient import TestClient
 
 from app import main
 from app import product_api
 from app import user_session
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+@pytest.mark.parametrize("failure", ["timeout", "server", "json", "shape"])
+def test_mutation_transport_or_receipt_failure_remains_unknown(monkeypatch, method, failure):
+    def transport(*args, **kwargs):
+        if failure == "timeout":
+            raise httpx.ReadTimeout("synthetic secret must not be exposed")
+        return httpx.Response(503 if failure == "server" else 202,
+                              text="invalid" if failure == "json" else "[]",
+                              request=httpx.Request(method, "http://backend/test"))
+    monkeypatch.setattr(product_api.httpx, "request", transport)
+    with pytest.raises(product_api.ProductError) as caught:
+        product_api._backend_request(method, "/synthetic", {"idempotency_key": "stable"})
+    assert caught.value.code == "operation_outcome_unknown"
+    assert "synthetic secret" not in str(caught.value)
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_explicit_domain_rejection_is_not_unknown(monkeypatch, method):
+    monkeypatch.setattr(product_api.httpx, "request", lambda *args, **kwargs:
+                        httpx.Response(409, json={"detail": "conflict"},
+                                       request=httpx.Request(method, "http://backend/test")))
+    with pytest.raises(product_api.ProductError) as caught:
+        product_api._backend_request(method, "/synthetic")
+    assert caught.value.code == "product_domain_rejected"
+    assert caught.value.status_code == 409
+
+
+def test_malformed_read_response_is_closed_error(monkeypatch):
+    response = httpx.Response(200, text="truncated", request=httpx.Request("GET", "http://backend/test"))
+    monkeypatch.setattr(product_api.httpx, "request", lambda *args, **kwargs: response)
+    monkeypatch.setattr(product_api.httpx, "get", lambda *args, **kwargs: response)
+    for read in (lambda: product_api._backend_request("GET", "/synthetic"),
+                 lambda: product_api._backend_get("/synthetic")):
+        with pytest.raises(product_api.ProductError) as caught:
+            read()
+        assert caught.value.code == "backend_invalid_response"
 
 
 def test_product_api_uses_error_envelope_and_auth_boundary(monkeypatch) -> None:
@@ -138,6 +177,8 @@ def test_ml_training_reconciles_timeout_by_server_generated_idempotency_key(monk
 
     def backend(method, path, payload=None, *, headers=None, params=None):
         calls.append({"method": method, "path": path, "payload": payload, "params": params})
+        if path == "/v1/research/ml/training-submissions":
+            return {"receipt_watch": {"watch_id": "mlwatch_test", "state": "awaiting_receipt", "registration_created": True}}
         if method == "POST":
             raise product_api.ProductError(503, "backend_unavailable", "backend is unavailable")
         assert path == "/v1/research/ml/training-runs/reconcile"
@@ -157,7 +198,7 @@ def test_ml_training_reconciles_timeout_by_server_generated_idempotency_key(monk
     assert response.json()["reconciliation"] == {
         "status": "confirmed", "reason": "create_response_timeout",
     }
-    assert [call["method"] for call in calls] == ["POST", "GET"]
+    assert [call["method"] for call in calls] == ["POST", "POST", "GET"]
 
 
 def test_ml_training_reuses_browser_idempotency_key_and_waits_for_commit_race(monkeypatch) -> None:
@@ -167,6 +208,8 @@ def test_ml_training_reuses_browser_idempotency_key_and_waits_for_commit_race(mo
 
     def backend(method, path, payload=None, *, headers=None, params=None):
         calls.append({"method": method, "path": path, "payload": payload, "params": params})
+        if path == "/v1/research/ml/training-submissions":
+            return {"receipt_watch": {"watch_id": "mlwatch_test", "state": "awaiting_receipt", "registration_created": True}}
         if method == "POST":
             raise product_api.ProductError(503, "backend_unavailable", "backend is unavailable")
         if sum(call["method"] == "GET" for call in calls) < 3:
@@ -190,7 +233,7 @@ def test_ml_training_reuses_browser_idempotency_key_and_waits_for_commit_race(mo
         "product-ml-training-browser-training-12345678"
     )
     assert calls[0]["payload"]["trace_id"] == calls[0]["payload"]["idempotency_key"]
-    assert [call["method"] for call in calls] == ["POST", "GET", "GET", "GET"]
+    assert [call["method"] for call in calls] == ["POST", "POST", "GET", "GET", "GET"]
 
 
 def test_ml_training_rejects_invalid_browser_idempotency_key(monkeypatch) -> None:
@@ -204,6 +247,35 @@ def test_ml_training_rejects_invalid_browser_idempotency_key(monkeypatch) -> Non
         },
     )
     assert response.status_code == 422
+
+
+def test_ml_training_does_not_resubmit_an_existing_unconfirmed_watch(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    calls = []
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append(path)
+        assert path == "/v1/research/ml/training-submissions"
+        return {"receipt_watch": {"watch_id": "mlwatch_test", "state": "awaiting_receipt", "registration_created": False}}
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).post("/api/product/ml/training-runs",
+        headers={"Authorization": "Bearer product-test-token", "x-idempotency-key": "original-key-123"},
+        json={"task_id": "task_1", "ml_strategy_artifact_id": "artifact_1", "stock_pool_snapshot_id": "snapshot_1"})
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "operation_outcome_unknown"
+    assert len(calls) == 1
+
+
+def test_ml_receipt_watch_query_uses_the_original_browser_key_namespace(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        assert method == "GET" and path == "/v1/research/ml/training-submissions/reconcile"
+        assert params == {"idempotency_key": "product-ml-training-original-key-123"}
+        return {"receipt_watch": {"state": "needs_attention", "check_count": 8}}
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).get("/api/product/ml/training-submissions/reconcile",
+        headers={"Authorization": "Bearer product-test-token"}, params={"idempotency_key": "original-key-123"})
+    assert response.status_code == 200
+    assert response.json()["receipt_watch"]["state"] == "needs_attention"
 
 
 def test_ml_prediction_rows_forwards_bounded_page_and_owner_context(monkeypatch) -> None:
@@ -1503,3 +1575,15 @@ def test_product_research_task_creation_owns_identity_fields(monkeypatch) -> Non
         json={"title": "bad", "objective": "bad", "owner_principal": "other-user"},
     )
     assert invalid.status_code == 422
+
+    stable_headers = {"Authorization": "Bearer product-test-token", "x-idempotency-key": "stable-task-request-1"}
+    body = {"title": "Momentum research", "objective": "Evaluate the signal"}
+    assert client.post("/api/product/research/tasks", headers=stable_headers, json=body).status_code == 201
+    original_request = dict(captured["json"])
+    assert client.post("/api/product/research/tasks", headers=stable_headers, json=body).status_code == 201
+    assert captured["json"] == original_request
+    monkeypatch.setenv("BYQ_PRODUCT_WORKSPACE_ID", "workspace_other")
+    assert client.post("/api/product/research/tasks", headers=stable_headers, json=body).status_code == 201
+    assert captured["json"]["idempotency_key"] != original_request["idempotency_key"]
+    for invalid_key in ("tiny", "bad key with spaces", "界" * 12, "x" * 97):
+        assert client.post("/api/product/research/tasks", headers={**stable_headers, "x-idempotency-key": invalid_key.encode("utf-8")}, json=body).status_code == 422

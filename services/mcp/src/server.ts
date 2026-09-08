@@ -67,6 +67,7 @@ import {
   fetchByqPoolHistory,
   fetchByqPoolLifecycle,
   fetchByqPoolList,
+  fetchByqIndexPoolCatalog, fetchByqIndexPoolCreate, fetchByqIndexPoolStatus, fetchByqIndexPoolReconcile,
   fetchByqPoolSnapshotReplace,
 } from "./stock-pool.js";
 import {
@@ -512,10 +513,13 @@ async function byqMlTrainingCreate(args: MlRequest, extra: unknown) {
   ) : agentContextUnavailable();
 }
 
-async function byqMlTrainingGet(args: { training_run_id: string }, extra: unknown) {
+async function byqMlTrainingGet(args: { training_run_id?: string; idempotency_key?: string }, extra: unknown) {
   const context = completeAgentContext(extra);
+  if (Boolean(args.training_run_id) === Boolean(args.idempotency_key)) {
+    return { content: [{ type: "text" as const, text: JSON.stringify({ status: "error", code: "exactly_one_training_identity_required" }) }], isError: true };
+  }
   return context ? fetchByqMlTrainingGet(
-    BACKEND_URL, args.training_run_id, trustedBackendFetcher(context),
+    BACKEND_URL, args.training_run_id ?? { idempotency_key: args.idempotency_key! }, trustedBackendFetcher(context),
   ) : agentContextUnavailable();
 }
 
@@ -710,6 +714,39 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   const poolContext = () => completeAgentContext(trustedContext);
   server.registerTool(
+    "byq_index_pool_catalog",
+    { description: "Read the closed six-index catalogue and verified constituent readiness at or before an explicit research date. This never downloads provider data.", inputSchema: {
+      requested_as_of: z.string().regex(/^\d{8}$/),
+    } },
+    (args) => { const context = poolContext(); return context ? fetchByqIndexPoolCatalog(BACKEND_URL, args.requested_as_of, context) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_index_pool_create",
+    { description: "Create an explicitly requested owner-scoped index pool from verified canonical weights. Choose historical_snapshot for a one-time past-date pool; follow_index tracks new constituents. One snapshot is not a multi-year membership series. Returns an accepted materialization job, not completed members. Freeze original date, mode and idempotency key.", inputSchema: {
+      index_symbol: z.enum(["000016.SH", "000300.SH", "000688.SH", "000905.SH", "000852.SH", "399006.SZ"]),
+      requested_as_of: z.string().regex(/^\d{8}$/), name: z.string().min(1).max(128).optional(),
+      description: z.string().max(2000).optional(), idempotency_key: z.string().min(1).max(128),
+      tracking_mode: z.enum(["follow_index", "historical_snapshot"]).optional(),
+    } },
+    (args) => { const context = poolContext(); return context ? fetchByqIndexPoolCreate(BACKEND_URL, args, context) : agentContextUnavailable(); },
+  );
+  server.registerTool(
+    "byq_index_pool_status",
+    { description: "Supply exactly one identity: pool_id reads the last ten materializations; the original idempotency_key precisely reconciles an unknown creation. An unconfirmed receipt is unknown, not absent. A pool is usable only after materialization succeeds and an immutable snapshot exists.", inputSchema: {
+      pool_id: z.string().regex(/^stock_pool_[0-9a-f]{32}$/).optional(),
+      idempotency_key: z.string().min(1).max(128).optional(),
+    } },
+    (args) => {
+      const context = poolContext();
+      if (!context) return agentContextUnavailable();
+      if (Boolean(args.pool_id) === Boolean(args.idempotency_key)) return {
+        content: [{ type: "text" as const, text: JSON.stringify({ status: "error", code: "exactly_one_pool_identity_required" }) }], isError: true,
+      };
+      return args.pool_id ? fetchByqIndexPoolStatus(BACKEND_URL, args.pool_id, context)
+        : fetchByqIndexPoolReconcile(BACKEND_URL, args.idempotency_key!, context);
+    },
+  );
+  server.registerTool(
     "byq_pool_list",
     { description: "List owner-scoped BYQ Stock Pools.", inputSchema: {} },
     () => { const context = poolContext(); return context ? fetchByqPoolList(BACKEND_URL, context) : agentContextUnavailable(); },
@@ -788,11 +825,12 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_agent_run_start",
     {
-      description: "Start an owner-scoped BYQ agent run correlated to the trusted DSH session and trace.",
+      description: "Register an owner-scoped AgentRun. pending_binding cannot authorize actions. For pending or unknown outcomes query the ORIGINAL idempotency_key with receipt_only=true; never mint a replacement key or assume success.",
       inputSchema: {
         role_id: z.enum(["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher"]),
         parent_run_id: z.string().regex(/^agent_run_[0-9a-f]{32}$/).optional(),
         idempotency_key: z.string(),
+        receipt_only: z.boolean().optional(),
       },
     },
     (args) => byqAgentRunStart(args, trustedContext),
@@ -1169,8 +1207,9 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_ml_training_get",
-    { description: "Read one owner-scoped trusted ML training lifecycle and safe result metadata.", inputSchema: {
-      training_run_id: z.string().regex(/^mlrun_[0-9a-f]{32}$/),
+    { description: "Read one owner-scoped training run, or reconcile an unknown submission by its exact original idempotency key. Supply exactly one identity. An unconfirmed receipt is unknown, not proof of absence.", inputSchema: {
+      training_run_id: z.string().regex(/^mlrun_[0-9a-f]{32}$/).optional(),
+      idempotency_key: z.string().min(1).max(128).optional(),
     } },
     (args) => byqMlTrainingGet(args, trustedContext),
   );
@@ -1359,12 +1398,20 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_research_transition",
     {
-      description: "Apply one validated, idempotent BYQ research-domain state transition.",
+      description: "Persist an owner-scoped research transition and optional task checkpoint. Keep exact task, stage, linked objects, next action and blocker across model turns. Task completion requires validated same-task evidence and no unfinished domain jobs. Typed domain artifacts require their dedicated producer, not generic validation.",
       inputSchema: {
         entity_type: z.enum(["research_task", "experiment", "artifact"]),
         entity_id: z.string(),
         target_status: z.string(),
         idempotency_key: z.string(),
+        progress: z.object({
+          schema_version: z.literal("research-progress.v1"),
+          stage: z.enum(["planning", "data_preparation", "research", "strategy", "approval", "training", "prediction", "backtest", "comparison", "blocked", "completed"]),
+          next_action: z.string().min(1).max(160).nullable(),
+          blocked_reason: z.string().min(1).max(160).nullable(),
+          linked_objects: z.array(z.object({ kind: z.enum(["artifact", "experiment"]), id: z.string() }).strict()).max(16),
+          completion_evidence: z.array(z.string()).max(16),
+        }).strict().optional(),
       },
     },
     (args) => byqResearchTransition(args, trustedContext),

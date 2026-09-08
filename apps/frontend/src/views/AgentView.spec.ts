@@ -14,6 +14,9 @@ const createAgentSession = vi.fn();
 const deleteAgentSession = vi.fn();
 const listAgentSessions = vi.fn();
 const updateAgentSession = vi.fn();
+const continueApproval = vi.fn();
+
+vi.mock("@/api/research", () => ({ continueApproval: (...args: unknown[]) => continueApproval(...args) }));
 
 vi.mock("vue-router", () => ({
   useRoute: () => ({ path: "/agent", query: {} }),
@@ -34,6 +37,7 @@ vi.mock("@/api/agent", () => ({
 
 describe("AgentView", () => {
   beforeEach(() => {
+    continueApproval.mockReset();
     setActivePinia(createPinia());
     useAuthStore().setUser({
       subject: "alice",
@@ -69,6 +73,43 @@ describe("AgentView", () => {
     });
     updateAgentSession.mockReset();
     updateAgentSession.mockResolvedValue({ session: {} });
+  });
+
+  it("stops unknown approval continuation instead of retrying a write", async () => {
+    continueApproval.mockResolvedValue({ approval: { continuation_status: "outcome_unknown" } });
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    await vm.retryApprovalContinuation("approval-synthetic");
+    expect(continueApproval).toHaveBeenCalledTimes(1);
+    expect(vm.error).toContain("不会自动重发");
+    expect(vm.approvalContinuationTimer).toBeNull();
+    wrapper.unmount();
+  });
+
+  it("bounds approval polling even when the service keeps returning queued", async () => {
+    continueApproval.mockResolvedValue({ approval: { continuation_status: "queued" } });
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    for (let attempt = 0; attempt < 10; attempt++) await vm.retryApprovalContinuation("approval-synthetic");
+    expect(continueApproval).toHaveBeenCalledTimes(8);
+    expect(vm.error).toContain("核对次数已用尽");
+    wrapper.unmount();
+  });
+
+  it("ignores approval acknowledgements after the view is unmounted", async () => {
+    let resolveReceipt: (value: unknown) => void = () => undefined;
+    continueApproval.mockReturnValue(new Promise(resolve => { resolveReceipt = resolve; }));
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    const pending = vm.retryApprovalContinuation("approval-synthetic");
+    wrapper.unmount();
+    resolveReceipt({ approval: { continuation_status: "outcome_unknown" } });
+    await pending;
+    expect(vm.error).not.toContain("续接结果尚未确认");
+    expect(vm.approvalContinuationTimer).toBeNull();
   });
 
   it("shows the personalized nickname and sends with Ctrl+Enter", async () => {
@@ -120,6 +161,23 @@ describe("AgentView", () => {
     wrapper.unmount();
   });
 
+  it("keeps an unconfirmed original message and never automatically submits it again", async () => {
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void> };
+    view.prompt = "核对这个原始研究问题";
+    submitTurn.mockRejectedValueOnce(Object.assign(new Error("请先核对原会话，勿重复发送。"), {
+      status: 502, code: "prompt_outcome_unknown",
+    }));
+    await view.send();
+    await flushPromises();
+    expect(view.prompt).toBe("核对这个原始研究问题");
+    expect(useAgentStore().messages.filter(message => message.text === "核对这个原始研究问题")).toHaveLength(1);
+    expect(submitTurn).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("勿重复发送");
+    wrapper.unmount();
+  });
+
   it("unlocks a failed run, explains the failure, and resumes before retry", async () => {
     const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
@@ -151,6 +209,21 @@ describe("AgentView", () => {
     await view.send();
     expect(resumeSession).toHaveBeenCalledWith("session-1", "");
     expect(submitTurn).toHaveBeenLastCalledWith("session-1", "重试请求", "");
+    view.handleEvent({
+      trace_id: "trace-1", session_id: "session-1", sequence: 4,
+      timestamp: "2026-08-28T00:00:04Z", kind: "session.started", source: "runtime-adapter", payload: {},
+    }, 1);
+    await flushPromises();
+    expect(wrapper.find(".run-failure").text()).toContain("没有形成可展示的结论");
+    expect(wrapper.find(".run-failure").text()).toContain("后续已发起新一轮");
+    view.handleEvent({
+      trace_id: "trace-1", session_id: "session-1", sequence: 5,
+      timestamp: "2026-08-28T00:00:05Z", kind: "session.result", source: "runtime-adapter", payload: {},
+    }, 1);
+    await flushPromises();
+    expect(wrapper.findAll(".run-failure")).toHaveLength(1);
+    expect(useAgentStore().messages.every(message => !message.text.includes("没有形成可展示的结论"))).toBe(true);
+    wrapper.unmount();
   });
 
   it("does not duplicate output when replay overlaps the live stream", async () => {

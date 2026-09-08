@@ -23,6 +23,9 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
 
 当前与 Phase 相关的 Accepted 决策也列在 `docs/roadmap/STATUS.md` 中：
 
+- ADR-0063 允许禁用身份后对精确绑定的既有 AgentRun 做可信终态清理及原子审计/回执，不恢复普通访问或业务续接。
+- ADR-0064 允许持久化最小 BYQ 执行证据，并仅在原执行者失效可证明时恢复收尾；不恢复模型或研究。
+
 - ADR-0020 定义 Phase 34 的 Stock Pool identity、不可变 snapshot、lifecycle 和
   cross-domain reference 边界。
 - ADR-0021 定义 Phase 35 的 Paper Trading account、settlement、risk、ledger 和
@@ -96,3 +99,5 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
 - ADR-0061 定义保留历史 release 身份不变的 U6 独立 BYQ 构建修订和重新认证，不授权生产部署。
 - ADR-0062 定义 Post-U8 未回答需求及失败事实恢复、活动续租、持久提交回执、任务绑定的有限
   后台续接和指数池修复边界；已接受，并具名修订 ADR-0045/0046，不授权生产部署或数据扩容。
+- ADR-0065 定义任务后台续接的累计预算准入、持久预留、未知结算及官方接口全调用覆盖资格；
+  已接受，但尚未证明可启用后台执行，不授权升级/fork DSH 或安装未合格扩展。

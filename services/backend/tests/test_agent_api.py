@@ -51,6 +51,16 @@ def test_agent_api_uses_trusted_runtime_context_and_exposes_audit(monkeypatch, t
     assert authorized.status_code == 200
     assert authorized.json()["authorization"]["decision"] == "allowed"
 
+    for changed in ({"x-byq-session-id": "session-other"}, {"x-byq-dsh-run-id": "generation-other"}):
+        stale = {**context, **changed}
+        assert client.post("/v1/agents/authorize", headers=stale,
+                           json={"run_id": run["run_id"], "action": "byq_factor_compute"}).status_code == 403
+        assert client.post("/v1/agents/approvals", headers=stale, json={
+            "run_id": run["run_id"], "action": "byq_strategy_approve", "reason": "Synthetic",
+            "resource_type": "strategy_version", "resource_id": "artifact_synthetic",
+            "idempotency_key": "stale-approval",
+        }).status_code == 403
+
     denied_context = trusted_agent_context("bob")
     denied = client.post(
         "/v1/agents/authorize",

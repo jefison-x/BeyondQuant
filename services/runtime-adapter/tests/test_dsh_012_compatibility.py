@@ -96,3 +96,13 @@ def test_candidate_drops_private_reasoning_arguments_and_unknown_reasons() -> No
     assert tool.call_id == "call-1"
     assert "must-not-cross" not in repr(tool)
     assert unknown.terminal_reason == "failed"
+
+
+@pytest.mark.parametrize("arguments", ["not-json", "[]", '{"idempotency_key": 7}',
+                                       '{"idempotency_key":""}', "x" * 4097,
+                                       '{"idempotency_key":"old-turn", "receipt_only":true}'])
+def test_invalid_registration_arguments_never_produce_a_binding(arguments):
+    observation = Dsh012Compatibility().observe(notification("tool/call", {
+        "callId": "registration", "name": "mcp__byq__byq_agent_run_start", "arguments": arguments,
+    }), root_session_id="root")
+    assert observation.registration_key is None

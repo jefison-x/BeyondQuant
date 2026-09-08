@@ -23,6 +23,11 @@ class BuildRevisionTests(unittest.TestCase):
             self.assertIn("packages/operations/admission.py", value["inputs"])
             self.assertIn("services/runtime-adapter/app/main.py", value["inputs"])
             self.assertIn("services/gateway/app/main.py", value["inputs"])
+            for path in ("workers/data/worker.py", "workers/ml/worker.py",
+                         "services/signal-sandbox/runner.py", "infra/postgres/init/10-byq-databases.sql",
+                         "scripts/ci/cleanup-resources.sh", "tests/test_dsh_build_revision.py",
+                         "apps/frontend/vitest.config.ts", ".github/workflows/ci-selfhosted.yml"):
+                self.assertIn(path, value["inputs"])
 
     def test_forged_revision_missing_input_drift_and_cross_release_fail(self):
         original = builds.render(builds.selected_build_id("dsh-0.1.2rc1"))
@@ -32,6 +37,8 @@ class BuildRevisionTests(unittest.TestCase):
             lambda v: v["inputs"].pop("packages/operations/admission.py"),
             lambda v: v["inputs"].update({"../../escape": "sha256:" + "0" * 64}),
             lambda v: v["inputs"].update({"services/runtime-adapter/app/main.py": "sha256:" + "0" * 64}),
+            lambda v: v["inputs"].pop("workers/data/worker.py"),
+            lambda v: v["inputs"].update({"workers/ml/worker.py": "sha256:" + "0" * 64}),
             lambda v: v.update(qualified=True),
             lambda v: v.update(build_id="dsh-0.1.2rc1-u6.999"),
         )

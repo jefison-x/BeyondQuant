@@ -4,6 +4,16 @@ import { AgentRequestError, cancelSession, createAgentSession, deleteAgentSessio
 describe("agent api client", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("preserves an unknown prompt receipt as distinct from rejection", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: {
+      code: "prompt_outcome_unknown", message: "请先核对原会话，勿重复发送。",
+    } }), { status: 502 })));
+    const failure = await submitTurn("s1", "原问题", "").catch(error => error);
+    expect(failure.code).toBe("prompt_outcome_unknown");
+    expect(failure.message).toContain("勿重复发送");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves the safe maintenance code and message from Product API", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({error: {
       code: "chat_maintenance", message: "小巴正在维护，输入已保留，请稍后重试。",

@@ -7,7 +7,7 @@ import {
   streamWorkflowEvents, submitTurn, updateAgentSession,
 } from "@/api/agent";
 import { continueApproval } from "@/api/research";
-import { foldWorkflowCards, workflowActivities, workflowRunState } from "@/api/workflow";
+import { foldWorkflowCards, workflowActivities, workflowOutcomes, workflowRunState, workflowWaiting } from "@/api/workflow";
 import type { AgentReplayMessage, AgentSession, WorkflowCardEvent, WorkflowTraceEvent } from "@/api/types";
 import AgentActivityPanel from "@/components/agent/AgentActivityPanel.vue";
 import RichMessage from "@/components/agent/RichMessage.vue";
@@ -43,6 +43,8 @@ let streamController: AbortController | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 let approvalContinuationTimer: ReturnType<typeof setTimeout> | null = null;
 let continuationWarningShown = false;
+const approvalContinuationChecks = new Map<string, number>();
+let viewDisposed = false;
 let reconciliationTimer: ReturnType<typeof setTimeout> | null = null;
 let lastStreamEventAt = 0;
 
@@ -53,17 +55,8 @@ const activeActivityCount = computed(() => activities.value.filter((item) =>
   ["started", "progress", "waiting_approval"].includes(item.payload.state),
 ).length);
 const replayRun = computed(() => workflowRunState(agent.events));
-const runFailureMessage = computed(() => {
-  if (!replayRun.value.failed) return "";
-  const messages: Record<string, string> = {
-    "runtime-no-progress-timeout": "本轮在较长时间内没有形成可展示的结论，系统为避免持续占用已停止。已完成的读取步骤仍保留，可以直接重试。",
-    "runtime-run-timeout": "本轮总处理时间超过运行上限，系统已停止任务。对话内容已保留，可以直接重试或缩小分析范围。",
-    "runtime-subagent-timeout": "本轮专项分析超过等待上限，系统已停止任务。对话内容已保留，可以直接重试。",
-    "model-run-failed": "模型服务本轮未能完成回答。对话内容已保留，可以直接重试；若持续失败，请联系管理员。",
-  };
-  return messages[replayRun.value.failureCode ?? ""]
-    ?? "本轮运行未能完成。对话内容已保留，可以直接重试；若持续失败，请联系管理员。";
-});
+const outcomes = computed(() => workflowOutcomes(agent.events, agent.activeSessionId));
+const waiting = computed(() => workflowWaiting(agent.events, agent.activeSessionId));
 const activeActivity = computed(() => [...activities.value].reverse().find((item) =>
   item.payload.state === "started" || item.payload.state === "progress" || item.payload.state === "waiting_approval",
 ));
@@ -85,6 +78,7 @@ const cards = computed(() => foldWorkflowCards(agent.events));
 const timeline = computed(() => [
   ...agent.messages.map((message, index) => ({ type: "message" as const, at: message.createdAt ?? "", key: `message-${index}`, message })),
   ...cards.value.map((card) => ({ type: "card" as const, at: card.timestamp, key: `card-${card.payload.card_id}`, card })),
+  ...outcomes.value.map((outcome) => ({ type: "outcome" as const, at: outcome.timestamp, key: `outcome-${outcome.key}`, outcome })),
 ].sort((left, right) => left.at.localeCompare(right.at)));
 
 function replayMessages(messages: AgentReplayMessage[], events: WorkflowTraceEvent[]): AgentMessage[] {
@@ -402,13 +396,26 @@ function applyRouteDraft(value: unknown) {
 }
 
 async function retryApprovalContinuation(value: unknown) {
-  if (typeof value !== "string" || !value) return;
+  if (viewDisposed || typeof value !== "string" || !value) return;
+  const generation = conversationGeneration;
+  const stillCurrent = () => !viewDisposed && generation === conversationGeneration;
   if (approvalContinuationTimer) {
     clearTimeout(approvalContinuationTimer);
     approvalContinuationTimer = null;
   }
+  const checks = approvalContinuationChecks.get(value) ?? 0;
+  if (checks >= 8) {
+    error.value = "审批决定已保存，自动续接核对次数已用尽，请检查原任务状态。";
+    return;
+  }
+  approvalContinuationChecks.set(value, checks + 1);
   try {
     const result = await continueApproval(value);
+    if (!stillCurrent()) return;
+    if (["outcome_unknown", "needs_attention"].includes(String(result.approval.continuation_status))) {
+      error.value = "审批决定已保存，但续接结果尚未确认；不会自动重发，请检查原任务状态。";
+      return;
+    }
     if (result.approval.continuation_status === "submitted" && agent.activeSessionId) {
       localRunStartedAt.value = new Date().toISOString();
       scheduleRunReconciliation(agent.activeSessionId, conversationGeneration);
@@ -418,13 +425,14 @@ async function retryApprovalContinuation(value: unknown) {
       return;
     }
     const delay = result.approval.continuation_status === "submitting" ? 31_000 : 5_000;
-    approvalContinuationTimer = setTimeout(() => void retryApprovalContinuation(value), delay);
+    approvalContinuationTimer = setTimeout(() => { if (stillCurrent()) void retryApprovalContinuation(value); }, delay);
   } catch {
+    if (!stillCurrent()) return;
     if (!continuationWarningShown) {
       continuationWarningShown = true;
       ElMessage.warning("审批已记录，正在等待原会话可继续执行");
     }
-    approvalContinuationTimer = setTimeout(() => void retryApprovalContinuation(value), 5_000);
+    approvalContinuationTimer = setTimeout(() => { if (stillCurrent()) void retryApprovalContinuation(value); }, 5_000);
   }
 }
 
@@ -471,6 +479,7 @@ watch(historyOpen, (open) => {
 });
 watch([historyStatus, historySearch], () => { if (historyOpen.value) void loadHistory(); });
 onBeforeUnmount(() => {
+  viewDisposed = true;
   stopStream();
   stopReconciliation();
   if (clockTimer) clearInterval(clockTimer);
@@ -503,6 +512,13 @@ onBeforeUnmount(() => {
               <template v-else>{{ item.message.text }}</template>
             </div>
           </article>
+          <article v-else-if="item.type === 'outcome'" class="conversation-message run-failure" aria-label="历史运行记录">
+            <span class="message-author">运行记录</span>
+            <div class="message-body">
+              <div>{{ item.outcome.message }}</div>
+              <small><time :datetime="item.outcome.timestamp">{{ new Date(item.outcome.timestamp).toLocaleString() }}</time><span v-if="item.outcome.laterTurnStarted"> · 后续已发起新一轮（不表示原任务已完成）</span></small>
+            </div>
+          </article>
           <WorkflowCard v-else :event="item.card" @navigate="navigateCard" />
         </template>
         <article v-if="processingVisible" class="conversation-message agent assistant-processing" role="status" aria-live="polite">
@@ -516,10 +532,10 @@ onBeforeUnmount(() => {
             <small>查看小巴正在进行的公开步骤</small>
           </div>
         </article>
-        <article v-else-if="runFailureMessage" class="conversation-message agent run-failure" role="alert">
-          <span class="message-author">小巴</span>
-          <div class="message-body">{{ runFailureMessage }}</div>
-        </article>
+        <p v-if="runActive && waiting" role="status" aria-live="polite" class="waiting-notice">
+          系统仍在等待处理：已用时 {{ waiting.elapsed }} 秒，最近可信活动距提示时 {{ waiting.quiet }} 秒。
+          此提示不代表取得新的研究进展，也不会延长执行时限。
+        </p>
       </div>
     </main>
     <footer class="composer-wrap">

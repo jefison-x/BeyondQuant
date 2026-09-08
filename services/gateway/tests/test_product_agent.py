@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import threading
+from types import SimpleNamespace
+import pytest
+from starlette.requests import Request
 
 from fastapi.testclient import TestClient
 
@@ -12,12 +15,170 @@ from app.trace_store import TraceStore
 TOKEN = "phase7-product-token"
 
 
+@pytest.mark.parametrize("mutation", [None, {"session_id": "other-session"},
+    {"idempotency_key": "other-message"}, {"content_sha256": "0" * 64},
+    {"accepted": True}, {"accepted": 0}, {"extra": "untrusted"}, {"code": "some-server-error"}])
+def test_only_exact_pre_admission_rejection_is_known_not_accepted(monkeypatch, mutation):
+    import hashlib
+    import httpx
+
+    session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
+                              principal=None, workspace_id="workspace-1")
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"message": {"message_id": "message_original"}})
+    detail = {"schema_version": "prompt-rejection.v1", "code": "model_credentials_unavailable",
+              "accepted": False, "session_id": "runtime-1", "idempotency_key": "message_original",
+              "content_sha256": hashlib.sha256(b"synthetic original").hexdigest()}
+    detail.update(mutation or {})
+    monkeypatch.setattr(main.httpx, "post", lambda url, **_: httpx.Response(
+        503, json={"detail": detail}, request=httpx.Request("POST", url)))
+    reads = []
+    monkeypatch.setattr(main, "_adapter_prompt_receipt", lambda *args: reads.append(args))
+    if mutation is None:
+        with pytest.raises(main.HTTPException) as raised:
+            main.submit_product_turn("conversation-1", main.ProductPromptRequest(content="synthetic original"), Request({"type": "http"}))
+        assert raised.value.status_code == 503
+        assert reads == []
+    else:
+        with pytest.raises(main.ProductError) as raised:
+            main.submit_product_turn("conversation-1", main.ProductPromptRequest(content="synthetic original"), Request({"type": "http"}))
+        assert raised.value.code == "prompt_outcome_unknown"
+        assert len(reads) == 1
+
+
+@pytest.mark.parametrize("receipt", [{}, {"accepted": False, "run_id": "run-1"},
+                                     {"accepted": True}, {"accepted": True, "run_id": " "}])
+def test_normal_turn_never_claims_acceptance_from_an_invalid_receipt(monkeypatch, receipt) -> None:
+    session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
+                              principal=None, workspace_id="workspace-1")
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"message": {"message_id": "message_original"}})
+    calls = []
+    monkeypatch.setattr(main, "_adapter_post", lambda *args, **kwargs: calls.append((args, kwargs)) or receipt)
+    monkeypatch.setattr(main, "_adapter_prompt_receipt", lambda *_: None)
+    with pytest.raises(main.ProductError) as raised:
+        main.submit_product_turn("conversation-1", main.ProductPromptRequest(content="synthetic original"), Request({"type": "http"}))
+    assert raised.value.status_code == 502
+    assert raised.value.code == "prompt_outcome_unknown"
+    assert len(calls) == 1
+
+
+def test_normal_turn_reconciles_original_receipt_without_repeating_prompt(monkeypatch) -> None:
+    session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
+                              principal=None, workspace_id="workspace-1")
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"message": {"message_id": "message_original"}})
+    writes = []
+    def lost_ack(*args, **kwargs):
+        writes.append((args, kwargs))
+        raise main.HTTPException(status_code=504, detail="synthetic lost ack")
+    def reconcile(session_id, key, content):
+        assert (session_id, key, content) == ("runtime-1", "message_original", "synthetic original")
+        return {"schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": "run-original"}
+    monkeypatch.setattr(main, "_adapter_post", lost_ack)
+    monkeypatch.setattr(main, "_adapter_prompt_receipt", reconcile)
+    result = main.submit_product_turn("conversation-1", main.ProductPromptRequest(content="synthetic original"), Request({"type": "http"}))
+    assert result["accepted"] is True
+    assert result["run_id"] == "run-original"
+    assert len(writes) == 1
+
+
+def test_turn_requires_a_durable_message_identity_before_runtime_submission(monkeypatch) -> None:
+    session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
+                              principal=None, workspace_id="workspace-1")
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"message": {"sequence": 1}})
+    writes = []
+    monkeypatch.setattr(main, "_adapter_post", lambda *args, **kwargs: writes.append(args) or {"accepted": True, "run_id": "run-1"})
+    with pytest.raises(main.ProductError) as raised:
+        main.submit_product_turn("conversation-1", main.ProductPromptRequest(content="synthetic original"), Request({"type": "http"}))
+    assert raised.value.code == "prompt_outcome_unknown"
+    assert writes == []
+
+
+@pytest.mark.parametrize("persisted_count", [1, 2])
+def test_collector_reconnect_preserves_history_and_accepts_only_its_session(monkeypatch, tmp_path, persisted_count):
+    import json
+    from contextlib import contextmanager
+
+    store = TraceStore(tmp_path)
+    first = {"trace_id": "trace-reconnect", "session_id": "session-reconnect", "sequence": 1,
+             "timestamp": "2026-09-07T00:00:00+00:00", "kind": "session.ready",
+             "source": "runtime-adapter", "payload": {"status": "ready"}}
+    second = {**first, "sequence": 2, "kind": "session.started", "payload": {"run_id": "a" * 32}}
+    third = {**second, "sequence": 3, "kind": "session.result"}
+    store.append(first)
+    if persisted_count == 2:
+        store.append(second)
+
+    @contextmanager
+    def stream(*args, **kwargs):
+        yield SimpleNamespace(status_code=200, iter_lines=lambda: iter([
+            "data: " + json.dumps(first),
+            "data: " + json.dumps(second),
+            "data: " + json.dumps({**third, "session_id": "another-session"}),
+            "data: " + json.dumps(third),
+        ]))
+
+    monkeypatch.setattr(main, "trace_store", store)
+    monkeypatch.setattr(main.httpx, "stream", stream)
+    monkeypatch.setattr(main, "_persist_projected_answer", lambda *_: None)
+    monkeypatch.setattr(main, "answer_delivery", SimpleNamespace(register=lambda *_: None))
+    main._collect_trace(SimpleNamespace(session_id="session-reconnect", trace_id="trace-reconnect", released=False))
+    assert store.read("session-reconnect") == [first, second, third]
+    assert store.read("another-session") == []
+
+
 def test_product_api_requires_bearer_auth(monkeypatch) -> None:
     monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
     response = TestClient(main.app).post("/v1/agent/sessions")
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
     assert TOKEN not in response.text
+
+
+@pytest.mark.parametrize("catalog_failure", [False, True])
+def test_collector_retries_durable_answers_without_runtime_history(monkeypatch, tmp_path, catalog_failure):
+    from contextlib import contextmanager
+
+    store = TraceStore(tmp_path)
+    first = {"trace_id": "trace-reconnect", "session_id": "session-reconnect", "sequence": 1,
+             "timestamp": "2026-09-07T00:00:00+00:00", "kind": "agent.output.delta",
+             "source": "runtime-adapter", "payload": {
+                 "schema_version": "workflow-answer.v1", "channel": "answer",
+                 "delta": "original durable answer", "truncated": False}}
+    store.append(first)
+    store.append({**first, "sequence": 2, "trace_id": "foreign-trace"})
+    store.append({**first, "sequence": 3})
+    calls = []
+
+    def catalog(method, path, principal, workspace, *, payload):
+        assert (method, path, principal.subject, workspace) == (
+            "POST", "/v1/product/conversations/conversation-reconnect/messages", "owner-1", "workspace-1")
+        calls.append(payload)
+        if catalog_failure:
+            raise main.HTTPException(status_code=503)
+        return {"message": {"workflow_sequence": payload["workflow_sequence"], "role": "assistant",
+                            "content": payload["content"], "message_id": "synthetic-message", "sequence": 1}}
+
+    @contextmanager
+    def missing_runtime(*args, **kwargs):
+        yield SimpleNamespace(status_code=404)
+
+    monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))  # process restart
+    monkeypatch.setattr(main, "_catalog_request", catalog)
+    monkeypatch.setattr(main.httpx, "stream", missing_runtime)
+    from app.agent_lifecycle_delivery import LifecycleDelivery
+    monkeypatch.setattr(main, "answer_delivery", LifecycleDelivery(tmp_path, main.trace_store, main._send_owned_answer, answers=True))
+    session = main.ProductSession(
+        conversation_id="conversation-reconnect", session_id="session-reconnect", trace_id="trace-reconnect",
+        principal=main.Principal(subject="owner-1"), workspace_id="workspace-1")
+    main._collect_trace(session)
+    assert calls == []  # Catalog I/O cannot delay or stop SSE collection.
+    main.answer_delivery.run_once()
+    assert [call["workflow_sequence"] for call in calls] == ([1] if catalog_failure else [1, 3])
+    assert all(call["content"] == "original durable answer" for call in calls)
+    assert store.read(session.session_id) == main.trace_store.read(session.session_id)
 
 
 def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_path: Path) -> None:
@@ -33,7 +194,7 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
             return {"conversation": {"conversation_id": "conversation_1", "title": "新投研对话", "status": "active"}}
         if path.endswith("/messages"):
             messages.append(str(payload["content"]))
-            return {"message": {"sequence": 1}}
+            return {"message": {"sequence": 1, "message_id": "message_original"}}
         raise AssertionError((method, path, params))
 
     monkeypatch.setattr(main, "_catalog_request", fake_catalog)
@@ -46,7 +207,7 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
             return None
 
         def json(self) -> dict[str, object]:
-            return {"status": "ready"} if len(calls) == 1 else {"run_id": "run-1"}
+            return {"status": "ready"} if len(calls) == 1 else {"accepted": True, "run_id": "run-1"}
 
     def fake_post(url: str, *, json: dict[str, object] | None, timeout: float) -> FakeResponse:
         calls.append((url, json))
@@ -69,6 +230,7 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
     assert calls[1][1] == {
         "content": "summarize the health contract",
         "require_model_key": True,
+        "idempotency_key": "message_original",
     }
     assert calls[0][1]["owner_principal"] == main.PRODUCT_PRINCIPAL
     assert messages == ["summarize the health contract"]
@@ -241,7 +403,8 @@ def test_projected_answer_is_persisted_and_filtered_from_durable_replay(monkeypa
     def fake_catalog(method, path, _principal, _workspace_id, *, payload=None, params=None):
         calls.append((method, path, payload))
         if method == "POST":
-            return {"message": {"workflow_sequence": 8}}
+            return {"message": {"workflow_sequence": 8, "role": "assistant", "content": "持久化回答",
+                                "message_id": "message-1", "sequence": 1}}
         return {
             "conversation": {
                 "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
@@ -273,12 +436,13 @@ def test_projected_answer_is_persisted_and_filtered_from_durable_replay(monkeypa
     assert response.json()["events"] == []
 
 
+@pytest.mark.parametrize("failure", [main.HTTPException(status_code=503), ValueError("invalid JSON")])
 def test_answer_trace_remains_available_when_catalog_persistence_is_temporarily_unavailable(
-    monkeypatch, tmp_path: Path,
+    monkeypatch, tmp_path: Path, failure,
 ) -> None:
     monkeypatch.setattr(
         main, "_catalog_request",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(main.HTTPException(status_code=503)),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(failure),
     )
     session = main.ProductSession(
         conversation_id="conversation_1", session_id="runtime-private", trace_id="trace-1",
@@ -289,7 +453,20 @@ def test_answer_trace_remains_available_when_catalog_persistence_is_temporarily_
         "payload": {"delta": "仍由执行记录回放"},
     }
 
-    main._persist_projected_answer(session, event)
+    assert main._persist_projected_answer(session, event) is False
+
+
+@pytest.mark.parametrize("change", [{"workflow_sequence": True}, {"workflow_sequence": 9},
+    {"role": "user"}, {"content": "different answer"}, {"message_id": ""}, {"sequence": False},
+    {"sequence": 0}])
+def test_answer_receipt_must_match_exact_durable_fragment(monkeypatch, change):
+    message = {"message_id": "synthetic-message", "sequence": 1, "role": "assistant",
+               "content": "synthetic answer", "workflow_sequence": 8, **change}
+    monkeypatch.setattr(main, "_catalog_request", lambda *args, **kwargs: {"message": message})
+    session = main.ProductSession(conversation_id="synthetic-conversation", session_id="synthetic-session",
+                                  trace_id="synthetic-trace", principal=main.Principal(subject="synthetic-user"))
+    assert main._persist_projected_answer(session, {"kind": "agent.output.delta", "sequence": 8,
+        "payload": {"delta": "synthetic answer"}}) is False
 
 
 def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(monkeypatch, tmp_path: Path) -> None:
@@ -327,6 +504,12 @@ def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(mon
         "session_id": "runtime-private", "trace_id": "trace-1",
         "workspace_id": "workspace_bootstrap_unresolved", "owner_principal": main.PRODUCT_PRINCIPAL,
         "initial_sequence": 7,
+        "conversation_recovery": {
+            "schema_version": "conversation-recovery.v2",
+            "session_id": "runtime-private", "trace_id": "trace-1",
+            "status": "needs_confirmation", "unanswered_turn": None,
+            "failure": {"sequence": 7, "run_id": None, "code": "model-run-failed"},
+        },
         "conversation_context": [
             {"role": "user", "content": "第一轮问题"},
             {"role": "assistant", "content": "第一轮回答"},
@@ -456,6 +639,7 @@ def test_turn_rehydrates_after_runtime_loss_without_duplicating_user_message(
                 "trace_id": "trace-1", "status": "active",
             },
             "messages": [{"role": "user", "content": "follow-up"}],
+            "message": {"message_id": "message_stable_retry"},
         }
 
     monkeypatch.setattr(main, "_catalog_request", catalog)
@@ -463,9 +647,11 @@ def test_turn_rehydrates_after_runtime_loss_without_duplicating_user_message(
 
     def adapter(path, **_kwargs):
         calls.append(path)
+        if path.endswith("/prompt"):
+            assert _kwargs["payload"]["idempotency_key"] == "message_stable_retry"
         if calls == ["/internal/runtime/sessions/runtime-private/prompt"]:
             raise main.HTTPException(status_code=404, detail="lost")
-        return {"status": "ready", "run_id": "run-rehydrated"}
+        return {"status": "ready", "accepted": True, "run_id": "run-rehydrated"}
 
     monkeypatch.setattr(main, "_adapter_post", adapter)
     monkeypatch.setattr(main, "_start_trace_collector", lambda _session: None)

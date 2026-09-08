@@ -45,4 +45,20 @@ describe("auth store", () => {
     expect(auth.user?.display_name).toBe("量化小周");
     expect(auth.user?.workspace.display_name).toBe("Alice 的个人工作区");
   });
+
+  it.each(["transport", "server", "json", "wrong_ack"])("retains the user for exact logout retry after %s", async (failure) => {
+    const auth = useAuthStore();
+    auth.setUser({ subject: "synthetic-user", workspace: { contract: "personal-workspace.v1", workspace_id: "workspace_test",
+      kind: "personal", display_name: "合成测试", role: "owner" } });
+    const request = vi.fn();
+    if (failure === "transport") request.mockRejectedValueOnce(new Error("synthetic transport error"));
+    else request.mockResolvedValueOnce(new Response(failure === "json" ? "invalid" : "{}", { status: failure === "server" ? 503 : 200 }));
+    request.mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
+    vi.stubGlobal("fetch", request);
+    await expect(auth.logout()).rejects.toThrow("注销结果尚未确认");
+    expect(auth.isAuthenticated).toBe(true);
+    await auth.logout();
+    expect(auth.isAuthenticated).toBe(false);
+    expect(request.mock.calls[0]).toEqual(request.mock.calls[1]);
+  });
 });

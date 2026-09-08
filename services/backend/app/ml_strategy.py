@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 from datetime import datetime
 from typing import Any
+from .ml_validation import MLValidationError
 
 from .ml_capabilities import (
     STRATEGY_SCHEMA as V2_SCHEMA_VERSION,
@@ -68,16 +68,16 @@ def content_sha256(value: object) -> str:
 
 def _object(value: object, *, field: str, allowed: set[str]) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise ValueError(f"{field} must be an object")
+        raise MLValidationError(f"{field} must be an object", field=field, code="object_required")
     unknown = sorted(set(value) - allowed)
     if unknown:
-        raise ValueError(f"{field} has unknown fields: {', '.join(unknown)}")
+        raise MLValidationError(f"{field} has unknown fields: {', '.join(unknown)}", field=field, code="unknown_fields")
     return value
 
 
 def _text(value: object, *, field: str, maximum: int) -> str:
     if not isinstance(value, str) or not value.strip() or len(value.strip()) > maximum:
-        raise ValueError(f"{field} must be a non-empty string of at most {maximum} characters")
+        raise MLValidationError(f"{field} must be a non-empty string of at most {maximum} characters", field=field, code="text_required")
     return value.strip()
 
 
@@ -86,12 +86,12 @@ def _date(value: object, *, field: str) -> str:
     try:
         return datetime.strptime(normalized, "%Y-%m-%d").strftime("%Y-%m-%d")
     except ValueError as error:
-        raise ValueError(f"{field} must be YYYY-MM-DD") from error
+        raise MLValidationError(f"{field} must be YYYY-MM-DD", field=field, code="date_format") from error
 
 
 def _integer(value: object, *, field: str, minimum: int, maximum: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
-        raise ValueError(f"{field} must be an integer between {minimum} and {maximum}")
+        raise MLValidationError(f"{field} must be an integer between {minimum} and {maximum}", field=field, code="integer_required")
     return value
 
 
@@ -101,14 +101,16 @@ def _parameters(value: object) -> dict[str, object]:
     for name, raw in supplied.items():
         expected, minimum, maximum = PARAMETER_RULES[name]
         if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-            raise ValueError(f"learner_parameters.{name} must be numeric")
+            raise MLValidationError(f"learner_parameters.{name} must be numeric", field=f"learner_parameters.{name}", code="number_required")
         if expected is int and not isinstance(raw, int):
-            raise ValueError(f"learner_parameters.{name} must be an integer")
-        normalized = int(raw) if expected is int else float(raw)
-        if not math.isfinite(float(normalized)) or not minimum <= normalized <= maximum:
-            raise ValueError(
-                f"learner_parameters.{name} must be between {minimum:g} and {maximum:g}"
+            raise MLValidationError(f"learner_parameters.{name} must be an integer", field=f"learner_parameters.{name}", code="integer_required")
+        # Compare before float conversion: finite JSON integers can exceed float range.
+        if not minimum <= raw <= maximum:
+            raise MLValidationError(
+                f"learner_parameters.{name} must be between {minimum:g} and {maximum:g}",
+                field=f"learner_parameters.{name}", code="out_of_range",
             )
+        normalized = int(raw) if expected is int else float(raw)
         result[name] = normalized
     return result
 
@@ -123,7 +125,7 @@ def _normalize_ml_strategy_v1(value: object) -> dict[str, object]:
         },
     )
     if data.get("schema_version") != SCHEMA_VERSION:
-        raise ValueError("unsupported ML strategy schema")
+        raise MLValidationError("unsupported ML strategy schema", field="schema_version", code="unsupported_value")
     learner = _object(data.get("learner"), field="learner", allowed={"kind", "profile"})
     if learner != {"kind": "lightgbm_regression", "profile": EXECUTION_PROFILE}:
         raise ValueError("only the closed LightGBM regression profile is supported")
@@ -151,8 +153,8 @@ def _normalize_ml_strategy_v1(value: object) -> dict[str, object]:
     ):
         raise ValueError("ML strategy splits must be chronological and non-overlapping")
     policy = _object(data.get("signal_policy"), field="signal_policy", allowed={"kind", "top_n", "rebalance"})
-    if policy.get("kind") != "top_n_equal_weight" or policy.get("rebalance") not in {"daily", "weekly", "monthly"}:
-        raise ValueError("unsupported ML signal policy")
+    if policy.get("kind") != "top_n_equal_weight" or policy.get("rebalance") not in ("daily", "weekly", "monthly"):
+        raise MLValidationError("unsupported ML signal policy", field="signal_policy", code="unsupported_value")
     top_n = _integer(policy.get("top_n"), field="signal_policy.top_n", minimum=1, maximum=100)
     snapshot: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,

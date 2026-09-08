@@ -4,6 +4,8 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 
 const endpoint = process.env.MCP_URL ?? "http://127.0.0.1:8300/mcp/v1";
 const token = process.env.BYQ_MCP_TOKEN;
+const expectedWebPluginVersion = process.env.BYQ_MCP_CONTRACT_WEB_PLUGIN_VERSION ?? "0.1.1-rc.1";
+assert.ok(["0.1.1-rc.1", "0.1.2-rc.1"].includes(expectedWebPluginVersion));
 
 if (!token) {
   throw new Error("BYQ_MCP_TOKEN is required for the MCP contract test");
@@ -157,7 +159,7 @@ try {
   assert.ok(readText && "text" in readText);
   const stored = JSON.parse(readText.text);
   assert.equal(stored.content.search.plugin_id, "web-search");
-  assert.equal(stored.content.search.plugin_version, "0.1.1-rc.1");
+  assert.equal(stored.content.search.plugin_version, expectedWebPluginVersion);
   assert.ok(stored.content_sha256);
   const repeated = await client.callTool({ name: "byq_web_evidence_create", arguments: evidenceArgs });
   assert.notEqual(repeated.isError, true);
@@ -168,7 +170,7 @@ try {
     name: "byq_web_evidence_create",
     arguments: {
       ...evidenceArgs,
-      content: { ...evidenceArgs.content, search: { ...evidenceArgs.content.search, plugin_id: "web-search", plugin_version: "0.1.1-rc.1" } },
+      content: { ...evidenceArgs.content, search: { ...evidenceArgs.content.search, plugin_id: "web-search", plugin_version: expectedWebPluginVersion } },
     },
   });
   assert.notEqual(legacy.isError, true, "matching legacy commands must remain compatible");

@@ -34,6 +34,11 @@ async function requestPool(
   body?: Record<string, unknown>,
   fetcher: Fetcher = fetch,
 ): Promise<PoolResult> {
+  const mutating = method !== "GET";
+  const unknown = () => result({ service: "beyondquant-mcp", status: "outcome_unknown", retryable: false,
+    ...(typeof body?.idempotency_key === "string" ? { idempotency_key: body.idempotency_key } : {}),
+    next_action: "Preserve the original request identity and verify its result; never create a replacement pool or infer absence from a partial list.",
+  }, false);
   try {
     const response = await fetcher(`${backendUrl}${path}`, {
       method,
@@ -42,7 +47,9 @@ async function requestPool(
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
     const payload = await response.json().catch(() => null) as unknown;
+    if (mutating && response.status >= 500) return unknown();
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+      if (mutating && response.ok) return unknown();
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (!response.ok) {
@@ -50,12 +57,29 @@ async function requestPool(
     }
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
+    if (mutating) return unknown();
     return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
   }
 }
 
 export const fetchByqPoolList = (backendUrl: string, context: PoolContext, fetcher: Fetcher = fetch) =>
   requestPool(backendUrl, "/v1/paper/pools", "GET", context, undefined, fetcher);
+export const fetchByqIndexPoolCatalog = (backendUrl: string, asOf: string, context: PoolContext, fetcher: Fetcher = fetch) =>
+  requestPool(backendUrl, `/v1/paper/index-pools/catalog?requested_as_of=${encodeURIComponent(asOf)}&limit=6&offset=0`, "GET", context, undefined, fetcher);
+export const fetchByqIndexPoolCreate = (backendUrl: string, body: Record<string, unknown>, context: PoolContext, fetcher: Fetcher = fetch) =>
+  requestPool(backendUrl, "/v1/paper/index-pools", "POST", context, body, fetcher);
+export const fetchByqIndexPoolStatus = (backendUrl: string, poolId: string, context: PoolContext, fetcher: Fetcher = fetch) =>
+  requestPool(backendUrl, `/v1/paper/pools/${encodeURIComponent(poolId)}/materializations?limit=10&offset=0`, "GET", context, undefined, fetcher);
+export async function fetchByqIndexPoolReconcile(backendUrl: string, key: string, context: PoolContext, fetcher: Fetcher = fetch) {
+  const response = await requestPool(backendUrl, `/v1/paper/index-pools/reconcile?idempotency_key=${encodeURIComponent(key)}`, "GET", context, undefined, fetcher);
+  const payload = JSON.parse(response.content[0].text);
+  if (response.isError && ![401, 403, 409, 422].includes(payload.backend?.http_status)) {
+    return result({ service: "beyondquant-mcp", status: "outcome_unknown", idempotency_key: key, retryable: false,
+      next_action: "Read byq_index_pool_status again with the same idempotency_key within a bounded reconciliation budget; do not repeat creation.",
+    }, false);
+  }
+  return response;
+}
 export const fetchByqPoolGet = (backendUrl: string, poolId: string, context: PoolContext, fetcher: Fetcher = fetch) =>
   requestPool(backendUrl, `/v1/paper/pools/${encodeURIComponent(poolId)}`, "GET", context, undefined, fetcher);
 export const fetchByqPoolCreate = (backendUrl: string, body: Record<string, unknown>, context: PoolContext, fetcher: Fetcher = fetch) =>

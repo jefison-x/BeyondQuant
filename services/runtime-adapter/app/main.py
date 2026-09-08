@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from packages.contracts.conversation_rehydration import ConversationContextMessage
 from packages.operations.admission import AdmissionClosed, chat_admission
+from packages.contracts.prompt_rejection import credential_rejection
 
 from .runtime import ModelCredentialUnavailable, RuntimeAdapter, SessionConflict
 
@@ -23,10 +24,12 @@ class CreateSessionRequest(BaseModel):
     owner_principal: str | None = None
     initial_sequence: int = 0
     conversation_context: list[ConversationContextMessage] = Field(default_factory=list)
+    conversation_recovery: dict[str, object] | None = None
 
 
 class ResumeSessionRequest(BaseModel):
     conversation_context: list[ConversationContextMessage] = Field(default_factory=list)
+    conversation_recovery: dict[str, object] | None = None
 
 
 class PromptRequest(BaseModel):
@@ -101,6 +104,7 @@ def create_session(request: CreateSessionRequest) -> dict[str, object]:
         return adapter.create_session(
             request.session_id, request.trace_id, request.owner_principal, request.workspace_id,
             request.initial_sequence, request.conversation_context,
+            request.conversation_recovery,
         )
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -126,6 +130,13 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ModelCredentialUnavailable as exc:
+        if request.idempotency_key is not None:
+            try:
+                rejection = credential_rejection(session_id, request.idempotency_key, request.content)
+            except ValueError:
+                rejection = None
+            if rejection is not None:
+                raise HTTPException(status_code=503, detail=rejection) from exc
         raise HTTPException(status_code=503, detail="configured model provider is unavailable") from exc
     return {"accepted": True, "session_id": session_id, "run_id": run_id}
 
@@ -136,13 +147,52 @@ def resume_session(session_id: str, request: ResumeSessionRequest | None = None)
         return adapter.resume_session(
             session_id,
             conversation_context=[] if request is None else request.conversation_context,
+            conversation_recovery=None if request is None else request.conversation_recovery,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail="DSH runtime failed to resume") from exc
+
+
+@app.post("/internal/runtime/sessions/{session_id}/terminal-receipt")
+def acknowledge_terminal(session_id: str, payload: dict) -> dict:
+    if set(payload) != {"receipt"}:
+        raise HTTPException(status_code=422, detail="exact terminal receipt required")
+    try:
+        return adapter.acknowledge_terminal(session_id, payload["receipt"])
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="runtime session not found") from exc
+    except SessionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/internal/runtime/sessions/{session_id}/recover-evidence")
+def recover_evidence(session_id: str, payload: dict) -> dict:
+    if set(payload) != {"trace_id", "owner", "workspace_id", "after_sequence"}:
+        raise HTTPException(status_code=422, detail="exact recovery context required")
+    try:
+        return adapter.recover_evidence({"session_id": session_id, **{k: payload[k]
+            for k in ("trace_id", "owner", "workspace_id")}}, payload["after_sequence"])
+    except (ValueError, OSError, TypeError, KeyError) as exc:
+        raise HTTPException(status_code=409, detail="runtime recovery evidence is unavailable or unproven") from exc
+
+
+@app.get("/internal/runtime/sessions/{session_id}/prompts/reconcile")
+def reconcile_prompt_receipt(
+    session_id: str, idempotency_key: str = Query(min_length=8, max_length=128),
+    content_sha256: str = Query(pattern="^[0-9a-f]{64}$"),
+) -> dict[str, object]:
+    try:
+        return adapter.reconcile_prompt(session_id, idempotency_key, content_sha256)
+    except KeyError:
+        return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
+    except SessionConflict as exc:
+        raise HTTPException(status_code=409, detail="prompt receipt identity conflicts") from exc
 
 
 @app.post("/internal/runtime/sessions/{session_id}/cancel")

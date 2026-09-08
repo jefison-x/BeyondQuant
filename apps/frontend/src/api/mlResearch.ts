@@ -2,6 +2,15 @@ import { createRequestId } from "@/utils/requestId";
 
 const ROOT = "/api/product/ml";
 
+export interface MLReceiptWatch {
+  watch_id: string; state: "awaiting_receipt" | "confirmed" | "rejected" | "needs_attention";
+  check_count: number; check_limit: number; next_check_at: string; deadline_at: string;
+  training_run_id?: string;
+}
+export const getMLTrainingSubmission = (key: string) => request<{ receipt_watch: MLReceiptWatch }>(
+  `/training-submissions/reconcile?${new URLSearchParams({ idempotency_key: key })}`,
+);
+
 export interface MLArtifact { artifact_id: string; task_id: string; kind: string; status: string; created_at?: string; content: Record<string, any> }
 export interface MLRun { training_run_id?: string; prediction_run_id?: string; task_id: string; status: string; ml_strategy_artifact_id: string; approval_artifact_id?: string; model_artifact_id?: string; feature_artifact_id?: string; prediction_artifact_id?: string; signal_artifact_id?: string; stock_pool_snapshot_id: string; error_code?: string; error_detail?: string }
 export interface MLWorkspace { tasks: Array<Record<string, any>>; pools: Array<Record<string, any>>; artifacts: MLArtifact[]; training_runs: MLRun[]; prediction_runs: MLRun[]; backtests: Array<Record<string, any>> }

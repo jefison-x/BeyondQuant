@@ -22,9 +22,11 @@ async function jsonRequest<T>(path: string, token: string, init: RequestInit = {
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { detail?: unknown; error?: { code?: unknown; message?: unknown } };
     const maintenance = response.status === 503 && body.error?.code === "chat_maintenance";
+    const unknownPrompt = response.status === 502 && body.error?.code === "prompt_outcome_unknown";
     const message = typeof body.error?.message === "string" ? body.error.message
       : typeof body.detail === "string" ? body.detail : "agent request failed";
-    throw new AgentRequestError(message.slice(0, 500), response.status, maintenance ? "chat_maintenance" : undefined);
+    throw new AgentRequestError(message.slice(0, 500), response.status,
+      maintenance ? "chat_maintenance" : unknownPrompt ? "prompt_outcome_unknown" : undefined);
   }
   return (await response.json()) as T;
 }

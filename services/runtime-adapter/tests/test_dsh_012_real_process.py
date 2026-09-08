@@ -49,6 +49,114 @@ class ScriptedProvider(BaseHTTPRequestHandler):
         return
 
 
+def test_official_registration_notification_has_exact_request_identity(monkeypatch) -> None:
+    """Inspect the public notification, with no owner and therefore no domain write."""
+    arguments = {"role_id": "quant_orchestrator", "idempotency_key": "synthetic-registration-probe"}
+
+    class RegistrationProvider(ScriptedProvider):
+        def do_POST(self) -> None:  # noqa: N802
+            body = json.loads(self.rfile.read(int(self.headers.get("content-length", "0"))))
+            has_result = any(item.get("role") == "tool" for item in body.get("messages", []))
+            delta = {"content": "合成接口核查完成"} if has_result else {
+                "tool_calls": [{"index": 0, "id": "synthetic-registration-call", "type": "function",
+                                "function": {"name": "mcp__byq__byq_agent_run_start",
+                                             "arguments": json.dumps(arguments)}}],
+            }
+            chunks = [
+                {"choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]},
+                {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop" if has_result else "tool_calls"}]},
+            ]
+            encoded = ("".join(f"data: {json.dumps(item)}\n\n" for item in chunks) + "data: [DONE]\n\n").encode()
+            self.send_response(200)
+            self.send_header("content-type", "text/event-stream")
+            self.send_header("content-length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), RegistrationProvider)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "scripted-test-only")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", f"http://127.0.0.1:{server.server_port}")
+    adapter = RuntimeAdapter()
+    captured = []
+    observations = []
+    original = adapter._on_notification
+
+    def capture(record, notification, **kwargs):
+        payload = getattr(notification, "payload", {})
+        event = payload.get("event", {})
+        if event.get("type") == "tool/call":
+            captured.append(event.get("data", {}))
+            observations.append(adapter._compatibility.observe(notification, root_session_id=record.runtime_session_id))
+        original(record, notification, **kwargs)
+
+    adapter._on_notification = capture
+    session_id = f"binding-probe-{uuid.uuid4().hex}"
+    try:
+        adapter.create_session(session_id, "binding-probe-trace")
+        adapter.submit_prompt(session_id, "合成接口核查，不执行研究")
+        record = adapter._get(session_id)
+        deadline = time.monotonic() + 20
+        while record.status == SessionStatus.RUNNING and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert record.status == SessionStatus.IDLE
+        calls = [item for item in captured if item.get("name") == "mcp__byq__byq_agent_run_start"]
+        assert len(calls) == 1
+        assert isinstance(calls[0].get("arguments"), str)
+        assert json.loads(calls[0]["arguments"]) == arguments
+        assert [item.registration_key for item in observations if item.registration_key] == [arguments["idempotency_key"]]
+    finally:
+        adapter.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+@pytest.mark.parametrize("current", ["继续", "沪深300近三年周频双均线，凯利仓位", "改为中证500近一年月频研究"])
+def test_real_generation_recovery_preserves_subject_and_current_input(monkeypatch, current):
+    """Real process + MCP, scripted model; asserts transport, not model reasoning."""
+    ScriptedProvider.requests.clear()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ScriptedProvider)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "scripted-test-only")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", f"http://127.0.0.1:{server.server_port}")
+    subject = "沪深300近三年周频双均线，凯利仓位"
+    session_id = f"r2-{uuid.uuid4().hex}"
+    recovery = {
+        "schema_version": "conversation-recovery.v2", "session_id": session_id,
+        "trace_id": "r2-trace", "status": "resolved",
+        "unanswered_turn": {"message_id": "original-request", "content": subject},
+        "failure": {"sequence": 9, "run_id": "failed-run", "code": "runtime-subagent-timeout"},
+    }
+    adapter = RuntimeAdapter()
+    try:
+        adapter.create_session(session_id, "r2-trace", initial_sequence=9, conversation_recovery=recovery)
+        record = adapter._get(session_id)
+        assert record.runtime_session_id != session_id
+        adapter.submit_prompt(session_id, current, idempotency_key="persisted-current-message")
+        deadline = time.monotonic() + 20
+        while record.status == SessionStatus.RUNNING and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert record.status == SessionStatus.IDLE
+        assert len(ScriptedProvider.requests) == 1
+        messages = ScriptedProvider.requests[0]["messages"]
+        wire = json.dumps(messages, ensure_ascii=False)
+        assert wire.count(subject) == 1
+        assert "runtime-subagent-timeout" in wire
+        assert "BYQ_TASK_RECOVERY" in wire
+        if current != subject:
+            assert current in wire
+        assert record.pending_conversation_recovery is None
+    finally:
+        adapter.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def test_candidate_mcp_auth_failure_blocks_initialization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

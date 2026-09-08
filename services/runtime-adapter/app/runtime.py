@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import queue
 import re
@@ -19,10 +20,15 @@ from packages.contracts.conversation_rehydration import (
     normalize_conversation_context,
     rehydrated_prompt,
 )
+from packages.contracts.conversation_recovery import normalize_recovery
+from packages.contracts.agent_run_lifecycle import registration_fingerprint, lifecycle_receipt, project_lifecycle_event
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
+from .child_lease import ChildLease
+from .normalization import close_public_activities
 from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_release
 from .identifiers import contained_session_path, validate_identifier
+from .lifecycle_journal import LifecycleJournal, JournalBusy
 from .normalization import NormalizationState, normalize_runtime_observation
 
 
@@ -66,6 +72,11 @@ class ActiveRun:
     soft_cancel_requested: bool = False
     hard_cancelled: bool = False
     active_subagent_calls: dict[str, float] = field(default_factory=dict)
+    child_leases: dict[str, ChildLease] = field(default_factory=dict)
+    finished_children: set[str] = field(default_factory=set)
+    last_root_sequence: int = -1
+    observed_registrations: set[str] = field(default_factory=set, repr=False)
+    last_wait_notice_at: float = 0.0
     watchdog_stop: threading.Event = field(default_factory=threading.Event, repr=False)
 
 
@@ -75,13 +86,18 @@ class RuntimeSession:
     trace_id: str
     harness: Any
     runtime_session_id: str
+    runtime_generation: str = field(default="", repr=False)
     owner_principal: str | None = None
     workspace_id: str | None = None
     model_resolution: dict[str, object] = field(default_factory=dict, repr=False)
     pending_conversation_context: list[ConversationContextMessage] = field(default_factory=list, repr=False)
+    pending_conversation_recovery: dict | None = field(default=None, repr=False)
     status: str = SessionStatus.STARTING
     active_run: ActiveRun | None = None
     prompt_idempotency: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
+    terminal_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
+    pending_terminal_receipts: set[str] = field(default_factory=set, repr=False)
+    journal: Any = field(default=None, repr=False)
     interrupted_run_id: str | None = None
     sequence: int = 0
     normalization: NormalizationState = field(default_factory=NormalizationState)
@@ -138,6 +154,9 @@ class RuntimeAdapter:
         )
         self._subagent_timeout_seconds = self._guard_seconds(
             "BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS", default=180.0,
+        )
+        self._subagent_hard_cap_seconds = self._guard_seconds(
+            "BYQ_DSH_SUBAGENT_HARD_CAP_SECONDS", default=600.0,
         )
         self._no_progress_timeout_seconds = self._guard_seconds(
             "BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS", default=120.0,
@@ -317,12 +336,14 @@ class RuntimeAdapter:
         self, session_id: str, trace_id: str, owner_principal: str | None = None,
         workspace_id: str | None = None, initial_sequence: int = 0,
         conversation_context: object = None,
+        conversation_recovery: object = None,
     ) -> dict[str, Any]:
         validate_identifier(session_id, field="session_id")
         validate_identifier(trace_id, field="trace_id")
         if isinstance(initial_sequence, bool) or not isinstance(initial_sequence, int) or initial_sequence < 0:
             raise ValueError("initial_sequence must be a non-negative integer")
         context = normalize_conversation_context([] if conversation_context is None else conversation_context)
+        recovery = normalize_recovery(conversation_recovery, session_id, trace_id)
         # The official rc.1 JSON-RPC carrier creates sessions but exposes no
         # persisted-session resume operation. Never recreate a released DSH
         # session over its append-only identity; use a fresh private generation
@@ -338,25 +359,47 @@ class RuntimeAdapter:
         with self._lock:
             if session_id in self._sessions:
                 raise SessionConflict(f"BYQ session already exists: {session_id}")
-            harness = self._build_harness(
-                session_id,
-                session_root,
-                trace_id=trace_id,
-                owner_principal=owner_principal,
-                workspace_id=workspace_id,
-                model_resolution=model_resolution,
-            )
+            journal = None
+            if workspace_id:
+                try:
+                    journal = LifecycleJournal.claim(self._session_root / "byq-lifecycle-evidence",
+                        {"session_id": session_id, "trace_id": trace_id, "owner": owner_principal,
+                         "workspace_id": workspace_id}, create=True)
+                except JournalBusy as exc:
+                    raise SessionConflict("runtime evidence is owned by another executor") from exc
+                initial_sequence = max(initial_sequence, journal.state["sequence"])
+                if journal.state["sequence"]:
+                    runtime_session_id = f"resume-{uuid.uuid4().hex}"
+                    session_root = contained_session_path(self._session_root, runtime_session_id)
+            runtime_generation = f"generation-{uuid.uuid4().hex}"
+            try:
+                harness = self._build_harness(
+                    session_id, session_root, trace_id=trace_id, owner_principal=owner_principal,
+                    workspace_id=workspace_id, model_resolution=model_resolution,
+                    runtime_generation=runtime_generation)
+            except BaseException:
+                if journal:
+                    journal.close()
+                raise
             record = RuntimeSession(
                 session_id=session_id,
                 trace_id=trace_id,
                 harness=harness,
                 runtime_session_id=runtime_session_id,
+                runtime_generation=runtime_generation,
                 owner_principal=owner_principal,
                 workspace_id=workspace_id,
                 model_resolution=model_resolution,
                 pending_conversation_context=context,
+                pending_conversation_recovery=recovery,
                 sequence=initial_sequence,
+                journal=journal,
+                history=[] if journal is None else list(journal.state["events"]),
             )
+            for event in record.history:
+                terminal = project_lifecycle_event(event, session_id, trace_id)
+                if terminal and terminal["outcome"] != "active":
+                    record.terminal_receipts.setdefault(terminal["root_run_id"], lifecycle_receipt(terminal))
             self._sessions[session_id] = record
 
         try:
@@ -368,7 +411,11 @@ class RuntimeAdapter:
         except Exception:
             with self._lock:
                 self._sessions.pop(session_id, None)
-            self._compatibility.close(harness)
+            try:
+                self._compatibility.close(harness)
+            finally:
+                if journal:
+                    journal.close()
             raise
 
     def submit_prompt(
@@ -376,18 +423,29 @@ class RuntimeAdapter:
         idempotency_key: str | None = None,
     ) -> str:
         record = self._get(session_id)
-        if require_model_key and not record.model_resolution.get("api_key"):
-            raise ModelCredentialUnavailable("the configured model provider has no credential")
         with record.lock:
             if idempotency_key is not None:
                 if not 8 <= len(idempotency_key) <= 128:
                     raise ValueError("prompt idempotency key has invalid length")
+                if record.journal is not None:
+                    try:
+                        durable = record.journal.receipt(idempotency_key, hashlib.sha256(content.encode()).hexdigest())
+                    except ValueError as exc:
+                        raise SessionConflict("prompt receipt identity conflicts") from exc
+                    if durable["state"] == "accepted":
+                        return durable["run_id"]
                 existing = record.prompt_idempotency.get(idempotency_key)
                 if existing is not None:
                     existing_content, existing_run_id = existing
                     if existing_content != content:
                         raise SessionConflict("prompt idempotency key was reused with different content")
                     return existing_run_id
+            # An accepted original receipt remains authoritative even if model
+            # credentials are subsequently absent. Reject only a new admission.
+            if require_model_key and not record.model_resolution.get("api_key"):
+                raise ModelCredentialUnavailable("the configured model provider has no credential")
+            if record.workspace_id and record.pending_terminal_receipts:
+                raise SessionConflict("previous turn domain cleanup is not yet acknowledged")
             if record.status not in SessionStatus.PROMPTABLE or record.active_run is not None:
                 raise SessionConflict(
                     f"session {session_id} cannot accept a prompt in state {record.status}"
@@ -398,13 +456,21 @@ class RuntimeAdapter:
                 started_at=now,
                 last_runtime_activity_at=now,
             )
-            effective_content = rehydrated_prompt(record.pending_conversation_context, content)
+            effective_content = rehydrated_prompt(record.pending_conversation_context, content, record.pending_conversation_recovery)
             record.pending_conversation_context = []
+            record.pending_conversation_recovery = None
             record.active_run = run
             record.status = SessionStatus.RUNNING
             if idempotency_key is not None:
                 record.prompt_idempotency[idempotency_key] = (content, run.run_id)
-            self._emit(record, "session.started", "runtime-adapter", {"run_id": run.run_id})
+            try:
+                self._emit(record, "session.started", "runtime-adapter", {"run_id": run.run_id})
+            except BaseException:
+                record.active_run = None
+                record.status = SessionStatus.FAILED
+                if idempotency_key:
+                    record.prompt_idempotency.pop(idempotency_key, None)
+                raise
 
         worker = threading.Thread(
             target=self._run_prompt,
@@ -421,7 +487,7 @@ class RuntimeAdapter:
                     if idempotency_key is not None:
                         record.prompt_idempotency.pop(idempotency_key, None)
                     record.status = SessionStatus.FAILED
-                    self._emit(record, "session.failed", "runtime-adapter", {"error": "thread-start"})
+                    self._emit(record, "session.failed", "runtime-adapter", {"error": "thread-start", "run_id": run.run_id})
             raise
         watchdog = threading.Thread(
             target=self._watch_run,
@@ -431,6 +497,35 @@ class RuntimeAdapter:
         )
         watchdog.start()
         return run.run_id
+
+    def reconcile_prompt(self, session_id: str, idempotency_key: str, content_sha256: str) -> dict[str, object]:
+        try:
+            record = self._get(session_id)
+        except KeyError:
+            validate_identifier(session_id, field="session_id")
+            try:
+                state = LifecycleJournal.read(self._session_root / "byq-lifecycle-evidence" / f"{session_id}.json")
+            except FileNotFoundError:
+                return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
+            if state["context"]["session_id"] != session_id:
+                raise SessionConflict("durable prompt session identity conflicts")
+            try:
+                return LifecycleJournal.lookup(state, idempotency_key, content_sha256)
+            except ValueError as exc:
+                raise SessionConflict("prompt receipt identity conflicts") from exc
+        with record.lock:
+            if record.journal:
+                try:
+                    return record.journal.receipt(idempotency_key, content_sha256)
+                except ValueError as exc:
+                    raise SessionConflict("prompt receipt identity conflicts") from exc
+            existing = record.prompt_idempotency.get(idempotency_key)
+            if existing is None:
+                return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
+            content, run_id = existing
+            if hashlib.sha256(content.encode("utf-8")).hexdigest() != content_sha256:
+                raise SessionConflict("prompt receipt identity conflicts with original content")
+            return {"schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": run_id}
 
     def _run_prompt(self, record: RuntimeSession, run: ActiveRun, content: str) -> None:
         runtime_session_id = record.runtime_session_id
@@ -456,10 +551,10 @@ class RuntimeAdapter:
                     return
                 if run.soft_cancel_requested:
                     record.status = SessionStatus.IDLE
-                    self._emit(record, "session.result.discarded", "runtime-adapter", {"reason": "soft-cancelled"})
+                    self._emit(record, "session.result.discarded", "runtime-adapter", {"reason": "soft-cancelled", "run_id": run.run_id})
                     return
                 record.status = SessionStatus.FAILED
-                self._emit(record, "session.failed", "runtime-adapter", {"error": type(exc).__name__})
+                self._emit(record, "session.failed", "runtime-adapter", {"error": type(exc).__name__, "run_id": run.run_id})
             return
 
         with record.lock:
@@ -471,15 +566,18 @@ class RuntimeAdapter:
                 return
             if run.soft_cancel_requested:
                 record.status = SessionStatus.IDLE
-                self._emit(record, "session.result.discarded", "runtime-adapter", {"reason": "soft-cancelled"})
+                self._emit(record, "session.result.discarded", "runtime-adapter", {"reason": "soft-cancelled", "run_id": run.run_id})
                 return
-            if finish_reason in {"error", "failed"}:
+            # A returned SDK call is not necessarily a completed model run.
+            # Token exhaustion, cancellation and unknown reasons must not
+            # resolve the user's unanswered request as a successful result.
+            if finish_reason != "completed":
                 record.status = SessionStatus.FAILED
                 self._emit(
                     record,
                     "session.failed",
                     "runtime-adapter",
-                    {"code": "model-run-failed", "retryable": True},
+                    {"code": "model-run-failed", "retryable": True, "run_id": run.run_id},
                 )
             else:
                 record.status = SessionStatus.IDLE
@@ -487,7 +585,7 @@ class RuntimeAdapter:
                     record,
                     "session.result",
                     "runtime-adapter",
-                    {"finish_reason": finish_reason},
+                    {"finish_reason": finish_reason, "run_id": run.run_id},
                 )
 
     def cancel_session(self, session_id: str, mode: str) -> dict[str, Any]:
@@ -513,20 +611,62 @@ class RuntimeAdapter:
                 record,
                 "session.cancelled",
                 "runtime-adapter",
-                {"mode": mode, "persistence": "dsh-owned", "resume": "new-run-after-interrupted"},
+                {"mode": mode, "persistence": "dsh-owned", "resume": "new-run-after-interrupted", "run_id": run.run_id},
             )
         if mode == "hard":
             self._compatibility.close(record.harness)
         return self.describe_session(record)
 
+    def recover_evidence(self, context: dict, after_sequence: int = 0) -> dict:
+        """Replays BYQ evidence only. Never constructs a harness or runs a model."""
+        LifecycleJournal._context(context)
+        if type(after_sequence) is not int or after_sequence < 0:
+            raise ValueError("invalid recovery cursor")
+        with self._lock:
+            if context["session_id"] in self._sessions:
+                record = self._sessions[context["session_id"]]
+                if (record.trace_id, record.owner_principal, record.workspace_id) != (
+                        context["trace_id"], context["owner"], context["workspace_id"]):
+                    raise ValueError("recovery identity mismatch")
+                return {"state": "owned", "events": [], "more": False}
+            try:
+                journal = LifecycleJournal.claim(self._session_root / "byq-lifecycle-evidence", context)
+            except JournalBusy:
+                return {"state": "owned", "events": [], "more": False}
+            except FileNotFoundError:
+                return {"state": "unknown", "events": [], "more": False}
+            try:
+                events = [e for e in journal.state["events"] if e["sequence"] > after_sequence]
+                return {"state": "recovered", "events": events[:256], "more": len(events) > 256}
+            finally:
+                journal.close()
+
+    def acknowledge_terminal(self, session_id: str, receipt: object) -> dict:
+        """Private Gateway acknowledgement of an exact Backend terminal receipt.
+
+        This opens no domain capability: it only permits reuse of this private
+        process after its previous BYQ root has been durably closed.
+        """
+        record = self._get(session_id)
+        with record.lock:
+            root = receipt.get("root_run_id") if isinstance(receipt, dict) else None
+            if (not isinstance(root, str) or type(receipt.get("sequence")) is not int
+                    or record.terminal_receipts.get(root) != receipt):
+                raise SessionConflict("terminal receipt does not match this runtime turn")
+            record.pending_terminal_receipts.discard(root)
+            return {"receipt": dict(receipt)}
+
     def resume_session(
         self, session_id: str, *, conversation_context: object = None,
+        conversation_recovery: object = None,
     ) -> dict[str, Any]:
         record = self._get(session_id)
         context = normalize_conversation_context([] if conversation_context is None else conversation_context)
+        recovery = normalize_recovery(conversation_recovery, record.session_id, record.trace_id)
         with record.lock:
             if record.status == SessionStatus.READY and record.active_run is None:
                 record.pending_conversation_context = context
+                record.pending_conversation_recovery = recovery
                 return {**self.describe_session(record), "resumed_from_run_id": None}
             if record.status not in {SessionStatus.INTERRUPTED, SessionStatus.FAILED} or record.active_run is not None:
                 raise SessionConflict(f"session {session_id} cannot be resumed")
@@ -547,6 +687,7 @@ class RuntimeAdapter:
 
         if previous_status == SessionStatus.FAILED:
             self._compatibility.close(previous_harness)
+        runtime_generation = f"generation-{uuid.uuid4().hex}"
         harness = self._build_harness(
             record.session_id,
             contained_session_path(self._session_root, runtime_session_id),
@@ -554,6 +695,7 @@ class RuntimeAdapter:
             owner_principal=record.owner_principal,
             workspace_id=record.workspace_id,
             model_resolution=record.model_resolution,
+            runtime_generation=runtime_generation,
         )
         try:
             self._compatibility.start(harness)
@@ -567,7 +709,12 @@ class RuntimeAdapter:
         with record.lock:
             record.harness = harness
             record.runtime_session_id = runtime_session_id
+            record.runtime_generation = runtime_generation
+            # The old process has been closed. A fresh generation cannot use
+            # old AgentRuns under Backend's existing exact-generation guard.
+            record.pending_terminal_receipts.clear()
             record.pending_conversation_context = context
+            record.pending_conversation_recovery = recovery
             record.normalization = NormalizationState()
             record.interrupted_run_id = None
             record.status = SessionStatus.READY
@@ -585,14 +732,21 @@ class RuntimeAdapter:
             if record.active_run is not None or record.status in SessionStatus.ACTIVE_PROMPT:
                 raise SessionConflict(f"session {session_id} has an active prompt")
             record.status = SessionStatus.CLOSED
-            self._emit(record, "session.closed", "runtime-adapter", {"reason": "released"})
-        self._compatibility.close(record.harness)
-        with self._lock:
-            if self._sessions.get(session_id) is record:
-                del self._sessions[session_id]
-        with record.lock:
-            for subscriber in list(record.subscribers):
-                subscriber.put(None)
+        try:
+            with record.lock:
+                self._emit(record, "session.closed", "runtime-adapter", {"reason": "released"})
+        finally:
+            try:
+                self._compatibility.close(record.harness)
+            finally:
+                if record.journal:
+                    record.journal.close()
+                with self._lock:
+                    if self._sessions.get(session_id) is record:
+                        del self._sessions[session_id]
+                with record.lock:
+                    for subscriber in list(record.subscribers):
+                        subscriber.put(None)
         return self.describe_session(record)
 
     def subscribe(self, session_id: str, *, replay: bool = False) -> queue.Queue[WorkflowTraceEvent | None]:
@@ -632,17 +786,33 @@ class RuntimeAdapter:
         with self._lock:
             records = list(self._sessions.values())
             self._sessions.clear()
+        failure = None
         for record in records:
-            with record.lock:
-                if record.active_run is not None:
-                    record.active_run.watchdog_stop.set()
-                record.active_run = None
-                record.status = SessionStatus.CLOSED
-                self._emit(record, "session.closed", "runtime-adapter", {"reason": "adapter-shutdown"})
-            self._compatibility.close(record.harness)
-            with record.lock:
-                for subscriber in record.subscribers:
-                    subscriber.put(None)
+            try:
+                with record.lock:
+                    closing_run = record.active_run
+                    if record.active_run is not None:
+                        record.active_run.watchdog_stop.set()
+                    record.active_run = None
+                    record.status = SessionStatus.CLOSED
+                    self._emit(record, "session.closed", "runtime-adapter", {
+                        "reason": "adapter-shutdown", **({"run_id": closing_run.run_id} if closing_run is not None else {}),
+                    })
+            except Exception as exc:
+                failure = exc
+            finally:
+                try:
+                    self._compatibility.close(record.harness)
+                except Exception as exc:
+                    failure = exc
+                finally:
+                    if record.journal:
+                        record.journal.close()
+                    with record.lock:
+                        for subscriber in record.subscribers:
+                            subscriber.put(None)
+        if failure is not None:
+            raise failure
 
     def _get(self, session_id: str) -> RuntimeSession:
         with self._lock:
@@ -660,6 +830,7 @@ class RuntimeAdapter:
         owner_principal: str | None,
         workspace_id: str | None,
         model_resolution: dict[str, object],
+        runtime_generation: str,
     ) -> Any:
         environment = {
             "BYQ_MCP_URL": os.environ.get("BYQ_MCP_URL", "http://mcp:8300/mcp/v1"),
@@ -672,9 +843,11 @@ class RuntimeAdapter:
             "BYQ_ACTOR_PRINCIPAL": f"byq-product-agent-{session_id}" if owner_principal else "",
             "BYQ_TRACE_ID": trace_id,
             "BYQ_SESSION_ID": session_id,
-            # The adapter uses the durable session as the stable DSH
-            # correlation when DSH does not expose a per-MCP-call header.
-            "BYQ_DSH_RUN_ID": session_id,
+            # Official MCP headers are process-scoped, not root-turn-scoped.
+            # Give each owned process a BYQ identity so resumed generations
+            # cannot authorize against an earlier process's AgentRun. This is
+            # deliberately distinct from both the public session and DSH ID.
+            "BYQ_DSH_RUN_ID": runtime_generation,
         }
         # The provider credential enters only the adapter-owned SDK child
         # environment. It is never returned in readiness, lifecycle responses,
@@ -782,6 +955,18 @@ class RuntimeAdapter:
                 runtime_activity = self._observe_run_observation(
                     record, run, observation,
                 )
+                if (runtime_activity and observation.registration_key and record.owner_principal
+                        and record.workspace_id and record.runtime_generation):
+                    fingerprint = registration_fingerprint(
+                        record.owner_principal, record.workspace_id, f"byq-product-agent-{record.session_id}",
+                        record.trace_id, record.session_id, record.runtime_generation, observation.registration_key,
+                    )
+                    if fingerprint not in run.observed_registrations and len(run.observed_registrations) < 128:
+                        run.observed_registrations.add(fingerprint)
+                        self._emit(record, "agent.run.registration", "runtime-adapter", {
+                            "schema_version": "agent-run-registration-observed.v1",
+                            "run_id": run.run_id, "registration_fingerprint": fingerprint,
+                        })
             self._record_usage(record, observation)
             events = normalize_runtime_observation(
                 observation,
@@ -810,8 +995,22 @@ class RuntimeAdapter:
 
     def _watch_run(self, record: RuntimeSession, run: ActiveRun) -> None:
         while not run.watchdog_stop.wait(timeout=1.0):
-            if self._enforce_run_guards(record, run, now=time.monotonic()):
+            now = time.monotonic()
+            if self._enforce_run_guards(record, run, now=now):
                 return
+            self._emit_wait_notice(record, run, now=now)
+
+    def _emit_wait_notice(self, record: RuntimeSession, run: ActiveRun, *, now: float) -> None:
+        with record.lock:
+            if (record.active_run is not run or record.status != SessionStatus.RUNNING
+                    or now - max(run.started_at, run.last_wait_notice_at) < 60):
+                return
+            run.last_wait_notice_at = now
+            self._emit(record, "session.waiting", "runtime-adapter", {
+                "run_id": run.run_id,
+                "elapsed_seconds": max(0, int(now - run.started_at)),
+                "last_activity_seconds": max(0, int(now - run.last_runtime_activity_at)),
+            })
 
     def _enforce_run_guards(
         self, record: RuntimeSession, run: ActiveRun, *, now: float,
@@ -824,11 +1023,12 @@ class RuntimeAdapter:
             if now - run.started_at > self._run_timeout_seconds:
                 code = "runtime-run-timeout"
             elif (
-                oldest_subagent is not None
-                and now - oldest_subagent > self._subagent_timeout_seconds
+                (oldest_subagent is not None and now - oldest_subagent > self._subagent_timeout_seconds)
+                or any(child.expired(now, self._subagent_timeout_seconds, self._subagent_hard_cap_seconds)
+                       for child in run.child_leases.values())
             ):
                 code = "runtime-subagent-timeout"
-            elif oldest_subagent is not None:
+            elif oldest_subagent is not None or run.child_leases:
                 # A delegated child owns a separate, longer bound. Do not let
                 # the parent's quiet interval mislabel active child work as a
                 # no-progress failure before that dedicated deadline.
@@ -847,7 +1047,7 @@ class RuntimeAdapter:
                 record,
                 "session.failed",
                 "runtime-adapter",
-                {"code": code, "retryable": True},
+                {"code": code, "retryable": True, "run_id": run.run_id},
             )
         # A session owns its DSH process, so closing it cannot interrupt any
         # other Product conversation. The detached worker will discard any
@@ -859,6 +1059,35 @@ class RuntimeAdapter:
     def _observe_run_observation(
         record: RuntimeSession, run: ActiveRun, observation: RuntimeObservation,
     ) -> bool:
+        now = time.monotonic()
+        if observation.kind == "subagent.started":
+            child_id = observation.child_session_id
+            # The official notification has no call ID. Only a unique pending
+            # root delegation can be associated; ambiguity never renews a lease.
+            if (observation.parent_session_id != record.runtime_session_id or not child_id
+                    or child_id in run.child_leases or child_id in run.finished_children
+                    or len(run.active_subagent_calls) != 1):
+                return False
+            call_id, started_at = next(iter(run.active_subagent_calls.items()))
+            run.child_leases[child_id] = ChildLease(
+                record.runtime_session_id, child_id, call_id, started_at, now,
+            )
+            run.active_subagent_calls.pop(call_id)
+            return True
+        if observation.kind == "subagent.finished":
+            child_id = observation.child_session_id
+            if observation.parent_session_id != record.runtime_session_id or child_id not in run.child_leases:
+                return False
+            run.child_leases.pop(child_id)
+            run.finished_children.add(child_id)
+            return True
+        if not observation.root_session:
+            child = run.child_leases.get(observation.session_id)
+            return bool(child and observation.runtime_activity and child.observe(observation.event_sequence, now))
+        if observation.runtime_activity and observation.event_sequence is not None:
+            if observation.event_sequence <= run.last_root_sequence:
+                return False
+            run.last_root_sequence = observation.event_sequence
         if observation.kind == "tool.call":
             call_id = observation.call_id
             name = observation.tool_name
@@ -868,7 +1097,7 @@ class RuntimeAdapter:
                 and isinstance(name, str)
                 and name.removeprefix("mcp__byq__").startswith("byq_delegate_")
             ):
-                run.active_subagent_calls[call_id] = time.monotonic()
+                run.active_subagent_calls.setdefault(call_id, now)
         elif observation.kind == "tool.result" and observation.root_session:
             for call_id in observation.completed_call_ids:
                 run.active_subagent_calls.pop(call_id, None)
@@ -901,6 +1130,11 @@ class RuntimeAdapter:
             payload=payload,
         )
         with record.lock:
+            if kind in {"session.result", "session.failed", "session.cancelled", "session.closed"}:
+                outcome = {"session.failed": "failed", "session.cancelled": "cancelled"}.get(kind, "unknown")
+                for closure in close_public_activities(record.normalization, record.trace_id,
+                                                       record.session_id, record.sequence + 1, outcome):
+                    self._publish(record, closure)
             self._publish(record, event)
 
     @staticmethod
@@ -909,6 +1143,21 @@ class RuntimeAdapter:
 
         record.sequence += 1
         ordered_event = {**event, "sequence": record.sequence}
+        if record.journal:
+            prompt = None
+            if event["kind"] == "session.started":
+                for key, (content, root) in record.prompt_idempotency.items():
+                    if root == event["payload"]["run_id"]:
+                        prompt = (key, hashlib.sha256(content.encode()).hexdigest())
+                        break
+            record.journal.observe(ordered_event, generation=record.runtime_generation, prompt=prompt)
+        if record.workspace_id:
+            terminal = project_lifecycle_event(ordered_event, record.session_id, record.trace_id)
+            if terminal and terminal["outcome"] != "active":
+                root = terminal["root_run_id"]
+                if root not in record.terminal_receipts:
+                    record.terminal_receipts[root] = lifecycle_receipt(terminal)
+                    record.pending_terminal_receipts.add(root)
         record.history.append(ordered_event)
         for subscriber in list(record.subscribers):
             subscriber.put(ordered_event)

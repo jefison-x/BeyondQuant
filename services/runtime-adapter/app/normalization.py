@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from .compat.types import RuntimeObservation
@@ -60,6 +60,9 @@ _CAPABILITIES: dict[str, tuple[str, str]] = {
     "byq_pool_get": ("select", "读取股票池详情"),
     "byq_pool_history": ("select", "读取股票池历史"),
     "byq_pool_create": ("select", "创建股票池"),
+    "byq_index_pool_catalog": ("select", "核查指数成分就绪状态"),
+    "byq_index_pool_create": ("select", "提交指数股票池创建"),
+    "byq_index_pool_status": ("select", "查询指数股票池生成进度"),
     "byq_pool_snapshot_replace": ("select", "更新股票池快照"),
     "byq_pool_lifecycle": ("select", "更新股票池状态"),
     "byq_strategy_draft_save": ("strategy", "保存策略草稿"),
@@ -115,19 +118,25 @@ class NormalizationState:
     tool_names: dict[str, str] = field(default_factory=dict)
     seen_messages: set[str] = field(default_factory=set)
     activity_count: int = 0
+    visible_activity_ids: set[str] = field(default_factory=set)
+    open_activity_ids: set[str] = field(default_factory=set)
     card_count: int = 0
     activity_truncated: bool = False
     card_truncated: bool = False
     turn_activity_id: str | None = None
+    activity_scope: str = ""
 
     def reset_turn(self) -> None:
         self.tool_names.clear()
         self.seen_messages.clear()
         self.activity_count = 0
+        self.visible_activity_ids.clear()
+        self.open_activity_ids.clear()
         self.card_count = 0
         self.activity_truncated = False
         self.card_truncated = False
         self.turn_activity_id = None
+        self.activity_scope = ""
 
 
 def normalize_runtime_observation(
@@ -146,9 +155,12 @@ def normalize_runtime_observation(
     if observation.kind == "session.status" and observation.status is not None:
         return [_event(trace_id, session_id, sequence, "session.status", "dsh", {"status": observation.status})]
     if observation.kind == "turn.start":
+        events = close_public_activities(current, trace_id, session_id, sequence, "unknown")
+        sequence += len(events)
         current.reset_turn()
         current.turn_activity_id = _stable_id("activity", trace_id, str(sequence), "turn")
-        return _bounded_activity(
+        current.activity_scope = str(sequence)
+        events.extend(_bounded_activity(
             current,
             trace_id,
             session_id,
@@ -157,7 +169,8 @@ def normalize_runtime_observation(
             phase="understand",
             activity_state="started",
             label="理解请求",
-        )
+        ))
+        return events
     if observation.kind == "turn.end":
         safe_reason = observation.terminal_reason or "failed"
         events: list[WorkflowTraceEvent] = []
@@ -184,14 +197,52 @@ def normalize_runtime_observation(
                 {"reason": safe_reason},
             )
         )
+        current.turn_activity_id = None
         return events
     if observation.kind == "assistant.message":
         return _answer_events(current, observation, trace_id, session_id, sequence)
     if observation.kind == "tool.call":
         return _tool_call_events(current, observation, trace_id, session_id, sequence)
     if observation.kind == "tool.result":
+        if observation.tool_results:
+            events = []
+            for result in observation.tool_results:
+                events.extend(_tool_result_events(
+                    current,
+                    replace(observation, call_id=result.call_id, tool_failed=result.failed,
+                            tool_result=result.result, tool_results=()),
+                    trace_id, session_id, sequence + len(events),
+                ))
+            return events
         return _tool_result_events(current, observation, trace_id, session_id, sequence)
     return []
+
+
+def close_public_activities(state: NormalizationState, trace_id: str, session_id: str,
+                            sequence: int, outcome: str) -> list[WorkflowTraceEvent]:
+    """Close only public runtime steps, never independently running domain jobs."""
+    events = []
+    pending = []
+    if state.turn_activity_id is not None:
+        pending.append((state.turn_activity_id, "understand", "理解请求"))
+    for call_id, capability in state.tool_names.items():
+        if capability in _INTERNAL_CONTROL_CAPABILITIES:
+            continue
+        phase, label = _CAPABILITIES.get(capability, ("tool", "受控能力"))
+        pending.append((_tool_activity_id(state, trace_id, call_id), phase, label))
+    state.tool_names.clear()
+    state.turn_activity_id = None
+    for identity, phase, label in pending:
+        events.extend(_bounded_activity(
+            state, trace_id, session_id, sequence + len(events),
+            activity_id=identity, phase=phase, activity_state=outcome, label=label,
+        ))
+    return events
+
+
+def _tool_activity_id(state: NormalizationState, trace_id: str, call_id: str) -> str:
+    return (_stable_id("activity", trace_id, state.activity_scope, call_id) if state.activity_scope
+            else _stable_id("activity", trace_id, call_id))
 
 
 def _answer_events(
@@ -251,7 +302,7 @@ def _tool_call_events(
         trace_id,
         session_id,
         sequence,
-        activity_id=_stable_id("activity", trace_id, call_id),
+        activity_id=_tool_activity_id(state, trace_id, call_id),
         phase=phase,
         activity_state="started",
         label=label,
@@ -274,14 +325,33 @@ def _tool_result_events(
         return []
     phase, label = _CAPABILITIES.get(capability or "", ("tool", "受控能力已返回"))
     failed = observation.tool_failed
+    result = observation.tool_result
+    status = result.get("status") if isinstance(result, dict) else None
+    activity_state = "failed" if failed else "completed"
+    if status == "outcome_unknown":
+        activity_state = "unknown"
+    elif status in ("accepted", "queued", "running", "waiting_for_data"):
+        activity_state = "waiting"
+    elif status in ("error", "failed"):
+        activity_state = "failed"
+    elif status == "ok" and capability.endswith(("_create", "_execute", "_submit", "_run")):
+        for field in ("training_run", "prediction_run", "task", "job", "run", "demand"):
+            domain = result.get(field)
+            domain_status = domain.get("status") if isinstance(domain, dict) else None
+            if domain_status in ("accepted", "queued", "running", "waiting_for_data", "preparing"):
+                activity_state = "waiting"
+                break
+            if domain_status in ("failed", "cancelled"):
+                activity_state = domain_status
+                break
     events = _bounded_activity(
         state,
         trace_id,
         session_id,
         sequence,
-        activity_id=_stable_id("activity", trace_id, call_id),
+        activity_id=_tool_activity_id(state, trace_id, call_id),
         phase=phase,
-        activity_state="failed" if failed else "completed",
+        activity_state=activity_state,
         label=label,
         **_execution_context(capability),
     )
@@ -368,11 +438,22 @@ def _bounded_activity(
     plugin_label: str | None = None,
     skill_label: str | None = None,
 ) -> list[WorkflowTraceEvent]:
-    if state.activity_count >= MAX_ACTIVITIES_PER_TURN:
-        if state.activity_truncated:
+    if activity_state == "started":
+        if activity_id in state.visible_activity_ids:
             return []
-        state.activity_truncated = True
-        return [_progress(trace_id, session_id, sequence, "activity-limit", True)]
+        # Every visible start reserves one eventual result/closure event.
+        # Limiting starts without this reservation strands already shown steps.
+        if state.activity_count + len(state.open_activity_ids) + 2 > MAX_ACTIVITIES_PER_TURN:
+            if state.activity_truncated:
+                return []
+            state.activity_truncated = True
+            return [_progress(trace_id, session_id, sequence, "activity-limit", True)]
+        state.visible_activity_ids.add(activity_id)
+        state.open_activity_ids.add(activity_id)
+    else:
+        if activity_id not in state.open_activity_ids:
+            return []
+        state.open_activity_ids.remove(activity_id)
     state.activity_count += 1
     payload: dict[str, Any] = {
         "schema_version": WORKFLOW_ACTIVITY_VERSION,

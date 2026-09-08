@@ -132,6 +132,10 @@ class DelegateProvider(BaseHTTPRequestHandler):
 def test_each_delegate_executes_its_real_mcp_ceiling(
     delegate: str, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _run_delegate_journey(delegate, monkeypatch)
+
+
+def _run_delegate_journey(delegate, monkeypatch, expected_requests=4):
     DelegateProvider.target = delegate
     DelegateProvider.requests.clear()
     server = ThreadingHTTPServer(("127.0.0.1", 0), DelegateProvider)
@@ -154,7 +158,7 @@ def test_each_delegate_executes_its_real_mcp_ceiling(
             "history": record.history[-30:],
             "stderr": list(record.harness.client._stderr_lines)[-80:],
         }
-        assert len(DelegateProvider.requests) == 4
+        assert len(DelegateProvider.requests) == expected_requests
         assert any(
             CONTEXT_TOOL in {
                 item["function"]["name"]
@@ -185,3 +189,33 @@ def test_each_delegate_executes_its_real_mcp_ceiling(
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_parallel_requested_delegations_are_serial_and_unambiguously_leased(monkeypatch):
+    target = "byq_delegate_market_research"
+    original_response = _tool_response
+    def two_calls(name, call_id, arguments=None):
+        if name != target:
+            return original_response(name, call_id, arguments)
+        return _event_stream(
+            {"choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": [
+                {"index": index, "id": f"delegate-{index}", "type": "function",
+                 "function": {"name": name, "arguments": json.dumps(arguments or {})}}
+                for index in range(2)
+            ]}, "finish_reason": None}]},
+            {"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
+        )
+    monkeypatch.setitem(globals(), "_tool_response", two_calls)
+    original_notification = RuntimeAdapter._on_notification
+    associated = set()
+    maximum_active = 0
+    def observe(self, record, notification, **kwargs):
+        nonlocal maximum_active
+        original_notification(self, record, notification, **kwargs)
+        if record.active_run:
+            maximum_active = max(maximum_active, len(record.active_run.child_leases))
+            associated.update(child.call_id for child in record.active_run.child_leases.values())
+    monkeypatch.setattr(RuntimeAdapter, "_on_notification", observe)
+    _run_delegate_journey(target, monkeypatch, expected_requests=6)
+    assert associated == {"delegate-0", "delegate-1"}
+    assert maximum_active == 1

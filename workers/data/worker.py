@@ -60,6 +60,7 @@ def main() -> int:
                     next_repair_reconcile_at = time.monotonic() + poll_seconds
             if time.monotonic() >= next_pool_scheduler_at:
                 try:
+                    pool_producers.enqueue_validated_index_refreshes()
                     pool_producers.enqueue_due_dynamic_runs()
                     next_pool_scheduler_at = time.monotonic() + 60
                 except Exception as error:

@@ -13,12 +13,20 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from .db import PgStoreMixin, ensure_column, execute, fetch_one
 from .web_research import normalize_web_research_evidence, validate_web_research_evidence
+from .research_continuation import ResearchContinuationMixin
 
 
 MAX_JSON_BYTES = 64 * 1024
 MAX_ARTIFACT_JSON_BYTES = 32 * 1024 * 1024
 MAX_SOURCES = 64
 MAX_LINEAGE = 64
+# These kinds carry domain validation/approval/execution authority. Only the
+# typed BYQ producer may create or transition them, never the generic API.
+PRODUCER_OWNED_ARTIFACT_KINDS = frozenset({
+    "strategy_draft", "strategy_version", "strategy_approval", "factor_result", "web_research_evidence",
+    "ml_strategy_version", "ml_strategy_approval", "ml_feature_snapshot", "ml_model", "ml_model_bundle",
+    "ml_regime_snapshot", "ml_prediction_snapshot", "signal_snapshot", "backtest_result",
+})
 _ID_PATTERN = re.compile(r"^(?:task|experiment|artifact)_[0-9a-f]{32}$")
 _TRACE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
@@ -35,6 +43,33 @@ ARTIFACT_TRANSITIONS = {
     "validated": {"validated", "superseded"},
     "superseded": {"superseded"},
 }
+
+PROGRESS_STAGES = frozenset({"planning", "data_preparation", "research", "strategy", "approval",
+                            "training", "prediction", "backtest", "comparison", "blocked", "completed"})
+
+
+def _progress_payload(value: object) -> dict[str, Any]:
+    fields = {"schema_version", "stage", "next_action", "blocked_reason", "linked_objects", "completion_evidence"}
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError("research progress has invalid fields")
+    if (value["schema_version"] != "research-progress.v1" or not isinstance(value["stage"], str)
+            or value["stage"] not in PROGRESS_STAGES):
+        raise ValueError("research progress schema or stage is invalid")
+    result = dict(value)
+    for field in ("next_action", "blocked_reason"):
+        if result[field] is not None:
+            result[field] = _text(result[field], field=f"progress.{field}", max_length=160)
+    references, _ = _lineage(value["linked_objects"])
+    if len(references) > 16 or any(ref["kind"] not in {"artifact", "experiment"} for ref in references):
+        raise ValueError("research progress references are invalid")
+    evidence = value["completion_evidence"]
+    if not isinstance(evidence, list) or len(evidence) > 16:
+        raise ValueError("research completion evidence is invalid")
+    result["linked_objects"] = references
+    result["completion_evidence"] = [_identifier(item, field="completion_evidence") for item in evidence]
+    if result["stage"] == "blocked" and result["blocked_reason"] is None:
+        raise ValueError("blocked research progress requires a reason")
+    return result
 
 _SECRET_KEY_FRAGMENTS = (
     "token",
@@ -205,7 +240,7 @@ def _row_dict(row: dict[str, Any]) -> dict[str, object]:
     return dict(row)
 
 
-class ResearchStore(PgStoreMixin):
+class ResearchStore(ResearchContinuationMixin, PgStoreMixin):
     """Backend-owned durable repository for Phase 9 business entities (ADR-0016 PG)."""
 
     SCHEMA_DDL: list[str] = [
@@ -228,6 +263,9 @@ class ResearchStore(PgStoreMixin):
         CREATE UNIQUE INDEX IF NOT EXISTS research_tasks_idempotency
             ON research_tasks(owner_principal, idempotency_key)
         """,
+        "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS progress JSONB",
+        "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS conversation_id TEXT",
+        "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS continuation_permission JSONB",
         """
         CREATE TABLE IF NOT EXISTS experiments (
             experiment_id TEXT PRIMARY KEY,
@@ -303,10 +341,31 @@ class ResearchStore(PgStoreMixin):
     def from_env(cls) -> "ResearchStore":
         return cls()
 
-    def create_task(self, payload: object) -> dict[str, object]:
+    def create_task(self, payload: object, *, trusted_context: dict[str, str] | None = None) -> dict[str, object]:
         data = self._task_payload(payload)
         request_hash = _hash_request(data)
         with self._transaction() as connection:
+            conversation_id = None
+            if trusted_context is not None:
+                if trusted_context["owner_principal"] != data["owner_principal"]:
+                    raise ValueError("research owner does not match trusted context")
+                conversation = fetch_one(connection, """SELECT * FROM product_conversations
+                    WHERE runtime_session_id = :session_id FOR SHARE""", {"session_id": trusted_context["session_id"]})
+                product_actor = trusted_context["actor_principal"] == f"byq-product-agent-{trusted_context['session_id']}"
+                if conversation is None:
+                    if product_actor:
+                        raise ValueError("research requires its original conversation")
+                else:
+                    if (conversation["owner_principal"] != data["owner_principal"]
+                            or conversation["workspace_id"] != trusted_context["workspace_id"]
+                            or conversation["trace_id"] != trusted_context["trace_id"]
+                            or data["trace_id"] != trusted_context["trace_id"]
+                            or conversation["status"] != "active"):
+                        raise ValueError("research conversation identity is invalid")
+                    conversation_id = conversation["conversation_id"]
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {
+                "scope": f"research-task|{data['owner_principal']}|{data['idempotency_key']}",
+            })
             existing = fetch_one(
                 connection,
                 "SELECT * FROM research_tasks WHERE owner_principal = :owner_principal AND idempotency_key = :idempotency_key",
@@ -315,6 +374,8 @@ class ResearchStore(PgStoreMixin):
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise IdempotencyConflict("research task idempotency key was reused")
+                if existing.get("conversation_id") != conversation_id:
+                    raise IdempotencyConflict("research task conversation cannot be rebound")
                 return self._task_row(existing)
             now = _now()
             task_id = _new_id("task")
@@ -322,13 +383,13 @@ class ResearchStore(PgStoreMixin):
                 connection,
                 """INSERT INTO research_tasks
                 (task_id, owner_principal, title, objective, status, trace_id,
-                 idempotency_key, request_hash, created_at, updated_at, version)
+                 idempotency_key, request_hash, created_at, updated_at, version, conversation_id)
                 VALUES (:task_id, :owner_principal, :title, :objective, 'planned', :trace_id,
-                        :idempotency_key, :request_hash, :created_at, :updated_at, 1)""",
+                        :idempotency_key, :request_hash, :created_at, :updated_at, 1, :conversation_id)""",
                 {"task_id": task_id, "owner_principal": data["owner_principal"], "title": data["title"],
                  "objective": data["objective"], "trace_id": data["trace_id"],
                  "idempotency_key": data["idempotency_key"], "request_hash": request_hash,
-                 "created_at": now, "updated_at": now},
+                 "created_at": now, "updated_at": now, "conversation_id": conversation_id},
             )
         return self.get_task(task_id)
 
@@ -510,12 +571,21 @@ class ResearchStore(PgStoreMixin):
             rows = self._execute("SELECT * FROM experiments ORDER BY created_at DESC, experiment_id DESC LIMIT 200")
         return {"experiments": [self._experiment_row(row) for row in rows]}
 
-    def create_artifact(self, payload: object) -> dict[str, object]:
+    def create_artifact(
+        self, payload: object, *, trusted_owner: str | None = None,
+        trusted_workspace: str | None = None,
+    ) -> dict[str, object]:
         data = self._artifact_payload(payload)
         request_hash = _hash_request(data)
         with self._transaction() as connection:
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                    {"scope": f"research-artifact|{data['task_id']}|{data['idempotency_key']}"})
             task = fetch_one(connection, "SELECT * FROM research_tasks WHERE task_id = :task_id", {"task_id": data["task_id"]})
             if task is None:
+                raise ResearchNotFound("research task not found")
+            if trusted_owner is not None and (
+                task["owner_principal"] != trusted_owner or task.get("workspace_id") != trusted_workspace
+            ):
                 raise ResearchNotFound("research task not found")
             experiment_id = data["experiment_id"]
             if experiment_id is not None:
@@ -538,8 +608,43 @@ class ResearchStore(PgStoreMixin):
                 if existing["request_hash"] != request_hash:
                     raise IdempotencyConflict("artifact idempotency key was reused")
                 return self._artifact_row(existing)
+            if trusted_owner is not None:
+                # Only closed domain reference kinds confer a verified association.
+                tables = {"research_task": ("research_tasks", "task_id"),
+                          "experiment": ("experiments", "experiment_id"),
+                          "artifact": ("artifacts", "artifact_id")}
+                for reference in lineage:
+                    target = tables.get(reference["kind"])
+                    if target is None:
+                        continue
+                    table, column = target
+                    linked = fetch_one(connection,
+                        f"SELECT owner_principal, workspace_id FROM {table} WHERE {column}=:identity",
+                        {"identity": reference["id"]})
+                    if linked is None or linked["owner_principal"] != trusted_owner or linked["workspace_id"] != trusted_workspace:
+                        raise ResearchNotFound("research lineage reference not found")
             now = _now()
             artifact_id = _new_id("artifact")
+            if trusted_owner is not None:
+                from .paper_trading import PaperTradingStore, PaperTradingNotFound, PaperTradingConflict
+                for snapshot in sorted({ref["id"] for ref in lineage if ref["kind"] == "stock_pool_snapshot"}):
+                    scoped = fetch_one(connection,
+                        "SELECT snapshot_id FROM stock_pool_snapshots WHERE snapshot_id=:snapshot AND workspace_id=:workspace",
+                        {"snapshot": snapshot, "workspace": trusted_workspace})
+                    if scoped is None:
+                        raise ResearchNotFound("research lineage reference not found")
+                    # One artifact can cite multiple frozen pools. Deterministic, bounded
+                    # identities preserve every reference without last-reference overwrite.
+                    reference_id = artifact_id + ":" + hashlib.sha256(snapshot.encode()).hexdigest()
+                    try:
+                        PaperTradingStore.record_pool_reference_in_transaction(
+                            connection, snapshot, domain="research", reference_id=reference_id,
+                            trusted_owner=trusted_owner,
+                        )
+                    except PaperTradingNotFound as error:
+                        raise ResearchNotFound("research lineage reference not found") from error
+                    except PaperTradingConflict as error:
+                        raise InvalidTransition("research stock pool reference is unavailable") from error
             execute(
                 connection,
                 """INSERT INTO artifacts
@@ -1154,6 +1259,7 @@ class ResearchStore(PgStoreMixin):
         entity_id: object,
         target_status: object,
         idempotency_key: object,
+        *, progress: object = None, require_completion_evidence: bool = False,
     ) -> dict[str, object]:
         entity_type = _text(entity_type, field="entity_type", max_length=32)
         entity_id = _identifier(entity_id, field="entity_id")
@@ -1167,17 +1273,21 @@ class ResearchStore(PgStoreMixin):
         if config is None:
             raise ValueError("entity_type must be research_task, experiment, or artifact")
         table, transitions, row_mapper = config
-        request_hash = _hash_request(
-            {
+        if progress is not None and entity_type != "research_task":
+            raise ValueError("progress is only supported for research tasks")
+        checkpoint = _progress_payload(progress) if progress is not None else None
+        request_data = {
                 "entity_type": entity_type,
                 "entity_id": entity_id,
                 "target_status": target_status,
             }
-        )
+        if checkpoint is not None:
+            request_data["progress"] = checkpoint
+        request_hash = _hash_request(request_data)
         with self._transaction() as connection:
             row = fetch_one(
                 connection,
-                f"SELECT * FROM {table} WHERE {self._id_column(entity_type)} = :entity_id",
+                f"SELECT * FROM {table} WHERE {self._id_column(entity_type)} = :entity_id FOR UPDATE",
                 {"entity_id": entity_id},
             )
             if row is None:
@@ -1196,11 +1306,44 @@ class ResearchStore(PgStoreMixin):
                     raise ResearchPersistenceError("stored transition result is invalid")
                 return result
             current = row["status"]
+            if checkpoint is not None and current in {"completed", "failed", "cancelled"}:
+                raise InvalidTransition("terminal research checkpoint cannot be changed")
+            if checkpoint is not None:
+                references = checkpoint["linked_objects"] + [
+                    {"kind": "artifact", "id": identity} for identity in checkpoint["completion_evidence"]]
+                for reference in references:
+                    ref_table, column = {"artifact": ("artifacts", "artifact_id"),
+                                         "experiment": ("experiments", "experiment_id")}[reference["kind"]]
+                    linked = fetch_one(connection, f"SELECT * FROM {ref_table} WHERE {column}=:identity",
+                                       {"identity": reference["id"]})
+                    if (linked is None or linked["task_id"] != entity_id
+                            or linked["owner_principal"] != row["owner_principal"]
+                            or linked.get("workspace_id") != row.get("workspace_id")):
+                        raise ResearchNotFound("research checkpoint reference not found")
+                    if reference["id"] in checkpoint["completion_evidence"] and (
+                        linked["status"] != "validated" or linked.get("kind") not in
+                        (PRODUCER_OWNED_ARTIFACT_KINDS - {"strategy_draft", "strategy_approval", "ml_strategy_approval"}
+                         | {"research_report", "evidence"})
+                    ):
+                        raise InvalidTransition("research completion evidence is not validated")
+                if checkpoint["stage"] == "completed" and target_status != "completed":
+                    raise InvalidTransition("completed checkpoint requires completed task status")
+            if entity_type == "research_task" and target_status == "completed" and require_completion_evidence:
+                proof = checkpoint or row.get("progress")
+                if (not proof or proof["stage"] != "completed" or not proof["completion_evidence"]
+                        or proof["next_action"] is not None or proof["blocked_reason"] is not None):
+                    raise InvalidTransition("research completion requires an explicit validated evidence checkpoint")
+                for job_table in ("experiments", "ml_training_runs", "ml_prediction_runs", "backtest_jobs"):
+                    active = fetch_one(connection,
+                        f"SELECT COUNT(*) AS count FROM {job_table} WHERE task_id=:task AND status NOT IN ('completed','failed','cancelled')",
+                        {"task": entity_id})
+                    if active and active["count"]:
+                        raise InvalidTransition("research still has unfinished domain work")
             if target_status not in transitions[current]:
                 raise InvalidTransition(
                     f"cannot transition {entity_type} from {current} to {target_status}"
                 )
-            if target_status == current:
+            if target_status == current and checkpoint is None:
                 result = row_mapper(row)
                 execute(
                     connection,
@@ -1212,6 +1355,9 @@ class ResearchStore(PgStoreMixin):
                 )
                 return result
             now = _now()
+            if checkpoint is not None:
+                execute(connection, "UPDATE research_tasks SET progress=:progress WHERE task_id=:task",
+                        {"progress": checkpoint, "task": entity_id})
             execute(
                 connection,
                 f"UPDATE {table} SET status = :status, updated_at = :updated_at, version = version + 1 WHERE {self._id_column(entity_type)} = :entity_id",
@@ -1305,6 +1451,7 @@ class ResearchStore(PgStoreMixin):
     @staticmethod
     def _task_row(row: dict[str, Any]) -> dict[str, object]:
         result = _row_dict(row)
+        result.pop("continuation_permission", None)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
         return result

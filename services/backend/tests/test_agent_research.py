@@ -48,13 +48,18 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_strategy_approve" not in strategy_tools
     assert "byq_backtest_run" not in strategy_tools
     orchestrator = ROLE_BY_ID["quant_orchestrator"]
-    assert orchestrator.version == "2.0.0"
+    assert orchestrator.version == "2.1.0"
     assert "byq_feedback_preview" in orchestrator.allowed_tools
     assert "byq_feedback_submit" in orchestrator.allowed_tools
     assert "byq_feedback_submit" in orchestrator.approval_required_actions
     assert "ml_researcher" in orchestrator.delegate_to
     orchestrator_tools = set(orchestrator.allowed_tools)
     assert {"byq_pool_list", "byq_pool_get", "byq_pool_create"} <= orchestrator_tools
+    index_tools = {"byq_index_pool_catalog", "byq_index_pool_create", "byq_index_pool_status"}
+    assert index_tools <= orchestrator_tools
+    for role_id, role in ROLE_BY_ID.items():
+        if role_id != "quant_orchestrator":
+            assert not index_tools.intersection(role.allowed_tools)
     assert {"byq_market_valuation", "byq_market_fundamentals"} <= orchestrator_tools
     assert "byq_market_session_context" in orchestrator_tools
     assert {"byq_data_demand_create", "byq_data_demand_get"} <= orchestrator_tools
@@ -107,6 +112,18 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
         "byq_ml_prediction_create", "byq_ml_prediction_get", "byq_backtest_task_get",
         "byq_backtest_task_execute", "byq_backtest_task_cancel",
     } <= ml_tools
+
+
+def test_old_run_does_not_gain_index_tools_after_role_upgrade() -> None:
+    store = AgentResearchStore()
+    try:
+        run = start(store)
+        assert store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_create"})["authorized"]
+        store._execute("UPDATE agent_runs SET role_version='2.0.0' WHERE run_id=:id", {"id": run["run_id"]})
+        with pytest.raises(AgentForbidden):
+            store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_create"})
+    finally:
+        store.close()
 
 
 def test_pool_creation_is_orchestrator_only_and_not_approval_gated() -> None:
@@ -180,6 +197,75 @@ def test_runs_are_owner_scoped_idempotent_and_delegation_is_allowlisted(tmp_path
     store.close()
 
 
+def test_delegation_rejects_another_session_generation_actor_or_terminal_parent() -> None:
+    store = AgentResearchStore()
+    try:
+        parent = start(store)
+        for index, override in enumerate(({"session_id": "session-other"},
+                                          {"dsh_run_id": "generation-other"},
+                                          {"actor_principal": "another-actor"})):
+            with pytest.raises(AgentForbidden, match="runtime context"):
+                start(store, role_id="market_researcher", parent_run_id=parent["run_id"],
+                      idempotency_key=f"stale-child-{index}", **override)
+        store._execute("UPDATE agent_runs SET status='cancelled' WHERE run_id=:id", {"id": parent["run_id"]})
+        with pytest.raises(AgentForbidden, match="runtime context"):
+            start(store, role_id="market_researcher", parent_run_id=parent["run_id"], idempotency_key="terminal-child")
+    finally:
+        store.close()
+
+
+def test_approval_continuation_claim_fences_late_ack_across_restart() -> None:
+    store = AgentResearchStore()
+    run = start(store)
+    approval = store.create_approval({"run_id": run["run_id"], "action": "byq_backtest_task_execute",
+        "reason": "Synthetic", "resource_type": "backtest_task", "resource_id": "backtesttask_1", "idempotency_key": "fenced-approval"})
+    store.decide_approval({"approval_id": approval["approval_id"], "decision": "approved"},
+                          trusted_owner="alice", trusted_actor="human-reviewer")
+    first = store.set_continuation_status(approval["approval_id"], "submitting", trusted_owner="alice")
+    assert first["continuation_attempt"] == 1
+    store.set_continuation_status(approval["approval_id"], "failed", trusted_owner="alice", expected_attempt=1)
+    store.close()
+    restarted = AgentResearchStore()
+    try:
+        second = restarted.set_continuation_status(approval["approval_id"], "submitting", trusted_owner="alice")
+        assert second["continuation_attempt"] == 2 and second["continuation_changed"]
+        restarted._execute("UPDATE agent_approvals SET updated_at=now()-interval '31 seconds' WHERE approval_id=:id", {"id": approval["approval_id"]})
+        expired = restarted.set_continuation_status(approval["approval_id"], "submitting", trusted_owner="alice")
+        assert not expired["continuation_changed"] and expired["continuation_attempt"] == 2
+        assert expired["continuation_status"] == "outcome_unknown"
+        for status in ("submitted", "failed"):
+            late = restarted.set_continuation_status(approval["approval_id"], status, trusted_owner="alice", expected_attempt=1)
+            assert not late["continuation_changed"] and late["continuation_status"] == "outcome_unknown"
+        with pytest.raises(ValueError):
+            restarted.set_continuation_status(approval["approval_id"], "submitted", trusted_owner="alice")
+        confirmed = restarted.set_continuation_status(approval["approval_id"], "submitted", trusted_owner="alice", expected_attempt=2)
+        assert confirmed["continuation_changed"] and confirmed["continuation_status"] == "submitted"
+        assert confirmed["execution_outcome"] == "authorized"  # transport ack is not business success
+    finally:
+        restarted.close()
+
+
+def test_known_unaccepted_continuations_have_a_persistent_retry_limit() -> None:
+    store = AgentResearchStore()
+    try:
+        run = start(store)
+        approval = store.create_approval({"run_id": run["run_id"], "action": "byq_backtest_task_execute",
+            "reason": "Synthetic", "resource_type": "backtest_task", "resource_id": "backtesttask_1", "idempotency_key": "limited-approval"})
+        store.decide_approval({"approval_id": approval["approval_id"], "decision": "approved"},
+                              trusted_owner="alice", trusted_actor="human-reviewer")
+        for attempt in range(1, 9):
+            claim = store.set_continuation_status(approval["approval_id"], "submitting", trusted_owner="alice")
+            assert claim["continuation_attempt"] == attempt and claim["continuation_changed"]
+            store.set_continuation_status(approval["approval_id"], "failed", trusted_owner="alice", expected_attempt=attempt)
+        store.close()
+        store = AgentResearchStore()
+        exhausted = store.set_continuation_status(approval["approval_id"], "submitting", trusted_owner="alice")
+        assert exhausted["continuation_status"] == "needs_attention"
+        assert not exhausted["continuation_changed"] and exhausted["continuation_attempt"] == 8
+    finally:
+        store.close()
+
+
 def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> None:
     store = AgentResearchStore()
     run = start(store)
@@ -226,6 +312,7 @@ def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> N
     assert claimed["continuation_changed"] is True
     submitted = store.set_continuation_status(
         pending["approval_id"], "submitted", trusted_owner="alice",
+        expected_attempt=claimed["continuation_attempt"],
     )
     assert submitted["continuation_status"] == "submitted"
     duplicate = store.set_continuation_status(

@@ -49,6 +49,9 @@ def test_index_pool_materialization_is_point_in_time_idempotent_and_owner_scoped
     assert [item["index_symbol"] for item in available] == ["000300.SH"]
     assert available[0]["latest_snapshot_date"] == "20240201"
     assert catalog["total"] == 6
+    past = store.list_index_catalog(requested_as_of="20240131")
+    assert next(item for item in past["indices"] if item["index_symbol"] == "000300.SH")["latest_snapshot_date"] == "20240102"
+    assert store.list_index_catalog(requested_as_of="20230101")["available_total"] == 0
 
     payload = {
         "index_symbol": "000300.SH", "name": "沪深300研究池",
@@ -63,6 +66,11 @@ def test_index_pool_materialization_is_point_in_time_idempotent_and_owner_scoped
         payload, trusted_owner="alice-index", trusted_workspace=alice_headers["x-byq-workspace-id"],
     )
     assert replay["pool"]["pool_id"] == created["pool"]["pool_id"]
+    assert store.reconcile_index_creation("create-index-1", trusted_owner="alice-index",
+                                         trusted_workspace=alice_headers["x-byq-workspace-id"])["pool"]["pool_id"] == created["pool"]["pool_id"]
+    with pytest.raises(StockPoolProducerNotFound):
+        store.reconcile_index_creation("create-index-1", trusted_owner="bob-index",
+                                       trusted_workspace=alice_headers["x-byq-workspace-id"])
 
     run = store.claim_next_run(worker_id="index-worker")
     assert run is not None
@@ -126,3 +134,83 @@ def test_index_catalog_rejects_month_only_evidence_without_verified_snapshot() -
         )
     store.close()
     paper.close()
+
+
+def test_historical_index_pool_never_follows_later_constituents() -> None:
+    from datetime import datetime, timezone
+    from app.stock_pool_producer import StockPoolProducerConflict
+    headers = trusted_agent_context("historical-index")
+    store = StockPoolProducerStore()
+    _seed_index(store)
+    context = {"trusted_owner": "historical-index", "trusted_workspace": headers["x-byq-workspace-id"]}
+    payload = {"index_symbol": "000300.SH", "requested_as_of": "20240131",
+               "tracking_mode": "historical_snapshot", "idempotency_key": "historical-index-once"}
+    created = store.create_index_pool(payload, **context)
+    claim = store.claim_next_run(worker_id="historical-worker")
+    assert claim is not None
+    store.materialize_claimed_index(claim, worker_id="historical-worker")
+    before = store.paper_store.get_pool(created["pool"]["pool_id"], trusted_owner="historical-index")
+    assert before["snapshot"]["effective_trade_date"] == "20240102"
+    readiness = store.get_readiness(before["pool_id"], **context)
+    assert readiness["state"] == "current"
+    assert readiness["source_snapshot_date"] == "20240102"
+    assert store.enqueue_validated_index_refreshes(now=datetime(2024, 3, 1, tzinfo=timezone.utc)) == 0
+    with pytest.raises(StockPoolProducerConflict):
+        store.enqueue_index_refresh(created["pool"]["pool_id"],
+            {"requested_as_of": "20240215", "idempotency_key": "wrong-historical-refresh"}, **context)
+    assert store.create_index_pool(payload, **context)["pool"]["pool_id"] == before["pool_id"]
+    with pytest.raises(StockPoolProducerConflict):
+        store.create_index_pool({**payload, "tracking_mode": "follow_index"}, **context)
+    assert store.paper_store.get_pool(before["pool_id"], trusted_owner="historical-index")["current_snapshot_id"] == before["current_snapshot_id"]
+    store.close()
+
+
+def test_validated_index_import_compensation_is_bounded_restart_safe_and_frozen() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import datetime, timezone
+    headers = trusted_agent_context("index-compensation")
+    store = StockPoolProducerStore()
+    _seed_index(store)
+    pools = []
+    try:
+        for number in range(3):
+            result = store.create_index_pool(
+                {"index_symbol": "000300.SH", "requested_as_of": "20240131", "idempotency_key": f"compensate-{number}"},
+                trusted_owner="index-compensation", trusted_workspace=headers["x-byq-workspace-id"],
+            )
+            claimed = store.claim_next_run(worker_id="synthetic")
+            store.materialize_claimed_index(claimed, worker_id="synthetic")
+            pools.append(result["pool"]["pool_id"])
+        frozen = store.paper_store.get_pool(pools[0], trusted_owner="index-compensation")["current_snapshot_id"]
+        readiness = store.get_readiness(pools[0], trusted_owner="index-compensation", trusted_workspace=headers["x-byq-workspace-id"])
+        assert readiness["state"] == "stale"
+        assert readiness["source_snapshot_date"] == "20240201"
+        assert readiness["current_snapshot_date"] == "20240102"
+        # Inactive pools are not scheduled, even if their definition remains active.
+        store._execute("UPDATE stock_pools SET status='inactive' WHERE pool_id=:id", {"id": pools[2]})
+        january = datetime(2024, 1, 31, tzinfo=timezone.utc)
+        february = datetime(2024, 2, 2, tzinfo=timezone.utc)
+        assert store.enqueue_validated_index_refreshes(now=january) == 0
+        assert store.enqueue_validated_index_refreshes(now=february, limit=1) == 1
+        restarted = StockPoolProducerStore()
+        try:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = list(executor.map(lambda item: item.enqueue_validated_index_refreshes(now=february),
+                                            [store, restarted]))
+            assert sum(results) == 1
+            assert restarted.enqueue_validated_index_refreshes(now=february) == 0
+            for _ in range(2):
+                claimed = restarted.claim_next_run(worker_id="synthetic")
+                assert claimed is not None
+                assert restarted.materialize_claimed_index(claimed, worker_id="synthetic")["status"] == "succeeded"
+            assert restarted.enqueue_validated_index_refreshes(now=january) == 0
+            assert restarted.enqueue_validated_index_refreshes(now=february) == 0
+            for pool in pools[:2]:
+                assert restarted.paper_store.get_pool(pool, trusted_owner="index-compensation")["snapshot"]["effective_trade_date"] == "20240201"
+                assert restarted.get_readiness(pool, trusted_owner="index-compensation", trusted_workspace=headers["x-byq-workspace-id"])["state"] == "current"
+            historical = restarted.paper_store.get_pool_snapshot(frozen, trusted_owner="index-compensation")
+            assert historical["effective_trade_date"] == "20240102"
+        finally:
+            restarted.close()
+    finally:
+        store.close()

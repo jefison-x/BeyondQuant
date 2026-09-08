@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import threading
+import json
+import hashlib
 import time
 from importlib.metadata import version
 from pathlib import Path
@@ -94,6 +96,179 @@ def wait_for_status(adapter: RuntimeAdapter, session_id: str, status: str) -> No
     raise AssertionError(f"session did not reach {status}")
 
 
+@pytest.mark.parametrize("finish_reason", ["max-tokens", "aborted", "future-unknown"])
+def test_incomplete_model_finish_is_never_a_success_result(adapter: RuntimeAdapter, finish_reason: str) -> None:
+    if version("deepseek-harness-sdk") == "0.1.1rc1":
+        finish_reason = {"max-tokens": "max_tokens", "aborted": "cancelled"}.get(finish_reason, finish_reason)
+    FakeHarness.finish_reason = finish_reason
+    try:
+        adapter.create_session("incomplete", "incomplete-trace")
+        receipt = adapter.submit_prompt("incomplete", "synthetic incomplete outcome")
+        FakeHarness.allow_run.set()
+        deadline = time.monotonic() + 2.0
+        record = adapter._get("incomplete")
+        while record.active_run is not None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert record.status == SessionStatus.FAILED
+        terminal = [item for item in record.history if item["kind"] in {"session.result", "session.failed"}]
+        assert len(terminal) == 1
+        assert terminal[0]["kind"] == "session.failed"
+        assert terminal[0]["payload"]["run_id"] == receipt
+    finally:
+        adapter.close()
+
+
+def test_registration_observation_uses_captured_turn_without_exposing_arguments(adapter: RuntimeAdapter):
+    if version("deepseek-harness-sdk") != "0.1.2rc1":
+        pytest.skip("requires qualified 0.1.2 notification carrier")
+    from packages.contracts.agent_run_lifecycle import registration_fingerprint
+
+    try:
+        adapter.create_session("binding", "binding-trace", "alice", "workspace_alice")
+        root_id = adapter.submit_prompt("binding", "synthetic registration")
+        record = adapter._get("binding")
+        run = record.active_run
+        notice = Notification(method="session.event", payload={"sessionId": record.runtime_session_id,
+            "event": {"type": "tool/call", "seq": 1, "data": {
+                "callId": "register", "name": "mcp__byq__byq_agent_run_start",
+                "arguments": json.dumps({"idempotency_key": "private-registration-key", "role_id": "quant_orchestrator"}),
+            }}})
+        for _ in range(2):
+            adapter._on_notification(record, notice, source_run=run, source_runtime_session_id=record.runtime_session_id)
+        bindings = [item for item in record.history if item["kind"] == "agent.run.registration"]
+        assert len(bindings) == 1
+        assert bindings[0]["payload"] == {
+            "schema_version": "agent-run-registration-observed.v1", "run_id": root_id,
+            "registration_fingerprint": registration_fingerprint(
+                "alice", "workspace_alice", "byq-product-agent-binding", "binding-trace", "binding",
+                FakeHarness.instances[0].config.env["BYQ_DSH_RUN_ID"], "private-registration-key"),
+        }
+        serialized = json.dumps(record.history)
+        assert "private-registration-key" not in serialized
+        assert record.runtime_generation not in serialized
+        adapter.cancel_session("binding", "hard")
+        adapter._on_notification(record, notice, source_run=run, source_runtime_session_id=record.runtime_session_id)
+        assert len([item for item in record.history if item["kind"] == "agent.run.registration"]) == 1
+    finally:
+        adapter.close()
+
+
+def test_product_process_cannot_start_next_turn_until_exact_terminal_ack(adapter):
+    from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
+    try:
+        adapter.create_session("ack-barrier", "ack-trace", "alice", "workspace_alice")
+        first = adapter.submit_prompt("ack-barrier", "first", idempotency_key="original-prompt")
+        FakeHarness.allow_run.set()
+        wait_for_status(adapter, "ack-barrier", SessionStatus.IDLE)
+        record = adapter._get("ack-barrier")
+        terminal = next(item for item in record.history if item["kind"] == "session.result")
+        receipt = lifecycle_receipt(project_lifecycle_event(terminal, "ack-barrier", "ack-trace"))
+        with pytest.raises(SessionConflict, match="cleanup"):
+            adapter.submit_prompt("ack-barrier", "second")
+        assert adapter.submit_prompt("ack-barrier", "first", idempotency_key="original-prompt") == first
+        assert FakeHarness.instances[0].run_count == 1
+        for invalid in ({**receipt, "event_sha256": "0" * 64}, {**receipt, "sequence": receipt["sequence"] + 1},
+                        {**receipt, "root_run_id": "f" * 32}, {**receipt, "extra": True},
+                        {**receipt, "sequence": float(receipt["sequence"])}):
+            with pytest.raises(SessionConflict):
+                adapter.acknowledge_terminal("ack-barrier", invalid)
+        assert adapter.acknowledge_terminal("ack-barrier", receipt) == {"receipt": receipt}
+        assert adapter.acknowledge_terminal("ack-barrier", receipt) == {"receipt": receipt}
+        second = adapter.submit_prompt("ack-barrier", "second")
+        assert second != first
+        wait_for_status(adapter, "ack-barrier", SessionStatus.IDLE)
+        adapter.acknowledge_terminal("ack-barrier", receipt)
+        with pytest.raises(SessionConflict, match="cleanup"):
+            adapter.submit_prompt("ack-barrier", "third")
+    finally:
+        adapter.close()
+
+
+def test_new_process_generation_does_not_inherit_old_ack_barrier(adapter):
+    try:
+        adapter.create_session("new-generation", "generation-trace", "alice", "workspace_alice")
+        adapter.submit_prompt("new-generation", "first")
+        assert FakeHarness.run_started.wait(1)
+        record = adapter._get("new-generation")
+        previous = record.runtime_generation
+        adapter.cancel_session("new-generation", "hard")
+        assert record.pending_terminal_receipts
+        adapter.resume_session("new-generation")
+        assert record.runtime_generation != previous
+        assert not record.pending_terminal_receipts
+        adapter.submit_prompt("new-generation", "new generation")
+    finally:
+        adapter.close()
+
+
+def test_terminal_receipt_http_is_closed_and_exact_session_scoped(adapter, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    monkeypatch.setattr(main, "adapter", adapter)
+    client = TestClient(main.app)
+    try:
+        adapter.create_session("receipt-http", "receipt-trace", "alice", "workspace_alice")
+        adapter.create_session("other-http", "other-trace", "bob", "workspace_bob")
+        adapter.submit_prompt("receipt-http", "first")
+        FakeHarness.allow_run.set()
+        wait_for_status(adapter, "receipt-http", SessionStatus.IDLE)
+        receipt = next(iter(adapter._get("receipt-http").terminal_receipts.values()))
+        path = "/internal/runtime/sessions/receipt-http/terminal-receipt"
+        assert client.post(path, json={"receipt": receipt, "bypass": True}).status_code == 422
+        assert client.post(path, json={"receipt": {}}).status_code == 409
+        assert client.post("/internal/runtime/sessions/other-http/terminal-receipt",
+                           json={"receipt": receipt}).status_code == 409
+        assert client.post("/internal/runtime/sessions/missing/terminal-receipt",
+                           json={"receipt": receipt}).status_code == 404
+        assert client.post(path, json={"receipt": receipt}).json() == {"receipt": receipt}
+    finally:
+        adapter.close()
+
+
+def test_recovery_and_durable_prompt_lookup_never_construct_or_run_a_harness(adapter):
+    from app.lifecycle_journal import LifecycleJournal
+    from app.contracts import make_workflow_trace_event
+    ctx = {"session_id": "orphan", "trace_id": "orphan-trace", "owner": "alice", "workspace_id": "workspace_alice"}
+    journal = LifecycleJournal.claim(adapter._session_root / "byq-lifecycle-evidence", ctx, create=True)
+    content = "synthetic private prompt not stored"
+    root = "a" * 32
+    journal.observe(make_workflow_trace_event(session_id="orphan", trace_id="orphan-trace", sequence=4,
+        kind="session.started", source="runtime-adapter", payload={"run_id": root}),
+        generation="old-generation", prompt=("original-prompt", hashlib.sha256(content.encode()).hexdigest()))
+    assert adapter.recover_evidence(ctx)["state"] == "owned"
+    journal.close()
+    recovered = adapter.recover_evidence(ctx)
+    assert [e["kind"] for e in recovered["events"]] == ["session.started", "session.closed"]
+    assert adapter.recover_evidence(ctx, after_sequence=5)["events"] == []
+    assert adapter.reconcile_prompt("orphan", "original-prompt", hashlib.sha256(content.encode()).hexdigest())["run_id"] == root
+    assert FakeHarness.instances == []
+    assert content not in journal.path.read_text()
+    with pytest.raises(ValueError):
+        adapter.recover_evidence({**ctx, "owner": "bob"})
+    try:
+        adapter.create_session("orphan", "orphan-trace", "alice", "workspace_alice")
+        assert adapter.submit_prompt("orphan", content, idempotency_key="original-prompt") == root
+        assert FakeHarness.instances[0].run_count == 0
+        assert adapter._get("orphan").sequence > 5
+    finally:
+        adapter.close()
+
+
+def test_failed_journal_write_prevents_model_start_and_shutdown_still_closes_process(adapter, monkeypatch):
+    adapter.create_session("disk-failure", "disk-trace", "alice", "workspace_alice")
+    record = adapter._get("disk-failure")
+    def fail(*args, **kwargs):
+        raise OSError("synthetic evidence storage failure")
+    monkeypatch.setattr(record.journal, "_save", fail)
+    with pytest.raises(OSError):
+        adapter.submit_prompt("disk-failure", "must not execute", idempotency_key="disk-failure-key")
+    assert FakeHarness.instances[0].run_count == 0
+    with pytest.raises(OSError):
+        adapter.close()
+    assert FakeHarness.instances[0].closed
+    assert record.journal.lock is None
+
+
 def test_default_whole_run_ceiling_allows_bounded_complex_research(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -135,6 +310,13 @@ def test_prompt_idempotency_returns_the_original_run_without_reexecution(adapter
     assert adapter.submit_prompt(
         "s-idempotent", "continue approval", idempotency_key="approval-continuation-1",
     ) == first_run
+    digest = hashlib.sha256(b"continue approval").hexdigest()
+    receipt = adapter.reconcile_prompt("s-idempotent", "approval-continuation-1", digest)
+    assert receipt == {"schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": first_run}
+    assert "continue approval" not in str(receipt)
+    assert adapter.reconcile_prompt("s-idempotent", "missing-key", digest)["state"] == "outcome_unknown"
+    with pytest.raises(SessionConflict):
+        adapter.reconcile_prompt("s-idempotent", "approval-continuation-1", "0" * 64)
     with pytest.raises(SessionConflict, match="reused"):
         adapter.submit_prompt(
             "s-idempotent", "different continuation", idempotency_key="approval-continuation-1",
@@ -145,6 +327,9 @@ def test_prompt_idempotency_returns_the_original_run_without_reexecution(adapter
     assert adapter.submit_prompt(
         "s-idempotent", "continue approval", idempotency_key="approval-continuation-1",
     ) == first_run
+    adapter.release_session("s-idempotent")
+    adapter.create_session("s-idempotent", "t-recreated")
+    assert adapter.reconcile_prompt("s-idempotent", "approval-continuation-1", digest)["state"] == "outcome_unknown"
     adapter.release_session("s-idempotent")
 
 
@@ -162,6 +347,58 @@ def test_hard_cancel_closes_runtime_and_rejects_later_prompt(adapter: RuntimeAda
 
     released = adapter.release_session("s-1")
     assert released["status"] == SessionStatus.CLOSED
+
+
+@pytest.mark.parametrize("outcome", ["completed", "error", "hard_cancel", "soft_cancel", "timeout", "shutdown"])
+def test_terminal_events_identify_the_exact_submitted_root_run(adapter: RuntimeAdapter, outcome: str) -> None:
+    adapter.create_session("s-terminal", "t-terminal")
+    run_id = adapter.submit_prompt("s-terminal", "synthetic lifecycle")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-terminal")
+    try:
+        if outcome in {"completed", "error"}:
+            FakeHarness.finish_reason = outcome
+            FakeHarness.allow_run.set()
+            wait_for_status(adapter, "s-terminal", SessionStatus.IDLE if outcome == "completed" else SessionStatus.FAILED)
+        elif outcome in {"hard_cancel", "soft_cancel"}:
+            adapter.cancel_session("s-terminal", "hard" if outcome == "hard_cancel" else "soft")
+            if outcome == "soft_cancel":
+                FakeHarness.allow_run.set()
+                wait_for_status(adapter, "s-terminal", SessionStatus.IDLE)
+                discarded = [event for event in record.history if event["kind"] == "session.result.discarded"]
+                assert discarded[0]["payload"]["run_id"] == run_id
+        elif outcome == "timeout":
+            run = record.active_run
+            assert run is not None
+            assert adapter._enforce_run_guards(record, run, now=run.started_at + 3601)
+        else:
+            adapter.close()
+        terminals = [event for event in record.history if event["kind"] in
+                     {"session.result", "session.failed", "session.cancelled", "session.closed"}]
+        assert len(terminals) == 1
+        assert terminals[0]["payload"].get("run_id") == run_id
+        started = next(event for event in record.history if event["kind"] == "session.started")
+        assert started["payload"]["run_id"] == run_id
+        assert run_id != record.session_id
+    finally:
+        adapter.close()
+
+
+def test_two_turns_in_one_process_keep_distinct_terminal_identities(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-two-turns", "t-two-turns")
+    FakeHarness.allow_run.set()
+    try:
+        first = adapter.submit_prompt("s-two-turns", "first synthetic question")
+        wait_for_status(adapter, "s-two-turns", SessionStatus.IDLE)
+        second = adapter.submit_prompt("s-two-turns", "second synthetic question")
+        wait_for_status(adapter, "s-two-turns", SessionStatus.IDLE)
+        assert first != second
+        results = [event["payload"]["run_id"] for event in adapter._get("s-two-turns").history
+                   if event["kind"] == "session.result"]
+        assert results == [first, second]
+        assert len(FakeHarness.instances) == 1
+    finally:
+        adapter.close()
 
 
 def test_no_progress_watchdog_fails_and_closes_only_the_stuck_runtime(adapter: RuntimeAdapter) -> None:
@@ -182,6 +419,7 @@ def test_no_progress_watchdog_fails_and_closes_only_the_stuck_runtime(adapter: R
     assert record.history[-1]["payload"] == {
         "code": "runtime-no-progress-timeout",
         "retryable": True,
+        "run_id": run.run_id,
     }
     history_length = len(record.history)
     adapter._on_notification(record, Notification(
@@ -320,7 +558,7 @@ def test_step_boundaries_refresh_internal_liveness_without_public_projection(
     adapter.cancel_session("s-step", "hard")
 
 
-def test_descendant_activity_refreshes_owned_run_without_exposing_private_state(
+def test_unassociated_descendant_cannot_refresh_owned_run(
     adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter.create_session("s-child-live", "t-child-live")
@@ -344,7 +582,7 @@ def test_descendant_activity_refreshes_owned_run_without_exposing_private_state(
         },
     ))
 
-    assert run.last_runtime_activity_at == 42.0
+    assert run.last_runtime_activity_at == 10.0
     assert len(record.history) == history_length
     assert "private-descendant-session" not in str(record.history)
     assert "child-private" not in str(record.history)
@@ -397,6 +635,7 @@ def test_subagent_wall_clock_timeout_wins_even_when_public_progress_continues(
     assert record.history[-1]["payload"] == {
         "code": "runtime-subagent-timeout",
         "retryable": True,
+        "run_id": run.run_id,
     }
 
 
@@ -424,7 +663,29 @@ def test_active_subagent_uses_its_dedicated_timeout_before_no_activity_guard(
     assert record.history[-1]["payload"] == {
         "code": "runtime-subagent-timeout",
         "retryable": True,
+        "run_id": run.run_id,
     }
+
+
+def test_wait_notices_are_bounded_do_not_renew_and_stop_with_run(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-wait", "t-wait")
+    adapter.submit_prompt("s-wait", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-wait")
+    run = record.active_run
+    run.started_at = 0
+    run.last_runtime_activity_at = 10
+    adapter._emit_wait_notice(record, run, now=59)
+    assert not any(e["kind"] == "session.waiting" for e in record.history)
+    adapter._emit_wait_notice(record, run, now=60)
+    adapter._emit_wait_notice(record, run, now=61)
+    notices = [e for e in record.history if e["kind"] == "session.waiting"]
+    assert len(notices) == 1
+    assert notices[0]["payload"] == {"run_id": run.run_id, "elapsed_seconds": 60, "last_activity_seconds": 50}
+    assert run.last_runtime_activity_at == 10
+    adapter.cancel_session("s-wait", "hard")
+    adapter._emit_wait_notice(record, run, now=120)
+    assert len([e for e in record.history if e["kind"] == "session.waiting"]) == 1
 
 
 def test_total_run_wall_clock_is_a_final_ceiling(adapter: RuntimeAdapter) -> None:
@@ -444,6 +705,7 @@ def test_total_run_wall_clock_is_a_final_ceiling(adapter: RuntimeAdapter) -> Non
     assert record.history[-1]["payload"] == {
         "code": "runtime-run-timeout",
         "retryable": True,
+        "run_id": run.run_id,
     }
 
 
@@ -528,6 +790,38 @@ def test_recreated_runtime_uses_private_generation_and_bounded_public_context(
     adapter.release_session("s-durable")
 
 
+def test_recovery_reaches_fresh_runtime_once(adapter: RuntimeAdapter) -> None:
+    FakeHarness.allow_run.set()
+    subject = "沪深300近三年周频双均线，凯利仓位"
+    recovery = {
+        "schema_version": "conversation-recovery.v2", "session_id": "s-recovery",
+        "trace_id": "t-recovery", "status": "resolved",
+        "unanswered_turn": {"message_id": "m-original", "content": subject},
+        "failure": {"sequence": 9, "run_id": "run-original", "code": "runtime-subagent-timeout"},
+    }
+    adapter.create_session("s-recovery", "t-recovery", initial_sequence=9, conversation_recovery=recovery)
+    adapter.submit_prompt("s-recovery", subject)
+    wait_for_status(adapter, "s-recovery", SessionStatus.IDLE)
+    assert FakeHarness.instances[0].last_content.count(subject) == 1
+    assert "runtime-subagent-timeout" in FakeHarness.instances[0].last_content
+    assert adapter._get("s-recovery").pending_conversation_recovery is None
+    adapter.release_session("s-recovery")
+
+
+def test_ambiguous_recovery_does_not_start_run(adapter: RuntimeAdapter) -> None:
+    recovery = {
+        "schema_version": "conversation-recovery.v2", "session_id": "s-ambiguous",
+        "trace_id": "t-ambiguous", "status": "needs_confirmation", "unanswered_turn": None,
+        "failure": {"sequence": 9, "run_id": None, "code": "unknown"},
+    }
+    adapter.create_session("s-ambiguous", "t-ambiguous", initial_sequence=9, conversation_recovery=recovery)
+    with pytest.raises(ValueError, match="请明确"):
+        adapter.submit_prompt("s-ambiguous", "继续")
+    assert FakeHarness.instances[0].run_count == 0
+    assert adapter._get("s-ambiguous").pending_conversation_recovery == recovery
+    adapter.release_session("s-ambiguous")
+
+
 def test_conversation_context_rejects_private_or_unbounded_shapes(adapter: RuntimeAdapter) -> None:
     with pytest.raises(ValueError, match="field set"):
         adapter.create_session(
@@ -566,6 +860,10 @@ def test_hard_cancel_resume_uses_a_new_owned_runtime(adapter: RuntimeAdapter) ->
     assert FakeHarness.instances[0].closed is True
     record = adapter._get("s-1")
     assert record.runtime_session_id != "s-1"
+    old_generation = FakeHarness.instances[0].config.env["BYQ_DSH_RUN_ID"]
+    new_generation = FakeHarness.instances[1].config.env["BYQ_DSH_RUN_ID"]
+    assert old_generation != new_generation
+    assert new_generation != record.runtime_session_id
     adapter.release_session("s-1")
 
 
@@ -589,7 +887,7 @@ def test_error_finish_reason_is_failed_and_can_resume_with_fresh_runtime(adapter
     FakeHarness.finish_reason = "error"
     FakeHarness.allow_run.set()
     adapter.create_session("s-1", "t-1")
-    adapter.submit_prompt("s-1", "fails")
+    run_id = adapter.submit_prompt("s-1", "fails")
     wait_for_status(adapter, "s-1", SessionStatus.FAILED)
 
     record = adapter._get("s-1")
@@ -597,6 +895,7 @@ def test_error_finish_reason_is_failed_and_can_resume_with_fresh_runtime(adapter
     assert record.history[-1]["payload"] == {
         "code": "model-run-failed",
         "retryable": True,
+        "run_id": run_id,
     }
     assert "error" not in str(record.history[-1]["payload"]).lower()
 
@@ -614,6 +913,18 @@ def test_product_turn_requires_a_model_credential_without_exposing_it(adapter: R
         adapter.submit_prompt("s-1", "product turn", require_model_key=True)
     assert "DEEPSEEK_API_KEY" not in str(adapter.readiness())
     assert "DEEPSEEK_API_KEY" not in str(adapter.describe_session(adapter._get("s-1")))
+    adapter.release_session("s-1")
+
+
+def test_existing_prompt_receipt_precedes_missing_credential_rejection(adapter: RuntimeAdapter):
+    adapter.create_session("s-1", "t-1")
+    record = adapter._get("s-1")
+    record.prompt_idempotency["message_original"] = ("synthetic original", "original-run")
+    assert adapter.submit_prompt("s-1", "synthetic original", require_model_key=True,
+                                 idempotency_key="message_original") == "original-run"
+    with pytest.raises(SessionConflict):
+        adapter.submit_prompt("s-1", "different content", require_model_key=True,
+                              idempotency_key="message_original")
     adapter.release_session("s-1")
 
 
@@ -773,6 +1084,7 @@ def test_opencode_personal_key_is_scoped_to_each_reviewed_runtime_route(
         trace_id="t-1",
         owner_principal="alice",
         workspace_id="workspace_alice",
+        runtime_generation="generation-provider-test",
         model_resolution={
             "provider": provider,
             "model": "catalog-model",
@@ -797,6 +1109,7 @@ def test_unreviewed_runtime_provider_cannot_receive_a_personal_key(
             trace_id="t-1",
             owner_principal="alice",
             workspace_id="workspace_alice",
+            runtime_generation="generation-provider-test",
             model_resolution={
                 "provider": "browser-controlled-provider",
                 "model": "arbitrary-model",
@@ -841,7 +1154,8 @@ def test_product_context_is_scoped_to_the_owned_sdk_environment(adapter: Runtime
     assert sdk_environment["BYQ_ACTOR_PRINCIPAL"] == "byq-product-agent-s-1"
     assert sdk_environment["BYQ_TRACE_ID"] == "t-1"
     assert sdk_environment["BYQ_SESSION_ID"] == "s-1"
-    assert sdk_environment["BYQ_DSH_RUN_ID"] == "s-1"
+    assert sdk_environment["BYQ_DSH_RUN_ID"].startswith("generation-")
+    assert sdk_environment["BYQ_DSH_RUN_ID"] not in str(adapter.describe_session(adapter._get("s-1")))
     adapter.release_session("s-1")
 
 

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import asyncio
 import threading
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -19,6 +21,7 @@ from packages.contracts.conversation_rehydration import (
     ConversationContextMessage,
 )
 from packages.operations.admission import AdmissionClosed, chat_admission
+from packages.contracts.prompt_rejection import matches_credential_rejection
 
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
 from .auth_api import router as auth_router
@@ -28,12 +31,27 @@ from .product_api import (
 from .pooled_http import pooled_http as httpx
 from .user_session import ProductAuthError, resolve_principal, resolve_user
 from .trace_store import TraceStore
+from .conversation_recovery import project_recovery
 from .workflow_projection import project_workflow_event
+from .agent_lifecycle_delivery import LifecycleDelivery
+from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
+from packages.contracts.workflow_trace import validate_workflow_trace_event
 
 
 SERVICE = "byq-gateway"
 VERSION = "0.1.0"
-app = FastAPI(title="BeyondQuant Gateway", version=VERSION)
+@asynccontextmanager
+async def lifespan(app):
+    lifecycle_delivery.start()
+    answer_delivery.start()
+    try:
+        yield
+    finally:
+        lifecycle_delivery.close()
+        answer_delivery.close()
+
+
+app = FastAPI(title="BeyondQuant Gateway", version=VERSION, lifespan=lifespan)
 app.include_router(product_router)
 app.include_router(auth_router)
 RUNTIME_ADAPTER_URL = os.environ.get("BYQ_RUNTIME_ADAPTER_URL", "http://runtime-adapter:8400")
@@ -42,6 +60,75 @@ BACKEND_URL = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
 PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
 trace_store = TraceStore(os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"))
+
+
+def _send_agent_lifecycle(context, event):
+    reply = _catalog_request("POST", f"/internal/agent-lifecycle/{context['conversation_id']}",
+        Principal(subject=context["owner"]), context["workspace_id"], payload={
+            "session_id": context["session_id"], "trace_id": context["trace_id"], "event": event})
+    if reply != {"receipt": lifecycle_receipt(event)}:
+        raise ValueError("lifecycle receipt mismatch")
+    if event["outcome"] != "active":
+        try:
+            acknowledged = _adapter_post(
+                f"/internal/runtime/sessions/{context['session_id']}/terminal-receipt",
+                payload=reply, timeout=5.0)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            # No reusable old process remains. A new Adapter generation cannot
+            # authorize an old AgentRun; Backend's receipt is still durable.
+        else:
+            if acknowledged != reply:
+                raise ValueError("runtime terminal acknowledgement mismatch")
+    return reply
+
+
+def _recover_agent_lifecycle(context):
+    cursor = max((e["sequence"] for e in trace_store.read(context["session_id"])), default=0)
+    reply = _adapter_post(f"/internal/runtime/sessions/{context['session_id']}/recover-evidence", payload={
+        "trace_id": context["trace_id"], "owner": context["owner"], "workspace_id": context["workspace_id"],
+        "after_sequence": cursor}, timeout=5.0)
+    if (set(reply) != {"state", "events", "more"} or reply["state"] not in {"owned", "unknown", "recovered"}
+            or not isinstance(reply["events"], list) or len(reply["events"]) > 256 or type(reply["more"]) is not bool):
+        raise ValueError("invalid recovery receipt")
+    previous = cursor
+    if reply["state"] != "recovered" and (reply["events"] or reply["more"]):
+        raise ValueError("unproven recovery cannot carry events")
+    if reply["state"] == "unknown":
+        raise ValueError("no durable recovery evidence; retain unknown state")
+    for event in reply["events"]:
+        validate_workflow_trace_event(event)
+        if (event["session_id"], event["trace_id"], event["source"]) != (
+                context["session_id"], context["trace_id"], "runtime-adapter") or event["sequence"] <= previous:
+            raise ValueError("foreign or unordered recovery event")
+        if event["kind"] == "session.started":
+            if set(event["payload"]) != {"run_id"}:
+                raise ValueError("invalid recovered root")
+        elif project_lifecycle_event(event, context["session_id"], context["trace_id"]) is None:
+            raise ValueError("non-lifecycle recovery event")
+        previous = event["sequence"]
+    for event in reply["events"]:
+        trace_store.append(event)
+    return reply["state"] == "recovered" and not reply["more"]
+
+
+lifecycle_delivery = LifecycleDelivery(
+    os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), trace_store, _send_agent_lifecycle,
+    recover=_recover_agent_lifecycle)
+
+
+def _send_owned_answer(context, event):
+    session = ProductSession(conversation_id=context["conversation_id"], session_id=context["session_id"],
+        trace_id=context["trace_id"], principal=Principal(subject=context["owner"]), workspace_id=context["workspace_id"])
+    if not _persist_projected_answer(session, {"kind": "agent.output.delta", "sequence": event["sequence"],
+                                              "payload": {"delta": event["content"]}}):
+        raise ValueError("public answer persistence remains unconfirmed")
+    return {"receipt": answer_delivery.receipt(event)}
+
+
+answer_delivery = LifecycleDelivery(
+    os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), trace_store, _send_owned_answer, answers=True)
 
 
 def require_chat_admission():
@@ -347,6 +434,10 @@ def _trusted_request_identity(request: Request) -> tuple[Principal, str]:
     )
 
 
+class PromptAdmissionRejected(HTTPException):
+    """Only constructed after checking an exact Runtime pre-admission receipt."""
+
+
 def _adapter_post(path: str, *, payload: dict[str, object] | None = None, timeout: float = 20.0) -> dict[str, object]:
     try:
         response = httpx.post(
@@ -362,16 +453,52 @@ def _adapter_post(path: str, *, payload: dict[str, object] | None = None, timeou
             detail = "runtime session is not available for this operation"
         elif status == 503:
             detail = "product model is unavailable"
+            prefix = "/internal/runtime/sessions/"
+            if (path.startswith(prefix) and path.endswith("/prompt") and isinstance(payload, dict)
+                    and payload.get("require_model_key") is True):
+                try:
+                    rejected = exc.response.json()
+                except ValueError:
+                    rejected = None
+                if (isinstance(rejected, dict) and set(rejected) == {"detail"}
+                        and matches_credential_rejection(rejected["detail"], path[len(prefix):-len("/prompt")],
+                            payload.get("idempotency_key"), payload.get("content"))):
+                    raise PromptAdmissionRejected(status_code=503, detail=detail) from exc
         raise HTTPException(status_code=status, detail=detail) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="runtime adapter unavailable") from exc
-    body = response.json()
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="runtime adapter returned an invalid response") from exc
     if not isinstance(body, dict):
         raise HTTPException(status_code=502, detail="runtime adapter returned an invalid response")
     return body
 
 
+def _valid_prompt_run_id(value: object) -> bool:
+    return isinstance(value, str) and 1 <= len(value) <= 128 and value.strip() == value and bool(value.strip())
+
+
+def _adapter_prompt_receipt(session_id: str, key: str, content: str) -> dict[str, object] | None:
+    """One exact read; missing ephemeral state is unknown, never resubmit permission."""
+    try:
+        response = httpx.get(f"{RUNTIME_ADAPTER_URL}/internal/runtime/sessions/{session_id}/prompts/reconcile",
+            params={"idempotency_key": key, "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest()},
+            timeout=2.0)
+        response.raise_for_status()
+        body = response.json()
+        if (isinstance(body, dict) and body.get("schema_version") == "prompt-receipt.v1"
+                and body.get("state") == "accepted" and _valid_prompt_run_id(body.get("run_id"))):
+            return body
+    except (httpx.HTTPError, ValueError):
+        pass
+    return None
+
+
 def _start_trace_collector(session: ProductSession) -> None:
+    lifecycle_delivery.register(session)
+    _register_answer_delivery(session)
     thread = threading.Thread(
         target=_collect_trace,
         args=(session,),
@@ -384,6 +511,12 @@ def _start_trace_collector(session: ProductSession) -> None:
 def _collect_trace(session: ProductSession) -> None:
     """Persist only the adapter's BYQ event envelopes for this product session."""
 
+    persisted = trace_store.read(session.session_id)
+    cursor = max((event["sequence"] for event in persisted), default=0)
+    # Delivery to the conversation catalog is independent of SSE ingestion.
+    # Retry the durable BYQ projection even if the adapter has lost this session
+    # or no longer replays its old events. Backend deduplicates workflow_sequence.
+    _register_answer_delivery(session)
     try:
         with httpx.stream(
             "GET",
@@ -400,6 +533,14 @@ def _collect_trace(session: ProductSession) -> None:
                     continue
                 try:
                     event = json.loads(line[6:])
+                    if (not isinstance(event, dict) or event.get("session_id") != session.session_id
+                            or event.get("trace_id") != session.trace_id):
+                        continue
+                    sequence = event.get("sequence")
+                    if type(sequence) is not int or sequence <= cursor:
+                        # Existing BYQ projections remain authoritative. Do not
+                        # rehydrate old cards or append an older replay again.
+                        continue
                     projected = project_workflow_event(
                         event,
                         backend_get=lambda path: _domain_get(path, session),
@@ -409,7 +550,7 @@ def _collect_trace(session: ProductSession) -> None:
                         ),
                     )
                     trace_store.append(projected)
-                    _persist_projected_answer(session, projected)
+                    cursor = sequence
                 except (ValueError, TypeError, json.JSONDecodeError):
                     # The adapter is the only producer. Invalid data is not
                     # persisted or reflected to the product client.
@@ -421,17 +562,26 @@ def _collect_trace(session: ProductSession) -> None:
             trace_store.close(session.session_id)
 
 
-def _persist_projected_answer(session: ProductSession, event: dict[str, object]) -> None:
+def _register_answer_delivery(session: ProductSession) -> None:
+    try:
+        answer_delivery.register(session)
+    except (OSError, ValueError, KeyError, TypeError):
+        # Keep collecting durable projections. Never reset a damaged ledger or
+        # turn storage failure into an uncharged direct catalog retry.
+        pass
+
+
+def _persist_projected_answer(session: ProductSession, event: dict[str, object]) -> bool:
     if event.get("kind") != "agent.output.delta":
-        return
+        return True
     payload = event.get("payload")
     sequence = event.get("sequence")
     if not isinstance(payload, dict) or not isinstance(payload.get("delta"), str):
-        return
+        return True
     if isinstance(sequence, bool) or not isinstance(sequence, int):
-        return
+        return True
     try:
-        _catalog_request(
+        reply = _catalog_request(
             "POST",
             f"/v1/product/conversations/{session.conversation_id}/messages",
             session.principal,
@@ -442,10 +592,21 @@ def _persist_projected_answer(session: ProductSession, event: dict[str, object])
                 "workflow_sequence": sequence,
             },
         )
-    except HTTPException:
+        message = reply.get("message")
+        if (not isinstance(message, dict)
+                or type(message.get("workflow_sequence")) is not int
+                or message["workflow_sequence"] != sequence
+                or message.get("role") != "assistant"
+                or message.get("content") != payload["delta"].strip()
+                or not isinstance(message.get("message_id"), str) or not message["message_id"].strip()
+                or type(message.get("sequence")) is not int or message["sequence"] < 1):
+            raise ValueError("projected answer receipt does not match")
+    except (HTTPException, ValueError):
         # WorkflowTrace remains the replay source when the durable catalog is
-        # temporarily unavailable; an adapter replay can retry this idempotent write.
-        return
+        # temporarily unavailable, including a malformed/lost catalog response.
+        # A collector restart retries from this projection, not raw adapter data.
+        return False
+    return True
 
 
 def _domain_get(path: str, session: ProductSession) -> dict[str, object]:
@@ -514,7 +675,8 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
     )
     persisted_events = trace_store.read(session.session_id)
     initial_sequence = max((event["sequence"] for event in persisted_events), default=0)
-    conversation_context = _conversation_context(body.get("messages"))
+    public_messages, recovery = project_recovery(body.get("messages"), persisted_events, session.session_id, session.trace_id)
+    conversation_context = _conversation_context(public_messages)
     try:
         _adapter_post(
             "/internal/runtime/sessions",
@@ -525,6 +687,7 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
                 "owner_principal": session.principal.subject,
                 "initial_sequence": initial_sequence,
                 "conversation_context": conversation_context,
+                **({"conversation_recovery": recovery} if recovery is not None else {}),
             },
         )
     except HTTPException as exc:
@@ -556,8 +719,8 @@ def _conversation_context(value: object) -> list[ConversationContextMessage]:
         bounded = content[:MAX_REHYDRATION_MESSAGE_CHARS]
         public.append({"role": role, "content": bounded})
 
-    # A trailing user turn has no completed public answer. It may be the failed
-    # prompt that the browser is about to retry, so do not replay it twice.
+    # This v1 section contains completed history only. Unanswered demands and
+    # failure evidence travel separately in the versioned recovery section.
     last_assistant = max(
         (index for index, item in enumerate(public) if item["role"] == "assistant"),
         default=-1,
@@ -613,11 +776,12 @@ def _continue_approval_conversation(
 ) -> dict[str, str]:
     """Submit one server-owned continuation turn for a durable approval decision."""
     headers = _trusted_agent_headers(request)
+    claim_attempt: int | None = None
 
     def mark(status: str) -> dict[str, object]:
         return _backend_request(
             "POST", f"/v1/agents/approvals/{approval_id}/continuation",
-            {"status": status}, headers=headers,
+            {"status": status, **({"expected_attempt": claim_attempt} if status != "submitting" else {})}, headers=headers,
         )
 
     claim = mark("submitting").get("approval")
@@ -625,6 +789,11 @@ def _continue_approval_conversation(
         return {"status": "failed"}
     if claim.get("continuation_changed") is not True:
         return {"status": str(claim.get("continuation_status") or "failed")}
+    claim_attempt = claim.get("continuation_attempt")
+    if type(claim_attempt) is not int or claim_attempt < 1:
+        # An old or malformed Backend cannot provide a trustworthy claim.
+        # Fail closed before submitting a model turn.
+        return {"status": "failed"}
 
     instruction = (
         "BYQ trusted approval continuation. "
@@ -638,20 +807,29 @@ def _continue_approval_conversation(
             else "Do not execute the rejected action; explain the rejection briefly and offer a safe next step."
         )
     )
+    prompt_attempted = False
     try:
         session = _product_session(request, conversation_id)
         payload = {"content": instruction, "require_model_key": True,
                    "idempotency_key": f"approval-continuation-{approval_id}"}
         try:
-            _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
+            prompt_attempted = True
+            receipt = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
             session = _replace_lost_runtime_session(session)
-            _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
-    except HTTPException:
-        mark("failed")
-        return {"status": "failed"}
+            receipt = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
+        if not isinstance(receipt, dict) or receipt.get("accepted") is not True or not _valid_prompt_run_id(receipt.get("run_id")):
+            raise HTTPException(status_code=502, detail="continuation receipt is unconfirmed")
+    except HTTPException as error:
+        state = "outcome_unknown" if (prompt_attempted and error.status_code >= 500
+                                      and not isinstance(error, PromptAdmissionRejected)) else "failed"
+        if state == "outcome_unknown" and _adapter_prompt_receipt(session.session_id, str(payload["idempotency_key"]), instruction) is not None:
+            confirmed = mark("submitted").get("approval")
+            return {"status": str(confirmed.get("continuation_status") if isinstance(confirmed, dict) else "outcome_unknown")}
+        mark(state)
+        return {"status": state}
     marked = mark("submitted").get("approval")
     return {
         "status": str(marked.get("continuation_status") if isinstance(marked, dict) else "submitted")
@@ -764,6 +942,28 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
     return {"conversation": public, "messages": messages, "events": events}
 
 
+@app.get("/v1/agent/sessions/{session_id}/lifecycle-delivery")
+def get_agent_lifecycle_delivery(session_id: str, request: Request) -> dict:
+    principal, workspace_id = _trusted_request_identity(request)
+    body = _catalog_request("GET", f"/v1/product/conversations/{session_id}", principal, workspace_id)
+    conversation = body.get("conversation")
+    if not isinstance(conversation, dict):
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    return lifecycle_delivery.status({"conversation_id": session_id, "session_id": conversation["runtime_session_id"],
+        "trace_id": conversation["trace_id"], "workspace_id": workspace_id, "owner": principal.subject})
+
+
+@app.get("/v1/agent/sessions/{session_id}/answer-delivery")
+def get_answer_delivery(session_id: str, request: Request) -> dict:
+    principal, workspace_id = _trusted_request_identity(request)
+    body = _catalog_request("GET", f"/v1/product/conversations/{session_id}", principal, workspace_id)
+    conversation = body.get("conversation")
+    if not isinstance(conversation, dict):
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    return answer_delivery.status({"conversation_id": session_id, "session_id": conversation["runtime_session_id"],
+        "trace_id": conversation["trace_id"], "workspace_id": workspace_id, "owner": principal.subject})
+
+
 @app.patch("/v1/agent/sessions/{session_id}")
 def update_product_session(
     session_id: str,
@@ -791,26 +991,42 @@ def submit_product_turn(
     http_request: Request,
 ) -> dict[str, object]:
     session = _product_session(http_request, session_id)
-    _catalog_request(
+    persisted = _catalog_request(
         "POST", f"/v1/product/conversations/{session.conversation_id}/messages",
         session.principal, session.workspace_id, payload={"content": request.content},
     )
     prompt_payload = {"content": request.content, "require_model_key": True}
+    persisted_message = persisted.get("message")
+    message_id = persisted_message.get("message_id") if isinstance(persisted_message, dict) else None
+    if not isinstance(message_id, str) or not 8 <= len(message_id) <= 128 or message_id.strip() != message_id:
+        raise ProductError(502, "prompt_outcome_unknown",
+                           "原消息的保存回执尚未确认，本次未启动模型；请先核对原会话。")
+    prompt_payload["idempotency_key"] = message_id
     try:
-        body = _adapter_post(
-            f"/internal/runtime/sessions/{session.session_id}/prompt",
-            payload=prompt_payload,
-            timeout=5.0,
-        )
+        try:
+            body = _adapter_post(
+                f"/internal/runtime/sessions/{session.session_id}/prompt",
+                payload=prompt_payload, timeout=5.0,
+            )
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            session = _replace_lost_runtime_session(session)
+            body = _adapter_post(
+                f"/internal/runtime/sessions/{session.session_id}/prompt",
+                payload=prompt_payload, timeout=5.0,
+            )
+        if not isinstance(body, dict) or body.get("accepted") is not True or not _valid_prompt_run_id(body.get("run_id")):
+            raise HTTPException(status_code=502, detail="prompt receipt is unconfirmed")
     except HTTPException as exc:
-        if exc.status_code != 404:
+        key = prompt_payload.get("idempotency_key")
+        if isinstance(exc, PromptAdmissionRejected) or exc.status_code < 500 or not isinstance(key, str):
             raise
-        session = _replace_lost_runtime_session(session)
-        body = _adapter_post(
-            f"/internal/runtime/sessions/{session.session_id}/prompt",
-            payload=prompt_payload,
-            timeout=5.0,
-        )
+        receipt = _adapter_prompt_receipt(session.session_id, key, request.content)
+        if receipt is None:
+            raise ProductError(502, "prompt_outcome_unknown",
+                               "本次消息的接收结果尚未确认；请先核对原会话，勿重复发送。") from exc
+        body = receipt
     return {
         "accepted": True,
         "session_id": session.conversation_id,
@@ -826,7 +1042,12 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
         "GET", f"/v1/product/conversations/{session.conversation_id}",
         session.principal, session.workspace_id,
     )
-    resume_payload = {"conversation_context": _conversation_context(catalog.get("messages"))}
+    public_messages, recovery = project_recovery(
+        catalog.get("messages"), trace_store.read(session.session_id), session.session_id, session.trace_id,
+    )
+    resume_payload = {"conversation_context": _conversation_context(public_messages)}
+    if recovery is not None:
+        resume_payload["conversation_recovery"] = recovery
     try:
         body = _adapter_post(
             f"/internal/runtime/sessions/{session.session_id}/resume",

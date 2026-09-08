@@ -1,3 +1,5 @@
+import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
+
 const BACKEND_TIMEOUT_MS = 8000;
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
@@ -63,13 +65,16 @@ async function requestAgent(
       },
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
+    if (isWriteRequest(init) && response.status >= 500) return unknownWriteResult(init);
     let payload: unknown;
     try {
       payload = await response.json();
     } catch {
+      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (!response.ok) {
@@ -77,6 +82,7 @@ async function requestAgent(
     }
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
+    if (isWriteRequest(init)) return unknownWriteResult(init);
     return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
   }
 }
@@ -88,13 +94,25 @@ export function fetchByqAgentRoles(
   return requestAgent(backendUrl, "/v1/agents/roles", { method: "GET" }, undefined, fetcher);
 }
 
-export function fetchByqAgentRunStart(
+export async function fetchByqAgentRunStart(
   backendUrl: string,
   request: Record<string, unknown>,
   context: AgentContext,
   fetcher: Fetcher = fetch,
 ): Promise<AgentResult> {
-  return requestAgent(backendUrl, "/v1/agents/runs", { method: "POST", body: JSON.stringify(request) }, context, fetcher);
+  const { receipt_only, ...registration } = request;
+  const receiptPath = `/v1/agents/runs/registration-receipt?idempotency_key=${encodeURIComponent(String(request.idempotency_key ?? ""))}`;
+  if (receipt_only === true) return requestAgent(backendUrl, receiptPath, { method: "GET" }, context, fetcher);
+  let response = await requestAgent(backendUrl, "/v1/agents/runs", { method: "POST", body: JSON.stringify(registration) }, context, fetcher);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const payload = JSON.parse(response.content[0].text);
+    if (response.isError || payload.run?.status !== "pending_binding") break;
+    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    const checked = await requestAgent(backendUrl, receiptPath, { method: "GET" }, context, fetcher);
+    if (checked.isError) break; // keep the original durable pending identity
+    response = checked;
+  }
+  return response;
 }
 
 export function fetchByqAgentAuthorize(

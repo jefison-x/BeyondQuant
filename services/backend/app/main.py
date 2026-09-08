@@ -164,6 +164,7 @@ from .user_policy import (
     public_policy,
 )
 from .research import (
+    PRODUCER_OWNED_ARTIFACT_KINDS,
     IdempotencyConflict,
     InvalidTransition,
     ResearchNotFound,
@@ -210,6 +211,9 @@ from .plugin_center import (
     PluginCenterPersistenceError,
     PluginCenterStore,
 )
+
+
+from .ml_validation import MLValidationError
 
 
 SERVICE = "byq-backend"
@@ -291,6 +295,8 @@ def _plugin_center_call(call: Callable[[], dict[str, object]]) -> dict[str, obje
 def _ml_call(call: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return call()
+    except MLValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.public_problem()) from exc
     except (MLTrainingNotFound, MLPredictionNotFound, ResearchNotFound, PaperTradingNotFound, SecurityMasterNotFound,
             MarketAutomationNotFound) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -415,6 +421,27 @@ def append_conversation_message(conversation_id: str, payload: dict[str, Any], r
             owner, conversation_id, payload.get("content"), payload.get("workflow_sequence")
         )})
     return _conversation_call(lambda: (_ for _ in ()).throw(ValueError("role must be user or assistant")))
+
+
+@app.post("/internal/agent-lifecycle/{conversation_id}")
+def consume_agent_lifecycle(conversation_id: str, payload: dict[str, Any], request: Request) -> dict:
+    # ADR-0063: this private consumer alone may close existing disabled-owner
+    # roots. The store validates durable ownership and terminal-only authority.
+    # Ordinary conversation and Agent APIs retain active-context validation.
+    owner = request.headers.get("x-byq-owner-principal")
+    if not owner:
+        raise HTTPException(status_code=401, detail="trusted workspace context required")
+    if request.headers.get("x-byq-actor-principal") != owner:
+        raise HTTPException(status_code=403, detail="trusted catalog consumer required")
+    conversation = _conversation_call(lambda: conversation_store.get(owner, conversation_id))
+    if (set(payload) != {"session_id", "trace_id", "event"}
+            or payload["session_id"] != conversation["runtime_session_id"]
+            or payload["trace_id"] != conversation["trace_id"]
+            or conversation["workspace_id"] != request.headers.get("x-byq-workspace-id")):
+        raise HTTPException(status_code=422, detail="lifecycle conversation identity mismatch")
+    return _agent_call(lambda: {"receipt": agent_store.consume_runtime_lifecycle_event(
+        payload["event"], trusted_owner=owner, trusted_workspace=conversation["workspace_id"],
+        trusted_session_id=conversation["runtime_session_id"], trusted_trace_id=conversation["trace_id"])})
 
 
 @app.patch("/v1/product/conversations/{conversation_id}")
@@ -1383,6 +1410,7 @@ def get_agent_data_demand_notifications(request: Request) -> dict[str, object]:
         ml_notifications = ml_training_store.list_agent_notifications(
             trusted_workspace=context["workspace_id"],
             trusted_owner=context["owner_principal"],
+            trusted_session=context["session_id"], trusted_trace=context["trace_id"],
         )
         return {"notifications": [*data_notifications, *ml_notifications]}
 
@@ -1550,6 +1578,8 @@ def list_security_master(
 def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return operation()
+    except MLValidationError as error:
+        raise HTTPException(status_code=422, detail=error.public_problem()) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except ResearchNotFound as error:
@@ -1790,28 +1820,43 @@ def _transition_args(payload: dict[str, Any]) -> tuple[object, object]:
     return payload["target_status"], payload["idempotency_key"]
 
 
+def _owned_research_entity(entity_type: str, entity_id: object, context: dict[str, str]) -> dict[str, object]:
+    reader = {"research_task": research_store.get_task, "experiment": research_store.get_experiment,
+              "artifact": research_store.get_artifact}[entity_type]
+    entity = reader(entity_id)
+    if (entity.get("owner_principal") != context["owner_principal"]
+            or entity.get("workspace_id") != context["workspace_id"]):
+        raise ResearchNotFound("research entity not found")
+    return entity
+
+
 def _research_transition(
     entity_type: str,
     entity_id: str,
     payload: dict[str, Any],
+    request: Request,
 ) -> dict[str, object]:
-    return _research_call(
-        lambda: research_store.transition(
-            entity_type,
-            entity_id,
-            *_transition_args(payload),
+    context = _required_agent_context(request, include_workspace=True)
+    def operation() -> dict[str, object]:
+        entity = _owned_research_entity(entity_type, entity_id, context)
+        if entity_type == "artifact" and entity.get("kind") in PRODUCER_OWNED_ARTIFACT_KINDS:
+            raise HTTPException(status_code=403, detail="artifact lifecycle requires its typed domain producer")
+        transition_payload = {key: value for key, value in payload.items() if key != "progress"}
+        return research_store.transition(
+            entity_type, entity_id, *_transition_args(transition_payload),
+            progress=payload.get("progress"), require_completion_evidence=True,
         )
-    )
+    return _research_call(operation)
 
 
 @app.post("/v1/research/tasks", status_code=201)
 def create_research_task(payload: dict[str, Any], request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         if payload.get("owner_principal") != context["owner_principal"]:
             raise ValueError("research task owner must match trusted context")
-        return research_store.create_task(payload)
+        return research_store.create_task(payload, trusted_context=context)
 
     return _research_call(operation)
 
@@ -1829,6 +1874,28 @@ def get_research_task(task_id: str, request: Request) -> dict[str, object]:
     return _research_call(operation)
 
 
+@app.get("/v1/research/tasks/{task_id}/continuation-permission")
+def get_research_continuation_permission(task_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.get_continuation_permission(task_id, trusted_context=context))
+
+
+@app.post("/v1/research/tasks/{task_id}/continuation-permission", status_code=201)
+def create_research_continuation_permission(task_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.create_continuation_permission(task_id, payload, trusted_context=context))
+
+
+@app.post("/v1/research/tasks/{task_id}/continuation-permission/revoke")
+def revoke_research_continuation_permission(task_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    def operation():
+        if set(payload) != {"grant_version"}:
+            raise ValueError("exact continuation grant version required")
+        return research_store.revoke_continuation_permission(task_id, grant_version=payload["grant_version"], trusted_context=context)
+    return _research_call(operation)
+
+
 @app.get("/v1/research/tasks")
 def list_research_tasks(request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
@@ -1836,13 +1903,17 @@ def list_research_tasks(request: Request) -> dict[str, object]:
 
 
 @app.post("/v1/research/tasks/{task_id}/transitions")
-def transition_research_task(task_id: str, payload: dict[str, Any]) -> dict[str, object]:
-    return _research_transition("research_task", task_id, payload)
+def transition_research_task(task_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    return _research_transition("research_task", task_id, payload, request)
 
 
 @app.post("/v1/research/experiments", status_code=201)
-def create_experiment(payload: dict[str, Any]) -> dict[str, object]:
-    return _research_call(lambda: research_store.create_experiment(payload))
+def create_experiment(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    def operation() -> dict[str, object]:
+        _owned_research_entity("research_task", payload.get("task_id"), context)
+        return research_store.create_experiment(payload)
+    return _research_call(operation)
 
 
 @app.get("/v1/research/experiments/{experiment_id}")
@@ -1865,27 +1936,20 @@ def list_experiments(request: Request) -> dict[str, object]:
 
 
 @app.post("/v1/research/experiments/{experiment_id}/transitions")
-def transition_experiment(experiment_id: str, payload: dict[str, Any]) -> dict[str, object]:
-    return _research_transition("experiment", experiment_id, payload)
+def transition_experiment(experiment_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    return _research_transition("experiment", experiment_id, payload, request)
 
 
 @app.post("/v1/research/artifacts", status_code=201)
-def create_artifact(payload: dict[str, Any]) -> dict[str, object]:
+def create_artifact(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
     def operation() -> dict[str, object]:
-        lineage = payload.get("lineage")
-        snapshot_id = lineage.get("stock_pool_snapshot_id") if isinstance(lineage, dict) else None
-        owner = payload.get("owner_principal")
-        if snapshot_id is not None:
-            if not isinstance(owner, str) or not owner:
-                raise ValueError("stock pool lineage requires owner_principal")
-            paper_store.get_pool_snapshot(snapshot_id, trusted_owner=owner)
-        artifact = research_store.create_artifact(payload)
-        if snapshot_id is not None:
-            paper_store.record_pool_reference(
-                snapshot_id, domain="research", reference_id=artifact["artifact_id"],
-                trusted_owner=artifact["owner_principal"],
-            )
-        return artifact
+        _owned_research_entity("research_task", payload.get("task_id"), context)
+        if isinstance(payload.get("kind"), str) and payload["kind"].strip() in PRODUCER_OWNED_ARTIFACT_KINDS:
+            raise HTTPException(status_code=403, detail="artifact kind requires its typed domain producer")
+        return research_store.create_artifact(
+            payload, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        )
     return _research_call(operation)
 
 
@@ -2586,20 +2650,15 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
             membership_fingerprint_value=str(pool_snapshot["membership_fingerprint"]),
             security_master_snapshot_id=str(master["snapshot_id"]), declared=declared,
         )
-        assessments = [market_readiness_store.assess(requirement) for requirement in requirements]
-        readiness = aggregate_ml_readiness(assessments)
-        repair_request_ids = []
-        for requirement, assessment in zip(requirements, assessments, strict=True):
-            if assessment.get("state") == "ready":
-                continue
-            repair = market_automation_store.request_data_repair(
-                requirement=requirement, requested_by=f"ml:{context['owner_principal']}"
-            )
-            repair_request_ids.append(str(repair["request_id"]))
+        # Pure, bounded requirement validation precedes acceptance. Coverage
+        # scans and repair scheduling run in the existing trusted ML Worker.
+        readiness = {"schema_version": "ml-data-preparation.v1", "state": "pending",
+                     "reason": "assessment_pending", "partition_count": len(requirements)}
         preparation = {
+            "receipt_version": "ml-training-submit.v2",
             "strategy": strategy,
             "requirements": requirements,
-            "repair_request_ids": repair_request_ids,
+            "repair_request_ids": [],
             "universe": {
                 "membership_mode": membership_mode,
                 "stock_pool_id": pool_snapshot["pool_id"],
@@ -2617,13 +2676,39 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
             requirement=requirements[0], readiness=readiness, trace_id=data.get("trace_id"),
             idempotency_key=data.get("idempotency_key"),
         )
-        paper_store.record_pool_reference(
-            pool_snapshot["snapshot_id"], domain="ml_training", reference_id=run["training_run_id"],
-            trusted_owner=context["owner_principal"],
-        )
         return {"training_run": run}
 
+    try:
+        return _ml_call(operation)
+    except HTTPException as error:
+        key = payload.get("idempotency_key")
+        if 400 <= error.status_code < 500 and isinstance(key, str) and 1 <= len(key) <= 128:
+            ml_training_store.reject_receipt_watch(
+                payload, trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
+            )
+        raise
+
+
+@app.post("/v1/research/ml/training-submissions", status_code=202)
+def register_ml_training_submission(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    def operation() -> dict[str, object]:
+        data = _strategy_payload(payload, {
+            "task_id", "experiment_id", "ml_strategy_artifact_id", "stock_pool_snapshot_id",
+            "trace_id", "idempotency_key",
+        })
+        return {"receipt_watch": ml_training_store.register_receipt_watch(
+            data, trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
+        )}
     return _ml_call(operation)
+
+
+@app.get("/v1/research/ml/training-submissions/reconcile")
+def get_ml_training_submission(idempotency_key: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _ml_call(lambda: {"receipt_watch": ml_training_store.get_receipt_watch(
+        idempotency_key, trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
+    )})
 
 
 @app.get("/v1/research/ml/training-runs")
@@ -3064,8 +3149,8 @@ def strategy_backtest_count(strategy_id: str, request: Request) -> dict[str, obj
 
 
 @app.post("/v1/research/artifacts/{artifact_id}/transitions")
-def transition_artifact(artifact_id: str, payload: dict[str, Any]) -> dict[str, object]:
-    return _research_transition("artifact", artifact_id, payload)
+def transition_artifact(artifact_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    return _research_transition("artifact", artifact_id, payload, request)
 
 
 def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
@@ -4079,7 +4164,15 @@ def start_agent_run(payload: dict[str, Any], request: Request) -> dict[str, obje
         request_payload,
         trusted_owner=context["owner_principal"],
         trusted_actor=context["actor_principal"],
+        trusted_workspace=request.headers.get("x-byq-workspace-id"),
+        require_runtime_binding=context["actor_principal"] == f"byq-product-agent-{context['session_id']}",
     )})
+
+
+@app.get("/v1/agents/runs/registration-receipt")
+def get_agent_registration_receipt(request: Request, idempotency_key: str) -> dict:
+    context = _required_agent_context(request, include_workspace=True)
+    return _agent_call(lambda: {"run": agent_store.registration_receipt(idempotency_key, **context)})
 
 
 @app.post("/v1/agents/authorize")
@@ -4095,6 +4188,8 @@ def authorize_agent_action(payload: dict[str, Any], request: Request) -> dict[st
             clean_payload,
             trusted_owner=context["owner_principal"],
             trusted_actor=context["actor_principal"],
+            trusted_session_id=context["session_id"],
+            trusted_dsh_run_id=context["dsh_run_id"],
         )
         effective = user_policy_store.evaluate_authorization(context["owner_principal"], base)
         if effective.get("decision") == "policy_denied":
@@ -4141,6 +4236,8 @@ def create_agent_approval(payload: dict[str, Any], request: Request) -> dict[str
         {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
         trusted_owner=context["owner_principal"],
         trusted_actor=context["actor_principal"],
+        trusted_session_id=context["session_id"],
+        trusted_dsh_run_id=context["dsh_run_id"],
     )})
 
 
@@ -4181,11 +4278,12 @@ def update_agent_approval_continuation(
 ) -> dict[str, object]:
     context = _required_agent_context(request, payload)
     if set(payload) - {
-        "status", "owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id",
+        "status", "expected_attempt", "owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id",
     }:
         raise HTTPException(status_code=422, detail="continuation request has invalid fields")
     return _agent_call(lambda: {"approval": agent_store.set_continuation_status(
         approval_id, payload.get("status"), trusted_owner=context["owner_principal"],
+        expected_attempt=payload.get("expected_attempt"),
     )})
 
 
@@ -4463,9 +4561,10 @@ def create_stock_pool(payload: dict[str, Any], request: Request) -> dict[str, ob
 
 
 @app.get("/v1/paper/index-pools/catalog")
-def list_index_pool_catalog(request: Request, limit: int = 50, offset: int = 0) -> dict[str, object]:
+def list_index_pool_catalog(request: Request, limit: int = 50, offset: int = 0, requested_as_of: str | None = None) -> dict[str, object]:
     _required_agent_context(request)
-    return _stock_pool_producer_call(lambda: stock_pool_producer_store.list_index_catalog(limit=limit, offset=offset))
+    return _stock_pool_producer_call(lambda: stock_pool_producer_store.list_index_catalog(
+        limit=limit, offset=offset, requested_as_of=requested_as_of))
 
 
 @app.post("/v1/paper/index-pools", status_code=202)
@@ -4473,6 +4572,14 @@ def create_index_pool(payload: dict[str, Any], request: Request) -> dict[str, ob
     context = _required_agent_context(request, payload, include_workspace=True)
     return _stock_pool_producer_call(lambda: stock_pool_producer_store.create_index_pool(
         payload, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+    ))
+
+
+@app.get("/v1/paper/index-pools/reconcile")
+def reconcile_index_pool_creation(request: Request, idempotency_key: str) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _stock_pool_producer_call(lambda: stock_pool_producer_store.reconcile_index_creation(
+        idempotency_key, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
     ))
 
 
@@ -4797,7 +4904,10 @@ def login(payload: dict[str, Any]) -> dict[str, object]:
 
 @app.post("/v1/auth/logout")
 def logout(payload: dict[str, Any]) -> dict[str, object]:
-    return _user_call(lambda: user_store.logout(payload.get("session_id")))
+    def operation() -> dict[str, object]:
+        user_store.logout(payload.get("session_id"))
+        return {"status": "ok"}
+    return _user_call(operation)
 
 
 @app.get("/v1/auth/session")

@@ -1,6 +1,6 @@
 {
   "schema_version": "product-capability-catalog.v1",
-  "catalog_version": "2026.09.03",
+  "catalog_version": "2026.09.07",
   "support_levels": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE", "UNAVAILABLE"],
   "capabilities": [
     {
@@ -48,8 +48,8 @@
       "keywords": ["股票池", "选股", "自定义股票池", "指数股票池", "动态股票池"],
       "prerequisites": ["有效个人工作区", "指数或动态股票池需要已就绪的可信数据"],
       "support": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE"],
-      "agent_tools": ["byq_pool_list", "byq_pool_get", "byq_pool_create"],
-      "limitations": ["小巴当前只执行有界 custom 股票池读写；指数和动态生产能力仅提供产品引导"]
+      "agent_tools": ["byq_pool_list", "byq_pool_get", "byq_pool_create", "byq_index_pool_catalog", "byq_index_pool_create", "byq_index_pool_status"],
+      "limitations": ["小巴支持有界 custom 和封闭目录内的 index 股票池创建；指数池需已验证成分，提交不等于生成完成，历史研究引用冻结快照；动态生产仍仅提供产品引导"]
     },
     {
       "capability_id": "strategy-management",

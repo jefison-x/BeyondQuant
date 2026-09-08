@@ -68,6 +68,20 @@
 
 ## 生效中的 Accepted ADR
 
+Post-U8 交付授权（2026-09-08）：维护者明确允许新增独立构建身份、重新认证，并将当前
+修复分支推送至 `jefison-x/BeyondQuant` 创建 Draft PR；不合并、不部署。ADR-0061 已补充
+本次范围，构建验证见[独立认证记录](../evidence/post-u8-r1/BUILD-REQUALIFICATION.md)。
+这不代表剩余整改全部完成，不改变 U8 提前结束结论或 Product Phase 97。
+
+当前 F6 维护决策：[ADR-0065](../architecture/adr/ADR-0065-task-continuation-budget-admission.md)
+已于 2026-09-08 获维护者明确批准，状态为 Accepted。已证实 SDK 单次 max_tokens 不等于
+任务累计预算；预算账本合同及官方接口资格核查继续进行。接口全调用覆盖尚未通过资格验证，
+后台执行保持关闭，不将 ADR 接受或合同存在计作 F6 完成，不改变 Product Phase 97。
+
+- [ADR-0064](../architecture/adr/ADR-0064-runtime-crash-recovery-evidence.md)：已接受并完成首版本地崩溃证据恢复；仅原本地卷、同次主机启动且原排他锁身份可证时收尾，不续跑模型。主机重启/复制卷/无日志保留不可判定。验证见 `docs/evidence/post-u8-r1/ADR-0064-VERIFICATION.md`，未部署，其他 Post-U8 整改未全部关闭。
+
+- [ADR-0063](../architecture/adr/ADR-0063-disabled-owner-terminal-cleanup.md)：维护者已接受禁用身份后既有 AgentRun 的受限终态清理；本地实现及 Backend 完整回归已通过，未部署。历史未绑定记录及其他 Post-U8 流程整改仍未关闭。
+
 - Post-U8 reliability maintenance：**ADR-0062**，具名修订ADR-0045/0046；不授权生产部署或数据扩容。
 
 - Development governance / CI integrity maintenance：**ADR-0059**。本次只授权治理、CI 与 DSH 方案修正；

@@ -71,3 +71,9 @@ Browser 只可接收有界 orientation projection：
 - 已认证但无有效 personal membership 的 request fail closed。
 - Resolved workspace 外的 resource 返回 not found，除非更窄的 accepted contract 明确要求 non-enumerating denial。
 - Write、lineage edge、approval、bundle 或 idempotency replay 中的 workspace mismatch 是 conflict/validation failure，绝不回退到 `owner_principal`。
+
+ADR-0063 唯一受限修订：禁用后，可信内部 lifecycle consumer 可对精确 owner/workspace/session/trace
+匹配的既有 root 和已绑定 AgentRun 提交终态，原子保存对应审计/回执。持久 personal owner 与
+membership 关系仍须存在；不能补身份、补绑定或新建 run。AgentRun 已有 owner/workspace 不可
+改写为另一活跃身份以逃避禁用。普通读写、审批和后台模型续接仍 fail closed；这不是普通
+用户、管理员或 MCP/model 可调用的清理权限。细则见 [AgentRun 合同](agent-run-lifecycle.md)。

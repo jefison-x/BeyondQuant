@@ -19,7 +19,7 @@ SPEC.loader.exec_module(MODULE)
 
 class DshReleaseTests(unittest.TestCase):
     def test_repository_descriptors_are_closed_and_authorized_u7_default_is_promoted(self) -> None:
-        deployment, releases = MODULE.load_all()
+        deployment, releases = MODULE.load_all(historical_inputs=True)
         self.assertEqual(deployment["default_release"], "dsh-0.1.2rc1")
         self.assertEqual(deployment["candidate_releases"], [])
         self.assertEqual(releases["dsh-0.1.1rc1"]["python"]["sdk"], "0.1.1rc1")
@@ -31,8 +31,8 @@ class DshReleaseTests(unittest.TestCase):
             releases["dsh-0.1.2rc1"]["profile"]["composition"],
             "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
         )
-        self.assertEqual(MODULE.render(), MODULE.render())
-        self.assertEqual(MODULE.OUTPUT_PATH.read_text(), MODULE.render())
+        self.assertEqual(MODULE.render(historical_inputs=True), MODULE.render(historical_inputs=True))
+        self.assertEqual(MODULE.OUTPUT_PATH.read_text(), MODULE.render(historical_inputs=True))
         self.assertEqual(
             MODULE.candidate_output_path("dsh-0.1.1rc1").read_text(),
             MODULE.render_release("dsh-0.1.1rc1", deployment, releases),
@@ -88,7 +88,7 @@ class DshReleaseTests(unittest.TestCase):
             output.write_text("stale\n")
             before = output.read_bytes()
             with patch.object(MODULE, "OUTPUT_PATH", output), patch(
-                "sys.argv", [str(SCRIPT), "check"]
+                "sys.argv", [str(SCRIPT), "check", "--historical-inputs"]
             ):
                 with self.assertRaises(SystemExit):
                     MODULE.main()
@@ -101,7 +101,7 @@ class DshReleaseTests(unittest.TestCase):
             for output in (first, second):
                 with patch(
                     "sys.argv",
-                    [str(SCRIPT), "generate", "--release", "dsh-0.1.2rc1", "--output", str(output)],
+                    [str(SCRIPT), "generate", "--historical-inputs", "--release", "dsh-0.1.2rc1", "--output", str(output)],
                 ):
                     self.assertEqual(MODULE.main(), 0)
             self.assertEqual(
@@ -110,20 +110,20 @@ class DshReleaseTests(unittest.TestCase):
             )
             with patch(
                 "sys.argv",
-                [str(SCRIPT), "check", "--release", "dsh-0.1.2rc1", "--output", str(first)],
+                [str(SCRIPT), "check", "--historical-inputs", "--release", "dsh-0.1.2rc1", "--output", str(first)],
             ):
                 self.assertEqual(MODULE.main(), 0)
             identity = first / "release.identity.json"
             identity.write_text("stale\n")
             with patch(
                 "sys.argv",
-                [str(SCRIPT), "check", "--release", "dsh-0.1.2rc1", "--output", str(first)],
+                [str(SCRIPT), "check", "--historical-inputs", "--release", "dsh-0.1.2rc1", "--output", str(first)],
             ):
                 with self.assertRaisesRegex(SystemExit, "stale"):
                     MODULE.main()
 
     def test_unknown_release_and_nonempty_output_fail_closed(self) -> None:
-        deployment, releases = MODULE.load_all()
+        deployment, releases = MODULE.load_all(historical_inputs=True)
         with self.assertRaisesRegex(MODULE.ReleaseError, "not registered"):
             MODULE.render_release("dsh-latest", deployment, releases)
         with tempfile.TemporaryDirectory() as directory:

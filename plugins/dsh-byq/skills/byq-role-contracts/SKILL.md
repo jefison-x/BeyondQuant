@@ -7,9 +7,29 @@ disable-model-invocation: false
 
 # BYQ role contract
 
+For multi-stage research, the coordinator persists a `research-progress.v1` checkpoint through
+`byq_research_transition` on the original task before waiting or returning control.
+Record the actual stage, exact task-owned Artifact/Experiment references, next
+action and blocker. Read that same task on continuation; never replace it with a
+workspace's latest object. A checkpoint is not authorization to execute its next
+action. Before marking a task completed, attach validated same-task report/result
+Artifact IDs as completion evidence, clear blockers/next actions, and verify that
+the user's actual objective is satisfied. A model turn ending is not that proof.
+Missing results or unfinished domain jobs must keep the task incomplete.
+Specialist roles without `byq_research_transition` return the exact checkpoint
+facts to the coordinator; they must not call a tool outside their allowlist.
+
 Use the specialized DSH delegation tools for focused work. Start a BYQ agent
 run before domain work, then call `byq_agent_authorize` before a domain action
 and `byq_agent_audit` with the bounded outcome afterward.
+
+Registration may return `pending_binding`; it is not an active authorization.
+For pending or unknown registration outcomes, query `byq_agent_run_start` with
+`receipt_only=true` and the ORIGINAL idempotency key. This mode is read-only.
+Never replace the key or start another run to evade a pending/unknown receipt.
+If it remains pending, report the wait and stop; do not poll indefinitely.
+Each new runtime turn needs its own registration; a previous terminal run cannot
+authorize new work. Domain jobs and approvals remain independent of run closure.
 
 A DSH runtime session identifier such as `byq-session-*` is not a BYQ Agent
 run identifier. Only the `agent_run_*` value returned by
@@ -30,6 +50,12 @@ Role boundaries are enforced by BYQ, not by this instruction. A delegated
 role must report a denied capability instead of retrying or asking for a wider
 tool scope. Research evidence remains a BYQ Artifact; DSH workflow state and
 raw DSH events are not business evidence.
+
+The generic `byq_artifact_create` and `byq_research_transition` tools cannot
+manufacture or validate typed strategies, approvals, models, features, signals,
+computed results or web evidence. Use the corresponding BYQ domain producer.
+A generic Artifact labelled as validated is never proof of human approval or
+successful computation. Do not try another kind name to bypass a producer denial.
 
 Web search is a Market Research specialization. The coordinator delegates it
 to the market researcher and does not pass web results to Factor, Strategy, or
@@ -60,8 +86,17 @@ candidates, only the `quant_orchestrator` may authorize and call the bounded
 `byq_pool_list`, `byq_pool_get`, or `byq_pool_create` tools. Use the trusted
 owner/workspace context, never invent or request an internal owner identifier,
 never expand the candidate set silently, and audit the actual domain result.
-Pool snapshot, lifecycle, delete, index, and dynamic-pool mutations are not
-Agent capabilities.
+For an explicit index-pool creation request, the coordinator may additionally
+authorize `byq_index_pool_catalog`, `byq_index_pool_create`, and `byq_index_pool_status`.
+Use the user's exact index and date; freeze the original idempotency key. The
+catalogue must prove readiness at or before that date. Never substitute a custom
+pool or today's members for missing historical constituents. Creation accepts a
+tracking definition, not completed membership; query its status and retrieve the
+immutable snapshot before research. New verified imports can update the tracking
+pool, but never the snapshot already referenced by research. Pool snapshot,
+lifecycle, delete, and dynamic-pool mutations remain unavailable to the Agent.
+If creation returns outcome_unknown, use `byq_index_pool_status` with the exact
+original `idempotency_key`; do not recreate the pool or infer absence from a list.
 
 The trusted DSH runtime clock answers natural wall-clock date and time only.
 For whether today is an exchange session or for the latest complete persisted
@@ -116,6 +151,14 @@ the user to a business page. A trusted Product continuation will reopen the
 same conversation after the decision. On that continuation, re-read the
 approval and current domain state before acting. Approval is not execution
 success: record the later domain outcome separately, including failures.
+
+A model turn ending is not completion of the user's research goal. Distinguish
+transport acknowledgement, accepted domain job, waiting, outcome_unknown,
+failed/cancelled, and completed evidence. Report the remaining requested stage
+and the exact wait or approval blocker. Never claim automatic downstream work
+from a next-turn notification alone: task-bound continuation permission and
+separate next-action authorization must both be confirmed by BYQ. A submitted
+continuation is not proof that its action or the overall goal completed.
 
 When a user-facing result is naturally a strategy draft, stock-candidate
 list, or optimization proposal, call `byq_workflow_card_propose` once with a

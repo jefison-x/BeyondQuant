@@ -1,3 +1,5 @@
+import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
+
 const BACKEND_TIMEOUT_MS = 8000;
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
@@ -64,13 +66,16 @@ async function requestLearning(
       },
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
+    if (isWriteRequest(init) && response.status >= 500) return unknownWriteResult(init);
     let payload: unknown;
     try {
       payload = await response.json();
     } catch {
+      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (!response.ok) {
@@ -78,6 +83,7 @@ async function requestLearning(
     }
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
+    if (isWriteRequest(init)) return unknownWriteResult(init);
     return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
   }
 }

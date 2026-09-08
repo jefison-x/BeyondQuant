@@ -14,6 +14,11 @@ const STATUS_LABELS: Record<string, string> = {
   completed: "已完成",
   cancelled: "已取消",
   failed: "失败",
+  succeeded: "已生成",
+  current: "已就绪",
+  stale: "待更新",
+  waiting_for_data: "等待数据",
+  paused: "已暂停",
   superseded: "已归档",
   unknown: "未知",
 };

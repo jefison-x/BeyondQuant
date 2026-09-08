@@ -48,7 +48,12 @@ def logout(session_id: str) -> None:
         response = httpx.post(f"{BACKEND_URL}/v1/auth/logout", json={"session_id": session_id}, timeout=5.0)
         response.raise_for_status()
     except httpx.HTTPError as exc:
-        raise ProductAuthError(503, "backend_unavailable", "backend is unavailable") from exc
+        raise ProductAuthError(503, "logout_outcome_unknown", "注销结果尚未确认，请重试注销。") from exc
+    try:
+        if response.json() != {"status": "ok"}:
+            raise ValueError("logout receipt mismatch")
+    except ValueError as exc:
+        raise ProductAuthError(503, "logout_outcome_unknown", "注销结果尚未确认，请重试注销。") from exc
 
 
 def resolve_principal(request: Request) -> Principal:

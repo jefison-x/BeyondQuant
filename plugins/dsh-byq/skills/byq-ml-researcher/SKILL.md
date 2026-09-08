@@ -78,19 +78,36 @@ create a replacement merely because the earlier run is still preparing,
 queued, or running. This inbox is next-turn tracking, not permission to keep a
 DSH prompt alive or claim unsolicited background conversation.
 
-Immediately after a training-action approval is granted, call
-`byq_ml_workspace_get` again before creating anything. Match training runs by
-the exact research task, ML strategy Artifact, and frozen stock-pool snapshot.
-If a matching run already exists in any lifecycle state, continue with that run
-and do not create or request approval for a duplicate, unless the user
-explicitly requested a new independent reproducibility run.
+Immediately after a training-action approval is granted, recover only the
+approval's exact bound research task, ML strategy Artifact, frozen stock-pool
+snapshot, and original submission identity. If a run ID is already known, read
+that run with `byq_ml_training_get`; if an earlier submission key is known,
+reconcile that exact key before any new write. A selected study detail may
+confirm a matching run, but no catalogue or bounded list proves its absence.
+Never select the newest workspace study, model, pool, or run as a replacement
+for an unresolved reference. If the approved object cannot be identified
+uniquely, ask for clarification and do not create anything.
 
 Call `byq_ml_training_create` at most once for one approved action. If it returns
 `outcome_unknown`, do not retry the mutation or claim that no task was created.
-Call `byq_ml_workspace_get` exactly once to reconcile the same task, strategy,
-and pool. Report the persisted run when found; otherwise say that submission
+Call `byq_ml_training_get` with the exact original `idempotency_key` to reconcile
+the submission (do not also supply a run ID). Do not use a bounded workspace
+list to prove absence. Report the persisted run when found; otherwise say that submission
 could not yet be confirmed and preserve the same idempotency key for a later
 reconciliation. A transport timeout is not evidence that a write failed.
+An `awaiting_receipt` watch means bounded background lookup, not accepted
+training. `needs_attention` means the lookup budget ended with the outcome
+still unknown; stop further polling in this turn and request manual inspection.
+Only `rejected` proves an explicit rejection of that exact request. It is not
+authorization to generate a replacement key or submit again. A `confirmed`
+watch identifies the original run; its training status remains separate.
+
+Route by the authoritative Artifact kind and schema, never its name or a
+workspace ordering. `ml_strategy_version` with `ml-strategy-version.v1` or
+`ml-strategy-version.v2` belongs to this ML flow. Do not call
+`byq_strategy_export` or rule-strategy validation for an ML Artifact, and do
+not turn an ordinary rule strategy into training merely because an ML study
+exists. Unknown or mismatched kind/schema is a stop condition.
 
 After a completed training run returns safe model or model-bundle metadata,
 prediction follows a separate sequence. Authorize `byq_ml_prediction_create`,

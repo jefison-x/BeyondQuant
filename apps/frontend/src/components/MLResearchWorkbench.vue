@@ -6,7 +6,7 @@ import {
   approveMLStrategy, createMLPrediction, createMLStrategy, createMLTraining,
   deleteMLStudy, setMLStudyLifecycle,
   getMLCapabilities, getMLOptions, getMLPrediction, getMLPredictionRows,
-  getMLStudies, getMLStudy, getMLTraining,
+  getMLStudies, getMLStudy, getMLTraining, getMLTrainingSubmission, type MLReceiptWatch,
   type MLArtifact, type MLCapabilities, type MLCapabilityComponent, type MLRun,
   type MLOptions, type MLStudyDetail, type MLStudySummary,
 } from "@/api/mlResearch";
@@ -84,28 +84,70 @@ const predictionRowsLoading = ref(false), predictionRowsQuery = ref(""), predict
 const predictionRowsPageSize = 50;
 const predictionRunId = computed(() => prediction.value?.status === "completed" ? prediction.value.prediction_run_id ?? "" : "");
 const trainingSubmissionCache = new Map<string, string>();
+const receiptWatch = ref<MLReceiptWatch | null>(null);
+const receiptWatchScope = ref("");
+const receiptWatchLabel = computed(() => ({ awaiting_receipt: "原提交仍在核对中，尚不能确定是否已接收",
+  confirmed: "原训练任务已确认", rejected: "原提交已被明确拒绝，请检查授权和输入",
+  needs_attention: "自动核对已结束，结果仍未确认；需要人工检查，不会重新训练",
+}[receiptWatch.value?.state ?? "awaiting_receipt"]));
 
 function trainingSubmissionStorageKey() {
   return selected.value && chosenPool.value
     ? `byq:ml-training:${selected.value.task_id}:${selected.value.artifact_id}:${chosenPool.value.current_snapshot_id}`
     : "";
 }
+function existingTrainingSubmissionId() {
+  const storageKey = trainingSubmissionStorageKey();
+  if (!storageKey) return "";
+  const existing = trainingSubmissionCache.get(storageKey) || window.localStorage.getItem(storageKey)
+    || window.sessionStorage.getItem(storageKey) || "";
+  if (existing && !/^[A-Za-z0-9_-]{8,96}$/.test(existing)) throw new Error("原训练提交身份无效，请先人工核查。");
+  return existing;
+}
 function trainingSubmissionId() {
   const storageKey = trainingSubmissionStorageKey();
   if (!storageKey) return "";
-  let existing = trainingSubmissionCache.get(storageKey) ?? "";
-  try { existing ||= window.sessionStorage.getItem(storageKey) ?? ""; } catch { /* memory fallback */ }
+  const existing = existingTrainingSubmissionId();
   if (existing) return existing;
   const created = createRequestId();
+  window.localStorage.setItem(storageKey, created);
   trainingSubmissionCache.set(storageKey, created);
-  try { window.sessionStorage.setItem(storageKey, created); } catch { /* memory fallback */ }
   return created;
 }
-function clearTrainingSubmissionId() {
-  const storageKey = trainingSubmissionStorageKey();
+function clearTrainingSubmissionId(storageKey = trainingSubmissionStorageKey()) {
   if (!storageKey) return;
   trainingSubmissionCache.delete(storageKey);
+  window.localStorage.removeItem(storageKey);
   try { window.sessionStorage.removeItem(storageKey); } catch { /* memory fallback */ }
+}
+
+async function checkTrainingSubmission(key = existingTrainingSubmissionId()) {
+  if (!key) return;
+  const watched = (await getMLTrainingSubmission(key)).receipt_watch;
+  if (existingTrainingSubmissionId() !== key) return;
+  receiptWatch.value = watched;
+  receiptWatchScope.value = trainingSubmissionStorageKey();
+  if (watched.state === "confirmed" && watched.training_run_id) {
+    const actual = (await getMLTraining(watched.training_run_id)).training_run;
+    if (existingTrainingSubmissionId() !== key) return;
+    training.value = actual;
+    clearTrainingSubmissionId();
+    pollTraining();
+  }
+}
+
+async function reconcileOriginalSubmission() {
+  if (busy.value) return;
+  busy.value = true;
+  try {
+    const key = existingTrainingSubmissionId();
+    if (!key || receiptWatchScope.value !== trainingSubmissionStorageKey()) {
+      throw new Error("原提交身份或股票池已变化，请先人工核查；不会发起训练。");
+    }
+    await checkTrainingSubmission(key);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "原提交暂时无法核对；不会发起训练。");
+  } finally { busy.value = false; }
 }
 
 function componentLabel(item: MLCapabilityComponent) { return item.display_name || item.id; }
@@ -146,12 +188,17 @@ async function loadCatalog() {
 }
 
 async function selectStudy(id: string) {
+  receiptWatch.value = null;
+  receiptWatchScope.value = "";
   selectedStrategy.value = id; activeTab.value = "overview";
   predictionRows.value = []; predictionRowsTotal.value = 0; predictionRowsPage.value = 1;
   const requestId = ++detailRequest; detailLoading.value = true; error.value = "";
   try {
     const value = await getMLStudy(id);
-    if (requestId === detailRequest && selectedStrategy.value === id) applyDetail(value);
+    if (requestId === detailRequest && selectedStrategy.value === id) {
+      applyDetail(value);
+      try { await checkTrainingSubmission(); } catch { /* Keep original identity; missing watch is not absence. */ }
+    }
   } catch (e) {
     if (requestId === detailRequest) error.value = e instanceof Error ? e.message : "模型研究详情加载失败";
   } finally { if (requestId === detailRequest) detailLoading.value = false; }
@@ -332,24 +379,55 @@ async function startTraining() {
   // Acquire the UI latch before opening the asynchronous confirmation. A
   // rapid double click must never create two independent confirmation flows.
   if (busy.value || deleting.value || !selected.value || !chosenPool.value) return;
+  const scope = trainingSubmissionStorageKey();
+  const original = { task_id: selected.value.task_id, ml_strategy_artifact_id: selected.value.artifact_id,
+    stock_pool_snapshot_id: chosenPool.value.current_snapshot_id };
+  const poolName = chosenPool.value.name;
   busy.value = true;
   try {
-    await ElMessageBox.confirm(`将使用“${chosenPool.value.name}”的当前冻结快照开始训练。`, "确认训练范围", { type: "warning", confirmButtonText: "开始训练", cancelButtonText: "返回检查" });
+    const originalKey = existingTrainingSubmissionId();
+    if (receiptWatch.value && receiptWatch.value.state !== "confirmed" && receiptWatchScope.value !== scope) {
+      throw new Error("请恢复原股票池后核对原提交，不会将旧提交关联到新对象。");
+    }
+    if (originalKey) { await checkTrainingSubmission(originalKey); return; }
+    if (receiptWatch.value && receiptWatch.value.state !== "confirmed") {
+      throw new Error("原提交身份缺失，请先人工核查；不会发起训练。");
+    }
+    await ElMessageBox.confirm(`将使用“${poolName}”的当前冻结快照开始训练。`, "确认训练范围", { type: "warning", confirmButtonText: "开始训练", cancelButtonText: "返回检查" });
+    if (trainingSubmissionStorageKey() !== scope) throw new Error("研究对象已变化，本次未提交训练，请重新确认。");
     if (!selectedApproval.value) {
-      const approved = await approveMLStrategy({ task_id: selected.value.task_id, ml_strategy_artifact_id: selected.value.artifact_id, decision: "approved", rationale: "用户在模型研究工作台主动确认训练范围" });
+      const approved = await approveMLStrategy({ task_id: original.task_id, ml_strategy_artifact_id: original.ml_strategy_artifact_id, decision: "approved", rationale: "用户在模型研究工作台主动确认训练范围" });
+      if (trainingSubmissionStorageKey() !== scope) throw new Error("研究对象已变化，本次未提交训练，请重新确认。");
       selectedApproval.value = approved.artifact.artifact_id;
     }
     const submissionId = trainingSubmissionId();
-    training.value = (await createMLTraining(
-      { task_id: selected.value.task_id, ml_strategy_artifact_id: selected.value.artifact_id, stock_pool_snapshot_id: chosenPool.value.current_snapshot_id },
+    const created = (await createMLTraining(
+      original,
       submissionId,
     )).training_run;
-    clearTrainingSubmissionId();
-    ElMessage.success("训练已提交；页面与小巴下次会话会读取同一持久状态"); pollTraining();
+    if (!created?.training_run_id) throw new Error("训练回执尚未确认，请核对原提交。");
+    clearTrainingSubmissionId(scope);
+    if (trainingSubmissionStorageKey() === scope) {
+      training.value = created; receiptWatch.value = null; pollTraining();
+    }
+    ElMessage.success("训练已提交；页面与小巴下次会话会读取同一持久状态");
   } catch (e) {
+    try { await checkTrainingSubmission(); } catch { /* Never replace an unknown submission key. */ }
     if (e !== "cancel" && e !== "close") ElMessage.error(e instanceof Error ? e.message : "训练提交失败；再次提交会自动对账，不会重复创建");
   }
   finally { busy.value = false; }
+}
+async function acknowledgeRejectedSubmission() {
+  if (busy.value || receiptWatch.value?.state !== "rejected") return;
+  const scope = receiptWatchScope.value;
+  busy.value = true;
+  try {
+    await ElMessageBox.confirm("原提交已被明确拒绝。清除本地提交身份后，请检查输入与权限，再单独确认新的训练。", "检查原提交", { type: "warning" });
+    if (receiptWatch.value?.state !== "rejected" || receiptWatchScope.value !== scope) return;
+    clearTrainingSubmissionId(scope); receiptWatch.value = null; receiptWatchScope.value = "";
+  } catch (error) {
+    if (error !== "cancel" && error !== "close") ElMessage.error("无法更新本地提交记录，请先人工核查。");
+  } finally { busy.value = false; }
 }
 function pollTraining() {
   if (!training.value?.training_run_id || ["completed", "failed", "cancelled"].includes(training.value.status)) { void refreshDetail().then(loadCatalog); return; }
@@ -395,6 +473,9 @@ const steps = computed(() => [
   { label: "回测复核", hint: "复用冻结信号", state: stepState(backtest.value) },
 ]);
 const next = computed(() => {
+  if (receiptWatch.value && receiptWatch.value.state !== "confirmed") return {
+    title: "核对原训练提交", hint: receiptWatchLabel.value, action: "train", label: "核对原提交",
+  };
   if (!selected.value) return { title: "选择或创建一项模型研究", hint: "目录与详情分开加载，首屏不会下载历史大制品。", action: "create", label: "新建模型研究" };
   if (!training.value || ["failed", "cancelled"].includes(training.value.status)) return { title: "开始可信训练", hint: "确认冻结股票池后，在可信计算环境中训练。", action: "train", label: training.value ? "重新开始训练" : "开始训练" };
   if (training.value.status !== "completed") return { title: "模型正在训练", hint: "完成后即可生成样本外预测。", action: "wait", label: "训练进行中" };
@@ -461,6 +542,9 @@ onBeforeUnmount(() => { if (timer) clearTimeout(timer); if (catalogTimer) clearT
           <el-button v-if="canDeleteStudy" type="danger" plain :disabled="busy" :loading="deleting" data-testid="ml-delete" @click="removeStudy">删除</el-button>
         </ManagementActionBar>
         <ol class="pipeline" aria-label="模型研究进度"><li v-for="(step,index) in steps" :key="step.label" :class="`is-${step.state}`"><b>{{ step.state==='completed'?'✓':index+1 }}</b><span><strong>{{ step.label }}</strong><small>{{ step.hint }}</small></span></li></ol>
+        <el-alert v-if="receiptWatch" title="训练提交核对" :description="`${receiptWatchLabel}；已核对 ${receiptWatch.check_count}/${receiptWatch.check_limit} 次。`" type="warning" :closable="false" show-icon />
+        <el-button v-if="receiptWatch && receiptWatch.state !== 'confirmed'" :disabled="busy" @click="reconcileOriginalSubmission">核对原提交（不重新训练）</el-button>
+        <el-button v-if="receiptWatch?.state === 'rejected'" :disabled="busy" @click="acknowledgeRejectedSubmission">检查后准备重新提交</el-button>
         <section class="next-step"><div><span>建议下一步</span><strong>{{ isArchived?'研究已归档':next.title }}</strong><p>{{ isArchived?'恢复后才可发起新的训练或执行动作；历史结果仍可查看。':next.hint }}</p></div><div class="next-actions"><el-select v-if="next.action==='train'" v-model="form.pool_id" :disabled="isArchived" aria-label="训练使用的冻结股票池" data-testid="ml-pool" placeholder="选择冻结股票池"><el-option v-for="pool in activePools" :key="pool.pool_id" :label="`${pool.name} · ${pool.member_count}只`" :value="pool.pool_id"/></el-select><el-button type="primary" :disabled="isArchived||next.action==='wait'||(next.action==='train'&&!chosenPool)" :loading="busy" :data-testid="next.action==='train'?'ml-train':next.action==='predict'?'ml-predict':next.action==='backtest'?'ml-backtest':undefined" @click="runNext">{{ next.label }}</el-button></div></section>
         <el-tabs v-model="activeTab" class="research-tabs">
           <el-tab-pane label="研究概览" name="overview"><div class="summary-grid"><div><span>研究方法</span><strong>{{ methodLabel(selected) }}</strong><small>{{ isV2?'净化走步验证':'兼容单次验证' }}</small></div><div><span>研究范围</span><strong>{{ selectedPool?.name || '训练时选择股票池' }}</strong><small>{{ selectedPool?`${selectedPool.member_count} 只股票`:'使用不可变成员快照' }}</small></div><div><span>预测目标</span><strong>未来 {{ targetHorizon ?? form.horizon }} 个交易日收益</strong><small>样本外预测不包含标签</small></div><div><span>组合规则</span><strong>前 {{ portfolio?.top_n ?? form.top_n }} 名等权</strong><small>{{ rebalance(portfolio?.rebalance ?? form.rebalance) }}调仓</small></div></div>

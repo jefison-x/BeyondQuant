@@ -112,6 +112,15 @@ def validate_workflow_trace_event(event: object) -> WorkflowTraceEvent:
         _validate_answer(payload)
     elif kind == "agent.activity":
         _validate_activity(payload)
+    elif kind == "session.waiting":
+        _exact_fields(payload, required={"run_id", "elapsed_seconds", "last_activity_seconds"},
+                      allowed={"run_id", "elapsed_seconds", "last_activity_seconds"})
+        if source != "runtime-adapter":
+            raise ValueError("waiting notices require runtime-adapter source")
+        _text(payload["run_id"], field="run_id", minimum=1, maximum=128)
+        for field in ("elapsed_seconds", "last_activity_seconds"):
+            if not _integer(payload[field], minimum=0, maximum=86400):
+                raise ValueError("waiting notice duration is invalid")
     elif source == "byq-domain":
         raise ValueError("byq-domain source is reserved for hydrated cards")
     return cast(WorkflowTraceEvent, event)
@@ -273,7 +282,7 @@ def _validate_activity(payload: dict[str, Any]) -> None:
         raise ValueError("workflow activity_id is invalid")
     if payload["phase"] not in {"understand", "select", "strategy", "backtest", "review", "tool"}:
         raise ValueError("workflow activity phase is invalid")
-    if payload["state"] not in {"started", "progress", "completed", "failed", "waiting_approval"}:
+    if payload["state"] not in {"started", "progress", "completed", "failed", "waiting_approval", "unknown", "cancelled", "waiting"}:
         raise ValueError("workflow activity state is invalid")
     _text(payload["label"], field="label", minimum=1, maximum=240)
     _optional_text(payload, "capability", maximum=128)

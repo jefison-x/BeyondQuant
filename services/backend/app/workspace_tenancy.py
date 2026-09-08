@@ -304,11 +304,36 @@ class WorkspaceTenancyStore(PgStoreMixin):
             RETURNS trigger LANGUAGE plpgsql AS $$
             DECLARE resolved TEXT;
             BEGIN
+              IF TG_TABLE_NAME = 'agent_runs' AND TG_OP = 'UPDATE' THEN
+                IF NEW.owner_principal IS DISTINCT FROM OLD.owner_principal
+                    OR (OLD.workspace_id IS NOT NULL AND NEW.workspace_id IS DISTINCT FROM OLD.workspace_id) THEN
+                  RAISE EXCEPTION 'agent run ownership is immutable';
+                END IF;
+              END IF;
               SELECT w.workspace_id INTO resolved FROM users u JOIN workspaces w
                 ON w.owner_user_id = u.user_id JOIN workspace_memberships m
                 ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
                 WHERE u.username = NEW.owner_principal AND u.status = 'active'
                   AND w.status = 'active' AND m.status = 'active';
+              -- ADR-0063: no generic bypass. Only an immutable, already-bound
+              -- run may follow its trusted persisted root into a terminal state.
+              IF resolved IS NULL AND TG_TABLE_NAME = 'agent_runs' AND TG_OP = 'UPDATE' THEN
+                IF OLD.status IN ('active', 'pending_binding')
+                    AND NEW.status IN ('completed', 'failed', 'cancelled', 'interrupted')
+                    AND NEW.version = OLD.version + 1
+                    AND (to_jsonb(NEW) - ARRAY['status','updated_at','version']) =
+                        (to_jsonb(OLD) - ARRAY['status','updated_at','version']) THEN
+                  SELECT w.workspace_id INTO resolved FROM users u
+                    JOIN workspaces w ON w.owner_user_id = u.user_id
+                    JOIN workspace_memberships m ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
+                    JOIN agent_runtime_turns r ON r.root_run_id = OLD.root_run_id
+                    WHERE u.username = OLD.owner_principal AND w.kind = 'personal' AND m.role = 'owner'
+                      AND w.workspace_id = OLD.workspace_id
+                      AND r.owner_principal = OLD.owner_principal AND r.workspace_id = OLD.workspace_id
+                      AND r.session_id = OLD.session_id AND r.trace_id = OLD.trace_id
+                      AND r.status = NEW.status AND r.terminal_sequence IS NOT NULL;
+                END IF;
+              END IF;
               IF resolved IS NULL THEN RAISE EXCEPTION 'trusted workspace owner is unresolved'; END IF;
               IF NEW.workspace_id IS NOT NULL AND NEW.workspace_id <> resolved THEN
                 RAISE EXCEPTION 'workspace owner mismatch';
@@ -336,6 +361,23 @@ class WorkspaceTenancyStore(PgStoreMixin):
                   ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
                   WHERE u.username = to_jsonb(NEW) ->> 'owner_principal'
                     AND u.status = 'active' AND w.status = 'active' AND m.status = 'active';
+                IF owner_resolved IS NULL AND TG_TABLE_NAME = 'agent_audit' AND TG_OP = 'INSERT' THEN
+                  SELECT w.workspace_id INTO owner_resolved FROM users u
+                    JOIN workspaces w ON w.owner_user_id = u.user_id
+                    JOIN workspace_memberships m ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
+                    JOIN agent_runs a ON a.run_id = NEW.run_id AND a.workspace_id = w.workspace_id
+                    JOIN agent_runtime_turns r ON r.root_run_id = a.root_run_id
+                    WHERE u.username = NEW.owner_principal AND w.kind = 'personal' AND m.role = 'owner'
+                      AND a.owner_principal = NEW.owner_principal AND a.actor_principal = NEW.actor_principal
+                      AND r.owner_principal = a.owner_principal AND r.workspace_id = a.workspace_id
+                      AND r.session_id = a.session_id AND r.trace_id = a.trace_id
+                      AND r.status IN ('completed','failed','cancelled','interrupted')
+                      AND a.status = r.status AND NEW.outcome = a.status AND r.terminal_sequence IS NOT NULL
+                      AND NEW.action = 'runtime_turn_binding' AND NEW.resource_type = 'runtime_turn'
+                      AND NEW.resource_id = r.root_run_id
+                      AND NEW.detail_json = jsonb_build_object('root_run_id', r.root_run_id,
+                                                              'terminal_sequence', r.terminal_sequence);
+                END IF;
                 IF owner_resolved IS NULL OR owner_resolved <> resolved THEN
                   RAISE EXCEPTION 'parent workspace owner mismatch';
                 END IF;

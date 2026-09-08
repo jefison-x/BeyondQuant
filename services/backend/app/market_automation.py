@@ -540,14 +540,14 @@ class MarketAutomationStore(PgStoreMixin):
         return created
 
     def request_data_repair(
-        self, *, requirement: dict[str, object], requested_by: str,
+        self, *, requirement: dict[str, object], requested_by: str, retry_terminal: bool = True,
     ) -> dict[str, object]:
         requirement_sha256 = str(requirement["requirement_sha256"])
         start_date, end_date = str(requirement["start_date"]), str(requirement["end_date"])
         existing = self._fetch_one("SELECT * FROM market_data_repair_requests WHERE requirement_sha256=:sha",
                                    {"sha": requirement_sha256})
         if existing is not None:
-            if existing["status"] in {"completed", "failed"}:
+            if retry_terminal and existing["status"] in {"completed", "failed"}:
                 self._execute("""UPDATE market_data_repair_requests
                     SET status='queued',claimed_at=NULL,completed_at=NULL,error_message=NULL,
                         requested_by=:by WHERE request_id=:id""",
@@ -560,11 +560,12 @@ class MarketAutomationStore(PgStoreMixin):
         request_id, now = f"datarepair_{uuid.uuid4().hex}", _now()
         self._execute("""INSERT INTO market_data_repair_requests
             (request_id,requirement_sha256,start_date,end_date,requirement_json,status,requested_by,created_at)
-            VALUES (:id,:sha,:start,:end,:requirement,'queued',:by,:now)""",
+            VALUES (:id,:sha,:start,:end,:requirement,'queued',:by,:now)
+            ON CONFLICT (requirement_sha256) DO NOTHING""",
             {"id": request_id, "sha": requirement_sha256, "start": start_date,
              "end": end_date, "requirement": requirement, "by": requested_by, "now": now})
-        return dict(self._fetch_one("SELECT * FROM market_data_repair_requests WHERE request_id=:id",
-                                    {"id": request_id}) or {})
+        return dict(self._fetch_one("SELECT * FROM market_data_repair_requests WHERE requirement_sha256=:sha",
+                                    {"sha": requirement_sha256}) or {})
 
     def claim_data_repair(self) -> dict[str, object] | None:
         with self._transaction() as connection:

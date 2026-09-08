@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from deepseek_harness import Notification
 
 from app.compat import Dsh011Compatibility
@@ -7,6 +9,99 @@ from app.normalization import NormalizationState, normalize_runtime_observation
 
 
 compatibility = Dsh011Compatibility()
+
+
+@pytest.mark.parametrize("family", ["dsh-0.1.1", "dsh-0.1.2"])
+def test_batched_tool_results_close_each_exact_activity(family: str) -> None:
+    adapter = (pytest.importorskip("app.compat.dsh_012").Dsh012Compatibility()
+               if family == "dsh-0.1.2" else Dsh011Compatibility())
+    state = NormalizationState()
+
+    def project(kind: str, data: dict, sequence: int):
+        return normalize_runtime_observation(
+            adapter.observe(notify(kind, data), root_session_id="s-1"),
+            trace_id="t-1", session_id="s-1", sequence=sequence, state=state,
+        )
+
+    started = []
+    for index, call_id in enumerate(("first", "second", "third"), 1):
+        started.extend(project("tool/call", {"callId": call_id, "name": "byq_market_daily"}, index))
+    results = [
+        {"type": "tool-result", "toolCallId": call_id, "isError": failed,
+         "content": [{"type": "text", "text": json.dumps({"status": status, "private": "not-public"})}]}
+        for call_id, failed, status in [
+            ("first", False, "ok"), ("second", True, "error"), ("third", False, "outcome_unknown"),
+        ]
+    ]
+    # A hidden control result and malformed/duplicate blocks must not hide
+    # later public results or allocate duplicate terminal events.
+    project("tool/call", {"callId": "control", "name": "byq_agent_authorize"}, 4)
+    results = [
+        {"type": "text", "text": "private-not-a-result"},
+        {"type": "tool-result", "toolCallId": "", "content": []},
+        {"type": "tool-result", "toolCallId": "control", "content": []},
+        results[0], results[0], *results[1:],
+    ]
+    events = project("tool/result", {"message": {"content": results}}, 4)
+    assert [item["payload"]["state"] for item in events] == ["completed", "failed", "unknown"]
+    assert [item["payload"]["activity_id"] for item in events] == [item["payload"]["activity_id"] for item in started]
+    assert [item["sequence"] for item in events] == [4, 5, 6]
+    assert state.tool_names == {}
+    assert "not-public" not in json.dumps(events)
+    assert project("tool/result", {"message": {"content": results}}, 7) == []
+
+
+@pytest.mark.parametrize("terminal", ["result", "cancelled"])
+def test_activity_limit_reserves_closure_for_visible_steps(terminal: str) -> None:
+    from app.compat.types import RuntimeObservation
+    from app.contracts import MAX_ACTIVITIES_PER_TURN
+    from app.normalization import close_public_activities
+
+    state = NormalizationState()
+    events = []
+    for index in range(MAX_ACTIVITIES_PER_TURN + 5):
+        events.extend(normalize_runtime_observation(
+            RuntimeObservation(kind="tool.call", root_session=True, call_id=f"call-{index}",
+                               tool_name="byq_market_daily"),
+            trace_id="t", session_id="s", sequence=len(events) + 1, state=state,
+        ))
+    if terminal == "result":
+        for index in range(MAX_ACTIVITIES_PER_TURN + 5):
+            events.extend(normalize_runtime_observation(
+                RuntimeObservation(kind="tool.result", root_session=True, call_id=f"call-{index}",
+                                   tool_result={"status": "ok"}),
+                trace_id="t", session_id="s", sequence=len(events) + 1, state=state,
+            ))
+    else:
+        events.extend(close_public_activities(state, "t", "s", len(events) + 1, "cancelled"))
+    activities = [item["payload"] for item in events if item["kind"] == "agent.activity"]
+    started = [item["activity_id"] for item in activities if item["state"] == "started"]
+    ended = [item["activity_id"] for item in activities if item["state"] != "started"]
+    assert started
+    assert ended == started
+    assert len(activities) <= MAX_ACTIVITIES_PER_TURN
+    assert [item["sequence"] for item in events] == list(range(1, len(events) + 1))
+    assert close_public_activities(state, "t", "s", len(events) + 1, "failed") == []
+
+
+def test_next_turn_does_not_forget_a_tool_with_no_result() -> None:
+    from app.compat.types import RuntimeObservation
+
+    state = NormalizationState()
+
+    def project(observation, sequence):
+        return normalize_runtime_observation(observation, trace_id="t", session_id="s",
+                                             sequence=sequence, state=state)
+
+    project(RuntimeObservation(kind="turn.start", root_session=True), 1)
+    started = project(RuntimeObservation(kind="tool.call", root_session=True, call_id="lost",
+                                       tool_name="byq_market_daily"), 2)
+    project(RuntimeObservation(kind="turn.end", root_session=True, terminal_reason="completed"), 3)
+    next_turn = project(RuntimeObservation(kind="turn.start", root_session=True), 5)
+    assert next_turn[0]["payload"]["activity_id"] == started[0]["payload"]["activity_id"]
+    assert next_turn[0]["payload"]["state"] == "unknown"
+    assert next_turn[1]["payload"]["state"] == "started"
+    assert [item["sequence"] for item in next_turn] == [5, 6]
 
 
 def notify(event_type: str, data: dict | None = None) -> Notification:
@@ -164,6 +259,36 @@ def test_final_answer_translates_raw_research_terms_and_preserves_evidence() -> 
     assert "资产负债率" in answer
     assert "20260825" in answer
     assert "-2.31%" in answer
+
+
+def test_unknown_submission_is_not_completed_and_unclosed_steps_are_closed():
+    from app.compat.types import RuntimeObservation
+    from app.normalization import close_public_activities, normalize_runtime_observation
+    state = NormalizationState()
+    def project(observation, sequence):
+        return normalize_runtime_observation(observation, trace_id="t", session_id="s", sequence=sequence, state=state)
+    project(RuntimeObservation(kind="turn.start", root_session=True), 1)
+    started = project(RuntimeObservation(kind="tool.call", root_session=True, call_id="call",
+                                         tool_name="byq_ml_training_create"), 2)
+    result = project(RuntimeObservation(kind="tool.result", root_session=True, call_id="call",
+                                        tool_result={"status": "outcome_unknown"}), 3)
+    assert result[0]["payload"]["state"] == "unknown"
+    assert result[0]["payload"]["activity_id"] == started[0]["payload"]["activity_id"]
+    project(RuntimeObservation(kind="tool.call", root_session=True, call_id="accepted",
+                               tool_name="byq_ml_training_create"), 4)
+    accepted = project(RuntimeObservation(kind="tool.result", root_session=True, call_id="accepted",
+                                          tool_result={"status": "ok", "training_run": {"status": "waiting_for_data"}}), 5)
+    assert accepted[0]["payload"]["state"] == "waiting"
+    project(RuntimeObservation(kind="tool.call", root_session=True, call_id="pending",
+                               tool_name="byq_ml_training_create"), 4)
+    closures = close_public_activities(state, "t", "s", 5, "cancelled")
+    assert len(closures) == 2
+    assert all(event["payload"]["state"] == "cancelled" for event in closures)
+    assert close_public_activities(state, "t", "s", 7, "failed") == []
+    project(RuntimeObservation(kind="turn.start", root_session=True), 8)
+    later = project(RuntimeObservation(kind="tool.call", root_session=True, call_id="call",
+                                       tool_name="byq_ml_training_create"), 9)
+    assert later[0]["payload"]["activity_id"] != started[0]["payload"]["activity_id"]
 
 
 def test_known_tool_emits_curated_activity_and_proposal_card() -> None:

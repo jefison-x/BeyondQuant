@@ -66,6 +66,13 @@ const asOfDate = ref("");
 const name = ref("");
 const poolType = ref<"custom" | "index" | "dynamic">("custom");
 const indexSymbol = ref("");
+const indexTrackingMode = ref<"follow_index" | "historical_snapshot">("follow_index");
+const indexDefinitionKnown = computed(() => selected.value?.pool_type === "index"
+  && producer.value?.pool_id === selected.value.pool_id);
+const isHistoricalIndex = computed(() => selected.value?.pool_type === "index"
+  && indexDefinitionKnown.value && producer.value?.definition?.tracking_mode === "historical_snapshot");
+const canRefreshPool = computed(() => selected.value?.pool_type === "dynamic"
+  || (indexDefinitionKnown.value && !isHistoricalIndex.value));
 const requestedAsOf = ref("");
 const dynamicMinimumMarketCap = ref<number | null>(null);
 const dynamicTopN = ref(50);
@@ -118,6 +125,7 @@ function closeCreate() {
   symbolsText.value = "";
   weightsText.value = "";
   indexSymbol.value = "";
+  indexTrackingMode.value = "follow_index";
   requestedAsOf.value = "";
   dynamicPreview.value = null;
   poolType.value = "custom";
@@ -205,6 +213,10 @@ async function loadIndexCatalog() {
 
 async function submit() {
   error.value = "";
+  if (poolType.value === "index" && indexTrackingMode.value === "historical_snapshot" && !requestedAsOf.value) {
+    ElMessage.warning("固定历史快照必须选择截至日期");
+    return;
+  }
   const symbols = symbolsText.value
     .split(",")
     .map((item) => item.trim())
@@ -244,6 +256,7 @@ async function submit() {
     const created = poolType.value === "index"
       ? await createIndexStockPool({
           index_symbol: indexSymbol.value,
+          tracking_mode: indexTrackingMode.value,
           name: name.value.trim() || undefined,
           description: description.value.trim() || undefined,
           requested_as_of: requestedAsOf.value?.replaceAll("-", "") || undefined,
@@ -265,6 +278,7 @@ async function submit() {
     symbolsText.value = "";
     weightsText.value = "";
     indexSymbol.value = "";
+    indexTrackingMode.value = "follow_index";
     requestedAsOf.value = "";
     poolType.value = "custom";
     await loadPools();
@@ -417,6 +431,7 @@ async function saveDynamicDefinition(status: "draft" | "active" | "paused" = pro
 }
 
 async function refreshIndexPool() {
+  if (!canRefreshPool.value) return;
   if (!selected.value?.pool_id || !["index", "dynamic"].includes(selected.value.pool_type ?? "")) return;
   busy.value = true;
   try {
@@ -556,8 +571,18 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
               </el-option>
             </el-select>
           </el-form-item>
-          <el-form-item label="截至日期（可选）">
-            <el-date-picker v-model="requestedAsOf" value-format="YYYY-MM-DD" placeholder="默认使用当前日期前最新完整快照" />
+          <el-form-item label="更新方式">
+            <el-radio-group v-model="indexTrackingMode" aria-label="指数股票池更新方式">
+              <el-radio-button value="follow_index">持续跟踪指数</el-radio-button>
+              <el-radio-button value="historical_snapshot">固定历史快照</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <el-alert :title="indexTrackingMode === 'historical_snapshot'
+            ? '只生成所选日期前的已验证成分快照，之后不会随新成分更新；缺少历史数据时不会使用未来成分替代。'
+            : '首次按截至日期生成；后续已验证成分导入后自动更新当前池，既有研究引用的历史快照保持冻结。'"
+            type="info" :closable="false" />
+          <el-form-item :label="indexTrackingMode === 'historical_snapshot' ? '截至日期（必选）' : '首次截至日期（可选）'">
+            <el-date-picker v-model="requestedAsOf" value-format="YYYY-MM-DD" :placeholder="indexTrackingMode === 'historical_snapshot' ? '选择历史截至日期' : '默认使用当前日期前最新完整快照'" />
           </el-form-item>
           <el-alert
             v-if="availableIndexCount < indexCatalog.length"
@@ -690,7 +715,7 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
         :description="selected.status === 'active' ? '停用后不再接受新的研究、回测或模拟操盘引用；历史快照和已有引用保持可复现。' : '重新启用后可接受新的下游引用；删除仍只建立不可恢复的目录墓碑。'"
       >
         <template #status><el-tag size="small">{{ statusLabel(selected.status) }}</el-tag></template>
-        <el-button v-if="selected.pool_type !== 'custom'" :loading="busy" @click="refreshIndexPool">刷新成分</el-button>
+        <el-button v-if="canRefreshPool" :loading="busy" @click="refreshIndexPool">刷新成分</el-button>
         <el-button v-if="selected.status === 'active'" :disabled="busy" @click="changeLifecycle('inactive')">停用</el-button>
         <el-button v-else-if="selected.status === 'inactive'" type="primary" :disabled="busy" @click="changeLifecycle('active')">启用</el-button>
         <el-button type="danger" plain :disabled="busy" @click="removeSelected">删除</el-button>
@@ -702,13 +727,18 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
             <el-descriptions-item label="状态"><el-tag>{{ statusLabel(selected.status) }}</el-tag></el-descriptions-item>
             <el-descriptions-item label="当前版本">{{ selected.version }}</el-descriptions-item>
             <el-descriptions-item label="成员数">{{ selected.member_count }}</el-descriptions-item>
-            <el-descriptions-item label="数据就绪度"><el-tag>{{ readiness?.state ?? "-" }}</el-tag></el-descriptions-item>
+            <el-descriptions-item label="数据就绪度"><el-tag>{{ statusLabel(readiness?.state) }}</el-tag></el-descriptions-item>
             <el-descriptions-item v-if="selected.pool_type !== 'custom'" label="物化状态">
-              <el-tag>{{ materializations[0]?.status ?? "等待任务" }}</el-tag>
+              <el-tag>{{ materializations[0]?.status ? statusLabel(materializations[0].status) : "等待任务" }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item v-if="selected.pool_type === 'index'" label="指数代码">
               {{ producer?.definition?.index_symbol ?? "-" }}
             </el-descriptions-item>
+            <el-descriptions-item v-if="selected.pool_type === 'index'" label="更新方式">{{ !indexDefinitionKnown ? "待核对" : isHistoricalIndex ? "固定历史快照（不自动更新）" : "持续跟踪指数" }}</el-descriptions-item>
+            <el-descriptions-item v-if="isHistoricalIndex" label="冻结截至日期">{{ producer?.definition?.frozen_as_of ?? "待核对" }}</el-descriptions-item>
+            <el-descriptions-item v-if="selected.pool_type === 'index'" label="数据中心成分日">{{ readiness?.source_snapshot_date ?? "待验证" }}</el-descriptions-item>
+            <el-descriptions-item v-if="selected.pool_type === 'index'" label="当前池成分日">{{ readiness?.current_snapshot_date ?? "待生成" }}</el-descriptions-item>
+            <el-descriptions-item v-if="selected.pool_type !== 'custom'" label="最近生成时间">{{ readiness?.updated_at ? formatChinaTime(readiness.updated_at) : "尚未完成" }}</el-descriptions-item>
             <el-descriptions-item v-if="selected.pool_type === 'dynamic'" label="规则状态">{{ producer?.status ?? "-" }}</el-descriptions-item>
           </el-descriptions>
           <el-form label-position="top" class="detail-form">
@@ -923,7 +953,3 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
   }
 }
 </style>
-  getStockPoolProducer,
-  listIndexPoolCatalog,
-  listStockPoolMaterializations,
-  refreshIndexStockPool,

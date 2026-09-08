@@ -1305,15 +1305,39 @@ class PaperTradingStore(PgStoreMixin):
     def record_pool_reference(
         self, snapshot_id: object, *, domain: str, reference_id: str, trusted_owner: str
     ) -> dict[str, object]:
-        snapshot = self.get_pool_snapshot(snapshot_id, trusted_owner=trusted_owner, include_members=False)
+        with self._transaction() as connection:
+            return self.record_pool_reference_in_transaction(
+                connection, snapshot_id, domain=domain, reference_id=reference_id,
+                trusted_owner=trusted_owner,
+            )
+
+    @staticmethod
+    def record_pool_reference_in_transaction(
+        connection, snapshot_id: object, *, domain: str, reference_id: str, trusted_owner: str
+    ) -> dict[str, object]:
+        """Share the caller's domain receipt transaction; lock against pool deletion."""
         if domain not in {
             "paper_order", "backtest", "research", "signal_producer", "ml_training", "ml_prediction"
         }:
             raise ValueError("stock pool reference domain is invalid")
-        pool = self.get_pool(snapshot["pool_id"], trusted_owner=trusted_owner)
-        if pool["status"] != "active":
+        execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                {"scope": f"pool-reference|{domain}|{reference_id}"})
+        snapshot = fetch_one(connection, """SELECT s.snapshot_id, s.pool_id, p.status
+            FROM stock_pool_snapshots s JOIN stock_pools p ON p.pool_id=s.pool_id
+            WHERE s.snapshot_id=:snapshot AND p.owner_principal=:owner FOR UPDATE OF p""",
+            {"snapshot": snapshot_id, "owner": trusted_owner})
+        if snapshot is None:
+            raise PaperTradingNotFound("stock pool snapshot not found")
+        existing = fetch_one(connection, """SELECT * FROM stock_pool_domain_references
+            WHERE domain=:domain AND reference_id=:reference""",
+            {"domain": domain, "reference": reference_id})
+        if existing is not None:
+            if existing["snapshot_id"] != snapshot_id or existing["owner_principal"] != trusted_owner:
+                raise PaperTradingConflict("stock pool reference identity was reused")
+            return {key: existing[key] for key in ("domain", "reference_id", "pool_id", "snapshot_id")}
+        if snapshot["status"] != "active":
             raise PaperTradingConflict("stock pool must be active for a new reference")
-        self._execute(
+        execute(connection,
             """INSERT INTO stock_pool_domain_references
                (domain, reference_id, pool_id, snapshot_id, owner_principal, created_at)
                VALUES (:domain, :reference_id, :pool_id, :snapshot_id, :owner, :created_at)
@@ -1322,7 +1346,6 @@ class PaperTradingStore(PgStoreMixin):
              "snapshot_id": snapshot["snapshot_id"], "owner": trusted_owner, "created_at": _now()},
         )
         return {"domain": domain, "reference_id": reference_id, "pool_id": snapshot["pool_id"], "snapshot_id": snapshot["snapshot_id"]}
-        return result
 
     def submit_order(self, payload: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):

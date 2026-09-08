@@ -155,7 +155,7 @@ export interface WorkflowActivityPayload {
   schema_version: "workflow-activity.v1";
   activity_id: string;
   phase: "understand" | "select" | "strategy" | "backtest" | "review" | "tool";
-  state: "started" | "progress" | "completed" | "failed" | "waiting_approval";
+  state: "started" | "progress" | "completed" | "failed" | "waiting_approval" | "unknown" | "cancelled" | "waiting";
   label: string;
   capability?: string;
   agent_label?: string;
@@ -432,6 +432,9 @@ export interface StockPoolReadiness {
   latest_run_id?: string | null;
   latest_run_status?: string | null;
   message?: string | null;
+  source_snapshot_date?: string | null;
+  current_snapshot_date?: string | null;
+  updated_at?: string | null;
 }
 
 export interface StockPoolSnapshotDiff {

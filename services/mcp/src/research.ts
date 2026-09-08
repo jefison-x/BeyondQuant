@@ -1,5 +1,7 @@
 import { bindActiveWebEvidenceProducer } from "./web-evidence-provenance.js";
 
+import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
+
 const BACKEND_TIMEOUT_MS = 8000;
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
@@ -20,6 +22,14 @@ export type ResearchTransitionRequest = {
   entity_id: string;
   target_status: string;
   idempotency_key: string;
+  progress?: {
+    schema_version: "research-progress.v1";
+    stage: string;
+    next_action: string | null;
+    blocked_reason: string | null;
+    linked_objects: Array<{ kind: "artifact" | "experiment"; id: string }>;
+    completion_evidence: string[];
+  };
 };
 
 export type ExperimentCreateRequest = {
@@ -60,6 +70,8 @@ function result(payload: unknown, isError: boolean): ByqResearchResult {
 }
 
 function errorStatus(status: number): string {
+  if (status === 401) return "research_unauthorized";
+  if (status === 403) return "research_forbidden";
   if (status === 404) return "research_not_found";
   if (status === 409) return "research_conflict";
   if (status === 422) return "research_request_invalid";
@@ -89,16 +101,19 @@ async function requestResearch(
       headers: { "content-type": "application/json", ...(init.headers ?? {}) },
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
+    if (isWriteRequest(init) && response.status >= 500) return unknownWriteResult(init);
     let payload: unknown;
     try {
       payload = await response.json();
     } catch {
+      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
       return result(
         { service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } },
         true,
       );
     }
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
       return result(
         { service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } },
         true,
@@ -132,6 +147,7 @@ async function requestResearch(
       : payload;
     return result({ service: "beyondquant-mcp", status: "ok", ...safePayload }, false);
   } catch {
+    if (isWriteRequest(init)) return unknownWriteResult(init);
     return result(
       { service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } },
       true,
@@ -208,7 +224,8 @@ export function fetchByqResearchTransition(
   return postResearch(
     backendUrl,
     `/v1/research/${collection}/${encodeURIComponent(request.entity_id)}/transitions`,
-    { target_status: request.target_status, idempotency_key: request.idempotency_key },
+    { target_status: request.target_status, idempotency_key: request.idempotency_key,
+      ...(request.progress ? { progress: request.progress } : {}) },
     fetcher,
   );
 }

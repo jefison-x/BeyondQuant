@@ -27,13 +27,14 @@ describe("research api client", () => {
       new Response(JSON.stringify({ task_id: "task_1", owner_principal: "alice" }), { status: 201 }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const task = await createTask("Momentum research", "Evaluate a bounded signal strategy");
+    const task = await createTask("Momentum research", "Evaluate a bounded signal strategy", "stable-task-request-1");
     expect(task.task_id).toBe("task_1");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/research/tasks",
       expect.objectContaining({
         method: "POST",
         credentials: "include",
+        headers: expect.objectContaining({ "x-idempotency-key": "stable-task-request-1" }),
         body: JSON.stringify({ title: "Momentum research", objective: "Evaluate a bounded signal strategy" }),
       }),
     );
@@ -52,6 +53,13 @@ describe("research api client", () => {
       "/api/product/approvals?limit=50&offset=0",
       expect.objectContaining({ credentials: "include" }),
     );
+  });
+
+  it("does not expose transport failures as a rejected task submission", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("private transport details")));
+    await expect(createTask("Task", "Goal", "stable-task-request-1")).rejects.toMatchObject({
+      status: 503, message: "提交结果尚未确认，请核对本次提交；不要新建任务。",
+    });
   });
 
   it("decides an approval through the product path", async () => {

@@ -2,8 +2,8 @@
 import type { WorkflowActivityPayload } from "@/api/types";
 
 defineProps<{ activities: Array<{ sequence: number; timestamp: string; payload: WorkflowActivityPayload }> }>();
-const stateType = (state: WorkflowActivityPayload["state"]) => ({ started: "primary", progress: "warning", completed: "success", failed: "danger", waiting_approval: "warning" }[state] as "primary" | "warning" | "success" | "danger");
-const stateLabel = (state: WorkflowActivityPayload["state"]) => ({ started: "进行中", progress: "处理中", completed: "已完成", failed: "未完成", waiting_approval: "等待确认" }[state]);
+const stateType = (state: WorkflowActivityPayload["state"]) => ({ started: "primary", progress: "warning", completed: "success", failed: "danger", waiting_approval: "warning", unknown: "warning", cancelled: "info", waiting: "warning" }[state] as "primary" | "warning" | "success" | "danger" | "info");
+const stateLabel = (state: WorkflowActivityPayload["state"]) => ({ started: "进行中", progress: "处理中", completed: "步骤已完成", failed: "失败", waiting_approval: "等待确认", unknown: "结果待核实", cancelled: "本轮已取消", waiting: "等待业务结果" }[state]);
 const phaseLabel = (phase: WorkflowActivityPayload["phase"]) => ({ understand: "理解需求", select: "研究数据", strategy: "策略研究", backtest: "回测分析", review: "结果确认", tool: "任务处理" }[phase]);
 </script>
 

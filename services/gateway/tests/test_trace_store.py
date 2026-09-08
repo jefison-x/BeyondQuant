@@ -33,6 +33,28 @@ def test_trace_store_is_append_only_and_replayable(tmp_path: Path) -> None:
         next(replay)
 
 
+def test_root_terminal_identity_survives_reopening_same_session(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path)
+    events = [
+        {**event(sequence, kind=kind), "payload": {"run_id": run_id}}
+        for sequence, kind, run_id in [
+            (1, "session.started", "root-first"),
+            (2, "session.failed", "root-first"),
+            (3, "session.started", "root-second"),
+            (4, "session.result", "root-second"),
+        ]
+    ]
+    for item in events:
+        assert store.append(item) is True
+    store.close("session-1")
+
+    reopened = TraceStore(tmp_path)
+    assert reopened.read("session-1") == events
+    assert [item["payload"]["run_id"] for item in reopened.read("session-1")] == [
+        "root-first", "root-first", "root-second", "root-second",
+    ]
+
+
 def test_trace_store_rejects_gaps_and_reused_sequences(tmp_path: Path) -> None:
     store = TraceStore(tmp_path)
     store.append(event(1))

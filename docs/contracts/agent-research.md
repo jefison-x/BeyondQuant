@@ -6,11 +6,18 @@ DSH 负责通用 role composition、skill loading、subagent lifecycle 和 deleg
 
 Product DSH 仅从经过认证的 Gateway 路径接收 session-scoped context header。MCP service 将该 context 转发给 Backend；model 永远不提供也不接收 product bearer token。Backend 会拒绝与 trusted context 不一致的 body identity。
 
+## Post-U8 修订（ADR-0062）
+
+协调角色 v2.1.0 新增封闭 `byq_index_pool_catalog/create/status`。指定日期的验证目录、
+幂等创建和精确回执核对不授予 Provider 或物化权限；只有可信 Worker 生成成员快照。
+旧 v2.0.0 AgentRun 不追溯取得这三个新权限。以下 Phase 58 的 index 限制由本条替代；
+dynamic、删除及任意 snapshot 写入限制保持不变。
+
 ## Roles
 
 版本化 catalogue 由 `byq_agent_roles` 暴露，目前包含：
 
-- `quant_orchestrator`（v2.0.0）：协调 hand-offs 和 consequential decisions；当用户明确要求时，
+- `quant_orchestrator`（v2.1.0）：协调 hand-offs 和 consequential decisions；当用户明确要求时，
   可经 BeyondQuant MCP list/get/create 当前 owner/workspace 的 custom Stock Pool；
 - `market_researcher`（v1.2.0）：提供 normalized market evidence 和冻结的候选列表，
   不创建或修改股票池；

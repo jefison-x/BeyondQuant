@@ -1,3 +1,5 @@
+import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
+
 const TIMEOUT_MS = 8_000;
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
 export type FeedbackResult = { content: Array<{ type: "text"; text: string }>; isError: boolean };
@@ -23,11 +25,16 @@ async function request(backendUrl: string, path: string, init: RequestInit, fetc
       headers: { "content-type": "application/json", ...(init.headers ?? {}) },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
+    if (isWriteRequest(init) && response.status >= 500) return unknownWriteResult(init);
     const payload = await response.json().catch(() => null) as unknown;
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
+      return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
+    }
     if (!response.ok) return result({ service: "beyondquant-mcp", status: "error", backend: { status: errorCode(response.status), http_status: response.status } }, true);
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
+    if (isWriteRequest(init)) return unknownWriteResult(init);
     return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
   }
 }

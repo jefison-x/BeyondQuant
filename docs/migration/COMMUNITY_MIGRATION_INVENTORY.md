@@ -9,7 +9,112 @@ BeyondQuant architecture 的内容。
 > 记录，以确保与只读 Community evidence 可逐项核对；这些内容不是复制旧实现
 > 的授权。
 
+## Post-U8 R1 historical outcome audit（2026-09-07）
+
+Post-U8 durable AgentRun closure: re-inspected Community
+`agent-service/app/workflows/contracts.py` GraphRun/GraphNode status and request/run
+identity read-only. Exact identity, terminal immutability and independent evidence
+are `REFERENCE_ONLY` / `PORT_TESTS`. Graph snapshots, executor, workflow persistence
+and old runtime coupling remain `DROP`; no code is copied. BYQ extends its existing
+AgentResearchStore and observes the qualified official SDK notification seam.
+The new store/observer components do not yet close the cross-service delivery gate.
+
+Post-U8 S3 historical membership: read-only Community `backend/app/models/market_data.py`
+IndexConstituentWeight/IndexWeightSyncState, `_run_index_weight_sync` and repository
+index month freshness/replacement/as-of selection were inspected. Date-bounded
+selection and explicit units/source are `REFERENCE_ONLY` / `PORT_TESTS`; destructive
+monthly replacement and “synced month implies complete” are `DROP`. No live cache
+rows have been certified by this inspection; it does not authorize migration or
+claim historical coverage. BYQ adds explicit once-only versus tracking identity
+to its existing index producer, not a new synchronization engine.
+
+Post-U8 F4 checkpoints: Community research/contracts.py and the complete frontend
+AgentThinking.vue were read-only inspected. Persisted goal, stage, exact evidence
+and blocker semantics are `REFERENCE_ONLY` / `PORT_TESTS`; concise Chinese stage
+labels are `PORT_UX`. Raw thought/tool events and default “step completed” are
+`DROP`. The existing BYQ ResearchTask transition and Product research table are
+extended; no Community workflow or execution graph is copied.
+
+Post-U8 generic research boundary: Community `agent-service/app/research/contracts.py`
+inspected read-only. Owner identity, explicit evidence references and completion
+evidence are `REFERENCE_ONLY` / `PORT_TESTS`; permissive client-supplied state and
+old orchestration are `REPLACE` / `DROP`. BYQ checks trusted owner/workspace and
+reserves authoritative Artifact kinds for existing typed domain producers.
+No Community code, database or runtime is copied or modified.
+
+Post-U8 runtime-context isolation: Community `agent-service/app/harness/roles.py`
+and `workflows/contracts.py` inspected read-only. Role/parent identity and explicit
+terminal status are `REFERENCE_ONLY`; old generic graph topology/executor is
+`DROP` for migration. BYQ extends existing AgentResearchStore checks and the
+official SDK Adapter environment, without copying graph execution or model binding.
+
+Post-U8 F8 instruction follow-up: read-only inspection of
+`agent-service/app/skills/builtin/python_strategy_generation/SKILL.md` retains
+“validate the strategy and never claim a backtest passed from generation alone”
+as `PORT_TESTS` / `REFERENCE_ONLY`. Its old publication workflow is `REPLACE`:
+new BYQ instructions use authoritative rule/ML Artifact kinds, exact original
+submission receipts and existing MCP authorization; no legacy harness is copied.
+
+Read-only inspection covered Community `frontend/src/views/AgentView.vue`
+(`submitMessage`, `openSession`) and the complete `components/agent/AgentThinking.vue`.
+Existing Phase 43/60 classifications remain in force; this slice changes only BYQ rendering.
+
+| Community behavior | Classification | BYQ decision / regression |
+|---|---|---|
+| Failed runs remain discoverable after reopening a session | `PORT_UX` / `PORT_TESTS` / `REFACTOR` | Replay normalized terminal events as distinct history records after later turns and restarts. |
+| Failure represented as an assistant message | `DROP` | Render operational outcomes separately; never append them to assistant messages or model history. |
+| Raw tool/error/reasoning fields and latest-artifact inference | `DROP` | Closed error labels only; historical outcome rendering neither selects a research object nor executes a retry. |
+
+No Community source or persistence was modified or copied. The first regression
+failed on the original BYQ view after a later `session.started`; the fixed view retains it.
+
+## Post-U8 R2 recovery audit（2026-09-07）
+
+Read-only Community `frontend/src/views/AgentView.vue` `openSession` was inspected:
+recovering the failed run's original request via `retry_content` is `REFERENCE_ONLY` /
+`PORT_TESTS`; BYQ derives a bounded public request and stable failure identity instead.
+Synthetic assistant failure messages and `fallbackBacktestId` / `inferBacktestId` /
+latest-artifact selection are `DROP` for task recovery. Missing or ambiguous subject
+must require confirmation. No Community code, database or runtime is copied or modified.
+
 ## Audit scope 与 evidence
+
+Post-U8 ML receipt-watch UI: read-only Community `frontend/src/views/BacktestView.vue`
+task-state display and selection refresh were inspected. Showing persisted task state is
+`PORT_UX`; fallback-to-first strategy/pool after an async selection change is `DROP` for
+an unresolved submission. BYQ fixes the original immutable identities, exposes bounded
+receipt-watch status through Product API, and never re-dispatches from a read action.
+
+Post-U8 research task submission: Community has no corresponding standalone research
+task page. Read-only `frontend/src/views/StrategyView.vue` save flow was inspected:
+disable-while-saving and preserve-form-on-failure are `PORT_UX`; raw API calls,
+raw errors and treating every failed response as a rejected write are `DROP`.
+BYQ preserves an unresolved task's scoped request identity across reload and uses
+only Product API; no legacy frontend component is copied.
+
+Post-U8 S1/S2: Community `backend/app/services/stock_pool_service.py` was inspected
+read-only. Owner-isolated creation and frozen membership-version references remain
+`REFERENCE_ONLY` / `PORT_TESTS`. Anonymous legacy visibility, mutable member lists,
+ORM architecture and deletion paths are `DROP`. BYQ reuses its existing index
+producer/materializer and adds bounded canonical-import compensation, never a new
+Provider fetch path or a Community storage migration.
+The Community `frontend/src/views/StockPoolView.vue` index summary, effective-date
+and history panels were also inspected. Explicit effective dates and maintenance
+semantics are `PORT_UX`; direct legacy APIs and global mutable index state are
+`DROP`. Current BYQ UI consumes only Product readiness/source/current-date fields.
+
+Post-U8 F1/F2 follow-up: read-only Community `backend/app/ops/sync_jobs.py`,
+strategy-validation and capability implementations were inspected. Durable receipt,
+stable request identity and claim/lease semantics are `REFERENCE_ONLY` / `PORT_TESTS`;
+training inside request/backtest processing and retry-with-new-key after unknown outcome
+are `DROP`. BYQ extends its existing ML store/Worker and exact MCP reads; no Community
+runtime, provider adapter or database is copied or modified.
+
+Post-U8 R3/R4/R5 follow-up: read-only Community AgentView/AgentThinking and
+`backend/app/ops/sync_jobs.py` were inspected. Honest waiting/terminal labels and
+separate lease/hard-bound semantics are `PORT_UX` / `REFERENCE_ONLY`; copying
+Community scheduler, ORM, raw Agent events or heartbeat-as-work renewal is `DROP`.
+BYQ uses only official DSH scheduling and its own normalized public projections.
 
 - Local reference: `/home/jefison/projects/BeyondQuant-community`.
 - Local reference revision: `58dd99d` on `agent/workspace-community`; the
@@ -1389,3 +1494,48 @@ The read-only Community references were inspected before completing the existing
 U2 retains `web-research-evidence.v1`, source/claim/time/usage validation and immutable
 Artifact hashes. Deployment-selected producer provenance is implemented in BYQ's existing
 MCP/Backend boundary. No Community file was changed or copied; generic search remains DSH-owned.
+# Post-U8 审批认领隔离补充
+
+- 只读检查 Community `agent-service/app/services/approval_executor.py` 与
+  `agent-service/tests/test_approval_workflow_recovery.py`。
+- “审批授权与领域执行结果分离”不变量为 `REFERENCE_ONLY`；旧自动续跑工作流、
+  状态混合与原始异常传播为 `DROP`。不复制旧执行器或引入第二通用 harness。
+- BYQ 在现有审批表及 Gateway 续接协议中增加事务化认领序号，测试重启与迟到回执。
+
+## Post-U8 F4 任务会话关联（2026-09-08）
+
+只读检查 Community `agent-service/app/research/contracts.py` 及 `repository.py` 的
+`create_task_for_run`：owner/request/session 的持久关联语义为 `REFERENCE_ONLY`；
+Agent 直写数据库、回合重试重开研究任务和旧状态机耦合为 `DROP`。在 BYQ ResearchStore
+中独立实现可信会话目录校验、原子创建关联和禁止幂等重绑，不复制旧实现。
+
+## Post-U8 F6 首版任务许可（2026-09-08）
+
+沿用已只读检查的 Community `agent-service/app/research/contracts.py`、`repository.py`
+及审批执行器分类：持久 owner/task/session 关联、固定证据引用为 `REFERENCE_ONLY`；
+Agent 直写业务数据库、自动重开旧任务及旧工作流执行器为 `DROP`。
+在 BYQ 原 ResearchTask 中独立保存明确的人类许可、确认制品摘要、幂等身份及撤销事实；
+不复制 Community 代码，不将原研究状态机或审批批准视为模型预算许可。
+
+## Post-U8 注销回执与界面（2026-09-08）
+
+实现前只读检查 Community `frontend/src/components/layout/UserSettingsMenu.vue` 和
+`frontend/src/auth/session.js`：用户菜单的明确退出操作为 `REFERENCE_ONLY`，保持现有 BYQ
+视觉与 Product API；旧 token 存储、直接旧 API、finally 无条件清理身份为 `DROP`。
+BYQ 独立校验注销回执，未知时保留原 cookie 供幂等重试，显示错误且不导航为已注销。
+没有复制旧 UI/认证代码或修改 Community。
+
+## Post-U8 F7 ML 输入校验（2026-09-08）
+
+只读检查 Community `backend/app/services/strategy_validation.py`：执行前校验、有限数值和
+可识别错误为 `REFERENCE_ONLY`；原 Python 脚本执行器、multiprocessing harness 及直接
+返回异常字符串为 `DROP`。BYQ 保留封闭 ML schema/registry，独立修复非法 JSON 类型、
+超大整数及嵌套字段定位，不引入旧执行栈；本切片不代表持久纠错计次已经实现。
+
+## Post-U8 S3 指数池更新方式界面（2026-09-08）
+
+实现前只读检查 Community `frontend/src/components/stocks/StockPoolDialog.vue` 全文与
+`frontend/src/views/StockPoolView.vue` 的指数成分/历史快照区：明确提交、有效日期、历史
+快照分离及移动端布局为 `REFERENCE_ONLY`；手工指定池身份和直接旧 API 为 `DROP`。
+旧页面没有本次固定历史/持续跟踪的明确创建选择，采用 `REPLACE`，在现有 BYQ 视觉和
+Product API 上独立实现模式选择、日期确认及只读定义展示，不复制旧组件/Provider 路径。

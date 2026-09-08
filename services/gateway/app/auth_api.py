@@ -55,8 +55,11 @@ def logout(request: Request) -> JSONResponse:
     if session_id:
         try:
             logout_user(session_id)
-        except ProductAuthError:
-            pass
+        except ProductAuthError as exc:
+            # Retain the exact session cookie for an idempotent retry; do not
+            # claim server-side revocation when its receipt is unavailable.
+            return JSONResponse(status_code=exc.status_code,
+                content={"error": {"code": exc.code, "message": exc.message}})
     response = JSONResponse(content={"status": "ok"})
     response.delete_cookie(SESSION_COOKIE, path="/")
     return response

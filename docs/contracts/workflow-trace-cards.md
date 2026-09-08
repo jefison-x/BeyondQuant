@@ -4,6 +4,18 @@
 
 ## Envelope 与 sources
 
+### Historical run outcomes（ADR-0062 / R1）
+
+`session.failed`、`session.cancelled`、`session.result.discarded` 的既有持久公开事件
+独立呈现为“运行记录”，不是 assistant message 或可执行 command。使用当前公开 session
+identity 与 event sequence 去重，按持久 timestamp 放入时间线；只使用封闭错误代码对应的
+文案，未知代码显示通用说明，不透传 payload/error/stack。不得写回或删除历史事件。
+
+同会话后续 `session.started` 只能标注“后续已发起新一轮”，不能声称原任务已完成或续跑了
+同一对象。`session.result` 不删除历史失败；ready/resumed 不算新回合。当前运行状态继续
+独立折叠，刷新、重新登录和 Gateway/Runtime 重启后从 Product API 重放这些记录。
+本显示修复不改变 wire schema，不定义写操作重试许可，也不代替 R2 的模型恢复合同。
+
 Cards 使用现有 `WorkflowTraceEvent` envelope。`source` 接受 `dsh`、`runtime-adapter`，并增加用于 Gateway-hydrated、owner-scoped Domain projection 的 `byq-domain`。`byq-domain` event 不得含只来自 model output 的 field。
 
 每个 serialized payload 是有限 JSON，最多 65,536 bytes。Gateway persistence/streaming 前执行精确 schema validation；拒绝 unknown fields、NaN/infinity、任意 URLs、HTTP request descriptors、credentials、raw runtime objects 和 tool arguments/results。
@@ -71,7 +83,12 @@ Artifact ID token 的回答 fail closed，不保留原文。
 {"schema_version":"workflow-activity.v1","activity_id":"activity_<hex>","phase":"strategy","state":"started","label":"校验策略草稿","agent_label":"量化研究 Agent","plugin_label":"BeyondQuant MCP","skill_label":"策略研究 Skill"}
 ```
 
-`phase` 为 `understand|select|strategy|backtest|review|tool`；`state` 为
+ADR-0062 追加 `unknown`（结果待核实）、`waiting`（等待业务结果）、`cancelled`（本轮取消）；
+它们不代表领域 job 成功或被取消。运行终态关闭未收口的公开步骤，不重写已知业务结果。
+`session.waiting` 只由 Runtime Adapter 每60秒生成，封闭字段为 `run_id`、`elapsed_seconds`、
+`last_activity_seconds`；不进入模型历史，不续租。工具 activity identity 按回合隔离。
+
+`phase` 为 `understand|select|strategy|backtest|review|tool`；既有 `state` 为
 `started|progress|completed|failed|waiting_approval`；`label` 为 1–240 characters。
 可选 `capability` 只为历史 v1 replay compatibility 保留；Phase 60 Adapter 不再生成该
 field。可选 `agent_label`、`plugin_label`、`skill_label` 只能由 Adapter 根据已观察到的

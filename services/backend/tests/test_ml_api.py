@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app import main as backend_main
 from app.main import _ml_pool_market_scope, app
@@ -9,6 +10,130 @@ from tests.workspace_helpers import trusted_agent_context
 
 
 client = TestClient(app)
+
+
+def test_training_receipt_precedes_coverage_scan_and_repair_and_retries_stay_stable(monkeypatch):
+    owner = "ml-receipt-owner"
+    headers = trusted_agent_context(owner)
+    task = backend_main.research_store.create_task({
+        "owner_principal": owner, "title": "Receipt", "objective": "Synthetic acceptance",
+        "trace_id": "receipt-trace", "idempotency_key": "receipt-task",
+    })
+    artifact = backend_main.research_store.create_artifact({
+        "task_id": task["task_id"], "kind": "ml_strategy_version", "content": backend_main.normalize_ml_strategy(valid_strategy()),
+        "lineage": [], "trace_id": "receipt-trace", "idempotency_key": "receipt-strategy",
+    })
+    backend_main.research_store.transition("artifact", artifact["artifact_id"], "validated", "receipt-validate")
+    monkeypatch.setattr(backend_main, "_approved_ml_strategy_artifact", lambda **kwargs: artifact)
+    pool = backend_main.paper_store.create_pool(
+        {"name": "Receipt synthetic pool", "symbols": ["000001.SZ"]}, trusted_owner=owner,
+    )
+    monkeypatch.setattr(backend_main.security_master_store, "latest_snapshot", lambda: {"snapshot_id": "master_original"})
+    def forbidden(*args, **kwargs):
+        raise AssertionError("expensive preparation ran before durable receipt")
+    monkeypatch.setattr(backend_main.market_readiness_store, "assess", forbidden)
+    monkeypatch.setattr(backend_main.market_automation_store, "request_data_repair", forbidden)
+    payload = {"task_id": task["task_id"], "ml_strategy_artifact_id": artifact["artifact_id"],
+               "stock_pool_snapshot_id": pool["current_snapshot_id"], "trace_id": "receipt-trace", "idempotency_key": "receipt-1"}
+    registered = client.post("/v1/research/ml/training-submissions", headers=headers, json=payload)
+    assert registered.status_code == 202, registered.text
+    watch = registered.json()["receipt_watch"]
+    assert watch["registration_created"] is True and watch["state"] == "awaiting_receipt"
+    duplicate_watch = client.post("/v1/research/ml/training-submissions", headers=headers, json=payload).json()["receipt_watch"]
+    assert duplicate_watch["watch_id"] == watch["watch_id"] and duplicate_watch["registration_created"] is False
+    assert client.post("/v1/research/ml/training-submissions", headers=headers,
+                       json={**payload, "experiment_id": "experiment_changed"}).status_code == 409
+    assert "identity_json" not in watch and "request_hash" not in watch
+    for mismatched in ({**payload, "stock_pool_snapshot_id": "snapshot_other"},
+                       {**payload, "unexpected": "invalid"}):
+        backend_main.ml_training_store.reject_receipt_watch(
+            mismatched, trusted_workspace=headers["x-byq-workspace-id"], trusted_owner=owner)
+        assert backend_main.ml_training_store.get_receipt_watch(
+            "receipt-1", trusted_workspace=headers["x-byq-workspace-id"], trusted_owner=owner,
+        )["state"] == "awaiting_receipt"
+    other_headers = trusted_agent_context("receipt-other-owner")
+    assert client.get("/v1/research/ml/training-submissions/reconcile", headers=other_headers,
+                      params={"idempotency_key": "receipt-1"}).status_code == 404
+    # Bound scheduled exact reads; restarting the store cannot reset the budget.
+    from app.ml_training import MLTrainingRunStore
+    for attempt in range(1, 9):
+        restarted = MLTrainingRunStore()
+        restarted._execute("UPDATE ml_training_receipt_watches SET next_check_at=now()-interval '1 second' WHERE watch_id=:id",
+                           {"id": watch["watch_id"]})
+        if attempt == 1:
+            from concurrent.futures import ThreadPoolExecutor
+            concurrent = MLTrainingRunStore()
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                assert sum(executor.map(lambda store: store.reconcile_receipt_watches(), [restarted, concurrent])) == 1
+            concurrent.close()
+        else:
+            assert restarted.reconcile_receipt_watches() == 1
+        current_watch = restarted.get_receipt_watch("receipt-1", trusted_workspace=headers["x-byq-workspace-id"], trusted_owner=owner)
+        assert current_watch["check_count"] == attempt
+        assert restarted.reconcile_receipt_watches() == 0
+        restarted.close()
+    assert current_watch["state"] == "needs_attention"
+    # A failure after inserting the reference must roll back the run and alias too.
+    from app.paper_trading import PaperTradingStore
+    original = PaperTradingStore.record_pool_reference_in_transaction
+    def fail_after_reference(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("synthetic transaction interruption")
+    with monkeypatch.context() as patch:
+        patch.setattr(PaperTradingStore, "record_pool_reference_in_transaction", staticmethod(fail_after_reference))
+        with pytest.raises(RuntimeError, match="synthetic transaction interruption"):
+            client.post("/v1/research/ml/training-runs", headers=headers, json=payload)
+    assert backend_main.ml_training_store._fetch_one(
+        "SELECT COUNT(*) AS n FROM ml_training_runs WHERE owner_principal=:owner", {"owner": owner},
+    )["n"] == 0
+    assert backend_main.ml_training_store._fetch_one(
+        "SELECT COUNT(*) AS n FROM ml_training_submission_keys WHERE owner_principal=:owner", {"owner": owner},
+    )["n"] == 0
+    assert backend_main.paper_store.pool_references(pool["pool_id"], trusted_owner=owner)["references"] == []
+    response = client.post("/v1/research/ml/training-runs", headers=headers, json=payload)
+    assert response.status_code == 202, response.text
+    run = response.json()["training_run"]
+    assert run["status"] == "waiting_for_data"
+    assert run["readiness"]["state"] == "pending"
+    confirmed_watch = client.get("/v1/research/ml/training-submissions/reconcile", headers=headers,
+                                 params={"idempotency_key": "receipt-1"}).json()["receipt_watch"]
+    assert confirmed_watch["state"] == "confirmed"
+    assert confirmed_watch["training_run_id"] == run["training_run_id"]
+    assert confirmed_watch["check_count"] == 8
+    references = backend_main.paper_store.pool_references(pool["pool_id"], trusted_owner=owner)["references"]
+    assert len(references) == 1 and references[0]["reference_count"] == 1
+    monkeypatch.setattr(backend_main.security_master_store, "latest_snapshot", lambda: {"snapshot_id": "master_new"})
+    retry = client.post("/v1/research/ml/training-runs", headers=headers, json=payload)
+    assert retry.status_code == 202, retry.text
+    assert retry.json()["training_run"]["training_run_id"] == run["training_run_id"]
+    alias = client.post("/v1/research/ml/training-runs", headers=headers, json={**payload, "idempotency_key": "receipt-2"})
+    assert alias.status_code == 202, alias.text
+    assert alias.json()["training_run"]["training_run_id"] == run["training_run_id"]
+    reconciled = client.get("/v1/research/ml/training-runs/reconcile", headers=headers,
+                            params={"idempotency_key": "receipt-2"})
+    assert reconciled.status_code == 200
+    assert reconciled.json()["training_run"]["training_run_id"] == run["training_run_id"]
+    other_pool = backend_main.paper_store.create_pool(
+        {"name": "Other receipt pool", "symbols": ["600000.SH"]}, trusted_owner=owner,
+    )
+    conflict = client.post("/v1/research/ml/training-runs", headers=headers,
+                           json={**payload, "stock_pool_snapshot_id": other_pool["current_snapshot_id"]})
+    assert conflict.status_code == 409
+    rejected_payload = {**payload, "idempotency_key": "rejected-submission"}
+    assert client.post("/v1/research/ml/training-submissions", headers=headers, json=rejected_payload).status_code == 202
+    with monkeypatch.context() as patch:
+        patch.setattr(backend_main, "_approved_ml_strategy_artifact", lambda **kwargs: None)
+        assert client.post("/v1/research/ml/training-runs", headers=headers, json=rejected_payload).status_code == 422
+    rejection = client.get("/v1/research/ml/training-submissions/reconcile", headers=headers,
+                           params={"idempotency_key": "rejected-submission"}).json()["receipt_watch"]
+    assert rejection["state"] == "rejected"
+    deadline_payload = {**payload, "idempotency_key": "deadline-submission"}
+    assert client.post("/v1/research/ml/training-submissions", headers=headers, json=deadline_payload).status_code == 202
+    backend_main.ml_training_store._execute("""UPDATE ml_training_receipt_watches
+        SET deadline_at=now()-interval '1 second' WHERE idempotency_key='deadline-submission'""")
+    deadline = client.get("/v1/research/ml/training-submissions/reconcile", headers=headers,
+                          params={"idempotency_key": "deadline-submission"}).json()["receipt_watch"]
+    assert deadline["state"] == "needs_attention" and deadline["check_count"] == 0
 
 
 def test_index_ml_pool_freezes_same_index_as_universe_and_benchmark() -> None:
@@ -79,13 +204,13 @@ def test_ml_training_reconcile_route_uses_trusted_workspace_and_owner(monkeypatc
     }
 
 
-def test_agent_context_inbox_includes_workspace_ml_progress(monkeypatch) -> None:
+def test_agent_context_inbox_requires_exact_session_ml_progress(monkeypatch) -> None:
     headers = trusted_agent_context("ml-notification-owner")
     captured: dict[str, str] = {}
     monkeypatch.setattr(backend_main.data_demand_store, "list_for_session", lambda **_kwargs: [])
 
-    def notifications(*, trusted_workspace, trusted_owner, limit=10):
-        captured.update(workspace=trusted_workspace, owner=trusted_owner)
+    def notifications(*, trusted_workspace, trusted_owner, trusted_session, trusted_trace, limit=10):
+        captured.update(workspace=trusted_workspace, owner=trusted_owner, session=trusted_session, trace=trusted_trace)
         return [{
             "kind": "ml_training_progress", "notification_id": "ml-training:run:now",
             "training_run_id": "mlrun_" + "c" * 32, "status": "running",
@@ -98,6 +223,7 @@ def test_agent_context_inbox_includes_workspace_ml_progress(monkeypatch) -> None
     assert response.json()["notifications"][0]["kind"] == "ml_training_progress"
     assert captured == {
         "workspace": headers["x-byq-workspace-id"], "owner": "ml-notification-owner",
+        "session": headers["x-byq-session-id"], "trace": headers["x-byq-trace-id"],
     }
 
 
@@ -169,7 +295,9 @@ def test_ml_strategy_endpoint_rejects_open_python_contract() -> None:
         "idempotency_key": "version-ml-reject",
     })
     assert response.status_code == 422
-    assert "unknown fields" in response.text
+    assert response.json()["detail"]["code"] == "unknown_fields"
+    assert response.json()["detail"]["field"] == "strategy"
+    assert "import lightgbm" not in response.text
 
 
 def test_ml_v2_strategy_version_and_approval_use_qualified_capability_lock() -> None:

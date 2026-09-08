@@ -377,7 +377,10 @@ def _backend_get(path: str) -> dict[str, object]:
             "GET", path, type(exc).__name__,
         )
         raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
-    body = response.json()
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise ProductError(502, "backend_invalid_response", "backend returned an invalid response") from exc
     if not isinstance(body, dict):
         raise ProductError(502, "backend_invalid_response", "backend returned an invalid response")
     return body
@@ -390,6 +393,10 @@ def _backend_request(
     headers: dict[str, str] | None = None,
     params: dict[str, str] | None = None,
 ) -> dict[str, object]:
+    mutating = method.upper() not in {"GET", "HEAD", "OPTIONS"}
+    def unknown() -> ProductError:
+        return ProductError(503, "operation_outcome_unknown",
+                            "操作结果尚未确认，请核对原任务；不要重新创建任务。")
     try:
         response = httpx.request(
             method,
@@ -413,6 +420,8 @@ def _backend_request(
                 "backend request rejected method=%s path=%s status=%s",
                 method, path, status,
             )
+            if mutating:
+                raise unknown() from exc
             raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
         raise ProductError(status, "product_domain_rejected", message) from exc
     except httpx.HTTPError as exc:
@@ -420,9 +429,18 @@ def _backend_request(
             "backend request failed method=%s path=%s error_type=%s",
             method, path, type(exc).__name__,
         )
+        if mutating:
+            raise unknown() from exc
         raise ProductError(503, "backend_unavailable", "backend is unavailable") from exc
-    body = response.json()
+    try:
+        body = response.json()
+    except ValueError as exc:
+        if mutating:
+            raise unknown() from exc
+        raise ProductError(502, "backend_invalid_response", "backend returned an invalid response") from exc
     if not isinstance(body, dict):
+        if mutating:
+            raise unknown()
         raise ProductError(502, "backend_invalid_response", "backend returned an invalid response")
     return body
 
@@ -493,8 +511,9 @@ def product_logout(request: Request) -> dict[str, object]:
     if session_id:
         try:
             logout_user(session_id)
-        except ProductAuthError:
-            pass
+        except ProductAuthError as exc:
+            return JSONResponse(status_code=exc.status_code,
+                content={"error": {"code": exc.code, "message": exc.message}})
     response = JSONResponse(content={"status": "ok"})
     response.delete_cookie(SESSION_COOKIE, path="/")
     return response
@@ -575,12 +594,55 @@ def product_research_tasks(request: Request) -> dict[str, object]:
     return _backend_request("GET", "/v1/research/tasks", headers=_trusted_agent_headers(request))
 
 
+def _continuation_permission_headers(request: Request) -> dict[str, str]:
+    # A deployment token or model-provided owner is never human consent.
+    if SESSION_COOKIE not in request.cookies:
+        raise ProductError(401, "product_authentication_required", "请先登录个人账号。")
+    if request.method != "GET" and request.headers.get("x-byq-continuation-confirmation") != "v1":
+        raise ProductError(403, "product_confirmation_required", "请明确确认任务续接许可操作。")
+    if request.headers.get("sec-fetch-site") == "cross-site":
+        raise ProductError(403, "product_forbidden", "不允许跨站许可操作。")
+    return _trusted_agent_headers(request)
+
+
+@router.get("/research/tasks/{task_id}/continuation-permission")
+def product_get_continuation_permission(task_id: str, request: Request) -> dict[str, object]:
+    return _backend_request("GET", f"/v1/research/tasks/{quote(task_id, safe='')}/continuation-permission",
+                            headers=_continuation_permission_headers(request))
+
+
+@router.post("/research/tasks/{task_id}/continuation-permission", status_code=201)
+def product_create_continuation_permission(task_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    headers = _continuation_permission_headers(request)
+    allowed = {"idempotency_key", "token_limit", "confirmed_artifact_ids", "max_turns", "valid_seconds", "turn_timeout_seconds"}
+    if set(payload) - allowed:
+        raise ProductError(422, "product_request_invalid", "续接许可包含不支持的字段。")
+    return _backend_request("POST", f"/v1/research/tasks/{quote(task_id, safe='')}/continuation-permission", payload, headers=headers)
+
+
+@router.post("/research/tasks/{task_id}/continuation-permission/revoke")
+def product_revoke_continuation_permission(task_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    headers = _continuation_permission_headers(request)
+    if set(payload) != {"grant_version"}:
+        raise ProductError(422, "product_request_invalid", "撤销需要原许可版本。")
+    return _backend_request("POST", f"/v1/research/tasks/{quote(task_id, safe='')}/continuation-permission/revoke", payload, headers=headers)
+
+
 @router.post("/research/tasks", status_code=201)
 def product_create_research_task(request: Request, payload: dict[str, object]) -> dict[str, object]:
     principal = _product_principal(request)
     if set(payload) != {"title", "objective"}:
         raise ProductError(422, "product_request_invalid", "research task request has invalid fields")
-    nonce = uuid.uuid4().hex
+    supplied = request.headers.get("x-idempotency-key")
+    if supplied is not None and (
+        not 8 <= len(supplied) <= 96
+        or not all(character.isascii() and (character.isalnum() or character in {"-", "_"}) for character in supplied)
+    ):
+        raise ProductError(422, "product_request_invalid", "research idempotency key has invalid format")
+    headers = _trusted_agent_headers(request)
+    nonce = hashlib.sha256(json.dumps([
+        headers["x-byq-workspace-id"], principal.subject, supplied or uuid.uuid4().hex,
+    ], separators=(",", ":")).encode()).hexdigest()[:40]
     return _backend_request(
         "POST",
         "/v1/research/tasks",
@@ -591,7 +653,7 @@ def product_create_research_task(request: Request, payload: dict[str, object]) -
             "trace_id": f"product-task-{nonce}",
             "idempotency_key": f"product-task-{nonce}",
         },
-        headers=_trusted_agent_headers(request),
+        headers=headers,
     )
 
 
@@ -601,8 +663,8 @@ def product_research_experiments(request: Request) -> dict[str, object]:
     return _backend_request("GET", "/v1/research/experiments", headers=_trusted_agent_headers(request))
 
 
-def _ml_nonce(prefix: str, request: Request) -> tuple[str, str]:
-    supplied = request.headers.get("x-idempotency-key")
+def _ml_nonce(prefix: str, request: Request, *, supplied_key: str | None = None) -> tuple[str, str]:
+    supplied = supplied_key if supplied_key is not None else request.headers.get("x-idempotency-key")
     if supplied is not None:
         supplied = supplied.strip()
         if not 8 <= len(supplied) <= 96 or not all(
@@ -759,6 +821,18 @@ def _ml_command(
         raise ProductError(422, "product_request_invalid", "ML research request has invalid fields")
     trace_id, idempotency_key = _ml_nonce(prefix, request)
     headers = _trusted_agent_headers(request)
+    if reconcile_training:
+        registration = _backend_request("POST", "/v1/research/ml/training-submissions",
+            {**payload, "trace_id": trace_id, "idempotency_key": idempotency_key}, headers=headers)
+        watch = registration.get("receipt_watch")
+        if not isinstance(watch, dict) or not isinstance(watch.get("watch_id"), str):
+            raise ProductError(503, "operation_outcome_unknown", "提交登记结果尚未确认，训练请求未继续发送。")
+        if watch.get("state") == "confirmed" and isinstance(watch.get("training_run_id"), str):
+            return _backend_request("GET", f"/v1/research/ml/training-runs/{quote(watch['training_run_id'], safe='')}", headers=headers)
+        if watch.get("state") == "rejected":
+            raise ProductError(409, "ml_submission_rejected", "原训练提交已被明确拒绝，请检查权限和输入后再提交。")
+        if watch.get("registration_created") is not True or watch.get("state") != "awaiting_receipt":
+            raise ProductError(503, "operation_outcome_unknown", "原训练提交仍在核对中；不会重复发送训练请求。")
     try:
         return _backend_request(
             "POST", path,
@@ -766,7 +840,7 @@ def _ml_command(
             headers=headers,
         )
     except ProductError as error:
-        if not reconcile_training or error.code != "backend_unavailable":
+        if not reconcile_training or error.code not in {"backend_unavailable", "operation_outcome_unknown"}:
             raise
         # The Backend may commit just after the Product API's POST timeout.
         # Reconcile the same browser key for a short bounded window instead of
@@ -789,6 +863,14 @@ def _ml_command(
                 "status": "confirmed", "reason": "create_response_timeout",
             }}
         raise error
+
+
+@router.get("/ml/training-submissions/reconcile")
+def product_ml_training_submission(request: Request, idempotency_key: str) -> dict[str, object]:
+    _product_principal(request)
+    _, key = _ml_nonce("training", request, supplied_key=idempotency_key)
+    return _backend_request("GET", "/v1/research/ml/training-submissions/reconcile",
+        params={"idempotency_key": key}, headers=_trusted_agent_headers(request))
 
 
 @router.post("/ml/strategies/versions", status_code=201)

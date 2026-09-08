@@ -133,9 +133,64 @@ paths:
       - $ref: "#/components/parameters/EntityType"
       - $ref: "#/components/parameters/EntityId"
     get: {summary: 获取 one owner-scoped research entity., responses: *okResponses}
+  /api/product/research/tasks/{task_id}/continuation-permission:
+    parameters:
+      - {name: task_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: 个人登录查询原任务的续接许可；当前执行资格未通过，can_start 始终为 false。
+      security: [{sessionCookie: []}]
+      responses: *okResponses
+    post:
+      summary: 明确确认 token 额度与原任务制品；持久幂等，不授予模型执行或金额保证。
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: x-byq-continuation-confirmation, in: header, required: true, schema: {type: string, enum: [v1]}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [idempotency_key, token_limit, confirmed_artifact_ids]
+              properties:
+                idempotency_key: {type: string, minLength: 1, maxLength: 128}
+                token_limit: {type: integer, minimum: 1, maximum: 9007199254740991}
+                confirmed_artifact_ids: {type: array, minItems: 1, maxItems: 16, uniqueItems: true, items: {type: string, maxLength: 64}}
+                max_turns: {type: integer, minimum: 1, maximum: 8, default: 8}
+                valid_seconds: {type: integer, minimum: 1, maximum: 86400, default: 86400}
+                turn_timeout_seconds: {type: integer, minimum: 1, maximum: 900, default: 900}
+      responses: *createdResponses
+  /api/product/research/tasks/{task_id}/continuation-permission/revoke:
+    parameters:
+      - {name: task_id, in: path, required: true, schema: {type: string}}
+    post:
+      summary: 个人登录撤销精确许可版本；重复撤销不复活或重置预算。
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: x-byq-continuation-confirmation, in: header, required: true, schema: {type: string, enum: [v1]}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [grant_version]
+              properties:
+                grant_version: {type: integer, minimum: 1}
+      responses: *okResponses
   /api/product/research/tasks:
     get: {summary: 列出 owner-scoped research tasks., responses: *okResponses}
-    post: {summary: 创建 an owner-scoped research task with server-owned identity fields., responses: *createdResponses}
+    post:
+      summary: 创建研究任务；同一提交重试保留身份，服务端绑定 owner/workspace。
+      parameters:
+        - name: x-idempotency-key
+          in: header
+          required: false
+          description: 浏览器须为一次提交持久保留此键，结果未知时不得换键。省略仅为旧客户端兼容，不保证重试去重。
+          schema: {type: string, minLength: 8, maxLength: 96, pattern: '^[A-Za-z0-9_-]+$'}
+      responses: *createdResponses
   /api/product/research/task-options:
     get: {summary: 返回策略编辑器使用的 bounded owner-scoped research task options., responses: *okResponses}
   /api/product/research/experiments:
@@ -163,6 +218,15 @@ paths:
     post: {summary: 记录 ML 策略版本的显式人工批准或拒绝。, responses: *createdResponses}
   /api/product/ml/training-runs:
     post: {summary: 对冻结股票池提交 durable qualified-profile ML 训练。, responses: *acceptedResponses}
+  /api/product/ml/training-submissions/reconcile:
+    get:
+      summary: 按原浏览器提交键读取持久核对状态；不重新提交训练。
+      parameters:
+        - name: idempotency_key
+          in: query
+          required: true
+          schema: {type: string, minLength: 8, maxLength: 96}
+      responses: *okResponses
   /api/product/ml/training-runs/{run_id}:
     parameters: [{$ref: "#/components/parameters/RunId"}]
     get: {summary: 获取 owner-scoped ML 训练状态和模型或模型包制品 ID。, responses: *okResponses}
@@ -426,6 +490,32 @@ paths:
     get: {summary: 重放 owner-scoped user messages and normalized WorkflowTrace events., responses: *okResponses}
     patch: {summary: 重命名、置顶、归档或恢复 an owner-scoped conversation., responses: *okResponses}
     delete: {summary: 归档并释放 an owner-scoped Product Agent session., responses: *noContentResponses}
+  /v1/agent/sessions/{session_id}/answer-delivery:
+    parameters: [{$ref: '#/components/parameters/SessionId'}]
+    get:
+      summary: 只读查询当前用户会话的公开回答投递状态；不重置重试预算或启动模型。
+      responses: *okResponses
+  /v1/agent/sessions/{session_id}/lifecycle-delivery:
+    parameters: [{$ref: '#/components/parameters/SessionId'}]
+    get:
+      summary: 只读查询当前用户会话的 AgentRun 终态投递状态，不启动模型或重置预算。
+      responses:
+        '200':
+          description: 投递进度不是研究目标完成证明；超限或无效事件需要人工核查。
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [schema_version, state, pending_events, exhausted_events, rejected_events, max_attempts, deadline_seconds]
+                properties:
+                  schema_version: {type: string, enum: [agent-run-delivery-status.v1]}
+                  state: {type: string, enum: [not_registered, pending, up_to_date, attention_required, unavailable]}
+                  pending_events: {type: integer, minimum: 0}
+                  exhausted_events: {type: integer, minimum: 0}
+                  rejected_events: {type: integer, minimum: 0}
+                  max_attempts: {type: integer, enum: [8]}
+                  deadline_seconds: {type: integer, enum: [86400]}
   /v1/agent/sessions/{session_id}/turns:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
     post: {summary: 提交 a turn to an owner-scoped Product Agent session., responses: *acceptedResponses}

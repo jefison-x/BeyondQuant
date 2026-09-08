@@ -6,7 +6,45 @@
 
 ## Entities
 
+### Post-U8 generic lineage boundary
+
+Generic Artifact creation validates `research_task`, `experiment` and `artifact`
+lineage references against trusted owner/workspace inside the receipt transaction.
+`stock_pool_snapshot` references must resolve to owned, active frozen snapshots;
+each distinct snapshot is registered atomically with the Artifact. The reference
+identity is the Artifact ID plus a SHA-256 of the snapshot ID, supporting multiple
+pools without overwriting earlier references. No additional reference grants execution.
+Other provenance labels are descriptive, not verified domain authority. A missing
+or foreign reference returns 404; an unavailable pool returns 409. A registration
+failure rolls back the Artifact and all references. Same-key creation is serialized
+and returns the original immutable receipt; historical records are not rewritten.
+
 ### ResearchTask
+
+Post-U8 F4：通用任务创建入口从 trusted runtime context 查找精确 Product conversation，
+在同一数据库事务内核对 owner/workspace/session/trace 和 active 状态并保存 `conversation_id`。
+Product Agent 缺失目录时拒绝创建；模型 payload 不能指定 conversation_id。原幂等键不允许
+跨会话重绑，历史无绑定任务保持 null，不按 trace/最新对象补绑。非会话领域生产器仍可创建
+无绑定任务；本切片不自动授予后台续接，也不代表所有专用生产器已接通会话关联。
+Agent ML 通知必须在 SQL 分页前按该关联核对会话、trace、owner/workspace 和 active 目录；
+其他会话及无绑定历史训练不进入当前会话 inbox。普通领域查询不因此失去既有授权访问。
+
+Post-U8 task checkpoints use the existing transition endpoint, with optional
+`progress` on ResearchTask only: schema `research-progress.v1`, a closed `stage`,
+`next_action`, optional `blocked_reason`, up to 16 exact `linked_objects` (Artifact
+or Experiment), and up to 16 Artifact IDs in `completion_evidence`. References
+must belong to the task and its owner/workspace; no latest-object fallback.
+Stages are planning, data_preparation, research, strategy, approval, training,
+prediction, backtest, comparison, blocked and completed. Progress is a durable
+domain checkpoint, not an execution plan or permission grant. Job identities
+remain discoverable through their exact typed Artifact lineage, not guessed.
+Same-key retries return the original checkpoint; changed checkpoints need a new
+key. Terminal tasks cannot acquire a new checkpoint. Generic API completion
+requires a completed checkpoint, no next action/blocker, and validated same-task
+result/report evidence. This checks persisted evidence, not the semantic quality
+of an investment conclusion. A model-turn terminal event never completes a task.
+Historical tasks are not rewritten or resumed. Automatic checkpoint updates and
+authorized background continuation require their separate acceptance evidence.
 
 `ResearchTask` 是 root research intent：
 
@@ -41,6 +79,19 @@ created_at, updated_at, version
 `content` 是有界 JSON。`content_sha256` 由 BYQ 基于 canonical JSON 计算，caller 不能提供。`lineage` 包含 task、experiment、data snapshot 或 parent artifact 的 typed references。Artifact status 为 `draft`、`validated` 或 `superseded`；Phase 9 不增加 business approval。
 
 ## Mutation semantics
+
+Post-U8 boundary correction (ADR-0062): every generic create/transition API
+requires trusted owner/workspace context and checks the referenced entity before
+writing. Missing identity is 401; another owner's entity is 404. Task ownership
+is not inferred from a caller-supplied task ID alone.
+
+Domain-produced Artifact kinds (rule/ML strategies and approvals, models,
+features, regimes, predictions, signals, backtest/factor results and web research
+evidence) cannot be created or transitioned through the generic Artifact API.
+Use the existing typed validator, approval or trusted Worker producer. A generic
+`validated` transition is not proof of approval, computation or research success.
+Generic research notes/evidence remain available; internal trusted producers
+retain their existing Store contracts. Historical rows are not rewritten.
 
 Create/transition requests 需要 caller 提供 `idempotency_key`，按 entity 和 owner scoped。相同 key 与相同 canonical request 返回原结果，不创建第二 entity；相同 key 搭配不同 input 返回 conflict。
 

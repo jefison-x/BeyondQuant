@@ -43,7 +43,15 @@ export const useAuthStore = defineStore("auth", {
       this.user = (await response.json()) as CurrentUser;
     },
     async logout() {
-      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+      try {
+        const response = await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+        const receipt = await response.json();
+        if (!response.ok || receipt?.status !== "ok" || Object.keys(receipt).length !== 1) {
+          throw new Error("invalid logout receipt");
+        }
+      } catch {
+        throw new Error("注销结果尚未确认，请重试退出登录。");
+      }
       this.user = null;
     },
   },
