@@ -284,6 +284,54 @@ def test_private_replay_cannot_change_catalog_binding(observed):
         store.consume_domain_call_evidence(evidence, **{**scope, "conversation_id": "conversation_foreign"})
 
 
+def test_agent_ml_correction_keeps_safe_field_problem_in_durable_receipt(observed):
+    from fastapi.testclient import TestClient
+    from app import main
+    from tests.test_ml_strategy import valid_strategy
+    from tests.test_agent_run_lifecycle import start
+    store, evidence, scope, ctx = observed
+    apply(store, ctx, evidence["root_run_id"], key="ml-problem", sequence=2)
+    run = start(store, ctx, "ml-problem", role_id="ml_researcher")
+    strategy = valid_strategy()
+    strategy["target"]["horizon_sessions"] = "synthetic-private-value"
+    payload = {"task_id": evidence["task_id"], "agent_run_id": run["run_id"],
+        "idempotency_key": "safe-problem", "strategy": strategy}
+    store.consume_domain_call_evidence({**evidence,
+        **request_evidence("byq_ml_strategy_create", payload, trace_id="trace-test"), "sequence": 3}, **scope)
+    client = TestClient(main.app)
+    headers = {**ctx, "x-byq-root-run-id": evidence["root_run_id"]}
+    reply = client.post("/v1/research/ml/strategies/versions", json=payload, headers=headers)
+    assert reply.status_code == 422, reply.text
+    detail = reply.json()["detail"]
+    assert detail["reason"] == "domain_validation_failed"
+    assert detail["validation"]["field"] == "target.horizon_sessions"
+    assert detail["validation"]["code"] == "integer_required"
+    assert "synthetic-private-value" not in reply.text
+    apply(store, ctx, evidence["root_run_id"], outcome="cancelled", sequence=5)
+    assert client.post("/v1/research/ml/strategies/versions", json=payload, headers=headers).json() == reply.json()
+    persisted = store._fetch_one("SELECT result_json FROM agent_domain_call_claims")["result_json"]
+    assert persisted["validation"] == detail["validation"]
+    assert "synthetic-private-value" not in str(persisted)
+
+
+def test_agent_strategy_static_rejection_has_value_free_diagnostic(observed):
+    from fastapi.testclient import TestClient
+    from app import main
+    from test_strategy_artifact import strategy_payload
+    store, evidence, scope, ctx = observed
+    payload = {"task_id": evidence["task_id"], "agent_run_id": evidence["agent_run_id"],
+        "idempotency_key": "static-problem", "strategy": strategy_payload(script="import synthetic_private_module")}
+    store.consume_domain_call_evidence({**evidence,
+        **request_evidence("byq_strategy_validate", payload, trace_id="trace-test"), "sequence": 3}, **scope)
+    response = TestClient(main.app).post("/v1/research/strategies/validate", json=payload,
+        headers={**ctx, "x-byq-root-run-id": evidence["root_run_id"]})
+    assert response.status_code == 422
+    problem = response.json()["detail"]["validation"]
+    assert problem["field"] == "strategy.script"
+    assert problem["code"] == "static_validation_failed"
+    assert "synthetic_private_module" not in response.text
+
+
 @pytest.mark.parametrize("action,path", [
     ("byq_strategy_validate", "/v1/research/strategies/validate"),
     ("byq_ml_strategy_create", "/v1/research/ml/strategies/versions"),

@@ -20,6 +20,19 @@ class CustomStrategy:
 """
 
 
+def test_strategy_problem_is_closed_and_does_not_serialize_diagnostics():
+    error = StrategyValidationError("synthetic private source and exception",
+        field="private-source-field", code="private-exception-code")
+    assert error.public_problem() == {"schema_version": "strategy-validation-problem.v1",
+        "field": "strategy", "code": "invalid_strategy", "repair_limit": 1,
+        "next_action": "read_strategy_contract_then_correct_once"}
+    from app.domain_call_admission import DomainValidationRejected
+    rejection = DomainValidationRejected("private", validation_error=error)
+    assert rejection.validation == error.public_problem()
+    assert "private" not in str(rejection.validation)
+    assert DomainValidationRejected("private", validation_error={"field": "private"}).validation is None
+
+
 def strategy_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "strategy_id": "MomentumStrategy",

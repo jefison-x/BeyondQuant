@@ -9,7 +9,10 @@ export function safeDomainAdmission(payload: unknown) {
   if (!detail || typeof detail !== "object" || Array.isArray(detail)) return undefined;
   const value = detail as Record<string, unknown>;
   if (value.schema_version !== "domain-call-admission.v1"
-    || !Object.keys(value).every(key => ["schema_version", "state", "reason"].includes(key))) return undefined;
+    || !Object.keys(value).every(key => ["schema_version", "state", "reason", "validation"].includes(key))) return undefined;
+  // Validation is a separate, sanitized projection; never copy it into the
+  // closed native-stop marker or let it change the durable admission decision.
+  if ("validation" in value && value.state !== "correctable_failure") return undefined;
   if (value.state === "unknown" && value.reason === undefined) {
     return { schema_version: "domain-call-admission.v1", state: "unknown", stop: true };
   }

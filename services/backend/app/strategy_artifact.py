@@ -91,26 +91,43 @@ _SECRET_KEY_FRAGMENTS = (
 class StrategyValidationError(ValueError):
     """Raised when a strategy violates the BYQ strategy contract."""
 
+    def __init__(self, message, *, field="strategy", code="invalid_strategy"):
+        super().__init__(message)
+        fields = {"strategy", *("strategy." + item for item in (
+            "strategy_id", "name", "category", "description", "parameters", "parameter_schema",
+            "data_requirements", "source_type", "script")),
+            *("strategy.data_requirements." + item for item in (
+                "benchmark", "index_universe", "daily_basic", "fundamentals"))}
+        codes = {"invalid_strategy", "text_required", "object_required", "unknown_fields", "too_large",
+            "invalid_json", "unsupported_value", "invalid_format", "credential_fields_forbidden",
+            "static_validation_failed"}
+        self.field = field if field in fields else "strategy"
+        self.code = code if code in codes else "invalid_strategy"
+
+    def public_problem(self):
+        return {"schema_version": "strategy-validation-problem.v1", "field": self.field,
+            "code": self.code, "repair_limit": 1, "next_action": "read_strategy_contract_then_correct_once"}
+
 
 def _text(value: object, field: str, maximum: int) -> str:
     if not isinstance(value, str) or not value.strip():
-        raise StrategyValidationError(f"{field} must be a non-empty string")
+        raise StrategyValidationError(f"{field} must be a non-empty string", field=field, code="text_required")
     result = value.strip()
     if len(result) > maximum:
-        raise StrategyValidationError(f"{field} exceeds {maximum} characters")
+        raise StrategyValidationError(f"{field} exceeds {maximum} characters", field=field, code="too_large")
     return result
 
 
 def _object(value: object, field: str) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise StrategyValidationError(f"{field} must be an object")
+        raise StrategyValidationError(f"{field} must be an object", field=field, code="object_required")
     return value
 
 
 def _reject_unknown(value: dict[str, Any], allowed: set[str], field: str) -> None:
     unknown = sorted(set(value) - allowed)
     if unknown:
-        raise StrategyValidationError(f"{field} has unknown fields: {', '.join(unknown)}")
+        raise StrategyValidationError(f"{field} has unknown fields: {', '.join(unknown)}", field=field, code="unknown_fields")
 
 
 def _reject_secret_keys(value: object) -> None:
@@ -118,7 +135,7 @@ def _reject_secret_keys(value: object) -> None:
         for key, nested in value.items():
             normalized = "".join(character for character in str(key).lower() if character.isalnum())
             if any(fragment in normalized for fragment in _SECRET_KEY_FRAGMENTS):
-                raise StrategyValidationError("strategy payload must not contain credential fields")
+                raise StrategyValidationError("strategy payload must not contain credential fields", code="credential_fields_forbidden")
             _reject_secret_keys(nested)
     elif isinstance(value, list):
         for nested in value:
@@ -136,9 +153,9 @@ def _canonical_json(value: object, field: str) -> tuple[object, str]:
             separators=(",", ":"),
         ).encode("utf-8")
     except (TypeError, ValueError) as error:
-        raise StrategyValidationError(f"{field} must be finite JSON") from error
+        raise StrategyValidationError(f"{field} must be finite JSON", field=field, code="invalid_json") from error
     if len(encoded) > MAX_JSON_BYTES:
-        raise StrategyValidationError(f"{field} exceeds {MAX_JSON_BYTES} bytes")
+        raise StrategyValidationError(f"{field} exceeds {MAX_JSON_BYTES} bytes", field=field, code="too_large")
     return json.loads(encoded), encoded.decode("utf-8")
 
 
@@ -321,28 +338,28 @@ def _strategy_snapshot(value: object) -> dict[str, Any]:
     )
     strategy_id = _text(strategy.get("strategy_id"), "strategy.strategy_id", 64)
     if _ID_PATTERN.fullmatch(strategy_id) is None:
-        raise StrategyValidationError("strategy.strategy_id has invalid format")
+        raise StrategyValidationError("strategy.strategy_id has invalid format", field="strategy.strategy_id", code="invalid_format")
     name = _text(strategy.get("name"), "strategy.name", 200)
     category = _text(strategy.get("category"), "strategy.category", 32)
     if category not in _CATEGORIES:
-        raise StrategyValidationError("strategy.category is not supported")
+        raise StrategyValidationError("strategy.category is not supported", field="strategy.category", code="unsupported_value")
     source_type = _text(strategy.get("source_type", "python_script"), "strategy.source_type", 32)
     if source_type not in _SOURCE_TYPES:
-        raise StrategyValidationError("strategy.source_type must be python_script")
+        raise StrategyValidationError("strategy.source_type must be python_script", field="strategy.source_type", code="unsupported_value")
     raw_description = strategy.get("description")
     if raw_description is None:
         description = ""
     elif not isinstance(raw_description, str):
-        raise StrategyValidationError("strategy.description must be a string")
+        raise StrategyValidationError("strategy.description must be a string", field="strategy.description", code="text_required")
     else:
         description = raw_description.strip()
         if len(description) > 4000:
-            raise StrategyValidationError("strategy.description exceeds 4000 characters")
+            raise StrategyValidationError("strategy.description exceeds 4000 characters", field="strategy.description", code="too_large")
     parameters, _ = _canonical_json(_object(strategy.get("parameters", {}), "strategy.parameters"), "strategy.parameters")
     parameter_schema, _ = _canonical_json(_object(strategy.get("parameter_schema", {}), "strategy.parameter_schema"), "strategy.parameter_schema")
     script = _text(strategy.get("script"), "strategy.script", MAX_SCRIPT_BYTES)
     if len(script.encode("utf-8")) > MAX_SCRIPT_BYTES:
-        raise StrategyValidationError(f"strategy.script exceeds {MAX_SCRIPT_BYTES} bytes")
+        raise StrategyValidationError(f"strategy.script exceeds {MAX_SCRIPT_BYTES} bytes", field="strategy.script", code="too_large")
     snapshot = {
         "strategy_id": strategy_id,
         "name": name,
@@ -364,17 +381,20 @@ def _strategy_snapshot(value: object) -> dict[str, Any]:
             if requirements.get(key) is not None:
                 symbol = _text(requirements[key], f"strategy.data_requirements.{key}", 24).upper()
                 if _INDEX_SYMBOL_PATTERN.fullmatch(symbol) is None:
-                    raise StrategyValidationError(f"strategy.data_requirements.{key} has invalid index symbol")
+                    raise StrategyValidationError(f"strategy.data_requirements.{key} has invalid index symbol",
+                        field=f"strategy.data_requirements.{key}", code="invalid_format")
                 normalized_requirements[key] = symbol
         for key, allowed in (("daily_basic", _DAILY_BASIC_FIELDS), ("fundamentals", _FUNDAMENTAL_FIELDS)):
             raw = requirements.get(key, [])
             if not isinstance(raw, list) or len(raw) > 12 or any(not isinstance(item, str) for item in raw):
-                raise StrategyValidationError(f"strategy.data_requirements.{key} must be a bounded field list")
+                raise StrategyValidationError(f"strategy.data_requirements.{key} must be a bounded field list",
+                    field=f"strategy.data_requirements.{key}", code="unsupported_value")
             fields = sorted(set(raw))
             unknown = sorted(set(fields) - allowed)
             if unknown:
                 raise StrategyValidationError(
-                    f"strategy.data_requirements.{key} has unsupported fields: {', '.join(unknown)}"
+                    f"strategy.data_requirements.{key} has unsupported fields: {', '.join(unknown)}",
+                    field=f"strategy.data_requirements.{key}", code="unsupported_value"
                 )
             if fields:
                 normalized_requirements[key] = fields
@@ -395,7 +415,8 @@ def prepare_strategy(value: object) -> dict[str, Any]:
         },
     }
     if not validation["success"]:
-        raise StrategyValidationError("strategy failed BYQ static validation: " + "; ".join(static_check["errors"]))
+        raise StrategyValidationError("strategy failed BYQ static validation: " + "; ".join(static_check["errors"]),
+            field="strategy.script", code="static_validation_failed")
     identity = {
         "schema_version": STRATEGY_VERSION_SCHEMA_VERSION,
         "strategy_id": snapshot["strategy_id"],

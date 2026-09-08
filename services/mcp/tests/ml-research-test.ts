@@ -9,6 +9,19 @@ import {
 const backend = "http://backend:8000";
 const runId = "mlrun_0123456789abcdef0123456789abcdef";
 
+for (const reason of ["domain_validation_failed", "correction_failed"]) {
+  const response = await fetchByqMlStrategyCreate(backend, {}, async () => Response.json({ detail: {
+    schema_version: "domain-call-admission.v1", state: "correctable_failure", reason,
+    validation: { schema_version: "ml-validation-problem.v1", field: "target.horizon_sessions",
+      code: "integer_required", message: "private-value", allowed_values: ["private-value"] },
+  } }, { status: 422 }));
+  const value = JSON.parse(response.content[0].text).backend;
+  assert.equal(value.validation.field, "target.horizon_sessions");
+  assert.equal(value.admission.stop, reason === "correction_failed");
+  assert.equal(value.admission.validation, undefined);
+  assert.doesNotMatch(response.content[0].text, /private-value/);
+}
+
 for (const field of ["validation_plan.parameters.folds", "learner.parameters.alpha", "experts.0.learner.parameters.alpha", "experts.0.training_regimes"]) {
   const value = await fetchByqMlStrategyCreate(backend, {}, async () => new Response(JSON.stringify({ detail: {
     schema_version: "ml-validation-problem.v1", field, code: "out_of_range", message: "secret must never pass",
