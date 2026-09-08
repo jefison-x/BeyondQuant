@@ -162,9 +162,11 @@ class UserAuthStore(PgStoreMixin):
             raise UserAuthPersistenceError("user storage is unavailable") from exc
 
     def bootstrap_schema(self) -> None:
+        from .db import schema_bootstrap_lock
         super().bootstrap_schema()
         # Column back-migration parity with the former SQLite schema.
         with self.engine.begin() as connection:
+            schema_bootstrap_lock(connection)
             ensure_column(connection, "users", "preferences", "TEXT")
             ensure_column(connection, "users", "default_prompt", "TEXT")
             users = execute(connection, "SELECT user_id, display_name FROM users ORDER BY user_id")

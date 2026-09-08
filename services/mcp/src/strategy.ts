@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
+import { safeDomainAdmission } from "./domain-admission.js";
 
 const BACKEND_TIMEOUT_MS = 8000;
 const MAX_VALIDATION_DETAIL_CHARACTERS = 1200;
@@ -93,6 +94,7 @@ async function requestStrategy(
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (!response.ok) {
+      const admission = safeDomainAdmission(payload);
       const validationMessage = response.status === 422 ? safeValidationMessage(payload) : undefined;
       return result(
         {
@@ -101,6 +103,7 @@ async function requestStrategy(
           backend: {
             status: errorStatus(response.status),
             http_status: response.status,
+            ...(admission ? { admission } : {}),
             ...(validationMessage
               ? { validation: { message: validationMessage, repair_limit: 1 } }
               : {}),

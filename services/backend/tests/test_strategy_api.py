@@ -243,7 +243,7 @@ def test_agent_strategy_approval_is_bound_to_exact_resource_and_human_decision(m
     draft = client.post("/v1/research/strategies/validate", json={
         "task_id": task["task_id"], "strategy": strategy_payload(), "trace_id": "approval-trace",
         "idempotency_key": "approval-binding-draft",
-    }).json()
+    }, headers=human_headers).json()  # Human fixture setup; Agent approval remains separately gated below.
     version = client.post("/v1/research/strategies/versions", json={
         "task_id": task["task_id"], "draft_artifact_id": draft["artifact"]["artifact_id"],
         "trace_id": "approval-trace", "idempotency_key": "approval-binding-version",

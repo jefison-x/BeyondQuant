@@ -15,6 +15,13 @@ function event(sequence: number, kind: string, payload: Record<string, unknown>)
 }
 
 describe("workflow projections", () => {
+  it.each(["domain-correction-stopped", "domain-call-reference-unproven", "domain-call-retention-bound"])(
+    "keeps %s as a stopped outcome without blind retry", code => {
+      const events = [event(1, "session.started", {}), event(2, "session.failed", { code, retryable: false })];
+      expect(workflowOutcomes(events, "session-1")[0].message).toContain("停止");
+      expect(workflowOutcomes(events, "session-1")[0].message).not.toContain("直接重试");
+      expect(workflowRunState(events).retryable).toBe(false);
+    });
   it("shows bounded waiting separately and clears it on terminal or next turn", () => {
     const wait = event(2, "session.waiting", { run_id: "run", elapsed_seconds: 60, last_activity_seconds: 20 });
     expect(workflowWaiting([event(1, "session.started", {}), wait], "session-1")).toEqual({ elapsed: 60, quiet: 20 });

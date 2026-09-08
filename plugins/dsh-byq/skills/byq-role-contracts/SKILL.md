@@ -19,6 +19,17 @@ Missing results or unfinished domain jobs must keep the task incomplete.
 Specialist roles without `byq_research_transition` return the exact checkpoint
 facts to the coordinator; they must not call a tool outside their allowlist.
 
+After an interrupted turn, use `byq_agent_context.research_context` to discover
+tasks bound to this exact conversation, then read the exact matching task with
+`byq_research_get` before proposing continuation. The bounded summaries are
+candidates, not a selected task, completed evidence, or permission to execute.
+The latest explicit user instruction takes precedence over an earlier objective.
+If several tasks could match, ask for clarification; never choose the workspace's
+latest task. `none_bound`, `unavailable`, or `has_more=true` cannot prove that the
+original submission never happened. Do not recreate a task with a new key merely
+because its original receipt is missing. This read-only discovery does not grant
+background continuation or restore a terminal Agent run's authorization.
+
 Use the specialized DSH delegation tools for focused work. Start a BYQ agent
 run before domain work, then call `byq_agent_authorize` before a domain action
 and `byq_agent_audit` with the bounded outcome afterward.

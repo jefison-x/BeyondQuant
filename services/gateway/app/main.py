@@ -44,11 +44,13 @@ VERSION = "0.1.0"
 async def lifespan(app):
     lifecycle_delivery.start()
     answer_delivery.start()
+    domain_call_delivery.start()
     try:
         yield
     finally:
         lifecycle_delivery.close()
         answer_delivery.close()
+        domain_call_delivery.close()
 
 
 app = FastAPI(title="BeyondQuant Gateway", version=VERSION, lifespan=lifespan)
@@ -69,18 +71,14 @@ def _send_agent_lifecycle(context, event):
     if reply != {"receipt": lifecycle_receipt(event)}:
         raise ValueError("lifecycle receipt mismatch")
     if event["outcome"] != "active":
-        try:
-            acknowledged = _adapter_post(
-                f"/internal/runtime/sessions/{context['session_id']}/terminal-receipt",
-                payload=reply, timeout=5.0)
-        except HTTPException as exc:
-            if exc.status_code != 404:
-                raise
-            # No reusable old process remains. A new Adapter generation cannot
-            # authorize an old AgentRun; Backend's receipt is still durable.
-        else:
-            if acknowledged != reply:
-                raise ValueError("runtime terminal acknowledgement mismatch")
+        # ADR-0067: a missing process is not a durable acknowledgement. The
+        # Adapter can now persist this receipt using its journal alone. Any
+        # missing evidence remains a bounded pending delivery, including 404.
+        acknowledged = _adapter_post(
+            f"/internal/runtime/sessions/{context['session_id']}/terminal-receipt",
+            payload=reply, timeout=5.0)
+        if acknowledged != reply:
+            raise ValueError("runtime terminal acknowledgement mismatch")
     return reply
 
 
@@ -129,6 +127,23 @@ def _send_owned_answer(context, event):
 
 answer_delivery = LifecycleDelivery(
     os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), trace_store, _send_owned_answer, answers=True)
+
+
+def _read_domain_calls(context, cursor):
+    return _adapter_post(f"/internal/runtime/sessions/{context['session_id']}/domain-call-evidence", payload={
+        "trace_id": context["trace_id"], "owner": context["owner"], "workspace_id": context["workspace_id"],
+        "after_sequence": cursor}, timeout=5.0)
+
+
+def _send_domain_call(context, event):
+    return _catalog_request("POST", f"/internal/domain-call-evidence/{context['conversation_id']}",
+        Principal(subject=context["owner"]), context["workspace_id"], payload={
+            "session_id": context["session_id"], "trace_id": context["trace_id"], "event": event})
+
+
+domain_call_delivery = LifecycleDelivery(
+    os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), trace_store,
+    _send_domain_call, private_source=_read_domain_calls)
 
 
 def require_chat_admission():
@@ -498,6 +513,7 @@ def _adapter_prompt_receipt(session_id: str, key: str, content: str) -> dict[str
 
 def _start_trace_collector(session: ProductSession) -> None:
     lifecycle_delivery.register(session)
+    domain_call_delivery.register(session)
     _register_answer_delivery(session)
     thread = threading.Thread(
         target=_collect_trace,
@@ -749,6 +765,42 @@ def _product_session(request: Request, session_id: str) -> ProductSession:
         return _restore_product_session(session_id, principal, workspace_id)
 
 
+def _runtime_recovery_payload(session: ProductSession) -> dict[str, object]:
+    """Fresh, bounded public history for one newly admitted root, never DSH state."""
+    catalog = _catalog_request("GET", f"/v1/product/conversations/{session.conversation_id}",
+                               session.principal, session.workspace_id)
+    if not isinstance(catalog.get("messages"), list):
+        raise HTTPException(status_code=502, detail="conversation history projection is unavailable")
+    events = trace_store.read(session.session_id)
+    owned = [event for event in events if event.get("session_id") == session.session_id
+             and event.get("trace_id") == session.trace_id and event.get("source") == "runtime-adapter"]
+    terminals = [event for event in owned if event["kind"] in {
+        "session.result", "session.failed", "session.cancelled", "session.result.discarded"}]
+    if terminals and terminals[-1]["kind"] == "session.result":
+        terminal = terminals[-1]
+        starts = [event for event in owned if event["kind"] == "session.started"
+                  and event["sequence"] < terminal["sequence"]
+                  and event.get("payload", {}).get("run_id") == terminal.get("payload", {}).get("run_id")]
+        if starts:
+            context = {"session_id": session.session_id, "trace_id": session.trace_id}
+            for event in owned:
+                if not starts[-1]["sequence"] < event["sequence"] < terminal["sequence"]:
+                    continue
+                answer = answer_delivery._project(event, context)
+                if answer and not any(message.get("role") == "assistant"
+                        and message.get("workflow_sequence") == answer["sequence"]
+                        and isinstance(message.get("content"), str)
+                        and message["content"].strip() == answer["content"]
+                        for message in catalog["messages"] if isinstance(message, dict)):
+                    raise HTTPException(status_code=503, detail="previous public answer persistence is pending")
+    public_messages, recovery = project_recovery(
+        catalog["messages"], events, session.session_id, session.trace_id)
+    payload: dict[str, object] = {"conversation_context": _conversation_context(public_messages)}
+    if recovery is not None:
+        payload["conversation_recovery"] = recovery
+    return payload
+
+
 def _replace_lost_runtime_session(session: ProductSession) -> ProductSession:
     """Rehydrate durable context after the Adapter lost only its private state."""
 
@@ -811,7 +863,8 @@ def _continue_approval_conversation(
     try:
         session = _product_session(request, conversation_id)
         payload = {"content": instruction, "require_model_key": True,
-                   "idempotency_key": f"approval-continuation-{approval_id}"}
+                   "idempotency_key": f"approval-continuation-{approval_id}",
+                   **_runtime_recovery_payload(session)}
         try:
             prompt_attempted = True
             receipt = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
@@ -991,11 +1044,14 @@ def submit_product_turn(
     http_request: Request,
 ) -> dict[str, object]:
     session = _product_session(http_request, session_id)
+    # Snapshot before saving the new demand, so a short "continue" cannot
+    # replace the previous unanswered research subject in recovery context.
+    recovery_payload = _runtime_recovery_payload(session)
     persisted = _catalog_request(
         "POST", f"/v1/product/conversations/{session.conversation_id}/messages",
         session.principal, session.workspace_id, payload={"content": request.content},
     )
-    prompt_payload = {"content": request.content, "require_model_key": True}
+    prompt_payload = {"content": request.content, "require_model_key": True, **recovery_payload}
     persisted_message = persisted.get("message")
     message_id = persisted_message.get("message_id") if isinstance(persisted_message, dict) else None
     if not isinstance(message_id, str) or not 8 <= len(message_id) <= 128 or message_id.strip() != message_id:
@@ -1038,16 +1094,7 @@ def submit_product_turn(
 @app.post("/v1/agent/sessions/{session_id}/resume", dependencies=[Depends(require_chat_admission)])
 def resume_product_session(session_id: str, request: Request) -> dict[str, object]:
     session = _product_session(request, session_id)
-    catalog = _catalog_request(
-        "GET", f"/v1/product/conversations/{session.conversation_id}",
-        session.principal, session.workspace_id,
-    )
-    public_messages, recovery = project_recovery(
-        catalog.get("messages"), trace_store.read(session.session_id), session.session_id, session.trace_id,
-    )
-    resume_payload = {"conversation_context": _conversation_context(public_messages)}
-    if recovery is not None:
-        resume_payload["conversation_recovery"] = recovery
+    resume_payload = _runtime_recovery_payload(session)
     try:
         body = _adapter_post(
             f"/internal/runtime/sessions/{session.session_id}/resume",

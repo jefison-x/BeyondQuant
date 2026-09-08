@@ -42,6 +42,14 @@ old orchestration are `REPLACE` / `DROP`. BYQ checks trusted owner/workspace and
 reserves authoritative Artifact kinds for existing typed domain producers.
 No Community code, database or runtime is copied or modified.
 
+Post-U8 original-task discovery: re-inspected Community ResearchTaskCreateRequest/
+ResearchTaskRecord session/request/task identity, owner_subject and goal/stage fields.
+Exact original identity and bounded progress are `REFERENCE_ONLY` / `PORT_TESTS`;
+client-selected session/run identity, optional ownership and arbitrary plan/conclusion
+objects are `DROP` for context recovery. BYQ will read its existing durable
+conversation binding through MCP context, never pick a workspace-latest task or
+copy private DSH state. Legacy unbound tasks remain unbound.
+
 Post-U8 runtime-context isolation: Community `agent-service/app/harness/roles.py`
 and `workflows/contracts.py` inspected read-only. Role/parent identity and explicit
 terminal status are `REFERENCE_ONLY`; old generic graph topology/executor is
@@ -1539,6 +1547,17 @@ Post-U8 迟到回答恢复补充（2026-09-08）：实现前只读检查 Communi
 可识别错误为 `REFERENCE_ONLY`；原 Python 脚本执行器、multiprocessing harness 及直接
 返回异常字符串为 `DROP`。BYQ 保留封闭 ML schema/registry，独立修复非法 JSON 类型、
 超大整数及嵌套字段定位，不引入旧执行栈；本切片不代表持久纠错计次已经实现。
+
+ADR-0066 接受后的调用准入资格切片：再次只读检查同一 Community 校验器的有限数值、
+输入与错误分离语义，分类仍为 `REFERENCE_ONLY`；旧执行器与 runtime 继续 `DROP`。
+逐调用可信根身份和私有规范输入摘要采用 `REPLACE`，独立定义 BYQ 合同及失败测试，
+不把旧策略验证成功或 model 自报 AgentRun 当作可信调用来源，不复制旧 harness。
+
+Post-U8 F7 停止原因补充：实现前只读检查 Community `AgentThinking.vue` 全文及
+`AgentView.vue` 顶部 errorContract/retryable 区。明确区分执行状态、阻断与可重试行为为
+`REFERENCE_ONLY`；raw tool/thinking、旧错误合同和直接重发为 `DROP`/`REPLACE`。
+BYQ 仅为规范化 WorkflowTrace 的封闭停止码增加中文说明，保留 `retryable=false`，
+不把失败状态当回答，不展示私有调用摘要，也不自动续接或重跑。
 
 ## Post-U8 S3 指数池更新方式界面（2026-09-08）
 

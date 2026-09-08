@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from .db import PgStoreMixin, execute, fetch_one
 from .index_catalog import INDEX_CATALOG_CONTRACT, INDEX_NAMES, SUPPORTED_INDEXES
+from .index_snapshot_demand import index_snapshot_scope
 from .dynamic_stock_pool import (
     DYNAMIC_RULE_SCHEMA_VERSION,
     evaluate_dynamic_rule,
@@ -242,11 +243,14 @@ class StockPoolProducerStore(PgStoreMixin):
         else:
             description = None
         key = _text(payload.get("idempotency_key"), "idempotency_key")
-        requested_as_of = _date(payload.get("requested_as_of") or datetime.now(timezone.utc).strftime("%Y%m%d"))
-        request = {"name": name, "description": description, "index_symbol": symbol, "requested_as_of": requested_as_of}
         mode = _text(payload.get("tracking_mode", "follow_index"), "tracking_mode")
         if mode not in {"follow_index", "historical_snapshot"}:
             raise ValueError("tracking_mode must be follow_index or historical_snapshot")
+        if mode == "historical_snapshot":
+            requested_as_of = str(index_snapshot_scope(symbol, payload.get("requested_as_of"))["requested_as_of"])
+        else:
+            requested_as_of = _date(payload.get("requested_as_of") or datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d"))
+        request = {"name": name, "description": description, "index_symbol": symbol, "requested_as_of": requested_as_of}
         if mode == "historical_snapshot":
             request["tracking_mode"] = mode
         request_hash = _hash(request)

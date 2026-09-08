@@ -521,12 +521,31 @@ class MarketReadinessStore(PgStoreMixin):
     def import_index_weights(
         self, index_symbol: str, period: str, weights: list[object], provenance: dict[str, object],
     ) -> int:
+        # Validate the complete input before the monthly replacement transaction.
+        # Provider validation alone cannot protect logical-import or replay paths.
+        if not isinstance(period, str) or not re.fullmatch(r"[0-9]{6}", period):
+            raise ValueError("index weight period must be YYYYMM")
+        try:
+            datetime.strptime(period + "01", "%Y%m%d")
+        except ValueError as error:
+            raise ValueError("index weight period must be a valid YYYYMM") from error
         rows = []
         for item in weights:
+            snapshot_date = getattr(item, "trade_date", None)
+            if getattr(item, "index_code", None) != index_symbol:
+                raise ValueError("index weight row does not match the requested index")
+            if not isinstance(snapshot_date, str) or not re.fullmatch(r"[0-9]{8}", snapshot_date):
+                raise ValueError("index weight snapshot date must be YYYYMMDD")
+            try:
+                datetime.strptime(snapshot_date, "%Y%m%d")
+            except ValueError as error:
+                raise ValueError("index weight snapshot date is invalid") from error
+            if snapshot_date[:6] != period:
+                raise ValueError("index weight snapshot date is outside the requested month")
             row = {
                 "index_symbol": index_symbol,
                 "constituent_symbol": str(getattr(item, "constituent_symbol")),
-                "snapshot_date": str(getattr(item, "trade_date")),
+                "snapshot_date": snapshot_date,
                 "weight": float(getattr(item, "weight")), "data_source": "tushare",
                 "provenance": provenance,
             }
@@ -538,6 +557,20 @@ class MarketReadinessStore(PgStoreMixin):
             snapshots.append(self._verified_index_snapshot(index_symbol, snapshot_date, snapshot_rows, provenance))
         identity = _hash([row["content_sha256"] for row in rows])
         with self._transaction() as connection:
+            # Serialize same-month refreshes, including an initially empty month.
+            # A shorter provider response is not proof that historical dates were
+            # revoked. Preserve verified coverage and fail the repair explicitly.
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:key,0))",
+                    {"key": f"byq:index-weight-month:{index_symbol}:{period}"})
+            existing = execute(connection, """SELECT snapshot_date,content_sha256 FROM market_index_weight_snapshots
+                WHERE index_symbol=:index_symbol AND substring(snapshot_date,1,6)=:period
+                  AND status='verified'""", {"index_symbol": index_symbol, "period": period})
+            incoming_dates = {snapshot["snapshot_date"] for snapshot in snapshots}
+            if any(snapshot["snapshot_date"] not in incoming_dates for snapshot in existing):
+                raise ValueError("index weight refresh would erase verified historical dates")
+            incoming_hashes = {snapshot["snapshot_date"]: snapshot["content_sha256"] for snapshot in snapshots}
+            if any(incoming_hashes[snapshot["snapshot_date"]] != snapshot["content_sha256"] for snapshot in existing):
+                raise ValueError("index weight verified content mismatch; existing snapshot preserved")
             execute(connection, """DELETE FROM market_index_weights
                 WHERE index_symbol=:index_symbol AND substring(snapshot_date,1,6)=:period""",
                 {"index_symbol": index_symbol, "period": period})

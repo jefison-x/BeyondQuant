@@ -28,6 +28,7 @@ class RuntimeObservation:
     call_id: str | None = None
     tool_name: str | None = None
     registration_key: str | None = field(default=None, repr=False)
+    domain_arguments: dict[str, Any] | None = field(default=None, repr=False)
     tool_failed: bool = False
     tool_result: dict[str, Any] | None = None
     tool_results: tuple[RuntimeToolResult, ...] = ()
@@ -50,6 +51,12 @@ class RuntimeCompatibility(Protocol):
     ) -> Any: ...
 
     def start(self, harness: Any) -> None: ...
+
+    def prepare_prompt(self, harness: Any, session_id: str) -> Any: ...
+
+    def run_prepared_prompt(
+        self, session: Any, content: str, on_notification: Callable[[object], None],
+    ) -> str: ...
 
     def prompt(
         self, harness: Any, session_id: str, content: str,

@@ -43,3 +43,19 @@ def test_shared_sql_layer_bootstrap_and_crud(byq_test_engine) -> None:
     assert row["title"] == "PG foundation"
     # Row normalization: TIMESTAMPTZ is returned as an ISO-8601 string.
     assert isinstance(row["created_at"], str)
+
+
+def test_concurrent_store_bootstraps_do_not_deadlock_or_lose_columns(byq_test_engine):
+    from concurrent.futures import ThreadPoolExecutor
+    from app.agent_research import AgentResearchStore
+    from app.user_auth import UserAuthStore
+    from app.workspace_tenancy import WorkspaceTenancyStore
+    from app.paper_trading import PaperTradingStore
+    classes = [AgentResearchStore, ResearchStore, UserAuthStore, WorkspaceTenancyStore, PaperTradingStore] * 2
+    def initialize(store_class):
+        store = store_class()
+        store.close()
+    with ThreadPoolExecutor(4) as executor:
+        list(executor.map(initialize, classes))
+    with byq_test_engine.connect() as connection:
+        assert fetch_one(connection, "SELECT count(*) AS n FROM information_schema.columns WHERE table_name='agent_runs' AND column_name='root_run_id'")["n"] == 1

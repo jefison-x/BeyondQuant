@@ -3,6 +3,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { domainValidationSchemas } from "./domain-validation-schema.js";
+import { evidenceBoundedFetcher, safeDomainAdmission } from "./domain-admission.js";
+import { observeDomainSchemaFailures } from "./domain-schema-observation.js";
+import { fetchResearchContext } from "./research-context.js";
 
 import { fetchByqHealth } from "./backend-health.js";
 import {
@@ -49,7 +53,6 @@ import {
   fetchByqStrategyExport,
   fetchByqStrategyValidate,
   fetchByqStrategyVersionCreate,
-  strategyValidationInputSchema,
   type StrategyRequest,
 } from "./strategy.js";
 import {
@@ -218,6 +221,12 @@ function headerValue(headers: unknown, name: string): string | undefined {
   return undefined;
 }
 
+const privateRoot = Symbol("BYQ trusted root header");
+
+function rootHeader(extra: unknown): string | undefined {
+  return extra && typeof extra === "object" ? (extra as { [privateRoot]?: string })[privateRoot] : undefined;
+}
+
 function agentContext(extra: unknown): AgentContext {
   if (extra && typeof extra === "object" && "owner_principal" in extra) {
     const value = extra as AgentContext;
@@ -273,7 +282,10 @@ function trustedBackendFetcher(context: Required<AgentContext>): typeof fetch {
 async function byqAgentContext(_args: Record<string, never>, extra: unknown) {
   const context = completeAgentContext(extra);
   if (!context) return agentContextUnavailable();
-  const inbox = await fetchByqDataDemandNotifications(BACKEND_URL, trustedBackendFetcher(context));
+  const [inbox, researchContext] = await Promise.all([
+    fetchByqDataDemandNotifications(BACKEND_URL, trustedBackendFetcher(context)),
+    fetchResearchContext(BACKEND_URL, trustedBackendFetcher(context)),
+  ]);
   let notifications: unknown[] = [];
   if (!inbox.isError) {
     try {
@@ -282,7 +294,8 @@ async function byqAgentContext(_args: Record<string, never>, extra: unknown) {
     } catch { notifications = []; }
   }
   return {
-    content: [{ type: "text" as const, text: JSON.stringify({ service: SERVICE, status: "ok", context, notifications }) }],
+    content: [{ type: "text" as const, text: JSON.stringify({ service: SERVICE, status: "ok", context, notifications,
+      research_context: researchContext }) }],
     isError: false,
   };
 }
@@ -494,7 +507,7 @@ async function byqMlStudyGet(args: { ml_strategy_artifact_id: string }, extra: u
 async function byqMlStrategyCreate(args: MlRequest, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqMlStrategyCreate(
-    BACKEND_URL, { ...args, trace_id: context.trace_id }, trustedBackendFetcher(context),
+    BACKEND_URL, { ...args, trace_id: context.trace_id }, evidenceBoundedFetcher(trustedBackendFetcher(context), rootHeader(extra)),
   ) : agentContextUnavailable();
 }
 
@@ -583,7 +596,8 @@ async function byqStrategyDraftDelete(args: { artifact_id: string }, extra: unkn
 
 async function byqStrategyValidate(args: StrategyRequest, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqStrategyValidate(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqStrategyValidate(BACKEND_URL, { ...args, trace_id: context.trace_id },
+    evidenceBoundedFetcher(trustedBackendFetcher(context), rootHeader(extra))) : agentContextUnavailable();
 }
 
 async function byqStrategyVersionCreate(args: StrategyRequest, extra: unknown) {
@@ -642,7 +656,9 @@ async function byqWebEvidenceCreate(args: WebEvidenceCreateRequest, extra: unkno
 }
 
 function buildServer(factoryContext: unknown = undefined): McpServer {
-  const trustedContext = agentContext(factoryContext);
+  const factory = factoryContext as { request?: { headers?: unknown }; requestInfo?: { headers?: unknown } } | undefined;
+  const trustedContext = { ...agentContext(factoryContext),
+    [privateRoot]: headerValue(factory?.request?.headers ?? factory?.requestInfo?.headers, "x-byq-root-run-id") };
   const server = new McpServer({ name: SERVICE, version: VERSION });
   server.registerTool(
     "byq_health",
@@ -809,7 +825,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_agent_context",
     {
-      description: "Return the trusted BYQ owner, actor, trace, and DSH session context plus bounded durable data and ML progress notifications for this agent run.",
+      description: "Return trusted BYQ identity, bounded data/ML notifications and original-conversation research task candidates. Candidates are not automatic task selection; read the exact task before continuing and ask when ambiguous. Unavailable or none_bound is not proof that no previous task exists.",
       inputSchema: {},
     },
     () => byqAgentContext({}, trustedContext),
@@ -1064,93 +1080,6 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqBacktestAnalysis(args, trustedContext),
   );
-  const dateWindowSchema = z.object({
-    start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  }).strict();
-  const lightgbmParametersSchema = z.object({
-    num_leaves: z.number().int().min(2).max(255).optional(),
-    learning_rate: z.number().min(0.001).max(0.5).optional(),
-    max_depth: z.number().int().min(-1).max(32).optional(),
-    min_data_in_leaf: z.number().int().min(5).max(10000).optional(),
-    feature_fraction: z.number().min(0.1).max(1).optional(),
-    bagging_fraction: z.number().min(0.1).max(1).optional(),
-    num_boost_round: z.number().int().min(10).max(2000).optional(),
-    early_stopping_rounds: z.number().int().min(1).max(200).optional(),
-  }).strict();
-  const learnerReferenceSchema = z.union([
-    z.object({ profile: z.literal("byq-lightgbm-cpu-v1"), parameters: lightgbmParametersSchema.optional() }).strict(),
-    z.object({ profile: z.literal("byq-ridge-cpu-v1"), parameters: z.object({
-      alpha: z.number().min(0.000001).max(1000000).optional(),
-      fit_intercept: z.boolean().optional(),
-    }).strict().optional() }).strict(),
-  ]);
-  const v1MlStrategySchema = z.object({
-    schema_version: z.literal("ml-strategy-version.v1"),
-    name: z.string().min(1).max(128),
-    learner: z.object({ kind: z.literal("lightgbm_regression"), profile: z.literal("byq-lightgbm-cpu-v1") }).strict(),
-    feature_set: z.object({ id: z.literal("price-volume-basic-v1") }).strict(),
-    target: z.object({ kind: z.literal("forward_return"), horizon_sessions: z.number().int().min(1).max(20) }).strict(),
-    split: z.object({ train: dateWindowSchema, validation: dateWindowSchema, prediction: dateWindowSchema }).strict(),
-    learner_parameters: lightgbmParametersSchema.optional(),
-    signal_policy: z.object({
-      kind: z.literal("top_n_equal_weight"), top_n: z.number().int().min(1).max(100),
-      rebalance: z.enum(["daily", "weekly", "monthly"]),
-    }).strict(),
-  }).strict();
-  const v2MlBase = {
-    schema_version: z.literal("ml-strategy-version.v2"),
-    name: z.string().min(1).max(128),
-    feature_set: z.object({ id: z.literal("price-volume-basic-v1"), parameters: z.object({}).strict().optional() }).strict(),
-    target: z.object({ id: z.literal("forward-return-v1"), parameters: z.object({
-      horizon_sessions: z.number().int().min(1).max(20).optional(),
-    }).strict().optional() }).strict(),
-    validation_plan: z.object({ id: z.literal("walk-forward-purged-v1"), parameters: z.object({
-      mode: z.enum(["expanding", "rolling"]).optional(),
-      train_sessions: z.number().int().min(60).max(1500).optional(),
-      validation_sessions: z.number().int().min(10).max(250).optional(),
-      step_sessions: z.number().int().min(10).max(250).optional(),
-      folds: z.number().int().min(2).max(12).optional(),
-      purge_sessions: z.number().int().min(1).max(20).optional(),
-      embargo_sessions: z.number().int().min(0).max(20).optional(),
-    }).strict().optional() }).strict(),
-    learner: learnerReferenceSchema,
-    portfolio_policy: z.object({ id: z.literal("top-n-equal-weight-v1"), parameters: z.object({
-      top_n: z.number().int().min(1).max(100).optional(),
-      rebalance: z.enum(["daily", "weekly", "monthly"]).optional(),
-    }).strict().optional() }).strict(),
-    development_window: dateWindowSchema,
-    prediction_window: dateWindowSchema,
-  };
-  const v2SingleMlStrategySchema = z.object(v2MlBase).strict();
-  const expertSchema = z.object({
-    key: z.enum(["risk_on", "neutral", "risk_off"]),
-    learner: learnerReferenceSchema,
-    training_regimes: z.array(z.enum(["risk_on", "neutral", "risk_off"])).min(1).max(3)
-      .refine(items => new Set(items).size === items.length, "training regimes must be unique"),
-  }).strict();
-  const v2RegimeMlStrategySchema = z.object({
-    ...v2MlBase,
-    regime: z.object({
-      definition: z.literal("hs300-trend-volatility-v1"), enabled: z.literal(true),
-      parameters: z.object({
-        risk_on_return_60_min: z.number().min(-0.2).max(0.3).optional(),
-        risk_on_ma_distance_60_min: z.number().min(-0.1).max(0.2).optional(),
-        risk_off_return_20_max: z.number().min(-0.3).max(0.1).optional(),
-        risk_off_volatility_20_min: z.number().min(0.005).max(0.1).optional(),
-        risk_off_ma_distance_60_max: z.number().min(-0.2).max(0.05).optional(),
-      }).strict().optional(),
-    }).strict(),
-    routing_policy: z.object({
-      id: z.literal("regime-expert-map-v1"),
-      fallback: z.enum(["risk_on", "neutral", "risk_off"]),
-    }).strict(),
-    experts: z.array(expertSchema).min(2).max(3),
-  }).strict().superRefine((value, context) => {
-    const keys = value.experts.map(item => item.key);
-    if (new Set(keys).size !== keys.length) context.addIssue({ code: z.ZodIssueCode.custom, message: "expert keys must be unique", path: ["experts"] });
-    if (!keys.includes(value.routing_policy.fallback)) context.addIssue({ code: z.ZodIssueCode.custom, message: "fallback must reference a configured expert", path: ["routing_policy", "fallback"] });
-  });
   server.registerTool(
     "byq_ml_capabilities",
     { description: "Read the closed BYQ machine-learning capability catalogue and bounded parameter limits.", inputSchema: {} },
@@ -1180,10 +1109,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_ml_strategy_create",
-    { description: "Create a validated closed-profile ML strategy: v1 LightGBM compatibility, v2 purged walk-forward with a qualified learner, or an explicit HS300 regime-expert plan. Human approval remains a separate Product action.", inputSchema: {
-      task_id: z.string(), experiment_id: z.string().optional(), idempotency_key: z.string().min(1).max(128),
-      strategy: z.union([v1MlStrategySchema, v2RegimeMlStrategySchema, v2SingleMlStrategySchema]),
-    } },
+    { description: "Create a validated closed-profile ML strategy: v1 LightGBM compatibility, v2 purged walk-forward with a qualified learner, or an explicit HS300 regime-expert plan. Human approval remains a separate Product action.", inputSchema: domainValidationSchemas.byq_ml_strategy_create },
     (args) => byqMlStrategyCreate(args, trustedContext),
   );
   server.registerTool(
@@ -1326,7 +1252,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_strategy_validate",
     {
       description: "Validate and persist a StrategyDraft. script must define class CustomStrategy with exactly one synchronous generate_signals(self, data, parameters) or generate_target_weights(self, data, portfolio_state, parameters). A planned research task is valid. On 422, use the safe validation message for at most one repair.",
-      inputSchema: strategyValidationInputSchema,
+      inputSchema: domainValidationSchemas.byq_strategy_validate,
     },
     (args) => byqStrategyValidate(args, trustedContext),
   );
@@ -1603,7 +1529,22 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   return server;
 }
 
-const handler = toNodeHandler(createMcpHandler(buildServer));
+const handler = toNodeHandler(observeDomainSchemaFailures(createMcpHandler(buildServer), async (failure, request) => {
+  const context = completeAgentContext({ request });
+  if (!context) return;
+  const send = evidenceBoundedFetcher(trustedBackendFetcher(context), request.headers.get("x-byq-root-run-id") ?? undefined);
+  try {
+    const response = await send(`${BACKEND_URL}/internal/domain-validation/schema-rejection`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(failure), signal: AbortSignal.timeout(8000),
+    });
+    return safeDomainAdmission(await response.json());
+  } catch {
+    // No automatic replay of a possibly debited request. The original schema
+    // error still reaches the model; the root additionally stops as unknown.
+    return safeDomainAdmission({ detail: { schema_version: "domain-call-admission.v1", state: "unknown" } });
+  }
+}));
 
 const httpServer = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);

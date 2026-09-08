@@ -40,6 +40,87 @@ def test_index_weight_import_requires_exact_complete_snapshots() -> None:
     store.close()
 
 
+@pytest.mark.parametrize("replacement", [[], [IndexWeight("000300.SH", "000001.SZ", "20240131", 100)]])
+def test_index_month_refresh_cannot_erase_verified_historical_dates(replacement) -> None:
+    store = MarketReadinessStore()
+    original = [
+        IndexWeight("000300.SH", "000001.SZ", "20240115", 100),
+        IndexWeight("000300.SH", "000001.SZ", "20240131", 100),
+    ]
+    store.import_index_weights("000300.SH", "202401", original, {"provider": "tushare"})
+    before = store._execute("SELECT * FROM market_index_weight_snapshots ORDER BY snapshot_date")
+    with pytest.raises(ValueError, match="erase verified"):
+        store.import_index_weights("000300.SH", "202401", replacement, {"provider": "tushare"})
+    assert store._execute("SELECT * FROM market_index_weight_snapshots ORDER BY snapshot_date") == before
+    assert len(store._execute("SELECT * FROM market_index_weights")) == 2
+    store.close()
+
+
+def test_index_month_refresh_allows_replay_and_added_historical_dates() -> None:
+    store = MarketReadinessStore()
+    original = [IndexWeight("000300.SH", "000001.SZ", "20240115", 100)]
+    provenance = {"provider": "tushare"}
+    assert store.import_index_weights("000300.SH", "202401", original, provenance) == 1
+    identity = store._fetch_one("SELECT content_sha256 FROM market_index_weight_snapshots")
+    assert store.import_index_weights("000300.SH", "202401", original, provenance) == 1
+    assert store._fetch_one("SELECT content_sha256 FROM market_index_weight_snapshots") == identity
+    extended = [*original, IndexWeight("000300.SH", "000001.SZ", "20240131", 100)]
+    assert store.import_index_weights("000300.SH", "202401", extended, provenance) == 2
+    assert [row["snapshot_date"] for row in store._execute(
+        "SELECT snapshot_date FROM market_index_weight_snapshots ORDER BY snapshot_date"
+    )] == ["20240115", "20240131"]
+    store.close()
+
+
+def test_index_month_refresh_cannot_silently_rewrite_verified_content() -> None:
+    store = MarketReadinessStore()
+    store.import_index_weights("000300.SH", "202401", [
+        IndexWeight("000300.SH", "000001.SZ", "20240131", 100),
+    ], {"provider": "tushare"})
+    before = store._execute("SELECT * FROM market_index_weight_snapshots")
+    with pytest.raises(ValueError, match="verified content mismatch"):
+        store.import_index_weights("000300.SH", "202401", [
+            IndexWeight("000300.SH", "600000.SH", "20240131", 100),
+        ], {"provider": "tushare"})
+    assert store._execute("SELECT * FROM market_index_weight_snapshots") == before
+    assert store._fetch_one("SELECT constituent_symbol FROM market_index_weights") == {
+        "constituent_symbol": "000001.SZ",
+    }
+    store.close()
+
+
+def test_concurrent_conflicting_index_imports_have_one_winner() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    barrier = Barrier(2)
+
+    def import_member(member: str) -> str:
+        store = MarketReadinessStore()
+        try:
+            barrier.wait(timeout=10)
+            try:
+                store.import_index_weights("000300.SH", "202401", [
+                    IndexWeight("000300.SH", member, "20240131", 100),
+                ], {"provider": "tushare"})
+                return member
+            except ValueError as error:
+                assert "verified content mismatch" in str(error)
+                return "rejected"
+        finally:
+            store.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(import_member, member) for member in ("000001.SZ", "600000.SH")]
+        results = [future.result(timeout=20) for future in futures]
+    assert results.count("rejected") == 1
+    winner = next(result for result in results if result != "rejected")
+    store = MarketReadinessStore()
+    assert store._execute("SELECT constituent_symbol FROM market_index_weights") == [{"constituent_symbol": winner}]
+    assert len(store._execute("SELECT * FROM market_index_weight_snapshots")) == 1
+    store.close()
+
+
 def test_lifecycle_and_suspension_evidence_define_ready_cells() -> None:
     store = MarketReadinessStore()
     store._execute("""INSERT INTO security_master_snapshots

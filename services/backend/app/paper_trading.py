@@ -522,9 +522,11 @@ class PaperTradingStore(PgStoreMixin):
             raise PaperTradingPersistenceError("paper trading storage is unavailable") from exc
 
     def bootstrap_schema(self) -> None:
+        from .db import schema_bootstrap_lock
         super().bootstrap_schema()
         # Column back-migration parity with the former SQLite schema.
         with self.engine.begin() as connection:
+            schema_bootstrap_lock(connection)
             ensure_column(connection, "stock_pools", "pool_type", "TEXT")
             ensure_column(connection, "stock_pools", "description", "TEXT")
             ensure_column(connection, "stock_pools", "weights_json", "JSONB")

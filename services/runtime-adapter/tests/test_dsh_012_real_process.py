@@ -49,9 +49,22 @@ class ScriptedProvider(BaseHTTPRequestHandler):
         return
 
 
-def test_official_registration_notification_has_exact_request_identity(monkeypatch) -> None:
-    """Inspect the public notification, with no owner and therefore no domain write."""
-    arguments = {"role_id": "quant_orchestrator", "idempotency_key": "synthetic-registration-probe"}
+@pytest.mark.parametrize("tool_name,arguments", [
+    ("byq_agent_run_start", {"role_id": "quant_orchestrator", "idempotency_key": "synthetic-registration-probe"}),
+    *[(name, arguments) for name in ("byq_strategy_validate", "byq_ml_strategy_create")
+      for arguments in (
+          {},
+          {"task_id": "synthetic-task", "idempotency_key": "synthetic-domain-probe",
+           "strategy": {"nested": {"中文": [None, True, 1, 1.25, "合成\\n测试"]}}},
+          {"task_id": "synthetic-task", "idempotency_key": "synthetic-domain-large",
+           "strategy": {"script": "合成" * 25000}},
+      )],
+])
+def test_official_registration_notification_has_exact_request_identity(monkeypatch, tool_name, arguments) -> None:
+    """Observation-only probe: no owner, invalid domain schemas, no authorized write.
+
+    This proves transport fidelity, not admission, accounting, or native loop stop.
+    """
 
     class RegistrationProvider(ScriptedProvider):
         def do_POST(self) -> None:  # noqa: N802
@@ -59,7 +72,7 @@ def test_official_registration_notification_has_exact_request_identity(monkeypat
             has_result = any(item.get("role") == "tool" for item in body.get("messages", []))
             delta = {"content": "合成接口核查完成"} if has_result else {
                 "tool_calls": [{"index": 0, "id": "synthetic-registration-call", "type": "function",
-                                "function": {"name": "mcp__byq__byq_agent_run_start",
+                                "function": {"name": "mcp__byq__" + tool_name,
                                              "arguments": json.dumps(arguments)}}],
             }
             chunks = [
@@ -99,14 +112,20 @@ def test_official_registration_notification_has_exact_request_identity(monkeypat
         adapter.submit_prompt(session_id, "合成接口核查，不执行研究")
         record = adapter._get(session_id)
         deadline = time.monotonic() + 20
-        while record.status == SessionStatus.RUNNING and time.monotonic() < deadline:
+        while (record.status == SessionStatus.RUNNING or record.process_closing) and time.monotonic() < deadline:
             time.sleep(0.05)
-        assert record.status == SessionStatus.IDLE
-        calls = [item for item in captured if item.get("name") == "mcp__byq__byq_agent_run_start"]
+        if adapter._root_scoped and tool_name != "byq_agent_run_start":
+            assert record.status == SessionStatus.FAILED
+            assert any(event["payload"].get("code") == "domain-call-reference-unproven" for event in record.history)
+            assert record.process_closed
+        else:
+            assert record.status == SessionStatus.IDLE
+        calls = [item for item in captured if item.get("name") == "mcp__byq__" + tool_name]
         assert len(calls) == 1
         assert isinstance(calls[0].get("arguments"), str)
         assert json.loads(calls[0]["arguments"]) == arguments
-        assert [item.registration_key for item in observations if item.registration_key] == [arguments["idempotency_key"]]
+        expected_keys = [arguments["idempotency_key"]] if tool_name == "byq_agent_run_start" else []
+        assert [item.registration_key for item in observations if item.registration_key] == expected_keys
     finally:
         adapter.close()
         server.shutdown()

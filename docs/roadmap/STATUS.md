@@ -78,6 +78,34 @@ Post-U8 交付授权（2026-09-08）：维护者明确允许新增独立构建�
 任务累计预算；预算账本合同及官方接口资格核查继续进行。接口全调用覆盖尚未通过资格验证，
 后台执行保持关闭，不将 ADR 接受或合同存在计作 F6 完成，不改变 Product Phase 97。
 
+F7 当前维护决策：[ADR-0066](../architecture/adr/ADR-0066-domain-validation-call-admission.md)
+已于 2026-09-08 获维护者回复“批准。”接受，状态为 Accepted；先隔离验证，再接入首批两工具。
+仅 AgentRun 引用/进程 generation 不足以作为该凭证；首批两工具的持久准入已本地验证，
+其余 F7 验收矩阵仍未全部关闭，不把 F7 标为完成。
+
+后续真实 HTTP 资格核查确认官方 MCP 请求缺少 Adapter 可关联的逐调用根身份，输入摘要
+匹配不能单独关闭此门禁。[ADR-0067](../architecture/adr/ADR-0067-root-scoped-runtime-call-identity.md)
+提出每根回合独立进程与可信根 header，已于 2026-09-08 获维护者批准，状态为 Accepted；
+隔离实现已通过下述本地验证，未改变生产拓扑，不计作 F7 全项完成。
+
+当前已接入逐根进程、公开上下文恢复、私有调用证据投递与两工具持久纠错准入，
+两工具真实 native stop 首次失败已定位并通过定向重测。独立 post-u8.10 构建的本地 CI
+26/26 项通过；真实 Chrome desktop/mobile、两工具跨服务 schema-stop、持久纠错回执及
+Backend/Gateway 重启恢复验证通过，未调用付费 Provider。完整自然语言研究语义及
+multi-child/迟到 HTTP/撤销矩阵仍有仅组件级证据的项目；不得部署或关闭 F7。
+具体通过/失败边界见[纠错台账实现切片](../evidence/post-u8-r1/F7-CORRECTION-LEDGER.md)。
+
+S3 历史成分准备继续隔离整改：明确日期的封闭准备范围及指数入库防错、旧覆盖防丢失、
+同日冲突保护已通过合成定向测试。真实 Community 缓存尚缺只读来源，未认证历史覆盖，
+专用 data-demand/Worker/Product 闭环尚未接入；不计作 S3 完成，不进行数据扩容。
+详见[历史成分准备记录](../evidence/post-u8-r1/S3-HISTORICAL-PREPARATION.md)。
+
+原会话任务发现缺口已补只读 Backend/MCP 上下文，禁止工作区最新任务回退和隐式重建。
+独立 `.12` 构建的架构 224 项、MCP 全套及 Backend 490 项（1 skipped）通过；三根真实
+Product/官方进程的合成恢复探针通过：原目标保留、经 MCP 找回原任务、明确新指令送达。
+该脚本不代替真实模型研究语义验收，F7/S3/F6 仍未全部关闭；未部署。
+见[原任务发现证据](../evidence/post-u8-r1/ORIGINAL-TASK-DISCOVERY.md)。
+
 - [ADR-0064](../architecture/adr/ADR-0064-runtime-crash-recovery-evidence.md)：已接受并完成首版本地崩溃证据恢复；仅原本地卷、同次主机启动且原排他锁身份可证时收尾，不续跑模型。主机重启/复制卷/无日志保留不可判定。验证见 `docs/evidence/post-u8-r1/ADR-0064-VERIFICATION.md`，未部署，其他 Post-U8 整改未全部关闭。
 
 - [ADR-0063](../architecture/adr/ADR-0063-disabled-owner-terminal-cleanup.md)：维护者已接受禁用身份后既有 AgentRun 的受限终态清理；本地实现及 Backend 完整回归已通过，未部署。历史未绑定记录及其他 Post-U8 流程整改仍未关闭。

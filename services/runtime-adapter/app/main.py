@@ -36,6 +36,8 @@ class PromptRequest(BaseModel):
     content: str
     require_model_key: bool = False
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
+    conversation_context: list[ConversationContextMessage] | None = None
+    conversation_recovery: dict[str, object] | None = None
 
 
 adapter = RuntimeAdapter()
@@ -122,6 +124,8 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
             request.content,
             require_model_key=request.require_model_key,
             idempotency_key=request.idempotency_key,
+            conversation_context=request.conversation_context,
+            conversation_recovery=request.conversation_recovery,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -169,6 +173,10 @@ def acknowledge_terminal(session_id: str, payload: dict) -> dict:
         raise HTTPException(status_code=404, detail="runtime session not found") from exc
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail="durable terminal evidence is unconfirmed") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="terminal acknowledgement could not be persisted") from exc
 
 
 @app.post("/internal/runtime/sessions/{session_id}/recover-evidence")
@@ -180,6 +188,17 @@ def recover_evidence(session_id: str, payload: dict) -> dict:
             for k in ("trace_id", "owner", "workspace_id")}}, payload["after_sequence"])
     except (ValueError, OSError, TypeError, KeyError) as exc:
         raise HTTPException(status_code=409, detail="runtime recovery evidence is unavailable or unproven") from exc
+
+
+@app.post("/internal/runtime/sessions/{session_id}/domain-call-evidence")
+def domain_call_evidence(session_id: str, payload: dict) -> dict:
+    if set(payload) != {"trace_id", "owner", "workspace_id", "after_sequence"}:
+        raise HTTPException(status_code=422, detail="exact private evidence context required")
+    try:
+        return adapter.domain_call_evidence({"session_id": session_id,
+            **{key: payload[key] for key in ("trace_id", "owner", "workspace_id")}}, payload["after_sequence"])
+    except (ValueError, OSError, TypeError, KeyError, RuntimeError) as exc:
+        raise HTTPException(status_code=409, detail="private evidence is unavailable or unproven") from exc
 
 
 @app.get("/internal/runtime/sessions/{session_id}/prompts/reconcile")
