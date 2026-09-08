@@ -2,6 +2,11 @@
 
 状态：本切片隔离实测通过；不关闭 F7。
 
+交付授权：维护者对“将这两批后续改动推送至 jefison-x/BeyondQuant、创建 PR，并在远端
+CI 全绿后按顺序合并”回复“同意”。本次仅覆盖先 `fix/post-u8-ci-log-evidence`、后
+`test/post-u8-late-http` 的 ADR-0015/0059 squash auto-merge；不包含生产部署、
+release/tag、历史研究续跑或架构扩权。F6 后台执行仍关闭，数据扩容仍暂缓。
+
 PR #263 合并后，从同步后的主线建立独立 `test/post-u8-late-http` 工作树。
 仅增加 Engineering 合成探针，不改变 Product 实现、生产配置或 DSH，不提交伪造的调用凭证。
 ADR-0066/0067 两工具限制保持；本切片只验证策略工具，不能推广为 ML 或全动作通过。
