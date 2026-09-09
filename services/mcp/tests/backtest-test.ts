@@ -12,6 +12,7 @@ import {
   fetchByqBacktestTaskCreate,
   fetchByqBacktestTaskExecute,
   fetchByqBacktestTaskGet,
+  fetchByqBacktestTaskLookup,
   fetchByqBacktestTaskPrepare,
 } from "../src/backtest.js";
 
@@ -232,3 +233,61 @@ const legacyLookup = await fetchByqBacktestLookup("http://backend:8000", { job_i
 });
 assert.equal(legacyLookup.isError, false);
 console.log("Backtest original receipt lookup PASS: exact identity, bounded reads, unknown safety and ID compatibility");
+
+
+const signalJobId = "signaljob_0123456789abcdef0123456789abcdef";
+for (const status of ["confirmed", "outcome_unknown"] as const) {
+  let calls = 0;
+  const key = "task/key &中文";
+  const response = await fetchByqBacktestTaskLookup("http://backend:8000", { task_id: request.task_id, idempotency_key: key }, async (url, init) => {
+    calls++;
+    const target = new URL(url);
+    assert.equal(target.pathname, "/v1/research/backtest-tasks/reconcile");
+    assert.equal(target.searchParams.get("task_id"), request.task_id);
+    assert.equal(target.searchParams.get("idempotency_key"), key);
+    assert.equal(init?.method, "GET");
+    assert.equal(init?.body, undefined);
+    return new Response(JSON.stringify({ schema_version: "backtest-task-submission-reconciliation.v1",
+      status, task_id: request.task_id, idempotency_key: key, private_probe: "must not leak",
+      ...(status === "confirmed" ? { receipt: { backtest_task_id: taskId, signal_producer_job_id: signalJobId,
+        signal_status: "waiting_for_data", preparation: "must not leak" } } : {}),
+    }));
+  });
+  assert.equal(calls, 1);
+  assert.equal(response.isError, false);
+  assert.equal(JSON.parse(response.content[0].text).status, status);
+  assert.doesNotMatch(response.content[0].text, /must not leak|private_probe|preparation/);
+  if (status === "outcome_unknown") assert.equal(JSON.parse(response.content[0].text).retryable, false);
+}
+for (const selector of [{}, { backtest_task_id: "bad" }, { task_id: request.task_id }, { idempotency_key: "key" },
+  { backtest_task_id: taskId, task_id: request.task_id }, { backtest_task_id: taskId, idempotency_key: "key" },
+  { task_id: request.task_id, idempotency_key: "x".repeat(129) }]) {
+  const response = await fetchByqBacktestTaskLookup("http://backend:8000", selector, async () => assert.fail("invalid identity called Backend"));
+  assert.equal(response.isError, true);
+}
+for (const failure of ["transport", "json", "key", "task", "mapping", "status", "missing", "http"] as const) {
+  let calls = 0;
+  const response = await fetchByqBacktestTaskLookup("http://backend:8000", request, async () => {
+    calls++;
+    if (failure === "transport") throw new Error("private synthetic failure");
+    if (failure === "json") return new Response("not json");
+    return new Response(JSON.stringify({ schema_version: "backtest-task-submission-reconciliation.v1", status: "confirmed",
+      task_id: failure === "task" ? "other" : request.task_id,
+      idempotency_key: failure === "key" ? "other" : request.idempotency_key,
+      ...(failure === "missing" ? {} : { receipt: { backtest_task_id: failure === "mapping" ? "backtesttask_ml_0123456789abcdef0123456789abcdef" : taskId,
+        signal_producer_job_id: signalJobId, signal_status: failure === "status" ? "invented" : "completed" } }),
+    }), { status: failure === "http" ? 503 : 200 });
+  });
+  assert.equal(calls, 1);
+  assert.equal(response.isError, true);
+  assert.doesNotMatch(response.content[0].text, /private synthetic/);
+}
+for (const id of [taskId, "backtesttask_ml_0123456789abcdef0123456789abcdef"]) {
+  const response = await fetchByqBacktestTaskLookup("http://backend:8000", { backtest_task_id: id }, async (url, init) => {
+    assert.equal(url, `http://backend:8000/v1/research/backtest-tasks/${id}`);
+    assert.equal(init?.method, "GET");
+    return new Response(JSON.stringify({ task: { backtest_task_id: id } }));
+  });
+  assert.equal(response.isError, false);
+}
+console.log("Derived backtest task receipt PASS: original key, closed identity projection, unknown safety and ML ID compatibility");

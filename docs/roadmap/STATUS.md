@@ -83,6 +83,8 @@
 
 Backtest 原键只读核对已完成，定向15项及独立`.21`完整CI26/26通过，资源清理通过；尚未部署，范围见[Backtest 回执记录](../evidence/post-u8-interface-audit/BACKTEST-RECEIPTS.md)。
 
+高层 backtest-task 原键核对已完成，定向16项及独立`.23`完整CI26/26通过；`.22`测试同步失败记录保留，资源清理通过，尚未部署。见[任务回执记录](../evidence/post-u8-interface-audit/BACKTEST-TASK-RECEIPTS.md)。
+
 ## 生效中的 Accepted ADR
 
 Post-U8 交付授权（2026-09-08）：维护者明确允许新增独立构建身份、重新认证，并将当前

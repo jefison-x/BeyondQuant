@@ -16,7 +16,8 @@ import {
   fetchByqBacktestTaskCancel,
   fetchByqBacktestTaskCreate,
   fetchByqBacktestTaskExecute,
-  fetchByqBacktestTaskGet,
+  fetchByqBacktestTaskLookup,
+  type BacktestTaskLookup,
   fetchByqBacktestTaskPrepare,
   fetchByqSignalSnapshotGet,
   type BacktestRequest,
@@ -466,9 +467,9 @@ async function byqBacktestTaskCreate(args: BacktestRequest, extra: unknown) {
   return context ? fetchByqBacktestTaskCreate(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqBacktestTaskGet(args: { backtest_task_id: string }, extra: unknown) {
+async function byqBacktestTaskGet(args: BacktestTaskLookup, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqBacktestTaskGet(BACKEND_URL, args.backtest_task_id, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqBacktestTaskLookup(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
 async function byqBacktestTaskExecute(args: { backtest_task_id: string }, extra: unknown) {
@@ -1043,8 +1044,9 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_backtest_task_get",
     {
-      description: "Read the derived backtest-task.v1 status and component lineage.",
-      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_(?:ml_)?[0-9a-f]{32}$/) },
+      description: "Read derived task state by backtest_task_id OR recover a signal-backed creation receipt using the original task_id and idempotency_key. Choose exactly one identity. Unknown never permits resubmission; a confirmed receipt provides the ID for a subsequent state read.",
+      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_(?:ml_)?[0-9a-f]{32}$/).optional(),
+        task_id: z.string().min(1).optional(), idempotency_key: z.string().trim().min(1).max(128).optional() },
     },
     (args) => byqBacktestTaskGet(args, trustedContext),
   );

@@ -93,6 +93,7 @@ from .backtest import (
     membership_fingerprint,
 )
 from .backtest_task import (
+    task_id_from_signal_job,
     is_ml_backtest_task,
     ml_prediction_id_from_task,
     project_backtest_task,
@@ -3766,6 +3767,29 @@ def create_backtest_task(payload: dict[str, Any], request: Request) -> dict[str,
             trusted_owner=context["owner_principal"],
         )
         return {"task": _backtest_task_view(job, owner_principal=context["owner_principal"])}
+
+    return _backtest_task_call(operation)
+
+
+@app.get("/v1/research/backtest-tasks/reconcile")
+def reconcile_backtest_task_submission(request: Request, task_id: str, idempotency_key: str) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        _owned_research_entity("research_task", task_id, context)
+        job = signal_job_store.find_submission(
+            task_id, idempotency_key, trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        )
+        result: dict[str, object] = {
+            "schema_version": "backtest-task-submission-reconciliation.v1",
+            "task_id": task_id.strip(), "idempotency_key": idempotency_key.strip(),
+            "status": "confirmed" if job is not None else "outcome_unknown",
+        }
+        if job is not None:
+            result["receipt"] = {"backtest_task_id": task_id_from_signal_job(job["job_id"]),
+                "signal_producer_job_id": job["job_id"], "signal_status": job["status"]}
+        return result
 
     return _backtest_task_call(operation)
 

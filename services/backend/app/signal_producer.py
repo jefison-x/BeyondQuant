@@ -344,6 +344,20 @@ class SignalJobStore(PgStoreMixin):
                  "ready_sha": ready_input_sha256, "now": _now()})
         return self.get(job_id)
 
+    def find_submission(
+        self, task_id: object, idempotency_key: object, *, trusted_owner: str, trusted_workspace: str,
+    ) -> dict[str, object] | None:
+        """Exact shared signal identity without loading preparation or input data."""
+        task = _identifier(task_id, "task_id")
+        key = _text(idempotency_key, "idempotency_key", 128)
+        row = self._fetch_one(
+            """SELECT job_id,status FROM signal_producer_jobs
+               WHERE owner_principal=:owner AND workspace_id=:workspace
+                 AND task_id=:task AND idempotency_key=:key""",
+            {"owner": trusted_owner, "workspace": trusted_workspace, "task": task, "key": key},
+        )
+        return dict(row) if row is not None else None
+
     def get(self, job_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         identity = _identifier(job_id, "job_id")
         row = self._fetch_one(

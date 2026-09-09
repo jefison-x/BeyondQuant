@@ -87,7 +87,12 @@ def test_go_routing_headers_on_official_protocol_and_permanent_rejection(monkeyp
         record = adapter._get(session_id)
         adapter.submit_prompt(session_id, "Synthetic provider rejection check only.")
         deadline = time.monotonic() + 20
-        while record.active_run is not None and time.monotonic() < deadline:
+        while time.monotonic() < deadline:
+            # State and terminal event are published under the same session lock.
+            # An unlocked active_run read can see the state before history is appended.
+            with record.lock:
+                if record.active_run is None:
+                    break
             time.sleep(0.02)
         assert record.active_run is None
         assert record.status == SessionStatus.FAILED
@@ -96,6 +101,7 @@ def test_go_routing_headers_on_official_protocol_and_permanent_rejection(monkeyp
         assert captured[0][0] == expected
         assert captured[0][1] and "python" not in captured[0][1].lower()
         failures = [event["payload"] for event in record.history if event["kind"] == "session.failed"]
+        assert failures, "terminal failure must be published before run completion is observed"
         assert failures[-1]["code"] == "model-request-rejected"
         assert failures[-1]["retryable"] is False
         assert "synthetic invalid request" not in json.dumps(record.history)
