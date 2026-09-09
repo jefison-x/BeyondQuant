@@ -5,6 +5,7 @@ import {
   fetchByqBacktestAnalysis,
   fetchByqBacktestCancel,
   fetchByqBacktestGet,
+  fetchByqBacktestLookup,
   fetchByqBacktestRun,
   fetchByqBacktestSubmit,
   fetchByqBacktestTaskCancel,
@@ -175,3 +176,59 @@ assert.equal(invalid.isError, true);
 assert.match(invalid.content[0].text, /backtest_not_found/);
 
 console.log("Backtest MCP translation PASS: task facade, legacy transport and safe error mapping");
+
+
+for (const status of ["confirmed", "outcome_unknown"] as const) {
+  let calls = 0;
+  const key = "original/key &中文";
+  const reply = await fetchByqBacktestLookup("http://backend:8000", {
+    task_id: request.task_id, idempotency_key: key,
+  }, async (url, init) => {
+    calls++;
+    const target = new URL(url);
+    assert.equal(target.pathname, "/v1/research/backtests/reconcile");
+    assert.equal(target.searchParams.get("task_id"), request.task_id);
+    assert.equal(target.searchParams.get("idempotency_key"), key);
+    assert.equal(init?.method, "GET");
+    assert.equal(init?.body, undefined);
+    return new Response(JSON.stringify({ schema_version: "backtest-submission-reconciliation.v1",
+      task_id: request.task_id, idempotency_key: key, status,
+      ...(status === "confirmed" ? { job: { job_id: jobId, task_id: request.task_id, status: "queued" } } : {}),
+    }));
+  });
+  assert.equal(calls, 1);
+  assert.equal(reply.isError, false);
+  assert.equal(JSON.parse(reply.content[0].text).status, status);
+  if (status === "outcome_unknown") assert.equal(JSON.parse(reply.content[0].text).retryable, false);
+}
+for (const selector of [{}, { job_id: " " }, { task_id: request.task_id }, { idempotency_key: "key" },
+  { job_id: jobId, task_id: request.task_id }, { job_id: jobId, idempotency_key: "key" },
+  { task_id: request.task_id, idempotency_key: "x".repeat(129) }]) {
+  const reply = await fetchByqBacktestLookup("http://backend:8000", selector, async () => {
+    assert.fail("invalid identity must not contact Backend");
+  });
+  assert.equal(reply.isError, true);
+}
+for (const failure of ["transport", "json", "wrong_key", "wrong_task", "missing_job", "wrong_job_task", "http"] as const) {
+  let calls = 0;
+  const reply = await fetchByqBacktestLookup("http://backend:8000", request, async () => {
+    calls++;
+    if (failure === "transport") throw new Error("synthetic private transport error");
+    if (failure === "json") return new Response("not JSON");
+    return new Response(JSON.stringify({ schema_version: "backtest-submission-reconciliation.v1", status: "confirmed",
+      task_id: failure === "wrong_task" ? "other" : request.task_id,
+      idempotency_key: failure === "wrong_key" ? "other" : request.idempotency_key,
+      ...(failure === "missing_job" ? {} : { job: { job_id: jobId, task_id: failure === "wrong_job_task" ? "other" : request.task_id } }),
+    }), { status: failure === "http" ? 503 : 200 });
+  });
+  assert.equal(calls, 1);
+  assert.equal(reply.isError, true);
+  assert.doesNotMatch(reply.content[0].text, /private transport/);
+}
+const legacyLookup = await fetchByqBacktestLookup("http://backend:8000", { job_id: jobId }, async (url, init) => {
+  assert.equal(url, `http://backend:8000/v1/research/backtests/${jobId}/summary`);
+  assert.equal(init?.method, "GET");
+  return new Response(JSON.stringify({ job: { job_id: jobId } }));
+});
+assert.equal(legacyLookup.isError, false);
+console.log("Backtest original receipt lookup PASS: exact identity, bounded reads, unknown safety and ID compatibility");

@@ -4049,6 +4049,20 @@ def list_backtest_catalog(
     ))
 
 
+@app.get("/v1/research/backtests/reconcile")
+def reconcile_backtest_submission(request: Request, task_id: str, idempotency_key: str) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        _owned_research_entity("research_task", task_id, context)
+        return backtest_store.reconcile_submission(
+            task_id, idempotency_key, trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        )
+
+    return _backtest_call(operation)
+
+
 @app.get("/v1/research/backtests/{job_id}")
 def get_backtest_job(job_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request)

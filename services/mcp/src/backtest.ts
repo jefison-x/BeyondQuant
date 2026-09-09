@@ -252,3 +252,35 @@ export function fetchByqBacktestTaskCancel(
     fetcher,
   );
 }
+
+
+export type BacktestLookup = { job_id?: string; task_id?: string; idempotency_key?: string };
+
+export async function fetchByqBacktestLookup(
+  backendUrl: string, request: BacktestLookup, fetcher: Fetcher = fetch,
+): Promise<ByqBacktestResult> {
+  const byId = request.job_id !== undefined;
+  if (byId ? (!request.job_id?.trim() || request.task_id !== undefined || request.idempotency_key !== undefined)
+      : (!request.task_id?.trim() || !request.idempotency_key?.trim() || request.idempotency_key.trim().length > 128)) {
+    return result({ service: "beyondquant-mcp", status: "error", backend: { status: "backtest_request_invalid" } }, true);
+  }
+  if (byId) return fetchByqBacktestGet(backendUrl, request.job_id!, fetcher);
+  const query = new URLSearchParams({ task_id: request.task_id!, idempotency_key: request.idempotency_key! });
+  const response = await requestBacktest(backendUrl, `/v1/research/backtests/reconcile?${query}`, { method: "GET" }, fetcher);
+  if (response.isError) return response;
+  const payload = JSON.parse(response.content[0]?.text ?? "{}");
+  if (payload.schema_version !== "backtest-submission-reconciliation.v1"
+      || payload.task_id !== request.task_id!.trim() || payload.idempotency_key !== request.idempotency_key!.trim()
+      || !["confirmed", "outcome_unknown"].includes(payload.status)
+      || (payload.status === "confirmed" && (!payload.job || Array.isArray(payload.job)
+        || typeof payload.job.job_id !== "string" || !/^backtest_[0-9a-f]{32}$/.test(payload.job.job_id)
+        || payload.job.task_id !== payload.task_id))) {
+    return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
+  }
+  if (payload.status === "outcome_unknown") return result({ service: "beyondquant-mcp",
+    schema_version: payload.schema_version, task_id: payload.task_id, idempotency_key: payload.idempotency_key,
+    status: "outcome_unknown", retryable: false,
+    next_action: "Preserve the original task and request key. Query this identity within the task budget; do not repeat submission or infer absence from a list.",
+  }, false);
+  return response;
+}

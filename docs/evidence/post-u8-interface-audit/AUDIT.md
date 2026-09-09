@@ -101,3 +101,6 @@ Factor/Signal归属缺口已隔离复现并完成定向修复；见
 
 后续具名切片：[Research 创建回执原键核对](RESEARCH-RECEIPTS.md)。
 补充前三类实体精确只读入口；持久 watch 和其他提交仍待完成，初始发现表保留历史语境。
+
+后续具名切片：[Backtest 原键核对](BACKTEST-RECEIPTS.md)。提供原 task/key 只读摘要，
+高层 backtest-task 提交、持久等待和自动续接仍未覆盖。

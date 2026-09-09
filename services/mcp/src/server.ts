@@ -11,7 +11,8 @@ import { fetchResearchContext } from "./research-context.js";
 import { fetchByqHealth } from "./backend-health.js";
 import {
   fetchBudgetedByqBacktestAnalysis,
-  fetchByqBacktestGet,
+  fetchByqBacktestLookup,
+  type BacktestLookup,
   fetchByqBacktestTaskCancel,
   fetchByqBacktestTaskCreate,
   fetchByqBacktestTaskExecute,
@@ -437,9 +438,9 @@ async function byqLessonReview(args: { lesson_id: string; decision: string; rati
   return fetchByqLessonReview(BACKEND_URL, lesson_id, request, context);
 }
 
-async function byqBacktestGet(args: { job_id: string }, extra: unknown) {
+async function byqBacktestGet(args: BacktestLookup, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqBacktestGet(BACKEND_URL, args.job_id, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqBacktestLookup(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
 async function byqBacktestAnalysis(
@@ -1065,7 +1066,11 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_backtest_get",
-    { description: "Read durable BYQ backtest job state and immutable result reference.", inputSchema: { job_id: z.string() } },
+    {
+      description: "Read a BYQ backtest summary by job_id OR reconcile a lost submission receipt using the original task_id and idempotency_key. Choose exactly one identity. An unknown receipt never authorizes resubmission.",
+      inputSchema: { job_id: z.string().min(1).optional(), task_id: z.string().min(1).optional(),
+        idempotency_key: z.string().trim().min(1).max(128).optional() },
+    },
     (args) => byqBacktestGet(args, trustedContext),
   );
   server.registerTool(
