@@ -75,6 +75,8 @@
 [ADR-0068](../architecture/adr/ADR-0068-post-u8-community-inspection-waiver.md) 已按维护者
 明确指示接受：当前及之后所有开发步骤免除 Community 原实现检查；真实数据迁移验证不豁免。
 本批不推进 Product Phase，不代表 F2/F6/S3 或全接口审计完成。
+后续归属切片已复现并修复Factor/Signal写入口及Snapshot读取的身份/owner/workspace/kind缺口，
+定向30项及独立`.19`完整CI26/26通过，独立清理通过，尚未部署；具名范围见[领域输入验收](../evidence/post-u8-interface-audit/DOMAIN-INPUT-OWNERSHIP.md)。
 
 ## 生效中的 Accepted ADR
 

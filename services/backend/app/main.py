@@ -2044,8 +2044,11 @@ def list_artifacts(request: Request) -> dict[str, object]:
 
 
 @app.post("/v1/research/factors/compute", status_code=201)
-def compute_research_factor(payload: dict[str, Any]) -> dict[str, object]:
+def compute_research_factor(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
     def operation() -> dict[str, object]:
+        _owned_research_entity("research_task", payload.get("task_id"), context)
         computed = compute_factor(payload)
         artifact_payload = {
             "task_id": payload.get("task_id"),
@@ -2056,7 +2059,10 @@ def compute_research_factor(payload: dict[str, Any]) -> dict[str, object]:
             "trace_id": payload.get("trace_id"),
             "idempotency_key": payload.get("idempotency_key"),
         }
-        artifact = research_store.create_artifact(artifact_payload)
+        artifact = research_store.create_artifact(
+            artifact_payload, trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        )
         return {
             "factor": computed["factor"],
             "input_manifest": computed["input_manifest"],
@@ -3347,15 +3353,18 @@ def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
 
 
 @app.post("/v1/research/signal-snapshots", status_code=201)
-def create_signal_snapshot(payload: dict[str, Any]) -> dict[str, object]:
-    """Create a validated signal_snapshot artifact from a keyless import.
+def create_signal_snapshot(payload: dict[str, Any], http_request: Request) -> dict[str, object]:
+    """Owner-only fixture/import path; keyless does not mean unauthenticated.
 
-    ADR-0017: the snapshot is the immutable frozen input reference for a
-    backtest submission. Phase 32 does not execute strategy source; this is
-    the explicit keyless fixture/import path (tests and demos) until a
-    dedicated signal-producer ADR lands.
+    ADR-0017 permits Product Agent reads, not raw signal imports. Production
+    signal computation continues through the ADR-0023 isolated producer.
     """
+    context = _required_agent_context(http_request, include_workspace=True)
+    if context["actor_principal"] != context["owner_principal"]:
+        raise HTTPException(status_code=403, detail="signal import requires its human owner")
+
     def operation() -> dict[str, object]:
+        _owned_research_entity("research_task", payload.get("task_id"), context)
         request = _strategy_payload(
             payload,
             {
@@ -3364,7 +3373,7 @@ def create_signal_snapshot(payload: dict[str, Any]) -> dict[str, object]:
                 "trace_id", "idempotency_key",
             },
         )
-        version = research_store.get_artifact(request.get("strategy_version_artifact_id"))
+        version = _owned_research_entity("artifact", request.get("strategy_version_artifact_id"), context)
         if version["kind"] != "strategy_version":
             raise ValueError("strategy_version_artifact_id must reference a strategy_version artifact")
         if version["status"] != "validated":
@@ -3398,7 +3407,8 @@ def create_signal_snapshot(payload: dict[str, Any]) -> dict[str, object]:
                     "lineage": [{"kind": "artifact", "id": version["artifact_id"]}],
                     "trace_id": request.get("trace_id"),
                     "idempotency_key": request.get("idempotency_key"),
-                }
+                },
+                trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
             )
         if artifact["status"] == "draft":
             artifact = research_store.transition(
@@ -3417,8 +3427,16 @@ def create_signal_snapshot(payload: dict[str, Any]) -> dict[str, object]:
 
 
 @app.get("/v1/research/signal-snapshots/{artifact_id}")
-def get_signal_snapshot(artifact_id: str) -> dict[str, object]:
-    return _research_call(lambda: {"snapshot": research_store.get_artifact(artifact_id)})
+def get_signal_snapshot(artifact_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        artifact = _owned_research_entity("artifact", artifact_id, context)
+        if artifact["kind"] != "signal_snapshot":
+            raise ResearchNotFound("signal snapshot not found")
+        return {"snapshot": artifact}
+
+    return _research_call(operation)
 
 
 @app.get("/v1/research/signal-snapshots")

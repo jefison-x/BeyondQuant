@@ -91,3 +91,10 @@ add_api_route 或 api_route 动态注册；不能据此关闭 Gateway handler �
 - 本批仅本地提交；未push、无Draft PR、未验证远端CI、未merge或部署。完整本地CI不等于生产修复或所有F2闭合。
 
 Product下一Phase仍未授权；剩余维护开发按上文顺序继续，不因本批通过自动扩大交付/部署授权。
+
+
+## 下一切片（2026-09-09）
+
+Factor/Signal归属缺口已隔离复现并完成定向修复；见
+[领域输入与信号读取归属](DOMAIN-INPUT-OWNERSHIP.md)。本页`.18`验收保持历史记录，
+不覆盖后续新源或宣称F2/全接口审计已闭合。
