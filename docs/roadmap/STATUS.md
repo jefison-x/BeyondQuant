@@ -70,6 +70,12 @@
 - Phase 61 由维护者于 2026-08-27 授权并完成；规范与证据位于 ADR-0034、验收报告和
   `docs/evidence/phase-61/`。
 
+当前整改批次（2026-09-09）：维护者已要求开始剩余项目；首批全接口清单及 F2 非ML
+反馈发布分页核对见[本批审计](../evidence/post-u8-interface-audit/AUDIT.md)。
+[ADR-0068](../architecture/adr/ADR-0068-post-u8-community-inspection-waiver.md) 已按维护者
+明确指示接受：当前及之后所有开发步骤免除 Community 原实现检查；真实数据迁移验证不豁免。
+本批不推进 Product Phase，不代表 F2/F6/S3 或全接口审计完成。
+
 ## 生效中的 Accepted ADR
 
 Post-U8 交付授权（2026-09-08）：维护者明确允许新增独立构建身份、重新认证，并将当前

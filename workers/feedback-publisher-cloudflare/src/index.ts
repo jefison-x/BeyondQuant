@@ -190,11 +190,21 @@ async function reconcileOrCreate(env: PublisherEnv, event: PublicationEvent): Pr
   const token = await installationToken(env);
   const base = `/repos/${REPOSITORY}/issues`;
   const headers = { authorization: `Bearer ${token}` };
-  const catalog = await githubRequest(env, `${base}?state=all&per_page=100&page=1`, { headers }) as GitHubIssue[];
-  if (!Array.isArray(catalog)) throw new PublisherError("provider_unavailable");
-  const matches = catalog.filter((issue) => String(issue.body ?? "").includes(marker(event)));
-  if (matches.length > 1) throw new PublisherError("reconciliation_conflict");
-  if (matches[0]) return matches[0];
+  // A full page is not evidence of absence. Never create after an incomplete scan.
+  const matches: GitHubIssue[] = [];
+  for (let page = 1; page <= 5; page++) {
+    const catalog = await githubRequest(env, `${base}?state=all&per_page=100&page=${page}`, { headers });
+    if (!Array.isArray(catalog) || catalog.length > 100 || catalog.some(
+      (issue) => issue === null || typeof issue !== "object" || Array.isArray(issue)
+    )) throw new PublisherError("provider_unavailable");
+    matches.push(...catalog.filter((issue) => String(issue.body ?? "").includes(marker(event))));
+    if (matches.length > 1) throw new PublisherError("reconciliation_conflict");
+    if (catalog.length < 100) {
+      if (matches[0]) return matches[0];
+      break;
+    }
+    if (page === 5) throw new PublisherError("provider_unavailable");
+  }
   return githubRequest(env, base, { method: "POST", headers, body: JSON.stringify(render(event)) }, 201) as Promise<GitHubIssue>;
 }
 

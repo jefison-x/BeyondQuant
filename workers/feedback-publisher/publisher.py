@@ -204,13 +204,21 @@ class GitHubIssues:
         return {"authorization": f"Bearer {self.credential.token()}"}
 
     def reconcile(self, event: dict[str, Any]) -> dict[str, Any] | None:
-        result = _json_request(f"{self.base}?state=all&per_page=100&page=1", headers=self._headers(), expected={200})
-        if not isinstance(result, list):
-            raise PublisherError("provider_unavailable")
-        matches = [item for item in result if marker(event) in str(item.get("body", ""))]
-        if len(matches) > 1:
-            raise PublisherError("reconciliation_conflict")
-        return matches[0] if matches else None
+        # A full page is not evidence of absence. Exhaustion remains unknown.
+        matches = []
+        for page in range(1, 6):
+            result = _json_request(f"{self.base}?state=all&per_page=100&page={page}",
+                                   headers=self._headers(), expected={200})
+            if not isinstance(result, list) or len(result) > 100 or any(
+                not isinstance(item, dict) for item in result
+            ):
+                raise PublisherError("provider_unavailable")
+            matches.extend(item for item in result if marker(event) in str(item.get("body", "")))
+            if len(matches) > 1:
+                raise PublisherError("reconciliation_conflict")
+            if len(result) < 100:
+                return matches[0] if matches else None
+        raise PublisherError("provider_unavailable")
 
     def create(self, event: dict[str, Any]) -> dict[str, Any]:
         title, body = render(event)
