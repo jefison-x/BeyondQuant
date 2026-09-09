@@ -98,3 +98,6 @@ Product下一Phase仍未授权；剩余维护开发按上文顺序继续，不�
 Factor/Signal归属缺口已隔离复现并完成定向修复；见
 [领域输入与信号读取归属](DOMAIN-INPUT-OWNERSHIP.md)。本页`.18`验收保持历史记录，
 不覆盖后续新源或宣称F2/全接口审计已闭合。
+
+后续具名切片：[Research 创建回执原键核对](RESEARCH-RECEIPTS.md)。
+补充前三类实体精确只读入口；持久 watch 和其他提交仍待完成，初始发现表保留历史语境。

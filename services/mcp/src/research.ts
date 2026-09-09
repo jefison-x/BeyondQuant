@@ -287,3 +287,43 @@ export function fetchByqWebEvidenceCreate(
     },
   );
 }
+
+
+export type ResearchLookup = {
+  entity_type: ResearchEntityType;
+  entity_id?: string;
+  idempotency_key?: string;
+  task_id?: string;
+};
+
+export async function fetchByqResearchLookup(
+  backendUrl: string, request: ResearchLookup, fetcher: Fetcher = fetch,
+): Promise<ByqResearchResult> {
+  const hasId = request.entity_id !== undefined;
+  const hasKey = request.idempotency_key !== undefined;
+  if (hasId === hasKey || (hasId && (request.task_id !== undefined || !request.entity_id?.trim()))
+      || (hasKey && (!request.idempotency_key?.trim() || request.idempotency_key.length > 128
+        || (request.entity_type === "research_task" ? request.task_id !== undefined : !request.task_id?.trim())))) {
+    return result({ service: "beyondquant-mcp", status: "error",
+      backend: { status: "research_request_invalid" } }, true);
+  }
+  if (hasId) return fetchByqResearchGet(backendUrl, request.entity_type, request.entity_id!, fetcher);
+  const query = new URLSearchParams({ entity_type: request.entity_type, idempotency_key: request.idempotency_key! });
+  if (request.task_id) query.set("task_id", request.task_id);
+  const response = await requestResearch(backendUrl, `/v1/research/submissions/reconcile?${query}`, { method: "GET" }, fetcher);
+  if (response.isError) return response;
+  const payload = JSON.parse(response.content[0]?.text ?? "{}");
+  const entityKey = { research_task: "task_id", experiment: "experiment_id", artifact: "artifact_id" }[request.entity_type];
+  if (payload.schema_version !== "research-submission-reconciliation.v1"
+      || payload.entity_type !== request.entity_type || payload.idempotency_key !== request.idempotency_key!.trim()
+      || !["confirmed", "outcome_unknown"].includes(payload.status)
+      || (payload.status === "confirmed" && (!payload.entity || Array.isArray(payload.entity) || typeof payload.entity[entityKey] !== "string" || !payload.entity[entityKey].trim()))) {
+    return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
+  }
+  if (payload.status === "outcome_unknown") return result({ service: "beyondquant-mcp",
+    schema_version: payload.schema_version, entity_type: request.entity_type,
+    idempotency_key: payload.idempotency_key, status: "outcome_unknown", retryable: false,
+    next_action: "Preserve the original request identity. Query this same key later within the task budget; do not repeat the write or infer absence from a list.",
+  }, false);
+  return response;
+}

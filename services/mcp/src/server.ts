@@ -82,7 +82,8 @@ import {
 import {
   fetchByqArtifactCreate,
   fetchByqExperimentCreate,
-  fetchByqResearchGet,
+  fetchByqResearchLookup,
+  type ResearchLookup,
   fetchByqResearchTaskCreate,
   fetchByqResearchTransition,
   fetchByqWebEvidenceCreate,
@@ -625,9 +626,9 @@ async function byqResearchTaskCreate(args: ResearchTaskCreateRequest, extra: unk
   }, trustedBackendFetcher(context));
 }
 
-async function byqResearchGet(args: { entity_type: ResearchEntityType; entity_id: string }, extra: unknown) {
+async function byqResearchGet(args: ResearchLookup, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqResearchGet(BACKEND_URL, args.entity_type, args.entity_id, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqResearchLookup(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
 async function byqSignalSnapshotGet(args: { artifact_id: string }, extra: unknown) {
@@ -1313,10 +1314,12 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_research_get",
     {
-      description: "Read one BYQ ResearchTask, Experiment, or Artifact by identity.",
+      description: "Read one BYQ research entity by entity_id, OR reconcile a lost creation receipt with its original idempotency_key. Experiment/Artifact key lookup requires the original task_id. Choose exactly one identity. Missing receipt is outcome_unknown, never permission to create again.",
       inputSchema: {
         entity_type: z.enum(["research_task", "experiment", "artifact"]),
-        entity_id: z.string(),
+        entity_id: z.string().min(1).optional(),
+        idempotency_key: z.string().min(1).max(128).optional(),
+        task_id: z.string().min(1).optional(),
       },
     },
     (args) => byqResearchGet(args, trustedContext),

@@ -517,6 +517,41 @@ class ResearchStore(ResearchContinuationMixin, PgStoreMixin):
             raise ResearchNotFound("research task not found")
         return self._task_row(row)
 
+    def reconcile_submission(
+        self, entity_type: str, key: object, *, trusted_owner: str,
+        trusted_workspace: str, task_id: object = None,
+    ) -> dict[str, object]:
+        """Read an exact durable creation identity; a missing row remains unknown."""
+        sources = {"research_task": ("research_tasks", self._task_row),
+                   "experiment": ("experiments", self._experiment_row),
+                   "artifact": ("artifacts", self._artifact_row)}
+        if entity_type not in sources:
+            raise ValueError("unsupported research entity type")
+        key = _idempotency_key(key)
+        parameters = {"key": key, "owner": trusted_owner, "workspace": trusted_workspace}
+        if entity_type == "research_task":
+            if task_id is not None:
+                raise ValueError("task lookup does not accept a parent task")
+            parent_filter = ""
+        else:
+            task_id = _identifier(task_id, field="task_id")
+            parent = self.get_task(task_id)
+            if parent["owner_principal"] != trusted_owner or parent["workspace_id"] != trusted_workspace:
+                raise ResearchNotFound("research task not found")
+            parameters["task_id"] = task_id
+            parent_filter = " AND task_id=:task_id"
+        table, projection = sources[entity_type]
+        row = self._fetch_one(
+            f"SELECT * FROM {table} WHERE owner_principal=:owner AND workspace_id=:workspace"
+            f" AND idempotency_key=:key{parent_filter}", parameters,
+        )
+        result = {"schema_version": "research-submission-reconciliation.v1",
+                  "entity_type": entity_type, "idempotency_key": key,
+                  "status": "confirmed" if row is not None else "outcome_unknown"}
+        if row is not None:
+            result["entity"] = projection(row)
+        return result
+
     def list_tasks(self, *, owner_principal: str | None = None) -> dict[str, object]:
         if owner_principal:
             rows = self._execute(

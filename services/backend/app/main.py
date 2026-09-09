@@ -1878,6 +1878,17 @@ def _research_transition(
     return _research_call(operation)
 
 
+@app.get("/v1/research/submissions/reconcile")
+def reconcile_research_submission(
+    request: Request, entity_type: str, idempotency_key: str, task_id: str | None = None,
+) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.reconcile_submission(
+        entity_type, idempotency_key, task_id=task_id,
+        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+    ))
+
+
 @app.post("/v1/research/tasks", status_code=201)
 def create_research_task(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)

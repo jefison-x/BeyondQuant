@@ -78,6 +78,9 @@
 后续归属切片已复现并修复Factor/Signal写入口及Snapshot读取的身份/owner/workspace/kind缺口，
 定向30项及独立`.19`完整CI26/26通过，独立清理通过，尚未部署；具名范围见[领域输入验收](../evidence/post-u8-interface-audit/DOMAIN-INPUT-OWNERSHIP.md)。
 
+非 ML 原键核对维护：ResearchTask/Experiment/Artifact 精确只读接口及 MCP 扩展已实现，
+定向26项与独立`.20`完整CI26/26通过，资源清理通过，尚未部署；完整 F2 仍未关闭。见[回执核对记录](../evidence/post-u8-interface-audit/RESEARCH-RECEIPTS.md)。
+
 ## 生效中的 Accepted ADR
 
 Post-U8 交付授权（2026-09-08）：维护者明确允许新增独立构建身份、重新认证，并将当前
