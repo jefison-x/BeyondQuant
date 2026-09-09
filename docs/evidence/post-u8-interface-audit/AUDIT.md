@@ -107,3 +107,6 @@ Factor/Signal归属缺口已隔离复现并完成定向修复；见
 
 后续具名切片：[高层 Backtest Task 回执](BACKTEST-TASK-RECEIPTS.md)。
 精确恢复信号组件及派生任务 ID；提交前准备/补数、认领与后续引用原子性仍待整改。
+
+后续具名切片：[信号任务提交认领与引用原子性](SIGNAL-SUBMISSION.md)。
+原键先认领、job/引用同事务，行情评估及补数后移现有 Worker；持久等待预算和自动续接仍待整改。

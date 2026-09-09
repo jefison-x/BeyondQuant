@@ -1644,9 +1644,9 @@ def _signal_producer_call(operation: Callable[[], dict[str, object]]) -> dict[st
         raise HTTPException(status_code=422, detail=str(error)) from error
     except (ResearchNotFound, PaperTradingNotFound, SignalProducerNotFound) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    except SignalProducerConflict as error:
+    except (SignalProducerConflict, PaperTradingConflict) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
-    except SignalProducerPersistenceError as error:
+    except (SignalProducerPersistenceError, PaperTradingPersistenceError, ResearchPersistenceError) as error:
         raise HTTPException(status_code=503, detail="signal producer storage is unavailable") from error
 
 
@@ -1657,9 +1657,9 @@ def _backtest_task_call(operation: Callable[[], dict[str, object]]) -> dict[str,
         raise HTTPException(status_code=422, detail=str(error)) from error
     except (ResearchNotFound, PaperTradingNotFound, SignalProducerNotFound, BacktestNotFound, MLPredictionNotFound) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    except (SignalProducerConflict, BacktestConflict, MLPredictionConflict) as error:
+    except (SignalProducerConflict, BacktestConflict, MLPredictionConflict, PaperTradingConflict) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
-    except (SignalProducerPersistenceError, BacktestStorageError, MLPredictionPersistenceError) as error:
+    except (SignalProducerPersistenceError, BacktestStorageError, MLPredictionPersistenceError, PaperTradingPersistenceError, ResearchPersistenceError) as error:
         raise HTTPException(status_code=503, detail="backtest task storage is unavailable") from error
 
 
@@ -3471,7 +3471,7 @@ def _signal_date(value: object, field: str) -> str:
 
 
 def _prepare_signal_producer(
-    data: dict[str, Any], *, owner_principal: str, request_repair: bool
+    data: dict[str, Any], *, owner_principal: str, request_repair: bool, assess_readiness: bool = True
 ) -> dict[str, object]:
     """Shared BYQ preflight for signal jobs and the backtest task facade."""
     task = research_store.get_task(data.get("task_id"))
@@ -3541,8 +3541,15 @@ def _prepare_signal_producer(
             if isinstance(strategy_snapshot.get("data_requirements"), dict) else {}
         ),
     )
-    readiness = market_readiness_store.assess(requirement)
-    if readiness["state"] != "ready":
+    members = security_master_store._execute(
+        """SELECT symbol FROM security_master_snapshot_members
+           WHERE snapshot_id=:snapshot AND symbol IN (SELECT jsonb_array_elements_text(:symbols))""",
+        {"snapshot": master_snapshot["snapshot_id"], "symbols": symbols},
+    )
+    if {str(row["symbol"]) for row in members} != set(symbols):
+        raise ValueError("stock pool contains symbols absent from the frozen security master")
+    readiness = market_readiness_store.assess(requirement) if assess_readiness else {"state": "unknown", "missing": []}
+    if assess_readiness and readiness["state"] != "ready":
         if any(item.get("dataset") == "security_lifecycle" for item in readiness["missing"]):
             raise ValueError("stock pool contains symbols absent from the frozen security master")
         if request_repair:
@@ -3572,10 +3579,36 @@ def _prepare_signal_producer(
     }
 
 
+def _submit_signal_component(data: dict[str, Any], context: dict[str, str], *, purpose: str) -> dict[str, object]:
+    _owned_research_entity("research_task", data.get("task_id"), context)
+    command = {key: value for key, value in data.items() if key not in {"trace_id", "idempotency_key"}}
+
+    def prepare() -> dict[str, object]:
+        prepared = _prepare_signal_producer(
+            data, owner_principal=context["owner_principal"], request_repair=False, assess_readiness=False,
+        )
+        if purpose == "backtest_task" and _approved_strategy_artifact(
+            context["owner_principal"], str(prepared["version"]["artifact_id"])
+        ) is None:
+            raise ValueError("strategy version must be approved before task creation")
+        if data.get("experiment_id") is not None:
+            experiment = _owned_research_entity("experiment", data["experiment_id"], context)
+            if experiment["task_id"] != prepared["task"]["task_id"]:
+                raise ValueError("experiment does not belong to task_id")
+        return prepared
+
+    return signal_job_store.submit_waiting(
+        command=command, purpose=purpose, trusted_owner=context["owner_principal"],
+        trusted_workspace=context["workspace_id"], trace_id=str(data.get("trace_id") or context["trace_id"]),
+        idempotency_key=data.get("idempotency_key"), prepare=prepare,
+        record_reference=paper_store.record_pool_reference_in_transaction,
+    )
+
+
 @app.post("/v1/research/signal-producer/jobs", status_code=202)
 def create_signal_producer_job(payload: dict[str, Any], request: Request) -> dict[str, object]:
     """Freeze owner-scoped BYQ inputs before isolated strategy execution."""
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         data = _strategy_payload(
@@ -3586,27 +3619,7 @@ def create_signal_producer_job(payload: dict[str, Any], request: Request) -> dic
                 "execution", "order_quantity", "trace_id", "idempotency_key",
             },
         )
-        prepared = _prepare_signal_producer(
-            data, owner_principal=context["owner_principal"], request_repair=True
-        )
-        task = prepared["task"]
-        version = prepared["version"]
-        pool_snapshot = prepared["pool_snapshot"]
-        job = signal_job_store.create_waiting(
-            owner_principal=context["owner_principal"],
-            task_id=task["task_id"],
-            experiment_id=data.get("experiment_id"),
-            strategy_version_artifact_id=version["artifact_id"],
-            stock_pool_snapshot_id=pool_snapshot["snapshot_id"],
-            preparation=prepared["preparation"], requirement=prepared["requirement"],
-            readiness=prepared["readiness"],
-            trace_id=data.get("trace_id"),
-            idempotency_key=data.get("idempotency_key"),
-        )
-        paper_store.record_pool_reference(
-            pool_snapshot["snapshot_id"], domain="signal_producer", reference_id=job["job_id"],
-            trusted_owner=context["owner_principal"],
-        )
+        job = _submit_signal_component(data, context, purpose="signal_producer")
         return {"job": job}
 
     return _signal_producer_call(operation)
@@ -3736,36 +3749,11 @@ def prepare_backtest_task(payload: dict[str, Any], request: Request) -> dict[str
 @app.post("/v1/research/backtest-tasks", status_code=202)
 def create_backtest_task(payload: dict[str, Any], request: Request) -> dict[str, object]:
     """Create the existing signal-preparation component and return its derived facade."""
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         data = _backtest_task_input(payload, include_idempotency=True)
-        prepared = _prepare_signal_producer(
-            data, owner_principal=context["owner_principal"], request_repair=True
-        )
-        version = prepared["version"]
-        if _approved_strategy_artifact(
-            context["owner_principal"], str(version["artifact_id"])
-        ) is None:
-            raise ValueError("strategy version must be approved before task creation")
-        job = signal_job_store.create_waiting(
-            owner_principal=context["owner_principal"],
-            task_id=prepared["task"]["task_id"],
-            experiment_id=data.get("experiment_id"),
-            strategy_version_artifact_id=version["artifact_id"],
-            stock_pool_snapshot_id=prepared["pool_snapshot"]["snapshot_id"],
-            preparation=prepared["preparation"],
-            requirement=prepared["requirement"],
-            readiness=prepared["readiness"],
-            trace_id=context["trace_id"],
-            idempotency_key=data.get("idempotency_key"),
-        )
-        paper_store.record_pool_reference(
-            str(prepared["pool_snapshot"]["snapshot_id"]),
-            domain="signal_producer",
-            reference_id=str(job["job_id"]),
-            trusted_owner=context["owner_principal"],
-        )
+        job = _submit_signal_component(data, context, purpose="backtest_task")
         return {"task": _backtest_task_view(job, owner_principal=context["owner_principal"])}
 
     return _backtest_task_call(operation)

@@ -154,7 +154,7 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
     assert created.status_code == 202, created.text
     job = created.json()["job"]
     assert job["status"] == "waiting_for_data"
-    assert job["readiness"]["state"] == "ready"
+    assert job["readiness"]["state"] == "unknown"
     assert jobs.claim_next() is None
     assert promote_waiting_signal_jobs(jobs, readiness) == 1
     job = jobs.get(job["job_id"], trusted_owner="signal-owner")
