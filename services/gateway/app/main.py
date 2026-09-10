@@ -5,7 +5,9 @@ import hashlib
 import os
 import asyncio
 import threading
+import time
 import uuid
+from datetime import datetime, timezone
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from contextlib import asynccontextmanager
@@ -141,6 +143,12 @@ def _consume_admitted_task_continuation(context):
     task = intent['task_id']
     if receipt.get('reservation_id') != identity or reservation.get('task_id') != task:
         raise ValueError('continuation reservation identity mismatch')
+    if observer is not None:
+        if not product_sessions.hold_continuation(observer, identity, reservation['expires_at']):
+            return
+        generation = product_sessions.idle_release_generation(observer)
+        if generation is not None:
+            _schedule_idle_release(observer, generation)
     def mark(status, **fields):
         return backend('receipt', {'reservation_id': identity, 'status': status, **fields}, task=task)
     settled = _continuation_adapter_get(
@@ -152,6 +160,7 @@ def _consume_admitted_task_continuation(context):
         mark('settled', charged_tokens=settled['charged_tokens'], settlement_sha256=settled['settlement_sha256'],
             outcome=settled['outcome'])
         if observer is not None:
+            product_sessions.finish_continuation(observer, identity)
             generation = product_sessions.idle_release_generation(observer)
             if generation is not None:
                 _schedule_idle_release(observer, generation)
@@ -170,6 +179,13 @@ def _consume_admitted_task_continuation(context):
     except HTTPException:
         product_sessions.remove_owned(conversation, principal)
         session = _restore_product_session(conversation, principal, workspace)
+    if observer is not session:
+        if not product_sessions.hold_continuation(session, identity, reservation['expires_at']):
+            return
+        observer = session
+        generation = product_sessions.idle_release_generation(observer)
+        if generation is not None:
+            _schedule_idle_release(observer, generation)
     payload = {'content': instruction, 'require_model_key': True, 'idempotency_key': identity,
         'continuation_budget': reservation, **_runtime_recovery_payload(session)}
     if backend('dispatch', {'reservation_id': identity}, task=task).get('dispatch') is not True:
@@ -182,6 +198,11 @@ def _consume_admitted_task_continuation(context):
         # Ambiguous transport failures remain unknown and are only reconciled.
         if exc.status_code == 409:
             mark('rejected')
+            if observer is not None:
+                product_sessions.finish_continuation(observer, identity)
+                generation = product_sessions.idle_release_generation(observer)
+                if generation is not None:
+                    _schedule_idle_release(observer, generation)
         return
     if accepted.get('accepted') is not True or not _valid_prompt_run_id(accepted.get('run_id')):
         return
@@ -346,6 +367,8 @@ class ProductSession:
     public_streams: int = 0
     release_generation: int = 0
     release_timer: threading.Timer | None = None
+    continuation_reservation: str | None = None
+    continuation_deadline: float = 0
 
 
 class ProductSessionRegistry:
@@ -396,6 +419,40 @@ class ProductSessionRegistry:
             session.release_generation += 1
             return session.release_generation
 
+    def hold_continuation(self, session: ProductSession, reservation_id: str, expires_at: str) -> bool:
+        """Keep the original session through its fixed admitted turn deadline.
+
+        This is only an idle-release lease, not spend or execution authority.
+        Receipt polling cannot extend a reservation's monotonic lease.
+        """
+        expiry = datetime.fromisoformat(expires_at)
+        if expiry.tzinfo is None:
+            raise ValueError('continuation expiry requires a timezone')
+        remaining = max(0, min(900, (expiry - datetime.now(timezone.utc)).total_seconds()))
+        with self._lock:
+            if session.released:
+                return False
+            if session.continuation_reservation != reservation_id:
+                session.continuation_reservation = reservation_id
+                session.continuation_deadline = time.monotonic() + remaining + 5
+            session.release_generation += 1
+            if session.release_timer is not None:
+                session.release_timer.cancel()
+                session.release_timer = None
+            return True
+
+    def finish_continuation(self, session: ProductSession, reservation_id: str) -> None:
+        with self._lock:
+            if session.continuation_reservation == reservation_id:
+                session.continuation_reservation = None
+                session.continuation_deadline = 0
+
+    def idle_release_delay(self, session: ProductSession) -> float:
+        with self._lock:
+            if session.continuation_reservation is not None:
+                return max(0, session.continuation_deadline + RUNTIME_SESSION_IDLE_SECONDS - time.monotonic())
+            return RUNTIME_SESSION_IDLE_SECONDS
+
     def attach_release_timer(self, session: ProductSession, generation: int, timer: threading.Timer) -> bool:
         with self._lock:
             if session.released or session.public_streams or session.release_generation != generation:
@@ -405,7 +462,8 @@ class ProductSessionRegistry:
 
     def claim_idle_release(self, session: ProductSession, generation: int) -> bool:
         with self._lock:
-            if session.released or session.public_streams or session.release_generation != generation:
+            if (session.released or session.public_streams or session.release_generation != generation
+                    or session.continuation_deadline > time.monotonic()):
                 return False
             session.released = True
             session.release_timer = None
@@ -517,7 +575,7 @@ def _schedule_idle_release(session: ProductSession, generation: int | None = Non
             return
         product_sessions.remove_owned(session.conversation_id, session.principal)
 
-    timer = threading.Timer(RUNTIME_SESSION_IDLE_SECONDS, release)
+    timer = threading.Timer(product_sessions.idle_release_delay(session), release)
     timer.daemon = True
     if product_sessions.attach_release_timer(session, generation, timer):
         timer.start()

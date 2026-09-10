@@ -675,7 +675,11 @@ PYCODE
   if ! resolve_ci_compose_urls; then
     bad "F6 endpoint discovery"; export COMPOSE_FILE="$original_compose"; return
   fi
-  if docker compose cp scripts/evidence/f6-chain-fixture.py backend:/tmp/f6-chain-fixture.py >/dev/null \
+  # Prior golden journeys intentionally replace their own market/security
+  # fixtures. Restore the complete F6 input scope before this independent chain.
+  if docker compose cp scripts/evidence/phase74-seed.py backend:/tmp/f6-market-seed.py >/dev/null \
+    && docker compose exec -T backend python /tmp/f6-market-seed.py \
+    && docker compose cp scripts/evidence/f6-chain-fixture.py backend:/tmp/f6-chain-fixture.py >/dev/null \
     && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" run_interruptible python3 scripts/evidence/f6-chain-verification.py; then
     ok "F6 real-domain chain and Gateway restart"
   else

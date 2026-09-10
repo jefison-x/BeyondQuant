@@ -89,7 +89,8 @@ watch(() => props.taskId, () => {
         <el-input-number aria-label="任务累计 token 额度" v-model="tokenLimit" :min="1" :max="Number.MAX_SAFE_INTEGER" :precision="0" :disabled="busy" />
       </el-form-item>
       <el-form-item label="确认本任务使用的已验证资产">
-        <el-select v-model="selected" multiple :multiple-limit="16" :disabled="busy" placeholder="选择已验证资产" style="width: 100%">
+        <el-select v-model="selected" multiple :multiple-limit="16" :disabled="busy" :fit-input-width="true"
+          popper-class="continuation-assets" placeholder="选择已验证资产" style="width: 100%">
           <el-option v-for="asset in eligible" :key="String(asset.artifact_id)" :value="String(asset.artifact_id)"
             :label="`${asset.kind} · ${asset.artifact_id}`" />
         </el-select>
@@ -110,4 +111,11 @@ watch(() => props.taskId, () => {
 .continuation-panel .el-checkbox { max-width: 100%; height: auto; align-items: flex-start; }
 .continuation-panel :deep(.el-checkbox__label) { white-space: normal; overflow-wrap: anywhere; line-height: 1.6; }
 .continuation-panel :deep(.el-checkbox__input) { margin-top: 4px; }
+</style>
+
+<style>
+.continuation-assets .el-select-dropdown__item {
+  height: auto; white-space: normal; overflow-wrap: anywhere;
+  line-height: 1.6; padding-top: 6px; padding-bottom: 6px;
+}
 </style>

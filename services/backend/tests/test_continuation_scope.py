@@ -19,7 +19,7 @@ def setup():
 
 def test_scope_binds_original_task_and_root_before_lost_prompt_ack():
     store, task, context, _, receipt = setup()
-    call = dict(tool='byq_research_get', arguments={'entity_type': 'research_task', 'entity_id': task}, root_run_id='a'*32)
+    call = dict(tool='byq_research_get', arguments={'entity_type': 'research_task', 'entity_id': ' ' + task + '\t'}, root_run_id='a'*32)
     try:
         reply = authorize(store, receipt['reservation_id'], call, context)
         assert reply['admitted'] is True and reply['task_id'] == task
@@ -40,13 +40,16 @@ def test_background_scope_cannot_approve_or_change_goals(tool):
         store.close()
 
 
-def test_scope_rejects_same_owner_other_task_and_cross_conversation():
+@pytest.mark.parametrize('padding', ['{}', ' {} ', '\t{}\n'])
+def test_scope_rejects_same_owner_other_task_and_cross_conversation(padding):
     store, task, context, _, receipt = setup()
     try:
         other = store.create_task({'owner_principal': context['owner_principal'], 'title': 'Other task',
             'objective': 'Unrelated', 'trace_id': context['trace_id'], 'idempotency_key': 'other-task'}, trusted_context=context)
+        identity = padding.format(other['task_id'])
+        assert store.get_task(identity)['task_id'] == other['task_id']
         call = dict(tool='byq_research_transition', arguments={'entity_type': 'research_task',
-            'entity_id': other['task_id'], 'target_status': 'running'}, root_run_id='a'*32)
+            'entity_id': identity, 'target_status': 'running'}, root_run_id='a'*32)
         assert authorize(store, receipt['reservation_id'], call, context)['admitted'] is False
         with pytest.raises(ValueError, match='no longer admitted'):
             authorize(store, receipt['reservation_id'], {**call, 'arguments': {'entity_id': task}},

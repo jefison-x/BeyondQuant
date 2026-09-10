@@ -6,7 +6,7 @@ import sys
 import pytest
 
 from app.lifecycle_journal import LifecycleJournal, JournalBusy
-from app.contracts import make_workflow_trace_event
+from app.contracts import make_workflow_trace_event, validate_workflow_trace_event
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
 
 
@@ -94,6 +94,32 @@ def test_terminal_is_not_overwritten_and_high_watermark_is_durable(tmp_path):
     assert [row["kind"] for row in journal.state["events"]] == ["session.started", "session.result"]
     assert "private-answer-must-not-persist" not in journal.path.read_text()
     journal.close()
+
+
+@pytest.mark.parametrize('kind,key,prefix', [
+    ('agent.card.backtest_context', 'job_id', 'backtest_'),
+    ('agent.card.approval', 'approval_id', 'agent_approval_'),
+])
+def test_internal_card_reference_advances_only_sequence_before_gateway_hydration(tmp_path, kind, key, prefix):
+    journal = LifecycleJournal.claim(tmp_path, CTX, create=True)
+    journal.observe(event(1), generation='one')
+    reference = {**event(2, kind), 'payload': {key: prefix + 'b' * 32}}
+    with pytest.raises(ValueError):
+        validate_workflow_trace_event(reference)
+    for invalid in ({**reference, 'payload': {**reference['payload'], 'status': 'completed'}},
+                    {**reference, 'payload': {key: 'foreign'}},
+                    {**reference, 'session_id': 'foreign-session'}):
+        with pytest.raises(ValueError):
+            journal.observe(invalid, generation='one')
+        assert journal.state['sequence'] == 1
+    journal.observe(reference, generation='one')
+    assert journal.state['sequence'] == 2
+    assert len(journal.state['events']) == 1
+    journal.observe(event(3, 'session.result'), generation='one')
+    journal.close()
+    state = LifecycleJournal.read(journal.path)
+    assert state['sequence'] == 3
+    assert [e['kind'] for e in state['events']] == ['session.started', 'session.result']
 
 
 def test_unknown_corrupt_and_foreign_journals_fail_closed(tmp_path):

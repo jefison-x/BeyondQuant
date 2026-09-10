@@ -94,6 +94,8 @@ while time.monotonic() < deadline:
         if state != last:
             print(json.dumps({'task_id': task, 'state': state}), flush=True)
             last = state
+        if view.get('blocked_reason') == 'continuation_needs_attention':
+            raise AssertionError('F6 reported a real blocker; inspect the domain evidence instead of waiting for fabricated completion')
         if row['status'] == 'completed' and view['budget']['unconfirmed_reservations'] == 0:
             assert view['permission']['expires_at'] == permission['permission']['expires_at']
             print(json.dumps(fixture('verify', {'task_id': task})), flush=True)

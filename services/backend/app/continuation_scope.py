@@ -92,6 +92,9 @@ class Scope:
             self.identity(value)
 
     def identity(self, identity):
+        # Match typed Domain identifier normalization before recognizing a
+        # reference; padding must not turn a foreign object into plain text.
+        identity = identity.strip()
         if identity in self.checked:
             return
         if len(self.checked) >= 128:

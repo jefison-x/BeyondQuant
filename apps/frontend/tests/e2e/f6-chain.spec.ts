@@ -30,8 +30,9 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       return { task, report: artifacts.artifacts.find((row: { artifact_id: string }) => row.artifact_id === task.progress.completion_evidence[0]) };
     });
     expect(snapshot.task.status).toBe('completed');
-    expect(snapshot.report.kind).toBe('comparison_report');
+    expect(snapshot.report.kind).toBe('research_report');
     expect(snapshot.report.status).toBe('validated');
+    expect(snapshot.report.content.report_type).toBe('strategy_comparison');
     expect(snapshot.report.content.delta_total_return).toBe(snapshot.report.content.candidate.total_return - snapshot.report.content.baseline.total_return);
     expect(foreign).toEqual([]);
     expect(errors).toEqual([]);

@@ -64,8 +64,9 @@ elif action == 'verify':
     evidence = task['progress']['completion_evidence']
     assert len(evidence) == 1
     report = store.get_artifact(evidence[0])
-    assert report['kind'] == 'comparison_report' and report['status'] == 'validated'
+    assert report['kind'] == 'research_report' and report['status'] == 'validated'
     result = report['content']
+    assert result['report_type'] == 'strategy_comparison'
     assert result['delta_total_return'] == result['candidate']['total_return'] - result['baseline']['total_return']
     print(json.dumps({'status': 'passed', 'task_id': task['task_id'], 'counts': counts,
         'turns': len(budget), 'charged_ceiling': sum(r['charged_tokens'] for r in budget), 'evidence': evidence}))

@@ -42,6 +42,9 @@ def next_action(body):
         raise ValueError('the isolated fixture accepts only trusted continuation prompts')
     task_id, event_text = matches[-1]
     event = json.loads(event_text)
+    if event['status'] != 'completed':
+        print(json.dumps({'f6_fixture_error': 'domain_event_not_completed', 'kind': event['kind']}), flush=True)
+        raise ValueError('fixture requires an actually completed domain event')
     calls = {}
     records = []
     for message in messages:
@@ -50,6 +53,8 @@ def next_action(body):
         if message['role'] == 'tool' and message.get('tool_call_id') in calls:
             result = decode_result(message.get('content'))
             if result is None:
+                print(json.dumps({'f6_fixture_error': 'unrecognized_mcp_result',
+                    'tool': calls[message['tool_call_id']]}), flush=True)
                 raise ValueError('unrecognized real MCP response')
             records.append((calls[message['tool_call_id']], result))
     def tool(name, args):
@@ -107,8 +112,8 @@ def next_action(body):
         report = latest('byq_artifact_create')
         if report is None:
             original, current = baseline_result['content']['summary'], candidate['job']['summary']
-            return tool('byq_artifact_create', {'task_id': task_id, 'kind': 'comparison_report',
-                'content': {'synthetic_input_fixture': True, 'baseline': original, 'candidate': current,
+            return tool('byq_artifact_create', {'task_id': task_id, 'kind': 'research_report',
+                'content': {'report_type': 'strategy_comparison', 'synthetic_input_fixture': True, 'baseline': original, 'candidate': current,
                     'delta_total_return': current['total_return'] - original['total_return']},
                 'lineage': [{'kind': 'artifact', 'id': baseline},
                     {'kind': 'artifact', 'id': candidate['job']['result_artifact_id']}],

@@ -47,6 +47,8 @@ def fixture(monkeypatch):
     monkeypatch.setattr(main, '_continuation_adapter_get', adapter)
     monkeypatch.setattr(main.product_sessions, 'get_owned', lambda *args: SimpleNamespace(session_id='session-a'))
     monkeypatch.setattr(main.product_sessions, 'idle_release_generation', lambda session: None)
+    monkeypatch.setattr(main.product_sessions, 'hold_continuation', lambda *args: True)
+    monkeypatch.setattr(main.product_sessions, 'finish_continuation', lambda *args: None)
     monkeypatch.setattr(main, '_runtime_recovery_payload', lambda session: {'conversation_context': []})
     monkeypatch.setattr(main, '_adapter_post', lambda path, payload, timeout: prompts.append(payload) or
         {'accepted': True, 'run_id': 'c'*32})
@@ -167,3 +169,49 @@ def test_restarted_gateway_observes_original_runtime_without_replacing_unknown_p
         assert started == [session] and reopened == [context['session_id']]
         assert main._attach_continuation_observer(context) is session
         assert started == [session]
+
+
+def test_background_turn_fences_old_idle_timer_and_browser_disconnect_without_renewal(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    clock = [100.0]
+    monkeypatch.setattr(main.time, 'monotonic', lambda: clock[0])
+    registry = main.ProductSessionRegistry()
+    session = main.ProductSession(conversation_id='conversation-a', session_id='session-a',
+        trace_id='trace-a', principal=main.Principal(subject='alice'))
+    registry.add(session)
+    old = registry.idle_release_generation(session)
+    expiry = (datetime.now(timezone.utc) + timedelta(seconds=300)).isoformat()
+    assert registry.hold_continuation(session, 'reservation-a', expiry)
+    deadline = session.continuation_deadline
+    assert not registry.claim_idle_release(session, old)
+    registry.begin_stream(session)
+    disconnected = registry.end_stream(session)
+    assert session.public_streams == 0 and disconnected is not None
+    assert not registry.claim_idle_release(session, disconnected)
+    assert registry.idle_release_delay(session) > 300
+    clock[0] += 30
+    assert registry.hold_continuation(session, 'reservation-a', expiry)
+    assert session.continuation_deadline == deadline
+    registry.finish_continuation(session, 'different-reservation')
+    assert session.continuation_deadline == deadline
+    # Unknown outcomes still have a bounded physical idle lease, without
+    # refunding Backend budget or inventing a terminal execution receipt.
+    clock[0] = deadline + 1
+    assert registry.idle_release_delay(session) == main.RUNTIME_SESSION_IDLE_SECONDS - 1
+    clock[0] = deadline + main.RUNTIME_SESSION_IDLE_SECONDS + 1
+    assert registry.hold_continuation(session, 'reservation-a', expiry)
+    assert registry.idle_release_delay(session) == 0
+    generation = registry.idle_release_generation(session)
+    assert registry.claim_idle_release(session, generation)
+
+
+def test_settlement_releases_only_matching_background_idle_lease():
+    from datetime import datetime, timedelta, timezone
+    registry = main.ProductSessionRegistry()
+    session = main.ProductSession(conversation_id='conversation-a', session_id='session-a',
+        trace_id='trace-a', principal=main.Principal(subject='alice'))
+    registry.add(session)
+    registry.hold_continuation(session, 'reservation-a', (datetime.now(timezone.utc) + timedelta(seconds=300)).isoformat())
+    registry.finish_continuation(session, 'reservation-a')
+    assert registry.idle_release_delay(session) == main.RUNTIME_SESSION_IDLE_SECONDS
+    assert registry.claim_idle_release(session, registry.idle_release_generation(session))

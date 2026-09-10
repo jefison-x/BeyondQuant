@@ -221,7 +221,22 @@ class LifecycleJournal:
                 os.unlink(name)
 
     def observe(self, event, *, generation, prompt=None):
-        validate_workflow_trace_event(event)
+        # Runtime emits only a closed reference for these cards. Gateway
+        # hydrates them through an owner-scoped Domain read before public
+        # persistence. They are sequence observations, never recovery evidence.
+        reference = {
+            'agent.card.backtest_context': ('job_id', r'backtest_[0-9a-f]{32}'),
+            'agent.card.approval': ('approval_id', r'agent_approval_[0-9a-f]{32}'),
+        }.get(event.get('kind'))
+        if reference and event.get('source') == 'runtime-adapter':
+            key, pattern = reference
+            payload = event.get('payload')
+            if (not isinstance(payload, dict) or set(payload) != {key}
+                    or not isinstance(payload[key], str) or re.fullmatch(pattern, payload[key]) is None):
+                raise ValueError('invalid internal card reference')
+            validate_workflow_trace_event({**event, 'kind': 'session.ready', 'payload': {}})
+        else:
+            validate_workflow_trace_event(event)
         if (event["session_id"], event["trace_id"]) != (self.state["context"]["session_id"], self.state["context"]["trace_id"]):
             raise ValueError("event belongs to a different journal")
         state = copy.deepcopy(self.state)
