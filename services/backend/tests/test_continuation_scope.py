@@ -31,7 +31,7 @@ def test_scope_binds_original_task_and_root_before_lost_prompt_ack():
 
 
 @pytest.mark.parametrize('tool', ['byq_agent_approval_decide', 'byq_research_task_create',
-    'byq_ml_training_create', 'byq_pool_create', 'byq_feedback_submit'])
+    'byq_ml_training_create', 'byq_pool_create', 'byq_feedback_submit', 'byq_agent_context'])
 def test_background_scope_cannot_approve_or_change_goals(tool):
     store, _, context, _, receipt = setup()
     try:

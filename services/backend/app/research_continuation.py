@@ -308,6 +308,9 @@ class ResearchContinuationMixin:
                         'Reconcile the exact original object before any write. Apply current authorization to each '
                         'prediction, signal, backtest and comparison action separately. A strategy approval is not '
                         'blanket authorization. If approval is needed, persist/request it and explain the blocker. '
+                        'The injected identity is authoritative. Workspace/conversation-wide context and notification inbox '
+                        'calls (including byq_agent_context) are unavailable in this task-bound turn; '
+                        'read only the exact task through byq_research_get. '
                         'Background web search is unavailable. Preserve the original goal; update its durable progress '
                         'and exact evidence. A completed model turn does not mean the research goal is complete. '
                         'Do not create a new task or choose a different workspace object.')

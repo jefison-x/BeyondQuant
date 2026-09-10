@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from .db import execute, fetch_one
 
 TOOLS = frozenset({
-    'byq_agent_context', 'byq_agent_roles', 'byq_agent_run_start', 'byq_agent_authorize',
+    'byq_agent_roles', 'byq_agent_run_start', 'byq_agent_authorize',
     'byq_agent_audit', 'byq_agent_audit_get', 'byq_agent_approval_request', 'byq_agent_approval_get',
     'byq_research_get', 'byq_research_transition', 'byq_experiment_create', 'byq_artifact_create',
     'byq_ml_training_get', 'byq_ml_prediction_create', 'byq_ml_prediction_get',

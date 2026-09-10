@@ -83,5 +83,43 @@ Gateway 全量 217 项通过。首尾空白跨任务负例修复后，消费者/
 移动端下拉框宽度、长编号和确认说明修复后，真实 Product API 保存、重载、隔离与撤销通过；
 390px 表单截图已人工检查，无横向裁切。这些调试构建仍不替代最终不可变构建全量验收。
 
+第五个独立合成用户的真实领域链路通过：task `task_ab567669f56a488584143da11b150a7b`，
+1 次训练、1 次预测、2 次原生回测（含既有基线），3 次唯一事件/派发/结算，
+累计保守额度 19,021,824，未确认预留为 0。完成证据为 validated `research_report`，
+`report_type=strategy_comparison`，使用两次真实回测汇总计算收益差；
+前一失败夹具误用的 `comparison_report` 并非既有完成证据类型，领域合同未为夹具放宽。
+桌面 1440px、手机 390px 的 Product API 完成状态及报告读取两项通过；手机结算截图已人工检查。
+此处“真实”指真实 DSH/MCP/领域/数据库/Worker/回测执行，Provider 决策和行情输入均明确为合成。
+
+中间候选源码提交 `e03c034`，不可变构建 `.27`（未晋升）：
+
+- baseline manifest：`sha256:f2d26aa6b043215aa6c99751bdbb0dd8a8d673ad284d2d9fbf5281bd58a44cb2`
+- candidate manifest：`sha256:4d68102528c131b6a3c166770c4dfcf674828d09b8e62191cebe4e51c5b887d1`
+- 本地 CI scope：`local-u7-f6-completion-27`，文档及 228 项架构检查通过，
+  Backend 全量执行期间自审发现 `byq_agent_context` 会提供同会话其他任务摘要和 inbox，
+  主动终止资格运行（exit 143），未计作全量通过。资源清理及独立 verify 通过。
+- `.26` 调试栈及三个临时 Runtime、Gateway/Frontend 镜像已清理；独立 cleanup verify 为零。
+- 生产只读前置核对：当前续接许可总数及未过期数均为 0；尚未改变服务或启动历史研究。
+
+`.28` 去掉后台 `byq_agent_context` 准入，指令明确仅使用已注入身份及精确原任务读取；
+普通前台 context/inbox 不变，新增拒绝回归。没有对 Product API 或公开卡片合同放宽权限。
+最终全量 CI scope 为 `local-u7-f6-completion-28`，当前 RUNNING。
+baseline manifest：`sha256:38bbbbbd3b8e840241717292bcbf60dee409cdba33a0c7a9b9742a693726cd8f`；
+candidate manifest：`sha256:f0980d9fb0da4966f826220e4ffeb3479cbb9ff28cd88b2f525df8e71432b29f`。
+
+### 验收定位
+
+| 要求 | 主要证据 |
+|---|---|
+| 原用户/工作区/任务/已确认策略边界 | `test_research_continuation.py`、`test_continuation_scope.py`，包含空白 ID 绕过负例 |
+| 并发额度、撤销竞争、未知结果不退款 | PostgreSQL `test_continuation_budget_ledger.py` |
+| 发出前额度保护、根/子/压缩/重试/搜索 | 真实官方进程 `test_continuation_budget_process.py` 和公开 hook Node 测试 |
+| 精确事件去重及恢复 | `test_continuation_notifications.py`、`test_task_continuation_delivery.py`；全链 Gateway 重启后只派发 3 次 |
+| 进程释放/Adapter 重启后的结算 | `test_continuation_budget_process.py` 的原身份持久证明测试 |
+| 模型回合与任务完成分离 | `f6-chain-verification.py` + `f6-chain-fixture.py` 核查持久领域对象与 validated 报告 |
+| 用户许可、重载、越权拒绝、撤销 | `real-product.spec.ts` 桌面/手机真实 Product API 流程 |
+| 完成状态、对比报告和额度可读 | `f6-chain.spec.ts` 桌面/手机；无外部请求及页面错误 |
+| 当前精确构建回归 | `.28` 全量 CI，尚待结果，不用上面的定向通过替代 |
+
 待补最终构建身份、完整 CI、浏览器视觉检查、关键模型资格、清理、PR/远端检查及部署结果。
 在这些证据就绪前维持 `QUALIFICATION_IN_PROGRESS`，不关闭 F6 或总整改计划。
