@@ -110,3 +110,10 @@ Factor/Signal归属缺口已隔离复现并完成定向修复；见
 
 后续具名切片：[信号任务提交认领与引用原子性](SIGNAL-SUBMISSION.md)。
 原键先认领、job/引用同事务，行情评估及补数后移现有 Worker；持久等待预算和自动续接仍待整改。
+
+## 后续维护链接（2026-09-10）
+
+F6 已在独立验收后交付，不能用本文件早期“尚未完成”描述覆盖新结论。
+ResearchTask/Experiment/Artifact 原键只读入口之后的持久核对切片，已在独立
+`codex/post-u8-f2-research-watch` 工作树完成本地 30/30 资格验证，见
+[当前记录](../post-u8-f2-research-watch/AUDIT.md)。完整 F2/S3/全接口审计仍未关闭。

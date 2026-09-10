@@ -83,3 +83,22 @@ def test_revocation_refuses_new_domain_admission_without_refunding():
         assert store.get_continuation_permission(task, trusted_context=context)['budget']['reserved_tokens'] == 600
     finally:
         store.close()
+
+
+@pytest.mark.parametrize('foreign', [False, True])
+def test_watch_read_is_bound_to_original_task_not_merely_owner(foreign):
+    store, task, context, _, reservation = setup()
+    try:
+        parent = task
+        if foreign:
+            parent = store.create_task({'owner_principal': context['owner_principal'], 'title':'Other',
+                'objective':'Other', 'trace_id':context['trace_id'], 'idempotency_key':'other-parent'},
+                trusted_context=context)['task_id']
+        watch = store.register_submission_watch({'entity_type':'artifact','request':{
+            'task_id':parent, 'kind':'evidence', 'content':{'synthetic':True}, 'lineage':[],
+            'trace_id':context['trace_id'], 'idempotency_key':'watched-artifact'}},trusted_context=context)
+        reply = authorize(store,reservation['reservation_id'],dict(tool='byq_research_get',
+            arguments={'entity_type':'artifact','watch_id':watch['watch_id']},root_run_id='a'*32),context)
+        assert reply['admitted'] is (not foreign)
+    finally:
+        store.close()

@@ -655,3 +655,16 @@ CI-green合并；按ADR-0015/0059执行精确head门禁，不直接push main、�
 详见 [F6 证据](../evidence/post-u8-interface-audit/F6-CONTINUATION.md)。默认分发开关仍为 0，
 实际启用须按已授权的合并/部署门禁；不续跑历史研究，不授予 Product DSH 工程权限。
 F6 实现与功能验收关闭，完整 F2/S3 和全接口剩余审计继续独立推进，Product Phase 97 不变。
+
+## 2026-09-10 F2 非 ML 研究提交的持久核对（本地验收完成）
+
+在 F6 已交付后，维护者回复“授权执行。”继续剩余维护。
+本切片仅覆盖 ResearchTask/Experiment/Artifact 三类 MCP 创建：写前持久登记，
+原 owner/workspace/conversation/task/key 精确查询，8 次/24 小时和持久退避，
+Gateway 原有循环只读核对及浏览器可见状态。不自动重放业务写入或历史研究。
+
+已通过定向 PostgreSQL/MCP/页面测试及独立 `.30` 镜像的真实 HTTP 超时与 Gateway
+容器重启探针；完整本地 CI 30/30、真实 Product API 桌面/手机和既有 F6 链路通过。
+远端 CI、精确提交合并及实际部署分别记录，不由本地绿色结果推定。
+[切片证据](../evidence/post-u8-f2-research-watch/AUDIT.md)区分组件验证、实际进程重启与完整资格。
+本条不关闭其他非 ML 提交、完整 F2、S3、历史任务处置或全接口逐项审计。

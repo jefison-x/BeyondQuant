@@ -1322,10 +1322,11 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_research_get",
     {
-      description: "Read one BYQ research entity by entity_id, OR reconcile a lost creation receipt with its original idempotency_key. Experiment/Artifact key lookup requires the original task_id. Choose exactly one identity. Missing receipt is outcome_unknown, never permission to create again.",
+      description: "Read one BYQ research entity by entity_id, inspect its durable submission watch by watch_id, OR reconcile a lost creation receipt with its original idempotency_key. Experiment/Artifact key lookup requires the original task_id. Choose exactly one identity. Missing receipt is outcome_unknown, never permission to create again.",
       inputSchema: {
         entity_type: z.enum(["research_task", "experiment", "artifact"]),
         entity_id: z.string().min(1).optional(),
+        watch_id: z.string().regex(/^researchwatch_[0-9a-f]{32}$/).optional(),
         idempotency_key: z.string().min(1).max(128).optional(),
         task_id: z.string().min(1).optional(),
       },

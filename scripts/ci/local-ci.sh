@@ -616,6 +616,9 @@ check_smoke() {
   if docker compose cp scripts/evidence/f6-permission-seed.py backend:/tmp/f6-permission-seed.py >/dev/null \
     && docker compose exec -T -e BYQ_F6_FIXTURE=1 backend python /tmp/f6-permission-seed.py; then
     ok "F6 bound-task permission fixture"; else bad "F6 bound-task permission fixture"; fi
+  if docker compose cp scripts/evidence/f2-receipt-seed.py backend:/tmp/f2-receipt-seed.py >/dev/null \
+    && docker compose exec -T -e BYQ_F2_FIXTURE=1 backend python /tmp/f2-receipt-seed.py; then
+    ok "F2 original receipt browser fixture"; else bad "F2 original receipt browser fixture"; fi
   if (
     cd apps/frontend
     [ -x node_modules/.bin/playwright ] || npm ci --no-audit --no-fund

@@ -1,0 +1,70 @@
+{
+  "result": "LOCAL_QUALIFIED",
+  "scope": "local-u7-f2-watch-30",
+  "checks_passed": 30,
+  "checks_failed": 0,
+  "log_sha256": "85094c6f421f5142e14cf3872b4cb7e5ced04e2f24d6b9048d53a13aace5d172",
+  "builds": {
+    "dsh-0.1.1rc1-post-u8.30": "20e4798d2d3d0a5de5300c2de5f6fe79ec24d459a1d4a660c7455006e2cd0b40",
+    "dsh-0.1.2rc1-post-u8.30": "41384ea972d3ed72916f9570f5cb227e2bc3f1c01eac58ff3546040a9fad603d"
+  },
+  "cleanup": "PASS",
+  "retention": {
+    "archive": {
+      "bytes": 462882304,
+      "name": "images.tar",
+      "sha256": "sha256:dbe899525ae3ce4c5efb7ae574f1d79821412569b33aa29893fac85896c61c7b"
+    },
+    "build_revisions": {
+      "dsh-0.1.1rc1": {
+        "build_id": "dsh-0.1.1rc1-post-u8.30",
+        "manifest_hash": "sha256:20e4798d2d3d0a5de5300c2de5f6fe79ec24d459a1d4a660c7455006e2cd0b40"
+      },
+      "dsh-0.1.2rc1": {
+        "build_id": "dsh-0.1.2rc1-post-u8.30",
+        "manifest_hash": "sha256:41384ea972d3ed72916f9570f5cb227e2bc3f1c01eac58ff3546040a9fad603d"
+      }
+    },
+    "ci_scope": "local-u7-f2-watch-30",
+    "images": {
+      "backend": {
+        "ci_tag": "byq-ci-stack-local-u7-f2-watch-30-backend:latest",
+        "image_id": "sha256:db5ffc86db824d5f753918c9d83930e1bc64f0e1dd3a4efeaf7038ffd73202ed",
+        "retained_tag": "byq-u7-artifact-local-u7-f2-watch-30-backend:retained"
+      },
+      "feedback-hub-relay": {
+        "ci_tag": "byq-ci-stack-local-u7-f2-watch-30-feedback-hub-relay:latest",
+        "image_id": "sha256:1ac1a05fb40bbac78fc477ac1b0674b4b3bfcbbd035593e6539b3a050b2a2af8",
+        "retained_tag": "byq-u7-artifact-local-u7-f2-watch-30-feedback-hub-relay:retained"
+      },
+      "frontend": {
+        "ci_tag": "byq-ci-stack-local-u7-f2-watch-30-frontend:latest",
+        "image_id": "sha256:3a92b0601e58d6b600e3b38b0ac1cf156771adeff0cf58af349fa2802e9c332e",
+        "retained_tag": "byq-u7-artifact-local-u7-f2-watch-30-frontend:retained"
+      },
+      "gateway": {
+        "ci_tag": "byq-ci-stack-local-u7-f2-watch-30-gateway:latest",
+        "image_id": "sha256:2135717e7e4add404c4d9cc13ce627c47ed7613789ef74b6e793ed0103fcb238",
+        "retained_tag": "byq-u7-artifact-local-u7-f2-watch-30-gateway:retained"
+      },
+      "mcp": {
+        "ci_tag": "byq-ci-stack-local-u7-f2-watch-30-mcp:latest",
+        "image_id": "sha256:15209d53a710295dc65d33c1dd63c26b1caf90581548938d0a35d2d65a1dce72",
+        "retained_tag": "byq-u7-artifact-local-u7-f2-watch-30-mcp:retained"
+      },
+      "runtime-adapter": {
+        "ci_tag": "byq-ci-stack-local-u7-f2-watch-30-runtime-adapter:latest",
+        "image_id": "sha256:aeb0efcabb4fcd24142c5e610fe4750f311a6efdf22c172eb9d4a66ad397562c",
+        "retained_tag": "byq-u7-artifact-local-u7-f2-watch-30-runtime-adapter:retained"
+      },
+      "runtime-candidate": {
+        "ci_tag": "byq-ci-stack-local-u7-f2-watch-30-runtime-candidate:latest",
+        "image_id": "sha256:71a91eab165987af829cc1256602c48e71583c0e37cb3c50461d74d3881d75cd",
+        "retained_tag": "byq-u7-artifact-local-u7-f2-watch-30-runtime-candidate:retained"
+      }
+    },
+    "schema_version": "dsh-u7-retained-artifacts.v1"
+  },
+  "remote_ci": "SEPARATE_PR_RECEIPT",
+  "production_deployment": "NOT_IMPLIED"
+}

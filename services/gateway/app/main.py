@@ -259,7 +259,14 @@ def _recover_agent_lifecycle(context):
 lifecycle_delivery = LifecycleDelivery(
     os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), trace_store, _send_agent_lifecycle,
     recover=_recover_agent_lifecycle)
-task_continuation_delivery = TaskContinuationDelivery(lifecycle_delivery.root, _consume_task_continuation)
+def _reconcile_research_receipts(context):
+    return _catalog_request('POST', f"/internal/research-receipts/{context['conversation_id']}/reconcile",
+        Principal(subject=context['owner']), context['workspace_id'],
+        payload={'session_id':context['session_id'],'trace_id':context['trace_id']})
+
+
+task_continuation_delivery = TaskContinuationDelivery(lifecycle_delivery.root, _consume_task_continuation,
+                                                      reconcile=_reconcile_research_receipts)
 
 
 def _send_owned_answer(context, event):
