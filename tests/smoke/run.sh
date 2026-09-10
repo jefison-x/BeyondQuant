@@ -63,7 +63,8 @@ contract_workspace="$("${compose[@]}" exec -T backend python -c 'from tests.work
 "${compose[@]}" exec -T \
   -e BYQ_MCP_CONTRACT_OWNER=mcp-contract \
   -e BYQ_MCP_CONTRACT_WORKSPACE="$contract_workspace" \
-  -e BYQ_MCP_CONTRACT_WEB_PLUGIN_VERSION=0.1.2-rc.1 mcp npm test
+  -e BYQ_MCP_CONTRACT_WEB_PLUGIN_VERSION=0.1.2-rc.1 \
+  -e BYQ_EXPECTED_WEB_EVIDENCE_PRODUCER=0.1.2-rc.1 mcp npm test
 "${compose[@]}" exec -T mcp node --input-type=module -e \
   "const r=await fetch('http://127.0.0.1:8300/mcp/v1',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}); if(r.status!==401) process.exit(1);"
 

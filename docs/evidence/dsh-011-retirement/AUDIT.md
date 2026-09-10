@@ -53,7 +53,14 @@ through BYQ. It does not patch the separately bundled DSH executable's dependenc
   expecting the retired producer. The explicit smoke expectation is corrected
   to 0.1.2-rc.1; historical provenance tests remain separate. F6 chain and all
   13 real Product API browser cases passed in this run.
-- `.35`: current-only build qualification submitted in
+- `.35`: a static CI test still required the retired composition mount. It was
+  changed to require the current bundled profile and reject the old mount.
+  The targeted MCP/smoke run separately exercises the producer correction.
+- `.35` targeted smoke exposed the research-test companion expectation
+  `BYQ_EXPECTED_WEB_EVIDENCE_PRODUCER`; both contract expectations now bind
+  the current 0.1.2 producer. `.36` static checks passed but was superseded
+  before complete qualification.
+- `.37`: current-only build qualification submitted in
   [PR #273](https://github.com/jefison-x/BeyondQuant/pull/273). Final local CI,
   remote exact-head checks, cleanup and delivery results are recorded on that PR;
   this source record does not infer success from creating a manifest or opening a PR.

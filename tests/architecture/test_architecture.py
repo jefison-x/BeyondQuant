@@ -929,10 +929,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
         self.assertIn("--network-alias backend", local_ci)
         self.assertIn("ensure_ci_backend", local_ci)
-        self.assertIn(
+        self.assertNotIn(
             "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml:/opt/byq/compositions/byq-product-sdk.cordis.yml:ro",
             local_ci,
         )
+        self.assertIn("BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml", local_ci)
+        self.assertIn("Dockerfile.post-u8-candidate", local_ci)
         self.assertNotIn("CI_PG_NET=byq_product", local_ci)
         self.assertNotIn("npm run build >/tmp/byq-mcp-build.log 2>&1", local_ci)
 
