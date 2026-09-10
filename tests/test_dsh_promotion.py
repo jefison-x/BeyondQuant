@@ -14,7 +14,7 @@ SPEC.loader.exec_module(MODULE)
 
 class PromotionTests(unittest.TestCase):
     def test_rollback_dockerfile_never_uses_promoted_default_identity(self):
-        source = (ROOT / 'services/runtime-adapter/Dockerfile.u7').read_text()
+        source = (ROOT / 'config/dsh/archive/dsh-0.1.1rc1/Dockerfile.u7.archive').read_text()
         self.assertIn('ARG BYQ_DSH_RELEASE_IDENTITY_SOURCE=config/dsh/generated/dsh-0.1.1rc1.identity.json', source)
         self.assertNotIn('ARG BYQ_DSH_RELEASE_IDENTITY_SOURCE=config/dsh/generated/deployment.identity.json', source)
 
@@ -62,8 +62,7 @@ class PromotionTests(unittest.TestCase):
 
     def test_promoted_stack_uses_exact_qualified_and_rollback_policy(self):
         from tests.dsh_upgrade.live_stack import manifest, validate_manifest
-        for release, name in (('dsh-0.1.2rc1', 'qualified-web-evidence-provenance.json'),
-                              ('dsh-0.1.1rc1', 'qualified-rollback-web-evidence-provenance.json')):
+        for release, name in (('dsh-0.1.2rc1', 'qualified-web-evidence-provenance.json'),):
             value = manifest('byq-u5-u7-test', release, 18210, promoted=True)
             validate_manifest(value)
             for service in ('backend', 'mcp'):

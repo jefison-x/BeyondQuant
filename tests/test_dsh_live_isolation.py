@@ -27,9 +27,10 @@ class LiveIsolationTests(unittest.TestCase):
 
     def test_rehearsal_reuses_closed_stack_with_only_read_only_scoped_gate(self):
         gate = "/tmp/byq-u6-abcdefgh/gate"
-        old = live_stack.manifest("byq-u5-u6-test", "dsh-0.1.1rc1", 18210, rehearsal_gate=gate)
+        with self.assertRaises(ValueError):
+            live_stack.manifest("byq-u5-u6-test", "dsh-0.1.1rc1", 18210, rehearsal_gate=gate)
         new = live_stack.manifest("byq-u5-u6-test", "dsh-0.1.2rc1", 18210, rehearsal_gate=gate)
-        for value in (old, new):
+        for value in (new,):
             live_stack.validate_manifest(value)
             self.assertEqual(set(value["services"]), live_stack.SERVICES)
             for name in ("gateway", "runtime-adapter"):
@@ -38,10 +39,6 @@ class LiveIsolationTests(unittest.TestCase):
             tampered["services"]["gateway"]["volumes"][-1]["read_only"] = False
             with self.assertRaises(ValueError):
                 live_stack.validate_manifest(tampered)
-        for name in live_stack.SERVICES - {"runtime-adapter"}:
-            self.assertEqual(old["services"][name], new["services"][name])
-        self.assertNotEqual(old["services"]["runtime-adapter"]["environment"]["DSH_SESSION_ROOT"],
-                            new["services"]["runtime-adapter"]["environment"]["DSH_SESSION_ROOT"])
         for invalid in ("/", "/home/jefison", "/tmp/byq-u6-abcdefgh/gate/../gate"):
             with self.assertRaises(ValueError):
                 live_stack.manifest("byq-u5-u6-test", "dsh-0.1.2rc1", 18210, rehearsal_gate=invalid)

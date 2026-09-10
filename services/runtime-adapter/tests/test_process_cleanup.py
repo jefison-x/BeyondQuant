@@ -12,7 +12,6 @@ import pytest
 from deepseek_harness import Notification
 
 import app.runtime as runtime_module
-from tests.legacy_011 import Dsh011Compatibility
 from app.identifiers import MAX_IDENTIFIER_LENGTH
 from app.runtime import ModelCredentialUnavailable, RuntimeAdapter, SessionConflict, SessionStatus
 
@@ -169,8 +168,6 @@ def test_failed_resume_initialization_does_not_leave_starting(adapter, monkeypat
 
 
 def release_compatibility(tmp_path: Path) -> object:
-    if version("deepseek-harness-sdk") == "0.1.1rc1":
-        return Dsh011Compatibility(harness_factory=FakeHarness)
     from app.compat.dsh_012 import Dsh012Compatibility
 
     executable = tmp_path / "candidate-dsh"
@@ -208,8 +205,6 @@ def wait_for_status(adapter: RuntimeAdapter, session_id: str, status: str) -> No
 
 @pytest.mark.parametrize("finish_reason", ["max-tokens", "aborted", "future-unknown"])
 def test_incomplete_model_finish_is_never_a_success_result(adapter: RuntimeAdapter, finish_reason: str) -> None:
-    if version("deepseek-harness-sdk") == "0.1.1rc1":
-        finish_reason = {"max-tokens": "max_tokens", "aborted": "cancelled"}.get(finish_reason, finish_reason)
     FakeHarness.finish_reason = finish_reason
     try:
         adapter.create_session("incomplete", "incomplete-trace")

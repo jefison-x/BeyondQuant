@@ -4,12 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.legacy_011 import Dsh011Compatibility
 from app.compat.dsh_012 import Dsh012Compatibility
 
 
 def test_prepared_official_session_cannot_restart_closed_harness(monkeypatch, tmp_path):
-    compatibility = Dsh012Compatibility() if version("deepseek-harness-sdk") == "0.1.2rc1" else Dsh011Compatibility()
+    compatibility = Dsh012Compatibility()
     profile = tmp_path / "synthetic-profile.yml"
     profile.write_text("{}\n")
     harness = compatibility.build_harness(provider="deepseek-official", model="deepseek-chat",

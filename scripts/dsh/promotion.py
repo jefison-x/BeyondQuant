@@ -94,7 +94,7 @@ def main():
                         ('qualified-rollback-web-evidence-provenance.json', rollback)):
         path = ROOT / 'config/dsh/generated' / name
         expected = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + '\n'
-        if args.action == 'generate':
+        if args.action == 'generate' and name != 'qualified-rollback-web-evidence-provenance.json':
             path.write_text(expected)
         elif not path.is_file() or path.read_text() != expected:
             raise ValueError('stale promotion projection: ' + name)

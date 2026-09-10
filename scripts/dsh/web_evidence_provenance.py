@@ -131,13 +131,10 @@ def outputs() -> dict[Path, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("generate", "check"))
+    parser.add_argument("command", choices=("check",))
     args = parser.parse_args()
     for path, expected in outputs().items():
-        if args.command == "generate":
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(expected, encoding="utf-8")
-        elif not path.is_file() or path.read_text(encoding="utf-8") != expected:
+        if not path.is_file() or path.read_text(encoding="utf-8") != expected:
             raise SystemExit(f"generated provenance policy is stale: {path}")
     print(json.dumps({"status": "ok", "check": args.command == "check"}))
     return 0
