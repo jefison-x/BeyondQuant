@@ -1574,6 +1574,31 @@ class BacktestJobStore(PgStoreMixin):
             )
         return self.get(job_id)
 
+    def reconcile_submission(
+        self, task_id: object, idempotency_key: object, *, trusted_owner: str, trusted_workspace: str,
+    ) -> dict[str, object]:
+        """Read only the exact committed identity and its bounded summary."""
+        task_id = _text(task_id, field="task_id", max_length=64)
+        key = _idempotency_key(idempotency_key)
+        row = self._fetch_one(
+            """SELECT job_id FROM backtest_jobs
+               WHERE task_id=:task_id AND idempotency_key=:key
+                 AND owner_principal=:owner AND workspace_id=:workspace""",
+            {"task_id": task_id, "key": key, "owner": trusted_owner, "workspace": trusted_workspace},
+        )
+        receipt: dict[str, object] = {
+            "schema_version": "backtest-submission-reconciliation.v1", "task_id": task_id,
+            "idempotency_key": key, "status": "outcome_unknown",
+        }
+        if row is not None:
+            try:
+                summary = self.get_backtest_summary(row["job_id"])
+            except BacktestNotFound:
+                # Deletion between reads is not evidence of a failed submission.
+                return receipt
+            receipt.update(status="confirmed", job=summary)
+        return receipt
+
     def get(self, job_id: object) -> dict[str, object]:
         job_id = _text(job_id, field="job_id", max_length=64)
         if JOB_ID_PATTERN.fullmatch(job_id) is None:

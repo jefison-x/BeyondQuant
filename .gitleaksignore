@@ -1,3 +1,6 @@
 # Synthetic MCP contract idempotency key, not authentication material.
 # Exact historical finding only; do not suppress generic-api-key globally.
 fcee92c55382b66313be3e4ad7cb47c0727a1456:services/mcp/tests/contract-test.ts:generic-api-key:143
+# Synthetic F6 comparison request deduplication key, not authentication material.
+# Exact historical finding only; all other generic-api-key findings still fail.
+50a4dfcd93036c029d25d066d1d43281995d8fe5:services/runtime-adapter/tests/f6_synthetic_runtime.py:generic-api-key:115

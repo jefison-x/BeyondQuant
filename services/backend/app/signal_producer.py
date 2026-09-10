@@ -7,6 +7,7 @@ import json
 import re
 import uuid
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
@@ -188,6 +189,7 @@ class SignalJobStore(PgStoreMixin):
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS requirement_json JSONB""",
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS readiness_json JSONB""",
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS ready_input_sha256 TEXT""",
+        """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS submission_hash TEXT""",
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -273,11 +275,53 @@ class SignalJobStore(PgStoreMixin):
             )
         return self.get(job_id, trusted_owner=owner)
 
+    def submit_waiting(
+        self, *, command: dict[str, object], purpose: str, trusted_owner: str, trusted_workspace: str,
+        trace_id: str, idempotency_key: object, prepare: Callable[[], dict[str, object]],
+        record_reference: Callable[..., object],
+    ) -> dict[str, object]:
+        """Serialize one original command; accept job and reference atomically."""
+        owner = _text(trusted_owner, "owner_principal", 128)
+        workspace = _identifier(trusted_workspace, "workspace_id")
+        key = _text(idempotency_key, "idempotency_key", 128)
+        if purpose not in {"signal_producer", "backtest_task"}:
+            raise ValueError("signal submission purpose is invalid")
+        _reject_secrets(command)
+        encoded = _canonical({"version": 1, "owner": owner, "workspace": workspace,
+                              "purpose": purpose, "command": command})
+        if len(encoded) > MAX_JOB_BYTES:
+            raise ValueError("signal submission exceeds maximum size")
+        submission_hash = hashlib.sha256(encoded).hexdigest()
+        with self._transaction() as connection:
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                    {"scope": f"signal-submission|{owner}|{key}"})
+            existing = fetch_one(connection, """SELECT * FROM signal_producer_jobs
+                WHERE owner_principal=:owner AND idempotency_key=:key""", {"owner": owner, "key": key})
+            if existing is not None:
+                if existing.get("workspace_id") != workspace or existing.get("submission_hash") != submission_hash:
+                    raise SignalProducerConflict("signal submission identity conflicts; use original receipt lookup")
+                return self._public_row(existing)
+            prepared = prepare()
+            job = self.create_waiting(
+                owner_principal=owner, task_id=prepared["task"]["task_id"],
+                experiment_id=command.get("experiment_id"),
+                strategy_version_artifact_id=prepared["version"]["artifact_id"],
+                stock_pool_snapshot_id=prepared["pool_snapshot"]["snapshot_id"],
+                preparation=prepared["preparation"], requirement=prepared["requirement"],
+                readiness=prepared["readiness"], trace_id=trace_id, idempotency_key=key, connection=connection,
+            )
+            record_reference(connection, prepared["pool_snapshot"]["snapshot_id"], domain="signal_producer",
+                             reference_id=job["job_id"], trusted_owner=owner)
+            execute(connection, "UPDATE signal_producer_jobs SET submission_hash=:hash WHERE job_id=:id",
+                    {"hash": submission_hash, "id": job["job_id"]})
+            return job
+
     def create_waiting(
         self, *, owner_principal: object, task_id: object, experiment_id: object | None,
         strategy_version_artifact_id: object, stock_pool_snapshot_id: object,
         preparation: dict[str, object], requirement: dict[str, object],
         readiness: dict[str, object], trace_id: object, idempotency_key: object,
+        connection=None,
     ) -> dict[str, object]:
         owner = _text(owner_principal, "owner_principal", 128)
         task = _identifier(task_id, "task_id")
@@ -292,7 +336,7 @@ class SignalJobStore(PgStoreMixin):
             "strategy_version_artifact_id": strategy, "stock_pool_snapshot_id": snapshot,
             "preparation": preparation, "requirement": requirement, "trace_id": trace,
         })).hexdigest()
-        with self._transaction() as connection:
+        with (self._transaction() if connection is None else nullcontext(connection)) as connection:
             existing = fetch_one(connection, """SELECT * FROM signal_producer_jobs
                 WHERE owner_principal=:owner AND idempotency_key=:key""",
                 {"owner": owner, "key": idempotency})
@@ -312,11 +356,17 @@ class SignalJobStore(PgStoreMixin):
                  "strategy": strategy, "snapshot": snapshot, "preparation": preparation,
                  "requirement": requirement, "readiness": readiness, "trace": trace,
                  "key": idempotency, "request_hash": request_hash, "now": now})
-        return self.get(job_id, trusted_owner=owner)
+            return self._public_row(fetch_one(connection, "SELECT * FROM signal_producer_jobs WHERE job_id=:id", {"id": job_id}))
 
     def list_waiting(self, *, limit: int = 20) -> list[dict[str, object]]:
-        rows = self._execute("""SELECT * FROM signal_producer_jobs
-            WHERE status='waiting_for_data' ORDER BY created_at, job_id LIMIT :limit""", {"limit": limit})
+        rows = self._execute("""SELECT j.* FROM signal_producer_jobs j
+            WHERE j.status='waiting_for_data' AND EXISTS (
+                SELECT 1 FROM workspaces w JOIN workspace_memberships m ON m.workspace_id=w.workspace_id
+                JOIN users u ON u.user_id=m.user_id
+                WHERE w.workspace_id=j.workspace_id AND u.username=j.owner_principal
+                  AND w.status='active' AND w.kind='personal'
+                  AND m.status='active' AND u.status='active' AND m.role='owner')
+            ORDER BY j.created_at, j.job_id LIMIT :limit""", {"limit": limit})
         return [dict(row) for row in rows]
 
     def update_readiness(self, job_id: str, readiness: dict[str, object]) -> None:
@@ -343,6 +393,20 @@ class SignalJobStore(PgStoreMixin):
                 {"job_id": job_id, "input": input_document, "input_sha": input_sha256,
                  "ready_sha": ready_input_sha256, "now": _now()})
         return self.get(job_id)
+
+    def find_submission(
+        self, task_id: object, idempotency_key: object, *, trusted_owner: str, trusted_workspace: str,
+    ) -> dict[str, object] | None:
+        """Exact shared signal identity without loading preparation or input data."""
+        task = _identifier(task_id, "task_id")
+        key = _text(idempotency_key, "idempotency_key", 128)
+        row = self._fetch_one(
+            """SELECT job_id,status FROM signal_producer_jobs
+               WHERE owner_principal=:owner AND workspace_id=:workspace
+                 AND task_id=:task AND idempotency_key=:key""",
+            {"owner": trusted_owner, "workspace": trusted_workspace, "task": task, "key": key},
+        )
+        return dict(row) if row is not None else None
 
     def get(self, job_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         identity = _identifier(job_id, "job_id")
@@ -479,6 +543,7 @@ class SignalJobStore(PgStoreMixin):
         universe = input_document.get("universe", {}) if isinstance(input_document, dict) else {}
         bars = input_document.get("bars", []) if isinstance(input_document, dict) else []
         value.pop("request_hash", None)
+        value.pop("submission_hash", None)
         value.pop("preparation_json", None)
         value["requirement"] = value.pop("requirement_json", None)
         value["readiness"] = value.pop("readiness_json", None)
@@ -495,11 +560,12 @@ class SignalJobStore(PgStoreMixin):
     def _internal_row(row: dict[str, Any]) -> dict[str, object]:
         value = dict(row)
         value.pop("request_hash", None)
+        value.pop("submission_hash", None)
         value["input"] = value.pop("input_json")
         return value
 
 
-def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object) -> int:
+def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object, automation_store: object | None = None) -> int:
     """Provider-free coordinator gate: only complete durable inputs become runnable."""
     promoted = 0
     for row in jobs.list_waiting():
@@ -510,6 +576,10 @@ def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object) -
         assessment = readiness_store.assess(requirement)
         jobs.update_readiness(str(row["job_id"]), assessment)
         if assessment.get("state") != "ready":
+            if automation_store is not None:
+                automation_store.request_data_repair(
+                    requirement=requirement, requested_by=f"signal:{row['owner_principal']}", retry_terminal=False,
+                )
             continue
         ready_input = readiness_store.build_ready_input(requirement)
         bars = list(ready_input["bars"])

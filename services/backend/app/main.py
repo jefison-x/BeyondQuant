@@ -93,6 +93,7 @@ from .backtest import (
     membership_fingerprint,
 )
 from .backtest_task import (
+    task_id_from_signal_job,
     is_ml_backtest_task,
     ml_prediction_id_from_task,
     project_backtest_task,
@@ -443,6 +444,65 @@ def consume_agent_lifecycle(conversation_id: str, payload: dict[str, Any], reque
     return _agent_call(lambda: {"receipt": agent_store.consume_runtime_lifecycle_event(
         payload["event"], trusted_owner=owner, trusted_workspace=conversation["workspace_id"],
         trusted_session_id=conversation["runtime_session_id"], trusted_trace_id=conversation["trace_id"])})
+
+
+def _continuation_consumer_context(request: Request) -> dict:
+    # This is the existing private Gateway catalog consumer, before a model
+    # root exists. MCP action admission below still requires full Agent context.
+    owner = _conversation_owner(request)
+    if request.headers.get('x-byq-actor-principal') != owner:
+        raise HTTPException(status_code=403, detail='trusted continuation consumer required')
+    return {'owner_principal': owner, 'actor_principal': owner,
+        'workspace_id': request.headers['x-byq-workspace-id']}
+
+
+@app.post('/internal/task-continuation/{reservation_id}/authorize-tool')
+def authorize_continuation_tool(reservation_id: str, payload: dict[str, Any], request: Request) -> dict:
+    from .continuation_scope import authorize
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: authorize(research_store, reservation_id, payload, context))
+
+
+@app.post('/internal/task-continuation/{conversation_id}/claim')
+def claim_task_continuation(conversation_id: str, request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    return _research_call(lambda: research_store.claim_conversation_continuation(
+        conversation_id, trusted_context=context))
+
+
+@app.post('/internal/task-continuation/{conversation_id}/peek')
+def peek_task_continuation(conversation_id: str, request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    return _research_call(lambda: research_store.claim_conversation_continuation(
+        conversation_id, trusted_context=context, admit=False))
+
+
+@app.post('/internal/task-continuation/{task_id}/dispatch')
+def dispatch_task_continuation(task_id: str, payload: dict[str, Any], request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    if set(payload) != {'reservation_id'}:
+        raise HTTPException(status_code=422, detail='exact continuation reservation required')
+    return _research_call(lambda: research_store.claim_continuation_dispatch(
+        task_id, payload['reservation_id'], trusted_context=context))
+
+
+@app.post('/internal/task-continuation/{task_id}/block')
+def block_task_continuation(task_id: str, payload: dict[str, Any], request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    if set(payload) != {'reason'}:
+        raise HTTPException(status_code=422, detail='exact continuation blocker required')
+    return _research_call(lambda: research_store.block_continuation(task_id, payload['reason'], trusted_context=context))
+
+
+@app.post('/internal/task-continuation/{task_id}/receipt')
+def record_task_continuation_receipt(task_id: str, payload: dict[str, Any], request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    if set(payload) - {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome'}:
+        raise HTTPException(status_code=422, detail='invalid continuation receipt fields')
+    if not {'reservation_id', 'status'} <= set(payload):
+        raise HTTPException(status_code=422, detail='original reservation and status required')
+    return _research_call(lambda: research_store.record_continuation_receipt(
+        task_id, trusted_context=context, **payload))
 
 
 @app.post("/internal/domain-call-evidence/{conversation_id}")
@@ -1643,9 +1703,9 @@ def _signal_producer_call(operation: Callable[[], dict[str, object]]) -> dict[st
         raise HTTPException(status_code=422, detail=str(error)) from error
     except (ResearchNotFound, PaperTradingNotFound, SignalProducerNotFound) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    except SignalProducerConflict as error:
+    except (SignalProducerConflict, PaperTradingConflict) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
-    except SignalProducerPersistenceError as error:
+    except (SignalProducerPersistenceError, PaperTradingPersistenceError, ResearchPersistenceError) as error:
         raise HTTPException(status_code=503, detail="signal producer storage is unavailable") from error
 
 
@@ -1656,9 +1716,9 @@ def _backtest_task_call(operation: Callable[[], dict[str, object]]) -> dict[str,
         raise HTTPException(status_code=422, detail=str(error)) from error
     except (ResearchNotFound, PaperTradingNotFound, SignalProducerNotFound, BacktestNotFound, MLPredictionNotFound) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    except (SignalProducerConflict, BacktestConflict, MLPredictionConflict) as error:
+    except (SignalProducerConflict, BacktestConflict, MLPredictionConflict, PaperTradingConflict) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
-    except (SignalProducerPersistenceError, BacktestStorageError, MLPredictionPersistenceError) as error:
+    except (SignalProducerPersistenceError, BacktestStorageError, MLPredictionPersistenceError, PaperTradingPersistenceError, ResearchPersistenceError) as error:
         raise HTTPException(status_code=503, detail="backtest task storage is unavailable") from error
 
 
@@ -1878,6 +1938,17 @@ def _research_transition(
     return _research_call(operation)
 
 
+@app.get("/v1/research/submissions/reconcile")
+def reconcile_research_submission(
+    request: Request, entity_type: str, idempotency_key: str, task_id: str | None = None,
+) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.reconcile_submission(
+        entity_type, idempotency_key, task_id=task_id,
+        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+    ))
+
+
 @app.post("/v1/research/tasks", status_code=201)
 def create_research_task(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
@@ -2044,8 +2115,11 @@ def list_artifacts(request: Request) -> dict[str, object]:
 
 
 @app.post("/v1/research/factors/compute", status_code=201)
-def compute_research_factor(payload: dict[str, Any]) -> dict[str, object]:
+def compute_research_factor(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
     def operation() -> dict[str, object]:
+        _owned_research_entity("research_task", payload.get("task_id"), context)
         computed = compute_factor(payload)
         artifact_payload = {
             "task_id": payload.get("task_id"),
@@ -2056,7 +2130,10 @@ def compute_research_factor(payload: dict[str, Any]) -> dict[str, object]:
             "trace_id": payload.get("trace_id"),
             "idempotency_key": payload.get("idempotency_key"),
         }
-        artifact = research_store.create_artifact(artifact_payload)
+        artifact = research_store.create_artifact(
+            artifact_payload, trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        )
         return {
             "factor": computed["factor"],
             "input_manifest": computed["input_manifest"],
@@ -3347,15 +3424,18 @@ def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
 
 
 @app.post("/v1/research/signal-snapshots", status_code=201)
-def create_signal_snapshot(payload: dict[str, Any]) -> dict[str, object]:
-    """Create a validated signal_snapshot artifact from a keyless import.
+def create_signal_snapshot(payload: dict[str, Any], http_request: Request) -> dict[str, object]:
+    """Owner-only fixture/import path; keyless does not mean unauthenticated.
 
-    ADR-0017: the snapshot is the immutable frozen input reference for a
-    backtest submission. Phase 32 does not execute strategy source; this is
-    the explicit keyless fixture/import path (tests and demos) until a
-    dedicated signal-producer ADR lands.
+    ADR-0017 permits Product Agent reads, not raw signal imports. Production
+    signal computation continues through the ADR-0023 isolated producer.
     """
+    context = _required_agent_context(http_request, include_workspace=True)
+    if context["actor_principal"] != context["owner_principal"]:
+        raise HTTPException(status_code=403, detail="signal import requires its human owner")
+
     def operation() -> dict[str, object]:
+        _owned_research_entity("research_task", payload.get("task_id"), context)
         request = _strategy_payload(
             payload,
             {
@@ -3364,7 +3444,7 @@ def create_signal_snapshot(payload: dict[str, Any]) -> dict[str, object]:
                 "trace_id", "idempotency_key",
             },
         )
-        version = research_store.get_artifact(request.get("strategy_version_artifact_id"))
+        version = _owned_research_entity("artifact", request.get("strategy_version_artifact_id"), context)
         if version["kind"] != "strategy_version":
             raise ValueError("strategy_version_artifact_id must reference a strategy_version artifact")
         if version["status"] != "validated":
@@ -3398,7 +3478,8 @@ def create_signal_snapshot(payload: dict[str, Any]) -> dict[str, object]:
                     "lineage": [{"kind": "artifact", "id": version["artifact_id"]}],
                     "trace_id": request.get("trace_id"),
                     "idempotency_key": request.get("idempotency_key"),
-                }
+                },
+                trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
             )
         if artifact["status"] == "draft":
             artifact = research_store.transition(
@@ -3417,8 +3498,16 @@ def create_signal_snapshot(payload: dict[str, Any]) -> dict[str, object]:
 
 
 @app.get("/v1/research/signal-snapshots/{artifact_id}")
-def get_signal_snapshot(artifact_id: str) -> dict[str, object]:
-    return _research_call(lambda: {"snapshot": research_store.get_artifact(artifact_id)})
+def get_signal_snapshot(artifact_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        artifact = _owned_research_entity("artifact", artifact_id, context)
+        if artifact["kind"] != "signal_snapshot":
+            raise ResearchNotFound("signal snapshot not found")
+        return {"snapshot": artifact}
+
+    return _research_call(operation)
 
 
 @app.get("/v1/research/signal-snapshots")
@@ -3441,7 +3530,7 @@ def _signal_date(value: object, field: str) -> str:
 
 
 def _prepare_signal_producer(
-    data: dict[str, Any], *, owner_principal: str, request_repair: bool
+    data: dict[str, Any], *, owner_principal: str, request_repair: bool, assess_readiness: bool = True
 ) -> dict[str, object]:
     """Shared BYQ preflight for signal jobs and the backtest task facade."""
     task = research_store.get_task(data.get("task_id"))
@@ -3511,8 +3600,15 @@ def _prepare_signal_producer(
             if isinstance(strategy_snapshot.get("data_requirements"), dict) else {}
         ),
     )
-    readiness = market_readiness_store.assess(requirement)
-    if readiness["state"] != "ready":
+    members = security_master_store._execute(
+        """SELECT symbol FROM security_master_snapshot_members
+           WHERE snapshot_id=:snapshot AND symbol IN (SELECT jsonb_array_elements_text(:symbols))""",
+        {"snapshot": master_snapshot["snapshot_id"], "symbols": symbols},
+    )
+    if {str(row["symbol"]) for row in members} != set(symbols):
+        raise ValueError("stock pool contains symbols absent from the frozen security master")
+    readiness = market_readiness_store.assess(requirement) if assess_readiness else {"state": "unknown", "missing": []}
+    if assess_readiness and readiness["state"] != "ready":
         if any(item.get("dataset") == "security_lifecycle" for item in readiness["missing"]):
             raise ValueError("stock pool contains symbols absent from the frozen security master")
         if request_repair:
@@ -3542,10 +3638,36 @@ def _prepare_signal_producer(
     }
 
 
+def _submit_signal_component(data: dict[str, Any], context: dict[str, str], *, purpose: str) -> dict[str, object]:
+    _owned_research_entity("research_task", data.get("task_id"), context)
+    command = {key: value for key, value in data.items() if key not in {"trace_id", "idempotency_key"}}
+
+    def prepare() -> dict[str, object]:
+        prepared = _prepare_signal_producer(
+            data, owner_principal=context["owner_principal"], request_repair=False, assess_readiness=False,
+        )
+        if purpose == "backtest_task" and _approved_strategy_artifact(
+            context["owner_principal"], str(prepared["version"]["artifact_id"])
+        ) is None:
+            raise ValueError("strategy version must be approved before task creation")
+        if data.get("experiment_id") is not None:
+            experiment = _owned_research_entity("experiment", data["experiment_id"], context)
+            if experiment["task_id"] != prepared["task"]["task_id"]:
+                raise ValueError("experiment does not belong to task_id")
+        return prepared
+
+    return signal_job_store.submit_waiting(
+        command=command, purpose=purpose, trusted_owner=context["owner_principal"],
+        trusted_workspace=context["workspace_id"], trace_id=str(data.get("trace_id") or context["trace_id"]),
+        idempotency_key=data.get("idempotency_key"), prepare=prepare,
+        record_reference=paper_store.record_pool_reference_in_transaction,
+    )
+
+
 @app.post("/v1/research/signal-producer/jobs", status_code=202)
 def create_signal_producer_job(payload: dict[str, Any], request: Request) -> dict[str, object]:
     """Freeze owner-scoped BYQ inputs before isolated strategy execution."""
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         data = _strategy_payload(
@@ -3556,27 +3678,7 @@ def create_signal_producer_job(payload: dict[str, Any], request: Request) -> dic
                 "execution", "order_quantity", "trace_id", "idempotency_key",
             },
         )
-        prepared = _prepare_signal_producer(
-            data, owner_principal=context["owner_principal"], request_repair=True
-        )
-        task = prepared["task"]
-        version = prepared["version"]
-        pool_snapshot = prepared["pool_snapshot"]
-        job = signal_job_store.create_waiting(
-            owner_principal=context["owner_principal"],
-            task_id=task["task_id"],
-            experiment_id=data.get("experiment_id"),
-            strategy_version_artifact_id=version["artifact_id"],
-            stock_pool_snapshot_id=pool_snapshot["snapshot_id"],
-            preparation=prepared["preparation"], requirement=prepared["requirement"],
-            readiness=prepared["readiness"],
-            trace_id=data.get("trace_id"),
-            idempotency_key=data.get("idempotency_key"),
-        )
-        paper_store.record_pool_reference(
-            pool_snapshot["snapshot_id"], domain="signal_producer", reference_id=job["job_id"],
-            trusted_owner=context["owner_principal"],
-        )
+        job = _submit_signal_component(data, context, purpose="signal_producer")
         return {"job": job}
 
     return _signal_producer_call(operation)
@@ -3706,37 +3808,35 @@ def prepare_backtest_task(payload: dict[str, Any], request: Request) -> dict[str
 @app.post("/v1/research/backtest-tasks", status_code=202)
 def create_backtest_task(payload: dict[str, Any], request: Request) -> dict[str, object]:
     """Create the existing signal-preparation component and return its derived facade."""
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         data = _backtest_task_input(payload, include_idempotency=True)
-        prepared = _prepare_signal_producer(
-            data, owner_principal=context["owner_principal"], request_repair=True
-        )
-        version = prepared["version"]
-        if _approved_strategy_artifact(
-            context["owner_principal"], str(version["artifact_id"])
-        ) is None:
-            raise ValueError("strategy version must be approved before task creation")
-        job = signal_job_store.create_waiting(
-            owner_principal=context["owner_principal"],
-            task_id=prepared["task"]["task_id"],
-            experiment_id=data.get("experiment_id"),
-            strategy_version_artifact_id=version["artifact_id"],
-            stock_pool_snapshot_id=prepared["pool_snapshot"]["snapshot_id"],
-            preparation=prepared["preparation"],
-            requirement=prepared["requirement"],
-            readiness=prepared["readiness"],
-            trace_id=context["trace_id"],
-            idempotency_key=data.get("idempotency_key"),
-        )
-        paper_store.record_pool_reference(
-            str(prepared["pool_snapshot"]["snapshot_id"]),
-            domain="signal_producer",
-            reference_id=str(job["job_id"]),
-            trusted_owner=context["owner_principal"],
-        )
+        job = _submit_signal_component(data, context, purpose="backtest_task")
         return {"task": _backtest_task_view(job, owner_principal=context["owner_principal"])}
+
+    return _backtest_task_call(operation)
+
+
+@app.get("/v1/research/backtest-tasks/reconcile")
+def reconcile_backtest_task_submission(request: Request, task_id: str, idempotency_key: str) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        _owned_research_entity("research_task", task_id, context)
+        job = signal_job_store.find_submission(
+            task_id, idempotency_key, trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        )
+        result: dict[str, object] = {
+            "schema_version": "backtest-task-submission-reconciliation.v1",
+            "task_id": task_id.strip(), "idempotency_key": idempotency_key.strip(),
+            "status": "confirmed" if job is not None else "outcome_unknown",
+        }
+        if job is not None:
+            result["receipt"] = {"backtest_task_id": task_id_from_signal_job(job["job_id"]),
+                "signal_producer_job_id": job["job_id"], "signal_status": job["status"]}
+        return result
 
     return _backtest_task_call(operation)
 
@@ -4018,6 +4118,20 @@ def list_backtest_catalog(
         owner_principal=context["owner_principal"], query=query, status=status,
         workspace_id=context["workspace_id"], limit=limit, offset=offset,
     ))
+
+
+@app.get("/v1/research/backtests/reconcile")
+def reconcile_backtest_submission(request: Request, task_id: str, idempotency_key: str) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        _owned_research_entity("research_task", task_id, context)
+        return backtest_store.reconcile_submission(
+            task_id, idempotency_key, trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        )
+
+    return _backtest_call(operation)
 
 
 @app.get("/v1/research/backtests/{job_id}")

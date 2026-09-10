@@ -23,7 +23,7 @@ COPY services/runtime-adapter/app ./app
 COPY services/runtime-adapter/tests ./tests
 COPY packages/contracts ./packages/contracts
 COPY packages/operations ./packages/operations
-COPY config/dsh/builds/dsh-0.1.1rc1-post-u8.17.json /opt/byq/builds/build.identity.json
+COPY config/dsh/builds/dsh-0.1.1rc1-post-u8.29.json /opt/byq/builds/build.identity.json
 RUN python3 -m pip install --break-system-packages --no-cache-dir ".[test]"
 
 ARG BYQ_DSH_COMPOSITION_SOURCE=plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml

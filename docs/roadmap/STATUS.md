@@ -70,6 +70,23 @@
 - Phase 61 由维护者于 2026-08-27 授权并完成；规范与证据位于 ADR-0034、验收报告和
   `docs/evidence/phase-61/`。
 
+当前整改批次（2026-09-09）：维护者已要求开始剩余项目；首批全接口清单及 F2 非ML
+反馈发布分页核对见[本批审计](../evidence/post-u8-interface-audit/AUDIT.md)。
+[ADR-0068](../architecture/adr/ADR-0068-post-u8-community-inspection-waiver.md) 已按维护者
+明确指示接受：当前及之后所有开发步骤免除 Community 原实现检查；真实数据迁移验证不豁免。
+本批不推进 Product Phase，不代表 F2/F6/S3 或全接口审计完成。
+后续归属切片已复现并修复Factor/Signal写入口及Snapshot读取的身份/owner/workspace/kind缺口，
+定向30项及独立`.19`完整CI26/26通过，独立清理通过，尚未部署；具名范围见[领域输入验收](../evidence/post-u8-interface-audit/DOMAIN-INPUT-OWNERSHIP.md)。
+
+非 ML 原键核对维护：ResearchTask/Experiment/Artifact 精确只读接口及 MCP 扩展已实现，
+定向26项与独立`.20`完整CI26/26通过，资源清理通过，尚未部署；完整 F2 仍未关闭。见[回执核对记录](../evidence/post-u8-interface-audit/RESEARCH-RECEIPTS.md)。
+
+Backtest 原键只读核对已完成，定向15项及独立`.21`完整CI26/26通过，资源清理通过；尚未部署，范围见[Backtest 回执记录](../evidence/post-u8-interface-audit/BACKTEST-RECEIPTS.md)。
+
+高层 backtest-task 原键核对已完成，定向16项及独立`.23`完整CI26/26通过；`.22`测试同步失败记录保留，资源清理通过，尚未部署。见[任务回执记录](../evidence/post-u8-interface-audit/BACKTEST-TASK-RECEIPTS.md)。
+
+信号任务幂等认领、job/引用原子提交及 Worker 补数已完成，定向25项与独立`.24`完整CI26/26通过，资源清理通过，尚未部署；见[提交验收记录](../evidence/post-u8-interface-audit/SIGNAL-SUBMISSION.md)。
+
 ## 生效中的 Accepted ADR
 
 Post-U8 交付授权（2026-09-08）：维护者明确允许新增独立构建身份、重新认证，并将当前
@@ -77,10 +94,25 @@ Post-U8 交付授权（2026-09-08）：维护者明确允许新增独立构建�
 本次范围，构建验证见[独立认证记录](../evidence/post-u8-r1/BUILD-REQUALIFICATION.md)。
 这不代表剩余整改全部完成，不改变 U8 提前结束结论或 Product Phase 97。
 
-当前 F6 维护决策：[ADR-0065](../architecture/adr/ADR-0065-task-continuation-budget-admission.md)
+2026-09-10 F6 实现与功能验收已完成：独立 `.29` 构建全量本地 CI 29/29、
+真实 Product API 桌面/手机许可及完成状态、Gateway 重启后的三回合领域链路通过；
+固定合成目标的真实模型已完成训练后预测、冻结信号、原生回测及 validated 对比报告。
+任务绑定许可、24小时/8回合/900秒/累计额度、逐工具范围检查、未知预留保留及持久结算均已验收。
+仅资格支持官方 `deepseek-v4-flash` 的保守 token 额度，后台搜索关闭；普通分发默认开关仍为 0，
+部署使用本任务明确授权及 ADR-0015/0059 精确门禁，不追溯授权历史研究。
+见 [F6 验收](../evidence/post-u8-interface-audit/F6-CONTINUATION.md)。
+此结论不关闭完整 F2/S3/全接口审计，不改变 Product Phase 97 或 U8 提前结束结论。
+
+F6 前期维护决策（以下保留历史事实）：[ADR-0065](../architecture/adr/ADR-0065-task-continuation-budget-admission.md)
 已于 2026-09-08 获维护者明确批准，状态为 Accepted。已证实 SDK 单次 max_tokens 不等于
 任务累计预算；预算账本合同及官方接口资格核查继续进行。接口全调用覆盖尚未通过资格验证，
 后台执行保持关闭，不将 ADR 接受或合同存在计作 F6 完成，不改变 Product Phase 97。
+
+2026-09-10 F6 接口复核：准确 `0.1.2-rc.1` npm 包公开了 `llm/stream` 调用前
+拦截接口，已记录制品摘要与静态调用位置；不能再把 SDK 参数缺失推定为所有官方接口缺失。
+既有两项无网络预算反例复测通过；bundled runtime 加载、全调用覆盖与预算执行仍未合格。
+下一步为该公开接口的隔离加载和发出前拒绝资格验证，见
+[F6 接口复核](../evidence/post-u8-r1/F6-STREAM-INTERFACE.md)。不启用后台续接。
 
 F7 当前维护决策：[ADR-0066](../architecture/adr/ADR-0066-domain-validation-call-admission.md)
 已于 2026-09-08 获维护者回复“批准。”接受，状态为 Accepted；先隔离验证，再接入首批两工具。

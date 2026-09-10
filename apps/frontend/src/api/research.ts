@@ -39,6 +39,34 @@ export function listTasks(): Promise<{ tasks: Array<Record<string, unknown>> }> 
   return getJson("/research/tasks");
 }
 
+export interface ContinuationPermissionView {
+  task_id: string;
+  can_start: boolean;
+  blocked_reason: string;
+  permission: null | { grant_version: number; token_limit: number; expires_at: string; revoked_at: string | null };
+  budget?: { reserved_tokens: number; charged_tokens: number; available_tokens: number;
+    turns_remaining: number; unconfirmed_reservations: number };
+}
+
+export function getContinuationPermission(taskId: string): Promise<ContinuationPermissionView> {
+  return getJson(`/research/tasks/${encodeURIComponent(taskId)}/continuation-permission`);
+}
+
+export function confirmContinuationPermission(taskId: string, payload: {
+  idempotency_key: string; token_limit: number; confirmed_artifact_ids: string[];
+}): Promise<ContinuationPermissionView> {
+  return getJson(`/research/tasks/${encodeURIComponent(taskId)}/continuation-permission`, {
+    method: 'POST', headers: { 'x-byq-continuation-confirmation': 'v1' }, body: JSON.stringify(payload),
+  });
+}
+
+export function revokeContinuationPermission(taskId: string, grantVersion: number): Promise<ContinuationPermissionView> {
+  return getJson(`/research/tasks/${encodeURIComponent(taskId)}/continuation-permission/revoke`, {
+    method: 'POST', headers: { 'x-byq-continuation-confirmation': 'v1' },
+    body: JSON.stringify({ grant_version: grantVersion }),
+  });
+}
+
 export function listTaskOptions(limit = 50): Promise<{ tasks: Array<Record<string, unknown>> }> {
   return getJson(`/research/task-options?limit=${limit}`);
 }

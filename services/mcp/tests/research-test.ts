@@ -6,6 +6,7 @@ import { bindActiveWebEvidenceProducer, loadWebEvidencePolicy } from "../src/web
 
 import {
   fetchByqArtifactCreate,
+  fetchByqResearchLookup,
   fetchByqResearchTaskCreate,
   fetchByqResearchTransition,
   fetchByqWebEvidenceCreate,
@@ -206,3 +207,65 @@ try {
   rmSync(policyDirectory, { recursive: true, force: true });
 }
 console.log("Web provenance policy PASS: complete identity, candidate isolation and active producer binding");
+
+
+for (const entity_type of ["research_task", "experiment", "artifact"] as const) {
+  for (const status of ["confirmed", "outcome_unknown"] as const) {
+    let calls = 0;
+    const lookup = { entity_type, idempotency_key: "original/key &中文",
+      ...(entity_type === "research_task" ? {} : { task_id: "task_original" }) };
+    const response = await fetchByqResearchLookup("http://backend:8000", lookup, async (url, init) => {
+      calls++;
+      const target = new URL(url);
+      assert.equal(target.pathname, "/v1/research/submissions/reconcile");
+      assert.equal(target.searchParams.get("idempotency_key"), lookup.idempotency_key);
+      assert.equal(target.searchParams.get("task_id"), lookup.task_id ?? null);
+      assert.equal(init?.method, "GET");
+      assert.equal(init?.body, undefined);
+      return new Response(JSON.stringify({ schema_version: "research-submission-reconciliation.v1",
+        entity_type, idempotency_key: lookup.idempotency_key, status,
+        ...(status === "confirmed" ? { entity: { [{ research_task: "task_id", experiment: "experiment_id", artifact: "artifact_id" }[entity_type]]: "original_id", status: "planned" } } : {}),
+      }), { status: 200 });
+    });
+    assert.equal(calls, 1);
+    assert.equal(response.isError, false);
+    assert.equal(JSON.parse(response.content[0].text).status, status);
+    if (status === "outcome_unknown") assert.equal(JSON.parse(response.content[0].text).retryable, false);
+  }
+}
+for (const request of [
+  { entity_type: "research_task" as const },
+  { entity_type: "research_task" as const, entity_id: "task_a", idempotency_key: "key" },
+  { entity_type: "research_task" as const, idempotency_key: "key", task_id: "task_a" },
+  { entity_type: "artifact" as const, idempotency_key: "key" },
+  { entity_type: "artifact" as const, entity_id: "artifact_a", task_id: "task_a" },
+]) {
+  const response = await fetchByqResearchLookup("http://backend:8000", request, async () => {
+    assert.fail("invalid selectors must not call Backend");
+  });
+  assert.equal(response.isError, true);
+}
+for (const failure of ["transport", "invalid", "wrong_key", "missing_id"] as const) {
+  let calls = 0;
+  const response = await fetchByqResearchLookup("http://backend:8000", {
+    entity_type: "research_task", idempotency_key: "key",
+  }, async () => {
+    calls++;
+    if (failure === "transport") throw new Error("synthetic transport failure");
+    return new Response(JSON.stringify(failure === "invalid" ? {} : {
+      schema_version: "research-submission-reconciliation.v1", status: "confirmed", entity_type: "research_task",
+      idempotency_key: failure === "wrong_key" ? "other" : "key", entity: {},
+    }), { status: 200 });
+  });
+  assert.equal(calls, 1);
+  assert.equal(response.isError, true);
+  assert.doesNotMatch(response.content[0].text, /synthetic transport failure/);
+}
+const legacyRead = await fetchByqResearchLookup("http://backend:8000", {
+  entity_type: "artifact", entity_id: "artifact_original",
+}, async (url, init) => {
+  assert.equal(url, "http://backend:8000/v1/research/artifacts/artifact_original");
+  assert.equal(init?.method, "GET");
+  return new Response(JSON.stringify({ artifact_id: "artifact_original" }), { status: 200 });
+});
+assert.equal(legacyRead.isError, false);

@@ -100,22 +100,19 @@ Contract 和 translation test。外部依赖必须有准确的 metadata/version 
 Runtime 变更需要 lifecycle 和 cleanup 证据。Product/Engineering 能力变更需要
 明确的隔离测试。仅有绿色测试不足以作为架构验收证据。
 
-## Phase 9+ Community 迁移纪律
+## Community 参考与迁移纪律（ADR-0068）
 
-实现 Phase 9 或更晚的领域能力前，Codex 必须：
+当前及之后所有开发步骤免除 Community 原实现检查。不得因旧源码不存在、未读取或
+未重新检查而阻塞开发，也不再重复请求豁免。历史 Phase/专项计划中的强制原实现检查
+由 ADR-0068 覆盖；现有 BYQ 合同、领域不变量、测试与真实 Product API 验收仍必须满足。
 
-1. 检查 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`。
-2. 检查对应的 BeyondQuant-Community 实现和测试。
-3. 将每个可复用资产分类为 `REUSE_AS_IS`、`PORT_LOGIC`、`PORT_TESTS`、
-   `REFACTOR`、`REFERENCE_ONLY`、`REPLACE` 或 `DROP`。
-4. 保持现有 BYQ ownership 和 MCP/DSH 架构边界。
-5. 仅将有依据的领域语义和 regression test 移植到 BYQ 自有 Contract。
-6. 在 inventory 中记录迁移决策及任何未来 Phase candidate。
+如主动复用旧代码，先核对来源、许可和 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`
+中的迁移分类；不能盲目复制旧架构。Community 源码与数据保持只读。
+真实缓存迁移仍必须验证来源、单位、schema、时点、覆盖和完整性，采用只读逻辑导出
+及可重复导入，不允许物理目录复制/挂载。
 
-未检查并分类现有 Community 实现属于 STOP CONDITION。重新引入 BaoStock、AKShare、
-VectorBT、PydanticAI、Hermes、旧 Agent runtime coupling、Agent 直接访问数据库，或
-frontend 依赖 raw Agent schema，同样属于 STOP CONDITION。不得创建 compatibility
-layer 来规避该决策。
+BaoStock、AKShare、VectorBT、PydanticAI/Hermes 主运行时、Agent 直连数据库或前端
+依赖 raw DSH schema 等禁止项不变；不得用 compatibility layer 绕过架构。
 
 ## STOP CONDITIONS
 
@@ -146,8 +143,8 @@ review 而 blocked。
 
 - 每个隔离 worktree/branch/Draft PR 只处理一个 Phase；
 - 默认在 Draft PR 创建且 CI 通过后停止，ready/merge 仅适用当前具名例外；
-- Product UI Phase 必须具备真实浏览器/Product API evidence 和 Community feature
+- Product UI Phase 必须具备真实浏览器/Product API evidence 和功能
   checklist，才能视为完成；
-- PR body 必须包含 Product Evidence：已检查的 Community reference、已测试的 browser
+- PR body 必须包含 Product Evidence：适用的功能来源（无需 Community 原实现检查）、已测试的 browser
   journey、所用测试浏览器及审查结果、frontend test、backend/Product API test、已完成的
   screen/surface，以及仍缺失的项目。

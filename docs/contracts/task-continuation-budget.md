@@ -1,21 +1,44 @@
 # 任务续接预算账本合同（ADR-0065）
 
-状态：已实现首版持久许可、个人登录 Product API 查询/确认/撤销；**执行预留、结算账本和消费者尚未实现**。
-当前没有合格的全调用预算执行器，不能凭此文档或计数器开启后台模型。
+状态：已实现持久许可、预算预留/结算、通知消费者、MCP 原任务范围门禁与前端许可控件。
+**F6 已通过 `.29` 集成资格验证；普通分发默认 `BYQ_F6_EXECUTOR_ENABLED=0`，启用须受控部署。**
+完整证据见 [F6 验收](../evidence/post-u8-interface-audit/F6-CONTINUATION.md)，包含真实领域链路、
+真实浏览器和独立的固定合成目标真实模型验证。
 
-## 首版实现范围
+## 实现范围与有限执行配置
 
-`ResearchStore` 在原 `research_tasks` 行保存 `continuation_permission`，复用原工作区保护。
-身份/成员关系、原会话与任务锁保护创建及撤销；确认固定 validated 制品 ID 和内容 SHA-256。
-每任务首版只允许一份不可替换的 version 1 许可；同键同输入返回当前状态，不刷新绝对到期时间，
-不同键/额度冲突，撤销后重放不能复活。暂无续期、增额或多版本创建接口。
-普通研究任务响应不包含内部许可字段；专用 Product API 不返回幂等键和请求摘要。
+每任务只有一份不可替换的 version 1 许可，用户明确填写正整数 token_limit 并确认
+validated 制品身份/内容哈希；同键同输入不延长有效期，不提供续期、增额或模型自我授权。
+普通部署 Token 不能操作许可，个人登录写入口要求显式确认 header；无原会话绑定的历史任务
+不能自动补绑。前端通过 Product API 查询、保存和撤销，并显示可用、预留和已记账上界。
 
-当前仅接收明确正整数 token_limit，不接受金额字段，也不承诺该额度已经受模型执行器强制约束。
-所有响应均为 can_start=false，并区分未授权、撤销、任务终态、会话归档、到期及执行器未合格。
-没有 reservation、消费事件、模型工具或后台 prompt；这些待办不能用本次许可去重替代。
-普通部署 Token 不能访问许可 API，写入口还要求显式确认 header，不能由模型声明身份或资格。
-本批未修改前端页面，尚无许可控件或 Chrome 功能验收。
+候选后台配置仅支持准确 SDK/runtime `0.1.2rc1`、root-turn 和官方 `deepseek-v4-flash`。
+每次 `llm/stream` 在调用 next 前 fsync 保守输入上界 1,048,576 加本次输出上限；普通后台
+请求输出上限 8,192，压缩同样计入累计额度。费用/币种输入仍不接受，已记账上界不是实际账单。
+背景配置禁用 `web-search-deepseek` 与 `tool-web`；已实证搜索的直接 HTTP 路径绕过
+`llm/stream`。其他模型不自动切换，给出模型未合格阻塞，普通主动研究配置不受此限制。
+
+`can_start=false` 表示本次查询不授予即时启动权；异步执行只能由消费者重新事务准入。
+`waiting_for_event` 表示等待原任务领域终态，`continuation_result_unconfirmed` 表示保留未知
+预留，`budget_exhausted` 与 `continuation_needs_attention` 分别说明额度或执行阻塞。
+模型 completed 不能据此写任务 completed，原研究完成证据及领域 job 校验仍为权威。
+
+## 持久通知、MCP 和恢复
+
+Backend 精确查询原 owner/workspace/conversation/task 及已确认策略 lineage 的训练、预测、
+信号与回测终态，事件 identity/status/updated_at 摘要去重。最多8份预留；同一任务最多一份
+未结算预留。每次 dispatch 在跨进程之前保存 outcome_unknown，只有明确 admission conflict
+可在原身份下最多8次退避重试。超时、5xx、空回执均只核对原 prompt，不重新提交。
+回执查询持久退避至300秒，最多256次且不超过许可到期；停止查询不释放未知额度。
+
+每个后台进程使用私有派生 patch 传递 reservation header。MCP 在执行工具前，经 BYQ
+Backend 校验原任务、会话/工作区、root、有效许可及全部显式领域引用；新任务、重新训练、
+自我审批、无关业务工具与未确认策略都不获准。正常领域工具仍执行各自审批和不变量。
+该门禁不使 DSH 访问业务库，不修改官方 runtime，也不是第二个通用 Agent loop。
+
+Runtime 在确认独占进程关闭后保存 fsync 结算证明，绑定原生命周期 journal、prompt 和
+终态身份。空闲释放/Adapter 重启仍可读取同一证明。没有关闭证明或文件损坏则维持 unknown；
+从不以“进程不见了”推导零消耗。每会话结算证据最多256份，容量耗尽保留未知预留而不丢弃证据。
 
 ## 所有权和许可
 
@@ -62,9 +85,14 @@ Provider 内部重试和并发；缺少任何一项就禁止后台启动。
 资格证据固定到 SDK/runtime、composition 和执行器实现的准确身份；升级或配置变化必须重新验证。
 不能接受普通请求中的 `qualified=true`，也不能凭包名、用量事件或注册表 AVAILABLE 状态放行。
 
-当前 SDK 的 max_tokens 只是每请求输出参数。当前 composition 有 token-meter，
-但没有加载 agent-budget；这不证明所有公开扩展都不可能实现，只证明当前组合尚不合格。
+SDK 的 max_tokens 只是每请求输出参数。先前普通 composition 的 token-meter
+不是累计额度执行器；当前后台专用 patch 已资格验证公开 llm/stream 调用前 guard。
 ADR-0038 不允许把未经验证的外置包直接装入 Product；ADR-0065 不授权 Provider 代理或未公开 hook。
+
+Gateway 在既有会话上按已预留回合截止时间设置有限空闲保护；浏览器断开或前一回合
+留下的释放计时器不能关闭当前后台回合。重复核对不延长截止时间，未知回执也不无限占用进程。
+Runtime 的回测/审批卡片仍为内部身份引用，日志仅校验引用并推进序号；Gateway 经原用户
+Domain 查询补全后才成为公开卡片。引用不进入生命周期恢复证据。
 
 ## 必需验证矩阵
 

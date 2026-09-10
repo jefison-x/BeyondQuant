@@ -11,6 +11,7 @@ import urllib.request
 
 from app.research import ResearchStore
 from app.market_readiness import MarketReadinessStore
+from app.market_automation import MarketAutomationStore
 from app.signal_producer import SignalJobStore, SignalProducerCoordinator, promote_waiting_signal_jobs
 
 
@@ -54,6 +55,7 @@ def main() -> int:
     jobs = SignalJobStore.from_env()
     research = ResearchStore.from_env()
     readiness = MarketReadinessStore.from_env()
+    automation = MarketAutomationStore.from_env()
     coordinator = SignalProducerCoordinator(
         jobs,
         research,
@@ -70,10 +72,11 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     try:
         while running:
-            promote_waiting_signal_jobs(jobs, readiness)
+            promote_waiting_signal_jobs(jobs, readiness, automation)
             if coordinator.run_next() is None:
                 time.sleep(poll)
     finally:
+        automation.close()
         readiness.close()
         research.close()
         jobs.close()

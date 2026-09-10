@@ -21,13 +21,13 @@ These rules apply to Codex, DSH engineering agents, and any other AI coding agen
 17. Do not migrate legacy code by copy unless `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md` explicitly classifies it for migration.
 18. The old repository at `/home/jefison/projects/BeyondQuant-community` is a READ-ONLY reference.
 19. Never edit `BeyondQuant-community` as part of new project work.
-20. Before implementing a legacy feature, inspect the old implementation, identify its domain invariant, implement it cleanly in the new architecture, and do not blindly copy its architecture.
+20. Implement domain invariants cleanly from current BYQ contracts and tests; do not blindly copy legacy architecture.
 
-21. Before implementing any Phase 9+ domain capability, Codex MUST inspect the
-    corresponding BeyondQuant-Community implementation first.
-22. The mandatory migration sequence is: inspect → classify → extract
-    invariants/tests → decide reuse/port/refactor/drop → implement. Existing
-    Community code is evidence, not an authorization to copy it.
+21. Under Accepted ADR-0068, all current and future development steps are exempt
+    from Community original-implementation inspection. Missing Community source
+    is not a development blocker; do not request the same exemption again.
+22. If voluntarily reusing legacy code, verify provenance, license and migration
+    classification first. Historical Community evidence is not authorization to copy.
 23. BaoStock MUST NOT be reintroduced.
 24. AKShare MUST NOT be reintroduced.
 25. VectorBT MUST NOT be reintroduced.
@@ -36,11 +36,9 @@ These rules apply to Codex, DSH engineering agents, and any other AI coding agen
     compatibility layer for them unless a future Accepted ADR explicitly
     reverses this decision.
 
-27. Productization Phase 17+ frontend work MUST inspect and classify the
-    corresponding BeyondQuant-Community frontend page/component before
-    implementation. Reuse visual language and UX only after deciding whether
-    each asset is `REUSE_AS_IS`, `PORT_COMPONENT`, `PORT_STYLE`, `PORT_LAYOUT`,
-    `PORT_UX`, `REFACTOR`, `REFERENCE_ONLY`, `REPLACE`, or `DROP`.
+27. Frontend implementation follows current BYQ requirements, contracts and
+    feature acceptance checklists. Community page/component inspection is optional
+    under ADR-0068; chosen reuse still requires an explicit classification.
 28. Productization frontend code MUST use BYQ Product API and normalized
     WorkflowTrace projections. It MUST NOT call raw Backend-internal APIs,
     MCP, DSH, or raw DSH event schemas.
@@ -70,12 +68,12 @@ These rules apply to Codex, DSH engineering agents, and any other AI coding agen
     real browser flows, persistence where required, and feature checklist
     evidence.
 36. Product phases affecting UI require real-browser verification through
-    Gateway/Product API and a Community feature checklist before completion.
+    Gateway/Product API and a feature checklist before completion.
+    Existing Community checklist records may be referenced without source reinspection.
     Playwright-managed Chromium is sufficient; Chrome MCP and a system-installed
     Chrome are not required. Mock-only tests do not replace real Product API flows.
-37. Community frontend remains READ ONLY and is the Product reference
-    baseline. Inspect feature-by-feature before port/redesign/rewrite; do not
-    copy the Community repository.
+37. Community frontend remains READ ONLY and may be used as a historical reference.
+    No original-implementation inspection is required; do not copy the repository.
 38. Browser requests must use Gateway/Product API only. The frontend MUST NOT
     call Backend, MCP, DSH, PostgreSQL, Redis, or Tushare directly.
 39. Product Token is bootstrap/internal/service compatibility only. Normal

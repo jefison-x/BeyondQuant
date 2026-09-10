@@ -8,7 +8,7 @@ export type SchemaFailure = {
   arguments: Record<string, unknown>;
 };
 
-async function boundedBody(request: Request): Promise<unknown> {
+export async function boundedBody(request: Request): Promise<unknown> {
   const reader = request.clone().body?.getReader();
   if (!reader) return undefined;
   const chunks: Uint8Array[] = [];

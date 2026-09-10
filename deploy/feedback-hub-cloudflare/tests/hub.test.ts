@@ -437,7 +437,7 @@ describe("isolated Cloudflare GitHub publisher", () => {
     expect(wrapped.length).toBeGreaterThan(4);
   });
 
-  it("uses only the fixed GitHub Issue route and acknowledges after Hub completion", async () => {
+  it.each(["empty", "later_match", "exhausted", "later_error", "cross_page_conflict"])("reconciles bounded catalog before publication: %s", async (scenario) => {
     const value = await envelope();
     const event: PublicationEvent = {
       event_id: `feedback_outbox_${hexId()}`,
@@ -476,7 +476,17 @@ describe("isolated Cloudflare GitHub publisher", () => {
       if (url.includes("/app/installations/")) {
         return new Response(JSON.stringify({ token: "installation-token", expires_at: new Date(Date.now() + 3_600_000).toISOString() }), { status: 201 });
       }
-      if (url.includes("?state=all")) return new Response("[]", { status: 200 });
+      if (url.includes("?state=all")) {
+        const page = Number(new URL(url).searchParams.get("page"));
+        const match = { id: 8001, number: 77, html_url: "https://github.com/jefison-x/BeyondQuant/issues/77", body: marker(event) };
+        if (scenario === "empty") return new Response("[]", { status: 200 });
+        if (page > 1 && scenario === "later_error") return new Response("{}", { status: 503 });
+        const rows = page === 1 || scenario === "exhausted"
+          ? Array.from({ length: 100 }, (_, index) => ({ id: page * 100 + index, body: "unrelated" }))
+          : [match];
+        if (page === 1 && scenario === "cross_page_conflict") rows[0] = match;
+        return new Response(JSON.stringify(rows), { status: 200 });
+      }
       return new Response(JSON.stringify({
         id: 8001, number: 77, html_url: "https://github.com/jefison-x/BeyondQuant/issues/77"
       }), { status: 201 });
@@ -501,12 +511,15 @@ describe("isolated Cloudflare GitHub publisher", () => {
     } as never);
     expect(message.ack).toHaveBeenCalledOnce();
     expect(message.retry).not.toHaveBeenCalled();
-    expect(hubCalls.some((url) => url.endsWith("/complete"))).toBe(true);
-    expect(githubCalls).toEqual([
-      "https://api.github.com/app/installations/5678/access_tokens",
-      "https://api.github.com/repos/jefison-x/BeyondQuant/issues?state=all&per_page=100&page=1",
-      "https://api.github.com/repos/jefison-x/BeyondQuant/issues"
-    ]);
+    const completed = scenario === "empty" || scenario === "later_match";
+    expect(hubCalls.some((url) => url.endsWith("/complete"))).toBe(completed);
+    expect(hubCalls.some((url) => url.endsWith("/retry"))).toBe(!completed);
+    const issueCalls = githubCalls.filter((url) => url.includes("/repos/"));
+    const pages = scenario === "empty" ? 1 : scenario === "exhausted" ? 5 : 2;
+    expect(issueCalls.filter((url) => url.includes("?state=all"))).toEqual(
+      Array.from({ length: pages }, (_, i) => `https://api.github.com/repos/jefison-x/BeyondQuant/issues?state=all&per_page=100&page=${i + 1}`)
+    );
+    expect(issueCalls.filter((url) => !url.includes("?")).length).toBe(scenario === "empty" ? 1 : 0);
     expect(githubCalls.some((url) => url.includes("/pulls") || url.includes("/contents"))).toBe(false);
   });
 });

@@ -494,6 +494,11 @@ check_dsh_candidate() {
       python3 -m pytest -q -p no:cacheprovider /app/tests; then
     bad "candidate complete unit and root wire suite"; return
   fi
+  if ! run_interruptible docker run --rm --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none \
+      -e PYTHONDONTWRITEBYTECODE=1 -e BYQ_BUDGET_SEMANTICS_TEST=1 "$candidate_image" \
+      python3 -m pytest -q -p no:cacheprovider /app/tests/test_continuation_budget_process.py; then
+    bad "candidate continuation budget and restart qualification"; return
+  fi
   if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
       -e BYQ_DSH_REAL_PROCESS_TEST=1 -v "$CI_CANDIDATE_VOL:/var/lib/byq/dsh-sessions" \
       -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$candidate_image" \
@@ -608,6 +613,9 @@ check_smoke() {
   if docker compose cp scripts/evidence/phase74-seed.py backend:/tmp/phase74-seed.py >/dev/null \
     && docker compose exec -T backend python /tmp/phase74-seed.py; then
     ok "Phase 74 LightGBM fixture"; else bad "Phase 74 LightGBM fixture"; fi
+  if docker compose cp scripts/evidence/f6-permission-seed.py backend:/tmp/f6-permission-seed.py >/dev/null \
+    && docker compose exec -T -e BYQ_F6_FIXTURE=1 backend python /tmp/f6-permission-seed.py; then
+    ok "F6 bound-task permission fixture"; else bad "F6 bound-task permission fixture"; fi
   if (
     cd apps/frontend
     [ -x node_modules/.bin/playwright ] || npm ci --no-audit --no-fund
@@ -639,6 +647,52 @@ check_smoke() {
       backend python /tmp/phase48-seed.py \
     && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" scripts/evidence/phase48-product-golden.py; then
     ok "Phase 48 no-mock two-user Product coherence"; else bad "Phase 48 no-mock two-user Product coherence"; fi
+}
+
+check_f6_chain() {
+  step "F6: candidate DSH to real MCP/ML/native-backtest continuation chain"
+  local override="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/f6-compose.json"
+  local original_compose="$COMPOSE_FILE"
+  F6_CANDIDATE_IMAGE="$(ci_image runtime-candidate)" python3 - "$override" <<'PYCODE'
+import json, os, sys
+value = {'services': {
+  'runtime-adapter': {'image': os.environ['F6_CANDIDATE_IMAGE'],
+    'command': ['python3', '-m', 'tests.f6_synthetic_runtime'], 'environment': {
+      'BYQ_F6_EXECUTOR_ENABLED': '1', 'BYQ_F6_SYNTHETIC_RUNTIME': '1', 'DEEPSEEK_API_KEY': 'f6-synthetic-only',
+      'BYQ_DSH_COMPATIBILITY_RELEASE': 'dsh-0.1.2rc1', 'BYQ_DSH_PROCESS_OWNERSHIP': 'root-turn',
+      'BYQ_DSH_COMPOSITION': '/opt/byq/profiles/byq-product.patch.yml',
+      'BYQ_DSH_COMPOSITION_IDENTITY': '/opt/byq/profiles/byq-product.identity.json',
+      'DSH_SESSION_ROOT': '/var/lib/byq/dsh-sessions/f6-qualification'}},
+  'gateway': {'environment': {'BYQ_F6_EXECUTOR_ENABLED': '1'}},
+  'backend': {'environment': {'BYQ_F6_EXECUTOR_ENABLED': '1'}},
+}}
+with open(sys.argv[1], 'w') as stream: json.dump(value, stream)
+PYCODE
+  export COMPOSE_FILE="$REPO_ROOT/compose.yml:$override"
+  if ! run_interruptible docker compose up -d --no-build --force-recreate --wait backend runtime-adapter gateway frontend; then
+    bad "F6 isolated candidate stack"; export COMPOSE_FILE="$original_compose"; return
+  fi
+  if ! resolve_ci_compose_urls; then
+    bad "F6 endpoint discovery"; export COMPOSE_FILE="$original_compose"; return
+  fi
+  # Prior golden journeys intentionally replace their own market/security
+  # fixtures. Restore the complete F6 input scope before this independent chain.
+  if docker compose cp scripts/evidence/phase74-seed.py backend:/tmp/f6-market-seed.py >/dev/null \
+    && docker compose exec -T backend python /tmp/f6-market-seed.py \
+    && docker compose cp scripts/evidence/f6-chain-fixture.py backend:/tmp/f6-chain-fixture.py >/dev/null \
+    && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" run_interruptible python3 scripts/evidence/f6-chain-verification.py; then
+    ok "F6 real-domain chain and Gateway restart"
+  else
+    docker compose logs --no-color --tail 40 runtime-adapter gateway backend || true
+    bad "F6 real-domain chain and Gateway restart"; export COMPOSE_FILE="$original_compose"; return
+  fi
+  if (cd apps/frontend && npx playwright test --config playwright.f6.config.ts \
+      --output "$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/f6-browser"); then
+    ok "F6 completed-task Product API desktop/mobile browser"
+  else
+    bad "F6 completed-task Product API desktop/mobile browser"
+  fi
+  export COMPOSE_FILE="$original_compose"
 }
 
 check_dsh_web() {
@@ -693,6 +747,7 @@ want runtime && check_runtime
 want mcp && check_mcp
 want frontend && check_frontend
 [ "$WITH_SMOKE" -eq 1 ] && check_smoke
+if [ "$WITH_SMOKE" -eq 1 ] && [ "$integration" = yes ] && want runtime; then check_f6_chain; fi
 [ "$WITH_DSH_WEB" -eq 1 ] && check_dsh_web
 
 printf '\n=============================\n'

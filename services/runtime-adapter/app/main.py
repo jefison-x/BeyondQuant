@@ -38,6 +38,7 @@ class PromptRequest(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
     conversation_context: list[ConversationContextMessage] | None = None
     conversation_recovery: dict[str, object] | None = None
+    continuation_budget: dict[str, object] | None = None
 
 
 adapter = RuntimeAdapter()
@@ -126,6 +127,7 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
             idempotency_key=request.idempotency_key,
             conversation_context=request.conversation_context,
             conversation_recovery=request.conversation_recovery,
+            continuation_budget=request.continuation_budget,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -212,6 +214,25 @@ def reconcile_prompt_receipt(
         return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail="prompt receipt identity conflicts") from exc
+
+
+@app.get('/internal/runtime/sessions/{session_id}/continuation-receipt/{reservation_id}')
+def continuation_budget_receipt(session_id: str, reservation_id: str) -> dict:
+    try:
+        return adapter.continuation_receipt(session_id, reservation_id)
+    except KeyError:
+        return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
+
+
+@app.get('/internal/runtime/sessions/{session_id}/continuation-qualification')
+def continuation_qualification(session_id: str) -> dict:
+    try:
+        record = adapter._get(session_id)
+    except KeyError:
+        return {'qualified': False, 'reason': 'session_missing'}
+    with record.lock:
+        qualified = adapter.continuation_qualified(record)
+        return {'qualified': qualified, 'reason': 'qualified' if qualified else 'model_or_executor_unqualified'}
 
 
 @app.post("/internal/runtime/sessions/{session_id}/cancel")

@@ -4,6 +4,7 @@ import importlib.util
 import json
 import sys
 import threading
+from urllib.parse import parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -27,7 +28,8 @@ class FakeGitHub(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         type(self).requests.append(("GET", self.path, None))
-        body = json.dumps(type(self).issues).encode()
+        page = int(parse_qs(urlparse(self.path).query).get("page", ["1"])[0])
+        body = json.dumps(type(self).issues[(page - 1) * 100:page * 100]).encode()
         self.send_response(type(self).get_status)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(body)))
@@ -168,3 +170,31 @@ def test_github_app_is_preferred_over_fallback_token() -> None:
         private_key_file="/run/secrets/key.pem", worker_id="worker-test", poll_seconds=2,
     )
     assert cfg.credential_kind == "github_app"
+
+
+@pytest.mark.parametrize("scenario", ["later_match", "exhausted", "later_error", "cross_page_conflict"])
+def test_unknown_receipt_never_creates_from_partial_catalog(monkeypatch, scenario):
+    calls = []
+    reads = []
+    match = {"id": 9001, "number": 321, "body": publisher.marker(event()),
+             "html_url": "https://github.com/jefison-x/BeyondQuant/issues/321"}
+    def request(url, **kwargs):
+        reads.append(url)
+        assert kwargs.get("method", "GET") == "GET", "must not create a replacement Issue"
+        page = int(parse_qs(urlparse(url).query)["page"][0])
+        if page == 1:
+            return ([match] if scenario == "cross_page_conflict" else []) + [
+                {"id": i + 1, "body": "unrelated"} for i in range(99 if scenario == "cross_page_conflict" else 100)]
+        if scenario == "later_error":
+            raise publisher.PublisherError("provider_unavailable")
+        if scenario == "exhausted":
+            return [{"id": page * 100 + i, "body": "unrelated"} for i in range(100)]
+        return [match]
+    monkeypatch.setattr(publisher, "_json_request", request)
+    monkeypatch.setattr(publisher, "_backend", lambda _cfg, path, payload: calls.append((path, payload)) or {})
+    cfg = config(publisher.SAFE_ORIGIN)
+    publisher.process_event(cfg, publisher.GitHubIssues(cfg), event())
+    assert len(reads) == (5 if scenario == "exhausted" else 2)
+    assert calls[-1][0].endswith("/complete" if scenario == "later_match" else "/retry")
+    if scenario != "later_match":
+        assert calls[-1][1]["error_category"] == ("reconciliation_conflict" if scenario == "cross_page_conflict" else "provider_unavailable")

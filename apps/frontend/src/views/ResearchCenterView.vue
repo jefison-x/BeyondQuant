@@ -6,6 +6,7 @@ import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import { researchProgress } from "@/researchProgress";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
+import ContinuationPermissionPanel from "@/components/ContinuationPermissionPanel.vue";
 import { useFilteredPagination } from "@/composables/useFilteredPagination";
 
 const tab = ref<"tasks" | "research" | "approval" | "assets" | "inbox">("tasks");
@@ -20,6 +21,7 @@ const approvals = ref<Array<Record<string, unknown>>>([]);
 const tasks = ref<Array<Record<string, unknown>>>([]);
 const taskTitle = ref("");
 const taskObjective = ref("");
+const continuationTask = ref("");
 const auth = useAuthStore();
 const pendingSubmission = ref<TaskSubmission | null>(null);
 function submissionScope(): string {
@@ -159,8 +161,12 @@ onMounted(async () => {
               </template>
             </el-table-column>
             <el-table-column prop="task_id" label="Task ID" min-width="260" show-overflow-tooltip />
+            <el-table-column label="后台续接" width="130">
+              <template #default="{ row }"><el-button v-if="row.conversation_id" link @click="continuationTask = row.task_id">查看许可</el-button><span v-else>需关联原研究对话</span></template>
+            </el-table-column>
           </el-table>
           </ListFilterPagination>
+          <ContinuationPermissionPanel v-if="continuationTask" :task-id="continuationTask" :artifacts="artifacts" />
           <el-empty v-if="!tasks.length && !busy && !pendingSubmission" description="暂无研究任务，请先创建一个任务" />
         </el-tab-pane>
 

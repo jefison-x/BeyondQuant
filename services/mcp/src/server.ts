@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { continuationAdmission } from './continuation-admission.js';
 import { domainValidationSchemas } from "./domain-validation-schema.js";
 import { evidenceBoundedFetcher, safeDomainAdmission } from "./domain-admission.js";
 import { observeDomainSchemaFailures } from "./domain-schema-observation.js";
@@ -11,11 +12,13 @@ import { fetchResearchContext } from "./research-context.js";
 import { fetchByqHealth } from "./backend-health.js";
 import {
   fetchBudgetedByqBacktestAnalysis,
-  fetchByqBacktestGet,
+  fetchByqBacktestLookup,
+  type BacktestLookup,
   fetchByqBacktestTaskCancel,
   fetchByqBacktestTaskCreate,
   fetchByqBacktestTaskExecute,
-  fetchByqBacktestTaskGet,
+  fetchByqBacktestTaskLookup,
+  type BacktestTaskLookup,
   fetchByqBacktestTaskPrepare,
   fetchByqSignalSnapshotGet,
   type BacktestRequest,
@@ -82,7 +85,8 @@ import {
 import {
   fetchByqArtifactCreate,
   fetchByqExperimentCreate,
-  fetchByqResearchGet,
+  fetchByqResearchLookup,
+  type ResearchLookup,
   fetchByqResearchTaskCreate,
   fetchByqResearchTransition,
   fetchByqWebEvidenceCreate,
@@ -436,9 +440,9 @@ async function byqLessonReview(args: { lesson_id: string; decision: string; rati
   return fetchByqLessonReview(BACKEND_URL, lesson_id, request, context);
 }
 
-async function byqBacktestGet(args: { job_id: string }, extra: unknown) {
+async function byqBacktestGet(args: BacktestLookup, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqBacktestGet(BACKEND_URL, args.job_id, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqBacktestLookup(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
 async function byqBacktestAnalysis(
@@ -464,9 +468,9 @@ async function byqBacktestTaskCreate(args: BacktestRequest, extra: unknown) {
   return context ? fetchByqBacktestTaskCreate(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqBacktestTaskGet(args: { backtest_task_id: string }, extra: unknown) {
+async function byqBacktestTaskGet(args: BacktestTaskLookup, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqBacktestTaskGet(BACKEND_URL, args.backtest_task_id, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqBacktestTaskLookup(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
 async function byqBacktestTaskExecute(args: { backtest_task_id: string }, extra: unknown) {
@@ -625,9 +629,9 @@ async function byqResearchTaskCreate(args: ResearchTaskCreateRequest, extra: unk
   }, trustedBackendFetcher(context));
 }
 
-async function byqResearchGet(args: { entity_type: ResearchEntityType; entity_id: string }, extra: unknown) {
+async function byqResearchGet(args: ResearchLookup, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqResearchGet(BACKEND_URL, args.entity_type, args.entity_id, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqResearchLookup(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
 async function byqSignalSnapshotGet(args: { artifact_id: string }, extra: unknown) {
@@ -1041,8 +1045,9 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_backtest_task_get",
     {
-      description: "Read the derived backtest-task.v1 status and component lineage.",
-      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_(?:ml_)?[0-9a-f]{32}$/) },
+      description: "Read derived task state by backtest_task_id OR recover a signal-backed creation receipt using the original task_id and idempotency_key. Choose exactly one identity. Unknown never permits resubmission; a confirmed receipt provides the ID for a subsequent state read.",
+      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_(?:ml_)?[0-9a-f]{32}$/).optional(),
+        task_id: z.string().min(1).optional(), idempotency_key: z.string().trim().min(1).max(128).optional() },
     },
     (args) => byqBacktestTaskGet(args, trustedContext),
   );
@@ -1064,7 +1069,11 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_backtest_get",
-    { description: "Read durable BYQ backtest job state and immutable result reference.", inputSchema: { job_id: z.string() } },
+    {
+      description: "Read a BYQ backtest summary by job_id OR reconcile a lost submission receipt using the original task_id and idempotency_key. Choose exactly one identity. An unknown receipt never authorizes resubmission.",
+      inputSchema: { job_id: z.string().min(1).optional(), task_id: z.string().min(1).optional(),
+        idempotency_key: z.string().trim().min(1).max(128).optional() },
+    },
     (args) => byqBacktestGet(args, trustedContext),
   );
   server.registerTool(
@@ -1313,10 +1322,12 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_research_get",
     {
-      description: "Read one BYQ ResearchTask, Experiment, or Artifact by identity.",
+      description: "Read one BYQ research entity by entity_id, OR reconcile a lost creation receipt with its original idempotency_key. Experiment/Artifact key lookup requires the original task_id. Choose exactly one identity. Missing receipt is outcome_unknown, never permission to create again.",
       inputSchema: {
         entity_type: z.enum(["research_task", "experiment", "artifact"]),
-        entity_id: z.string(),
+        entity_id: z.string().min(1).optional(),
+        idempotency_key: z.string().min(1).max(128).optional(),
+        task_id: z.string().min(1).optional(),
       },
     },
     (args) => byqResearchGet(args, trustedContext),
@@ -1529,7 +1540,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   return server;
 }
 
-const handler = toNodeHandler(observeDomainSchemaFailures(createMcpHandler(buildServer), async (failure, request) => {
+const observedHandler = observeDomainSchemaFailures(createMcpHandler(buildServer), async (failure, request) => {
   const context = completeAgentContext({ request });
   if (!context) return;
   const send = evidenceBoundedFetcher(trustedBackendFetcher(context), request.headers.get("x-byq-root-run-id") ?? undefined);
@@ -1544,6 +1555,18 @@ const handler = toNodeHandler(observeDomainSchemaFailures(createMcpHandler(build
     // error still reaches the model; the root additionally stops as unknown.
     return safeDomainAdmission({ detail: { schema_version: "domain-call-admission.v1", state: "unknown" } });
   }
+});
+const handler = toNodeHandler(continuationAdmission(observedHandler, async (reservation, call, request) => {
+  const context = completeAgentContext({ request });
+  if (!context) return false;
+  const response = await trustedBackendFetcher(context)(`${BACKEND_URL}/internal/task-continuation/${reservation}/authorize-tool`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(call),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!response.ok) { await response.body?.cancel(); return false; }
+  const value = await response.json() as Record<string, unknown>;
+  return value.schema_version === 'continuation-action-admission.v1' && value.admitted === true
+    && value.reservation_id === reservation;
 }));
 
 const httpServer = createServer(async (request, response) => {

@@ -252,3 +252,72 @@ export function fetchByqBacktestTaskCancel(
     fetcher,
   );
 }
+
+
+export type BacktestLookup = { job_id?: string; task_id?: string; idempotency_key?: string };
+
+export async function fetchByqBacktestLookup(
+  backendUrl: string, request: BacktestLookup, fetcher: Fetcher = fetch,
+): Promise<ByqBacktestResult> {
+  const byId = request.job_id !== undefined;
+  if (byId ? (!request.job_id?.trim() || request.task_id !== undefined || request.idempotency_key !== undefined)
+      : (!request.task_id?.trim() || !request.idempotency_key?.trim() || request.idempotency_key.trim().length > 128)) {
+    return result({ service: "beyondquant-mcp", status: "error", backend: { status: "backtest_request_invalid" } }, true);
+  }
+  if (byId) return fetchByqBacktestGet(backendUrl, request.job_id!, fetcher);
+  const query = new URLSearchParams({ task_id: request.task_id!, idempotency_key: request.idempotency_key! });
+  const response = await requestBacktest(backendUrl, `/v1/research/backtests/reconcile?${query}`, { method: "GET" }, fetcher);
+  if (response.isError) return response;
+  const payload = JSON.parse(response.content[0]?.text ?? "{}");
+  if (payload.schema_version !== "backtest-submission-reconciliation.v1"
+      || payload.task_id !== request.task_id!.trim() || payload.idempotency_key !== request.idempotency_key!.trim()
+      || !["confirmed", "outcome_unknown"].includes(payload.status)
+      || (payload.status === "confirmed" && (!payload.job || Array.isArray(payload.job)
+        || typeof payload.job.job_id !== "string" || !/^backtest_[0-9a-f]{32}$/.test(payload.job.job_id)
+        || payload.job.task_id !== payload.task_id))) {
+    return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
+  }
+  if (payload.status === "outcome_unknown") return result({ service: "beyondquant-mcp",
+    schema_version: payload.schema_version, task_id: payload.task_id, idempotency_key: payload.idempotency_key,
+    status: "outcome_unknown", retryable: false,
+    next_action: "Preserve the original task and request key. Query this identity within the task budget; do not repeat submission or infer absence from a list.",
+  }, false);
+  return response;
+}
+
+
+export type BacktestTaskLookup = { backtest_task_id?: string; task_id?: string; idempotency_key?: string };
+
+export async function fetchByqBacktestTaskLookup(
+  backendUrl: string, request: BacktestTaskLookup, fetcher: Fetcher = fetch,
+): Promise<ByqBacktestResult> {
+  const byId = request.backtest_task_id !== undefined;
+  if (byId ? (!/^backtesttask_(?:ml_)?[0-9a-f]{32}$/.test(request.backtest_task_id!)
+        || request.task_id !== undefined || request.idempotency_key !== undefined)
+      : (!request.task_id?.trim() || !request.idempotency_key?.trim() || request.idempotency_key.trim().length > 128)) {
+    return result({ service: "beyondquant-mcp", status: "error", backend: { status: "backtest_request_invalid" } }, true);
+  }
+  if (byId) return fetchByqBacktestTaskGet(backendUrl, request.backtest_task_id!, fetcher);
+  const query = new URLSearchParams({ task_id: request.task_id!, idempotency_key: request.idempotency_key! });
+  const response = await requestBacktest(backendUrl, `/v1/research/backtest-tasks/reconcile?${query}`, { method: "GET" }, fetcher);
+  if (response.isError) return response;
+  const payload = JSON.parse(response.content[0]?.text ?? "{}");
+  const receipt = payload.receipt;
+  if (payload.schema_version !== "backtest-task-submission-reconciliation.v1"
+      || payload.task_id !== request.task_id!.trim() || payload.idempotency_key !== request.idempotency_key!.trim()
+      || !["confirmed", "outcome_unknown"].includes(payload.status)
+      || (payload.status === "confirmed" && (!receipt || Array.isArray(receipt)
+        || typeof receipt.signal_producer_job_id !== "string" || !/^signaljob_[0-9a-f]{32}$/.test(receipt.signal_producer_job_id)
+        || receipt.backtest_task_id !== receipt.signal_producer_job_id.replace("signaljob_", "backtesttask_")
+        || !["waiting_for_data", "queued", "running", "completed", "failed", "cancelled"].includes(receipt.signal_status)))) {
+    return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
+  }
+  return result({ service: "beyondquant-mcp", schema_version: payload.schema_version,
+    task_id: payload.task_id, idempotency_key: payload.idempotency_key, status: payload.status,
+    ...(payload.status === "confirmed" ? { receipt: {
+      backtest_task_id: receipt.backtest_task_id, signal_producer_job_id: receipt.signal_producer_job_id,
+      signal_status: receipt.signal_status,
+    }, next_action: "Read the recovered backtest_task_id for current state; confirmation grants no execution permission." }
+    : { retryable: false, next_action: "Preserve the original task and key. Query this identity within the task budget; do not resubmit or infer absence from a list." }),
+  }, false);
+}
