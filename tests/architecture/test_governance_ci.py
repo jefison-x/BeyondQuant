@@ -119,9 +119,9 @@ if ! build_test_images; then exit 1; fi
 check_runtime
 '''
             result = subprocess.run(["bash", "-c", command], cwd=ROOT, capture_output=True, text=True,
-                env={**os.environ, "PATH": f"{folder}:{os.environ['PATH']}", "FAKE_CALLS": str(calls), "BYQ_CI_SCOPE": "fake-image-contract"})
+                env={**os.environ, "PATH": f"{folder}:{os.environ['PATH']}", "FAKE_CALLS": str(calls), "BYQ_CI_SCOPE": "fake-image-contract", "BYQ_CI_GHA_CACHE": "0"})
             self.assertEqual(result.returncode, 1)
-            self.assertIn("build runtime-adapter", calls.read_text())
+            self.assertIn("build backend runtime-adapter mcp", calls.read_text())
             self.assertNotIn("run --rm", calls.read_text())
             self.assertNotIn("beyondquant-runtime-adapter", calls.read_text())
 
@@ -181,7 +181,7 @@ test -z "$DEEPSEEK_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_
 
     def test_fork_routing_and_non_skippable_aggregate_gate(self):
         workflow = (ROOT / ".github/workflows/ci-selfhosted.yml").read_text()
-        self.assertEqual(workflow.count("runs-on: ubuntu-24.04"), 3)
+        self.assertEqual(workflow.count("runs-on: ubuntu-24.04"), 5)
         self.assertNotIn('"self-hosted"', workflow)
         self.assertNotIn('runs-on: ${{', workflow)
         self.assertNotIn("pull_request_target:", workflow)
@@ -200,11 +200,10 @@ test -z "$DEEPSEEK_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_
         self.assertIn("actions/upload-artifact@", workflow)
         self.assertIn("package-manager-cache: false", workflow)
         action_uses = re.findall(r"uses: actions/[\w-]+@([^\s]+)\s+#\s+(v[^\s]+)", workflow)
-        self.assertEqual(len(action_uses), 5)
+        self.assertEqual(len(action_uses), 7)
         for revision, release in action_uses:
             self.assertRegex(revision, r"^[0-9a-f]{40}$")
-            self.assertRegex(release, r"^v7\.")
-        self.assertNotIn("# v4", workflow)
+            self.assertRegex(release, r"^v(7\.|8$)")
         self.assertNotIn("# v5", workflow)
 
     def test_ci_upload_is_explicit_and_missing_evidence_fails(self):

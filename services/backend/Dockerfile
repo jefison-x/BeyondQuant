@@ -6,6 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY services/backend/pyproject.toml ./
+RUN python -c 'import subprocess,tomllib; p=tomllib.load(open("pyproject.toml","rb")); subprocess.check_call(["pip","install","--no-cache-dir",*p["build-system"]["requires"],*p["project"]["dependencies"],*p["project"]["optional-dependencies"]["test"]])'
 COPY services/backend/app ./app
 COPY services/backend/tests ./tests
 COPY packages/contracts ./packages/contracts
@@ -16,7 +17,7 @@ COPY config/dsh/generated/qualified-rollback-web-evidence-provenance.json /app/q
 COPY config/dsh/generated/web-evidence-provenance.json /app/web-evidence-provenance.json
 COPY config/dsh/generated/dsh-0.1.2rc1.web-evidence-provenance.json /app/dsh-0.1.2rc1.web-evidence-provenance.json
 
-RUN pip install --no-cache-dir ".[test]"
+RUN pip install --no-cache-dir --no-deps --no-build-isolation ".[test]"
 
 RUN groupadd --system --gid 10001 byq \
     && useradd --system --uid 10001 --gid byq --no-create-home \

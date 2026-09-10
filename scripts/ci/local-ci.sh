@@ -38,13 +38,18 @@ WITH_DSH_WEB=0
 RETAIN_U6_ARTIFACTS=0
 KEEP_POSTGRES=0
 NO_CLEANUP=0
+RELEASE_ARTIFACTS=0
 PLAN_ONLY=0
+INTEGRATION_ONLY=0
 
 for arg in "$@"; do
   case "$arg" in
     --base=*) BASE_SHA="${arg#*=}" ;;
     --only=*) ONLY="${arg#*=}" ;;
     --all) ALL=1 ;;
+    --release-artifacts) RELEASE_ARTIFACTS=1 ;;
+    --component-only) integration=no; export BYQ_CI_COMPONENT_ONLY=1 ;;
+    --integration-only) INTEGRATION_ONLY=1; WITH_SMOKE=1; WITH_E2E=1; ONLY=integration ;;
     --build) DO_BUILD=1 ;;
     --with-e2e) WITH_E2E=1 ;;
     --with-smoke) WITH_SMOKE=1 ;;
@@ -63,6 +68,10 @@ if [ "$RETAIN_U6_ARTIFACTS" -eq 1 ] && { [ "$ALL" -ne 1 ] || [ "$WITH_E2E" -ne 1
     || [ "$WITH_SMOKE" -ne 1 ] || [ "${GITHUB_ACTIONS:-false}" = true ]; }; then
   echo "U6 artifact handoff requires explicit local --all --with-e2e --with-smoke" >&2
   exit 2
+fi
+
+if [ "$RELEASE_ARTIFACTS" -eq 1 ] && { [ "$ALL" -ne 1 ] || [ "$WITH_SMOKE" -ne 1 ] || [ "$WITH_E2E" -ne 1 ]; }; then
+  echo "release handoff requires full CI" >&2; exit 2
 fi
 
 PASS=0
@@ -329,7 +338,7 @@ build_test_images() {
   if [ "$WITH_SMOKE" -eq 1 ] || [ "$WITH_DSH_WEB" -eq 1 ]; then
     services=(backend gateway runtime-adapter mcp frontend data-worker signal-worker ml-worker signal-sandbox feedback-publisher feedback-hub-relay)
   else
-    if want backend || want mcp; then services+=(backend); fi
+    if want backend || want mcp || want runtime; then services+=(backend); fi
     if want gateway; then services+=(gateway); fi
     if want runtime; then services+=(runtime-adapter); fi
     if want mcp || want runtime; then services+=(mcp); fi
@@ -338,7 +347,11 @@ build_test_images() {
   step "build: selected run-scoped images (cache allowed, stale fallback forbidden)"
   RESOURCES_TOUCHED=1
   acquire_heavy_capacity || return 1
-  run_interruptible docker compose --profile feedback-publisher build "${services[@]}" || return 1
+  if [ "${BYQ_CI_GHA_CACHE:-0}" = 1 ]; then
+    run_interruptible python3 scripts/ci/build-images.py "${services[@]}" || return 1
+  else
+    run_interruptible docker compose --profile feedback-publisher build "${services[@]}" || return 1
+  fi
   for service in "${services[@]}"; do
     printf '    image identity -> service=%s tag=%s id=' "$service" "$(ci_image "$service")"
     docker image inspect "$(ci_image "$service")" --format '{{.Id}}' || return 1
@@ -470,8 +483,7 @@ check_dsh_candidate() {
   ensure_ci_mcp || { bad "candidate live MCP dependency"; return; }
   RESOURCES_TOUCHED=1
   candidate_image="$(ci_image runtime-candidate)"
-  if ! run_interruptible docker build -f services/runtime-adapter/Dockerfile.post-u8-candidate \
-      -t "$candidate_image" .; then
+  if ! docker image tag "$(ci_image runtime-adapter)" "$candidate_image"; then
     bad "candidate image build"; return
   fi
   printf '    candidate image identity -> tag=%s id=' "$candidate_image"
@@ -720,6 +732,8 @@ check_dsh_web() {
 # Allow contract tests to exercise functions with fake Docker, without running CI.
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 compute_changed
+if [ "${BYQ_CI_COMPONENT_ONLY:-0}" = 1 ]; then integration=no; fi
+if [ "$ALL" -eq 1 ] || [ "$INTEGRATION_ONLY" -eq 1 ]; then integration=yes; fi
 
 if [ "$AUTO_SMOKE" -eq 1 ] && [ "$integration" = yes ]; then
   WITH_SMOKE=1
@@ -745,11 +759,11 @@ if want backend; then
 fi
 want gateway && check_gateway
 want runtime && check_runtime
-[ "$integration" = yes ] && want runtime && check_dsh_candidate
+if [ "$integration" = yes ] && { want runtime || [ "$INTEGRATION_ONLY" -eq 1 ]; }; then check_dsh_candidate; fi
 want mcp && check_mcp
 want frontend && check_frontend
 [ "$WITH_SMOKE" -eq 1 ] && check_smoke
-if [ "$WITH_SMOKE" -eq 1 ] && [ "$integration" = yes ] && want runtime; then check_f6_chain; fi
+if [ "$WITH_SMOKE" -eq 1 ] && [ "$integration" = yes ] && { want runtime || [ "$INTEGRATION_ONLY" -eq 1 ]; }; then check_f6_chain; fi
 [ "$WITH_DSH_WEB" -eq 1 ] && check_dsh_web
 
 printf '\n=============================\n'
@@ -759,5 +773,8 @@ if [ "$FAIL" -gt 0 ]; then
 fi
 if [ "$RETAIN_U6_ARTIFACTS" -eq 1 ]; then
   python3 scripts/dsh/retain_u6_ci_images.py --scope "$BYQ_CI_SCOPE" || exit 1
+fi
+if [ "$RELEASE_ARTIFACTS" -eq 1 ]; then
+  python3 scripts/release/images.py export || exit 1
 fi
 printf 'Local CI: all %d checks passed\n' "$PASS"

@@ -42,7 +42,7 @@ source of truth and has architecture tests for representative routes.
 - A merge to `main` does not repeat the same full suite; nightly Full detects cross-change drift.
 - Full CI remains available through `workflow_dispatch` and is mandatory for release candidates.
 - A failing selected check is a failing required check. Selection may not hide an assertion failure.
-- Every PR (including same-repository), nightly and manual run uses a standard ephemeral GitHub-hosted
+- Every PR (including same-repository), nightly and manual test run uses a standard ephemeral GitHub-hosted
   ubuntu-24.04 VM with read-only token and no production secrets/network. No self-hosted lane remains;
   the production runner registration must be revoked before visibility changes. Do not use `pull_request_target`.
   Billing/approval/runner unavailability means NOT_RUN, not pass. Runner access restrictions must be
@@ -142,3 +142,14 @@ MCP Node image; no old DSH npm runtime is installed to obtain Node.
 normalization fixtures remain readable. They are not supported execution targets.
 The retired npm manifests have `.archive` suffixes and cannot be installed or
 updated by Dependabot. Historical image hashes are not current-build qualification.
+
+## ADR-0070 execution amendment
+
+[ADR-0070](../architecture/adr/ADR-0070-hosted-ci-and-image-release.md) governs the current implementation.
+Local default is `make dev-check` plus necessary targeted tests, not a duplicate full CI.
+Hosted component lanes execute in parallel; integration owns real-process qualification and Product browser flows.
+`local-ci` aggregates plan and every matrix lane, retaining existing required check names.
+Node dependency caching is now explicitly enabled with lockfile keys. Buildx uses per-service GHA v2 min caches,
+linux/amd64 and at most two concurrent build operations; only frontend/integration install browser dependencies.
+Release's separate trusted-main publisher may upload tested image archives, SPDX SBOMs and attested manifests;
+PR jobs retain the original log-only upload boundary. See [image release runbook](image-release.md).

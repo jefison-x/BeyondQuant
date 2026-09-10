@@ -949,11 +949,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         workflow = (ROOT / ".github/workflows/ci-selfhosted.yml").read_text()
         self.assertIn(
-            './scripts/ci/local-ci.sh --base="$BYQ_CI_BASE_SHA" --with-e2e --auto-smoke',
+            './scripts/ci/local-ci.sh --base="$BYQ_CI_BASE_SHA" --only="$LANE" --component-only --with-e2e',
             workflow,
         )
-        self.assertIn('--all --with-e2e --with-smoke', workflow)
-        self.assertEqual(workflow.count('runs-on: ubuntu-24.04'), 3)
+        self.assertIn('--integration-only', workflow)
+        self.assertIn('args+=(--full)', workflow)
+        self.assertEqual(workflow.count('runs-on: ubuntu-24.04'), 5)
         self.assertNotIn('runs-on: ${{', workflow)
         self.assertIn('test "$CI_RESULT" = success', workflow)
 

@@ -7,12 +7,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY services/gateway/pyproject.toml ./
+RUN python -c 'import subprocess,tomllib; p=tomllib.load(open("pyproject.toml","rb")); subprocess.check_call(["pip","install","--no-cache-dir",*p["build-system"]["requires"],*p["project"]["dependencies"],*p["project"]["optional-dependencies"]["test"]])'
 COPY services/gateway/app ./app
 COPY services/gateway/tests ./tests
 COPY packages/contracts ./packages/contracts
 COPY packages/operations ./packages/operations
 
-RUN pip install --no-cache-dir ".[test]"
+RUN pip install --no-cache-dir --no-deps --no-build-isolation ".[test]"
 
 RUN groupadd --system --gid 10001 byq \
     && useradd --system --uid 10001 --gid byq --no-create-home \

@@ -1,0 +1,190 @@
+name: BeyondQuant Release Images
+on:
+  workflow_dispatch:
+    inputs:
+      migration:
+        description: Reviewed migration requirement for these images
+        type: choice
+        required: true
+        default: operator-required
+        options: [none, forward-compatible, operator-required]
+concurrency:
+  group: byq-release-images
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  qualify:
+    if: github.ref == 'refs/heads/main' && github.repository == 'jefison-x/BeyondQuant'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      # Guard against any future opt-in compose usage colliding with the
+      # developer's local stack project name.
+      COMPOSE_PROJECT_NAME: byq-ci-runner
+      COMPOSE_PARALLEL_LIMIT: '2'
+      BYQ_CI_GHA_CACHE: '1'
+      # A pull request's base SHA is immutable even if main advances or the PR
+      # is squash-merged while this job is queued/running.
+      BYQ_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+      BYQ_CI_SCOPE: ${{ github.run_id }}-${{ github.run_attempt }}-release
+      # A cancelled parallel BuildKit request may finish publishing an exact
+      # run-scoped tag after the client exits. Cleanup requires two stable,
+      # bounded zero-resource observations.
+      BYQ_CI_CLEANUP_MAX_ATTEMPTS: '20'
+      BYQ_CI_CLEANUP_RETRY_SECONDS: '3'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node toolchain
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+          cache: npm
+          cache-dependency-path: |
+            apps/frontend/package-lock.json
+            deploy/feedback-hub-cloudflare/package-lock.json
+
+      - name: Set up Python toolchain
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+
+      - name: Set up bounded Buildx cache builder
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+        with:
+          buildkitd-config-inline: |
+            [worker.oci]
+              max-parallelism = 2
+      - name: Expose GitHub cache API to Buildx
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            core.setSecret(process.env.ACTIONS_RUNTIME_TOKEN);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN);
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL);
+
+      - name: Inspect ephemeral runner capacity
+        run: |
+          free -m
+          df -h . /var/lib/docker
+          docker version
+          docker compose version
+
+      - name: Install browser OS dependencies
+        run: |
+          cd apps/frontend
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install-deps chromium
+
+      - name: Scan new Git history for secrets
+        run: |
+          audit_dir="$(mktemp -d "$RUNNER_TEMP/byq-gitleaks.XXXXXX")"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            --output "$audit_dir/gitleaks.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $audit_dir/gitleaks.tar.gz" | sha256sum --check
+          tar -xzf "$audit_dir/gitleaks.tar.gz" -C "$audit_dir" gitleaks
+          "$audit_dir/gitleaks" git --redact=100 --no-banner --log-opts="$BYQ_CI_BASE_SHA..HEAD"
+
+      - name: Fetch main baseline for path filtering
+        run: |
+          if [ "$BYQ_CI_BASE_SHA" != "HEAD^" ]; then
+            git fetch --quiet origin "$BYQ_CI_BASE_SHA"
+          fi
+
+      - name: Run risk-selected or full CI profile
+        env:
+          LANE: release
+        run: |
+          mkdir -p .ci-artifacts
+          set -o pipefail
+          ./scripts/ci/local-ci.sh --base="$BYQ_CI_BASE_SHA" --all --with-e2e --with-smoke --release-artifacts 2>&1 | python3 scripts/ci/redact-log.py | tee .ci-artifacts/checks.log
+
+      - name: Verify run-scoped resource cleanup
+        if: always()
+        run: |
+          mkdir -p .ci-artifacts
+          set -o pipefail
+          ./scripts/ci/cleanup-resources.sh --scope="$BYQ_CI_SCOPE" 2>&1 | python3 scripts/ci/redact-log.py | tee .ci-artifacts/cleanup.log
+
+      - name: Upload sanitized CI evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-${{ github.run_id }}-${{ github.run_attempt }}-release
+          # Only these two redacted outputs may cross the upload boundary.
+          path: |
+            .ci-artifacts/checks.log
+            .ci-artifacts/cleanup.log
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload tested image archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tested-release-images
+          path: |
+            .ci-artifacts/release-images/images.tar
+            .ci-artifacts/release-images/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  publish:
+    needs: qualify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: tested-release-images
+          path: .ci-artifacts/release-images
+      - name: Install verified SBOM tool
+        run: |
+          curl --fail --silent --show-error --location --retry 3 https://github.com/anchore/syft/releases/download/v1.51.1/syft_1.51.1_linux_amd64.tar.gz -o "$RUNNER_TEMP/syft.tar.gz"
+          echo "8fcb33017a0dc1058298c923c436d19dfa68ae93968e0b423248542e3afb9fc3  $RUNNER_TEMP/syft.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/syft.tar.gz" -C "$RUNNER_TEMP" syft
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Log in to GHCR
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Publish exact tested images and SBOMs
+        env:
+          MIGRATION: ${{ inputs.migration }}
+        run: python3 scripts/release/images.py publish --migration="$MIGRATION"
+      - name: Attest manifest binding source, image digests, CI and SBOM hashes
+        id: provenance
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: release-manifest/manifest.json
+      - name: Preserve verification bundle
+        env:
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "$BUNDLE_PATH" release-manifest/attestation.json
+      - name: Retain release manifest and SBOMs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-manifest
+          path: release-manifest/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Registry logout
+        if: always()
+        run: docker logout ghcr.io
