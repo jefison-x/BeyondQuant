@@ -48,8 +48,10 @@ through BYQ. It does not patch the separately bundled DSH executable's dependenc
 - `.33`: 232 architecture/governance tests passed; local and remote full CI were
   intentionally cancelled to migrate the remaining smoke/browser assertions
   from the retired SDK to the supported SDK. Not a full-CI PASS.
-- `.34`: current-only build qualification in progress. Local and remote complete
-  CI, cleanup and delivery results will be recorded after completion.
+- `.34`: current-only build qualification submitted in
+  [PR #273](https://github.com/jefison-x/BeyondQuant/pull/273). Final local CI,
+  remote exact-head checks, cleanup and delivery results are recorded on that PR;
+  this source record does not infer success from creating a manifest or opening a PR.
 
 ## Boundaries
 
