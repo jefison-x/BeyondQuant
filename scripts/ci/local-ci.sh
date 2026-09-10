@@ -654,10 +654,11 @@ check_f6_chain() {
   step "F6: candidate DSH to real MCP/ML/native-backtest continuation chain"
   local override="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/f6-compose.json"
   local original_compose="$COMPOSE_FILE"
-  F6_CANDIDATE_IMAGE="$(ci_image runtime-candidate)" python3 - "$override" <<'PYCODE'
+  F6_CANDIDATE_IMAGE="$(ci_image runtime-candidate)" F6_TESTS_SOURCE="$REPO_ROOT/services/runtime-adapter/tests" python3 - "$override" <<'PYCODE'
 import json, os, sys
 value = {'services': {
   'runtime-adapter': {'image': os.environ['F6_CANDIDATE_IMAGE'],
+    'volumes': [{'type': 'bind', 'source': os.environ['F6_TESTS_SOURCE'], 'target': '/app/tests', 'read_only': True}],
     'command': ['python3', '-m', 'tests.f6_synthetic_runtime'], 'environment': {
       'BYQ_F6_EXECUTOR_ENABLED': '1', 'BYQ_F6_SYNTHETIC_RUNTIME': '1', 'DEEPSEEK_API_KEY': 'f6-synthetic-only',
       'BYQ_DSH_COMPATIBILITY_RELEASE': 'dsh-0.1.2rc1', 'BYQ_DSH_PROCESS_OWNERSHIP': 'root-turn',
