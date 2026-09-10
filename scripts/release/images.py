@@ -71,7 +71,13 @@ def publish(directory, migration):
     sha = trusted_main()
     run = os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT']
     receipt = json.loads((directory / 'receipt.json').read_text())
-    validate(receipt, sha, run)
+    # A failed publish job may be retried without rebuilding the successful
+    # qualification job. Accept only an earlier attempt of this exact run.
+    produced_run = receipt.get('run_id', '')
+    match = re.fullmatch(re.escape(os.environ['GITHUB_RUN_ID']) + r'-([1-9][0-9]*)', produced_run)
+    if not match or int(match[1]) > int(os.environ['GITHUB_RUN_ATTEMPT']):
+        raise ValueError('handoff belongs to a different run or future attempt')
+    validate(receipt, sha, produced_run)
     if checksum(directory / 'images.tar') != receipt['archive_sha256']:
         raise ValueError('archive checksum mismatch')
     subprocess.run(['docker', 'load', '-i', str(directory / 'images.tar')], check=True)

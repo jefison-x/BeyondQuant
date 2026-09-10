@@ -17,12 +17,13 @@
 ## 本地验证
 
 - actionlint 1.7.12：三个 workflow 语法通过。
-- 架构/脚本 unittest：235 项通过（包括 GHA cache 环境下运行）。
+- 架构/脚本 unittest：236 项通过（包括 GHA cache 环境下运行）。
 - changed-document links 与 git diff --check 通过。
 - Compose build --print 输出验证：目标标签绑定本次 scope，Dockerfile/context 来自当前隔离工作树。
 - 不重复本地 Full；远端结果与实际发布验证追加在 PR 描述，未执行前不得称为已发布。
 
 构建 `.43` 的旧 CI 结构断言失败保留；`.44` 本地测试通过，随后修正远端缓存环境下的
-fake-Docker 测试隔离；`.45` 为本次提交的候选身份。历史 manifest 不改写。
+fake-Docker 测试隔离；`.45` 远端已有组件通过后，新增发布失败重试及归档压缩；`.46` 为最终候选身份，
+本地 236 项通过。旧提交未完成任务由新提交自动取消，历史 manifest 不改写。
 
 生产应用不因 CI 配置合入而重启。正式 release/tag 和具体生产部署结果独立记录。

@@ -25,7 +25,8 @@ gh workflow run release-images.yml --ref main -f migration=none
 PR 与 release 可能各构建一次，依靠缓存降低成本；publish 与部署都不重编译。
 镜像标签包含源码和 run/attempt；生产引用 `ghcr.io/...@sha256:...`。
 发布失败不产生可用的成功 run 清单，即使部分 candidate 镜像已上传也不能部署。
-镜像归档保留一天，脱敏日志七天，发布清单/SBOM 九十天；正式 release 时把清单、SBOM
+发布作业失败可以只重跑失败作业，复用同一 run 中已成功验证的归档；无需重跑 Full。
+镜像归档压缩上传并保留一天，脱敏日志七天，发布清单/SBOM 九十天；正式 release 时把清单、SBOM
 及 attestation bundle 保存为长期 release 资产，不依赖 Actions 临时保留期。
 
 ## RC 提升

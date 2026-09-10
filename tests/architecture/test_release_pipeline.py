@@ -121,9 +121,9 @@ class ReleasePipelineTests(unittest.TestCase):
             (directory / 'receipt.json').write_text('{}')
             (directory / 'images.tar').write_bytes(b'corrupt')
             with patch.object(images, 'trusted_main', return_value='a' * 40), \
-                 patch.dict(os.environ, {'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1'}), \
+                 patch.dict(os.environ, {'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '2'}), \
                  patch.object(images, 'validate'), patch.object(images.subprocess, 'run') as docker:
-                (directory / 'receipt.json').write_text(json.dumps({'archive_sha256': 'sha256:' + '0' * 64}))
+                (directory / 'receipt.json').write_text(json.dumps({'archive_sha256': 'sha256:' + '0' * 64, 'run_id': '123-1'}))
                 with self.assertRaisesRegex(ValueError, 'checksum'):
                     images.publish(directory, 'none')
                 docker.assert_not_called()
@@ -148,3 +148,16 @@ class ReleasePipelineTests(unittest.TestCase):
         with patch.object(manifest.subprocess, 'run', return_value=result):
             with self.assertRaisesRegex(ValueError, 'absence'):
                 manifest.promote(fixture(), 'v0.2.0')
+
+    def test_retry_cannot_consume_other_run_or_future_attempt(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            for produced in ('124-1', '123-3', '123-0'):
+                (directory / 'receipt.json').write_text(json.dumps({'run_id': produced}))
+                with patch.object(images, 'trusted_main', return_value='a' * 40), \
+                     patch.dict(os.environ, {'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '2'}), \
+                     patch.object(images.subprocess, 'run') as docker:
+                    with self.assertRaisesRegex(ValueError, 'different run or future attempt'):
+                        images.publish(directory, 'none')
+                    docker.assert_not_called()
