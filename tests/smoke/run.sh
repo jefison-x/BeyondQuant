@@ -243,7 +243,7 @@ with urlopen("http://127.0.0.1:8400/readyz", timeout=20) as response:
     readiness = json.load(response)
 assert readiness["sdk"] == "deepseek-harness-sdk==0.1.2rc1"
 assert readiness["runtime_bin"] == "deepseek-harness-runtime-bin==0.1.2rc1"
-assert readiness["plugin_profile"] == "research"
+assert readiness["plugin_profile"] == "byq-product-candidate"
 assert readiness["enabled_plugin_ids"] == ["compaction", "guard", "web-search"]
 assert readiness["composition_hash"].startswith("sha256:")
 serialized_readiness = json.dumps(readiness).lower()

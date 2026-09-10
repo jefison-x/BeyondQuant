@@ -60,7 +60,11 @@ through BYQ. It does not patch the separately bundled DSH executable's dependenc
   `BYQ_EXPECTED_WEB_EVIDENCE_PRODUCER`; both contract expectations now bind
   the current 0.1.2 producer. `.36` static checks passed but was superseded
   before complete qualification.
-- `.37`: current-only build qualification submitted in
+- `.37`: targeted MCP producer checks passed; the remaining smoke profile
+  assertion still expected old `research`. Actual supported-image readiness
+  reports `byq-product-candidate`. A bounded synthetic initialization/prompt/
+  hard-cancel/resume/release probe passed with that exact profile expectation.
+- `.38`: current-only build qualification submitted in
   [PR #273](https://github.com/jefison-x/BeyondQuant/pull/273). Final local CI,
   remote exact-head checks, cleanup and delivery results are recorded on that PR;
   this source record does not infer success from creating a manifest or opening a PR.
