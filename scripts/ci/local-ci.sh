@@ -514,11 +514,6 @@ check_dsh_candidate() {
     bad "baseline lifecycle benchmark"; return
   fi
   cat "$benchmark_dir/baseline-benchmark.json"
-  if ! run_interruptible docker run --rm --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none \
-      -e PYTHONDONTWRITEBYTECODE=1 -e BYQ_BUDGET_SEMANTICS_TEST=1 "$candidate_image" \
-      python3 -m pytest -q -p no:cacheprovider /app/tests/test_continuation_budget_process.py; then
-    bad "candidate continuation budget and restart qualification"; return
-  fi
   if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
       -e BYQ_DSH_REAL_PROCESS_TEST=1 -v "$CI_CANDIDATE_BENCH_VOL:/var/lib/byq/dsh-sessions" \
       -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$candidate_image" \

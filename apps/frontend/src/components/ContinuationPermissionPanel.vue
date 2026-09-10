@@ -107,4 +107,7 @@ watch(() => props.taskId, () => {
 .continuation-panel p { line-height: 1.6; }
 .task-identity { overflow-wrap: anywhere; }
 .continuation-panel .el-button { margin-top: 12px; }
+.continuation-panel .el-checkbox { max-width: 100%; height: auto; align-items: flex-start; }
+.continuation-panel :deep(.el-checkbox__label) { white-space: normal; overflow-wrap: anywhere; line-height: 1.6; }
+.continuation-panel :deep(.el-checkbox__input) { margin-top: 4px; }
 </style>

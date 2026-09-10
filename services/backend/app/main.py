@@ -447,10 +447,13 @@ def consume_agent_lifecycle(conversation_id: str, payload: dict[str, Any], reque
 
 
 def _continuation_consumer_context(request: Request) -> dict:
-    context = _required_agent_context(request, include_workspace=True)
-    if context['actor_principal'] != context['owner_principal']:
+    # This is the existing private Gateway catalog consumer, before a model
+    # root exists. MCP action admission below still requires full Agent context.
+    owner = _conversation_owner(request)
+    if request.headers.get('x-byq-actor-principal') != owner:
         raise HTTPException(status_code=403, detail='trusted continuation consumer required')
-    return context
+    return {'owner_principal': owner, 'actor_principal': owner,
+        'workspace_id': request.headers['x-byq-workspace-id']}
 
 
 @app.post('/internal/task-continuation/{reservation_id}/authorize-tool')

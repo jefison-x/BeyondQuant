@@ -71,3 +71,28 @@ def test_terminal_notification_claim_and_dispatch_are_durable_and_once(monkeypat
 def make_watch_due(store, task):
     store._execute("""UPDATE research_tasks SET continuation_budget=jsonb_set(continuation_budget,
         '{0,next_reconcile_at}', to_jsonb((now()-interval '1 second')::text)) WHERE task_id=:task""", {'task': task})
+
+
+def test_private_consumer_uses_catalog_identity_before_any_model_root(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    from tests.test_research_continuation import setup_permission
+    store, task, context, payload = setup_permission()
+    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+    monkeypatch.setattr(main, 'research_store', store)
+    try:
+        grant = store.create_continuation_permission(task, payload, trusted_context=context)
+        conversation = grant['permission']['conversation_id']
+        headers = {'x-byq-owner-principal': context['owner_principal'],
+            'x-byq-actor-principal': context['owner_principal'], 'x-byq-workspace-id': context['workspace_id']}
+        client = TestClient(main.app)
+        path = f'/internal/task-continuation/{conversation}/peek'
+        reply = client.post(path, headers=headers)
+        assert reply.status_code == 200 and reply.json() == {'status': 'waiting'}
+        assert client.post(path, headers={**headers, 'x-byq-actor-principal': 'product-agent'}).status_code == 403
+        assert client.post(path, headers={**headers, 'x-byq-workspace-id': 'another-workspace'}).status_code == 401
+        # This consumer identity cannot be reused as an Agent tool admission.
+        assert client.post('/internal/task-continuation/continuation_' + 'a'*32 + '/authorize-tool',
+            headers=headers, json={'tool': 'byq_research_get', 'arguments': {}, 'root_run_id': 'b'*32}).status_code == 401
+    finally:
+        store.close()

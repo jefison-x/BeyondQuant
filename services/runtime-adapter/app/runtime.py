@@ -1041,6 +1041,7 @@ class RuntimeAdapter:
             exact = False
         return (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') == '1' and self._root_scoped
             and self._compatibility.family == 'dsh-0.1.2' and exact
+            and bool(record.model_resolution.get('api_key'))
             and (record.model_resolution.get('provider', self._provider), record.model_resolution.get('model', self._model))
                 == ('deepseek-official', 'deepseek-v4-flash'))
 

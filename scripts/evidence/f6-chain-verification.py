@@ -3,6 +3,7 @@
 import http.cookiejar
 import json
 import os
+import re
 import subprocess
 import time
 from urllib.request import Request, build_opener, HTTPCookieProcessor
@@ -77,6 +78,11 @@ training = call('POST', '/api/product/ml/training-runs', {'task_id': task,
     headers={'x-idempotency-key': 'f6-original-training'})
 # Restart only the Gateway consumer: original task/event/receipts survive.
 subprocess.run(['docker', 'compose', 'restart', 'gateway'], check=True, capture_output=True, timeout=45)
+# Docker may allocate a new host port when restarting an ephemeral-port
+# container. The same durable cookie remains valid for the same loopback host.
+binding = subprocess.check_output(['docker', 'compose', 'port', 'gateway', '8100'], text=True, timeout=15).strip()
+assert re.fullmatch(r'127\.0\.0\.1:[0-9]{1,5}', binding), 'isolated Gateway port required'
+origin = 'http://' + binding
 deadline = time.monotonic() + 360
 last = None
 while time.monotonic() < deadline:

@@ -41,8 +41,8 @@ def _request(payload: object) -> dict:
 class ResearchContinuationMixin:
     """Stored on the original task row, serialized with task transitions.
 
-    First version permits one immutable grant per task. It intentionally cannot
-    renew a grant, settle spend or admit an execution until enforcement qualifies.
+    One immutable grant per task; enforcement must qualify before dispatch.
+    Grants cannot be renewed or replenished, including after unknown outcomes.
     """
 
     @staticmethod

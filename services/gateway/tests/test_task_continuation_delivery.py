@@ -143,3 +143,27 @@ def test_background_completion_does_not_release_a_live_browser_stream():
     registry.end_stream(session)
     generation = registry.idle_release_generation(session)
     assert generation is not None and registry.claim_idle_release(session, generation)
+
+
+@pytest.mark.parametrize('missing', [False, True])
+def test_restarted_gateway_observes_original_runtime_without_replacing_unknown_process(monkeypatch, missing):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+        session_id='session-a', trace_id='trace-a')
+    registry = main.ProductSessionRegistry()
+    monkeypatch.setattr(main, 'product_sessions', registry)
+    started, reopened = [], []
+    monkeypatch.setattr(main, '_continuation_adapter_get', lambda path: {'qualified': not missing,
+        'reason': 'session_missing' if missing else None})
+    monkeypatch.setattr(main, '_start_trace_collector', started.append)
+    monkeypatch.setattr(main.trace_store, 'reopen', reopened.append)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('receipt observation cannot create a replacement model process')
+    monkeypatch.setattr(main, '_restore_product_session', forbidden)
+    session = main._attach_continuation_observer(context)
+    if missing:
+        assert session is None and started == reopened == []
+    else:
+        assert session.session_id == context['session_id'] and session.workspace_id == context['workspace_id']
+        assert started == [session] and reopened == [context['session_id']]
+        assert main._attach_continuation_observer(context) is session
+        assert started == [session]

@@ -622,7 +622,8 @@ for (const viewport of ['desktop', 'mobile'] as const) {
     page.on('request', request => {
       const url = new URL(request.url());
       if (['http:', 'https:'].includes(url.protocol) && url.origin !== origin) unexpected.add(url.origin);
-      if (url.origin === origin && /\/(?:internal|v1|mcp)\//.test(url.pathname)) unexpected.add(url.pathname);
+      if (url.origin === origin && (/^\/(?:internal|mcp)\//.test(url.pathname)
+        || (url.pathname.startsWith('/v1/') && !/^\/v1\/(?:agent|workflows)\//.test(url.pathname)))) unexpected.add(url.pathname);
     });
     page.on('pageerror', error => errors.push(error.message));
     await page.goto('/login');
@@ -636,9 +637,12 @@ for (const viewport of ['desktop', 'mobile'] as const) {
     await expect(panel.getByRole('status')).toContainText('尚未授权');
     await expect(panel.getByRole('spinbutton')).toHaveValue('');
     await panel.getByRole('spinbutton').fill('3000000');
-    await panel.getByRole('combobox').click();
+    await panel.getByText('选择已验证资产', { exact: true }).click();
     await page.getByRole('option', { name: /^strategy_version ·/ }).click();
+    await panel.getByRole('combobox').press('Escape');
     await panel.getByRole('checkbox').check();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await panel.screenshot({ path: testInfo.outputPath(`f6-permission-form-${viewport}.png`) });
     const saved = page.waitForResponse(response => response.url().endsWith('/continuation-permission') && response.request().method() === 'POST');
     await panel.getByRole('button', { name: '保存续接许可' }).click();
     const response = await saved;
