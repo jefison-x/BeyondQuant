@@ -1,0 +1,123 @@
+{
+  "schema_version": "byq-f6-verification.v1",
+  "verified_at": "2026-09-10T01:42:34.300938+00:00",
+  "implementation_commit": "3b0b25a695148a0922214717ef63395ec14e682d",
+  "ci_scope": "local-u7-f6-completion-29",
+  "result": "PASS",
+  "checks": [
+    "git diff --check",
+    "docs checks",
+    "architecture tests",
+    "backend tests",
+    "feedback publisher fake-GitHub tests",
+    "feedback hub relay tests",
+    "Cloudflare feedback hub tests and bundles",
+    "gateway tests",
+    "runtime-adapter tests",
+    "candidate real-process, five delegates and old/new lifecycle benchmarks",
+    "mcp tests",
+    "frontend locked install",
+    "frontend build",
+    "frontend unit tests",
+    "frontend dependency audit",
+    "frontend mocked UI e2e",
+    "full smoke",
+    "unconfigured non-root feedback publisher",
+    "Phase 67 validated index fixture",
+    "Phase 70 multi-index catalogue fixture",
+    "Phase 68 dynamic inputs fixture",
+    "Phase 74 LightGBM fixture",
+    "F6 bound-task permission fixture",
+    "real Product API browser smoke",
+    "Phase 74 restart persistence and two-user isolation",
+    "Phase 90 feedback restart persistence and two-user isolation",
+    "Phase 48 no-mock two-user Product coherence",
+    "F6 real-domain chain and Gateway restart",
+    "F6 completed-task Product API desktop/mobile browser"
+  ],
+  "build_revisions": {
+    "dsh-0.1.1rc1": {
+      "build_id": "dsh-0.1.1rc1-post-u8.29",
+      "manifest_hash": "sha256:5ae65640093c3c12df8ea336d4afed3102b7729165b6cdbcbd9177a41c0fb075"
+    },
+    "dsh-0.1.2rc1": {
+      "build_id": "dsh-0.1.2rc1-post-u8.29",
+      "manifest_hash": "sha256:3288185bdd789f4e530dc5f75ce22ca85366ac0b91045f451864a39f13f98741"
+    }
+  },
+  "images": {
+    "backend": {
+      "ci_tag": "byq-ci-stack-local-u7-f6-completion-29-backend:latest",
+      "image_id": "sha256:a5b3185d674a14e10393ddb45b8c24a53a16905126c37fafb4372d33f54349c6",
+      "retained_tag": "byq-u7-artifact-local-u7-f6-completion-29-backend:retained"
+    },
+    "feedback-hub-relay": {
+      "ci_tag": "byq-ci-stack-local-u7-f6-completion-29-feedback-hub-relay:latest",
+      "image_id": "sha256:f03552f33dc754c1592c8fdd25cbf542f34ce7cb73449d2620a6dc8360a530b2",
+      "retained_tag": "byq-u7-artifact-local-u7-f6-completion-29-feedback-hub-relay:retained"
+    },
+    "frontend": {
+      "ci_tag": "byq-ci-stack-local-u7-f6-completion-29-frontend:latest",
+      "image_id": "sha256:e6b5fe371777bb2231f194dd60d6d48769271813a0cc645ce3376bfdcf02569e",
+      "retained_tag": "byq-u7-artifact-local-u7-f6-completion-29-frontend:retained"
+    },
+    "gateway": {
+      "ci_tag": "byq-ci-stack-local-u7-f6-completion-29-gateway:latest",
+      "image_id": "sha256:3307e61aa4a518f7654b6c8cfcc8b5c8ecadfca4c72974c69ec609608893a2bd",
+      "retained_tag": "byq-u7-artifact-local-u7-f6-completion-29-gateway:retained"
+    },
+    "mcp": {
+      "ci_tag": "byq-ci-stack-local-u7-f6-completion-29-mcp:latest",
+      "image_id": "sha256:a7990e5b06ec36f96fec073ea58fb1ad722f9c9c328d58d3d384ca33c1c6ac8d",
+      "retained_tag": "byq-u7-artifact-local-u7-f6-completion-29-mcp:retained"
+    },
+    "runtime-adapter": {
+      "ci_tag": "byq-ci-stack-local-u7-f6-completion-29-runtime-adapter:latest",
+      "image_id": "sha256:424fdb445fe0237813dcb0294f9de4223d66c276ae0cf36ca28534637b107427",
+      "retained_tag": "byq-u7-artifact-local-u7-f6-completion-29-runtime-adapter:retained"
+    },
+    "runtime-candidate": {
+      "ci_tag": "byq-ci-stack-local-u7-f6-completion-29-runtime-candidate:latest",
+      "image_id": "sha256:e715453960c7a4736e48eee11983f07f7eb7e615ec9b3da0b03011ca877e6582",
+      "retained_tag": "byq-u7-artifact-local-u7-f6-completion-29-runtime-candidate:retained"
+    }
+  },
+  "archive": {
+    "bytes": 462842368,
+    "name": "images.tar",
+    "sha256": "sha256:b7ced460b2d268d8a2ab91fee2a6a0724338c1fd70c6186710bc68b2137a495b"
+  },
+  "logs": {
+    ".ci-artifacts/local-u7-f6-completion-29/LOCAL-CI.log": {
+      "bytes": 168325,
+      "sha256": "e9603f4d660e62c898ecc8e3a3201dd2c0d1b5aa3cd72f60ffb6b1224c6ee4d4"
+    },
+    ".ci-artifacts/local-u7-f6-completion-29/PAID-GUARD-STANDARD.log": {
+      "bytes": 238,
+      "sha256": "3bef43bbdbd64fa25c6550c940cc44c0682a0fcc3873d76a86e7b4e9321ce4aa"
+    },
+    ".ci-artifacts/local-u7-f6-completion-29/SECRET-SCAN-FIXED.log": {
+      "bytes": 110,
+      "sha256": "cf7dc0c67e36707d962c0bb81f289c37e1f964c56a96a9ca3388e4519d9f67fb"
+    },
+    ".ci-artifacts/f6-live-28/JOURNEY.log": {
+      "bytes": 8883,
+      "sha256": "15a82e16e112418f3bf3895c73993598658e202fff6828b3d6f2c61215c14485"
+    },
+    ".ci-artifacts/local-u7-f6-completion-28/RESTORE-CHECK.log": {
+      "bytes": 453,
+      "sha256": "9fa19afbb2086dc149208eaf2251e7e696ac5c00062da3a09dc766302867aeee"
+    },
+    "docs/evidence/post-u8-interface-audit/f6-permission-desktop.png": {
+      "bytes": 67110,
+      "sha256": "9ae0d3009395bca2af842d3f52f02dc509dbb78368050eab58805cc95c70adbc"
+    },
+    "docs/evidence/post-u8-interface-audit/f6-settlement-mobile.png": {
+      "bytes": 61152,
+      "sha256": "18ed3b746539cba3bf479bdbb31fbdec6f9402ed703e1e4d420b5ec047834c03"
+    }
+  },
+  "resource_cleanup": "independently verified; zero scoped containers/networks/volumes; seven declared artifact images retained",
+  "real_model_scope": "fixed synthetic original task on .28, actual Domain/Worker execution; .29 exact-image guarded critical call separately passed",
+  "remote_merge_deployment": "derive from GitHub exact-head checks and trusted operator receipt; not asserted by local CI"
+}

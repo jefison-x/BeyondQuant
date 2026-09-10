@@ -1,8 +1,9 @@
 # 任务续接预算账本合同（ADR-0065）
 
 状态：已实现持久许可、预算预留/结算、通知消费者、MCP 原任务范围门禁与前端许可控件。
-**当前仍在 F6 集成资格验证中，生产默认 `BYQ_F6_EXECUTOR_ENABLED=0`。**
-不能把组件测试通过当作训练→预测→信号→回测→对比全链完成。
+**F6 已通过 `.29` 集成资格验证；普通分发默认 `BYQ_F6_EXECUTOR_ENABLED=0`，启用须受控部署。**
+完整证据见 [F6 验收](../evidence/post-u8-interface-audit/F6-CONTINUATION.md)，包含真实领域链路、
+真实浏览器和独立的固定合成目标真实模型验证。
 
 ## 实现范围与有限执行配置
 
@@ -84,8 +85,8 @@ Provider 内部重试和并发；缺少任何一项就禁止后台启动。
 资格证据固定到 SDK/runtime、composition 和执行器实现的准确身份；升级或配置变化必须重新验证。
 不能接受普通请求中的 `qualified=true`，也不能凭包名、用量事件或注册表 AVAILABLE 状态放行。
 
-当前 SDK 的 max_tokens 只是每请求输出参数。当前 composition 有 token-meter，
-但没有加载 agent-budget；这不证明所有公开扩展都不可能实现，只证明当前组合尚不合格。
+SDK 的 max_tokens 只是每请求输出参数。先前普通 composition 的 token-meter
+不是累计额度执行器；当前后台专用 patch 已资格验证公开 llm/stream 调用前 guard。
 ADR-0038 不允许把未经验证的外置包直接装入 Product；ADR-0065 不授权 Provider 代理或未公开 hook。
 
 Gateway 在既有会话上按已预留回合截止时间设置有限空闲保护；浏览器断开或前一回合

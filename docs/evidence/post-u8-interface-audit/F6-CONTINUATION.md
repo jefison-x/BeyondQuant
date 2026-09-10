@@ -1,6 +1,7 @@
 # F6 后台续接执行验收
 
-当前状态：IMPLEMENTED / QUALIFICATION_IN_PROGRESS。不得据此宣称 F6 完成、生产已启用或真实模型研究验收通过。
+当前状态：VERIFIED。F6 实现及功能验收完成；生产启用另按本任务授权、精确合并门禁和
+trusted operator 回执执行。固定合成目标的真实模型验证不代表全部研究语义验收。
 
 ## 授权与范围
 
@@ -81,14 +82,14 @@ Gateway 的 owner-scoped hydration 与公开卡片合同保持不变。日志回
 未知结果不因此退款。该风险由竞态测试证明，不再把它当作上述失败的已证实原因。
 Gateway 全量 217 项通过。首尾空白跨任务负例修复后，消费者/范围测试 12 项通过。
 移动端下拉框宽度、长编号和确认说明修复后，真实 Product API 保存、重载、隔离与撤销通过；
-390px 表单截图已人工检查，无横向裁切。这些调试构建仍不替代最终不可变构建全量验收。
+390px 表单截图已视觉核对，无横向裁切。这些调试构建仍不替代最终不可变构建全量验收。
 
 第五个独立合成用户的真实领域链路通过：task `task_ab567669f56a488584143da11b150a7b`，
 1 次训练、1 次预测、2 次原生回测（含既有基线），3 次唯一事件/派发/结算，
 累计保守额度 19,021,824，未确认预留为 0。完成证据为 validated `research_report`，
 `report_type=strategy_comparison`，使用两次真实回测汇总计算收益差；
 前一失败夹具误用的 `comparison_report` 并非既有完成证据类型，领域合同未为夹具放宽。
-桌面 1440px、手机 390px 的 Product API 完成状态及报告读取两项通过；手机结算截图已人工检查。
+桌面 1440px、手机 390px 的 Product API 完成状态及报告读取两项通过；手机结算截图已视觉核对。
 此处“真实”指真实 DSH/MCP/领域/数据库/Worker/回测执行，Provider 决策和行情输入均明确为合成。
 
 中间候选源码提交 `e03c034`，不可变构建 `.27`（未晋升）：
@@ -125,9 +126,21 @@ validated `research_report` `artifact_b9a07adf414249f8942a6a18083394ba`，实际
 这是一份固定合成目标的验证，不等于全研究语义/S3 或历史事故全量验收。
 `f6-live-28` 成功后自动清理，独立 verify 为零。
 
-最终构建 `.29` 全量 CI scope：`local-u7-f6-completion-29`，当前 RUNNING。
+最终构建 `.29` 全量 CI scope：`local-u7-f6-completion-29`，**29/29 PASS，exit 0**。
 baseline manifest：`sha256:5ae65640093c3c12df8ea336d4afed3102b7729165b6cdbcbd9177a41c0fb075`；
 candidate manifest：`sha256:3288185bdd789f4e530dc5f75ce22ca85366ac0b91045f451864a39f13f98741`。
+
+`.29` 精确候选镜像 `sha256:e715453960c7a4736e48eee11983f07f7eb7e615ec9b3da0b03011ca877e6582`
+的受限付费关键点通过：标准非 root 容器运行设置下，官方模型处理固定合成提示，
+completed、恰有 1 次受保护请求、保守额度 1,056,768，无 MCP/领域挂载。
+首次探针额外加入整容器只读、tmpfs 和 capability 限制组合，SDK 报 JsonRpcError；
+两次脱敏诊断均仅有 guard 就绪行、没有请求扣减。撤去这组未在本轮资格范围内的额外
+容器设置后通过；不据此声称该额外设置组合可用，也不修改应用源码或生产用户权限来迎合探针。
+原失败及诊断日志保留，未作为成功样本。
+
+提交前 Gitleaks v8.30.1 对本分支历史发现一条合成比较请求的 `idempotency_key` 误报；
+按现有 `.gitleaksignore` 纪律仅排除精确历史 commit/path/rule/line 指纹，未关闭规则。
+重新扫描无凭据发现；真实模型密钥没有写入源码或证据。
 
 生产备份（仍未部署）：`baseline-20260910T005931Z`，逻辑 dump 2,291,767,925 bytes，
 SHA-256 `492485ae4966df733ee6eecabe31299bdba8e54467f7423eea941e1b86ff89e3`；
@@ -148,7 +161,24 @@ SHA-256 `a0fcaf26075c2d8066099319ace13fcca7a53e3e10fdee22c29f0092d3a0de7b`，权
 | 模型回合与任务完成分离 | `f6-chain-verification.py` + `f6-chain-fixture.py` 核查持久领域对象与 validated 报告 |
 | 用户许可、重载、越权拒绝、撤销 | `real-product.spec.ts` 桌面/手机真实 Product API 流程 |
 | 完成状态、对比报告和额度可读 | `f6-chain.spec.ts` 桌面/手机；无外部请求及页面错误 |
-| 当前精确构建回归 | `.29` 全量 CI，尚待结果，不用上面的定向通过替代 |
+| 当前精确构建回归 | `.29` 全量 CI 29/29、真实浏览器及精确候选付费关键点通过 |
 
-待补最终构建身份、完整 CI、浏览器视觉检查、关键模型资格、清理、PR/远端检查及部署结果。
-在这些证据就绪前维持 `QUALIFICATION_IN_PROGRESS`，不关闭 F6 或总整改计划。
+### 最终本地验收与交付门禁
+
+Backend 568 passed、1 skipped、7 subtests passed；Gateway 217 passed；
+baseline Runtime 157 passed/45 skipped，candidate 166 passed/36 skipped；
+真实预算进程 10 项、真实进程/五角色 23 项、新旧各20周期零残留会话/线程通过。
+Frontend 179 项、构建、20 项 UI e2e、11 项真实 Product API 浏览器及 2 项 F6 完成状态浏览器通过。
+MCP 全量及 scope/丢回执/异常身份/前台隔离测试通过；228 项架构检查通过。
+`.29` 原任务 `task_f7cc2fdf251748bcb2213d99c8cd1942` 的三个后台回合均唯一派发并结算，
+1 次训练、1 次预测、2 次回测及 validated 对比报告通过真实领域断言。
+
+最终桌面/手机截图已视觉核对：[桌面许可](f6-permission-desktop.png)、
+[手机完成结算](f6-settlement-mobile.png)，均为明确合成测试身份。
+构建、镜像、各检查、日志/截图摘要见 [机器可读验收](F6-VERIFICATION.json)。
+scoped cleanup 和独立 verify 均通过；7 份具名应用镜像及 462,842,368-byte 校验归档
+按显式制品交接保留，不将其误报为资源泄漏；调试额外镜像已清理。
+
+本记录关闭 F6 的实现与功能验收，不关闭完整 F2/S3/全接口审计。
+PR 的最终交付状态以 GitHub 精确 head 的实际检查为准，部署状态以已授权 operator 的
+私有回执为准；本地通过不冒充远端通过，普通仓库默认开关不冒充生产已启用。

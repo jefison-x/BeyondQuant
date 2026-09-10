@@ -94,7 +94,16 @@ Post-U8 交付授权（2026-09-08）：维护者明确允许新增独立构建�
 本次范围，构建验证见[独立认证记录](../evidence/post-u8-r1/BUILD-REQUALIFICATION.md)。
 这不代表剩余整改全部完成，不改变 U8 提前结束结论或 Product Phase 97。
 
-当前 F6 维护决策：[ADR-0065](../architecture/adr/ADR-0065-task-continuation-budget-admission.md)
+2026-09-10 F6 实现与功能验收已完成：独立 `.29` 构建全量本地 CI 29/29、
+真实 Product API 桌面/手机许可及完成状态、Gateway 重启后的三回合领域链路通过；
+固定合成目标的真实模型已完成训练后预测、冻结信号、原生回测及 validated 对比报告。
+任务绑定许可、24小时/8回合/900秒/累计额度、逐工具范围检查、未知预留保留及持久结算均已验收。
+仅资格支持官方 `deepseek-v4-flash` 的保守 token 额度，后台搜索关闭；普通分发默认开关仍为 0，
+部署使用本任务明确授权及 ADR-0015/0059 精确门禁，不追溯授权历史研究。
+见 [F6 验收](../evidence/post-u8-interface-audit/F6-CONTINUATION.md)。
+此结论不关闭完整 F2/S3/全接口审计，不改变 Product Phase 97 或 U8 提前结束结论。
+
+F6 前期维护决策（以下保留历史事实）：[ADR-0065](../architecture/adr/ADR-0065-task-continuation-budget-admission.md)
 已于 2026-09-08 获维护者明确批准，状态为 Accepted。已证实 SDK 单次 max_tokens 不等于
 任务累计预算；预算账本合同及官方接口资格核查继续进行。接口全调用覆盖尚未通过资格验证，
 后台执行保持关闭，不将 ADR 接受或合同存在计作 F6 完成，不改变 Product Phase 97。
