@@ -16,6 +16,7 @@ from .db import PgStoreMixin, ensure_column, execute, fetch_one
 from .db import schema_bootstrap_lock
 from .web_research import normalize_web_research_evidence, validate_web_research_evidence
 from .research_continuation import ResearchContinuationMixin
+from .research_receipts import ResearchReceiptMixin, SCHEMA_DDL as RECEIPT_SCHEMA_DDL
 
 
 MAX_JSON_BYTES = 64 * 1024
@@ -244,10 +245,11 @@ def _row_dict(row: dict[str, Any]) -> dict[str, object]:
     return dict(row)
 
 
-class ResearchStore(ResearchContinuationMixin, PgStoreMixin):
+class ResearchStore(ResearchReceiptMixin, ResearchContinuationMixin, PgStoreMixin):
     """Backend-owned durable repository for Phase 9 business entities (ADR-0016 PG)."""
 
     SCHEMA_DDL: list[str] = [
+        *RECEIPT_SCHEMA_DDL,
         """
         CREATE TABLE IF NOT EXISTS research_tasks (
             task_id TEXT PRIMARY KEY,

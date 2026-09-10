@@ -1949,6 +1949,33 @@ def reconcile_research_submission(
     ))
 
 
+@app.post('/v1/research/submission-watches', status_code=201)
+def register_research_submission_watch(payload: dict[str, Any], request: Request):
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.register_submission_watch(payload, trusted_context=context))
+
+
+@app.get('/v1/research/submission-watches/{watch_id}')
+def get_research_submission_watch(watch_id: str, request: Request):
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.get_submission_watch(watch_id, trusted_context=context))
+
+
+@app.get('/v1/product/research/submission-watches/{conversation_id}')
+def list_research_submission_watches(conversation_id: str, request: Request):
+    context = _continuation_consumer_context(request)
+    return _research_call(lambda: research_store.list_submission_watches(conversation_id, trusted_context=context))
+
+
+@app.post('/internal/research-receipts/{conversation_id}/reconcile')
+def consume_research_submission_watches(conversation_id: str, payload: dict[str, Any], request: Request):
+    context = _continuation_consumer_context(request)
+    if set(payload) != {'session_id','trace_id'} or any(not isinstance(v,str) or not v for v in payload.values()):
+        raise HTTPException(status_code=422, detail='exact receipt conversation identity required')
+    return _research_call(lambda: {'checked':research_store.consume_submission_watches(
+        conversation_id, trusted_context={**context,**payload})})
+
+
 @app.post("/v1/research/tasks", status_code=201)
 def create_research_task(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)

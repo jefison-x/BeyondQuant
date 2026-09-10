@@ -8,14 +8,16 @@ from pathlib import Path
 
 
 class TaskContinuationDelivery:
-    def __init__(self, root: Path, consume):
+    def __init__(self, root: Path, consume, *, reconcile=None):
         self.root, self.consume = Path(root), consume
+        self.reconcile = reconcile
         self.stop = threading.Event()
         self.thread = None
         self.cursor = ''
 
     def tick(self):
-        if os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1':
+        enabled = os.environ.get('BYQ_F6_EXECUTOR_ENABLED') == '1'
+        if not enabled and self.reconcile is None:
             return
         paths = sorted(self.root.glob('*.lifecycle.json'))
         candidates = [p for p in paths if p.name > self.cursor]
@@ -32,14 +34,20 @@ class TaskContinuationDelivery:
                 context = json.loads(path.read_text())['context']
                 if set(context) != {'session_id', 'trace_id', 'conversation_id', 'workspace_id', 'owner'}:
                     continue
-                self.consume(context)
+                if self.reconcile is not None:
+                    try:
+                        self.reconcile(context)
+                    except Exception:
+                        pass
+                if enabled:
+                    self.consume(context)
             except Exception:
                 # The Backend owns every intent/uncertain liability. A transport
                 # failure never fabricates a receipt or retries a model write.
                 continue
 
     def start(self):
-        if self.thread is not None or os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1':
+        if self.thread is not None or (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1' and self.reconcile is None):
             return
         self.stop.clear()
         def run():

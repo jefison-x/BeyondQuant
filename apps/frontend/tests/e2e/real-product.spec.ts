@@ -677,3 +677,44 @@ for (const viewport of ['desktop', 'mobile'] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+for (const viewport of ['desktop','mobile'] as const) {
+  test(`F2 real original receipt visibility and owner isolation (${viewport})`,async ({page,browser,baseURL},testInfo) => {
+    await page.setViewportSize(viewport==='desktop'?{width:1440,height:1000}:{width:390,height:844});
+    const errors:string[]=[];
+    const origin=new URL(baseURL!).origin;
+    page.on('pageerror',error=>errors.push(error.message));
+    page.on('request',request=>{
+      const url=new URL(request.url());
+      if (['http:','https:'].includes(url.protocol) && url.origin!==origin) errors.push('foreign origin');
+      if (/^\/(internal|mcp)\//.test(url.pathname)) errors.push('internal request');
+    });
+    page.on('response',response=>{if(response.status()>=500)errors.push(String(response.status()));});
+    await page.goto('/login');
+    await page.getByLabel('用户名').fill('f2-browser-'+viewport);
+    await page.getByLabel('密码').fill('test-password-123');
+    await page.getByRole('button',{name:'进入'}).click();
+    await expect(page).toHaveURL(/\/agent$/);
+    const sessions=await page.request.get('/v1/agent/sessions');
+    expect(sessions.ok()).toBeTruthy();
+    const body=await sessions.json();
+    const conversation=body.sessions[0].session_id;
+    await page.goto('/agent?session='+encodeURIComponent(conversation));
+    const panel=page.getByRole('region',{name:'研究提交核对'});
+    await expect(panel).toContainText('已确认创建');
+    await expect(panel).toContainText('结果仍未确认');
+    await expect(panel).toContainText('不代表研究或计算已完成');
+    await page.reload();
+    await expect(panel).toContainText('已确认创建');
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await panel.screenshot({path:testInfo.outputPath('f2-receipts-'+viewport+'.png')});
+    const other=await browser.newContext({baseURL});
+    try {
+      await other.request.post('/api/auth/login',{data:{username:'f2-browser-'+(viewport==='desktop'?'mobile':'desktop'),password:'test-password-123'}});
+      const denied=await other.request.get('/api/product/research/submission-watches?conversation_id='+encodeURIComponent(conversation));
+      expect([403,404]).toContain(denied.status());
+      expect(await denied.text()).not.toContain('f2-original');
+    } finally {await other.close();}
+    expect(errors).toEqual([]);
+  });
+}

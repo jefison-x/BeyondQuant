@@ -1,5 +1,23 @@
 const ROOT = "/api/product";
 
+export interface ResearchReceipt {
+  watch_id: string;
+  entity_type: 'research_task' | 'experiment' | 'artifact';
+  status: 'awaiting_receipt' | 'confirmed' | 'conflict' | 'needs_attention';
+  entity_id: string | null;
+  attempts: number;
+  max_attempts: number;
+  deadline_at: string;
+  reason: string;
+}
+
+export function getResearchReceipts(conversationId: string): Promise<{
+  schema_version: 'research-receipt-list.v1'; conversation_id: string; receipts: ResearchReceipt[];
+}> {
+  return getJson(`/research/submission-watches?conversation_id=${encodeURIComponent(conversationId)}`,
+    { signal: AbortSignal.timeout(8000) });
+}
+
 export class ResearchRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }

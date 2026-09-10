@@ -198,7 +198,7 @@ export function fetchByqResearchTaskCreate(
   request: ResearchTaskCreateRequest,
   fetcher: Fetcher = fetch,
 ): Promise<ByqResearchResult> {
-  return postResearch(backendUrl, "/v1/research/tasks", request, fetcher);
+  return watchedResearchCreate(backendUrl, 'research_task', "/v1/research/tasks", request, fetcher);
 }
 
 export function fetchByqResearchGet(
@@ -235,7 +235,7 @@ export function fetchByqExperimentCreate(
   request: ExperimentCreateRequest,
   fetcher: Fetcher = fetch,
 ): Promise<ByqResearchResult> {
-  return postResearch(backendUrl, "/v1/research/experiments", request, fetcher);
+  return watchedResearchCreate(backendUrl, 'experiment', "/v1/research/experiments", request, fetcher);
 }
 
 export function fetchByqArtifactCreate(
@@ -243,7 +243,7 @@ export function fetchByqArtifactCreate(
   request: ArtifactCreateRequest,
   fetcher: Fetcher = fetch,
 ): Promise<ByqResearchResult> {
-  return postResearch(backendUrl, "/v1/research/artifacts", request, fetcher);
+  return watchedResearchCreate(backendUrl, 'artifact', "/v1/research/artifacts", request, fetcher);
 }
 
 export function fetchByqWebEvidenceCreate(
@@ -291,6 +291,7 @@ export function fetchByqWebEvidenceCreate(
 
 export type ResearchLookup = {
   entity_type: ResearchEntityType;
+  watch_id?: string;
   entity_id?: string;
   idempotency_key?: string;
   task_id?: string;
@@ -299,6 +300,19 @@ export type ResearchLookup = {
 export async function fetchByqResearchLookup(
   backendUrl: string, request: ResearchLookup, fetcher: Fetcher = fetch,
 ): Promise<ByqResearchResult> {
+  if (request.watch_id !== undefined) {
+    if (!/^researchwatch_[0-9a-f]{32}$/.test(request.watch_id) || request.entity_id !== undefined
+        || request.idempotency_key !== undefined || request.task_id !== undefined) {
+      return result({service:'beyondquant-mcp',status:'error',backend:{status:'research_request_invalid'}},true);
+    }
+    const response = await requestResearch(backendUrl, `/v1/research/submission-watches/${request.watch_id}`, {method:'GET'}, fetcher);
+    if (response.isError) return response;
+    const value = JSON.parse(response.content[0]?.text ?? '{}');
+    if (!validWatch(value, request.entity_type) || value.watch_id !== request.watch_id) {
+      return result({service:'beyondquant-mcp',status:'error',backend:{status:'invalid_response'}},true);
+    }
+    return response;
+  }
   const hasId = request.entity_id !== undefined;
   const hasKey = request.idempotency_key !== undefined;
   if (hasId === hasKey || (hasId && (request.task_id !== undefined || !request.entity_id?.trim()))
@@ -325,5 +339,41 @@ export async function fetchByqResearchLookup(
     idempotency_key: payload.idempotency_key, status: "outcome_unknown", retryable: false,
     next_action: "Preserve the original request identity. Query this same key later within the task budget; do not repeat the write or infer absence from a list.",
   }, false);
+  return response;
+}
+
+function validWatch(value: Record<string, unknown>, kind: ResearchEntityType): boolean {
+  return value.schema_version === 'research-receipt-watch.v1' && value.entity_type === kind
+    && typeof value.watch_id === 'string' && /^researchwatch_[0-9a-f]{32}$/.test(value.watch_id)
+    && ['awaiting_receipt','confirmed','conflict','needs_attention'].includes(String(value.status))
+    && Number.isInteger(value.attempts) && Number(value.attempts) >= 0 && Number(value.attempts) <= 8
+    && value.max_attempts === 8 && typeof value.idempotency_key === 'string'
+    && (value.status !== 'confirmed' || (typeof value.entity_id === 'string' && new RegExp(`^${kind === 'research_task' ? 'task' : kind}_[0-9a-f]{32}$`).test(value.entity_id)));
+}
+
+async function watchedResearchCreate(backendUrl: string, kind: ResearchEntityType, path: string,
+  payload: Record<string, unknown>, fetcher: Fetcher): Promise<ByqResearchResult> {
+  const registration = await postResearch(backendUrl, '/v1/research/submission-watches', {entity_type:kind,request:payload}, fetcher);
+  if (registration.isError) return registration;
+  const watch = JSON.parse(registration.content[0]?.text ?? '{}');
+  if (!validWatch(watch,kind) || watch.idempotency_key !== String(payload.idempotency_key).trim()
+      || watch.task_id !== (payload.task_id ?? null) || typeof watch.registration_created !== 'boolean') {
+    // Registration may have committed. Without its exact acknowledgement no
+    // business POST is sent, including on a caller's repeated registration.
+    return result({service:'beyondquant-mcp',status:'outcome_unknown',retryable:false,
+      ...(typeof payload.idempotency_key === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(payload.idempotency_key)
+        ? {idempotency_key:payload.idempotency_key} : {}),
+      next_action:'Receipt monitoring was not acknowledged; no research write was sent. Preserve the original identity and inspect this conversation receipt status.'},false);
+  }
+  if (watch.status === 'confirmed') return fetchByqResearchGet(backendUrl,kind,watch.entity_id,fetcher);
+  const unknown = () => result({service:'beyondquant-mcp',status:'outcome_unknown',retryable:false,
+    idempotency_key:watch.idempotency_key,submission_watch:watch,
+    next_action:'BYQ will only check this original request within its persistent budget. Inspect the watch with byq_research_get; do not repeat the write or create a new identity.'},false);
+  if (watch.registration_created !== true || watch.status !== 'awaiting_receipt') return unknown();
+  const response = await postResearch(backendUrl,path,payload,fetcher);
+  if (response.isError) return response;
+  const value = JSON.parse(response.content[0]?.text ?? '{}');
+  const id = value[{research_task:'task_id',experiment:'experiment_id',artifact:'artifact_id'}[kind]];
+  if (value.status === 'outcome_unknown' || typeof id !== 'string' || !new RegExp(`^${kind === 'research_task' ? 'task' : kind}_[0-9a-f]{32}$`).test(id)) return unknown();
   return response;
 }

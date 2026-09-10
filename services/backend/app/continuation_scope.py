@@ -53,7 +53,9 @@ def authorize(store, reservation_id, payload, context):
                 raise ValueError('continuation action is outside its scope')
             if payload['tool'] == 'byq_ml_training_get' and not args.get('training_run_id'):
                 raise ValueError('continuation requires the exact training identity')
-            if payload['tool'] == 'byq_research_get' and not args.get('entity_id') and args.get('task_id') != task['task_id']:
+            if payload['tool'] == 'byq_research_get' and args.get('watch_id'):
+                scope.receipt(args['watch_id'], args.get('entity_type'))
+            elif payload['tool'] == 'byq_research_get' and not args.get('entity_id') and args.get('task_id') != task['task_id']:
                 raise ValueError('continuation requires the original task identity')
             scope.walk(args)
         except ValueError:
@@ -75,6 +77,18 @@ class Scope:
         self.connection, self.task, self.context = connection, task, context
         self.checked = set()
         self.nodes = 0
+
+    def receipt(self, identity, kind):
+        if not isinstance(identity, str) or re.fullmatch(r'researchwatch_[0-9a-f]{32}', identity) is None:
+            raise ValueError('invalid research receipt identity')
+        row = fetch_one(self.connection, """SELECT * FROM research_receipt_watches WHERE watch_id=:id
+            AND owner_principal=:owner AND workspace_id=:workspace AND session_id=:session AND trace_id=:trace""",
+            {'id':identity, 'owner':self.context['owner_principal'], 'workspace':self.context['workspace_id'],
+             'session':self.context['session_id'], 'trace':self.context['trace_id']})
+        if row is None or row['entity_type'] != kind or (
+                row['parent_task_id'] != self.task['task_id'] and not (
+                    kind == 'research_task' and row['entity_id'] == self.task['task_id'])):
+            raise ValueError('research receipt belongs to another task')
 
     def walk(self, value, depth=0):
         self.nodes += 1

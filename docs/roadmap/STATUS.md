@@ -87,6 +87,11 @@ Backtest 原键只读核对已完成，定向15项及独立`.21`完整CI26/26通
 
 信号任务幂等认领、job/引用原子提交及 Worker 补数已完成，定向25项与独立`.24`完整CI26/26通过，资源清理通过，尚未部署；见[提交验收记录](../evidence/post-u8-interface-audit/SIGNAL-SUBMISSION.md)。
 
+F2 三类研究创建持久核对维护（本地验收完成）：ResearchTask/Experiment/Artifact 的 MCP 写前登记、
+有限次数原键核对、重启保持预算及 Product 只读投影已实现；独立 `.30`
+完整本地 CI 30/30、真实 HTTP 超时/Gateway 重启及 Product API 桌面/手机验收通过。见[本切片记录](../evidence/post-u8-f2-research-watch/AUDIT.md)。
+不将本切片计作完整 F2、S3 或全接口审计完成；F6 已交付结论不变。
+
 ## 生效中的 Accepted ADR
 
 Post-U8 交付授权（2026-09-08）：维护者明确允许新增独立构建身份、重新认证，并将当前

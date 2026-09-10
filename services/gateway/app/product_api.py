@@ -594,6 +594,14 @@ def product_research_tasks(request: Request) -> dict[str, object]:
     return _backend_request("GET", "/v1/research/tasks", headers=_trusted_agent_headers(request))
 
 
+@router.get('/research/submission-watches')
+def product_research_submission_watches(conversation_id: str, request: Request):
+    user = resolve_user(request)
+    headers = _trusted_agent_headers(request)
+    headers['x-byq-actor-principal'] = str(user.get('username') or user.get('user_id'))
+    return _backend_request('GET', f"/v1/product/research/submission-watches/{quote(conversation_id,safe='')}", headers=headers)
+
+
 def _continuation_permission_headers(request: Request) -> dict[str, str]:
     # A deployment token or model-provided owner is never human consent.
     if SESSION_COOKIE not in request.cookies:

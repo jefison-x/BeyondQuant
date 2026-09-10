@@ -22,6 +22,11 @@ const task = await fetchByqResearchTaskCreate(
     idempotency_key: "mcp-task-1",
   },
   async (url, init) => {
+    if (url.endsWith('/submission-watches')) return new Response(JSON.stringify({
+      schema_version:'research-receipt-watch.v1',watch_id:'researchwatch_'+'a'.repeat(32),
+      entity_type:'research_task',task_id:null,idempotency_key:'mcp-task-1',status:'awaiting_receipt',
+      entity_id:null,attempts:1,max_attempts:8,registration_created:true,
+    }),{status:201});
     assert.equal(url, "http://backend:8000/v1/research/tasks");
     assert.equal(init?.method, "POST");
     assert.doesNotMatch(String(init?.body), /sqlite|password|secret|token/i);

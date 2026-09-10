@@ -1,0 +1,31 @@
+{
+  "result": "PASS",
+  "watch": "researchwatch_4a2c6eea4b4a49eb8b868b4eee26a80e",
+  "state": {
+    "schema_version": "research-receipt-watch.v1",
+    "watch_id": "researchwatch_4a2c6eea4b4a49eb8b868b4eee26a80e",
+    "entity_type": "research_task",
+    "task_id": null,
+    "idempotency_key": "f2-http-original",
+    "status": "confirmed",
+    "reason": "receipt_confirmed",
+    "entity_id": "task_f183d071d1c54f80bd81fa75645cd02b",
+    "attempts": 3,
+    "max_attempts": 8,
+    "deadline_at": "2026-09-11T02:55:13.205928+00:00",
+    "next_check_at": null,
+    "outcome": "confirmed"
+  },
+  "original_http_posts": 1,
+  "gateway_restart": {
+    "before": "2026-09-10T02:55:07.933663346Z",
+    "after": "2026-09-10T02:55:21.790225881Z"
+  },
+  "f6_enabled": false,
+  "runtime_or_provider_started": false,
+  "images": {
+    "backend": "sha256:db5ffc86db824d5f753918c9d83930e1bc64f0e1dd3a4efeaf7038ffd73202ed",
+    "gateway": "sha256:2135717e7e4add404c4d9cc13ce627c47ed7613789ef74b6e793ed0103fcb238",
+    "mcp": "sha256:15209d53a710295dc65d33c1dd63c26b1caf90581548938d0a35d2d65a1dce72"
+  }
+}

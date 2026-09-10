@@ -215,3 +215,27 @@ def test_settlement_releases_only_matching_background_idle_lease():
     registry.finish_continuation(session, 'reservation-a')
     assert registry.idle_release_delay(session) == main.RUNTIME_SESSION_IDLE_SECONDS
     assert registry.claim_idle_release(session, registry.idle_release_generation(session))
+
+
+def test_passive_receipt_checks_survive_restart_without_f6_model_permission(tmp_path, monkeypatch):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+        session_id='session-a', trace_id='trace-a')
+    (tmp_path / 'a.lifecycle.json').write_text(json.dumps({'context': context}))
+    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '0')
+    reads, prompts = [], []
+    for _ in range(2):
+        delivery = TaskContinuationDelivery(tmp_path, prompts.append, reconcile=reads.append)
+        delivery.tick()
+    assert reads == [context, context] and prompts == []
+
+
+def test_passive_failure_does_not_block_separately_admitted_f6(tmp_path, monkeypatch):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+        session_id='session-a', trace_id='trace-a')
+    (tmp_path / 'a.lifecycle.json').write_text(json.dumps({'context': context}))
+    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+    prompts = []
+    def unavailable(_):
+        raise RuntimeError('synthetic read unavailable')
+    TaskContinuationDelivery(tmp_path, prompts.append, reconcile=unavailable).tick()
+    assert prompts == [context]

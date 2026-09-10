@@ -10,6 +10,7 @@ import { continueApproval } from "@/api/research";
 import { foldWorkflowCards, workflowActivities, workflowOutcomes, workflowRunState, workflowWaiting } from "@/api/workflow";
 import type { AgentReplayMessage, AgentSession, WorkflowCardEvent, WorkflowTraceEvent } from "@/api/types";
 import AgentActivityPanel from "@/components/agent/AgentActivityPanel.vue";
+import ResearchReceiptPanel from "@/components/agent/ResearchReceiptPanel.vue";
 import RichMessage from "@/components/agent/RichMessage.vue";
 import WorkflowCard from "@/components/agent/WorkflowCard.vue";
 import { useAgentStore, type AgentMessage } from "@/stores/agent";
@@ -537,6 +538,7 @@ onBeforeUnmount(() => {
           此提示不代表取得新的研究进展，也不会延长执行时限。
         </p>
       </div>
+      <ResearchReceiptPanel v-if="agent.activeSessionId" :conversation-id="agent.activeSessionId" />
     </main>
     <footer class="composer-wrap">
       <form class="agent-composer" @submit.prevent="send()">
