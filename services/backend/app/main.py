@@ -446,6 +446,62 @@ def consume_agent_lifecycle(conversation_id: str, payload: dict[str, Any], reque
         trusted_session_id=conversation["runtime_session_id"], trusted_trace_id=conversation["trace_id"])})
 
 
+def _continuation_consumer_context(request: Request) -> dict:
+    context = _required_agent_context(request, include_workspace=True)
+    if context['actor_principal'] != context['owner_principal']:
+        raise HTTPException(status_code=403, detail='trusted continuation consumer required')
+    return context
+
+
+@app.post('/internal/task-continuation/{reservation_id}/authorize-tool')
+def authorize_continuation_tool(reservation_id: str, payload: dict[str, Any], request: Request) -> dict:
+    from .continuation_scope import authorize
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: authorize(research_store, reservation_id, payload, context))
+
+
+@app.post('/internal/task-continuation/{conversation_id}/claim')
+def claim_task_continuation(conversation_id: str, request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    return _research_call(lambda: research_store.claim_conversation_continuation(
+        conversation_id, trusted_context=context))
+
+
+@app.post('/internal/task-continuation/{conversation_id}/peek')
+def peek_task_continuation(conversation_id: str, request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    return _research_call(lambda: research_store.claim_conversation_continuation(
+        conversation_id, trusted_context=context, admit=False))
+
+
+@app.post('/internal/task-continuation/{task_id}/dispatch')
+def dispatch_task_continuation(task_id: str, payload: dict[str, Any], request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    if set(payload) != {'reservation_id'}:
+        raise HTTPException(status_code=422, detail='exact continuation reservation required')
+    return _research_call(lambda: research_store.claim_continuation_dispatch(
+        task_id, payload['reservation_id'], trusted_context=context))
+
+
+@app.post('/internal/task-continuation/{task_id}/block')
+def block_task_continuation(task_id: str, payload: dict[str, Any], request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    if set(payload) != {'reason'}:
+        raise HTTPException(status_code=422, detail='exact continuation blocker required')
+    return _research_call(lambda: research_store.block_continuation(task_id, payload['reason'], trusted_context=context))
+
+
+@app.post('/internal/task-continuation/{task_id}/receipt')
+def record_task_continuation_receipt(task_id: str, payload: dict[str, Any], request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    if set(payload) - {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome'}:
+        raise HTTPException(status_code=422, detail='invalid continuation receipt fields')
+    if not {'reservation_id', 'status'} <= set(payload):
+        raise HTTPException(status_code=422, detail='original reservation and status required')
+    return _research_call(lambda: research_store.record_continuation_receipt(
+        task_id, trusted_context=context, **payload))
+
+
 @app.post("/internal/domain-call-evidence/{conversation_id}")
 def consume_domain_call_evidence(conversation_id: str, payload: dict[str, Any], request: Request) -> dict:
     # Private Gateway consumer. Never exposed through Product API or MCP.

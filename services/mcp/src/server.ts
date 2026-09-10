@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { continuationAdmission } from './continuation-admission.js';
 import { domainValidationSchemas } from "./domain-validation-schema.js";
 import { evidenceBoundedFetcher, safeDomainAdmission } from "./domain-admission.js";
 import { observeDomainSchemaFailures } from "./domain-schema-observation.js";
@@ -1539,7 +1540,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   return server;
 }
 
-const handler = toNodeHandler(observeDomainSchemaFailures(createMcpHandler(buildServer), async (failure, request) => {
+const observedHandler = observeDomainSchemaFailures(createMcpHandler(buildServer), async (failure, request) => {
   const context = completeAgentContext({ request });
   if (!context) return;
   const send = evidenceBoundedFetcher(trustedBackendFetcher(context), request.headers.get("x-byq-root-run-id") ?? undefined);
@@ -1554,6 +1555,18 @@ const handler = toNodeHandler(observeDomainSchemaFailures(createMcpHandler(build
     // error still reaches the model; the root additionally stops as unknown.
     return safeDomainAdmission({ detail: { schema_version: "domain-call-admission.v1", state: "unknown" } });
   }
+});
+const handler = toNodeHandler(continuationAdmission(observedHandler, async (reservation, call, request) => {
+  const context = completeAgentContext({ request });
+  if (!context) return false;
+  const response = await trustedBackendFetcher(context)(`${BACKEND_URL}/internal/task-continuation/${reservation}/authorize-tool`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(call),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!response.ok) { await response.body?.cancel(); return false; }
+  const value = await response.json() as Record<string, unknown>;
+  return value.schema_version === 'continuation-action-admission.v1' && value.admitted === true
+    && value.reservation_id === reservation;
 }));
 
 const httpServer = createServer(async (request, response) => {

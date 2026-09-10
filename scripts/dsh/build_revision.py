@@ -36,7 +36,7 @@ FIXED_INPUTS = (
     "apps/frontend/index.html", "apps/frontend/vite.config.ts", "apps/frontend/tsconfig.app.json",
     "apps/frontend/tsconfig.json", "apps/frontend/tsconfig.node.json",
     "apps/frontend/vitest.config.ts", "apps/frontend/playwright.config.ts",
-    "apps/frontend/playwright.real.config.ts", ".github/workflows/ci-selfhosted.yml",
+    "apps/frontend/playwright.real.config.ts", "apps/frontend/playwright.f6.config.ts", ".github/workflows/ci-selfhosted.yml",
     "docs/contracts/product-capability-catalog.v1.json",
     "config/dsh/generated/web-evidence-provenance.json",
     "config/dsh/deployment.json", "config/dsh/generated/dsh-0.1.1rc1.identity.json",
@@ -55,7 +55,7 @@ def digest(path):
 def selected_build_id(release):
     if release not in RELEASES:
         raise ValueError("unregistered release")
-    return release + "-post-u8.24"
+    return release + "-post-u8.25"
 
 
 def identity(build_id):

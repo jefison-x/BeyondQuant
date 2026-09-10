@@ -10,6 +10,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version as distribution_version
 from pathlib import Path
 from typing import Any, ClassVar
@@ -30,6 +31,7 @@ from .normalization import close_public_activities
 from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_release
 from .identifiers import contained_session_path, validate_identifier
 from .lifecycle_journal import LifecycleJournal, JournalBusy
+from .continuation_budget import persist_settlement, recovered_settlement, validate_reservation, create_guard_patch, read_guard
 from .normalization import NormalizationState, normalize_runtime_observation
 
 
@@ -70,6 +72,7 @@ class ActiveRun:
     run_id: str
     started_at: float
     last_runtime_activity_at: float
+    continuation_deadline: float | None = None
     soft_cancel_requested: bool = False
     hard_cancelled: bool = False
     active_subagent_calls: dict[str, float] = field(default_factory=dict)
@@ -96,6 +99,10 @@ class RuntimeSession:
     process_root_id: str = field(default="", repr=False)
     process_used: bool = field(default=False, repr=False)
     process_closed: bool = field(default=False, repr=False)
+    continuation_budget: dict | None = field(default=None, repr=False)
+    budget_journal: Path | None = field(default=None, repr=False)
+    budget_run_id: str | None = field(default=None, repr=False)
+    budget_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
     owner_principal: str | None = None
     workspace_id: str | None = None
     model_resolution: dict[str, object] = field(default_factory=dict, repr=False)
@@ -451,15 +458,18 @@ class RuntimeAdapter:
         idempotency_key: str | None = None,
         conversation_context: object = None,
         conversation_recovery: object = None,
+        continuation_budget: object = None,
     ) -> str:
         record = self._get(session_id)
         with record.lock:
+            identity_content = content if continuation_budget is None else json.dumps(
+                {'content': content, 'reservation': continuation_budget}, sort_keys=True, separators=(',', ':'))
             if idempotency_key is not None:
                 if not 8 <= len(idempotency_key) <= 128:
                     raise ValueError("prompt idempotency key has invalid length")
                 if record.journal is not None:
                     try:
-                        durable = record.journal.receipt(idempotency_key, hashlib.sha256(content.encode()).hexdigest())
+                        durable = record.journal.receipt(idempotency_key, hashlib.sha256(identity_content.encode()).hexdigest())
                     except ValueError as exc:
                         raise SessionConflict("prompt receipt identity conflicts") from exc
                     if durable["state"] == "accepted":
@@ -467,7 +477,7 @@ class RuntimeAdapter:
                 existing = record.prompt_idempotency.get(idempotency_key)
                 if existing is not None:
                     existing_content, existing_run_id = existing
-                    if existing_content != content:
+                    if existing_content != identity_content:
                         raise SessionConflict("prompt idempotency key was reused with different content")
                     return existing_run_id
             # An accepted original receipt remains authoritative even if model
@@ -476,6 +486,17 @@ class RuntimeAdapter:
                 raise ModelCredentialUnavailable("the configured model provider has no credential")
             if record.workspace_id and record.pending_terminal_receipts:
                 raise SessionConflict("previous turn domain cleanup is not yet acknowledged")
+            budget = None
+            if continuation_budget is not None:
+                if not self.continuation_qualified(record):
+                    raise ValueError('continuation executor is not enabled')
+                budget = validate_reservation(continuation_budget,
+                    owner=record.owner_principal, workspace=record.workspace_id)
+                if idempotency_key != budget['reservation_id']:
+                    raise ValueError('continuation requires its original reservation key')
+                if (record.model_resolution.get('provider', self._provider), record.model_resolution.get('model', self._model)) != (
+                        'deepseek-official', 'deepseek-v4-flash'):
+                    raise ValueError('selected continuation model is unqualified')
             if record.status not in SessionStatus.PROMPTABLE or record.active_run is not None:
                 raise SessionConflict(
                     f"session {session_id} cannot accept a prompt in state {record.status}"
@@ -491,11 +512,19 @@ class RuntimeAdapter:
             elif conversation_recovery is not None:
                 raise ValueError("conversation recovery requires an explicit context projection")
             effective_content = rehydrated_prompt(context, content, recovery)
-            if self._root_scoped and record.process_used:
+            if budget is not None and not record.process_used:
+                self._compatibility.close(record.harness)
+                record.process_closed = True
+            if self._root_scoped and (record.process_used or budget is not None):
                 if record.workspace_id and conversation_context is None:
                     raise SessionConflict("new root requires a fresh public conversation projection")
                 if record.process_closing or not record.process_closed:
                     raise SessionConflict("previous runtime process cleanup is not complete")
+                if record.continuation_budget is not None:
+                    old_id = record.continuation_budget['reservation_id']
+                    record.budget_receipts[old_id] = self._budget_receipt(record)
+                    while len(record.budget_receipts) > 64:
+                        del record.budget_receipts[next(iter(record.budget_receipts))]
                 private_session = f"root-{uuid.uuid4().hex}"
                 generation = f"generation-{uuid.uuid4().hex}"
                 root_id = uuid.uuid4().hex
@@ -503,7 +532,7 @@ class RuntimeAdapter:
                     contained_session_path(self._session_root, private_session),
                     trace_id=record.trace_id, owner_principal=record.owner_principal,
                     workspace_id=record.workspace_id, model_resolution=record.model_resolution,
-                    runtime_generation=generation, root_run_id=root_id)
+                    runtime_generation=generation, root_run_id=root_id, continuation_budget=budget)
                 record.harness = harness
                 record.runtime_session_id = private_session
                 record.runtime_generation = generation
@@ -511,16 +540,21 @@ class RuntimeAdapter:
                 record.process_closed = False
                 record.normalization = NormalizationState()
                 record.usage_message_ids.clear()
+                record.continuation_budget = budget
+                record.budget_journal = contained_session_path(self._session_root, private_session) / 'continuation-budget.jsonl' if budget else None
+                record.budget_run_id = root_id if budget else None
             now = time.monotonic()
             run = ActiveRun(run_id=record.process_root_id if self._root_scoped else uuid.uuid4().hex,
                             started_at=now, last_runtime_activity_at=now)
+            if budget:
+                run.continuation_deadline = now + max(0, (datetime.fromisoformat(budget['expires_at']) - datetime.now(timezone.utc)).total_seconds())
             record.process_used = True
             record.pending_conversation_context = []
             record.pending_conversation_recovery = None
             record.active_run = run
             record.status = SessionStatus.RUNNING
             if idempotency_key is not None:
-                record.prompt_idempotency[idempotency_key] = (content, run.run_id)
+                record.prompt_idempotency[idempotency_key] = (identity_content, run.run_id)
             try:
                 self._emit(record, "session.started", "runtime-adapter", {"run_id": run.run_id})
             except BaseException:
@@ -601,6 +635,11 @@ class RuntimeAdapter:
                 # that operation with cancellation; Session.run only sends to
                 # the existing transport and cannot restart it after close.
                 prepared = self._compatibility.prepare_prompt(harness, runtime_session_id)
+                if record.continuation_budget is not None:
+                    # Startup must demonstrate the guard registered before
+                    # any model prompt is sent; a failed plugin cannot silently
+                    # fall back to an unguarded runtime.
+                    read_guard(record.budget_journal, record.continuation_budget)
             try:
                 finish_reason = self._compatibility.run_prepared_prompt(
                     prepared, content,
@@ -656,7 +695,17 @@ class RuntimeAdapter:
             # A returned SDK call is not necessarily a completed model run.
             # Token exhaustion, cancellation and unknown reasons must not
             # resolve the user's unanswered request as a successful result.
-            if finish_reason != "completed" or run.domain_stop_code:
+            budget_blocked = False
+            if record.continuation_budget:
+                try:
+                    budget_blocked = bool(read_guard(record.budget_journal, record.continuation_budget,
+                        terminal=True)['blocked_reason'])
+                except (OSError, ValueError, TypeError, KeyError):
+                    budget_blocked = True
+                if budget_blocked:
+                    run.model_failure_code = 'model-run-failed'
+                    run.model_failure_retryable = False
+            if finish_reason != "completed" or run.domain_stop_code or budget_blocked:
                 record.status = SessionStatus.FAILED
                 self._emit(
                     record,
@@ -892,6 +941,8 @@ class RuntimeAdapter:
                 raise SessionConflict(f"session {session_id} is still initializing")
             if record.process_closing or record.active_run is not None or record.status in SessionStatus.ACTIVE_PROMPT:
                 raise SessionConflict(f"session {session_id} has an active prompt")
+            if record.continuation_budget:
+                self._budget_receipt(record)
             record.status = SessionStatus.CLOSED
         try:
             with record.lock:
@@ -982,6 +1033,51 @@ class RuntimeAdapter:
             raise KeyError(f"unknown BYQ session: {session_id}")
         return record
 
+    def continuation_qualified(self, record: RuntimeSession) -> bool:
+        try:
+            exact = (distribution_version('deepseek-harness-sdk') == '0.1.2rc1'
+                and distribution_version('deepseek-harness-runtime-bin') == '0.1.2rc1')
+        except PackageNotFoundError:
+            exact = False
+        return (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') == '1' and self._root_scoped
+            and self._compatibility.family == 'dsh-0.1.2' and exact
+            and (record.model_resolution.get('provider', self._provider), record.model_resolution.get('model', self._model))
+                == ('deepseek-official', 'deepseek-v4-flash'))
+
+    def _budget_receipt(self, record: RuntimeSession) -> dict:
+        reservation = record.continuation_budget
+        unknown = {'reservation_id': reservation['reservation_id'], 'status': 'outcome_unknown'}
+        if record.active_run is not None or not record.process_closed or record.process_closing:
+            return unknown
+        try:
+            receipt = read_guard(record.budget_journal, reservation, terminal=True)
+            completed = any(event['kind'] == 'session.result'
+                and event['payload'].get('run_id') == record.budget_run_id for event in record.history)
+            receipt = {**receipt, 'run_id': record.budget_run_id,
+                'outcome': 'completed' if completed else 'needs_attention'}
+            if record.journal:
+                persist_settlement(self._session_root, record.journal.state['context'], receipt)
+            return receipt
+        except (OSError, ValueError, TypeError, KeyError):
+            return unknown
+
+    def continuation_receipt(self, session_id: str, reservation_id: str) -> dict:
+        validate_identifier(session_id, field='session_id')
+        def recover():
+            try:
+                state = LifecycleJournal.read(self._session_root / 'byq-lifecycle-evidence' / f'{session_id}.json')
+                return recovered_settlement(self._session_root, session_id, reservation_id, state)
+            except (OSError, ValueError, TypeError, KeyError):
+                return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
+        try:
+            record = self._get(session_id)
+        except KeyError:
+            return recover()
+        with record.lock:
+            if record.continuation_budget and record.continuation_budget['reservation_id'] == reservation_id:
+                return self._budget_receipt(record)
+            return record.budget_receipts.get(reservation_id) or recover()
+
     def _build_harness(
         self,
         session_id: str,
@@ -993,6 +1089,7 @@ class RuntimeAdapter:
         model_resolution: dict[str, object],
         runtime_generation: str,
         root_run_id: str = "",
+        continuation_budget: dict | None = None,
     ) -> Any:
         if self._root_scoped and re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
             raise ValueError("root-scoped process requires a reserved root identity")
@@ -1030,10 +1127,14 @@ class RuntimeAdapter:
                 environment["OPENCODE_API_KEY"] = model_api_key
             else:
                 raise ModelCredentialUnavailable("selected model provider is unavailable")
+        composition = self._composition
+        if continuation_budget is not None:
+            composition, _ = create_guard_patch(composition, session_root, continuation_budget)
+            environment['DEEPSEEK_BASE_URL'] = 'https://api.deepseek.com'
         return self._compatibility.build_harness(
             provider=str(model_resolution.get("provider") or self._provider),
             model=str(model_resolution.get("model") or self._model),
-            composition=self._composition,
+            composition=composition,
             session_root=session_root,
             runtime_command=self.runtime_command,
             environment=environment,
@@ -1246,7 +1347,8 @@ class RuntimeAdapter:
             oldest_subagent = min(run.active_subagent_calls.values(), default=None)
             if run.domain_stop_code:
                 code = run.domain_stop_code
-            elif now - run.started_at > self._run_timeout_seconds:
+            elif (now - run.started_at > self._run_timeout_seconds
+                    or (run.continuation_deadline is not None and now >= run.continuation_deadline)):
                 code = "runtime-run-timeout"
             elif (
                 (oldest_subagent is not None and now - oldest_subagent > self._subagent_timeout_seconds)
@@ -1368,6 +1470,8 @@ class RuntimeAdapter:
                                                        record.session_id, record.sequence + 1, outcome):
                     self._publish(record, closure)
             self._publish(record, event)
+            if record.continuation_budget and kind in {'session.result', 'session.failed', 'session.cancelled', 'session.result.discarded'}:
+                self._budget_receipt(record)
 
     @staticmethod
     def _publish(record: RuntimeSession, event: WorkflowTraceEvent) -> None:

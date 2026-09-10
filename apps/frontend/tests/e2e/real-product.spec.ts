@@ -612,3 +612,63 @@ async function phase90FeedbackJourney({ page, baseURL }: { page: Page; baseURL?:
   expect(serverErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);
 }
+
+for (const viewport of ['desktop', 'mobile'] as const) {
+  test(`F6 real Product API permission persists and revokes (${viewport})`, async ({ page, browser, baseURL }, testInfo) => {
+    await page.setViewportSize(viewport === 'desktop' ? { width: 1440, height: 1000 } : { width: 390, height: 844 });
+    const unexpected = new Set<string>();
+    const errors: string[] = [];
+    const origin = new URL(baseURL!).origin;
+    page.on('request', request => {
+      const url = new URL(request.url());
+      if (['http:', 'https:'].includes(url.protocol) && url.origin !== origin) unexpected.add(url.origin);
+      if (url.origin === origin && /\/(?:internal|v1|mcp)\//.test(url.pathname)) unexpected.add(url.pathname);
+    });
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto('/login');
+    await page.getByLabel('用户名').fill(`f6-browser-${viewport}`);
+    await page.getByLabel('密码').fill('test-password-123');
+    await page.getByRole('button', { name: '进入' }).click();
+    await expect(page).toHaveURL(/\/agent$/);
+    await page.goto('/user/research');
+    await page.getByRole('button', { name: '查看许可', exact: true }).click();
+    const panel = page.getByRole('region', { name: '任务后台续接许可' });
+    await expect(panel.getByRole('status')).toContainText('尚未授权');
+    await expect(panel.getByRole('spinbutton')).toHaveValue('');
+    await panel.getByRole('spinbutton').fill('3000000');
+    await panel.getByRole('combobox').click();
+    await page.getByRole('option', { name: /^strategy_version ·/ }).click();
+    await panel.getByRole('checkbox').check();
+    const saved = page.waitForResponse(response => response.url().endsWith('/continuation-permission') && response.request().method() === 'POST');
+    await panel.getByRole('button', { name: '保存续接许可' }).click();
+    const response = await saved;
+    expect(response.status()).toBe(201);
+    const grant = await response.json() as { task_id: string; permission: { grant_version: number; token_limit: number } };
+    expect(grant.permission.token_limit).toBe(3000000);
+    await expect(panel).toContainText('总额度：3000000');
+    await page.reload();
+    await page.getByRole('button', { name: '查看许可', exact: true }).click();
+    await expect(panel).toContainText('总额度：3000000');
+    await expect(panel.getByRole('button', { name: '保存续接许可' })).toHaveCount(0);
+    await panel.screenshot({ path: testInfo.outputPath(`f6-permission-${viewport}.png`) });
+    const other = await browser.newContext({ baseURL });
+    try {
+      const otherPage = await other.newPage();
+      await otherPage.goto('/login');
+      await otherPage.getByLabel('用户名').fill(`f6-browser-${viewport === 'desktop' ? 'mobile' : 'desktop'}`);
+      await otherPage.getByLabel('密码').fill('test-password-123');
+      await otherPage.getByRole('button', { name: '进入' }).click();
+      await expect(otherPage).toHaveURL(/\/agent$/);
+      const denied = await otherPage.request.get(`/api/product/research/tasks/${grant.task_id}/continuation-permission`);
+      expect([403, 404, 422]).toContain(denied.status());
+      expect(await denied.text()).not.toContain('3000000');
+    } finally { await other.close(); }
+    await panel.getByRole('button', { name: '撤销后台续接许可' }).click();
+    await expect(panel.getByRole('status')).toContainText('撤销');
+    await page.reload();
+    await page.getByRole('button', { name: '查看许可', exact: true }).click();
+    await expect(panel.getByRole('status')).toContainText('撤销');
+    expect([...unexpected]).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+}

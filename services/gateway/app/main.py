@@ -34,6 +34,7 @@ from .trace_store import TraceStore
 from .conversation_recovery import project_recovery
 from .workflow_projection import project_workflow_event
 from .agent_lifecycle_delivery import LifecycleDelivery
+from .task_continuation import TaskContinuationDelivery
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
 from packages.contracts.workflow_trace import validate_workflow_trace_event
 
@@ -45,9 +46,11 @@ async def lifespan(app):
     lifecycle_delivery.start()
     answer_delivery.start()
     domain_call_delivery.start()
+    task_continuation_delivery.start()
     try:
         yield
     finally:
+        task_continuation_delivery.close()
         lifecycle_delivery.close()
         answer_delivery.close()
         domain_call_delivery.close()
@@ -62,6 +65,127 @@ BACKEND_URL = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
 PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
 trace_store = TraceStore(os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"))
+
+
+def _continuation_adapter_get(path: str, params=None) -> dict:
+    response = httpx.get(f'{RUNTIME_ADAPTER_URL}{path}', params=params, timeout=5.0)
+    response.raise_for_status()
+    value = response.json()
+    if not isinstance(value, dict):
+        raise ValueError('invalid continuation adapter receipt')
+    return value
+
+
+def _consume_task_continuation(context):
+    with chat_admission():
+        _consume_admitted_task_continuation(context)
+
+
+def _attach_continuation_observer(context):
+    principal = Principal(subject=context['owner'])
+    try:
+        return product_sessions.get_owned(context['conversation_id'], principal)
+    except HTTPException:
+        pass
+    # Observe an existing original Runtime after a Gateway restart. Do not
+    # create a replacement process merely to reconcile an uncertain receipt.
+    state = _continuation_adapter_get(
+        f"/internal/runtime/sessions/{context['session_id']}/continuation-qualification")
+    if state.get('reason') == 'session_missing':
+        return None
+    product_sessions.remove_owned(context['conversation_id'], principal)
+    session = ProductSession(conversation_id=context['conversation_id'], session_id=context['session_id'],
+        trace_id=context['trace_id'], principal=principal, workspace_id=context['workspace_id'])
+    try:
+        product_sessions.add(session)
+    except RuntimeError:
+        return product_sessions.get_owned(context['conversation_id'], principal)
+    trace_store.reopen(session.session_id)
+    _start_trace_collector(session)
+    return session
+
+
+def _consume_admitted_task_continuation(context):
+    principal = Principal(subject=context['owner'])
+    conversation = context['conversation_id']
+    workspace = context['workspace_id']
+    def backend(suffix, payload=None, task=None):
+        return _catalog_request('POST', f'/internal/task-continuation/{task or conversation}/{suffix}',
+            principal, workspace, payload=payload)
+    intent = backend('peek')
+    if intent.get('status') == 'eligible':
+        try:
+            session = product_sessions.get_owned(conversation, principal)
+        except HTTPException:
+            product_sessions.remove_owned(conversation, principal)
+            session = _restore_product_session(conversation, principal, workspace)
+        qualification = _continuation_adapter_get(
+            f'/internal/runtime/sessions/{session.session_id}/continuation-qualification')
+        if qualification.get('reason') == 'session_missing':
+            product_sessions.remove_owned(conversation, principal)
+            session = _restore_product_session(conversation, principal, workspace)
+            qualification = _continuation_adapter_get(
+                f'/internal/runtime/sessions/{session.session_id}/continuation-qualification')
+        if qualification.get('qualified') is not True:
+            backend('block', {'reason': 'model_or_executor_unqualified'}, task=intent['task_id'])
+            return
+        intent = backend('claim')
+    if intent.get('status') != 'intent':
+        return
+    if (intent.get('conversation_id'), intent.get('session_id'), intent.get('trace_id')) != (
+            conversation, context['session_id'], context['trace_id']):
+        raise ValueError('continuation conversation identity changed')
+    observer = _attach_continuation_observer(context)
+    reservation, receipt = intent['reservation'], intent['receipt']
+    identity = reservation['reservation_id']
+    task = intent['task_id']
+    if receipt.get('reservation_id') != identity or reservation.get('task_id') != task:
+        raise ValueError('continuation reservation identity mismatch')
+    def mark(status, **fields):
+        return backend('receipt', {'reservation_id': identity, 'status': status, **fields}, task=task)
+    settled = _continuation_adapter_get(
+        f"/internal/runtime/sessions/{intent['session_id']}/continuation-receipt/{identity}")
+    if settled.get('reservation_id') != identity:
+        raise ValueError('continuation settlement identity mismatch')
+    if settled.get('status') == 'settled':
+        mark('accepted', run_id=settled['run_id'])
+        mark('settled', charged_tokens=settled['charged_tokens'], settlement_sha256=settled['settlement_sha256'],
+            outcome=settled['outcome'])
+        if observer is not None:
+            generation = product_sessions.idle_release_generation(observer)
+            if generation is not None:
+                _schedule_idle_release(observer, generation)
+        return
+    instruction = receipt['instruction']
+    identity_content = json.dumps({'content': instruction, 'reservation': reservation}, sort_keys=True, separators=(',', ':'))
+    original = _continuation_adapter_get(f"/internal/runtime/sessions/{intent['session_id']}/prompts/reconcile",
+        params={'idempotency_key': identity, 'content_sha256': hashlib.sha256(identity_content.encode()).hexdigest()})
+    if original.get('state') == 'accepted':
+        mark('accepted', run_id=original['run_id'])
+        return
+    if receipt['status'] != 'reserved' or intent.get('may_dispatch') is not True:
+        return
+    try:
+        session = product_sessions.get_owned(conversation, principal)
+    except HTTPException:
+        product_sessions.remove_owned(conversation, principal)
+        session = _restore_product_session(conversation, principal, workspace)
+    payload = {'content': instruction, 'require_model_key': True, 'idempotency_key': identity,
+        'continuation_budget': reservation, **_runtime_recovery_payload(session)}
+    if backend('dispatch', {'reservation_id': identity}, task=task).get('dispatch') is not True:
+        return
+    try:
+        accepted = _adapter_post(f'/internal/runtime/sessions/{session.session_id}/prompt', payload=payload, timeout=5.0)
+    except HTTPException as exc:
+        # Original identity is checked before Runtime's admission conflicts.
+        # A definite conflict may be retried under the same charged intent.
+        # Ambiguous transport failures remain unknown and are only reconciled.
+        if exc.status_code == 409:
+            mark('rejected')
+        return
+    if accepted.get('accepted') is not True or not _valid_prompt_run_id(accepted.get('run_id')):
+        return
+    mark('accepted', run_id=accepted['run_id'])
 
 
 def _send_agent_lifecycle(context, event):
@@ -114,6 +238,7 @@ def _recover_agent_lifecycle(context):
 lifecycle_delivery = LifecycleDelivery(
     os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), trace_store, _send_agent_lifecycle,
     recover=_recover_agent_lifecycle)
+task_continuation_delivery = TaskContinuationDelivery(lifecycle_delivery.root, _consume_task_continuation)
 
 
 def _send_owned_answer(context, event):
@@ -257,6 +382,17 @@ class ProductSessionRegistry:
             session.public_streams = max(0, session.public_streams - 1)
             if session.released or session.public_streams:
                 return None
+            session.release_generation += 1
+            return session.release_generation
+
+    def idle_release_generation(self, session: ProductSession) -> int | None:
+        """Background completion does not decrement a browser stream lease."""
+        with self._lock:
+            if session.released or session.public_streams:
+                return None
+            if session.release_timer is not None:
+                session.release_timer.cancel()
+                session.release_timer = None
             session.release_generation += 1
             return session.release_generation
 

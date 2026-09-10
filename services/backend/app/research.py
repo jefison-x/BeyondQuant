@@ -270,6 +270,14 @@ class ResearchStore(ResearchContinuationMixin, PgStoreMixin):
         "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS progress JSONB",
         "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS conversation_id TEXT",
         "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS continuation_permission JSONB",
+        "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS continuation_budget JSONB",
+        "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS continuation_checked_at TIMESTAMPTZ",
+        "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS continuation_blocked_reason TEXT",
+        """CREATE INDEX IF NOT EXISTS research_continuation_scan ON research_tasks
+            (conversation_id, owner_principal, continuation_checked_at, task_id)
+            WHERE continuation_permission IS NOT NULL""",
+        """CREATE INDEX IF NOT EXISTS research_continuation_receipts ON research_tasks
+            USING GIN (continuation_budget jsonb_path_ops) WHERE continuation_budget IS NOT NULL""",
         """CREATE INDEX IF NOT EXISTS research_tasks_conversation_context
             ON research_tasks(conversation_id,owner_principal,created_at,task_id)""",
         """
@@ -1533,6 +1541,9 @@ class ResearchStore(ResearchContinuationMixin, PgStoreMixin):
     def _task_row(row: dict[str, Any]) -> dict[str, object]:
         result = _row_dict(row)
         result.pop("continuation_permission", None)
+        result.pop("continuation_budget", None)
+        result.pop("continuation_checked_at", None)
+        result.pop("continuation_blocked_reason", None)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
         return result
