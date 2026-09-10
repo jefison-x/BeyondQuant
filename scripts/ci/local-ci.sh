@@ -148,7 +148,6 @@ CI_MCP_TEST="byq-ci-mcp-test-$BYQ_CI_SCOPE"
 CI_MCP_SERVER="byq-ci-mcp-server-$BYQ_CI_SCOPE"
 CI_CANDIDATE_TEST="byq-ci-runtime-candidate-test-$BYQ_CI_SCOPE"
 CI_CANDIDATE_VOL="byq-ci-runtime-candidate-data-$BYQ_CI_SCOPE"
-CI_BASELINE_BENCH_VOL="byq-ci-runtime-baseline-bench-$BYQ_CI_SCOPE"
 CI_CANDIDATE_BENCH_VOL="byq-ci-runtime-candidate-bench-$BYQ_CI_SCOPE"
 RESOURCES_TOUCHED=0
 ACTIVE_CHILD_PID=""
@@ -300,15 +299,14 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   export BYQ_DSH_COMPOSITION_SOURCE=plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml
   export BYQ_DSH_IDENTITY_SOURCE=plugins/dsh-byq/compositions/byq-product-sdk.identity.json
-  # Explicit rollback baseline for the legacy full suite. The exact promoted
-  # bundled artifact is separately built and exercised by check_dsh_candidate
-  # and U7's closed Product/model/browser qualification; never silently retag it.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8
-  export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.1rc1
-  export BYQ_DSH_COMPOSITION=/opt/byq/compositions/byq-product-sdk.cordis.yml
-  export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.1rc1
-  export BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/app/web-evidence-provenance.json
-  export BYQ_PLUGIN_REGISTRY_PATH=/app/plugin-registry/plugins.json
+  # ADR-0069: daily suites use the supported bundled runtime only.
+  # Archived rollback images are never rebuilt or executed by routine CI.
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-candidate
+  export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.2rc1
+  export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
+  export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.2rc1
+  export BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/app/qualified-web-evidence-provenance.json
+  export BYQ_PLUGIN_REGISTRY_PATH=/app/plugin-registry/product-plugins.json
   export BYQ_BOOTSTRAP_ADMIN_USERNAME="${BYQ_CI_BOOTSTRAP_ADMIN_USERNAME:-ci-admin}"
   export BYQ_BOOTSTRAP_ADMIN_PASSWORD="${BYQ_CI_BOOTSTRAP_ADMIN_PASSWORD:-ci-bootstrap-test-only}"
   export BYQ_E2E_ADMIN_USERNAME="$BYQ_BOOTSTRAP_ADMIN_USERNAME"
@@ -336,7 +334,7 @@ build_test_images() {
     if want backend || want mcp; then services+=(backend); fi
     if want gateway; then services+=(gateway); fi
     if want runtime; then services+=(runtime-adapter); fi
-    if want mcp; then services+=(mcp); fi
+    if want mcp || want runtime; then services+=(mcp); fi
   fi
   [ "${#services[@]}" -gt 0 ] || return 0
   step "build: selected run-scoped images (cache allowed, stale fallback forbidden)"
@@ -452,6 +450,10 @@ check_gateway() {
 
 check_runtime() {
   step "runtime-adapter: pytest"
+  if run_interruptible docker run --rm --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none \
+      -v "$REPO_ROOT/plugins/dsh-byq/runtime:/opt/byq/runtime:ro" \
+      "$(ci_image mcp)" sh -ec 'node --test /opt/byq/runtime/*.test.js'; then
+    ok "runtime helper contracts"; else bad "runtime helper contracts"; fi
   RESOURCES_TOUCHED=1
   if run_interruptible docker run --rm --name "$CI_RUNTIME_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/runtime-adapter:/app" \
@@ -459,7 +461,8 @@ check_runtime() {
       -v "$REPO_ROOT/plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml:/opt/byq/compositions/byq-product-sdk.cordis.yml:ro" \
       -v "$REPO_ROOT/plugins/dsh-byq/runtime:/opt/byq/runtime:ro" \
       -v "$REPO_ROOT/plugins/dsh-byq/skills:/opt/dsh/bundles/dsh-byq/skills:ro" \
-      "$(ci_image runtime-adapter)" sh -ec 'node --test /opt/byq/runtime/*.test.js && python3 -m pytest -q -p no:cacheprovider'; then
+      -e BYQ_DSH_PROCESS_OWNERSHIP=session \
+      "$(ci_image runtime-adapter)" python3 -m pytest -q -p no:cacheprovider; then
     ok "runtime-adapter tests"; else bad "runtime-adapter tests"; fi
 }
 
@@ -476,7 +479,7 @@ check_dsh_candidate() {
   fi
   printf '    candidate image identity -> tag=%s id=' "$candidate_image"
   docker image inspect "$candidate_image" --format '{{.Id}}' || { bad "candidate image identity"; return; }
-  for volume in "$CI_CANDIDATE_VOL" "$CI_BASELINE_BENCH_VOL" "$CI_CANDIDATE_BENCH_VOL"; do
+  for volume in "$CI_CANDIDATE_VOL" "$CI_CANDIDATE_BENCH_VOL"; do
     docker volume create --label "byq.ci.scope=$BYQ_CI_SCOPE" "$volume" >/dev/null
   done
   common=(--rm --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET"
@@ -506,14 +509,6 @@ check_dsh_candidate() {
       /app/tests/test_dsh_012_real_process.py /qualification/test_candidate_journeys.py; then
     bad "candidate real-process/delegate journeys"; return
   fi
-  if ! run_interruptible docker run --name "$CI_RUNTIME_TEST" "${common[@]}" \
-      -v "$CI_BASELINE_BENCH_VOL:/var/lib/byq/dsh-sessions" \
-      -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$(ci_image runtime-adapter)" \
-      python3 /qualification/runtime_benchmark.py > "$benchmark_dir/baseline-benchmark.json"; then
-    cat "$benchmark_dir/baseline-benchmark.json" >&2
-    bad "baseline lifecycle benchmark"; return
-  fi
-  cat "$benchmark_dir/baseline-benchmark.json"
   if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
       -e BYQ_DSH_REAL_PROCESS_TEST=1 -v "$CI_CANDIDATE_BENCH_VOL:/var/lib/byq/dsh-sessions" \
       -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$candidate_image" \
@@ -522,7 +517,7 @@ check_dsh_candidate() {
     bad "candidate lifecycle benchmark"; return
   fi
   cat "$benchmark_dir/candidate-benchmark.json"
-  ok "candidate real-process, five delegates and old/new lifecycle benchmarks"
+  ok "candidate real-process, five delegates and supported-runtime lifecycle benchmark"
 }
 
 check_mcp() {

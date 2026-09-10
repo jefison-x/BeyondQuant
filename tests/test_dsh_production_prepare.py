@@ -14,7 +14,7 @@ finally:
 class ProductionPrepareTests(unittest.TestCase):
     def setUp(self):
         self.directory = Path('/home/jefison/backups/byq-dsh-u7/release-20260907T000000Z')
-        self.receipt = {'images': {name: {'image_id': 'sha256:' + str(index) * 64}
+        self.receipt = {'build_revisions': {release: {'build_id': release + '-u7.1'} for release in ('dsh-0.1.1rc1', 'dsh-0.1.2rc1')}, 'images': {name: {'image_id': 'sha256:' + str(index) * 64}
                                   for index, name in enumerate((*MODULE.SERVICES, 'runtime-candidate'))}}
 
     def test_exact_allowlist_readonly_gate_and_three_separate_namespaces(self):
@@ -41,3 +41,10 @@ class ProductionPrepareTests(unittest.TestCase):
         self.receipt['images']['backend']['image_id'] = 'backend:latest'
         with self.assertRaises(ValueError):
             MODULE.overlay(self.receipt, self.directory, 'target')
+
+    def test_current_only_receipt_cannot_be_mislabeled_as_old_rollback(self):
+        fixture = self
+        fixture.receipt['build_revisions'].pop('dsh-0.1.1rc1')
+        for mode in ('prepare', 'target', 'rollback'):
+            with fixture.assertRaisesRegex(ValueError, 'historical dual-build'):
+                MODULE.overlay(fixture.receipt, fixture.directory, mode)

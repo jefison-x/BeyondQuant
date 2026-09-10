@@ -135,7 +135,7 @@ class RuntimeAdapter:
 
     def __init__(self, compatibility: RuntimeCompatibility | None = None) -> None:
         self._compatibility = compatibility or compatibility_for_release(
-            os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-0.1.1rc1")
+            os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-0.1.2rc1")
         )
         self._sessions: dict[str, RuntimeSession] = {}
         self._lock = threading.RLock()
@@ -143,13 +143,13 @@ class RuntimeAdapter:
         self._composition = Path(
             os.environ.get(
                 "BYQ_DSH_COMPOSITION",
-                "/opt/byq/compositions/byq-product-sdk.cordis.yml",
+                "/opt/byq/profiles/byq-product.patch.yml",
             )
         )
         self._composition_identity = Path(
             os.environ.get(
                 "BYQ_DSH_COMPOSITION_IDENTITY",
-                "/opt/byq/compositions/byq-product-sdk.identity.json",
+                "/opt/byq/profiles/byq-product.identity.json",
             )
         )
         self._release_identity = Path(

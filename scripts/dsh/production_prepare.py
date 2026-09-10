@@ -27,6 +27,14 @@ def overlay(receipt, directory, mode):
     if (directory.parent != Path('/home/jefison/backups/byq-dsh-u7')
             or re.fullmatch(r'release-[0-9]{8}T[0-9]{6}Z', directory.name) is None):
         raise ValueError('dedicated approved release directory required')
+    # This historical U7 helper encodes a two-release rollback. A current-only
+    # receipt must never relabel the supported runtime as an old rollback image.
+    builds = receipt.get('build_revisions', {})
+    if set(builds) != {'dsh-0.1.1rc1', 'dsh-0.1.2rc1'}:
+        raise ValueError('retired U7 dual-release overlay requires historical dual-build receipt')
+    for release, build in builds.items():
+        if not isinstance(build, dict) or not str(build.get('build_id', '')).startswith(release + '-'):
+            raise ValueError('historical rollback release/build mismatch')
     target = mode == 'target'
     release = 'dsh-0.1.2rc1' if target else 'dsh-0.1.1rc1'
     members = {}

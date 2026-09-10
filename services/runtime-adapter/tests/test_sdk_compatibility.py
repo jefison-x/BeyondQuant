@@ -112,3 +112,10 @@ def test_product_research_skill_requires_evidence_bound_public_answers() -> None
     assert "agent_approval_id" in feedback_contract
     assert "do not submit yet" in feedback_contract
     assert "Never request a GitHub account" in feedback_contract
+
+
+def test_retired_release_selection_is_rejected():
+    import pytest
+    from app.compat import compatibility_for_release
+    with pytest.raises(ValueError, match="unsupported DSH"):
+        compatibility_for_release("dsh-0.1.1rc1")

@@ -10,7 +10,9 @@ import re
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILDS = ROOT / "config/dsh/builds"
-RELEASES = {"dsh-0.1.1rc1", "dsh-0.1.2rc1"}
+RELEASES = {"dsh-0.1.2rc1"}
+RETIRED_BUILD = "dsh-0.1.1rc1-post-u8.30"
+RETIRED_SOURCE = "b6c8034ed638447aa1d0ddd82af9738df830bbdf"
 KEYS = {"schema_version", "build_id", "release_id", "release_descriptor_hash", "dockerfile", "inputs"}
 SOURCE_ROOTS = (
     "services/runtime-adapter/app", "services/gateway/app", "services/backend/app",
@@ -28,7 +30,8 @@ FIXED_INPUTS = (
     "services/mcp/Dockerfile", "services/mcp/package.json", "services/mcp/package-lock.json",
     "apps/frontend/Dockerfile", "apps/frontend/package.json", "apps/frontend/package-lock.json",
     "services/runtime-adapter/pyproject.toml", "services/runtime-adapter/requirements.candidate.lock",
-    "services/runtime-adapter/runtime/package.json", "services/runtime-adapter/runtime/package-lock.json",
+    "config/dsh/archive/dsh-0.1.1rc1/package.json.archive",
+    "config/dsh/archive/dsh-0.1.1rc1/package-lock.json.archive",
     "scripts/dsh/build_revision.py",
     "scripts/dsh/historical_inputs.py", "scripts/dsh/release.py",
     "scripts/ci/local-ci.sh", "compose.yml",
@@ -53,9 +56,11 @@ def digest(path):
 
 
 def selected_build_id(release):
+    if release == "dsh-0.1.1rc1":
+        return RETIRED_BUILD  # Historical identity only; never a current build.
     if release not in RELEASES:
         raise ValueError("unregistered release")
-    return release + "-post-u8.30"
+    return release + "-post-u8.33"
 
 
 def identity(build_id):
@@ -95,6 +100,8 @@ def inventory(release, dockerfile):
 
 def render(build_id):
     release, dockerfile = identity(build_id)
+    if release not in RELEASES:
+        raise ValueError("retired release cannot be rebuilt from current sources")
     if f"COPY config/dsh/builds/{build_id}.json /opt/byq/builds/build.identity.json" not in (ROOT / dockerfile).read_text():
         raise ValueError("Dockerfile must embed the exact selected build manifest")
     return {"schema_version": "byq-dsh-build.v1", "build_id": build_id, "release_id": release,
@@ -113,6 +120,16 @@ def validate(value):
 
 def check(build_id):
     identity(build_id)
+    if build_id == RETIRED_BUILD:
+        try:
+            from scripts.dsh.historical_inputs import read_blob
+        except ModuleNotFoundError:
+            from historical_inputs import read_blob
+        relative = f"config/dsh/builds/{build_id}.json"
+        archived = read_blob(RETIRED_SOURCE, relative)
+        if (ROOT / relative).read_bytes() != archived:
+            raise ValueError("retired build manifest changed")
+        return json.loads(archived)
     path = BUILDS / f"{build_id}.json"
     return validate(json.loads(path.read_text()))
 

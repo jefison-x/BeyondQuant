@@ -8,7 +8,7 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCKS = ("apps/frontend/package-lock.json", "services/mcp/package-lock.json",
-         "services/runtime-adapter/runtime/package-lock.json", "deploy/feedback-hub-cloudflare/package-lock.json")
+         "config/dsh/archive/dsh-0.1.1rc1/package-lock.json.archive", "deploy/feedback-hub-cloudflare/package-lock.json")
 REVIEWED = {"MIT", "MIT-0", "ISC", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "PSF-2.0",
             "Python-2.0", "0BSD", "BlueOak-1.0.0", "CC0-1.0", "MPL-2.0", "(MPL-2.0 OR Apache-2.0)",
             "MIT OR Apache-2.0", "LGPL-3.0-or-later", "Apache-2.0 AND LGPL-3.0-or-later",

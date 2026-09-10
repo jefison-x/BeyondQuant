@@ -12,7 +12,7 @@ import pytest
 from deepseek_harness import Notification
 
 import app.runtime as runtime_module
-from app.compat import Dsh011Compatibility
+from tests.legacy_011 import Dsh011Compatibility
 from app.identifiers import MAX_IDENTIFIER_LENGTH
 from app.runtime import ModelCredentialUnavailable, RuntimeAdapter, SessionConflict, SessionStatus
 

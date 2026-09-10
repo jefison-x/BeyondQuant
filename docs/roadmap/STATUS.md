@@ -92,6 +92,11 @@ F2 三类研究创建持久核对维护（本地验收完成）：ResearchTask/E
 完整本地 CI 30/30、真实 HTTP 超时/Gateway 重启及 Product API 桌面/手机验收通过。见[本切片记录](../evidence/post-u8-f2-research-watch/AUDIT.md)。
 不将本切片计作完整 F2、S3 或全接口审计完成；F6 已交付结论不变。
 
+DSH 旧基线退役维护：维护者已接受 [ADR-0069](../architecture/adr/ADR-0069-retire-dsh-011-build-lane.md)。
+日常构建和运行仅支持 0.1.2rc1，0.1.1rc1 仅保留历史制品、来源与验收证据；
+不再持续升级旧 npm 依赖。MCP Hono 4.13.7 与当前运行时整栈资格正在验证。
+本任务不推进 Product Phase，不关闭剩余 F2/S3 或 U8 长期稳定性观察。
+
 ## 生效中的 Accepted ADR
 
 Post-U8 交付授权（2026-09-08）：维护者明确允许新增独立构建身份、重新认证，并将当前

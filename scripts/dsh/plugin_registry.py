@@ -25,8 +25,8 @@ AGENT_PATH = REGISTRY_DIR / "agent-capabilities.json"
 TEMPLATE_PATH = ROOT / "plugins/dsh-byq/compositions/templates/byq-product-sdk.cordis.yml"
 OUTPUT_PATH = ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml"
 IDENTITY_PATH = ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.identity.json"
-MANIFEST_PATH = ROOT / "services/runtime-adapter/runtime/package.json"
-LOCK_PATH = ROOT / "services/runtime-adapter/runtime/package-lock.json"
+MANIFEST_PATH = ROOT / "config/dsh/archive/dsh-0.1.1rc1/package.json.archive"
+LOCK_PATH = ROOT / "config/dsh/archive/dsh-0.1.1rc1/package-lock.json.archive"
 # This builder owns the retained npm/old-release composition, not the promoted
 # bundled SDK patch. Its historical output must not drift with deployment choice.
 DEPLOYMENT_IDENTITY_PATH = ROOT / "config/dsh/releases/dsh-0.1.1rc1.json"

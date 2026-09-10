@@ -58,10 +58,14 @@ class DependencySecurityTests(unittest.TestCase):
         self.assertEqual(len(set(pytest_versions)), 1)
         self.assertGreaterEqual(_version_tuple(pytest_versions[0]), (9, 0, 3))
 
-    def test_runtime_qs_lock_clears_both_advisories(self):
-        lock = json.loads((ROOT / "services/runtime-adapter/runtime/package-lock.json").read_text())
-        version = lock["packages"]["node_modules/qs"]["version"]
-        self.assertGreaterEqual(_version_tuple(version), (6, 16, 0))
+    def test_supported_mcp_hono_is_explicit_and_patched(self):
+        manifest = json.loads((ROOT / "services/mcp/package.json").read_text())
+        lock = json.loads((ROOT / "services/mcp/package-lock.json").read_text())
+        version = lock["packages"]["node_modules/hono"]["version"]
+        self.assertEqual(manifest["dependencies"]["hono"], version)
+        self.assertEqual(lock["packages"][""]["dependencies"]["hono"], version)
+        self.assertGreaterEqual(_version_tuple(version), (4, 13, 7))
+
 
 
 if __name__ == "__main__":
