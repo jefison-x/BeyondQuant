@@ -48,7 +48,15 @@ test "$mounts" = "/var/lib/byq/dsh-sessions"
 
 echo "== Runtime Adapter filesystem permissions =="
 "${compose[@]}" exec -T runtime-adapter sh -c \
-  'test -w /var/lib/byq/dsh-sessions && test ! -w /app && test ! -w /opt/dsh-runtime && test ! -w /opt/byq'
+  'test -w /var/lib/byq/dsh-sessions && test ! -w /app && test ! -w /opt/byq'
+
+"${compose[@]}" exec -T runtime-adapter python3 - <<'PYCODE'
+import os
+from deepseek_harness_runtime import bundled_runtime_path
+runtime = bundled_runtime_path()
+assert runtime.is_file() and os.access(runtime, os.X_OK)
+assert not os.access(runtime, os.W_OK)
+PYCODE
 
 echo "== MCP contract and auth wall =="
 contract_workspace="$("${compose[@]}" exec -T backend python -c 'from tests.workspace_helpers import trusted_agent_context; print(trusted_agent_context("mcp-contract")["x-byq-workspace-id"])')"
@@ -231,8 +239,8 @@ base = "http://127.0.0.1:8400/internal/runtime"
 
 with urlopen("http://127.0.0.1:8400/readyz", timeout=20) as response:
     readiness = json.load(response)
-assert readiness["sdk"] == "deepseek-harness-sdk==0.1.1rc1"
-assert readiness["runtime_bin"] == "deepseek-harness-runtime-bin==0.1.1rc1"
+assert readiness["sdk"] == "deepseek-harness-sdk==0.1.2rc1"
+assert readiness["runtime_bin"] == "deepseek-harness-runtime-bin==0.1.2rc1"
 assert readiness["plugin_profile"] == "research"
 assert readiness["enabled_plugin_ids"] == ["compaction", "guard", "web-search"]
 assert readiness["composition_hash"].startswith("sha256:")

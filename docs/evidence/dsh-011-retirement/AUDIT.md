@@ -45,7 +45,10 @@ through BYQ. It does not patch the separately bundled DSH executable's dependenc
 - `.32`: 231 architecture/governance tests passed; image build succeeded. Full CI
   was intentionally cancelled (exit 143) during Backend regression to add the
   historical overlay guard. It is not a full-CI PASS.
-- `.33`: current-only build qualification in progress. Local and remote complete
+- `.33`: 232 architecture/governance tests passed; local and remote full CI were
+  intentionally cancelled to migrate the remaining smoke/browser assertions
+  from the retired SDK to the supported SDK. Not a full-CI PASS.
+- `.34`: current-only build qualification in progress. Local and remote complete
   CI, cleanup and delivery results will be recorded after completion.
 
 ## Boundaries
