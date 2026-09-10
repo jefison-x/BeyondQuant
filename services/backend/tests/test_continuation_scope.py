@@ -40,6 +40,20 @@ def test_background_scope_cannot_approve_or_change_goals(tool):
         store.close()
 
 
+def test_background_scope_allows_static_model_catalog_without_broad_context():
+    store, task, context, _, receipt = setup()
+    try:
+        call = dict(tool='byq_ml_capabilities', arguments={}, root_run_id='a'*32)
+        reply = authorize(store, receipt['reservation_id'], call, context)
+        assert reply['admitted'] is True and reply['task_id'] == task
+        row = store._fetch_one('SELECT continuation_blocked_reason FROM research_tasks WHERE task_id=:task', {'task': task})
+        assert row['continuation_blocked_reason'] is None
+        assert authorize(store, receipt['reservation_id'],
+            {**call, 'tool': 'byq_agent_context'}, context)['admitted'] is False
+    finally:
+        store.close()
+
+
 @pytest.mark.parametrize('padding', ['{}', ' {} ', '\t{}\n'])
 def test_scope_rejects_same_owner_other_task_and_cross_conversation(padding):
     store, task, context, _, receipt = setup()

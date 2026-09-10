@@ -103,9 +103,38 @@ Gateway 全量 217 项通过。首尾空白跨任务负例修复后，消费者/
 
 `.28` 去掉后台 `byq_agent_context` 准入，指令明确仅使用已注入身份及精确原任务读取；
 普通前台 context/inbox 不变，新增拒绝回归。没有对 Product API 或公开卡片合同放宽权限。
-最终全量 CI scope 为 `local-u7-f6-completion-28`，当前 RUNNING。
+中间全量 CI scope 为 `local-u7-f6-completion-28`，后续因真实模型暴露纯能力目录误拦而
+在 Backend suite 中主动停止（exit 143），未计作全量通过，清理及独立 verify 通过。
 baseline manifest：`sha256:38bbbbbd3b8e840241717292bcbf60dee409cdba33a0c7a9b9742a693726cd8f`；
 candidate manifest：`sha256:f0980d9fb0da4966f826220e4ffeb3479cbb9ff28cd88b2f525df8e71432b29f`。
+
+### 固定合成任务的真实模型验证
+
+隔离 `f6-live-28` 在 `.28` 当前源码上先通过 10 项真实进程预算测试（28.45 秒），
+再通过脚本 Provider 全链，随后只将独立 Runtime 切换到正常官方 Provider。
+真实密钥只经既有本机凭据读取后传入隔离 Runtime；不进入 CI、参数、Git、报告或生产域。
+纯合成行情 668 bars、2 symbols；新建独立合成用户和明确的 64,000,000 任务额度，
+固定目标要求比较已确认基线与本次 ML 回测、保存实际收益差及 validated 研究报告。
+
+真实 `deepseek-v4-flash` 在 Gateway 重启后用 **1 个后台回合**完成原任务
+`task_e2967895e2ff413fa444beaf157bc915`：1 次训练、1 次预测、2 次回测（含基线），
+validated `research_report` `artifact_b9a07adf414249f8942a6a18083394ba`，实际收益差校验通过。
+唯一派发与结算，保守额度 25,362,432，未确认预留 0；没有将脚本模型当作真实模型。
+期间 `byq_ml_capabilities` 纯静态目录被过严白名单拒绝一次，产生失败活动；模型仍完成原目标。
+`.29` 仅补齐该无业务数据目录的准入及回归测试，跨任务 context/inbox 禁令保留。
+这是一份固定合成目标的验证，不等于全研究语义/S3 或历史事故全量验收。
+`f6-live-28` 成功后自动清理，独立 verify 为零。
+
+最终构建 `.29` 全量 CI scope：`local-u7-f6-completion-29`，当前 RUNNING。
+baseline manifest：`sha256:5ae65640093c3c12df8ea336d4afed3102b7729165b6cdbcbd9177a41c0fb075`；
+candidate manifest：`sha256:3288185bdd789f4e530dc5f75ce22ca85366ac0b91045f451864a39f13f98741`。
+
+生产备份（仍未部署）：`baseline-20260910T005931Z`，逻辑 dump 2,291,767,925 bytes，
+SHA-256 `492485ae4966df733ee6eecabe31299bdba8e54467f7423eea941e1b86ff89e3`；
+隔离实际恢复 113 表、8 个关键表摘要与约束匹配，结果及清理 PASS。
+旧应用镜像/配置归档 `application-20260910T010404Z`，320,236,032 bytes，
+SHA-256 `a0fcaf26075c2d8066099319ace13fcca7a53e3e10fdee22c29f0092d3a0de7b`，权限 0600；
+位于已授权的私有备份根 `/home/jefison/backups/byq-dsh-u7`，不包含在 Git。
 
 ### 验收定位
 
@@ -119,7 +148,7 @@ candidate manifest：`sha256:f0980d9fb0da4966f826220e4ffeb3479cbb9ff28cd88b2f525
 | 模型回合与任务完成分离 | `f6-chain-verification.py` + `f6-chain-fixture.py` 核查持久领域对象与 validated 报告 |
 | 用户许可、重载、越权拒绝、撤销 | `real-product.spec.ts` 桌面/手机真实 Product API 流程 |
 | 完成状态、对比报告和额度可读 | `f6-chain.spec.ts` 桌面/手机；无外部请求及页面错误 |
-| 当前精确构建回归 | `.28` 全量 CI，尚待结果，不用上面的定向通过替代 |
+| 当前精确构建回归 | `.29` 全量 CI，尚待结果，不用上面的定向通过替代 |
 
 待补最终构建身份、完整 CI、浏览器视觉检查、关键模型资格、清理、PR/远端检查及部署结果。
 在这些证据就绪前维持 `QUALIFICATION_IN_PROGRESS`，不关闭 F6 或总整改计划。

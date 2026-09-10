@@ -10,7 +10,7 @@ TOOLS = frozenset({
     'byq_agent_roles', 'byq_agent_run_start', 'byq_agent_authorize',
     'byq_agent_audit', 'byq_agent_audit_get', 'byq_agent_approval_request', 'byq_agent_approval_get',
     'byq_research_get', 'byq_research_transition', 'byq_experiment_create', 'byq_artifact_create',
-    'byq_ml_training_get', 'byq_ml_prediction_create', 'byq_ml_prediction_get',
+    'byq_ml_capabilities', 'byq_ml_training_get', 'byq_ml_prediction_create', 'byq_ml_prediction_get',
     'byq_backtest_task_prepare', 'byq_backtest_task_create', 'byq_backtest_task_get',
     'byq_backtest_task_execute', 'byq_backtest_get', 'byq_backtest_analysis_get',
     'byq_signal_snapshot_get', 'byq_experiment_compare', 'byq_workflow_card_propose',
