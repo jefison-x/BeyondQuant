@@ -63,7 +63,7 @@ class DshReleaseTests(unittest.TestCase):
         release = MODULE.load_json(MODULE.RELEASE_ROOT / "dsh-0.1.1rc1.json")
         relative = "services/runtime-adapter/pyproject.toml"
         release["build_inputs"][relative] = "sha256:" + "0" * 64
-        with self.assertRaisesRegex(MODULE.ReleaseError, "build input drift"):
+        with self.assertRaisesRegex(MODULE.ReleaseError, "build input drift|missing build input"):
             MODULE.validate_release(release, verify_files=True)
 
         with tempfile.TemporaryDirectory() as directory:

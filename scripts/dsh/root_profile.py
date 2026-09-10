@@ -9,10 +9,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILES = {
-    "dsh-0.1.1rc1": (
-        "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
-        "plugins/dsh-byq/compositions/byq-product-sdk.identity.json",
-    ),
     "dsh-0.1.2rc1": (
         "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
         "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.identity.json",
@@ -29,15 +25,6 @@ def render(source: str, identity: dict, release: str) -> tuple[str, dict]:
     if len(matching) != 1 or "BYQ_ROOT_RUN_ID" in source or "X-BYQ-Root-Run-ID" in source:
         raise ValueError("root profile requires one unmodified generation header")
     source_hash = "sha256:" + hashlib.sha256(source.encode()).hexdigest()
-    if release == "dsh-0.1.1rc1":
-        # Registry v1 hashes canonical policy metadata plus the YAML body,
-        # excluding its three generated comment lines (not raw file bytes).
-        metadata = {key: value for key, value in identity.items() if key != "composition_hash"}
-        canonical = json.dumps(metadata, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-        if len(lines) < 3 or not lines[2].startswith("# composition-hash: "):
-            raise ValueError("source registry profile header mismatch")
-        body = "\n".join(lines[3:]) + "\n"
-        source_hash = "sha256:" + hashlib.sha256(canonical + b"\n" + body.encode()).hexdigest()
     if identity.get("composition_hash") != source_hash:
         raise ValueError("source profile identity mismatch")
     line = matching[0]

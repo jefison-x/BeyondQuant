@@ -37,23 +37,23 @@ def test_release_identity_matches_installed_metadata_and_fails_closed(monkeypatc
     identity = tmp_path / "release.json"
     identity.write_text(json.dumps({
         "schema_version": "dsh-deployment-identity.v1",
-        "default_release": "dsh-0.1.1rc1",
-        "python": {"sdk": "0.1.1rc1", "runtime_bin": "0.1.1rc1"},
+        "default_release": "dsh-0.1.2rc1",
+        "python": {"sdk": "0.1.2rc1", "runtime_bin": "0.1.2rc1"},
     }))
     monkeypatch.setenv("BYQ_DSH_RELEASE_IDENTITY", str(identity))
-    monkeypatch.setattr(runtime_module, "distribution_version", lambda _name: "0.1.1rc1")
+    monkeypatch.setattr(runtime_module, "distribution_version", lambda _name: "0.1.2rc1")
     readiness = RuntimeAdapter().readiness()
-    assert readiness["release_id"] == "dsh-0.1.1rc1"
+    assert readiness["release_id"] == "dsh-0.1.2rc1"
     assert readiness["release_identity"] == "matched"
     assert readiness["runtime_adapter"] == "ready"
 
     identity.write_text(json.dumps({
         "schema_version": "dsh-deployment-identity.v1",
-        "default_release": "dsh-0.1.2rc1",
-        "python": {"sdk": "0.1.2rc1", "runtime_bin": "0.1.2rc1"},
+        "default_release": "dsh-0.1.99rc1",
+        "python": {"sdk": "0.1.99rc1", "runtime_bin": "0.1.99rc1"},
     }))
     mismatch = RuntimeAdapter().readiness()
-    assert mismatch["release_id"] == "dsh-0.1.2rc1"
+    assert mismatch["release_id"] == "dsh-0.1.99rc1"
     assert mismatch["release_identity"] == "mismatch"
     assert mismatch["runtime_adapter"] == "release-identity-mismatch"
     assert RuntimeAdapter().operations_snapshot()["runtime"]["status"] == "release-identity-mismatch"

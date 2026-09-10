@@ -458,6 +458,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.command == "build":
+            _require(args.check, "retired 0.1.1 composition generator is verification-only")
             _require(not (args.profile and args.policy_file), "profile and managed policy are mutually exclusive")
             write_or_check(profile_name=args.profile, check=args.check, policy_path=args.policy_file,
                            output_path=args.output, identity_path=args.identity_output)

@@ -11,7 +11,7 @@ from scripts.dsh import release as releases
 
 class HistoricalInputTests(unittest.TestCase):
     def test_default_current_tree_check_still_rejects_historical_source_drift(self):
-        with self.assertRaisesRegex(releases.ReleaseError, "build input drift"):
+        with self.assertRaisesRegex(releases.ReleaseError, "build input drift|missing build input"):
             releases.load_all()
         with self.assertRaisesRegex(releases.ReleaseError, "cannot disable"):
             releases.load_all(verify_files=False, historical_inputs=True)

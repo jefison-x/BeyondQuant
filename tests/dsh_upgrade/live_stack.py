@@ -18,7 +18,7 @@ except ModuleNotFoundError:
     from scripts.dsh import build_revision
 
 ROOT = Path(__file__).resolve().parents[2]
-RELEASES = {"dsh-0.1.1rc1", "dsh-0.1.2rc1"}
+RELEASES = {"dsh-0.1.2rc1"}
 SERVICES = {"postgres", "backend", "mcp", "runtime-adapter", "gateway", "frontend", "fake-hub", "feedback-hub-relay"}
 LABEL = "org.beyondquant.u5-test-scope"
 
@@ -80,7 +80,7 @@ def manifest(scope: str, release: str, port: int, *, rehearsal_gate: str | None 
     postgres = service("postgres", environment={"POSTGRES_USER": "byq_app", "POSTGRES_PASSWORD": "u5-synthetic-db-only", "POSTGRES_DB": "byq_domain"})
     postgres.update(image="postgres:16-alpine", volumes=["postgres:/var/lib/postgresql/data"],
                     cap_drop=[], healthcheck={"test": ["CMD", "pg_isready", "-U", "byq_app", "-d", "byq_domain"], "interval": "3s", "timeout": "5s", "retries": 60})
-    policy = "/app/dsh-0.1.2rc1.web-evidence-provenance.json" if release.endswith("2rc1") else "/app/web-evidence-provenance.json"
+    policy = "/app/dsh-0.1.2rc1.web-evidence-provenance.json"
     backend = service("backend", "services/backend/Dockerfile", {
         "BYQ_DATABASE_URL": "postgresql+psycopg://byq_app:u5-synthetic-db-only@postgres:5432/byq_domain",
         "BYQ_BACKTEST_OBJECT_ROOT": "/var/lib/byq/domain/backtest-objects",
@@ -125,20 +125,17 @@ def manifest(scope: str, release: str, port: int, *, rehearsal_gate: str | None 
             member["volumes"].append({"type": "bind", "source": rehearsal_gate,
                                       "target": "/run/byq-admission", "read_only": True,
                                       "bind": {"create_host_path": False}})
-        # Keep compatibility preparation services stable while replacing only
-        # Runtime. Both releases retain disjoint homes in the synthetic volume.
+        # Keep the current runtime isolated in its qualified synthetic home.
         for member in (backend, mcp):
             member["environment"]["BYQ_WEB_EVIDENCE_PROVENANCE_POLICY"] = "/app/dsh-0.1.2rc1.web-evidence-provenance.json"
         runtime["environment"]["DSH_SESSION_ROOT"] = f"/var/lib/byq/dsh-sessions/{release}"
         runtime["image"] = f"{scope}-runtime-adapter-{release}:qualification"
     if promoted:
         result['x-byq-promoted'] = True
-        policy = ('/app/qualified-web-evidence-provenance.json' if release.endswith('2rc1')
-                  else '/app/qualified-rollback-web-evidence-provenance.json')
+        policy = '/app/qualified-web-evidence-provenance.json'
         for member in (backend, mcp):
             member['environment']['BYQ_WEB_EVIDENCE_PROVENANCE_POLICY'] = policy
-        backend['environment']['BYQ_PLUGIN_REGISTRY_PATH'] = (
-            '/app/plugin-registry/product-plugins.json' if release.endswith('2rc1') else '/app/plugin-registry/plugins.json')
+        backend['environment']['BYQ_PLUGIN_REGISTRY_PATH'] = '/app/plugin-registry/product-plugins.json'
     return result
 
 
@@ -178,15 +175,14 @@ def attest_promoted_files(path: Path) -> dict:
     if value.get('x-byq-promoted') is not True:
         raise ValueError('promoted synthetic stack required')
     release = value['x-byq-release']
-    target = release == 'dsh-0.1.2rc1'
-    policy = 'qualified-web-evidence-provenance.json' if target else 'qualified-rollback-web-evidence-provenance.json'
-    registry = 'config/dsh/generated/product-plugin-registry.json' if target else 'plugins/dsh-byq/registry/plugins.json'
-    identity = 'deployment.identity.json' if target else 'dsh-0.1.1rc1.identity.json'
+    policy = 'qualified-web-evidence-provenance.json'
+    registry = 'config/dsh/generated/product-plugin-registry.json'
+    identity = 'deployment.identity.json'
     files = [
         ('runtime-adapter', '/opt/byq/releases/deployment.identity.json', 'config/dsh/generated/' + identity),
         ('backend', '/app/' + policy, 'config/dsh/generated/' + policy),
         ('mcp', '/app/' + policy, 'config/dsh/generated/' + policy),
-        ('backend', '/app/plugin-registry/' + ('product-plugins.json' if target else 'plugins.json'), registry),
+        ('backend', '/app/plugin-registry/' + 'product-plugins.json', registry),
     ]
     result = {}
     for service, installed, source in files:

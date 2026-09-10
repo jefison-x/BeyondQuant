@@ -4,17 +4,15 @@ import pytest
 
 from deepseek_harness import Notification
 
-from tests.legacy_011 import Dsh011Compatibility
+from app.compat.dsh_012 import Dsh012Compatibility
 from app.normalization import NormalizationState, normalize_runtime_observation
 
 
-compatibility = Dsh011Compatibility()
+compatibility = Dsh012Compatibility()
 
 
-@pytest.mark.parametrize("family", ["dsh-0.1.1", "dsh-0.1.2"])
-def test_batched_tool_results_close_each_exact_activity(family: str) -> None:
-    adapter = (pytest.importorskip("app.compat.dsh_012").Dsh012Compatibility()
-               if family == "dsh-0.1.2" else Dsh011Compatibility())
+def test_batched_tool_results_close_each_exact_activity() -> None:
+    adapter = Dsh012Compatibility()
     state = NormalizationState()
 
     def project(kind: str, data: dict, sequence: int):

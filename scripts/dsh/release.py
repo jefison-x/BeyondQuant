@@ -270,8 +270,6 @@ def generated_outputs(*, historical_inputs: bool = False) -> dict[Path, str]:
         candidate_output_path(release_id): render_release(release_id, deployment, releases)
         for release_id in deployment["candidate_releases"]
     })
-    if deployment["default_release"] == "dsh-0.1.2rc1":
-        outputs[candidate_output_path("dsh-0.1.1rc1")] = render_release("dsh-0.1.1rc1", deployment, releases)
     return outputs
 
 

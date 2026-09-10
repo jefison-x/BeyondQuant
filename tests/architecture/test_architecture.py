@@ -315,7 +315,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("ports:", diagnostic)
 
     def test_runtime_image_keeps_application_and_config_root_owned(self) -> None:
-        dockerfile = (ROOT / "services/runtime-adapter/Dockerfile").read_text()
+        dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
         self.assertIn("chown -R byq:byq /var/lib/byq/dsh-sessions", dockerfile)
         self.assertNotIn("chown -R byq:byq /app", dockerfile)
         self.assertNotIn("chown -R byq:byq /opt/dsh-runtime", dockerfile)
@@ -1087,12 +1087,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
 
     def test_runtime_adapter_does_not_mount_application_source(self) -> None:
-        dockerfile = (ROOT / "services/runtime-adapter/Dockerfile").read_text()
+        dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
         copy_lines = [line for line in dockerfile.splitlines() if line.startswith("COPY")]
         self.assertNotIn("COPY .", dockerfile)
         self.assertIn("packages/contracts", "\n".join(copy_lines))
-        self.assertIn("BYQ_DSH_COMPOSITION_SOURCE=plugins/dsh-byq/compositions", dockerfile)
-        self.assertIn("COPY ${BYQ_DSH_COMPOSITION_SOURCE}", "\n".join(copy_lines))
+        self.assertIn("plugins/dsh-byq/profiles/root-scoped/dsh-0.1.2rc1", dockerfile)
+        self.assertIn("/opt/byq/profiles/byq-product.patch.yml", "\n".join(copy_lines))
         self.assertNotIn("services/backend", dockerfile)
         self.assertNotIn(".git", dockerfile)
 
@@ -1131,7 +1131,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("agent_audit", role_contract)
         self.assertNotIn("psycopg", role_contract.lower())
 
-        runtime_dockerfile = (ROOT / "services/runtime-adapter/Dockerfile").read_text()
+        runtime_dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
         self.assertIn("plugins/dsh-byq/skills /opt/dsh/bundles/dsh-byq/skills", runtime_dockerfile)
 
     def test_phase58_agent_actions_are_bounded_and_user_facing(self) -> None:
@@ -1186,7 +1186,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_trusted_time_is_split_between_dsh_clock_and_byq_market_facts(self) -> None:
         plugin = (ROOT / "plugins/dsh-byq/runtime/byq-runtime-time-context.js").read_text()
         composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
-        dockerfile = (ROOT / "services/runtime-adapter/Dockerfile").read_text()
+        dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
         verifier = (ROOT / "services/runtime-adapter/runtime/verify-time-context.mjs").read_text()
         backend = (ROOT / "services/backend/app/market_automation.py").read_text()
         mcp = (ROOT / "services/mcp/src/server.ts").read_text()
@@ -1199,8 +1199,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("不得据此推断交易日", plugin)
         self.assertIn("name: '../runtime/byq-runtime-time-context.js'", composition)
         self.assertIn("timezone: Asia/Shanghai", composition)
-        self.assertIn("COPY plugins/dsh-byq/runtime /opt/byq/runtime", dockerfile)
-        self.assertIn("node verify-time-context.mjs", dockerfile)
+        self.assertIn("plugins/dsh-byq/runtime/byq-runtime-time-context.js /opt/byq/runtime/", dockerfile)
+        self.assertIn("node --test /opt/byq/runtime/*.test.js", (ROOT / "scripts/ci/local-ci.sh").read_text())
         self.assertIn("renderContextSnapshot", verifier)
         self.assertIn('"market-session-context.v1"', backend)
         self.assertIn('"byq_market_session_context"', mcp)

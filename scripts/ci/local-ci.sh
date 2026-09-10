@@ -476,13 +476,18 @@ check_dsh_candidate() {
   fi
   printf '    candidate image identity -> tag=%s id=' "$candidate_image"
   docker image inspect "$candidate_image" --format '{{.Id}}' || { bad "candidate image identity"; return; }
+  if ! run_interruptible docker run --rm --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none "$candidate_image" \
+      python3 -c 'from pathlib import Path; assert not Path("/app/tests").exists(); assert not list(Path("/opt/byq/runtime").glob("*.test.js")); assert not Path("/app/app/compat/dsh_011.py").exists()'; then
+    bad "production runtime contains retired implementation or tests"; return
+  fi
   for volume in "$CI_CANDIDATE_VOL" "$CI_CANDIDATE_BENCH_VOL"; do
     docker volume create --label "byq.ci.scope=$BYQ_CI_SCOPE" "$volume" >/dev/null
   done
   common=(--rm --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET"
     -e BYQ_MCP_TOKEN=ci-mcp-test-only -e BYQ_MCP_URL="http://$CI_MCP_SERVER:8300/mcp/v1"
     -e BYQ_OWNER_PRINCIPAL=ci-candidate -e BYQ_ACTOR_PRINCIPAL=ci-candidate
-    -e BYQ_WORKSPACE_ID=ci-candidate -e PYTHONDONTWRITEBYTECODE=1)
+    -e BYQ_WORKSPACE_ID=ci-candidate -e PYTHONDONTWRITEBYTECODE=1
+    -v "$REPO_ROOT/services/runtime-adapter/tests:/app/tests:ro")
   # Compatibility unit fixtures explicitly exercise session mode; root-mode
   # tests opt into their independently verified profile. Real candidate
   # journeys below retain the image's actual root-turn default.
@@ -495,7 +500,8 @@ check_dsh_candidate() {
     bad "candidate complete unit and root wire suite"; return
   fi
   if ! run_interruptible docker run --rm --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none \
-      -e PYTHONDONTWRITEBYTECODE=1 -e BYQ_BUDGET_SEMANTICS_TEST=1 "$candidate_image" \
+      -e PYTHONDONTWRITEBYTECODE=1 -e BYQ_BUDGET_SEMANTICS_TEST=1 \
+      -v "$REPO_ROOT/services/runtime-adapter/tests:/app/tests:ro" "$candidate_image" \
       python3 -m pytest -q -p no:cacheprovider /app/tests/test_continuation_budget_process.py; then
     bad "candidate continuation budget and restart qualification"; return
   fi
@@ -648,10 +654,11 @@ check_f6_chain() {
   step "F6: candidate DSH to real MCP/ML/native-backtest continuation chain"
   local override="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/f6-compose.json"
   local original_compose="$COMPOSE_FILE"
-  F6_CANDIDATE_IMAGE="$(ci_image runtime-candidate)" python3 - "$override" <<'PYCODE'
+  F6_CANDIDATE_IMAGE="$(ci_image runtime-candidate)" F6_TESTS_SOURCE="$REPO_ROOT/services/runtime-adapter/tests" python3 - "$override" <<'PYCODE'
 import json, os, sys
 value = {'services': {
   'runtime-adapter': {'image': os.environ['F6_CANDIDATE_IMAGE'],
+    'volumes': [{'type': 'bind', 'source': os.environ['F6_TESTS_SOURCE'], 'target': '/app/tests', 'read_only': True}],
     'command': ['python3', '-m', 'tests.f6_synthetic_runtime'], 'environment': {
       'BYQ_F6_EXECUTOR_ENABLED': '1', 'BYQ_F6_SYNTHETIC_RUNTIME': '1', 'DEEPSEEK_API_KEY': 'f6-synthetic-only',
       'BYQ_DSH_COMPATIBILITY_RELEASE': 'dsh-0.1.2rc1', 'BYQ_DSH_PROCESS_OWNERSHIP': 'root-turn',
