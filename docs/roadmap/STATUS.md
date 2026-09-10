@@ -52,7 +52,7 @@
   ADR-0015 自动合并和进入下一阶段。维护者另行授权在当前本地环境使用既有凭据链执行必要的
   付费模型测试，并精确限制为合成测试用户、固定提示和 BYQ 测试上下文，不含生产数据、真实对话或密钥。
   本次 U7 生产部署授权已另行取得，不授权数据库回退、数据删除或正式 release/tag。
-  默认选择器及实际生产均为 0.1.2rc1；已认证兼容回滚基线为 0.1.1rc1，Product Phase 97 不变。
+  默认选择器及实际生产均为 0.1.2rc1；0.1.1rc1 按 ADR-0069 仅保留历史回滚制品，不再持续维护；Product Phase 97 不变。
 - Phase 82 已依据 ADR-0047 完成；验收证据位于 `docs/evidence/phase-82/`。
 - Phase 90 已依据 ADR-0049 完成；验收证据位于 `docs/evidence/phase-90/`。
 - Phase 91 已依据 ADR-0051 完成；验收证据位于 `docs/evidence/phase-91/`。
@@ -91,6 +91,12 @@ F2 三类研究创建持久核对维护（本地验收完成）：ResearchTask/E
 有限次数原键核对、重启保持预算及 Product 只读投影已实现；独立 `.30`
 完整本地 CI 30/30、真实 HTTP 超时/Gateway 重启及 Product API 桌面/手机验收通过。见[本切片记录](../evidence/post-u8-f2-research-watch/AUDIT.md)。
 不将本切片计作完整 F2、S3 或全接口审计完成；F6 已交付结论不变。
+
+DSH 旧基线退役维护：维护者已接受 [ADR-0069](../architecture/adr/ADR-0069-retire-dsh-011-build-lane.md)。
+日常构建和运行仅支持 0.1.2rc1，0.1.1rc1 仅保留历史制品、来源与验收证据；
+不再持续升级旧 npm 依赖。MCP Hono 4.13.7 与当前运行时整栈资格见
+[退役验收记录](../evidence/dsh-011-retirement/AUDIT.md)。
+本任务不推进 Product Phase，不关闭剩余 F2/S3 或 U8 长期稳定性观察。
 
 ## 生效中的 Accepted ADR
 

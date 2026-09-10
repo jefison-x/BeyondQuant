@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from app.compat.dsh_011 import Dsh011Compatibility
+from tests.legacy_011 import Dsh011Compatibility
 from app.compat.dsh_012 import Dsh012Compatibility
 
 

@@ -4,7 +4,7 @@ import pytest
 
 from deepseek_harness import Notification
 
-from app.compat import Dsh011Compatibility
+from tests.legacy_011 import Dsh011Compatibility
 from app.normalization import NormalizationState, normalize_runtime_observation
 
 

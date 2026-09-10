@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 from deepseek_harness import Notification
 
-from app.compat import Dsh011Compatibility
+from tests.legacy_011 import Dsh011Compatibility
 
 
 def notification(event_type: str, data: dict, *, session_id: str = "root") -> Notification:

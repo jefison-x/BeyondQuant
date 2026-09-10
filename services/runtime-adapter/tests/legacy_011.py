@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from deepseek_harness import DeepSeekHarness, DeepSeekHarnessConfig, Notification
 
-from .types import RuntimeObservation, RuntimeToolResult
+from app.compat.types import RuntimeObservation, RuntimeToolResult
 
 
 _SESSION_STATUSES = frozenset({

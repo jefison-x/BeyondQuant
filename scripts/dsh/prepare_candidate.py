@@ -20,8 +20,8 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RUNTIME_MANIFEST = REPO_ROOT / "services/runtime-adapter/runtime/package.json"
-RUNTIME_LOCK = REPO_ROOT / "services/runtime-adapter/runtime/package-lock.json"
+RUNTIME_MANIFEST = REPO_ROOT / "config/dsh/archive/dsh-0.1.1rc1/package.json.archive"
+RUNTIME_LOCK = REPO_ROOT / "config/dsh/archive/dsh-0.1.1rc1/package-lock.json.archive"
 DEEPSEEK_PACKAGE_PREFIX = "@deepseek-ai/"
 DSH_PACKAGE_PREFIX = f"{DEEPSEEK_PACKAGE_PREFIX}dsh-"
 REVIEWED_INSTALL_SCRIPTS = {

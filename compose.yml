@@ -96,10 +96,7 @@ services:
     restart: unless-stopped
     build:
       context: .
-      dockerfile: ${BYQ_DSH_RUNTIME_DOCKERFILE:-services/runtime-adapter/Dockerfile.u7-candidate}
-      args:
-        BYQ_DSH_COMPOSITION_SOURCE: ${BYQ_DSH_COMPOSITION_SOURCE:-plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml}
-        BYQ_DSH_IDENTITY_SOURCE: ${BYQ_DSH_IDENTITY_SOURCE:-plugins/dsh-byq/compositions/byq-product-sdk.identity.json}
+      dockerfile: ${BYQ_DSH_RUNTIME_DOCKERFILE:-services/runtime-adapter/Dockerfile.post-u8-candidate}
     environment:
       BYQ_F6_EXECUTOR_ENABLED: ${BYQ_F6_EXECUTOR_ENABLED:-0}
       BYQ_MCP_TOKEN: ${BYQ_MCP_TOKEN:?BYQ_MCP_TOKEN must be set}

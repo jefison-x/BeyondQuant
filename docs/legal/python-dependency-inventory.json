@@ -65,12 +65,12 @@
     {
       "source": "services/runtime-adapter/pyproject.toml",
       "group": "runtime",
-      "requirement": "deepseek-harness-runtime-bin==0.1.1rc1"
+      "requirement": "deepseek-harness-runtime-bin==0.1.2rc1"
     },
     {
       "source": "services/runtime-adapter/pyproject.toml",
       "group": "runtime",
-      "requirement": "deepseek-harness-sdk==0.1.1rc1"
+      "requirement": "deepseek-harness-sdk==0.1.2rc1"
     },
     {
       "source": "services/runtime-adapter/pyproject.toml",

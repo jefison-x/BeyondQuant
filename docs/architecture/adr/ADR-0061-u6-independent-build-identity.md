@@ -51,3 +51,10 @@ against their exact archived Git source and current inputs against a new complet
 manifest; missing history or current-source drift must fail closed. Historical
 qualification is not qualification of the new image. Report incomplete Post-U8
 business acceptance separately from build and deterministic test results.
+
+## Retirement amendment (ADR-0069, 2026-09-10)
+
+The maintainer accepted retiring the 0.1.1rc1 maintenance lane. New Post-U8 builds
+are generated for 0.1.2rc1 only. Previous dual-build records remain immutable;
+retired manifests are verified against their exact historical Git source and
+never certify current application inputs.

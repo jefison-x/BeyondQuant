@@ -129,3 +129,16 @@ docker compose up -d --no-deps frontend
 ```
 
 After deployment, verify the changed service, its public route, dependent health and host resources.
+
+## Supported DSH runtime (ADR-0069)
+
+Daily CI builds and executes only the exact official 0.1.2rc1 bundled runtime.
+The complete runtime suite, real MCP/delegate journeys, continuation budget checks,
+20-cycle lifecycle benchmark, F6 chain and Product browser journeys remain required
+for integration-risk changes. Runtime helper JavaScript tests run in the scoped
+MCP Node image; no old DSH npm runtime is installed to obtain Node.
+
+0.1.1rc1 release/build reports, license/provenance fixtures and historical event
+normalization fixtures remain readable. They are not supported execution targets.
+The retired npm manifests have `.archive` suffixes and cannot be installed or
+updated by Dependabot. Historical image hashes are not current-build qualification.

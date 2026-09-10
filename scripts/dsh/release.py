@@ -181,8 +181,9 @@ def validate_release(value: dict[str, Any], *, verify_files: bool) -> None:
         _require(isinstance(expected, str) and SHA256.fullmatch(expected) is not None,
                  "invalid build input SHA-256")
         path = (ROOT / relative).resolve()
-        _require(path.is_relative_to(ROOT.resolve()) and path.is_file(), f"missing build input: {relative}")
+        _require(path.is_relative_to(ROOT.resolve()), "build input path must be contained")
         if verify_files:
+            _require(path.is_file(), f"missing build input: {relative}")
             _require(digest(path) == expected, f"build input drift: {relative}")
     if carrier["kind"] == "npm-explicit-cli":
         _require(carrier.get("npm_version") == python["sdk"].replace("rc", "-rc."),

@@ -929,10 +929,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
         self.assertIn("--network-alias backend", local_ci)
         self.assertIn("ensure_ci_backend", local_ci)
-        self.assertIn(
+        self.assertNotIn(
             "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml:/opt/byq/compositions/byq-product-sdk.cordis.yml:ro",
             local_ci,
         )
+        self.assertIn("BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml", local_ci)
+        self.assertIn("Dockerfile.post-u8-candidate", local_ci)
         self.assertNotIn("CI_PG_NET=byq_product", local_ci)
         self.assertNotIn("npm run build >/tmp/byq-mcp-build.log 2>&1", local_ci)
 
@@ -1031,12 +1033,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             for path in (ROOT / "services/runtime-adapter").rglob("*.py")
         )
         self.assertIn("DeepSeekHarnessConfig", adapter)
-        self.assertIn("launch_args_override", adapter)
+        self.assertIn("dsh_bin=runtime_command[0]", adapter)
         self.assertNotIn("DeepSeekHarness()", adapter)
 
         pyproject = (ROOT / "services/runtime-adapter/pyproject.toml").read_text()
-        self.assertIn('"deepseek-harness-sdk==0.1.1rc1"', pyproject)
-        self.assertIn('"deepseek-harness-runtime-bin==0.1.1rc1"', pyproject)
+        self.assertIn('"deepseek-harness-sdk==0.1.2rc1"', pyproject)
+        self.assertIn('"deepseek-harness-runtime-bin==0.1.2rc1"', pyproject)
 
         composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
         self.assertIn("@deepseek-ai/dsh-sdk-jsonrpc-server", composition)
@@ -1050,7 +1052,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
 
         runtime_package = json.loads(
-            (ROOT / "services/runtime-adapter/runtime/package.json").read_text()
+            (ROOT / "config/dsh/archive/dsh-0.1.1rc1/package.json.archive").read_text()
         )
         for dependency in (
             "@deepseek-ai/dsh-agent-spine-demo",
@@ -1063,7 +1065,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             self.assertEqual(runtime_package["dependencies"][dependency], "0.1.1-rc.1")
 
         runtime_lock = json.loads(
-            (ROOT / "services/runtime-adapter/runtime/package-lock.json").read_text()
+            (ROOT / "config/dsh/archive/dsh-0.1.1rc1/package-lock.json.archive").read_text()
         )
         deepseek_lock_packages = {
             path.removeprefix("node_modules/"): metadata["version"]
@@ -1096,13 +1098,13 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_sdk_runtime_does_not_use_bundled_zero_config(self) -> None:
         adapter = (ROOT / "services/runtime-adapter/app/runtime.py").read_text()
-        compatibility = (ROOT / "services/runtime-adapter/app/compat/dsh_011.py").read_text()
+        compatibility = (ROOT / "services/runtime-adapter/app/compat/dsh_012.py").read_text()
         self.assertIn("runtime_command=self.runtime_command", adapter)
         self.assertIn("composition = self._composition", adapter)
         self.assertIn("composition=composition", adapter)
         self.assertIn("create_guard_patch(composition, session_root, continuation_budget)", adapter)
-        self.assertIn("launch_args_override=runtime_command", compatibility)
-        self.assertIn("cordis=str(composition)", compatibility)
+        self.assertIn("dsh_bin=runtime_command[0]", compatibility)
+        self.assertIn("patches=(str(patch),)", compatibility)
         self.assertNotIn("resolve_bundled_launch_args", adapter + compatibility)
 
     def test_runtime_adapter_does_not_bypass_mcp(self) -> None:
@@ -1411,7 +1413,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             if "notification.payload" in path.read_text()
         ]
 
-        expected = ["compat/dsh_011.py", "compat/dsh_012.py"]
+        expected = ["compat/dsh_012.py"]
         self.assertEqual(sdk_imports, expected)
         self.assertEqual(raw_payload_readers, expected)
 

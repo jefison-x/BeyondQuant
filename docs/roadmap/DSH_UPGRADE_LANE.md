@@ -1,5 +1,8 @@
 # DSH Upgrade Lane
 
+> Historical lane: ADR-0069 retires 0.1.1rc1 from current builds, CI execution and dependency updates.
+> The following records preserve the original qualification; current development supports 0.1.2rc1 only.
+
 Status: **QUALIFIED — `0.1.1rc1` / `0.1.1-rc.1` maintenance upgrade**
 
 2026-09-05 后续规划：[DSH 0.1.2rc1 升级与可维护性改造执行方案](DSH_012RC1_UPGRADE_PLAN.md)

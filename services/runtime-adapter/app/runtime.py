@@ -127,15 +127,14 @@ class RuntimeSession:
 class RuntimeAdapter:
     """Own one official DSH SDK subprocess per active BYQ session.
 
-    DSH 0.1.1-rc.1 has no prompt-cancel or per-session close. A dedicated
-    process makes hard cancellation and failure isolation explicit: hard
+    An owned process makes hard cancellation and failure isolation explicit: hard
     cancel closes the owned process, while soft cancel marks only the current
     run and resets to idle when that run settles.
     """
 
     def __init__(self, compatibility: RuntimeCompatibility | None = None) -> None:
         self._compatibility = compatibility or compatibility_for_release(
-            os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-0.1.1rc1")
+            os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-0.1.2rc1")
         )
         self._sessions: dict[str, RuntimeSession] = {}
         self._lock = threading.RLock()
@@ -143,13 +142,13 @@ class RuntimeAdapter:
         self._composition = Path(
             os.environ.get(
                 "BYQ_DSH_COMPOSITION",
-                "/opt/byq/compositions/byq-product-sdk.cordis.yml",
+                "/opt/byq/profiles/byq-product.patch.yml",
             )
         )
         self._composition_identity = Path(
             os.environ.get(
                 "BYQ_DSH_COMPOSITION_IDENTITY",
-                "/opt/byq/compositions/byq-product-sdk.identity.json",
+                "/opt/byq/profiles/byq-product.identity.json",
             )
         )
         self._release_identity = Path(

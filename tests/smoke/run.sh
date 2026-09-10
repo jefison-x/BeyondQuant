@@ -48,13 +48,23 @@ test "$mounts" = "/var/lib/byq/dsh-sessions"
 
 echo "== Runtime Adapter filesystem permissions =="
 "${compose[@]}" exec -T runtime-adapter sh -c \
-  'test -w /var/lib/byq/dsh-sessions && test ! -w /app && test ! -w /opt/dsh-runtime && test ! -w /opt/byq'
+  'test -w /var/lib/byq/dsh-sessions && test ! -w /app && test ! -w /opt/byq'
+
+"${compose[@]}" exec -T runtime-adapter python3 - <<'PYCODE'
+import os
+from deepseek_harness_runtime import bundled_runtime_path
+runtime = bundled_runtime_path()
+assert runtime.is_file() and os.access(runtime, os.X_OK)
+assert not os.access(runtime, os.W_OK)
+PYCODE
 
 echo "== MCP contract and auth wall =="
 contract_workspace="$("${compose[@]}" exec -T backend python -c 'from tests.workspace_helpers import trusted_agent_context; print(trusted_agent_context("mcp-contract")["x-byq-workspace-id"])')"
 "${compose[@]}" exec -T \
   -e BYQ_MCP_CONTRACT_OWNER=mcp-contract \
-  -e BYQ_MCP_CONTRACT_WORKSPACE="$contract_workspace" mcp npm test
+  -e BYQ_MCP_CONTRACT_WORKSPACE="$contract_workspace" \
+  -e BYQ_MCP_CONTRACT_WEB_PLUGIN_VERSION=0.1.2-rc.1 \
+  -e BYQ_EXPECTED_WEB_EVIDENCE_PRODUCER=0.1.2-rc.1 mcp npm test
 "${compose[@]}" exec -T mcp node --input-type=module -e \
   "const r=await fetch('http://127.0.0.1:8300/mcp/v1',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}); if(r.status!==401) process.exit(1);"
 
@@ -231,9 +241,9 @@ base = "http://127.0.0.1:8400/internal/runtime"
 
 with urlopen("http://127.0.0.1:8400/readyz", timeout=20) as response:
     readiness = json.load(response)
-assert readiness["sdk"] == "deepseek-harness-sdk==0.1.1rc1"
-assert readiness["runtime_bin"] == "deepseek-harness-runtime-bin==0.1.1rc1"
-assert readiness["plugin_profile"] == "research"
+assert readiness["sdk"] == "deepseek-harness-sdk==0.1.2rc1"
+assert readiness["runtime_bin"] == "deepseek-harness-runtime-bin==0.1.2rc1"
+assert readiness["plugin_profile"] == "byq-product-candidate"
 assert readiness["enabled_plugin_ids"] == ["compaction", "guard", "web-search"]
 assert readiness["composition_hash"].startswith("sha256:")
 serialized_readiness = json.dumps(readiness).lower()
@@ -285,7 +295,7 @@ print(json.dumps({"created": created, "prompt_status": prompt_status, "cancelled
 PY
 
 echo "== owned DSH child cleanup =="
-if docker top "$runtime_id" -eo pid,args | grep -E 'dsh-jsonrpc-agent|packaged-bin.js|/lib/bin.js'; then
+if docker top "$runtime_id" -eo pid,args | grep -E 'deepseek-harness-sdk-runtime-linux-x64|dsh-jsonrpc-agent|packaged-bin.js|/lib/bin.js'; then
   echo "Released session left an owned DSH runtime process behind" >&2
   exit 1
 fi
