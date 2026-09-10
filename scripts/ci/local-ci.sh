@@ -297,8 +297,6 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_GITHUB_TOKEN="" BYQ_FEEDBACK_GITHUB_APP_ID="" BYQ_FEEDBACK_GITHUB_REPOSITORY=""
   export BYQ_FEEDBACK_GITHUB_INSTALLATION_ID="" BYQ_FEEDBACK_GITHUB_APP_PRIVATE_KEY_FILE=""
   export BYQ_FEEDBACK_HUB_URL=""
-  export BYQ_DSH_COMPOSITION_SOURCE=plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml
-  export BYQ_DSH_IDENTITY_SOURCE=plugins/dsh-byq/compositions/byq-product-sdk.identity.json
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
   export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-candidate
@@ -458,7 +456,6 @@ check_runtime() {
   if run_interruptible docker run --rm --name "$CI_RUNTIME_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/runtime-adapter:/app" \
       -v "$REPO_ROOT/packages:/app/packages" -w /app \
-      -v "$REPO_ROOT/plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml:/opt/byq/compositions/byq-product-sdk.cordis.yml:ro" \
       -v "$REPO_ROOT/plugins/dsh-byq/runtime:/opt/byq/runtime:ro" \
       -v "$REPO_ROOT/plugins/dsh-byq/skills:/opt/dsh/bundles/dsh-byq/skills:ro" \
       -e BYQ_DSH_PROCESS_OWNERSHIP=session \

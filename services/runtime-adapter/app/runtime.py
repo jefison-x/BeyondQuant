@@ -127,8 +127,7 @@ class RuntimeSession:
 class RuntimeAdapter:
     """Own one official DSH SDK subprocess per active BYQ session.
 
-    DSH 0.1.1-rc.1 has no prompt-cancel or per-session close. A dedicated
-    process makes hard cancellation and failure isolation explicit: hard
+    An owned process makes hard cancellation and failure isolation explicit: hard
     cancel closes the owned process, while soft cancel marks only the current
     run and resets to idle when that run settles.
     """

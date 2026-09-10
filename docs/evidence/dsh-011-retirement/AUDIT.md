@@ -48,7 +48,12 @@ through BYQ. It does not patch the separately bundled DSH executable's dependenc
 - `.33`: 232 architecture/governance tests passed; local and remote full CI were
   intentionally cancelled to migrate the remaining smoke/browser assertions
   from the retired SDK to the supported SDK. Not a full-CI PASS.
-- `.34`: current-only build qualification submitted in
+- `.34`: full local CI 30 PASS / 1 FAIL. The smoke used the correct current
+  web-evidence producer, but its MCP contract invocation still defaulted to
+  expecting the retired producer. The explicit smoke expectation is corrected
+  to 0.1.2-rc.1; historical provenance tests remain separate. F6 chain and all
+  13 real Product API browser cases passed in this run.
+- `.35`: current-only build qualification submitted in
   [PR #273](https://github.com/jefison-x/BeyondQuant/pull/273). Final local CI,
   remote exact-head checks, cleanup and delivery results are recorded on that PR;
   this source record does not infer success from creating a manifest or opening a PR.
