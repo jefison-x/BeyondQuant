@@ -44,6 +44,26 @@ def verified(path):
     return manifest
 
 
+def verify_pulled_image(image, inspection, remote):
+    """Bind the pulled manifest and its config across Docker image stores.
+
+    Classic store Id is the config digest; containerd store Id is the target
+    manifest digest. Neither may be treated as an interchangeable free-form ID.
+    """
+    manifest_digest = image['ref'].split('@', 1)[1]
+    if (remote.get('config', {}).get('digest') != image['image_id']
+            or image['ref'] not in inspection.get('RepoDigests', [])
+            or inspection.get('Os') != 'linux' or inspection.get('Architecture') != 'amd64'):
+        raise ValueError('pulled manifest/config/platform differs from qualified image')
+    actual = inspection.get('Id')
+    if actual == image['image_id']:
+        return
+    if (actual == manifest_digest
+            and inspection.get('Descriptor', {}).get('digest') == manifest_digest):
+        return
+    raise ValueError('unbound local image identity')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('action', choices=('overlay', 'promote'))
@@ -64,9 +84,11 @@ def main():
         for name in services:
             image = manifest['images'][name]
             subprocess.run(['docker', 'pull', image['ref']], check=True)
-            actual = subprocess.check_output(['docker', 'image', 'inspect', image['ref'], '--format', '{{.Id}}'], text=True).strip()
-            if actual != image['image_id']:
-                raise ValueError('registry image config differs from qualified image')
+            inspection = json.loads(subprocess.check_output(
+                ['docker', 'image', 'inspect', image['ref']], text=True))[0]
+            remote = json.loads(subprocess.check_output(
+                ['docker', 'manifest', 'inspect', image['ref']], text=True))
+            verify_pulled_image(image, inspection, remote)
         with args.output.open('x') as output:
             json.dump(overlay, output, indent=2)
             output.write('\n')

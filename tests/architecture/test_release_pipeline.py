@@ -161,3 +161,22 @@ class ReleasePipelineTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'different run or future attempt'):
                         images.publish(directory, 'none')
                     docker.assert_not_called()
+
+    def test_pull_identity_supports_classic_and_containerd_with_exact_manifest_binding(self):
+        image = fixture()['images']['frontend']
+        remote = {'config': {'digest': image['image_id']}}
+        local = {'Id': image['image_id'], 'RepoDigests': [image['ref']],
+                 'Architecture': 'amd64', 'Os': 'linux'}
+        manifest.verify_pulled_image(image, local, remote)
+        local['Id'] = image['ref'].split('@')[1]
+        local['Descriptor'] = {'digest': local['Id']}
+        manifest.verify_pulled_image(image, local, remote)
+        for key, value in [('Id', 'sha256:' + '0' * 64), ('RepoDigests', []),
+                           ('Descriptor', {'digest': 'sha256:' + '0' * 64}),
+                           ('Architecture', 'arm64')]:
+            changed = copy.deepcopy(local)
+            changed[key] = value
+            with self.assertRaises(ValueError):
+                manifest.verify_pulled_image(image, changed, remote)
+        with self.assertRaises(ValueError):
+            manifest.verify_pulled_image(image, local, {'config': {'digest': 'sha256:' + '0' * 64}})

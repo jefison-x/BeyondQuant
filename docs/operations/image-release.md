@@ -66,3 +66,7 @@ python3 scripts/release/manifest.py overlay \
 
 缓存采用服务级 GHA v2 `mode=min`，通过平台配额与逐出限制总占用，不提高付费额度。
 缓存失效仅导致重建；测试范围和制品验证不可省略。时间以 Actions 实测为准，首轮冷缓存会更慢。
+
+Docker classic store 的 `Id` 是 config digest，containerd store 的 `Id` 是 manifest digest。
+配置生成同时检查注册表 config、拉取后的精确 RepoDigest、平台及 store 对应的 ID/Descriptor；
+不因 Docker 29 的默认 store 改变而误报，也不能仅接受任意一种 SHA 字符串。
