@@ -21,6 +21,10 @@
   取消根/子默认总时长硬终止，新增15分钟检查，新后台期限随许可最长24小时；旧许可/预算/取消保留。
   [执行与验收记录](LONG_RESEARCH_EXECUTION_CHANGE.md)独立记录本地验证，生产不由此自动更新。
 - 下一 Product 阶段：**未授权**。必须由维护者明确选择并授权，且继续遵守一阶段一工作树/Draft PR 的合并门禁。
+- 版本规划：维护者已接受 [ADR-0071](../architecture/adr/ADR-0071-v1-machine-learning-release-plan.md) 与
+  [0.9.x → 1.0 路线](VERSION_PLAN.md)。1.0 须在约定主流机器学习模块及研究闭环开发、运行稳定后发布，
+  包括 HIST 的历史关系资格和最终候选至少14天观察；仅当前整改完成不足以发布1.0。
+  本次仅规划，不开启新 Product Phase，不改现有版本号或运行能力。
 - 维护执行：[DSH 0.1.2rc1 升级方案](DSH_012RC1_UPGRADE_PLAN.md) 的 U0 已 `VERIFIED`，维护者于
   2026-09-06 接受 ADR-0058 和官方 matching wheel bundled executable 路线；U0 已通过 PR #250
   按 ADR-0015 squash auto-merge。U1 的集中 release identity、候选物料与隔离验证已完成；U2 的可信

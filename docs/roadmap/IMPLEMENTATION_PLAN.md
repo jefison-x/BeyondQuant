@@ -14,6 +14,14 @@
 
 所有 phases 遵循 `docs/DEVELOPMENT_WORKFLOW.md`：只执行 `STATUS.md` 指定的 next phase；每 phase 使用 isolated worktree/branch/PR；contract/test 优先；保持 Product/Agent/Quant/Data/Engineering boundaries；CI 与 evidence 完成后才进入 merge gate。
 
+## 1.0 版本规划（Accepted planning baseline）
+
+维护者于2026-09-11接受 [ADR-0071](../architecture/adr/ADR-0071-v1-machine-learning-release-plan.md)。
+[版本里程碑](VERSION_PLAN.md)、[模块支持矩阵](V1_ML_SUPPORT_MATRIX.md) 和
+[稳定性发布门槛](V1_RELEASE_ACCEPTANCE.md) 定义后续0.x至1.0范围。
+它们补充历史Phase计划，不把历史RC开放结论视为当前1.0可发布，也不预授权新阶段。
+新增模型、GPU、有限调参、HIST和Worker边界仍须具名实施ADR及STATUS下一阶段授权；Phase97保持完成。
+
 ## Phase 6 — Runtime seam、ADR-0003 与 development framework
 
 - **目标/范围**：验证 Gateway → Runtime Adapter → official DSH SDK → explicit DSH runtime seam；研究 official npm/PyPI rc.6；评估 Options A/B/C 并接受 ADR-0003；实现 Python/FastAPI Runtime Adapter 的 keyless initialize、MCP startup、lifecycle、normalization、internal SSE prototype 与最小 `WorkflowTraceEvent`；补 architecture/unit/contract/smoke CI 和 workflow docs。
