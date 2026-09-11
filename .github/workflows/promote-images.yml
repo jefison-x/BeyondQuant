@@ -1,0 +1,51 @@
+name: BeyondQuant Promote Images
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Release Images run containing the attested manifest
+        type: string
+        required: true
+      tag:
+        description: Explicit authorized version (vX.Y.Z or vX.Y.Z-rc.N)
+        type: string
+        required: true
+concurrency:
+  group: byq-release-images
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  promote:
+    if: github.ref == 'refs/heads/main' && github.repository == 'jefison-x/BeyondQuant'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - name: Download the explicit release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RUN: ${{ inputs.run_id }}
+        run: |
+          [[ "$RELEASE_RUN" =~ ^[0-9]+$ ]]
+          gh run download "$RELEASE_RUN" --repo "$GITHUB_REPOSITORY" --name release-manifest --dir release-manifest
+      - name: Authenticate registry
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Verify provenance and promote the same digests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 scripts/release/manifest.py promote --manifest release-manifest/manifest.json --tag="$RELEASE_TAG"
+      - name: Registry logout
+        if: always()
+        run: docker logout ghcr.io

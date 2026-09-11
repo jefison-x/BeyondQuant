@@ -42,7 +42,7 @@ source of truth and has architecture tests for representative routes.
 - A merge to `main` does not repeat the same full suite; nightly Full detects cross-change drift.
 - Full CI remains available through `workflow_dispatch` and is mandatory for release candidates.
 - A failing selected check is a failing required check. Selection may not hide an assertion failure.
-- Every PR (including same-repository), nightly and manual run uses a standard ephemeral GitHub-hosted
+- Every PR (including same-repository), nightly and manual test run uses a standard ephemeral GitHub-hosted
   ubuntu-24.04 VM with read-only token and no production secrets/network. No self-hosted lane remains;
   the production runner registration must be revoked before visibility changes. Do not use `pull_request_target`.
   Billing/approval/runner unavailability means NOT_RUN, not pass. Runner access restrictions must be
@@ -77,7 +77,7 @@ These are targets, not measured hosted guarantees. Hosted runs record actual mem
 Docker build concurrency is limited to two, Node 22 and Python 3.13 are installed explicitly, and browser
 OS dependencies are installed. Do not remove suites or reconnect production to meet timing targets.
 Actions use their current Node 24-based v7 releases, pinned to verified full commit SHA; setup-node automatic
-package-manager caching is disabled because this workflow does not require a shared dependency cache.
+package-manager caching is disabled; the explicit npm cache uses the checked-in lockfiles.
 Gitleaks 8.30.1 is checksum-verified and scans new reachable history
 with full redaction; initial complete-history review is separate publication evidence. Unknown findings block.
 Standard public-repository runners have free execution minutes; larger runners, artifacts and caches have
@@ -121,13 +121,8 @@ scripts/ci/local-ci.sh --base=origin/main --with-e2e --auto-smoke
 scripts/ci/local-ci.sh --base=origin/main --all --with-e2e --with-smoke
 ```
 
-Component deployment must not rebuild or restart its dependency chain. For a frontend-only release:
-
-```bash
-docker compose build frontend
-docker compose up -d --no-deps frontend
-```
-
+Component deployment uses the verified digest overlay from [the image release runbook](image-release.md).
+Only selected services restart using `--no-deps --no-build`; do not rebuild images on the production host.
 After deployment, verify the changed service, its public route, dependent health and host resources.
 
 ## Supported DSH runtime (ADR-0069)
@@ -142,3 +137,14 @@ MCP Node image; no old DSH npm runtime is installed to obtain Node.
 normalization fixtures remain readable. They are not supported execution targets.
 The retired npm manifests have `.archive` suffixes and cannot be installed or
 updated by Dependabot. Historical image hashes are not current-build qualification.
+
+## ADR-0070 execution amendment
+
+[ADR-0070](../architecture/adr/ADR-0070-hosted-ci-and-image-release.md) governs the current implementation.
+Local default is `make dev-check` plus necessary targeted tests, not a duplicate full CI.
+Hosted component lanes execute in parallel; integration owns real-process qualification and Product browser flows.
+`local-ci` aggregates plan and every matrix lane, retaining existing required check names.
+Node dependency caching is now explicitly enabled with lockfile keys. Buildx uses per-service GHA v2 min caches,
+linux/amd64 and at most two concurrent build operations; only frontend/integration install browser dependencies.
+Release's separate trusted-main publisher may upload tested image archives, SPDX SBOMs and attested manifests;
+PR jobs retain the original log-only upload boundary. See [image release runbook](image-release.md).

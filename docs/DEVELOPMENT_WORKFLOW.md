@@ -37,7 +37,8 @@ AGENTS 为入口，ARCHITECTURE 定义持久边界，Accepted ADR 定义具名�
    下创建隔离 worktree 和 feature branch，运行 `python3 scripts/ci/verify-worktree.py <worktree>`。
    所有实现修改必须在其中完成。无权限时申请适当目录权限，不能自行把整个 /tmp 当作根。
 5. 实现满足当前 Phase 的最小 contract-first 变更。不得修改旧 Community 仓库。
-6. 按 ci-policy 运行所需 architecture test；规范修改必须运行。
+6. 依据 ADR-0070，本地先运行 `make dev-check` 和必要定向测试；以下完整套件可以由远端 PR CI 执行，
+   不要求本地和 GitHub 重复。规范改动的架构测试须有真实执行证据。按 ci-policy 运行所需 architecture test；规范修改必须运行。
 7. 运行受影响组件完整 unit test。
 8. 运行受影响组件完整 contract test 和 build。
 9. integration-risk 才运行无密钥 smoke/integration/browser；专项验收要求更严格时不能降低。

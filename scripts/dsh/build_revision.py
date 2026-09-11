@@ -22,7 +22,7 @@ SOURCE_ROOTS = (
     "services/gateway/tests", "services/backend/tests", "services/mcp/tests",
     "apps/frontend/tests",
     "workers", "services/signal-sandbox", "infra/postgres/init",
-    "scripts", "tests",
+    "scripts", "tests", ".github/workflows",
 )
 FIXED_INPUTS = (
     "services/gateway/Dockerfile", "services/gateway/pyproject.toml",
@@ -60,7 +60,7 @@ def selected_build_id(release):
         return RETIRED_BUILD  # Historical identity only; never a current build.
     if release not in RELEASES:
         raise ValueError("unregistered release")
-    return release + "-post-u8.42"
+    return release + "-post-u8.46"
 
 
 def identity(build_id):

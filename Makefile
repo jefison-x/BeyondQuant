@@ -33,3 +33,8 @@ dsh-config:
 
 local-ci:
 	./scripts/ci/local-ci.sh
+
+.PHONY: dev-check
+# Lightweight local feedback; complete suites execute in hosted PR CI.
+dev-check:
+	python3 scripts/ci/dev-check.py
