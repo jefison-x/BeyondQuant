@@ -1,3 +1,4 @@
+import { safeRequestValidation } from "./request-validation.js";
 import type { PageBudgetDecision } from "./page-budget.js";
 
 import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
@@ -58,7 +59,9 @@ async function requestBacktest(
     }
     if (!response.ok) {
       return result(
-        { service: "beyondquant-mcp", status: "error", backend: { status: errorStatus(response.status), http_status: response.status } },
+        { service: "beyondquant-mcp", status: "error", backend: { status: errorStatus(response.status), http_status: response.status,
+          ...(response.status === 422 && safeRequestValidation(payload)
+            ? { validation: safeRequestValidation(payload) } : {}) } },
         true,
       );
     }

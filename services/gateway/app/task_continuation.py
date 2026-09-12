@@ -4,13 +4,16 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
+import math
 from pathlib import Path
 
 
 class TaskContinuationDelivery:
-    def __init__(self, root: Path, consume, *, reconcile=None):
+    def __init__(self, root: Path, consume, *, reconcile=None, now=time.time):
         self.root, self.consume = Path(root), consume
         self.reconcile = reconcile
+        self.now = now
         self.stop = threading.Event()
         self.thread = None
         self.cursor = ''
@@ -35,16 +38,46 @@ class TaskContinuationDelivery:
                 if set(context) != {'session_id', 'trace_id', 'conversation_id', 'workspace_id', 'owner'}:
                     continue
                 if self.reconcile is not None:
-                    try:
-                        self.reconcile(context)
-                    except Exception:
-                        pass
+                    self._reconcile_with_backoff(path, context)
                 if enabled:
                     self.consume(context)
             except Exception:
                 # The Backend owns every intent/uncertain liability. A transport
                 # failure never fabricates a receipt or retries a model write.
                 continue
+
+    def _reconcile_with_backoff(self, path, context):
+        # A failed check is never evidence that the underlying write is absent.
+        # Keep the lifecycle liability and retry, independently of F6 dispatch.
+        state_path = path.with_suffix('.receipt-backoff.json')
+        now, attempts = self.now(), 0
+        try:
+            if state_path.stat().st_size <= 4096:
+                state = json.loads(state_path.read_text())
+                if isinstance(state, dict) and state.get('context') == context:
+                    attempts = max(0, min(7, int(state['attempts'])))
+                    retry_at = float(state['retry_at'])
+                    if math.isfinite(retry_at) and now < retry_at <= now + 300:
+                        return
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
+        try:
+            self.reconcile(context)
+        except Exception:
+            attempts = min(7, attempts + 1)
+            state = dict(context=context, attempts=attempts,
+                         retry_at=now + min(300, 30 * 2 ** (attempts - 1)))
+            temporary = state_path.with_suffix('.tmp')
+            try:
+                temporary.write_text(json.dumps(state))
+                os.replace(temporary, state_path)
+            except OSError:
+                pass
+        else:
+            try:
+                state_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def start(self):
         if self.thread is not None or (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1' and self.reconcile is None):

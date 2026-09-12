@@ -845,7 +845,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_agent_run_start",
     {
-      description: "Register an owner-scoped AgentRun. pending_binding cannot authorize actions. For pending or unknown outcomes query the ORIGINAL idempotency_key with receipt_only=true; never mint a replacement key or assume success.",
+      description: "Register an owner-scoped AgentRun. parent_run_id is only for delegation from an active parent in this current root/session/generation; never reuse a completed run from an earlier turn. pending_binding cannot authorize actions. For pending or unknown outcomes query the ORIGINAL idempotency_key with receipt_only=true; never mint a replacement key or assume success.",
       inputSchema: {
         role_id: z.enum(["quant_orchestrator", "market_researcher", "factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher"]),
         parent_run_id: z.string().regex(/^agent_run_[0-9a-f]{32}$/).optional(),
@@ -894,7 +894,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_agent_approval_request",
     {
-      description: "Create a pending BYQ human approval for a consequential agent action.",
+      description: "Create a pending BYQ human approval for a consequential agent action. Strategy approval requires resource_type=strategy_version; ML strategy approval requires ml_strategy_version; feedback submission requires product_feedback. Use the exact resource ID, never generic artifact.",
       inputSchema: {
         run_id: z.string().regex(/^agent_run_[0-9a-f]{32}$/),
         action: z.string(),
@@ -1322,7 +1322,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_research_get",
     {
-      description: "Read one BYQ research entity by entity_id, inspect its durable submission watch by watch_id, OR reconcile a lost creation receipt with its original idempotency_key. Experiment/Artifact key lookup requires the original task_id. Choose exactly one identity. Missing receipt is outcome_unknown, never permission to create again.",
+      description: "Read one BYQ research entity by entity_id, inspect its durable submission watch by watch_id, OR reconcile a lost creation receipt with its original idempotency_key. Experiment/Artifact key lookup requires the original task_id. Choose exactly one identity. For entity_id or watch_id omit task_id; task_id is only for Experiment/Artifact idempotency_key lookup. Missing receipt is outcome_unknown, never permission to create again.",
       inputSchema: {
         entity_type: z.enum(["research_task", "experiment", "artifact"]),
         entity_id: z.string().min(1).optional(),
@@ -1336,7 +1336,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_research_transition",
     {
-      description: "Persist an owner-scoped research transition and optional task checkpoint. Keep exact task, stage, linked objects, next action and blocker across model turns. Task completion requires validated same-task evidence and no unfinished domain jobs. Typed domain artifacts require their dedicated producer, not generic validation.",
+      description: "Persist an owner-scoped research transition and optional task checkpoint. Task/Experiment statuses are planned, running, completed, failed, cancelled; blocked belongs to progress.stage, not target_status. Keep exact task, stage, linked objects, next action and blocker across model turns. Task completion requires validated same-task evidence and no unfinished domain jobs. Typed domain artifacts require their dedicated producer, not generic validation.",
       inputSchema: {
         entity_type: z.enum(["research_task", "experiment", "artifact"]),
         entity_id: z.string(),
@@ -1357,7 +1357,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_experiment_create",
     {
-      description: "Create a durable Experiment with required data provenance sources.",
+      description: "Create a durable Experiment. input_snapshot.sources must be a non-empty array of objects with provider, endpoint and request_fingerprint from real data provenance; do not fabricate sources.",
       inputSchema: {
         task_id: z.string(),
         name: z.string(),

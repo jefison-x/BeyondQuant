@@ -274,3 +274,20 @@ const legacyRead = await fetchByqResearchLookup("http://backend:8000", {
   return new Response(JSON.stringify({ artifact_id: "artifact_original" }), { status: 200 });
 });
 assert.equal(legacyRead.isError, false);
+
+
+for (const target_status of ['in_progress', 'active', 'blocked']) {
+  const invalid = await fetchByqResearchTransition('http://backend', {
+    entity_type: 'research_task', entity_id: 'task_a', target_status, idempotency_key: 'original',
+  }, async () => { throw new Error('invalid status must not reach Backend'); });
+  assert.equal(invalid.isError, true);
+  const body = JSON.parse(invalid.content[0].text);
+  assert.equal(body.backend.status, 'research_request_invalid');
+  assert.ok(body.backend.validation.allowed_values.includes('running'));
+  assert.match(body.backend.validation.message, /progress.stage/);
+}
+const redundantLookup = await fetchByqResearchLookup('http://backend', {
+  entity_type: 'artifact', entity_id: 'artifact_a', task_id: 'task_a',
+}, async () => { throw new Error('invalid lookup must not reach Backend'); });
+assert.equal(redundantLookup.isError, true);
+assert.match(JSON.parse(redundantLookup.content[0].text).backend.validation.message, /entity_id.*task_id/);

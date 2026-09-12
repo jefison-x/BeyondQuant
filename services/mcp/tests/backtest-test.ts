@@ -291,3 +291,18 @@ for (const id of [taskId, "backtesttask_ml_0123456789abcdef0123456789abcdef"]) {
   assert.equal(response.isError, false);
 }
 console.log("Derived backtest task receipt PASS: original key, closed identity projection, unknown safety and ML ID compatibility");
+
+
+for (const [detail, expected] of [
+  ['strategy version is not approved for execution', /materialized strategy approval/],
+  ['start_date must be YYYY-MM-DD', /start_date/],
+] as const) {
+  const invalid = await fetchByqBacktestTaskPrepare('http://backend', taskRequest,
+    async () => new Response(JSON.stringify({detail}), {status: 422}));
+  assert.equal(invalid.isError, true);
+  assert.match(JSON.parse(invalid.content[0].text).backend.validation.message, expected);
+}
+const { safeRequestValidation } = await import('../src/request-validation.js');
+assert.equal(safeRequestValidation({detail: 'password=secret-fixture /home/private'}), undefined);
+assert.equal(safeRequestValidation({detail: 'constructor'}), undefined);
+assert.match(safeRequestValidation({detail: 'input_snapshot.sources must be a non-empty list'})!.message, /request_fingerprint/);

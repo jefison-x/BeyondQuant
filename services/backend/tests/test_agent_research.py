@@ -347,3 +347,48 @@ def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> N
     listed = store.list_audit(run["run_id"], trusted_owner="alice")
     assert [event["outcome"] for event in listed["events"]][-1] == "completed"
     store.close()
+
+
+@pytest.mark.parametrize('linked', [True, False])
+def test_legacy_mismatched_approval_cannot_launch_continuation(linked):
+    from tests.workspace_helpers import trusted_agent_context
+    from app.research import ResearchStore
+    from app.conversation_catalog import ConversationCatalogStore
+    headers = trusted_agent_context('alice', session_id='session-agent-1', trace_id='trace-agent-1')
+    context = {key.removeprefix('x-byq-').replace('-', '_'): value for key, value in headers.items()}
+    conversations = ConversationCatalogStore()
+    conversations.create('alice', 'session-agent-1', 'trace-agent-1')
+    research = ResearchStore()
+    task = research.create_task(dict(owner_principal='alice', title='test', objective='test',
+        trace_id='trace-agent-1', idempotency_key='task'), trusted_context=context)
+    artifact = research.create_artifact(dict(task_id=task['task_id'], kind='strategy_version', content={},
+        lineage=[], trace_id='trace-agent-1', idempotency_key='version'))
+    progress = dict(schema_version='research-progress.v1', stage='approval', next_action='wait',
+        blocked_reason=None, linked_objects=[dict(kind='artifact', id=artifact['artifact_id'])] if linked else [],
+        completion_evidence=[])
+    research.transition('research_task', task['task_id'], 'planned', 'checkpoint', progress=progress)
+    store = AgentResearchStore()
+    try:
+        run = start(store)
+        approval = store.create_approval(dict(run_id=run['run_id'], action='byq_strategy_approve',
+            resource_type='strategy_version', resource_id=artifact['artifact_id'],
+            reason='review', idempotency_key='legacy-approval'))
+        # Simulate a record created before request-time resource validation.
+        store._execute("UPDATE agent_approvals SET resource_type='artifact' WHERE approval_id=:id",
+            {'id': approval['approval_id']})
+        store.decide_approval(dict(approval_id=approval['approval_id'], decision='approved'), trusted_owner='alice', trusted_actor='human-reviewer')
+        result = store.set_continuation_status(approval['approval_id'], 'submitting', trusted_owner='alice')
+        assert result['continuation_changed'] is False
+        assert result['continuation_status'] == 'needs_attention'
+        assert result['continuation_attempt'] == 0
+        assert result['status'] == 'approved' and result['resource_type'] == 'artifact'
+        again = store.set_continuation_status(approval['approval_id'], 'submitting', trusted_owner='alice')
+        assert again['continuation_changed'] is False
+        updated = research.get_task(task['task_id'])
+        assert updated['status'] == 'planned'
+        assert updated['progress']['stage'] == ('blocked' if linked else 'approval')
+        assert updated['progress']['linked_objects'] == progress['linked_objects']
+    finally:
+        store.close()
+        research.close()
+        conversations.close()

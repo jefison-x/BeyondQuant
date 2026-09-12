@@ -142,12 +142,21 @@ export function fetchByqAgentAuditGet(
   return requestAgent(backendUrl, `/v1/agents/runs/${encodeURIComponent(runId)}/audit`, { method: "GET" }, context, fetcher);
 }
 
-export function fetchByqAgentApprovalRequest(
+export async function fetchByqAgentApprovalRequest(
   backendUrl: string,
   request: Record<string, unknown>,
   context: AgentContext,
   fetcher: Fetcher = fetch,
 ): Promise<AgentResult> {
+  const expected = ({ byq_strategy_approve: 'strategy_version',
+    byq_ml_strategy_approve: 'ml_strategy_version', byq_feedback_submit: 'product_feedback',
+  } as Record<string, string>)[String(request.action)];
+  if (expected && (request.resource_type !== expected || typeof request.resource_id !== 'string' || !request.resource_id.trim())) {
+    return result({ service: 'beyondquant-mcp', status: 'error', backend: {
+      status: 'agent_request_invalid', validation: { field: 'resource_type', repair_limit: 1,
+        message: `This action requires resource_type=${expected} and the exact resource_id. Do not use artifact or reuse a mismatched approval.` },
+    } }, true);
+  }
   return requestAgent(backendUrl, "/v1/agents/approvals", { method: "POST", body: JSON.stringify(request) }, context, fetcher);
 }
 
