@@ -86,6 +86,7 @@ class ActiveRun:
     model_failure_retryable: bool = False
     domain_stop_dispatched: bool = field(default=False, repr=False)
     last_wait_notice_at: float = 0.0
+    last_progress_check_at: float = 0.0
     watchdog_stop: threading.Event = field(default_factory=threading.Event, repr=False)
 
 
@@ -177,13 +178,16 @@ class RuntimeAdapter:
         self._backend_url = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
         self._resolver_token = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
         self._run_timeout_seconds = self._guard_seconds(
-            "BYQ_DSH_RUN_TIMEOUT_SECONDS", default=900.0,
+            "BYQ_DSH_RUN_TIMEOUT_SECONDS", default=0.0, allow_disabled=True, maximum=86400.0,
+        )
+        self._progress_check_interval_seconds = self._guard_seconds(
+            "BYQ_DSH_PROGRESS_CHECK_INTERVAL_SECONDS", default=900.0,
         )
         self._subagent_timeout_seconds = self._guard_seconds(
             "BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS", default=180.0,
         )
         self._subagent_hard_cap_seconds = self._guard_seconds(
-            "BYQ_DSH_SUBAGENT_HARD_CAP_SECONDS", default=600.0,
+            "BYQ_DSH_SUBAGENT_HARD_CAP_SECONDS", default=0.0, allow_disabled=True, maximum=86400.0,
         )
         self._no_progress_timeout_seconds = self._guard_seconds(
             "BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS", default=120.0,
@@ -231,6 +235,8 @@ class RuntimeAdapter:
             "process_ownership": "one-per-root-turn" if self._root_scoped else "one-per-active-session",
             "run_guards": {
                 "run_timeout_seconds": self._run_timeout_seconds,
+                "progress_check_interval_seconds": self._progress_check_interval_seconds,
+                "subagent_hard_cap_seconds": self._subagent_hard_cap_seconds,
                 "subagent_timeout_seconds": self._subagent_timeout_seconds,
                 "no_progress_timeout_seconds": self._no_progress_timeout_seconds,
             },
@@ -1306,7 +1312,7 @@ class RuntimeAdapter:
                 "correction_budget_exhausted", "call_retention_bound", "correction_failed"})
 
     @staticmethod
-    def _guard_seconds(name: str, *, default: float) -> float:
+    def _guard_seconds(name: str, *, default: float, allow_disabled: bool = False, maximum: float = 3600.0) -> float:
         raw = os.environ.get(name)
         if raw is None:
             return default
@@ -1314,8 +1320,10 @@ class RuntimeAdapter:
             value = float(raw)
         except ValueError as exc:
             raise ValueError(f"{name} must be a number") from exc
-        if not 1.0 <= value <= 3600.0:
-            raise ValueError(f"{name} must be between 1 and 3600 seconds")
+        if allow_disabled and value == 0:
+            return 0.0
+        if not 1.0 <= value <= maximum:
+            raise ValueError(f"{name} must be between 1 and {maximum:g} seconds" + (" or 0 to disable" if allow_disabled else ""))
         return value
 
     def _watch_run(self, record: RuntimeSession, run: ActiveRun) -> None:
@@ -1345,9 +1353,13 @@ class RuntimeAdapter:
                 run.watchdog_stop.set()
                 return False
             oldest_subagent = min(run.active_subagent_calls.values(), default=None)
+            # A periodic observation, never a new model call or lease renewal.
+            if now - max(run.started_at, run.last_progress_check_at) >= self._progress_check_interval_seconds:
+                run.last_progress_check_at = now
+                self._emit_wait_notice(record, run, now=now)
             if run.domain_stop_code:
                 code = run.domain_stop_code
-            elif (now - run.started_at > self._run_timeout_seconds
+            elif ((self._run_timeout_seconds > 0 and now - run.started_at > self._run_timeout_seconds)
                     or (run.continuation_deadline is not None and now >= run.continuation_deadline)):
                 code = "runtime-run-timeout"
             elif (

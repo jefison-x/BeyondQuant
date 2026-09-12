@@ -18,11 +18,14 @@ export function createBudgetGate(config, append, now = Date.now, monotonic = () 
     throw new Error('BYQ_CONTINUATION_BUDGET_INVALID');
   }
   const started = monotonic();
+  // Capture the admitted remaining lifetime once; wall-clock rollback must
+  // never extend this reservation, including after a long-running model call.
+  const lifetime = Math.max(0, Math.min(86400000, config.expiresAt - now()));
   let charged = 0;
   let calls = 0;
   let failed = false;
   return (options) => {
-    if (failed || now() >= config.expiresAt || monotonic() - started >= 900000) {
+    if (failed || now() >= config.expiresAt || monotonic() - started >= lifetime) {
       throw new Error('BYQ_CONTINUATION_BUDGET_CLOSED');
     }
     // This ceiling is a candidate for the official text-only DeepSeek route.

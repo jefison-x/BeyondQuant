@@ -5,12 +5,22 @@
 明确指定的维护/bugfix/CI/依赖资格任务按 ADR-0059 与 DEVELOPMENT_WORKFLOW 的独立通道执行，
 不要求伪造新 Product Phase。历史章节保留当时验收语义；当前合并/部署权限以具名生效规则为准。
 
+独立长研究维护：[运行策略及验收](LONG_RESEARCH_EXECUTION_CHANGE.md)，按Accepted ADR-0072执行；不推进Product Phase。
+
 独立维护规划：[DSH 0.1.2rc1 升级与可维护性改造](DSH_012RC1_UPGRADE_PLAN.md) 定义 U0–U8，
 目前仅为待实施方案，不占用下一 Product Phase，不改变当前 Runtime baseline，也不授权自动生产升级。
 
 从 Phase 9 起，永久 migration source of truth 为 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`。实现 phase 前必须先检查、分类其 Community candidates。可在 BYQ-owned contracts 中重新实现 provider/engine-independent semantics，但不得复制 Community runtime、storage、provider 或 engine architecture。BaoStock、AKShare、VectorBT、PydanticAI 和 Hermes 保持排除，除非未来 Accepted ADR 明确反转。
 
 所有 phases 遵循 `docs/DEVELOPMENT_WORKFLOW.md`：只执行 `STATUS.md` 指定的 next phase；每 phase 使用 isolated worktree/branch/PR；contract/test 优先；保持 Product/Agent/Quant/Data/Engineering boundaries；CI 与 evidence 完成后才进入 merge gate。
+
+## 1.0 版本规划（Accepted planning baseline）
+
+维护者于2026-09-11接受 [ADR-0071](../architecture/adr/ADR-0071-v1-machine-learning-release-plan.md)。
+[版本里程碑](VERSION_PLAN.md)、[模块支持矩阵](V1_ML_SUPPORT_MATRIX.md) 和
+[稳定性发布门槛](V1_RELEASE_ACCEPTANCE.md) 定义后续0.x至1.0范围。
+它们补充历史Phase计划，不把历史RC开放结论视为当前1.0可发布，也不预授权新阶段。
+新增模型、GPU、有限调参、HIST和Worker边界仍须具名实施ADR及STATUS下一阶段授权；Phase97保持完成。
 
 ## Phase 6 — Runtime seam、ADR-0003 与 development framework
 

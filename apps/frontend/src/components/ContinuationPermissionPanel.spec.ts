@@ -47,3 +47,15 @@ it('late read for a previously selected task cannot overwrite the current task',
   expect(wrapper.text()).not.toContain('尚未授权');
   wrapper.unmount();
 });
+
+
+it.each([900, 7200, 86400])('shows the saved permission deadline %s without extending old grants', async (seconds) => {
+  read.mockResolvedValue({ ...missing, permission: { grant_version: 1, token_limit: 1000,
+    turn_timeout_seconds: seconds, expires_at: '2026-09-13T00:00:00Z', revoked_at: null } });
+  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: 'task-one', artifacts: [] } });
+  await flushPromises();
+  expect(wrapper.text()).toContain(`当前许可每回合期限：${seconds} 秒`);
+  expect(wrapper.text()).not.toContain('每回合最多 15 分钟');
+  expect(confirm).not.toHaveBeenCalled();
+  wrapper.unmount();
+});

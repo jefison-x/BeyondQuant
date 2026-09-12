@@ -81,3 +81,22 @@ assert.match(safeError.content[0].text, /agent_unauthorized/);
 assert.doesNotMatch(safeError.content[0].text, /var\/lib/);
 
 console.log("Agent MCP translation PASS: trusted context headers, authorization, and safe errors");
+
+
+const { fetchByqAgentApprovalRequest } = await import('../src/agent.js');
+for (const resource_type of ['artifact', undefined]) {
+  const invalid = await fetchByqAgentApprovalRequest('http://backend', {
+    action: 'byq_strategy_approve', resource_type, resource_id: 'artifact_a',
+  }, {}, async () => { throw new Error('invalid approval must not reach Backend'); });
+  assert.equal(invalid.isError, true);
+  assert.match(invalid.content[0].text, /resource_type=strategy_version/);
+}
+let approvedRequestReachedBackend = false;
+const validApproval = await fetchByqAgentApprovalRequest('http://backend', {
+  action: 'byq_strategy_approve', resource_type: 'strategy_version', resource_id: 'artifact_a',
+}, {}, async () => {
+  approvedRequestReachedBackend = true;
+  return new Response(JSON.stringify({status: 'pending'}), {status: 201});
+});
+assert.equal(validApproval.isError, false);
+assert.equal(approvedRequestReachedBackend, true);

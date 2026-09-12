@@ -23,7 +23,7 @@ def validate_reservation(value: object, *, owner: str, workspace: str) -> dict:
     if not isinstance(value['expires_at'], str):
         raise ValueError('invalid continuation expiry')
     expiry = datetime.fromisoformat(value['expires_at'])
-    if expiry.tzinfo is None or not 0 < (expiry - datetime.now(timezone.utc)).total_seconds() <= 900:
+    if expiry.tzinfo is None or not 0 < (expiry - datetime.now(timezone.utc)).total_seconds() <= 86400:
         raise ValueError('continuation reservation expired or exceeds hard deadline')
     return dict(value)
 

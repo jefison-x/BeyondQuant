@@ -4,7 +4,7 @@ const port = process.env.BYQ_MOCK_E2E_PORT ?? "15173";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testIgnore: ["real-product.spec.ts", "f6-chain.spec.ts", "phase61-acceptance.spec.ts", "phase62-polish.spec.ts"],
+  testIgnore: ["long-research.spec.ts", "real-product.spec.ts", "f6-chain.spec.ts", "phase61-acceptance.spec.ts", "phase62-polish.spec.ts"],
   forbidOnly: true,
   use: {
     baseURL: `http://127.0.0.1:${port}`,

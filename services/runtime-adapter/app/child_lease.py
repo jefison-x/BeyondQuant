@@ -19,4 +19,4 @@ class ChildLease:
         return True
 
     def expired(self, now: float, inactivity: float, hard_cap: float) -> bool:
-        return now - self.started_at > hard_cap or now - self.last_activity_at > inactivity
+        return (hard_cap > 0 and now - self.started_at > hard_cap) or now - self.last_activity_at > inactivity

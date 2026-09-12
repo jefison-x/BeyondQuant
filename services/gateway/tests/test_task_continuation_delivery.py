@@ -239,3 +239,72 @@ def test_passive_failure_does_not_block_separately_admitted_f6(tmp_path, monkeyp
         raise RuntimeError('synthetic read unavailable')
     TaskContinuationDelivery(tmp_path, prompts.append, reconcile=unavailable).tick()
     assert prompts == [context]
+
+
+def test_receipt_failure_backoff_survives_restart_and_recovers(tmp_path, monkeypatch):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+        session_id='session-a', trace_id='trace-a')
+    (tmp_path / 'a.lifecycle.json').write_text(json.dumps({'context': context}))
+    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+    clock = [1000.0]
+    reads, prompts = [], []
+    def missing(value):
+        reads.append(value)
+        raise HTTPException(status_code=404, detail='not found')
+    def delivery(reconcile):
+        return TaskContinuationDelivery(tmp_path, prompts.append, reconcile=reconcile, now=lambda: clock[0])
+    delivery(missing).tick()
+    delivery(missing).tick()
+    assert len(reads) == 1 and len(prompts) == 2
+    assert (tmp_path / 'a.lifecycle.json').exists()
+    clock[0] += 60
+    delivery(reads.append).tick()
+    delivery(reads.append).tick()
+    assert len(reads) == 3  # success clears backoff
+
+
+def test_receipt_backoff_does_not_cross_context_identity(tmp_path, monkeypatch):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+        session_id='session-a', trace_id='trace-a')
+    path = tmp_path / 'a.lifecycle.json'
+    path.write_text(json.dumps({'context': context}))
+    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '0')
+    def missing(_):
+        raise RuntimeError('unavailable')
+    TaskContinuationDelivery(tmp_path, lambda _: None, reconcile=missing, now=lambda: 1000).tick()
+    context['trace_id'] = 'trace-b'
+    path.write_text(json.dumps({'context': context}))
+    reads = []
+    TaskContinuationDelivery(tmp_path, lambda _: None, reconcile=reads.append, now=lambda: 1001).tick()
+    assert reads == [context]
+
+
+@pytest.mark.parametrize('state', ['[]', '{bad json', '{"context": null}'])
+def test_corrupt_receipt_backoff_does_not_block_checks_or_f6(tmp_path, monkeypatch, state):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+        session_id='session-a', trace_id='trace-a')
+    (tmp_path / 'a.lifecycle.json').write_text(json.dumps({'context': context}))
+    (tmp_path / 'a.lifecycle.receipt-backoff.json').write_text(state)
+    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+    reads, prompts = [], []
+    TaskContinuationDelivery(tmp_path, prompts.append, reconcile=reads.append).tick()
+    assert reads == [context] and prompts == [context]
+
+
+def test_long_continuation_hold_survives_old_limit_without_renewal(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    clock = [1000.0]
+    monkeypatch.setattr(main.time, 'monotonic', lambda: clock[0])
+    registry = main.ProductSessionRegistry()
+    session = main.ProductSession(conversation_id='long-conversation', session_id='long-session',
+        trace_id='long-trace', principal=main.Principal(subject='alice'))
+    registry.add(session)
+    expiry = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    assert registry.hold_continuation(session, 'long-reservation', expiry)
+    deadline = session.continuation_deadline
+    assert 8190 < deadline <= 8205
+    clock[0] += 1800
+    assert registry.hold_continuation(session, 'long-reservation', expiry)
+    assert session.continuation_deadline == deadline
+    registry.finish_continuation(session, 'long-reservation')
+    assert registry.idle_release_delay(session) == main.RUNTIME_SESSION_IDLE_SECONDS

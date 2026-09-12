@@ -1,3 +1,4 @@
+import { safeRequestValidation } from "./request-validation.js";
 import { bindActiveWebEvidenceProducer } from "./web-evidence-provenance.js";
 
 import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
@@ -130,6 +131,8 @@ async function requestResearch(
           backend: {
             status: errorStatus(response.status),
             http_status: response.status,
+            ...(response.status === 422 && safeRequestValidation(payload)
+              ? { validation: safeRequestValidation(payload) } : {}),
             ...(validationIssue ? { validation_issue: validationIssue } : {}),
           },
           ...(safeWebValidation ? {
@@ -220,6 +223,14 @@ export function fetchByqResearchTransition(
   request: ResearchTransitionRequest,
   fetcher: Fetcher = fetch,
 ): Promise<ByqResearchResult> {
+  const statuses = request.entity_type === 'artifact'
+    ? ['draft', 'validated', 'superseded'] : ['planned', 'running', 'completed', 'failed', 'cancelled'];
+  if (!statuses.includes(request.target_status)) {
+    return Promise.resolve(result({ service: 'beyondquant-mcp', status: 'error', backend: {
+      status: 'research_request_invalid', validation: { field: 'target_status', allowed_values: statuses,
+        repair_limit: 1, message: 'Use a listed target_status. blocked is a task progress.stage, not a status; active and in_progress are invalid. Read the entity before choosing a legal transition.' },
+    } }, true));
+  }
   const collection = request.entity_type === "research_task" ? "tasks" : `${request.entity_type}s`;
   return postResearch(
     backendUrl,
@@ -319,7 +330,8 @@ export async function fetchByqResearchLookup(
       || (hasKey && (!request.idempotency_key?.trim() || request.idempotency_key.length > 128
         || (request.entity_type === "research_task" ? request.task_id !== undefined : !request.task_id?.trim())))) {
     return result({ service: "beyondquant-mcp", status: "error",
-      backend: { status: "research_request_invalid" } }, true);
+      backend: { status: "research_request_invalid", validation: { repair_limit: 1,
+        message: 'For entity_id lookup omit task_id and idempotency_key. For idempotency_key lookup omit entity_id; task_id is required only for artifact or experiment. Preserve the original request identity.' } } }, true);
   }
   if (hasId) return fetchByqResearchGet(backendUrl, request.entity_type, request.entity_id!, fetcher);
   const query = new URLSearchParams({ entity_type: request.entity_type, idempotency_key: request.idempotency_key! });

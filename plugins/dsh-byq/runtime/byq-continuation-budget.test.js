@@ -51,3 +51,26 @@ test('invalid allowances and unsupported route/output reject', () => {
     assert.throws(() => gate({ ...request, ...change }), /UNQUALIFIED/);
   }
 });
+
+
+test('long reservation passes fifteen minutes but rollback cannot extend its deadline', () => {
+  let wall = 1000, elapsed = 0;
+  const records = [];
+  const gate = createBudgetGate({ ...config, tokenLimit: ceiling * 3, expiresAt: wall + 7200000 },
+    r => records.push(r), () => wall, () => elapsed);
+  elapsed = 900001; wall += 900001;
+  assert.equal(gate(request).call, 1);
+  elapsed = 7199999; wall = 1;
+  assert.equal(gate(request).call, 2);
+  elapsed = 7200000;
+  assert.throws(() => gate(request), /CLOSED/);
+  assert.equal(records.length, 2);
+});
+
+test('an existing short reservation still stops at its original monotonic deadline', () => {
+  let wall = 1000, elapsed = 0;
+  const gate = createBudgetGate({ ...config, expiresAt: wall + 900000 }, () => assert.fail('expired'),
+    () => wall, () => elapsed);
+  elapsed = 900000; wall = 1;
+  assert.throws(() => gate(request), /CLOSED/);
+});

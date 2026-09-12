@@ -27,6 +27,12 @@ from .db import PgStoreMixin, execute, fetch_one
 from .domain_call_admission import DomainCallEvidenceMixin, DOMAIN_CALL_DDL
 
 
+APPROVAL_RESOURCE_TYPES = {
+    "byq_strategy_approve": "strategy_version",
+    "byq_ml_strategy_approve": "ml_strategy_version",
+    "byq_feedback_submit": "product_feedback",
+}
+
 MAX_DETAIL_BYTES = 16 * 1024
 _ID_PATTERN = re.compile(r"^(?:agent_run|agent_approval|agent_audit)_[0-9a-f]{32}$")
 _TRACE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
@@ -801,6 +807,11 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         )
         if (resource_type is None) != (resource_id is None):
             raise ValueError("resource_type and resource_id must be provided together")
+        # Approval and execution must agree before asking a human to approve.
+        # Never reinterpret existing approvals or weaken execution-time binding.
+        expected_resource = APPROVAL_RESOURCE_TYPES.get(action)
+        if expected_resource and (resource_type != expected_resource or resource_id is None):
+            raise ValueError(f"{action} requires resource_type={expected_resource} and resource_id")
         key = _idempotency(payload.get("idempotency_key"))
         with self._transaction() as connection:
             run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
@@ -1016,6 +1027,13 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 blocked_state = "outcome_unknown"
             elif next_status == "submitting" and current in {"queued", "failed"} and int(row.get("continuation_attempt") or 0) >= 8:
                 blocked_state = "needs_attention"
+            expected_resource = APPROVAL_RESOURCE_TYPES.get(row['action'])
+            invalid_binding = (next_status == 'submitting' and current in {'queued', 'failed'}
+                and row['status'] == 'approved' and expected_resource is not None
+                and (row.get('resource_type') != expected_resource or not row.get('resource_id')))
+            if invalid_binding:
+                blocked_state = 'needs_attention'
+                self._record_approval_binding_blocker(connection, row, expected_resource)
             if blocked_state:
                 execute(connection, "UPDATE agent_approvals SET continuation_status=:status,updated_at=:now WHERE approval_id=:id",
                         {"status": blocked_state, "now": _now(), "id": approval_id})
@@ -1038,6 +1056,33 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             )
             assert updated is not None
         return {**self._approval_row(updated), "continuation_changed": changed}
+
+    def _record_approval_binding_blocker(self, connection, approval, expected_resource):
+        # Only the explicitly linked task waiting on this same resource is
+        # affected. Never choose a task by recency or rewrite a domain status.
+        if expected_resource not in {'strategy_version', 'ml_strategy_version'}:
+            return
+        execute(connection, """UPDATE research_tasks t
+            SET progress = t.progress || CAST(:checkpoint AS jsonb), updated_at=:now, version=t.version+1
+            FROM artifacts a, agent_runs r, product_conversations c
+            WHERE a.artifact_id=:resource AND a.kind=:kind AND a.task_id=t.task_id
+              AND a.owner_principal=t.owner_principal AND a.workspace_id=t.workspace_id
+              AND r.run_id=:run AND r.owner_principal=t.owner_principal AND r.workspace_id=t.workspace_id
+              AND t.owner_principal=:owner AND t.conversation_id=c.conversation_id
+              AND c.owner_principal=t.owner_principal AND c.workspace_id=t.workspace_id
+              AND c.runtime_session_id=r.session_id AND c.trace_id=r.trace_id
+              AND t.status IN ('planned','running') AND t.progress->>'stage'='approval'
+              AND t.progress->'linked_objects' @> CAST(:linked AS jsonb)""",
+            {'resource': approval.get('resource_id'), 'kind': expected_resource,
+             'run': approval['run_id'], 'owner': approval['owner_principal'], 'now': _now(),
+             'linked': json.dumps([{'kind': 'artifact', 'id': approval.get('resource_id')}]),
+             'checkpoint': json.dumps({'stage': 'blocked',
+                 'blocked_reason': '审批资源类型与执行动作不匹配，尚未执行策略审批。',
+                 'next_action': '按准确的策略版本重新申请审批；旧审批不能作为执行授权。'})})
+        run = fetch_one(connection, 'SELECT * FROM agent_runs WHERE run_id=:id', {'id': approval['run_id']})
+        self._record_audit_row(run, action='approval.continuation', outcome='blocked',
+            resource_type='agent_approval', resource_id=approval['approval_id'],
+            detail={'reason': 'approval_resource_mismatch'}, connection=connection)
 
     @staticmethod
     def _check_runtime_context(row: dict[str, Any], session_id: str | None, generation_id: str | None) -> None:

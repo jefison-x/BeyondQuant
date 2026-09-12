@@ -8,6 +8,9 @@
 - Supersedes: ADR-0046 §2 尾部未回答消息丢弃规则及对应验收要求；ADR-0045 的禁止无用户回合
   主动模型执行规则仅按下述有限授权例外修订。其余身份、MCP、Provider、审批边界不变。
 
+> 2026-09-12 修订：下文根900秒、child600秒及后台每回合900秒默认硬上限已由
+> [ADR-0072](ADR-0072-long-running-research-checkpoints.md)具名替代；旧许可和历史验收事实保留。
+
 ## 1. 恢复与失败事实
 
 Gateway 从持久公开消息和规范化 WorkflowTrace 提供 bounded completed history、最近未回答
