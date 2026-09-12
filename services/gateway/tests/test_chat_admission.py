@@ -140,3 +140,35 @@ def test_prompt_receipt_lookup_is_exact_and_never_sends_prompt_text(monkeypatch)
     assert calls[0][1]["params"]["idempotency_key"] == "original-key"
     assert len(calls[0][1]["params"]["content_sha256"]) == 64
     assert "synthetic private instruction" not in str(calls)
+
+
+def test_approval_handoff_keeps_the_mission_without_expanding_authority(monkeypatch):
+    """Exercise actual dispatch: approval and rejection get different authority instructions."""
+    monkeypatch.delenv("BYQ_CHAT_ADMISSION_FILE", raising=False)
+    monkeypatch.setattr(main, "_trusted_agent_headers", lambda _: {})
+    monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: {"messages": []})
+    session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="synthetic"))
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    monkeypatch.setattr(main, "_backend_request", lambda method, path, payload, **kwargs: {
+        "approval": {"continuation_changed": True, "continuation_attempt": 1,
+                     "continuation_status": payload["status"]},
+    })
+    prompts = []
+    def submit(path, **kwargs):
+        prompts.append(kwargs["payload"])
+        return {"accepted": True, "run_id": "accepted-run"}
+    monkeypatch.setattr(main, "_adapter_post", submit)
+    for decision in ("approved", "rejected"):
+        assert main.continue_approval_conversation(
+            None, "conversation", "approval", decision, "byq_strategy_approve",
+        ) == {"status": "submitted"}
+    approved, rejected = [prompt["content"] for prompt in prompts]
+    assert "First execute the already approved action byq_strategy_approve" in approved
+    assert "exact task/artifact lineage" in approved
+    assert "one approved action does not complete the mission" in approved
+    assert "no authority for other consequential actions or extra background turns" in approved
+    assert "reconcile the exact original operation before any retry" in approved
+    assert "confirmed queued delivery and valid task continuation permission" in approved
+    assert "Do not execute the rejected action" in rejected
+    assert "First execute" not in rejected
+    assert all(prompt["idempotency_key"] == "approval-continuation-approval" for prompt in prompts)
