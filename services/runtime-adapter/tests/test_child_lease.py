@@ -59,3 +59,10 @@ def test_ambiguous_parallel_calls_and_foreign_parents_cannot_claim_a_lease():
         assert not RuntimeAdapter._observe_run_observation(record, run, event)
     assert run.child_leases == {}
     assert run.active_subagent_calls == {"a": 0, "b": 0}
+
+
+def test_disabled_total_cap_preserves_per_child_inactivity():
+    lease = ChildLease('parent', 'child', 'call', 0, 0)
+    assert lease.observe(1, 10800)
+    assert not lease.expired(10801, 180, 0)
+    assert lease.expired(10981, 180, 0)

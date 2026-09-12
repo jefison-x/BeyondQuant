@@ -34,7 +34,7 @@ def test_permission_persists_without_enabling_execution_or_refreshing_expiry():
     assert result["blocked_reason"] == "budget_enforcement_unqualified"
     assert result["permission"]["max_turns"] == 8
     assert result["permission"]["valid_seconds"] == 86400
-    assert result["permission"]["turn_timeout_seconds"] == 900
+    assert result["permission"]["turn_timeout_seconds"] == 86400
     assert "idempotency_key" not in result["permission"]
     assert "continuation_permission" not in store.get_task(task)
     store.close()
@@ -53,7 +53,7 @@ def test_permission_persists_without_enabling_execution_or_refreshing_expiry():
 
 
 @pytest.mark.parametrize("change", [{"token_limit": True}, {"token_limit": 0}, {"token_limit": 1.5},
-    {"max_turns": 9}, {"valid_seconds": 86401}, {"turn_timeout_seconds": 901},
+    {"max_turns": 9}, {"valid_seconds": 86401}, {"turn_timeout_seconds": 86401},
     {"confirmed_artifact_ids": []}, {"qualified": True}, {"cost_limit": 1},
     {"confirmed_artifact_ids": ["artifact_" + "0" * 32]}])
 def test_permission_rejects_invalid_or_unverified_budget_without_writing(change):
@@ -133,5 +133,43 @@ def test_permission_backend_api_exact_identity_and_closed_fields(monkeypatch):
         assert client.get(path, headers=headers).json() == response.json()
         assert client.post(path + "/revoke", headers=headers, json={"grant_version": 1, "qualified": True}).status_code == 422
         assert client.post(path + "/revoke", headers=headers, json={"grant_version": 1}).json()["blocked_reason"] == "permission_revoked"
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize('validity,explicit,expected', [(7200, None, 7200), (86400, None, 86400), (7200, 60, 60)])
+def test_new_permission_and_reservation_follow_the_confirmed_lifetime(validity, explicit, expected):
+    from datetime import datetime
+    from tests.test_continuation_budget_ledger import reserve
+    store, task, context, payload = setup_permission()
+    try:
+        payload['valid_seconds'] = validity
+        if explicit is not None:
+            payload['turn_timeout_seconds'] = explicit
+        view = store.create_continuation_permission(task, payload, trusted_context=context)
+        assert view['permission']['turn_timeout_seconds'] == expected
+        receipt = reserve(store, task, context)
+        duration = (datetime.fromisoformat(receipt['expires_at']) - datetime.fromisoformat(receipt['created_at'])).total_seconds()
+        assert expected - 5 <= duration <= expected
+        assert datetime.fromisoformat(receipt['expires_at']) <= datetime.fromisoformat(view['permission']['expires_at'])
+    finally:
+        store.close()
+
+
+def test_old_implicit_short_grant_replays_without_extension_or_budget_reset():
+    from tests.test_continuation_budget_ledger import reserve
+    store, task, context, payload = setup_permission()
+    try:
+        original = store.create_continuation_permission(task, {**payload, 'turn_timeout_seconds': 900}, trusted_context=context)
+        receipt = reserve(store, task, context)
+        store.close()
+        store = ResearchStore()
+        replay = store.create_continuation_permission(task, payload, trusted_context=context)
+        assert replay['permission'] == original['permission']
+        assert replay['permission']['turn_timeout_seconds'] == 900
+        assert replay['budget']['reserved_tokens'] == 600
+        assert reserve(store, task, context) == receipt
+        with pytest.raises(IdempotencyConflict):
+            store.create_continuation_permission(task, {**payload, 'turn_timeout_seconds': 86400}, trusted_context=context)
     finally:
         store.close()

@@ -6,35 +6,19 @@ BeyondQuant MCP enforces bounded Agent-to-Domain reads.
 
 ## Runtime limits
 
-Each accepted prompt has three monotonic wall-clock limits:
+Under Accepted ADR-0072, each accepted prompt has separate liveness checks and optional deadlines:
 
-- `run_timeout_seconds` (default 900): maximum duration of the whole prompt;
-- `subagent_timeout_seconds` (default 180): maximum duration between an
-  observed `byq_delegate_*` call and its matching result;
-- `no_progress_timeout_seconds` (default 120): maximum duration without a
-  validated DSH execution activity from the owned root runtime or one of its
-  observed descendants. Activity includes turn/step boundaries, non-empty
-  text or reasoning chunks, committed assistant messages, and valid tool
-  calls/results. This private liveness clock does not make hidden content
-  public.
+- `run_timeout_seconds` defaults to 0: no whole-run wall-clock ceiling. A positive explicitly configured value is still enforced.
+- `progress_check_interval_seconds` defaults to 900: inspect the existing run guards and publish the bounded waiting observation when due. A checkpoint never renews activity or launches a model call.
+- `subagent_timeout_seconds` defaults to 180: an unassociated delegation must resolve within this interval; an associated child renews its own inactivity lease only with validated new sequence evidence.
+- `subagent_hard_cap_seconds` defaults to 0: no total child duration ceiling. A positive explicit value remains binding.
+- `no_progress_timeout_seconds` defaults to 120: inactivity protection based on validated owned-runtime activity, not absence of public text. Liveness is not proof of business progress.
 
-The first exceeded guard atomically detaches the active run, emits one safe
-`session.failed` event with a stable code, and closes only that session's owned
-DSH process. A late result is discarded. Existing failed-session resume creates
-a fresh private runtime generation and restores only bounded public context.
+Explicit Backend continuation reservations retain absolute expiry and token limits. New reservations may last up to the human permission's remaining validity (at most 24 hours), while existing short reservations keep their original deadlines. The earlier deadline wins. The Gateway hold and native model gate use the same admitted lifetime with monotonic protection against clock rollback.
 
-The whole-run timeout is always the final hard ceiling. While a tracked
-delegated child is active, its dedicated timeout owns the quiet interval so the
-shorter root no-progress guard cannot misclassify legitimate child work. An
-unknown, empty, or malformed notification never refreshes liveness. Raw
-reasoning, descendant identity, tool arguments/results, and
-unrecognized DSH events remain absent from WorkflowTrace, persistence, and the
-Browser boundary.
+A due failure guard atomically detaches the active run, emits one safe `session.failed` event, and closes its owned DSH process. Late results cannot reopen it. Domain jobs remain independent; recovery preserves the original public context and still needs current authorization. A running child owns its own quiet interval rather than inheriting the shorter root inactivity guard. Unknown, malformed and duplicate notifications do not renew its lease.
 
-The 15-minute ceiling accommodates bounded multi-stage research that continues
-to emit validated private runtime activity. It does not extend either the
-two-minute inactivity deadline or the three-minute delegated-child deadline,
-so an actually stalled run still terminates promptly.
+The periodic checkpoint does not claim business completion or durable task checkpoint creation. Existing domain progress/receipts remain authoritative. No raw reasoning, descendant identity, tool arguments/results or unrecognized DSH events enter WorkflowTrace.
 
 Stable failure codes are `runtime-run-timeout`, `runtime-subagent-timeout`, and
 `runtime-no-progress-timeout`; all are retryable. Raw DSH event, tool argument,
@@ -61,5 +45,4 @@ not a tool failure and must not be retried or waited on.
 The analyst must read summary once, select only relevant evidence sections,
 never enumerate `has_more`, track the returned remaining-call count, and answer
 from already collected evidence when the budget is exhausted. The runtime
-wall-clock and no-progress guards remain the hard process-level ceiling if a
-child ignores this result.
+inactivity guards and explicit deadlines remain enforced. This read budget is not a universal persistent tool-loop stop; the wider F7 coverage gap is unchanged.

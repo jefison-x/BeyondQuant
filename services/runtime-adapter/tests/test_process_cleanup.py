@@ -537,12 +537,15 @@ def test_failed_journal_write_prevents_model_start_and_shutdown_still_closes_pro
     assert record.journal.lock is None
 
 
-def test_default_whole_run_ceiling_allows_bounded_complex_research(
+def test_default_long_research_uses_checkpoints_instead_of_wall_clock_ceiling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("BYQ_DSH_RUN_TIMEOUT_SECONDS", raising=False)
 
-    assert RuntimeAdapter().readiness()["run_guards"]["run_timeout_seconds"] == 900.0
+    guards = RuntimeAdapter().readiness()["run_guards"]
+    assert guards["run_timeout_seconds"] == 0.0
+    assert guards["subagent_hard_cap_seconds"] == 0.0
+    assert guards["progress_check_interval_seconds"] == 900.0
 
 
 def test_lifecycle_has_single_active_prompt_and_duplicate_create_is_explicit(adapter: RuntimeAdapter) -> None:
@@ -1501,3 +1504,40 @@ def test_workflow_trace_sequence_and_publish_order_are_atomic(adapter: RuntimeAd
     assert sequences == list(range(2, 34))
     assert len(set(sequences)) == len(sequences)
     adapter.release_session("s-1")
+
+
+@pytest.mark.parametrize('elapsed', [901.0, 3601.0, 10801.0])
+def test_long_active_research_checkpoint_does_not_cancel_or_renew_activity(adapter, elapsed):
+    adapter._run_timeout_seconds = 0
+    adapter.create_session('long-research', 'long-trace')
+    adapter.submit_prompt('long-research', 'research')
+    assert FakeHarness.run_started.wait(timeout=1)
+    record = adapter._get('long-research')
+    with record.lock:
+        run = record.active_run
+        run.started_at = 10.0
+        run.last_runtime_activity_at = elapsed + 9.0
+        assert adapter._enforce_run_guards(record, run, now=elapsed + 10.0) is False
+        assert record.status == SessionStatus.RUNNING
+        assert run.last_progress_check_at == elapsed + 10.0
+        assert run.last_runtime_activity_at == elapsed + 9.0
+        assert FakeHarness.instances[0].run_count == 1
+        assert not any(e['kind'] == 'session.failed' for e in record.history)
+        adapter.cancel_session('long-research', 'hard')
+        assert record.status == SessionStatus.INTERRUPTED
+
+
+def test_long_research_still_honors_reserved_deadline(adapter):
+    adapter._run_timeout_seconds = 0
+    adapter.create_session('reserved-deadline', 'deadline-trace')
+    adapter.submit_prompt('reserved-deadline', 'research')
+    assert FakeHarness.run_started.wait(timeout=1)
+    record = adapter._get('reserved-deadline')
+    with record.lock:
+        run = record.active_run
+        run.started_at = 10
+        run.last_runtime_activity_at = 999
+        run.continuation_deadline = 1000
+        assert adapter._enforce_run_guards(record, run, now=1000)
+        assert record.status == SessionStatus.FAILED
+        assert record.history[-1]['payload']['code'] == 'runtime-run-timeout'

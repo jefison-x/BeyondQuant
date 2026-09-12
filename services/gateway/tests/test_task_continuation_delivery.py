@@ -289,3 +289,22 @@ def test_corrupt_receipt_backoff_does_not_block_checks_or_f6(tmp_path, monkeypat
     reads, prompts = [], []
     TaskContinuationDelivery(tmp_path, prompts.append, reconcile=reads.append).tick()
     assert reads == [context] and prompts == [context]
+
+
+def test_long_continuation_hold_survives_old_limit_without_renewal(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    clock = [1000.0]
+    monkeypatch.setattr(main.time, 'monotonic', lambda: clock[0])
+    registry = main.ProductSessionRegistry()
+    session = main.ProductSession(conversation_id='long-conversation', session_id='long-session',
+        trace_id='long-trace', principal=main.Principal(subject='alice'))
+    registry.add(session)
+    expiry = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    assert registry.hold_continuation(session, 'long-reservation', expiry)
+    deadline = session.continuation_deadline
+    assert 8190 < deadline <= 8205
+    clock[0] += 1800
+    assert registry.hold_continuation(session, 'long-reservation', expiry)
+    assert session.continuation_deadline == deadline
+    registry.finish_continuation(session, 'long-reservation')
+    assert registry.idle_release_delay(session) == main.RUNTIME_SESSION_IDLE_SECONDS

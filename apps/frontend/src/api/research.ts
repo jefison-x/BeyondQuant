@@ -61,7 +61,7 @@ export interface ContinuationPermissionView {
   task_id: string;
   can_start: boolean;
   blocked_reason: string;
-  permission: null | { grant_version: number; token_limit: number; expires_at: string; revoked_at: string | null };
+  permission: null | { grant_version: number; token_limit: number; turn_timeout_seconds?: number; expires_at: string; revoked_at: string | null };
   budget?: { reserved_tokens: number; charged_tokens: number; available_tokens: number;
     turns_remaining: number; unconfirmed_reservations: number };
 }

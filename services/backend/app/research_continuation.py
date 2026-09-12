@@ -35,7 +35,7 @@ def _request(payload: object) -> dict:
             "token_limit": _positive(payload["token_limit"], "token limit", 2**53 - 1),
             "max_turns": _positive(payload.get("max_turns", 8), "turn limit", 8),
             "valid_seconds": _positive(payload.get("valid_seconds", 86400), "validity", 86400),
-            "turn_timeout_seconds": _positive(payload.get("turn_timeout_seconds", 900), "turn timeout", 900)}
+            "turn_timeout_seconds": _positive(payload.get("turn_timeout_seconds", payload.get("valid_seconds", 86400)), "turn timeout", 86400)}
 
 
 class ResearchContinuationMixin:
@@ -124,6 +124,10 @@ class ResearchContinuationMixin:
             task, conversation = self._continuation_task(connection, task_id, trusted_context, human=True)
             existing = task.get("continuation_permission")
             if existing is not None:
+                # Replaying an old implicit default must not extend its grant.
+                if 'turn_timeout_seconds' not in payload:
+                    request['turn_timeout_seconds'] = existing['turn_timeout_seconds']
+                    digest = hashlib.sha256(json.dumps(request, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 if existing["idempotency_key"] != request["idempotency_key"] or existing["request_sha256"] != digest:
                     raise IdempotencyConflict("continuation permission cannot be replaced or replenished")
                 return self._continuation_view(task, conversation)

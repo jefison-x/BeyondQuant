@@ -435,7 +435,7 @@ class ProductSessionRegistry:
         expiry = datetime.fromisoformat(expires_at)
         if expiry.tzinfo is None:
             raise ValueError('continuation expiry requires a timezone')
-        remaining = max(0, min(900, (expiry - datetime.now(timezone.utc)).total_seconds()))
+        remaining = max(0, min(86400, (expiry - datetime.now(timezone.utc)).total_seconds()))
         with self._lock:
             if session.released:
                 return False

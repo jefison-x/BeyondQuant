@@ -74,10 +74,11 @@ watch(() => props.taskId, () => {
   <section aria-label="任务后台续接许可" class="continuation-panel" v-loading="busy">
     <h3>后台续接许可</h3>
     <p class="task-identity">任务：{{ taskId }}</p>
-    <p>仅恢复本任务原目标。许可有效期 24 小时，最多 8 个后台回合，每回合最多 15 分钟；训练、预测和回测仍逐项检查权限。</p>
+    <p>仅恢复本任务原目标。许可有效期 24 小时，最多 8 个后台回合，正常研究不按固定 15 分钟中断；训练、预测和回测仍逐项检查权限。</p>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <p v-if="view" role="status">{{ status }}</p>
     <template v-if="view?.permission">
+      <p v-if="view.permission.turn_timeout_seconds">当前许可每回合期限：{{ view.permission.turn_timeout_seconds }} 秒，且不超过许可到期时间。</p>
       <p>总额度：{{ view.permission.token_limit }} token；到期：{{ formatChinaTime(view.permission.expires_at) }}</p>
       <p v-if="view.budget">可用：{{ view.budget.available_tokens }}；已预留：{{ view.budget.reserved_tokens }}；已记账：{{ view.budget.charged_tokens }} token；剩余回合：{{ view.budget.turns_remaining }}</p>
       <p>预留与记账额度不代表精确费用账单。未知结果会继续占用预留额度。</p>
