@@ -6,6 +6,7 @@ import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import { researchProgress } from "@/researchProgress";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
+import TaskHandoffPanel from "@/components/TaskHandoffPanel.vue";
 import ContinuationPermissionPanel from "@/components/ContinuationPermissionPanel.vue";
 import { useFilteredPagination } from "@/composables/useFilteredPagination";
 
@@ -22,6 +23,7 @@ const tasks = ref<Array<Record<string, unknown>>>([]);
 const taskTitle = ref("");
 const taskObjective = ref("");
 const continuationTask = ref("");
+const handoffTask = ref("");
 const auth = useAuthStore();
 const pendingSubmission = ref<TaskSubmission | null>(null);
 function submissionScope(): string {
@@ -151,7 +153,7 @@ onMounted(async () => {
           <el-table :data="taskPages.pageItems.value" v-loading="busy" :empty-text="pendingSubmission ? '提交结果尚未确认，请核对本次提交' : '暂无研究任务'">
             <el-table-column prop="title" label="任务名称" min-width="180" />
             <el-table-column prop="objective" label="研究目标" min-width="300" show-overflow-tooltip />
-            <el-table-column prop="status" label="状态" width="120" />
+            <el-table-column label="任务记录" width="120"><template #default="{ row }">{{ row.status === "running" ? "未完成" : row.status }}</template></el-table-column>
             <el-table-column label="研究阶段与下一步" min-width="280">
               <template #default="{ row }">
                 <div>{{ researchProgress(row.progress).stage }}</div>
@@ -161,11 +163,13 @@ onMounted(async () => {
               </template>
             </el-table-column>
             <el-table-column prop="task_id" label="Task ID" min-width="260" show-overflow-tooltip />
+            <el-table-column label="任务交接" width="130"><template #default="{ row }"><el-button link @click="handoffTask = row.task_id">查看交接</el-button></template></el-table-column>
             <el-table-column label="后台续接" width="130">
               <template #default="{ row }"><el-button v-if="row.conversation_id" link @click="continuationTask = row.task_id">查看许可</el-button><span v-else>需关联原研究对话</span></template>
             </el-table-column>
           </el-table>
           </ListFilterPagination>
+          <TaskHandoffPanel v-if="handoffTask" :task-id="handoffTask" />
           <ContinuationPermissionPanel v-if="continuationTask" :task-id="continuationTask" :artifacts="artifacts" />
           <el-empty v-if="!tasks.length && !busy && !pendingSubmission" description="暂无研究任务，请先创建一个任务" />
         </el-tab-pane>

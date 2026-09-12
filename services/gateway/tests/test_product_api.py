@@ -1587,3 +1587,17 @@ def test_product_research_task_creation_owns_identity_fields(monkeypatch) -> Non
     assert captured["json"]["idempotency_key"] != original_request["idempotency_key"]
     for invalid_key in ("tiny", "bad key with spaces", "界" * 12, "x" * 97):
         assert client.post("/api/product/research/tasks", headers={**stable_headers, "x-idempotency-key": invalid_key.encode("utf-8")}, json=body).status_code == 422
+
+
+def test_handoff_uses_authenticated_product_read_boundary(monkeypatch):
+    monkeypatch.setattr(product_api, 'PRODUCT_TOKEN', 'product-test-token')
+    calls = []
+    monkeypatch.setattr(product_api, '_backend_request', lambda method, path, **kwargs:
+                        calls.append((method, path, kwargs)) or {'state': 'needs_permission'})
+    client = TestClient(main.app)
+    path = '/api/product/research/tasks/task_one/handoff'
+    assert client.get(path).status_code == 401
+    assert calls == []
+    result = client.get(path, headers={'Authorization': 'Bearer product-test-token'})
+    assert result.status_code == 200
+    assert calls[0][0:2] == ('GET', '/v1/research/tasks/task_one/handoff')

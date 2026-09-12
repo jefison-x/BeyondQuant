@@ -133,6 +133,13 @@ paths:
       - $ref: "#/components/parameters/EntityType"
       - $ref: "#/components/parameters/EntityId"
     get: {summary: 获取 one owner-scoped research entity., responses: *okResponses}
+  /api/product/research/tasks/{task_id}/handoff:
+    parameters:
+      - {name: task_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: 从持久业务事实只读核对原任务交接；不授予续接权限或改写任务状态。
+      security: [{sessionCookie: []}]
+      responses: *okResponses
   /api/product/research/tasks/{task_id}/continuation-permission:
     parameters:
       - {name: task_id, in: path, required: true, schema: {type: string}}

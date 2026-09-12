@@ -1990,15 +1990,21 @@ def create_research_task(payload: dict[str, Any], request: Request) -> dict[str,
 
 @app.get("/v1/research/tasks/{task_id}")
 def get_research_task(task_id: str, request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         task = research_store.get_task(task_id)
         if task["owner_principal"] != context["owner_principal"]:
             raise ResearchNotFound("research task not found")
-        return task
+        return {**task, "handoff": research_store.get_task_handoff(task_id, trusted_context=context)}
 
     return _research_call(operation)
+
+
+@app.get("/v1/research/tasks/{task_id}/handoff")
+def get_research_task_handoff(task_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.get_task_handoff(task_id, trusted_context=context))
 
 
 @app.get("/v1/research/tasks/{task_id}/continuation-permission")

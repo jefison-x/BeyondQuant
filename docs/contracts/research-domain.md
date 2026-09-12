@@ -112,3 +112,35 @@ MCP layer 将调用转换为 Backend domain endpoints，不暴露 SQLite、SQL�
 ## 所有权与安全
 
 Backend 负责 identity、validation、state、idempotency、provenance、lineage 和 persistence。当前 trusted MCP service boundary 携带 immutable `owner_principal` metadata；未来 multi-user authorization policy 必须增加 ADR，不得把 agent-provided string 当作新 auth system。Product DSH 无直接 persistence 或 application-source access。
+
+
+## H2：研究任务交接投影（2026-09-13）
+
+`GET /api/product/research/tasks/{task_id}/handoff` 返回 `research-task-handoff.v1`。
+Backend 对应只读路由为 `/v1/research/tasks/{task_id}/handoff`；现有任务详情同时添加
+`handoff`，使 MCP 的原任务读取无需新工具即可取得同一投影。普通浏览器仍仅访问 Product API。
+
+闭合字段为 `schema_version, task_id, task_version, task_status, objective, progress,
+state, reason, references, has_more, observed_at`。`progress` 复用持久检查点，未记录时为 `{}`；
+`references` 元素仅含 `kind/id/status`。原目标、检查点和依据继续保存在现有领域表中，
+GET 在只读 repeatable-read 事务中取一致快照，不另存可能过期的“正在运行”缓存。
+`observed_at` 是本次核对时间，不是活动续租时间；`task_version` 不是跨表事件版本。
+
+`state` 枚举：`completed, failed, cancelled, waiting_approval, waiting_job,
+conversation_active, continuation_queued, approval_continuation_queued,
+needs_permission, needs_reconciliation, blocked`。状态不改变原 ResearchTask lifecycle，
+不产生许可、额度、事件或模型调用。完成需要现有终态及可核对的完成检查点/制品；
+历史无证据 completed 保留原记录，但交接提示需核对。
+
+只关联同 task/owner/workspace 的 Artifact、训练、预测、信号及回测作业，以及绑定这些对象且
+同 trace 的审批；不选最新任务或工作区对象。每类读取上限64，超出后标记 `has_more` 并要求核对，
+不能据截断结果断言没有执行者。其他未纳入的领域执行路径不能据此推断完成或取消。
+身份必须是有效 owner/workspace；外部对象与私有续接 instruction、预算账本不输出。
+
+终态优先于迟到活动；未知提交先核对；pending 审批与已排队审批续接不同；
+非终态作业只表示已有作业等待结果，不保证 Worker 当前持有有效租约。
+原会话 active 只能表示会话活动，不能归属为某个任务的执行证明。
+后台 queued 需要未结算 reserved 投递、未过期且未撤销的许可、未耗尽投递尝试及启用的执行器。
+仅有许可、已 submitted 回执或一句“下一步继续”都不足以显示后台执行中。
+无匹配执行事实时提示缺许可或阻塞；正常用户仍可在原对话手动继续。
+此视图不包含 H3 的自动调度连接，不自动修复历史任务，也不判断研究结论质量。

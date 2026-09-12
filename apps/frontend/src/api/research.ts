@@ -140,3 +140,13 @@ export function continueApproval(
 ): Promise<{ approval: Record<string, unknown> }> {
   return getJson(`/approvals/${encodeURIComponent(approvalId)}/continue`, { method: "POST" });
 }
+
+export interface TaskHandoffView {
+  schema_version: 'research-task-handoff.v1'; task_id: string; task_version: number;
+  task_status: string; objective: string; progress: unknown; state: string;
+  reason: string | null; references: Array<{ kind: string; id: string; status: string }>;
+  has_more: boolean; observed_at: string;
+}
+export function getTaskHandoff(taskId: string): Promise<TaskHandoffView> {
+  return getJson(`/research/tasks/${encodeURIComponent(taskId)}/handoff`);
+}
