@@ -53,3 +53,5 @@ MCP 编译和官方 SDK schema/请求体边界复测通过。
 复核本次 diff 仅改变 create_strategy_version 的 Backend handler 和 MCP 版本注册/转发、候选 schema 与公共运行时动作识别；既有台账其余 handler 未改，更新其整文件/相关依赖哈希，共涉及 67 个已有条目，不新增全接口完成声明。
 
 独立 .96 构建清单通过，manifest sha256:a8ccac4c51dd57017c4ca1c6788b14954d50f0a8414f6efc663dd63ad550ab77。124 项架构测试全绿，make dev-check 通过；台账 112/560，448 未核对，8 人工入口待审。远端 CI 待新提交执行。
+
+逐接口复核将具名 Backend 版本创建与 MCP 版本工具加入台账：114/560，446 未核对。仅这两个接口，私有 schema 端点其他动作与全局接口范围不从此推定通过。`.96` 远端 CI 34749217063 已核实仍 queued，旧 CI 结果不替代新头。

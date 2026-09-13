@@ -3570,6 +3570,88 @@
         "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
         "apps/frontend/src/api/pendingStorage.ts": "sha256:b8ad6577068a84fac0bda65eb42fb1304db3c5838bf14aa61ee48197cfeef0c3"
       }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2263,
+      "method": "POST",
+      "path": "/v1/research/strategies/versions",
+      "handler": "create_strategy_version",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Backend 原研究任务 owner/workspace 与原草稿；Agent 还须原 root/registered AgentRun/trace/generation 凭证",
+      "mode": "write",
+      "authorization": "ADR-0073 既有工具逐项资格；MCP completeAgentContext 与 Backend _required_agent_context；不扩大角色权限，人类 Product 路径不扣 Agent 纠错额度",
+      "idempotency": "原 task/action/key 与完整输入摘要；同键异输入拒绝，内容寻址版本保留每个原键回执",
+      "timeout": "MCP 既有有界 HTTP/凭证等待；Backend 2秒锁等待、5秒短SQL；不在领域事务内调用模型或外部 Provider",
+      "errors": "可信 SDK schema 错误可修正一次；来源证据损坏、身份错误和存储异常不伪装成可修正；未知结果不退还额度",
+      "retry": "仅原调用凭证 pending 时有界原请求等待；不自动重发未知写；最多一次不同输入修正，换键不算进展",
+      "authority": "BYQ PostgreSQL task/draft/version 与持久调用账本，DSH 负责通用执行和停止",
+      "recovery": "版本/validated转换/成功回执在 Agent 同事务；重启原键返回原结果；插入后失败回滚并保留unknown；并发取消等待提交",
+      "consumers": [
+        "BYQ MCP strategy tools",
+        "Gateway Product strategy workflow"
+      ],
+      "evidence": [
+        "docs/evidence/research-handoff-h4/STRATEGY-VERSION-QUALIFICATION.md",
+        "services/backend/tests/test_strategy_version_correction.py",
+        "services/backend/tests/test_domain_call_evidence.py",
+        "services/backend/tests/test_domain_correction_admission.py",
+        "services/mcp/tests/domain-server-wire-test.ts",
+        "services/mcp/tests/domain-schema-observation-test.ts",
+        "services/runtime-adapter/tests/test_domain_call_wire.py"
+      ],
+      "source_sha256": "dd1ae0b99494a71aa4e5f01fcd95c3df8680b708541177956ce3d9574c80bc8b",
+      "dependencies_sha256": {
+        "packages/contracts/domain_call_admission.py": "sha256:5d378db61e2223862bec4ba9c9f66e8a55e5a8f497c0f332c25b05fa9bb865f1",
+        "services/backend/app/domain_call_admission.py": "sha256:5479e361ce78b5fb6f113927bda22bb2eb86258ad96d4bbbad589e90781a020b",
+        "services/backend/app/research.py": "sha256:65fcaa7bdd5b39cc686bdc813820533a24037cbd8425cc2e115c2d3be2034b06",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "services/mcp/src/domain-validation-schema.ts": "sha256:e0454153f2f29caaefc0174939bb59c0442379a0f05bcb11e438875dab03a191",
+        "services/mcp/src/domain-admission.ts": "sha256:f5c4fa396a5d1d8629073b9ae5f8e3ffb738708b11d42e44f3636b608528529e",
+        "services/mcp/src/strategy.ts": "sha256:068b80b2e3333e14ad5fde96f125f4b3b6ed79c466be902e177c5605b5c897e2",
+        "services/runtime-adapter/app/runtime.py": "sha256:cf1ab277821cd448750b9b18ad1bc699eb94c23e8ffead568d381d98288f046b"
+      }
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1262,
+      "name": "byq_strategy_version_create",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Backend 原研究任务 owner/workspace 与原草稿；Agent 还须原 root/registered AgentRun/trace/generation 凭证",
+      "mode": "write",
+      "authorization": "ADR-0073 既有工具逐项资格；MCP completeAgentContext 与 Backend _required_agent_context；不扩大角色权限，人类 Product 路径不扣 Agent 纠错额度",
+      "idempotency": "原 task/action/key 与完整输入摘要；同键异输入拒绝，内容寻址版本保留每个原键回执",
+      "timeout": "MCP 既有有界 HTTP/凭证等待；Backend 2秒锁等待、5秒短SQL；不在领域事务内调用模型或外部 Provider",
+      "errors": "可信 SDK schema 错误可修正一次；来源证据损坏、身份错误和存储异常不伪装成可修正；未知结果不退还额度",
+      "retry": "仅原调用凭证 pending 时有界原请求等待；不自动重发未知写；最多一次不同输入修正，换键不算进展",
+      "authority": "BYQ PostgreSQL task/draft/version 与持久调用账本，DSH 负责通用执行和停止",
+      "recovery": "版本/validated转换/成功回执在 Agent 同事务；重启原键返回原结果；插入后失败回滚并保留unknown；并发取消等待提交",
+      "consumers": [
+        "BYQ MCP strategy tools",
+        "Gateway Product strategy workflow"
+      ],
+      "evidence": [
+        "docs/evidence/research-handoff-h4/STRATEGY-VERSION-QUALIFICATION.md",
+        "services/backend/tests/test_strategy_version_correction.py",
+        "services/backend/tests/test_domain_call_evidence.py",
+        "services/backend/tests/test_domain_correction_admission.py",
+        "services/mcp/tests/domain-server-wire-test.ts",
+        "services/mcp/tests/domain-schema-observation-test.ts",
+        "services/runtime-adapter/tests/test_domain_call_wire.py"
+      ],
+      "source_sha256": "ec06a08139b74cce43801ec53868bc1d0ad56a4902ac766ceda81beb8e6dc6ee",
+      "dependencies_sha256": {
+        "packages/contracts/domain_call_admission.py": "sha256:5d378db61e2223862bec4ba9c9f66e8a55e5a8f497c0f332c25b05fa9bb865f1",
+        "services/backend/app/domain_call_admission.py": "sha256:5479e361ce78b5fb6f113927bda22bb2eb86258ad96d4bbbad589e90781a020b",
+        "services/backend/app/research.py": "sha256:65fcaa7bdd5b39cc686bdc813820533a24037cbd8425cc2e115c2d3be2034b06",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "services/mcp/src/domain-validation-schema.ts": "sha256:e0454153f2f29caaefc0174939bb59c0442379a0f05bcb11e438875dab03a191",
+        "services/mcp/src/domain-admission.ts": "sha256:f5c4fa396a5d1d8629073b9ae5f8e3ffb738708b11d42e44f3636b608528529e",
+        "services/mcp/src/strategy.ts": "sha256:068b80b2e3333e14ad5fde96f125f4b3b6ed79c466be902e177c5605b5c897e2",
+        "services/runtime-adapter/app/runtime.py": "sha256:cf1ab277821cd448750b9b18ad1bc699eb94c23e8ffead568d381d98288f046b"
+      }
     }
   ],
   "manual_surfaces": [
