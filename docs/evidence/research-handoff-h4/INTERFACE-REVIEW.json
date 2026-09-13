@@ -3652,6 +3652,76 @@
         "services/mcp/src/strategy.ts": "sha256:fac4515504840c96c72107de196ba9b765610560d172d214523fb7990200eefe",
         "services/runtime-adapter/app/runtime.py": "sha256:cf1ab277821cd448750b9b18ad1bc699eb94c23e8ffead568d381d98288f046b"
       }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3279,
+      "method": "GET",
+      "path": "/v1/research/strategies/{strategy_id}/versions",
+      "handler": "strategy_version_history",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner与当前单用户个人workspace合同；查询只读取该owner的策略版本",
+      "mode": "read",
+      "authorization": "_required_agent_context经workspace_tenancy.resolve_context核对有效个人工作区；不接受payload覆盖owner",
+      "idempotency": "只读投影，不创建领域对象；limit/offset明确分页，无latest对象替换",
+      "timeout": "专用短查询使用bounded_metadata_transaction：进程/数据库锁2秒，语句5秒；不改变回测执行期限。锁冲突恢复实测见证据",
+      "errors": "非法策略ID/分页422；存储不可用503且不返回内部错误细节；不将查询失败解释为空目录",
+      "retry": "handler不重试；调用者可重新读取原strategy_id及明确分页，不触发新回测",
+      "authority": "PostgreSQL原owner的strategy_version和关联backtest_jobs；不依据聊天文本或页面历史缓存",
+      "recovery": "返回稳定排序的当前页及同一SQL快照total，1005版本最后5条可达，页面迟到响应不会覆盖新页",
+      "consumers": [
+        "Gateway Product API策略投影",
+        "StrategyView版本历史与统计"
+      ],
+      "evidence": [
+        "docs/evidence/research-handoff-h4/STRATEGY-PROJECTION-ERRORS.md",
+        "services/backend/tests/test_strategy_api.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/tests/e2e/h4-strategy-pagination.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/backtest.py": "sha256:c6190e71b4168c1889b02fddd23a27e17eed2d7d03e5045b619ad82298077aaf",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "services/backend/app/workspace_tenancy.py": "sha256:05485ebc3817fe9abae16aa82941667539b114257e4c54c46974afc334b46207"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3291,
+      "method": "GET",
+      "path": "/v1/research/strategies/{strategy_id}/backtest-count",
+      "handler": "strategy_backtest_count",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner与当前单用户个人workspace合同；查询只读取该owner的策略版本",
+      "mode": "read",
+      "authorization": "_required_agent_context经workspace_tenancy.resolve_context核对有效个人工作区；不接受payload覆盖owner",
+      "idempotency": "只读投影，不创建领域对象；limit/offset明确分页，无latest对象替换",
+      "timeout": "专用短查询使用bounded_metadata_transaction：进程/数据库锁2秒，语句5秒；不改变回测执行期限。锁冲突恢复实测见证据",
+      "errors": "非法策略ID/分页422；存储不可用503且不返回内部错误细节；不将查询失败解释为空目录",
+      "retry": "handler不重试；调用者可重新读取原strategy_id及明确分页，不触发新回测",
+      "authority": "PostgreSQL原owner的strategy_version和关联backtest_jobs；不依据聊天文本或页面历史缓存",
+      "recovery": "全部版本聚合总数与by_version分页分离，第1001版本已完成回测仍计入总数；锁释放后原接口200",
+      "consumers": [
+        "Gateway Product API策略投影",
+        "StrategyView版本历史与统计"
+      ],
+      "evidence": [
+        "docs/evidence/research-handoff-h4/STRATEGY-PROJECTION-ERRORS.md",
+        "services/backend/tests/test_strategy_api.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/tests/e2e/h4-strategy-pagination.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/backtest.py": "sha256:c6190e71b4168c1889b02fddd23a27e17eed2d7d03e5045b619ad82298077aaf",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "services/backend/app/workspace_tenancy.py": "sha256:05485ebc3817fe9abae16aa82941667539b114257e4c54c46974afc334b46207"
+      }
     }
   ],
   "manual_surfaces": [

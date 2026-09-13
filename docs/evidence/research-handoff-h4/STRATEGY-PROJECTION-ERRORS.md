@@ -50,3 +50,5 @@
 ## 统计短查询锁等待
 
 Research版本页已走现有有界事务，但Backtest统计仍继承普通_fetch_one。真实进程锁与PostgreSQL ACCESS EXCLUSIVE锁两个反例均复现等待持锁者4秒释放才返回200，未遵循短查询等待界限。仅strategy_counts改用既有bounded_metadata_transaction，保留SQL、返回合同与回测执行路径。两类锁冲突现在返回安全503，锁释放后同接口恢复200；完整strategy_api21项通过（27.48秒）。公共函数定义2秒进程/数据库锁等待、5秒语句期限，本轮直接验证的是锁冲突及恢复，不冒充所有慢SQL情形测试。
+
+H4具名登记：strategy_version_history与strategy_backtest_count两条Backend读取接口完成当前实现/权限/分页/错误/等待/恢复核对；依据21项实际数据库模块、77项Gateway模块、210项前端单元及真实分页浏览器证据登记，台账116/560。Gateway转发入口、其他策略接口与人工面不随之自动完成；最新候选远端CI仍待通过。
