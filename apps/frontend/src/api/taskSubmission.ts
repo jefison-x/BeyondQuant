@@ -1,3 +1,5 @@
+import { createRequestId } from "@/utils/requestId";
+
 // One unresolved submission per owner/workspace. Never silently replace its identity.
 export interface TaskSubmission { key: string; title: string; objective: string }
 const storageKey = (scope: string) => `byq.research-submission.v1:${scope}`;
@@ -22,7 +24,7 @@ export function beginTaskSubmission(scope: string, title: string, objective: str
     }
     return pending;
   }
-  const value = { key: crypto.randomUUID(), title, objective };
+  const value = { key: createRequestId(), title, objective };
   // Fail before the write request if durable browser storage is unavailable.
   localStorage.setItem(storageKey(scope), JSON.stringify(value));
   return value;
