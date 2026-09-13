@@ -35,7 +35,7 @@ const backend = createServer(async (req, res) => {
     result = { detail: { schema_version: "domain-call-admission.v1",
       state: schemaCalls === 1 ? "correctable_failure" : "blocked",
       reason: schemaCalls === 1 ? "domain_validation_failed" : "correction_budget_exhausted" } };
-  } else if (req.url === "/v1/research/factors/compute") {
+  } else if (["/v1/research/factors/compute", "/v1/research/strategies/versions"].includes(req.url ?? "")) {
     status = 409;
     result = { detail: { schema_version: "domain-call-admission.v1", state: "blocked", reason: "correction_budget_exhausted" } };
   } else if (requests.length === 1) {
@@ -103,6 +103,15 @@ try {
   assert.equal(factor.isError, true);
   assert.equal(JSON.parse((factor.content as Array<{ text: string }>)[0].text).backend.admission.stop, true);
   assert.equal(requests.at(-1)?.path, "/v1/research/factors/compute");
+  assert.equal(requests.at(-1)?.body.trace_id, "trace-wire");
+  assert.equal(requests.at(-1)?.body.agent_run_id, "run-wire");
+  const version = await client.callTool({ name: "byq_strategy_version_create", arguments: {
+    task_id: "task-wire", agent_run_id: "run-wire", trace_id: "untrusted", idempotency_key: "version-wire",
+    draft_artifact_id: "draft-wire",
+  } });
+  assert.equal(version.isError, true);
+  assert.equal(JSON.parse((version.content as Array<{ text: string }>)[0].text).backend.admission.stop, true);
+  assert.equal(requests.at(-1)?.path, "/v1/research/strategies/versions");
   assert.equal(requests.at(-1)?.body.trace_id, "trace-wire");
   assert.equal(requests.at(-1)?.body.agent_run_id, "run-wire");
   console.log("domain-server-wire: trusted factory root, exact pending resend, SDK rejection and closed stop PASS");

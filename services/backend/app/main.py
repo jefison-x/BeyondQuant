@@ -2264,9 +2264,9 @@ def validate_strategy_draft(payload: dict[str, Any], http_request: Request) -> d
 def create_strategy_version(payload: dict[str, Any], http_request: Request) -> dict[str, object]:
     context = _required_agent_context(http_request, include_workspace=True)
 
-    def operation() -> dict[str, object]:
+    def operation(data, connection) -> dict[str, object]:
         strategy_request = _strategy_payload(
-            payload,
+            data,
             {"task_id", "experiment_id", "draft_artifact_id", "trace_id", "idempotency_key"},
         )
         draft = research_store.get_artifact(strategy_request.get("draft_artifact_id"))
@@ -2290,13 +2290,14 @@ def create_strategy_version(payload: dict[str, Any], http_request: Request) -> d
             "lineage": [{"kind": "artifact", "id": draft["artifact_id"]}],
             "trace_id": strategy_request.get("trace_id"),
             "idempotency_key": strategy_request.get("idempotency_key"),
-        }, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"])
+        }, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"], _connection=connection)
         if artifact["status"] == "draft":
             artifact = research_store.transition(
                 "artifact",
                 artifact["artifact_id"],
                 "validated",
                 f"strategy-version-validate-{prepared['version_id']}",
+                _connection=connection,
             )
         return {
             "strategy_version": version_content,
@@ -2304,7 +2305,8 @@ def create_strategy_version(payload: dict[str, Any], http_request: Request) -> d
             "source_draft_artifact_id": draft["artifact_id"],
         }
 
-    return _research_call(operation)
+    return _research_call(lambda: _domain_validation_operation(http_request, payload, context,
+        "byq_strategy_version_create", operation))
 
 
 @app.post("/v1/research/strategies/approvals", status_code=201)

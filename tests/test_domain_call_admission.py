@@ -14,6 +14,24 @@ class DomainCallAdmissionTests(unittest.TestCase):
     def evidence(self, payload=None, action="byq_strategy_validate"):
         return request_evidence(action, self.request() if payload is None else payload, trace_id="trusted-trace")
 
+    def test_version_replay_cannot_buy_correction_with_new_run_or_key(self):
+        payload = {"task_id": "task_original", "agent_run_id": "run_original",
+                   "idempotency_key": "original", "draft_artifact_id": "draft_original"}
+        def evidence(value):
+            return request_evidence("byq_strategy_version_create", value, trace_id="trusted")
+        original = evidence(payload)
+        replay = evidence({**payload, "agent_run_id": "new_run", "idempotency_key": "new_key"})
+        self.assertEqual(original["input_sha256"], replay["input_sha256"])
+        self.assertNotEqual(original["request_sha256"], replay["request_sha256"])
+        self.assertNotEqual(original["input_sha256"], evidence({**payload, "draft_artifact_id": "different"})["input_sha256"])
+        for field in payload:
+            incomplete = {key: value for key, value in payload.items() if key != field}
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                evidence(incomplete)
+        for extra in ({"root_run_id": "guessed"}, {"strategy": {}}, {"owner_id": "guessed"}):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                evidence({**payload, **extra})
+
     def test_factor_tables_have_separate_bounded_evidence(self):
         payload = {"task_id": "task_one", "agent_run_id": "run_one", "idempotency_key": "key",
             "as_of_date": "20260901", "factor": {"name": "momentum", "version": "1", "lookback": 2},

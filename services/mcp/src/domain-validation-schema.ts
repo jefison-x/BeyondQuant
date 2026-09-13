@@ -90,6 +90,14 @@ const v2RegimeMlStrategySchema = z.object({
 });
 
 export const domainValidationSchemas = {
+  byq_strategy_version_create: z.object({
+    task_id: z.string(),
+    experiment_id: z.string().optional(),
+    draft_artifact_id: z.string(),
+    trace_id: z.string(),
+    idempotency_key: z.string(),
+    agent_run_id: z.string().min(1).max(128),
+  }).strict(),
   byq_factor_compute: z.object({
     task_id: z.string(),
     experiment_id: z.string().optional(),

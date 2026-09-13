@@ -18,6 +18,7 @@ const official = createMcpHandler(() => {
   server.registerTool("byq_strategy_validate", { inputSchema: domainValidationSchemas.byq_strategy_validate }, run);
   server.registerTool("byq_ml_strategy_create", { inputSchema: domainValidationSchemas.byq_ml_strategy_create }, run);
   server.registerTool("byq_factor_compute", { inputSchema: domainValidationSchemas.byq_factor_compute }, run);
+  server.registerTool("byq_strategy_version_create", { inputSchema: domainValidationSchemas.byq_strategy_version_create }, run);
   return server;
 });
 const handler = toNodeHandler(observeDomainSchemaFailures(official, async (failure, request) => {
@@ -38,7 +39,10 @@ const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${
 try {
   await client.connect(transport);
   for (const action of Object.keys(domainValidationSchemas)) {
-    const args = { task_id: "task-one", agent_run_id: "run-one", idempotency_key: "key-one",
+    const args = action === "byq_strategy_version_create"
+      ? { task_id: "task-one", agent_run_id: "run-one", idempotency_key: "key-one",
+          trace_id: "trace-one", draft_artifact_id: 42 }
+      : { task_id: "task-one", agent_run_id: "run-one", idempotency_key: "key-one",
       trace_id: "trace-one", strategy: { name: "沪深300", nested: [1, 1.5, true, null] } };
     // The unmodified SDK must still reject the exact invalid request. Observing
     // a schema failure must not run a domain callback or fake a successful tool.

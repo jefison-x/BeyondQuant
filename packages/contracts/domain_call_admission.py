@@ -12,7 +12,7 @@ import math
 import re
 
 
-ACTIONS = frozenset({"byq_strategy_validate", "byq_ml_strategy_create", "byq_factor_compute"})
+ACTIONS = frozenset({"byq_strategy_validate", "byq_ml_strategy_create", "byq_factor_compute", "byq_strategy_version_create"})
 MAX_INPUT_BYTES = 256 * 1024
 MAX_NODES = 8192
 MAX_DEPTH = 24
@@ -109,6 +109,9 @@ def request_evidence(action: str, payload: object, *, trace_id: str) -> dict:
         required = {"task_id", "agent_run_id", "idempotency_key", "as_of_date", "factor",
                     "securities", "sessions", "bars", "universe_snapshots", "sources"}
         allowed = required | {"experiment_id", "trace_id", "statuses"}
+    if action == "byq_strategy_version_create":
+        required = {"task_id", "agent_run_id", "idempotency_key", "draft_artifact_id"}
+        allowed = required | {"experiment_id", "trace_id"}
     if not required <= payload.keys() or payload.keys() - allowed:
         raise ValueError("exact domain call references required")
     task, run, key = (_text(payload[name]) for name in ("task_id", "agent_run_id", "idempotency_key"))

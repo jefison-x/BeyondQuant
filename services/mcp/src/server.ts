@@ -617,7 +617,8 @@ async function byqStrategyValidate(args: StrategyRequest, extra: unknown) {
 
 async function byqStrategyVersionCreate(args: StrategyRequest, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqStrategyVersionCreate(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqStrategyVersionCreate(BACKEND_URL, { ...args, trace_id: context.trace_id },
+    evidenceBoundedFetcher(trustedBackendFetcher(context), rootHeader(extra))) : agentContextUnavailable();
 }
 
 async function byqStrategyApprove(args: StrategyRequest, extra: unknown) {
@@ -1262,13 +1263,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_strategy_version_create",
     {
       description: "Materialize an immutable content-addressed StrategyVersion from a validated draft.",
-      inputSchema: {
-        task_id: z.string(),
-        experiment_id: z.string().optional(),
-        draft_artifact_id: z.string(),
-        trace_id: z.string(),
-        idempotency_key: z.string(),
-      },
+      inputSchema: domainValidationSchemas.byq_strategy_version_create,
     },
     (args) => byqStrategyVersionCreate(args, trustedContext),
   );
