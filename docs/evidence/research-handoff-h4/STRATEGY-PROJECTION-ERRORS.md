@@ -11,3 +11,5 @@
 本候选尚未生成独立构建身份、更新台账源码哈希、提交或推送；H4全接口与H5保留。
 
 最终本地完整 strategy_api 与版本纠错用例14项通过（12.19秒）。复核 main.py 差异只包裹两个未登记的读取handler，其他已登记handler未改；据此更新整文件哈希，不新增全接口已完成数量。
+
+远端 .96 CI run 34749217063 已 completed/failure：Backend 唯一失败为 test_agent_strategy_approval_is_bound_to_exact_resource_and_human_decision，strategy_api.py:299 KeyError artifact；其余组件及集成通过。与本地已复现并在 .100 修正的人工夹具一致。保留失败，不对 .96 标绿；后续 .101 需新远端验证。
