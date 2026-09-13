@@ -552,6 +552,7 @@ class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinua
             assert artifact_row is not None
             return {
                 "record_status": "saved",
+                "idempotency_key": record_key,
                 "source_count": len(content["sources"]),  # type: ignore[arg-type]
                 "task": self._task_row(task_row),
                 "artifact": self._artifact_row(artifact_row),

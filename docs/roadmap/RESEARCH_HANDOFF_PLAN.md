@@ -140,3 +140,5 @@ H4 网页证据错误成功回执和原键只读恢复已修正，见[WEB-RECEIP
 H4 研究短事务等待与网页同原键并发已修复，研究GET台账补至87项，见[RESEARCH-STORAGE-BOUNDS](../evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md)。全接口及H5继续。
 
 H5 三轮研究的固定验收合同和反例门禁已起草，见[COMPLETE-RESEARCH-CONTRACT](../evidence/research-handoff-h5/COMPLETE-RESEARCH-CONTRACT.md)。未执行真实模型，不计作完成。
+
+H4 MCP入口畸形请求进程退出及请求体漏拦截已修复，并纠正`.87`网页公开回执合同，完整MCP测试通过，见[MCP-TRANSPORT](../evidence/research-handoff-h4/MCP-TRANSPORT.md)。其他工具/人工入口与H5继续。

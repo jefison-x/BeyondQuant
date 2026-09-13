@@ -1564,7 +1564,14 @@ const handler = toNodeHandler(continuationAdmission(observedHandler, async (rese
 }));
 
 const httpServer = createServer(async (request, response) => {
-  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  let url: URL;
+  try {
+    // Routing needs only the request target; an untrusted Host is not a URL base.
+    url = new URL(request.url ?? "/", "http://localhost");
+  } catch {
+    writeJson(response, 400, { service: SERVICE, status: "invalid_request" });
+    return;
+  }
 
   if (request.method === "GET" && url.pathname === "/healthz") {
     writeJson(response, 200, healthPayload());
@@ -1582,7 +1589,17 @@ const httpServer = createServer(async (request, response) => {
     return;
   }
 
-  await handler(request, response);
+  try {
+    await handler(request, response);
+  } catch {
+    // A failed transport can follow a committed domain write. Never claim rejection
+    // or retry it here, and never let an async listener rejection kill all sessions.
+    if (response.headersSent || response.writableEnded || response.destroyed) {
+      response.destroy();
+    } else {
+      writeJson(response, 503, { service: SERVICE, status: "outcome_unknown" });
+    }
+  }
 });
 
 httpServer.listen(PORT, "0.0.0.0", () => {

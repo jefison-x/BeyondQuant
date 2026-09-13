@@ -2347,7 +2347,7 @@
       ],
       "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
-        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
         "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
         "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
@@ -2380,7 +2380,7 @@
       ],
       "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
-        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
         "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
         "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
@@ -2413,7 +2413,7 @@
       ],
       "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
-        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
         "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
         "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
@@ -2446,7 +2446,7 @@
       ],
       "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
-        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
         "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
         "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
@@ -2479,7 +2479,7 @@
       ],
       "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
-        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
         "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
         "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
@@ -2512,7 +2512,7 @@
       ],
       "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
-        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
         "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
         "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
@@ -2545,7 +2545,7 @@
       ],
       "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
-        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
         "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
         "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
@@ -2578,7 +2578,7 @@
       ],
       "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
-        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
         "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
         "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
@@ -2611,7 +2611,7 @@
       ],
       "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
-        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
         "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
         "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
@@ -2644,7 +2644,7 @@
       ],
       "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
-        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
         "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
         "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
@@ -2677,10 +2677,43 @@
       ],
       "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
-        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
         "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
         "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
+      }
+    }
+  ],
+  "manual_surfaces": [
+    {
+      "name": "mcp_transport",
+      "file": "services/mcp/src/server.ts",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部Bearer服务认证；每请求由可信HTTP头构造owner/workspace/session/root，工具参数不能替代可信根身份",
+      "mode": "transport read/write dispatch",
+      "authorization": "/healthz仅存活公开；MCP路径须服务认证，领域执行仍逐工具验证，后台另有原任务许可准入",
+      "idempotency": "HTTP入口不生成业务身份、不自动重放；领域原键/回执归Backend，官方SDK处理协议生命周期",
+      "timeout": "POST请求体5秒且普通512KiB/因子4MiB；内部准入HTTP8秒；SSE保留正常长连接，不以此限制长研究总时长",
+      "errors": "畸形URL400、未知路径404、认证401；异步处理失败未发头则503 unknown，已发头则断开，不泄露异常内容或退出全进程",
+      "retry": "没有入口级写重试；传输丢失交由原工具/原任务的精确回执恢复，不推断提交不存在",
+      "authority": "仅协议与执行准入，领域状态与完成证据仍由Backend持久化",
+      "recovery": "进程/连接中断不重写领域；真实HTTP保存、原键重复和按ID回读通过，未知命令按各工具恢复合同",
+      "consumers": [
+        "官方DSH MCP客户端；隔离官方MCP协议测试客户端"
+      ],
+      "evidence": [
+        "services/mcp/tests/transport-resilience-test.ts",
+        "services/mcp/tests/domain-schema-observation-test.ts",
+        "services/mcp/tests/continuation-admission-test.ts",
+        "services/mcp/tests/domain-server-wire-test.ts",
+        "services/mcp/tests/contract-test.ts",
+        "docs/evidence/research-handoff-h4/MCP-TRANSPORT.md"
+      ],
+      "source_sha256": "b4b86dd037467db7b42ed8dba85baa7ef407998745d3e3ec21048e79d48eb634",
+      "dependencies_sha256": {
+        "services/mcp/src/domain-schema-observation.ts": "sha256:bbb1660a0eabd3552c52227d4e328e6e9f37a16b723fe0d0fa88e46bda104c67",
+        "services/mcp/src/continuation-admission.ts": "sha256:a4e143cb62714dcd1914c2a5e7505cbc25694b47fe5caf5a4ff9a31cd7a73dce",
+        "services/mcp/src/domain-admission.ts": "sha256:f5c4fa396a5d1d8629073b9ae5f8e3ffb738708b11d42e44f3636b608528529e"
       }
     }
   ]

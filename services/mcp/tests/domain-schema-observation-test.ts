@@ -64,3 +64,39 @@ try {
   await client.close();
   await new Promise<void>((resolve, reject) => http.close(error => error ? reject(error) : resolve()));
 }
+
+let oversizedExecutions = 0;
+const boundedGate = observeDomainSchemaFailures({ async fetch() {
+  oversizedExecutions++;
+  return Response.json({executed:true});
+}}, async () => undefined);
+const oversized = new Request('http://localhost/mcp', {method:'POST',
+  body: JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{
+    name:'byq_strategy_validate',arguments:{script:'x'.repeat(513*1024)},
+  }})});
+assert.equal((await boundedGate.fetch(oversized)).status, 400);
+assert.equal(oversizedExecutions, 0, 'oversized unobserved request must not reach tool execution');
+
+for (const body of ['{', new Uint8Array([0xff]), JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',
+  params:{name:'byq_factor_compute',arguments:{data:'x'.repeat(4*1024*1024)}}})]) {
+  const rejected = await boundedGate.fetch(new Request('http://localhost/mcp',{method:'POST',body}));
+  assert.equal(rejected.status,400);
+}
+assert.equal(oversizedExecutions,0);
+const factorEnvelope = new Request('http://localhost/mcp',{method:'POST',body:JSON.stringify({
+  jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'byq_factor_compute',arguments:{data:'x'.repeat(1024*1024)}},
+})});
+assert.equal((await boundedGate.fetch(factorEnvelope)).status,200);
+assert.equal(oversizedExecutions,1,'the existing larger factor transport envelope remains supported');
+let streamCancelled = false;
+const incomplete = new Request('http://localhost/mcp',{method:'POST',duplex:'half',body:new ReadableStream({
+  start(controller) { controller.enqueue(new TextEncoder().encode('{"jsonrpc":')); },
+  cancel() { streamCancelled = true; },
+})} as RequestInit & {duplex:'half'});
+const started = Date.now();
+assert.equal((await boundedGate.fetch(incomplete)).status,400);
+assert.ok(Date.now()-started >= 4500 && Date.now()-started < 6500);
+await new Promise(resolve=>setTimeout(resolve,0));
+assert.ok(streamCancelled,'rejected slow body must release both stream branches');
+assert.equal(oversizedExecutions,1);
+console.log('MCP body bounds PASS: malformed, oversized and stalled bodies cannot execute tools');

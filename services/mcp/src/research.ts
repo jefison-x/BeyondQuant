@@ -289,16 +289,14 @@ export async function fetchByqWebEvidenceCreate(
     (payload) => {
       const task = payload.task as Record<string, unknown> | null;
       const artifact = payload.artifact as Record<string, unknown> | null;
-      const digest = createHash('sha256').update(request.idempotency_key.trim()).digest('hex').slice(0, 32);
       const content = artifact?.content as Record<string, unknown> | null;
       if (payload.record_status !== 'saved'
           || !task || Array.isArray(task) || !artifact || Array.isArray(artifact)
           || typeof task.task_id !== 'string' || !/^task_[0-9a-f]{32}$/.test(task.task_id)
-          || task.idempotency_key !== `web-record-task:${digest}`
+          || payload.idempotency_key !== request.idempotency_key.trim()
           || task.title !== request.task.title.trim() || task.objective !== request.task.objective.trim()
           || typeof artifact.artifact_id !== 'string' || !/^artifact_[0-9a-f]{32}$/.test(artifact.artifact_id)
           || artifact.task_id !== task.task_id || artifact.kind !== 'web_research_evidence'
-          || artifact.idempotency_key !== `web-record-artifact:${digest}`
           || !Number.isSafeInteger(payload.source_count) || Number(payload.source_count) < 0
           || !Array.isArray(content?.sources) || content.sources.length !== payload.source_count) {
         // requestResearch classifies a rejected write receipt as unknown, preserving its key.

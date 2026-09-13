@@ -85,12 +85,11 @@ assert.match(conflict.content[0].text, /research_conflict/);
 assert.doesNotMatch(conflict.content[0].text, /SQL path|var\/lib/);
 
 function webReceipt(key: string, title: string, objective: string, sourceCount = 2) {
-  const digest = createHash('sha256').update(key).digest('hex').slice(0, 32);
   const taskId = 'task_' + 'a'.repeat(32);
-  return { record_status: 'saved', source_count: sourceCount,
-    task: { task_id: taskId, title, objective, idempotency_key: `web-record-task:${digest}` },
+  return { record_status: 'saved', idempotency_key:key, source_count: sourceCount,
+    task: { task_id: taskId, title, objective },
     artifact: { artifact_id: 'artifact_0123456789abcdef0123456789abcdef', task_id: taskId,
-      kind: 'web_research_evidence', idempotency_key: `web-record-artifact:${digest}`,
+      kind: 'web_research_evidence',
       content: { sources: Array.from({length: sourceCount}, () => ({source_id:'source_internal'})) } },
   };
 }
@@ -339,9 +338,9 @@ for (const invalidReceipt of [{}, { record_status: 'saved', source_count: 0 },
 
 for (const corrupt of [
   (row: ReturnType<typeof webReceipt>) => { row.task.task_id = 'task_' + 'b'.repeat(32); },
-  (row: ReturnType<typeof webReceipt>) => { row.task.idempotency_key = 'other-key'; },
+  (row: ReturnType<typeof webReceipt>) => { row.idempotency_key = 'other-key'; },
   (row: ReturnType<typeof webReceipt>) => { row.task.objective = 'unrelated goal'; },
-  (row: ReturnType<typeof webReceipt>) => { row.artifact.idempotency_key = 'other-key'; },
+  (row: ReturnType<typeof webReceipt>) => { row.artifact.task_id = 'task_' + 'f'.repeat(32); },
   (row: ReturnType<typeof webReceipt>) => { row.artifact.kind = 'strategy_version'; },
   (row: ReturnType<typeof webReceipt>) => { row.artifact.artifact_id = 'bad-id'; },
   (row: ReturnType<typeof webReceipt>) => { row.source_count = 3; },

@@ -217,6 +217,9 @@ def test_web_record_original_keys_recover_after_store_restart(monkeypatch):
     })
     assert response.status_code == 201, response.text
     original = response.json()
+    assert original['idempotency_key'] == key
+    assert 'idempotency_key' not in original['task']
+    assert 'idempotency_key' not in original['artifact']
     store.close()
     replacement = ResearchStore()
     monkeypatch.setattr(main, 'research_store', replacement)

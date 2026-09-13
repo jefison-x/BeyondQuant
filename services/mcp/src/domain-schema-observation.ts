@@ -13,9 +13,14 @@ export async function boundedBody(request: Request): Promise<unknown> {
   if (!reader) return undefined;
   const chunks: Uint8Array[] = [];
   let size = 0;
+  let complete = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error('MCP body deadline')), 5000);
+  });
   try {
     while (true) {
-      const chunk = await reader.read();
+      const chunk = await Promise.race([reader.read(), deadline]);
       if (chunk.done) break;
       size += chunk.value.byteLength;
       if (size > 4 * 1024 * 1024) return undefined;
@@ -26,12 +31,16 @@ export async function boundedBody(request: Request): Promise<unknown> {
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
     const body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     if (size > 512 * 1024 && body?.params?.name !== "byq_factor_compute") return undefined;
+    complete = true;
     return body;
   } catch {
     return undefined; // Missing proof is never execution permission.
   } finally {
-    // A cloned tee must not await cancellation of the untouched original.
+    if (timer !== undefined) clearTimeout(timer);
+    // Never await tee cancellation. A rejected request must not leave its
+    // untouched branch buffering an unbounded incoming body.
     void reader.cancel().catch(() => undefined);
+    if (!complete) void request.body?.cancel().catch(() => undefined);
   }
 }
 
@@ -42,6 +51,8 @@ export function observeDomainSchemaFailures(handler: Handler,
     let callId: unknown;
     if (request.method === "POST") {
       const body = options?.parsedBody ?? await boundedBody(request);
+      if (body === undefined) return new Response('Invalid or oversized MCP envelope', { status: 400 });
+      options = { ...options, parsedBody: body };
       if (body && typeof body === "object" && !Array.isArray(body)) {
         const envelope = body as Record<string, unknown>;
         const params = envelope.params as Record<string, unknown> | undefined;

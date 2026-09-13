@@ -43,9 +43,11 @@ def audit():
         if (REQUIRED|{'file'})-set(entry):
             errors.append({'surface':name,'error':'missing manual review fields'})
             continue
-        path=ROOT/entry['file']
-        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=entry['source_sha256']:
-            errors.append({'surface':name,'error':'manual source drift'})
+        hashes={entry['file']:entry['source_sha256'],**entry.get('dependencies_sha256',{})}
+        for relative,expected in hashes.items():
+            path=ROOT/relative
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=str(expected).removeprefix('sha256:'):
+                errors.append({'surface':name,'error':'manual source drift','file':relative})
         if not entry['evidence']:errors.append({'surface':name,'error':'missing manual evidence'})
         for evidence in entry['evidence']:
             if not evidence.startswith('https://') and not (ROOT/evidence).is_file():
