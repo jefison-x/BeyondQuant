@@ -5,7 +5,7 @@ import json
 import os
 import re
 import uuid
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -355,6 +355,29 @@ class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinua
         except SQLAlchemyError as error:
             raise ResearchPersistenceError("research storage is unavailable") from error
 
+    @contextmanager
+    def _transaction(self):
+        # Bound metadata contention; this does not impose an Agent or research duration.
+        if not self._lock.acquire(timeout=2):
+            raise ResearchPersistenceError("research storage is unavailable")
+        try:
+            with self.engine.begin() as connection:
+                execute(connection, "SET LOCAL lock_timeout = '2s'")
+                execute(connection, "SET LOCAL statement_timeout = '5s'")
+                yield connection
+        except SQLAlchemyError as error:
+            raise ResearchPersistenceError("research storage is unavailable") from error
+        finally:
+            self._lock.release()
+
+    def _execute(self, sql, params=None):
+        with self._transaction() as connection:
+            return execute(connection, sql, params)
+
+    def _fetch_one(self, sql, params=None):
+        with self._transaction() as connection:
+            return fetch_one(connection, sql, params)
+
     def bootstrap_schema(self) -> None:
         super().bootstrap_schema()
         # Column back-migration parity with the former SQLite schema.
@@ -444,6 +467,9 @@ class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinua
         task_hash = _hash_request(task_data)
 
         with self._transaction() as connection:
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {
+                "scope": f"research-task|{owner}|{task_data['idempotency_key']}",
+            })
             task_row = fetch_one(
                 connection,
                 "SELECT * FROM research_tasks WHERE owner_principal = :owner_principal AND idempotency_key = :idempotency_key",
@@ -489,6 +515,9 @@ class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinua
             )
             artifact_data["lineage"] = artifact_lineage
             artifact_hash = _hash_request(artifact_data)
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {
+                "scope": f"research-artifact|{task_row['task_id']}|{artifact_data['idempotency_key']}",
+            })
             artifact_row = fetch_one(
                 connection,
                 "SELECT * FROM artifacts WHERE task_id = :task_id AND idempotency_key = :idempotency_key",

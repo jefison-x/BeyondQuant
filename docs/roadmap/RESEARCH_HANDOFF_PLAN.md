@@ -136,3 +136,5 @@ H4 模型绑定和档案删除原命令回执及真实浏览器恢复通过，�
 H4 五类个人审批策略原键恢复、并发及原子回滚与真实浏览器通过，台账76项；见[POLICY-RECOVERY](../evidence/research-handoff-h4/POLICY-RECOVERY.md)。其余接口及H5继续。
 
 H4 网页证据错误成功回执和原键只读恢复已修正，见[WEB-RECEIPT-VALIDATION](../evidence/research-handoff-h4/WEB-RECEIPT-VALIDATION.md)。该接口剩余并发及纠错资格继续。
+
+H4 研究短事务等待与网页同原键并发已修复，研究GET台账补至87项，见[RESEARCH-STORAGE-BOUNDS](../evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md)。全接口及H5继续。

@@ -2319,6 +2319,369 @@
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1946,
+      "method": "GET",
+      "path": "/v1/research/submissions/reconcile",
+      "handler": "reconcile_research_submission",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "原owner/workspace/entity_type/key及必要原task精确查询；未命中仍unknown，不调用创建或列表",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_submission_reconciliation.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1963,
+      "method": "GET",
+      "path": "/v1/research/submission-watches/{watch_id}",
+      "handler": "get_research_submission_watch",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "精确watch ID、owner/workspace和原会话身份核对；GET不消耗新的核对预算",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_receipt_watches.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1969,
+      "method": "GET",
+      "path": "/v1/product/research/submission-watches/{conversation_id}",
+      "handler": "list_research_submission_watches",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "原会话身份及owner/workspace；最多64条展示，不据截断列表认定原提交不存在",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_receipt_watches.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1996,
+      "method": "GET",
+      "path": "/v1/research/tasks/{task_id}",
+      "handler": "get_research_task",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "精确task ID和owner；handoff再次核对workspace/有效成员，缺原会话明确blocked",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_api.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2009,
+      "method": "GET",
+      "path": "/v1/research/tasks/{task_id}/handoff",
+      "handler": "get_research_task_handoff",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "只读一致性快照；最多64引用并报告has_more，完成判断来自持久领域事实",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_handoff.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2015,
+      "method": "GET",
+      "path": "/v1/research/tasks/{task_id}/continuation-permission",
+      "handler": "get_research_continuation_permission",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "必须为原任务有效human owner和原会话；只投影许可及预算，can_start固定false，不执行续接",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_continuation.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2037,
+      "method": "GET",
+      "path": "/v1/research/tasks",
+      "handler": "list_research_tasks",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "owner过滤，固定最近200条目录；目录缺项不能证明原提交不存在",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2057,
+      "method": "GET",
+      "path": "/v1/research/experiments/{experiment_id}",
+      "handler": "get_experiment",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "规范化精确experiment ID和owner；返回持久对象，不推断原任务完成",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_api.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2070,
+      "method": "GET",
+      "path": "/v1/research/experiments",
+      "handler": "list_experiments",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "owner过滤，固定最近200条目录，不用列表替代原键恢复",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2136,
+      "method": "GET",
+      "path": "/v1/research/artifacts/{artifact_id}",
+      "handler": "get_artifact",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "规范化精确Artifact ID和owner；保留领域kind及原task供消费者交叉核对",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_api.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2149,
+      "method": "GET",
+      "path": "/v1/research/artifacts",
+      "handler": "list_artifacts",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "owner过滤，固定最近200条目录；Artifact存在不等同validated或研究完成",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:35021e3825e8064916d798275ba18bb77a45f26a0cfac5ad0ed935c42e82b16b",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
+      }
     }
   ]
 }
