@@ -229,7 +229,7 @@ for (const entity_type of ["research_task", "experiment", "artifact"] as const) 
       assert.equal(init?.body, undefined);
       return new Response(JSON.stringify({ schema_version: "research-submission-reconciliation.v1",
         entity_type, idempotency_key: lookup.idempotency_key, status,
-        ...(status === "confirmed" ? { entity: { [{ research_task: "task_id", experiment: "experiment_id", artifact: "artifact_id" }[entity_type]]: "original_id", status: "planned" } } : {}),
+        ...(status === "confirmed" ? { entity: { [{ research_task: "task_id", experiment: "experiment_id", artifact: "artifact_id" }[entity_type]]: "original_id", ...(lookup.task_id ? { task_id: lookup.task_id } : {}), status: "planned" } } : {}),
       }), { status: 200 });
     });
     assert.equal(calls, 1);
@@ -291,3 +291,24 @@ const redundantLookup = await fetchByqResearchLookup('http://backend', {
 }, async () => { throw new Error('invalid lookup must not reach Backend'); });
 assert.equal(redundantLookup.isError, true);
 assert.match(JSON.parse(redundantLookup.content[0].text).backend.validation.message, /entity_id.*task_id/);
+
+for (const entity_type of ["experiment", "artifact"] as const) {
+  for (const task_id of [undefined, "task_other", null, 42]) {
+    let calls = 0;
+    const response = await fetchByqResearchLookup("http://backend:8000", {
+      entity_type, idempotency_key: "original-key", task_id: "task_original",
+    }, async (_url, init) => {
+      calls++;
+      assert.equal(init?.method, "GET");
+      return new Response(JSON.stringify({
+        schema_version: "research-submission-reconciliation.v1", status: "confirmed",
+        entity_type, idempotency_key: "original-key",
+        entity: { [entity_type + "_id"]: entity_type + "_original", task_id },
+      }));
+    });
+    assert.equal(calls, 1);
+    assert.equal(response.isError, true, `${entity_type}: reject mismatched parent ${task_id}`);
+    assert.equal(JSON.parse(response.content[0].text).backend.status, "invalid_response");
+  }
+}
+console.log("Research receipt parent binding PASS: missing, wrong and malformed task identities rejected");

@@ -73,3 +73,5 @@ H1 只调整 Gateway 发给 DSH 的审批交接指令。稳定审批 ID 仍是�
 
 2026-09-13：修复 HTTP 研究创建入口的提交标识生成，保留持久凭据和原键重试。
 [本地证据](../evidence/research-handoff-h4/AUDIT.md)；H4 总范围仍进行中，真实浏览器合并证据待补。
+
+H4 第二切片：原键核对的 Experiment/Artifact 回执须与原任务一致；[证据](../evidence/research-handoff-h4/RECEIPT-LINEAGE.md)。完整接口审计仍进行中。

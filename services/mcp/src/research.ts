@@ -343,6 +343,8 @@ export async function fetchByqResearchLookup(
   if (payload.schema_version !== "research-submission-reconciliation.v1"
       || payload.entity_type !== request.entity_type || payload.idempotency_key !== request.idempotency_key!.trim()
       || !["confirmed", "outcome_unknown"].includes(payload.status)
+      || (payload.status === "confirmed" && request.entity_type !== "research_task"
+        && payload.entity?.task_id !== request.task_id)
       || (payload.status === "confirmed" && (!payload.entity || Array.isArray(payload.entity) || typeof payload.entity[entityKey] !== "string" || !payload.entity[entityKey].trim()))) {
     return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
   }
