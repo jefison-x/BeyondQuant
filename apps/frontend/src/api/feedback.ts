@@ -60,3 +60,18 @@ export const moderateFeedback = (item: FeedbackModerationItem, action: "triage" 
     method: "POST",
     body: JSON.stringify({ expected_version: item.version, rationale, idempotency_key: createRequestId(), ...(action === "duplicate" ? { canonical_feedback_id: canonicalFeedbackId } : {}) }),
   });
+
+export type FeedbackCommand = {operation:'create'|'update'|'submit'|'withdraw';key:string;feedback_id?:string;payload:Record<string,unknown>};
+export async function sendFeedbackCommand(command:FeedbackCommand) {
+  const path = command.operation === 'create' ? '/items' : '/items/'+encodeURIComponent(command.feedback_id!)+(command.operation === 'update' ? '' : '/'+command.operation);
+  const value = await request<{feedback:ProductFeedbackSummary}>(path,{method:command.operation === 'update'?'PUT':'POST',
+    signal:AbortSignal.timeout(15000),body:JSON.stringify({...command.payload,idempotency_key:command.key})});
+  if(!/^feedback_[0-9a-f]{32}$/.test(value.feedback?.feedback_id ?? '') || (command.feedback_id && value.feedback.feedback_id !== command.feedback_id)) throw Error('反馈回执未确认，请核对原请求');
+  return value;
+}
+export async function reconcileFeedbackCommand(command:FeedbackCommand) {
+  const value = await request<{state:'confirmed';feedback:ProductFeedbackSummary}|{state:'not_found'}>('/receipts'+query({operation:command.operation,idempotency_key:command.key,...(command.feedback_id ? {feedback_id:command.feedback_id}:{})}),{signal:AbortSignal.timeout(15000)});
+  if(value.state === 'not_found' && Object.keys(value).length === 1) return value;
+  if(value.state !== 'confirmed' || !/^feedback_[0-9a-f]{32}$/.test(value.feedback?.feedback_id ?? '') || (command.feedback_id && value.feedback.feedback_id !== command.feedback_id)) throw Error('反馈原请求核对结果不完整');
+  return value;
+}

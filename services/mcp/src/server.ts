@@ -123,7 +123,7 @@ import {
 } from "./data-demand.js";
 import { PageCallBudget, boundedIntegerEnvironment } from "./page-budget.js";
 import {
-  fetchByqFeedbackCreate, fetchByqFeedbackGet, fetchByqFeedbackList, fetchByqFeedbackOptions,
+  fetchByqFeedbackCreate, fetchByqFeedbackGet, fetchByqFeedbackReceipt, fetchByqFeedbackList, fetchByqFeedbackOptions,
   fetchByqFeedbackPreview, fetchByqFeedbackSubmit, fetchByqFeedbackUpdate,
 } from "./feedback.js";
 
@@ -707,8 +707,12 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_feedback_get",
-    { description: "Read one feedback item owned by the current trusted workspace.", inputSchema: { feedback_id: z.string().regex(/^feedback_[0-9a-f]{32}$/) } },
-    (args) => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? fetchByqFeedbackGet(BACKEND_URL, args.feedback_id, fetcher) : agentContextUnavailable(); },
+    { description: "Read one feedback item owned by the current trusted workspace.", inputSchema: z.union([
+      z.object({feedback_id:z.string().regex(/^feedback_[0-9a-f]{32}$/)}).strict(),
+      z.object({operation:z.literal('create'),idempotency_key:z.string().min(1).max(128)}).strict(),
+      z.object({operation:z.enum(['update','submit','withdraw']),idempotency_key:z.string().min(1).max(128),feedback_id:z.string().regex(/^feedback_[0-9a-f]{32}$/)}).strict(),
+    ]) },
+    (args) => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? ('operation' in args ? fetchByqFeedbackReceipt(BACKEND_URL,args,fetcher) : fetchByqFeedbackGet(BACKEND_URL, args.feedback_id, fetcher)) : agentContextUnavailable(); },
   );
   server.registerTool(
     "byq_feedback_create_draft",

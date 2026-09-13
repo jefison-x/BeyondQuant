@@ -2401,6 +2401,14 @@ def product_feedback_create(request: Request, payload: dict[str, object]) -> dic
     return _backend_request("POST", "/v1/feedback/items", payload, headers=_feedback_headers(request))
 
 
+@router.get("/feedback/receipts")
+def product_feedback_receipt(request: Request, operation: str, idempotency_key: str, feedback_id: str | None = None):
+    params = {"operation":operation,"idempotency_key":idempotency_key}
+    if feedback_id is not None:
+        params["feedback_id"] = feedback_id
+    return _backend_request("GET", "/v1/feedback/receipts?"+urlencode(params), headers=_feedback_headers(request))
+
+
 @router.get("/feedback/items/{feedback_id}")
 def product_feedback_get(feedback_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)

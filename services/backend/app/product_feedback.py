@@ -503,6 +503,9 @@ class ProductFeedbackStore(PgStoreMixin):
         return heartbeat >= datetime.now(timezone.utc) - timedelta(seconds=120)
 
     def _replay(self, connection: Any, *, scope: str, actor: str, operation: str, key: str, request_hash: str) -> dict[str, object] | None:
+        execute(connection, "SET LOCAL lock_timeout = '2s'")
+        execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                {"scope":_hash([scope, actor, operation, key])})
         row = fetch_one(connection, """SELECT request_hash, result_json FROM product_feedback_commands
             WHERE scope_key=:scope AND actor_principal=:actor AND operation=:operation AND idempotency_key=:key""",
             {"scope": scope, "actor": actor, "operation": operation, "key": key})
@@ -650,6 +653,27 @@ class ProductFeedbackStore(PgStoreMixin):
             self._record_command(connection, scope=trusted_workspace, actor=trusted_actor, operation="create", key=key,
                                  request_hash=request_hash, result=result, now=now)
             return result
+
+    def reconcile_command(self, operation, key, *, feedback_id=None, trusted_workspace, trusted_actor):
+        if operation not in {"create", "update", "submit", "withdraw"}:
+            raise ValueError("unsupported feedback receipt operation")
+        key = _idempotency(key)
+        identity = _feedback_id(feedback_id) if operation != "create" else None
+        command = operation if identity is None else f"{operation}:{identity}"
+        row = self._fetch_one("""SELECT result_json FROM product_feedback_commands
+            WHERE scope_key=:workspace AND actor_principal=:actor AND operation=:operation AND idempotency_key=:key""",
+            {"workspace":trusted_workspace,"actor":trusted_actor,"operation":command,"key":key})
+        if row is None:
+            return {"state":"not_found"}
+        result = row["result_json"]
+        if not isinstance(result, dict) or not isinstance(result.get("feedback"), dict):
+            raise FeedbackPersistenceError("feedback receipt is invalid")
+        actual = _feedback_id(result["feedback"].get("feedback_id"))
+        if identity is not None and actual != identity:
+            raise FeedbackPersistenceError("feedback receipt identity differs")
+        # Confirm the object remains in this workspace; return the original command result.
+        self.get_owner(actual, trusted_workspace=trusted_workspace)
+        return {"state":"confirmed", "feedback":result["feedback"]}
 
     def list_owner(self, *, trusted_workspace: str, status: str = "all", category: str = "all",
                    query: str = "", limit: int = 20, offset: int = 0) -> dict[str, object]:

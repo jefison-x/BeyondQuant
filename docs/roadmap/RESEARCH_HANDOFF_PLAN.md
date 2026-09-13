@@ -105,3 +105,6 @@ H5已验证真实沪深300三个月缓存及实际Worker无外部取数完成；
 
 H4 学习运行/迭代/评估信号/经验提案已补原键核对，最后一轮回执丢失可恢复，
 见[LEARNING-RECOVERY](../evidence/research-handoff-h4/LEARNING-RECOVERY.md)。总范围继续进行。
+
+H4 反馈草稿及原命令核对已接入，真实浏览器刷新恢复不重复创建；
+见[FEEDBACK-RECOVERY](../evidence/research-handoff-h4/FEEDBACK-RECOVERY.md)。全接口映射与H5继续。

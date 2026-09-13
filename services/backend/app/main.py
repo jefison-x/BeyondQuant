@@ -592,6 +592,13 @@ def feedback_create(payload: dict[str, Any], request: Request) -> dict[str, obje
     ))
 
 
+@app.get("/v1/feedback/receipts")
+def feedback_receipt(request: Request, operation: str, idempotency_key: str, feedback_id: str | None = None):
+    context = _feedback_context(request)
+    return _feedback_call(lambda: feedback_store.reconcile_command(operation, idempotency_key, feedback_id=feedback_id,
+        trusted_workspace=context["workspace_id"], trusted_actor=context["actor_principal"]))
+
+
 @app.get("/v1/feedback/items/{feedback_id}")
 def feedback_get(feedback_id: str, request: Request) -> dict[str, object]:
     context = _feedback_context(request)

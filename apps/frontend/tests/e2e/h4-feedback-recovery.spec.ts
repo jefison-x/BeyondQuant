@@ -1,0 +1,35 @@
+import {test,expect} from '@playwright/test';
+test.skip(process.env.BYQ_H5_EVIDENCE !== '1','isolated Product stack required');
+test('private feedback draft recovers its original commit after refresh',async({page})=>{
+  await page.goto('/login');
+  await page.getByLabel('用户名').fill('h5-browser');
+  await page.getByLabel('密码').fill('test-password-123');
+  await page.getByRole('button',{name:'进入'}).click();
+  await expect(page).toHaveURL(/\/agent$/);
+  await page.goto('/feedback');
+  await page.getByRole('button',{name:'新建',exact:true}).click();
+  const title = '隔离恢复测试 '+Date.now();
+  await page.getByLabel('标题',{exact:true}).fill(title);
+  await page.getByLabel('问题或建议描述').fill('验证保存成功但浏览器未收到回执时可以恢复原草稿。');
+  let id = '', writes = 0;
+  page.on('request',r=>{if(r.url().endsWith('/feedback/items') && r.method()==='POST') writes++;});
+  await page.route('**/api/product/feedback/items',async route=>{
+    if(route.request().method() !== 'POST') return route.continue();
+    const response = await route.fetch(); expect(response.ok()).toBeTruthy();
+    id = (await response.json()).feedback.feedback_id;
+    await route.abort('failed');
+  });
+  await page.getByRole('button',{name:'保存草稿',exact:true}).click();
+  await expect(page.getByText('有一笔反馈操作尚未确认',{exact:true})).toBeVisible();
+  expect(id).toMatch(/^feedback_[0-9a-f]{32}$/);
+  await page.reload();
+  await expect(page.getByText('有一笔反馈操作尚未确认',{exact:true})).toBeVisible();
+  const receipt = page.waitForResponse(r=>r.url().includes('/feedback/receipts?'));
+  await page.getByRole('button',{name:'核对原反馈请求',exact:true}).click();
+  const body = await (await receipt).json();
+  expect(body.state).toBe('confirmed');expect(body.feedback.feedback_id).toBe(id);
+  expect(body.feedback.status).toBe('draft');
+  await expect(page.getByText('有一笔反馈操作尚未确认',{exact:true})).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
+  expect(writes).toBe(1);
+});

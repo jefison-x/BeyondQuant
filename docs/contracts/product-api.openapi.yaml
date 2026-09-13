@@ -91,6 +91,14 @@ paths:
   /api/product/feedback/items:
     get: {summary: 筛选并分页返回当前 personal workspace 的反馈摘要。, responses: *okResponses}
     post: {summary: 创建 owner-scoped feedback draft 和首个不可变 revision。, responses: *createdResponses}
+  /api/product/feedback/receipts:
+    get:
+      summary: 按当前工作区与原执行者核对反馈原命令回执。
+      parameters:
+        - {name: operation, in: query, required: true, schema: {type: string, enum: [create, update, submit, withdraw]}}
+        - {name: idempotency_key, in: query, required: true, schema: {type: string}}
+        - {name: feedback_id, in: query, schema: {type: string}}
+      responses: *okResponses
   /api/product/feedback/items/{feedback_id}:
     parameters: [{$ref: "#/components/parameters/FeedbackId"}]
     get: {summary: 按需返回一个 owner-scoped feedback detail。, responses: *okResponses}
