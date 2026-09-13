@@ -85,3 +85,6 @@ H4 第三切片：三类研究对象按 ID 读取及已确认回执回读均拒�
 H4 因子提交：原键锁内复用规范化结果，避免成功重试/并发重复计算；未知回执提供原任务Artifact核对。见[证据](../evidence/research-handoff-h4/FACTOR-RECOVERY.md)。
 
 H4 继续：四类实际HTTP提交的丢回执/Backend重启/新进程原键只读恢复通过，见[CROSS-PROCESS](../evidence/research-handoff-h4/CROSS-PROCESS.md)。策略版本内容去重新增每个原键的持久回执，见[STRATEGY-RECEIPTS](../evidence/research-handoff-h4/STRATEGY-RECEIPTS.md)。
+
+H4/H5 数据修复重复请求：完整已验证指数月份可复用缓存，缺失月份才取数，证据损坏停止。
+[验收与真实覆盖缺口](../evidence/research-handoff-h4/INDEX-REPAIR-CACHE.md)；H5完整研究尚未完成。

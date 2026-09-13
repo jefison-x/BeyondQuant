@@ -1129,6 +1129,8 @@ def sync_declared_inputs(
     index_universe = declared.get("index_universe")
     if index_universe:
         for period in list(requirement.get("index_weight_periods", [])):
+            if readiness_store.has_verified_index_month(str(index_universe), str(period)):
+                continue
             year, month = int(str(period)[:4]), int(str(period)[4:6])
             start = f"{period}01"
             end = f"{period}{monthrange(year, month)[1]:02d}"

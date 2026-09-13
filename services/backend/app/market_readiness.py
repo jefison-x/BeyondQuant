@@ -518,6 +518,51 @@ class MarketReadinessStore(PgStoreMixin):
                       content_sha256=excluded.content_sha256,updated_at=excluded.updated_at""", row)
         return len(bars)
 
+    def has_verified_index_month(self, index_symbol: str, period: str) -> bool:
+        """Reuse a closed month only with intact persisted snapshot evidence."""
+        from calendar import monthrange
+        first = datetime.strptime(period + "01", "%Y%m%d")
+        last = first.replace(day=monthrange(first.year, first.month)[1]).date()
+        params = {"symbol":index_symbol, "period":period}
+        with self._transaction() as connection:
+            execute(connection, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            markers = execute(connection, """SELECT * FROM market_index_weight_completeness
+                WHERE index_symbol=:symbol AND period=:period""", params)
+            if not markers or not markers[0]["row_count"]:
+                return False
+            marker = markers[0]
+            provenance = marker["provenance_json"]
+            if not isinstance(provenance, dict) or provenance.get("provider") != "tushare" or provenance.get("endpoint") != "index_weight":
+                raise ValueError("cached index month has unproven source")
+            try:
+                retrieved = datetime.fromisoformat(str(provenance["retrieved_at"]).replace("Z", "+00:00"))
+            except (ValueError, KeyError) as error:
+                raise ValueError("cached index month has unproven retrieval time") from error
+            if retrieved.tzinfo is None:
+                raise ValueError("cached index month has unproven retrieval timezone")
+            if retrieved.date() <= last:
+                return False  # An in-month fetch cannot certify a closed month.
+            rows = execute(connection, """SELECT * FROM market_index_weights
+                WHERE index_symbol=:symbol AND substring(snapshot_date,1,6)=:period
+                ORDER BY snapshot_date,constituent_symbol LIMIT 50001""", params)
+            snapshots = execute(connection, """SELECT * FROM market_index_weight_snapshots
+                WHERE index_symbol=:symbol AND substring(snapshot_date,1,6)=:period
+                ORDER BY snapshot_date LIMIT 32""", params)
+            if len(rows) > 50000 or len(rows) != marker["row_count"]:
+                raise ValueError("cached index month row integrity mismatch")
+            dates = {row["snapshot_date"] for row in rows}
+            if dates != {item["snapshot_date"] for item in snapshots}:
+                raise ValueError("cached index month snapshot evidence mismatch")
+            for snapshot in snapshots:
+                members = [row for row in rows if row["snapshot_date"] == snapshot["snapshot_date"]]
+                if (snapshot["status"] != "verified" or snapshot["provenance_json"] != provenance
+                        or any(row["data_source"] != "tushare" or row["provenance_json"] != provenance for row in members)):
+                    raise ValueError("cached index month provenance mismatch")
+                verified = self._verified_index_snapshot(index_symbol, snapshot["snapshot_date"], members, provenance)
+                if any(snapshot[key] != verified[key] for key in ("content_sha256", "member_count", "weight_sum")):
+                    raise ValueError("cached index month content integrity mismatch")
+            return True
+
     def import_index_weights(
         self, index_symbol: str, period: str, weights: list[object], provenance: dict[str, object],
     ) -> int:
