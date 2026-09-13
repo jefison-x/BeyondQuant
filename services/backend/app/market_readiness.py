@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -518,14 +519,21 @@ class MarketReadinessStore(PgStoreMixin):
                       content_sha256=excluded.content_sha256,updated_at=excluded.updated_at""", row)
         return len(bars)
 
-    def has_verified_index_month(self, index_symbol: str, period: str) -> bool:
+    def has_verified_index_month(self, index_symbol: str, period: str, *, through_date=None, _connection=None) -> bool:
         """Reuse a closed month only with intact persisted snapshot evidence."""
         from calendar import monthrange
+        from zoneinfo import ZoneInfo
         first = datetime.strptime(period + "01", "%Y%m%d")
         last = first.replace(day=monthrange(first.year, first.month)[1]).date()
+        through = last
+        if through_date is not None:
+            through = datetime.strptime(through_date, "%Y%m%d").date()
+            if through.strftime("%Y%m") != period:
+                raise ValueError("index verification cutoff must be inside requested month")
         params = {"symbol":index_symbol, "period":period}
-        with self._transaction() as connection:
-            execute(connection, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        with (self._transaction() if _connection is None else nullcontext(_connection)) as connection:
+            if _connection is None:
+                execute(connection, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             markers = execute(connection, """SELECT * FROM market_index_weight_completeness
                 WHERE index_symbol=:symbol AND period=:period""", params)
             if not markers or not markers[0]["row_count"]:
@@ -540,8 +548,8 @@ class MarketReadinessStore(PgStoreMixin):
                 raise ValueError("cached index month has unproven retrieval time") from error
             if retrieved.tzinfo is None:
                 raise ValueError("cached index month has unproven retrieval timezone")
-            if retrieved.date() <= last:
-                return False  # An in-month fetch cannot certify a closed month.
+            if retrieved.astimezone(ZoneInfo("Asia/Shanghai")).date() <= through:
+                return False  # The fetch must postdate the requested complete day.
             rows = execute(connection, """SELECT * FROM market_index_weights
                 WHERE index_symbol=:symbol AND substring(snapshot_date,1,6)=:period
                 ORDER BY snapshot_date,constituent_symbol LIMIT 50001""", params)
@@ -847,6 +855,9 @@ class MarketReadinessStore(PgStoreMixin):
         }
 
     def assess(self, requirement: dict[str, object]) -> dict[str, object]:
+        from .index_snapshot_demand import INDEX_SNAPSHOT_REQUIREMENT, assess_index_snapshot
+        if requirement.get("schema_version") == INDEX_SNAPSHOT_REQUIREMENT:
+            return assess_index_snapshot(self, requirement)
         if requirement.get("schema_version") not in {SCHEMA_VERSION, RESEARCH_SCHEMA_VERSION, LEGACY_SCHEMA_VERSION}:
             raise ValueError("unsupported market data requirement")
         requires_research_inputs = requirement.get("schema_version") in {SCHEMA_VERSION, RESEARCH_SCHEMA_VERSION}

@@ -30,6 +30,7 @@ import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogIte
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import { statusLabel } from "@/display";
+import IndexSnapshotPreparation from "@/components/IndexSnapshotPreparation.vue";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 import ManagementActionBar from "@/components/layout/ManagementActionBar.vue";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
@@ -248,7 +249,7 @@ async function submit() {
       return;
     }
     if (poolType.value === "index" && !indexCatalog.value.some(
-      (item) => item.index_symbol === indexSymbol.value && item.selectable,
+      (item) => item.index_symbol === indexSymbol.value && (indexTrackingMode.value === "historical_snapshot" || item.selectable),
     )) {
       ElMessage.warning("该指数尚无已验证的完整权重快照");
       return;
@@ -562,7 +563,7 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
                 :key="item.index_symbol"
                 :label="`${item.name}（${item.index_symbol}）`"
                 :value="item.index_symbol"
-                :disabled="!item.selectable"
+                :disabled="!item.selectable && indexTrackingMode !== 'historical_snapshot'"
               >
                 <span>{{ item.name }}（{{ item.index_symbol }}）</span>
                 <small class="catalog-option-meta">
@@ -584,6 +585,8 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
           <el-form-item :label="indexTrackingMode === 'historical_snapshot' ? '截至日期（必选）' : '首次截至日期（可选）'">
             <el-date-picker v-model="requestedAsOf" value-format="YYYY-MM-DD" :placeholder="indexTrackingMode === 'historical_snapshot' ? '选择历史截至日期' : '默认使用当前日期前最新完整快照'" />
           </el-form-item>
+          <IndexSnapshotPreparation v-if="indexTrackingMode === 'historical_snapshot'"
+            :index-symbol="indexSymbol" :requested-as-of="requestedAsOf" @ready="loadIndexCatalog" />
           <el-alert
             v-if="availableIndexCount < indexCatalog.length"
             :title="`当前 ${availableIndexCount}/${indexCatalog.length} 个指数具备已验证快照；其余指数将在数据中心可信同步完成后开放。`"

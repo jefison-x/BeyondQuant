@@ -36,6 +36,12 @@ _IDEMPOTENCY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _PURPOSES = {"research", "backtest", "machine_learning"}
 
 
+def _allowed_fields(payload):
+    if payload.get("scope_kind") == "index_snapshot":
+        return {"purpose", "scope_kind", "index_symbol", "requested_as_of", "idempotency_key"}
+    return {"purpose", "stock_pool_snapshot_id", "start_date", "end_date", "data_requirements", "idempotency_key"}
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -57,7 +63,7 @@ class DataDemandStore(PgStoreMixin):
             trace_id TEXT NOT NULL,
             session_id TEXT NOT NULL,
             purpose TEXT NOT NULL,
-            stock_pool_snapshot_id TEXT NOT NULL,
+            stock_pool_snapshot_id TEXT,
             scope_json JSONB NOT NULL,
             requirements_json JSONB NOT NULL,
             repair_request_ids_json JSONB NOT NULL,
@@ -80,6 +86,8 @@ class DataDemandStore(PgStoreMixin):
         """,
     ]
 
+    SCHEMA_DDL.append("ALTER TABLE data_demands ALTER COLUMN stock_pool_snapshot_id DROP NOT NULL")
+
     def __init__(self, database_url: str | None = None) -> None:
         try:
             super().__init__(database_url)
@@ -96,7 +104,7 @@ class DataDemandStore(PgStoreMixin):
     ) -> tuple[dict[str, object], bool]:
         if not isinstance(payload, dict):
             raise ValueError("data demand request must be an object")
-        allowed = {"purpose", "stock_pool_snapshot_id", "start_date", "end_date", "data_requirements", "idempotency_key"}
+        allowed = _allowed_fields(payload)
         unknown = sorted(set(payload) - allowed)
         if unknown:
             raise ValueError(f"data demand request has unknown fields: {', '.join(unknown)}")
@@ -130,11 +138,11 @@ class DataDemandStore(PgStoreMixin):
                     "id": demand_id, "owner": context["owner_principal"],
                     "workspace": context["workspace_id"], "actor": context["actor_principal"],
                     "trace": context["trace_id"], "session": context["session_id"],
-                    "purpose": purpose, "snapshot": str(payload.get("stock_pool_snapshot_id")),
+                    "purpose": purpose, "snapshot": None if payload.get("scope_kind") == "index_snapshot" else str(payload.get("stock_pool_snapshot_id")),
                     "scope": scope, "requirements": requirements, "repairs": repair_request_ids,
                     "progress": {"partition_count": len(requirements), "ready_partitions": 0,
                                  "completed_units": 0, "total_units": 0, "percent": 0,
-                                 "unit": "symbol_session_cells", "stage": "queued"},
+                                 "unit": "index_snapshots" if scope.get("kind") == "index_snapshot" else "symbol_session_cells", "stage": "queued"},
                     "key": key, "sha": request_sha256, "now": now,
                 })
                 inserted = fetch_one(connection, "SELECT * FROM data_demands WHERE demand_id=:id", {"id": demand_id})
@@ -186,7 +194,7 @@ class DataDemandStore(PgStoreMixin):
         """Resolve an existing request before repair jobs gain any side effects."""
         if not isinstance(payload, dict):
             raise ValueError("data demand request must be an object")
-        allowed = {"purpose", "stock_pool_snapshot_id", "start_date", "end_date", "data_requirements", "idempotency_key"}
+        allowed = _allowed_fields(payload)
         unknown = sorted(set(payload) - allowed)
         if unknown:
             raise ValueError(f"data demand request has unknown fields: {', '.join(unknown)}")
@@ -213,6 +221,8 @@ class DataDemandStore(PgStoreMixin):
     def _request_sha256(
         payload: dict[str, object], *, scope: dict[str, object], requirements: list[dict[str, object]],
     ) -> str:
+        if payload.get("scope_kind") == "index_snapshot":
+            return _hash({"request": payload | {"idempotency_key": None}, "scope": scope, "requirements": requirements})
         return _hash({
             "purpose": str(payload.get("purpose", "")).strip(),
             "stock_pool_snapshot_id": str(payload.get("stock_pool_snapshot_id")),
@@ -266,10 +276,13 @@ class DataDemandStore(PgStoreMixin):
         progress.update({
             "completed_units": completed_units, "total_units": total_units,
             "percent": progress_percent(completed_units, total_units),
-            "unit": "symbol_session_cells",
+            "unit": "index_snapshots" if row["scope_json"].get("kind") == "index_snapshot" else "symbol_session_cells",
             "stage": "verified" if status == "ready" else "failed" if status in {"failed", "partial"}
                      else "synchronizing" if active else "queued",
         })
+        if row["scope_json"].get("kind") == "index_snapshot":
+            progress["missing_periods"] = sorted({period for item in assessments for period in item.get("missing_periods", [])})
+            progress["verified_snapshot_date"] = (assessments[0].get("snapshot") or {}).get("snapshot_date")
         terminal = status in {"ready", "partial", "failed"}
         self._execute("""UPDATE data_demands SET status=:status,progress_json=:progress,
             completed_at=CASE WHEN :terminal THEN COALESCE(completed_at,now()) ELSE NULL END,
@@ -319,7 +332,8 @@ class DataDemandStore(PgStoreMixin):
             "created_at": row["created_at"], "updated_at": row["updated_at"],
             "completed_at": row.get("completed_at"),
             "notification": (
-                "数据已准备妥当，可以继续研究" if row["status"] == "ready"
+                "该时点指数成分已验证，可创建固定历史快照；不表示历史调仓序列或行情已就绪" if row["status"] == "ready" and scope.get("kind") == "index_snapshot"
+                else "数据已准备妥当，可以继续研究" if row["status"] == "ready"
                 else "数据仅部分准备完成，请检查缺失项" if row["status"] == "partial"
                 else "数据准备失败，请检查数据中心" if row["status"] == "failed"
                 else "数据中心正在按需准备数据"

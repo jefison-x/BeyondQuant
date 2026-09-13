@@ -38,3 +38,24 @@ code does not call Backend, MCP, Data Worker or provider endpoints directly.
 Community `DataSync.vue` progress and task intent are `PORT_UX`; its fake progress, TODO service
 calls and direct synchronization shape are `DROP`. No Community code, schema or provider path is
 copied.
+
+## Historical single-snapshot preparation (H5)
+
+The closed alternative request is `{purpose, scope_kind:"index_snapshot", index_symbol,
+requested_as_of, idempotency_key}`. It accepts only the six canonical catalogue indexes and
+an explicit non-future date. It needs no pre-existing Stock Pool snapshot; the existing nullable
+snapshot column is empty only for this scope. It uses the existing repair coordinator and
+Data Worker, fetching only index weights for at most three monthly partitions spanning the
+62-day snapshot window. It does not download trading-calendar or daily-price datasets.
+
+Readiness requires intact Tushare provenance, row/snapshot hashes, weights and evidence retrieved
+after each required complete day. It selects the latest verified snapshot inside the frozen
+window, never after the requested date. The final notification explicitly says that a single
+snapshot does not establish historical rebalancing-series coverage or market-price readiness.
+A request for today may remain unready until complete-day evidence is available.
+
+Demand identity and repair references commit together. Same-key retries reuse the original
+frozen plan before mutable readiness planning; changed input conflicts. `byq_data_demand_get`
+accepts exactly one of `demand_id` and `idempotency_key`, with owner/workspace-scoped original-key
+lookup for unknown writes. Browser access uses `/api/product/data-center/demands` and its exact
+ID/key reads only. Administrator-owned workspace requirements remain unchanged.

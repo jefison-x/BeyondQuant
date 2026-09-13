@@ -94,3 +94,7 @@ H4 因子有界纠错：完成独立官方观察资格、持久计次、同事�
 
 H4/H5前置数据需求恢复：需求及修复引用原子提交，重试复用冻结计划并支持原键只读核对，
 见[DATA-DEMAND-RECOVERY](../evidence/research-handoff-h4/DATA-DEMAND-RECOVERY.md)。历史指数范围尚待接入。
+
+H5历史单次指数快照准备已接入既有data-demand/Worker/Product页面，并完成合成数据下真实浏览器
+丢回执恢复→准备→创建→物化；[特性清单及限制](../evidence/research-handoff-h5/INDEX-PREPARATION.md)。
+真实历史来源和完整模型研究仍待验收，H系列不因此关闭。

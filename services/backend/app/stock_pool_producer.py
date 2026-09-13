@@ -280,10 +280,11 @@ class StockPoolProducerStore(PgStoreMixin):
                         "run": self.get_run(previous["run_id"], trusted_owner=owner, trusted_workspace=workspace)}
             catalogue = fetch_one(connection, """SELECT MAX(snapshot_date) AS latest_snapshot_date
                 FROM market_index_weight_snapshots
-                WHERE index_symbol=:symbol AND status='verified' AND snapshot_date<=:requested""",
-                {"symbol": symbol, "requested": requested_as_of})
+                WHERE index_symbol=:symbol AND status='verified' AND snapshot_date<=:requested AND snapshot_date>=:earliest""",
+                {"symbol": symbol, "requested": requested_as_of, "earliest":
+                    index_snapshot_scope(symbol, requested_as_of)["start_date"] if mode == "historical_snapshot" else "00000000"})
             if catalogue is None or not catalogue.get("latest_snapshot_date"):
-                raise StockPoolProducerNotFound("no validated index weights exist at or before requested_as_of")
+                raise StockPoolProducerNotFound("no validated index weights exist within the requested snapshot scope")
             pool_id = _new_id("stock_pool")
             definition_id = _new_id("stock_pool_definition")
             run_id = _new_id("stock_pool_run")
@@ -836,14 +837,16 @@ class StockPoolProducerStore(PgStoreMixin):
                 symbol = str(definition["definition_json"]["index_symbol"])
                 latest = fetch_one(connection, """SELECT MAX(snapshot_date) AS snapshot_date
                     FROM market_index_weight_snapshots
-                    WHERE index_symbol=:symbol AND status='verified' AND snapshot_date<=:requested""",
-                    {"symbol": symbol, "requested": locked["requested_as_of"]})
+                    WHERE index_symbol=:symbol AND status='verified' AND snapshot_date<=:requested AND snapshot_date>=:earliest""",
+                    {"symbol": symbol, "requested": locked["requested_as_of"], "earliest":
+                        index_snapshot_scope(symbol, locked["requested_as_of"])["start_date"]
+                        if definition["definition_json"].get("tracking_mode") == "historical_snapshot" else "00000000"})
                 if latest is None or not latest.get("snapshot_date"):
                     execute(connection, """UPDATE stock_pool_materialization_runs SET status='waiting_for_data',
-                        error_code='index_weights_missing',error_message='请求日期前没有已验证的指数权重',
+                        error_code='index_weights_missing',error_message='请求范围内没有已验证的指数权重',
                         lease_owner=NULL,lease_expires_at=NULL,finished_at=now() WHERE run_id=:run""", {"run": run_id})
                     waiting = {**locked, "status": "waiting_for_data", "error_code": "index_weights_missing",
-                               "error_message": "请求日期前没有已验证的指数权重", "lease_owner": None,
+                               "error_message": "请求范围内没有已验证的指数权重", "lease_owner": None,
                                "lease_expires_at": None, "finished_at": _now()}
                     return self._public_run(waiting)
                 snapshot_date = str(latest["snapshot_date"])

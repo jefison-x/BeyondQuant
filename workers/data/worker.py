@@ -76,7 +76,7 @@ def main() -> int:
                     provider = provider_factory()
                     cursor = datetime.strptime(str(repair["start_date"]), "%Y%m%d")
                     end = datetime.strptime(str(repair["end_date"]), "%Y%m%d")
-                    while cursor <= end:
+                    while cursor <= end and repair["requirement_json"].get("kind") != "index_snapshot":
                         chunk_end = min(end, cursor + timedelta(days=400))
                         automation.refresh_calendar(
                             provider, start_date=cursor.strftime("%Y%m%d"),

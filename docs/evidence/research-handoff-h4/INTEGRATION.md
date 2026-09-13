@@ -28,7 +28,7 @@
 
 CURRENT-INVENTORY.json 重新按当前源码枚举，保持 NEEDS_EVIDENCE，不能把枚举当作验证。
 旧完整清单中的人工补充 surface 仍适用，见 post-u8-interface-audit/AUDIT.md。
-H4/F2/F7尚未关闭；H5不启动。下一优先项为策略/因子写入的原键核对及跨服务故障注入。
+上述为集成初检时的待办。后续按下方切片推进；H4/F2/F7仍未关闭，H5已进行历史单次快照准备，不能将合成流程验收当作真实研究完成。
 
 ## 首轮远端 CI
 

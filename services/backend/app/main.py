@@ -1380,6 +1380,10 @@ def _ml_pool_market_scope(
 
 
 def _data_demand_requirements(payload: dict[str, Any], context: dict[str, str]) -> tuple[dict[str, object], list[dict[str, object]]]:
+    if payload.get("scope_kind") == "index_snapshot":
+        from .index_snapshot_demand import index_snapshot_requirement
+        scope, requirement = index_snapshot_requirement(payload.get("index_symbol"), payload.get("requested_as_of"))
+        return scope, [requirement]
     snapshot = paper_store.get_pool_snapshot(
         payload.get("stock_pool_snapshot_id"), trusted_owner=context["owner_principal"],
     )

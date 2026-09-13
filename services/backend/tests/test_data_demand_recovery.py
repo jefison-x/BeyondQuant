@@ -35,10 +35,15 @@ def test_concurrent_demand_freezes_original_plan_and_reconciles():
     def planner(payload, context):
         planned.append(True)
         return {'symbol_count':1}, [{'requirement_sha256':'b'*64, 'start_date':'20260101', 'end_date':'20260131'}]
-    def submit(_):
-        return demands.submit(_payload(), context=context, planner=planner, automation_store=automation)
-    with ThreadPoolExecutor(3) as executor:
-        results = list(executor.map(submit, range(3)))
+    writers = [DataDemandStore() for _ in range(3)]
+    def submit(index):
+        return writers[index].submit(_payload(), context=context, planner=planner, automation_store=automation)
+    try:
+        with ThreadPoolExecutor(3) as executor:
+            results = list(executor.map(submit, range(3)))
+    finally:
+        for writer in writers:
+            writer.close()
     assert sum(created for _, created in results) == 1
     assert len({item['demand_id'] for item, _ in results}) == 1
     assert len(planned) == 1

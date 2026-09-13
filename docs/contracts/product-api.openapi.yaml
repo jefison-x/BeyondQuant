@@ -41,6 +41,14 @@ paths:
     get: {summary: 返回 the bounded dashboard projection., responses: *okResponses}
   /api/product/data/status:
     get: {summary: 返回 provider and migration status without credentials., responses: *okResponses}
+  /api/product/data-center/demands:
+    post: {summary: 原子提交管理员工作区的有界数据需求或历史指数单次快照准备., responses: *acceptedResponses}
+  /api/product/data-center/demands/by-key/{idempotency_key}:
+    parameters: [{name: idempotency_key, in: path, required: true, schema: {type: string}}]
+    get: {summary: 按当前owner和workspace原提交键只读核对数据需求., responses: *okResponses}
+  /api/product/data-center/demands/{demand_id}:
+    parameters: [{name: demand_id, in: path, required: true, schema: {type: string}}]
+    get: {summary: 获取原数据需求的权威准备进度., responses: *okResponses}
   /api/product/data-center/status:
     get: {summary: 返回 Tushare source metadata, sync history, and observed PostgreSQL coverage without secrets., responses: *okResponses}
   /api/product/data-center/automation:

@@ -803,12 +803,16 @@ export interface DataDemand {
   purpose: "research" | "backtest" | "machine_learning";
   status: "queued" | "syncing" | "ready" | "partial" | "failed";
   scope: {
-    stock_pool_snapshot_id: string;
-    pool_id: string;
-    symbol_count: number;
+    kind?: "index_snapshot";
+    index_symbol?: string;
+    requested_as_of?: string;
+    historical_series?: false;
+    stock_pool_snapshot_id?: string;
+    pool_id?: string;
+    symbol_count?: number;
     start_date: string;
     end_date: string;
-    partition_count: number;
+    partition_count?: number;
     datasets: string[];
   };
   progress: {

@@ -1601,3 +1601,25 @@ def test_handoff_uses_authenticated_product_read_boundary(monkeypatch):
     result = client.get(path, headers={'Authorization': 'Bearer product-test-token'})
     assert result.status_code == 200
     assert calls[0][0:2] == ('GET', '/v1/research/tasks/task_one/handoff')
+
+
+def test_historical_demand_product_route_preserves_admin_gate_and_original_key(monkeypatch):
+    captured = []
+    monkeypatch.setattr(product_api, "_product_principal", lambda request: None)
+    user = {"username":"admin", "role":"admin", "_workspace":{"workspace_id":"workspace_admin"}}
+    monkeypatch.setattr(product_api, "resolve_user", lambda request: user)
+    def backend(method, path, *args, **kwargs):
+        captured.append((method, path, kwargs["headers"]))
+        return {"state":"not_found"}
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    client = TestClient(main.app)
+    client.cookies.set(product_api.SESSION_COOKIE, "synthetic")
+    assert client.post("/api/product/data-center/demands", json={}).status_code == 202
+    assert captured[-1][1] == "/v1/agent/data-demands"
+    assert captured[-1][2]["x-byq-workspace-id"] == "workspace_admin"
+    assert client.get("/api/product/data-center/demands/by-key/index-snapshot-v1:000300.SH:20210815").status_code == 200
+    assert captured[-1][0] == "GET" and "/by-key/" in captured[-1][1]
+    user["role"] = "user"
+    count = len(captured)
+    assert client.post("/api/product/data-center/demands", json={}).status_code == 403
+    assert len(captured) == count

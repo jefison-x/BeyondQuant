@@ -1329,6 +1329,27 @@ def _product_approval_projection(
     return projected
 
 
+@router.post("/data-center/demands", status_code=202)
+def product_data_demand_create(request: Request, payload: dict[str, object]):
+    _data_actor_headers(request, require_admin=True)
+    return _backend_request("POST", "/v1/agent/data-demands", payload,
+        headers=_trusted_agent_headers(request))
+
+
+@router.get("/data-center/demands/by-key/{idempotency_key}")
+def product_data_demand_reconcile(idempotency_key: str, request: Request):
+    _product_principal(request)
+    return _backend_request("GET", "/v1/agent/data-demands/by-key/" + quote(idempotency_key, safe=""),
+        headers=_trusted_agent_headers(request))
+
+
+@router.get("/data-center/demands/{demand_id}")
+def product_data_demand_get(demand_id: str, request: Request):
+    _product_principal(request)
+    return _backend_request("GET", "/v1/agent/data-demands/" + quote(demand_id, safe=""),
+        headers=_trusted_agent_headers(request))
+
+
 @router.get("/data-center/status")
 def product_data_center_status(request: Request, view: str = "full") -> dict[str, object]:
     if view not in {"summary", "full"}:

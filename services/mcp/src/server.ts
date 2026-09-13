@@ -940,7 +940,8 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_data_demand_create",
     {
       description: "Ask the trusted BYQ Data Center to prepare a bounded frozen stock-pool/date scope. This queues durable repair work and never gives the Agent Provider access.",
-      inputSchema: {
+      inputSchema: z.union([
+        z.object({
         purpose: z.enum(["research", "backtest", "machine_learning"]),
         stock_pool_snapshot_id: z.string(),
         start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -952,7 +953,13 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
           fundamentals: z.array(z.string()).max(12).optional(),
         }).strict().optional(),
         idempotency_key: z.string().min(1).max(128),
-      },
+      }).strict(),
+        z.object({ purpose: z.enum(["research", "backtest", "machine_learning"]),
+          scope_kind: z.literal("index_snapshot"), index_symbol: z.enum(["000016.SH", "000300.SH", "000688.SH", "000852.SH", "000905.SH", "399006.SZ"]),
+          requested_as_of: z.string().regex(/^(?:\d{8}|\d{4}-\d{2}-\d{2})$/),
+          idempotency_key: z.string().min(1).max(128),
+        }).strict(),
+      ]),
     },
     (args) => byqDataDemandCreate(args, trustedContext),
   );
