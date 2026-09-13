@@ -527,6 +527,7 @@ class PaperTradingStore(PgStoreMixin):
         # Column back-migration parity with the former SQLite schema.
         with self.engine.begin() as connection:
             schema_bootstrap_lock(connection)
+            ensure_column(connection, "stock_pools", "workspace_id", "TEXT")
             ensure_column(connection, "stock_pools", "pool_type", "TEXT")
             ensure_column(connection, "stock_pools", "description", "TEXT")
             ensure_column(connection, "stock_pools", "weights_json", "JSONB")

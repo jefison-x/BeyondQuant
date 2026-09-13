@@ -69,7 +69,7 @@ def main() -> None:
     task_id = str(task["task_id"])
     pool = owner.request(
         "POST", "/paper/pools",
-        {"name": "Phase 40 golden pool", "pool_type": "custom", "symbols": ["000001.SZ"]},
+        {"idempotency_key": "phase40-golden-pool", "name": "Phase 40 golden pool", "pool_type": "custom", "symbols": ["000001.SZ"]},
     )["pool"]
     pool_id = str(pool["pool_id"])
     snapshot_id = str(pool["snapshot"]["snapshot_id"])

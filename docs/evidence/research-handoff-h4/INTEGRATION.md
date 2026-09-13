@@ -49,3 +49,16 @@ CURRENT-INVENTORY.json 重新按当前源码枚举，保持 NEEDS_EVIDENCE，不
 
 2026-09-13：提交 `6bbd2d8` 的远端完整受影响 CI 已通过，运行 `34732957839`。
 该结果覆盖因子原键恢复、三类内容去重回执和跨进程探针；随后 `.65` 缓存与 `.66` 因子纠错仍需新CI。
+
+## `.69` 远端失败与修正
+
+运行34736701923：Backend 631通过、9失败、1跳过、7subtests通过；9项失败均因独立
+PaperTradingStore初始化未建stock_pools.workspace_id，新创建INSERT引用该列失败。
+在该Store既有schema bootstrap中补列，工作区归属/约束仍由既有tenancy管理。
+真实浏览器12通过、1失败，另Phase48黄金链失败，均为旧夹具未传新的自建池原键。
+补My Space、Phase48及同类Phase40夹具显式键，不取消Backend强制原键要求。
+
+其他组件检查通过不等于整批CI通过；该运行的失败保留。`.70`学习、`.71`反馈、`.72`跨进程证据
+与本次`.73`修订一并提交新远端检查，不沿用旧绿色结果。
+
+`.73`本地修正后涉及data_sync、paper_trading、stock_pool_closure、pool_creation_recovery共35项通过；开发与124项架构检查通过。
