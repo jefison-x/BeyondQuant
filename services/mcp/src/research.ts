@@ -204,18 +204,25 @@ export function fetchByqResearchTaskCreate(
   return watchedResearchCreate(backendUrl, 'research_task', "/v1/research/tasks", request, fetcher);
 }
 
-export function fetchByqResearchGet(
+export async function fetchByqResearchGet(
   backendUrl: string,
   entityType: ResearchEntityType,
   entityId: string,
   fetcher: Fetcher = fetch,
 ): Promise<ByqResearchResult> {
-  return requestResearch(
+  const response = await requestResearch(
     backendUrl,
     `/v1/research/${entityType === "research_task" ? "tasks" : `${entityType}s`}/${encodeURIComponent(entityId)}`,
     { method: "GET" },
     fetcher,
   );
+  if (response.isError) return response;
+  const value = JSON.parse(response.content[0]?.text ?? '{}');
+  const key = {research_task:'task_id',experiment:'experiment_id',artifact:'artifact_id'}[entityType];
+  if (value[key] !== entityId) {
+    return result({service:'beyondquant-mcp',status:'error',backend:{status:'invalid_response'}},true);
+  }
+  return response;
 }
 
 export function fetchByqResearchTransition(
