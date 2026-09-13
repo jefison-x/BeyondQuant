@@ -108,3 +108,6 @@ H4 学习运行/迭代/评估信号/经验提案已补原键核对，最后一�
 
 H4 反馈草稿及原命令核对已接入，真实浏览器刷新恢复不重复创建；
 见[FEEDBACK-RECOVERY](../evidence/research-handoff-h4/FEEDBACK-RECOVERY.md)。全接口映射与H5继续。
+
+H4 六类领域对象的实际HTTP丢回执→Backend重启→新MCP进程原键GET恢复通过，
+持久数量无重复；见[CROSS-PROCESS补充](../evidence/research-handoff-h4/CROSS-PROCESS.md)。
