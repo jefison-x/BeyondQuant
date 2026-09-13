@@ -1,3 +1,4 @@
+import {readPendingText,writePendingText} from './pendingStorage';
 import {createRequestId} from '@/utils/requestId';
 export type PolicyOperation='settings'|'rule_create'|'rule_update'|'rule_delete'|'preset';
 export type PolicySubmission={key:string;operation:PolicyOperation;resource_id?:string;payload:Record<string,string|number|boolean>};
@@ -15,8 +16,8 @@ function normalize(operation:PolicyOperation,payload:Record<string,unknown>,reso
   return {operation,...(resource_id===undefined?{}:{resource_id}),payload:Object.fromEntries(Object.keys(payload).sort().map(k=>[k,payload[k]])) as PolicySubmission['payload']};
 }
 export function readPolicySubmission(scope:string):PolicySubmission|null{
-  const raw=localStorage.getItem(storageKey(scope));if(raw===null)return null;
-  if(raw.length>8192)throw Error('原审批策略记录超出范围');const v=JSON.parse(raw);
+  const raw=readPendingText(storageKey(scope),8192,'审批策略原请求超出范围');if(raw===null)return null;
+  const v=JSON.parse(raw);
   if(!v || Object.keys(v).some(k=>!['key','operation','resource_id','payload'].includes(k)) || !/^[A-Za-z0-9_-]{8,96}$/.test(v.key ?? ''))throw Error('原审批策略记录无效');
   return {key:v.key,...normalize(v.operation,v.payload,v.resource_id)};
 }
@@ -24,7 +25,7 @@ export function beginPolicySubmission(scope:string,operation:PolicyOperation,pay
   const value=normalize(operation,payload,resource_id),prior=readPolicySubmission(scope);
   if(prior){const {key,...original}=prior;if(JSON.stringify(original)!==JSON.stringify(value))throw Error('上一笔审批策略操作尚未确认，请先核对');return prior;}
   const command={key:createRequestId(),...value},raw=JSON.stringify(command);
-  if(raw.length>8192)throw Error('审批策略操作超出范围');localStorage.setItem(storageKey(scope),raw);return command;
+  writePendingText(storageKey(scope),raw,8192,'审批策略原请求超出范围');return command;
 }
 export function finishPolicySubmission(scope:string,key:string){if(readPolicySubmission(scope)?.key===key)localStorage.removeItem(storageKey(scope));}
 export function validatePolicyResult(result:any,command:PolicySubmission){

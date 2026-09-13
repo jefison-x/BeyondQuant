@@ -1,11 +1,12 @@
+import {readPendingText,writePendingText} from './pendingStorage';
 import { createRequestId } from '@/utils/requestId';
 import type { PoolCreationKind } from './paper';
 export interface PoolSubmission {key:string; kind:PoolCreationKind; payload:Record<string,unknown>}
 const storageKey = (scope:string) => 'byq.pool-creation.v1:'+scope;
 export function readPoolSubmission(scope:string): PoolSubmission | null {
-  const raw = localStorage.getItem(storageKey(scope));
+  const raw = readPendingText(storageKey(scope),128*1024,'股票池原请求超出范围');
   if (raw === null) return null;
-  if (raw.length > 128 * 1024) throw new Error('原股票池提交记录超出范围，请先核查。');
+
   const value = JSON.parse(raw);
   if (!value || typeof value.key !== "string" || !/^[A-Za-z0-9_-]{8,96}$/.test(value.key) || !['custom','index','dynamic'].includes(value.kind)
       || !value.payload || typeof value.payload !== 'object' || Array.isArray(value.payload)) throw new Error('原股票池提交记录无法读取，请先核查。');
@@ -20,8 +21,8 @@ export function beginPoolSubmission(scope:string, kind:PoolCreationKind, payload
   }
   const value = {key:createRequestId(), kind, payload:clean};
   const raw = JSON.stringify(value);
-  if (raw.length > 128 * 1024) throw new Error("股票池提交超出有界范围");
-  localStorage.setItem(storageKey(scope), raw); // Before any network write.
+
+  writePendingText(storageKey(scope),raw,128*1024,'股票池原请求超出范围'); // Before any network write.
   return value;
 }
 export function finishPoolSubmission(scope:string, key:string) {

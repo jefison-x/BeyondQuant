@@ -1,10 +1,11 @@
+import {readPendingText,writePendingText} from './pendingStorage';
 import { createRequestId } from '@/utils/requestId';
 import type { FeedbackCommand } from './feedback';
 const name = (scope:string) => 'byq.feedback-command.v1:'+scope;
 export function readFeedbackSubmission(scope:string):FeedbackCommand|null {
-  const raw = localStorage.getItem(name(scope));
+  const raw = readPendingText(name(scope),128*1024,'反馈原请求超出范围');
   if(raw === null) return null;
-  if(raw.length > 128*1024) throw Error('反馈原请求超出范围');
+
   const value = JSON.parse(raw);
   if(!value || typeof value.key !== 'string' || !/^[A-Za-z0-9_-]{8,96}$/.test(value.key)
     || !['create','update','submit','withdraw'].includes(value.operation) || !value.payload || typeof value.payload !== 'object' || Array.isArray(value.payload)
@@ -21,8 +22,8 @@ export function beginFeedbackSubmission(scope:string, input:Omit<FeedbackCommand
   }
   const value = {...clean,key:createRequestId()};
   const raw = JSON.stringify(value);
-  if(raw.length > 128*1024) throw Error('反馈请求超出范围');
-  localStorage.setItem(name(scope),raw);
+
+  writePendingText(name(scope),raw,128*1024,'反馈原请求超出范围');
   return value;
 }
 export function finishFeedbackSubmission(scope:string,key:string) {

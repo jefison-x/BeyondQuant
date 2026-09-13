@@ -1,3 +1,4 @@
+import {readPendingText,writePendingText} from './pendingStorage';
 import { createRequestId } from "@/utils/requestId";
 
 // One unresolved submission per owner/workspace. Never silently replace its identity.
@@ -5,7 +6,7 @@ export interface TaskSubmission { key: string; title: string; objective: string 
 const storageKey = (scope: string) => `byq.research-submission.v1:${scope}`;
 
 export function readTaskSubmission(scope: string): TaskSubmission | null {
-  const raw = localStorage.getItem(storageKey(scope));
+  const raw = readPendingText(storageKey(scope),32768,'上次提交记录超出范围，请先核查研究任务。');
   if (raw === null) return null;
   const value = JSON.parse(raw) as TaskSubmission;
   if (!value || typeof value.key !== "string" || !/^[a-zA-Z0-9_-]{8,96}$/.test(value.key)
@@ -26,7 +27,7 @@ export function beginTaskSubmission(scope: string, title: string, objective: str
   }
   const value = { key: createRequestId(), title, objective };
   // Fail before the write request if durable browser storage is unavailable.
-  localStorage.setItem(storageKey(scope), JSON.stringify(value));
+  writePendingText(storageKey(scope),JSON.stringify(value),32768,'上次提交记录超出范围，请先核查研究任务。');
   return value;
 }
 

@@ -1,3 +1,4 @@
+import {readPendingText,writePendingText} from './pendingStorage';
 export type ProfileInput={credential_id:string;key_name:string;display_name:string;provider:string;model:string;temperature:number;reasoning_enabled:boolean};
 const fields=['credential_id','key_name','display_name','provider','model','temperature','reasoning_enabled'] as const;
 const storageKey=(scope:string)=>'byq.profile-creation.v1:'+scope;
@@ -10,14 +11,14 @@ export function profileInput(value:unknown):ProfileInput {
   return Object.fromEntries(fields.map(k=>[k,typeof v[k]==='string'?(v[k] as string).trim():v[k]])) as ProfileInput;
 }
 export function readProfileSubmission(scope:string):ProfileInput|null {
-  const raw=localStorage.getItem(storageKey(scope));if(raw===null)return null;
-  if(raw.length>4096)throw Error('原模型档案记录超出范围');return profileInput(JSON.parse(raw));
+  const raw=readPendingText(storageKey(scope),4096,'原模型档案记录超出范围');if(raw===null)return null;
+  return profileInput(JSON.parse(raw));
 }
 export function beginProfileSubmission(scope:string,payload:unknown):ProfileInput {
   const input=profileInput(payload),prior=readProfileSubmission(scope);
   if(prior && JSON.stringify(prior)!==JSON.stringify(input))throw Error('上一笔模型档案尚未确认，请先核对原请求');
-  const raw=JSON.stringify(input);if(raw.length>4096)throw Error('模型档案参数超出范围');
-  if(!prior)localStorage.setItem(storageKey(scope),raw);return prior ?? input;
+  const raw=JSON.stringify(input);
+  if(!prior)writePendingText(storageKey(scope),raw,4096,'原模型档案记录超出范围');return prior ?? input;
 }
 export function finishProfileSubmission(scope:string,input:ProfileInput){
   if(JSON.stringify(readProfileSubmission(scope))===JSON.stringify(input))localStorage.removeItem(storageKey(scope));

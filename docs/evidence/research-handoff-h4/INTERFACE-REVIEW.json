@@ -3451,9 +3451,10 @@
       "dependencies_sha256": {
         "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
         "apps/frontend/src/api/feedback.ts": "sha256:71488d27c64798229d45857dbc7e7e4a98d2cd2429919a5f6b80ba501494c283",
-        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:e2429da948ca21257bd9c252810774e7411f79dc475e917d9f5686f9d26da9fd",
+        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:70e54a679eda75eecede6ac0ad03d32200ed35274749092736851211715c3cfb",
         "apps/frontend/src/views/FeedbackAdminView.vue": "sha256:7142785ad570f201b358753f97aa8c0968dfe9fb99068599b51ce5b57fdb4509",
-        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "apps/frontend/src/api/pendingStorage.ts": "sha256:b8ad6577068a84fac0bda65eb42fb1304db3c5838bf14aa61ee48197cfeef0c3"
       }
     },
     {
@@ -3488,9 +3489,10 @@
       "dependencies_sha256": {
         "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
         "apps/frontend/src/api/feedback.ts": "sha256:71488d27c64798229d45857dbc7e7e4a98d2cd2429919a5f6b80ba501494c283",
-        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:e2429da948ca21257bd9c252810774e7411f79dc475e917d9f5686f9d26da9fd",
+        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:70e54a679eda75eecede6ac0ad03d32200ed35274749092736851211715c3cfb",
         "apps/frontend/src/views/FeedbackAdminView.vue": "sha256:7142785ad570f201b358753f97aa8c0968dfe9fb99068599b51ce5b57fdb4509",
-        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "apps/frontend/src/api/pendingStorage.ts": "sha256:b8ad6577068a84fac0bda65eb42fb1304db3c5838bf14aa61ee48197cfeef0c3"
       }
     },
     {
@@ -3525,9 +3527,10 @@
       "dependencies_sha256": {
         "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
         "apps/frontend/src/api/feedback.ts": "sha256:71488d27c64798229d45857dbc7e7e4a98d2cd2429919a5f6b80ba501494c283",
-        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:e2429da948ca21257bd9c252810774e7411f79dc475e917d9f5686f9d26da9fd",
+        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:70e54a679eda75eecede6ac0ad03d32200ed35274749092736851211715c3cfb",
         "apps/frontend/src/views/FeedbackAdminView.vue": "sha256:7142785ad570f201b358753f97aa8c0968dfe9fb99068599b51ce5b57fdb4509",
-        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "apps/frontend/src/api/pendingStorage.ts": "sha256:b8ad6577068a84fac0bda65eb42fb1304db3c5838bf14aa61ee48197cfeef0c3"
       }
     },
     {
@@ -3562,9 +3565,10 @@
       "dependencies_sha256": {
         "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
         "apps/frontend/src/api/feedback.ts": "sha256:71488d27c64798229d45857dbc7e7e4a98d2cd2429919a5f6b80ba501494c283",
-        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:e2429da948ca21257bd9c252810774e7411f79dc475e917d9f5686f9d26da9fd",
+        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:70e54a679eda75eecede6ac0ad03d32200ed35274749092736851211715c3cfb",
         "apps/frontend/src/views/FeedbackAdminView.vue": "sha256:7142785ad570f201b358753f97aa8c0968dfe9fb99068599b51ce5b57fdb4509",
-        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "apps/frontend/src/api/pendingStorage.ts": "sha256:b8ad6577068a84fac0bda65eb42fb1304db3c5838bf14aa61ee48197cfeef0c3"
       }
     }
   ],

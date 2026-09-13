@@ -1,10 +1,11 @@
+import {readPendingText,writePendingText} from './pendingStorage';
 import {createRequestId} from '@/utils/requestId';
 export type CredentialWrite = {operation:'create'|'update'|'revoke';key:string;credential_id?:string;metadata:Record<string,string|number|boolean>};
 const storageKey=(scope:string)=>'byq.credential-write.v1:'+scope;
 const metadataFields=['provider','label','status','expected_version','has_secret'];
 export function readCredentialWrite(scope:string):CredentialWrite|null {
-  const raw=localStorage.getItem(storageKey(scope));if(raw===null)return null;
-  if(raw.length>4096)throw Error('原凭据请求标识无法读取');
+  const raw=readPendingText(storageKey(scope),4096,'凭据原请求标识超出范围');if(raw===null)return null;
+
   const value=JSON.parse(raw);
   if(!value || Object.keys(value).some(k=>!['operation','key','credential_id','metadata'].includes(k))
     || !['create','update','revoke'].includes(value.operation) || !/^[A-Za-z0-9_-]{8,96}$/.test(value.key ?? '')
@@ -27,8 +28,8 @@ export function beginCredentialWrite(scope:string,operation:CredentialWrite['ope
     return pending;
   }
   const value={...input,key:createRequestId()},raw=JSON.stringify(value);
-  if(raw.length>4096)throw Error('凭据请求标识超出范围');
-  localStorage.setItem(storageKey(scope),raw);return value;
+
+  writePendingText(storageKey(scope),raw,4096,'凭据原请求标识超出范围');return value;
 }
 export function finishCredentialWrite(scope:string,key:string) {
   if(readCredentialWrite(scope)?.key===key)localStorage.removeItem(storageKey(scope));
