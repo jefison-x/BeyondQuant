@@ -57,3 +57,5 @@ Cloudflare 测试使用合成 fetch 与 binding 响应，不能替代生产网�
 Python _complete 原来仅检查id非空，六个反例True/-1/浮点/数字字符串/对象/数组均复现可进入Backend complete请求。URL使用原配置仓库合法地址，避免URL拒绝掩盖ID缺陷。现在仅接受非bool正整数，畸形回执保持transport_ambiguous且Backend调用为零；完整Publisher25项通过（7.18秒）。这是边界反例，不是生产收到畸形GitHub回执的证据。
 
 CI影响分类已核对workers/*触发Backend、架构及集成，共享期限模块不会漏出组件选择。`.108`目前只有已修正的前端模拟用例失败，Backend尚在运行；不提前取消剩余作业。
+
+部署权限探针：实际uid/gid10006与10007分别在network=none、read-only、cap-drop ALL、no-new-privileges容器内触发40毫秒deadline并中断300毫秒等待；原SIGALRM处理器恢复、timer归零且下一期限正常。两个容器--rm退出，不需要root或额外capability。仍是保留依赖镜像加当前共享源码的权限验证，不冒充完整新镜像资格。
