@@ -81,3 +81,5 @@ H4 第三切片：三类研究对象按 ID 读取及已确认回执回读均拒�
 ## H4 集成验证
 
 完整 MCP 测试、17项数据库回执恢复与真实 HTTP 创建浏览器验证通过；[未决接口族及证据](../evidence/research-handoff-h4/INTEGRATION.md)。H4仍未关闭。本轮维护者接受统一推送及远端CI，创建Draft PR；不包含合并或部署。
+
+H4 因子提交：原键锁内复用规范化结果，避免成功重试/并发重复计算；未知回执提供原任务Artifact核对。见[证据](../evidence/research-handoff-h4/FACTOR-RECOVERY.md)。

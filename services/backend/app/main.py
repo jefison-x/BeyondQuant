@@ -72,6 +72,7 @@ from .credentials import (
     authorize_resolver,
 )
 from .factor_research import compute_factor
+from .factor_submission import submit_factor
 from .backtest import (
     BacktestConflict,
     BacktestError,
@@ -2153,26 +2154,7 @@ def compute_research_factor(payload: dict[str, Any], request: Request) -> dict[s
 
     def operation() -> dict[str, object]:
         _owned_research_entity("research_task", payload.get("task_id"), context)
-        computed = compute_factor(payload)
-        artifact_payload = {
-            "task_id": payload.get("task_id"),
-            "experiment_id": payload.get("experiment_id"),
-            "kind": "factor_result",
-            "content": computed["artifact_content"],
-            "lineage": computed["artifact_lineage"],
-            "trace_id": payload.get("trace_id"),
-            "idempotency_key": payload.get("idempotency_key"),
-        }
-        artifact = research_store.create_artifact(
-            artifact_payload, trusted_owner=context["owner_principal"],
-            trusted_workspace=context["workspace_id"],
-        )
-        return {
-            "factor": computed["factor"],
-            "input_manifest": computed["input_manifest"],
-            "coverage": computed["coverage"],
-            "artifact": artifact,
-        }
+        return submit_factor(research_store, payload, context, compute_factor)
 
     return _research_call(operation)
 

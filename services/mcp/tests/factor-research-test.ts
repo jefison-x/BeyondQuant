@@ -17,7 +17,7 @@ const success = await fetchByqFactorCompute(
     assert.equal(url, "http://backend:8000/v1/research/factors/compute");
     assert.equal(init?.method, "POST");
     assert.doesNotMatch(String(init?.body), /password|secret|token/i);
-    return new Response(JSON.stringify({ input_manifest: { id: "fixture" }, factor: { reproducibility: "reproducible" } }), { status: 201 });
+    return new Response(JSON.stringify({ input_manifest: { id: "fixture" }, factor: { reproducibility: "reproducible", input_manifest_id: "fixture" }, artifact: { artifact_id: "artifact_" + "a".repeat(32), task_id: request.task_id, kind: "factor_result", content: { input_manifest_id: "fixture" } } }), { status: 201 });
   },
 );
 assert.equal(success.isError, false);
@@ -32,3 +32,28 @@ assert.equal(invalid.isError, true);
 assert.match(invalid.content[0].text, /factor_request_invalid/);
 
 console.log("Factor MCP translation PASS: deterministic factor request and safe validation error");
+
+for (const failure of ['transport', 'missing-artifact', 'wrong-task', 'wrong-manifest']) {
+  let calls = 0;
+  const response = await fetchByqFactorCompute('http://backend', request, async () => {
+    calls++;
+    if (failure === 'transport') throw new Error('private transport');
+    return new Response(JSON.stringify({
+      input_manifest: { id: 'fixture' }, factor: { input_manifest_id: 'fixture' },
+      ...(failure === 'missing-artifact' ? {} : { artifact: {
+        artifact_id: 'artifact_' + 'a'.repeat(32), kind: 'factor_result',
+        task_id: failure === 'wrong-task' ? 'task_other' : request.task_id,
+        content: { input_manifest_id: failure === 'wrong-manifest' ? 'other' : 'fixture' },
+      } }),
+    }), { status: 201 });
+  });
+  assert.equal(calls, 1);
+  const body = JSON.parse(response.content[0].text);
+  assert.equal(body.status, 'outcome_unknown');
+  assert.equal(body.retryable, false);
+  assert.deepEqual(body.reconciliation, { tool:'byq_research_get', arguments:{
+    entity_type:'artifact', task_id:request.task_id, idempotency_key:request.idempotency_key,
+  } });
+  assert.doesNotMatch(response.content[0].text, /private transport|task_other/);
+}
+console.log('Factor recovery PASS: exact original artifact lookup and no automatic write replay');
