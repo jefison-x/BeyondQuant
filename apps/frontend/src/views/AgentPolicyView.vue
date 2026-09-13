@@ -1,11 +1,41 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { applyAgentPolicyPreset, createAgentPolicyRule, deleteAgentPolicyRule, getAgentPolicyStatus, updateAgentPolicy, updateAgentPolicyRule } from "@/api/settings";
+import { getAgentPolicyStatus, sendPolicyCommand, getPolicyReceipt, SettingsRequestError } from "@/api/settings";
 import { listApprovals } from "@/api/research";
 import type { AgentPolicyRule, AgentPolicyStatus } from "@/api/types";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { useFilteredPagination } from "@/composables/useFilteredPagination";
+
+import {useAuthStore} from '@/stores/auth';
+import {beginPolicySubmission,readPolicySubmission,finishPolicySubmission,validatePolicyResult,confirmPolicyReceipt,type PolicySubmission,type PolicyOperation} from '@/api/policySubmission';
+const auth=useAuthStore(),pendingPolicy=ref<PolicySubmission|null>(null);
+function policyScope(){if(!auth.user)throw Error('请先登录');return JSON.stringify([auth.user.subject,auth.user.workspace.workspace_id]);}
+async function executePolicy(operation:PolicyOperation,payload:Record<string,unknown>,resource_id?:string){
+  const scope=policyScope(),previous=readPolicySubmission(scope),command=beginPolicySubmission(scope,operation,payload,resource_id);pendingPolicy.value=command;
+  try{
+    const result=await sendPolicyCommand(command);validatePolicyResult(result,command);
+    if(scope!==policyScope())throw Error('工作区已切换，请在原工作区核对');
+    finishPolicySubmission(scope,command.key);pendingPolicy.value=null;return result;
+  }catch(cause){
+    if(!previous && cause instanceof SettingsRequestError && [400,401,403,404,409,422].includes(cause.status)){finishPolicySubmission(scope,command.key);pendingPolicy.value=null;}
+    throw cause;
+  }
+}
+async function recoverPolicy(){
+  if(!pendingPolicy.value)return;saving.value=true;
+  try{
+    const scope=policyScope(),command=pendingPolicy.value,confirmed=confirmPolicyReceipt(await getPolicyReceipt(command),command);
+    if(scope!==policyScope())throw Error('工作区已切换，请在原工作区核对');
+    if(!confirmed){ElMessage.warning('尚未找到原审批策略回执，请稍后核对或使用原操作重试');return;}
+    finishPolicySubmission(scope,command.key);pendingPolicy.value=null;ruleDialog.value=false;await load();ElMessage.success('原审批策略操作已确认');
+  }catch(cause){ElMessage.error(cause instanceof Error?cause.message:'策略核对失败');}finally{saving.value=false;}
+}
+async function retryPolicy(){
+  if(!pendingPolicy.value)return;saving.value=true;
+  try{const c=pendingPolicy.value;await executePolicy(c.operation,c.payload,c.resource_id);await load();}
+  catch(cause){ElMessage.error(cause instanceof Error?cause.message:'策略重试失败');}finally{saving.value=false;}
+}
 
 const loading = ref(true);
 const error = ref("");
@@ -41,16 +71,13 @@ async function load() {
   }
 }
 
-onMounted(load);
+onMounted(async()=>{try{pendingPolicy.value=readPolicySubmission(policyScope());}catch(cause){loading.value=false;error.value=cause instanceof Error?cause.message:'原策略记录无法读取';return;}await load();});
 
 async function savePersonal() {
   saving.value = true;
   try {
     const { owner_principal: _owner, ...payload } = personal.value;
-    const body = await updateAgentPolicy(payload);
-    personal.value = { ...personal.value, ...body.personal_policy };
-    const policyBody = await getAgentPolicyStatus();
-    policy.value = policyBody;
+    await executePolicy('settings',payload);await load();
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "保存审批偏好失败";
   } finally {
@@ -61,10 +88,10 @@ async function savePersonal() {
 async function applyPreset(presetId: string) {
   try {
     await ElMessageBox.confirm("应用预设会替换当前个人规则。", "应用策略预设", { type: "warning" });
-    await applyAgentPolicyPreset(presetId);
+    saving.value=true;await executePolicy('preset',{},presetId);
     ElMessage.success("策略预设已应用");
     await load();
-  } catch (exc) { if (exc !== "cancel" && exc !== "close") ElMessage.error(exc instanceof Error ? exc.message : "应用预设失败"); }
+  } catch (exc) { if (exc !== "cancel" && exc !== "close") ElMessage.error(exc instanceof Error ? exc.message : "应用预设失败"); } finally{saving.value=false;}
 }
 
 function openRule(item: AgentPolicyRule | null = null) {
@@ -80,21 +107,21 @@ async function saveRule() {
   if (!ruleForm.name.trim()) return ElMessage.warning("请输入规则名称");
   saving.value = true;
   try {
-    if (editingRule.value) await updateAgentPolicyRule(editingRule.value.rule_id, { ...ruleForm, expected_version: editingRule.value.version });
-    else await createAgentPolicyRule({ ...ruleForm });
+    if (editingRule.value) await executePolicy('rule_update',{...ruleForm,expected_version:editingRule.value.version},editingRule.value.rule_id);
+    else await executePolicy('rule_create',{...ruleForm});
     ruleDialog.value = false;
     ElMessage.success(editingRule.value ? "规则已更新" : "规则已创建");
     await load();
   } catch (exc) { ElMessage.error(exc instanceof Error ? exc.message : "保存规则失败"); }
-  finally { saving.value = false; }
+  finally { saving.value = false;if(pendingPolicy.value)ruleDialog.value=false; }
 }
 
 async function removeRule(item: AgentPolicyRule) {
   try {
     await ElMessageBox.confirm(`删除规则“${item.name}”？`, "删除规则", { type: "warning" });
-    await deleteAgentPolicyRule(item.rule_id, item.version);
+    saving.value=true;await executePolicy('rule_delete',{expected_version:item.version},item.rule_id);
     await load();
-  } catch (exc) { if (exc !== "cancel" && exc !== "close") ElMessage.error(exc instanceof Error ? exc.message : "删除失败"); }
+  } catch (exc) { if (exc !== "cancel" && exc !== "close") ElMessage.error(exc instanceof Error ? exc.message : "删除失败"); } finally{saving.value=false;}
 }
 
 const DECISION_LABELS: Record<string, string> = { manual: "人工审批", auto_approve: "自动批准（受平台门禁约束）", auto_deny: "自动拒绝" };
@@ -114,6 +141,10 @@ function statusLabel(value: unknown) {
 
 <template>
   <section class="my-space-page">
+    <el-alert v-if="pendingPolicy" title="有一笔审批策略操作尚未确认" type="warning" :closable="false" show-icon>
+      <el-button :loading="saving" @click="recoverPolicy">核对原审批策略操作</el-button>
+      <el-button :loading="saving" @click="retryPolicy">使用原审批策略操作重试</el-button>
+    </el-alert>
     <el-alert
       title="平台规则优先"
       description="你可以查看个人审批偏好和自动化规则；平台强制人工确认、自动拒绝、暂停和关闭自动审批的设置不可被个人配置绕过。"
@@ -225,7 +256,7 @@ function statusLabel(value: unknown) {
         <el-form-item label="说明"><el-input v-model="ruleForm.description" type="textarea" maxlength="500" /></el-form-item>
         <div class="form-grid"><el-form-item label="动作"><el-select v-model="ruleForm.action"><el-option label="提交回测" value="byq_backtest_submit" /><el-option label="执行回测" value="byq_backtest_run" /></el-select></el-form-item><el-form-item label="Agent"><el-select v-model="ruleForm.agent_id"><el-option label="所有支持的 Agent" value="*" /><el-option label="首席量化研究员" value="chief_quant_researcher" /><el-option label="策略研究员" value="strategy_researcher" /></el-select></el-form-item></div>
         <div class="form-grid"><el-form-item label="决策"><el-select v-model="ruleForm.decision_mode"><el-option label="人工审批" value="manual" /><el-option label="自动批准（受平台门禁约束）" value="auto_approve" /><el-option label="自动拒绝" value="auto_deny" /></el-select></el-form-item><el-form-item label="风险"><el-select v-model="ruleForm.risk_level"><el-option label="低" value="low" /><el-option label="中" value="medium" /><el-option label="高" value="high" /><el-option label="关键" value="critical" /></el-select></el-form-item></div>
-        <div class="form-grid"><el-form-item label="优先级"><el-input-number v-model="ruleForm.priority" :min="1" :max="10000" /></el-form-item><el-form-item label="启用"><el-switch v-model="ruleForm.enabled" /></el-form-item></div>
+        <div class="form-grid"><el-form-item label="优先级"><el-input-number v-model="ruleForm.priority" :min="1" :max="1000" /></el-form-item><el-form-item label="启用"><el-switch v-model="ruleForm.enabled" /></el-form-item></div>
       </el-form>
       <template #footer><el-button @click="ruleDialog = false">取消</el-button><el-button type="primary" :loading="saving" @click="saveRule">保存规则</el-button></template>
     </el-dialog>

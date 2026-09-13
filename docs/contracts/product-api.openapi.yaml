@@ -400,17 +400,44 @@ paths:
     post: {summary: 软删除 a model profile and unbind it., responses: *okResponses}
   /api/product/settings/models/bindings/{agent_id}:
     put: {summary: 绑定 or unbind one BYQ Agent preset to an owner-scoped model profile., responses: *okResponses}
+  /api/product/settings/agent-policy/receipts:
+    get:
+      summary: Read the original committed personal policy command without repeating it
+      parameters:
+        - {name: operation, in: query, required: true, schema: {type: string, enum: [settings, rule_create, rule_update, rule_delete, preset]}}
+        - {name: request_id, in: query, required: true, schema: {type: string, maxLength: 128}}
+        - {name: resource_id, in: query, schema: {type: string}}
+      responses: *okResponses
   /api/product/settings/agent-policy:
     get: {summary: 返回 platform and personal agent policy., responses: *okResponses}
-    put: {summary: 更新 personal agent policy., responses: *okResponses}
+    put:
+      summary: 更新 personal agent policy.
+      requestBody: &policyCommandBody
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [request_id], properties: {request_id: {type: string, minLength: 1, maxLength: 128}}}
+      responses: *okResponses
   /api/product/settings/agent-policy/rules:
-    post: {summary: 创建 an owner-scoped Agent authorization rule., responses: *createdResponses}
+    post:
+      summary: 创建 an owner-scoped Agent authorization rule.
+      requestBody: *policyCommandBody
+      responses: *createdResponses
   /api/product/settings/agent-policy/rules/{rule_id}:
-    put: {summary: 更新 an owner-scoped Agent authorization rule with optimistic concurrency., responses: *okResponses}
+    put:
+      summary: 更新 an owner-scoped Agent authorization rule with optimistic concurrency.
+      requestBody: *policyCommandBody
+      responses: *okResponses
   /api/product/settings/agent-policy/rules/{rule_id}/delete:
-    post: {summary: 删除 an owner-scoped Agent authorization rule., responses: *okResponses}
+    post:
+      summary: 删除 an owner-scoped Agent authorization rule.
+      requestBody: *policyCommandBody
+      responses: *okResponses
   /api/product/settings/agent-policy/presets/{preset_id}/apply:
-    post: {summary: 替换 personal policy settings and rules from a BYQ preset., responses: *okResponses}
+    post:
+      summary: 替换 personal policy settings and rules from a BYQ preset.
+      requestBody: *policyCommandBody
+      responses: *okResponses
   /api/product/settings/assets:
     get: {summary: 返回 owner-scoped workspace assets., responses: *okResponses}
   /api/product/settings/assets/export:

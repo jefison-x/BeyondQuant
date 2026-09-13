@@ -502,7 +502,7 @@ test("real Product API My Space credential, binding, policy, and asset import fl
     const settings = (await request("/settings/models")).body;
     const binding = settings.bindings.find((item: { agent_id: string }) => item.agent_id === "byq-product");
     await request("/settings/models/bindings/byq-product", { method: "PUT", body: JSON.stringify({ profile_id: profile.profile_id, expected_version: binding?.version ?? 0 }) });
-    await request("/settings/agent-policy/rules", { method: "POST", body: JSON.stringify({ name: `E2E拒绝回测-${id}`, description: "real browser evidence", action: "byq_backtest_run", agent_id: "*", decision_mode: "auto_deny", risk_level: "high", priority: 10, enabled: true }) });
+    await request("/settings/agent-policy/rules", { method: "POST", body: JSON.stringify({ request_id: `e2e-policy-rule-${id}`, name: `E2E拒绝回测-${id}`, description: "real browser evidence", action: "byq_backtest_run", agent_id: "*", decision_mode: "auto_deny", risk_level: "high", priority: 10, enabled: true }) });
     await request("/paper/pools", { method: "POST", body: JSON.stringify({ idempotency_key: `e2e-asset-pool-${id}`, name: `E2E资产池-${id}`, symbols: ["000001.SZ"], pool_type: "custom" }) });
     const bundle = (await request("/settings/assets/export")).body;
     const imported = (await request("/settings/assets/import", { method: "POST", body: JSON.stringify(bundle) })).body;

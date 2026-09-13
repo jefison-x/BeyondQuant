@@ -461,7 +461,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
     },
     {
       "kind": "route",
@@ -490,7 +490,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
     },
     {
       "kind": "route",
@@ -519,7 +519,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
     },
     {
       "kind": "route",
@@ -548,7 +548,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
     },
     {
       "kind": "route",
@@ -577,7 +577,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
     },
     {
       "kind": "route",
@@ -606,7 +606,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
     },
     {
       "kind": "route",
@@ -635,7 +635,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
     },
     {
       "kind": "route",
@@ -664,7 +664,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
     },
     {
       "kind": "route",
@@ -693,7 +693,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
     },
     {
       "kind": "route",
@@ -809,7 +809,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
     },
     {
       "kind": "route",
@@ -838,7 +838,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
     },
     {
       "kind": "route",
@@ -867,7 +867,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
     },
     {
       "kind": "route",
@@ -896,7 +896,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
     },
     {
       "kind": "route",
@@ -925,7 +925,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
     },
     {
       "kind": "route",
@@ -954,7 +954,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
     },
     {
       "kind": "route",
@@ -983,7 +983,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
     },
     {
       "kind": "route",
@@ -1012,7 +1012,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
     },
     {
       "kind": "route",
@@ -1041,7 +1041,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
     },
     {
       "kind": "route",
@@ -1071,7 +1071,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1104,7 +1104,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1137,7 +1137,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1170,7 +1170,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1203,7 +1203,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1236,7 +1236,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1269,7 +1269,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1302,7 +1302,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1335,7 +1335,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1370,7 +1370,7 @@
         "services/backend/tests/test_model_command_receipts.py",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1403,7 +1403,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1438,7 +1438,7 @@
         "services/backend/tests/test_model_command_receipts.py",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1471,7 +1471,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1504,7 +1504,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1537,7 +1537,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1570,7 +1570,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1603,7 +1603,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1636,7 +1636,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1669,7 +1669,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1702,7 +1702,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1735,7 +1735,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1770,7 +1770,7 @@
         "services/backend/tests/test_model_command_receipts.py",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1805,7 +1805,7 @@
         "services/backend/tests/test_model_command_receipts.py",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1836,7 +1836,7 @@
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1867,9 +1867,457 @@
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5396,
+      "method": "GET",
+      "path": "/v1/users/agent-policy/receipts",
+      "handler": "reconcile_user_agent_policy",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "read",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "owner/原 request_id/operation/resource 精确匹配",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "返回原提交结果；删除规则或后续改动后仍可核对，不以当前设置代替原命令",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5402,
+      "method": "GET",
+      "path": "/v1/users/agent-policy",
+      "handler": "get_user_agent_policy",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "read",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "owner 当前偏好、完整规则、闭合预设及有界审计目录",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "目录不替代原命令回执；超时不返回空规则作为不存在",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5413,
+      "method": "PUT",
+      "path": "/v1/users/agent-policy",
+      "handler": "update_user_agent_policy",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "公开 request_id 必填；规范输入 hash + owner 事务锁",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "原键重试返回原设置，不覆盖后续保存；回执失败回滚偏好",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5420,
+      "method": "POST",
+      "path": "/v1/users/agent-policy/rules",
+      "handler": "create_user_agent_policy_rule",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "原键 + 规范规则 hash + owner 事务锁",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "8 连接原键只建一条规则/一条审计；删除后重放创建不重新建规则",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5432,
+      "method": "PUT",
+      "path": "/v1/users/agent-policy/rules/{rule_id}",
+      "handler": "update_user_agent_policy_rule",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "原键先核对再检查 expected_version",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "后续删除仍返回原更新版本；不同输入复用原键409；回执与规则更新同事务",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5449,
+      "method": "POST",
+      "path": "/v1/users/agent-policy/rules/{rule_id}/delete",
+      "handler": "delete_user_agent_policy_rule",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "原键先核对再检查目标/expected_version",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "删除与审计/回执同事务；删除后原键重试不重复副作用",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5466,
+      "method": "POST",
+      "path": "/v1/users/agent-policy/presets/{preset_id}/apply",
+      "handler": "apply_user_agent_policy_preset",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "闭合预设 + 原键 + owner 事务锁",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "原规则替换结果和生成ID同事务保存；原键重试不覆盖之后新建的规则",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1746,
+      "method": "GET",
+      "path": "/settings/agent-policy",
+      "handler": "product_agent_policy",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "read",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "owner 当前偏好、完整规则、闭合预设及有界审计目录",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "目录不替代原命令回执；超时不返回空规则作为不存在",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1776,
+      "method": "GET",
+      "path": "/settings/agent-policy/receipts",
+      "handler": "product_agent_policy_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "read",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "owner/原 request_id/operation/resource 精确匹配",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "返回原提交结果；删除规则或后续改动后仍可核对，不以当前设置代替原命令",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1784,
+      "method": "PUT",
+      "path": "/settings/agent-policy",
+      "handler": "product_agent_policy_update",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "公开 request_id 必填；规范输入 hash + owner 事务锁",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "原键重试返回原设置，不覆盖后续保存；回执失败回滚偏好",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1796,
+      "method": "POST",
+      "path": "/settings/agent-policy/rules",
+      "handler": "product_agent_policy_rule_create",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "原键 + 规范规则 hash + owner 事务锁",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "8 连接原键只建一条规则/一条审计；删除后重放创建不重新建规则",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1810,
+      "method": "PUT",
+      "path": "/settings/agent-policy/rules/{rule_id}",
+      "handler": "product_agent_policy_rule_update",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "原键先核对再检查 expected_version",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "后续删除仍返回原更新版本；不同输入复用原键409；回执与规则更新同事务",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1825,
+      "method": "POST",
+      "path": "/settings/agent-policy/rules/{rule_id}/delete",
+      "handler": "product_agent_policy_rule_delete",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "原键先核对再检查目标/expected_version",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "删除与审计/回执同事务；删除后原键重试不重复副作用",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1840,
+      "method": "POST",
+      "path": "/settings/agent-policy/presets/{preset_id}/apply",
+      "handler": "product_agent_policy_preset_apply",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "闭合预设 + 原键 + owner 事务锁",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "原规则替换结果和生成ID同事务保存；原键重试不覆盖之后新建的规则",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
     }
   ]

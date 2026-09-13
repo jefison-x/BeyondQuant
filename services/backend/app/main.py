@@ -5386,6 +5386,19 @@ def resolve_model_credential(payload: dict[str, Any], request: Request) -> dict[
         raise HTTPException(status_code=503, detail="credential storage is unavailable") from error
 
 
+def _policy_request(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    key=payload.get("request_id")
+    if not isinstance(key,str) or not key.strip() or len(key)>128:
+        raise HTTPException(status_code=422,detail="policy request_id is required")
+    return {field:value for field,value in payload.items() if field!="request_id"},key.strip()
+
+
+@app.get("/v1/users/agent-policy/receipts")
+def reconcile_user_agent_policy(request: Request, operation: str, request_id: str, resource_id: str | None = None) -> dict[str, object]:
+    context=_required_agent_context(request)
+    return _policy_call(lambda:user_policy_store.reconcile_command(context["owner_principal"],operation,request_id,resource_id))
+
+
 @app.get("/v1/users/agent-policy")
 def get_user_agent_policy(request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
@@ -5400,16 +5413,19 @@ def get_user_agent_policy(request: Request) -> dict[str, object]:
 @app.put("/v1/users/agent-policy")
 def update_user_agent_policy(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
-    return _policy_call(lambda: {"policy": public_policy(user_policy_store.update(context["owner_principal"], payload))})
+    payload,key=_policy_request(payload)
+    return _policy_call(lambda: {"policy": public_policy(user_policy_store.update(context["owner_principal"], payload,request_id=key,actor=context["actor_principal"]))})
 
 
 @app.post("/v1/users/agent-policy/rules", status_code=201)
 def create_user_agent_policy_rule(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
+    payload,key=_policy_request(payload)
     return _policy_call(lambda: {"rule": user_policy_store.create_rule(
         context["owner_principal"],
         payload,
         actor=context["actor_principal"],
+        request_id=key,
     )})
 
 
@@ -5420,11 +5436,13 @@ def update_user_agent_policy_rule(
     request: Request,
 ) -> dict[str, object]:
     context = _required_agent_context(request)
+    payload,key=_policy_request(payload)
     return _policy_call(lambda: {"rule": user_policy_store.update_rule(
         rule_id,
         context["owner_principal"],
         payload,
         actor=context["actor_principal"],
+        request_id=key,
     )})
 
 
@@ -5435,19 +5453,23 @@ def delete_user_agent_policy_rule(
     request: Request,
 ) -> dict[str, object]:
     context = _required_agent_context(request)
+    payload,key=_policy_request(payload)
     return _policy_call(lambda: user_policy_store.delete_rule(
         rule_id,
         context["owner_principal"],
         actor=context["actor_principal"],
+        request_id=key,
         expected_version=payload.get("expected_version"),
     ))
 
 
 @app.post("/v1/users/agent-policy/presets/{preset_id}/apply")
-def apply_user_agent_policy_preset(preset_id: str, request: Request) -> dict[str, object]:
+def apply_user_agent_policy_preset(preset_id: str, request: Request, payload: dict[str, Any]) -> dict[str, object]:
     context = _required_agent_context(request)
+    _,key=_policy_request(payload)
     return _policy_call(lambda: user_policy_store.apply_preset(
         context["owner_principal"],
         preset_id,
         actor=context["actor_principal"],
+        request_id=key,
     ))

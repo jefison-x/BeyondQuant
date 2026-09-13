@@ -1294,6 +1294,7 @@ def test_product_agent_policy_get_and_update(monkeypatch) -> None:
         if "/v1/agents/approvals?status=pending&limit=1&offset=0" in url:
             return FakeResponse({"approvals": [], "pending_count": 0, "total": 0})
         if method == "PUT":
+            assert kwargs["json"]["request_id"] == "gateway-policy-test"
             return FakeResponse({"policy": {"owner_principal": "product-user", "automation_enabled": False, "paused": True, "default_decision_mode": "manual"}})
         return FakeResponse({"policy": {"owner_principal": "product-user", "automation_enabled": True, "default_decision_mode": "manual"}})
 
@@ -1307,7 +1308,7 @@ def test_product_agent_policy_get_and_update(monkeypatch) -> None:
     updated = client.put(
         "/api/product/settings/agent-policy",
         headers=auth,
-        json={"automation_enabled": False, "paused": True},
+        json={"automation_enabled": False, "paused": True,"request_id":"gateway-policy-test"},
     )
     assert updated.status_code == 200
     assert updated.json()["personal_policy"]["paused"] is True

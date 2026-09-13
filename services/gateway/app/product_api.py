@@ -1773,6 +1773,14 @@ def product_agent_policy(request: Request) -> dict[str, object]:
     }
 
 
+@router.get("/settings/agent-policy/receipts")
+def product_agent_policy_receipt(request: Request, operation: str, request_id: str, resource_id: str | None = None) -> dict[str, object]:
+    from urllib.parse import urlencode
+    params={"operation":operation,"request_id":request_id}
+    if resource_id is not None:params["resource_id"]=resource_id
+    return _backend_request("GET","/v1/users/agent-policy/receipts?"+urlencode(params),headers=_trusted_agent_headers(request))
+
+
 @router.put("/settings/agent-policy")
 def product_agent_policy_update(request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
@@ -1830,12 +1838,12 @@ def product_agent_policy_rule_delete(
 
 
 @router.post("/settings/agent-policy/presets/{preset_id}/apply")
-def product_agent_policy_preset_apply(preset_id: str, request: Request) -> dict[str, object]:
+def product_agent_policy_preset_apply(preset_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
         "POST",
         f"/v1/users/agent-policy/presets/{preset_id}/apply",
-        {},
+        payload,
         headers=_trusted_agent_headers(request),
     )
 

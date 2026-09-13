@@ -83,24 +83,24 @@ export function getAgentPolicyStatus(): Promise<AgentPolicyStatus> {
   return request("/settings/agent-policy");
 }
 
-export function updateAgentPolicy(payload: Record<string, unknown>): Promise<{ personal_policy: AgentPolicyStatus["personal_policy"] }> {
+export function updateAgentPolicy(payload: Record<string, unknown> & {request_id:string}): Promise<{ personal_policy: AgentPolicyStatus["personal_policy"] }> {
   return request("/settings/agent-policy", { method: "PUT", body: JSON.stringify(payload) });
 }
 
-export function createAgentPolicyRule(payload: Record<string, unknown>): Promise<{ rule: Record<string, unknown> }> {
+export function createAgentPolicyRule(payload: Record<string, unknown> & {request_id:string}): Promise<{ rule: Record<string, unknown> }> {
   return request("/settings/agent-policy/rules", { method: "POST", body: JSON.stringify(payload) });
 }
 
-export function updateAgentPolicyRule(ruleId: string, payload: Record<string, unknown>): Promise<{ rule: Record<string, unknown> }> {
+export function updateAgentPolicyRule(ruleId: string, payload: Record<string, unknown> & {request_id:string}): Promise<{ rule: Record<string, unknown> }> {
   return request(`/settings/agent-policy/rules/${ruleId}`, { method: "PUT", body: JSON.stringify(payload) });
 }
 
-export function deleteAgentPolicyRule(ruleId: string, expectedVersion: number): Promise<{ deleted: boolean }> {
-  return request(`/settings/agent-policy/rules/${ruleId}/delete`, { method: "POST", body: JSON.stringify({ expected_version: expectedVersion }) });
+export function deleteAgentPolicyRule(ruleId: string, expectedVersion: number, requestId:string): Promise<{ deleted: boolean }> {
+  return request(`/settings/agent-policy/rules/${ruleId}/delete`, { method: "POST", body: JSON.stringify({ expected_version: expectedVersion,request_id:requestId }) });
 }
 
-export function applyAgentPolicyPreset(presetId: string): Promise<Record<string, unknown>> {
-  return request(`/settings/agent-policy/presets/${presetId}/apply`, { method: "POST", body: "{}" });
+export function applyAgentPolicyPreset(presetId: string, requestId:string): Promise<Record<string, unknown>> {
+  return request(`/settings/agent-policy/presets/${presetId}/apply`, { method: "POST", body: JSON.stringify({request_id:requestId}) });
 }
 
 export async function getSettingsStatus(token: string): Promise<SettingsStatus> {
@@ -132,4 +132,18 @@ export function getModelCommandReceipt(command:import('./modelCommand').ModelCom
   const params=new URLSearchParams({operation:command.operation,resource_id:command.resource_id,expected_version:String(command.expected_version)});
   if(command.operation==='binding' && command.profile_id!==null)params.set('profile_id',command.profile_id);
   return request('/settings/models/commands/receipts?'+params);
+}
+
+export async function sendPolicyCommand(command:import('./policySubmission').PolicySubmission){
+  const payload={...command.payload,request_id:command.key};
+  if(command.operation==='settings')return (await updateAgentPolicy(payload)).personal_policy;
+  if(command.operation==='rule_create')return (await createAgentPolicyRule(payload)).rule;
+  if(command.operation==='rule_update')return (await updateAgentPolicyRule(command.resource_id!,payload)).rule;
+  if(command.operation==='rule_delete')return deleteAgentPolicyRule(command.resource_id!,Number(command.payload.expected_version),command.key);
+  return applyAgentPolicyPreset(command.resource_id!,command.key);
+}
+export function getPolicyReceipt(command:import('./policySubmission').PolicySubmission):Promise<unknown>{
+  const params=new URLSearchParams({operation:command.operation,request_id:command.key});
+  if(command.resource_id)params.set('resource_id',command.resource_id);
+  return request('/settings/agent-policy/receipts?'+params);
 }
