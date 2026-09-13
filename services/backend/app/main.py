@@ -3281,54 +3281,60 @@ def delete_strategy_draft(artifact_id: str, request: Request) -> dict[str, objec
 def strategy_version_history(strategy_id: str, request: Request) -> dict[str, object]:
     """List version history for one strategy (Phase 33)."""
     context = _required_agent_context(request)
-    if _STRATEGY_ID_RE.fullmatch(strategy_id) is None:
-        raise ValueError("strategy_id has invalid format")
-    artifacts = research_store.list_strategy_versions(
-        owner_principal=context["owner_principal"], strategy_id=strategy_id
-    )
-    versions: list[dict[str, object]] = []
-    for item in artifacts:
-        if item["kind"] != "strategy_version":
-            continue
-        content = item["content"]
-        if not isinstance(content, dict) or content.get("strategy_id") != strategy_id:
-            continue
-        versions.append(
-            {
-                "artifact_id": item["artifact_id"],
-                "status": item["status"],
-                "version_id": content.get("version_id"),
-                "source_fingerprint": content.get("source_fingerprint"),
-                "created_at": item["created_at"],
-            }
+    def operation() -> dict[str, object]:
+        if _STRATEGY_ID_RE.fullmatch(strategy_id) is None:
+            raise ValueError("strategy_id has invalid format")
+        artifacts = research_store.list_strategy_versions(
+            owner_principal=context["owner_principal"], strategy_id=strategy_id
         )
-    versions.sort(key=lambda row: str(row["created_at"]), reverse=True)
-    return {"strategy_id": strategy_id, "versions": versions}
+        versions: list[dict[str, object]] = []
+        for item in artifacts:
+            if item["kind"] != "strategy_version":
+                continue
+            content = item["content"]
+            if not isinstance(content, dict) or content.get("strategy_id") != strategy_id:
+                continue
+            versions.append(
+                {
+                    "artifact_id": item["artifact_id"],
+                    "status": item["status"],
+                    "version_id": content.get("version_id"),
+                    "source_fingerprint": content.get("source_fingerprint"),
+                    "created_at": item["created_at"],
+                }
+            )
+        versions.sort(key=lambda row: str(row["created_at"]), reverse=True)
+        return {"strategy_id": strategy_id, "versions": versions}
+
+    return _research_call(operation)
 
 
 @app.get("/v1/research/strategies/{strategy_id}/backtest-count")
 def strategy_backtest_count(strategy_id: str, request: Request) -> dict[str, object]:
     """Return backtest job counts per strategy version (Phase 33 projection)."""
     context = _required_agent_context(request)
-    if _STRATEGY_ID_RE.fullmatch(strategy_id) is None:
-        raise ValueError("strategy_id has invalid format")
-    artifacts = research_store.list_strategy_versions(
-        owner_principal=context["owner_principal"], strategy_id=strategy_id
-    )
-    version_ids: list[str] = []
-    for item in artifacts:
-        if item["kind"] != "strategy_version":
-            continue
-        content = item["content"]
-        if isinstance(content, dict) and content.get("strategy_id") == strategy_id:
-            version_ids.append(item["artifact_id"])
-    counts = backtest_store.count_by_strategy_versions(version_ids)
-    return {
-        "strategy_id": strategy_id,
-        "version_count": len(version_ids),
-        "backtest_count": sum(counts.values()),
-        "by_version": counts,
-    }
+    def operation() -> dict[str, object]:
+        if _STRATEGY_ID_RE.fullmatch(strategy_id) is None:
+            raise ValueError("strategy_id has invalid format")
+        artifacts = research_store.list_strategy_versions(
+            owner_principal=context["owner_principal"], strategy_id=strategy_id
+        )
+        version_ids: list[str] = []
+        for item in artifacts:
+            if item["kind"] != "strategy_version":
+                continue
+            content = item["content"]
+            if isinstance(content, dict) and content.get("strategy_id") == strategy_id:
+                version_ids.append(item["artifact_id"])
+        counts = backtest_store.count_by_strategy_versions(version_ids)
+        return {
+            "strategy_id": strategy_id,
+            "version_count": len(version_ids),
+            "backtest_count": sum(counts.values()),
+            "by_version": counts,
+        }
+
+    return _backtest_call(operation)
 
 
 @app.post("/v1/research/artifacts/{artifact_id}/transitions")

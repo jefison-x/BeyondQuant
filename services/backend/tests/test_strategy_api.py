@@ -295,7 +295,9 @@ def test_agent_strategy_approval_is_bound_to_exact_resource_and_human_decision(m
     version = client.post("/v1/research/strategies/versions", json={
         "task_id": task["task_id"], "draft_artifact_id": draft["artifact"]["artifact_id"],
         "trace_id": "approval-trace", "idempotency_key": "approval-binding-version",
-    }).json()
+    }, headers=human_headers)
+    assert version.status_code == 201, version.text
+    version = version.json()
     artifact_id = version["artifact"]["artifact_id"]
     run = client.post("/v1/agents/runs", json={
         "role_id": "quant_orchestrator", "idempotency_key": "approval-binding-run",
@@ -459,3 +461,31 @@ def test_strategy_version_history_and_backtest_count(monkeypatch, tmp_path) -> N
     assert count1.json()["version_count"] == 1
     store.close()
     jobs.close()
+
+
+@pytest.mark.parametrize("suffix", ["versions", "backtest-count"])
+def test_strategy_projection_rejects_invalid_identifier_with_422(suffix):
+    client = TestClient(main.app, raise_server_exceptions=False)
+    response = client.get(f"/v1/research/strategies/invalid!/{suffix}", headers=_owner_headers())
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize("suffix,store_kind", [
+    ("versions", "research"), ("backtest-count", "research"), ("backtest-count", "backtest"),
+])
+def test_strategy_projection_storage_error_is_safe_503(monkeypatch, suffix, store_kind):
+    from app.research import ResearchPersistenceError
+    from app.backtest import BacktestStorageError
+    def failed(*args, **kwargs):
+        error = ResearchPersistenceError if store_kind == "research" else BacktestStorageError
+        raise error("synthetic-private-connection-details")
+    if store_kind == "research":
+        monkeypatch.setattr(main.research_store, "list_strategy_versions", failed)
+    else:
+        monkeypatch.setattr(main.research_store, "list_strategy_versions", lambda **kwargs: [])
+        monkeypatch.setattr(main.backtest_store, "count_by_strategy_versions", failed)
+    client = TestClient(main.app, raise_server_exceptions=False)
+    response = client.get(f"/v1/research/strategies/ValidStrategy/{suffix}", headers=_owner_headers())
+    assert response.status_code == 503, response.text
+    assert "synthetic-private" not in response.text
+    assert response.json()["detail"] == f"{store_kind} storage is unavailable"
