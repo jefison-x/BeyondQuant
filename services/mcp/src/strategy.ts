@@ -152,17 +152,26 @@ export function fetchByqStrategyDraftSave(
   );
 }
 
-export function fetchByqStrategyDraftDelete(
+export async function fetchByqStrategyDraftDelete(
   backendUrl: string,
   artifactId: string,
   fetcher: Fetcher = fetch,
 ): Promise<ByqStrategyResult> {
-  return requestStrategy(
+  const response = await requestStrategy(
     backendUrl,
     `/v1/research/strategies/drafts/${encodeURIComponent(artifactId)}`,
     { method: "DELETE" },
     fetcher,
   );
+  const payload = JSON.parse(response.content[0].text);
+  if (payload.status === "outcome_unknown" && /^artifact_[0-9a-f]{32}$/.test(artifactId)) {
+    payload.reconciliation = { tool: "byq_research_get", arguments: {
+      entity_type: "artifact", entity_id: artifactId,
+    } };
+    payload.next_action = "Read this exact original draft and inspect its status. Do not infer deletion from a missing list entry or retry with another artifact identity.";
+    return result(payload, false);
+  }
+  return response;
 }
 
 export function fetchByqStrategyValidate(

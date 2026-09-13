@@ -159,3 +159,22 @@ for (const create of [fetchByqStrategyVersionCreate, fetchByqStrategyApprove]) {
   } });
 }
 console.log('Strategy original-key recovery guidance PASS');
+
+
+for (const mode of ["disconnect", "server_error", "bad_json", "null", "array"]) {
+  let calls = 0;
+  const reply = await fetchByqStrategyDraftDelete("http://backend:8000", artifactId, async () => {
+    calls++;
+    if (mode === "disconnect") throw new TypeError("synthetic lost response");
+    if (mode === "server_error") return new Response("unavailable", { status: 503 });
+    if (mode === "bad_json") return new Response("{");
+    return Response.json(mode === "null" ? null : []);
+  });
+  const payload = JSON.parse(reply.content[0].text);
+  assert.equal(payload.status, "outcome_unknown");
+  assert.deepEqual(payload.reconciliation, { tool: "byq_research_get", arguments: {
+    entity_type: "artifact", entity_id: artifactId,
+  } });
+  assert.equal(calls, 1, "unknown deletion cannot trigger another write");
+}
+console.log("Draft deletion unknown result preserves exact read identity PASS");

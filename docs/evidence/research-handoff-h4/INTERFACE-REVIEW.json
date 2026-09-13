@@ -3609,7 +3609,7 @@
         "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
         "services/mcp/src/domain-validation-schema.ts": "sha256:e0454153f2f29caaefc0174939bb59c0442379a0f05bcb11e438875dab03a191",
         "services/mcp/src/domain-admission.ts": "sha256:f5c4fa396a5d1d8629073b9ae5f8e3ffb738708b11d42e44f3636b608528529e",
-        "services/mcp/src/strategy.ts": "sha256:068b80b2e3333e14ad5fde96f125f4b3b6ed79c466be902e177c5605b5c897e2",
+        "services/mcp/src/strategy.ts": "sha256:fac4515504840c96c72107de196ba9b765610560d172d214523fb7990200eefe",
         "services/runtime-adapter/app/runtime.py": "sha256:cf1ab277821cd448750b9b18ad1bc699eb94c23e8ffead568d381d98288f046b"
       }
     },
@@ -3649,7 +3649,7 @@
         "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
         "services/mcp/src/domain-validation-schema.ts": "sha256:e0454153f2f29caaefc0174939bb59c0442379a0f05bcb11e438875dab03a191",
         "services/mcp/src/domain-admission.ts": "sha256:f5c4fa396a5d1d8629073b9ae5f8e3ffb738708b11d42e44f3636b608528529e",
-        "services/mcp/src/strategy.ts": "sha256:068b80b2e3333e14ad5fde96f125f4b3b6ed79c466be902e177c5605b5c897e2",
+        "services/mcp/src/strategy.ts": "sha256:fac4515504840c96c72107de196ba9b765610560d172d214523fb7990200eefe",
         "services/runtime-adapter/app/runtime.py": "sha256:cf1ab277821cd448750b9b18ad1bc699eb94c23e8ffead568d381d98288f046b"
       }
     }
