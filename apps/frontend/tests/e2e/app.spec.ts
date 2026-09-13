@@ -498,7 +498,7 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
       }),
     }),
   );
-  await page.route("**/api/product/strategies/MomentumStrategy/versions", (route) =>
+  await page.route("**/api/product/strategies/MomentumStrategy/versions?limit=50&offset=0", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
