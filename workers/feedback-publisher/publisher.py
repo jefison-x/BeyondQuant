@@ -246,7 +246,7 @@ def _complete(config: Config, event: dict[str, Any], issue: dict[str, Any]) -> N
     number = issue.get("number")
     provider_id = issue.get("id")
     expected_url = f"https://github.com/{config.repository}/issues/{number}"
-    if isinstance(number, bool) or not isinstance(number, int) or number < 1 or not provider_id or issue.get("html_url") != expected_url:
+    if isinstance(number, bool) or not isinstance(number, int) or number < 1 or isinstance(provider_id, bool) or not isinstance(provider_id, int) or provider_id < 1 or issue.get("html_url") != expected_url:
         raise PublisherError("transport_ambiguous")
     _backend(config, f"/internal/feedback-publications/{event['event_id']}/complete", {
         "worker_id": config.worker_id, "lease_fence": event["lease_fence"], "repository": config.repository,

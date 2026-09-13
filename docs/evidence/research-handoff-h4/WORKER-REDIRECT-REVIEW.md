@@ -51,3 +51,9 @@ Cloudflare 测试使用合成 fetch 与 binding 响应，不能替代生产网�
 修正后Relay完整8项通过（2.14秒），共享期限增强测试3项通过（1.34秒）；124项架构、dev-check语法、CI脚本语法及`.109`构建身份通过。尚未新镜像运行或远端CI验证，不标记整个人工入口完成。
 
 两个Worker当前源码与共享模块按Docker同目录布局只读挂载，清空额外PYTHONPATH后均成功import；依赖仍由保留镜像提供，此探针不是新镜像构建证明。
+
+## Provider回执内部ID资格
+
+Python _complete 原来仅检查id非空，六个反例True/-1/浮点/数字字符串/对象/数组均复现可进入Backend complete请求。URL使用原配置仓库合法地址，避免URL拒绝掩盖ID缺陷。现在仅接受非bool正整数，畸形回执保持transport_ambiguous且Backend调用为零；完整Publisher25项通过（7.18秒）。这是边界反例，不是生产收到畸形GitHub回执的证据。
+
+CI影响分类已核对workers/*触发Backend、架构及集成，共享期限模块不会漏出组件选择。`.108`目前只有已修正的前端模拟用例失败，Backend尚在运行；不提前取消剩余作业。

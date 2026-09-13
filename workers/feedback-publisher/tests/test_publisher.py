@@ -254,3 +254,14 @@ def test_http_redirect_cannot_forward_credentials(redirect_status):
     finally:
         for server in (source, sink): server.shutdown(); server.server_close()
         for thread in threads: thread.join(timeout=2)
+
+
+@pytest.mark.parametrize('provider_id', [True, -1, 1.5, '123', {'id':123}, [123]])
+def test_malformed_issue_identity_cannot_complete(monkeypatch, provider_id):
+    calls = []
+    monkeypatch.setattr(publisher, '_backend', lambda *args, **kwargs: calls.append((args, kwargs)))
+    with pytest.raises(publisher.PublisherError) as caught:
+        publisher._complete(config('http://127.0.0.1'), event(), {
+            'number': 1, 'id': provider_id, 'html_url':'https://github.com/jefison-x/BeyondQuant/issues/1'})
+    assert caught.value.category == 'transport_ambiguous'
+    assert calls == []
