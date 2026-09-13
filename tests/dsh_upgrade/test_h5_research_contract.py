@@ -8,11 +8,11 @@ def fixture():
     context={'scenario':SCENARIO,'synthetic':True,'owner':'h5-research-user','task_id':'task_'+'a'*32,
         'workspace_id':'workspace_'+'a'*32,'pool_id':'stock_pool_'+'b'*32,'snapshot_id':'stock_pool_snapshot_'+'c'*64,
         'symbols':['000001.SZ','600000.SH']}
-    task={'task_id':context['task_id'],'owner_principal':context['owner'],'status':'completed','progress':{'completion_evidence':['artifact_'+'a'*32]}}
+    task={'workspace_id':context['workspace_id'],'task_id':context['task_id'],'owner_principal':context['owner'],'status':'completed','progress':{'completion_evidence':['artifact_'+'a'*32]}}
     jobs=[{'job_id':'backtest_'+char*32,'task_id':context['task_id'],'owner_principal':context['owner'],'status':'completed',
         'strategy_version_artifact_id':'artifact_'+char*32,'stock_pool_snapshot_id':context['snapshot_id'],'summary':{'total_return':value}}
         for char,value in [('b',0.1),('c',0.2),('d',0.15)]]
-    report={'artifact_id':'artifact_'+'a'*32,'task_id':context['task_id'],'owner_principal':context['owner'],'kind':'research_report','status':'validated',
+    report={'workspace_id':context['workspace_id'],'artifact_id':'artifact_'+'a'*32,'task_id':context['task_id'],'owner_principal':context['owner'],'kind':'research_report','status':'validated',
         'content':{'synthetic':True,'selected_job_id':jobs[1]['job_id'],'candidates':[{'job_id':j['job_id'],'strategy_version_artifact_id':j['strategy_version_artifact_id'],'total_return':j['summary']['total_return']} for j in jobs]}}
     account={'account_id':'paper_account_'+'e'*32,'owner_principal':context['owner'],'workspace_id':context['workspace_id'],
         'status':'active','bound_snapshot_id':context['snapshot_id'],'bound_pool_id':context['pool_id']}
@@ -22,6 +22,18 @@ def fixture():
 class H5CompletionGateTest(unittest.TestCase):
     def test_internal_consistency_gate_accepts_matching_facts(self):
         self.assertEqual(verify_completion(*fixture())['selected_job_id'],'backtest_'+'c'*32)
+
+    def test_task_and_report_require_original_workspace(self):
+        for position in (1, 3):
+            for missing in (False, True):
+                values = list(deepcopy(fixture()))
+                if missing:
+                    values[position].pop('workspace_id')
+                else:
+                    values[position]['workspace_id'] = 'workspace_' + 'f'*32
+                with self.subTest(position=position, missing=missing):
+                    with self.assertRaises(AssertionError):
+                        verify_completion(*values)
 
     def test_neither_task_label_nor_report_text_can_replace_domain_facts(self):
         for failure in ('pending_job','two_jobs','wrong_task','wrong_pool','wrong_account_workspace','fake_return','wrong_winner','missing_report_link','wrong_candidate_version','wrong_account_pool'):

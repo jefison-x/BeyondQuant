@@ -42,6 +42,8 @@ def validate_context(value):
 def verify_completion(context, task, jobs, report, account):
     """Use caller-fetched authoritative rows, never assistant prose, as evidence."""
     validate_context(context)
+    if any(row.get('workspace_id') != context['workspace_id'] for row in (task, report)):
+        raise AssertionError('task and report must belong to original H5 workspace')
     if task.get('task_id') != context['task_id'] or task.get('owner_principal') != context['owner'] or task.get('status') != 'completed':
         raise AssertionError('original research task has not completed')
     if len(jobs) != 3 or len({row.get('job_id') for row in jobs}) != 3:

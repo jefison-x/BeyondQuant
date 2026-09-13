@@ -48,3 +48,7 @@ h5_signal_probe.py 经真实回环HTTP触发子进程，对两标的合成单日
 inspect_networks 对Docker实际inspect结果核对精确4网络集合、bridge驱动、scope标签、Internal属性并拒绝Ingress。4项栈合同测试通过，包含6种实际网络结果变更反例。
 已实际创建独立随机byq-h5-netcheck作用域的4个空Docker网络并读取inspect通过；无容器、无数据连接。finally按本次创建的精确ID删除，按scope标签复查剩余零。
 此证据只覆盖网络，实际容器镜像/进程/环境/挂载/健康和整栈清理检查仍待实现，H5未完成。
+
+## 完成证据工作区核对
+
+核对当前 ResearchStore 的 task/artifact 真实响应保留 workspace_id；完成校验新增原工作区精确匹配。任务和报告分别错工作区/缺字段四个反例先复现误通过，修复后六项采集合同比较测试通过。Backtest summary 未提供 workspace_id，未凭空要求该字段，继续通过原 task/snapshot 关联校验。此处是验收工具缺口修复，不是生产跨工作区事故证据；真实三轮研究仍未执行。
