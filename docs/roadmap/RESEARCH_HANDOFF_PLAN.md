@@ -77,3 +77,7 @@ H1 只调整 Gateway 发给 DSH 的审批交接指令。稳定审批 ID 仍是�
 H4 第二切片：原键核对的 Experiment/Artifact 回执须与原任务一致；[证据](../evidence/research-handoff-h4/RECEIPT-LINEAGE.md)。完整接口审计仍进行中。
 
 H4 第三切片：三类研究对象按 ID 读取及已确认回执回读均拒绝错对象；[证据](../evidence/research-handoff-h4/EXACT-READ.md)。全接口剩余审计保留。
+
+## H4 集成验证
+
+完整 MCP 测试、17项数据库回执恢复与真实 HTTP 创建浏览器验证通过；[未决接口族及证据](../evidence/research-handoff-h4/INTEGRATION.md)。H4仍未关闭。本轮维护者接受统一推送及远端CI，创建Draft PR；不包含合并或部署。

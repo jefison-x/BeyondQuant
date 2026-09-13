@@ -1,0 +1,4665 @@
+{
+  "schema_version": "reliability-inventory.v1",
+  "entries": [
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 326,
+      "method": "GET",
+      "path": "/healthz",
+      "handler": "healthz",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 331,
+      "method": "GET",
+      "path": "/readyz",
+      "handler": "readyz",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 377,
+      "method": "POST",
+      "path": "/v1/product/conversations",
+      "handler": "create_conversation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 384,
+      "method": "GET",
+      "path": "/v1/product/conversations",
+      "handler": "list_conversations",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 397,
+      "method": "GET",
+      "path": "/v1/product/conversations/by-runtime/{session_id}",
+      "handler": "conversation_by_runtime",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 404,
+      "method": "GET",
+      "path": "/v1/product/conversations/{conversation_id}",
+      "handler": "get_conversation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 413,
+      "method": "POST",
+      "path": "/v1/product/conversations/{conversation_id}/messages",
+      "handler": "append_conversation_message",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 428,
+      "method": "POST",
+      "path": "/internal/agent-lifecycle/{conversation_id}",
+      "handler": "consume_agent_lifecycle",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 459,
+      "method": "POST",
+      "path": "/internal/task-continuation/{reservation_id}/authorize-tool",
+      "handler": "authorize_continuation_tool",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 466,
+      "method": "POST",
+      "path": "/internal/task-continuation/{conversation_id}/claim",
+      "handler": "claim_task_continuation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 473,
+      "method": "POST",
+      "path": "/internal/task-continuation/{conversation_id}/peek",
+      "handler": "peek_task_continuation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 480,
+      "method": "POST",
+      "path": "/internal/task-continuation/{task_id}/dispatch",
+      "handler": "dispatch_task_continuation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 489,
+      "method": "POST",
+      "path": "/internal/task-continuation/{task_id}/block",
+      "handler": "block_task_continuation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 497,
+      "method": "POST",
+      "path": "/internal/task-continuation/{task_id}/receipt",
+      "handler": "record_task_continuation_receipt",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 508,
+      "method": "POST",
+      "path": "/internal/domain-call-evidence/{conversation_id}",
+      "handler": "consume_domain_call_evidence",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 528,
+      "method": "PATCH",
+      "path": "/v1/product/conversations/{conversation_id}",
+      "handler": "update_conversation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 535,
+      "method": "DELETE",
+      "path": "/v1/product/conversations/{conversation_id}",
+      "handler": "delete_conversation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 567,
+      "method": "GET",
+      "path": "/v1/feedback/options",
+      "handler": "feedback_options",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 573,
+      "method": "GET",
+      "path": "/v1/feedback/items",
+      "handler": "feedback_items",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 585,
+      "method": "POST",
+      "path": "/v1/feedback/items",
+      "handler": "feedback_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 594,
+      "method": "GET",
+      "path": "/v1/feedback/items/{feedback_id}",
+      "handler": "feedback_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 602,
+      "method": "PUT",
+      "path": "/v1/feedback/items/{feedback_id}",
+      "handler": "feedback_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 611,
+      "method": "GET",
+      "path": "/v1/feedback/items/{feedback_id}/revisions",
+      "handler": "feedback_revisions",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 621,
+      "method": "POST",
+      "path": "/v1/feedback/items/{feedback_id}/preview",
+      "handler": "feedback_preview",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 633,
+      "method": "POST",
+      "path": "/v1/feedback/items/{feedback_id}/submit",
+      "handler": "feedback_submit",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 654,
+      "method": "POST",
+      "path": "/v1/feedback/items/{feedback_id}/withdraw",
+      "handler": "feedback_withdraw",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 662,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/items",
+      "handler": "feedback_moderation_items",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 673,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/items/{feedback_id}",
+      "handler": "feedback_moderation_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 679,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/items/{feedback_id}/audit",
+      "handler": "feedback_moderation_audit",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 689,
+      "method": "POST",
+      "path": "/v1/feedback/moderation/items/{feedback_id}/{action}",
+      "handler": "feedback_moderate",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 697,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/publisher-status",
+      "handler": "feedback_publisher_status",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 711,
+      "method": "POST",
+      "path": "/internal/feedback-publications/heartbeat",
+      "handler": "feedback_publisher_heartbeat",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 717,
+      "method": "POST",
+      "path": "/internal/feedback-publications/claim",
+      "handler": "feedback_publication_claim",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 723,
+      "method": "POST",
+      "path": "/internal/feedback-publications/{event_id}/complete",
+      "handler": "feedback_publication_complete",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 729,
+      "method": "POST",
+      "path": "/internal/feedback-publications/{event_id}/retry",
+      "handler": "feedback_publication_retry",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 743,
+      "method": "POST",
+      "path": "/internal/feedback-hub/heartbeat",
+      "handler": "feedback_hub_heartbeat",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 749,
+      "method": "POST",
+      "path": "/internal/feedback-hub/claim",
+      "handler": "feedback_hub_claim",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 755,
+      "method": "POST",
+      "path": "/internal/feedback-hub/{event_id}/complete",
+      "handler": "feedback_hub_complete",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 761,
+      "method": "POST",
+      "path": "/internal/feedback-hub/{event_id}/retry",
+      "handler": "feedback_hub_retry",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 767,
+      "method": "GET",
+      "path": "/internal/feedback-hub/status-candidates",
+      "handler": "feedback_hub_status_candidates",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 773,
+      "method": "POST",
+      "path": "/internal/feedback-hub/{event_id}/status",
+      "handler": "feedback_hub_status",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 779,
+      "method": "GET",
+      "path": "/v1/operations/overview",
+      "handler": "operations_overview",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 788,
+      "method": "PUT",
+      "path": "/v1/operations/budget",
+      "handler": "operations_budget_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 799,
+      "method": "GET",
+      "path": "/v1/plugin-center",
+      "handler": "plugin_center_projection",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 806,
+      "method": "GET",
+      "path": "/v1/plugin-center/plugins/{plugin_id}",
+      "handler": "plugin_center_detail",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 813,
+      "method": "POST",
+      "path": "/v1/plugin-center/changes",
+      "handler": "plugin_center_change",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 822,
+      "method": "POST",
+      "path": "/v1/plugin-center/qualifications",
+      "handler": "plugin_center_qualification",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 831,
+      "method": "GET",
+      "path": "/internal/plugin-center/requests/{request_id}",
+      "handler": "plugin_deployment_input",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 838,
+      "method": "POST",
+      "path": "/internal/plugin-center/requests/{request_id}/result",
+      "handler": "plugin_deployment_result",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 845,
+      "method": "GET",
+      "path": "/v1/data/daily",
+      "handler": "daily_data",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 897,
+      "method": "POST",
+      "path": "/v1/data/research/valuation",
+      "handler": "research_valuation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 909,
+      "method": "POST",
+      "path": "/v1/data/research/daily",
+      "handler": "research_daily",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 923,
+      "method": "GET",
+      "path": "/v1/data/research/session-context",
+      "handler": "research_market_session_context",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 930,
+      "method": "POST",
+      "path": "/v1/data/research/fundamentals",
+      "handler": "research_fundamentals",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1068,
+      "method": "GET",
+      "path": "/v1/data-center/status",
+      "handler": "data_center_status",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1181,
+      "method": "GET",
+      "path": "/v1/data-sync/automation",
+      "handler": "get_market_sync_automation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1187,
+      "method": "PUT",
+      "path": "/v1/data-sync/automation/config",
+      "handler": "update_market_sync_automation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1195,
+      "method": "POST",
+      "path": "/v1/data-sync/automation/run-now",
+      "handler": "run_market_sync_automation_now",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1206,
+      "method": "GET",
+      "path": "/v1/data-sync/automation/run-now/{request_id}",
+      "handler": "get_market_sync_automation_run",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1214,
+      "method": "POST",
+      "path": "/v1/data-sources/tushare/credentials",
+      "handler": "create_tushare_credential",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1230,
+      "method": "PUT",
+      "path": "/v1/data-sources/tushare/credentials/{credential_id}",
+      "handler": "update_tushare_credential",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1249,
+      "method": "POST",
+      "path": "/v1/data-sources/tushare/credentials/{credential_id}/revoke",
+      "handler": "revoke_tushare_credential",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1270,
+      "method": "POST",
+      "path": "/v1/data-sources/tushare/test",
+      "handler": "test_tushare_connection",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1311,
+      "method": "POST",
+      "path": "/v1/data-sync/jobs",
+      "handler": "create_data_sync_job",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1436,
+      "method": "POST",
+      "path": "/v1/agent/data-demands",
+      "handler": "create_agent_data_demand",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1466,
+      "method": "GET",
+      "path": "/v1/agent/data-demands/{demand_id}",
+      "handler": "get_agent_data_demand",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1475,
+      "method": "GET",
+      "path": "/v1/agent/data-demand-notifications",
+      "handler": "get_agent_data_demand_notifications",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1501,
+      "method": "GET",
+      "path": "/v1/agent/research-context",
+      "handler": "get_agent_research_context",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1509,
+      "method": "GET",
+      "path": "/v1/data-sync/jobs",
+      "handler": "list_data_sync_jobs",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1515,
+      "method": "GET",
+      "path": "/v1/data-sync/jobs/{job_id}",
+      "handler": "get_data_sync_job",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1521,
+      "method": "GET",
+      "path": "/v1/data-center/coverage",
+      "handler": "get_data_coverage",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1538,
+      "method": "POST",
+      "path": "/v1/data-center/readiness",
+      "handler": "query_data_readiness",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1620,
+      "method": "POST",
+      "path": "/v1/data-sync/security-master/jobs",
+      "handler": "create_security_master_sync_job",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1641,
+      "method": "GET",
+      "path": "/v1/data-sync/security-master/jobs/{job_id}",
+      "handler": "get_security_master_sync_job",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1647,
+      "method": "GET",
+      "path": "/v1/data-center/securities",
+      "handler": "list_security_master",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1941,
+      "method": "GET",
+      "path": "/v1/research/submissions/reconcile",
+      "handler": "reconcile_research_submission",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1952,
+      "method": "POST",
+      "path": "/v1/research/submission-watches",
+      "handler": "register_research_submission_watch",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1958,
+      "method": "GET",
+      "path": "/v1/research/submission-watches/{watch_id}",
+      "handler": "get_research_submission_watch",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1964,
+      "method": "GET",
+      "path": "/v1/product/research/submission-watches/{conversation_id}",
+      "handler": "list_research_submission_watches",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1970,
+      "method": "POST",
+      "path": "/internal/research-receipts/{conversation_id}/reconcile",
+      "handler": "consume_research_submission_watches",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1979,
+      "method": "POST",
+      "path": "/v1/research/tasks",
+      "handler": "create_research_task",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1991,
+      "method": "GET",
+      "path": "/v1/research/tasks/{task_id}",
+      "handler": "get_research_task",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2004,
+      "method": "GET",
+      "path": "/v1/research/tasks/{task_id}/handoff",
+      "handler": "get_research_task_handoff",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2010,
+      "method": "GET",
+      "path": "/v1/research/tasks/{task_id}/continuation-permission",
+      "handler": "get_research_continuation_permission",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2016,
+      "method": "POST",
+      "path": "/v1/research/tasks/{task_id}/continuation-permission",
+      "handler": "create_research_continuation_permission",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2022,
+      "method": "POST",
+      "path": "/v1/research/tasks/{task_id}/continuation-permission/revoke",
+      "handler": "revoke_research_continuation_permission",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2032,
+      "method": "GET",
+      "path": "/v1/research/tasks",
+      "handler": "list_research_tasks",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2038,
+      "method": "POST",
+      "path": "/v1/research/tasks/{task_id}/transitions",
+      "handler": "transition_research_task",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2043,
+      "method": "POST",
+      "path": "/v1/research/experiments",
+      "handler": "create_experiment",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2052,
+      "method": "GET",
+      "path": "/v1/research/experiments/{experiment_id}",
+      "handler": "get_experiment",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2065,
+      "method": "GET",
+      "path": "/v1/research/experiments",
+      "handler": "list_experiments",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2071,
+      "method": "POST",
+      "path": "/v1/research/experiments/{experiment_id}/transitions",
+      "handler": "transition_experiment",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2076,
+      "method": "POST",
+      "path": "/v1/research/artifacts",
+      "handler": "create_artifact",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2089,
+      "method": "POST",
+      "path": "/v1/research/web-evidence",
+      "handler": "create_web_research_evidence",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2113,
+      "method": "POST",
+      "path": "/v1/research/web-evidence-records",
+      "handler": "create_web_research_evidence_record",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2131,
+      "method": "GET",
+      "path": "/v1/research/artifacts/{artifact_id}",
+      "handler": "get_artifact",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2144,
+      "method": "GET",
+      "path": "/v1/research/artifacts",
+      "handler": "list_artifacts",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2150,
+      "method": "POST",
+      "path": "/v1/research/factors/compute",
+      "handler": "compute_research_factor",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2200,
+      "method": "POST",
+      "path": "/internal/domain-validation/schema-rejection",
+      "handler": "record_domain_schema_rejection",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2210,
+      "method": "POST",
+      "path": "/v1/research/strategies/validate",
+      "handler": "validate_strategy_draft",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2253,
+      "method": "POST",
+      "path": "/v1/research/strategies/versions",
+      "handler": "create_strategy_version",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2308,
+      "method": "POST",
+      "path": "/v1/research/strategies/approvals",
+      "handler": "create_strategy_approval",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2386,
+      "method": "GET",
+      "path": "/v1/research/strategies/versions/{artifact_id}/export",
+      "handler": "export_strategy_version_artifact",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2476,
+      "method": "GET",
+      "path": "/v1/research/ml/capabilities",
+      "handler": "get_ml_capabilities",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2504,
+      "method": "GET",
+      "path": "/v1/research/ml/options",
+      "handler": "get_ml_options",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2510,
+      "method": "GET",
+      "path": "/v1/research/ml/studies",
+      "handler": "list_ml_studies",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2524,
+      "method": "GET",
+      "path": "/v1/research/ml/studies/{strategy_artifact_id}",
+      "handler": "get_ml_study",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2607,
+      "method": "POST",
+      "path": "/v1/research/ml/studies/{strategy_artifact_id}/lifecycle",
+      "handler": "update_ml_study_lifecycle",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2623,
+      "method": "DELETE",
+      "path": "/v1/research/ml/studies/{strategy_artifact_id}",
+      "handler": "delete_ml_study",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2636,
+      "method": "GET",
+      "path": "/v1/research/ml/workspace",
+      "handler": "get_ml_agent_workspace",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2665,
+      "method": "POST",
+      "path": "/v1/research/ml/strategies/versions",
+      "handler": "create_ml_strategy_version",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2704,
+      "method": "POST",
+      "path": "/v1/research/ml/strategies/approvals",
+      "handler": "create_ml_strategy_approval",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2772,
+      "method": "POST",
+      "path": "/v1/research/ml/training-runs",
+      "handler": "create_ml_training_run",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2875,
+      "method": "POST",
+      "path": "/v1/research/ml/training-submissions",
+      "handler": "register_ml_training_submission",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2889,
+      "method": "GET",
+      "path": "/v1/research/ml/training-submissions/reconcile",
+      "handler": "get_ml_training_submission",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2897,
+      "method": "GET",
+      "path": "/v1/research/ml/training-runs",
+      "handler": "list_ml_training_runs",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2909,
+      "method": "GET",
+      "path": "/v1/research/ml/training-runs/reconcile",
+      "handler": "get_ml_training_run_by_idempotency",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2921,
+      "method": "GET",
+      "path": "/v1/research/ml/training-runs/{training_run_id}",
+      "handler": "get_ml_training_run",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2930,
+      "method": "POST",
+      "path": "/v1/research/ml/training-runs/{training_run_id}/cancel",
+      "handler": "cancel_ml_training_run",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2939,
+      "method": "POST",
+      "path": "/v1/research/ml/prediction-runs",
+      "handler": "create_ml_prediction_run",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3093,
+      "method": "GET",
+      "path": "/v1/research/ml/prediction-runs",
+      "handler": "list_ml_prediction_runs",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3105,
+      "method": "GET",
+      "path": "/v1/research/ml/prediction-runs/{prediction_run_id}",
+      "handler": "get_ml_prediction_run",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3123,
+      "method": "GET",
+      "path": "/v1/research/ml/prediction-runs/{prediction_run_id}/rows",
+      "handler": "get_ml_prediction_rows",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3173,
+      "method": "GET",
+      "path": "/v1/research/strategies",
+      "handler": "list_strategy_artifacts",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3188,
+      "method": "GET",
+      "path": "/v1/research/strategies/versions/{artifact_id}/approval",
+      "handler": "get_strategy_version_approval",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3207,
+      "method": "GET",
+      "path": "/v1/research/task-options",
+      "handler": "list_research_task_options",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3217,
+      "method": "POST",
+      "path": "/v1/research/strategies/drafts",
+      "handler": "save_strategy_draft",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3256,
+      "method": "DELETE",
+      "path": "/v1/research/strategies/drafts/{artifact_id}",
+      "handler": "delete_strategy_draft",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3280,
+      "method": "GET",
+      "path": "/v1/research/strategies/{strategy_id}/versions",
+      "handler": "strategy_version_history",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3309,
+      "method": "GET",
+      "path": "/v1/research/strategies/{strategy_id}/backtest-count",
+      "handler": "strategy_backtest_count",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3334,
+      "method": "POST",
+      "path": "/v1/research/artifacts/{artifact_id}/transitions",
+      "handler": "transition_artifact",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3459,
+      "method": "POST",
+      "path": "/v1/research/signal-snapshots",
+      "handler": "create_signal_snapshot",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3533,
+      "method": "GET",
+      "path": "/v1/research/signal-snapshots/{artifact_id}",
+      "handler": "get_signal_snapshot",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3546,
+      "method": "GET",
+      "path": "/v1/research/signal-snapshots",
+      "handler": "list_signal_snapshots",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3700,
+      "method": "POST",
+      "path": "/v1/research/signal-producer/jobs",
+      "handler": "create_signal_producer_job",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3720,
+      "method": "GET",
+      "path": "/v1/research/signal-producer/jobs",
+      "handler": "list_signal_producer_jobs",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3730,
+      "method": "GET",
+      "path": "/v1/research/signal-producer/jobs/{job_id}",
+      "handler": "get_signal_producer_job",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3816,
+      "method": "POST",
+      "path": "/v1/research/backtest-tasks/prepare",
+      "handler": "prepare_backtest_task",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3841,
+      "method": "POST",
+      "path": "/v1/research/backtest-tasks",
+      "handler": "create_backtest_task",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3854,
+      "method": "GET",
+      "path": "/v1/research/backtest-tasks/reconcile",
+      "handler": "reconcile_backtest_task_submission",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3877,
+      "method": "GET",
+      "path": "/v1/research/backtest-tasks/{backtest_task_id}",
+      "handler": "get_backtest_task",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3901,
+      "method": "POST",
+      "path": "/v1/research/backtest-tasks/{backtest_task_id}/execute",
+      "handler": "execute_backtest_task",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3983,
+      "method": "POST",
+      "path": "/v1/research/backtest-tasks/{backtest_task_id}/cancel",
+      "handler": "cancel_backtest_task",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4029,
+      "method": "POST",
+      "path": "/v1/research/backtests",
+      "handler": "create_backtest_job",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4086,
+      "method": "GET",
+      "path": "/v1/research/backtests/options",
+      "handler": "backtest_options",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4145,
+      "method": "GET",
+      "path": "/v1/research/backtests/catalog",
+      "handler": "list_backtest_catalog",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4156,
+      "method": "GET",
+      "path": "/v1/research/backtests/reconcile",
+      "handler": "reconcile_backtest_submission",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4170,
+      "method": "GET",
+      "path": "/v1/research/backtests/{job_id}",
+      "handler": "get_backtest_job",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4183,
+      "method": "GET",
+      "path": "/v1/research/backtests/{job_id}/summary",
+      "handler": "get_backtest_job_summary",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4196,
+      "method": "GET",
+      "path": "/v1/research/backtests/{job_id}/manifest",
+      "handler": "get_backtest_job_manifest",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4209,
+      "method": "GET",
+      "path": "/v1/research/backtests/{job_id}/result",
+      "handler": "get_backtest_result",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4264,
+      "method": "GET",
+      "path": "/v1/research/backtests/{job_id}/analysis",
+      "handler": "get_backtest_analysis",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4296,
+      "method": "GET",
+      "path": "/v1/research/backtests",
+      "handler": "list_backtest_jobs",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4302,
+      "method": "POST",
+      "path": "/v1/research/backtests/{job_id}/run",
+      "handler": "run_backtest_job",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4319,
+      "method": "POST",
+      "path": "/v1/research/backtests/{job_id}/cancel",
+      "handler": "cancel_backtest_job",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4334,
+      "method": "DELETE",
+      "path": "/v1/research/backtests/{job_id}",
+      "handler": "delete_backtest_job",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4369,
+      "method": "GET",
+      "path": "/v1/agents/roles",
+      "handler": "get_agent_roles",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4376,
+      "method": "POST",
+      "path": "/v1/agents/runs",
+      "handler": "start_agent_run",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4392,
+      "method": "GET",
+      "path": "/v1/agents/runs/registration-receipt",
+      "handler": "get_agent_registration_receipt",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4398,
+      "method": "POST",
+      "path": "/v1/agents/authorize",
+      "handler": "authorize_agent_action",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4436,
+      "method": "POST",
+      "path": "/v1/agents/audit",
+      "handler": "record_agent_audit",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4446,
+      "method": "GET",
+      "path": "/v1/agents/runs/{run_id}/audit",
+      "handler": "get_agent_audit",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4452,
+      "method": "POST",
+      "path": "/v1/agents/approvals",
+      "handler": "create_agent_approval",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4464,
+      "method": "GET",
+      "path": "/v1/agents/approvals/{approval_id}",
+      "handler": "get_agent_approval",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4473,
+      "method": "GET",
+      "path": "/v1/agents/approvals",
+      "handler": "list_agent_approvals",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4483,
+      "method": "POST",
+      "path": "/v1/agents/approvals/{approval_id}/decision",
+      "handler": "decide_agent_approval",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4495,
+      "method": "POST",
+      "path": "/v1/agents/approvals/{approval_id}/continuation",
+      "handler": "update_agent_approval_continuation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4510,
+      "method": "POST",
+      "path": "/v1/learning/runs",
+      "handler": "start_learning_run",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4526,
+      "method": "GET",
+      "path": "/v1/learning/runs/{run_id}",
+      "handler": "get_learning_run",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4535,
+      "method": "POST",
+      "path": "/v1/learning/runs/{run_id}/iterations",
+      "handler": "record_learning_iteration",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4552,
+      "method": "GET",
+      "path": "/v1/learning/runs/{run_id}/iterations",
+      "handler": "list_learning_iterations",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4561,
+      "method": "POST",
+      "path": "/v1/learning/runs/{run_id}/review",
+      "handler": "review_learning_run",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4577,
+      "method": "POST",
+      "path": "/v1/learning/signals",
+      "handler": "create_evaluation_signal",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4592,
+      "method": "GET",
+      "path": "/v1/learning/signals/{signal_id}",
+      "handler": "get_evaluation_signal",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4601,
+      "method": "POST",
+      "path": "/v1/learning/experiments/compare",
+      "handler": "compare_experiments",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4615,
+      "method": "POST",
+      "path": "/v1/learning/lessons",
+      "handler": "propose_lesson",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4631,
+      "method": "GET",
+      "path": "/v1/learning/lessons/{lesson_id}",
+      "handler": "get_lesson",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4640,
+      "method": "POST",
+      "path": "/v1/learning/lessons/{lesson_id}/review",
+      "handler": "review_lesson",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4656,
+      "method": "POST",
+      "path": "/v1/engineering/tasks",
+      "handler": "create_engineering_task",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4672,
+      "method": "GET",
+      "path": "/v1/engineering/tasks",
+      "handler": "list_engineering_tasks",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4680,
+      "method": "GET",
+      "path": "/v1/engineering/tasks/{task_id}",
+      "handler": "get_engineering_task",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4689,
+      "method": "POST",
+      "path": "/v1/engineering/tasks/{task_id}/transitions",
+      "handler": "transition_engineering_task",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4705,
+      "method": "POST",
+      "path": "/v1/engineering/tasks/{task_id}/evidence",
+      "handler": "report_engineering_evidence",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4721,
+      "method": "POST",
+      "path": "/v1/engineering/tasks/{task_id}/merge",
+      "handler": "record_human_engineering_merge",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4737,
+      "method": "POST",
+      "path": "/v1/paper/accounts",
+      "handler": "create_paper_account",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4746,
+      "method": "GET",
+      "path": "/v1/paper/accounts/{account_id}",
+      "handler": "get_paper_account",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4755,
+      "method": "GET",
+      "path": "/v1/paper/accounts",
+      "handler": "list_paper_accounts",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4761,
+      "method": "DELETE",
+      "path": "/v1/paper/accounts/{account_id}",
+      "handler": "delete_paper_account",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4774,
+      "method": "POST",
+      "path": "/v1/paper/pools",
+      "handler": "create_stock_pool",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4783,
+      "method": "GET",
+      "path": "/v1/paper/index-pools/catalog",
+      "handler": "list_index_pool_catalog",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4790,
+      "method": "POST",
+      "path": "/v1/paper/index-pools",
+      "handler": "create_index_pool",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4798,
+      "method": "GET",
+      "path": "/v1/paper/index-pools/reconcile",
+      "handler": "reconcile_index_pool_creation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4806,
+      "method": "POST",
+      "path": "/v1/paper/dynamic-pools/preview",
+      "handler": "preview_dynamic_pool",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4814,
+      "method": "POST",
+      "path": "/v1/paper/dynamic-pools",
+      "handler": "create_dynamic_pool",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4822,
+      "method": "POST",
+      "path": "/v1/paper/producer-imports",
+      "handler": "import_stock_pool_producer",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4830,
+      "method": "GET",
+      "path": "/v1/paper/pools/{pool_id}/producer",
+      "handler": "get_stock_pool_producer",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4838,
+      "method": "GET",
+      "path": "/v1/paper/pools/{pool_id}/materializations",
+      "handler": "list_stock_pool_materializations",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4849,
+      "method": "PUT",
+      "path": "/v1/paper/pools/{pool_id}/producer",
+      "handler": "update_stock_pool_producer",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4857,
+      "method": "POST",
+      "path": "/v1/paper/pools/{pool_id}/materializations",
+      "handler": "refresh_stock_pool_producer",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4865,
+      "method": "GET",
+      "path": "/v1/paper/pools/{pool_id}",
+      "handler": "get_stock_pool",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4875,
+      "method": "GET",
+      "path": "/v1/paper/pools/{pool_id}/members",
+      "handler": "list_stock_pool_members",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4889,
+      "method": "GET",
+      "path": "/v1/paper/pools",
+      "handler": "list_stock_pools",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4910,
+      "method": "GET",
+      "path": "/v1/paper/pools/{pool_id}/readiness",
+      "handler": "get_stock_pool_readiness",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4925,
+      "method": "PATCH",
+      "path": "/v1/paper/pools/{pool_id}/metadata",
+      "handler": "update_stock_pool_metadata",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4933,
+      "method": "PUT",
+      "path": "/v1/paper/pools/{pool_id}/snapshot",
+      "handler": "replace_stock_pool_snapshot",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4941,
+      "method": "GET",
+      "path": "/v1/paper/pools/{pool_id}/snapshots",
+      "handler": "list_stock_pool_snapshots",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4949,
+      "method": "GET",
+      "path": "/v1/paper/pools/{pool_id}/snapshot-diff",
+      "handler": "diff_stock_pool_snapshots",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4959,
+      "method": "GET",
+      "path": "/v1/paper/pools/{pool_id}/snapshots/{snapshot_id}",
+      "handler": "get_stock_pool_snapshot",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4970,
+      "method": "GET",
+      "path": "/v1/paper/pools/{pool_id}/as-of/{trade_date}",
+      "handler": "get_stock_pool_as_of",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4978,
+      "method": "PATCH",
+      "path": "/v1/paper/pools/{pool_id}/lifecycle",
+      "handler": "update_stock_pool_lifecycle",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4986,
+      "method": "DELETE",
+      "path": "/v1/paper/pools/{pool_id}",
+      "handler": "delete_stock_pool",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 4999,
+      "method": "GET",
+      "path": "/v1/paper/pools/{pool_id}/references",
+      "handler": "list_stock_pool_references",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5007,
+      "method": "POST",
+      "path": "/v1/paper/orders",
+      "handler": "submit_paper_order",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5016,
+      "method": "GET",
+      "path": "/v1/paper/accounts/{account_id}/orders",
+      "handler": "list_paper_orders",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5025,
+      "method": "GET",
+      "path": "/v1/paper/accounts/{account_id}/orders/{order_id}",
+      "handler": "get_paper_order",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5033,
+      "method": "GET",
+      "path": "/v1/paper/accounts/{account_id}/positions",
+      "handler": "list_paper_positions",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5042,
+      "method": "GET",
+      "path": "/v1/paper/accounts/{account_id}/fills",
+      "handler": "list_paper_fills",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5051,
+      "method": "GET",
+      "path": "/v1/paper/accounts/{account_id}/ledger",
+      "handler": "list_paper_ledger",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5059,
+      "method": "GET",
+      "path": "/v1/paper/accounts/{account_id}/snapshots",
+      "handler": "list_paper_account_snapshots",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5067,
+      "method": "POST",
+      "path": "/v1/paper/accounts/{account_id}/settlements",
+      "handler": "settle_paper_account",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5076,
+      "method": "GET",
+      "path": "/v1/paper/accounts/{account_id}/controls",
+      "handler": "get_paper_account_controls",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5084,
+      "method": "PUT",
+      "path": "/v1/paper/accounts/{account_id}/controls",
+      "handler": "update_paper_account_controls",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5093,
+      "method": "PUT",
+      "path": "/v1/paper/accounts/{account_id}/binding",
+      "handler": "rebind_paper_account",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5102,
+      "method": "GET",
+      "path": "/v1/paper/accounts/{account_id}/export",
+      "handler": "export_paper_account",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5110,
+      "method": "POST",
+      "path": "/v1/paper/accounts/import",
+      "handler": "import_paper_account",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5120,
+      "method": "POST",
+      "path": "/v1/auth/login",
+      "handler": "login",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5125,
+      "method": "POST",
+      "path": "/v1/auth/logout",
+      "handler": "logout",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5133,
+      "method": "GET",
+      "path": "/v1/auth/session",
+      "handler": "get_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5141,
+      "method": "POST",
+      "path": "/v1/users",
+      "handler": "create_user",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5147,
+      "method": "GET",
+      "path": "/v1/users",
+      "handler": "list_users",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5153,
+      "method": "POST",
+      "path": "/v1/users/{user_id}/disable",
+      "handler": "disable_user",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5159,
+      "method": "PUT",
+      "path": "/v1/users/{user_id}/profile",
+      "handler": "update_user_profile",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5167,
+      "method": "GET",
+      "path": "/v1/users/{user_id}/ui-preferences",
+      "handler": "get_user_ui_preferences",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5175,
+      "method": "PUT",
+      "path": "/v1/users/{user_id}/ui-preferences",
+      "handler": "update_user_ui_preferences",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5215,
+      "method": "GET",
+      "path": "/v1/users/model-catalog",
+      "handler": "get_model_catalog",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5227,
+      "method": "GET",
+      "path": "/v1/users/model-credentials",
+      "handler": "list_model_credentials",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5236,
+      "method": "POST",
+      "path": "/v1/users/model-credentials",
+      "handler": "create_model_credential",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5246,
+      "method": "PUT",
+      "path": "/v1/users/model-credentials/{credential_id}",
+      "handler": "update_model_credential",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5261,
+      "method": "POST",
+      "path": "/v1/users/model-credentials/{credential_id}/revoke",
+      "handler": "revoke_model_credential",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5277,
+      "method": "GET",
+      "path": "/v1/users/model-profiles",
+      "handler": "list_model_profiles",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5285,
+      "method": "POST",
+      "path": "/v1/users/model-profiles",
+      "handler": "create_model_profile",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5294,
+      "method": "POST",
+      "path": "/v1/users/model-profiles/{profile_id}/delete",
+      "handler": "delete_model_profile",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5308,
+      "method": "GET",
+      "path": "/v1/users/model-bindings",
+      "handler": "list_model_bindings",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5316,
+      "method": "PUT",
+      "path": "/v1/users/model-bindings/{agent_id}",
+      "handler": "put_model_binding",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5331,
+      "method": "GET",
+      "path": "/v1/users/model-credential-audit",
+      "handler": "list_model_credential_audit",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5340,
+      "method": "POST",
+      "path": "/internal/credentials/model-resolution",
+      "handler": "resolve_model_credential",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5371,
+      "method": "GET",
+      "path": "/v1/users/agent-policy",
+      "handler": "get_user_agent_policy",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5382,
+      "method": "PUT",
+      "path": "/v1/users/agent-policy",
+      "handler": "update_user_agent_policy",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5388,
+      "method": "POST",
+      "path": "/v1/users/agent-policy/rules",
+      "handler": "create_user_agent_policy_rule",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5398,
+      "method": "PUT",
+      "path": "/v1/users/agent-policy/rules/{rule_id}",
+      "handler": "update_user_agent_policy_rule",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5413,
+      "method": "POST",
+      "path": "/v1/users/agent-policy/rules/{rule_id}/delete",
+      "handler": "delete_user_agent_policy_rule",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5428,
+      "method": "POST",
+      "path": "/v1/users/agent-policy/presets/{preset_id}/apply",
+      "handler": "apply_user_agent_policy_preset",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/auth_api.py",
+      "line": 31,
+      "method": "POST",
+      "path": "/login",
+      "handler": "login",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/auth_api.py",
+      "line": 52,
+      "method": "POST",
+      "path": "/logout",
+      "handler": "logout",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/auth_api.py",
+      "line": 68,
+      "method": "GET",
+      "path": "/me",
+      "handler": "me",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 591,
+      "method": "GET",
+      "path": "/healthz",
+      "handler": "healthz",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 600,
+      "method": "GET",
+      "path": "/readyz",
+      "handler": "readyz",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1106,
+      "method": "POST",
+      "path": "/v1/agent/sessions",
+      "handler": "create_product_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1149,
+      "method": "GET",
+      "path": "/v1/agent/sessions",
+      "handler": "list_product_sessions",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1179,
+      "method": "GET",
+      "path": "/v1/agent/sessions/{session_id}",
+      "handler": "get_product_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1212,
+      "method": "GET",
+      "path": "/v1/agent/sessions/{session_id}/lifecycle-delivery",
+      "handler": "get_agent_lifecycle_delivery",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1223,
+      "method": "GET",
+      "path": "/v1/agent/sessions/{session_id}/answer-delivery",
+      "handler": "get_answer_delivery",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1234,
+      "method": "PATCH",
+      "path": "/v1/agent/sessions/{session_id}",
+      "handler": "update_product_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1254,
+      "method": "POST",
+      "path": "/v1/agent/sessions/{session_id}/turns",
+      "handler": "submit_product_turn",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1308,
+      "method": "POST",
+      "path": "/v1/agent/sessions/{session_id}/resume",
+      "handler": "resume_product_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1333,
+      "method": "POST",
+      "path": "/v1/agent/sessions/{session_id}/cancel",
+      "handler": "cancel_product_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1356,
+      "method": "DELETE",
+      "path": "/v1/agent/sessions/{session_id}",
+      "handler": "delete_product_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1388,
+      "method": "GET",
+      "path": "/v1/workflows/{session_id}/events",
+      "handler": "product_workflow_events",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1431,
+      "method": "GET",
+      "path": "/internal/runtime/health",
+      "handler": "runtime_health",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1443,
+      "method": "POST",
+      "path": "/internal/runtime/sessions",
+      "handler": "create_runtime_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1453,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/prompt",
+      "handler": "submit_runtime_prompt",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1462,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/cancel",
+      "handler": "cancel_runtime_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1470,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/release",
+      "handler": "release_runtime_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/main.py",
+      "line": 1478,
+      "method": "GET",
+      "path": "/internal/workflows/{session_id}/events",
+      "handler": "workflow_events",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 476,
+      "method": "GET",
+      "path": "/health",
+      "handler": "product_health",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 482,
+      "method": "POST",
+      "path": "/auth/login",
+      "handler": "product_login",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 508,
+      "method": "POST",
+      "path": "/auth/logout",
+      "handler": "product_logout",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 522,
+      "method": "GET",
+      "path": "/auth/me",
+      "handler": "product_me",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 533,
+      "method": "GET",
+      "path": "/dashboard",
+      "handler": "product_dashboard",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 561,
+      "method": "GET",
+      "path": "/data/status",
+      "handler": "product_data_status",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 573,
+      "method": "GET",
+      "path": "/research/{entity_type}/{entity_id}",
+      "handler": "product_research_entity",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 585,
+      "method": "GET",
+      "path": "/research/artifacts",
+      "handler": "product_artifacts",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 591,
+      "method": "GET",
+      "path": "/research/tasks/{task_id}/handoff",
+      "handler": "product_research_handoff",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 598,
+      "method": "GET",
+      "path": "/research/tasks",
+      "handler": "product_research_tasks",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 604,
+      "method": "GET",
+      "path": "/research/submission-watches",
+      "handler": "product_research_submission_watches",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 623,
+      "method": "GET",
+      "path": "/research/tasks/{task_id}/continuation-permission",
+      "handler": "product_get_continuation_permission",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 629,
+      "method": "POST",
+      "path": "/research/tasks/{task_id}/continuation-permission",
+      "handler": "product_create_continuation_permission",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 638,
+      "method": "POST",
+      "path": "/research/tasks/{task_id}/continuation-permission/revoke",
+      "handler": "product_revoke_continuation_permission",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 646,
+      "method": "POST",
+      "path": "/research/tasks",
+      "handler": "product_create_research_task",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 675,
+      "method": "GET",
+      "path": "/research/experiments",
+      "handler": "product_research_experiments",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 724,
+      "method": "GET",
+      "path": "/ml/capabilities",
+      "handler": "product_ml_capabilities",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 732,
+      "method": "GET",
+      "path": "/ml/options",
+      "handler": "product_ml_options",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 740,
+      "method": "GET",
+      "path": "/ml/studies",
+      "handler": "product_ml_studies",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 751,
+      "method": "GET",
+      "path": "/ml/studies/{strategy_artifact_id}",
+      "handler": "product_ml_study",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 775,
+      "method": "POST",
+      "path": "/ml/studies/{strategy_artifact_id}/lifecycle",
+      "handler": "product_ml_study_lifecycle",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 792,
+      "method": "DELETE",
+      "path": "/ml/studies/{strategy_artifact_id}",
+      "handler": "product_ml_study_delete",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 801,
+      "method": "GET",
+      "path": "/ml/workspace",
+      "handler": "product_ml_workspace",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 883,
+      "method": "GET",
+      "path": "/ml/training-submissions/reconcile",
+      "handler": "product_ml_training_submission",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 891,
+      "method": "POST",
+      "path": "/ml/strategies/versions",
+      "handler": "product_ml_strategy",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 896,
+      "method": "POST",
+      "path": "/ml/strategies/approvals",
+      "handler": "product_ml_approval",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 901,
+      "method": "POST",
+      "path": "/ml/training-runs",
+      "handler": "product_ml_training",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 910,
+      "method": "GET",
+      "path": "/ml/training-runs/{run_id}",
+      "handler": "product_ml_training_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 916,
+      "method": "POST",
+      "path": "/ml/training-runs/{run_id}/cancel",
+      "handler": "product_ml_training_cancel",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 922,
+      "method": "POST",
+      "path": "/ml/prediction-runs",
+      "handler": "product_ml_prediction",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 927,
+      "method": "GET",
+      "path": "/ml/prediction-runs/{run_id}",
+      "handler": "product_ml_prediction_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 933,
+      "method": "GET",
+      "path": "/ml/prediction-runs/{run_id}/rows",
+      "handler": "product_ml_prediction_rows",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 945,
+      "method": "GET",
+      "path": "/backtests/options",
+      "handler": "product_backtest_options",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 953,
+      "method": "POST",
+      "path": "/backtests",
+      "handler": "product_backtest_submit",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 962,
+      "method": "GET",
+      "path": "/backtests/{job_id}",
+      "handler": "product_backtest_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 972,
+      "method": "GET",
+      "path": "/backtests/{job_id}/result",
+      "handler": "product_backtest_result",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 982,
+      "method": "GET",
+      "path": "/backtests/{job_id}/manifest",
+      "handler": "product_backtest_manifest",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 991,
+      "method": "GET",
+      "path": "/backtests/{job_id}/analysis",
+      "handler": "product_backtest_analysis",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1004,
+      "method": "GET",
+      "path": "/backtests",
+      "handler": "product_backtests",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1016,
+      "method": "POST",
+      "path": "/backtests/{job_id}/run",
+      "handler": "product_backtest_run",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1026,
+      "method": "POST",
+      "path": "/backtests/{job_id}/cancel",
+      "handler": "product_backtest_cancel",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1035,
+      "method": "DELETE",
+      "path": "/backtests/{job_id}",
+      "handler": "product_backtest_delete",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1045,
+      "method": "GET",
+      "path": "/strategies/versions/{artifact_id}/export",
+      "handler": "product_strategy_export",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1055,
+      "method": "GET",
+      "path": "/strategies/versions/{artifact_id}/approval",
+      "handler": "product_strategy_version_approval",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1065,
+      "method": "GET",
+      "path": "/research/task-options",
+      "handler": "product_research_task_options",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1073,
+      "method": "GET",
+      "path": "/strategies",
+      "handler": "product_strategies",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1087,
+      "method": "GET",
+      "path": "/signal-snapshots",
+      "handler": "product_signal_snapshots",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1101,
+      "method": "POST",
+      "path": "/signal-producer/jobs",
+      "handler": "product_signal_producer_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1112,
+      "method": "GET",
+      "path": "/signal-producer/jobs",
+      "handler": "product_signal_producer_list",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1122,
+      "method": "GET",
+      "path": "/signal-producer/jobs/{job_id}",
+      "handler": "product_signal_producer_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1132,
+      "method": "POST",
+      "path": "/strategies/drafts",
+      "handler": "product_strategy_draft_save",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1143,
+      "method": "DELETE",
+      "path": "/strategies/drafts/{artifact_id}",
+      "handler": "product_strategy_draft_delete",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1153,
+      "method": "GET",
+      "path": "/strategies/{strategy_id}/versions",
+      "handler": "product_strategy_versions",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1163,
+      "method": "GET",
+      "path": "/strategies/{strategy_id}/backtest-count",
+      "handler": "product_strategy_backtest_count",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1173,
+      "method": "POST",
+      "path": "/strategies/validate",
+      "handler": "product_strategy_validate",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1184,
+      "method": "POST",
+      "path": "/strategies/versions",
+      "handler": "product_strategy_version_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1195,
+      "method": "POST",
+      "path": "/strategies/approvals",
+      "handler": "product_strategy_approval_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1208,
+      "method": "GET",
+      "path": "/factors",
+      "handler": "product_factors",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1218,
+      "method": "GET",
+      "path": "/approvals/{approval_id}",
+      "handler": "product_approval_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1230,
+      "method": "GET",
+      "path": "/approvals",
+      "handler": "product_approvals",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1255,
+      "method": "POST",
+      "path": "/approvals/{approval_id}/decision",
+      "handler": "product_approval_decision",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1276,
+      "method": "POST",
+      "path": "/approvals/{approval_id}/continue",
+      "handler": "product_approval_continue",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1332,
+      "method": "GET",
+      "path": "/data-center/status",
+      "handler": "product_data_center_status",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1343,
+      "method": "POST",
+      "path": "/data-center/source/credentials",
+      "handler": "product_tushare_credential_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1353,
+      "method": "PUT",
+      "path": "/data-center/source/credentials/{credential_id}",
+      "handler": "product_tushare_credential_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1367,
+      "method": "POST",
+      "path": "/data-center/source/credentials/{credential_id}/revoke",
+      "handler": "product_tushare_credential_revoke",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1381,
+      "method": "POST",
+      "path": "/data-center/source/test",
+      "handler": "product_tushare_connection_test",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1391,
+      "method": "POST",
+      "path": "/data-center/sync-jobs",
+      "handler": "product_data_sync_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1401,
+      "method": "GET",
+      "path": "/data-center/automation",
+      "handler": "product_market_sync_automation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1410,
+      "method": "PUT",
+      "path": "/data-center/automation/config",
+      "handler": "product_market_sync_automation_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1423,
+      "method": "POST",
+      "path": "/data-center/automation/run-now",
+      "handler": "product_market_sync_run_now",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1433,
+      "method": "GET",
+      "path": "/data-center/automation/run-now/{request_id}",
+      "handler": "product_market_sync_run_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1442,
+      "method": "GET",
+      "path": "/data-center/sync-jobs/{job_id}",
+      "handler": "product_data_sync_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1451,
+      "method": "GET",
+      "path": "/data-center/coverage",
+      "handler": "product_data_coverage",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1460,
+      "method": "POST",
+      "path": "/data-center/readiness",
+      "handler": "product_data_readiness",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1470,
+      "method": "POST",
+      "path": "/data-center/security-master/sync-jobs",
+      "handler": "product_security_master_sync_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1480,
+      "method": "GET",
+      "path": "/data-center/security-master/sync-jobs/{job_id}",
+      "handler": "product_security_master_sync_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1489,
+      "method": "GET",
+      "path": "/data-center/securities",
+      "handler": "product_security_master_list",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1500,
+      "method": "GET",
+      "path": "/admin/users",
+      "handler": "product_admin_users",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1508,
+      "method": "POST",
+      "path": "/admin/users/{user_id}/disable",
+      "handler": "product_admin_disable_user",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1516,
+      "method": "GET",
+      "path": "/settings/status",
+      "handler": "product_settings_status",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1528,
+      "method": "GET",
+      "path": "/profile",
+      "handler": "product_profile_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1533,
+      "method": "PUT",
+      "path": "/profile",
+      "handler": "product_profile_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1551,
+      "method": "GET",
+      "path": "/settings/appearance",
+      "handler": "product_appearance_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1568,
+      "method": "PUT",
+      "path": "/settings/appearance",
+      "handler": "product_appearance_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1586,
+      "method": "GET",
+      "path": "/settings/models",
+      "handler": "product_model_settings",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1614,
+      "method": "POST",
+      "path": "/settings/models/credentials",
+      "handler": "product_model_credential_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1628,
+      "method": "PUT",
+      "path": "/settings/models/credentials/{credential_id}",
+      "handler": "product_model_credential_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1643,
+      "method": "POST",
+      "path": "/settings/models/credentials/{credential_id}/revoke",
+      "handler": "product_model_credential_revoke",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1658,
+      "method": "POST",
+      "path": "/settings/models/profiles",
+      "handler": "product_model_profile_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1672,
+      "method": "POST",
+      "path": "/settings/models/profiles/{profile_id}/delete",
+      "handler": "product_model_profile_delete",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1687,
+      "method": "PUT",
+      "path": "/settings/models/bindings/{agent_id}",
+      "handler": "product_model_binding_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1702,
+      "method": "GET",
+      "path": "/settings/agent-policy",
+      "handler": "product_agent_policy",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1732,
+      "method": "PUT",
+      "path": "/settings/agent-policy",
+      "handler": "product_agent_policy_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1744,
+      "method": "POST",
+      "path": "/settings/agent-policy/rules",
+      "handler": "product_agent_policy_rule_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1758,
+      "method": "PUT",
+      "path": "/settings/agent-policy/rules/{rule_id}",
+      "handler": "product_agent_policy_rule_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1773,
+      "method": "POST",
+      "path": "/settings/agent-policy/rules/{rule_id}/delete",
+      "handler": "product_agent_policy_rule_delete",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1788,
+      "method": "POST",
+      "path": "/settings/agent-policy/presets/{preset_id}/apply",
+      "handler": "product_agent_policy_preset_apply",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1799,
+      "method": "GET",
+      "path": "/settings/assets",
+      "handler": "product_assets",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1821,
+      "method": "GET",
+      "path": "/settings/assets/export",
+      "handler": "product_assets_export",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1856,
+      "method": "POST",
+      "path": "/settings/assets/import",
+      "handler": "product_assets_import",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2033,
+      "method": "POST",
+      "path": "/paper/accounts",
+      "handler": "product_paper_account_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2044,
+      "method": "GET",
+      "path": "/paper/accounts/{account_id}",
+      "handler": "product_paper_account_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2054,
+      "method": "GET",
+      "path": "/paper/accounts",
+      "handler": "product_paper_accounts",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2060,
+      "method": "DELETE",
+      "path": "/paper/accounts/{account_id}",
+      "handler": "product_paper_account_delete",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2073,
+      "method": "POST",
+      "path": "/paper/pools",
+      "handler": "product_stock_pool_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2084,
+      "method": "GET",
+      "path": "/paper/index-pools/catalog",
+      "handler": "product_index_pool_catalog",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2093,
+      "method": "POST",
+      "path": "/paper/index-pools",
+      "handler": "product_index_pool_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2101,
+      "method": "POST",
+      "path": "/paper/dynamic-pools/preview",
+      "handler": "product_dynamic_pool_preview",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2109,
+      "method": "POST",
+      "path": "/paper/dynamic-pools",
+      "handler": "product_dynamic_pool_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2117,
+      "method": "GET",
+      "path": "/paper/pools/{pool_id}/producer",
+      "handler": "product_stock_pool_producer",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2125,
+      "method": "PUT",
+      "path": "/paper/pools/{pool_id}/producer",
+      "handler": "product_stock_pool_producer_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2136,
+      "method": "GET",
+      "path": "/paper/pools/{pool_id}/materializations",
+      "handler": "product_stock_pool_materializations",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2147,
+      "method": "POST",
+      "path": "/paper/pools/{pool_id}/materializations",
+      "handler": "product_stock_pool_materialization_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2158,
+      "method": "GET",
+      "path": "/paper/pools/{pool_id}",
+      "handler": "product_stock_pool_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2168,
+      "method": "GET",
+      "path": "/paper/pools/{pool_id}/members",
+      "handler": "product_stock_pool_members",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2179,
+      "method": "GET",
+      "path": "/paper/pools",
+      "handler": "product_stock_pools",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2185,
+      "method": "GET",
+      "path": "/paper/pools/{pool_id}/readiness",
+      "handler": "product_stock_pool_readiness",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2191,
+      "method": "PATCH",
+      "path": "/paper/pools/{pool_id}/metadata",
+      "handler": "product_stock_pool_metadata",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2197,
+      "method": "PUT",
+      "path": "/paper/pools/{pool_id}/snapshot",
+      "handler": "product_stock_pool_snapshot_replace",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2203,
+      "method": "GET",
+      "path": "/paper/pools/{pool_id}/snapshots",
+      "handler": "product_stock_pool_snapshots",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2209,
+      "method": "GET",
+      "path": "/paper/pools/{pool_id}/snapshot-diff",
+      "handler": "product_stock_pool_snapshot_diff",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2220,
+      "method": "GET",
+      "path": "/paper/pools/{pool_id}/snapshots/{snapshot_id}",
+      "handler": "product_stock_pool_snapshot_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2226,
+      "method": "GET",
+      "path": "/paper/pools/{pool_id}/as-of/{trade_date}",
+      "handler": "product_stock_pool_as_of",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2232,
+      "method": "PATCH",
+      "path": "/paper/pools/{pool_id}/lifecycle",
+      "handler": "product_stock_pool_lifecycle",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2238,
+      "method": "DELETE",
+      "path": "/paper/pools/{pool_id}",
+      "handler": "product_stock_pool_delete",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2246,
+      "method": "GET",
+      "path": "/paper/pools/{pool_id}/references",
+      "handler": "product_stock_pool_references",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2252,
+      "method": "POST",
+      "path": "/paper/orders",
+      "handler": "product_paper_order_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2263,
+      "method": "GET",
+      "path": "/paper/accounts/{account_id}/orders",
+      "handler": "product_paper_orders",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2273,
+      "method": "GET",
+      "path": "/paper/accounts/{account_id}/orders/{order_id}",
+      "handler": "product_paper_order_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2282,
+      "method": "GET",
+      "path": "/paper/accounts/{account_id}/positions",
+      "handler": "product_paper_positions",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2292,
+      "method": "GET",
+      "path": "/paper/accounts/{account_id}/fills",
+      "handler": "product_paper_fills",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2302,
+      "method": "GET",
+      "path": "/paper/accounts/{account_id}/ledger",
+      "handler": "product_paper_ledger",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2312,
+      "method": "GET",
+      "path": "/paper/accounts/{account_id}/snapshots",
+      "handler": "product_paper_snapshots",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2318,
+      "method": "POST",
+      "path": "/paper/accounts/{account_id}/settlements",
+      "handler": "product_paper_settlement",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2324,
+      "method": "GET",
+      "path": "/paper/accounts/{account_id}/controls",
+      "handler": "product_paper_controls",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2330,
+      "method": "PUT",
+      "path": "/paper/accounts/{account_id}/controls",
+      "handler": "product_paper_controls_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2336,
+      "method": "PUT",
+      "path": "/paper/accounts/{account_id}/binding",
+      "handler": "product_paper_binding_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2342,
+      "method": "GET",
+      "path": "/paper/accounts/{account_id}/export",
+      "handler": "product_paper_export",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2348,
+      "method": "POST",
+      "path": "/paper/accounts/import",
+      "handler": "product_paper_import",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2354,
+      "method": "GET",
+      "path": "/feedback/options",
+      "handler": "product_feedback_options",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2360,
+      "method": "GET",
+      "path": "/feedback/items",
+      "handler": "product_feedback_items",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2370,
+      "method": "POST",
+      "path": "/feedback/items",
+      "handler": "product_feedback_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2376,
+      "method": "GET",
+      "path": "/feedback/items/{feedback_id}",
+      "handler": "product_feedback_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2382,
+      "method": "PUT",
+      "path": "/feedback/items/{feedback_id}",
+      "handler": "product_feedback_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2388,
+      "method": "GET",
+      "path": "/feedback/items/{feedback_id}/revisions",
+      "handler": "product_feedback_revisions",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2397,
+      "method": "POST",
+      "path": "/feedback/items/{feedback_id}/preview",
+      "handler": "product_feedback_preview",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2403,
+      "method": "POST",
+      "path": "/feedback/items/{feedback_id}/submit",
+      "handler": "product_feedback_submit",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2409,
+      "method": "POST",
+      "path": "/feedback/items/{feedback_id}/withdraw",
+      "handler": "product_feedback_withdraw",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2415,
+      "method": "GET",
+      "path": "/feedback/moderation/items",
+      "handler": "product_feedback_moderation_items",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2425,
+      "method": "GET",
+      "path": "/feedback/moderation/items/{feedback_id}",
+      "handler": "product_feedback_moderation_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2431,
+      "method": "GET",
+      "path": "/feedback/moderation/items/{feedback_id}/audit",
+      "handler": "product_feedback_moderation_audit",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2440,
+      "method": "POST",
+      "path": "/feedback/moderation/items/{feedback_id}/{action}",
+      "handler": "product_feedback_moderate",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2448,
+      "method": "GET",
+      "path": "/feedback/moderation/publisher-status",
+      "handler": "product_feedback_publisher_status",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2454,
+      "method": "GET",
+      "path": "/operations/status",
+      "handler": "product_operations_status",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2485,
+      "method": "PUT",
+      "path": "/operations/budget",
+      "handler": "product_operations_budget_update",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2560,
+      "method": "GET",
+      "path": "/plugins",
+      "handler": "product_plugin_center",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2567,
+      "method": "GET",
+      "path": "/plugins/{plugin_id}",
+      "handler": "product_plugin_detail",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2575,
+      "method": "POST",
+      "path": "/plugins/changes",
+      "handler": "product_plugin_change",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2581,
+      "method": "POST",
+      "path": "/plugins/qualifications",
+      "handler": "product_plugin_qualification",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 89,
+      "method": "GET",
+      "path": "/healthz",
+      "handler": "healthz",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 94,
+      "method": "GET",
+      "path": "/readyz",
+      "handler": "readyz",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 99,
+      "method": "GET",
+      "path": "/internal/runtime/operations",
+      "handler": "runtime_operations",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 104,
+      "method": "POST",
+      "path": "/internal/runtime/sessions",
+      "handler": "create_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 120,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/prompt",
+      "handler": "submit_prompt",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 150,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/resume",
+      "handler": "resume_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 168,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/terminal-receipt",
+      "handler": "acknowledge_terminal",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 184,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/recover-evidence",
+      "handler": "recover_evidence",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 195,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/domain-call-evidence",
+      "handler": "domain_call_evidence",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 206,
+      "method": "GET",
+      "path": "/internal/runtime/sessions/{session_id}/prompts/reconcile",
+      "handler": "reconcile_prompt_receipt",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 219,
+      "method": "GET",
+      "path": "/internal/runtime/sessions/{session_id}/continuation-receipt/{reservation_id}",
+      "handler": "continuation_budget_receipt",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 227,
+      "method": "GET",
+      "path": "/internal/runtime/sessions/{session_id}/continuation-qualification",
+      "handler": "continuation_qualification",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 238,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/cancel",
+      "handler": "cancel_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 250,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/release",
+      "handler": "release_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 260,
+      "method": "DELETE",
+      "path": "/internal/runtime/sessions/{session_id}",
+      "handler": "close_session",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 265,
+      "method": "GET",
+      "path": "/internal/runtime/sessions/{session_id}/events",
+      "handler": "events",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/signal-sandbox/server.py",
+      "line": 31,
+      "method": "GET",
+      "path": "/healthz",
+      "handler": "healthz",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "route",
+      "file": "services/signal-sandbox/server.py",
+      "line": 36,
+      "method": "POST",
+      "path": "/v1/execute",
+      "handler": "execute",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 667,
+      "name": "byq_health",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 675,
+      "name": "byq_product_help_query",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 683,
+      "name": "byq_feedback_options",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 688,
+      "name": "byq_feedback_list",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 697,
+      "name": "byq_feedback_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 702,
+      "name": "byq_feedback_create_draft",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 707,
+      "name": "byq_feedback_update_draft",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 714,
+      "name": "byq_feedback_preview",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 719,
+      "name": "byq_feedback_submit",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 727,
+      "name": "byq_workflow_card_propose",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 736,
+      "name": "byq_index_pool_catalog",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 743,
+      "name": "byq_index_pool_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 753,
+      "name": "byq_index_pool_status",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 769,
+      "name": "byq_pool_list",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 774,
+      "name": "byq_pool_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 779,
+      "name": "byq_pool_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 788,
+      "name": "byq_pool_snapshot_replace",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 797,
+      "name": "byq_pool_history",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 802,
+      "name": "byq_pool_lifecycle",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 809,
+      "name": "byq_paper_account_list",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 814,
+      "name": "byq_paper_account_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 819,
+      "name": "byq_paper_order_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 824,
+      "name": "byq_paper_snapshot_list",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 829,
+      "name": "byq_agent_context",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 837,
+      "name": "byq_agent_roles",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 845,
+      "name": "byq_agent_run_start",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 858,
+      "name": "byq_agent_authorize",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 871,
+      "name": "byq_agent_audit",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 886,
+      "name": "byq_agent_audit_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 894,
+      "name": "byq_agent_approval_request",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 909,
+      "name": "byq_agent_approval_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 917,
+      "name": "byq_agent_approval_decide",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 929,
+      "name": "byq_market_session_context",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 937,
+      "name": "byq_data_demand_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 957,
+      "name": "byq_data_demand_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 965,
+      "name": "byq_market_daily",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 978,
+      "name": "byq_market_valuation",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 994,
+      "name": "byq_market_fundamentals",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1008,
+      "name": "byq_backtest_task_prepare",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1026,
+      "name": "byq_backtest_task_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1045,
+      "name": "byq_backtest_task_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1054,
+      "name": "byq_backtest_task_execute",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1062,
+      "name": "byq_backtest_task_cancel",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1070,
+      "name": "byq_backtest_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1079,
+      "name": "byq_backtest_analysis_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1092,
+      "name": "byq_ml_capabilities",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1097,
+      "name": "byq_ml_workspace_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1102,
+      "name": "byq_ml_studies",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1112,
+      "name": "byq_ml_study_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1119,
+      "name": "byq_ml_strategy_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1124,
+      "name": "byq_ml_strategy_approve",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1135,
+      "name": "byq_ml_training_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1143,
+      "name": "byq_ml_training_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1151,
+      "name": "byq_ml_training_cancel",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1158,
+      "name": "byq_ml_prediction_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1173,
+      "name": "byq_ml_prediction_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1180,
+      "name": "byq_signal_snapshot_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1188,
+      "name": "byq_factor_compute",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1238,
+      "name": "byq_strategy_draft_save",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1252,
+      "name": "byq_strategy_draft_delete",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1260,
+      "name": "byq_strategy_validate",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1268,
+      "name": "byq_strategy_version_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1282,
+      "name": "byq_strategy_approve",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1300,
+      "name": "byq_strategy_export",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1308,
+      "name": "byq_research_task_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1322,
+      "name": "byq_research_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1336,
+      "name": "byq_research_transition",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1357,
+      "name": "byq_experiment_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1371,
+      "name": "byq_artifact_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1387,
+      "name": "byq_web_evidence_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1403,
+      "name": "byq_learning_run_start",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1424,
+      "name": "byq_learning_run_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1432,
+      "name": "byq_learning_iteration_record",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1449,
+      "name": "byq_learning_iteration_list",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1457,
+      "name": "byq_learning_run_review",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1469,
+      "name": "byq_evaluation_signal_create",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1486,
+      "name": "byq_evaluation_signal_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1494,
+      "name": "byq_experiment_compare",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1507,
+      "name": "byq_lesson_propose",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1521,
+      "name": "byq_lesson_get",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1529,
+      "name": "byq_lesson_review",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "worker",
+      "file": "workers/backtest/worker.py",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "worker",
+      "file": "workers/data/worker.py",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "worker",
+      "file": "workers/ml/worker.py",
+      "audit_status": "NEEDS_EVIDENCE"
+    },
+    {
+      "kind": "worker",
+      "file": "workers/signal/worker.py",
+      "audit_status": "NEEDS_EVIDENCE"
+    }
+  ],
+  "limitations": [
+    "Python literal route decorators and literal MCP registrations only",
+    "Manual review required for mounts, dynamic routes and external TypeScript handlers",
+    "Discovery does not establish correctness"
+  ]
+}
