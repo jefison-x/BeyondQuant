@@ -138,3 +138,5 @@ H4 五类个人审批策略原键恢复、并发及原子回滚与真实浏览�
 H4 网页证据错误成功回执和原键只读恢复已修正，见[WEB-RECEIPT-VALIDATION](../evidence/research-handoff-h4/WEB-RECEIPT-VALIDATION.md)。该接口剩余并发及纠错资格继续。
 
 H4 研究短事务等待与网页同原键并发已修复，研究GET台账补至87项，见[RESEARCH-STORAGE-BOUNDS](../evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md)。全接口及H5继续。
+
+H5 三轮研究的固定验收合同和反例门禁已起草，见[COMPLETE-RESEARCH-CONTRACT](../evidence/research-handoff-h5/COMPLETE-RESEARCH-CONTRACT.md)。未执行真实模型，不计作完成。
