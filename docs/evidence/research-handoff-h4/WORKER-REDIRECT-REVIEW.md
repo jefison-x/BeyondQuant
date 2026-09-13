@@ -23,3 +23,10 @@ Cloudflare 测试使用合成 fetch 与 binding 响应，不能替代生产网�
 剩余响应读取总时限/大小边界与完整人工入口审计继续；本次不标记这些入口全部 VERIFIED。
 
 独立 .97 清单 sha256:75059dc3dbf2b9adf67ef1036efc6f9c11a6326cfff643bf770700832f149f18；124 架构、make dev-check、台账一致性检查通过。台账仍114/560，人工入口仍8项待审。未推送本候选，等待既有 .96 CI 完成后再更新 Draft PR。
+
+## Cloudflare 响应边界
+
+新增 boundedResponse 接缝，GitHub 与 Hub 请求在响应头/正文合计12秒内读取；分别限制8MiB和512KiB实际字节，不信任 Content-Length。
+通过 AbortController 取消请求，同时以 Promise.race 保证不依赖对端响应 abort 才结束；退出时取消未完成正文流，不新增请求或许可。
+实际 workerd 26 项通过（1.92秒），四项新增覆盖正常回执、伪造长度下超限、永不返回响应头、正文停滞和流取消；定向时限用50ms，生产默认12秒。
+类型检查与两个 Worker dry-run 通过，尚未部署。Python worker 的12秒 socket timeout 仍不代表总正文期限，此剩余事项未关闭。
