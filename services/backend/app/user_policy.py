@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import json
 import hashlib
-from contextlib import contextmanager
 import re
 import uuid
 from datetime import datetime, timezone
@@ -13,7 +12,7 @@ from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from .db import PgStoreMixin, execute, fetch_one
+from .db import bounded_metadata_transaction, PgStoreMixin, execute, fetch_one
 
 
 _PRINCIPAL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$")
@@ -210,17 +209,9 @@ class UserPolicyStore(PgStoreMixin):
         except SQLAlchemyError as exc:
             raise UserPolicyPersistenceError("user policy storage is unavailable") from exc
 
-    @contextmanager
     def _transaction(self):
-        if not self._lock.acquire(timeout=2):raise UserPolicyPersistenceError("user policy storage is unavailable")
-        try:
-            with self.engine.begin() as connection:
-                execute(connection,"SET LOCAL lock_timeout = '2s'")
-                execute(connection,"SET LOCAL statement_timeout = '5s'")
-                yield connection
-        except SQLAlchemyError as exc:
-            raise UserPolicyPersistenceError("user policy storage is unavailable") from exc
-        finally:self._lock.release()
+        return bounded_metadata_transaction(self.engine, self._lock,
+            error_type=UserPolicyPersistenceError, error_message="user policy storage is unavailable")
 
     def _execute(self, sql, params=None):
         with self._transaction() as connection:return execute(connection,sql,params)

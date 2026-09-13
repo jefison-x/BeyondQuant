@@ -5,14 +5,14 @@ import json
 import os
 import re
 import uuid
-from contextlib import contextmanager, nullcontext
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from .db import PgStoreMixin, ensure_column, execute, fetch_one
+from .db import bounded_metadata_transaction, PgStoreMixin, ensure_column, execute, fetch_one
 from .db import schema_bootstrap_lock
 from .web_research import normalize_web_research_evidence, validate_web_research_evidence
 from .research_continuation import ResearchContinuationMixin
@@ -355,20 +355,9 @@ class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinua
         except SQLAlchemyError as error:
             raise ResearchPersistenceError("research storage is unavailable") from error
 
-    @contextmanager
     def _transaction(self):
-        # Bound metadata contention; this does not impose an Agent or research duration.
-        if not self._lock.acquire(timeout=2):
-            raise ResearchPersistenceError("research storage is unavailable")
-        try:
-            with self.engine.begin() as connection:
-                execute(connection, "SET LOCAL lock_timeout = '2s'")
-                execute(connection, "SET LOCAL statement_timeout = '5s'")
-                yield connection
-        except SQLAlchemyError as error:
-            raise ResearchPersistenceError("research storage is unavailable") from error
-        finally:
-            self._lock.release()
+        return bounded_metadata_transaction(self.engine, self._lock,
+            error_type=ResearchPersistenceError, error_message="research storage is unavailable")
 
     def _execute(self, sql, params=None):
         with self._transaction() as connection:

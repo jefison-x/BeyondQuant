@@ -14,12 +14,11 @@ import re
 import unicodedata
 import uuid
 from datetime import datetime, timedelta, timezone
-from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from .db import PgStoreMixin, execute, fetch_one
+from .db import bounded_metadata_transaction, PgStoreMixin, execute, fetch_one
 
 
 SCHEMA_VERSION = "product-feedback.v1"
@@ -467,19 +466,9 @@ class ProductFeedbackStore(PgStoreMixin):
         except SQLAlchemyError as exc:
             raise FeedbackPersistenceError("feedback storage is unavailable") from exc
 
-    @contextmanager
     def _transaction(self):
-        if not self._lock.acquire(timeout=2):
-            raise FeedbackPersistenceError("feedback storage is unavailable")
-        try:
-            with self.engine.begin() as connection:
-                execute(connection, "SET LOCAL lock_timeout = '2s'")
-                execute(connection, "SET LOCAL statement_timeout = '5s'")
-                yield connection
-        except SQLAlchemyError as exc:
-            raise FeedbackPersistenceError("feedback storage is unavailable") from exc
-        finally:
-            self._lock.release()
+        return bounded_metadata_transaction(self.engine, self._lock,
+            error_type=FeedbackPersistenceError, error_message="feedback storage is unavailable")
 
     def _execute(self, sql, params=None):
         with self._transaction() as connection:
