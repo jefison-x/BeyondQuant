@@ -991,25 +991,35 @@ class CredentialStore(PgStoreMixin):
         else:
             if expected_version not in {None, 0}:
                 raise CredentialConflict("Agent binding version conflict")
+            expected = 0
             version = 1
         now = _now()
-        self._execute(
-            """INSERT INTO agent_model_bindings
-            (owner_principal, agent_id, profile_id, version, updated_at)
-            VALUES (:owner, :agent_id, :profile_id, :version, :updated_at)
-            ON CONFLICT(owner_principal, agent_id) DO UPDATE SET
-                profile_id = excluded.profile_id,
-                version = excluded.version,
-                updated_at = excluded.updated_at""",
-            {
-                "owner": owner_principal,
-                "agent_id": agent,
-                "profile_id": None if profile is None else profile["profile_id"],
-                "version": version,
-                "updated_at": now,
-            },
-        )
-        return next(item for item in self.list_bindings(owner_principal) if item["agent_id"] == agent)
+        with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            committed = fetch_one(connection,
+                """INSERT INTO agent_model_bindings
+                (owner_principal, agent_id, profile_id, version, updated_at)
+                VALUES (:owner, :agent_id, :profile_id, :version, :updated_at)
+                ON CONFLICT(owner_principal, agent_id) DO UPDATE SET
+                    profile_id = excluded.profile_id,
+                    version = excluded.version,
+                    updated_at = excluded.updated_at
+                WHERE agent_model_bindings.version = :expected
+                RETURNING *""",
+                {
+                    "owner": owner_principal,
+                    "agent_id": agent,
+                    "profile_id": None if profile is None else profile["profile_id"],
+                    "version": version, "expected": expected,
+                    "updated_at": now,
+                },
+            )
+        if committed is None:
+            raise CredentialConflict("Agent binding version conflict")
+        committed.update({"display_name":None if profile is None else profile["display_name"],
+                          "model":None if profile is None else profile["model"],
+                          "profile_status":None if profile is None else profile["status"]})
+        return self._public_binding(committed,owner_principal,agent)
 
     def resolve_model(self, owner: object, agent_id: object) -> dict[str, object] | None:
         owner_principal = _principal(owner)

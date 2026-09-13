@@ -1,0 +1,1047 @@
+{
+  "schema_version": "h4-interface-review.v1",
+  "scope": "已人工核对的逐接口行；缺行明确未完成，禁止将全量枚举默认标为通过",
+  "entries": [
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 89,
+      "method": "GET",
+      "path": "/healthz",
+      "handler": "healthz",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "无业务写入",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "只报告进程存活，不证明研究完成",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_plugin_identity.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 94,
+      "method": "GET",
+      "path": "/readyz",
+      "handler": "readyz",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "无业务写入",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "受当前插件/执行器资格约束，不将缺资格视为ready",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_plugin_identity.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 99,
+      "method": "GET",
+      "path": "/internal/runtime/operations",
+      "handler": "runtime_operations",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "有界内存快照",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "诊断信息不作为领域任务完成权威",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 104,
+      "method": "POST",
+      "path": "/internal/runtime/sessions",
+      "handler": "create_session",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "稳定session身份及journal claim；同ID重复明确409",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "初始化失败释放进程/journal；Gateway保留原公开会话身份",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 120,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/prompt",
+      "handler": "submit_prompt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "原key+content hash，执行前持久journal",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "未知回执只读原key/hash；原run不可重新执行",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_runtime_crash_wire.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 150,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/resume",
+      "handler": "resume_session",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "单session锁及新私有generation",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "旧进程清理及terminal ack完成后才准入；不重放旧业务动作",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 168,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/terminal-receipt",
+      "handler": "acknowledge_terminal",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "精确terminal receipt，持久ack",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "写盘失败保留准入屏障；重复ack不生成新run",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 184,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/recover-evidence",
+      "handler": "recover_evidence",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "完整owner/workspace/session/trace及cursor",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "每页最多256，不构造Harness，不调用模型",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_runtime_crash_wire.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 195,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/domain-call-evidence",
+      "handler": "domain_call_evidence",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "精确私有context与cursor",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "闭合私有证据分页，不进入公开SSE；未知证据不授予写权限",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_domain_call_wire.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 206,
+      "method": "GET",
+      "path": "/internal/runtime/sessions/{session_id}/prompts/reconcile",
+      "handler": "reconcile_prompt_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "原key+SHA256匹配",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "重启后读journal；缺记录是outcome_unknown，不能断言未执行",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 219,
+      "method": "GET",
+      "path": "/internal/runtime/sessions/{session_id}/continuation-receipt/{reservation_id}",
+      "handler": "continuation_budget_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "原reservation identity",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "持久预算回执；不存在保持未知，不充值或续期",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_continuation_qualification.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 227,
+      "method": "GET",
+      "path": "/internal/runtime/sessions/{session_id}/continuation-qualification",
+      "handler": "continuation_qualification",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "现有session执行器/模型资格",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "未找到session时qualified=false；不构造会话",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_continuation_qualification.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 238,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/cancel",
+      "handler": "cancel_session",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "当前active run锁及soft/hard闭集",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "hard取消分离原run并关闭所属进程，迟到结果不能更新下一run；重复取消409不启动执行",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 250,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/release",
+      "handler": "release_session",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "单session锁，active/initializing拒绝",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "释放进程和journal，保留持久业务/回执；重复释放404无新效果",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 260,
+      "method": "DELETE",
+      "path": "/internal/runtime/sessions/{session_id}",
+      "handler": "close_session",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "release别名，同准入",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "与release完全相同，不删除领域任务或持久记录",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 265,
+      "method": "GET",
+      "path": "/internal/runtime/sessions/{session_id}/events",
+      "handler": "events",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read-stream",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "BYQ规范化事件sequence",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "断连finally取消订阅；heartbeat无业务写入；公开事件不是私有DSH流",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_sse_delivery.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5115,
+      "method": "POST",
+      "path": "/v1/auth/login",
+      "handler": "login",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "密码KDF校验；每次显式登录产生独立12小时会话，非领域任务重放",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "回执丢失不获得cookie；再次显式登录产生新会话，旧不可见session按过期及禁用失效，不自动重试",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ae05bec85a0b788b05855689fed51d346f88a8cd850e39740720ca6026455305"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5120,
+      "method": "POST",
+      "path": "/v1/auth/logout",
+      "handler": "logout",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "原session_id删除幂等",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "未收到精确ok回执保留原cookie以重试；Backend已删除时再次删除无额外效果",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ae05bec85a0b788b05855689fed51d346f88a8cd850e39740720ca6026455305"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5128,
+      "method": "GET",
+      "path": "/v1/auth/session",
+      "handler": "get_session",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "精确session_id及有效期/用户active",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "服务重启从PostgreSQL读取；disabled即使有旧session也拒绝",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ae05bec85a0b788b05855689fed51d346f88a8cd850e39740720ca6026455305"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5136,
+      "method": "POST",
+      "path": "/v1/users",
+      "handler": "create_user",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "唯一username，用户与个人workspace同事务",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "不自动重试注册；原username在管理员目录可核对，冲突不覆盖既有账号",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ae05bec85a0b788b05855689fed51d346f88a8cd850e39740720ca6026455305"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5142,
+      "method": "GET",
+      "path": "/v1/users",
+      "handler": "list_users",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "管理员身份",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "数据库目录读取；不得由普通用户/Agent获得管理员列表",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ae05bec85a0b788b05855689fed51d346f88a8cd850e39740720ca6026455305"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5148,
+      "method": "POST",
+      "path": "/v1/users/{user_id}/disable",
+      "handler": "disable_user",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "设置disabled及删除该user全部session同事务",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "原user_id重复禁用不重新启用/创建session，后续请求再次校验active",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ae05bec85a0b788b05855689fed51d346f88a8cd850e39740720ca6026455305"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5154,
+      "method": "PUT",
+      "path": "/v1/users/{user_id}/profile",
+      "handler": "update_user_profile",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "owner精确user_id；显式字段赋值（最后保存生效）",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "未知结果回读自己的profile，重新保存仅变更指定字段；不提升角色",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ae05bec85a0b788b05855689fed51d346f88a8cd850e39740720ca6026455305"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5162,
+      "method": "GET",
+      "path": "/v1/users/{user_id}/ui-preferences",
+      "handler": "get_user_ui_preferences",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "owner精确user_id",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "持久偏好缺省投影，跨owner拒绝",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ae05bec85a0b788b05855689fed51d346f88a8cd850e39740720ca6026455305"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5170,
+      "method": "PUT",
+      "path": "/v1/users/{user_id}/ui-preferences",
+      "handler": "update_user_ui_preferences",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "expected_version及行锁",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "旧版本重试冲突；回读持久版本和颜色设置，不能用新版本静默覆盖并发修改",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ae05bec85a0b788b05855689fed51d346f88a8cd850e39740720ca6026455305"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/auth_api.py",
+      "line": 31,
+      "method": "POST",
+      "path": "/login",
+      "handler": "login",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "密码KDF校验；每次显式登录产生独立12小时会话，非领域任务重放",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "回执丢失不获得cookie；再次显式登录产生新会话，旧不可见session按过期及禁用失效，不自动重试",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "0d5109cba0a5b9078e49ac6b35c156b1e007273ba4dd9723a0cbc21b8c68771d"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/auth_api.py",
+      "line": 52,
+      "method": "POST",
+      "path": "/logout",
+      "handler": "logout",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "原session_id删除幂等",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "未收到精确ok回执保留原cookie以重试；Backend已删除时再次删除无额外效果",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "0d5109cba0a5b9078e49ac6b35c156b1e007273ba4dd9723a0cbc21b8c68771d"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/auth_api.py",
+      "line": 68,
+      "method": "GET",
+      "path": "/me",
+      "handler": "me",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "cookie对应精确session/user/workspace",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "Backend超时不当作有效身份，未认证不返回hardcoded user",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "0d5109cba0a5b9078e49ac6b35c156b1e007273ba4dd9723a0cbc21b8c68771d"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 482,
+      "method": "POST",
+      "path": "/auth/login",
+      "handler": "product_login",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "密码KDF校验；每次显式登录产生独立12小时会话，非领域任务重放",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "回执丢失不获得cookie；再次显式登录产生新会话，旧不可见session按过期及禁用失效，不自动重试",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "a9ee0e15f8bcaa07374ba008ba366e70f8e07c798dc2e4dd61ce76c14a93f09f"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 508,
+      "method": "POST",
+      "path": "/auth/logout",
+      "handler": "product_logout",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "原session_id删除幂等",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "未收到精确ok回执保留原cookie以重试；Backend已删除时再次删除无额外效果",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "a9ee0e15f8bcaa07374ba008ba366e70f8e07c798dc2e4dd61ce76c14a93f09f"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 522,
+      "method": "GET",
+      "path": "/auth/me",
+      "handler": "product_me",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "cookie对应精确session/user/workspace",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "Backend超时不当作有效身份，未认证不返回hardcoded user",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "a9ee0e15f8bcaa07374ba008ba366e70f8e07c798dc2e4dd61ce76c14a93f09f"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1521,
+      "method": "GET",
+      "path": "/admin/users",
+      "handler": "product_admin_users",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "管理员身份",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "数据库目录读取；不得由普通用户/Agent获得管理员列表",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "a9ee0e15f8bcaa07374ba008ba366e70f8e07c798dc2e4dd61ce76c14a93f09f"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1529,
+      "method": "POST",
+      "path": "/admin/users/{user_id}/disable",
+      "handler": "product_admin_disable_user",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "设置disabled及删除该user全部session同事务",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "原user_id重复禁用不重新启用/创建session，后续请求再次校验active",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "a9ee0e15f8bcaa07374ba008ba366e70f8e07c798dc2e4dd61ce76c14a93f09f"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1549,
+      "method": "GET",
+      "path": "/profile",
+      "handler": "product_profile_get",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "cookie解析唯一用户",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "公开profile闭合投影，不返回password_hash",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "a9ee0e15f8bcaa07374ba008ba366e70f8e07c798dc2e4dd61ce76c14a93f09f"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1554,
+      "method": "PUT",
+      "path": "/profile",
+      "handler": "product_profile_update",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "cookie解析owner；显式字段赋值",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "只允许显示名/偏好/提示，不接受角色或owner改变；未知后只读回看",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "a9ee0e15f8bcaa07374ba008ba366e70f8e07c798dc2e4dd61ce76c14a93f09f"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1572,
+      "method": "GET",
+      "path": "/settings/appearance",
+      "handler": "product_appearance_get",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "cookie解析owner user_id",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "只访问Product API；持久读取无本地假保存",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "a9ee0e15f8bcaa07374ba008ba366e70f8e07c798dc2e4dd61ce76c14a93f09f"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1589,
+      "method": "PUT",
+      "path": "/settings/appearance",
+      "handler": "product_appearance_update",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "cookie解析owner及expected_version",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "冲突不自动增版本重试；只读回看持久偏好",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "a9ee0e15f8bcaa07374ba008ba366e70f8e07c798dc2e4dd61ce76c14a93f09f"
+    }
+  ]
+}

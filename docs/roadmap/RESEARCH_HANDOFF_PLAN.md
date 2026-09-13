@@ -122,3 +122,5 @@ H4 模拟账户六类命令原回执及页面刷新恢复通过；账户创建�
 H4账户导入已补原键事务回执、摘要键及真实浏览器刷新恢复，见[PAPER-IMPORT-RECOVERY](../evidence/research-handoff-h4/PAPER-IMPORT-RECOVERY.md)。
 
 H4回测及派生任务、信号快照的精确ID读取和原键未知结果指引已补齐，见[BACKTEST-EXACT-READ](../evidence/research-handoff-h4/BACKTEST-EXACT-READ.md)。
+
+H4模型绑定同版本并发覆盖已修正，逐接口结论台账起稿37项；见[MODEL-BINDING-CONCURRENCY](../evidence/research-handoff-h4/MODEL-BINDING-CONCURRENCY.md)。剩余接口仍继续核对。
