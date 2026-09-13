@@ -1,7 +1,7 @@
 """Negative gate tests, not a claim of model or real-domain H5 completion."""
 from copy import deepcopy
 import unittest
-from tests.dsh_upgrade.h5_research_contract import SCENARIO, verify_completion
+from tests.dsh_upgrade.h5_research_contract import SCENARIO, verify_completion, collect_completion
 
 
 def fixture():
@@ -38,3 +38,56 @@ class H5CompletionGateTest(unittest.TestCase):
                 if failure=='wrong_account_pool':account['bound_pool_id']='stock_pool_'+'f'*32
                 if failure=='missing_report_link':task['progress']['completion_evidence']=[]
                 with self.assertRaises(AssertionError):verify_completion(*values)
+
+
+class H5ExactCollectionTest(unittest.TestCase):
+    def test_reads_only_six_original_objects_and_rejects_substituted_report(self):
+        context, task, jobs, report, account = fixture()
+        paths = {
+            '/v1/research/tasks/' + context['task_id']: task,
+            **{'/v1/research/backtests/' + job['job_id'] + '/summary': {'job': job} for job in jobs},
+            '/v1/research/artifacts/' + report['artifact_id']: report,
+            '/v1/paper/accounts/' + account['account_id']: {'account': account},
+        }
+        calls = []
+        def read(path):
+            calls.append(path)
+            return deepcopy(paths[path])
+        arguments = dict(job_ids=[job['job_id'] for job in jobs], report_id=report['artifact_id'],
+                         account_id=account['account_id'], read=read)
+        self.assertEqual(collect_completion(context, **arguments)['selected_job_id'], jobs[1]['job_id'])
+        self.assertEqual(calls, list(paths))
+        self.assertEqual(len(calls), 6)
+        paths['/v1/research/artifacts/' + report['artifact_id']] = {**report, 'artifact_id': 'artifact_' + 'f'*32}
+        with self.assertRaises(AssertionError):
+            collect_completion(context, **arguments)
+
+    def test_bad_or_duplicate_id_stops_before_any_read(self):
+        context, _, jobs, report, account = fixture()
+        def forbidden(path):
+            self.fail('invalid identity reached the transport')
+        for ids in ([jobs[0]['job_id']]*3, ['../other']*3, [], None):
+            with self.subTest(ids=ids), self.assertRaises(ValueError):
+                collect_completion(context, job_ids=ids, report_id=report['artifact_id'],
+                                   account_id=account['account_id'], read=forbidden)
+
+    def test_each_missing_or_failed_read_stops_without_retry_or_substitution(self):
+        context, task, jobs, report, account = fixture()
+        responses = [task, *({'job': job} for job in jobs), report, {'account': account}]
+        for failure_at in range(6):
+            for transport_failure in (False, True):
+                calls = []
+                def read(path):
+                    index = len(calls)
+                    calls.append(path)
+                    if index == failure_at:
+                        if transport_failure:
+                            raise TimeoutError('synthetic unavailable read')
+                        return None
+                    return deepcopy(responses[index])
+                with self.subTest(failure_at=failure_at, transport_failure=transport_failure):
+                    with self.assertRaises(TimeoutError if transport_failure else AssertionError):
+                        collect_completion(context, job_ids=[job['job_id'] for job in jobs],
+                                           report_id=report['artifact_id'], account_id=account['account_id'], read=read)
+                    self.assertEqual(len(calls), failure_at + 1)
+                    self.assertEqual(len(set(calls)), len(calls))

@@ -84,3 +84,35 @@ def verify_completion(context, task, jobs, report, account):
         raise AssertionError('original task must retain its report evidence')
     return {'scenario':SCENARIO,'prompt_sha256':PROMPT_SHA256,'task_id':context['task_id'],
         'job_ids':sorted(measured),'selected_job_id':selected,'account_id':account['account_id']}
+
+
+def collect_completion(context, *, job_ids, report_id, account_id, read):
+    """Read-only operator adapter: `read` must GET the authenticated isolated Backend.
+
+    No catalog search, latest-object fallback, retry, or writes. The caller owns
+    HTTP isolation/authentication; this function never loads a credential.
+    """
+    validate_context(context)
+    if (not isinstance(job_ids, list) or len(job_ids) != 3
+            or any(not isinstance(value, str) or not re.fullmatch(r'backtest_[0-9a-f]{32}', value) for value in job_ids)
+            or len(set(job_ids)) != 3):
+        raise ValueError('three exact original backtest identities required')
+    if not isinstance(report_id, str) or not re.fullmatch(r'artifact_[0-9a-f]{32}', report_id):
+        raise ValueError('exact original report identity required')
+    if not isinstance(account_id, str) or not re.fullmatch(r'paper_account_[0-9a-f]{32}', account_id):
+        raise ValueError('exact original account identity required')
+
+    def exact(path, field, identity, envelope=None):
+        value = read(path)
+        if envelope is not None:
+            value = value.get(envelope) if isinstance(value, dict) else None
+        if not isinstance(value, dict) or value.get(field) != identity:
+            raise AssertionError('authoritative read returned a different or missing object')
+        return value
+
+    task = exact('/v1/research/tasks/' + context['task_id'], 'task_id', context['task_id'])
+    jobs = [exact('/v1/research/backtests/' + identity + '/summary', 'job_id', identity, 'job')
+            for identity in job_ids]
+    report = exact('/v1/research/artifacts/' + report_id, 'artifact_id', report_id)
+    account = exact('/v1/paper/accounts/' + account_id, 'account_id', account_id, 'account')
+    return verify_completion(context, task, jobs, report, account)
