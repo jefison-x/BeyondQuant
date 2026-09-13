@@ -33,13 +33,13 @@ Agent 人工批准/拒绝入口已集中到全局审批中心，决定后会幂�
 服务重启后会用新的私有 DSH generation 恢复已完成的公开上下文，继续追问不再复用冲突的 Runtime
 身份。Agent 发起的策略批准及预测、回测等有后果动作仍由用户在全局中心逐项确认，DSH 不接收 Provider 凭据、模型对象、
 raw features、raw predictions 或 raw signals。
-Product Runtime baseline 仍保持 Python `0.1.1rc1` / npm `0.1.1-rc.1`。
+Product Runtime baseline 为 Python `0.1.2rc1`，使用匹配 wheel 内置的官方 runtime executable。
 当前状态以
 [`docs/roadmap/STATUS.md`](docs/roadmap/STATUS.md) 为准。
 
 DSH `0.1.2rc1` 的[详细升级方案](docs/roadmap/DSH_012RC1_UPGRADE_PLAN.md)、
 [执行表](docs/roadmap/DSH_012RC1_EXECUTION.md)和[测试矩阵](docs/roadmap/DSH_012RC1_TEST_MATRIX.md)
-已作为后续维护规划归档。**方案入库不等于已升级**；当前 runtime 版本仍如上，实施从 U0 开始。
+保留升级过程和验收记录；当前继续执行 Post-U8 可靠性维护。
 
 ## 项目定位
 
@@ -51,6 +51,33 @@ DSH 是通用 Agent Harness。BYQ 是围绕自身领域不变量、Contract 和�
 
 BYQ 不 fork DSH。DSH 版本通过明确的依赖策略和兼容性 Contract 固定。BYQ 提供
 自己的产品 UI；Agent 与量化领域之间的通信统一经过 BeyondQuant MCP。
+
+## 会话与研究流程
+
+DSH 负责分析、选择工具和委派 Agent；BYQ 负责权限、业务状态和结果持久化。
+下图省略传输细节，Agent 的所有业务动作实际均经过 BeyondQuant MCP。
+
+```mermaid
+flowchart TD
+    A["用户提出研究目标"] --> B["BYQ 接收任务<br/>核验身份、权限，保存目标"]
+    B --> C["DSH 执行研究<br/>分析、选工具、委派子 Agent"]
+    C --> D["BYQ 执行业务动作<br/>校验审批，保存策略、回测等结果"]
+    D --> E{"当前结果"}
+    E -->|可以继续| C
+    E -->|需要审批或等待作业| F["BYQ 保存等待状态"]
+    F -->|结果到达且允许续接| C
+    E -->|本回合结束| G["BYQ 保存回答与运行终态"]
+    G --> H["任务已完成：交付结果<br/>任务未完成：核对后续安排"]
+```
+
+**回合结束不等于研究目标完成。** 审批仅授权绑定的具体动作；后台续接还需要有效的任务许可、
+预算和实际投递记录。跨回合恢复使用新的私有 DSH generation，并恢复持久化的公开上下文。
+研究中心现可查看和刷新基于持久业务事实的交接状态，区分待审批、待作业、缺许可和需核对等情况。
+新确认的许可已接入一次原任务交接与后续策略审批动作完成触发，沿用 F6 的预算、去重和撤销检查；
+旧许可保持原触发范围。不能将图中的条件箭头理解为任意任务都会自动继续。
+
+下一阶段按[研究流程连续性整改计划](docs/roadmap/RESEARCH_HANDOFF_PLAN.md)推进，
+保留现有架构与 F6 机制，优先完善审批后的原目标交接和真实等待状态。
 
 ## 当前能力
 

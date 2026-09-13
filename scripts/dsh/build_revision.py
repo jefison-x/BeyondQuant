@@ -22,9 +22,14 @@ SOURCE_ROOTS = (
     "services/gateway/tests", "services/backend/tests", "services/mcp/tests",
     "apps/frontend/tests",
     "workers", "services/signal-sandbox", "infra/postgres/init",
+    "services/feedback-hub-cloudflare/src", "deploy/feedback-hub-cloudflare/migrations",
+    "deploy/feedback-hub-cloudflare/tests", "deploy/feedback-hub-cloudflare/scripts",
     "scripts", "tests", ".github/workflows",
 )
 FIXED_INPUTS = (
+    "deploy/feedback-hub-cloudflare/package.json", "deploy/feedback-hub-cloudflare/package-lock.json",
+    "deploy/feedback-hub-cloudflare/tsconfig.json", "deploy/feedback-hub-cloudflare/vitest.config.ts",
+    "deploy/feedback-hub-cloudflare/wrangler.hub.jsonc", "deploy/feedback-hub-cloudflare/wrangler.publisher.jsonc",
     "services/gateway/Dockerfile", "services/gateway/pyproject.toml",
     "services/backend/Dockerfile", "services/backend/pyproject.toml",
     "services/mcp/Dockerfile", "services/mcp/package.json", "services/mcp/package-lock.json",
@@ -60,7 +65,7 @@ def selected_build_id(release):
         return RETIRED_BUILD  # Historical identity only; never a current build.
     if release not in RELEASES:
         raise ValueError("unregistered release")
-    return release + "-post-u8.51"
+    return release + "-post-u8.112"
 
 
 def identity(build_id):

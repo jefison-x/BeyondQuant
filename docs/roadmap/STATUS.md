@@ -1,5 +1,7 @@
 # BeyondQuant 状态
 
+研究流程连续性维护：见[下一阶段整改目标](RESEARCH_HANDOFF_PLAN.md)，先完成审批后原目标交接，再补持久交接与授权续接连接；不推进 Product Phase。
+
 <!-- byq:current-completed-phase=97 -->
 
 本文档顶部是当前 Phase 状态的事实来源，使新的 Codex session 不会从 commit history 推断状态。

@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from .db import PgStoreMixin, execute, fetch_one
+from .db import bounded_metadata_transaction, PgStoreMixin, execute, fetch_one
 
 
 SCHEMA_VERSION = "product-feedback.v1"
@@ -449,6 +449,10 @@ class ProductFeedbackStore(PgStoreMixin):
             updated_at TIMESTAMPTZ NOT NULL
         )
         """,
+        "ALTER TABLE product_feedback_hub_outbox ADD COLUMN IF NOT EXISTS next_status_check_at TIMESTAMPTZ NOT NULL DEFAULT now()",
+        "CREATE INDEX IF NOT EXISTS product_feedback_hub_status_due ON product_feedback_hub_outbox(next_status_check_at,event_id) WHERE state IN ('received','triaged','accepted','publishing') AND receipt_id IS NOT NULL",
+        "ALTER TABLE product_feedback_outbox ADD COLUMN IF NOT EXISTS create_started BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE product_feedback_outbox ALTER COLUMN create_started SET DEFAULT FALSE",
         "CREATE INDEX IF NOT EXISTS product_feedback_hub_outbox_due ON product_feedback_hub_outbox(state,next_attempt_at,event_id)",
         f"""INSERT INTO product_feedback_hub_state (state_key,installation_id,configured)
             VALUES ('central','{_DEFAULT_HUB_INSTALLATION_ID}',FALSE) ON CONFLICT(state_key) DO NOTHING""",
@@ -461,6 +465,18 @@ class ProductFeedbackStore(PgStoreMixin):
             super().__init__(database_url)
         except SQLAlchemyError as exc:
             raise FeedbackPersistenceError("feedback storage is unavailable") from exc
+
+    def _transaction(self):
+        return bounded_metadata_transaction(self.engine, self._lock,
+            error_type=FeedbackPersistenceError, error_message="feedback storage is unavailable")
+
+    def _execute(self, sql, params=None):
+        with self._transaction() as connection:
+            return execute(connection, sql, params)
+
+    def _fetch_one(self, sql, params=None):
+        with self._transaction() as connection:
+            return fetch_one(connection, sql, params)
 
     @staticmethod
     def options(*, publisher_configured: bool = False, publisher_status: str | None = None) -> dict[str, object]:
@@ -503,6 +519,9 @@ class ProductFeedbackStore(PgStoreMixin):
         return heartbeat >= datetime.now(timezone.utc) - timedelta(seconds=120)
 
     def _replay(self, connection: Any, *, scope: str, actor: str, operation: str, key: str, request_hash: str) -> dict[str, object] | None:
+        execute(connection, "SET LOCAL lock_timeout = '2s'")
+        execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                {"scope":_hash([scope, actor, operation, key])})
         row = fetch_one(connection, """SELECT request_hash, result_json FROM product_feedback_commands
             WHERE scope_key=:scope AND actor_principal=:actor AND operation=:operation AND idempotency_key=:key""",
             {"scope": scope, "actor": actor, "operation": operation, "key": key})
@@ -650,6 +669,27 @@ class ProductFeedbackStore(PgStoreMixin):
             self._record_command(connection, scope=trusted_workspace, actor=trusted_actor, operation="create", key=key,
                                  request_hash=request_hash, result=result, now=now)
             return result
+
+    def reconcile_command(self, operation, key, *, feedback_id=None, trusted_workspace, trusted_actor):
+        if operation not in {"create", "update", "submit", "withdraw"}:
+            raise ValueError("unsupported feedback receipt operation")
+        key = _idempotency(key)
+        identity = _feedback_id(feedback_id) if operation != "create" else None
+        command = operation if identity is None else f"{operation}:{identity}"
+        row = self._fetch_one("""SELECT result_json FROM product_feedback_commands
+            WHERE scope_key=:workspace AND actor_principal=:actor AND operation=:operation AND idempotency_key=:key""",
+            {"workspace":trusted_workspace,"actor":trusted_actor,"operation":command,"key":key})
+        if row is None:
+            return {"state":"not_found"}
+        result = row["result_json"]
+        if not isinstance(result, dict) or not isinstance(result.get("feedback"), dict):
+            raise FeedbackPersistenceError("feedback receipt is invalid")
+        actual = _feedback_id(result["feedback"].get("feedback_id"))
+        if identity is not None and actual != identity:
+            raise FeedbackPersistenceError("feedback receipt identity differs")
+        # Confirm the object remains in this workspace; return the original command result.
+        self.get_owner(actual, trusted_workspace=trusted_workspace)
+        return {"state":"confirmed", "feedback":result["feedback"]}
 
     def list_owner(self, *, trusted_workspace: str, status: str = "all", category: str = "all",
                    query: str = "", limit: int = 20, offset: int = 0) -> dict[str, object]:
@@ -916,6 +956,12 @@ class ProductFeedbackStore(PgStoreMixin):
                 {"now": now, "limit": limit})
             events: list[dict[str, object]] = []
             for row in rows:
+                if int(row["attempt"]) >= MAX_HUB_DELIVERY_ATTEMPTS:
+                    execute(connection, """UPDATE product_feedback_hub_outbox
+                        SET state='failed_terminal',last_error_category='retry_exhausted',
+                            lease_owner=NULL,lease_expires_at=NULL,updated_at=:now WHERE event_id=:event""",
+                        {"now":now,"event":row["event_id"]})
+                    continue
                 attempt, fence = int(row["attempt"]) + 1, int(row["lease_fence"]) + 1
                 execute(connection, """UPDATE product_feedback_hub_outbox SET state='delivering',attempt=:attempt,
                     lease_owner=:worker,lease_expires_at=:expiry,lease_fence=:fence,updated_at=:now WHERE event_id=:event""",
@@ -979,6 +1025,24 @@ class ProductFeedbackStore(PgStoreMixin):
                     {"category": category})
         return {"schema_version": "feedback-hub-relay-result.v1", "status": target, "attempt": int(row["attempt"])}
 
+    def claim_hub_status_checks(self, payload: object) -> dict[str, object]:
+        if not isinstance(payload, dict):
+            raise ValueError("feedback hub status claim must be an object")
+        _reject_unknown(payload, {"limit"})
+        limit = min(_positive_int(payload.get("limit", 10), field="limit"), 20)
+        with self._transaction() as connection:
+            rows = execute(connection, """SELECT event_id,receipt_id,status_token
+                FROM product_feedback_hub_outbox
+                WHERE state IN ('received','triaged','accepted','publishing')
+                  AND receipt_id IS NOT NULL AND next_status_check_at <= now()
+                ORDER BY next_status_check_at,event_id LIMIT :limit FOR UPDATE SKIP LOCKED""",
+                {"limit": limit})
+            for row in rows:
+                execute(connection, """UPDATE product_feedback_hub_outbox
+                    SET next_status_check_at=now()+interval '30 seconds' WHERE event_id=:event""",
+                    {"event": row["event_id"]})
+        return {"schema_version": "feedback-hub-status-checks.v1", "items": rows}
+
     def hub_status_candidates(self, *, limit: int = 10) -> dict[str, object]:
         bounded = min(max(limit, 1), 20)
         rows = self._execute("""SELECT event_id,receipt_id,status_token FROM product_feedback_hub_outbox
@@ -1008,9 +1072,22 @@ class ProductFeedbackStore(PgStoreMixin):
                 raise ValueError("feedback hub GitHub URL is not canonical")
         now = _now()
         with self._transaction() as connection:
-            row = fetch_one(connection, "SELECT receipt_id FROM product_feedback_hub_outbox WHERE event_id=:event FOR UPDATE", {"event": event_id})
+            row = fetch_one(connection, "SELECT * FROM product_feedback_hub_outbox WHERE event_id=:event FOR UPDATE", {"event": event_id})
             if row is None or row["receipt_id"] != receipt:
                 raise FeedbackConflict("feedback hub receipt does not match delivery")
+            transitions = {
+                "received": {"received","triaged","accepted","rejected","duplicate","publishing","published"},
+                "triaged": {"triaged","accepted","rejected","duplicate","publishing","published"},
+                "accepted": {"accepted","publishing","published"},
+                "publishing": {"accepted","publishing","published"},
+                "rejected": {"rejected"}, "duplicate": {"duplicate"}, "published": {"published"},
+            }
+            if status not in transitions.get(row["state"], set()):
+                raise FeedbackConflict("feedback hub status is stale or inconsistent")
+            if row["state"] == "published" and (
+                    row["github_repository"] != repository or row["github_issue_number"] != number
+                    or row["github_html_url"] != url):
+                raise FeedbackConflict("feedback hub publication identity cannot be replaced")
             execute(connection, """UPDATE product_feedback_hub_outbox SET state=:status,github_repository=:repository,
                 github_issue_number=:number,github_html_url=:url,updated_at=:now WHERE event_id=:event""",
                 {"status": status, "repository": repository, "number": number, "url": url, "now": now, "event": event_id})
@@ -1085,6 +1162,24 @@ class ProductFeedbackStore(PgStoreMixin):
         total = int(count["count"] if count else 0)
         return {"schema_version": "feedback-moderation-audit.v1", "audit": safe_rows, "total": total,
                 "limit": limit, "offset": offset, "has_more": offset + len(rows) < total}
+
+    def reconcile_moderation(self, feedback_id, action, key, *, trusted_actor, actor_role):
+        self._require_moderator(actor_role)
+        identity = _feedback_id(feedback_id)
+        if action not in {"triage", "accept", "reject", "duplicate"}:
+            raise ValueError("moderation action is invalid")
+        key = _idempotency(key)
+        row = self._fetch_one("""SELECT result_json FROM product_feedback_commands
+            WHERE scope_key='platform-feedback' AND actor_principal=:actor
+              AND operation=:operation AND idempotency_key=:key""",
+            {"actor": trusted_actor, "operation": f"moderate:{action}:{identity}", "key": key})
+        if row is None:
+            return {"state": "not_found"}
+        result = row["result_json"]
+        if not isinstance(result, dict) or not isinstance(result.get("feedback"), dict) or result["feedback"].get("feedback_id") != identity:
+            raise FeedbackPersistenceError("feedback moderation receipt is invalid")
+        self.get_moderation(identity, actor_role=actor_role)
+        return {"state": "confirmed", "feedback": result["feedback"]}
 
     def moderate(self, feedback_id: object, action: str, payload: object, *, trusted_actor: str, actor_role: str) -> dict[str, object]:
         self._require_moderator(actor_role)
@@ -1234,6 +1329,14 @@ class ProductFeedbackStore(PgStoreMixin):
                 {"now": now, "limit": limit})
             events: list[dict[str, object]] = []
             for row in rows:
+                if int(row["attempt"]) >= MAX_PUBLICATION_ATTEMPTS:
+                    execute(connection, """UPDATE product_feedback_outbox
+                        SET state='failed_terminal',last_error_category='transport_ambiguous',
+                            lease_owner=NULL,lease_expires_at=NULL,updated_at=:now WHERE event_id=:event""",
+                        {"now": now, "event": row["event_id"]})
+                    execute(connection, """UPDATE product_feedback SET publication_status='failed_terminal',
+                        updated_at=:now WHERE feedback_id=:feedback""", {"now": now, "feedback": row["feedback_id"]})
+                    continue
                 fence = int(row["lease_fence"]) + 1
                 attempt = int(row["attempt"]) + 1
                 execute(connection, """UPDATE product_feedback_outbox SET state='publishing',attempt=:attempt,
@@ -1257,6 +1360,25 @@ class ProductFeedbackStore(PgStoreMixin):
         if row["state"] != "publishing" or row["lease_owner"] != worker or int(row["lease_fence"]) != fence:
             raise FeedbackConflict("publication lease is stale")
         return row
+
+    def begin_publication_create(self, event_id: object, payload: object) -> dict[str, object]:
+        if not isinstance(event_id, str) or re.fullmatch(r"feedback_outbox_[0-9a-f]{32}", event_id) is None:
+            raise ValueError("publication event id is invalid")
+        if not isinstance(payload, dict):
+            raise ValueError("publisher create permit must be an object")
+        _reject_unknown(payload, {"worker_id", "lease_fence"})
+        worker = _text(payload.get("worker_id"), field="worker_id", minimum=3, maximum=80)
+        fence = _positive_int(payload.get("lease_fence"), field="lease_fence")
+        with self._transaction() as connection:
+            row = self._leased_row(connection, event_id, worker, fence)
+            if datetime.fromisoformat(str(row["lease_expires_at"]).replace("Z", "+00:00")) <= datetime.now(timezone.utc):
+                raise FeedbackConflict("publication lease is stale")
+            allowed = not row["create_started"]
+            if allowed:
+                execute(connection, "UPDATE product_feedback_outbox SET create_started=TRUE WHERE event_id=:event",
+                        {"event": event_id})
+        # Lost permit replies are unknown. Never issue the same create permission twice.
+        return {"schema_version": "feedback-publisher-create-permit.v1", "allowed": allowed}
 
     def complete_publication(self, event_id: object, payload: object) -> dict[str, object]:
         if not isinstance(event_id, str) or re.fullmatch(r"feedback_outbox_[0-9a-f]{32}", event_id) is None:

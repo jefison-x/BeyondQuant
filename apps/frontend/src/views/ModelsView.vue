@@ -3,12 +3,44 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   createModelCredential, createModelProfile, deleteModelProfile, getModelSettings,
-  revokeModelCredential, updateModelBinding, updateModelCredential,
+  revokeModelCredential, updateModelBinding, updateModelCredential, reconcileModelCredential, SettingsRequestError, getModelProfileReceipt, getModelCommandReceipt,
 } from "@/api/settings";
 import type { ModelCredential, ModelProfile, ModelSettings } from "@/api/types";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { useFilteredPagination } from "@/composables/useFilteredPagination";
 
+import {useAuthStore} from '@/stores/auth';
+import {beginCredentialWrite,readCredentialWrite,finishCredentialWrite,type CredentialWrite} from '@/api/credentialSubmission';
+import {beginProfileSubmission,readProfileSubmission,finishProfileSubmission,confirmProfileReceipt,type ProfileInput} from '@/api/profileSubmission';
+import {beginModelCommand,readModelCommand,finishModelCommand,confirmModelCommand,type ModelCommand} from '@/api/modelCommand';
+const pendingModelCommand=ref<ModelCommand|null>(null);
+const pendingProfile=ref<ProfileInput|null>(null);
+const auth=useAuthStore();
+const pendingCredential=ref<CredentialWrite|null>(null);
+function credentialScope(){if(!auth.user)throw Error('请先登录');return JSON.stringify([auth.user.subject,auth.user.workspace.workspace_id]);}
+async function executeCredential(operation:CredentialWrite['operation'],payload:Record<string,unknown>,credentialId?:string){
+  const scope=credentialScope(),previous=readCredentialWrite(scope),command=beginCredentialWrite(scope,operation,payload,credentialId);pendingCredential.value=command;
+  try {
+    const value=operation==='create'?await createModelCredential({...payload,idempotency_key:command.key})
+      : operation==='update'?await updateModelCredential(credentialId!,{...payload,request_id:command.key})
+      : await revokeModelCredential(credentialId!,{...payload,request_id:command.key});
+    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
+    if(!/^cred_[0-9a-f]{32}$/.test(String(value.credential?.credential_id ?? '')) || (credentialId && value.credential.credential_id!==credentialId))throw Error('凭据提交回执不完整，请核对原操作');
+    finishCredentialWrite(scope,command.key);pendingCredential.value=null;return value;
+  } catch(cause){
+    if(!previous && cause instanceof SettingsRequestError && [400,401,403,404,422].includes(cause.status)){finishCredentialWrite(scope,command.key);pendingCredential.value=null;}
+    throw cause;
+  }
+}
+async function recoverCredential(){
+  if(!pendingCredential.value)return;busy.value=true;
+  try {
+    const scope=credentialScope(),command=pendingCredential.value,value=await reconcileModelCredential(command);
+    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
+    if(value.state==='not_found'){ElMessage.warning('尚未找到原回执。请稍后核对，或重新填写同一操作；密钥需要重新输入。');return;}
+    finishCredentialWrite(scope,command.key);pendingCredential.value=null;credentialDialog.value=false;credentialForm.secret='';await load();ElMessage.success('原凭据操作已确认');
+  }catch(cause){ElMessage.error(cause instanceof Error?cause.message:'凭据核对失败');}finally{busy.value=false;}
+}
 const loading = ref(true);
 const busy = ref(false);
 const error = ref("");
@@ -44,7 +76,7 @@ async function load() {
   finally { loading.value = false; }
 }
 
-onMounted(load);
+onMounted(async()=>{try{pendingCredential.value=readCredentialWrite(credentialScope());pendingProfile.value=readProfileSubmission(credentialScope());pendingModelCommand.value=readModelCommand(credentialScope());}catch(cause){error.value=cause instanceof Error?cause.message:'原凭据操作无法读取';return;}await load();});
 
 function openCredential(item: ModelCredential | null = null) {
   editingCredential.value = item;
@@ -59,26 +91,26 @@ async function saveCredential() {
   busy.value = true;
   try {
     if (editingCredential.value) {
-      await updateModelCredential(editingCredential.value.credential_id, {
+      await executeCredential("update", {
         label: credentialForm.label, secret: credentialForm.secret,
-        expected_version: editingCredential.value.version, request_id: `browser-replace-${Date.now()}`,
-      });
+        expected_version: editingCredential.value.version,
+      },editingCredential.value.credential_id);
       ElMessage.success("凭据已安全替换");
     } else {
-      await createModelCredential({ purpose: "model_api_key", provider: credentialForm.provider, scope: "user", label: credentialForm.label, secret: credentialForm.secret, idempotency_key: `browser-create-${Date.now()}` });
+      await executeCredential("create",{provider:credentialForm.provider,label:credentialForm.label,secret:credentialForm.secret});
       ElMessage.success("凭据已保存");
     }
     credentialDialog.value = false;
     credentialForm.secret = "";
     await load();
   } catch (exc) { ElMessage.error(exc instanceof Error ? exc.message : "保存凭据失败"); }
-  finally { busy.value = false; }
+  finally { busy.value = false; credentialForm.secret=""; if(pendingCredential.value)credentialDialog.value=false; }
 }
 
 async function setCredentialStatus(item: ModelCredential, status: "active" | "disabled") {
   busy.value = true;
   try {
-    await updateModelCredential(item.credential_id, { label: item.label, status, expected_version: item.version, request_id: `browser-status-${Date.now()}` });
+    await executeCredential("update",{label:item.label,status,expected_version:item.version},item.credential_id);
     await load();
   } catch (exc) { ElMessage.error(exc instanceof Error ? exc.message : "更新凭据失败"); }
   finally { busy.value = false; }
@@ -87,7 +119,7 @@ async function setCredentialStatus(item: ModelCredential, status: "active" | "di
 async function revoke(item: ModelCredential) {
   try {
     await ElMessageBox.confirm("撤销后密文会被清除，使用它的档案将立即不可用。", "撤销凭据", { type: "warning", confirmButtonText: "确认撤销" });
-    await revokeModelCredential(item.credential_id, { expected_version: item.version, request_id: `browser-revoke-${Date.now()}` });
+    await executeCredential("revoke",{expected_version:item.version},item.credential_id);
     ElMessage.success("凭据已撤销");
     await load();
   } catch (exc) { if (exc !== "cancel" && exc !== "close") ElMessage.error(exc instanceof Error ? exc.message : "撤销失败"); }
@@ -105,16 +137,33 @@ function openProfile() {
   profileDialog.value = true;
 }
 
-async function saveProfile() {
-  if (!profileForm.credential_id || !profileForm.key_name.trim() || !profileForm.display_name.trim()) return ElMessage.warning("请完整填写模型档案");
+async function recoverProfile(){
+  if(!pendingProfile.value)return;busy.value=true;
+  try{
+    const scope=credentialScope(),input=pendingProfile.value;
+    const identity=confirmProfileReceipt(await getModelProfileReceipt(input.key_name),input);
+    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
+    if(!identity){ElMessage.warning('尚未找到原模型档案，请稍后核对或使用原内容重试');return;}
+    finishProfileSubmission(scope,input);pendingProfile.value=null;profileDialog.value=false;await load();ElMessage.success('原模型档案创建已确认');
+  }catch(cause){ElMessage.error(cause instanceof Error?cause.message:'档案核对失败');}finally{busy.value=false;}
+}
+async function saveProfile(useOriginal=false) {
+  if (!useOriginal && (!profileForm.credential_id || !profileForm.key_name.trim() || !profileForm.display_name.trim())) return ElMessage.warning("请完整填写模型档案");
   busy.value = true;
+  let scope='',input:ProfileInput|null=null,previous:ProfileInput|null=null;
   try {
-    await createModelProfile({ ...profileForm });
-    profileDialog.value = false;
-    ElMessage.success("模型档案已创建");
-    await load();
-  } catch (exc) { ElMessage.error(exc instanceof Error ? exc.message : "创建档案失败"); }
-  finally { busy.value = false; }
+    scope=credentialScope();previous=readProfileSubmission(scope);
+    input=beginProfileSubmission(scope,useOriginal?previous:{...profileForm});pendingProfile.value=input;
+    const result=await createModelProfile(input);
+    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
+    confirmProfileReceipt({state:'confirmed',profile_id:result.profile?.profile_id,committed_version:result.profile?.version,
+      input:Object.fromEntries(Object.keys(input).map(k=>[k,result.profile?.[k]]))},input);
+    finishProfileSubmission(scope,input);pendingProfile.value=null;profileDialog.value = false;
+    ElMessage.success("模型档案已创建");await load();
+  } catch (exc) {
+    if(input && !previous && exc instanceof SettingsRequestError && [400,401,403,404,409,422].includes(exc.status)){finishProfileSubmission(scope,input);pendingProfile.value=null;}
+    ElMessage.error(exc instanceof Error ? exc.message : "创建档案失败");
+  } finally { busy.value = false;if(pendingProfile.value)profileDialog.value=false; }
 }
 
 watch(() => profileForm.credential_id, credentialId => {
@@ -127,31 +176,68 @@ watch(() => profileForm.credential_id, credentialId => {
   }
 });
 
+async function executeModelCommand(input:ModelCommand){
+  const scope=credentialScope(),previous=readModelCommand(scope),command=beginModelCommand(scope,input);pendingModelCommand.value=command;
+  try{
+    if(command.operation==='binding'){
+      const {binding}=await updateModelBinding(command.resource_id,command.profile_id,command.expected_version);
+      if(binding.agent_id!==command.resource_id || binding.profile_id!==command.profile_id || binding.version!==command.expected_version+1)throw Error('绑定回执不一致，请核对原操作');
+    }else{
+      const {profile}=await deleteModelProfile(command.resource_id,command.expected_version);
+      if(profile.profile_id!==command.resource_id || profile.status!=='deleted' || profile.version!==command.expected_version+1)throw Error('删除回执不一致，请核对原操作');
+    }
+    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
+    finishModelCommand(scope,command);pendingModelCommand.value=null;
+  }catch(cause){
+    if(!previous && cause instanceof SettingsRequestError && [400,401,403,404,409,422].includes(cause.status)){finishModelCommand(scope,command);pendingModelCommand.value=null;}
+    throw cause;
+  }
+}
+async function recoverModelCommand(){
+  if(!pendingModelCommand.value)return;busy.value=true;
+  try{
+    const scope=credentialScope(),command=pendingModelCommand.value;
+    const confirmed=confirmModelCommand(await getModelCommandReceipt(command),command);
+    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
+    if(!confirmed){ElMessage.warning('尚未找到原模型操作回执，请稍后核对');return;}
+    finishModelCommand(scope,command);pendingModelCommand.value=null;await load();ElMessage.success('原模型操作已确认');
+  }catch(cause){ElMessage.error(cause instanceof Error?cause.message:'模型操作核对失败');}finally{busy.value=false;}
+}
 async function removeProfile(item: ModelProfile) {
   try {
     await ElMessageBox.confirm("删除档案会将关联 Agent 恢复为系统默认。", "删除模型档案", { type: "warning" });
-    await deleteModelProfile(item.profile_id, item.version);
-    await load();
+    busy.value=true;
+    await executeModelCommand({operation:'delete_profile',resource_id:item.profile_id,profile_id:item.profile_id,expected_version:item.version});await load();
   } catch (exc) { if (exc !== "cancel" && exc !== "close") ElMessage.error(exc instanceof Error ? exc.message : "删除失败"); }
+  finally{busy.value=false;}
 }
-
 async function bind(agentId: string, profileId: string | null, version: number) {
   busy.value = true;
   try {
-    await updateModelBinding(agentId, profileId || null, version);
-    ElMessage.success(profileId ? "Agent 模型绑定已更新" : "已恢复系统默认");
-    await load();
+    await executeModelCommand({operation:'binding',resource_id:agentId,profile_id:profileId || null,expected_version:version});
+    ElMessage.success(profileId ? "Agent 模型绑定已更新" : "已恢复系统默认");await load();
   } catch (exc) { ElMessage.error(exc instanceof Error ? exc.message : "绑定失败"); }
   finally { busy.value = false; }
 }
 
 function actionLabel(value: unknown) {
-  return ({ created: "创建", secret_replaced: "替换密钥", enabled: "启用", disabled: "停用", revoked: "撤销" } as Record<string, string>)[String(value)] ?? String(value ?? "-");
+  return ({ created: "创建", secret_replaced: "替换密钥", enabled: "启用", disabled: "停用", revoked: "撤销", revoked_noop: "确认已撤销" } as Record<string, string>)[String(value)] ?? String(value ?? "-");
 }
 </script>
 
 <template>
   <section class="my-space-page">
+    <el-alert v-if="pendingModelCommand" title="有一笔模型操作尚未确认" type="warning" :closable="false" show-icon>
+      <el-button :loading="busy" @click="recoverModelCommand">核对原模型操作</el-button>
+    </el-alert>
+    <el-alert v-if="pendingProfile" title="有一笔模型档案创建尚未确认" type="warning" :closable="false" show-icon>
+      <el-button :loading="busy" @click="recoverProfile">核对原模型档案</el-button>
+      <el-button :loading="busy" @click="saveProfile(true)">使用原档案重试</el-button>
+    </el-alert>
+    <el-alert v-if="pendingCredential" title="有一笔凭据操作尚未确认" type="warning" :closable="false" show-icon>
+      <p>已保存原请求标识，未保存密钥。请先核对；再次提交同一操作时需重新输入密钥。</p>
+      <el-button :loading="busy" @click="recoverCredential">核对原凭据操作</el-button>
+    </el-alert>
     <el-alert title="密钥仅可写入，不会返回浏览器、日志或 WorkflowTrace；运行时通过 Backend 私有边界按当前用户解析。" type="info" show-icon :closable="false" />
     <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
     <div v-else-if="error" class="base-error" role="alert">{{ error }}</div>
@@ -204,7 +290,7 @@ function actionLabel(value: unknown) {
 
     <el-dialog v-model="profileDialog" title="新建模型档案" width="min(560px, 92vw)" destroy-on-close>
       <el-form label-position="top"><el-form-item label="档案名称"><el-input v-model="profileForm.display_name" /></el-form-item><el-form-item label="唯一键"><el-input v-model="profileForm.key_name" placeholder="research-fast" /></el-form-item><el-form-item label="凭据"><el-select v-model="profileForm.credential_id" class="full"><el-option v-for="item in activeCredentials" :key="item.credential_id" :label="`${providerName(item.provider)} · ${item.label} · ${item.masked}`" :value="item.credential_id" /></el-select></el-form-item><el-form-item label="模型"><el-select v-model="profileForm.model" class="full"><el-option v-for="model in modelsForProvider" :key="`${model.provider}:${model.model}`" :label="model.display_name" :value="model.model" /></el-select></el-form-item><el-form-item label="温度"><el-slider v-model="profileForm.temperature" :min="0" :max="2" :step="0.1" show-input /></el-form-item><el-form-item label="推理模式"><el-switch v-model="profileForm.reasoning_enabled" :disabled="!selectedModel?.reasoning_supported" /></el-form-item></el-form>
-      <template #footer><el-button @click="profileDialog = false">取消</el-button><el-button type="primary" :loading="busy" @click="saveProfile">创建档案</el-button></template>
+      <template #footer><el-button @click="profileDialog = false">取消</el-button><el-button type="primary" :loading="busy" @click="saveProfile()">创建档案</el-button></template>
     </el-dialog>
   </section>
 </template>

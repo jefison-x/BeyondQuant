@@ -40,7 +40,7 @@ import {
   fetchByqExperimentCompare,
   fetchByqLearningIterationList,
   fetchByqLearningIterationRecord,
-  fetchByqLearningRunGet,
+  fetchByqLearningRunGet, fetchByqLearningReceipt,
   fetchByqLearningRunReview,
   fetchByqLearningRunStart,
   fetchByqLearningSignalCreate,
@@ -73,11 +73,12 @@ import {
   fetchByqPoolHistory,
   fetchByqPoolLifecycle,
   fetchByqPoolList,
+  fetchByqPoolCreationReconcile,
   fetchByqIndexPoolCatalog, fetchByqIndexPoolCreate, fetchByqIndexPoolStatus, fetchByqIndexPoolReconcile,
   fetchByqPoolSnapshotReplace,
 } from "./stock-pool.js";
 import {
-  fetchByqPaperAccount,
+  fetchByqPaperAccount, fetchByqPaperReceipt,
   fetchByqPaperAccounts,
   fetchByqPaperOrder,
   fetchByqPaperSnapshots,
@@ -118,10 +119,11 @@ import {
   fetchByqDataDemandGet,
   fetchByqDataDemandNotifications,
   type DataDemandRequest,
+  type DataDemandLookup,
 } from "./data-demand.js";
 import { PageCallBudget, boundedIntegerEnvironment } from "./page-budget.js";
 import {
-  fetchByqFeedbackCreate, fetchByqFeedbackGet, fetchByqFeedbackList, fetchByqFeedbackOptions,
+  fetchByqFeedbackCreate, fetchByqFeedbackGet, fetchByqFeedbackReceipt, fetchByqFeedbackList, fetchByqFeedbackOptions,
   fetchByqFeedbackPreview, fetchByqFeedbackSubmit, fetchByqFeedbackUpdate,
 } from "./feedback.js";
 
@@ -311,10 +313,10 @@ async function byqDataDemandCreate(args: DataDemandRequest, extra: unknown) {
   ) : agentContextUnavailable();
 }
 
-async function byqDataDemandGet(args: { demand_id: string }, extra: unknown) {
+async function byqDataDemandGet(args: DataDemandLookup, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqDataDemandGet(
-    BACKEND_URL, args.demand_id, trustedBackendFetcher(context),
+    BACKEND_URL, args, trustedBackendFetcher(context),
   ) : agentContextUnavailable();
 }
 
@@ -384,9 +386,11 @@ async function byqLearningRunStart(args: Record<string, unknown>, extra: unknown
   return context ? fetchByqLearningRunStart(BACKEND_URL, args, context) : agentContextUnavailable();
 }
 
-async function byqLearningRunGet(args: { run_id: string }, extra: unknown) {
+async function byqLearningRunGet(args: { run_id: string } | { task_id: string; idempotency_key: string }, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqLearningRunGet(BACKEND_URL, args.run_id, context) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  return "idempotency_key" in args ? fetchByqLearningReceipt(BACKEND_URL, "run", args, context)
+    : fetchByqLearningRunGet(BACKEND_URL, args.run_id, context);
 }
 
 async function byqLearningIterationRecord(args: { run_id: string } & Record<string, unknown>, extra: unknown) {
@@ -396,9 +400,11 @@ async function byqLearningIterationRecord(args: { run_id: string } & Record<stri
   return fetchByqLearningIterationRecord(BACKEND_URL, run_id, request, context);
 }
 
-async function byqLearningIterationList(args: { run_id: string }, extra: unknown) {
+async function byqLearningIterationList(args: { run_id: string; idempotency_key?: string }, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqLearningIterationList(BACKEND_URL, args.run_id, context) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  return args.idempotency_key ? fetchByqLearningReceipt(BACKEND_URL,"iteration",{run_id:args.run_id,idempotency_key:args.idempotency_key},context)
+    : fetchByqLearningIterationList(BACKEND_URL, args.run_id, context);
 }
 
 async function byqLearningRunReview(args: { run_id: string; decision: string; rationale?: string }, extra: unknown) {
@@ -413,9 +419,11 @@ async function byqLearningSignalCreate(args: Record<string, unknown>, extra: unk
   return context ? fetchByqLearningSignalCreate(BACKEND_URL, args, context) : agentContextUnavailable();
 }
 
-async function byqLearningSignalGet(args: { signal_id: string }, extra: unknown) {
+async function byqLearningSignalGet(args: { signal_id: string } | { task_id: string; idempotency_key: string }, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqLearningSignalGet(BACKEND_URL, args.signal_id, context) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  return "idempotency_key" in args ? fetchByqLearningReceipt(BACKEND_URL, "signal", args, context)
+    : fetchByqLearningSignalGet(BACKEND_URL, args.signal_id, context);
 }
 
 async function byqExperimentCompare(args: Record<string, unknown>, extra: unknown) {
@@ -428,9 +436,11 @@ async function byqLessonPropose(args: Record<string, unknown>, extra: unknown) {
   return context ? fetchByqLessonPropose(BACKEND_URL, args, context) : agentContextUnavailable();
 }
 
-async function byqLessonGet(args: { lesson_id: string }, extra: unknown) {
+async function byqLessonGet(args: { lesson_id: string } | { task_id: string; idempotency_key: string }, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqLessonGet(BACKEND_URL, args.lesson_id, context) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  return "idempotency_key" in args ? fetchByqLearningReceipt(BACKEND_URL, "lesson", args, context)
+    : fetchByqLessonGet(BACKEND_URL, args.lesson_id, context);
 }
 
 async function byqLessonReview(args: { lesson_id: string; decision: string; rationale?: string }, extra: unknown) {
@@ -585,7 +595,8 @@ async function byqMarketFundamentals(args: MarketFundamentalsRequest, extra: unk
 
 async function byqFactorCompute(args: FactorComputeRequest, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqFactorCompute(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqFactorCompute(BACKEND_URL, { ...args, trace_id: context.trace_id },
+    evidenceBoundedFetcher(trustedBackendFetcher(context), rootHeader(extra))) : agentContextUnavailable();
 }
 
 async function byqStrategyDraftSave(args: StrategyRequest, extra: unknown) {
@@ -606,7 +617,8 @@ async function byqStrategyValidate(args: StrategyRequest, extra: unknown) {
 
 async function byqStrategyVersionCreate(args: StrategyRequest, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqStrategyVersionCreate(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqStrategyVersionCreate(BACKEND_URL, { ...args, trace_id: context.trace_id },
+    evidenceBoundedFetcher(trustedBackendFetcher(context), rootHeader(extra))) : agentContextUnavailable();
 }
 
 async function byqStrategyApprove(args: StrategyRequest, extra: unknown) {
@@ -696,8 +708,12 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_feedback_get",
-    { description: "Read one feedback item owned by the current trusted workspace.", inputSchema: { feedback_id: z.string().regex(/^feedback_[0-9a-f]{32}$/) } },
-    (args) => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? fetchByqFeedbackGet(BACKEND_URL, args.feedback_id, fetcher) : agentContextUnavailable(); },
+    { description: "Read one feedback item owned by the current trusted workspace.", inputSchema: z.union([
+      z.object({feedback_id:z.string().regex(/^feedback_[0-9a-f]{32}$/)}).strict(),
+      z.object({operation:z.literal('create'),idempotency_key:z.string().min(1).max(128)}).strict(),
+      z.object({operation:z.enum(['update','submit','withdraw']),idempotency_key:z.string().min(1).max(128),feedback_id:z.string().regex(/^feedback_[0-9a-f]{32}$/)}).strict(),
+    ]) },
+    (args) => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? ('operation' in args ? fetchByqFeedbackReceipt(BACKEND_URL,args,fetcher) : fetchByqFeedbackGet(BACKEND_URL, args.feedback_id, fetcher)) : agentContextUnavailable(); },
   );
   server.registerTool(
     "byq_feedback_create_draft",
@@ -773,12 +789,18 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_pool_get",
-    { description: "Read one owner-scoped BYQ Stock Pool and its current immutable snapshot.", inputSchema: { pool_id: z.string() } },
-    (args) => { const context = poolContext(); return context ? fetchByqPoolGet(BACKEND_URL, args.pool_id, context) : agentContextUnavailable(); },
+    { description: "Read one exact Stock Pool or reconcile its original creation key without replaying a write.", inputSchema: z.union([
+      z.object({ pool_id:z.string() }).strict(),
+      z.object({ creation_kind:z.enum(["custom","index","dynamic"]), idempotency_key:z.string().min(1).max(128) }).strict(),
+    ]) },
+    (args) => { const context = poolContext(); return context ? ("pool_id" in args
+      ? fetchByqPoolGet(BACKEND_URL, args.pool_id, context)
+      : fetchByqPoolCreationReconcile(BACKEND_URL, args.creation_kind, args.idempotency_key, context)) : agentContextUnavailable(); },
   );
   server.registerTool(
     "byq_pool_create",
     { description: "Create an owner-scoped custom Stock Pool and first immutable snapshot.", inputSchema: {
+      idempotency_key: z.string().min(1).max(128),
       name: z.string(), description: z.string().optional(), symbols: z.array(z.string()).min(1),
       weights: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
       definition: z.record(z.string(), z.unknown()).optional(),
@@ -813,8 +835,12 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_paper_account_get",
-    { description: "Read one owner-scoped Paper Trading account projection.", inputSchema: { account_id: z.string() } },
-    (args) => { const context = poolContext(); return context ? fetchByqPaperAccount(BACKEND_URL, args.account_id, context) : agentContextUnavailable(); },
+    { description: "Read one owner-scoped Paper Trading account projection.", inputSchema: z.union([
+      z.object({account_id:z.string()}).strict(),
+      z.object({operation:z.enum(['create','import']),idempotency_key:z.string().min(1).max(128)}).strict(),
+      z.object({operation:z.enum(['order','settlement','controls','rebind','delete']),account_id:z.string(),idempotency_key:z.string().min(1).max(128)}).strict(),
+    ]) },
+    (args) => { const context = poolContext(); return context ? ('operation' in args ? fetchByqPaperReceipt(BACKEND_URL,args,context) : fetchByqPaperAccount(BACKEND_URL, args.account_id, context)) : agentContextUnavailable(); },
   );
   server.registerTool(
     "byq_paper_order_get",
@@ -938,7 +964,8 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_data_demand_create",
     {
       description: "Ask the trusted BYQ Data Center to prepare a bounded frozen stock-pool/date scope. This queues durable repair work and never gives the Agent Provider access.",
-      inputSchema: {
+      inputSchema: z.union([
+        z.object({
         purpose: z.enum(["research", "backtest", "machine_learning"]),
         stock_pool_snapshot_id: z.string(),
         start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -950,7 +977,13 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
           fundamentals: z.array(z.string()).max(12).optional(),
         }).strict().optional(),
         idempotency_key: z.string().min(1).max(128),
-      },
+      }).strict(),
+        z.object({ purpose: z.enum(["research", "backtest", "machine_learning"]),
+          scope_kind: z.literal("index_snapshot"), index_symbol: z.enum(["000016.SH", "000300.SH", "000688.SH", "000852.SH", "000905.SH", "399006.SZ"]),
+          requested_as_of: z.string().regex(/^(?:\d{8}|\d{4}-\d{2}-\d{2})$/),
+          idempotency_key: z.string().min(1).max(128),
+        }).strict(),
+      ]),
     },
     (args) => byqDataDemandCreate(args, trustedContext),
   );
@@ -958,7 +991,10 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_data_demand_get",
     {
       description: "Read verified preparation progress for one owner-scoped data-demand.v1 request.",
-      inputSchema: { demand_id: z.string().regex(/^datademand_[0-9a-f]{32}$/) },
+      inputSchema: z.union([
+        z.object({ demand_id: z.string().regex(/^datademand_[0-9a-f]{32}$/) }).strict(),
+        z.object({ idempotency_key: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) }).strict(),
+      ]),
     },
     (args) => byqDataDemandGet(args, trustedContext),
   );
@@ -1189,49 +1225,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_factor_compute",
     {
       description: "Validate and compute a deterministic BYQ factor from point-in-time snapshots.",
-      inputSchema: {
-        task_id: z.string(),
-        experiment_id: z.string().optional(),
-        trace_id: z.string(),
-        idempotency_key: z.string(),
-        as_of_date: z.string(),
-        factor: z.object({
-          name: z.enum(["daily_return", "momentum"]),
-          version: z.string(),
-          lookback: z.number().int().min(1).max(252),
-        }),
-        securities: z.array(z.object({
-          symbol: z.string(),
-          exchange: z.string().optional(),
-          asset_type: z.enum(["stock", "etf"]),
-          list_date: z.string().nullable().optional(),
-          delist_date: z.string().nullable().optional(),
-        })),
-        sessions: z.array(z.object({ trade_date: z.string(), is_open: z.boolean() })),
-        statuses: z.array(z.object({
-          symbol: z.string(),
-          trade_date: z.string(),
-          state: z.enum(["trading", "suspended"]),
-          reason: z.string().nullable().optional(),
-        })).optional(),
-        bars: z.array(z.object({
-          symbol: z.string(),
-          trade_date: z.string(),
-          open: z.number(),
-          high: z.number(),
-          low: z.number(),
-          close: z.number(),
-        })),
-        universe_snapshots: z.array(z.object({ snapshot_date: z.string(), symbols: z.array(z.string()) })),
-        sources: z.array(z.object({
-          provider: z.string(),
-          endpoint: z.string(),
-          request_fingerprint: z.string(),
-          dataset_id: z.string(),
-          announcement_date: z.string().nullable().optional(),
-          effective_date: z.string().nullable().optional(),
-        })),
-      },
+      inputSchema: domainValidationSchemas.byq_factor_compute,
     },
     (args) => byqFactorCompute(args, trustedContext),
   );
@@ -1269,13 +1263,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_strategy_version_create",
     {
       description: "Materialize an immutable content-addressed StrategyVersion from a validated draft.",
-      inputSchema: {
-        task_id: z.string(),
-        experiment_id: z.string().optional(),
-        draft_artifact_id: z.string(),
-        trace_id: z.string(),
-        idempotency_key: z.string(),
-      },
+      inputSchema: domainValidationSchemas.byq_strategy_version_create,
     },
     (args) => byqStrategyVersionCreate(args, trustedContext),
   );
@@ -1425,7 +1413,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_learning_run_get",
     {
       description: "Read one owner-scoped BYQ learning run and its bounded state.",
-      inputSchema: { run_id: z.string() },
+      inputSchema: z.union([z.object({ run_id: z.string() }).strict(), z.object({ task_id:z.string(), idempotency_key:z.string() }).strict()]),
     },
     (args) => byqLearningRunGet(args, trustedContext),
   );
@@ -1450,7 +1438,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_learning_iteration_list",
     {
       description: "Read the ordered, replayable iteration history of one BYQ learning run.",
-      inputSchema: { run_id: z.string() },
+      inputSchema: { run_id: z.string(), idempotency_key:z.string().optional() },
     },
     (args) => byqLearningIterationList(args, trustedContext),
   );
@@ -1487,7 +1475,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_evaluation_signal_get",
     {
       description: "Read one owner-scoped BYQ evaluation signal.",
-      inputSchema: { signal_id: z.string() },
+      inputSchema: z.union([z.object({ signal_id: z.string() }).strict(), z.object({ task_id:z.string(), idempotency_key:z.string() }).strict()]),
     },
     (args) => byqLearningSignalGet(args, trustedContext),
   );
@@ -1522,7 +1510,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_lesson_get",
     {
       description: "Read one owner-scoped BYQ lesson and its promotion history.",
-      inputSchema: { lesson_id: z.string() },
+      inputSchema: z.union([z.object({ lesson_id: z.string() }).strict(), z.object({ task_id:z.string(), idempotency_key:z.string() }).strict()]),
     },
     (args) => byqLessonGet(args, trustedContext),
   );
@@ -1571,7 +1559,14 @@ const handler = toNodeHandler(continuationAdmission(observedHandler, async (rese
 }));
 
 const httpServer = createServer(async (request, response) => {
-  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  let url: URL;
+  try {
+    // Routing needs only the request target; an untrusted Host is not a URL base.
+    url = new URL(request.url ?? "/", "http://localhost");
+  } catch {
+    writeJson(response, 400, { service: SERVICE, status: "invalid_request" });
+    return;
+  }
 
   if (request.method === "GET" && url.pathname === "/healthz") {
     writeJson(response, 200, healthPayload());
@@ -1589,7 +1584,17 @@ const httpServer = createServer(async (request, response) => {
     return;
   }
 
-  await handler(request, response);
+  try {
+    await handler(request, response);
+  } catch {
+    // A failed transport can follow a committed domain write. Never claim rejection
+    // or retry it here, and never let an async listener rejection kill all sessions.
+    if (response.headersSent || response.writableEnded || response.destroyed) {
+      response.destroy();
+    } else {
+      writeJson(response, 503, { service: SERVICE, status: "outcome_unknown" });
+    }
+  }
 });
 
 httpServer.listen(PORT, "0.0.0.0", () => {

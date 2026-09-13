@@ -1,0 +1,3760 @@
+{
+  "schema_version": "h4-interface-review.v1",
+  "scope": "已人工核对的逐接口行；缺行明确未完成，禁止将全量枚举默认标为通过",
+  "entries": [
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 89,
+      "method": "GET",
+      "path": "/healthz",
+      "handler": "healthz",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "无业务写入",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "只报告进程存活，不证明研究完成",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_plugin_identity.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 94,
+      "method": "GET",
+      "path": "/readyz",
+      "handler": "readyz",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "无业务写入",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "受当前插件/执行器资格约束，不将缺资格视为ready",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_plugin_identity.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 99,
+      "method": "GET",
+      "path": "/internal/runtime/operations",
+      "handler": "runtime_operations",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "有界内存快照",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "诊断信息不作为领域任务完成权威",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 104,
+      "method": "POST",
+      "path": "/internal/runtime/sessions",
+      "handler": "create_session",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "稳定session身份及journal claim；同ID重复明确409",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "初始化失败释放进程/journal；Gateway保留原公开会话身份",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 120,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/prompt",
+      "handler": "submit_prompt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "原key+content hash，执行前持久journal",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "未知回执只读原key/hash；原run不可重新执行",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_runtime_crash_wire.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 150,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/resume",
+      "handler": "resume_session",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "单session锁及新私有generation",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "旧进程清理及terminal ack完成后才准入；不重放旧业务动作",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 168,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/terminal-receipt",
+      "handler": "acknowledge_terminal",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "精确terminal receipt，持久ack",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "写盘失败保留准入屏障；重复ack不生成新run",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 184,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/recover-evidence",
+      "handler": "recover_evidence",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "完整owner/workspace/session/trace及cursor",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "每页最多256，不构造Harness，不调用模型",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_runtime_crash_wire.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 195,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/domain-call-evidence",
+      "handler": "domain_call_evidence",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "精确私有context与cursor",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "闭合私有证据分页，不进入公开SSE；未知证据不授予写权限",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_domain_call_wire.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 206,
+      "method": "GET",
+      "path": "/internal/runtime/sessions/{session_id}/prompts/reconcile",
+      "handler": "reconcile_prompt_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "原key+SHA256匹配",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "重启后读journal；缺记录是outcome_unknown，不能断言未执行",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 219,
+      "method": "GET",
+      "path": "/internal/runtime/sessions/{session_id}/continuation-receipt/{reservation_id}",
+      "handler": "continuation_budget_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "原reservation identity",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "持久预算回执；不存在保持未知，不充值或续期",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_continuation_qualification.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 227,
+      "method": "GET",
+      "path": "/internal/runtime/sessions/{session_id}/continuation-qualification",
+      "handler": "continuation_qualification",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "现有session执行器/模型资格",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "未找到session时qualified=false；不构造会话",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_continuation_qualification.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 238,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/cancel",
+      "handler": "cancel_session",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "当前active run锁及soft/hard闭集",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "hard取消分离原run并关闭所属进程，迟到结果不能更新下一run；重复取消409不启动执行",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 250,
+      "method": "POST",
+      "path": "/internal/runtime/sessions/{session_id}/release",
+      "handler": "release_session",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "单session锁，active/initializing拒绝",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "释放进程和journal，保留持久业务/回执；重复释放404无新效果",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 260,
+      "method": "DELETE",
+      "path": "/internal/runtime/sessions/{session_id}",
+      "handler": "close_session",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "write",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "release别名，同准入",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "与release完全相同，不删除领域任务或持久记录",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_process_cleanup.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/runtime-adapter/app/main.py",
+      "line": 265,
+      "method": "GET",
+      "path": "/internal/runtime/sessions/{session_id}/events",
+      "handler": "events",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Gateway持久会话owner/workspace；此端口仅内部Product网络控制面",
+      "mode": "read-stream",
+      "authorization": "Gateway鉴权与可信会话context；Compose不对浏览器暴露Runtime端口",
+      "idempotency": "BYQ规范化事件sequence",
+      "timeout": "Gateway普通控制HTTP有界；DSH初始化/清理按SDK界限，长根回合按ADR-0072检查而非默认总时长硬终止；SSE为有意长连接",
+      "errors": "闭合HTTP错误/状态；未知不投影成功；私有证据不进入Product投影",
+      "retry": "读可有界重试；写仅按原身份核对，不由本handler调度新业务",
+      "authority": "DSH执行事实+BYQ lifecycle journal；领域完成仍由Backend持久事实决定",
+      "recovery": "断连finally取消订阅；heartbeat无业务写入；公开事件不是私有DSH流",
+      "consumers": [
+        "Gateway runtime bridge/lifecycle consumer"
+      ],
+      "evidence": [
+        "services/runtime-adapter/tests/test_sse_delivery.py",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5115,
+      "method": "POST",
+      "path": "/v1/auth/login",
+      "handler": "login",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "密码KDF校验；每次显式登录产生独立12小时会话，非领域任务重放",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "回执丢失不获得cookie；再次显式登录产生新会话，旧不可见session按过期及禁用失效，不自动重试",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5120,
+      "method": "POST",
+      "path": "/v1/auth/logout",
+      "handler": "logout",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "原session_id删除幂等",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "未收到精确ok回执保留原cookie以重试；Backend已删除时再次删除无额外效果",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5128,
+      "method": "GET",
+      "path": "/v1/auth/session",
+      "handler": "get_session",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "精确session_id及有效期/用户active",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "服务重启从PostgreSQL读取；disabled即使有旧session也拒绝",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5136,
+      "method": "POST",
+      "path": "/v1/users",
+      "handler": "create_user",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "唯一username，用户与个人workspace同事务",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "不自动重试注册；原username在管理员目录可核对，冲突不覆盖既有账号",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5142,
+      "method": "GET",
+      "path": "/v1/users",
+      "handler": "list_users",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "管理员身份",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "数据库目录读取；不得由普通用户/Agent获得管理员列表",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5148,
+      "method": "POST",
+      "path": "/v1/users/{user_id}/disable",
+      "handler": "disable_user",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "设置disabled及删除该user全部session同事务",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "原user_id重复禁用不重新启用/创建session，后续请求再次校验active",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5154,
+      "method": "PUT",
+      "path": "/v1/users/{user_id}/profile",
+      "handler": "update_user_profile",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "owner精确user_id；显式字段赋值（最后保存生效）",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "未知结果回读自己的profile，重新保存仅变更指定字段；不提升角色",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5162,
+      "method": "GET",
+      "path": "/v1/users/{user_id}/ui-preferences",
+      "handler": "get_user_ui_preferences",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "owner精确user_id",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "持久偏好缺省投影，跨owner拒绝",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5170,
+      "method": "PUT",
+      "path": "/v1/users/{user_id}/ui-preferences",
+      "handler": "update_user_ui_preferences",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "expected_version及行锁",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "旧版本重试冲突；回读持久版本和颜色设置，不能用新版本静默覆盖并发修改",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/auth_api.py",
+      "line": 31,
+      "method": "POST",
+      "path": "/login",
+      "handler": "login",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "密码KDF校验；每次显式登录产生独立12小时会话，非领域任务重放",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "回执丢失不获得cookie；再次显式登录产生新会话，旧不可见session按过期及禁用失效，不自动重试",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "0d5109cba0a5b9078e49ac6b35c156b1e007273ba4dd9723a0cbc21b8c68771d"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/auth_api.py",
+      "line": 52,
+      "method": "POST",
+      "path": "/logout",
+      "handler": "logout",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "原session_id删除幂等",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "未收到精确ok回执保留原cookie以重试；Backend已删除时再次删除无额外效果",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "0d5109cba0a5b9078e49ac6b35c156b1e007273ba4dd9723a0cbc21b8c68771d"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/auth_api.py",
+      "line": 68,
+      "method": "GET",
+      "path": "/me",
+      "handler": "me",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "cookie对应精确session/user/workspace",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "Backend超时不当作有效身份，未认证不返回hardcoded user",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "0d5109cba0a5b9078e49ac6b35c156b1e007273ba4dd9723a0cbc21b8c68771d"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 482,
+      "method": "POST",
+      "path": "/auth/login",
+      "handler": "product_login",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "密码KDF校验；每次显式登录产生独立12小时会话，非领域任务重放",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "回执丢失不获得cookie；再次显式登录产生新会话，旧不可见session按过期及禁用失效，不自动重试",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 508,
+      "method": "POST",
+      "path": "/auth/logout",
+      "handler": "product_logout",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "原session_id删除幂等",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "未收到精确ok回执保留原cookie以重试；Backend已删除时再次删除无额外效果",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 522,
+      "method": "GET",
+      "path": "/auth/me",
+      "handler": "product_me",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "cookie对应精确session/user/workspace",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "Backend超时不当作有效身份，未认证不返回hardcoded user",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1521,
+      "method": "GET",
+      "path": "/admin/users",
+      "handler": "product_admin_users",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "管理员身份",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "数据库目录读取；不得由普通用户/Agent获得管理员列表",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1529,
+      "method": "POST",
+      "path": "/admin/users/{user_id}/disable",
+      "handler": "product_admin_disable_user",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "设置disabled及删除该user全部session同事务",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "原user_id重复禁用不重新启用/创建session，后续请求再次校验active",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1549,
+      "method": "GET",
+      "path": "/profile",
+      "handler": "product_profile_get",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "cookie解析唯一用户",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "公开profile闭合投影，不返回password_hash",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1554,
+      "method": "PUT",
+      "path": "/profile",
+      "handler": "product_profile_update",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "cookie解析owner；显式字段赋值",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "只允许显示名/偏好/提示，不接受角色或owner改变；未知后只读回看",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1572,
+      "method": "GET",
+      "path": "/settings/appearance",
+      "handler": "product_appearance_get",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "read",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "cookie解析owner user_id",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "只访问Product API；持久读取无本地假保存",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe"
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1589,
+      "method": "PUT",
+      "path": "/settings/appearance",
+      "handler": "product_appearance_update",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；用户目录/创建/禁用为admin",
+      "mode": "write",
+      "authorization": "浏览器durable session；Gateway派生可信owner/actor-role，Backend内网再次检查owner或admin；登录校验密码",
+      "idempotency": "cookie解析owner及expected_version",
+      "timeout": "Auth链5秒；普通Product后端请求8秒；登录会话有效期12小时不等同于研究回合时长",
+      "errors": "无效身份/归属拒绝；存储失败不返回成功；登录/注销不因请求失败推断服务端完成",
+      "retry": "无自动业务写重放；logout按同一cookie显式重试；有版本写读回后再由用户决定",
+      "authority": "PostgreSQL users/auth_sessions/personal workspace/UI preferences",
+      "recovery": "冲突不自动增版本重试；只读回看持久偏好",
+      "consumers": [
+        "Product浏览器认证/个人设置/管理员用户管理"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_auth.py",
+        "services/backend/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_logout_receipt.py",
+        "services/gateway/tests/test_health.py",
+        "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5210,
+      "method": "GET",
+      "path": "/v1/users/model-catalog",
+      "handler": "get_model_catalog",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "无领域写入；封闭 BYQ 厂商/模型/Agent 目录",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "缺身份拒绝；公开目录移除 runtime_provider；不能推导 Provider 已可用",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5222,
+      "method": "GET",
+      "path": "/v1/users/model-credentials",
+      "handler": "list_model_credentials",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "当前 owner 的完整凭据元数据",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "只读当前状态；masked 投影排除 secret/envelope，不冒充某次写回执",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5231,
+      "method": "GET",
+      "path": "/v1/users/model-credentials/receipts",
+      "handler": "reconcile_model_credential",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner + operation + original request_id + exact credential_id",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原审计版本可跨轮换/撤销核对；无匹配 not_found，歧义冲突，错 owner/动作/目标不认领",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5238,
+      "method": "POST",
+      "path": "/v1/users/model-credentials",
+      "handler": "create_model_credential",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/scope/original key 事务锁；请求 hash 匹配",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "写前保存元数据原键；未知只读核对；8 连接只产生一个对象；历史 NULL owner 歧义拒绝",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5248,
+      "method": "PUT",
+      "path": "/v1/users/model-credentials/{credential_id}",
+      "handler": "update_model_credential",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "expected_version 行锁与审计同事务",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原 request_id 只读回执；旧版本不覆盖；重试拒绝不能清除先前未知记录",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5263,
+      "method": "POST",
+      "path": "/v1/users/model-credentials/{credential_id}/revoke",
+      "handler": "revoke_model_credential",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "版本锁内清除信封；已撤销原键审计复用",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原审计版本恢复；新 no-op 撤销键留无副作用回执，不重复版本/信封写入",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5279,
+      "method": "GET",
+      "path": "/v1/users/model-profiles",
+      "handler": "list_model_profiles",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner 完整目录；公开不可变配置和当前可用性",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "状态只反映当前；不会返回凭据内容；目录不替代原提交精确核对",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5287,
+      "method": "GET",
+      "path": "/v1/users/model-profiles/receipts",
+      "handler": "reconcile_model_profile",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/key_name 唯一且配置不可变",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "创建版本 1 和原配置可在删除后核对；前端完整配置比较，错配置拒绝",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5293,
+      "method": "POST",
+      "path": "/v1/users/model-profiles",
+      "handler": "create_model_profile",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/key_name 数据库唯一约束",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "前端写前冻结配置和原键；未知 GET 原配置核对，不自动换键创建",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5302,
+      "method": "POST",
+      "path": "/v1/users/model-profiles/{profile_id}/delete",
+      "handler": "delete_model_profile",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "expected_version 行锁；解绑与软删除同事务",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原 owner/操作/资源/expected_version 及目标 profile 精确回执；写前保存原版本，刷新 GET 恢复；回执与写入/解绑同事务；历史无回执不补造",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
+        "services/backend/tests/test_model_command_receipts.py",
+        "apps/frontend/src/api/modelCommand.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5316,
+      "method": "GET",
+      "path": "/v1/users/model-bindings",
+      "handler": "list_model_bindings",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner + 封闭 Agent 集合",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "当前绑定版本读取；解析时另核对 profile/credential active，读取不证明原写成功",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5324,
+      "method": "PUT",
+      "path": "/v1/users/model-bindings/{agent_id}",
+      "handler": "put_model_binding",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "版本条件在 UPSERT 中比较并返回原提交行",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原 owner/操作/资源/expected_version 及目标 profile 精确回执；写前保存原版本，刷新 GET 恢复；回执与写入/解绑同事务；历史无回执不补造",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
+        "services/backend/tests/test_model_command_receipts.py",
+        "apps/frontend/src/api/modelCommand.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5339,
+      "method": "GET",
+      "path": "/v1/users/model-credential-audit",
+      "handler": "list_model_credential_audit",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner 限定；limit 1..200",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "安全元数据目录；分页目录不是原键不存在证据，核对走独立 receipt",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5348,
+      "method": "POST",
+      "path": "/internal/credentials/model-resolution",
+      "handler": "resolve_model_credential",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "独立 resolver token；owner/agent/session/trace 验证",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "仅内部 Adapter 解析；无绑定404、失效409、存储503；不把密钥送 Product/MCP/trace",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1607,
+      "method": "GET",
+      "path": "/settings/models",
+      "handler": "product_model_settings",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "durable owner；五个只读 Backend 投影",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "只显示当前配置与状态；不将该目录作为原创建确认，原提交独立 receipts",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1635,
+      "method": "GET",
+      "path": "/settings/models/credentials/receipts",
+      "handler": "product_model_credential_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner + operation + original request_id + exact credential_id",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原审计版本可跨轮换/撤销核对；无匹配 not_found，歧义冲突，错 owner/动作/目标不认领",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1644,
+      "method": "POST",
+      "path": "/settings/models/credentials",
+      "handler": "product_model_credential_create",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/scope/original key 事务锁；请求 hash 匹配",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "写前保存元数据原键；未知只读核对；8 连接只产生一个对象；历史 NULL owner 歧义拒绝",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1658,
+      "method": "PUT",
+      "path": "/settings/models/credentials/{credential_id}",
+      "handler": "product_model_credential_update",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "expected_version 行锁与审计同事务",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原 request_id 只读回执；旧版本不覆盖；重试拒绝不能清除先前未知记录",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1673,
+      "method": "POST",
+      "path": "/settings/models/credentials/{credential_id}/revoke",
+      "handler": "product_model_credential_revoke",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "版本锁内清除信封；已撤销原键审计复用",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原审计版本恢复；新 no-op 撤销键留无副作用回执，不重复版本/信封写入",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1688,
+      "method": "GET",
+      "path": "/settings/models/profiles/receipts",
+      "handler": "product_model_profile_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/key_name 唯一且配置不可变",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "创建版本 1 和原配置可在删除后核对；前端完整配置比较，错配置拒绝",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1694,
+      "method": "POST",
+      "path": "/settings/models/profiles",
+      "handler": "product_model_profile_create",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/key_name 数据库唯一约束",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "前端写前冻结配置和原键；未知 GET 原配置核对，不自动换键创建",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1708,
+      "method": "POST",
+      "path": "/settings/models/profiles/{profile_id}/delete",
+      "handler": "product_model_profile_delete",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "expected_version 行锁；解绑与软删除同事务",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原 owner/操作/资源/expected_version 及目标 profile 精确回执；写前保存原版本，刷新 GET 恢复；回执与写入/解绑同事务；历史无回执不补造",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
+        "services/backend/tests/test_model_command_receipts.py",
+        "apps/frontend/src/api/modelCommand.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1723,
+      "method": "PUT",
+      "path": "/settings/models/bindings/{agent_id}",
+      "handler": "product_model_binding_update",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "版本条件在 UPSERT 中比较并返回原提交行",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原 owner/操作/资源/expected_version 及目标 profile 精确回执；写前保存原版本，刷新 GET 恢复；回执与写入/解绑同事务；历史无回执不补造",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
+        "services/backend/tests/test_model_command_receipts.py",
+        "apps/frontend/src/api/modelCommand.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5317,
+      "method": "GET",
+      "path": "/v1/users/model-commands/receipts",
+      "handler": "reconcile_model_command",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/operation/resource/original expected_version 与 profile 精确匹配",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "后续改绑/删除后仍返回原提交版本；错 owner/目标/原版本不返回；不使用当前目录认领原操作",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_model_command_receipts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
+        "apps/frontend/src/api/modelCommand.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1708,
+      "method": "GET",
+      "path": "/settings/models/commands/receipts",
+      "handler": "product_model_command_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/operation/resource/original expected_version 与 profile 精确匹配",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "后续改绑/删除后仍返回原提交版本；错 owner/目标/原版本不返回；不使用当前目录认领原操作",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_model_command_receipts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
+        "apps/frontend/src/api/modelCommand.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5396,
+      "method": "GET",
+      "path": "/v1/users/agent-policy/receipts",
+      "handler": "reconcile_user_agent_policy",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "read",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "owner/原 request_id/operation/resource 精确匹配",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "返回原提交结果；删除规则或后续改动后仍可核对，不以当前设置代替原命令",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5402,
+      "method": "GET",
+      "path": "/v1/users/agent-policy",
+      "handler": "get_user_agent_policy",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "read",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "owner 当前偏好、完整规则、闭合预设及有界审计目录",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "目录不替代原命令回执；超时不返回空规则作为不存在",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5413,
+      "method": "PUT",
+      "path": "/v1/users/agent-policy",
+      "handler": "update_user_agent_policy",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "公开 request_id 必填；规范输入 hash + owner 事务锁",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "原键重试返回原设置，不覆盖后续保存；回执失败回滚偏好",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5420,
+      "method": "POST",
+      "path": "/v1/users/agent-policy/rules",
+      "handler": "create_user_agent_policy_rule",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "原键 + 规范规则 hash + owner 事务锁",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "8 连接原键只建一条规则/一条审计；删除后重放创建不重新建规则",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5432,
+      "method": "PUT",
+      "path": "/v1/users/agent-policy/rules/{rule_id}",
+      "handler": "update_user_agent_policy_rule",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "原键先核对再检查 expected_version",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "后续删除仍返回原更新版本；不同输入复用原键409；回执与规则更新同事务",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5449,
+      "method": "POST",
+      "path": "/v1/users/agent-policy/rules/{rule_id}/delete",
+      "handler": "delete_user_agent_policy_rule",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "原键先核对再检查目标/expected_version",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "删除与审计/回执同事务；删除后原键重试不重复副作用",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5466,
+      "method": "POST",
+      "path": "/v1/users/agent-policy/presets/{preset_id}/apply",
+      "handler": "apply_user_agent_policy_preset",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "闭合预设 + 原键 + owner 事务锁",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "原规则替换结果和生成ID同事务保存；原键重试不覆盖之后新建的规则",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1746,
+      "method": "GET",
+      "path": "/settings/agent-policy",
+      "handler": "product_agent_policy",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "read",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "owner 当前偏好、完整规则、闭合预设及有界审计目录",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "目录不替代原命令回执；超时不返回空规则作为不存在",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1776,
+      "method": "GET",
+      "path": "/settings/agent-policy/receipts",
+      "handler": "product_agent_policy_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "read",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "owner/原 request_id/operation/resource 精确匹配",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "返回原提交结果；删除规则或后续改动后仍可核对，不以当前设置代替原命令",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1784,
+      "method": "PUT",
+      "path": "/settings/agent-policy",
+      "handler": "product_agent_policy_update",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "公开 request_id 必填；规范输入 hash + owner 事务锁",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "原键重试返回原设置，不覆盖后续保存；回执失败回滚偏好",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1796,
+      "method": "POST",
+      "path": "/settings/agent-policy/rules",
+      "handler": "product_agent_policy_rule_create",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "原键 + 规范规则 hash + owner 事务锁",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "8 连接原键只建一条规则/一条审计；删除后重放创建不重新建规则",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1810,
+      "method": "PUT",
+      "path": "/settings/agent-policy/rules/{rule_id}",
+      "handler": "product_agent_policy_rule_update",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "原键先核对再检查 expected_version",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "后续删除仍返回原更新版本；不同输入复用原键409；回执与规则更新同事务",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1825,
+      "method": "POST",
+      "path": "/settings/agent-policy/rules/{rule_id}/delete",
+      "handler": "product_agent_policy_rule_delete",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "原键先核对再检查目标/expected_version",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "删除与审计/回执同事务；删除后原键重试不重复副作用",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1840,
+      "method": "POST",
+      "path": "/settings/agent-policy/presets/{preset_id}/apply",
+      "handler": "product_agent_policy_preset_apply",
+      "audit_status": "VERIFIED_OK",
+      "owner": "当前 durable BYQ 用户；不接受 payload owner/actor 覆盖",
+      "mode": "write",
+      "authorization": "Product 用户身份→可信 owner/actor→Backend；个人 auto_approve 不能绕过平台审批，现有 auto_deny 语义保留",
+      "idempotency": "闭合预设 + 原键 + owner 事务锁",
+      "timeout": "进程锁2s、数据库锁2s、单语句5s；Gateway每次Backend8s，settings浏览器15s；不涉及研究总时长",
+      "errors": "缺键/非法规则422，原键错输入或版本409，错目标404，存储503安全消息；未知不投影成功",
+      "retry": "页面写前保存原键及闭合配置，刷新GET核对；显式重试沿用原键；旧未知不因后续拒绝丢弃；人工设置不触发DSH纠错循环",
+      "authority": "PostgreSQL user policy/rules/audit/command receipts；同事务效果及回执",
+      "recovery": "原规则替换结果和生成ID同事务保存；原键重试不覆盖之后新建的规则",
+      "consumers": [
+        "Product个人审批策略页面；Backend授权只读评估"
+      ],
+      "evidence": [
+        "services/backend/tests/test_user_policy.py",
+        "services/backend/tests/test_user_policy_receipts.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/policySubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/user_policy.py": "sha256:5d78a8fcb05bf59d4a367b2a3e7f7878d29ed2a0e4ee24ed3318ff927302e2f8",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1946,
+      "method": "GET",
+      "path": "/v1/research/submissions/reconcile",
+      "handler": "reconcile_research_submission",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "原owner/workspace/entity_type/key及必要原task精确查询；未命中仍unknown，不调用创建或列表",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_submission_reconciliation.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1963,
+      "method": "GET",
+      "path": "/v1/research/submission-watches/{watch_id}",
+      "handler": "get_research_submission_watch",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "精确watch ID、owner/workspace和原会话身份核对；GET不消耗新的核对预算",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_receipt_watches.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1969,
+      "method": "GET",
+      "path": "/v1/product/research/submission-watches/{conversation_id}",
+      "handler": "list_research_submission_watches",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "原会话身份及owner/workspace；最多64条展示，不据截断列表认定原提交不存在",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_receipt_watches.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 1996,
+      "method": "GET",
+      "path": "/v1/research/tasks/{task_id}",
+      "handler": "get_research_task",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "精确task ID和owner；handoff再次核对workspace/有效成员，缺原会话明确blocked",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_api.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2009,
+      "method": "GET",
+      "path": "/v1/research/tasks/{task_id}/handoff",
+      "handler": "get_research_task_handoff",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "只读一致性快照；最多64引用并报告has_more，完成判断来自持久领域事实",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_handoff.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2015,
+      "method": "GET",
+      "path": "/v1/research/tasks/{task_id}/continuation-permission",
+      "handler": "get_research_continuation_permission",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "必须为原任务有效human owner和原会话；只投影许可及预算，can_start固定false，不执行续接",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_continuation.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2037,
+      "method": "GET",
+      "path": "/v1/research/tasks",
+      "handler": "list_research_tasks",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "owner过滤，固定最近200条目录；目录缺项不能证明原提交不存在",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2057,
+      "method": "GET",
+      "path": "/v1/research/experiments/{experiment_id}",
+      "handler": "get_experiment",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "规范化精确experiment ID和owner；返回持久对象，不推断原任务完成",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_api.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2070,
+      "method": "GET",
+      "path": "/v1/research/experiments",
+      "handler": "list_experiments",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "owner过滤，固定最近200条目录，不用列表替代原键恢复",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2136,
+      "method": "GET",
+      "path": "/v1/research/artifacts/{artifact_id}",
+      "handler": "get_artifact",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "规范化精确Artifact ID和owner；保留领域kind及原task供消费者交叉核对",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research_api.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2149,
+      "method": "GET",
+      "path": "/v1/research/artifacts",
+      "handler": "list_artifacts",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信Agent context的owner及个人workspace；许可/会话回执追加原人类/会话归属核对",
+      "mode": "read",
+      "authorization": "内部Backend可信context；Product由Gateway耐久登录构造，MCP由可信根context构造；不接受查询参数自报owner",
+      "idempotency": "只读，不重写业务、不生成新的提交身份",
+      "timeout": "ResearchStore进程锁2秒、数据库锁2秒、单SQL5秒；handoff引用有界；不是整个研究或所有网络等待的总期限",
+      "errors": "非法输入422、越权对象404、存储错误安全503；未知不显示成功",
+      "retry": "调用方可有界只读重查；不自动重写、不从目录缺项推断不存在",
+      "authority": "Backend PostgreSQL持久研究对象/回执/许可，DSH回合状态不替代领域完成",
+      "recovery": "owner过滤，固定最近200条目录；Artifact存在不等同validated或研究完成",
+      "consumers": [
+        "Gateway Product API 或 BeyondQuant MCP规范化研究读取"
+      ],
+      "evidence": [
+        "services/backend/tests/test_research.py",
+        "services/backend/tests/test_research_storage_bounds.py",
+        "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
+        "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
+        "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 751,
+      "method": "POST",
+      "path": "/internal/feedback-hub/heartbeat",
+      "handler": "feedback_hub_heartbeat",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "write",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      },
+      "recovery": "仅更新配置和心跳，不证明Hub可用或反馈送达",
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 757,
+      "method": "POST",
+      "path": "/internal/feedback-hub/claim",
+      "handler": "feedback_hub_claim",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "write",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      },
+      "recovery": "SKIP LOCKED领取到期原事件、递增fence；崩溃后重领仍受8次上限",
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 763,
+      "method": "POST",
+      "path": "/internal/feedback-hub/{event_id}/complete",
+      "handler": "feedback_hub_complete",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "write",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      },
+      "recovery": "只接受原事件有效lease/fence和原receipt，过期worker不能覆盖",
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 769,
+      "method": "POST",
+      "path": "/internal/feedback-hub/{event_id}/retry",
+      "handler": "feedback_hub_retry",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "write",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      },
+      "recovery": "原lease失败转持久等待或终止，终止不等于送达",
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 775,
+      "method": "POST",
+      "path": "/internal/feedback-hub/status-checks/claim",
+      "handler": "feedback_hub_status_checks_claim",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "write",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      },
+      "recovery": "读取候选与30秒预约同事务；重启后失败候选不会持续占据队首",
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 781,
+      "method": "GET",
+      "path": "/internal/feedback-hub/status-candidates",
+      "handler": "feedback_hub_status_candidates",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "read",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      },
+      "recovery": "只读至多20条诊断，不以缺项证明不存在；非relay调度入口",
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 787,
+      "method": "POST",
+      "path": "/internal/feedback-hub/{event_id}/status",
+      "handler": "feedback_hub_status",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "write",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      },
+      "recovery": "原receipt行锁、可达状态核对，拒绝迟到回退与published issue替换",
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 574,
+      "method": "GET",
+      "path": "/v1/feedback/items",
+      "handler": "feedback_items",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner/actor及个人workspace",
+      "mode": "read",
+      "authorization": "Gateway耐久身份或MCP可信context，Backend按workspace过滤",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "个人workspace过滤；最多100条分页，不以本页缺项推断不存在",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 595,
+      "method": "GET",
+      "path": "/v1/feedback/receipts",
+      "handler": "feedback_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner/actor及个人workspace",
+      "mode": "read",
+      "authorization": "Gateway耐久身份或MCP可信context，Backend按workspace过滤",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "原actor/workspace/operation/key和对象核对；读取原命令结果而非最新状态",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 602,
+      "method": "GET",
+      "path": "/v1/feedback/items/{feedback_id}",
+      "handler": "feedback_get",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner/actor及个人workspace",
+      "mode": "read",
+      "authorization": "Gateway耐久身份或MCP可信context，Backend按workspace过滤",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "原ID+workspace读取当前持久对象及不可变revision；跨workspace404",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 619,
+      "method": "GET",
+      "path": "/v1/feedback/items/{feedback_id}/revisions",
+      "handler": "feedback_revisions",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner/actor及个人workspace",
+      "mode": "read",
+      "authorization": "Gateway耐久身份或MCP可信context，Backend按workspace过滤",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "先校验owner再返回最多50条revision元数据；无写入",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 629,
+      "method": "POST",
+      "path": "/v1/feedback/items/{feedback_id}/preview",
+      "handler": "feedback_preview",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner/actor及个人workspace",
+      "mode": "read",
+      "authorization": "Gateway耐久身份或MCP可信context，Backend按workspace过滤",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "原版本核对并生成脱敏披露预览；POST但不提交或生成outbox",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 670,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/items",
+      "handler": "feedback_moderation_items",
+      "audit_status": "VERIFIED_OK",
+      "owner": "平台admin仅限已提交脱敏反馈",
+      "mode": "read",
+      "authorization": "Gateway耐久身份构造可信admin actor/role，Backend再次要求admin",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "admin只见已提交脱敏快照，目录最多100条，不读用户草稿",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 681,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/items/{feedback_id}",
+      "handler": "feedback_moderation_get",
+      "audit_status": "VERIFIED_OK",
+      "owner": "平台admin仅限已提交脱敏反馈",
+      "mode": "read",
+      "authorization": "Gateway耐久身份构造可信admin actor/role，Backend再次要求admin",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "admin按原ID读取非draft投影，无workspace原草稿内容",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 687,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/items/{feedback_id}/audit",
+      "handler": "feedback_moderation_audit",
+      "audit_status": "VERIFIED_OK",
+      "owner": "平台admin仅限已提交脱敏反馈",
+      "mode": "read",
+      "authorization": "Gateway耐久身份构造可信admin actor/role，Backend再次要求admin",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "admin原ID、最多50条过滤审计；不暴露actor身份或原detail",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 705,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/publisher-status",
+      "handler": "feedback_publisher_status",
+      "audit_status": "VERIFIED_OK",
+      "owner": "平台admin仅限已提交脱敏反馈",
+      "mode": "read",
+      "authorization": "Gateway耐久身份构造可信admin actor/role，Backend再次要求admin",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "admin有界状态聚合；心跳新鲜不等同外部发布成功",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 719,
+      "method": "POST",
+      "path": "/internal/feedback-publications/heartbeat",
+      "handler": "feedback_publisher_heartbeat",
+      "audit_status": "VERIFIED_OK",
+      "owner": "独立publisher服务身份",
+      "mode": "write",
+      "authorization": "内部专用publisher token，缺配置503/缺凭据401",
+      "idempotency": "原outbox事件、lease fence和单次create许可；无自动新身份",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "固定仓库及credential种类登记；不授予Product Agent GitHub权限",
+      "consumers": [
+        "独立feedback-publisher"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 725,
+      "method": "POST",
+      "path": "/internal/feedback-publications/claim",
+      "handler": "feedback_publication_claim",
+      "audit_status": "VERIFIED_OK",
+      "owner": "独立publisher服务身份",
+      "mode": "write",
+      "authorization": "内部专用publisher token，缺配置503/缺凭据401",
+      "idempotency": "原outbox事件、lease fence和单次create许可；无自动新身份",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "原outbox到期领取与fence持久化；崩溃重领仍受6次上限",
+      "consumers": [
+        "独立feedback-publisher"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 731,
+      "method": "POST",
+      "path": "/internal/feedback-publications/{event_id}/begin-create",
+      "handler": "feedback_publication_begin_create",
+      "audit_status": "VERIFIED_OK",
+      "owner": "独立publisher服务身份",
+      "mode": "write",
+      "authorization": "内部专用publisher token，缺配置503/缺凭据401",
+      "idempotency": "原outbox事件、lease fence和单次create许可；无自动新身份",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "有效原lease原fence下只消费一次create许可；丢回执不重新授予，旧事件仅核对",
+      "consumers": [
+        "独立feedback-publisher"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 737,
+      "method": "POST",
+      "path": "/internal/feedback-publications/{event_id}/complete",
+      "handler": "feedback_publication_complete",
+      "audit_status": "VERIFIED_OK",
+      "owner": "独立publisher服务身份",
+      "mode": "write",
+      "authorization": "内部专用publisher token，缺配置503/缺凭据401",
+      "idempotency": "原outbox事件、lease fence和单次create许可；无自动新身份",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "原lease/fence与固定仓库/canonical URL，映射和published同事务；允许只读核对后完成",
+      "consumers": [
+        "独立feedback-publisher"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 743,
+      "method": "POST",
+      "path": "/internal/feedback-publications/{event_id}/retry",
+      "handler": "feedback_publication_retry",
+      "audit_status": "VERIFIED_OK",
+      "owner": "独立publisher服务身份",
+      "mode": "write",
+      "authorization": "内部专用publisher token，缺配置503/缺凭据401",
+      "idempotency": "原outbox事件、lease fence和单次create许可；无自动新身份",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "原lease/fence，闭合错误分类和次数上限；unknown保留原事件，不创建新outbox",
+      "consumers": [
+        "独立feedback-publisher"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 568,
+      "method": "GET",
+      "path": "/v1/feedback/options",
+      "handler": "feedback_options",
+      "audit_status": "VERIFIED_OK",
+      "owner": "原管理员actor；options为已登录个人workspace用户",
+      "mode": "read",
+      "authorization": "Gateway耐久登录，moderation再次校验admin；options要求可信研究context",
+      "idempotency": "审核原actor/action/feedback/key及payload hash；读不创建命令",
+      "timeout": "短事务进程/数据库锁2秒、SQL5秒；浏览器命令/核对15秒；非整个研究期限",
+      "errors": "拒绝403、缺对象404、冲突409、参数422、存储503；未知保留原请求",
+      "retry": "核对只读；用户显式重试使用原key和原payload，不新建替代操作",
+      "authority": "Backend PostgreSQL原命令结果、审核audit和outbox；浏览器缓存仅恢复请求意图",
+      "recovery": "静态有界选项及publisher新鲜度；存储失败统一安全503，不证明外部发布成功",
+      "consumers": [
+        "管理员Product反馈页面；options为用户反馈页面"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_moderation_recovery.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/feedbackModerationSubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-feedback-recovery.spec.ts",
+        "docs/evidence/research-handoff-h4/FEEDBACK-MODERATION-RECOVERY.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "apps/frontend/src/api/feedback.ts": "sha256:71488d27c64798229d45857dbc7e7e4a98d2cd2429919a5f6b80ba501494c283",
+        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:70e54a679eda75eecede6ac0ad03d32200ed35274749092736851211715c3cfb",
+        "apps/frontend/src/views/FeedbackAdminView.vue": "sha256:7142785ad570f201b358753f97aa8c0968dfe9fb99068599b51ce5b57fdb4509",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "apps/frontend/src/api/pendingStorage.ts": "sha256:b8ad6577068a84fac0bda65eb42fb1304db3c5838bf14aa61ee48197cfeef0c3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 670,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/receipts",
+      "handler": "feedback_moderation_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "原管理员actor；options为已登录个人workspace用户",
+      "mode": "read",
+      "authorization": "Gateway耐久登录，moderation再次校验admin；options要求可信研究context",
+      "idempotency": "审核原actor/action/feedback/key及payload hash；读不创建命令",
+      "timeout": "短事务进程/数据库锁2秒、SQL5秒；浏览器命令/核对15秒；非整个研究期限",
+      "errors": "拒绝403、缺对象404、冲突409、参数422、存储503；未知保留原请求",
+      "retry": "核对只读；用户显式重试使用原key和原payload，不新建替代操作",
+      "authority": "Backend PostgreSQL原命令结果、审核audit和outbox；浏览器缓存仅恢复请求意图",
+      "recovery": "admin原actor/action/key读取原moderation结果；后续状态变化不覆盖原回执",
+      "consumers": [
+        "管理员Product反馈页面；options为用户反馈页面"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_moderation_recovery.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/feedbackModerationSubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-feedback-recovery.spec.ts",
+        "docs/evidence/research-handoff-h4/FEEDBACK-MODERATION-RECOVERY.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "apps/frontend/src/api/feedback.ts": "sha256:71488d27c64798229d45857dbc7e7e4a98d2cd2429919a5f6b80ba501494c283",
+        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:70e54a679eda75eecede6ac0ad03d32200ed35274749092736851211715c3cfb",
+        "apps/frontend/src/views/FeedbackAdminView.vue": "sha256:7142785ad570f201b358753f97aa8c0968dfe9fb99068599b51ce5b57fdb4509",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "apps/frontend/src/api/pendingStorage.ts": "sha256:b8ad6577068a84fac0bda65eb42fb1304db3c5838bf14aa61ee48197cfeef0c3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 704,
+      "method": "POST",
+      "path": "/v1/feedback/moderation/items/{feedback_id}/{action}",
+      "handler": "feedback_moderate",
+      "audit_status": "VERIFIED_OK",
+      "owner": "原管理员actor；options为已登录个人workspace用户",
+      "mode": "write",
+      "authorization": "Gateway耐久登录，moderation再次校验admin；options要求可信研究context",
+      "idempotency": "审核原actor/action/feedback/key及payload hash；读不创建命令",
+      "timeout": "短事务进程/数据库锁2秒、SQL5秒；浏览器命令/核对15秒；非整个研究期限",
+      "errors": "拒绝403、缺对象404、冲突409、参数422、存储503；未知保留原请求",
+      "retry": "核对只读；用户显式重试使用原key和原payload，不新建替代操作",
+      "authority": "Backend PostgreSQL原命令结果、审核audit和outbox；浏览器缓存仅恢复请求意图",
+      "recovery": "原action/key/hash与row lock，结果和audit/outbox同事务；浏览器待确认记录阻止新键替代",
+      "consumers": [
+        "管理员Product反馈页面；options为用户反馈页面"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_moderation_recovery.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/feedbackModerationSubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-feedback-recovery.spec.ts",
+        "docs/evidence/research-handoff-h4/FEEDBACK-MODERATION-RECOVERY.md"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "apps/frontend/src/api/feedback.ts": "sha256:71488d27c64798229d45857dbc7e7e4a98d2cd2429919a5f6b80ba501494c283",
+        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:70e54a679eda75eecede6ac0ad03d32200ed35274749092736851211715c3cfb",
+        "apps/frontend/src/views/FeedbackAdminView.vue": "sha256:7142785ad570f201b358753f97aa8c0968dfe9fb99068599b51ce5b57fdb4509",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "apps/frontend/src/api/pendingStorage.ts": "sha256:b8ad6577068a84fac0bda65eb42fb1304db3c5838bf14aa61ee48197cfeef0c3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2491,
+      "method": "GET",
+      "path": "/feedback/moderation/receipts",
+      "handler": "product_feedback_moderation_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "原管理员actor；options为已登录个人workspace用户",
+      "mode": "read",
+      "authorization": "Gateway耐久登录，moderation再次校验admin；options要求可信研究context",
+      "idempotency": "审核原actor/action/feedback/key及payload hash；读不创建命令",
+      "timeout": "短事务进程/数据库锁2秒、SQL5秒；浏览器命令/核对15秒；非整个研究期限",
+      "errors": "拒绝403、缺对象404、冲突409、参数422、存储503；未知保留原请求",
+      "retry": "核对只读；用户显式重试使用原key和原payload，不新建替代操作",
+      "authority": "Backend PostgreSQL原命令结果、审核audit和outbox；浏览器缓存仅恢复请求意图",
+      "recovery": "只读Product入口构造可信admin头，精确query透传，不转发workspace或用户提交的actor",
+      "consumers": [
+        "管理员Product反馈页面；options为用户反馈页面"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_moderation_recovery.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/feedbackModerationSubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-feedback-recovery.spec.ts",
+        "docs/evidence/research-handoff-h4/FEEDBACK-MODERATION-RECOVERY.md"
+      ],
+      "source_sha256": "69ceb4b6721b6c4e3f5a44230a0880ad0dcac3c8bf65566abf14aaadf24bddbe",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:e22851d9e55afbc8ef4fdb4952fcb9009c3f56c26c032885d8f9b2869c2afc73",
+        "apps/frontend/src/api/feedback.ts": "sha256:71488d27c64798229d45857dbc7e7e4a98d2cd2429919a5f6b80ba501494c283",
+        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:70e54a679eda75eecede6ac0ad03d32200ed35274749092736851211715c3cfb",
+        "apps/frontend/src/views/FeedbackAdminView.vue": "sha256:7142785ad570f201b358753f97aa8c0968dfe9fb99068599b51ce5b57fdb4509",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "apps/frontend/src/api/pendingStorage.ts": "sha256:b8ad6577068a84fac0bda65eb42fb1304db3c5838bf14aa61ee48197cfeef0c3"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 2263,
+      "method": "POST",
+      "path": "/v1/research/strategies/versions",
+      "handler": "create_strategy_version",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Backend 原研究任务 owner/workspace 与原草稿；Agent 还须原 root/registered AgentRun/trace/generation 凭证",
+      "mode": "write",
+      "authorization": "ADR-0073 既有工具逐项资格；MCP completeAgentContext 与 Backend _required_agent_context；不扩大角色权限，人类 Product 路径不扣 Agent 纠错额度",
+      "idempotency": "原 task/action/key 与完整输入摘要；同键异输入拒绝，内容寻址版本保留每个原键回执",
+      "timeout": "MCP 既有有界 HTTP/凭证等待；Backend 2秒锁等待、5秒短SQL；不在领域事务内调用模型或外部 Provider",
+      "errors": "可信 SDK schema 错误可修正一次；来源证据损坏、身份错误和存储异常不伪装成可修正；未知结果不退还额度",
+      "retry": "仅原调用凭证 pending 时有界原请求等待；不自动重发未知写；最多一次不同输入修正，换键不算进展",
+      "authority": "BYQ PostgreSQL task/draft/version 与持久调用账本，DSH 负责通用执行和停止",
+      "recovery": "版本/validated转换/成功回执在 Agent 同事务；重启原键返回原结果；插入后失败回滚并保留unknown；并发取消等待提交",
+      "consumers": [
+        "BYQ MCP strategy tools",
+        "Gateway Product strategy workflow"
+      ],
+      "evidence": [
+        "docs/evidence/research-handoff-h4/STRATEGY-VERSION-QUALIFICATION.md",
+        "services/backend/tests/test_strategy_version_correction.py",
+        "services/backend/tests/test_domain_call_evidence.py",
+        "services/backend/tests/test_domain_correction_admission.py",
+        "services/mcp/tests/domain-server-wire-test.ts",
+        "services/mcp/tests/domain-schema-observation-test.ts",
+        "services/runtime-adapter/tests/test_domain_call_wire.py"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "packages/contracts/domain_call_admission.py": "sha256:5d378db61e2223862bec4ba9c9f66e8a55e5a8f497c0f332c25b05fa9bb865f1",
+        "services/backend/app/domain_call_admission.py": "sha256:5479e361ce78b5fb6f113927bda22bb2eb86258ad96d4bbbad589e90781a020b",
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "services/mcp/src/domain-validation-schema.ts": "sha256:e0454153f2f29caaefc0174939bb59c0442379a0f05bcb11e438875dab03a191",
+        "services/mcp/src/domain-admission.ts": "sha256:f5c4fa396a5d1d8629073b9ae5f8e3ffb738708b11d42e44f3636b608528529e",
+        "services/mcp/src/strategy.ts": "sha256:fac4515504840c96c72107de196ba9b765610560d172d214523fb7990200eefe",
+        "services/runtime-adapter/app/runtime.py": "sha256:cf1ab277821cd448750b9b18ad1bc699eb94c23e8ffead568d381d98288f046b"
+      }
+    },
+    {
+      "kind": "mcp_tool",
+      "file": "services/mcp/src/server.ts",
+      "line": 1262,
+      "name": "byq_strategy_version_create",
+      "audit_status": "VERIFIED_OK",
+      "owner": "Backend 原研究任务 owner/workspace 与原草稿；Agent 还须原 root/registered AgentRun/trace/generation 凭证",
+      "mode": "write",
+      "authorization": "ADR-0073 既有工具逐项资格；MCP completeAgentContext 与 Backend _required_agent_context；不扩大角色权限，人类 Product 路径不扣 Agent 纠错额度",
+      "idempotency": "原 task/action/key 与完整输入摘要；同键异输入拒绝，内容寻址版本保留每个原键回执",
+      "timeout": "MCP 既有有界 HTTP/凭证等待；Backend 2秒锁等待、5秒短SQL；不在领域事务内调用模型或外部 Provider",
+      "errors": "可信 SDK schema 错误可修正一次；来源证据损坏、身份错误和存储异常不伪装成可修正；未知结果不退还额度",
+      "retry": "仅原调用凭证 pending 时有界原请求等待；不自动重发未知写；最多一次不同输入修正，换键不算进展",
+      "authority": "BYQ PostgreSQL task/draft/version 与持久调用账本，DSH 负责通用执行和停止",
+      "recovery": "版本/validated转换/成功回执在 Agent 同事务；重启原键返回原结果；插入后失败回滚并保留unknown；并发取消等待提交",
+      "consumers": [
+        "BYQ MCP strategy tools",
+        "Gateway Product strategy workflow"
+      ],
+      "evidence": [
+        "docs/evidence/research-handoff-h4/STRATEGY-VERSION-QUALIFICATION.md",
+        "services/backend/tests/test_strategy_version_correction.py",
+        "services/backend/tests/test_domain_call_evidence.py",
+        "services/backend/tests/test_domain_correction_admission.py",
+        "services/mcp/tests/domain-server-wire-test.ts",
+        "services/mcp/tests/domain-schema-observation-test.ts",
+        "services/runtime-adapter/tests/test_domain_call_wire.py"
+      ],
+      "source_sha256": "ec06a08139b74cce43801ec53868bc1d0ad56a4902ac766ceda81beb8e6dc6ee",
+      "dependencies_sha256": {
+        "packages/contracts/domain_call_admission.py": "sha256:5d378db61e2223862bec4ba9c9f66e8a55e5a8f497c0f332c25b05fa9bb865f1",
+        "services/backend/app/domain_call_admission.py": "sha256:5479e361ce78b5fb6f113927bda22bb2eb86258ad96d4bbbad589e90781a020b",
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "services/mcp/src/domain-validation-schema.ts": "sha256:e0454153f2f29caaefc0174939bb59c0442379a0f05bcb11e438875dab03a191",
+        "services/mcp/src/domain-admission.ts": "sha256:f5c4fa396a5d1d8629073b9ae5f8e3ffb738708b11d42e44f3636b608528529e",
+        "services/mcp/src/strategy.ts": "sha256:fac4515504840c96c72107de196ba9b765610560d172d214523fb7990200eefe",
+        "services/runtime-adapter/app/runtime.py": "sha256:cf1ab277821cd448750b9b18ad1bc699eb94c23e8ffead568d381d98288f046b"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3279,
+      "method": "GET",
+      "path": "/v1/research/strategies/{strategy_id}/versions",
+      "handler": "strategy_version_history",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner与当前单用户个人workspace合同；查询只读取该owner的策略版本",
+      "mode": "read",
+      "authorization": "_required_agent_context经workspace_tenancy.resolve_context核对有效个人工作区；不接受payload覆盖owner",
+      "idempotency": "只读投影，不创建领域对象；limit/offset明确分页，无latest对象替换",
+      "timeout": "专用短查询使用bounded_metadata_transaction：进程/数据库锁2秒，语句5秒；不改变回测执行期限。锁冲突恢复实测见证据",
+      "errors": "非法策略ID/分页422；存储不可用503且不返回内部错误细节；不将查询失败解释为空目录",
+      "retry": "handler不重试；调用者可重新读取原strategy_id及明确分页，不触发新回测",
+      "authority": "PostgreSQL原owner的strategy_version和关联backtest_jobs；不依据聊天文本或页面历史缓存",
+      "recovery": "返回稳定排序的当前页及同一SQL快照total，1005版本最后5条可达，页面迟到响应不会覆盖新页",
+      "consumers": [
+        "Gateway Product API策略投影",
+        "StrategyView版本历史与统计"
+      ],
+      "evidence": [
+        "docs/evidence/research-handoff-h4/STRATEGY-PROJECTION-ERRORS.md",
+        "services/backend/tests/test_strategy_api.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/tests/e2e/h4-strategy-pagination.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/backtest.py": "sha256:c6190e71b4168c1889b02fddd23a27e17eed2d7d03e5045b619ad82298077aaf",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "services/backend/app/workspace_tenancy.py": "sha256:05485ebc3817fe9abae16aa82941667539b114257e4c54c46974afc334b46207"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 3291,
+      "method": "GET",
+      "path": "/v1/research/strategies/{strategy_id}/backtest-count",
+      "handler": "strategy_backtest_count",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner与当前单用户个人workspace合同；查询只读取该owner的策略版本",
+      "mode": "read",
+      "authorization": "_required_agent_context经workspace_tenancy.resolve_context核对有效个人工作区；不接受payload覆盖owner",
+      "idempotency": "只读投影，不创建领域对象；limit/offset明确分页，无latest对象替换",
+      "timeout": "专用短查询使用bounded_metadata_transaction：进程/数据库锁2秒，语句5秒；不改变回测执行期限。锁冲突恢复实测见证据",
+      "errors": "非法策略ID/分页422；存储不可用503且不返回内部错误细节；不将查询失败解释为空目录",
+      "retry": "handler不重试；调用者可重新读取原strategy_id及明确分页，不触发新回测",
+      "authority": "PostgreSQL原owner的strategy_version和关联backtest_jobs；不依据聊天文本或页面历史缓存",
+      "recovery": "全部版本聚合总数与by_version分页分离，第1001版本已完成回测仍计入总数；锁释放后原接口200",
+      "consumers": [
+        "Gateway Product API策略投影",
+        "StrategyView版本历史与统计"
+      ],
+      "evidence": [
+        "docs/evidence/research-handoff-h4/STRATEGY-PROJECTION-ERRORS.md",
+        "services/backend/tests/test_strategy_api.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/tests/e2e/h4-strategy-pagination.spec.ts"
+      ],
+      "source_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "dependencies_sha256": {
+        "services/backend/app/research.py": "sha256:cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+        "services/backend/app/backtest.py": "sha256:c6190e71b4168c1889b02fddd23a27e17eed2d7d03e5045b619ad82298077aaf",
+        "services/backend/app/db.py": "sha256:f57f0832008153fed39133c1d21b8f9f7a05fbaa1f86ee16013015c05f213134",
+        "services/backend/app/workspace_tenancy.py": "sha256:05485ebc3817fe9abae16aa82941667539b114257e4c54c46974afc334b46207"
+      }
+    }
+  ],
+  "manual_surfaces": [
+    {
+      "name": "mcp_transport",
+      "file": "services/mcp/src/server.ts",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部Bearer服务认证；每请求由可信HTTP头构造owner/workspace/session/root，工具参数不能替代可信根身份",
+      "mode": "transport read/write dispatch",
+      "authorization": "/healthz仅存活公开；MCP路径须服务认证，领域执行仍逐工具验证，后台另有原任务许可准入",
+      "idempotency": "HTTP入口不生成业务身份、不自动重放；领域原键/回执归Backend，官方SDK处理协议生命周期",
+      "timeout": "POST请求体5秒且普通512KiB/因子4MiB；内部准入HTTP8秒；SSE保留正常长连接，不以此限制长研究总时长",
+      "errors": "畸形URL400、未知路径404、认证401；异步处理失败未发头则503 unknown，已发头则断开，不泄露异常内容或退出全进程",
+      "retry": "没有入口级写重试；传输丢失交由原工具/原任务的精确回执恢复，不推断提交不存在",
+      "authority": "仅协议与执行准入，领域状态与完成证据仍由Backend持久化",
+      "recovery": "进程/连接中断不重写领域；真实HTTP保存、原键重复和按ID回读通过，未知命令按各工具恢复合同",
+      "consumers": [
+        "官方DSH MCP客户端；隔离官方MCP协议测试客户端"
+      ],
+      "evidence": [
+        "services/mcp/tests/transport-resilience-test.ts",
+        "services/mcp/tests/domain-schema-observation-test.ts",
+        "services/mcp/tests/continuation-admission-test.ts",
+        "services/mcp/tests/domain-server-wire-test.ts",
+        "services/mcp/tests/contract-test.ts",
+        "docs/evidence/research-handoff-h4/MCP-TRANSPORT.md"
+      ],
+      "source_sha256": "ec06a08139b74cce43801ec53868bc1d0ad56a4902ac766ceda81beb8e6dc6ee",
+      "dependencies_sha256": {
+        "services/mcp/src/domain-schema-observation.ts": "sha256:bbb1660a0eabd3552c52227d4e328e6e9f37a16b723fe0d0fa88e46bda104c67",
+        "services/mcp/src/continuation-admission.ts": "sha256:a4e143cb62714dcd1914c2a5e7505cbc25694b47fe5caf5a4ff9a31cd7a73dce",
+        "services/mcp/src/domain-admission.ts": "sha256:f5c4fa396a5d1d8629073b9ae5f8e3ffb738708b11d42e44f3636b608528529e"
+      }
+    }
+  ]
+}

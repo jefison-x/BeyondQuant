@@ -614,7 +614,7 @@ function securityStatusLabel(value: string) {
             <el-table :data="status.data_demands" empty-text="暂无小巴按需数据任务" size="small">
               <el-table-column prop="demand_id" label="需求" min-width="210" show-overflow-tooltip />
               <el-table-column label="用途" width="120"><template #default="scope">{{ ({ research: "市场研究", backtest: "策略回测", machine_learning: "机器学习" } as Record<string, string>)[scope.row.purpose] ?? scope.row.purpose }}</template></el-table-column>
-              <el-table-column label="范围" min-width="210"><template #default="scope">{{ scope.row.scope.symbol_count }} 只 · {{ scope.row.scope.start_date }}—{{ scope.row.scope.end_date }}</template></el-table-column>
+              <el-table-column label="范围" min-width="210"><template #default="scope">{{ scope.row.scope.kind === "index_snapshot" ? `${scope.row.scope.index_symbol} · 截至 ${scope.row.scope.requested_as_of} 的单次快照` : `${scope.row.scope.symbol_count} 只 · ${scope.row.scope.start_date}—${scope.row.scope.end_date}` }}</template></el-table-column>
               <el-table-column label="分片" width="100"><template #default="scope">{{ scope.row.progress.ready_partitions }}/{{ scope.row.progress.partition_count }}</template></el-table-column>
               <el-table-column label="状态" width="110"><template #default="scope"><el-tag :type="scope.row.status === 'ready' ? 'success' : scope.row.status === 'failed' ? 'danger' : scope.row.status === 'partial' ? 'warning' : 'info'">{{ ({ queued: "已排队", syncing: "准备中", ready: "已就绪", partial: "部分就绪", failed: "失败" } as Record<string, string>)[scope.row.status] }}</el-tag></template></el-table-column>
               <el-table-column prop="notification" label="通知" min-width="220" />

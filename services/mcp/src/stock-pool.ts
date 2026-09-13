@@ -36,7 +36,10 @@ async function requestPool(
 ): Promise<PoolResult> {
   const mutating = method !== "GET";
   const unknown = () => result({ service: "beyondquant-mcp", status: "outcome_unknown", retryable: false,
-    ...(typeof body?.idempotency_key === "string" ? { idempotency_key: body.idempotency_key } : {}),
+    ...(typeof body?.idempotency_key === "string" && /^[A-Za-z0-9_.:-]{1,128}$/.test(body.idempotency_key) ? { idempotency_key: body.idempotency_key } : {}),
+    ...(method === "POST" && ["/v1/paper/pools", "/v1/paper/index-pools"].includes(path)
+      && typeof body?.idempotency_key === "string" && /^[A-Za-z0-9_.:-]{1,128}$/.test(body.idempotency_key)
+      ? { reconciliation: { tool:"byq_pool_get", arguments:{ creation_kind:path.includes("index-pools") ? "index" : "custom", idempotency_key:body.idempotency_key } } } : {}),
     next_action: "Preserve the original request identity and verify its result; never create a replacement pool or infer absence from a partial list.",
   }, false);
   try {
@@ -54,6 +57,17 @@ async function requestPool(
     }
     if (!response.ok) {
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "pool_rejected", http_status: response.status } }, true);
+    }
+    const value = payload as Record<string, any>;
+    const exactRead = /^\/v1\/paper\/pools\/[^/?]+$/.test(path);
+    const creation = method === "POST" && ["/v1/paper/pools", "/v1/paper/index-pools"].includes(path);
+    const receipt = path.startsWith("/v1/paper/pools/reconcile?");
+    if ((exactRead || creation || receipt) && !(receipt && value.state === "not_found" && Object.keys(value).length === 1)) {
+      const valid = /^stock_pool_[0-9a-f]{32}$/.test(value.pool?.pool_id ?? "")
+        && (!exactRead || value.pool.pool_id === path.split("/").at(-1))
+        && (!receipt || value.state === "confirmed")
+        && (!value.run || value.run.pool_id === value.pool.pool_id);
+      if (!valid) return creation ? unknown() : result({ service:"beyondquant-mcp", status:"error", backend:{status:"invalid_response"} }, true);
     }
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
@@ -90,3 +104,6 @@ export const fetchByqPoolHistory = (backendUrl: string, poolId: string, context:
   requestPool(backendUrl, `/v1/paper/pools/${encodeURIComponent(poolId)}/snapshots`, "GET", context, undefined, fetcher);
 export const fetchByqPoolLifecycle = (backendUrl: string, poolId: string, body: Record<string, unknown>, context: PoolContext, fetcher: Fetcher = fetch) =>
   requestPool(backendUrl, `/v1/paper/pools/${encodeURIComponent(poolId)}/lifecycle`, "PATCH", context, body, fetcher);
+
+export const fetchByqPoolCreationReconcile = (backendUrl: string, kind: string, key: string, context: PoolContext, fetcher: Fetcher = fetch) =>
+  requestPool(backendUrl, `/v1/paper/pools/reconcile?kind=${encodeURIComponent(kind)}&idempotency_key=${encodeURIComponent(key)}`, "GET", context, undefined, fetcher);

@@ -216,7 +216,7 @@ def _domain_arguments(name: str, arguments: object) -> dict | None:
     if name not in {"mcp__byq__" + action for action in ACTIONS}:
         return None
     try:
-        return parse_observed_arguments(arguments)
+        return parse_observed_arguments(arguments, action=name.removeprefix("mcp__byq__"))
     except ValueError:
         # Unprovable input receives no observation credential. The admission
         # boundary must reject it; do not repair or truncate model arguments.

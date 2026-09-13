@@ -527,6 +527,7 @@ class PaperTradingStore(PgStoreMixin):
         # Column back-migration parity with the former SQLite schema.
         with self.engine.begin() as connection:
             schema_bootstrap_lock(connection)
+            ensure_column(connection, "stock_pools", "workspace_id", "TEXT")
             ensure_column(connection, "stock_pools", "pool_type", "TEXT")
             ensure_column(connection, "stock_pools", "description", "TEXT")
             ensure_column(connection, "stock_pools", "weights_json", "JSONB")
@@ -537,6 +538,7 @@ class PaperTradingStore(PgStoreMixin):
             ensure_column(connection, "stock_pools", "deleted_at", "TIMESTAMPTZ")
             ensure_column(connection, "paper_orders", "pool_id", "TEXT")
             ensure_column(connection, "paper_orders", "stock_pool_snapshot_id", "TEXT")
+            ensure_column(connection, "paper_accounts", "workspace_id", "TEXT")
             ensure_column(connection, "paper_accounts", "initial_cash", "NUMERIC(18,4)")
             ensure_column(connection, "paper_accounts", "equity", "NUMERIC(18,4)")
             ensure_column(connection, "paper_accounts", "realized_pnl", "NUMERIC(18,4) NOT NULL DEFAULT 0")
@@ -663,7 +665,7 @@ class PaperTradingStore(PgStoreMixin):
     def from_env(cls) -> "PaperTradingStore":
         return cls()
 
-    def create_account(self, payload: object, *, trusted_owner: str | None = None) -> dict[str, object]:
+    def create_account(self, payload: object, *, trusted_owner: str | None = None, trusted_workspace: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("account request must be an object")
         owner = _principal(trusted_owner, field="owner_principal") if trusted_owner else None
@@ -671,23 +673,34 @@ class PaperTradingStore(PgStoreMixin):
             raise PaperTradingForbidden("account requires a trusted owner")
         name = _text(payload.get("name"), field="name", max_length=128)
         cash = _money(payload.get("cash"), "cash", positive=True)
-        existing = self._fetch_one(
-            "SELECT * FROM paper_accounts WHERE owner_principal = :owner AND name = :name AND status <> 'deleted'",
-            {"owner": owner, "name": name},
-        )
-        if existing is not None:
-            raise PaperTradingConflict("account name already exists")
+        key = _idempotency(payload["idempotency_key"]) if "idempotency_key" in payload else None
+        if key is not None and not trusted_workspace:
+            raise PaperTradingForbidden("account creation receipt requires a trusted workspace")
+        request_hash = _hash({"name":name,"cash":_money_text(cash),"workspace":trusted_workspace})
         now = _now()
         account_id = _new_id("paper_account")
         with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            if key is not None:
+                execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {"scope":f"paper-create|{owner}|{key}"})
+                prior = fetch_one(connection, "SELECT * FROM paper_account_audit WHERE owner_principal=:owner AND idempotency_key=:key",
+                    {"owner":owner,"key":key})
+                if prior is not None:
+                    if prior["action"] != "account_created" or prior["request_hash"] != request_hash:
+                        raise PaperTradingConflict("account creation key was reused")
+                    return self.get_account(prior["account_id"],trusted_owner=owner)
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {"scope":f"paper-name|{owner}|{name}"})
+            if fetch_one(connection, "SELECT account_id FROM paper_accounts WHERE owner_principal=:owner AND name=:name AND status <> 'deleted'",
+                    {"owner":owner,"name":name}) is not None:
+                raise PaperTradingConflict("account name already exists")
             execute(
                 connection,
                 """INSERT INTO paper_accounts
-                (account_id, owner_principal, name, cash, initial_cash, equity,
+                (account_id, workspace_id, owner_principal, name, cash, initial_cash, equity,
                  realized_pnl, currency, status, created_at, updated_at, version)
-                VALUES (:account_id, :owner, :name, :cash, :cash, :cash,
+                VALUES (:account_id, :workspace, :owner, :name, :cash, :cash, :cash,
                         0, 'CNY', 'active', :created_at, :updated_at, 1)""",
-                {"account_id": account_id, "owner": owner, "name": name,
+                {"account_id": account_id, "workspace":trusted_workspace, "owner": owner, "name": name,
                  "cash": cash, "created_at": now, "updated_at": now},
             )
             execute(
@@ -707,7 +720,30 @@ class PaperTradingStore(PgStoreMixin):
                 {"entry_id": _new_id("paper_ledger"), "account_id": account_id,
                  "cash": cash, "details": {"currency": "CNY"}, "at": now},
             )
+            if key is not None:
+                execute(connection, """INSERT INTO paper_account_audit
+                    (audit_id,account_id,owner_principal,actor_principal,action,idempotency_key,request_hash,details_json,created_at)
+                    VALUES (:id,:account,:owner,:owner,'account_created',:key,:hash,:details,:now)""",
+                    {"id":_new_id("paper_audit"),"account":account_id,"owner":owner,"key":key,"hash":request_hash,
+                     "details":{"initial_cash":_money_text(cash),"name":name},"now":now})
         return self.get_account(account_id, trusted_owner=owner)
+
+    def reconcile_command(self, operation, key, *, account_id=None, trusted_owner, trusted_workspace):
+        actions = {"create":"account_created", "import":"account_imported", "controls":"controls_updated", "rebind":"universe_rebound", "delete":"account_deleted", "settlement":"settled"}
+        if operation not in {*actions,"order"}:
+            raise ValueError("unsupported paper receipt operation")
+        key = _idempotency(key)
+        identity = None if operation in {"create","import"} else _id(account_id,prefix="paper_account")
+        params = {"owner":trusted_owner,"workspace":trusted_workspace,"key":key,"account":identity}
+        if operation == "order":
+            row = self._fetch_one("""SELECT o.* FROM paper_orders o JOIN paper_accounts a USING(account_id)
+                WHERE a.owner_principal=:owner AND a.workspace_id=:workspace AND o.account_id=:account AND o.idempotency_key=:key""",params)
+            return {"state":"not_found"} if row is None else {"state":"confirmed","operation":operation,"account_id":identity,"order":self._order_row(row)}
+        row = self._fetch_one("""SELECT c.* FROM paper_account_audit c JOIN paper_accounts a USING(account_id)
+            WHERE c.owner_principal=:owner AND a.owner_principal=:owner AND a.workspace_id=:workspace AND c.idempotency_key=:key""",params)
+        if row is None or row["action"] not in ({"settled","settlement_replayed"} if operation == "settlement" else {actions[operation]}) or (identity is not None and row["account_id"] != identity):
+            return {"state":"not_found"}
+        return {"state":"confirmed","operation":operation,"account_id":row["account_id"],"details":dict(row["details_json"])}
 
     def get_account(self, account_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         account_id = _id(account_id, prefix="paper_account")
@@ -753,6 +789,12 @@ class PaperTradingStore(PgStoreMixin):
             "reason": reason,
         })
         with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            account = fetch_one(
+                connection,
+                "SELECT * FROM paper_accounts WHERE account_id = :account_id FOR UPDATE",
+                {"account_id": account_id},
+            )
             prior = fetch_one(
                 connection,
                 "SELECT * FROM paper_account_audit WHERE owner_principal = :owner AND idempotency_key = :key",
@@ -762,11 +804,6 @@ class PaperTradingStore(PgStoreMixin):
                 if prior["action"] != "account_deleted" or prior["request_hash"] != request_hash:
                     raise PaperTradingConflict("account deletion idempotency key was reused")
                 return {"account_id": account_id, "deleted": True}
-            account = fetch_one(
-                connection,
-                "SELECT * FROM paper_accounts WHERE account_id = :account_id",
-                {"account_id": account_id},
-            )
             if account is None or account["owner_principal"] != owner or account["status"] == "deleted":
                 raise PaperTradingNotFound("paper account not found")
             if int(account["version"]) != expected:
@@ -901,12 +938,16 @@ class PaperTradingStore(PgStoreMixin):
             )
         return snapshot_id
 
-    def create_pool(self, payload: object, *, trusted_owner: str | None = None) -> dict[str, object]:
+    def create_pool(self, payload: object, *, trusted_owner: str | None = None, trusted_workspace: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("pool request must be an object")
         owner = _principal(trusted_owner, field="owner_principal") if trusted_owner else None
         if owner is None:
             raise PaperTradingForbidden("pool requires a trusted owner")
+        key = _idempotency(payload["idempotency_key"]) if "idempotency_key" in payload else None
+        if key is not None and not trusted_workspace:
+            raise PaperTradingForbidden("pool creation receipt requires a trusted workspace")
+        request_hash = _hash({k: v for k, v in payload.items() if k != "idempotency_key"})
         name = _text(payload.get("name"), field="name", max_length=128)
         pool_type = _text(payload.get("pool_type", "custom"), field="pool_type", max_length=16)
         if pool_type not in {"custom", "index", "dynamic"}:
@@ -919,17 +960,36 @@ class PaperTradingStore(PgStoreMixin):
         pool_id = _new_id("stock_pool")
         now = _now()
         with self._transaction() as connection:
+            if key is not None:
+                execute(connection, "SET LOCAL lock_timeout = '2s'")
+                execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                        {"scope": f"pool-write|{owner}|{key}"})
+                previous = fetch_one(connection, "SELECT * FROM stock_pool_write_idempotency WHERE owner_principal=:owner AND idempotency_key=:key",
+                    {"owner":owner, "key":key})
+                if previous is not None:
+                    if previous["action"] != "create" or previous["request_hash"] != request_hash:
+                        raise PaperTradingConflict("stock pool creation key was reused")
+                    original = fetch_one(connection, "SELECT workspace_id FROM stock_pools WHERE pool_id=:id AND owner_principal=:owner",
+                        {"id":previous["result_id"], "owner":owner})
+                    if original is None or original["workspace_id"] != trusted_workspace:
+                        raise PaperTradingConflict("stock pool creation key belongs to another workspace")
+                    return self.get_pool(previous["result_id"], trusted_owner=owner)
             execute(connection, """INSERT INTO stock_pools
-                (pool_id, owner_principal, name, pool_type, description, weights_json,
+                (pool_id, workspace_id, owner_principal, name, pool_type, description, weights_json,
                  symbols_json, version, provenance_json, created_at, updated_at, status, metadata_version)
-                VALUES (:pool_id, :owner, :name, :pool_type, :description, :weights,
+                VALUES (:pool_id, :workspace, :owner, :name, :pool_type, :description, :weights,
                         :symbols, 'v1', :provenance, :created_at, :created_at, 'active', 1)""",
-                {"pool_id": pool_id, "owner": owner, "name": name, "pool_type": pool_type,
+                {"pool_id": pool_id, "workspace": trusted_workspace, "owner": owner, "name": name, "pool_type": pool_type,
                  "description": description, "weights": weights, "symbols": symbols,
                  "provenance": provenance, "created_at": now})
             snapshot_id = self._insert_snapshot(connection, pool_id, pool_type, payload, provenance)
             execute(connection, "UPDATE stock_pools SET current_snapshot_id = :snapshot_id WHERE pool_id = :pool_id",
                     {"snapshot_id": snapshot_id, "pool_id": pool_id})
+            if key is not None:
+                execute(connection, """INSERT INTO stock_pool_write_idempotency
+                    (owner_principal,idempotency_key,action,request_hash,result_id,created_at)
+                    VALUES (:owner,:key,'create',:hash,:pool,:now)""",
+                    {"owner":owner, "key":key, "hash":request_hash, "pool":pool_id, "now":now})
         return self.get_pool(pool_id, trusted_owner=owner)
 
     def create_trusted_pool(self, payload: object, *, trusted_owner: str | None = None) -> dict[str, object]:
@@ -1382,10 +1442,18 @@ class PaperTradingStore(PgStoreMixin):
             "idempotency_key": key,
         }
         with self._transaction() as connection:
-            account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id FOR UPDATE", {"account_id": account_id})
             if account is None or account["owner_principal"] != owner or account["status"] != "active":
                 raise PaperTradingNotFound("paper account not found")
-            pool = fetch_one(connection, "SELECT * FROM stock_pools WHERE pool_id = :pool_id", {"pool_id": pool_id})
+            existing = fetch_one(connection, "SELECT * FROM paper_orders WHERE account_id=:account AND idempotency_key=:key",
+                {"account":account_id,"key":key})
+            if existing is not None:
+                original_request = {**request,"stock_pool_snapshot_id":existing["stock_pool_snapshot_id"]}
+                if existing["request_hash"] != _hash(original_request):
+                    raise PaperTradingConflict("order idempotency key was reused")
+                return self._order_row(existing)
+            pool = fetch_one(connection, "SELECT * FROM stock_pools WHERE pool_id = :pool_id FOR SHARE", {"pool_id": pool_id})
             if pool is None or pool["owner_principal"] != owner:
                 raise PaperTradingForbidden("stock pool is not owned by this principal")
             if pool["status"] != "active" or not pool["current_snapshot_id"]:
@@ -1402,21 +1470,6 @@ class PaperTradingStore(PgStoreMixin):
                 raise PaperTradingForbidden("symbol is not in the authorized stock pool")
             request["stock_pool_snapshot_id"] = snapshot_id
             request_hash = _hash(request)
-            existing = fetch_one(
-                connection,
-                "SELECT * FROM paper_orders WHERE account_id = :account_id AND idempotency_key = :key",
-                {"account_id": account_id, "key": key},
-            )
-            if existing is not None:
-                if existing["request_hash"] != request_hash:
-                    raise PaperTradingConflict("order idempotency key was reused")
-                execute(connection, """INSERT INTO stock_pool_domain_references
-                        (domain, reference_id, pool_id, snapshot_id, owner_principal, created_at)
-                        VALUES ('paper_order', :reference_id, :pool_id, :snapshot_id, :owner, :created_at)
-                        ON CONFLICT(domain, reference_id) DO NOTHING""",
-                        {"reference_id": existing["order_id"], "pool_id": pool_id, "snapshot_id": snapshot_id,
-                         "owner": owner, "created_at": existing["created_at"]})
-                return self._order_row(existing)
 
             controls = fetch_one(connection, "SELECT * FROM paper_account_controls WHERE account_id = :account_id", {"account_id": account_id})
             if controls is None:
@@ -1599,7 +1652,8 @@ class PaperTradingStore(PgStoreMixin):
                    "kill_switch_reason": reason, "max_order_notional": _money_text(limit) if limit is not None else None}
         request_hash = _hash(request)
         with self._transaction() as connection:
-            account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id FOR UPDATE", {"account_id": account_id})
             if account is None or account["owner_principal"] != owner or account["status"] != "active":
                 raise PaperTradingNotFound("paper account not found")
             audit = fetch_one(connection, "SELECT * FROM paper_account_audit WHERE owner_principal = :owner AND idempotency_key = :key",
@@ -1644,24 +1698,25 @@ class PaperTradingStore(PgStoreMixin):
         key = _idempotency(payload.get("idempotency_key"))
         request_hash = _hash({"account_id": account_id, "pool_id": pool_id, "expected_version": expected})
         with self._transaction() as connection:
-            account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id FOR UPDATE", {"account_id": account_id})
             if account is None or account["owner_principal"] != owner or account["status"] != "active":
                 raise PaperTradingNotFound("paper account not found")
-            if int(account["version"]) != expected:
-                raise PaperTradingConflict("paper account version is stale")
-            position_count = fetch_one(connection, "SELECT COUNT(*) AS count FROM paper_positions WHERE account_id = :account_id",
-                                       {"account_id": account_id})
-            if int(position_count["count"] if position_count else 0) != 0:
-                raise PaperTradingConflict("paper account with positions cannot be rebound")
-            pool = fetch_one(connection, "SELECT * FROM stock_pools WHERE pool_id = :pool_id", {"pool_id": pool_id})
-            if pool is None or pool["owner_principal"] != owner or pool["status"] != "active" or not pool["current_snapshot_id"]:
-                raise PaperTradingForbidden("stock pool is not available for binding")
             existing = fetch_one(connection, "SELECT * FROM paper_account_audit WHERE owner_principal = :owner AND idempotency_key = :key",
                                  {"owner": owner, "key": key})
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise PaperTradingConflict("rebind idempotency key was reused")
                 return self.get_account(account_id, trusted_owner=owner)
+            if int(account["version"]) != expected:
+                raise PaperTradingConflict("paper account version is stale")
+            position_count = fetch_one(connection, "SELECT COUNT(*) AS count FROM paper_positions WHERE account_id = :account_id",
+                                       {"account_id": account_id})
+            if int(position_count["count"] if position_count else 0) != 0:
+                raise PaperTradingConflict("paper account with positions cannot be rebound")
+            pool = fetch_one(connection, "SELECT * FROM stock_pools WHERE pool_id = :pool_id FOR SHARE", {"pool_id": pool_id})
+            if pool is None or pool["owner_principal"] != owner or pool["status"] != "active" or not pool["current_snapshot_id"]:
+                raise PaperTradingForbidden("stock pool is not available for binding")
             now = _now()
             execute(connection, """UPDATE paper_accounts SET bound_pool_id = :pool_id,
                     bound_snapshot_id = :snapshot_id, version = version + 1,
@@ -1719,7 +1774,8 @@ class PaperTradingStore(PgStoreMixin):
                    "marks": {symbol: _money_text(value) for symbol, value in sorted(marks.items())}}
         request_hash = _hash(request)
         with self._transaction() as connection:
-            account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id", {"account_id": account_id})
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            account = fetch_one(connection, "SELECT * FROM paper_accounts WHERE account_id = :account_id FOR UPDATE", {"account_id": account_id})
             if account is None or account["owner_principal"] != owner or account["status"] != "active":
                 raise PaperTradingNotFound("paper account not found")
             existing = fetch_one(connection, "SELECT * FROM paper_account_snapshots WHERE account_id = :account_id AND trade_date = :trade_date",
@@ -1727,6 +1783,17 @@ class PaperTradingStore(PgStoreMixin):
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise PaperTradingConflict("paper settlement cannot rewrite a daily snapshot")
+                audit = fetch_one(connection, "SELECT * FROM paper_account_audit WHERE owner_principal=:owner AND idempotency_key=:key",
+                    {"owner":owner,"key":key})
+                if audit is not None:
+                    if audit["action"] not in {"settled","settlement_replayed"} or audit["request_hash"] != request_hash:
+                        raise PaperTradingConflict("settlement key was reused")
+                else:
+                    execute(connection, """INSERT INTO paper_account_audit
+                        (audit_id,account_id,owner_principal,actor_principal,action,idempotency_key,request_hash,details_json,created_at)
+                        VALUES (:id,:account,:owner,:actor,'settlement_replayed',:key,:hash,:details,:now)""",
+                        {"id":_new_id("paper_audit"),"account":account_id,"owner":owner,"actor":actor,"key":key,"hash":request_hash,
+                         "details":{"snapshot_id":existing["snapshot_id"],"receipt_alias":True},"now":_now()})
                 return dict(existing)
             if int(account["version"]) != expected:
                 raise PaperTradingConflict("paper account version is stale")
@@ -1859,7 +1926,8 @@ class PaperTradingStore(PgStoreMixin):
 
     def import_bundle(
         self, payload: object, *, trusted_owner: str | None = None,
-        trusted_actor: str | None = None,
+        trusted_actor: str | None = None, trusted_workspace: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("paper account bundle must be an object")
@@ -1906,9 +1974,8 @@ class PaperTradingStore(PgStoreMixin):
             raise ValueError("paper account bundle account sections are invalid")
         source_name = _text(account_data.get("name"), field="name", max_length=96)
         name = f"{source_name} · 导入 {bundle_sha256[:8]}"
-        if self._fetch_one("SELECT account_id FROM paper_accounts WHERE owner_principal = :owner AND name = :name",
-                           {"owner": owner, "name": name}) is not None:
-            raise PaperTradingConflict("paper account name already exists; import never overwrites")
+        key = _idempotency(idempotency_key or ("paper-import-" + bundle_sha256))
+        request_hash = _hash({"bundle_sha256":bundle_sha256,"workspace":trusted_workspace})
         initial_cash = _money(account_data.get("initial_cash"), "initial_cash", positive=True)
         cash = _money(account_data.get("cash"), "cash")
         equity = _money(account_data.get("equity"), "equity")
@@ -1928,14 +1995,27 @@ class PaperTradingStore(PgStoreMixin):
         account_id = _new_id("paper_account")
         now = _now()
         with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:identity,0))",
+                    {"identity":"paper-import|"+owner+"|"+key})
+            prior = fetch_one(connection, "SELECT * FROM paper_account_audit WHERE owner_principal=:owner AND idempotency_key=:key",
+                              {"owner":owner,"key":key})
+            if prior is not None:
+                if prior["action"] != "account_imported" or prior["request_hash"] != request_hash:
+                    raise PaperTradingConflict("import idempotency key was reused")
+                return {"imported":True,"account":self.get_account(prior["account_id"],trusted_owner=owner),"bundle_sha256":bundle_sha256}
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:identity,0))",
+                    {"identity":"paper-name|"+owner+"|"+name})
+            if fetch_one(connection,"SELECT account_id FROM paper_accounts WHERE owner_principal=:owner AND name=:name",{"owner":owner,"name":name}):
+                raise PaperTradingConflict("paper account name already exists; import never overwrites")
             execute(connection, """INSERT INTO paper_accounts
-                    (account_id, owner_principal, name, cash, initial_cash, equity,
+                    (account_id, owner_principal, workspace_id, name, cash, initial_cash, equity,
                      realized_pnl, currency, status, last_settlement_date,
                      bound_pool_id, bound_snapshot_id, created_at, updated_at, version)
-                    VALUES (:account_id, :owner, :name, :cash, :initial_cash, :equity,
+                    VALUES (:account_id, :owner, :workspace, :name, :cash, :initial_cash, :equity,
                             :realized, 'CNY', 'active', :last_settlement_date,
                             :pool_id, :snapshot_id, :at, :at, 1)""",
-                    {"account_id": account_id, "owner": owner, "name": name, "cash": cash,
+                    {"account_id": account_id, "owner": owner, "workspace":trusted_workspace, "name": name, "cash": cash,
                      "initial_cash": initial_cash, "equity": equity, "realized": realized,
                      "last_settlement_date": account_data.get("last_settlement_date"),
                      "pool_id": pool_id, "snapshot_id": snapshot_id, "at": now})
@@ -2095,6 +2175,11 @@ class PaperTradingStore(PgStoreMixin):
                     {"transfer_id": _new_id("paper_transfer"), "account_id": account_id,
                      "owner": owner, "sha": bundle_sha256,
                      "details": {"actor_principal": actor}, "at": now})
+            execute(connection, """INSERT INTO paper_account_audit
+                (audit_id,account_id,owner_principal,actor_principal,action,idempotency_key,request_hash,details_json,created_at)
+                VALUES (:id,:account,:owner,:actor,'account_imported',:key,:hash,:details,:now)""",
+                {"id":_new_id("paper_audit"),"account":account_id,"owner":owner,"actor":actor,"key":key,"hash":request_hash,
+                 "details":{"bundle_sha256":bundle_sha256},"now":now})
         return {"imported": True, "account": self.get_account(account_id, trusted_owner=owner),
                 "bundle_sha256": bundle_sha256}
 

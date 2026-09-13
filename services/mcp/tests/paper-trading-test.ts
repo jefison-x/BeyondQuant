@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { fetchByqPaperAccount, fetchByqPaperOrder, fetchByqPaperSnapshots, type PaperContext } from "../src/paper-trading.js";
+import { fetchByqPaperReceipt, fetchByqPaperAccount, fetchByqPaperOrder, fetchByqPaperSnapshots, type PaperContext } from "../src/paper-trading.js";
 
 const context: PaperContext = {
   workspace_id: "workspace_alice",
@@ -25,3 +25,9 @@ assert.equal(headers["x-byq-workspace-id"], "workspace_alice");
 assert.equal(headers["x-byq-actor-principal"], "agent-1");
 assert.equal(headers["x-byq-dsh-run-id"], "run-1");
 console.log("Paper Trading MCP translation PASS: trusted context and bounded read projections");
+
+const accountId='paper_account_'+'a'.repeat(32);
+const wrong=await fetchByqPaperReceipt('http://backend',{operation:'order',account_id:accountId,idempotency_key:'original'},context,async()=>new Response(JSON.stringify({state:'confirmed',operation:'order',account_id:accountId,order:{account_id:'paper_account_'+'b'.repeat(32),order_id:'paper_order_'+'a'.repeat(32)}})));
+assert.equal(wrong.isError,true);
+assert.equal((await fetchByqPaperAccount('http://backend',accountId,context,async()=>new Response(JSON.stringify({account:{account_id:'paper_account_'+'b'.repeat(32)}})))).isError,true);
+console.log('Paper original receipt and exact identity refusal PASS');

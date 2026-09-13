@@ -588,6 +588,13 @@ def product_artifacts(request: Request) -> dict[str, object]:
     return _backend_request("GET", "/v1/research/artifacts", headers=_trusted_agent_headers(request))
 
 
+@router.get("/research/tasks/{task_id}/handoff")
+def product_research_handoff(task_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/research/tasks/{task_id}/handoff",
+                            headers=_trusted_agent_headers(request))
+
+
 @router.get("/research/tasks")
 def product_research_tasks(request: Request) -> dict[str, object]:
     _product_principal(request)
@@ -1144,21 +1151,21 @@ def product_strategy_draft_delete(artifact_id: str, request: Request) -> dict[st
 
 
 @router.get("/strategies/{strategy_id}/versions")
-def product_strategy_versions(strategy_id: str, request: Request) -> dict[str, object]:
+def product_strategy_versions(strategy_id: str, request: Request, limit: int = 1000, offset: int = 0) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
         "GET",
-        f"/v1/research/strategies/{strategy_id}/versions",
+        f"/v1/research/strategies/{strategy_id}/versions?{urlencode({'limit': limit, 'offset': offset})}",
         headers=_trusted_agent_headers(request),
     )
 
 
 @router.get("/strategies/{strategy_id}/backtest-count")
-def product_strategy_backtest_count(strategy_id: str, request: Request) -> dict[str, object]:
+def product_strategy_backtest_count(strategy_id: str, request: Request, limit: int = 1000, offset: int = 0) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
         "GET",
-        f"/v1/research/strategies/{strategy_id}/backtest-count",
+        f"/v1/research/strategies/{strategy_id}/backtest-count?{urlencode({'limit': limit, 'offset': offset})}",
         headers=_trusted_agent_headers(request),
     )
 
@@ -1320,6 +1327,27 @@ def _product_approval_projection(
             projected["conversation_id"] = conversation["conversation_id"]
             projected["conversation_title"] = conversation.get("title")
     return projected
+
+
+@router.post("/data-center/demands", status_code=202)
+def product_data_demand_create(request: Request, payload: dict[str, object]):
+    _data_actor_headers(request, require_admin=True)
+    return _backend_request("POST", "/v1/agent/data-demands", payload,
+        headers=_trusted_agent_headers(request))
+
+
+@router.get("/data-center/demands/by-key/{idempotency_key}")
+def product_data_demand_reconcile(idempotency_key: str, request: Request):
+    _product_principal(request)
+    return _backend_request("GET", "/v1/agent/data-demands/by-key/" + quote(idempotency_key, safe=""),
+        headers=_trusted_agent_headers(request))
+
+
+@router.get("/data-center/demands/{demand_id}")
+def product_data_demand_get(demand_id: str, request: Request):
+    _product_principal(request)
+    return _backend_request("GET", "/v1/agent/data-demands/" + quote(demand_id, safe=""),
+        headers=_trusted_agent_headers(request))
 
 
 @router.get("/data-center/status")
@@ -1604,6 +1632,15 @@ def product_model_settings(request: Request) -> dict[str, object]:
     }
 
 
+@router.get("/settings/models/credentials/receipts")
+def product_model_credential_receipt(request: Request, operation: str, request_id: str, credential_id: str | None = None) -> dict[str, object]:
+    from urllib.parse import urlencode
+    params = {"operation":operation,"request_id":request_id}
+    if credential_id is not None:
+        params["credential_id"] = credential_id
+    return _backend_request("GET","/v1/users/model-credentials/receipts?"+urlencode(params),headers=_trusted_agent_headers(request))
+
+
 @router.post("/settings/models/credentials", status_code=201)
 def product_model_credential_create(
     request: Request,
@@ -1648,6 +1685,12 @@ def product_model_credential_revoke(
     )
 
 
+@router.get("/settings/models/profiles/receipts")
+def product_model_profile_receipt(request: Request, key_name: str) -> dict[str, object]:
+    from urllib.parse import urlencode
+    return _backend_request("GET", "/v1/users/model-profiles/receipts?"+urlencode({"key_name":key_name}), headers=_trusted_agent_headers(request))
+
+
 @router.post("/settings/models/profiles", status_code=201)
 def product_model_profile_create(
     request: Request,
@@ -1660,6 +1703,14 @@ def product_model_profile_create(
         payload,
         headers=_trusted_agent_headers(request),
     )
+
+
+@router.get("/settings/models/commands/receipts")
+def product_model_command_receipt(request: Request, operation: str, resource_id: str, expected_version: int, profile_id: str | None = None) -> dict[str, object]:
+    from urllib.parse import urlencode
+    params={"operation":operation,"resource_id":resource_id,"expected_version":expected_version}
+    if profile_id is not None:params["profile_id"]=profile_id
+    return _backend_request("GET","/v1/users/model-commands/receipts?"+urlencode(params),headers=_trusted_agent_headers(request))
 
 
 @router.post("/settings/models/profiles/{profile_id}/delete")
@@ -1722,6 +1773,14 @@ def product_agent_policy(request: Request) -> dict[str, object]:
     }
 
 
+@router.get("/settings/agent-policy/receipts")
+def product_agent_policy_receipt(request: Request, operation: str, request_id: str, resource_id: str | None = None) -> dict[str, object]:
+    from urllib.parse import urlencode
+    params={"operation":operation,"request_id":request_id}
+    if resource_id is not None:params["resource_id"]=resource_id
+    return _backend_request("GET","/v1/users/agent-policy/receipts?"+urlencode(params),headers=_trusted_agent_headers(request))
+
+
 @router.put("/settings/agent-policy")
 def product_agent_policy_update(request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
@@ -1779,12 +1838,12 @@ def product_agent_policy_rule_delete(
 
 
 @router.post("/settings/agent-policy/presets/{preset_id}/apply")
-def product_agent_policy_preset_apply(preset_id: str, request: Request) -> dict[str, object]:
+def product_agent_policy_preset_apply(preset_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
         "POST",
         f"/v1/users/agent-policy/presets/{preset_id}/apply",
-        {},
+        payload,
         headers=_trusted_agent_headers(request),
     )
 
@@ -1989,7 +2048,7 @@ def product_assets_import(request: Request, payload: dict[str, object]) -> dict[
                 }, headers=headers)
             else:
                 custom = {key: value for key, value in clean_pool.items() if key != "portable_producer"}
-                _backend_request("POST", "/v1/paper/pools", custom, headers=headers)
+                _backend_request("POST", "/v1/paper/pools", {**custom, "idempotency_key": f"import-pool-{import_nonce}-{index}"}, headers=headers)
             imported_pools += 1
         except (ProductError, ValueError) as exc:
             errors.append({"kind": "pool", "message": str(exc)})
@@ -2032,6 +2091,15 @@ def product_paper_account_create(request: Request, payload: dict[str, object]) -
         payload,
         headers=_trusted_agent_headers(request),
     )
+
+
+@router.get("/paper/receipts")
+def product_paper_receipt(request: Request, operation: str, idempotency_key: str, account_id: str | None = None):
+    _product_principal(request)
+    params = {"operation":operation,"idempotency_key":idempotency_key}
+    if account_id is not None:
+        params["account_id"] = account_id
+    return _backend_request("GET", "/v1/paper/receipts?"+urlencode(params),headers=_trusted_agent_headers(request))
 
 
 @router.get("/paper/accounts/{account_id}")
@@ -2146,6 +2214,13 @@ def product_stock_pool_materialization_create(
         "POST", f"/v1/paper/pools/{pool_id}/materializations", payload,
         headers=_trusted_agent_headers(request),
     )
+
+
+@router.get("/paper/pools/reconcile")
+def product_pool_creation_reconcile(request: Request, kind: str, idempotency_key: str):
+    _product_principal(request)
+    return _backend_request("GET", "/v1/paper/pools/reconcile?" + urlencode({"kind":kind, "idempotency_key":idempotency_key}),
+        headers=_trusted_agent_headers(request))
 
 
 @router.get("/paper/pools/{pool_id}")
@@ -2366,6 +2441,14 @@ def product_feedback_create(request: Request, payload: dict[str, object]) -> dic
     return _backend_request("POST", "/v1/feedback/items", payload, headers=_feedback_headers(request))
 
 
+@router.get("/feedback/receipts")
+def product_feedback_receipt(request: Request, operation: str, idempotency_key: str, feedback_id: str | None = None):
+    params = {"operation":operation,"idempotency_key":idempotency_key}
+    if feedback_id is not None:
+        params["feedback_id"] = feedback_id
+    return _backend_request("GET", "/v1/feedback/receipts?"+urlencode(params), headers=_feedback_headers(request))
+
+
 @router.get("/feedback/items/{feedback_id}")
 def product_feedback_get(feedback_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
@@ -2403,6 +2486,13 @@ def product_feedback_submit(feedback_id: str, request: Request, payload: dict[st
 def product_feedback_withdraw(feedback_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
     _product_principal(request)
     return _backend_request("POST", f"/v1/feedback/items/{feedback_id}/withdraw", payload, headers=_feedback_headers(request))
+
+
+@router.get("/feedback/moderation/receipts")
+def product_feedback_moderation_receipt(request: Request, feedback_id: str, action: str, idempotency_key: str):
+    params = urlencode({"feedback_id": feedback_id, "action": action, "idempotency_key": idempotency_key})
+    return _backend_request("GET", "/v1/feedback/moderation/receipts?" + params,
+                            headers=_feedback_moderator_headers(request))
 
 
 @router.get("/feedback/moderation/items")

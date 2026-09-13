@@ -99,7 +99,7 @@ const analysis = await fetchByqBacktestAnalysis(
       `http://backend:8000/v1/research/backtests/${jobId}/analysis?section=blocked_trades&limit=25&offset=50`,
     );
     assert.equal(init?.method, "GET");
-    return new Response(JSON.stringify({ analysis: { schema_version: "backtest-analysis.v1" } }), { status: 200 });
+    return new Response(JSON.stringify({ job_id:jobId, analysis: { schema_version: "backtest-analysis.v1" } }), { status: 200 });
   },
 );
 assert.equal(analysis.isError, false);
@@ -113,7 +113,7 @@ const lastAllowed = await fetchBudgetedByqBacktestAnalysis(
   { allowed: true, limit: 6, remaining: 0 },
   async () => {
     boundedBackendCalls += 1;
-    return new Response(JSON.stringify({ analysis: {
+    return new Response(JSON.stringify({ job_id:jobId, analysis: {
       schema_version: "backtest-analysis.v1",
       section: "daily_returns",
       page: { total: 241, limit: 100, offset: 200, has_more: false, rows: [] },

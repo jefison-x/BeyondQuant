@@ -12,6 +12,7 @@ import json
 import re
 import uuid
 from calendar import monthrange
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 from zoneinfo import ZoneInfo
@@ -540,32 +541,33 @@ class MarketAutomationStore(PgStoreMixin):
         return created
 
     def request_data_repair(
-        self, *, requirement: dict[str, object], requested_by: str, retry_terminal: bool = True,
+        self, *, requirement: dict[str, object], requested_by: str, retry_terminal: bool = True, _connection=None,
     ) -> dict[str, object]:
-        requirement_sha256 = str(requirement["requirement_sha256"])
-        start_date, end_date = str(requirement["start_date"]), str(requirement["end_date"])
-        existing = self._fetch_one("SELECT * FROM market_data_repair_requests WHERE requirement_sha256=:sha",
-                                   {"sha": requirement_sha256})
-        if existing is not None:
-            if retry_terminal and existing["status"] in {"completed", "failed"}:
-                self._execute("""UPDATE market_data_repair_requests
-                    SET status='queued',claimed_at=NULL,completed_at=NULL,error_message=NULL,
-                        requested_by=:by WHERE request_id=:id""",
-                    {"id": existing["request_id"], "by": requested_by})
-                existing = self._fetch_one(
-                    "SELECT * FROM market_data_repair_requests WHERE request_id=:id",
-                    {"id": existing["request_id"]},
-                )
-            return dict(existing)
-        request_id, now = f"datarepair_{uuid.uuid4().hex}", _now()
-        self._execute("""INSERT INTO market_data_repair_requests
-            (request_id,requirement_sha256,start_date,end_date,requirement_json,status,requested_by,created_at)
-            VALUES (:id,:sha,:start,:end,:requirement,'queued',:by,:now)
-            ON CONFLICT (requirement_sha256) DO NOTHING""",
-            {"id": request_id, "sha": requirement_sha256, "start": start_date,
-             "end": end_date, "requirement": requirement, "by": requested_by, "now": now})
-        return dict(self._fetch_one("SELECT * FROM market_data_repair_requests WHERE requirement_sha256=:sha",
-                                    {"sha": requirement_sha256}) or {})
+        with (self._transaction() if _connection is None else nullcontext(_connection)) as connection:
+            requirement_sha256 = str(requirement["requirement_sha256"])
+            start_date, end_date = str(requirement["start_date"]), str(requirement["end_date"])
+            existing = fetch_one(connection, "SELECT * FROM market_data_repair_requests WHERE requirement_sha256=:sha",
+                                       {"sha": requirement_sha256})
+            if existing is not None:
+                if retry_terminal and existing["status"] in {"completed", "failed"}:
+                    execute(connection, """UPDATE market_data_repair_requests
+                        SET status='queued',claimed_at=NULL,completed_at=NULL,error_message=NULL,
+                            requested_by=:by WHERE request_id=:id""",
+                        {"id": existing["request_id"], "by": requested_by})
+                    existing = fetch_one(connection,
+                        "SELECT * FROM market_data_repair_requests WHERE request_id=:id",
+                        {"id": existing["request_id"]},
+                    )
+                return dict(existing)
+            request_id, now = f"datarepair_{uuid.uuid4().hex}", _now()
+            execute(connection, """INSERT INTO market_data_repair_requests
+                (request_id,requirement_sha256,start_date,end_date,requirement_json,status,requested_by,created_at)
+                VALUES (:id,:sha,:start,:end,:requirement,'queued',:by,:now)
+                ON CONFLICT (requirement_sha256) DO NOTHING""",
+                {"id": request_id, "sha": requirement_sha256, "start": start_date,
+                 "end": end_date, "requirement": requirement, "by": requested_by, "now": now})
+            return dict(fetch_one(connection, "SELECT * FROM market_data_repair_requests WHERE requirement_sha256=:sha",
+                                        {"sha": requirement_sha256}) or {})
 
     def claim_data_repair(self) -> dict[str, object] | None:
         with self._transaction() as connection:
@@ -1129,6 +1131,8 @@ def sync_declared_inputs(
     index_universe = declared.get("index_universe")
     if index_universe:
         for period in list(requirement.get("index_weight_periods", [])):
+            if readiness_store.has_verified_index_month(str(index_universe), str(period)):
+                continue
             year, month = int(str(period)[:4]), int(str(period)[4:6])
             start = f"{period}01"
             end = f"{period}{monthrange(year, month)[1]:02d}"

@@ -272,6 +272,15 @@ def test_ml_strategy_version_and_human_approval_are_owner_scoped() -> None:
     assert version.status_code == 201, version.text
     artifact = version.json()["artifact"]
     assert artifact["kind"] == "ml_strategy_version" and artifact["status"] == "validated"
+    duplicate = client.post("/v1/research/ml/strategies/versions", headers=headers, json={
+        "task_id":task_id, "strategy":valid_strategy(), "trace_id":"trace-ml-api", "idempotency_key":"ml-alias",
+    })
+    assert duplicate.status_code == 201
+    assert duplicate.json()["artifact"]["artifact_id"] == artifact["artifact_id"]
+    receipt = client.get("/v1/research/submissions/reconcile", headers=headers, params={
+        "entity_type":"artifact", "task_id":task_id, "idempotency_key":"ml-alias",
+    })
+    assert receipt.json()["entity"]["artifact_id"] == artifact["artifact_id"]
     approval = client.post("/v1/research/ml/strategies/approvals", headers=headers, json={
         "task_id": task_id, "ml_strategy_artifact_id": artifact["artifact_id"],
         "decision": "approved", "rationale": "reviewed", "trace_id": "trace-ml-api",

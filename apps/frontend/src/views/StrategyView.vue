@@ -56,6 +56,10 @@ const templateId = ref("");
 const lastDraftId = ref("");
 const saving = ref(false);
 const versionHistory = ref<Array<Record<string, unknown>>>([]);
+const historyPage = ref(1);
+const historyTotal = ref(0);
+const historyLoading = ref(false);
+let metadataRequest = 0;
 const backtestCount = ref(0);
 const versionCount = ref(0);
 const editorBaseline = ref("");
@@ -214,6 +218,10 @@ async function openBacktest() {
 
 async function newDraft() {
   if (!confirmDiscard()) return;
+  metadataRequest += 1;
+  historyLoading.value = false;
+  historyPage.value = 1;
+  historyTotal.value = 0;
   selected.value = null;
   detail.value = null;
   lifecycle.value = "active";
@@ -335,24 +343,35 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
   }
 }
 
-async function refreshStrategyMeta() {
+async function refreshStrategyMeta(targetPage = 1) {
   const sid = selectedStrategyId.value;
+  const requestId = ++metadataRequest;
+  historyLoading.value = false;
   if (!sid) {
     versionHistory.value = [];
+    historyTotal.value = 0;
     backtestCount.value = 0;
     versionCount.value = 0;
     return;
   }
+  historyLoading.value = true;
   try {
     const [history, counts] = await Promise.all([
-      getStrategyVersions(sid, auth.token),
+      getStrategyVersions(sid, auth.token, { limit: PAGE_SIZE, offset: (targetPage - 1) * PAGE_SIZE }),
       getStrategyBacktestCount(sid, auth.token),
     ]);
+    if (requestId !== metadataRequest || sid !== selectedStrategyId.value) return;
     versionHistory.value = (history.versions ?? []) as Array<Record<string, unknown>>;
+    historyTotal.value = Number(history.total ?? versionHistory.value.length);
+    historyPage.value = targetPage;
     backtestCount.value = Number(counts.backtest_count ?? 0);
     versionCount.value = Number(counts.version_count ?? 0);
   } catch (exc) {
-    error.value = exc instanceof Error ? exc.message : "加载策略统计失败";
+    if (requestId === metadataRequest && sid === selectedStrategyId.value) {
+      error.value = exc instanceof Error ? exc.message : "加载策略统计失败";
+    }
+  } finally {
+    if (requestId === metadataRequest) historyLoading.value = false;
   }
 }
 
@@ -772,6 +791,10 @@ onMounted(loadList);
               <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
             </el-table-column>
           </el-table>
+          <el-pagination v-if="historyTotal > PAGE_SIZE" aria-label="策略版本历史分页"
+            :current-page="historyPage" :page-size="PAGE_SIZE" :total="historyTotal"
+            :disabled="historyLoading" layout="prev, pager, next, total"
+            @current-change="refreshStrategyMeta" />
           <p v-if="error" class="page-error">{{ error }}</p>
           <el-empty v-else-if="!detail" description="请选择左侧策略" />
           <el-collapse v-else class="technical-details"><el-collapse-item title="技术与审计详情" name="technical"><p>这里保留完整内部编号、策略源码和可复现输入，普通使用无需复制这些内容。</p><pre class="quant-result">{{ JSON.stringify(detail, null, 2) }}</pre></el-collapse-item></el-collapse>

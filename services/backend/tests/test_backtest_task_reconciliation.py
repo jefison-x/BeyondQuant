@@ -21,7 +21,7 @@ def setup_creation(monkeypatch, tmp_path):
     jobs = SignalJobStore()
     monkeypatch.setattr(main, "signal_job_store", jobs)
     chain = _create_strategy_chain(client, key="task-receipt")
-    pool = client.post("/v1/paper/pools", json={"name": "Receipt pool", "pool_type": "custom", "symbols": ["000001.SZ"]}).json()["pool"]
+    pool = client.post("/v1/paper/pools", json={"idempotency_key": "test-pool-24", "name": "Receipt pool", "pool_type": "custom", "symbols": ["000001.SZ"]}).json()["pool"]
     main.security_master_store._execute("""INSERT INTO security_master_snapshots
         (snapshot_id,provider,endpoint,dataset_id,request_fingerprint,statuses_json,row_count,retrieved_at,requested_by)
         VALUES ('sms_receipt','tushare','stock_basic','fixture','fixture','["L"]',1,now(),'test')""")

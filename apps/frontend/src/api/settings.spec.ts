@@ -99,7 +99,7 @@ describe("settings api client", () => {
       new Response(JSON.stringify({ personal_policy: { automation_enabled: true, paused: false, default_decision_mode: "manual" } }), { status: 200 }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const result = await updateAgentPolicy({ automation_enabled: true });
+    const result = await updateAgentPolicy({ automation_enabled: true, request_id:"settings-test" });
     expect(result.personal_policy.automation_enabled).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/settings/agent-policy",

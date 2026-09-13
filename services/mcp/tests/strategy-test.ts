@@ -143,3 +143,38 @@ assert.doesNotMatch(sensitiveInvalid.content[0].text, /private\.py|do-not-expose
 assert.doesNotMatch(sensitiveInvalid.content[0].text, /"validation"/);
 
 console.log("Strategy MCP translation PASS: draft save/delete, validation, version, approval, export and safe error mapping");
+
+for (const create of [fetchByqStrategyVersionCreate, fetchByqStrategyApprove]) {
+  let calls = 0;
+  const response = await create('http://backend', { task_id:taskId, idempotency_key:'lost-strategy' }, async () => {
+    calls++;
+    throw new Error('private lost response');
+  });
+  assert.equal(calls, 1);
+  const value = JSON.parse(response.content[0].text);
+  assert.equal(value.status, 'outcome_unknown');
+  assert.equal(value.retryable, false);
+  assert.deepEqual(value.reconciliation, { tool:'byq_research_get', arguments:{
+    entity_type:'artifact', task_id:taskId, idempotency_key:'lost-strategy',
+  } });
+}
+console.log('Strategy original-key recovery guidance PASS');
+
+
+for (const mode of ["disconnect", "server_error", "bad_json", "null", "array"]) {
+  let calls = 0;
+  const reply = await fetchByqStrategyDraftDelete("http://backend:8000", artifactId, async () => {
+    calls++;
+    if (mode === "disconnect") throw new TypeError("synthetic lost response");
+    if (mode === "server_error") return new Response("unavailable", { status: 503 });
+    if (mode === "bad_json") return new Response("{");
+    return Response.json(mode === "null" ? null : []);
+  });
+  const payload = JSON.parse(reply.content[0].text);
+  assert.equal(payload.status, "outcome_unknown");
+  assert.deepEqual(payload.reconciliation, { tool: "byq_research_get", arguments: {
+    entity_type: "artifact", entity_id: artifactId,
+  } });
+  assert.equal(calls, 1, "unknown deletion cannot trigger another write");
+}
+console.log("Draft deletion unknown result preserves exact read identity PASS");

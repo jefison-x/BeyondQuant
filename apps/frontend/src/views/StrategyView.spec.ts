@@ -124,11 +124,30 @@ describe("StrategyView", () => {
     const wrapper = mountView();
     await flushPromises();
 
-    expect(getStrategyVersions).toHaveBeenCalledWith("MomentumStrategy", "strategy-test");
+    expect(getStrategyVersions).toHaveBeenCalledWith("MomentumStrategy", "strategy-test", { limit: 50, offset: 0 });
     expect(getStrategyBacktestCount).toHaveBeenCalledWith("MomentumStrategy", "strategy-test");
     expect((wrapper.vm as unknown as { isReadonly: boolean }).isReadonly).toBe(true);
     expect((wrapper.vm as unknown as { backtestCount: number }).backtestCount).toBe(7);
     expect((wrapper.vm as unknown as { versionCount: number }).versionCount).toBe(3);
+    const vm = wrapper.vm as unknown as {
+      refreshStrategyMeta: (page: number) => Promise<void>;
+      historyPage: number; historyTotal: number; versionHistory: Array<{ artifact_id: string }>;
+    };
+    let first!: (value: Record<string, unknown>) => void;
+    let second!: (value: Record<string, unknown>) => void;
+    getStrategyVersions.mockImplementationOnce(() => new Promise(resolve => { first = resolve; }));
+    getStrategyVersions.mockImplementationOnce(() => new Promise(resolve => { second = resolve; }));
+    const oldPage = vm.refreshStrategyMeta(2);
+    const newPage = vm.refreshStrategyMeta(3);
+    second({ versions: [{ artifact_id: "page-three" }], total: 1005 });
+    await newPage;
+    first({ versions: [{ artifact_id: "page-two" }], total: 1005 });
+    await oldPage;
+    expect(getStrategyVersions).toHaveBeenLastCalledWith("MomentumStrategy", "strategy-test", { limit: 50, offset: 100 });
+    expect(vm.historyPage).toBe(3);
+    expect(vm.historyTotal).toBe(1005);
+    expect(vm.versionHistory[0].artifact_id).toBe("page-three");
+
   });
 
   it("opens a fresh editable strategy from the explicit create action", async () => {

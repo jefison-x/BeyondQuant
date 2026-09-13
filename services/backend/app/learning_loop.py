@@ -323,6 +323,29 @@ class LearningLoopStore(PgStoreMixin):
     def from_env(cls, research_store: ResearchStore) -> "LearningLoopStore":
         return cls(None, research_store)
 
+    def reconcile_submission(self, kind, key, *, task_id=None, run_id=None, trusted_owner=None, trusted_workspace=None):
+        if not trusted_owner:
+            raise LearningUnauthorized("learning receipt requires a trusted owner")
+        key = _idempotency(key)
+        if kind == "iteration":
+            run = self.get_run(run_id, trusted_owner=trusted_owner)
+            if trusted_workspace is not None and run.get("workspace_id") != trusted_workspace:
+                raise LearningUnauthorized("learning run is outside this workspace")
+            row = self._fetch_one("SELECT * FROM learning_iterations WHERE learning_run_id=:run AND idempotency_key=:key",
+                {"run":run["learning_run_id"], "key":key})
+            return {"state":"not_found"} if row is None else {"state":"confirmed", "iteration":self._iteration_row(row), "run":run}
+        if kind not in {"run", "signal", "lesson"}:
+            raise ValueError("unsupported learning receipt kind")
+        task_id = _text(task_id, field="task_id", max_length=64)
+        task = self._owned_task(task_id, trusted_owner)
+        if trusted_workspace is not None and task.get("workspace_id") != trusted_workspace:
+            raise LearningUnauthorized("learning task is outside this workspace")
+        table, convert = {"run":("learning_runs",self._run_row), "signal":("evaluation_signals",self._signal_row),
+            "lesson":("lessons",self._lesson_with_history)}[kind]
+        row = self._fetch_one(f"SELECT * FROM {table} WHERE task_id=:task AND idempotency_key=:key",
+            {"task":task_id, "key":key})
+        return {"state":"not_found"} if row is None else {"state":"confirmed",kind:convert(row)}
+
     def start_run(
         self,
         payload: object,
@@ -356,6 +379,8 @@ class LearningLoopStore(PgStoreMixin):
         }
         request_hash = _hash(request)
         with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {"scope":f"learning-run|{owner}|{key}"})
             existing = fetch_one(
                 connection,
                 "SELECT * FROM learning_runs WHERE owner_principal = :owner AND idempotency_key = :key",
@@ -411,8 +436,6 @@ class LearningLoopStore(PgStoreMixin):
         if run is None:
             raise LearningNotFound("learning run not found")
         self._check_run_access(run, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
-        if run["status"] != "active":
-            raise LearningForbidden("learning run is not active")
         iteration_index = self._positive_int(payload.get("iteration_index"), "iteration_index")
         attempt = self._positive_int(payload.get("attempt"), "attempt")
         outcome = _text(payload.get("outcome"), field="outcome", max_length=32)
@@ -436,6 +459,11 @@ class LearningLoopStore(PgStoreMixin):
         }
         request_hash = _hash(request)
         with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            run = fetch_one(connection, "SELECT * FROM learning_runs WHERE learning_run_id=:run_id FOR UPDATE", {"run_id":run_id})
+            if run is None:
+                raise LearningNotFound("learning run not found")
+            self._check_run_access(run, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
             existing = fetch_one(
                 connection,
                 "SELECT * FROM learning_iterations WHERE learning_run_id = :run_id AND idempotency_key = :key",
@@ -445,6 +473,8 @@ class LearningLoopStore(PgStoreMixin):
                 if existing["request_hash"] != request_hash:
                     raise LearningConflict("learning iteration idempotency key was reused")
                 return {"iteration": self._iteration_row(existing), "run": self._run_row(run)}
+            if run["status"] != "active":
+                raise LearningForbidden("learning run is not active")
             rows = execute(
                 connection,
                 "SELECT * FROM learning_iterations WHERE learning_run_id = :run_id ORDER BY sequence ASC",
@@ -501,7 +531,8 @@ class LearningLoopStore(PgStoreMixin):
             raise ValueError("decision must be approved or rejected")
         rationale = _text(payload.get("rationale") or "", field="rationale", max_length=2000) if payload.get("rationale") else ""
         with self._transaction() as connection:
-            run = fetch_one(connection, "SELECT * FROM learning_runs WHERE learning_run_id = :run_id", {"run_id": run_id})
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            run = fetch_one(connection, "SELECT * FROM learning_runs WHERE learning_run_id = :run_id FOR UPDATE", {"run_id": run_id})
             if run is None:
                 raise LearningNotFound("learning run not found")
             if trusted_owner and run["owner_principal"] != trusted_owner:
@@ -580,6 +611,8 @@ class LearningLoopStore(PgStoreMixin):
         }
         request_hash = _hash(request)
         with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {"scope":f"learning-signal|{task_id}|{key}"})
             existing = fetch_one(
                 connection,
                 "SELECT * FROM evaluation_signals WHERE task_id = :task_id AND idempotency_key = :key",
@@ -691,6 +724,8 @@ class LearningLoopStore(PgStoreMixin):
         }
         request_hash = _hash(request)
         with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {"scope":f"learning-lesson|{task_id}|{key}"})
             existing = fetch_one(
                 connection,
                 "SELECT * FROM lessons WHERE task_id = :task_id AND idempotency_key = :key",
@@ -747,7 +782,8 @@ class LearningLoopStore(PgStoreMixin):
             raise ValueError("decision must be approved, rejected, or superseded")
         rationale = _text(payload.get("rationale") or "", field="rationale", max_length=2000) if payload.get("rationale") else ""
         with self._transaction() as connection:
-            row = fetch_one(connection, "SELECT * FROM lessons WHERE lesson_id = :lesson_id", {"lesson_id": lesson_id})
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            row = fetch_one(connection, "SELECT * FROM lessons WHERE lesson_id = :lesson_id FOR UPDATE", {"lesson_id": lesson_id})
             if row is None:
                 raise LearningNotFound("lesson not found")
             if trusted_owner and row["owner_principal"] != trusted_owner:

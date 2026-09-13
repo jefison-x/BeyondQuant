@@ -3,21 +3,50 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  createPaperAccount, deletePaperAccount, exportPaperAccount, getPaperAccount, getPaperControls,
-  getPaperOrder, importPaperAccount, listPaperAccounts, listPaperFills,
+  sendPaperCommand, reconcilePaperCommand, PaperCommandRejected, type PaperCommand, exportPaperAccount, getPaperAccount, getPaperControls,
+  getPaperOrder, listPaperAccounts, listPaperFills,
   listPaperLedger, listPaperOrders, listPaperPositions, listPaperSnapshots,
-  listStockPools, rebindPaperAccount, settlePaperAccount, submitPaperOrder,
-  updatePaperControls,
+  listStockPools,
 } from "@/api/paper";
 import type { PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot } from "@/api/types";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { useFilteredPagination } from "@/composables/useFilteredPagination";
 import { useAuthStore } from "@/stores/auth";
-import { createRequestId } from "@/utils/requestId";
+import { beginPaperSubmission, readPaperSubmission, finishPaperSubmission } from "@/api/paperSubmission";
 
 const auth = useAuthStore();
 const route = useRoute();
+const pending = ref<PaperCommand|null>(null);
+function commandScope() {
+  if(!auth.user) throw Error('请先登录');
+  return JSON.stringify([auth.user.subject,auth.user.workspace.workspace_id]);
+}
+async function executeCommand(input:Omit<PaperCommand,'key'>) {
+  const scope = commandScope(), previous = readPaperSubmission(scope), command = beginPaperSubmission(scope,input); pending.value = command;
+  try {
+    const result = await sendPaperCommand(command,auth.token);
+    if(scope !== commandScope()) throw Error('工作区已切换，请在原工作区核对');
+    finishPaperSubmission(scope,command.key);pending.value = null;return result;
+  } catch(cause) {
+    if(!previous && cause instanceof PaperCommandRejected) {finishPaperSubmission(scope,command.key);pending.value = null;}
+    throw cause;
+  }
+}
+async function recoverCommand(retry=false) {
+  if(!pending.value) return;
+  busy.value = 'recover';
+  try {
+    const scope = commandScope(), command = pending.value;
+    if(retry) await executeCommand({operation:command.operation,account_id:command.account_id,payload:command.payload});
+    const result = await reconcilePaperCommand(command,auth.token);
+    if(scope !== commandScope()) throw Error('工作区已切换，请在原工作区核对');
+    if(result.state === 'not_found') {error.value = '尚未找到原回执，请稍后核对或使用原请求重试。';return;}
+    finishPaperSubmission(scope,command.key);pending.value=null;error.value='';settlementDialog.value=false;
+    await loadAccounts(command.operation === 'delete' ? undefined : result.account_id);
+  } catch(cause) {error.value = cause instanceof Error ? cause.message : '原操作核对失败';}
+  finally {busy.value='';}
+}
 const loading = ref(true);
 const busy = ref("");
 const error = ref("");
@@ -131,7 +160,7 @@ async function selectAccount(account: PaperAccount) {
 async function createAccount() {
   busy.value = "create";
   try {
-    const body = await createPaperAccount(accountName.value.trim(), initialCash.value, auth.token);
+    const body = await executeCommand({operation:"create",payload:{name:accountName.value.trim(),cash:initialCash.value}});
     await loadAccounts(body.account.account_id);
     ElMessage.success("模拟账户已创建");
   } catch (exc) { error.value = exc instanceof Error ? exc.message : "创建账户失败"; }
@@ -147,7 +176,7 @@ async function deleteAccount() {
   );
   busy.value = "delete";
   try {
-    await deletePaperAccount(selected.value.account_id, selected.value.version, auth.token);
+    await executeCommand({operation:"delete",account_id:selected.value.account_id,payload:{expected_version:selected.value.version,reason:"用户删除模拟账户"}});
     selected.value = null;
     await loadAccounts();
     ElMessage.success("模拟账户已删除，历史审计记录已保留");
@@ -161,12 +190,11 @@ async function placeOrder() {
   }
   busy.value = "order";
   try {
-    const body = await submitPaperOrder({
+    const body = await executeCommand({operation:"order",account_id:selected.value.account_id,payload:{
       account_id: selected.value.account_id, pool_id: poolId.value,
       symbol: symbol.value.trim().toUpperCase(), side: side.value,
       quantity: quantity.value, price: price.value, trade_date: tradeDate.value,
-      idempotency_key: createRequestId(),
-    }, auth.token);
+    }});
     await loadDetail(selected.value.account_id);
     if (body.order.status === "blocked") ElMessage.warning(`订单已拦截：${reasonLabel(body.order.blocked_reason)}`);
     else ElMessage.success("模拟订单已成交");
@@ -191,13 +219,12 @@ async function settle() {
   if (!selected.value?.account_id || !selected.value.version) return;
   busy.value = "settle";
   try {
-    await settlePaperAccount(selected.value.account_id, { trade_date: settlementDate.value,
-      expected_version: selected.value.version, idempotency_key: createRequestId(), marks: settlementMarks.value }, auth.token);
+    await executeCommand({operation:"settlement",account_id:selected.value.account_id,payload:{trade_date:settlementDate.value,expected_version:selected.value.version,marks:settlementMarks.value}});
     settlementDialog.value = false;
     await loadDetail(selected.value.account_id);
     activeTab.value = "snapshots";
     ElMessage.success("日终结算已完成，快照不可改写");
-  } catch (exc) { error.value = exc instanceof Error ? exc.message : "结算失败"; }
+  } catch (exc) { if(pending.value) settlementDialog.value=false; error.value = exc instanceof Error ? exc.message : "结算失败"; }
   finally { busy.value = ""; }
 }
 
@@ -205,11 +232,11 @@ async function saveControls() {
   if (!selected.value?.account_id || !controls.value) return;
   busy.value = "controls";
   try {
-    controls.value = (await updatePaperControls(selected.value.account_id, {
+    controls.value = (await executeCommand({operation:"controls",account_id:selected.value.account_id,payload:{
       kill_switch_engaged: killSwitch.value, kill_switch_reason: killReason.value,
       max_order_notional: maxOrderNotional.value ?? null,
-      expected_version: controls.value.version, idempotency_key: createRequestId(),
-    }, auth.token)).controls;
+      expected_version: controls.value.version,
+    }})).controls;
     ElMessage.success("风险控制已保存");
   } catch (exc) { error.value = exc instanceof Error ? exc.message : "保存风险控制失败"; }
   finally { busy.value = ""; }
@@ -219,7 +246,7 @@ async function rebind() {
   if (!selected.value?.account_id || !selected.value.version || !poolId.value) return;
   busy.value = "binding";
   try {
-    await rebindPaperAccount(selected.value.account_id, { pool_id: poolId.value, expected_version: selected.value.version, idempotency_key: createRequestId() }, auth.token);
+    await executeCommand({operation:"rebind",account_id:selected.value.account_id,payload:{pool_id:poolId.value,expected_version:selected.value.version}});
     await loadDetail(selected.value.account_id); ElMessage.success("账户股票池快照已重新绑定");
   } catch (exc) { error.value = exc instanceof Error ? exc.message : "重新绑定失败"; }
   finally { busy.value = ""; }
@@ -242,18 +269,27 @@ async function onImportFile(event: Event) {
   const input = event.target as HTMLInputElement; const file = input.files?.[0]; if (!file) return;
   busy.value = "import";
   try {
+    if(file.size > 4*1024*1024) throw Error("账户资产包不能超过4 MiB，请缩小导入范围");
     const parsed = JSON.parse(await file.text()) as Record<string, unknown>;
-    const body = await importPaperAccount((parsed.bundle as Record<string, unknown>) ?? parsed, auth.token);
+    const body = await executeCommand({operation:"import",payload:{bundle:(parsed.bundle as Record<string, unknown>) ?? parsed}});
     await loadAccounts(body.account.account_id); ElMessage.success("账户资产包已校验并导入为新账户");
   } catch (exc) { error.value = exc instanceof Error ? exc.message : "导入失败"; }
   finally { busy.value = ""; input.value = ""; }
 }
 
-onMounted(loadAccounts);
+onMounted(async()=>{
+  if(auth.user) {try {pending.value=readPaperSubmission(commandScope());} catch(cause){error.value=cause instanceof Error?cause.message:'原操作未确认';}}
+  await loadAccounts();
+});
 </script>
 
 <template>
   <section class="paper-page">
+    <el-alert v-if="pending" title="有一笔模拟账户操作尚未确认" type="warning" :closable="false">
+      <p>已保留原请求，刷新后仍可核对。</p>
+      <el-button :disabled="Boolean(busy)" @click="recoverCommand()">核对原模拟操作</el-button>
+      <el-button :disabled="Boolean(busy)" @click="recoverCommand(true)">使用原模拟操作重试</el-button>
+    </el-alert>
     <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="top-band" />
     <el-alert v-if="route.query.from === 'backtest'" title="已从回测带入股票池上下文" type="info" :closable="false" show-icon
@@ -310,5 +346,5 @@ onMounted(loadAccounts);
 </template>
 
 <style scoped>
-.paper-page{display:grid;gap:12px}.button-row,.panel-heading,.tab-toolbar{align-items:center;display:flex;gap:10px;justify-content:space-between}.hidden-input{display:none}.account-rail,.account-empty{min-width:0}.account-empty{display:grid;min-height:360px;place-items:center}.account-item{align-items:center;background:transparent;border:1px solid transparent;border-radius:10px;color:inherit;cursor:pointer;display:flex;gap:8px;justify-content:space-between;margin-bottom:6px;padding:10px;text-align:left;width:100%}.account-item>span:first-child{flex:1;min-width:0}.account-item strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-item:hover,.account-item.active{background:color-mix(in srgb,var(--byq-brand) 9%,transparent);border-color:color-mix(in srgb,var(--byq-brand) 38%,transparent)}.account-item small{color:var(--byq-text-muted);display:block;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-value{flex:0 0 auto;font-size:12px;font-weight:700;white-space:nowrap}.create-grid,.workspace{display:grid;gap:10px;min-width:0}.initial-cash-field{display:grid;gap:5px}.initial-cash-field>span{color:var(--byq-text-muted);font-size:12px}.initial-cash-field :deep(.el-input-number){width:100%}.summary-strip{display:grid;gap:10px;grid-template-columns:repeat(4,minmax(0,1fr))}.summary-strip>div,.info-panel,.risk-panel{background:var(--el-bg-color);border:1px solid var(--el-border-color-lighter);border-radius:12px;padding:16px}.summary-strip span,.info-panel span{color:var(--byq-text-muted);display:block;font-size:12px;margin-bottom:6px}.summary-strip strong{font-size:20px}.trade-form{display:grid;gap:9px;grid-template-columns:1.5fr 1fr auto 1fr 1fr 1fr auto}.binding-note,.muted{color:var(--byq-text-muted);font-size:12px}.binding-note{margin:10px 0 0;overflow-wrap:anywhere}.overview-grid{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}.account-danger-zone{align-items:center;border-top:1px solid var(--byq-border-subtle);display:flex;gap:12px;justify-content:space-between;margin-top:16px;padding-top:16px}.account-danger-zone>span{display:grid;gap:4px}.account-danger-zone small{color:var(--byq-text-muted)}.tab-toolbar{margin-bottom:12px}.risk-grid{display:grid;gap:14px;grid-template-columns:repeat(3,minmax(0,1fr))}.risk-panel h3{margin-top:0}.wide-select{margin-bottom:12px;width:100%}.positive{color:var(--el-color-success)}.negative{color:var(--el-color-danger)}.detail-list{display:grid;gap:12px}.detail-list>div{display:grid;gap:6px}.detail-list span{color:var(--byq-text-muted);font-size:12px}.detail-list code,.detail-list pre{background:var(--el-fill-color-light);border-radius:8px;margin:0;overflow:auto;padding:10px;white-space:pre-wrap}.settlement-form{display:grid;gap:0 12px;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:14px}@media(max-width:1100px){.trade-form{grid-template-columns:repeat(2,minmax(0,1fr))}.risk-grid{grid-template-columns:1fr}}@media(max-width:720px){.summary-strip,.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.trade-form,.settlement-form{grid-template-columns:1fr}.summary-strip strong{font-size:16px}.account-danger-zone{align-items:flex-start;flex-direction:column}}
+.paper-page{display:grid;gap:12px}.button-row,.panel-heading,.tab-toolbar{align-items:center;display:flex;gap:10px;justify-content:space-between}.hidden-input{display:none}.account-rail,.account-empty{min-width:0}.account-empty{display:grid;min-height:360px;place-items:center}.account-item{align-items:center;background:transparent;border:1px solid transparent;border-radius:10px;color:inherit;cursor:pointer;display:flex;gap:8px;justify-content:space-between;margin-bottom:6px;padding:10px;text-align:left;width:100%}.account-item>span:first-child{flex:1;min-width:0}.account-item strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-item:hover,.account-item.active{background:color-mix(in srgb,var(--byq-brand) 9%,transparent);border-color:color-mix(in srgb,var(--byq-brand) 38%,transparent)}.account-item small{color:var(--byq-text-muted);display:block;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-value{flex:0 0 auto;font-size:12px;font-weight:700;white-space:nowrap}.create-grid,.workspace{display:grid;gap:10px;min-width:0}.initial-cash-field{display:grid;gap:5px}.initial-cash-field>span{color:var(--byq-text-muted);font-size:12px}.initial-cash-field :deep(.el-input-number){width:100%}.summary-strip{display:grid;gap:10px;grid-template-columns:repeat(4,minmax(0,1fr))}.summary-strip>div,.info-panel,.risk-panel{background:var(--el-bg-color);border:1px solid var(--el-border-color-lighter);border-radius:12px;padding:16px}.summary-strip span,.info-panel span{color:var(--byq-text-muted);display:block;font-size:12px;margin-bottom:6px}.summary-strip strong{font-size:20px}.trade-form{display:grid;gap:9px;grid-template-columns:repeat(3,minmax(0,1fr))}.binding-note,.muted{color:var(--byq-text-muted);font-size:12px}.binding-note{margin:10px 0 0;overflow-wrap:anywhere}.overview-grid{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}.account-danger-zone{align-items:center;border-top:1px solid var(--byq-border-subtle);display:flex;gap:12px;justify-content:space-between;margin-top:16px;padding-top:16px}.account-danger-zone>span{display:grid;gap:4px}.account-danger-zone small{color:var(--byq-text-muted)}.tab-toolbar{margin-bottom:12px}.risk-grid{display:grid;gap:14px;grid-template-columns:repeat(3,minmax(0,1fr))}.risk-panel h3{margin-top:0}.wide-select{margin-bottom:12px;width:100%}.positive{color:var(--el-color-success)}.negative{color:var(--el-color-danger)}.detail-list{display:grid;gap:12px}.detail-list>div{display:grid;gap:6px}.detail-list span{color:var(--byq-text-muted);font-size:12px}.detail-list code,.detail-list pre{background:var(--el-fill-color-light);border-radius:8px;margin:0;overflow:auto;padding:10px;white-space:pre-wrap}.settlement-form{display:grid;gap:0 12px;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:14px}@media(max-width:1100px){.trade-form{grid-template-columns:repeat(2,minmax(0,1fr))}.risk-grid{grid-template-columns:1fr}}@media(max-width:720px){.summary-strip,.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.trade-form,.settlement-form{grid-template-columns:1fr}.summary-strip strong{font-size:16px}.account-danger-zone{align-items:flex-start;flex-direction:column}}
 </style>

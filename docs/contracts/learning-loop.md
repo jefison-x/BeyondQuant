@@ -21,3 +21,15 @@ Lesson proposal 必须引用至少一个 validated Artifact 或 EvaluationSignal
 ## 稳定性
 
 Backend storage 是实现细节。Agent-to-domain 调用使用 normalized BeyondQuant MCP tools；DSH 永不获得直接 business-storage access 或绕过这些 invariants 的权限。
+
+## 原提交恢复（H4）
+
+学习运行、评估信号和经验提案按 task_id + idempotency_key 精确读取；迭代按 run_id +
+idempotency_key 精确读取。GET /v1/learning/receipts 的 kind 仅允许 run/iteration/signal/lesson，
+验证可信owner/workspace并读取既有持久原键。不存在只返回not_found，不据分页列表推断。
+MCP复用各自get工具的原键分支，iteration_list带原键时仅核对这一提交。
+创建未知回执保留原键和只读工具参数，错对象/父任务不得标为确认。
+
+最后一轮已写入但回执丢失时，即使运行已awaiting_review/terminal，原键仍返回原迭代；
+不追加事件、不重置预算。新的迭代仍要求active。行锁序列化迭代及人工审核，既有创建键锁
+序列化同键提交；等待有2秒上限。审核本身不是可自动重放动作，未知时回读状态及历史。

@@ -71,7 +71,8 @@ from .credentials import (
     CredentialUnavailable,
     authorize_resolver,
 )
-from .factor_research import compute_factor
+from .factor_research import FactorValidationError, compute_factor
+from .factor_submission import submit_factor
 from .backtest import (
     BacktestConflict,
     BacktestError,
@@ -567,7 +568,7 @@ def _feedback_moderator(request: Request) -> tuple[str, str]:
 @app.get("/v1/feedback/options")
 def feedback_options(request: Request) -> dict[str, object]:
     _feedback_context(request)
-    return feedback_store.public_options()
+    return _feedback_call(lambda: feedback_store.public_options())
 
 
 @app.get("/v1/feedback/items")
@@ -589,6 +590,13 @@ def feedback_create(payload: dict[str, Any], request: Request) -> dict[str, obje
         payload, trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
         trusted_actor=context["actor_principal"],
     ))
+
+
+@app.get("/v1/feedback/receipts")
+def feedback_receipt(request: Request, operation: str, idempotency_key: str, feedback_id: str | None = None):
+    context = _feedback_context(request)
+    return _feedback_call(lambda: feedback_store.reconcile_command(operation, idempotency_key, feedback_id=feedback_id,
+        trusted_workspace=context["workspace_id"], trusted_actor=context["actor_principal"]))
 
 
 @app.get("/v1/feedback/items/{feedback_id}")
@@ -659,6 +667,13 @@ def feedback_withdraw(feedback_id: str, payload: dict[str, Any], request: Reques
     ))
 
 
+@app.get("/v1/feedback/moderation/receipts")
+def feedback_moderation_receipt(request: Request, feedback_id: str, action: str, idempotency_key: str):
+    actor, role = _feedback_moderator(request)
+    return _feedback_call(lambda: feedback_store.reconcile_moderation(feedback_id, action, idempotency_key,
+        trusted_actor=actor, actor_role=role))
+
+
 @app.get("/v1/feedback/moderation/items")
 def feedback_moderation_items(
     request: Request, status: str = "submitted", category: str = "all", query: str = "",
@@ -720,6 +735,12 @@ def feedback_publication_claim(payload: dict[str, Any], request: Request) -> dic
     return _feedback_call(lambda: feedback_store.claim_publications(payload))
 
 
+@app.post("/internal/feedback-publications/{event_id}/begin-create")
+def feedback_publication_begin_create(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_feedback_publisher(request)
+    return _feedback_call(lambda: feedback_store.begin_publication_create(event_id, payload))
+
+
 @app.post("/internal/feedback-publications/{event_id}/complete")
 def feedback_publication_complete(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
     _require_feedback_publisher(request)
@@ -762,6 +783,12 @@ def feedback_hub_complete(event_id: str, payload: dict[str, Any], request: Reque
 def feedback_hub_retry(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
     _require_feedback_hub_relay(request)
     return _feedback_call(lambda: feedback_store.retry_hub_delivery(event_id, payload))
+
+
+@app.post("/internal/feedback-hub/status-checks/claim")
+def feedback_hub_status_checks_claim(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_feedback_hub_relay(request)
+    return _feedback_call(lambda: feedback_store.claim_hub_status_checks(payload))
 
 
 @app.get("/internal/feedback-hub/status-candidates")
@@ -1379,6 +1406,10 @@ def _ml_pool_market_scope(
 
 
 def _data_demand_requirements(payload: dict[str, Any], context: dict[str, str]) -> tuple[dict[str, object], list[dict[str, object]]]:
+    if payload.get("scope_kind") == "index_snapshot":
+        from .index_snapshot_demand import index_snapshot_requirement
+        scope, requirement = index_snapshot_requirement(payload.get("index_symbol"), payload.get("requested_as_of"))
+        return scope, [requirement]
     snapshot = paper_store.get_pool_snapshot(
         payload.get("stock_pool_snapshot_id"), trusted_owner=context["owner_principal"],
     )
@@ -1439,28 +1470,21 @@ def create_agent_data_demand(payload: dict[str, Any], request: Request) -> dict[
     _require_data_demand_admin(context)
 
     def operation() -> dict[str, object]:
-        scope, requirements = _data_demand_requirements(payload, context)
-        existing = data_demand_store.find_idempotent(
-            payload, context=context, scope=scope, requirements=requirements,
-        )
-        if existing is not None:
-            return {"demand": data_demand_store.refresh(
-                existing["demand_id"], trusted_owner=context["owner_principal"],
-                readiness_store=market_readiness_store, automation_store=market_automation_store,
-            ), "created": False}
-        repairs = [market_automation_store.request_data_repair(
-            requirement=requirement, requested_by=f"agent-data-demand:{context['owner_principal']}",
-        ) for requirement in requirements]
-        demand, created = data_demand_store.create(
-            payload, context=context, scope=scope, requirements=requirements,
-            repair_request_ids=[str(item["request_id"]) for item in repairs],
-        )
+        demand, created = data_demand_store.submit(payload, context=context,
+            planner=_data_demand_requirements, automation_store=market_automation_store)
         return {"demand": data_demand_store.refresh(
             demand["demand_id"], trusted_owner=context["owner_principal"],
             readiness_store=market_readiness_store, automation_store=market_automation_store,
         ), "created": created}
 
     return _data_demand_call(operation)
+
+
+@app.get("/v1/agent/data-demands/by-key/{idempotency_key}")
+def reconcile_agent_data_demand(idempotency_key: str, request: Request):
+    context = _required_agent_context(request, include_workspace=True)
+    return _data_demand_call(lambda: data_demand_store.reconcile_submission(idempotency_key,
+        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"]))
 
 
 @app.get("/v1/agent/data-demands/{demand_id}")
@@ -1667,7 +1691,7 @@ def list_security_master(
 def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return operation()
-    except MLValidationError as error:
+    except (MLValidationError, FactorValidationError) as error:
         raise HTTPException(status_code=422, detail=error.public_problem()) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
@@ -1990,15 +2014,21 @@ def create_research_task(payload: dict[str, Any], request: Request) -> dict[str,
 
 @app.get("/v1/research/tasks/{task_id}")
 def get_research_task(task_id: str, request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         task = research_store.get_task(task_id)
         if task["owner_principal"] != context["owner_principal"]:
             raise ResearchNotFound("research task not found")
-        return task
+        return {**task, "handoff": research_store.get_task_handoff(task_id, trusted_context=context)}
 
     return _research_call(operation)
+
+
+@app.get("/v1/research/tasks/{task_id}/handoff")
+def get_research_task_handoff(task_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.get_task_handoff(task_id, trusted_context=context))
 
 
 @app.get("/v1/research/tasks/{task_id}/continuation-permission")
@@ -2145,30 +2175,16 @@ def list_artifacts(request: Request) -> dict[str, object]:
 def compute_research_factor(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
 
-    def operation() -> dict[str, object]:
-        _owned_research_entity("research_task", payload.get("task_id"), context)
-        computed = compute_factor(payload)
-        artifact_payload = {
-            "task_id": payload.get("task_id"),
-            "experiment_id": payload.get("experiment_id"),
-            "kind": "factor_result",
-            "content": computed["artifact_content"],
-            "lineage": computed["artifact_lineage"],
-            "trace_id": payload.get("trace_id"),
-            "idempotency_key": payload.get("idempotency_key"),
-        }
-        artifact = research_store.create_artifact(
-            artifact_payload, trusted_owner=context["owner_principal"],
-            trusted_workspace=context["workspace_id"],
-        )
-        return {
-            "factor": computed["factor"],
-            "input_manifest": computed["input_manifest"],
-            "coverage": computed["coverage"],
-            "artifact": artifact,
-        }
+    def operation(data, connection) -> dict[str, object]:
+        try:
+            return submit_factor(research_store, data, context, compute_factor, _connection=connection)
+        except FactorValidationError as error:
+            if connection is not None:
+                raise DomainValidationRejected("factor validation failed", validation_error=error) from error
+            raise
 
-    return _research_call(operation)
+    return _research_call(lambda: _domain_validation_operation(request, payload, context,
+        "byq_factor_compute", operation))
 
 
 def _domain_validation_operation(request, payload, context, action, operation):
@@ -2246,11 +2262,11 @@ def validate_strategy_draft(payload: dict[str, Any], http_request: Request) -> d
 
 @app.post("/v1/research/strategies/versions", status_code=201)
 def create_strategy_version(payload: dict[str, Any], http_request: Request) -> dict[str, object]:
-    context = _required_agent_context(http_request)
+    context = _required_agent_context(http_request, include_workspace=True)
 
-    def operation() -> dict[str, object]:
+    def operation(data, connection) -> dict[str, object]:
         strategy_request = _strategy_payload(
-            payload,
+            data,
             {"task_id", "experiment_id", "draft_artifact_id", "trace_id", "idempotency_key"},
         )
         draft = research_store.get_artifact(strategy_request.get("draft_artifact_id"))
@@ -2267,28 +2283,21 @@ def create_strategy_version(payload: dict[str, Any], http_request: Request) -> d
         if draft_content.get("validation") != prepared["validation"]:
             raise ValueError("strategy draft validation evidence does not match its snapshot")
         version_content = strategy_version_content(prepared)
-        version_fingerprint = content_sha256(version_content)
-        artifact = research_store.find_artifact_by_content(
-            strategy_request.get("task_id"), "strategy_version", version_fingerprint
-        )
-        if artifact is None:
-            artifact = research_store.create_artifact(
-                {
-                    "task_id": strategy_request.get("task_id"),
-                    "experiment_id": strategy_request.get("experiment_id"),
-                    "kind": "strategy_version",
-                    "content": version_content,
-                    "lineage": [{"kind": "artifact", "id": draft["artifact_id"]}],
-                    "trace_id": strategy_request.get("trace_id"),
-                    "idempotency_key": strategy_request.get("idempotency_key"),
-                }
-            )
+        artifact = research_store.create_content_addressed_artifact({
+            "task_id": strategy_request.get("task_id"),
+            "experiment_id": strategy_request.get("experiment_id"),
+            "kind": "strategy_version", "content": version_content,
+            "lineage": [{"kind": "artifact", "id": draft["artifact_id"]}],
+            "trace_id": strategy_request.get("trace_id"),
+            "idempotency_key": strategy_request.get("idempotency_key"),
+        }, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"], _connection=connection)
         if artifact["status"] == "draft":
             artifact = research_store.transition(
                 "artifact",
                 artifact["artifact_id"],
                 "validated",
                 f"strategy-version-validate-{prepared['version_id']}",
+                _connection=connection,
             )
         return {
             "strategy_version": version_content,
@@ -2296,7 +2305,8 @@ def create_strategy_version(payload: dict[str, Any], http_request: Request) -> d
             "source_draft_artifact_id": draft["artifact_id"],
         }
 
-    return _research_call(operation)
+    return _research_call(lambda: _domain_validation_operation(http_request, payload, context,
+        "byq_strategy_version_create", operation))
 
 
 @app.post("/v1/research/strategies/approvals", status_code=201)
@@ -2673,16 +2683,12 @@ def create_ml_strategy_version(payload: dict[str, Any], request: Request) -> dic
             if connection is not None:
                 raise DomainValidationRejected("ML strategy validation failed", validation_error=error) from error
             raise
-        fingerprint = content_sha256(normalized)
-        artifact = research_store.find_artifact_by_content(
-            str(task["task_id"]), "ml_strategy_version", fingerprint
-        )
-        if artifact is None:
-            artifact = research_store.create_artifact({
-                "task_id": task["task_id"], "experiment_id": data.get("experiment_id"),
-                "kind": "ml_strategy_version", "content": normalized, "lineage": [],
-                "trace_id": data.get("trace_id"), "idempotency_key": data.get("idempotency_key"),
-            }, _connection=connection)
+        artifact = research_store.create_content_addressed_artifact({
+            "task_id": task["task_id"], "experiment_id": data.get("experiment_id"),
+            "kind": "ml_strategy_version", "content": normalized, "lineage": [],
+            "trace_id": data.get("trace_id"), "idempotency_key": data.get("idempotency_key"),
+        }, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+            _connection=connection)
         if artifact["status"] == "draft":
             artifact = research_store.transition(
                 "artifact", artifact["artifact_id"], "validated",
@@ -3257,12 +3263,11 @@ def delete_strategy_draft(artifact_id: str, request: Request) -> dict[str, objec
     def operation() -> dict[str, object]:
         context = _required_agent_context(request)
         artifact = research_store.get_artifact(artifact_id)
-        if artifact["kind"] != "strategy_draft":
-            raise ValueError("artifact is not a strategy draft")
         if artifact["owner_principal"] != context["owner_principal"]:
             raise ResearchNotFound("strategy draft not found")
-        if artifact["status"] not in {"draft", "validated"}:
-            raise ValueError("strategy draft is already superseded")
+        if artifact["kind"] != "strategy_draft":
+            raise ValueError("artifact is not a strategy draft")
+        # The durable transition checks its original receipt before current status.
         transitioned = research_store.transition(
             "artifact", artifact_id, "superseded", f"strategy-draft-delete-{artifact_id[:16]}"
         )
@@ -3272,57 +3277,27 @@ def delete_strategy_draft(artifact_id: str, request: Request) -> dict[str, objec
 
 
 @app.get("/v1/research/strategies/{strategy_id}/versions")
-def strategy_version_history(strategy_id: str, request: Request) -> dict[str, object]:
-    """List version history for one strategy (Phase 33)."""
+def strategy_version_history(strategy_id: str, request: Request, limit: int = 1000, offset: int = 0) -> dict[str, object]:
+    """Read a bounded page and exact total from the same database snapshot."""
     context = _required_agent_context(request)
-    if _STRATEGY_ID_RE.fullmatch(strategy_id) is None:
-        raise ValueError("strategy_id has invalid format")
-    artifacts = research_store.list_strategy_versions(
-        owner_principal=context["owner_principal"], strategy_id=strategy_id
-    )
-    versions: list[dict[str, object]] = []
-    for item in artifacts:
-        if item["kind"] != "strategy_version":
-            continue
-        content = item["content"]
-        if not isinstance(content, dict) or content.get("strategy_id") != strategy_id:
-            continue
-        versions.append(
-            {
-                "artifact_id": item["artifact_id"],
-                "status": item["status"],
-                "version_id": content.get("version_id"),
-                "source_fingerprint": content.get("source_fingerprint"),
-                "created_at": item["created_at"],
-            }
-        )
-    versions.sort(key=lambda row: str(row["created_at"]), reverse=True)
-    return {"strategy_id": strategy_id, "versions": versions}
+    def operation() -> dict[str, object]:
+        if _STRATEGY_ID_RE.fullmatch(strategy_id) is None:
+            raise ValueError("strategy_id has invalid format")
+        return {"strategy_id": strategy_id, **research_store.strategy_version_page(
+            owner_principal=context["owner_principal"], strategy_id=strategy_id, limit=limit, offset=offset)}
+    return _research_call(operation)
 
 
 @app.get("/v1/research/strategies/{strategy_id}/backtest-count")
-def strategy_backtest_count(strategy_id: str, request: Request) -> dict[str, object]:
-    """Return backtest job counts per strategy version (Phase 33 projection)."""
+def strategy_backtest_count(strategy_id: str, request: Request, limit: int = 1000, offset: int = 0) -> dict[str, object]:
+    """Exact whole-strategy totals plus bounded per-version counts."""
     context = _required_agent_context(request)
-    if _STRATEGY_ID_RE.fullmatch(strategy_id) is None:
-        raise ValueError("strategy_id has invalid format")
-    artifacts = research_store.list_strategy_versions(
-        owner_principal=context["owner_principal"], strategy_id=strategy_id
-    )
-    version_ids: list[str] = []
-    for item in artifacts:
-        if item["kind"] != "strategy_version":
-            continue
-        content = item["content"]
-        if isinstance(content, dict) and content.get("strategy_id") == strategy_id:
-            version_ids.append(item["artifact_id"])
-    counts = backtest_store.count_by_strategy_versions(version_ids)
-    return {
-        "strategy_id": strategy_id,
-        "version_count": len(version_ids),
-        "backtest_count": sum(counts.values()),
-        "by_version": counts,
-    }
+    def operation() -> dict[str, object]:
+        if _STRATEGY_ID_RE.fullmatch(strategy_id) is None:
+            raise ValueError("strategy_id has invalid format")
+        return {"strategy_id": strategy_id, **backtest_store.strategy_counts(
+            owner_principal=context["owner_principal"], strategy_id=strategy_id, limit=limit, offset=offset)}
+    return _backtest_call(operation)
 
 
 @app.post("/v1/research/artifacts/{artifact_id}/transitions")
@@ -3492,22 +3467,12 @@ def create_signal_snapshot(payload: dict[str, Any], http_request: Request) -> di
             strategy_version_id=validated_version.get("version_id"),
         )
         fingerprint = signal_snapshot_content_sha256(document)
-        artifact = research_store.find_artifact_by_content(
-            request.get("task_id"), "signal_snapshot", fingerprint
-        )
-        if artifact is None:
-            artifact = research_store.create_artifact(
-                {
-                    "task_id": request.get("task_id"),
-                    "experiment_id": request.get("experiment_id"),
-                    "kind": "signal_snapshot",
-                    "content": document,
-                    "lineage": [{"kind": "artifact", "id": version["artifact_id"]}],
-                    "trace_id": request.get("trace_id"),
-                    "idempotency_key": request.get("idempotency_key"),
-                },
-                trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
-            )
+        artifact = research_store.create_content_addressed_artifact({
+            "task_id": request.get("task_id"), "experiment_id": request.get("experiment_id"),
+            "kind": "signal_snapshot", "content": document,
+            "lineage": [{"kind": "artifact", "id": version["artifact_id"]}],
+            "trace_id": request.get("trace_id"), "idempotency_key": request.get("idempotency_key"),
+        }, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"])
         if artifact["status"] == "draft":
             artifact = research_store.transition(
                 "artifact",
@@ -4501,6 +4466,13 @@ def update_agent_approval_continuation(
     )})
 
 
+@app.get("/v1/learning/receipts")
+def get_learning_receipt(request: Request, kind: str, idempotency_key: str, task_id: str | None = None, run_id: str | None = None):
+    context = _required_agent_context(request, include_workspace=True)
+    return _learning_call(lambda: learning_store.reconcile_submission(kind, idempotency_key,
+        task_id=task_id, run_id=run_id, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"]))
+
+
 @app.post("/v1/learning/runs", status_code=201)
 def start_learning_run(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, payload)
@@ -4730,11 +4702,20 @@ def record_human_engineering_merge(task_id: str, payload: dict[str, Any], reques
 
 @app.post("/v1/paper/accounts", status_code=201)
 def create_paper_account(payload: dict[str, Any], request: Request) -> dict[str, object]:
-    context = _required_agent_context(request, payload)
+    context = _required_agent_context(request, payload, include_workspace=True)
+    if not isinstance(payload.get("idempotency_key"), str) or not payload["idempotency_key"].strip():
+        raise HTTPException(status_code=422, detail="paper account creation requires idempotency_key")
     return _paper_call(lambda: {"account": paper_store.create_account(
         {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
-        trusted_owner=context["owner_principal"],
+        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
     )})
+
+
+@app.get("/v1/paper/receipts")
+def get_paper_receipt(request: Request, operation: str, idempotency_key: str, account_id: str | None = None):
+    context = _required_agent_context(request, include_workspace=True)
+    return _paper_call(lambda: paper_store.reconcile_command(operation,idempotency_key,account_id=account_id,
+        trusted_owner=context["owner_principal"],trusted_workspace=context["workspace_id"]))
 
 
 @app.get("/v1/paper/accounts/{account_id}")
@@ -4767,10 +4748,12 @@ def delete_paper_account(account_id: str, payload: dict[str, Any], request: Requ
 
 @app.post("/v1/paper/pools", status_code=201)
 def create_stock_pool(payload: dict[str, Any], request: Request) -> dict[str, object]:
-    context = _required_agent_context(request, payload)
+    context = _required_agent_context(request, payload, include_workspace=True)
+    if not isinstance(payload.get("idempotency_key"), str) or not payload["idempotency_key"].strip():
+        raise HTTPException(status_code=422, detail="stock pool creation requires idempotency_key")
     return _paper_call(lambda: {"pool": paper_store.create_pool(
         {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
-        trusted_owner=context["owner_principal"],
+        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
     )})
 
 
@@ -4819,6 +4802,13 @@ def import_stock_pool_producer(payload: dict[str, Any], request: Request) -> dic
     return _stock_pool_producer_call(lambda: stock_pool_producer_store.import_inactive_definition(
         payload, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
     ))
+
+
+@app.get("/v1/paper/pools/reconcile")
+def reconcile_pool_creation(request: Request, kind: str, idempotency_key: str):
+    context = _required_agent_context(request, include_workspace=True)
+    return _stock_pool_producer_call(lambda: stock_pool_producer_store.reconcile_creation(kind, idempotency_key,
+        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"]))
 
 
 @app.get("/v1/paper/pools/{pool_id}/producer")
@@ -5103,11 +5093,12 @@ def export_paper_account(account_id: str, request: Request) -> dict[str, object]
 
 @app.post("/v1/paper/accounts/import", status_code=201)
 def import_paper_account(payload: dict[str, Any], request: Request) -> dict[str, object]:
-    context = _required_agent_context(request, payload)
+    context = _required_agent_context(request, payload, include_workspace=True)
     bundle = payload.get("bundle", payload)
     return _paper_call(lambda: paper_store.import_bundle(
         bundle, trusted_owner=context["owner_principal"],
-        trusted_actor=context["actor_principal"],
+        trusted_actor=context["actor_principal"], trusted_workspace=context["workspace_id"],
+        idempotency_key=payload.get("idempotency_key"),
     ))
 
 
@@ -5227,6 +5218,13 @@ def list_model_credentials(request: Request) -> dict[str, object]:
     })
 
 
+@app.get("/v1/users/model-credentials/receipts")
+def reconcile_model_credential(request: Request, operation: str, request_id: str, credential_id: str | None = None) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _credential_call(lambda: credential_store.reconcile_model_write(
+        operation,request_id,owner=context["owner_principal"],credential_id=credential_id))
+
+
 @app.post("/v1/users/model-credentials", status_code=201)
 def create_model_credential(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
@@ -5276,6 +5274,12 @@ def list_model_profiles(request: Request) -> dict[str, object]:
     )})
 
 
+@app.get("/v1/users/model-profiles/receipts")
+def reconcile_model_profile(request: Request, key_name: str) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _credential_call(lambda: credential_store.reconcile_profile_creation(context["owner_principal"], key_name))
+
+
 @app.post("/v1/users/model-profiles", status_code=201)
 def create_model_profile(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
@@ -5296,7 +5300,14 @@ def delete_model_profile(
         profile_id,
         context["owner_principal"],
         expected_version=payload.get("expected_version"),
+        actor=context["actor_principal"],
     )})
+
+
+@app.get("/v1/users/model-commands/receipts")
+def reconcile_model_command(request: Request, operation: str, resource_id: str, expected_version: int, profile_id: str | None = None) -> dict[str, object]:
+    context=_required_agent_context(request)
+    return _credential_call(lambda: credential_store.reconcile_model_command(context["owner_principal"],operation,resource_id,expected_version,profile_id))
 
 
 @app.get("/v1/users/model-bindings")
@@ -5319,6 +5330,7 @@ def put_model_binding(
         agent_id,
         payload.get("profile_id"),
         expected_version=payload.get("expected_version"),
+        actor=context["actor_principal"],
     )})
 
 
@@ -5360,6 +5372,21 @@ def resolve_model_credential(payload: dict[str, Any], request: Request) -> dict[
         raise HTTPException(status_code=403, detail="credential resolver denied") from error
     except CredentialUnavailable as error:
         raise HTTPException(status_code=409, detail="selected model binding is unavailable") from error
+    except CredentialPersistenceError as error:
+        raise HTTPException(status_code=503, detail="credential storage is unavailable") from error
+
+
+def _policy_request(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    key=payload.get("request_id")
+    if not isinstance(key,str) or not key.strip() or len(key)>128:
+        raise HTTPException(status_code=422,detail="policy request_id is required")
+    return {field:value for field,value in payload.items() if field!="request_id"},key.strip()
+
+
+@app.get("/v1/users/agent-policy/receipts")
+def reconcile_user_agent_policy(request: Request, operation: str, request_id: str, resource_id: str | None = None) -> dict[str, object]:
+    context=_required_agent_context(request)
+    return _policy_call(lambda:user_policy_store.reconcile_command(context["owner_principal"],operation,request_id,resource_id))
 
 
 @app.get("/v1/users/agent-policy")
@@ -5376,16 +5403,19 @@ def get_user_agent_policy(request: Request) -> dict[str, object]:
 @app.put("/v1/users/agent-policy")
 def update_user_agent_policy(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
-    return _policy_call(lambda: {"policy": public_policy(user_policy_store.update(context["owner_principal"], payload))})
+    payload,key=_policy_request(payload)
+    return _policy_call(lambda: {"policy": public_policy(user_policy_store.update(context["owner_principal"], payload,request_id=key,actor=context["actor_principal"]))})
 
 
 @app.post("/v1/users/agent-policy/rules", status_code=201)
 def create_user_agent_policy_rule(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
+    payload,key=_policy_request(payload)
     return _policy_call(lambda: {"rule": user_policy_store.create_rule(
         context["owner_principal"],
         payload,
         actor=context["actor_principal"],
+        request_id=key,
     )})
 
 
@@ -5396,11 +5426,13 @@ def update_user_agent_policy_rule(
     request: Request,
 ) -> dict[str, object]:
     context = _required_agent_context(request)
+    payload,key=_policy_request(payload)
     return _policy_call(lambda: {"rule": user_policy_store.update_rule(
         rule_id,
         context["owner_principal"],
         payload,
         actor=context["actor_principal"],
+        request_id=key,
     )})
 
 
@@ -5411,19 +5443,23 @@ def delete_user_agent_policy_rule(
     request: Request,
 ) -> dict[str, object]:
     context = _required_agent_context(request)
+    payload,key=_policy_request(payload)
     return _policy_call(lambda: user_policy_store.delete_rule(
         rule_id,
         context["owner_principal"],
         actor=context["actor_principal"],
+        request_id=key,
         expected_version=payload.get("expected_version"),
     ))
 
 
 @app.post("/v1/users/agent-policy/presets/{preset_id}/apply")
-def apply_user_agent_policy_preset(preset_id: str, request: Request) -> dict[str, object]:
+def apply_user_agent_policy_preset(preset_id: str, request: Request, payload: dict[str, Any]) -> dict[str, object]:
     context = _required_agent_context(request)
+    _,key=_policy_request(payload)
     return _policy_call(lambda: user_policy_store.apply_preset(
         context["owner_principal"],
         preset_id,
         actor=context["actor_principal"],
+        request_id=key,
     ))

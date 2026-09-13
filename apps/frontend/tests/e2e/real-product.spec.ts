@@ -195,7 +195,7 @@ test("Phase 74 real LightGBM training to frozen-signal backtest journey", async 
   page.on("response", response => { if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`); });
   await page.goto("/login"); await page.getByLabel("用户名").fill(username); await page.getByLabel("密码").fill(password); await page.getByRole("button", { name: "进入" }).click();
   await expect(page).toHaveURL(`${origin}/agent`);
-  const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `Phase 74 ML 冻结池-${Date.now()}`, pool_type: "custom", description: "真实浏览器 LightGBM 闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
+  const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ idempotency_key: `phase74-pool-${Date.now()}`, name: `Phase 74 ML 冻结池-${Date.now()}`, pool_type: "custom", description: "真实浏览器 LightGBM 闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
   expect(poolStatus).toBe(201);
   await page.goto("/model-research");
   await expect(page.getByRole("heading", { name: "模型研究目录与实验进程" })).toBeVisible();
@@ -224,7 +224,7 @@ test("Phase 86 real HS300 regime experts to routed frozen-signal backtest journe
   page.on("response", response => { if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`); });
   await page.goto("/login"); await page.getByLabel("用户名").fill(username); await page.getByLabel("密码").fill(password); await page.getByRole("button", { name: "进入" }).click();
   await expect(page).toHaveURL(`${origin}/agent`);
-  const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `Phase 86 状态专家池-${Date.now()}`, pool_type: "custom", description: "真实浏览器沪深300状态专家闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
+  const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ idempotency_key: `phase86-pool-${Date.now()}`, name: `Phase 86 状态专家池-${Date.now()}`, pool_type: "custom", description: "真实浏览器沪深300状态专家闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
   expect(poolStatus).toBe(201);
   await page.goto("/model-research");
   await expect(page.getByRole("heading", { name: "模型研究目录与实验进程" })).toBeVisible();
@@ -304,7 +304,7 @@ test("real Product API index pool materializes validated point-in-time weights",
   await expect(page.getByText("600000.SH", { exact: true }).first()).toBeVisible();
   await page.getByRole("tab", { name: "快照历史" }).click();
   await expect(
-    page.getByRole("tabpanel", { name: "快照历史" }).getByText("succeeded", { exact: true }),
+    page.getByRole("tabpanel", { name: "快照历史" }).getByText("succeeded", { exact: true }).first(),
   ).toBeVisible();
   const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
   if (evidenceDir) {
@@ -397,7 +397,7 @@ test("real Product API Paper Trading settlement, risk, detail, and bundle flow",
   const pool = await page.evaluate(async (name) => {
     const response = await fetch("/api/product/paper/pools", {
       method: "POST", credentials: "include", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, symbols: ["000001.SZ"], pool_type: "custom" }),
+      body: JSON.stringify({ idempotency_key: `paper-pool-${Date.now()}`, name, symbols: ["000001.SZ"], pool_type: "custom" }),
     });
     if (!response.ok) throw new Error(`pool create failed: ${response.status}`);
     return (await response.json()).pool;
@@ -502,8 +502,8 @@ test("real Product API My Space credential, binding, policy, and asset import fl
     const settings = (await request("/settings/models")).body;
     const binding = settings.bindings.find((item: { agent_id: string }) => item.agent_id === "byq-product");
     await request("/settings/models/bindings/byq-product", { method: "PUT", body: JSON.stringify({ profile_id: profile.profile_id, expected_version: binding?.version ?? 0 }) });
-    await request("/settings/agent-policy/rules", { method: "POST", body: JSON.stringify({ name: `E2E拒绝回测-${id}`, description: "real browser evidence", action: "byq_backtest_run", agent_id: "*", decision_mode: "auto_deny", risk_level: "high", priority: 10, enabled: true }) });
-    await request("/paper/pools", { method: "POST", body: JSON.stringify({ name: `E2E资产池-${id}`, symbols: ["000001.SZ"], pool_type: "custom" }) });
+    await request("/settings/agent-policy/rules", { method: "POST", body: JSON.stringify({ request_id: `e2e-policy-rule-${id}`, name: `E2E拒绝回测-${id}`, description: "real browser evidence", action: "byq_backtest_run", agent_id: "*", decision_mode: "auto_deny", risk_level: "high", priority: 10, enabled: true }) });
+    await request("/paper/pools", { method: "POST", body: JSON.stringify({ idempotency_key: `e2e-asset-pool-${id}`, name: `E2E资产池-${id}`, symbols: ["000001.SZ"], pool_type: "custom" }) });
     const bundle = (await request("/settings/assets/export")).body;
     const imported = (await request("/settings/assets/import", { method: "POST", body: JSON.stringify(bundle) })).body;
     return { bundleVersion: bundle.schema_version, imported, credentialLabel: credential.label };
@@ -640,7 +640,7 @@ for (const viewport of ['desktop', 'mobile'] as const) {
     await panel.getByText('选择已验证资产', { exact: true }).click();
     await page.getByRole('option', { name: /^strategy_version ·/ }).click();
     await panel.getByRole('combobox').press('Escape');
-    await panel.getByText('我确认上述任务、资产、额度与有效期；已保存许可不代表后台执行已启用。', { exact: true }).click();
+    await panel.getByText('我确认上述任务、资产、额度与有效期，并允许按上述条件续接；实际执行仍须通过准入检查。', { exact: true }).click();
     await expect(panel.getByRole('checkbox')).toBeChecked();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await panel.screenshot({ path: testInfo.outputPath(`f6-permission-form-${viewport}.png`) });
