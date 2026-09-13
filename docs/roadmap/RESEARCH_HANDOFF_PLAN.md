@@ -111,3 +111,6 @@ H4 反馈草稿及原命令核对已接入，真实浏览器刷新恢复不重�
 
 H4 六类领域对象的实际HTTP丢回执→Backend重启→新MCP进程原键GET恢复通过，
 持久数量无重复；见[CROSS-PROCESS补充](../evidence/research-handoff-h4/CROSS-PROCESS.md)。
+
+H4 模拟账户并发资金校验及换绑/订单原键恢复已修复，
+见[PAPER-ORDER-SERIALIZATION](../evidence/research-handoff-h4/PAPER-ORDER-SERIALIZATION.md)。其余模拟命令恢复继续。
