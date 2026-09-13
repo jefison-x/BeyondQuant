@@ -127,3 +127,9 @@ export async function reconcileModelCredential(command:{operation:string;key:str
 export function getModelProfileReceipt(keyName:string):Promise<unknown> {
   return request('/settings/models/profiles/receipts?'+new URLSearchParams({key_name:keyName}));
 }
+
+export function getModelCommandReceipt(command:import('./modelCommand').ModelCommand):Promise<unknown>{
+  const params=new URLSearchParams({operation:command.operation,resource_id:command.resource_id,expected_version:String(command.expected_version)});
+  if(command.operation==='binding' && command.profile_id!==null)params.set('profile_id',command.profile_id);
+  return request('/settings/models/commands/receipts?'+params);
+}

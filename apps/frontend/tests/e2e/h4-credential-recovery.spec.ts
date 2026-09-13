@@ -50,3 +50,45 @@ test('model profile creation recovers the original configuration after refresh',
   expect(await(await response).json()).toEqual({state:'confirmed',profile_id:identity,committed_version:1,input:original});
   await expect(page.getByText('有一笔模型档案创建尚未确认',{exact:true})).toHaveCount(0);expect(writes).toBe(1);
 });
+
+test('binding and profile deletion recover their original command after lost acknowledgements',async({page})=>{
+  await page.goto('/login');await page.getByLabel('用户名').fill('h5-browser');await page.getByLabel('密码').fill('test-password-123');
+  await page.getByRole('button',{name:'进入'}).click();await expect(page).toHaveURL(/\/agent$/);
+  const name='Command recovery '+Date.now();
+  const profile=await page.evaluate(async name=>{
+    const post=async(path:string,payload:unknown)=>{
+      const r=await fetch('/api/product/settings/models/'+path,{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
+      if(r.status!==201)throw Error('model fixture failed');return r.json();
+    };
+    const {credential}=await post('credentials',{provider:'deepseek',label:name,secret:'synthetic-command-fixture',idempotency_key:name});
+    return (await post('profiles',{credential_id:credential.credential_id,key_name:name,display_name:name,provider:'deepseek',model:'deepseek-v4-flash',temperature:0.2,reasoning_enabled:false})).profile;
+  },name);
+  let bindingWrites=0,deleteWrites=0,bindingVersion=0;
+  await page.goto('/user/models');
+  await page.route('**/api/product/settings/models/bindings/byq-product',async route=>{
+    bindingWrites++;const r=await route.fetch();expect(r.status()).toBe(200);bindingVersion=(await r.json()).binding.version;await route.abort('failed');
+  });
+  await page.locator('.binding-row .el-select__wrapper').scrollIntoViewIfNeeded();
+  await page.locator('.binding-row .el-select__wrapper').click();
+  await expect(page.getByRole('combobox',{name:'小巴 Product Agent 模型档案'})).toHaveAttribute('aria-expanded','true');
+  await page.getByRole('option').filter({hasText:name}).click();
+  await expect(page.getByText('有一笔模型操作尚未确认',{exact:true})).toBeVisible();await page.reload();
+  let received=page.waitForResponse(r=>r.url().includes('/models/commands/receipts?'));
+  await page.getByRole('button',{name:'核对原模型操作',exact:true}).click();
+  expect(await(await received).json()).toEqual({state:'confirmed',operation:'binding',resource_id:'byq-product',expected_version:bindingVersion-1,profile_id:profile.profile_id,committed_version:bindingVersion});
+  await expect(page.getByText('有一笔模型操作尚未确认',{exact:true})).toHaveCount(0);
+  await page.getByPlaceholder('筛选档案、厂商、模型或状态').fill(name);
+  await page.route('**/api/product/settings/models/profiles/'+profile.profile_id+'/delete',async route=>{
+    deleteWrites++;const r=await route.fetch();expect(r.status()).toBe(200);expect((await r.json()).profile.status).toBe('deleted');await route.abort('failed');
+  });
+  await page.getByRole('row').filter({hasText:name}).getByRole('button',{name:'删除',exact:true}).click();
+  await page.locator('.el-message-box__btns button').last().click();
+  await expect(page.getByText('有一笔模型操作尚未确认',{exact:true})).toBeVisible();await page.reload();
+  received=page.waitForResponse(r=>r.url().includes('/models/commands/receipts?'));
+  await page.getByRole('button',{name:'核对原模型操作',exact:true}).click();
+  expect(await(await received).json()).toEqual({state:'confirmed',operation:'delete_profile',resource_id:profile.profile_id,expected_version:1,profile_id:profile.profile_id,committed_version:2});
+  await expect(page.getByText('有一笔模型操作尚未确认',{exact:true})).toHaveCount(0);
+  const settings=await page.evaluate(async()=>(await fetch('/api/product/settings/models',{credentials:'include'})).json());
+  const binding=settings.bindings.find((v:any)=>v.agent_id==='byq-product');expect(binding.profile_id).toBeNull();expect(binding.version).toBe(bindingVersion+1);
+  expect(bindingWrites).toBe(1);expect(deleteWrites).toBe(1);
+});

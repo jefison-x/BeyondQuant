@@ -461,7 +461,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
     },
     {
       "kind": "route",
@@ -490,7 +490,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
     },
     {
       "kind": "route",
@@ -519,7 +519,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
     },
     {
       "kind": "route",
@@ -548,7 +548,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
     },
     {
       "kind": "route",
@@ -577,7 +577,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
     },
     {
       "kind": "route",
@@ -606,7 +606,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
     },
     {
       "kind": "route",
@@ -635,7 +635,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
     },
     {
       "kind": "route",
@@ -664,7 +664,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
     },
     {
       "kind": "route",
@@ -693,7 +693,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5"
     },
     {
       "kind": "route",
@@ -809,7 +809,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7"
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
     },
     {
       "kind": "route",
@@ -838,7 +838,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7"
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
     },
     {
       "kind": "route",
@@ -867,7 +867,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7"
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
     },
     {
       "kind": "route",
@@ -896,7 +896,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7"
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
     },
     {
       "kind": "route",
@@ -925,7 +925,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7"
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
     },
     {
       "kind": "route",
@@ -954,7 +954,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7"
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
     },
     {
       "kind": "route",
@@ -983,7 +983,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7"
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
     },
     {
       "kind": "route",
@@ -1012,7 +1012,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7"
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
     },
     {
       "kind": "route",
@@ -1041,7 +1041,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7"
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b"
     },
     {
       "kind": "route",
@@ -1071,9 +1071,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1104,9 +1104,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1137,9 +1137,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1170,9 +1170,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1203,9 +1203,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1236,9 +1236,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1269,9 +1269,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1302,9 +1302,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1335,9 +1335,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1347,7 +1347,7 @@
       "method": "POST",
       "path": "/v1/users/model-profiles/{profile_id}/delete",
       "handler": "delete_model_profile",
-      "audit_status": "NEEDS_EVIDENCE",
+      "audit_status": "VERIFIED_OK",
       "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
       "mode": "write",
       "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
@@ -1356,7 +1356,7 @@
       "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
       "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
       "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
-      "recovery": "锁竞争已证明有界；原提交身份与绑定审计缺口仍待处理，不将当前 deleted 等同于某次命令回执",
+      "recovery": "原 owner/操作/资源/expected_version 及目标 profile 精确回执；写前保存原版本，刷新 GET 恢复；回执与写入/解绑同事务；历史无回执不补造",
       "consumers": [
         "Product 模型设置浏览器；私有解析仅 Adapter"
       ],
@@ -1366,11 +1366,13 @@
         "services/backend/tests/test_model_profile_recovery.py",
         "services/backend/tests/test_credential_timeouts.py",
         "services/backend/tests/test_model_binding_concurrency.py",
-        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
+        "services/backend/tests/test_model_command_receipts.py",
+        "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1401,9 +1403,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1413,7 +1415,7 @@
       "method": "PUT",
       "path": "/v1/users/model-bindings/{agent_id}",
       "handler": "put_model_binding",
-      "audit_status": "NEEDS_EVIDENCE",
+      "audit_status": "VERIFIED_OK",
       "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
       "mode": "write",
       "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
@@ -1422,7 +1424,7 @@
       "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
       "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
       "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
-      "recovery": "首次/已有绑定同版本竞争仅一条推进；绑定审计和未知提交恢复记录仍需补齐",
+      "recovery": "原 owner/操作/资源/expected_version 及目标 profile 精确回执；写前保存原版本，刷新 GET 恢复；回执与写入/解绑同事务；历史无回执不补造",
       "consumers": [
         "Product 模型设置浏览器；私有解析仅 Adapter"
       ],
@@ -1432,11 +1434,13 @@
         "services/backend/tests/test_model_profile_recovery.py",
         "services/backend/tests/test_credential_timeouts.py",
         "services/backend/tests/test_model_binding_concurrency.py",
-        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
+        "services/backend/tests/test_model_command_receipts.py",
+        "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1467,9 +1471,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1500,9 +1504,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1533,9 +1537,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1566,9 +1570,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1599,9 +1603,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1632,9 +1636,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1665,9 +1669,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1698,9 +1702,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1731,9 +1735,9 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1743,7 +1747,7 @@
       "method": "POST",
       "path": "/settings/models/profiles/{profile_id}/delete",
       "handler": "product_model_profile_delete",
-      "audit_status": "NEEDS_EVIDENCE",
+      "audit_status": "VERIFIED_OK",
       "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
       "mode": "write",
       "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
@@ -1752,7 +1756,7 @@
       "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
       "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
       "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
-      "recovery": "锁竞争已证明有界；原提交身份与绑定审计缺口仍待处理，不将当前 deleted 等同于某次命令回执",
+      "recovery": "原 owner/操作/资源/expected_version 及目标 profile 精确回执；写前保存原版本，刷新 GET 恢复；回执与写入/解绑同事务；历史无回执不补造",
       "consumers": [
         "Product 模型设置浏览器；私有解析仅 Adapter"
       ],
@@ -1762,11 +1766,13 @@
         "services/backend/tests/test_model_profile_recovery.py",
         "services/backend/tests/test_credential_timeouts.py",
         "services/backend/tests/test_model_binding_concurrency.py",
-        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
+        "services/backend/tests/test_model_command_receipts.py",
+        "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     },
     {
@@ -1776,7 +1782,7 @@
       "method": "PUT",
       "path": "/settings/models/bindings/{agent_id}",
       "handler": "product_model_binding_update",
-      "audit_status": "NEEDS_EVIDENCE",
+      "audit_status": "VERIFIED_OK",
       "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
       "mode": "write",
       "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
@@ -1785,7 +1791,7 @@
       "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
       "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
       "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
-      "recovery": "首次/已有绑定同版本竞争仅一条推进；绑定审计和未知提交恢复记录仍需补齐",
+      "recovery": "原 owner/操作/资源/expected_version 及目标 profile 精确回执；写前保存原版本，刷新 GET 恢复；回执与写入/解绑同事务；历史无回执不补造",
       "consumers": [
         "Product 模型设置浏览器；私有解析仅 Adapter"
       ],
@@ -1795,11 +1801,75 @@
         "services/backend/tests/test_model_profile_recovery.py",
         "services/backend/tests/test_credential_timeouts.py",
         "services/backend/tests/test_model_binding_concurrency.py",
-        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
+        "services/backend/tests/test_model_command_receipts.py",
+        "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
       "dependencies_sha256": {
-        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5317,
+      "method": "GET",
+      "path": "/v1/users/model-commands/receipts",
+      "handler": "reconcile_model_command",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/operation/resource/original expected_version 与 profile 精确匹配",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "后续改绑/删除后仍返回原提交版本；错 owner/目标/原版本不返回；不使用当前目录认领原操作",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_model_command_receipts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
+        "apps/frontend/src/api/modelCommand.spec.ts"
+      ],
+      "source_sha256": "b5ed08267f2bce51e99f1f273b2cd70d7ee6561303ad195d8f85a0cf296ac4c5",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1708,
+      "method": "GET",
+      "path": "/settings/models/commands/receipts",
+      "handler": "product_model_command_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/operation/resource/original expected_version 与 profile 精确匹配",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "后续改绑/删除后仍返回原提交版本；错 owner/目标/原版本不返回；不使用当前目录认领原操作",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_model_command_receipts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
+        "apps/frontend/src/api/modelCommand.spec.ts"
+      ],
+      "source_sha256": "fc13992bb910ca98c987775811b9fee59fae7ba4e6f5cd8f4e5bd1f2c261535b",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
     }
   ]

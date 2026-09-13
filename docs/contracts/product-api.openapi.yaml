@@ -387,6 +387,15 @@ paths:
         "200": {description: Original immutable profile configuration and ID or not_found}
   /api/product/settings/models/profiles:
     post: {summary: 创建 an owner-scoped model profile from the reviewed catalogue., responses: *createdResponses}
+  /api/product/settings/models/commands/receipts:
+    get:
+      summary: Read the original model binding or profile deletion version
+      parameters:
+        - {name: operation, in: query, required: true, schema: {type: string, enum: [binding, delete_profile]}}
+        - {name: resource_id, in: query, required: true, schema: {type: string}}
+        - {name: expected_version, in: query, required: true, schema: {type: integer, minimum: 0}}
+        - {name: profile_id, in: query, schema: {type: string}}
+      responses: *okResponses
   /api/product/settings/models/profiles/{profile_id}/delete:
     post: {summary: 软删除 a model profile and unbind it., responses: *okResponses}
   /api/product/settings/models/bindings/{agent_id}:

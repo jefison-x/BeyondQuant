@@ -5310,7 +5310,14 @@ def delete_model_profile(
         profile_id,
         context["owner_principal"],
         expected_version=payload.get("expected_version"),
+        actor=context["actor_principal"],
     )})
+
+
+@app.get("/v1/users/model-commands/receipts")
+def reconcile_model_command(request: Request, operation: str, resource_id: str, expected_version: int, profile_id: str | None = None) -> dict[str, object]:
+    context=_required_agent_context(request)
+    return _credential_call(lambda: credential_store.reconcile_model_command(context["owner_principal"],operation,resource_id,expected_version,profile_id))
 
 
 @app.get("/v1/users/model-bindings")
@@ -5333,6 +5340,7 @@ def put_model_binding(
         agent_id,
         payload.get("profile_id"),
         expected_version=payload.get("expected_version"),
+        actor=context["actor_principal"],
     )})
 
 

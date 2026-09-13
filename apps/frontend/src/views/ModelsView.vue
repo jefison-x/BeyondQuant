@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   createModelCredential, createModelProfile, deleteModelProfile, getModelSettings,
-  revokeModelCredential, updateModelBinding, updateModelCredential, reconcileModelCredential, SettingsRequestError, getModelProfileReceipt,
+  revokeModelCredential, updateModelBinding, updateModelCredential, reconcileModelCredential, SettingsRequestError, getModelProfileReceipt, getModelCommandReceipt,
 } from "@/api/settings";
 import type { ModelCredential, ModelProfile, ModelSettings } from "@/api/types";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
@@ -12,6 +12,8 @@ import { useFilteredPagination } from "@/composables/useFilteredPagination";
 import {useAuthStore} from '@/stores/auth';
 import {beginCredentialWrite,readCredentialWrite,finishCredentialWrite,type CredentialWrite} from '@/api/credentialSubmission';
 import {beginProfileSubmission,readProfileSubmission,finishProfileSubmission,confirmProfileReceipt,type ProfileInput} from '@/api/profileSubmission';
+import {beginModelCommand,readModelCommand,finishModelCommand,confirmModelCommand,type ModelCommand} from '@/api/modelCommand';
+const pendingModelCommand=ref<ModelCommand|null>(null);
 const pendingProfile=ref<ProfileInput|null>(null);
 const auth=useAuthStore();
 const pendingCredential=ref<CredentialWrite|null>(null);
@@ -74,7 +76,7 @@ async function load() {
   finally { loading.value = false; }
 }
 
-onMounted(async()=>{try{pendingCredential.value=readCredentialWrite(credentialScope());pendingProfile.value=readProfileSubmission(credentialScope());}catch(cause){error.value=cause instanceof Error?cause.message:'原凭据操作无法读取';return;}await load();});
+onMounted(async()=>{try{pendingCredential.value=readCredentialWrite(credentialScope());pendingProfile.value=readProfileSubmission(credentialScope());pendingModelCommand.value=readModelCommand(credentialScope());}catch(cause){error.value=cause instanceof Error?cause.message:'原凭据操作无法读取';return;}await load();});
 
 function openCredential(item: ModelCredential | null = null) {
   editingCredential.value = item;
@@ -174,20 +176,46 @@ watch(() => profileForm.credential_id, credentialId => {
   }
 });
 
+async function executeModelCommand(input:ModelCommand){
+  const scope=credentialScope(),previous=readModelCommand(scope),command=beginModelCommand(scope,input);pendingModelCommand.value=command;
+  try{
+    if(command.operation==='binding'){
+      const {binding}=await updateModelBinding(command.resource_id,command.profile_id,command.expected_version);
+      if(binding.agent_id!==command.resource_id || binding.profile_id!==command.profile_id || binding.version!==command.expected_version+1)throw Error('绑定回执不一致，请核对原操作');
+    }else{
+      const {profile}=await deleteModelProfile(command.resource_id,command.expected_version);
+      if(profile.profile_id!==command.resource_id || profile.status!=='deleted' || profile.version!==command.expected_version+1)throw Error('删除回执不一致，请核对原操作');
+    }
+    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
+    finishModelCommand(scope,command);pendingModelCommand.value=null;
+  }catch(cause){
+    if(!previous && cause instanceof SettingsRequestError && [400,401,403,404,409,422].includes(cause.status)){finishModelCommand(scope,command);pendingModelCommand.value=null;}
+    throw cause;
+  }
+}
+async function recoverModelCommand(){
+  if(!pendingModelCommand.value)return;busy.value=true;
+  try{
+    const scope=credentialScope(),command=pendingModelCommand.value;
+    const confirmed=confirmModelCommand(await getModelCommandReceipt(command),command);
+    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
+    if(!confirmed){ElMessage.warning('尚未找到原模型操作回执，请稍后核对');return;}
+    finishModelCommand(scope,command);pendingModelCommand.value=null;await load();ElMessage.success('原模型操作已确认');
+  }catch(cause){ElMessage.error(cause instanceof Error?cause.message:'模型操作核对失败');}finally{busy.value=false;}
+}
 async function removeProfile(item: ModelProfile) {
   try {
     await ElMessageBox.confirm("删除档案会将关联 Agent 恢复为系统默认。", "删除模型档案", { type: "warning" });
-    await deleteModelProfile(item.profile_id, item.version);
-    await load();
+    busy.value=true;
+    await executeModelCommand({operation:'delete_profile',resource_id:item.profile_id,profile_id:item.profile_id,expected_version:item.version});await load();
   } catch (exc) { if (exc !== "cancel" && exc !== "close") ElMessage.error(exc instanceof Error ? exc.message : "删除失败"); }
+  finally{busy.value=false;}
 }
-
 async function bind(agentId: string, profileId: string | null, version: number) {
   busy.value = true;
   try {
-    await updateModelBinding(agentId, profileId || null, version);
-    ElMessage.success(profileId ? "Agent 模型绑定已更新" : "已恢复系统默认");
-    await load();
+    await executeModelCommand({operation:'binding',resource_id:agentId,profile_id:profileId || null,expected_version:version});
+    ElMessage.success(profileId ? "Agent 模型绑定已更新" : "已恢复系统默认");await load();
   } catch (exc) { ElMessage.error(exc instanceof Error ? exc.message : "绑定失败"); }
   finally { busy.value = false; }
 }
@@ -199,6 +227,9 @@ function actionLabel(value: unknown) {
 
 <template>
   <section class="my-space-page">
+    <el-alert v-if="pendingModelCommand" title="有一笔模型操作尚未确认" type="warning" :closable="false" show-icon>
+      <el-button :loading="busy" @click="recoverModelCommand">核对原模型操作</el-button>
+    </el-alert>
     <el-alert v-if="pendingProfile" title="有一笔模型档案创建尚未确认" type="warning" :closable="false" show-icon>
       <el-button :loading="busy" @click="recoverProfile">核对原模型档案</el-button>
       <el-button :loading="busy" @click="saveProfile(true)">使用原档案重试</el-button>

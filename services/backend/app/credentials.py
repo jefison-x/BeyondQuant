@@ -438,6 +438,18 @@ class CredentialStore(PgStoreMixin):
             PRIMARY KEY(owner_principal, agent_id)
         )
         """,
+        """CREATE TABLE IF NOT EXISTS model_command_receipts (
+            owner_principal TEXT NOT NULL,
+            operation TEXT NOT NULL CHECK(operation IN ('binding','delete_profile')),
+            resource_id TEXT NOT NULL,
+            expected_version INTEGER NOT NULL CHECK(expected_version >= 0),
+            profile_id TEXT,
+            committed_version INTEGER NOT NULL,
+            actor_principal TEXT NOT NULL,
+            effect_json JSONB NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY(owner_principal,operation,resource_id,expected_version)
+        )""",
     ]
 
     def __init__(
@@ -974,16 +986,46 @@ class CredentialStore(PgStoreMixin):
             raise CredentialNotFound("model profile not found")
         return self._public_profile(row)
 
+    def _record_model_command(self, connection, *, owner, actor, operation, resource_id, expected_version, profile_id, committed_version, effect):
+        execute(connection,"""INSERT INTO model_command_receipts
+            (owner_principal,operation,resource_id,expected_version,profile_id,committed_version,actor_principal,effect_json,created_at)
+            VALUES (:owner,:operation,:resource,:expected,:profile,:version,:actor,:effect,:created)""",
+            {"owner":owner,"operation":operation,"resource":resource_id,"expected":expected_version,
+             "profile":profile_id,"version":committed_version,"actor":actor,"effect":effect,"created":_now()})
+
+    def reconcile_model_command(self, owner, operation, resource_id, expected_version, profile_id=None):
+        owner=_principal(owner)
+        if isinstance(expected_version,bool) or not isinstance(expected_version,int) or expected_version<0:
+            raise ValueError("expected_version must be a non-negative integer")
+        if operation=='binding':
+            resource_id=_text(resource_id,field="agent_id",maximum=64)
+            if resource_id not in _AGENT_IDS:raise ValueError("agent_id is not bindable")
+            profile_id=None if profile_id is None else _identifier(profile_id,field="profile_id",prefix="profile")
+        elif operation=='delete_profile':
+            resource_id=_identifier(resource_id,field="profile_id",prefix="profile")
+            if profile_id is not None or expected_version<1:raise ValueError("invalid profile deletion identity")
+            profile_id=resource_id
+        else:raise ValueError("unsupported model command")
+        row=self._fetch_one("""SELECT committed_version FROM model_command_receipts
+            WHERE owner_principal=:owner AND operation=:operation AND resource_id=:resource
+              AND expected_version=:expected AND profile_id IS NOT DISTINCT FROM CAST(:profile AS TEXT)""",
+            {"owner":owner,"operation":operation,"resource":resource_id,"expected":expected_version,"profile":profile_id})
+        if row is None:return {"state":"not_found"}
+        return {"state":"confirmed","operation":operation,"resource_id":resource_id,"expected_version":expected_version,
+                "profile_id":profile_id,"committed_version":row["committed_version"]}
+
     def delete_profile(
         self,
         profile_id: object,
         owner: object,
         *,
         expected_version: object,
+        actor: object | None = None,
     ) -> dict[str, object]:
         profile_id = _identifier(profile_id, field="profile_id", prefix="profile")
         owner_principal = _principal(owner)
         expected = _expected_version(expected_version)
+        actor_principal = _principal(owner_principal if actor is None else actor, field="actor_principal")
         with self._transaction() as connection:
             row = fetch_one(
                 connection,
@@ -997,20 +1039,23 @@ class CredentialStore(PgStoreMixin):
             if row["version"] != expected:
                 raise CredentialConflict("model profile version conflict")
             now = _now()
-            execute(
+            unbound = execute(
                 connection,
                 """UPDATE agent_model_bindings SET profile_id = NULL,
                    version = version + 1, updated_at = :updated_at
-                   WHERE owner_principal = :owner AND profile_id = :profile_id""",
+                   WHERE owner_principal = :owner AND profile_id = :profile_id RETURNING agent_id, version""",
                 {"owner": owner_principal, "profile_id": profile_id, "updated_at": now},
             )
-            execute(
+            committed = fetch_one(
                 connection,
                 """UPDATE model_profiles SET status = 'deleted', version = version + 1,
-                   updated_at = :updated_at WHERE profile_id = :profile_id""",
+                   updated_at = :updated_at WHERE profile_id = :profile_id RETURNING *""",
                 {"profile_id": profile_id, "updated_at": now},
             )
-        return self.get_profile(profile_id, owner=owner_principal)
+            self._record_model_command(connection,owner=owner_principal,actor=actor_principal,operation="delete_profile",
+                resource_id=profile_id,expected_version=expected,profile_id=profile_id,committed_version=committed["version"],effect={"unbound_agents":unbound})
+        committed["credential_status"]=None  # Deleted profiles are unavailable regardless of credential state.
+        return self._public_profile(committed)
 
     def list_bindings(self, owner: object) -> list[dict[str, object]]:
         owner_principal = _principal(owner)
@@ -1032,8 +1077,10 @@ class CredentialStore(PgStoreMixin):
         profile_id: object | None,
         *,
         expected_version: object | None = None,
+        actor: object | None = None,
     ) -> dict[str, object]:
         owner_principal = _principal(owner)
+        actor_principal = _principal(owner_principal if actor is None else actor, field="actor_principal")
         agent = _text(agent_id, field="agent_id", maximum=64)
         if agent not in _AGENT_IDS:
             raise ValueError("agent_id is not bindable")
@@ -1088,8 +1135,11 @@ class CredentialStore(PgStoreMixin):
                     "updated_at": now,
                 },
             )
-        if committed is None:
-            raise CredentialConflict("Agent binding version conflict")
+            if committed is None:
+                raise CredentialConflict("Agent binding version conflict")
+            self._record_model_command(connection,owner=owner_principal,actor=actor_principal,operation="binding",
+                resource_id=agent,expected_version=expected,profile_id=None if profile is None else profile["profile_id"],
+                committed_version=committed["version"],effect={})
         committed.update({"display_name":None if profile is None else profile["display_name"],
                           "model":None if profile is None else profile["model"],
                           "profile_status":None if profile is None else profile["status"]})

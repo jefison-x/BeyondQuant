@@ -1705,6 +1705,14 @@ def product_model_profile_create(
     )
 
 
+@router.get("/settings/models/commands/receipts")
+def product_model_command_receipt(request: Request, operation: str, resource_id: str, expected_version: int, profile_id: str | None = None) -> dict[str, object]:
+    from urllib.parse import urlencode
+    params={"operation":operation,"resource_id":resource_id,"expected_version":expected_version}
+    if profile_id is not None:params["profile_id"]=profile_id
+    return _backend_request("GET","/v1/users/model-commands/receipts?"+urlencode(params),headers=_trusted_agent_headers(request))
+
+
 @router.post("/settings/models/profiles/{profile_id}/delete")
 def product_model_profile_delete(
     profile_id: str,

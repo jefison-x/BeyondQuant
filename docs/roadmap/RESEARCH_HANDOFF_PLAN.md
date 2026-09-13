@@ -130,3 +130,5 @@ H4 凭据原提交回执、并发创建与浏览器刷新恢复通过，后续�
 H4 模型档案原配置与唯一键恢复通过，见[PROFILE-RECOVERY](../evidence/research-handoff-h4/PROFILE-RECOVERY.md)。
 
 H4 凭据短事务锁等待已补有界失败与无迟到提交验证，逐接口台账 60 行（56 已核对、4 未决），见[CREDENTIAL-TIMEOUTS](../evidence/research-handoff-h4/CREDENTIAL-TIMEOUTS.md)。全范围仍未完成。
+
+H4 模型绑定和档案删除原命令回执及真实浏览器恢复通过，台账 62 条具名验证；见[MODEL-COMMAND-RECOVERY](../evidence/research-handoff-h4/MODEL-COMMAND-RECOVERY.md)。全接口与 H5 继续。
