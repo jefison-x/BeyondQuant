@@ -461,7 +461,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "8946bd8340d8099f5d94fb572cfcd35812d3b40d8795f7edb8d78cc61570b9dc"
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
     },
     {
       "kind": "route",
@@ -490,7 +490,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "8946bd8340d8099f5d94fb572cfcd35812d3b40d8795f7edb8d78cc61570b9dc"
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
     },
     {
       "kind": "route",
@@ -519,7 +519,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "8946bd8340d8099f5d94fb572cfcd35812d3b40d8795f7edb8d78cc61570b9dc"
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
     },
     {
       "kind": "route",
@@ -548,7 +548,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "8946bd8340d8099f5d94fb572cfcd35812d3b40d8795f7edb8d78cc61570b9dc"
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
     },
     {
       "kind": "route",
@@ -577,7 +577,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "8946bd8340d8099f5d94fb572cfcd35812d3b40d8795f7edb8d78cc61570b9dc"
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
     },
     {
       "kind": "route",
@@ -606,7 +606,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "8946bd8340d8099f5d94fb572cfcd35812d3b40d8795f7edb8d78cc61570b9dc"
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
     },
     {
       "kind": "route",
@@ -635,7 +635,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "8946bd8340d8099f5d94fb572cfcd35812d3b40d8795f7edb8d78cc61570b9dc"
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
     },
     {
       "kind": "route",
@@ -664,7 +664,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "8946bd8340d8099f5d94fb572cfcd35812d3b40d8795f7edb8d78cc61570b9dc"
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
     },
     {
       "kind": "route",
@@ -693,7 +693,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "8946bd8340d8099f5d94fb572cfcd35812d3b40d8795f7edb8d78cc61570b9dc"
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577"
     },
     {
       "kind": "route",
@@ -1042,6 +1042,765 @@
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
       "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5210,
+      "method": "GET",
+      "path": "/v1/users/model-catalog",
+      "handler": "get_model_catalog",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "无领域写入；封闭 BYQ 厂商/模型/Agent 目录",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "缺身份拒绝；公开目录移除 runtime_provider；不能推导 Provider 已可用",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5222,
+      "method": "GET",
+      "path": "/v1/users/model-credentials",
+      "handler": "list_model_credentials",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "当前 owner 的完整凭据元数据",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "只读当前状态；masked 投影排除 secret/envelope，不冒充某次写回执",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5231,
+      "method": "GET",
+      "path": "/v1/users/model-credentials/receipts",
+      "handler": "reconcile_model_credential",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner + operation + original request_id + exact credential_id",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原审计版本可跨轮换/撤销核对；无匹配 not_found，歧义冲突，错 owner/动作/目标不认领",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5238,
+      "method": "POST",
+      "path": "/v1/users/model-credentials",
+      "handler": "create_model_credential",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/scope/original key 事务锁；请求 hash 匹配",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "写前保存元数据原键；未知只读核对；8 连接只产生一个对象；历史 NULL owner 歧义拒绝",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5248,
+      "method": "PUT",
+      "path": "/v1/users/model-credentials/{credential_id}",
+      "handler": "update_model_credential",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "expected_version 行锁与审计同事务",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原 request_id 只读回执；旧版本不覆盖；重试拒绝不能清除先前未知记录",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5263,
+      "method": "POST",
+      "path": "/v1/users/model-credentials/{credential_id}/revoke",
+      "handler": "revoke_model_credential",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "版本锁内清除信封；已撤销原键审计复用",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原审计版本恢复；新 no-op 撤销键留无副作用回执，不重复版本/信封写入",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5279,
+      "method": "GET",
+      "path": "/v1/users/model-profiles",
+      "handler": "list_model_profiles",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner 完整目录；公开不可变配置和当前可用性",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "状态只反映当前；不会返回凭据内容；目录不替代原提交精确核对",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5287,
+      "method": "GET",
+      "path": "/v1/users/model-profiles/receipts",
+      "handler": "reconcile_model_profile",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/key_name 唯一且配置不可变",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "创建版本 1 和原配置可在删除后核对；前端完整配置比较，错配置拒绝",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5293,
+      "method": "POST",
+      "path": "/v1/users/model-profiles",
+      "handler": "create_model_profile",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/key_name 数据库唯一约束",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "前端写前冻结配置和原键；未知 GET 原配置核对，不自动换键创建",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5302,
+      "method": "POST",
+      "path": "/v1/users/model-profiles/{profile_id}/delete",
+      "handler": "delete_model_profile",
+      "audit_status": "NEEDS_EVIDENCE",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "expected_version 行锁；解绑与软删除同事务",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "锁竞争已证明有界；原提交身份与绑定审计缺口仍待处理，不将当前 deleted 等同于某次命令回执",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5316,
+      "method": "GET",
+      "path": "/v1/users/model-bindings",
+      "handler": "list_model_bindings",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner + 封闭 Agent 集合",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "当前绑定版本读取；解析时另核对 profile/credential active，读取不证明原写成功",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5324,
+      "method": "PUT",
+      "path": "/v1/users/model-bindings/{agent_id}",
+      "handler": "put_model_binding",
+      "audit_status": "NEEDS_EVIDENCE",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "版本条件在 UPSERT 中比较并返回原提交行",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "首次/已有绑定同版本竞争仅一条推进；绑定审计和未知提交恢复记录仍需补齐",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5339,
+      "method": "GET",
+      "path": "/v1/users/model-credential-audit",
+      "handler": "list_model_credential_audit",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner 限定；limit 1..200",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "安全元数据目录；分页目录不是原键不存在证据，核对走独立 receipt",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 5348,
+      "method": "POST",
+      "path": "/internal/credentials/model-resolution",
+      "handler": "resolve_model_credential",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "独立 resolver token；owner/agent/session/trace 验证",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "仅内部 Adapter 解析；无绑定404、失效409、存储503；不把密钥送 Product/MCP/trace",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "fe2b706fee034054347616fff993ca2f41879898c948f99a356af38126f15577",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1607,
+      "method": "GET",
+      "path": "/settings/models",
+      "handler": "product_model_settings",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "durable owner；五个只读 Backend 投影",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "只显示当前配置与状态；不将该目录作为原创建确认，原提交独立 receipts",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1635,
+      "method": "GET",
+      "path": "/settings/models/credentials/receipts",
+      "handler": "product_model_credential_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner + operation + original request_id + exact credential_id",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原审计版本可跨轮换/撤销核对；无匹配 not_found，歧义冲突，错 owner/动作/目标不认领",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1644,
+      "method": "POST",
+      "path": "/settings/models/credentials",
+      "handler": "product_model_credential_create",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/scope/original key 事务锁；请求 hash 匹配",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "写前保存元数据原键；未知只读核对；8 连接只产生一个对象；历史 NULL owner 歧义拒绝",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1658,
+      "method": "PUT",
+      "path": "/settings/models/credentials/{credential_id}",
+      "handler": "product_model_credential_update",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "expected_version 行锁与审计同事务",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原 request_id 只读回执；旧版本不覆盖；重试拒绝不能清除先前未知记录",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1673,
+      "method": "POST",
+      "path": "/settings/models/credentials/{credential_id}/revoke",
+      "handler": "product_model_credential_revoke",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "版本锁内清除信封；已撤销原键审计复用",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "原审计版本恢复；新 no-op 撤销键留无副作用回执，不重复版本/信封写入",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1688,
+      "method": "GET",
+      "path": "/settings/models/profiles/receipts",
+      "handler": "product_model_profile_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "read",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/key_name 唯一且配置不可变",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "创建版本 1 和原配置可在删除后核对；前端完整配置比较，错配置拒绝",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1694,
+      "method": "POST",
+      "path": "/settings/models/profiles",
+      "handler": "product_model_profile_create",
+      "audit_status": "VERIFIED_OK",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "owner/key_name 数据库唯一约束",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "前端写前冻结配置和原键；未知 GET 原配置核对，不自动换键创建",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1708,
+      "method": "POST",
+      "path": "/settings/models/profiles/{profile_id}/delete",
+      "handler": "product_model_profile_delete",
+      "audit_status": "NEEDS_EVIDENCE",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "expected_version 行锁；解绑与软删除同事务",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "锁竞争已证明有界；原提交身份与绑定审计缺口仍待处理，不将当前 deleted 等同于某次命令回执",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 1723,
+      "method": "PUT",
+      "path": "/settings/models/bindings/{agent_id}",
+      "handler": "product_model_binding_update",
+      "audit_status": "NEEDS_EVIDENCE",
+      "owner": "用户本人；system credential 保留独立 admin 边界；私有 resolver 仅可信 Adapter",
+      "mode": "write",
+      "authorization": "Gateway durable session 派生可信 owner；Backend 再校验；MCP 不提供凭据 CRUD/解析",
+      "idempotency": "版本条件在 UPSERT 中比较并返回原提交行",
+      "timeout": "凭据进程锁 2s、数据库锁 2s、单语句 5s；Gateway 每次 Backend 请求 8s，settings 浏览器 15s；不限制研究回合总时长",
+      "errors": "领域 403/404/409/422；存储 503 安全消息；未知保持未确认；resolver 不返回存储诊断",
+      "retry": "无自动新身份写重放；用户显式原请求重试或只读恢复；F7 DSH 纠错不适用于该人工设置入口",
+      "authority": "PostgreSQL credential/model profile/binding/audit；DSH 不读取业务 DB",
+      "recovery": "首次/已有绑定同版本竞争仅一条推进；绑定审计和未知提交恢复记录仍需补齐",
+      "consumers": [
+        "Product 模型设置浏览器；私有解析仅 Adapter"
+      ],
+      "evidence": [
+        "services/backend/tests/test_credentials.py",
+        "services/backend/tests/test_credential_receipts.py",
+        "services/backend/tests/test_model_profile_recovery.py",
+        "services/backend/tests/test_credential_timeouts.py",
+        "services/backend/tests/test_model_binding_concurrency.py",
+        "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
+      ],
+      "source_sha256": "b1a89ed574c5a7d31ac8ac2a0991806f1c109bcdaca9da42a31fad7460e9d2a7",
+      "dependencies_sha256": {
+        "services/backend/app/credentials.py": "sha256:01bfc0e299b99e02a3e89ade4c751b90e210b0c7ff2fee8ce3c6a554b6c048c4"
+      }
     }
   ]
 }

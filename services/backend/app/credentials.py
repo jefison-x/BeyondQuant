@@ -10,6 +10,7 @@ import os
 import re
 import uuid
 from datetime import datetime, timezone
+from contextlib import contextmanager
 from typing import Any
 
 from cryptography.exceptions import InvalidTag
@@ -452,6 +453,32 @@ class CredentialStore(PgStoreMixin):
             super().__init__(database_url)
         except SQLAlchemyError as exc:
             raise CredentialPersistenceError("credential storage is unavailable") from exc
+
+    @contextmanager
+    def _transaction(self):
+        # Credential operations are short metadata transactions, never provider calls.
+        if not self._lock.acquire(timeout=2):
+            raise CredentialPersistenceError("credential storage is unavailable")
+        try:
+            with self.engine.begin() as connection:
+                execute(connection, "SET LOCAL lock_timeout = '2s'")
+                execute(connection, "SET LOCAL statement_timeout = '5s'")
+                yield connection
+        except IntegrityError:
+            # Creation maps its known unique-key constraint to the domain conflict.
+            raise
+        except SQLAlchemyError as exc:
+            raise CredentialPersistenceError("credential storage is unavailable") from exc
+        finally:
+            self._lock.release()
+
+    def _execute(self, sql, params=None):
+        with self._transaction() as connection:
+            return execute(connection, sql, params)
+
+    def _fetch_one(self, sql, params=None):
+        with self._transaction() as connection:
+            return fetch_one(connection, sql, params)
 
     @classmethod
     def from_env(cls) -> "CredentialStore":

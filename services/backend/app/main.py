@@ -5374,6 +5374,8 @@ def resolve_model_credential(payload: dict[str, Any], request: Request) -> dict[
         raise HTTPException(status_code=403, detail="credential resolver denied") from error
     except CredentialUnavailable as error:
         raise HTTPException(status_code=409, detail="selected model binding is unavailable") from error
+    except CredentialPersistenceError as error:
+        raise HTTPException(status_code=503, detail="credential storage is unavailable") from error
 
 
 @app.get("/v1/users/agent-policy")

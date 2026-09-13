@@ -128,3 +128,5 @@ H4模型绑定同版本并发覆盖已修正，逐接口结论台账起稿37项�
 H4 凭据原提交回执、并发创建与浏览器刷新恢复通过，后续重试拒绝不再清除先前未知记录；见[CREDENTIAL-RECOVERY](../evidence/research-handoff-h4/CREDENTIAL-RECOVERY.md)。
 
 H4 模型档案原配置与唯一键恢复通过，见[PROFILE-RECOVERY](../evidence/research-handoff-h4/PROFILE-RECOVERY.md)。
+
+H4 凭据短事务锁等待已补有界失败与无迟到提交验证，逐接口台账 60 行（56 已核对、4 未决），见[CREDENTIAL-TIMEOUTS](../evidence/research-handoff-h4/CREDENTIAL-TIMEOUTS.md)。全范围仍未完成。
