@@ -1440,28 +1440,21 @@ def create_agent_data_demand(payload: dict[str, Any], request: Request) -> dict[
     _require_data_demand_admin(context)
 
     def operation() -> dict[str, object]:
-        scope, requirements = _data_demand_requirements(payload, context)
-        existing = data_demand_store.find_idempotent(
-            payload, context=context, scope=scope, requirements=requirements,
-        )
-        if existing is not None:
-            return {"demand": data_demand_store.refresh(
-                existing["demand_id"], trusted_owner=context["owner_principal"],
-                readiness_store=market_readiness_store, automation_store=market_automation_store,
-            ), "created": False}
-        repairs = [market_automation_store.request_data_repair(
-            requirement=requirement, requested_by=f"agent-data-demand:{context['owner_principal']}",
-        ) for requirement in requirements]
-        demand, created = data_demand_store.create(
-            payload, context=context, scope=scope, requirements=requirements,
-            repair_request_ids=[str(item["request_id"]) for item in repairs],
-        )
+        demand, created = data_demand_store.submit(payload, context=context,
+            planner=_data_demand_requirements, automation_store=market_automation_store)
         return {"demand": data_demand_store.refresh(
             demand["demand_id"], trusted_owner=context["owner_principal"],
             readiness_store=market_readiness_store, automation_store=market_automation_store,
         ), "created": created}
 
     return _data_demand_call(operation)
+
+
+@app.get("/v1/agent/data-demands/by-key/{idempotency_key}")
+def reconcile_agent_data_demand(idempotency_key: str, request: Request):
+    context = _required_agent_context(request, include_workspace=True)
+    return _data_demand_call(lambda: data_demand_store.reconcile_submission(idempotency_key,
+        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"]))
 
 
 @app.get("/v1/agent/data-demands/{demand_id}")

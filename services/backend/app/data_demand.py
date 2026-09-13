@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any
 
@@ -91,7 +92,7 @@ class DataDemandStore(PgStoreMixin):
 
     def create(
         self, payload: object, *, context: dict[str, str], scope: dict[str, object],
-        requirements: list[dict[str, object]], repair_request_ids: list[str],
+        requirements: list[dict[str, object]], repair_request_ids: list[str], _connection=None,
     ) -> tuple[dict[str, object], bool]:
         if not isinstance(payload, dict):
             raise ValueError("data demand request must be an object")
@@ -111,12 +112,12 @@ class DataDemandStore(PgStoreMixin):
         demand_id = f"datademand_{uuid.uuid4().hex}"
         now = _now()
         try:
-            with self._transaction() as connection:
+            with (self._transaction() if _connection is None else nullcontext(_connection)) as connection:
                 existing = fetch_one(connection, """SELECT * FROM data_demands
                     WHERE workspace_id=:workspace AND idempotency_key=:key""",
                     {"workspace": context["workspace_id"], "key": key})
                 if existing is not None:
-                    if existing["request_sha256"] != request_sha256:
+                    if existing["owner_principal"] != context["owner_principal"] or existing["request_sha256"] != request_sha256:
                         raise DataDemandConflict("data demand idempotency key was reused")
                     return self._public(existing), False
                 execute(connection, """INSERT INTO data_demands
@@ -136,9 +137,47 @@ class DataDemandStore(PgStoreMixin):
                                  "unit": "symbol_session_cells", "stage": "queued"},
                     "key": key, "sha": request_sha256, "now": now,
                 })
+                inserted = fetch_one(connection, "SELECT * FROM data_demands WHERE demand_id=:id", {"id": demand_id})
         except IntegrityError as error:
             raise DataDemandConflict("data demand conflicts with existing state") from error
-        return self.get(demand_id, trusted_owner=context["owner_principal"]), True
+        return self._public(inserted), True
+
+    def submit(self, payload, *, context, planner, automation_store):
+        """Freeze demand and repair references atomically before workers can claim."""
+        if not isinstance(payload, dict):
+            raise ValueError("data demand request must be an object")
+        key = payload.get("idempotency_key")
+        if not isinstance(key, str) or _IDEMPOTENCY.fullmatch(key) is None:
+            raise ValueError("idempotency_key is invalid")
+        with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                    {"scope": f"data-demand|{context['workspace_id']}|{key}"})
+            previous = fetch_one(connection,
+                "SELECT * FROM data_demands WHERE workspace_id=:workspace AND idempotency_key=:key",
+                {"workspace": context["workspace_id"], "key": key})
+            if previous is not None:
+                # Reuse the frozen original plan even when market state changed.
+                scope, requirements = previous["scope_json"], previous["requirements_json"]
+            else:
+                scope, requirements = planner(payload, context)
+            # Validate the closed request before adding any repair side effect.
+            existing = self.find_idempotent(payload, context=context, scope=scope, requirements=requirements)
+            if existing is not None:
+                return existing, False
+            repairs = [automation_store.request_data_repair(requirement=item,
+                requested_by=f"agent-data-demand:{context['owner_principal']}",
+                _connection=connection) for item in requirements]
+            return self.create(payload, context=context, scope=scope, requirements=requirements,
+                repair_request_ids=[str(item["request_id"]) for item in repairs], _connection=connection)
+
+    def reconcile_submission(self, key, *, trusted_owner, trusted_workspace):
+        if not isinstance(key, str) or _IDEMPOTENCY.fullmatch(key) is None:
+            raise ValueError("idempotency_key is invalid")
+        row = self._fetch_one("""SELECT * FROM data_demands WHERE workspace_id=:workspace
+            AND owner_principal=:owner AND idempotency_key=:key""",
+            {"workspace": trusted_workspace, "owner": trusted_owner, "key": key})
+        return {"state": "confirmed", "demand": self._public(row)} if row else {"state": "not_found"}
 
     def find_idempotent(
         self, payload: object, *, context: dict[str, str], scope: dict[str, object],

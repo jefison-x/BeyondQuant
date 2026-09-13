@@ -91,3 +91,6 @@ H4/H5 数据修复重复请求：完整已验证指数月份可复用缓存，�
 
 H4 因子有界纠错：完成独立官方观察资格、持久计次、同事务结果回执和原生停止接入，
 见[FACTOR-CORRECTION](../evidence/research-handoff-h4/FACTOR-CORRECTION.md)。H4全接口及H5继续执行。
+
+H4/H5前置数据需求恢复：需求及修复引用原子提交，重试复用冻结计划并支持原键只读核对，
+见[DATA-DEMAND-RECOVERY](../evidence/research-handoff-h4/DATA-DEMAND-RECOVERY.md)。历史指数范围尚待接入。

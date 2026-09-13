@@ -3,6 +3,7 @@ import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
 const BACKEND_TIMEOUT_MS = 8000;
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
+export type DataDemandLookup = { demand_id: string } | { idempotency_key: string };
 export type DataDemandRequest = Record<string, unknown>;
 export type DataDemandResult = { content: Array<{ type: "text"; text: string }>; isError: boolean };
 
@@ -18,6 +19,15 @@ function errorStatus(status: number): string {
   return "data_demand_unavailable";
 }
 
+function unknownDemand(init: RequestInit) {
+  const response = unknownWriteResult(init);
+  const body = JSON.parse(response.content[0].text);
+  if (typeof body.idempotency_key === "string") body.reconciliation = {
+    tool: "byq_data_demand_get", arguments: { idempotency_key: body.idempotency_key },
+  };
+  return result(body, false);
+}
+
 async function requestDataDemand(
   backendUrl: string, path: string, init: RequestInit, fetcher: Fetcher,
 ): Promise<DataDemandResult> {
@@ -27,22 +37,35 @@ async function requestDataDemand(
       headers: { "content-type": "application/json", ...(init.headers ?? {}) },
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
-    if (isWriteRequest(init) && response.status >= 500) return unknownWriteResult(init);
+    if (isWriteRequest(init) && response.status >= 500) return unknownDemand(init);
     let payload: unknown;
     try { payload = await response.json(); } catch {
-      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
+      if (isWriteRequest(init) && response.ok) return unknownDemand(init);
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
-      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
+      if (isWriteRequest(init) && response.ok) return unknownDemand(init);
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (!response.ok) {
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: errorStatus(response.status), http_status: response.status } }, true);
     }
+    const value = payload as Record<string, any>;
+    if (!path.endsWith("/data-demand-notifications")) {
+      const byKey = path.includes("/by-key/");
+      const demand = value.demand;
+      const valid = demand?.schema_version === "data-demand.v1"
+        && typeof demand.demand_id === "string" && /^datademand_[0-9a-f]{32}$/.test(demand.demand_id);
+      if (!(byKey && value.state === "not_found" && Object.keys(value).length === 1)
+          && (!valid || byKey && value.state !== "confirmed"
+              || !isWriteRequest(init) && !byKey && demand.demand_id !== path.split("/").at(-1))) {
+        if (isWriteRequest(init)) return unknownDemand(init);
+        return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
+      }
+    }
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
-    if (isWriteRequest(init)) return unknownWriteResult(init);
+    if (isWriteRequest(init)) return unknownDemand(init);
     return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
   }
 }
@@ -56,9 +79,12 @@ export function fetchByqDataDemandCreate(
 }
 
 export function fetchByqDataDemandGet(
-  backendUrl: string, demandId: string, fetcher: Fetcher = fetch,
+  backendUrl: string, lookup: string | DataDemandLookup, fetcher: Fetcher = fetch,
 ): Promise<DataDemandResult> {
-  return requestDataDemand(backendUrl, `/v1/agent/data-demands/${encodeURIComponent(demandId)}`, { method: "GET" }, fetcher);
+  const path = typeof lookup === "string" ? encodeURIComponent(lookup)
+    : "demand_id" in lookup ? encodeURIComponent(lookup.demand_id)
+    : "by-key/" + encodeURIComponent(lookup.idempotency_key);
+  return requestDataDemand(backendUrl, `/v1/agent/data-demands/${path}`, { method: "GET" }, fetcher);
 }
 
 export function fetchByqDataDemandNotifications(

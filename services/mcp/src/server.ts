@@ -118,6 +118,7 @@ import {
   fetchByqDataDemandGet,
   fetchByqDataDemandNotifications,
   type DataDemandRequest,
+  type DataDemandLookup,
 } from "./data-demand.js";
 import { PageCallBudget, boundedIntegerEnvironment } from "./page-budget.js";
 import {
@@ -311,10 +312,10 @@ async function byqDataDemandCreate(args: DataDemandRequest, extra: unknown) {
   ) : agentContextUnavailable();
 }
 
-async function byqDataDemandGet(args: { demand_id: string }, extra: unknown) {
+async function byqDataDemandGet(args: DataDemandLookup, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqDataDemandGet(
-    BACKEND_URL, args.demand_id, trustedBackendFetcher(context),
+    BACKEND_URL, args, trustedBackendFetcher(context),
   ) : agentContextUnavailable();
 }
 
@@ -959,7 +960,10 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_data_demand_get",
     {
       description: "Read verified preparation progress for one owner-scoped data-demand.v1 request.",
-      inputSchema: { demand_id: z.string().regex(/^datademand_[0-9a-f]{32}$/) },
+      inputSchema: z.union([
+        z.object({ demand_id: z.string().regex(/^datademand_[0-9a-f]{32}$/) }).strict(),
+        z.object({ idempotency_key: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) }).strict(),
+      ]),
     },
     (args) => byqDataDemandGet(args, trustedContext),
   );
