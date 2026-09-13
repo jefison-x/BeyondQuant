@@ -10,6 +10,7 @@ from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 
 from .db import execute, fetch_one
+from .research_handoff_events import handoff_events, handoff_ready
 
 
 def _positive(value: object, name: str, maximum: int) -> int:
@@ -94,7 +95,7 @@ class ResearchContinuationMixin:
         if ledger is None:
             return {"schema_version": "task-continuation-permission.v1", "task_id": task["task_id"],
                     "permission": None, "can_start": False, "blocked_reason": "permission_missing"}
-        public = {key: value for key, value in ledger.items() if key not in {"idempotency_key", "request_sha256"}}
+        public = {key: value for key, value in ledger.items() if key not in {"idempotency_key", "request_sha256", "handoff_version"}}
         rows = task.get('continuation_budget') or []
         reserved = sum(row['token_limit'] for row in rows if row['status'] != 'settled')
         charged = sum(row['charged_tokens'] for row in rows if row['status'] == 'settled')
@@ -145,7 +146,7 @@ class ResearchContinuationMixin:
                 confirmed_artifacts.append(artifact)
             now = datetime.now(timezone.utc)
             ledger = {**request, "request_sha256": digest, "grant_version": 1,
-                      "confirmed_artifacts": confirmed_artifacts,
+                      "confirmed_artifacts": confirmed_artifacts, "handoff_version": 1,
                       "owner_principal": task["owner_principal"], "workspace_id": task["workspace_id"],
                       "conversation_id": task["conversation_id"], "confirmed_by": trusted_context["actor_principal"],
                       "created_at": now.isoformat(), "expires_at": (now + timedelta(seconds=request["valid_seconds"])).isoformat(),
@@ -258,6 +259,11 @@ class ResearchContinuationMixin:
                 ledger = task.get('continuation_budget') or []
                 pending = next((r for r in ledger if r['status'] != 'settled' and r.get('instruction')), None)
                 if pending is not None:
+                    if (pending['status'] == 'reserved' and pending['event_key'].startswith('handoff-v1:')
+                            and not handoff_ready(connection, task, conversation)):
+                        # No model submission to reconcile while this handoff
+                        # waits for a domain/foreground prerequisite.
+                        continue
                     now = datetime.now(timezone.utc)
                     # Receipt watches are bounded independently from dispatch.
                     # Expired/unknown liabilities remain charged indefinitely;
@@ -299,8 +305,15 @@ class ResearchContinuationMixin:
                           AND status IN ('completed','failed','cancelled') AND updated_at >= CAST(:since AS TIMESTAMPTZ)
                         ORDER BY updated_at,{identity} LIMIT 64''', params)
                     events.extend({'kind': table, **row} for row in rows)
+                unseen = [event for event in events if not any(
+                    row['event_key'] == hashlib.sha256(json.dumps(event, sort_keys=True).encode()).hexdigest()
+                    for row in ledger)]
+                if not unseen:
+                    events = handoff_events(connection, task, conversation)
                 for event in sorted(events, key=lambda e: (e['updated_at'], e['kind'], e['identity'])):
                     event_key = hashlib.sha256(json.dumps(event, sort_keys=True).encode()).hexdigest()
+                    if event['kind'] in {'permission_handoff', 'approval_handoff'}:
+                        event_key = 'handoff-v1:' + event_key
                     if any(r['event_key'] == event_key for r in ledger):
                         continue
                     if not admit:
@@ -344,6 +357,10 @@ class ResearchContinuationMixin:
                     or self._permission_blocked_reason(task, conversation) is not None
                     or datetime.fromisoformat(row['expires_at']) <= now
                     or datetime.fromisoformat(row['next_attempt_at']) > now or row['dispatch_attempts'] >= 8):
+                return {'dispatch': False}
+            if row['event_key'].startswith('handoff-v1:') and not handoff_ready(connection, task, conversation):
+                # Waiting for a foreground turn, approval or job consumes no
+                # dispatch attempts and does not create a second reservation.
                 return {'dispatch': False}
             row['dispatch_attempts'] += 1
             row['next_attempt_at'] = (now + timedelta(seconds=min(60, 2 ** row['dispatch_attempts']))).isoformat()
