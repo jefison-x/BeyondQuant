@@ -223,7 +223,8 @@ def test_unknown_create_and_invisible_catalog_never_issue_second_post(monkeypatc
     assert calls[-1][1]['error_category']=='transport_ambiguous'
 
 
-def test_http_redirect_cannot_forward_credentials():
+@pytest.mark.parametrize("redirect_status", [301, 302, 303, 307, 308])
+def test_http_redirect_cannot_forward_credentials(redirect_status):
     import pytest
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -237,17 +238,18 @@ def test_http_redirect_cannot_forward_credentials():
     class Redirect(BaseHTTPRequestHandler):
         def log_message(self, *args): pass
         def do_GET(self):
-            self.send_response(302)
+            self.send_response(redirect_status)
             self.send_header('Location', f'http://127.0.0.1:{sink.server_port}/untrusted')
             self.end_headers()
     source = ThreadingHTTPServer(('127.0.0.1', 0), Redirect)
     threads = [threading.Thread(target=server.serve_forever, daemon=True) for server in (sink, source)]
     for thread in threads: thread.start()
     try:
-        with pytest.raises(publisher.PublisherError):
+        with pytest.raises(publisher.PublisherError) as rejected:
             publisher._json_request(f'http://127.0.0.1:{source.server_port}/receipt',
                 headers={'Authorization':'Bearer synthetic-redirect-token',
                          'x-byq-feedback-hub-relay-token':'synthetic-service-token'})
+        assert rejected.value.category == 'transport_ambiguous'
         assert received == [], 'redirect target must receive neither request nor credential'
     finally:
         for server in (source, sink): server.shutdown(); server.server_close()

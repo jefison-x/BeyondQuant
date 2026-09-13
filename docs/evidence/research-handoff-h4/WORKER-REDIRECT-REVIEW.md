@@ -30,3 +30,8 @@ Cloudflare 测试使用合成 fetch 与 binding 响应，不能替代生产网�
 通过 AbortController 取消请求，同时以 Promise.race 保证不依赖对端响应 abort 才结束；退出时取消未完成正文流，不新增请求或许可。
 实际 workerd 26 项通过（1.92秒），四项新增覆盖正常回执、伪造长度下超限、永不返回响应头、正文停滞和流取消；定向时限用50ms，生产默认12秒。
 类型检查与两个 Worker dry-run 通过，尚未部署。Python worker 的12秒 socket timeout 仍不代表总正文期限，此剩余事项未关闭。
+
+## 本地发布器重定向分类补正
+
+复核发现 `.97` 仅拒绝跳转，但 urllib HTTPError 的3xx仍走旧默认 validation_rejected；此前仅检查目标零请求的测试未覆盖该分类。新增断言先失败，保留此遗漏事实。
+现在3xx明确 transport_ambiguous。五种301/302/303/307/308回环测试均要求目标零请求且错误为未知；全部发布器16项通过（6.31秒）。未部署旧错误候选。

@@ -160,6 +160,8 @@ def _json_request(url: str, *, method: str = "GET", payload: object | None = Non
             401: "authentication_failed", 403: "permission_denied", 404: "repository_unavailable",
             410: "issues_disabled", 422: "validation_rejected", 429: "rate_limited",
         }.get(exc.code, "provider_unavailable" if exc.code >= 500 else "validation_rejected")
+        if 300 <= exc.code < 400:
+            category = "transport_ambiguous"
         if rate_limited_403:
             category = "rate_limited"
         raise PublisherError(category, retry_after=bounded_retry) from exc
