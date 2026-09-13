@@ -1174,6 +1174,24 @@ class ProductFeedbackStore(PgStoreMixin):
         return {"schema_version": "feedback-moderation-audit.v1", "audit": safe_rows, "total": total,
                 "limit": limit, "offset": offset, "has_more": offset + len(rows) < total}
 
+    def reconcile_moderation(self, feedback_id, action, key, *, trusted_actor, actor_role):
+        self._require_moderator(actor_role)
+        identity = _feedback_id(feedback_id)
+        if action not in {"triage", "accept", "reject", "duplicate"}:
+            raise ValueError("moderation action is invalid")
+        key = _idempotency(key)
+        row = self._fetch_one("""SELECT result_json FROM product_feedback_commands
+            WHERE scope_key='platform-feedback' AND actor_principal=:actor
+              AND operation=:operation AND idempotency_key=:key""",
+            {"actor": trusted_actor, "operation": f"moderate:{action}:{identity}", "key": key})
+        if row is None:
+            return {"state": "not_found"}
+        result = row["result_json"]
+        if not isinstance(result, dict) or not isinstance(result.get("feedback"), dict) or result["feedback"].get("feedback_id") != identity:
+            raise FeedbackPersistenceError("feedback moderation receipt is invalid")
+        self.get_moderation(identity, actor_role=actor_role)
+        return {"state": "confirmed", "feedback": result["feedback"]}
+
     def moderate(self, feedback_id: object, action: str, payload: object, *, trusted_actor: str, actor_role: str) -> dict[str, object]:
         self._require_moderator(actor_role)
         identity = _feedback_id(feedback_id)

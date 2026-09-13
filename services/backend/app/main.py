@@ -568,7 +568,7 @@ def _feedback_moderator(request: Request) -> tuple[str, str]:
 @app.get("/v1/feedback/options")
 def feedback_options(request: Request) -> dict[str, object]:
     _feedback_context(request)
-    return feedback_store.public_options()
+    return _feedback_call(lambda: feedback_store.public_options())
 
 
 @app.get("/v1/feedback/items")
@@ -665,6 +665,13 @@ def feedback_withdraw(feedback_id: str, payload: dict[str, Any], request: Reques
     return _feedback_call(lambda: feedback_store.withdraw(
         feedback_id, payload, trusted_workspace=context["workspace_id"], trusted_actor=context["actor_principal"],
     ))
+
+
+@app.get("/v1/feedback/moderation/receipts")
+def feedback_moderation_receipt(request: Request, feedback_id: str, action: str, idempotency_key: str):
+    actor, role = _feedback_moderator(request)
+    return _feedback_call(lambda: feedback_store.reconcile_moderation(feedback_id, action, idempotency_key,
+        trusted_actor=actor, actor_role=role))
 
 
 @app.get("/v1/feedback/moderation/items")

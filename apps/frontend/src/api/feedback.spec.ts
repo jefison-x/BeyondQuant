@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProductFeedbackContent } from "./types";
+import { beginModerationSubmission } from "./feedbackModerationSubmission";
 import {
   createFeedback,
   getFeedbackAudit,
   getFeedbackOptions,
   listFeedback,
-  moderateFeedback,
+  sendFeedbackModerationCommand,
   submitFeedback,
   updateFeedback,
   withdrawFeedback,
@@ -13,6 +14,7 @@ import {
 
 describe("feedback api", () => {
   afterEach(() => {
+    localStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -59,7 +61,9 @@ describe("feedback api", () => {
     await updateFeedback(item, content);
     await submitFeedback(item, "b".repeat(64));
     await withdrawFeedback(item);
-    await moderateFeedback(item, "triage", "已验证");
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({feedback:{feedback_id:"feedback_"+"a".repeat(32),status:"triaged",version:3}})));
+    await sendFeedbackModerationCommand(beginModerationSubmission('test-admin',{
+      feedback_id:"feedback_"+"a".repeat(32),action:'triage',payload:{expected_version:2,rationale:'已验证'}}));
 
     expect(fetchMock).toHaveBeenCalledTimes(5);
     for (const [, init] of fetchMock.mock.calls) {

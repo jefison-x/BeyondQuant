@@ -115,6 +115,14 @@ paths:
   /api/product/feedback/items/{feedback_id}/withdraw:
     parameters: [{$ref: "#/components/parameters/FeedbackId"}]
     post: {summary: 在分诊前撤回已提交反馈，不硬删除 revision/audit。, responses: *okResponses}
+  /api/product/feedback/moderation/receipts:
+    get:
+      summary: 管理员按原执行者、审核动作与请求键只读核对原回执。
+      parameters:
+        - {name: feedback_id, in: query, required: true, schema: {type: string}}
+        - {name: action, in: query, required: true, schema: {type: string, enum: [triage, accept, reject, duplicate]}}
+        - {name: idempotency_key, in: query, required: true, schema: {type: string}}
+      responses: *okResponses
   /api/product/feedback/moderation/items:
     get: {summary: 管理员专用分页 submitted-snapshot inbox；不读取 workspace drafts 或用户身份。, responses: *okResponses}
   /api/product/feedback/moderation/items/{feedback_id}:

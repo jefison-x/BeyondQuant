@@ -125,6 +125,14 @@ def test_feedback_moderation_requires_admin_session_and_never_forwards_workspace
     assert response.status_code == 200
     forwarded = calls[0]["headers"]
     assert forwarded == {"x-byq-actor-principal": "moderator", "x-byq-actor-role": "admin"}
+    receipt_path = "/api/product/feedback/moderation/receipts?feedback_id=feedback_" + "a" * 32 + "&action=triage&idempotency_key=original"
+    current["role"] = "user"
+    assert browser.get(receipt_path).status_code == 403
+    assert len(calls) == 1
+    current["role"] = "admin"
+    assert browser.get(receipt_path).status_code == 200
+    assert calls[-1]["method"] == "GET" and calls[-1]["headers"] == forwarded
+    assert calls[-1]["path"].startswith("/v1/feedback/moderation/receipts?")
 
 
 def test_ml_workspace_projects_safe_artifacts_and_owner_context(monkeypatch) -> None:

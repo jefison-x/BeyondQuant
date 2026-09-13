@@ -461,7 +461,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -490,7 +490,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -519,7 +519,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -548,7 +548,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -577,7 +577,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -606,7 +606,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -635,7 +635,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -664,7 +664,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -693,7 +693,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -809,7 +809,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53"
     },
     {
       "kind": "route",
@@ -838,7 +838,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53"
     },
     {
       "kind": "route",
@@ -867,7 +867,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53"
     },
     {
       "kind": "route",
@@ -896,7 +896,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53"
     },
     {
       "kind": "route",
@@ -925,7 +925,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53"
     },
     {
       "kind": "route",
@@ -954,7 +954,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53"
     },
     {
       "kind": "route",
@@ -983,7 +983,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53"
     },
     {
       "kind": "route",
@@ -1012,7 +1012,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53"
     },
     {
       "kind": "route",
@@ -1041,7 +1041,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417"
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53"
     },
     {
       "kind": "route",
@@ -1071,7 +1071,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1104,7 +1104,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1137,7 +1137,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1170,7 +1170,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1203,7 +1203,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1236,7 +1236,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1269,7 +1269,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1302,7 +1302,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1335,7 +1335,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1370,7 +1370,7 @@
         "services/backend/tests/test_model_command_receipts.py",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1403,7 +1403,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1438,7 +1438,7 @@
         "services/backend/tests/test_model_command_receipts.py",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1471,7 +1471,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1504,7 +1504,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1537,7 +1537,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1570,7 +1570,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1603,7 +1603,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1636,7 +1636,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1669,7 +1669,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1702,7 +1702,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1735,7 +1735,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1770,7 +1770,7 @@
         "services/backend/tests/test_model_command_receipts.py",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1805,7 +1805,7 @@
         "services/backend/tests/test_model_command_receipts.py",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1836,7 +1836,7 @@
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1867,7 +1867,7 @@
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1899,7 +1899,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -1931,7 +1931,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -1963,7 +1963,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -1995,7 +1995,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2027,7 +2027,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2059,7 +2059,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2091,7 +2091,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2123,7 +2123,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2155,7 +2155,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2187,7 +2187,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2219,7 +2219,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2251,7 +2251,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2283,7 +2283,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2315,7 +2315,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "311f75610c9e0af99699c7f3fc989ca035bb77695ff16c9c3a699768f4c90417",
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2345,7 +2345,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2378,7 +2378,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2411,7 +2411,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2444,7 +2444,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2477,7 +2477,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2510,7 +2510,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2543,7 +2543,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2576,7 +2576,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2609,7 +2609,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2642,7 +2642,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2675,7 +2675,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2709,10 +2709,10 @@
         "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
       ],
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       },
       "recovery": "仅更新配置和心跳，不证明Hub可用或反馈送达",
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -2740,10 +2740,10 @@
         "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
       ],
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       },
       "recovery": "SKIP LOCKED领取到期原事件、递增fence；崩溃后重领仍受8次上限",
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -2771,10 +2771,10 @@
         "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
       ],
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       },
       "recovery": "只接受原事件有效lease/fence和原receipt，过期worker不能覆盖",
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -2802,10 +2802,10 @@
         "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
       ],
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       },
       "recovery": "原lease失败转持久等待或终止，终止不等于送达",
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -2833,10 +2833,10 @@
         "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
       ],
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       },
       "recovery": "读取候选与30秒预约同事务；重启后失败候选不会持续占据队首",
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -2864,10 +2864,10 @@
         "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
       ],
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       },
       "recovery": "只读至多20条诊断，不以缺项证明不存在；非relay调度入口",
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -2895,10 +2895,10 @@
         "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
       ],
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       },
       "recovery": "原receipt行锁、可达状态核对，拒绝迟到回退与published issue替换",
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb"
     },
     {
       "kind": "route",
@@ -2927,9 +2927,9 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       }
     },
     {
@@ -2959,9 +2959,9 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       }
     },
     {
@@ -2991,9 +2991,9 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       }
     },
     {
@@ -3023,9 +3023,9 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       }
     },
     {
@@ -3055,9 +3055,9 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       }
     },
     {
@@ -3087,9 +3087,9 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       }
     },
     {
@@ -3119,9 +3119,9 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       }
     },
     {
@@ -3151,9 +3151,9 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       }
     },
     {
@@ -3183,9 +3183,9 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       }
     },
     {
@@ -3215,9 +3215,9 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       }
     },
     {
@@ -3247,9 +3247,9 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       }
     },
     {
@@ -3279,9 +3279,9 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       }
     },
     {
@@ -3311,9 +3311,9 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
       }
     },
     {
@@ -3343,9 +3343,153 @@
         "services/backend/tests/test_feedback_publisher_create_permit.py",
         "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
       ],
-      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
       "dependencies_sha256": {
-        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 568,
+      "method": "GET",
+      "path": "/v1/feedback/options",
+      "handler": "feedback_options",
+      "audit_status": "VERIFIED_OK",
+      "owner": "原管理员actor；options为已登录个人workspace用户",
+      "mode": "read",
+      "authorization": "Gateway耐久登录，moderation再次校验admin；options要求可信研究context",
+      "idempotency": "审核原actor/action/feedback/key及payload hash；读不创建命令",
+      "timeout": "短事务进程/数据库锁2秒、SQL5秒；浏览器命令/核对15秒；非整个研究期限",
+      "errors": "拒绝403、缺对象404、冲突409、参数422、存储503；未知保留原请求",
+      "retry": "核对只读；用户显式重试使用原key和原payload，不新建替代操作",
+      "authority": "Backend PostgreSQL原命令结果、审核audit和outbox；浏览器缓存仅恢复请求意图",
+      "recovery": "静态有界选项及publisher新鲜度；存储失败统一安全503，不证明外部发布成功",
+      "consumers": [
+        "管理员Product反馈页面；options为用户反馈页面"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_moderation_recovery.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/feedbackModerationSubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-feedback-recovery.spec.ts",
+        "docs/evidence/research-handoff-h4/FEEDBACK-MODERATION-RECOVERY.md"
+      ],
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2",
+        "apps/frontend/src/api/feedback.ts": "sha256:71488d27c64798229d45857dbc7e7e4a98d2cd2429919a5f6b80ba501494c283",
+        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:e2429da948ca21257bd9c252810774e7411f79dc475e917d9f5686f9d26da9fd",
+        "apps/frontend/src/views/FeedbackAdminView.vue": "sha256:7142785ad570f201b358753f97aa8c0968dfe9fb99068599b51ce5b57fdb4509"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 670,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/receipts",
+      "handler": "feedback_moderation_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "原管理员actor；options为已登录个人workspace用户",
+      "mode": "read",
+      "authorization": "Gateway耐久登录，moderation再次校验admin；options要求可信研究context",
+      "idempotency": "审核原actor/action/feedback/key及payload hash；读不创建命令",
+      "timeout": "短事务进程/数据库锁2秒、SQL5秒；浏览器命令/核对15秒；非整个研究期限",
+      "errors": "拒绝403、缺对象404、冲突409、参数422、存储503；未知保留原请求",
+      "retry": "核对只读；用户显式重试使用原key和原payload，不新建替代操作",
+      "authority": "Backend PostgreSQL原命令结果、审核audit和outbox；浏览器缓存仅恢复请求意图",
+      "recovery": "admin原actor/action/key读取原moderation结果；后续状态变化不覆盖原回执",
+      "consumers": [
+        "管理员Product反馈页面；options为用户反馈页面"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_moderation_recovery.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/feedbackModerationSubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-feedback-recovery.spec.ts",
+        "docs/evidence/research-handoff-h4/FEEDBACK-MODERATION-RECOVERY.md"
+      ],
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2",
+        "apps/frontend/src/api/feedback.ts": "sha256:71488d27c64798229d45857dbc7e7e4a98d2cd2429919a5f6b80ba501494c283",
+        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:e2429da948ca21257bd9c252810774e7411f79dc475e917d9f5686f9d26da9fd",
+        "apps/frontend/src/views/FeedbackAdminView.vue": "sha256:7142785ad570f201b358753f97aa8c0968dfe9fb99068599b51ce5b57fdb4509"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 704,
+      "method": "POST",
+      "path": "/v1/feedback/moderation/items/{feedback_id}/{action}",
+      "handler": "feedback_moderate",
+      "audit_status": "VERIFIED_OK",
+      "owner": "原管理员actor；options为已登录个人workspace用户",
+      "mode": "write",
+      "authorization": "Gateway耐久登录，moderation再次校验admin；options要求可信研究context",
+      "idempotency": "审核原actor/action/feedback/key及payload hash；读不创建命令",
+      "timeout": "短事务进程/数据库锁2秒、SQL5秒；浏览器命令/核对15秒；非整个研究期限",
+      "errors": "拒绝403、缺对象404、冲突409、参数422、存储503；未知保留原请求",
+      "retry": "核对只读；用户显式重试使用原key和原payload，不新建替代操作",
+      "authority": "Backend PostgreSQL原命令结果、审核audit和outbox；浏览器缓存仅恢复请求意图",
+      "recovery": "原action/key/hash与row lock，结果和audit/outbox同事务；浏览器待确认记录阻止新键替代",
+      "consumers": [
+        "管理员Product反馈页面；options为用户反馈页面"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_moderation_recovery.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/feedbackModerationSubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-feedback-recovery.spec.ts",
+        "docs/evidence/research-handoff-h4/FEEDBACK-MODERATION-RECOVERY.md"
+      ],
+      "source_sha256": "b083c016f4cde366bbe95b55783b9f497e1f5ae8002af8103ab74690b01ec8eb",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2",
+        "apps/frontend/src/api/feedback.ts": "sha256:71488d27c64798229d45857dbc7e7e4a98d2cd2429919a5f6b80ba501494c283",
+        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:e2429da948ca21257bd9c252810774e7411f79dc475e917d9f5686f9d26da9fd",
+        "apps/frontend/src/views/FeedbackAdminView.vue": "sha256:7142785ad570f201b358753f97aa8c0968dfe9fb99068599b51ce5b57fdb4509"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/gateway/app/product_api.py",
+      "line": 2491,
+      "method": "GET",
+      "path": "/feedback/moderation/receipts",
+      "handler": "product_feedback_moderation_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "原管理员actor；options为已登录个人workspace用户",
+      "mode": "read",
+      "authorization": "Gateway耐久登录，moderation再次校验admin；options要求可信研究context",
+      "idempotency": "审核原actor/action/feedback/key及payload hash；读不创建命令",
+      "timeout": "短事务进程/数据库锁2秒、SQL5秒；浏览器命令/核对15秒；非整个研究期限",
+      "errors": "拒绝403、缺对象404、冲突409、参数422、存储503；未知保留原请求",
+      "retry": "核对只读；用户显式重试使用原key和原payload，不新建替代操作",
+      "authority": "Backend PostgreSQL原命令结果、审核audit和outbox；浏览器缓存仅恢复请求意图",
+      "recovery": "只读Product入口构造可信admin头，精确query透传，不转发workspace或用户提交的actor",
+      "consumers": [
+        "管理员Product反馈页面；options为用户反馈页面"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_moderation_recovery.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/gateway/tests/test_product_api.py",
+        "apps/frontend/src/api/feedbackModerationSubmission.spec.ts",
+        "apps/frontend/tests/e2e/h4-feedback-recovery.spec.ts",
+        "docs/evidence/research-handoff-h4/FEEDBACK-MODERATION-RECOVERY.md"
+      ],
+      "source_sha256": "53a592dca1b8ceeadd5bc8bafc6bfc5fa226905a5c00139f936a396179febc53",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:b15007d8a602c4a909e8231535c838dbe9f739e303feaad75fb7843e3f7539c2",
+        "apps/frontend/src/api/feedback.ts": "sha256:71488d27c64798229d45857dbc7e7e4a98d2cd2429919a5f6b80ba501494c283",
+        "apps/frontend/src/api/feedbackModerationSubmission.ts": "sha256:e2429da948ca21257bd9c252810774e7411f79dc475e917d9f5686f9d26da9fd",
+        "apps/frontend/src/views/FeedbackAdminView.vue": "sha256:7142785ad570f201b358753f97aa8c0968dfe9fb99068599b51ce5b57fdb4509"
       }
     }
   ],

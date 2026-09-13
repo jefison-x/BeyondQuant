@@ -2488,6 +2488,13 @@ def product_feedback_withdraw(feedback_id: str, request: Request, payload: dict[
     return _backend_request("POST", f"/v1/feedback/items/{feedback_id}/withdraw", payload, headers=_feedback_headers(request))
 
 
+@router.get("/feedback/moderation/receipts")
+def product_feedback_moderation_receipt(request: Request, feedback_id: str, action: str, idempotency_key: str):
+    params = urlencode({"feedback_id": feedback_id, "action": action, "idempotency_key": idempotency_key})
+    return _backend_request("GET", "/v1/feedback/moderation/receipts?" + params,
+                            headers=_feedback_moderator_headers(request))
+
+
 @router.get("/feedback/moderation/items")
 def product_feedback_moderation_items(
     request: Request, status: str = "submitted", category: str = "all", query: str = "",
