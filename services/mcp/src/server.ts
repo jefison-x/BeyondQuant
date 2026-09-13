@@ -73,6 +73,7 @@ import {
   fetchByqPoolHistory,
   fetchByqPoolLifecycle,
   fetchByqPoolList,
+  fetchByqPoolCreationReconcile,
   fetchByqIndexPoolCatalog, fetchByqIndexPoolCreate, fetchByqIndexPoolStatus, fetchByqIndexPoolReconcile,
   fetchByqPoolSnapshotReplace,
 } from "./stock-pool.js";
@@ -775,12 +776,18 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_pool_get",
-    { description: "Read one owner-scoped BYQ Stock Pool and its current immutable snapshot.", inputSchema: { pool_id: z.string() } },
-    (args) => { const context = poolContext(); return context ? fetchByqPoolGet(BACKEND_URL, args.pool_id, context) : agentContextUnavailable(); },
+    { description: "Read one exact Stock Pool or reconcile its original creation key without replaying a write.", inputSchema: z.union([
+      z.object({ pool_id:z.string() }).strict(),
+      z.object({ creation_kind:z.enum(["custom","index","dynamic"]), idempotency_key:z.string().min(1).max(128) }).strict(),
+    ]) },
+    (args) => { const context = poolContext(); return context ? ("pool_id" in args
+      ? fetchByqPoolGet(BACKEND_URL, args.pool_id, context)
+      : fetchByqPoolCreationReconcile(BACKEND_URL, args.creation_kind, args.idempotency_key, context)) : agentContextUnavailable(); },
   );
   server.registerTool(
     "byq_pool_create",
     { description: "Create an owner-scoped custom Stock Pool and first immutable snapshot.", inputSchema: {
+      idempotency_key: z.string().min(1).max(128),
       name: z.string(), description: z.string().optional(), symbols: z.array(z.string()).min(1),
       weights: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
       definition: z.record(z.string(), z.unknown()).optional(),

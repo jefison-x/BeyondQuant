@@ -103,7 +103,7 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
     ).json()
     pool = client.post(
         "/v1/paper/pools",
-        json={"name": "Signal pool", "pool_type": "custom", "symbols": [SYMBOL]},
+        json={"idempotency_key": "test-pool-104", "name": "Signal pool", "pool_type": "custom", "symbols": [SYMBOL]},
     ).json()["pool"]
     market.import_bars([_bar("20260105", 10.0), _bar("20260106", 11.0)])
     securities._execute("""INSERT INTO security_master_snapshots

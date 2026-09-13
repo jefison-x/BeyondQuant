@@ -1,6 +1,9 @@
 import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogItem, PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot, StockPool, StockPoolMaterializationRun, StockPoolMember, StockPoolProducerDefinition, StockPoolReadiness, StockPoolSnapshot, StockPoolSnapshotDiff } from "./types";
 import { createRequestId } from "@/utils/requestId";
 
+class PaperRequestError extends Error { constructor(public status: number, message: string) { super(message); } }
+export class PoolCreationRejected extends Error {}
+
 const ROOT = "/api/product/paper";
 
 async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
@@ -14,7 +17,7 @@ async function request<T>(path: string, token: string, init: RequestInit = {}): 
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: { message?: string }; detail?: string };
-    throw new Error(body.error?.message ?? body.detail ?? "paper request failed");
+    throw new PaperRequestError(response.status, body.error?.message ?? body.detail ?? "paper request failed");
   }
   return (await response.json()) as T;
 }
@@ -50,13 +53,14 @@ export function createStockPool(
   name: string,
   symbols: string[],
   token: string,
-  options: { poolType?: string; description?: string; weights?: Record<string, number> } = {},
+  options: { poolType?: string; description?: string; weights?: Record<string, number>; idempotencyKey?: string } = {},
 ): Promise<{ pool: StockPool }> {
   return request("/pools", token, {
     method: "POST",
     body: JSON.stringify({
       name,
       symbols,
+      idempotency_key: options.idempotencyKey ?? createRequestId(),
       pool_type: options.poolType ?? "custom",
       description: options.description ?? null,
       weights: options.weights ?? {},
@@ -282,4 +286,24 @@ export function exportPaperAccount(accountId: string, token: string): Promise<{ 
 
 export function importPaperAccount(bundle: Record<string, unknown>, token: string): Promise<{ imported: boolean; account: PaperAccount }> {
   return request("/accounts/import", token, { method: "POST", body: JSON.stringify({ bundle }) });
+}
+
+
+export type PoolCreationKind = "custom" | "index" | "dynamic";
+export async function submitPoolCreation(kind: PoolCreationKind, payload: Record<string, unknown>, token: string): Promise<{pool: StockPool}> {
+  const path = kind === "custom" ? "/pools" : kind === "index" ? "/index-pools" : "/dynamic-pools";
+  let value: {pool:StockPool};
+  try { value = await request<{pool:StockPool}>(path, token, {method:"POST", body:JSON.stringify(payload)}); }
+  catch (error) {
+    if (error instanceof PaperRequestError && [400,401,403,404,422].includes(error.status)) throw new PoolCreationRejected(error.message);
+    throw error;
+  }
+  if (!/^stock_pool_[0-9a-f]{32}$/.test(value.pool?.pool_id ?? "") || value.pool.pool_type !== kind) throw new Error("创建回执未确认，请按原请求核对。");
+  return value;
+}
+export async function reconcilePoolCreation(kind: PoolCreationKind, key: string, token: string): Promise<{state:"not_found"} | {state:"confirmed"; pool:StockPool}> {
+  const value = await request<any>(`/pools/reconcile?kind=${encodeURIComponent(kind)}&idempotency_key=${encodeURIComponent(key)}`, token);
+  if (value.state === "not_found" && Object.keys(value).length === 1) return value;
+  if (value.state !== "confirmed" || !/^stock_pool_[0-9a-f]{32}$/.test(value.pool?.pool_id ?? "") || value.pool.pool_type !== kind) throw new Error("原请求回执无法确认。");
+  return value;
 }

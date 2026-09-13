@@ -211,17 +211,36 @@ class StockPoolProducerStore(PgStoreMixin):
             "offset": offset,
         }
 
-    def reconcile_index_creation(self, key: str, *, trusted_owner: str, trusted_workspace: str) -> dict[str, object]:
+    def reconcile_creation(self, kind, key, *, trusted_owner, trusted_workspace):
+        if kind not in {"custom", "index", "dynamic"}:
+            raise ValueError("unsupported stock pool creation kind")
         identity = _text(key, "idempotency_key")
-        row = self._fetch_one("""SELECT k.pool_id,k.run_id FROM stock_pool_producer_idempotency k
-            JOIN stock_pool_producer_definitions d ON d.pool_id=k.pool_id
-            WHERE k.workspace_id=:workspace AND k.owner_principal=:owner AND k.idempotency_key=:key
-              AND d.producer_kind='index'""",
-            {"workspace": trusted_workspace, "owner": trusted_owner, "key": identity})
+        params = {"kind":kind, "key":identity, "owner":trusted_owner, "workspace":trusted_workspace}
+        if kind == "custom":
+            row = self._fetch_one("""SELECT p.pool_id,NULL AS run_id FROM stock_pool_write_idempotency k
+                JOIN stock_pools p ON p.pool_id=k.result_id
+                WHERE k.owner_principal=:owner AND k.idempotency_key=:key AND k.action='create'
+                  AND p.owner_principal=:owner AND p.workspace_id=:workspace AND p.pool_type=:kind""", params)
+        else:
+            row = self._fetch_one("""SELECT p.pool_id,k.run_id FROM stock_pool_producer_idempotency k
+                JOIN stock_pools p ON p.pool_id=k.pool_id
+                JOIN stock_pool_producer_definitions d ON d.pool_id=p.pool_id
+                WHERE k.workspace_id=:workspace AND k.owner_principal=:owner AND k.idempotency_key=:key
+                  AND p.owner_principal=:owner AND p.workspace_id=:workspace AND p.pool_type=:kind
+                  AND d.producer_kind=:kind AND d.owner_principal=:owner AND d.workspace_id=:workspace""", params)
         if row is None:
+            return {"state":"not_found"}
+        pool = self.paper_store.get_pool(row["pool_id"], trusted_owner=trusted_owner)
+        run = self.get_run(row["run_id"], trusted_owner=trusted_owner, trusted_workspace=trusted_workspace) if row["run_id"] else None
+        if run is not None and run["pool_id"] != pool["pool_id"]:
+            raise StockPoolProducerConflict("creation receipt run does not belong to its pool")
+        return {"state":"confirmed", "pool":pool, "run":run}
+
+    def reconcile_index_creation(self, key: str, *, trusted_owner: str, trusted_workspace: str) -> dict[str, object]:
+        receipt = self.reconcile_creation("index", key, trusted_owner=trusted_owner, trusted_workspace=trusted_workspace)
+        if receipt["state"] != "confirmed":
             raise StockPoolProducerNotFound("index creation receipt is not yet confirmed")
-        return {"pool": self.paper_store.get_pool(row["pool_id"], trusted_owner=trusted_owner),
-                "run": self.get_run(row["run_id"], trusted_owner=trusted_owner, trusted_workspace=trusted_workspace)}
+        return {"pool":receipt["pool"], "run":receipt["run"]}
 
     def create_index_pool(
         self, payload: object, *, trusted_owner: str, trusted_workspace: str,
@@ -416,6 +435,9 @@ class StockPoolProducerStore(PgStoreMixin):
         })
         now = _now()
         with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                    {"scope": f"index-create|{workspace}|{owner}|{key}"})
             previous = fetch_one(connection, """SELECT * FROM stock_pool_producer_idempotency
                 WHERE workspace_id=:workspace AND owner_principal=:owner AND idempotency_key=:key""",
                 {"workspace": workspace, "owner": owner, "key": key})

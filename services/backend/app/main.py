@@ -4735,10 +4735,12 @@ def delete_paper_account(account_id: str, payload: dict[str, Any], request: Requ
 
 @app.post("/v1/paper/pools", status_code=201)
 def create_stock_pool(payload: dict[str, Any], request: Request) -> dict[str, object]:
-    context = _required_agent_context(request, payload)
+    context = _required_agent_context(request, payload, include_workspace=True)
+    if not isinstance(payload.get("idempotency_key"), str) or not payload["idempotency_key"].strip():
+        raise HTTPException(status_code=422, detail="stock pool creation requires idempotency_key")
     return _paper_call(lambda: {"pool": paper_store.create_pool(
         {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
-        trusted_owner=context["owner_principal"],
+        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
     )})
 
 
@@ -4787,6 +4789,13 @@ def import_stock_pool_producer(payload: dict[str, Any], request: Request) -> dic
     return _stock_pool_producer_call(lambda: stock_pool_producer_store.import_inactive_definition(
         payload, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
     ))
+
+
+@app.get("/v1/paper/pools/reconcile")
+def reconcile_pool_creation(request: Request, kind: str, idempotency_key: str):
+    context = _required_agent_context(request, include_workspace=True)
+    return _stock_pool_producer_call(lambda: stock_pool_producer_store.reconcile_creation(kind, idempotency_key,
+        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"]))
 
 
 @app.get("/v1/paper/pools/{pool_id}/producer")

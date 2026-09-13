@@ -411,6 +411,13 @@ paths:
     post: {summary: 以 point-in-time inputs 预览 closed dynamic rule；结果不构成权威快照., responses: *okResponses}
   /api/product/paper/dynamic-pools:
     post: {summary: 创建 owner-scoped dynamic pool definition and optionally enqueue trusted materialization., responses: *createdResponses}
+  /api/product/paper/pools/reconcile:
+    get:
+      summary: 按原创建键核对当前用户和工作区内的股票池回执。
+      parameters:
+        - {name: kind, in: query, required: true, schema: {type: string, enum: [custom, index, dynamic]}}
+        - {name: idempotency_key, in: query, required: true, schema: {type: string}}
+      responses: *okResponses
   /api/product/paper/pools/{pool_id}:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
     get:

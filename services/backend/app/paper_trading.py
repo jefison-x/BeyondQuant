@@ -901,12 +901,16 @@ class PaperTradingStore(PgStoreMixin):
             )
         return snapshot_id
 
-    def create_pool(self, payload: object, *, trusted_owner: str | None = None) -> dict[str, object]:
+    def create_pool(self, payload: object, *, trusted_owner: str | None = None, trusted_workspace: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("pool request must be an object")
         owner = _principal(trusted_owner, field="owner_principal") if trusted_owner else None
         if owner is None:
             raise PaperTradingForbidden("pool requires a trusted owner")
+        key = _idempotency(payload["idempotency_key"]) if "idempotency_key" in payload else None
+        if key is not None and not trusted_workspace:
+            raise PaperTradingForbidden("pool creation receipt requires a trusted workspace")
+        request_hash = _hash({k: v for k, v in payload.items() if k != "idempotency_key"})
         name = _text(payload.get("name"), field="name", max_length=128)
         pool_type = _text(payload.get("pool_type", "custom"), field="pool_type", max_length=16)
         if pool_type not in {"custom", "index", "dynamic"}:
@@ -919,17 +923,36 @@ class PaperTradingStore(PgStoreMixin):
         pool_id = _new_id("stock_pool")
         now = _now()
         with self._transaction() as connection:
+            if key is not None:
+                execute(connection, "SET LOCAL lock_timeout = '2s'")
+                execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                        {"scope": f"pool-write|{owner}|{key}"})
+                previous = fetch_one(connection, "SELECT * FROM stock_pool_write_idempotency WHERE owner_principal=:owner AND idempotency_key=:key",
+                    {"owner":owner, "key":key})
+                if previous is not None:
+                    if previous["action"] != "create" or previous["request_hash"] != request_hash:
+                        raise PaperTradingConflict("stock pool creation key was reused")
+                    original = fetch_one(connection, "SELECT workspace_id FROM stock_pools WHERE pool_id=:id AND owner_principal=:owner",
+                        {"id":previous["result_id"], "owner":owner})
+                    if original is None or original["workspace_id"] != trusted_workspace:
+                        raise PaperTradingConflict("stock pool creation key belongs to another workspace")
+                    return self.get_pool(previous["result_id"], trusted_owner=owner)
             execute(connection, """INSERT INTO stock_pools
-                (pool_id, owner_principal, name, pool_type, description, weights_json,
+                (pool_id, workspace_id, owner_principal, name, pool_type, description, weights_json,
                  symbols_json, version, provenance_json, created_at, updated_at, status, metadata_version)
-                VALUES (:pool_id, :owner, :name, :pool_type, :description, :weights,
+                VALUES (:pool_id, :workspace, :owner, :name, :pool_type, :description, :weights,
                         :symbols, 'v1', :provenance, :created_at, :created_at, 'active', 1)""",
-                {"pool_id": pool_id, "owner": owner, "name": name, "pool_type": pool_type,
+                {"pool_id": pool_id, "workspace": trusted_workspace, "owner": owner, "name": name, "pool_type": pool_type,
                  "description": description, "weights": weights, "symbols": symbols,
                  "provenance": provenance, "created_at": now})
             snapshot_id = self._insert_snapshot(connection, pool_id, pool_type, payload, provenance)
             execute(connection, "UPDATE stock_pools SET current_snapshot_id = :snapshot_id WHERE pool_id = :pool_id",
                     {"snapshot_id": snapshot_id, "pool_id": pool_id})
+            if key is not None:
+                execute(connection, """INSERT INTO stock_pool_write_idempotency
+                    (owner_principal,idempotency_key,action,request_hash,result_id,created_at)
+                    VALUES (:owner,:key,'create',:hash,:pool,:now)""",
+                    {"owner":owner, "key":key, "hash":request_hash, "pool":pool_id, "now":now})
         return self.get_pool(pool_id, trusted_owner=owner)
 
     def create_trusted_pool(self, payload: object, *, trusted_owner: str | None = None) -> dict[str, object]:

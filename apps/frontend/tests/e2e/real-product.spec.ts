@@ -195,7 +195,7 @@ test("Phase 74 real LightGBM training to frozen-signal backtest journey", async 
   page.on("response", response => { if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`); });
   await page.goto("/login"); await page.getByLabel("用户名").fill(username); await page.getByLabel("密码").fill(password); await page.getByRole("button", { name: "进入" }).click();
   await expect(page).toHaveURL(`${origin}/agent`);
-  const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `Phase 74 ML 冻结池-${Date.now()}`, pool_type: "custom", description: "真实浏览器 LightGBM 闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
+  const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ idempotency_key: `phase74-pool-${Date.now()}`, name: `Phase 74 ML 冻结池-${Date.now()}`, pool_type: "custom", description: "真实浏览器 LightGBM 闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
   expect(poolStatus).toBe(201);
   await page.goto("/model-research");
   await expect(page.getByRole("heading", { name: "模型研究目录与实验进程" })).toBeVisible();
@@ -224,7 +224,7 @@ test("Phase 86 real HS300 regime experts to routed frozen-signal backtest journe
   page.on("response", response => { if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`); });
   await page.goto("/login"); await page.getByLabel("用户名").fill(username); await page.getByLabel("密码").fill(password); await page.getByRole("button", { name: "进入" }).click();
   await expect(page).toHaveURL(`${origin}/agent`);
-  const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `Phase 86 状态专家池-${Date.now()}`, pool_type: "custom", description: "真实浏览器沪深300状态专家闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
+  const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ idempotency_key: `phase86-pool-${Date.now()}`, name: `Phase 86 状态专家池-${Date.now()}`, pool_type: "custom", description: "真实浏览器沪深300状态专家闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
   expect(poolStatus).toBe(201);
   await page.goto("/model-research");
   await expect(page.getByRole("heading", { name: "模型研究目录与实验进程" })).toBeVisible();
@@ -397,7 +397,7 @@ test("real Product API Paper Trading settlement, risk, detail, and bundle flow",
   const pool = await page.evaluate(async (name) => {
     const response = await fetch("/api/product/paper/pools", {
       method: "POST", credentials: "include", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, symbols: ["000001.SZ"], pool_type: "custom" }),
+      body: JSON.stringify({ idempotency_key: `paper-pool-${Date.now()}`, name, symbols: ["000001.SZ"], pool_type: "custom" }),
     });
     if (!response.ok) throw new Error(`pool create failed: ${response.status}`);
     return (await response.json()).pool;

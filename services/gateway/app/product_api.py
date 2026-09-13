@@ -2017,7 +2017,7 @@ def product_assets_import(request: Request, payload: dict[str, object]) -> dict[
                 }, headers=headers)
             else:
                 custom = {key: value for key, value in clean_pool.items() if key != "portable_producer"}
-                _backend_request("POST", "/v1/paper/pools", custom, headers=headers)
+                _backend_request("POST", "/v1/paper/pools", {**custom, "idempotency_key": f"import-pool-{import_nonce}-{index}"}, headers=headers)
             imported_pools += 1
         except (ProductError, ValueError) as exc:
             errors.append({"kind": "pool", "message": str(exc)})
@@ -2174,6 +2174,13 @@ def product_stock_pool_materialization_create(
         "POST", f"/v1/paper/pools/{pool_id}/materializations", payload,
         headers=_trusted_agent_headers(request),
     )
+
+
+@router.get("/paper/pools/reconcile")
+def product_pool_creation_reconcile(request: Request, kind: str, idempotency_key: str):
+    _product_principal(request)
+    return _backend_request("GET", "/v1/paper/pools/reconcile?" + urlencode({"kind":kind, "idempotency_key":idempotency_key}),
+        headers=_trusted_agent_headers(request))
 
 
 @router.get("/paper/pools/{pool_id}")

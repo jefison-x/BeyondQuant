@@ -98,3 +98,7 @@ H4/H5前置数据需求恢复：需求及修复引用原子提交，重试复用
 H5历史单次指数快照准备已接入既有data-demand/Worker/Product页面，并完成合成数据下真实浏览器
 丢回执恢复→准备→创建→物化；[特性清单及限制](../evidence/research-handoff-h5/INDEX-PREPARATION.md)。
 真实历史来源和完整模型研究仍待验收，H系列不因此关闭。
+
+H4 股票池创建已补持久原键及刷新恢复，见[POOL-RECOVERY](../evidence/research-handoff-h4/POOL-RECOVERY.md)。
+H5已验证真实沪深300三个月缓存及实际Worker无外部取数完成；单次真实范围来源通过，
+三年调仓覆盖与完整模型研究仍未完成。

@@ -1,0 +1,35 @@
+import { test, expect } from '@playwright/test';
+test.skip(process.env.BYQ_H5_EVIDENCE !== '1', 'isolated Product stack required');
+test('pool commit survives lost acknowledgement and reload without a second write', async ({page}) => {
+  await page.goto('/login');
+  await page.getByLabel('用户名').fill('h5-browser');
+  await page.getByLabel('密码').fill('test-password-123');
+  await page.getByRole('button',{name:'进入'}).click();
+  await expect(page).toHaveURL(/\/agent$/);
+  await page.goto('/stock-pool');
+  await page.getByRole('button',{name:'新建股票池',exact:true}).click();
+  const name = 'H4 receipt '+Date.now();
+  await page.getByPlaceholder('Pool name').fill(name);
+  await page.getByPlaceholder('000001.SZ,600000.SH').fill('000001.SZ,600000.SH');
+  let writes = 0, poolId = '';
+  page.on('request', r => { if(r.url().endsWith('/paper/pools') && r.method()==='POST') writes++; });
+  await page.route('**/api/product/paper/pools', async route => {
+    if(route.request().method() !== 'POST') return route.continue();
+    const response = await route.fetch();
+    expect(response.ok()).toBeTruthy();
+    poolId = (await response.json()).pool.pool_id;
+    await route.abort('failed');
+  });
+  await page.getByRole('button',{name:'创建股票池',exact:true}).click();
+  await expect(page.getByText('有一笔股票池创建尚未确认',{exact:true})).toBeVisible();
+  expect(poolId).toMatch(/^stock_pool_[0-9a-f]{32}$/);
+  await page.reload();
+  await expect(page.getByText('有一笔股票池创建尚未确认',{exact:true})).toBeVisible();
+  const receipt = page.waitForResponse(r=>r.url().includes('/paper/pools/reconcile?'));
+  await page.getByRole('button',{name:'核对原创建请求',exact:true}).click();
+  const body = await (await receipt).json();
+  expect(body.state).toBe('confirmed');
+  expect(body.pool.pool_id).toBe(poolId);
+  await expect(page.getByText('有一笔股票池创建尚未确认',{exact:true})).toHaveCount(0);
+  expect(writes).toBe(1);
+});
