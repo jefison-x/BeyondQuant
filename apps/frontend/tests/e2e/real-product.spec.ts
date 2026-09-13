@@ -640,7 +640,7 @@ for (const viewport of ['desktop', 'mobile'] as const) {
     await panel.getByText('选择已验证资产', { exact: true }).click();
     await page.getByRole('option', { name: /^strategy_version ·/ }).click();
     await panel.getByRole('combobox').press('Escape');
-    await panel.getByText('我确认上述任务、资产、额度与有效期；已保存许可不代表后台执行已启用。', { exact: true }).click();
+    await panel.getByText('我确认上述任务、资产、额度与有效期，并允许按上述条件续接；实际执行仍须通过准入检查。', { exact: true }).click();
     await expect(panel.getByRole('checkbox')).toBeChecked();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await panel.screenshot({ path: testInfo.outputPath(`f6-permission-form-${viewport}.png`) });
