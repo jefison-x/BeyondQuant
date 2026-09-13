@@ -152,3 +152,36 @@ def test_http_redirect_cannot_forward_credentials():
     finally:
         for server in (source, sink): server.shutdown(); server.server_close()
         for thread in threads: thread.join(timeout=2)
+
+
+def test_slow_body_deadline_preserves_unknown_result():
+    import threading
+    import pytest
+    import time
+    import signal
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    calls = []
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_POST(self):
+            calls.append(self.path)
+            body = b'{"padding":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}'
+            self.send_response(202)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            try:
+                for byte in body:
+                    self.wfile.write(bytes([byte])); self.wfile.flush(); time.sleep(.03)
+            except (BrokenPipeError, ConnectionResetError): pass
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+    try:
+        started = time.monotonic()
+        with pytest.raises(relay.RelayError) as caught:
+            relay._json_request(f'http://127.0.0.1:{server.server_port}/intake', method='POST', payload={}, expected=202, timeout=.12)
+        assert caught.value.category == 'hub_unavailable'
+        assert time.monotonic() - started < .8
+        assert calls == ['/intake']
+        assert signal.getitimer(signal.ITIMER_REAL) == (0., 0.)
+    finally:
+        server.shutdown(); server.server_close(); thread.join(2)

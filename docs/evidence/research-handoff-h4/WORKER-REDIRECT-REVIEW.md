@@ -41,3 +41,11 @@ Cloudflare 测试使用合成 fetch 与 binding 响应，不能替代生产网�
 发现旧坏JSON测试仍patch urllib.request.urlopen，而实现已使用build_opener.open。修正为拦截实际Opener，并断言5次请求与5次实际read；四个畸形/超限响应拒绝，正常JSON成功对照通过。完整Relay7项通过（1.12秒），无外部网络。旧测试的通过不能证明曾读取过坏响应。
 
 独立无网络容器的回环HTTP慢响应实测：publisher._json_request(timeout=0.08)，每0.03秒发送一个字节，实际0.320秒后返回正常成功。确认socket timeout不是整次header/body deadline；本轮仅复现，尚未修复，Python发布器/Relay人工入口审计仍不关闭。没有外部服务或真实认证。
+
+## Python整次请求期限候选
+
+两个Worker确认在Linux主线程串行调用HTTP，只有健康服务在后台线程。新增共享feedback_http_deadline.request_deadline，以POSIX实时时钟覆盖连接/响应头/正文；finally清除本次timer并恢复原SIGALRM处理器。拒绝非主线程及已有timer，不覆盖其他定时器、不启动遗留网络线程、不自动重发。默认仍12秒，Relay与Publisher保留各自hub_unavailable/transport_ambiguous映射。此辅助函数不适用于通用多线程HTTP客户端，也不改变Agent会话时限。Docker与CI显式加入同一模块。
+
+真实无网络容器回环测试覆盖慢响应头和慢正文：每30毫秒持续发送字节，120毫秒期限触发未知结果，耗时小于800毫秒；后续快速请求成功，timer归零、原handler恢复；嵌套timer与非主线程调用在网络前拒绝。Publisher完整19项通过（7.62秒），加强线程异常传播后定向复核另行执行。Relay新增测试初次因缺threading导入未执行到请求，已修正并重跑，原失败不作为运行缺陷。新候选尚需构建、架构检查及远端CI，人工入口整体审计仍未关闭。
+
+修正后Relay完整8项通过（2.14秒），共享期限增强测试3项通过（1.34秒）；124项架构、dev-check语法、CI脚本语法及`.109`构建身份通过。尚未新镜像运行或远端CI验证，不标记整个人工入口完成。

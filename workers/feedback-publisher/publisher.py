@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import http.client
 import json
+from feedback_http_deadline import request_deadline
 import os
 import re
 import socket
@@ -140,7 +141,7 @@ def _json_request(url: str, *, method: str = "GET", payload: object | None = Non
         outgoing["content-type"] = "application/json"
     request = urllib.request.Request(url, data=body, headers=outgoing, method=method)
     try:
-        with urllib.request.build_opener(_RejectRedirect()).open(request, timeout=timeout) as response:
+        with request_deadline(timeout), urllib.request.build_opener(_RejectRedirect()).open(request, timeout=timeout) as response:
             if expected and response.status not in expected:
                 raise PublisherError("provider_unavailable")
             raw = response.read(256 * 1024 + 1)

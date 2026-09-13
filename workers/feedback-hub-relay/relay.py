@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from feedback_http_deadline import request_deadline
 import http.client
 import re
 import os
@@ -57,14 +58,14 @@ class _RejectRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def _json_request(url: str, *, method: str = "GET", payload: object | None = None,
-                  headers: dict[str, str] | None = None, expected: int = 200) -> dict[str, Any]:
+                  headers: dict[str, str] | None = None, expected: int = 200, timeout: float = 12) -> dict[str, Any]:
     body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode()
     outgoing = {"accept": "application/json", "user-agent": "BeyondQuant-Feedback-Hub-Relay/1", **(headers or {})}
     if body is not None:
         outgoing["content-type"] = "application/json"
     request = urllib.request.Request(url, data=body, headers=outgoing, method=method)
     try:
-        with urllib.request.build_opener(_RejectRedirect()).open(request, timeout=12) as response:
+        with request_deadline(timeout), urllib.request.build_opener(_RejectRedirect()).open(request, timeout=timeout) as response:
             if response.status != expected:
                 raise RelayError("hub_unavailable")
             raw = response.read(64 * 1024 + 1)
