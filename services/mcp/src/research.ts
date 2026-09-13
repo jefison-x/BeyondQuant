@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { safeRequestValidation } from "./request-validation.js";
 import { bindActiveWebEvidenceProducer } from "./web-evidence-provenance.js";
 
@@ -264,7 +265,7 @@ export function fetchByqArtifactCreate(
   return watchedResearchCreate(backendUrl, 'artifact', "/v1/research/artifacts", request, fetcher);
 }
 
-export function fetchByqWebEvidenceCreate(
+export async function fetchByqWebEvidenceCreate(
   backendUrl: string,
   request: WebEvidenceCreateRequest,
   fetcher: Fetcher = fetch,
@@ -279,17 +280,31 @@ export function fetchByqWebEvidenceCreate(
       backend: { status: "research_request_invalid", validation_issue: "PRODUCER_PROVENANCE" },
     }, true));
   }
-  return requestResearch(
+  const response = await requestResearch(
     backendUrl,
     "/v1/research/web-evidence-records",
     { method: "POST", body: JSON.stringify(trustedRequest) },
     fetcher,
     true,
     (payload) => {
-      const artifact = payload.artifact;
-      const artifactId = artifact !== null && typeof artifact === "object" && !Array.isArray(artifact)
-        ? (artifact as Record<string, unknown>).artifact_id
-        : undefined;
+      const task = payload.task as Record<string, unknown> | null;
+      const artifact = payload.artifact as Record<string, unknown> | null;
+      const digest = createHash('sha256').update(request.idempotency_key.trim()).digest('hex').slice(0, 32);
+      const content = artifact?.content as Record<string, unknown> | null;
+      if (payload.record_status !== 'saved'
+          || !task || Array.isArray(task) || !artifact || Array.isArray(artifact)
+          || typeof task.task_id !== 'string' || !/^task_[0-9a-f]{32}$/.test(task.task_id)
+          || task.idempotency_key !== `web-record-task:${digest}`
+          || task.title !== request.task.title.trim() || task.objective !== request.task.objective.trim()
+          || typeof artifact.artifact_id !== 'string' || !/^artifact_[0-9a-f]{32}$/.test(artifact.artifact_id)
+          || artifact.task_id !== task.task_id || artifact.kind !== 'web_research_evidence'
+          || artifact.idempotency_key !== `web-record-artifact:${digest}`
+          || !Number.isSafeInteger(payload.source_count) || Number(payload.source_count) < 0
+          || !Array.isArray(content?.sources) || content.sources.length !== payload.source_count) {
+        // requestResearch classifies a rejected write receipt as unknown, preserving its key.
+        throw new Error('invalid web evidence receipt');
+      }
+      const artifactId = artifact.artifact_id;
       return {
         record_status: payload.record_status,
         source_count: payload.source_count,
@@ -304,6 +319,18 @@ export function fetchByqWebEvidenceCreate(
       };
     },
   );
+  const resultBody = JSON.parse(response.content[0].text);
+  if (resultBody.status === 'outcome_unknown') {
+    const digest = createHash('sha256').update(request.idempotency_key.trim()).digest('hex').slice(0, 32);
+    resultBody.reconciliation = { tool: 'byq_research_get', arguments: {
+      entity_type: 'research_task', idempotency_key: `web-record-task:${digest}`,
+    }, then: { tool: 'byq_research_get', entity_type: 'artifact',
+      idempotency_key: `web-record-artifact:${digest}`,
+      task_id_source: 'confirmed_original_task_id',
+    } };
+    return result(resultBody, false);
+  }
+  return response;
 }
 
 

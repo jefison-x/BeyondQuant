@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -83,6 +84,17 @@ assert.equal(conflict.isError, true);
 assert.match(conflict.content[0].text, /research_conflict/);
 assert.doesNotMatch(conflict.content[0].text, /SQL path|var\/lib/);
 
+function webReceipt(key: string, title: string, objective: string, sourceCount = 2) {
+  const digest = createHash('sha256').update(key).digest('hex').slice(0, 32);
+  const taskId = 'task_' + 'a'.repeat(32);
+  return { record_status: 'saved', source_count: sourceCount,
+    task: { task_id: taskId, title, objective, idempotency_key: `web-record-task:${digest}` },
+    artifact: { artifact_id: 'artifact_0123456789abcdef0123456789abcdef', task_id: taskId,
+      kind: 'web_research_evidence', idempotency_key: `web-record-artifact:${digest}`,
+      content: { sources: Array.from({length: sourceCount}, () => ({source_id:'source_internal'})) } },
+  };
+}
+
 const webEvidence = await fetchByqWebEvidenceCreate(
   "http://backend:8000",
   {
@@ -96,15 +108,7 @@ const webEvidence = await fetchByqWebEvidenceCreate(
     assert.equal(init?.method, "POST");
     assert.doesNotMatch(String(init?.body), /credential|password|secret|token/i);
     return new Response(
-      JSON.stringify({
-        record_status: "saved",
-        source_count: 2,
-        artifact: {
-          artifact_id: "artifact_0123456789abcdef0123456789abcdef",
-          kind: "web_research_evidence",
-          content: { schema_version: "web-research-evidence.v1", sources: [{ source_id: "source_internal" }] },
-        },
-      }),
+      JSON.stringify(webReceipt('mcp-web-evidence-1', '网页研究记录', '保存本轮公开网页研究证据。')),
       { status: 201 },
     );
   },
@@ -129,7 +133,7 @@ const trustedProducer = await fetchByqWebEvidenceCreate(
   },
   async (_url, init) => {
     trustedBody = JSON.parse(String(init?.body));
-    return new Response(JSON.stringify({ record_status: "saved", source_count: 0 }), { status: 201 });
+    return new Response(JSON.stringify(webReceipt('mcp-web-evidence-producer', 'producer', 'bind trusted provenance', 0)), { status: 201 });
   },
 );
 assert.equal(trustedProducer.isError, false);
@@ -312,3 +316,50 @@ for (const entity_type of ["experiment", "artifact"] as const) {
   }
 }
 console.log("Research receipt parent binding PASS: missing, wrong and malformed task identities rejected");
+
+// A successful HTTP envelope is not evidence that the original record was saved.
+for (const invalidReceipt of [{}, { record_status: 'saved', source_count: 0 },
+  { record_status: 'not_saved', source_count: 2, artifact: { artifact_id: 'artifact_' + 'a'.repeat(32) } }]) {
+  const receipt = await fetchByqWebEvidenceCreate('http://backend:8000', {
+    task: { title: 'receipt', objective: 'Validate committed identity' },
+    content: { schema_version: 'web-research-evidence.v1' }, lineage: [],
+    idempotency_key: 'web-original-receipt',
+  }, async () => new Response(JSON.stringify(invalidReceipt), { status: 201 }));
+  const body = JSON.parse(receipt.content[0].text);
+  assert.equal(body.status, 'outcome_unknown');
+  assert.equal(body.idempotency_key, 'web-original-receipt');
+  const digest = createHash('sha256').update('web-original-receipt').digest('hex').slice(0, 32);
+  assert.deepEqual(body.reconciliation.arguments, {
+    entity_type: 'research_task', idempotency_key: `web-record-task:${digest}`,
+  });
+  assert.equal(body.reconciliation.then.idempotency_key, `web-record-artifact:${digest}`);
+  assert.equal(body.reconciliation.then.task_id_source, 'confirmed_original_task_id');
+  assert.doesNotMatch(receipt.content[0].text, /研究记录已保存/);
+}
+
+for (const corrupt of [
+  (row: ReturnType<typeof webReceipt>) => { row.task.task_id = 'task_' + 'b'.repeat(32); },
+  (row: ReturnType<typeof webReceipt>) => { row.task.idempotency_key = 'other-key'; },
+  (row: ReturnType<typeof webReceipt>) => { row.task.objective = 'unrelated goal'; },
+  (row: ReturnType<typeof webReceipt>) => { row.artifact.idempotency_key = 'other-key'; },
+  (row: ReturnType<typeof webReceipt>) => { row.artifact.kind = 'strategy_version'; },
+  (row: ReturnType<typeof webReceipt>) => { row.artifact.artifact_id = 'bad-id'; },
+  (row: ReturnType<typeof webReceipt>) => { row.source_count = 3; },
+]) {
+  const row = webReceipt('web-original-receipt', 'receipt', 'Validate committed identity');
+  corrupt(row);
+  const receipt = await fetchByqWebEvidenceCreate('http://backend:8000', {
+    task: { title: 'receipt', objective: 'Validate committed identity' },
+    content: { schema_version: 'web-research-evidence.v1' }, lineage: [],
+    idempotency_key: 'web-original-receipt',
+  }, async () => new Response(JSON.stringify(row), { status: 201 }));
+  assert.equal(JSON.parse(receipt.content[0].text).status, 'outcome_unknown');
+}
+console.log('Web evidence receipt PASS: original key, goal, object lineage and source count');
+
+const paddedKey = await fetchByqWebEvidenceCreate('http://backend:8000', {
+  task: { title: ' receipt ', objective: ' Validate committed identity ' },
+  content: { schema_version: 'web-research-evidence.v1' }, lineage: [],
+  idempotency_key: ' web-original-receipt ',
+}, async () => new Response(JSON.stringify(webReceipt('web-original-receipt', 'receipt', 'Validate committed identity')), {status:201}));
+assert.equal(JSON.parse(paddedKey.content[0].text).status, 'ok');
