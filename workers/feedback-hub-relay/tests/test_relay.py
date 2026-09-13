@@ -82,13 +82,26 @@ def test_http_commit_then_lost_reply_reuses_same_original_event(monkeypatch):
 def test_invalid_json_encoding_and_oversized_http_success_stay_unknown(monkeypatch):
     import io
     import pytest
+    calls = []
+    reads = []
     class Response(io.BytesIO):
-        status=202
-    for raw in (b'{',b'\xff',b'[]',b'{}'+b' '*(64*1024)):
-        monkeypatch.setattr(relay.urllib.request,'urlopen',lambda *args,**kwargs:Response(raw))
+        status = 202
+        def read(self, size=-1):
+            reads.append(size)
+            return super().read(size)
+    class Opener:
+        def open(self, request, *, timeout):
+            calls.append((request.method, request.full_url, timeout))
+            return Response(raw)
+    monkeypatch.setattr(relay.urllib.request, 'build_opener', lambda *handlers: Opener())
+    for raw in (b'{', b'\xff', b'[]', b'{}'+b' '*(64*1024)):
         with pytest.raises(relay.RelayError) as error:
-            relay._json_request('https://feedback.example.org/v1/intake',method='POST',payload={},expected=202)
-        assert error.value.category=='hub_unavailable'
+            relay._json_request('https://feedback.example.org/v1/intake', method='POST', payload={}, expected=202)
+        assert error.value.category == 'hub_unavailable'
+    raw = b'{"valid":true}'
+    assert relay._json_request('https://feedback.example.org/v1/intake', method='POST', payload={}, expected=202) == {'valid': True}
+    assert calls == [('POST', 'https://feedback.example.org/v1/intake', 12)] * 5
+    assert reads == [64 * 1024 + 1] * 5
 
 
 def test_status_refresh_reserves_durable_candidates_before_remote_reads(monkeypatch):

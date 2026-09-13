@@ -35,3 +35,9 @@ Cloudflare 测试使用合成 fetch 与 binding 响应，不能替代生产网�
 
 复核发现 `.97` 仅拒绝跳转，但 urllib HTTPError 的3xx仍走旧默认 validation_rejected；此前仅检查目标零请求的测试未覆盖该分类。新增断言先失败，保留此遗漏事实。
 现在3xx明确 transport_ambiguous。五种301/302/303/307/308回环测试均要求目标零请求且错误为未知；全部发布器16项通过（6.31秒）。未部署旧错误候选。
+
+## Relay失效拦截修正与慢响应证据
+
+发现旧坏JSON测试仍patch urllib.request.urlopen，而实现已使用build_opener.open。修正为拦截实际Opener，并断言5次请求与5次实际read；四个畸形/超限响应拒绝，正常JSON成功对照通过。完整Relay7项通过（1.12秒），无外部网络。旧测试的通过不能证明曾读取过坏响应。
+
+独立无网络容器的回环HTTP慢响应实测：publisher._json_request(timeout=0.08)，每0.03秒发送一个字节，实际0.320秒后返回正常成功。确认socket timeout不是整次header/body deadline；本轮仅复现，尚未修复，Python发布器/Relay人工入口审计仍不关闭。没有外部服务或真实认证。
