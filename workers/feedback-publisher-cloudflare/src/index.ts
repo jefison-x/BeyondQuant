@@ -110,6 +110,7 @@ export function classifyGitHubStatus(status: number, headers = new Headers()): P
 async function githubRequest(env: PublisherEnv, path: string, init: RequestInit = {}, expected = 200): Promise<unknown> {
   const response = await fetch(`https://api.github.com${path}`, {
     ...init,
+    redirect: "error",
     headers: {
       accept: "application/vnd.github+json",
       "content-type": "application/json",
@@ -167,6 +168,7 @@ export function render(event: PublicationEvent): { title: string; body: string }
 
 async function hubRequest(env: PublisherEnv, path: string, payload: unknown): Promise<Response> {
   return env.HUB.fetch(`https://byq-feedback-hub${path}`, {
+    redirect: "error",
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -238,8 +240,9 @@ async function processMessage(message: Message<QueueEnvelope>, env: PublisherEnv
     const issue = await reconcileOrCreate(env, event, workerId);
     const number = issue.number;
     const expectedUrl = `https://github.com/${REPOSITORY}/issues/${number}`;
-    if (!Number.isInteger(number) || number < 1 || issue.html_url !== expectedUrl || !issue.id) {
-      throw new PublisherError("validation_rejected");
+    if (!Number.isSafeInteger(number) || number < 1 || issue.html_url !== expectedUrl
+        || !Number.isSafeInteger(issue.id) || Number(issue.id) < 1) {
+      throw new PublisherError("transport_ambiguous");
     }
     const result = await hubRequest(env, `/internal/feedback-publications/${event.event_id}/complete`, {
       worker_id: workerId,

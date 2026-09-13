@@ -49,6 +49,13 @@ class Config:
         )
 
 
+class _RejectRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # These requests carry service credentials to a configured endpoint.
+        # A redirect is an unknown outcome, never authority for another target.
+        return None
+
+
 def _json_request(url: str, *, method: str = "GET", payload: object | None = None,
                   headers: dict[str, str] | None = None, expected: int = 200) -> dict[str, Any]:
     body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode()
@@ -57,7 +64,7 @@ def _json_request(url: str, *, method: str = "GET", payload: object | None = Non
         outgoing["content-type"] = "application/json"
     request = urllib.request.Request(url, data=body, headers=outgoing, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=12) as response:
+        with urllib.request.build_opener(_RejectRedirect()).open(request, timeout=12) as response:
             if response.status != expected:
                 raise RelayError("hub_unavailable")
             raw = response.read(64 * 1024 + 1)

@@ -108,3 +108,34 @@ def test_status_refresh_reserves_durable_candidates_before_remote_reads(monkeypa
     relay._refresh_statuses(config)
     assert calls[1][0]=='/internal/feedback-hub/'+item['event_id']+'/status'
     assert calls[1][1]['payload']['status']=='accepted'
+
+
+def test_http_redirect_cannot_forward_credentials():
+    import pytest
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    received = []
+    class Sink(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_GET(self):
+            received.append(dict(self.headers))
+            self.send_response(200); self.end_headers(); self.wfile.write(b'{}')
+    sink = ThreadingHTTPServer(('127.0.0.1', 0), Sink)
+    class Redirect(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header('Location', f'http://127.0.0.1:{sink.server_port}/untrusted')
+            self.end_headers()
+    source = ThreadingHTTPServer(('127.0.0.1', 0), Redirect)
+    threads = [threading.Thread(target=server.serve_forever, daemon=True) for server in (sink, source)]
+    for thread in threads: thread.start()
+    try:
+        with pytest.raises(relay.RelayError):
+            relay._json_request(f'http://127.0.0.1:{source.server_port}/receipt',
+                headers={'Authorization':'Bearer synthetic-redirect-token',
+                         'x-byq-feedback-hub-relay-token':'synthetic-service-token'})
+        assert received == [], 'redirect target must receive neither request nor credential'
+    finally:
+        for server in (source, sink): server.shutdown(); server.server_close()
+        for thread in threads: thread.join(timeout=2)

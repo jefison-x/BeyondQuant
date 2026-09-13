@@ -123,6 +123,13 @@ class GitHubCredential:
             raise PublisherError("authentication_failed") from exc
 
 
+class _RejectRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # These requests carry service credentials to a configured endpoint.
+        # A redirect is an unknown outcome, never authority for another target.
+        return None
+
+
 def _json_request(url: str, *, method: str = "GET", payload: object | None = None,
                   headers: dict[str, str] | None = None, expected: set[int] | None = None,
                   timeout: float = 12) -> dict[str, Any] | list[Any]:
@@ -133,7 +140,7 @@ def _json_request(url: str, *, method: str = "GET", payload: object | None = Non
         outgoing["content-type"] = "application/json"
     request = urllib.request.Request(url, data=body, headers=outgoing, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.build_opener(_RejectRedirect()).open(request, timeout=timeout) as response:
             if expected and response.status not in expected:
                 raise PublisherError("provider_unavailable")
             raw = response.read(256 * 1024 + 1)
