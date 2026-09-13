@@ -49,7 +49,17 @@ def test_research_api_exposes_normalized_persistent_entity_flow(monkeypatch) -> 
 
     fetched = client.get(f"/v1/research/tasks/{task_id}")
     assert fetched.status_code == 200
-    assert fetched.json() == task
+    detail = fetched.json()
+    handoff = detail.pop("handoff")
+    assert detail == task
+    assert handoff["schema_version"] == "research-task-handoff.v1"
+    assert handoff["task_id"] == task_id
+    assert handoff["task_status"] == task["status"]
+    assert handoff["objective"] == task["objective"]
+    assert handoff["state"] == "blocked"
+    assert handoff["reason"] == "conversation_binding_missing"
+    assert handoff["references"] == []
+    assert handoff["has_more"] is False
 
     hidden = client.get(
         f"/v1/research/tasks/{task_id}",
