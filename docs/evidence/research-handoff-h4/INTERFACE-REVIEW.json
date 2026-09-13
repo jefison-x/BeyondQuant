@@ -2899,6 +2899,454 @@
       },
       "recovery": "原receipt行锁、可达状态核对，拒绝迟到回退与published issue替换",
       "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 574,
+      "method": "GET",
+      "path": "/v1/feedback/items",
+      "handler": "feedback_items",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner/actor及个人workspace",
+      "mode": "read",
+      "authorization": "Gateway耐久身份或MCP可信context，Backend按workspace过滤",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "个人workspace过滤；最多100条分页，不以本页缺项推断不存在",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 595,
+      "method": "GET",
+      "path": "/v1/feedback/receipts",
+      "handler": "feedback_receipt",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner/actor及个人workspace",
+      "mode": "read",
+      "authorization": "Gateway耐久身份或MCP可信context，Backend按workspace过滤",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "原actor/workspace/operation/key和对象核对；读取原命令结果而非最新状态",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 602,
+      "method": "GET",
+      "path": "/v1/feedback/items/{feedback_id}",
+      "handler": "feedback_get",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner/actor及个人workspace",
+      "mode": "read",
+      "authorization": "Gateway耐久身份或MCP可信context，Backend按workspace过滤",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "原ID+workspace读取当前持久对象及不可变revision；跨workspace404",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 619,
+      "method": "GET",
+      "path": "/v1/feedback/items/{feedback_id}/revisions",
+      "handler": "feedback_revisions",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner/actor及个人workspace",
+      "mode": "read",
+      "authorization": "Gateway耐久身份或MCP可信context，Backend按workspace过滤",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "先校验owner再返回最多50条revision元数据；无写入",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 629,
+      "method": "POST",
+      "path": "/v1/feedback/items/{feedback_id}/preview",
+      "handler": "feedback_preview",
+      "audit_status": "VERIFIED_OK",
+      "owner": "可信owner/actor及个人workspace",
+      "mode": "read",
+      "authorization": "Gateway耐久身份或MCP可信context，Backend按workspace过滤",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "原版本核对并生成脱敏披露预览；POST但不提交或生成outbox",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 670,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/items",
+      "handler": "feedback_moderation_items",
+      "audit_status": "VERIFIED_OK",
+      "owner": "平台admin仅限已提交脱敏反馈",
+      "mode": "read",
+      "authorization": "Gateway耐久身份构造可信admin actor/role，Backend再次要求admin",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "admin只见已提交脱敏快照，目录最多100条，不读用户草稿",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 681,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/items/{feedback_id}",
+      "handler": "feedback_moderation_get",
+      "audit_status": "VERIFIED_OK",
+      "owner": "平台admin仅限已提交脱敏反馈",
+      "mode": "read",
+      "authorization": "Gateway耐久身份构造可信admin actor/role，Backend再次要求admin",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "admin按原ID读取非draft投影，无workspace原草稿内容",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 687,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/items/{feedback_id}/audit",
+      "handler": "feedback_moderation_audit",
+      "audit_status": "VERIFIED_OK",
+      "owner": "平台admin仅限已提交脱敏反馈",
+      "mode": "read",
+      "authorization": "Gateway耐久身份构造可信admin actor/role，Backend再次要求admin",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "admin原ID、最多50条过滤审计；不暴露actor身份或原detail",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 705,
+      "method": "GET",
+      "path": "/v1/feedback/moderation/publisher-status",
+      "handler": "feedback_publisher_status",
+      "audit_status": "VERIFIED_OK",
+      "owner": "平台admin仅限已提交脱敏反馈",
+      "mode": "read",
+      "authorization": "Gateway耐久身份构造可信admin actor/role，Backend再次要求admin",
+      "idempotency": "只读无业务重放",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "admin有界状态聚合；心跳新鲜不等同外部发布成功",
+      "consumers": [
+        "Gateway Product反馈界面/可信MCP"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 719,
+      "method": "POST",
+      "path": "/internal/feedback-publications/heartbeat",
+      "handler": "feedback_publisher_heartbeat",
+      "audit_status": "VERIFIED_OK",
+      "owner": "独立publisher服务身份",
+      "mode": "write",
+      "authorization": "内部专用publisher token，缺配置503/缺凭据401",
+      "idempotency": "原outbox事件、lease fence和单次create许可；无自动新身份",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "固定仓库及credential种类登记；不授予Product Agent GitHub权限",
+      "consumers": [
+        "独立feedback-publisher"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 725,
+      "method": "POST",
+      "path": "/internal/feedback-publications/claim",
+      "handler": "feedback_publication_claim",
+      "audit_status": "VERIFIED_OK",
+      "owner": "独立publisher服务身份",
+      "mode": "write",
+      "authorization": "内部专用publisher token，缺配置503/缺凭据401",
+      "idempotency": "原outbox事件、lease fence和单次create许可；无自动新身份",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "原outbox到期领取与fence持久化；崩溃重领仍受6次上限",
+      "consumers": [
+        "独立feedback-publisher"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 731,
+      "method": "POST",
+      "path": "/internal/feedback-publications/{event_id}/begin-create",
+      "handler": "feedback_publication_begin_create",
+      "audit_status": "VERIFIED_OK",
+      "owner": "独立publisher服务身份",
+      "mode": "write",
+      "authorization": "内部专用publisher token，缺配置503/缺凭据401",
+      "idempotency": "原outbox事件、lease fence和单次create许可；无自动新身份",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "有效原lease原fence下只消费一次create许可；丢回执不重新授予，旧事件仅核对",
+      "consumers": [
+        "独立feedback-publisher"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 737,
+      "method": "POST",
+      "path": "/internal/feedback-publications/{event_id}/complete",
+      "handler": "feedback_publication_complete",
+      "audit_status": "VERIFIED_OK",
+      "owner": "独立publisher服务身份",
+      "mode": "write",
+      "authorization": "内部专用publisher token，缺配置503/缺凭据401",
+      "idempotency": "原outbox事件、lease fence和单次create许可；无自动新身份",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "原lease/fence与固定仓库/canonical URL，映射和published同事务；允许只读核对后完成",
+      "consumers": [
+        "独立feedback-publisher"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 743,
+      "method": "POST",
+      "path": "/internal/feedback-publications/{event_id}/retry",
+      "handler": "feedback_publication_retry",
+      "audit_status": "VERIFIED_OK",
+      "owner": "独立publisher服务身份",
+      "mode": "write",
+      "authorization": "内部专用publisher token，缺配置503/缺凭据401",
+      "idempotency": "原outbox事件、lease fence和单次create许可；无自动新身份",
+      "timeout": "FeedbackStore进程锁2秒/数据库锁2秒/SQL5秒；不是整个研究总时长",
+      "errors": "参数422、越权/不存在404或403、版本/lease冲突409、存储安全503；未知不算成功",
+      "retry": "读取可有界重查，目录缺项不代表不存在；发布写仅原事件核对，create许可不重复消费",
+      "authority": "Backend PostgreSQL反馈/命令/发布映射；外部Issue须固定身份核对",
+      "recovery": "原lease/fence，闭合错误分类和次数上限；unknown保留原事件，不创建新outbox",
+      "consumers": [
+        "独立feedback-publisher"
+      ],
+      "evidence": [
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "services/backend/tests/test_feedback_recovery.py",
+        "services/backend/tests/test_feedback_publisher_create_permit.py",
+        "docs/evidence/research-handoff-h4/PUBLISHER-CREATE-PERMIT.md"
+      ],
+      "source_sha256": "0790a8be398fd1ef487fbfcefec30d6341eca76ffb73e3679d5ab5515087a4d4",
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:4ea9fa2d1ad0b1289331b11ba64c53e0428683d88f33784339cea7a17d2eafdc"
+      }
     }
   ],
   "manual_surfaces": [
