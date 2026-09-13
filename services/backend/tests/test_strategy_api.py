@@ -376,6 +376,23 @@ def test_strategy_draft_save_tolerates_invalid_and_delete(monkeypatch) -> None:
     assert deleted.status_code == 200, deleted.text
     assert deleted.json()["artifact"]["status"] == "superseded"
 
+    # Simulate a lost response and a fresh Backend store before retrying.
+    restarted = ResearchStore()
+    monkeypatch.setattr(main, "research_store", restarted)
+    try:
+        replay = client.delete(
+            f"/v1/research/strategies/drafts/{saved_body['artifact']['artifact_id']}",
+            headers=_owner_headers(),
+        )
+        assert replay.status_code == 200, replay.text
+        assert replay.json() == deleted.json()
+        count = restarted._fetch_one("SELECT count(*) AS n FROM research_transitions WHERE entity_id=:id AND target_status='superseded'",
+                                     {"id": saved_body["artifact"]["artifact_id"]})
+        assert count["n"] == 1
+    finally:
+        monkeypatch.setattr(main, "research_store", store)
+        restarted.close()
+
     # Non-owner delete must 404 (owner-scoped).
     denied = client.delete(
         f"/v1/research/strategies/drafts/{saved_body['artifact']['artifact_id']}",

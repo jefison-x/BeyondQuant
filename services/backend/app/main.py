@@ -3263,12 +3263,11 @@ def delete_strategy_draft(artifact_id: str, request: Request) -> dict[str, objec
     def operation() -> dict[str, object]:
         context = _required_agent_context(request)
         artifact = research_store.get_artifact(artifact_id)
-        if artifact["kind"] != "strategy_draft":
-            raise ValueError("artifact is not a strategy draft")
         if artifact["owner_principal"] != context["owner_principal"]:
             raise ResearchNotFound("strategy draft not found")
-        if artifact["status"] not in {"draft", "validated"}:
-            raise ValueError("strategy draft is already superseded")
+        if artifact["kind"] != "strategy_draft":
+            raise ValueError("artifact is not a strategy draft")
+        # The durable transition checks its original receipt before current status.
         transitioned = research_store.transition(
             "artifact", artifact_id, "superseded", f"strategy-draft-delete-{artifact_id[:16]}"
         )
