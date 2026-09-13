@@ -19,6 +19,10 @@ def submit_factor(store, payload, context, compute):
         original = fetch_one(connection,
             'SELECT * FROM artifacts WHERE task_id=:task AND idempotency_key=:key',
             {'task': task_id, 'key': key})
+        if original is None and fetch_one(connection,
+                'SELECT artifact_id FROM artifact_submission_receipts WHERE task_id=:task AND idempotency_key=:key',
+                {'task':task_id, 'key':key}) is not None:
+            raise IdempotencyConflict('factor key belongs to another artifact submission')
         if original is not None:
             content = original['content']
             if (original['kind'] != 'factor_result'

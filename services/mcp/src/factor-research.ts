@@ -1,4 +1,4 @@
-import { unknownWriteResult } from "./write-outcome.js";
+import { unknownArtifactWriteResult } from "./write-outcome.js";
 
 const BACKEND_TIMEOUT_MS = 8000;
 
@@ -30,17 +30,7 @@ export async function fetchByqFactorCompute(
   fetcher: Fetcher = fetch,
 ): Promise<ByqFactorResult> {
   const init = { method: "POST", body: JSON.stringify(request) };
-  const unknown = () => {
-    const response = unknownWriteResult(init);
-    const body = JSON.parse(response.content[0].text);
-    if (typeof request.task_id === 'string' && /^task_[0-9a-f]{32}$/.test(request.task_id)
-        && typeof body.idempotency_key === 'string') {
-      body.reconciliation = { tool: 'byq_research_get', arguments: {
-        entity_type: 'artifact', task_id: request.task_id, idempotency_key: body.idempotency_key,
-      } };
-    }
-    return result(body, false);
-  };
+  const unknown = () => unknownArtifactWriteResult(init);
   try {
     const response = await fetcher(`${backendUrl}/v1/research/factors/compute`, {
       method: "POST",

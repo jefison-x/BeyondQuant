@@ -329,6 +329,13 @@ class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinua
         """
         CREATE INDEX IF NOT EXISTS artifacts_kind ON artifacts(kind)
         """,
+        """CREATE TABLE IF NOT EXISTS artifact_submission_receipts (
+            task_id TEXT NOT NULL REFERENCES research_tasks(task_id),
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            artifact_id TEXT NOT NULL REFERENCES artifacts(artifact_id),
+            PRIMARY KEY(task_id, idempotency_key)
+        )""",
         """
         CREATE TABLE IF NOT EXISTS research_transitions (
             entity_type TEXT NOT NULL,
@@ -556,6 +563,11 @@ class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinua
             f"SELECT * FROM {table} WHERE owner_principal=:owner AND workspace_id=:workspace"
             f" AND idempotency_key=:key{parent_filter}", parameters,
         )
+        if row is None and entity_type == "artifact":
+            row = self._fetch_one("""SELECT a.* FROM artifact_submission_receipts r
+                JOIN artifacts a ON a.artifact_id=r.artifact_id AND a.task_id=r.task_id
+                WHERE r.task_id=:task_id AND r.idempotency_key=:key
+                  AND a.owner_principal=:owner AND a.workspace_id=:workspace""", parameters)
         result = {"schema_version": "research-submission-reconciliation.v1",
                   "entity_type": entity_type, "idempotency_key": key,
                   "status": "confirmed" if row is not None else "outcome_unknown"}
@@ -697,6 +709,11 @@ class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinua
                 if existing["request_hash"] != request_hash:
                     raise IdempotencyConflict("artifact idempotency key was reused")
                 return self._artifact_row(existing)
+            alias = fetch_one(connection, """SELECT artifact_id FROM artifact_submission_receipts
+                WHERE task_id=:task AND idempotency_key=:key""",
+                {"task":data["task_id"], "key":data["idempotency_key"]})
+            if alias is not None:
+                raise IdempotencyConflict("artifact key belongs to a content-addressed submission")
             if trusted_owner is not None:
                 # Only closed domain reference kinds confer a verified association.
                 tables = {"research_task": ("research_tasks", "task_id"),
@@ -753,6 +770,46 @@ class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinua
                 return self._artifact_row(fetch_one(connection,
                     "SELECT * FROM artifacts WHERE artifact_id=:id", {"id": artifact_id}))
         return self.get_artifact(artifact_id)
+
+    def create_content_addressed_artifact(self, payload, *, trusted_owner, trusted_workspace, _connection=None):
+        """Keep a receipt for every key even when immutable version content is reused."""
+        data = self._artifact_payload(payload)
+        if data["kind"] not in {"strategy_version", "ml_strategy_version", "signal_snapshot"}:
+            raise ValueError("closed content-addressed Artifact producer required")
+        request_hash = _hash_request(data)
+        params = {"task":data["task_id"], "key":data["idempotency_key"]}
+        with (nullcontext(_connection) if _connection is not None else self._transaction()) as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                {"scope":f"research-artifact|{params['task']}|{params['key']}"})
+            task = fetch_one(connection, "SELECT * FROM research_tasks WHERE task_id=:task", params)
+            if task is None or task["owner_principal"] != trusted_owner or task["workspace_id"] != trusted_workspace:
+                raise ResearchNotFound("research task not found")
+            existing = fetch_one(connection, "SELECT * FROM artifacts WHERE task_id=:task AND idempotency_key=:key", params)
+            if existing is not None:
+                return self.create_artifact(payload, trusted_owner=trusted_owner,
+                    trusted_workspace=trusted_workspace, _connection=connection)
+            receipt = fetch_one(connection, "SELECT * FROM artifact_submission_receipts WHERE task_id=:task AND idempotency_key=:key", params)
+            if receipt is not None:
+                if receipt["request_hash"] != request_hash:
+                    raise IdempotencyConflict("content-addressed artifact idempotency key was reused")
+                return self._artifact_row(fetch_one(connection,
+                    "SELECT * FROM artifacts WHERE artifact_id=:id AND task_id=:task",
+                    {"id":receipt["artifact_id"], "task":params["task"]}))
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                {"scope":f"artifact-content|{params['task']}|{data['kind']}|{data['content_sha256']}"})
+            original = fetch_one(connection, """SELECT * FROM artifacts WHERE task_id=:task
+                AND kind=:kind AND content_sha256=:hash ORDER BY created_at,artifact_id LIMIT 1""",
+                {"task":params["task"], "kind":data["kind"], "hash":data["content_sha256"]})
+            if original is None:
+                return self.create_artifact(payload, trusted_owner=trusted_owner,
+                    trusted_workspace=trusted_workspace, _connection=connection)
+            if original["experiment_id"] != data["experiment_id"]:
+                raise IdempotencyConflict("content-addressed artifact belongs to a different experiment")
+            execute(connection, """INSERT INTO artifact_submission_receipts
+                (task_id,idempotency_key,request_hash,artifact_id) VALUES (:task,:key,:hash,:id)""",
+                {**params, "hash":request_hash, "id":original["artifact_id"]})
+            return self._artifact_row(original)
 
     def get_artifact(self, artifact_id: object) -> dict[str, object]:
         artifact_id = _identifier(artifact_id, field="artifact_id")

@@ -2234,7 +2234,7 @@ def validate_strategy_draft(payload: dict[str, Any], http_request: Request) -> d
 
 @app.post("/v1/research/strategies/versions", status_code=201)
 def create_strategy_version(payload: dict[str, Any], http_request: Request) -> dict[str, object]:
-    context = _required_agent_context(http_request)
+    context = _required_agent_context(http_request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         strategy_request = _strategy_payload(
@@ -2255,22 +2255,14 @@ def create_strategy_version(payload: dict[str, Any], http_request: Request) -> d
         if draft_content.get("validation") != prepared["validation"]:
             raise ValueError("strategy draft validation evidence does not match its snapshot")
         version_content = strategy_version_content(prepared)
-        version_fingerprint = content_sha256(version_content)
-        artifact = research_store.find_artifact_by_content(
-            strategy_request.get("task_id"), "strategy_version", version_fingerprint
-        )
-        if artifact is None:
-            artifact = research_store.create_artifact(
-                {
-                    "task_id": strategy_request.get("task_id"),
-                    "experiment_id": strategy_request.get("experiment_id"),
-                    "kind": "strategy_version",
-                    "content": version_content,
-                    "lineage": [{"kind": "artifact", "id": draft["artifact_id"]}],
-                    "trace_id": strategy_request.get("trace_id"),
-                    "idempotency_key": strategy_request.get("idempotency_key"),
-                }
-            )
+        artifact = research_store.create_content_addressed_artifact({
+            "task_id": strategy_request.get("task_id"),
+            "experiment_id": strategy_request.get("experiment_id"),
+            "kind": "strategy_version", "content": version_content,
+            "lineage": [{"kind": "artifact", "id": draft["artifact_id"]}],
+            "trace_id": strategy_request.get("trace_id"),
+            "idempotency_key": strategy_request.get("idempotency_key"),
+        }, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"])
         if artifact["status"] == "draft":
             artifact = research_store.transition(
                 "artifact",
@@ -2661,16 +2653,12 @@ def create_ml_strategy_version(payload: dict[str, Any], request: Request) -> dic
             if connection is not None:
                 raise DomainValidationRejected("ML strategy validation failed", validation_error=error) from error
             raise
-        fingerprint = content_sha256(normalized)
-        artifact = research_store.find_artifact_by_content(
-            str(task["task_id"]), "ml_strategy_version", fingerprint
-        )
-        if artifact is None:
-            artifact = research_store.create_artifact({
-                "task_id": task["task_id"], "experiment_id": data.get("experiment_id"),
-                "kind": "ml_strategy_version", "content": normalized, "lineage": [],
-                "trace_id": data.get("trace_id"), "idempotency_key": data.get("idempotency_key"),
-            }, _connection=connection)
+        artifact = research_store.create_content_addressed_artifact({
+            "task_id": task["task_id"], "experiment_id": data.get("experiment_id"),
+            "kind": "ml_strategy_version", "content": normalized, "lineage": [],
+            "trace_id": data.get("trace_id"), "idempotency_key": data.get("idempotency_key"),
+        }, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+            _connection=connection)
         if artifact["status"] == "draft":
             artifact = research_store.transition(
                 "artifact", artifact["artifact_id"], "validated",
@@ -3480,22 +3468,12 @@ def create_signal_snapshot(payload: dict[str, Any], http_request: Request) -> di
             strategy_version_id=validated_version.get("version_id"),
         )
         fingerprint = signal_snapshot_content_sha256(document)
-        artifact = research_store.find_artifact_by_content(
-            request.get("task_id"), "signal_snapshot", fingerprint
-        )
-        if artifact is None:
-            artifact = research_store.create_artifact(
-                {
-                    "task_id": request.get("task_id"),
-                    "experiment_id": request.get("experiment_id"),
-                    "kind": "signal_snapshot",
-                    "content": document,
-                    "lineage": [{"kind": "artifact", "id": version["artifact_id"]}],
-                    "trace_id": request.get("trace_id"),
-                    "idempotency_key": request.get("idempotency_key"),
-                },
-                trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
-            )
+        artifact = research_store.create_content_addressed_artifact({
+            "task_id": request.get("task_id"), "experiment_id": request.get("experiment_id"),
+            "kind": "signal_snapshot", "content": document,
+            "lineage": [{"kind": "artifact", "id": version["artifact_id"]}],
+            "trace_id": request.get("trace_id"), "idempotency_key": request.get("idempotency_key"),
+        }, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"])
         if artifact["status"] == "draft":
             artifact = research_store.transition(
                 "artifact",

@@ -137,6 +137,54 @@ def test_strategy_draft_version_export_and_approval_flow(monkeypatch) -> None:
     assert retry.status_code == 201
     assert retry.json()["artifact"]["artifact_id"] == version["artifact"]["artifact_id"]
 
+    receipt = client.get("/v1/research/submissions/reconcile", params={
+        "entity_type":"artifact", "task_id":task["task_id"], "idempotency_key":"strategy-version-retry",
+    })
+    assert receipt.status_code == 200
+    assert receipt.json()["status"] == "confirmed"
+    assert receipt.json()["entity"]["artifact_id"] == version["artifact"]["artifact_id"]
+    changed = client.post("/v1/research/strategies/versions", json={
+        **version_request, "idempotency_key":"strategy-version-retry", "trace_id":"changed-trace",
+    })
+    assert changed.status_code == 409
+    hijack = client.post("/v1/research/artifacts", json={
+        "task_id":task["task_id"], "kind":"evidence", "content":{"synthetic":True},
+        "lineage":[], "trace_id":"byq-trace-strategy-api", "idempotency_key":"strategy-version-retry",
+    })
+    assert hijack.status_code == 409
+    from test_factor_research import factor_payload
+    with monkeypatch.context() as patch:
+        def no_factor(_):
+            raise AssertionError("reserved strategy key must fail before factor computation")
+        patch.setattr(main, "compute_factor", no_factor)
+        factor_collision = client.post("/v1/research/factors/compute", json={
+            **factor_payload(), "task_id":task["task_id"], "idempotency_key":"strategy-version-retry",
+        })
+        assert factor_collision.status_code == 409
+    reopened = ResearchStore()
+    recovered = reopened.reconcile_submission("artifact", "strategy-version-retry",
+        task_id=task["task_id"], trusted_owner="product-user",
+        trusted_workspace=client.headers["x-byq-workspace-id"])
+    assert recovered["entity"]["artifact_id"] == version["artifact"]["artifact_id"]
+    reopened.close()
+    from concurrent.futures import ThreadPoolExecutor
+    def duplicate(index):
+        return store.create_content_addressed_artifact({
+            "task_id":task["task_id"], "kind":"strategy_version", "content":version["strategy_version"],
+            "lineage":[{"kind":"artifact", "id":draft["artifact"]["artifact_id"]}],
+            "trace_id":"byq-trace-strategy-api", "idempotency_key":f"parallel-version-{index}",
+        }, trusted_owner="product-user", trusted_workspace=client.headers["x-byq-workspace-id"])
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        duplicates = list(pool.map(duplicate, [0, 0, 1]))
+    assert {item["artifact_id"] for item in duplicates} == {version["artifact"]["artifact_id"]}
+    for key in ("parallel-version-0", "parallel-version-1"):
+        assert store.reconcile_submission("artifact", key, task_id=task["task_id"],
+            trusted_owner="product-user", trusted_workspace=client.headers["x-byq-workspace-id"])["status"] == "confirmed"
+    foreign = client.get("/v1/research/submissions/reconcile", params={
+        "entity_type":"artifact", "task_id":task["task_id"], "idempotency_key":"strategy-version-retry",
+    }, headers=_owner_headers("other-user"))
+    assert foreign.status_code == 404
+
     exported = client.get(f"/v1/research/strategies/versions/{version['artifact']['artifact_id']}/export")
     assert exported.status_code == 200
     assert exported.json()["export"]["version_id"] == version_id

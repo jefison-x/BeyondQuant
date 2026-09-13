@@ -498,6 +498,17 @@ def test_signal_snapshot_create_and_backtest_submit(monkeypatch, tmp_path) -> No
     assert created.status_code == 201, created.text
     snapshot = created.json()
     assert snapshot["artifact"]["kind"] == "signal_snapshot"
+    duplicate = client.post("/v1/research/signal-snapshots", json={
+        "task_id":chain["task"]["task_id"], "strategy_version_artifact_id":version_artifact_id,
+        "trace_id":"byq-trace-snapshot-e2e", "idempotency_key":"snapshot-alias",
+        "source":{"producer":"test-fixture"}, **_snapshot_input(),
+    })
+    assert duplicate.status_code == 201
+    assert duplicate.json()["artifact"]["artifact_id"] == snapshot["artifact"]["artifact_id"]
+    receipt = client.get("/v1/research/submissions/reconcile", params={
+        "entity_type":"artifact", "task_id":chain["task"]["task_id"], "idempotency_key":"snapshot-alias",
+    })
+    assert receipt.json()["entity"]["artifact_id"] == snapshot["artifact"]["artifact_id"]
     assert snapshot["artifact"]["status"] == "validated"
     assert snapshot["snapshot"]["strategy"]["strategy_version_artifact_id"] == version_artifact_id
     assert snapshot["snapshot"]["source"]["producer"] == "test-fixture"
