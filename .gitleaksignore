@@ -8,3 +8,6 @@ fcee92c55382b66313be3e4ad7cb47c0727a1456:services/mcp/tests/contract-test.ts:gen
 # test cipher rotation; neither is a provider credential. Exact old findings only.
 622d2df674974c8c4bed00f9ef699fde7c5d5465:apps/frontend/src/api/credentialSubmission.spec.ts:generic-api-key:5
 622d2df674974c8c4bed00f9ef699fde7c5d5465:services/backend/tests/test_credential_receipts.py:generic-api-key:15
+
+# Fixed synthetic pagination idempotency key; not authentication material.
+df5e8990fb092e0f678ef5f0aa9d59cce5679904:scripts/evidence/h4-strategy-pagination-fixture.py:generic-api-key:11
