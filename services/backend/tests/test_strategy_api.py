@@ -544,3 +544,39 @@ def test_strategy_projection_rejects_invalid_pagination(suffix, query):
     client = TestClient(main.app, raise_server_exceptions=False)
     response = client.get(f"/v1/research/strategies/ValidStrategy/{suffix}?{query}", headers=_owner_headers())
     assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize('lock_kind', ['process', 'database'])
+def test_strategy_counts_lock_wait_is_bounded_and_recovers(monkeypatch, lock_kind):
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    store = BacktestJobStore()
+    monkeypatch.setattr(main, 'backtest_store', store)
+    headers = _owner_headers('bounded-count-owner')
+    client = TestClient(main.app, raise_server_exceptions=False)
+    held, release = threading.Event(), threading.Event()
+    def hold():
+        if lock_kind == 'process':
+            with store._lock:
+                held.set(); release.wait(4)
+        else:
+            with store.engine.begin() as connection:
+                execute(connection, 'LOCK TABLE backtest_jobs IN ACCESS EXCLUSIVE MODE')
+                held.set(); release.wait(4)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(hold)
+        try:
+            assert held.wait(2)
+            started = time.monotonic()
+            response = client.get('/v1/research/strategies/BoundedCounts/backtest-count', headers=headers)
+            elapsed = time.monotonic() - started
+            assert response.status_code == 503, response.text
+            assert response.json()['detail'] == 'backtest storage is unavailable'
+            assert elapsed < 3.5
+        finally:
+            release.set(); future.result(timeout=3)
+    recovered = client.get('/v1/research/strategies/BoundedCounts/backtest-count', headers=headers)
+    assert recovered.status_code == 200
+    assert recovered.json()['version_count'] == 0
+    store.close()
