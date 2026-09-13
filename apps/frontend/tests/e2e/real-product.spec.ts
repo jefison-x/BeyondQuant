@@ -304,7 +304,7 @@ test("real Product API index pool materializes validated point-in-time weights",
   await expect(page.getByText("600000.SH", { exact: true }).first()).toBeVisible();
   await page.getByRole("tab", { name: "快照历史" }).click();
   await expect(
-    page.getByRole("tabpanel", { name: "快照历史" }).getByText("succeeded", { exact: true }),
+    page.getByRole("tabpanel", { name: "快照历史" }).getByText("succeeded", { exact: true }).first(),
   ).toBeVisible();
   const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
   if (evidenceDir) {

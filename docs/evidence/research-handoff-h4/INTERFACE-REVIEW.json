@@ -461,7 +461,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
     },
     {
       "kind": "route",
@@ -490,7 +490,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
     },
     {
       "kind": "route",
@@ -519,7 +519,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
     },
     {
       "kind": "route",
@@ -548,7 +548,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
     },
     {
       "kind": "route",
@@ -577,7 +577,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
     },
     {
       "kind": "route",
@@ -606,7 +606,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
     },
     {
       "kind": "route",
@@ -635,7 +635,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
     },
     {
       "kind": "route",
@@ -664,7 +664,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
     },
     {
       "kind": "route",
@@ -693,7 +693,7 @@
         "services/gateway/tests/test_health.py",
         "https://github.com/jefison-x/BeyondQuant/actions/runs/34737828603"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf"
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
     },
     {
       "kind": "route",
@@ -1071,7 +1071,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1104,7 +1104,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1137,7 +1137,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1170,7 +1170,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1203,7 +1203,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1236,7 +1236,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1269,7 +1269,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1302,7 +1302,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1335,7 +1335,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1370,7 +1370,7 @@
         "services/backend/tests/test_model_command_receipts.py",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1403,7 +1403,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1438,7 +1438,7 @@
         "services/backend/tests/test_model_command_receipts.py",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1471,7 +1471,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1504,7 +1504,7 @@
         "services/backend/tests/test_model_binding_concurrency.py",
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1836,7 +1836,7 @@
         "apps/frontend/tests/e2e/h4-credential-recovery.spec.ts",
         "apps/frontend/src/api/modelCommand.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/credentials.py": "sha256:e75b3721a52d82e1ae0a39319a924b2cfdf5103801c36f54efa64dabcdd4581d"
       }
@@ -1899,7 +1899,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -1931,7 +1931,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -1963,7 +1963,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -1995,7 +1995,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2027,7 +2027,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2059,7 +2059,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2091,7 +2091,7 @@
         "apps/frontend/src/api/policySubmission.spec.ts",
         "apps/frontend/tests/e2e/h4-policy-recovery.spec.ts"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/user_policy.py": "sha256:efab1f2ee351c7420405ffc598f55af95140de4d9cdc4de66fabcc051ad9a49b"
       }
@@ -2345,7 +2345,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2378,7 +2378,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2411,7 +2411,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2444,7 +2444,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2477,7 +2477,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2510,7 +2510,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2543,7 +2543,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2576,7 +2576,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2609,7 +2609,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2642,7 +2642,7 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
@@ -2675,13 +2675,230 @@
         "services/backend/tests/test_research_storage_bounds.py",
         "docs/evidence/research-handoff-h4/RESEARCH-STORAGE-BOUNDS.md"
       ],
-      "source_sha256": "cb8bdeeba63d26a7261fb8f1a7dc37886b848aaae524339b3a98e153a57615cf",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099",
       "dependencies_sha256": {
         "services/backend/app/research.py": "sha256:c898bcd8a5410bc65db64f34002df3476f27c6eb346d9c1e712a211d0a0523ce",
         "services/backend/app/research_handoff.py": "sha256:338fdec62d4b8d146c24dd50b7081234e7d555935b6f7c205457a67c8314978c",
         "services/backend/app/research_receipts.py": "sha256:ab38bd3158cb984e54a171f236a32a89cc0fa52b60aa6b68facfb8cd10f0f731",
         "services/backend/app/research_continuation.py": "sha256:4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
       }
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 751,
+      "method": "POST",
+      "path": "/internal/feedback-hub/heartbeat",
+      "handler": "feedback_hub_heartbeat",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "write",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:5d14cf65c3ca1a668f61c3119b68a30405f191399287f90b041d593bca0b5e8f"
+      },
+      "recovery": "仅更新配置和心跳，不证明Hub可用或反馈送达",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 757,
+      "method": "POST",
+      "path": "/internal/feedback-hub/claim",
+      "handler": "feedback_hub_claim",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "write",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:5d14cf65c3ca1a668f61c3119b68a30405f191399287f90b041d593bca0b5e8f"
+      },
+      "recovery": "SKIP LOCKED领取到期原事件、递增fence；崩溃后重领仍受8次上限",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 763,
+      "method": "POST",
+      "path": "/internal/feedback-hub/{event_id}/complete",
+      "handler": "feedback_hub_complete",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "write",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:5d14cf65c3ca1a668f61c3119b68a30405f191399287f90b041d593bca0b5e8f"
+      },
+      "recovery": "只接受原事件有效lease/fence和原receipt，过期worker不能覆盖",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 769,
+      "method": "POST",
+      "path": "/internal/feedback-hub/{event_id}/retry",
+      "handler": "feedback_hub_retry",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "write",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:5d14cf65c3ca1a668f61c3119b68a30405f191399287f90b041d593bca0b5e8f"
+      },
+      "recovery": "原lease失败转持久等待或终止，终止不等于送达",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 775,
+      "method": "POST",
+      "path": "/internal/feedback-hub/status-checks/claim",
+      "handler": "feedback_hub_status_checks_claim",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "write",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:5d14cf65c3ca1a668f61c3119b68a30405f191399287f90b041d593bca0b5e8f"
+      },
+      "recovery": "读取候选与30秒预约同事务；重启后失败候选不会持续占据队首",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 781,
+      "method": "GET",
+      "path": "/internal/feedback-hub/status-candidates",
+      "handler": "feedback_hub_status_candidates",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "read",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:5d14cf65c3ca1a668f61c3119b68a30405f191399287f90b041d593bca0b5e8f"
+      },
+      "recovery": "只读至多20条诊断，不以缺项证明不存在；非relay调度入口",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
+    },
+    {
+      "kind": "route",
+      "file": "services/backend/app/main.py",
+      "line": 787,
+      "method": "POST",
+      "path": "/internal/feedback-hub/{event_id}/status",
+      "handler": "feedback_hub_status",
+      "audit_status": "VERIFIED_OK",
+      "owner": "内部 relay 服务身份；反馈 owner/workspace 在原提交时持久化，Hub仅接收匿名原事件快照",
+      "mode": "write",
+      "authorization": "专用 relay token 常量时间核对；缺配置503、缺失或不符401；不开放浏览器直接调用",
+      "idempotency": "原事件/快照身份；投递回调校验原worker和fence；不生成新的反馈",
+      "timeout": "进程锁2秒、数据库锁2秒、单SQL5秒；relay HTTP为12秒socket timeout，不宣称总时长期限",
+      "errors": "参数422、过期lease/状态冲突409、存储安全503；未知不投影成功",
+      "retry": "既有持久队列原事件最多8次；状态查询持久等待30秒，不自动新建业务",
+      "authority": "Backend PostgreSQL原反馈及Hub原receipt；最终发布身份不可变",
+      "consumers": [
+        "feedback-hub-relay"
+      ],
+      "evidence": [
+        "services/backend/tests/test_feedback_hub_delivery_recovery.py",
+        "services/backend/tests/test_product_feedback.py",
+        "services/backend/tests/test_product_feedback_api.py",
+        "docs/evidence/research-handoff-h4/FEEDBACK-HUB-RECOVERY.md"
+      ],
+      "dependencies_sha256": {
+        "services/backend/app/product_feedback.py": "sha256:5d14cf65c3ca1a668f61c3119b68a30405f191399287f90b041d593bca0b5e8f"
+      },
+      "recovery": "原receipt行锁、可达状态核对，拒绝迟到回退与published issue替换",
+      "source_sha256": "4192f4aa2df5162b13778c745fd4002308af2ba55ee72ab107fafbf3dd307099"
     }
   ],
   "manual_surfaces": [

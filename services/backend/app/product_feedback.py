@@ -14,6 +14,7 @@ import re
 import unicodedata
 import uuid
 from datetime import datetime, timedelta, timezone
+from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -449,6 +450,8 @@ class ProductFeedbackStore(PgStoreMixin):
             updated_at TIMESTAMPTZ NOT NULL
         )
         """,
+        "ALTER TABLE product_feedback_hub_outbox ADD COLUMN IF NOT EXISTS next_status_check_at TIMESTAMPTZ NOT NULL DEFAULT now()",
+        "CREATE INDEX IF NOT EXISTS product_feedback_hub_status_due ON product_feedback_hub_outbox(next_status_check_at,event_id) WHERE state IN ('received','triaged','accepted','publishing') AND receipt_id IS NOT NULL",
         "CREATE INDEX IF NOT EXISTS product_feedback_hub_outbox_due ON product_feedback_hub_outbox(state,next_attempt_at,event_id)",
         f"""INSERT INTO product_feedback_hub_state (state_key,installation_id,configured)
             VALUES ('central','{_DEFAULT_HUB_INSTALLATION_ID}',FALSE) ON CONFLICT(state_key) DO NOTHING""",
@@ -461,6 +464,28 @@ class ProductFeedbackStore(PgStoreMixin):
             super().__init__(database_url)
         except SQLAlchemyError as exc:
             raise FeedbackPersistenceError("feedback storage is unavailable") from exc
+
+    @contextmanager
+    def _transaction(self):
+        if not self._lock.acquire(timeout=2):
+            raise FeedbackPersistenceError("feedback storage is unavailable")
+        try:
+            with self.engine.begin() as connection:
+                execute(connection, "SET LOCAL lock_timeout = '2s'")
+                execute(connection, "SET LOCAL statement_timeout = '5s'")
+                yield connection
+        except SQLAlchemyError as exc:
+            raise FeedbackPersistenceError("feedback storage is unavailable") from exc
+        finally:
+            self._lock.release()
+
+    def _execute(self, sql, params=None):
+        with self._transaction() as connection:
+            return execute(connection, sql, params)
+
+    def _fetch_one(self, sql, params=None):
+        with self._transaction() as connection:
+            return fetch_one(connection, sql, params)
 
     @staticmethod
     def options(*, publisher_configured: bool = False, publisher_status: str | None = None) -> dict[str, object]:
@@ -940,6 +965,12 @@ class ProductFeedbackStore(PgStoreMixin):
                 {"now": now, "limit": limit})
             events: list[dict[str, object]] = []
             for row in rows:
+                if int(row["attempt"]) >= MAX_HUB_DELIVERY_ATTEMPTS:
+                    execute(connection, """UPDATE product_feedback_hub_outbox
+                        SET state='failed_terminal',last_error_category='retry_exhausted',
+                            lease_owner=NULL,lease_expires_at=NULL,updated_at=:now WHERE event_id=:event""",
+                        {"now":now,"event":row["event_id"]})
+                    continue
                 attempt, fence = int(row["attempt"]) + 1, int(row["lease_fence"]) + 1
                 execute(connection, """UPDATE product_feedback_hub_outbox SET state='delivering',attempt=:attempt,
                     lease_owner=:worker,lease_expires_at=:expiry,lease_fence=:fence,updated_at=:now WHERE event_id=:event""",
@@ -1003,6 +1034,24 @@ class ProductFeedbackStore(PgStoreMixin):
                     {"category": category})
         return {"schema_version": "feedback-hub-relay-result.v1", "status": target, "attempt": int(row["attempt"])}
 
+    def claim_hub_status_checks(self, payload: object) -> dict[str, object]:
+        if not isinstance(payload, dict):
+            raise ValueError("feedback hub status claim must be an object")
+        _reject_unknown(payload, {"limit"})
+        limit = min(_positive_int(payload.get("limit", 10), field="limit"), 20)
+        with self._transaction() as connection:
+            rows = execute(connection, """SELECT event_id,receipt_id,status_token
+                FROM product_feedback_hub_outbox
+                WHERE state IN ('received','triaged','accepted','publishing')
+                  AND receipt_id IS NOT NULL AND next_status_check_at <= now()
+                ORDER BY next_status_check_at,event_id LIMIT :limit FOR UPDATE SKIP LOCKED""",
+                {"limit": limit})
+            for row in rows:
+                execute(connection, """UPDATE product_feedback_hub_outbox
+                    SET next_status_check_at=now()+interval '30 seconds' WHERE event_id=:event""",
+                    {"event": row["event_id"]})
+        return {"schema_version": "feedback-hub-status-checks.v1", "items": rows}
+
     def hub_status_candidates(self, *, limit: int = 10) -> dict[str, object]:
         bounded = min(max(limit, 1), 20)
         rows = self._execute("""SELECT event_id,receipt_id,status_token FROM product_feedback_hub_outbox
@@ -1032,9 +1081,22 @@ class ProductFeedbackStore(PgStoreMixin):
                 raise ValueError("feedback hub GitHub URL is not canonical")
         now = _now()
         with self._transaction() as connection:
-            row = fetch_one(connection, "SELECT receipt_id FROM product_feedback_hub_outbox WHERE event_id=:event FOR UPDATE", {"event": event_id})
+            row = fetch_one(connection, "SELECT * FROM product_feedback_hub_outbox WHERE event_id=:event FOR UPDATE", {"event": event_id})
             if row is None or row["receipt_id"] != receipt:
                 raise FeedbackConflict("feedback hub receipt does not match delivery")
+            transitions = {
+                "received": {"received","triaged","accepted","rejected","duplicate","publishing","published"},
+                "triaged": {"triaged","accepted","rejected","duplicate","publishing","published"},
+                "accepted": {"accepted","publishing","published"},
+                "publishing": {"accepted","publishing","published"},
+                "rejected": {"rejected"}, "duplicate": {"duplicate"}, "published": {"published"},
+            }
+            if status not in transitions.get(row["state"], set()):
+                raise FeedbackConflict("feedback hub status is stale or inconsistent")
+            if row["state"] == "published" and (
+                    row["github_repository"] != repository or row["github_issue_number"] != number
+                    or row["github_html_url"] != url):
+                raise FeedbackConflict("feedback hub publication identity cannot be replaced")
             execute(connection, """UPDATE product_feedback_hub_outbox SET state=:status,github_repository=:repository,
                 github_issue_number=:number,github_html_url=:url,updated_at=:now WHERE event_id=:event""",
                 {"status": status, "repository": repository, "number": number, "url": url, "now": now, "event": event_id})

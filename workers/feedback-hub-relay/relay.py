@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import http.client
+import re
 import os
 import socket
 import threading
@@ -58,15 +60,17 @@ def _json_request(url: str, *, method: str = "GET", payload: object | None = Non
         with urllib.request.urlopen(request, timeout=12) as response:
             if response.status != expected:
                 raise RelayError("hub_unavailable")
-            raw = response.read(64 * 1024)
+            raw = response.read(64 * 1024 + 1)
+            if len(raw) > 64 * 1024:
+                raise RelayError("hub_unavailable")
             result = json.loads(raw) if raw else {}
             if not isinstance(result, dict):
-                raise RelayError("validation_rejected")
+                raise RelayError("hub_unavailable")
             return result
     except urllib.error.HTTPError as exc:
         category = "rate_limited" if exc.code == 429 else "validation_rejected" if exc.code in {400, 409, 413, 422} else "hub_unavailable"
         raise RelayError(category, 60 if exc.code == 429 else 30) from exc
-    except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+    except (urllib.error.URLError, TimeoutError, socket.timeout, http.client.HTTPException, ValueError) as exc:
         raise RelayError("hub_unavailable") from exc
 
 
@@ -85,12 +89,21 @@ def _deliver(config: Config, event: dict[str, Any]) -> None:
             "installation_id": event["installation_id"], "event_id": event["event_id"],
             "snapshot_hash": event["snapshot_hash"], "snapshot": event["snapshot"],
         })
+        if (receipt.get("schema_version") != "central-feedback-receipt.v1"
+                or not isinstance(receipt.get("receipt_id"), str)
+                or re.fullmatch(r"central_feedback_[0-9a-f]{32}", receipt["receipt_id"]) is None
+                or not isinstance(receipt.get("status_token"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", receipt["status_token"]) is None
+                or not isinstance(receipt.get("status"), str)
+                or receipt.get("status") not in {"received", "triaged", "accepted", "rejected", "duplicate", "publishing", "published"}):
+            # A malformed success response is not proof that intake rejected it.
+            raise RelayError("hub_unavailable")
         _backend(config, f"/internal/feedback-hub/{event['event_id']}/complete", payload={
             "worker_id": config.worker_id, "lease_fence": event["lease_fence"],
             "receipt_id": receipt["receipt_id"], "status_token": receipt["status_token"],
         })
     except (RelayError, KeyError) as caught:
-        exc = caught if isinstance(caught, RelayError) else RelayError("validation_rejected")
+        exc = caught if isinstance(caught, RelayError) else RelayError("hub_unavailable")
         _backend(config, f"/internal/feedback-hub/{event['event_id']}/retry", payload={
             "worker_id": config.worker_id, "lease_fence": event["lease_fence"],
             "error_category": exc.category, "retry_after_seconds": exc.retry_after,
@@ -99,7 +112,9 @@ def _deliver(config: Config, event: dict[str, Any]) -> None:
 
 def _refresh_statuses(config: Config) -> None:
     assert config.hub_url
-    candidates = _backend(config, "/internal/feedback-hub/status-candidates?limit=10", method="GET")
+    candidates = _backend(config, "/internal/feedback-hub/status-checks/claim", payload={"limit": 10})
+    if candidates.get("schema_version") != "feedback-hub-status-checks.v1" or not isinstance(candidates.get("items"), list):
+        raise RelayError("hub_unavailable")
     for item in candidates.get("items", []):
         try:
             status = _json_request(

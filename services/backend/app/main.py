@@ -772,6 +772,12 @@ def feedback_hub_retry(event_id: str, payload: dict[str, Any], request: Request)
     return _feedback_call(lambda: feedback_store.retry_hub_delivery(event_id, payload))
 
 
+@app.post("/internal/feedback-hub/status-checks/claim")
+def feedback_hub_status_checks_claim(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_feedback_hub_relay(request)
+    return _feedback_call(lambda: feedback_store.claim_hub_status_checks(payload))
+
+
 @app.get("/internal/feedback-hub/status-candidates")
 def feedback_hub_status_candidates(request: Request, limit: int = 10) -> dict[str, object]:
     _require_feedback_hub_relay(request)
