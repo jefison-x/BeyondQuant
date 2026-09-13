@@ -452,6 +452,8 @@ class ProductFeedbackStore(PgStoreMixin):
         """,
         "ALTER TABLE product_feedback_hub_outbox ADD COLUMN IF NOT EXISTS next_status_check_at TIMESTAMPTZ NOT NULL DEFAULT now()",
         "CREATE INDEX IF NOT EXISTS product_feedback_hub_status_due ON product_feedback_hub_outbox(next_status_check_at,event_id) WHERE state IN ('received','triaged','accepted','publishing') AND receipt_id IS NOT NULL",
+        "ALTER TABLE product_feedback_outbox ADD COLUMN IF NOT EXISTS create_started BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE product_feedback_outbox ALTER COLUMN create_started SET DEFAULT FALSE",
         "CREATE INDEX IF NOT EXISTS product_feedback_hub_outbox_due ON product_feedback_hub_outbox(state,next_attempt_at,event_id)",
         f"""INSERT INTO product_feedback_hub_state (state_key,installation_id,configured)
             VALUES ('central','{_DEFAULT_HUB_INSTALLATION_ID}',FALSE) ON CONFLICT(state_key) DO NOTHING""",
@@ -1320,6 +1322,14 @@ class ProductFeedbackStore(PgStoreMixin):
                 {"now": now, "limit": limit})
             events: list[dict[str, object]] = []
             for row in rows:
+                if int(row["attempt"]) >= MAX_PUBLICATION_ATTEMPTS:
+                    execute(connection, """UPDATE product_feedback_outbox
+                        SET state='failed_terminal',last_error_category='transport_ambiguous',
+                            lease_owner=NULL,lease_expires_at=NULL,updated_at=:now WHERE event_id=:event""",
+                        {"now": now, "event": row["event_id"]})
+                    execute(connection, """UPDATE product_feedback SET publication_status='failed_terminal',
+                        updated_at=:now WHERE feedback_id=:feedback""", {"now": now, "feedback": row["feedback_id"]})
+                    continue
                 fence = int(row["lease_fence"]) + 1
                 attempt = int(row["attempt"]) + 1
                 execute(connection, """UPDATE product_feedback_outbox SET state='publishing',attempt=:attempt,
@@ -1343,6 +1353,25 @@ class ProductFeedbackStore(PgStoreMixin):
         if row["state"] != "publishing" or row["lease_owner"] != worker or int(row["lease_fence"]) != fence:
             raise FeedbackConflict("publication lease is stale")
         return row
+
+    def begin_publication_create(self, event_id: object, payload: object) -> dict[str, object]:
+        if not isinstance(event_id, str) or re.fullmatch(r"feedback_outbox_[0-9a-f]{32}", event_id) is None:
+            raise ValueError("publication event id is invalid")
+        if not isinstance(payload, dict):
+            raise ValueError("publisher create permit must be an object")
+        _reject_unknown(payload, {"worker_id", "lease_fence"})
+        worker = _text(payload.get("worker_id"), field="worker_id", minimum=3, maximum=80)
+        fence = _positive_int(payload.get("lease_fence"), field="lease_fence")
+        with self._transaction() as connection:
+            row = self._leased_row(connection, event_id, worker, fence)
+            if datetime.fromisoformat(str(row["lease_expires_at"]).replace("Z", "+00:00")) <= datetime.now(timezone.utc):
+                raise FeedbackConflict("publication lease is stale")
+            allowed = not row["create_started"]
+            if allowed:
+                execute(connection, "UPDATE product_feedback_outbox SET create_started=TRUE WHERE event_id=:event",
+                        {"event": event_id})
+        # Lost permit replies are unknown. Never issue the same create permission twice.
+        return {"schema_version": "feedback-publisher-create-permit.v1", "allowed": allowed}
 
     def complete_publication(self, event_id: object, payload: object) -> dict[str, object]:
         if not isinstance(event_id, str) or re.fullmatch(r"feedback_outbox_[0-9a-f]{32}", event_id) is None:

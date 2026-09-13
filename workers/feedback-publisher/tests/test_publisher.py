@@ -138,7 +138,7 @@ def test_non_default_origin_and_arbitrary_repository_fail_closed(monkeypatch) ->
 
 def test_ambiguous_create_is_retried_then_reconciled_without_second_create(monkeypatch) -> None:
     calls = []
-    monkeypatch.setattr(publisher, "_backend", lambda _config, path, payload: calls.append((path, payload)) or {})
+    monkeypatch.setattr(publisher, "_backend", lambda _config, path, payload: calls.append((path, payload)) or {"schema_version":"feedback-publisher-create-permit.v1","allowed":True})
 
     class AmbiguousThenExisting:
         def __init__(self):
@@ -198,3 +198,26 @@ def test_unknown_receipt_never_creates_from_partial_catalog(monkeypatch, scenari
     assert calls[-1][0].endswith("/complete" if scenario == "later_match" else "/retry")
     if scenario != "later_match":
         assert calls[-1][1]["error_category"] == ("reconciliation_conflict" if scenario == "cross_page_conflict" else "provider_unavailable")
+
+
+def test_unknown_create_and_invisible_catalog_never_issue_second_post(monkeypatch):
+    calls=[];granted=False
+    def backend(_config,path,payload):
+        nonlocal granted
+        calls.append((path,payload))
+        if path.endswith('/begin-create'):
+            allowed=not granted;granted=True
+            return {'schema_version':'feedback-publisher-create-permit.v1','allowed':allowed}
+        return {}
+    class DelayedVisibility:
+        creates=0
+        def reconcile(self,_event):return None
+        def create(self,_event):
+            self.creates+=1
+            raise publisher.PublisherError('transport_ambiguous')
+    monkeypatch.setattr(publisher,'_backend',backend)
+    github=DelayedVisibility();cfg=config(publisher.SAFE_ORIGIN)
+    publisher.process_event(cfg,github,event())
+    publisher.process_event(cfg,github,{**event(),'lease_fence':2})
+    assert github.creates==1
+    assert calls[-1][1]['error_category']=='transport_ambiguous'

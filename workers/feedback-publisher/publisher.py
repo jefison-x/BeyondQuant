@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import os
 import re
@@ -135,7 +136,9 @@ def _json_request(url: str, *, method: str = "GET", payload: object | None = Non
         with urllib.request.urlopen(request, timeout=timeout) as response:
             if expected and response.status not in expected:
                 raise PublisherError("provider_unavailable")
-            raw = response.read(256 * 1024)
+            raw = response.read(256 * 1024 + 1)
+            if len(raw) > 256 * 1024:
+                raise PublisherError("transport_ambiguous")
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
         retry_after = exc.headers.get("retry-after", "30")
@@ -153,7 +156,7 @@ def _json_request(url: str, *, method: str = "GET", payload: object | None = Non
         if rate_limited_403:
             category = "rate_limited"
         raise PublisherError(category, retry_after=bounded_retry) from exc
-    except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+    except (urllib.error.URLError, TimeoutError, socket.timeout, http.client.HTTPException, ValueError) as exc:
         raise PublisherError("transport_ambiguous") from exc
 
 
@@ -233,8 +236,8 @@ def _complete(config: Config, event: dict[str, Any], issue: dict[str, Any]) -> N
     number = issue.get("number")
     provider_id = issue.get("id")
     expected_url = f"https://github.com/{config.repository}/issues/{number}"
-    if not isinstance(number, int) or number < 1 or not provider_id or issue.get("html_url") != expected_url:
-        raise PublisherError("validation_rejected")
+    if isinstance(number, bool) or not isinstance(number, int) or number < 1 or not provider_id or issue.get("html_url") != expected_url:
+        raise PublisherError("transport_ambiguous")
     _backend(config, f"/internal/feedback-publications/{event['event_id']}/complete", {
         "worker_id": config.worker_id, "lease_fence": event["lease_fence"], "repository": config.repository,
         "issue_number": number, "html_url": expected_url, "provider_identity": str(provider_id),
@@ -244,7 +247,14 @@ def _complete(config: Config, event: dict[str, Any], issue: dict[str, Any]) -> N
 def process_event(config: Config, github: GitHubIssues, event: dict[str, Any]) -> None:
     try:
         existing = github.reconcile(event)
-        _complete(config, event, existing or github.create(event))
+        if existing is None:
+            permit = _backend(config, f"/internal/feedback-publications/{event['event_id']}/begin-create", {
+                "worker_id": config.worker_id, "lease_fence": event["lease_fence"],
+            })
+            if permit.get("schema_version") != "feedback-publisher-create-permit.v1" or permit.get("allowed") is not True:
+                raise PublisherError("transport_ambiguous")
+            existing = github.create(event)
+        _complete(config, event, existing)
     except PublisherError as exc:
         _backend(config, f"/internal/feedback-publications/{event['event_id']}/retry", {
             "worker_id": config.worker_id, "lease_fence": event["lease_fence"],

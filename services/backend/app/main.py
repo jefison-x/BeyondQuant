@@ -728,6 +728,12 @@ def feedback_publication_claim(payload: dict[str, Any], request: Request) -> dic
     return _feedback_call(lambda: feedback_store.claim_publications(payload))
 
 
+@app.post("/internal/feedback-publications/{event_id}/begin-create")
+def feedback_publication_begin_create(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_feedback_publisher(request)
+    return _feedback_call(lambda: feedback_store.begin_publication_create(event_id, payload))
+
+
 @app.post("/internal/feedback-publications/{event_id}/complete")
 def feedback_publication_complete(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
     _require_feedback_publisher(request)

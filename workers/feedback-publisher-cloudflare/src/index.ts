@@ -186,7 +186,7 @@ async function claim(env: PublisherEnv, eventId: string, workerId: string): Prom
   return response.json<PublicationEvent>();
 }
 
-async function reconcileOrCreate(env: PublisherEnv, event: PublicationEvent): Promise<GitHubIssue> {
+async function reconcileOrCreate(env: PublisherEnv, event: PublicationEvent, workerId: string): Promise<GitHubIssue> {
   const token = await installationToken(env);
   const base = `/repos/${REPOSITORY}/issues`;
   const headers = { authorization: `Bearer ${token}` };
@@ -204,6 +204,14 @@ async function reconcileOrCreate(env: PublisherEnv, event: PublicationEvent): Pr
       break;
     }
     if (page === 5) throw new PublisherError("provider_unavailable");
+  }
+  const permission = await hubRequest(env, `/internal/feedback-publications/${event.event_id}/begin-create`, {
+    worker_id: workerId, lease_fence: event.lease_fence
+  });
+  if (!permission.ok) throw new PublisherError("hub_unavailable");
+  const permit = await permission.json<{ schema_version?: string; allowed?: boolean }>();
+  if (permit.schema_version !== "feedback-publisher-create-permit.v1" || permit.allowed !== true) {
+    throw new PublisherError("transport_ambiguous");
   }
   return githubRequest(env, base, { method: "POST", headers, body: JSON.stringify(render(event)) }, 201) as Promise<GitHubIssue>;
 }
@@ -227,7 +235,7 @@ async function processMessage(message: Message<QueueEnvelope>, env: PublisherEnv
     return;
   }
   try {
-    const issue = await reconcileOrCreate(env, event);
+    const issue = await reconcileOrCreate(env, event, workerId);
     const number = issue.number;
     const expectedUrl = `https://github.com/${REPOSITORY}/issues/${number}`;
     if (!Number.isInteger(number) || number < 1 || issue.html_url !== expectedUrl || !issue.id) {
