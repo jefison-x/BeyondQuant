@@ -911,6 +911,18 @@ class CredentialStore(PgStoreMixin):
             raise CredentialConflict("model profile key already exists") from exc
         return self.get_profile(profile_id, owner=owner_principal)
 
+    def reconcile_profile_creation(self, owner: object, key_name: object) -> dict[str, object]:
+        owner = _principal(owner)
+        key_name = _text(key_name, field="key_name", maximum=64)
+        # These configuration fields are immutable; deletion changes status/version only.
+        row = self._fetch_one("""SELECT profile_id,credential_id,key_name,display_name,
+            provider,model,temperature,reasoning_enabled FROM model_profiles
+            WHERE owner_principal=:owner AND key_name=:key""", {"owner":owner,"key":key_name})
+        if row is None:
+            return {"state":"not_found"}
+        original = {field:row[field] for field in ("credential_id","key_name","display_name","provider","model","temperature","reasoning_enabled")}
+        return {"state":"confirmed","profile_id":row["profile_id"],"committed_version":1,"input":original}
+
     def list_profiles(self, owner: object) -> list[dict[str, object]]:
         owner_principal = _principal(owner)
         rows = self._execute(

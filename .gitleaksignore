@@ -4,3 +4,7 @@ fcee92c55382b66313be3e4ad7cb47c0727a1456:services/mcp/tests/contract-test.ts:gen
 # Synthetic F6 comparison request deduplication key, not authentication material.
 # Exact historical finding only; all other generic-api-key findings still fail.
 50a4dfcd93036c029d25d066d1d43281995d8fe5:services/runtime-adapter/tests/f6_synthetic_runtime.py:generic-api-key:115
+# H4 explicit synthetic test-only values: browser non-persistence and in-memory
+# test cipher rotation; neither is a provider credential. Exact old findings only.
+622d2df674974c8c4bed00f9ef699fde7c5d5465:apps/frontend/src/api/credentialSubmission.spec.ts:generic-api-key:5
+622d2df674974c8c4bed00f9ef699fde7c5d5465:services/backend/tests/test_credential_receipts.py:generic-api-key:15

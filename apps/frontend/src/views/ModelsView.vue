@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   createModelCredential, createModelProfile, deleteModelProfile, getModelSettings,
-  revokeModelCredential, updateModelBinding, updateModelCredential, reconcileModelCredential, SettingsRequestError,
+  revokeModelCredential, updateModelBinding, updateModelCredential, reconcileModelCredential, SettingsRequestError, getModelProfileReceipt,
 } from "@/api/settings";
 import type { ModelCredential, ModelProfile, ModelSettings } from "@/api/types";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
@@ -11,6 +11,8 @@ import { useFilteredPagination } from "@/composables/useFilteredPagination";
 
 import {useAuthStore} from '@/stores/auth';
 import {beginCredentialWrite,readCredentialWrite,finishCredentialWrite,type CredentialWrite} from '@/api/credentialSubmission';
+import {beginProfileSubmission,readProfileSubmission,finishProfileSubmission,confirmProfileReceipt,type ProfileInput} from '@/api/profileSubmission';
+const pendingProfile=ref<ProfileInput|null>(null);
 const auth=useAuthStore();
 const pendingCredential=ref<CredentialWrite|null>(null);
 function credentialScope(){if(!auth.user)throw Error('请先登录');return JSON.stringify([auth.user.subject,auth.user.workspace.workspace_id]);}
@@ -72,7 +74,7 @@ async function load() {
   finally { loading.value = false; }
 }
 
-onMounted(async()=>{try{pendingCredential.value=readCredentialWrite(credentialScope());}catch(cause){error.value=cause instanceof Error?cause.message:'原凭据操作无法读取';return;}await load();});
+onMounted(async()=>{try{pendingCredential.value=readCredentialWrite(credentialScope());pendingProfile.value=readProfileSubmission(credentialScope());}catch(cause){error.value=cause instanceof Error?cause.message:'原凭据操作无法读取';return;}await load();});
 
 function openCredential(item: ModelCredential | null = null) {
   editingCredential.value = item;
@@ -133,16 +135,33 @@ function openProfile() {
   profileDialog.value = true;
 }
 
-async function saveProfile() {
-  if (!profileForm.credential_id || !profileForm.key_name.trim() || !profileForm.display_name.trim()) return ElMessage.warning("请完整填写模型档案");
+async function recoverProfile(){
+  if(!pendingProfile.value)return;busy.value=true;
+  try{
+    const scope=credentialScope(),input=pendingProfile.value;
+    const identity=confirmProfileReceipt(await getModelProfileReceipt(input.key_name),input);
+    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
+    if(!identity){ElMessage.warning('尚未找到原模型档案，请稍后核对或使用原内容重试');return;}
+    finishProfileSubmission(scope,input);pendingProfile.value=null;profileDialog.value=false;await load();ElMessage.success('原模型档案创建已确认');
+  }catch(cause){ElMessage.error(cause instanceof Error?cause.message:'档案核对失败');}finally{busy.value=false;}
+}
+async function saveProfile(useOriginal=false) {
+  if (!useOriginal && (!profileForm.credential_id || !profileForm.key_name.trim() || !profileForm.display_name.trim())) return ElMessage.warning("请完整填写模型档案");
   busy.value = true;
+  let scope='',input:ProfileInput|null=null,previous:ProfileInput|null=null;
   try {
-    await createModelProfile({ ...profileForm });
-    profileDialog.value = false;
-    ElMessage.success("模型档案已创建");
-    await load();
-  } catch (exc) { ElMessage.error(exc instanceof Error ? exc.message : "创建档案失败"); }
-  finally { busy.value = false; }
+    scope=credentialScope();previous=readProfileSubmission(scope);
+    input=beginProfileSubmission(scope,useOriginal?previous:{...profileForm});pendingProfile.value=input;
+    const result=await createModelProfile(input);
+    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
+    confirmProfileReceipt({state:'confirmed',profile_id:result.profile?.profile_id,committed_version:result.profile?.version,
+      input:Object.fromEntries(Object.keys(input).map(k=>[k,result.profile?.[k]]))},input);
+    finishProfileSubmission(scope,input);pendingProfile.value=null;profileDialog.value = false;
+    ElMessage.success("模型档案已创建");await load();
+  } catch (exc) {
+    if(input && !previous && exc instanceof SettingsRequestError && [400,401,403,404,409,422].includes(exc.status)){finishProfileSubmission(scope,input);pendingProfile.value=null;}
+    ElMessage.error(exc instanceof Error ? exc.message : "创建档案失败");
+  } finally { busy.value = false;if(pendingProfile.value)profileDialog.value=false; }
 }
 
 watch(() => profileForm.credential_id, credentialId => {
@@ -180,6 +199,10 @@ function actionLabel(value: unknown) {
 
 <template>
   <section class="my-space-page">
+    <el-alert v-if="pendingProfile" title="有一笔模型档案创建尚未确认" type="warning" :closable="false" show-icon>
+      <el-button :loading="busy" @click="recoverProfile">核对原模型档案</el-button>
+      <el-button :loading="busy" @click="saveProfile(true)">使用原档案重试</el-button>
+    </el-alert>
     <el-alert v-if="pendingCredential" title="有一笔凭据操作尚未确认" type="warning" :closable="false" show-icon>
       <p>已保存原请求标识，未保存密钥。请先核对；再次提交同一操作时需重新输入密钥。</p>
       <el-button :loading="busy" @click="recoverCredential">核对原凭据操作</el-button>
@@ -236,7 +259,7 @@ function actionLabel(value: unknown) {
 
     <el-dialog v-model="profileDialog" title="新建模型档案" width="min(560px, 92vw)" destroy-on-close>
       <el-form label-position="top"><el-form-item label="档案名称"><el-input v-model="profileForm.display_name" /></el-form-item><el-form-item label="唯一键"><el-input v-model="profileForm.key_name" placeholder="research-fast" /></el-form-item><el-form-item label="凭据"><el-select v-model="profileForm.credential_id" class="full"><el-option v-for="item in activeCredentials" :key="item.credential_id" :label="`${providerName(item.provider)} · ${item.label} · ${item.masked}`" :value="item.credential_id" /></el-select></el-form-item><el-form-item label="模型"><el-select v-model="profileForm.model" class="full"><el-option v-for="model in modelsForProvider" :key="`${model.provider}:${model.model}`" :label="model.display_name" :value="model.model" /></el-select></el-form-item><el-form-item label="温度"><el-slider v-model="profileForm.temperature" :min="0" :max="2" :step="0.1" show-input /></el-form-item><el-form-item label="推理模式"><el-switch v-model="profileForm.reasoning_enabled" :disabled="!selectedModel?.reasoning_supported" /></el-form-item></el-form>
-      <template #footer><el-button @click="profileDialog = false">取消</el-button><el-button type="primary" :loading="busy" @click="saveProfile">创建档案</el-button></template>
+      <template #footer><el-button @click="profileDialog = false">取消</el-button><el-button type="primary" :loading="busy" @click="saveProfile()">创建档案</el-button></template>
     </el-dialog>
   </section>
 </template>

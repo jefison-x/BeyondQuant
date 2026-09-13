@@ -1685,6 +1685,12 @@ def product_model_credential_revoke(
     )
 
 
+@router.get("/settings/models/profiles/receipts")
+def product_model_profile_receipt(request: Request, key_name: str) -> dict[str, object]:
+    from urllib.parse import urlencode
+    return _backend_request("GET", "/v1/users/model-profiles/receipts?"+urlencode({"key_name":key_name}), headers=_trusted_agent_headers(request))
+
+
 @router.post("/settings/models/profiles", status_code=201)
 def product_model_profile_create(
     request: Request,

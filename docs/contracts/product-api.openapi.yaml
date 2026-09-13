@@ -378,6 +378,13 @@ paths:
     put: {summary: 替换 metadata or the write-only secret with optimistic concurrency., responses: *okResponses}
   /api/product/settings/models/credentials/{credential_id}/revoke:
     post: {summary: 撤销 an owner-scoped credential and disable dependent bindings., responses: *okResponses}
+  /api/product/settings/models/profiles/receipts:
+    get:
+      summary: Read the original model profile creation by its owner-scoped unique key
+      parameters:
+        - {name: key_name, in: query, required: true, schema: {type: string, maxLength: 64}}
+      responses:
+        "200": {description: Original immutable profile configuration and ID or not_found}
   /api/product/settings/models/profiles:
     post: {summary: 创建 an owner-scoped model profile from the reviewed catalogue., responses: *createdResponses}
   /api/product/settings/models/profiles/{profile_id}/delete:

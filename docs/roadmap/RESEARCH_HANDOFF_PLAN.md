@@ -126,3 +126,5 @@ H4回测及派生任务、信号快照的精确ID读取和原键未知结果指�
 H4模型绑定同版本并发覆盖已修正，逐接口结论台账起稿37项；见[MODEL-BINDING-CONCURRENCY](../evidence/research-handoff-h4/MODEL-BINDING-CONCURRENCY.md)。剩余接口仍继续核对。
 
 H4 凭据原提交回执、并发创建与浏览器刷新恢复通过，后续重试拒绝不再清除先前未知记录；见[CREDENTIAL-RECOVERY](../evidence/research-handoff-h4/CREDENTIAL-RECOVERY.md)。
+
+H4 模型档案原配置与唯一键恢复通过，见[PROFILE-RECOVERY](../evidence/research-handoff-h4/PROFILE-RECOVERY.md)。

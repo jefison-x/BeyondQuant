@@ -5284,6 +5284,12 @@ def list_model_profiles(request: Request) -> dict[str, object]:
     )})
 
 
+@app.get("/v1/users/model-profiles/receipts")
+def reconcile_model_profile(request: Request, key_name: str) -> dict[str, object]:
+    context = _required_agent_context(request)
+    return _credential_call(lambda: credential_store.reconcile_profile_creation(context["owner_principal"], key_name))
+
+
 @app.post("/v1/users/model-profiles", status_code=201)
 def create_model_profile(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request)

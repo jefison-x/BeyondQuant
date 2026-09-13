@@ -123,3 +123,7 @@ export async function reconcileModelCredential(command:{operation:string;key:str
     || (command.credential_id && value.credential_id!==command.credential_id) || !Number.isSafeInteger(value.committed_version) || value.committed_version<1)throw Error('原凭据回执无法确认');
   return value;
 }
+
+export function getModelProfileReceipt(keyName:string):Promise<unknown> {
+  return request('/settings/models/profiles/receipts?'+new URLSearchParams({key_name:keyName}));
+}
