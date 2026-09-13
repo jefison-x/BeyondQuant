@@ -78,7 +78,7 @@ import {
   fetchByqPoolSnapshotReplace,
 } from "./stock-pool.js";
 import {
-  fetchByqPaperAccount,
+  fetchByqPaperAccount, fetchByqPaperReceipt,
   fetchByqPaperAccounts,
   fetchByqPaperOrder,
   fetchByqPaperSnapshots,
@@ -834,8 +834,12 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   server.registerTool(
     "byq_paper_account_get",
-    { description: "Read one owner-scoped Paper Trading account projection.", inputSchema: { account_id: z.string() } },
-    (args) => { const context = poolContext(); return context ? fetchByqPaperAccount(BACKEND_URL, args.account_id, context) : agentContextUnavailable(); },
+    { description: "Read one owner-scoped Paper Trading account projection.", inputSchema: z.union([
+      z.object({account_id:z.string()}).strict(),
+      z.object({operation:z.literal('create'),idempotency_key:z.string().min(1).max(128)}).strict(),
+      z.object({operation:z.enum(['order','settlement','controls','rebind','delete']),account_id:z.string(),idempotency_key:z.string().min(1).max(128)}).strict(),
+    ]) },
+    (args) => { const context = poolContext(); return context ? ('operation' in args ? fetchByqPaperReceipt(BACKEND_URL,args,context) : fetchByqPaperAccount(BACKEND_URL, args.account_id, context)) : agentContextUnavailable(); },
   );
   server.registerTool(
     "byq_paper_order_get",

@@ -4712,11 +4712,20 @@ def record_human_engineering_merge(task_id: str, payload: dict[str, Any], reques
 
 @app.post("/v1/paper/accounts", status_code=201)
 def create_paper_account(payload: dict[str, Any], request: Request) -> dict[str, object]:
-    context = _required_agent_context(request, payload)
+    context = _required_agent_context(request, payload, include_workspace=True)
+    if not isinstance(payload.get("idempotency_key"), str) or not payload["idempotency_key"].strip():
+        raise HTTPException(status_code=422, detail="paper account creation requires idempotency_key")
     return _paper_call(lambda: {"account": paper_store.create_account(
         {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
-        trusted_owner=context["owner_principal"],
+        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
     )})
+
+
+@app.get("/v1/paper/receipts")
+def get_paper_receipt(request: Request, operation: str, idempotency_key: str, account_id: str | None = None):
+    context = _required_agent_context(request, include_workspace=True)
+    return _paper_call(lambda: paper_store.reconcile_command(operation,idempotency_key,account_id=account_id,
+        trusted_owner=context["owner_principal"],trusted_workspace=context["workspace_id"]))
 
 
 @app.get("/v1/paper/accounts/{account_id}")

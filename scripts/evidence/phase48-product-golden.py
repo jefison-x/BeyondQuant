@@ -197,7 +197,7 @@ def main() -> None:
     paper = owner.product(
         "POST",
         "/paper/accounts",
-        {"name": f"Phase 52 isolated account {suffix}", "cash": 100000},
+        {"idempotency_key":f"phase52-account-{suffix}","name": f"Phase 52 isolated account {suffix}", "cash": 100000},
     )["account"]
     paper_account_id = str(paper["account_id"])
 

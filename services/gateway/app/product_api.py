@@ -2062,6 +2062,15 @@ def product_paper_account_create(request: Request, payload: dict[str, object]) -
     )
 
 
+@router.get("/paper/receipts")
+def product_paper_receipt(request: Request, operation: str, idempotency_key: str, account_id: str | None = None):
+    _product_principal(request)
+    params = {"operation":operation,"idempotency_key":idempotency_key}
+    if account_id is not None:
+        params["account_id"] = account_id
+    return _backend_request("GET", "/v1/paper/receipts?"+urlencode(params),headers=_trusted_agent_headers(request))
+
+
 @router.get("/paper/accounts/{account_id}")
 def product_paper_account_get(account_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)

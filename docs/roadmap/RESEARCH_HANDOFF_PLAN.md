@@ -114,3 +114,7 @@ H4 六类领域对象的实际HTTP丢回执→Backend重启→新MCP进程原键
 
 H4 模拟账户并发资金校验及换绑/订单原键恢复已修复，
 见[PAPER-ORDER-SERIALIZATION](../evidence/research-handoff-h4/PAPER-ORDER-SERIALIZATION.md)。其余模拟命令恢复继续。
+
+H4 模拟账户六类命令原回执及页面刷新恢复通过；账户创建、下单连续两次丢回执后
+只读找回原结果，未重复扣款，见[PAPER-COMMAND-RECOVERY](../evidence/research-handoff-h4/PAPER-COMMAND-RECOVERY.md)。
+账户导入、剩余接口映射和完整H5模型研究继续。
