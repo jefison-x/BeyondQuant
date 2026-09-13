@@ -102,3 +102,6 @@ H5历史单次指数快照准备已接入既有data-demand/Worker/Product页面�
 H4 股票池创建已补持久原键及刷新恢复，见[POOL-RECOVERY](../evidence/research-handoff-h4/POOL-RECOVERY.md)。
 H5已验证真实沪深300三个月缓存及实际Worker无外部取数完成；单次真实范围来源通过，
 三年调仓覆盖与完整模型研究仍未完成。
+
+H4 学习运行/迭代/评估信号/经验提案已补原键核对，最后一轮回执丢失可恢复，
+见[LEARNING-RECOVERY](../evidence/research-handoff-h4/LEARNING-RECOVERY.md)。总范围继续进行。

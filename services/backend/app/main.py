@@ -4469,6 +4469,13 @@ def update_agent_approval_continuation(
     )})
 
 
+@app.get("/v1/learning/receipts")
+def get_learning_receipt(request: Request, kind: str, idempotency_key: str, task_id: str | None = None, run_id: str | None = None):
+    context = _required_agent_context(request, include_workspace=True)
+    return _learning_call(lambda: learning_store.reconcile_submission(kind, idempotency_key,
+        task_id=task_id, run_id=run_id, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"]))
+
+
 @app.post("/v1/learning/runs", status_code=201)
 def start_learning_run(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, payload)

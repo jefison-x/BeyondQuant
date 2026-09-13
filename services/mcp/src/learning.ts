@@ -56,6 +56,20 @@ async function requestLearning(
   context: LearningContext | undefined,
   fetcher: Fetcher,
 ): Promise<LearningResult> {
+  const unknown = () => {
+    const base = unknownWriteResult(init);
+    const value = JSON.parse(base.content[0].text);
+    let body:Record<string,unknown> = {};
+    try { body = JSON.parse(String(init.body)); } catch {}
+    const match = path.match(/^\/v1\/learning\/runs\/(learning_run_[0-9a-f]{32})\/iterations$/);
+    const tool = path === '/v1/learning/runs' ? 'byq_learning_run_get' : path === '/v1/learning/signals' ? 'byq_evaluation_signal_get'
+      : path === '/v1/learning/lessons' ? 'byq_lesson_get' : match ? 'byq_learning_iteration_list' : null;
+    if (tool && typeof body.idempotency_key === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(body.idempotency_key)
+        && (match || (typeof body.task_id === 'string' && /^task_[0-9a-f]{32}$/.test(body.task_id)))) {
+      value.reconciliation = {tool, arguments:{...(match ? {run_id:match[1]} : {task_id:body.task_id}),idempotency_key:body.idempotency_key}};
+    }
+    return result(value,false);
+  };
   try {
     const response = await fetcher(`${backendUrl}${path}`, {
       ...init,
@@ -66,24 +80,53 @@ async function requestLearning(
       },
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
-    if (isWriteRequest(init) && response.status >= 500) return unknownWriteResult(init);
+    if (isWriteRequest(init) && response.status >= 500) return unknown();
     let payload: unknown;
     try {
       payload = await response.json();
     } catch {
-      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
+      if (isWriteRequest(init) && response.ok) return unknown();
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
-      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
+      if (isWriteRequest(init) && response.ok) return unknown();
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (!response.ok) {
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: errorStatus(response.status), http_status: response.status } }, true);
     }
+    const value = payload as Record<string,any>;
+    const body = init.body ? JSON.parse(String(init.body)) : {};
+    const route = path.match(/^\/v1\/learning\/(runs|signals|lessons)(?:\/([^/?]+))?$/);
+    const shapes:Record<string,[string,string,string]> = {runs:['run','learning_run_id','learning_run'],signals:['signal','signal_id','evaluation_signal'],lessons:['lesson','lesson_id','lesson']};
+    if (route) {
+      const [field,id,prefix] = shapes[route[1]];
+      const valid = new RegExp('^'+prefix+'_[0-9a-f]{32}$').test(value[field]?.[id] ?? '')
+        && (!route[2] || value[field][id] === decodeURIComponent(route[2]))
+        && (!isWriteRequest(init) || value[field].task_id === body.task_id);
+      if (!valid) return isWriteRequest(init) ? unknown() : result({status:'error',backend:{status:'invalid_response'}},true);
+    }
+    const iterationPath = path.match(/^\/v1\/learning\/runs\/([^/?]+)\/iterations$/);
+    if (iterationPath && isWriteRequest(init)) {
+      const valid = /^learning_iteration_[0-9a-f]{32}$/.test(value.iteration?.iteration_id ?? '')
+        && value.iteration.learning_run_id === decodeURIComponent(iterationPath[1])
+        && value.run?.learning_run_id === decodeURIComponent(iterationPath[1]);
+      if (!valid) return unknown();
+    }
+    if (path.startsWith('/v1/learning/receipts?')) {
+      const query = new URLSearchParams(path.split('?')[1]);
+      const kind = query.get('kind')!;
+      const fields:Record<string,[string,string]> = {run:['learning_run_id','learning_run'],signal:['signal_id','evaluation_signal'],lesson:['lesson_id','lesson'],iteration:['iteration_id','learning_iteration']};
+      const [id,prefix] = fields[kind];
+      const missing = value.state === 'not_found' && Object.keys(value).length === 1;
+      const valid = value.state === 'confirmed' && new RegExp('^'+prefix+'_[0-9a-f]{32}$').test(value[kind]?.[id] ?? '')
+        && (kind === 'iteration' ? value.iteration.learning_run_id === query.get('run_id') && value.run?.learning_run_id === query.get('run_id')
+          : value[kind].task_id === query.get('task_id'));
+      if (!missing && !valid) return result({status:'error',backend:{status:'invalid_response'}},true);
+    }
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
-    if (isWriteRequest(init)) return unknownWriteResult(init);
+    if (isWriteRequest(init)) return unknown();
     return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
   }
 }
@@ -188,4 +231,11 @@ export function fetchByqLessonReview(
   fetcher: Fetcher = fetch,
 ): Promise<LearningResult> {
   return requestLearning(backendUrl, `/v1/learning/lessons/${encodeURIComponent(lessonId)}/review`, { method: "POST", body: JSON.stringify(request) }, context, fetcher);
+}
+
+export function fetchByqLearningReceipt(backendUrl:string, kind:'run'|'signal'|'lesson'|'iteration', args:{task_id?:string;run_id?:string;idempotency_key:string}, context:LearningContext, fetcher:Fetcher=fetch) {
+  const query = new URLSearchParams({kind,idempotency_key:args.idempotency_key});
+  if(args.task_id) query.set('task_id',args.task_id);
+  if(args.run_id) query.set('run_id',args.run_id);
+  return requestLearning(backendUrl,'/v1/learning/receipts?'+query,{method:'GET'},context,fetcher);
 }

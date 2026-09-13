@@ -40,7 +40,7 @@ import {
   fetchByqExperimentCompare,
   fetchByqLearningIterationList,
   fetchByqLearningIterationRecord,
-  fetchByqLearningRunGet,
+  fetchByqLearningRunGet, fetchByqLearningReceipt,
   fetchByqLearningRunReview,
   fetchByqLearningRunStart,
   fetchByqLearningSignalCreate,
@@ -386,9 +386,11 @@ async function byqLearningRunStart(args: Record<string, unknown>, extra: unknown
   return context ? fetchByqLearningRunStart(BACKEND_URL, args, context) : agentContextUnavailable();
 }
 
-async function byqLearningRunGet(args: { run_id: string }, extra: unknown) {
+async function byqLearningRunGet(args: { run_id: string } | { task_id: string; idempotency_key: string }, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqLearningRunGet(BACKEND_URL, args.run_id, context) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  return "idempotency_key" in args ? fetchByqLearningReceipt(BACKEND_URL, "run", args, context)
+    : fetchByqLearningRunGet(BACKEND_URL, args.run_id, context);
 }
 
 async function byqLearningIterationRecord(args: { run_id: string } & Record<string, unknown>, extra: unknown) {
@@ -398,9 +400,11 @@ async function byqLearningIterationRecord(args: { run_id: string } & Record<stri
   return fetchByqLearningIterationRecord(BACKEND_URL, run_id, request, context);
 }
 
-async function byqLearningIterationList(args: { run_id: string }, extra: unknown) {
+async function byqLearningIterationList(args: { run_id: string; idempotency_key?: string }, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqLearningIterationList(BACKEND_URL, args.run_id, context) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  return args.idempotency_key ? fetchByqLearningReceipt(BACKEND_URL,"iteration",{run_id:args.run_id,idempotency_key:args.idempotency_key},context)
+    : fetchByqLearningIterationList(BACKEND_URL, args.run_id, context);
 }
 
 async function byqLearningRunReview(args: { run_id: string; decision: string; rationale?: string }, extra: unknown) {
@@ -415,9 +419,11 @@ async function byqLearningSignalCreate(args: Record<string, unknown>, extra: unk
   return context ? fetchByqLearningSignalCreate(BACKEND_URL, args, context) : agentContextUnavailable();
 }
 
-async function byqLearningSignalGet(args: { signal_id: string }, extra: unknown) {
+async function byqLearningSignalGet(args: { signal_id: string } | { task_id: string; idempotency_key: string }, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqLearningSignalGet(BACKEND_URL, args.signal_id, context) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  return "idempotency_key" in args ? fetchByqLearningReceipt(BACKEND_URL, "signal", args, context)
+    : fetchByqLearningSignalGet(BACKEND_URL, args.signal_id, context);
 }
 
 async function byqExperimentCompare(args: Record<string, unknown>, extra: unknown) {
@@ -430,9 +436,11 @@ async function byqLessonPropose(args: Record<string, unknown>, extra: unknown) {
   return context ? fetchByqLessonPropose(BACKEND_URL, args, context) : agentContextUnavailable();
 }
 
-async function byqLessonGet(args: { lesson_id: string }, extra: unknown) {
+async function byqLessonGet(args: { lesson_id: string } | { task_id: string; idempotency_key: string }, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqLessonGet(BACKEND_URL, args.lesson_id, context) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  return "idempotency_key" in args ? fetchByqLearningReceipt(BACKEND_URL, "lesson", args, context)
+    : fetchByqLessonGet(BACKEND_URL, args.lesson_id, context);
 }
 
 async function byqLessonReview(args: { lesson_id: string; decision: string; rationale?: string }, extra: unknown) {
@@ -1402,7 +1410,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_learning_run_get",
     {
       description: "Read one owner-scoped BYQ learning run and its bounded state.",
-      inputSchema: { run_id: z.string() },
+      inputSchema: z.union([z.object({ run_id: z.string() }).strict(), z.object({ task_id:z.string(), idempotency_key:z.string() }).strict()]),
     },
     (args) => byqLearningRunGet(args, trustedContext),
   );
@@ -1427,7 +1435,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_learning_iteration_list",
     {
       description: "Read the ordered, replayable iteration history of one BYQ learning run.",
-      inputSchema: { run_id: z.string() },
+      inputSchema: { run_id: z.string(), idempotency_key:z.string().optional() },
     },
     (args) => byqLearningIterationList(args, trustedContext),
   );
@@ -1464,7 +1472,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_evaluation_signal_get",
     {
       description: "Read one owner-scoped BYQ evaluation signal.",
-      inputSchema: { signal_id: z.string() },
+      inputSchema: z.union([z.object({ signal_id: z.string() }).strict(), z.object({ task_id:z.string(), idempotency_key:z.string() }).strict()]),
     },
     (args) => byqLearningSignalGet(args, trustedContext),
   );
@@ -1499,7 +1507,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_lesson_get",
     {
       description: "Read one owner-scoped BYQ lesson and its promotion history.",
-      inputSchema: { lesson_id: z.string() },
+      inputSchema: z.union([z.object({ lesson_id: z.string() }).strict(), z.object({ task_id:z.string(), idempotency_key:z.string() }).strict()]),
     },
     (args) => byqLessonGet(args, trustedContext),
   );
