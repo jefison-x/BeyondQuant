@@ -62,9 +62,6 @@ async function recoverCreation(retry = false) {
     showCreate.value = false;
     await loadPools();
   } catch (cause) {
-    if (cause instanceof PoolCreationRejected && pendingCreation.value) {
-      finishPoolSubmission(creationScope(), pendingCreation.value.key); pendingCreation.value = null;
-    }
     error.value = cause instanceof Error ? cause.message : "原请求未确认";
   }
   finally { busy.value = false; }
@@ -243,6 +240,7 @@ async function loadIndexCatalog() {
 }
 
 async function submit() {
+  let hadPrevious = false;
   error.value = "";
   if (poolType.value === "index" && indexTrackingMode.value === "historical_snapshot" && !requestedAsOf.value) {
     ElMessage.warning("固定历史快照必须选择截至日期");
@@ -293,6 +291,7 @@ async function submit() {
       requested_as_of:requestedAsOf.value?.replaceAll("-", "") || today, activate:dynamicActivate.value,
     } : {name:name.value.trim(), pool_type:"custom", description:description.value.trim() || null, symbols, weights};
     const scope = creationScope();
+    hadPrevious = readPoolSubmission(scope) !== null;
     pendingCreation.value = beginPoolSubmission(scope, poolType.value, payload);
     const original = pendingCreation.value;
     const created = await submitPoolCreation(original.kind, {...original.payload, idempotency_key:original.key}, auth.token);
@@ -312,7 +311,7 @@ async function submit() {
     poolType.value = "custom";
     await loadPools();
   } catch (exc) {
-    if (exc instanceof PoolCreationRejected && pendingCreation.value) {
+    if (!hadPrevious && exc instanceof PoolCreationRejected && pendingCreation.value) {
       finishPoolSubmission(creationScope(), pendingCreation.value.key); pendingCreation.value = null;
     }
     if (pendingCreation.value) showCreate.value = false;

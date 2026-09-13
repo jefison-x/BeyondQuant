@@ -5228,6 +5228,13 @@ def list_model_credentials(request: Request) -> dict[str, object]:
     })
 
 
+@app.get("/v1/users/model-credentials/receipts")
+def reconcile_model_credential(request: Request, operation: str, request_id: str, credential_id: str | None = None) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    return _credential_call(lambda: credential_store.reconcile_model_write(
+        operation,request_id,owner=context["owner_principal"],credential_id=credential_id))
+
+
 @app.post("/v1/users/model-credentials", status_code=201)
 def create_model_credential(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request)

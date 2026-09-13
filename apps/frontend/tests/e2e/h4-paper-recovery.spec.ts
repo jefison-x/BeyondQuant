@@ -65,3 +65,24 @@ test('account import acknowledgement is recovered without importing twice',async
   const body=await(await receipt).json();expect(body.account_id).toBe(importedId);expect(body.operation).toBe('import');
   await expect(page.getByText('有一笔模拟账户操作尚未确认',{exact:true})).toHaveCount(0);expect(writes).toBe(1);
 });
+
+test('a rejected retry cannot erase an earlier unknown committed account',async({page})=>{
+  await page.goto('/login');await page.getByLabel('用户名').fill('h5-browser');await page.getByLabel('密码').fill('test-password-123');
+  await page.getByRole('button',{name:'进入'}).click();await expect(page).toHaveURL(/\/agent$/);
+  await page.goto('/paper-trading');await page.getByTestId('paper-account-name').fill('Retry auth '+Date.now());
+  let committedId='',attempts=0;
+  await page.route('**/api/product/paper/accounts',async route=>{
+    if(route.request().method()!=='POST')return route.continue();
+    attempts++;
+    if(attempts>1)return route.fulfill({status:401,contentType:'application/json',body:JSON.stringify({error:{message:'synthetic expired session'}})});
+    const response=await route.fetch();expect(response.status()).toBe(201);committedId=(await response.json()).account.account_id;await route.abort('failed');
+  });
+  await page.getByTestId('paper-create-account').click();await expect(page.getByText('有一笔模拟账户操作尚未确认',{exact:true})).toBeVisible();
+  await page.reload();await page.getByRole('button',{name:'使用原模拟操作重试',exact:true}).click();
+  await expect(page.getByText('synthetic expired session',{exact:true})).toBeVisible();
+  await expect(page.getByText('有一笔模拟账户操作尚未确认',{exact:true})).toBeVisible();
+  const recovered=page.waitForResponse(r=>r.url().includes('/paper/receipts?'));
+  await page.getByRole('button',{name:'核对原模拟操作',exact:true}).click();
+  expect((await(await recovered).json()).account_id).toBe(committedId);
+  await expect(page.getByText('有一笔模拟账户操作尚未确认',{exact:true})).toHaveCount(0);expect(attempts).toBe(2);
+});

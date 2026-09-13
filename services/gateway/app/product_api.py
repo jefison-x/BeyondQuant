@@ -1632,6 +1632,15 @@ def product_model_settings(request: Request) -> dict[str, object]:
     }
 
 
+@router.get("/settings/models/credentials/receipts")
+def product_model_credential_receipt(request: Request, operation: str, request_id: str, credential_id: str | None = None) -> dict[str, object]:
+    from urllib.parse import urlencode
+    params = {"operation":operation,"request_id":request_id}
+    if credential_id is not None:
+        params["credential_id"] = credential_id
+    return _backend_request("GET","/v1/users/model-credentials/receipts?"+urlencode(params),headers=_trusted_agent_headers(request))
+
+
 @router.post("/settings/models/credentials", status_code=201)
 def product_model_credential_create(
     request: Request,

@@ -23,13 +23,13 @@ function commandScope() {
   return JSON.stringify([auth.user.subject,auth.user.workspace.workspace_id]);
 }
 async function executeCommand(input:Omit<PaperCommand,'key'>) {
-  const scope = commandScope(), command = beginPaperSubmission(scope,input); pending.value = command;
+  const scope = commandScope(), previous = readPaperSubmission(scope), command = beginPaperSubmission(scope,input); pending.value = command;
   try {
     const result = await sendPaperCommand(command,auth.token);
     if(scope !== commandScope()) throw Error('工作区已切换，请在原工作区核对');
     finishPaperSubmission(scope,command.key);pending.value = null;return result;
   } catch(cause) {
-    if(cause instanceof PaperCommandRejected) {finishPaperSubmission(scope,command.key);pending.value = null;}
+    if(!previous && cause instanceof PaperCommandRejected) {finishPaperSubmission(scope,command.key);pending.value = null;}
     throw cause;
   }
 }

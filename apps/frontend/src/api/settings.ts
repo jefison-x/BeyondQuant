@@ -1,9 +1,12 @@
 import type { AgentPolicyStatus, AssetImportReport, AssetSummary, ModelSettings, SettingsStatus, UiPreferences, UserProfile } from "./types";
 
+export class SettingsRequestError extends Error {constructor(message:string,readonly status:number){super(message);}}
+
 const ROOT = "/api/product";
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${ROOT}${path}`, {
+    signal:AbortSignal.timeout(15000),
     ...init,
     credentials: "include",
     headers: {
@@ -13,7 +16,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: { message?: string }; detail?: string };
-    throw new Error(body.error?.message ?? body.detail ?? "settings request failed");
+    throw new SettingsRequestError(body.error?.message ?? body.detail ?? "settings request failed",response.status);
   }
   return (await response.json()) as T;
 }
@@ -109,4 +112,14 @@ export async function getSettingsStatus(token: string): Promise<SettingsStatus> 
     throw new Error(body.error?.message ?? "settings request failed");
   }
   return (await response.json()) as SettingsStatus;
+}
+
+export async function reconcileModelCredential(command:{operation:string;key:string;credential_id?:string}) {
+  const params=new URLSearchParams({operation:command.operation,request_id:command.key});
+  if(command.credential_id)params.set('credential_id',command.credential_id);
+  const value=await request<any>('/settings/models/credentials/receipts?'+params);
+  if(value.state==='not_found' && Object.keys(value).length===1)return value;
+  if(value.state!=='confirmed' || value.operation!==command.operation || !/^cred_[0-9a-f]{32}$/.test(value.credential_id ?? '')
+    || (command.credential_id && value.credential_id!==command.credential_id) || !Number.isSafeInteger(value.committed_version) || value.committed_version<1)throw Error('原凭据回执无法确认');
+  return value;
 }

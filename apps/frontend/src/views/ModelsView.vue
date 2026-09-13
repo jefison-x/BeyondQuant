@@ -3,12 +3,40 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   createModelCredential, createModelProfile, deleteModelProfile, getModelSettings,
-  revokeModelCredential, updateModelBinding, updateModelCredential,
+  revokeModelCredential, updateModelBinding, updateModelCredential, reconcileModelCredential, SettingsRequestError,
 } from "@/api/settings";
 import type { ModelCredential, ModelProfile, ModelSettings } from "@/api/types";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { useFilteredPagination } from "@/composables/useFilteredPagination";
 
+import {useAuthStore} from '@/stores/auth';
+import {beginCredentialWrite,readCredentialWrite,finishCredentialWrite,type CredentialWrite} from '@/api/credentialSubmission';
+const auth=useAuthStore();
+const pendingCredential=ref<CredentialWrite|null>(null);
+function credentialScope(){if(!auth.user)throw Error('请先登录');return JSON.stringify([auth.user.subject,auth.user.workspace.workspace_id]);}
+async function executeCredential(operation:CredentialWrite['operation'],payload:Record<string,unknown>,credentialId?:string){
+  const scope=credentialScope(),previous=readCredentialWrite(scope),command=beginCredentialWrite(scope,operation,payload,credentialId);pendingCredential.value=command;
+  try {
+    const value=operation==='create'?await createModelCredential({...payload,idempotency_key:command.key})
+      : operation==='update'?await updateModelCredential(credentialId!,{...payload,request_id:command.key})
+      : await revokeModelCredential(credentialId!,{...payload,request_id:command.key});
+    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
+    if(!/^cred_[0-9a-f]{32}$/.test(String(value.credential?.credential_id ?? '')) || (credentialId && value.credential.credential_id!==credentialId))throw Error('凭据提交回执不完整，请核对原操作');
+    finishCredentialWrite(scope,command.key);pendingCredential.value=null;return value;
+  } catch(cause){
+    if(!previous && cause instanceof SettingsRequestError && [400,401,403,404,422].includes(cause.status)){finishCredentialWrite(scope,command.key);pendingCredential.value=null;}
+    throw cause;
+  }
+}
+async function recoverCredential(){
+  if(!pendingCredential.value)return;busy.value=true;
+  try {
+    const scope=credentialScope(),command=pendingCredential.value,value=await reconcileModelCredential(command);
+    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
+    if(value.state==='not_found'){ElMessage.warning('尚未找到原回执。请稍后核对，或重新填写同一操作；密钥需要重新输入。');return;}
+    finishCredentialWrite(scope,command.key);pendingCredential.value=null;credentialDialog.value=false;credentialForm.secret='';await load();ElMessage.success('原凭据操作已确认');
+  }catch(cause){ElMessage.error(cause instanceof Error?cause.message:'凭据核对失败');}finally{busy.value=false;}
+}
 const loading = ref(true);
 const busy = ref(false);
 const error = ref("");
@@ -44,7 +72,7 @@ async function load() {
   finally { loading.value = false; }
 }
 
-onMounted(load);
+onMounted(async()=>{try{pendingCredential.value=readCredentialWrite(credentialScope());}catch(cause){error.value=cause instanceof Error?cause.message:'原凭据操作无法读取';return;}await load();});
 
 function openCredential(item: ModelCredential | null = null) {
   editingCredential.value = item;
@@ -59,26 +87,26 @@ async function saveCredential() {
   busy.value = true;
   try {
     if (editingCredential.value) {
-      await updateModelCredential(editingCredential.value.credential_id, {
+      await executeCredential("update", {
         label: credentialForm.label, secret: credentialForm.secret,
-        expected_version: editingCredential.value.version, request_id: `browser-replace-${Date.now()}`,
-      });
+        expected_version: editingCredential.value.version,
+      },editingCredential.value.credential_id);
       ElMessage.success("凭据已安全替换");
     } else {
-      await createModelCredential({ purpose: "model_api_key", provider: credentialForm.provider, scope: "user", label: credentialForm.label, secret: credentialForm.secret, idempotency_key: `browser-create-${Date.now()}` });
+      await executeCredential("create",{provider:credentialForm.provider,label:credentialForm.label,secret:credentialForm.secret});
       ElMessage.success("凭据已保存");
     }
     credentialDialog.value = false;
     credentialForm.secret = "";
     await load();
   } catch (exc) { ElMessage.error(exc instanceof Error ? exc.message : "保存凭据失败"); }
-  finally { busy.value = false; }
+  finally { busy.value = false; credentialForm.secret=""; if(pendingCredential.value)credentialDialog.value=false; }
 }
 
 async function setCredentialStatus(item: ModelCredential, status: "active" | "disabled") {
   busy.value = true;
   try {
-    await updateModelCredential(item.credential_id, { label: item.label, status, expected_version: item.version, request_id: `browser-status-${Date.now()}` });
+    await executeCredential("update",{label:item.label,status,expected_version:item.version},item.credential_id);
     await load();
   } catch (exc) { ElMessage.error(exc instanceof Error ? exc.message : "更新凭据失败"); }
   finally { busy.value = false; }
@@ -87,7 +115,7 @@ async function setCredentialStatus(item: ModelCredential, status: "active" | "di
 async function revoke(item: ModelCredential) {
   try {
     await ElMessageBox.confirm("撤销后密文会被清除，使用它的档案将立即不可用。", "撤销凭据", { type: "warning", confirmButtonText: "确认撤销" });
-    await revokeModelCredential(item.credential_id, { expected_version: item.version, request_id: `browser-revoke-${Date.now()}` });
+    await executeCredential("revoke",{expected_version:item.version},item.credential_id);
     ElMessage.success("凭据已撤销");
     await load();
   } catch (exc) { if (exc !== "cancel" && exc !== "close") ElMessage.error(exc instanceof Error ? exc.message : "撤销失败"); }
@@ -146,12 +174,16 @@ async function bind(agentId: string, profileId: string | null, version: number) 
 }
 
 function actionLabel(value: unknown) {
-  return ({ created: "创建", secret_replaced: "替换密钥", enabled: "启用", disabled: "停用", revoked: "撤销" } as Record<string, string>)[String(value)] ?? String(value ?? "-");
+  return ({ created: "创建", secret_replaced: "替换密钥", enabled: "启用", disabled: "停用", revoked: "撤销", revoked_noop: "确认已撤销" } as Record<string, string>)[String(value)] ?? String(value ?? "-");
 }
 </script>
 
 <template>
   <section class="my-space-page">
+    <el-alert v-if="pendingCredential" title="有一笔凭据操作尚未确认" type="warning" :closable="false" show-icon>
+      <p>已保存原请求标识，未保存密钥。请先核对；再次提交同一操作时需重新输入密钥。</p>
+      <el-button :loading="busy" @click="recoverCredential">核对原凭据操作</el-button>
+    </el-alert>
     <el-alert title="密钥仅可写入，不会返回浏览器、日志或 WorkflowTrace；运行时通过 Backend 私有边界按当前用户解析。" type="info" show-icon :closable="false" />
     <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
     <div v-else-if="error" class="base-error" role="alert">{{ error }}</div>

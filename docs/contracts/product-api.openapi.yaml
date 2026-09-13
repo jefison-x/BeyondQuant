@@ -364,6 +364,14 @@ paths:
     get: {summary: 返回 user settings capability status., responses: *okResponses}
   /api/product/settings/models:
     get: {summary: 返回 a secret-free model capability projection., responses: *okResponses}
+  /api/product/settings/models/credentials/receipts:
+    get:
+      summary: 只读核对原凭据写入的标识和提交版本，不返回密钥或密文。
+      parameters:
+        - {name: operation, in: query, required: true, schema: {type: string, enum: [create, update, revoke]}}
+        - {name: request_id, in: query, required: true, schema: {type: string}}
+        - {name: credential_id, in: query, schema: {type: string}, description: Required for update and revoke.}
+      responses: *okResponses
   /api/product/settings/models/credentials:
     post: {summary: 创建 an owner-scoped write-only model credential., responses: *createdResponses}
   /api/product/settings/models/credentials/{credential_id}:

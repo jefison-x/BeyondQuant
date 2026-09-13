@@ -519,18 +519,24 @@ class CredentialStore(PgStoreMixin):
         now = _now()
         try:
             with self._transaction() as connection:
-                existing = fetch_one(
+                execute(connection,"SET LOCAL lock_timeout = '2s'")
+                execute(connection,"SELECT pg_advisory_xact_lock(hashtextextended(:identity,0))",
+                        {"identity":json.dumps(["credential-create",scope,record_owner,idempotency_key],separators=(",",":"))})
+                existing_rows = execute(
                     connection,
                     """SELECT * FROM credentials
                     WHERE scope = :scope
                       AND owner_principal IS NOT DISTINCT FROM :owner_principal
-                      AND idempotency_key = :idempotency_key""",
+                      AND idempotency_key = :idempotency_key LIMIT 2""",
                     {
                         "scope": scope,
                         "owner_principal": record_owner,
                         "idempotency_key": idempotency_key,
                     },
                 )
+                if len(existing_rows) > 1:
+                    raise CredentialConflict("credential original identity is ambiguous")
+                existing = existing_rows[0] if existing_rows else None
                 if existing is not None:
                     if existing["request_hash"] != request_hash:
                         raise CredentialConflict("credential idempotency key was reused")
@@ -735,6 +741,13 @@ class CredentialStore(PgStoreMixin):
             if row is None or not self._can_access(row, owner_principal, actor_role):
                 raise CredentialNotFound("credential not found")
             if row["status"] == "revoked":
+                prior = fetch_one(connection,"SELECT action FROM credential_audit WHERE credential_id=:identity AND request_id=:key LIMIT 1",
+                                  {"identity":credential_id,"key":request_id})
+                if prior is not None and prior["action"] not in {"revoked","revoked_noop"}:
+                    raise CredentialConflict("credential request identity was reused")
+                if prior is None:
+                    self._audit(connection,credential_id=credential_id,scope=str(row["scope"]),owner=row["owner_principal"],
+                                actor=actor_principal,action="revoked_noop",request_id=request_id,prior_version=row["version"],new_version=row["version"])
                 return self._public_credential(row)
             if row["version"] != expected:
                 raise CredentialConflict("credential version conflict")
@@ -787,6 +800,28 @@ class CredentialStore(PgStoreMixin):
                 new_version=new_version,
             )
         return self.get_credential(credential_id, owner=owner_principal, actor_role=actor_role)
+
+    def reconcile_model_write(self, operation, request_id, *, owner, credential_id=None):
+        owner = _principal(owner)
+        request_id = _text(request_id,field="request_id",maximum=128)
+        actions = {"create":{"created"},"update":{"updated","secret_replaced","enabled","disabled"},"revoke":{"revoked","revoked_noop"}}
+        if operation not in actions:
+            raise ValueError("unsupported credential receipt operation")
+        identity = None if operation == "create" else _identifier(credential_id,field="credential_id",prefix="cred")
+        rows = self._execute("""SELECT a.credential_id,a.action,a.new_version FROM credential_audit a
+            JOIN credentials c USING(credential_id)
+            WHERE a.owner_principal=:owner AND c.owner_principal=:owner
+              AND a.scope='user' AND c.scope='user' AND c.purpose='model_api_key'
+              AND a.request_id=:key AND a.outcome='completed' AND a.action IN (SELECT jsonb_array_elements_text(CAST(:actions AS JSONB)))
+              AND (CAST(:identity AS TEXT) IS NULL OR a.credential_id=:identity) LIMIT 2""",
+            {"owner":owner,"key":request_id,"identity":identity,"actions":sorted(actions[operation])})
+        matching = [row for row in rows if row["action"] in actions[operation]]
+        if not matching:
+            return {"state":"not_found"}
+        if len(matching) != 1:
+            raise CredentialConflict("credential receipt identity is ambiguous")
+        row = matching[0]
+        return {"state":"confirmed","operation":operation,"credential_id":row["credential_id"],"committed_version":row["new_version"]}
 
     def list_audit(self, owner: object, *, limit: int = 100) -> list[dict[str, object]]:
         owner_principal = _principal(owner)

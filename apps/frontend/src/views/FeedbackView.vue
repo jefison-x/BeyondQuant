@@ -19,7 +19,7 @@ function commandScope() {
   return JSON.stringify([auth.user.subject,auth.user.workspace.workspace_id]);
 }
 async function executeCommand(input:Omit<FeedbackCommand,'key'>) {
-  const scope = commandScope();
+  const scope = commandScope(), previous = readFeedbackSubmission(scope);
   const command = beginFeedbackSubmission(scope,input);
   pending.value = command;
   try {
@@ -28,7 +28,7 @@ async function executeCommand(input:Omit<FeedbackCommand,'key'>) {
     finishFeedbackSubmission(scope,command.key); pending.value = null;
     return result;
   } catch(cause) {
-    if(cause instanceof ProductApiError && [400,401,403,404,422].includes(cause.status)) {
+    if(!previous && cause instanceof ProductApiError && [400,401,403,404,422].includes(cause.status)) {
       finishFeedbackSubmission(scope,command.key); pending.value = null;
     }
     throw cause;
