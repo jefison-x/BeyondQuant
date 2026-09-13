@@ -1399,6 +1399,25 @@ class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinua
         )
         return [self._artifact_row(row) for row in rows]
 
+    def strategy_version_page(self, *, owner_principal: str, strategy_id: str,
+                              limit: int = 1000, offset: int = 0) -> dict[str, object]:
+        if (isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000
+                or isinstance(offset, bool) or not isinstance(offset, int) or offset < 0):
+            raise ValueError("invalid strategy version pagination")
+        row = self._fetch_one(
+            """WITH versions AS (
+                SELECT artifact_id, status, content->>'version_id' AS version_id,
+                       content->>'source_fingerprint' AS source_fingerprint, created_at
+                FROM artifacts WHERE owner_principal=:owner AND kind='strategy_version'
+                  AND content->>'strategy_id'=:strategy
+            ), page AS (SELECT * FROM versions ORDER BY created_at DESC, artifact_id DESC
+                        LIMIT :limit OFFSET :offset)
+            SELECT (SELECT COUNT(*) FROM versions) AS total,
+                   COALESCE((SELECT jsonb_agg(to_jsonb(page) ORDER BY created_at DESC, artifact_id DESC)
+                             FROM page), '[]'::jsonb) AS versions""",
+            {"owner": owner_principal, "strategy": strategy_id, "limit": limit, "offset": offset})
+        return {**row, "limit": limit, "offset": offset}
+
     def list_strategy_approvals(
         self, *, owner_principal: str, limit: int = 10_000
     ) -> list[dict[str, object]]:

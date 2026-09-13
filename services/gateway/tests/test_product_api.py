@@ -1013,9 +1013,9 @@ def test_product_strategy_draft_and_projection_routes_forward_owner_headers(monk
         captured["headers"] = kwargs.get("headers", {})
         if url.endswith("/v1/research/strategies/drafts"):
             return FakeResponse({"artifact": {"artifact_id": "artifact_draft_1", "kind": "strategy_draft"}})
-        if url.endswith("/strategies/MomentumStrategy/versions"):
+        if url.endswith("/strategies/MomentumStrategy/versions?limit=1000&offset=0"):
             return FakeResponse({"strategy_id": "MomentumStrategy", "versions": [{"artifact_id": "artifact_version_1"}]})
-        if url.endswith("/strategies/MomentumStrategy/backtest-count"):
+        if url.endswith("/strategies/MomentumStrategy/backtest-count?limit=1000&offset=0"):
             return FakeResponse({"strategy_id": "MomentumStrategy", "version_count": 1, "backtest_count": 2})
         return FakeResponse({"artifact": {"artifact_id": "artifact_draft_1", "status": "superseded"}})
 
@@ -1046,6 +1046,12 @@ def test_product_strategy_draft_and_projection_routes_forward_owner_headers(monk
     assert counts.status_code == 200
     assert counts.json()["backtest_count"] == 2
     assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+    for suffix in ("versions", "backtest-count"):
+        response = client.get(f"/api/product/strategies/MomentumStrategy/{suffix}?limit=50&offset=1000", headers=auth)
+        assert response.status_code == 200
+        assert captured["url"].endswith(f"/{suffix}?limit=50&offset=1000")
+        assert captured["headers"]["x-byq-owner-principal"] == "product-user"
 
 
 def test_product_stock_pool_create_forwards_owner_headers(monkeypatch) -> None:

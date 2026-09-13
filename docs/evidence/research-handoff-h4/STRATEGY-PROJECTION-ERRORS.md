@@ -28,3 +28,15 @@
 使用既有隔离 PostgreSQL 测试库、当前 Backend 源码及真实 TestClient 请求，分别测试205/1005版本与versions/backtest-count两个投影：2通过、2失败（4.10秒）。1005版本时历史仅1000条，统计version_count也仅1000；当前夹具没有回测job，尚未把回测job少算作为实际复现结论。
 
 扩展反例暂保留在本地未提交测试中，未推送失败候选。修复须让历史分页可达全部版本、统计与列表分页解耦，并贯通Gateway/Product页面；单纯将LIMIT调大不能解决正确性。`.105` 远端CI 34750787778 仍in_progress，与此新增反例不是同一源码候选。
+
+## 分页与独立聚合修复进行中
+
+新增 strategy_version_page：单SQL快照返回有界版本页及total，按created_at/artifact_id稳定排序，支持offset；新增 strategy_counts：按owner过滤全部策略版本，联结同owner/workspace回测后计算总数，by_version单独分页。两个Backend入口及Product Gateway转发limit/offset，Product策略页面每页50条，迟到请求不覆盖新页面。未提升原1000响应上限。
+
+真实PostgreSQL完整strategy_api 19项通过（15.79秒）；随后增强实际回测测试：完成回测的版本置于第1001位，总数仍为1，第二页返回原版本计数1，其他owner为0，定向1项通过（2.55秒）。Gateway分页/身份转发1项通过；前端16项定向测试含逆序响应，vue-tsc与Vite构建通过。先误调用不存在的typecheck脚本，随后使用项目build脚本实际完成类型检查，不能把前一次失败算通过。
+
+当前实现尚未提交/推送，真实浏览器验收、完整组件CI、台账差异核对与独立构建身份待完成；H4/H5仍未关闭。
+
+真实Chromium验收已通过（1项，2.0秒）：持久测试用户登录，经Gateway/Product API读取1005版本总数和第一页50条；页面实际点击第21页，收到offset=1000的最后5条并显示synthetic-1，无pageerror。仅显式合成规模夹具，不冒充H5研究结果。三台隔离测试应用已挂载当前工作树源码，保留依赖镜像不是新镜像构建资格。
+
+复核源码差异：Backend仅替换两个未登记投影handler，Research/Backtest仅新增专用页/计数方法；Gateway仅修改对应两个未登记投影转发。其他已登记handler和公共方法未改，据此更新相关整文件依赖指纹，不增加114/560审计完成数量。

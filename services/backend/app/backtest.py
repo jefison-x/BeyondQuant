@@ -1731,6 +1731,28 @@ class BacktestJobStore(PgStoreMixin):
         counts = {identity: observed.get(identity, 0) for identity in identities}
         return counts
 
+    def strategy_counts(self, *, owner_principal: str, strategy_id: str,
+                        limit: int = 1000, offset: int = 0) -> dict[str, object]:
+        if (isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000
+                or isinstance(offset, bool) or not isinstance(offset, int) or offset < 0):
+            raise ValueError("invalid strategy count pagination")
+        row = self._fetch_one(
+            """WITH counts AS (
+                SELECT a.artifact_id, a.created_at, COUNT(b.job_id) AS n
+                FROM artifacts a LEFT JOIN backtest_jobs b
+                  ON b.strategy_version_artifact_id=a.artifact_id
+                 AND b.owner_principal=a.owner_principal AND b.workspace_id=a.workspace_id
+                WHERE a.owner_principal=:owner AND a.kind='strategy_version'
+                  AND a.content->>'strategy_id'=:strategy
+                GROUP BY a.artifact_id, a.created_at
+            ), page AS (SELECT * FROM counts ORDER BY created_at DESC, artifact_id DESC
+                        LIMIT :limit OFFSET :offset)
+            SELECT COUNT(*) AS version_count, COALESCE(SUM(n),0)::bigint AS backtest_count,
+                   COALESCE((SELECT jsonb_object_agg(artifact_id,n) FROM page), '{}'::jsonb) AS by_version
+            FROM counts""",
+            {"owner": owner_principal, "strategy": strategy_id, "limit": limit, "offset": offset})
+        return {**row, "limit": limit, "offset": offset}
+
     def all_result_references(self) -> list[dict[str, object]]:
         """Return every stored backtest result reference across all owners.
 

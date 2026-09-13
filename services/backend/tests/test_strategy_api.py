@@ -36,7 +36,9 @@ def _task(client: TestClient) -> dict[str, object]:
     return response.json()
 
 
-def test_strategy_queries_remain_exact_beyond_generic_200_row_limit(monkeypatch) -> None:
+@pytest.mark.parametrize("version_count", [205, 1005])
+@pytest.mark.parametrize("projection", ["versions", "backtest-count"])
+def test_strategy_queries_remain_exact_beyond_generic_200_row_limit(monkeypatch, version_count, projection) -> None:
     store = ResearchStore()
     backtests = BacktestJobStore()
     monkeypatch.setattr(main, "research_store", store)
@@ -63,22 +65,31 @@ def test_strategy_queries_remain_exact_beyond_generic_200_row_limit(monkeypatch)
                       jsonb_build_object('strategy_id', 'ScaleStrategy', 'version_id', 'v-' || n),
                       repeat('a', 64), '[]'::jsonb, 'scale-trace', 'scale-version-' || n,
                       repeat('b', 64), now(), now(), 1
-               FROM generate_series(1, 205) AS n""",
-            {"task_id": task["task_id"]},
+               FROM generate_series(1, :version_count) AS n""",
+            {"task_id": task["task_id"], "version_count": version_count},
         )
 
     first = client.get("/v1/research/strategies?lifecycle=active&limit=50&offset=0")
     assert first.status_code == 200
-    assert first.json()["total"] == 205
+    assert first.json()["total"] == version_count
     assert len(first.json()["strategies"]) == 50
-    last = client.get("/v1/research/strategies?lifecycle=active&limit=50&offset=200")
+    last = client.get(f"/v1/research/strategies?lifecycle=active&limit=50&offset={version_count - 5}")
     assert len(last.json()["strategies"]) == 5
-    history = client.get("/v1/research/strategies/ScaleStrategy/versions")
-    assert len(history.json()["versions"]) == 205
+    if projection == "versions":
+        history = client.get("/v1/research/strategies/ScaleStrategy/versions")
+        assert history.json()["total"] == version_count
+        assert len(history.json()["versions"]) == min(1000, version_count)
+        tail = client.get("/v1/research/strategies/ScaleStrategy/versions?offset=1000").json()
+        assert tail["total"] == version_count
+        assert len(tail["versions"]) == max(0, version_count - 1000)
+        assert len({r["artifact_id"] for r in history.json()["versions"] + tail["versions"]}) == version_count
     counts = client.get("/v1/research/strategies/ScaleStrategy/backtest-count")
-    assert counts.json()["version_count"] == 205
+    assert counts.json()["version_count"] == version_count
     assert counts.json()["backtest_count"] == 0
-    assert len(counts.json()["by_version"]) == 205
+    assert len(counts.json()["by_version"]) == min(1000, version_count)
+    tail_counts = client.get("/v1/research/strategies/ScaleStrategy/backtest-count?offset=1000").json()
+    assert tail_counts["version_count"] == version_count
+    assert len(tail_counts["by_version"]) == max(0, version_count - 1000)
     backtests.close()
     store.close()
 
@@ -472,10 +483,30 @@ def test_strategy_version_history_and_backtest_count(monkeypatch, tmp_path) -> N
     job = submit.json()["job"]
     assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "completed"
 
+    # Place the actual completed job's version beyond the first 1000 versions.
+    with store._transaction() as connection:
+        execute(connection, """INSERT INTO artifacts
+            (artifact_id, task_id, experiment_id, owner_principal, kind, status, content,
+             content_sha256, lineage, trace_id, idempotency_key, request_hash, created_at, updated_at, version)
+            SELECT 'artifact_' || lpad(to_hex(n),32,'0'), task_id, NULL, owner_principal,
+                   kind, status, content || jsonb_build_object('version_id','later-' || n),
+                   content_sha256, lineage, trace_id, 'scale-later-' || n, request_hash,
+                   now(), now(), 1
+            FROM artifacts CROSS JOIN generate_series(1,1000) n
+            WHERE artifact_id=:original""", {"original": version["artifact"]["artifact_id"]})
+
     count1 = client.get(f"/v1/research/strategies/{strategy_id}/backtest-count", headers=_owner_headers())
     assert count1.status_code == 200
     assert count1.json()["backtest_count"] == 1
-    assert count1.json()["version_count"] == 1
+    assert count1.json()["version_count"] == 1001
+    assert len(count1.json()["by_version"]) == 1000
+    assert version["artifact"]["artifact_id"] not in count1.json()["by_version"]
+    tail = client.get(f"/v1/research/strategies/{strategy_id}/backtest-count?offset=1000", headers=_owner_headers()).json()
+    assert tail["backtest_count"] == 1
+    assert tail["by_version"] == {version["artifact"]["artifact_id"]: 1}
+    foreign = client.get(f"/v1/research/strategies/{strategy_id}/backtest-count", headers=_owner_headers("other-user")).json()
+    assert foreign["version_count"] == foreign["backtest_count"] == 0
+    assert foreign["by_version"] == {}
     store.close()
     jobs.close()
 
@@ -488,7 +519,7 @@ def test_strategy_projection_rejects_invalid_identifier_with_422(suffix):
 
 
 @pytest.mark.parametrize("suffix,store_kind", [
-    ("versions", "research"), ("backtest-count", "research"), ("backtest-count", "backtest"),
+    ("versions", "research"), ("backtest-count", "backtest"),
 ])
 def test_strategy_projection_storage_error_is_safe_503(monkeypatch, suffix, store_kind):
     from app.research import ResearchPersistenceError
@@ -497,12 +528,19 @@ def test_strategy_projection_storage_error_is_safe_503(monkeypatch, suffix, stor
         error = ResearchPersistenceError if store_kind == "research" else BacktestStorageError
         raise error("synthetic-private-connection-details")
     if store_kind == "research":
-        monkeypatch.setattr(main.research_store, "list_strategy_versions", failed)
+        monkeypatch.setattr(main.research_store, "strategy_version_page", failed)
     else:
-        monkeypatch.setattr(main.research_store, "list_strategy_versions", lambda **kwargs: [])
-        monkeypatch.setattr(main.backtest_store, "count_by_strategy_versions", failed)
+        monkeypatch.setattr(main.backtest_store, "strategy_counts", failed)
     client = TestClient(main.app, raise_server_exceptions=False)
     response = client.get(f"/v1/research/strategies/ValidStrategy/{suffix}", headers=_owner_headers())
     assert response.status_code == 503, response.text
     assert "synthetic-private" not in response.text
     assert response.json()["detail"] == f"{store_kind} storage is unavailable"
+
+
+@pytest.mark.parametrize("suffix", ["versions", "backtest-count"])
+@pytest.mark.parametrize("query", ["limit=0", "limit=1001", "offset=-1"])
+def test_strategy_projection_rejects_invalid_pagination(suffix, query):
+    client = TestClient(main.app, raise_server_exceptions=False)
+    response = client.get(f"/v1/research/strategies/ValidStrategy/{suffix}?{query}", headers=_owner_headers())
+    assert response.status_code == 422, response.text

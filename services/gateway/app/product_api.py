@@ -1151,21 +1151,21 @@ def product_strategy_draft_delete(artifact_id: str, request: Request) -> dict[st
 
 
 @router.get("/strategies/{strategy_id}/versions")
-def product_strategy_versions(strategy_id: str, request: Request) -> dict[str, object]:
+def product_strategy_versions(strategy_id: str, request: Request, limit: int = 1000, offset: int = 0) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
         "GET",
-        f"/v1/research/strategies/{strategy_id}/versions",
+        f"/v1/research/strategies/{strategy_id}/versions?{urlencode({'limit': limit, 'offset': offset})}",
         headers=_trusted_agent_headers(request),
     )
 
 
 @router.get("/strategies/{strategy_id}/backtest-count")
-def product_strategy_backtest_count(strategy_id: str, request: Request) -> dict[str, object]:
+def product_strategy_backtest_count(strategy_id: str, request: Request, limit: int = 1000, offset: int = 0) -> dict[str, object]:
     _product_principal(request)
     return _backend_request(
         "GET",
-        f"/v1/research/strategies/{strategy_id}/backtest-count",
+        f"/v1/research/strategies/{strategy_id}/backtest-count?{urlencode({'limit': limit, 'offset': offset})}",
         headers=_trusted_agent_headers(request),
     )
 
