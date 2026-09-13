@@ -41,3 +41,22 @@ class H5TopologyTest(unittest.TestCase):
             if change == 'extra_service': value['services']['unreviewed'] = {'image': 'unknown'}
             with self.subTest(change=change), self.assertRaises(ValueError):
                 validate_candidate(value)
+
+    def test_actual_network_must_match_scope_driver_and_isolation(self):
+        from copy import deepcopy
+        from tests.dsh_upgrade.h5_stack import LABEL, inspect_networks
+        value = manifest('byq-h5-candidate')
+        rows = [{'Name': spec['name'], 'Internal': spec['internal'], 'Driver': 'bridge',
+                 'Labels': {LABEL: value['name']}, 'Ingress': False}
+                for spec in value['networks'].values()]
+        inspect_networks(value, rows)
+        for change in ('external', 'driver', 'label', 'missing', 'duplicate', 'ingress'):
+            altered = deepcopy(rows)
+            if change == 'external': altered[0]['Internal'] = False
+            if change == 'driver': altered[0]['Driver'] = 'host'
+            if change == 'label': altered[0]['Labels'][LABEL] = 'different'
+            if change == 'missing': altered.pop()
+            if change == 'duplicate': altered[-1] = altered[0]
+            if change == 'ingress': altered[0]['Ingress'] = True
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                inspect_networks(value, altered)

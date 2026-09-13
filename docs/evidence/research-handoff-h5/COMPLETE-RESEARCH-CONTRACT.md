@@ -42,3 +42,9 @@ h5_signal_probe.py 经真实回环HTTP触发子进程，对两标的合成单日
 探针容器自动删除后docker ps -a精确名称查询为零。未使用模型、未创建回测、未写研究完成结果，不替代H5三轮研究验收。
 
 候选原始配置增加 validate_candidate 完整匹配生成定义；七类变更（模型网络、密钥、沙箱数据库网络、主机挂载、特权、伪造授权标记、额外服务）均拒绝。H5栈与采集合同共8项通过。它只验证原始配置，不能证明实际容器状态或授予模型运行权限；运行态preflight和cleanup仍待接入。
+
+## 实际网络 preflight 切片
+
+inspect_networks 对Docker实际inspect结果核对精确4网络集合、bridge驱动、scope标签、Internal属性并拒绝Ingress。4项栈合同测试通过，包含6种实际网络结果变更反例。
+已实际创建独立随机byq-h5-netcheck作用域的4个空Docker网络并读取inspect通过；无容器、无数据连接。finally按本次创建的精确ID删除，按scope标签复查剩余零。
+此证据只覆盖网络，实际容器镜像/进程/环境/挂载/健康和整栈清理检查仍待实现，H5未完成。

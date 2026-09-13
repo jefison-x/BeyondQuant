@@ -61,3 +61,18 @@ def validate_candidate(value: object) -> dict:
     if value != expected:
         raise ValueError('H5 candidate was altered or uses a different build')
     return value
+
+
+def inspect_networks(value: dict, networks: list[dict]) -> None:
+    """Check actual Docker network inspect rows; never trusts Compose alone."""
+    validate_candidate(value)
+    expected = {item['name']: item for item in value['networks'].values()}
+    if len(networks) != len(expected) or {item.get('Name') for item in networks} != set(expected):
+        raise ValueError('exact H5 networks required')
+    for actual in networks:
+        spec = expected[actual['Name']]
+        if (actual.get('Internal') is not spec['internal'] or actual.get('Driver') != 'bridge'
+                or actual.get('Labels', {}).get(LABEL) != value['name']):
+            raise ValueError('actual H5 network isolation differs from candidate')
+        if actual.get('Ingress') is True:
+            raise ValueError('swarm ingress cannot be used for H5')
