@@ -24,3 +24,21 @@
 仍缺真实隔离服务栈、已授权模型执行器、逐轮工具时序及实际对象回读；H5仍未完成。
 
 补充六个读取位置分别缺失/超时的12个反例，要求停止在原位置、无重复路径、无替代对象；当前5项合同测试通过。仍为内部夹具测试，没有实际三轮研究或模型执行。
+
+## 独立 H5 栈候选
+
+新增 h5_stack.manifest 复用旧验收栈生成器的封闭服务定义，使用独立 byq-h5 资源命名/标签；不读取部署Compose或.env，不继承模型密钥。
+补 signal-worker 与 signal-sandbox 后共10服务。沙箱仅在内部signal网络，不带数据库/模型环境或持久卷；原model网络设internal，Runtime模型key为空，配置明确execution-authorized=false。
+实际高层回测由Backend run_backtest_job/BacktestWorker.run_once执行，未加入不必要的常驻回测worker。
+两项配置测试和 docker compose --env-file /dev/null ... config --quiet通过；未构建、启动或访问真实Provider。
+仍需镜像当前源码/依赖可用性核查、完整栈只读preflight及cleanup、合成行情准备、真实模型与审批/许可/三轮工具链验收。配置存在不算运行资格。
+
+## 信号组件实际启动探针
+
+当前signal-worker源码在无网络容器成功import；临时屏蔽packages目录后仍通过，未发现猜测的缺失模块问题。
+当前signal-sandbox server.py/runner.py只读挂载到保留依赖镜像 sha256:f30b6907408456886521e419dfd6fe1affcdc4c04a398a2c4a67ee43c5ddbefc；这是当前源码组件探针，不是新镜像构建验收。
+容器network=none、只读根、32MiB noexec tmpfs、全部cap移除、896MiB/1CPU/32pid限制；无DB或Provider密钥。
+h5_signal_probe.py 经真实回环HTTP触发子进程，对两标的合成单日输入产出精确两个信号，禁止import os被source_rejected拒绝。
+探针容器自动删除后docker ps -a精确名称查询为零。未使用模型、未创建回测、未写研究完成结果，不替代H5三轮研究验收。
+
+候选原始配置增加 validate_candidate 完整匹配生成定义；七类变更（模型网络、密钥、沙箱数据库网络、主机挂载、特权、伪造授权标记、额外服务）均拒绝。H5栈与采集合同共8项通过。它只验证原始配置，不能证明实际容器状态或授予模型运行权限；运行态preflight和cleanup仍待接入。
