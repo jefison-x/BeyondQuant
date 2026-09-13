@@ -1,13 +1,15 @@
 """Exact factor-result reuse under the existing Artifact submission lock."""
+from contextlib import nullcontext
+
 from .db import execute, fetch_one
 from .factor_research import prepare_factor_input
 from .research import IdempotencyConflict, ResearchNotFound, _identifier, _idempotency_key
 
 
-def submit_factor(store, payload, context, compute):
+def submit_factor(store, payload, context, compute, *, _connection=None):
     task_id = _identifier(payload.get('task_id'), field='task_id')
     key = _idempotency_key(payload.get('idempotency_key'))
-    with store._transaction() as connection:
+    with (store._transaction() if _connection is None else nullcontext(_connection)) as connection:
         execute(connection, "SET LOCAL lock_timeout = '2s'")
         execute(connection, 'SELECT pg_advisory_xact_lock(hashtext(:scope))',
                 {'scope': f'research-artifact|{task_id}|{key}'})

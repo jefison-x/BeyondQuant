@@ -61,6 +61,7 @@ def test_failed_input_new_key_never_runs_and_one_repair_survives_restart(observe
 @pytest.mark.parametrize("action,path", [
     ("byq_strategy_validate", "/v1/research/strategies/validate"),
     ("byq_ml_strategy_create", "/v1/research/ml/strategies/versions"),
+    ("byq_factor_compute", "/v1/research/factors/compute"),
 ])
 def test_cancel_waits_for_inflight_atomic_artifact_commit(observed, monkeypatch, action, path):
     from threading import Event
@@ -79,6 +80,10 @@ def test_cancel_waits_for_inflight_atomic_artifact_commit(observed, monkeypatch,
     payload = {"task_id": evidence["task_id"], "agent_run_id": evidence["agent_run_id"],
         "idempotency_key": "inflight-commit", "trace_id": "trace-test",
         "strategy": strategy_payload() if action == "byq_strategy_validate" else valid_strategy()}
+    if action == "byq_factor_compute":
+        from test_factor_research import factor_payload
+        payload.pop("strategy")
+        payload = factor_payload(**payload)
     store.consume_domain_call_evidence({**evidence,
         **request_evidence(action, payload, trace_id="trace-test"), "sequence": 3}, **scope)
     headers = {**ctx, "x-byq-root-run-id": evidence["root_run_id"]}

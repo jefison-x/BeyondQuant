@@ -71,7 +71,7 @@ from .credentials import (
     CredentialUnavailable,
     authorize_resolver,
 )
-from .factor_research import compute_factor
+from .factor_research import FactorValidationError, compute_factor
 from .factor_submission import submit_factor
 from .backtest import (
     BacktestConflict,
@@ -1668,7 +1668,7 @@ def list_security_master(
 def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return operation()
-    except MLValidationError as error:
+    except (MLValidationError, FactorValidationError) as error:
         raise HTTPException(status_code=422, detail=error.public_problem()) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
@@ -2152,11 +2152,16 @@ def list_artifacts(request: Request) -> dict[str, object]:
 def compute_research_factor(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
 
-    def operation() -> dict[str, object]:
-        _owned_research_entity("research_task", payload.get("task_id"), context)
-        return submit_factor(research_store, payload, context, compute_factor)
+    def operation(data, connection) -> dict[str, object]:
+        try:
+            return submit_factor(research_store, data, context, compute_factor, _connection=connection)
+        except FactorValidationError as error:
+            if connection is not None:
+                raise DomainValidationRejected("factor validation failed", validation_error=error) from error
+            raise
 
-    return _research_call(operation)
+    return _research_call(lambda: _domain_validation_operation(request, payload, context,
+        "byq_factor_compute", operation))
 
 
 def _domain_validation_operation(request, payload, context, action, operation):

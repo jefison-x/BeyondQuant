@@ -585,7 +585,8 @@ async function byqMarketFundamentals(args: MarketFundamentalsRequest, extra: unk
 
 async function byqFactorCompute(args: FactorComputeRequest, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqFactorCompute(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqFactorCompute(BACKEND_URL, { ...args, trace_id: context.trace_id },
+    evidenceBoundedFetcher(trustedBackendFetcher(context), rootHeader(extra))) : agentContextUnavailable();
 }
 
 async function byqStrategyDraftSave(args: StrategyRequest, extra: unknown) {
@@ -1189,49 +1190,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_factor_compute",
     {
       description: "Validate and compute a deterministic BYQ factor from point-in-time snapshots.",
-      inputSchema: {
-        task_id: z.string(),
-        experiment_id: z.string().optional(),
-        trace_id: z.string(),
-        idempotency_key: z.string(),
-        as_of_date: z.string(),
-        factor: z.object({
-          name: z.enum(["daily_return", "momentum"]),
-          version: z.string(),
-          lookback: z.number().int().min(1).max(252),
-        }),
-        securities: z.array(z.object({
-          symbol: z.string(),
-          exchange: z.string().optional(),
-          asset_type: z.enum(["stock", "etf"]),
-          list_date: z.string().nullable().optional(),
-          delist_date: z.string().nullable().optional(),
-        })),
-        sessions: z.array(z.object({ trade_date: z.string(), is_open: z.boolean() })),
-        statuses: z.array(z.object({
-          symbol: z.string(),
-          trade_date: z.string(),
-          state: z.enum(["trading", "suspended"]),
-          reason: z.string().nullable().optional(),
-        })).optional(),
-        bars: z.array(z.object({
-          symbol: z.string(),
-          trade_date: z.string(),
-          open: z.number(),
-          high: z.number(),
-          low: z.number(),
-          close: z.number(),
-        })),
-        universe_snapshots: z.array(z.object({ snapshot_date: z.string(), symbols: z.array(z.string()) })),
-        sources: z.array(z.object({
-          provider: z.string(),
-          endpoint: z.string(),
-          request_fingerprint: z.string(),
-          dataset_id: z.string(),
-          announcement_date: z.string().nullable().optional(),
-          effective_date: z.string().nullable().optional(),
-        })),
-      },
+      inputSchema: domainValidationSchemas.byq_factor_compute,
     },
     (args) => byqFactorCompute(args, trustedContext),
   );

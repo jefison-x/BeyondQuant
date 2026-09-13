@@ -17,12 +17,13 @@ const official = createMcpHandler(() => {
   };
   server.registerTool("byq_strategy_validate", { inputSchema: domainValidationSchemas.byq_strategy_validate }, run);
   server.registerTool("byq_ml_strategy_create", { inputSchema: domainValidationSchemas.byq_ml_strategy_create }, run);
+  server.registerTool("byq_factor_compute", { inputSchema: domainValidationSchemas.byq_factor_compute }, run);
   return server;
 });
 const handler = toNodeHandler(observeDomainSchemaFailures(official, async (failure, request) => {
   assert.equal(request.headers.get("x-byq-root-run-id"), "a".repeat(32));
   observations.push(failure);
-  if (observations.length > 2) return safeDomainAdmission({ detail: {
+  if (observations.length > Object.keys(domainValidationSchemas).length) return safeDomainAdmission({ detail: {
     schema_version: "domain-call-admission.v1", state: "blocked", reason: "correction_budget_exhausted",
   } });
 }));
@@ -50,7 +51,7 @@ try {
     trace_id: "trace-one", strategy: { strategy_id: "synthetic", name: "合成", category: "custom", script: "invalid Python" } };
   const reply = await client.callTool({ name: "byq_strategy_validate", arguments: valid });
   assert.notEqual(reply.isError, true);
-  assert.equal(observations.length, 2);
+  assert.equal(observations.length, Object.keys(domainValidationSchemas).length);
   assert.equal(executions, 1); // schema acceptance is not Python validation
   const stopped = await client.callTool({ name: "byq_strategy_validate", arguments: { task_id: "task-one" } });
   assert.equal(stopped.isError, true);
@@ -58,7 +59,7 @@ try {
   assert.equal(JSON.parse(content[0].text).backend.admission.stop, true);
   assert.match(content[1].text, /(?:Invalid|validation|invalid)/);
   assert.equal(executions, 1); // stop decoration cannot invoke the SDK callback
-  console.log("domain-schema-observation: official SDK rejection preserved for both tools");
+  console.log("domain-schema-observation: official SDK rejection preserved for each qualified tool");
 } finally {
   await client.close();
   await new Promise<void>((resolve, reject) => http.close(error => error ? reject(error) : resolve()));

@@ -15,7 +15,7 @@ const researchContext = { schema_version: "research-task-context.v1", status: "a
 const backend = createServer(async (req, res) => {
   if (req.method === "GET") {
     assert.ok(["/v1/agent/data-demand-notifications", "/v1/agent/research-context"].includes(req.url ?? ""));
-    assert.equal(req.headers["x-byq-root-run-id"], undefined); // private header is limited to the two admitted actions
+    assert.equal(req.headers["x-byq-root-run-id"], undefined); // private header is limited to qualified admitted actions
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify(req.url === "/v1/agent/research-context" ? researchContext : { notifications: [] }));
     return;
@@ -35,6 +35,9 @@ const backend = createServer(async (req, res) => {
     result = { detail: { schema_version: "domain-call-admission.v1",
       state: schemaCalls === 1 ? "correctable_failure" : "blocked",
       reason: schemaCalls === 1 ? "domain_validation_failed" : "correction_budget_exhausted" } };
+  } else if (req.url === "/v1/research/factors/compute") {
+    status = 409;
+    result = { detail: { schema_version: "domain-call-admission.v1", state: "blocked", reason: "correction_budget_exhausted" } };
   } else if (requests.length === 1) {
     status = 425;
     result = { detail: { schema_version: "domain-call-admission.v1", state: "blocked", reason: "call_evidence_pending" } };
@@ -92,6 +95,16 @@ try {
   assert.match(content[1].text, /(?:Invalid|validation|invalid)/);
   assert.equal(requests.filter(item => item.path === "/v1/research/strategies/validate").length, 2);
   assert.equal(schemaCalls, 2);
+  const factor = await client.callTool({ name: "byq_factor_compute", arguments: {
+    task_id: "task-wire", agent_run_id: "run-wire", trace_id: "untrusted", idempotency_key: "factor-wire",
+    as_of_date: "20260831", factor: { name: "momentum", version: "1", lookback: 2 },
+    securities: [], sessions: [], bars: [], universe_snapshots: [], sources: [],
+  } });
+  assert.equal(factor.isError, true);
+  assert.equal(JSON.parse((factor.content as Array<{ text: string }>)[0].text).backend.admission.stop, true);
+  assert.equal(requests.at(-1)?.path, "/v1/research/factors/compute");
+  assert.equal(requests.at(-1)?.body.trace_id, "trace-wire");
+  assert.equal(requests.at(-1)?.body.agent_run_id, "run-wire");
   console.log("domain-server-wire: trusted factory root, exact pending resend, SDK rejection and closed stop PASS");
 } finally {
   await client.close();

@@ -1,3 +1,4 @@
+import { safeDomainAdmission } from "./domain-admission.js";
 import { unknownArtifactWriteResult } from "./write-outcome.js";
 
 const BACKEND_TIMEOUT_MS = 8000;
@@ -55,7 +56,9 @@ export async function fetchByqFactorCompute(
         {
           service: "beyondquant-mcp",
           status: "error",
-          backend: { status: errorStatus(response.status), http_status: response.status },
+          backend: { status: errorStatus(response.status), http_status: response.status,
+            ...(safeDomainAdmission(payload) ? { admission: safeDomainAdmission(payload) } : {}),
+            ...(safeFactorValidation(payload) ? { validation: safeFactorValidation(payload) } : {}) },
         },
         true,
       );
@@ -72,4 +75,19 @@ export async function fetchByqFactorCompute(
   } catch {
     return unknown();
   }
+}
+
+
+export function safeFactorValidation(payload: unknown) {
+  const detail = (payload as any)?.detail;
+  const value = detail?.validation ?? detail;
+  if (!value || value.schema_version !== "factor-validation-problem.v1"
+      || !["request", "as_of_date", "factor", "factor.name", "factor.version", "factor.lookback",
+           "securities", "sessions", "statuses", "bars", "universe_snapshots", "sources"].includes(value.field)
+      || !["invalid_input", "object_required", "unknown_fields", "text_required", "date_format",
+           "unsupported_value", "out_of_range"].includes(value.code)) return undefined;
+  return { schema_version: "factor-validation-problem.v1", field: value.field, code: value.code,
+    repair_limit: 1, next_action: "correct_once",
+    ...(value.field === "factor.name" && value.code === "unsupported_value"
+      ? { allowed_values: ["daily_return", "momentum"] } : {}) };
 }

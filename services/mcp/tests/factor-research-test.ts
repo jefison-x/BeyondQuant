@@ -57,3 +57,17 @@ for (const failure of ['transport', 'missing-artifact', 'wrong-task', 'wrong-man
   assert.doesNotMatch(response.content[0].text, /private transport|task_other/);
 }
 console.log('Factor recovery PASS: exact original artifact lookup and no automatic write replay');
+
+for (const reason of ["domain_validation_failed", "unchanged_failed_input", "correction_budget_exhausted"]) {
+  const translated = await fetchByqFactorCompute("http://backend", request, async () => Response.json({ detail: {
+    schema_version: "domain-call-admission.v1", state: reason === "domain_validation_failed" ? "correctable_failure" : "blocked",
+    reason, ...(reason === "domain_validation_failed" ? { validation: {
+      schema_version: "factor-validation-problem.v1", field: "factor.name", code: "unsupported_value",
+      allowed_values: ["private-value"], message: "secret" } } : {}),
+  } }, { status: reason === "domain_validation_failed" ? 422 : 409 }));
+  const body = JSON.parse(translated.content[0].text);
+  assert.equal(translated.isError, true);
+  assert.equal(body.backend.admission.stop, reason !== "domain_validation_failed");
+  assert.doesNotMatch(translated.content[0].text, /private-value|secret/);
+  if (reason === "domain_validation_failed") assert.deepEqual(body.backend.validation.allowed_values, ["daily_return", "momentum"]);
+}

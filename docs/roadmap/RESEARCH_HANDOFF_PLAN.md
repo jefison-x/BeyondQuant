@@ -88,3 +88,6 @@ H4 继续：四类实际HTTP提交的丢回执/Backend重启/新进程原键只�
 
 H4/H5 数据修复重复请求：完整已验证指数月份可复用缓存，缺失月份才取数，证据损坏停止。
 [验收与真实覆盖缺口](../evidence/research-handoff-h4/INDEX-REPAIR-CACHE.md)；H5完整研究尚未完成。
+
+H4 因子有界纠错：完成独立官方观察资格、持久计次、同事务结果回执和原生停止接入，
+见[FACTOR-CORRECTION](../evidence/research-handoff-h4/FACTOR-CORRECTION.md)。H4全接口及H5继续执行。

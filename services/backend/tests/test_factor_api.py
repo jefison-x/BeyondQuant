@@ -43,6 +43,7 @@ def test_factor_endpoint_persists_factor_result_artifact(monkeypatch) -> None:
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["factor"]["reproducibility"] == "reproducible"
+    assert store._fetch_one("SELECT count(*) AS n FROM agent_domain_call_claims")["n"] == 0
     assert body["artifact"]["kind"] == "factor_result"
     assert body["artifact"]["lineage"][-1]["kind"] == "factor_input"
 

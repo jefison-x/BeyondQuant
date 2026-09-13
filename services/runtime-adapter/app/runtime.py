@@ -1236,7 +1236,8 @@ class RuntimeAdapter:
                 )
                 if self._root_scoped and source_run is run and runtime_activity:
                     if observation.kind == "tool.call" and observation.tool_name in {
-                            "mcp__byq__byq_strategy_validate", "mcp__byq__byq_ml_strategy_create"}:
+                            "mcp__byq__byq_strategy_validate", "mcp__byq__byq_ml_strategy_create",
+                            "mcp__byq__byq_factor_compute"}:
                         if (len(run.domain_calls) >= 1024
                                 or record.journal is not None and len(record.journal.state["calls"]) >= 1024):
                             run.domain_stop_code = "domain-call-retention-bound"

@@ -18,13 +18,15 @@ export async function boundedBody(request: Request): Promise<unknown> {
       const chunk = await reader.read();
       if (chunk.done) break;
       size += chunk.value.byteLength;
-      if (size > 512 * 1024) return undefined;
+      if (size > 4 * 1024 * 1024) return undefined;
       chunks.push(chunk.value);
     }
     const bytes = new Uint8Array(size);
     let offset = 0;
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    const body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    if (size > 512 * 1024 && body?.params?.name !== "byq_factor_compute") return undefined;
+    return body;
   } catch {
     return undefined; // Missing proof is never execution permission.
   } finally {

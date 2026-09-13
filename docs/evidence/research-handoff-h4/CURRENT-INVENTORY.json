@@ -4,7 +4,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 326,
+      "line": 327,
       "method": "GET",
       "path": "/healthz",
       "handler": "healthz",
@@ -13,7 +13,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 331,
+      "line": 332,
       "method": "GET",
       "path": "/readyz",
       "handler": "readyz",
@@ -22,7 +22,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 377,
+      "line": 378,
       "method": "POST",
       "path": "/v1/product/conversations",
       "handler": "create_conversation",
@@ -31,7 +31,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 384,
+      "line": 385,
       "method": "GET",
       "path": "/v1/product/conversations",
       "handler": "list_conversations",
@@ -40,7 +40,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 397,
+      "line": 398,
       "method": "GET",
       "path": "/v1/product/conversations/by-runtime/{session_id}",
       "handler": "conversation_by_runtime",
@@ -49,7 +49,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 404,
+      "line": 405,
       "method": "GET",
       "path": "/v1/product/conversations/{conversation_id}",
       "handler": "get_conversation",
@@ -58,7 +58,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 413,
+      "line": 414,
       "method": "POST",
       "path": "/v1/product/conversations/{conversation_id}/messages",
       "handler": "append_conversation_message",
@@ -67,7 +67,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 428,
+      "line": 429,
       "method": "POST",
       "path": "/internal/agent-lifecycle/{conversation_id}",
       "handler": "consume_agent_lifecycle",
@@ -76,7 +76,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 459,
+      "line": 460,
       "method": "POST",
       "path": "/internal/task-continuation/{reservation_id}/authorize-tool",
       "handler": "authorize_continuation_tool",
@@ -85,7 +85,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 466,
+      "line": 467,
       "method": "POST",
       "path": "/internal/task-continuation/{conversation_id}/claim",
       "handler": "claim_task_continuation",
@@ -94,7 +94,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 473,
+      "line": 474,
       "method": "POST",
       "path": "/internal/task-continuation/{conversation_id}/peek",
       "handler": "peek_task_continuation",
@@ -103,7 +103,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 480,
+      "line": 481,
       "method": "POST",
       "path": "/internal/task-continuation/{task_id}/dispatch",
       "handler": "dispatch_task_continuation",
@@ -112,7 +112,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 489,
+      "line": 490,
       "method": "POST",
       "path": "/internal/task-continuation/{task_id}/block",
       "handler": "block_task_continuation",
@@ -121,7 +121,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 497,
+      "line": 498,
       "method": "POST",
       "path": "/internal/task-continuation/{task_id}/receipt",
       "handler": "record_task_continuation_receipt",
@@ -130,7 +130,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 508,
+      "line": 509,
       "method": "POST",
       "path": "/internal/domain-call-evidence/{conversation_id}",
       "handler": "consume_domain_call_evidence",
@@ -139,7 +139,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 528,
+      "line": 529,
       "method": "PATCH",
       "path": "/v1/product/conversations/{conversation_id}",
       "handler": "update_conversation",
@@ -148,7 +148,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 535,
+      "line": 536,
       "method": "DELETE",
       "path": "/v1/product/conversations/{conversation_id}",
       "handler": "delete_conversation",
@@ -157,7 +157,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 567,
+      "line": 568,
       "method": "GET",
       "path": "/v1/feedback/options",
       "handler": "feedback_options",
@@ -166,7 +166,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 573,
+      "line": 574,
       "method": "GET",
       "path": "/v1/feedback/items",
       "handler": "feedback_items",
@@ -175,7 +175,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 585,
+      "line": 586,
       "method": "POST",
       "path": "/v1/feedback/items",
       "handler": "feedback_create",
@@ -184,7 +184,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 594,
+      "line": 595,
       "method": "GET",
       "path": "/v1/feedback/items/{feedback_id}",
       "handler": "feedback_get",
@@ -193,7 +193,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 602,
+      "line": 603,
       "method": "PUT",
       "path": "/v1/feedback/items/{feedback_id}",
       "handler": "feedback_update",
@@ -202,7 +202,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 611,
+      "line": 612,
       "method": "GET",
       "path": "/v1/feedback/items/{feedback_id}/revisions",
       "handler": "feedback_revisions",
@@ -211,7 +211,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 621,
+      "line": 622,
       "method": "POST",
       "path": "/v1/feedback/items/{feedback_id}/preview",
       "handler": "feedback_preview",
@@ -220,7 +220,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 633,
+      "line": 634,
       "method": "POST",
       "path": "/v1/feedback/items/{feedback_id}/submit",
       "handler": "feedback_submit",
@@ -229,7 +229,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 654,
+      "line": 655,
       "method": "POST",
       "path": "/v1/feedback/items/{feedback_id}/withdraw",
       "handler": "feedback_withdraw",
@@ -238,7 +238,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 662,
+      "line": 663,
       "method": "GET",
       "path": "/v1/feedback/moderation/items",
       "handler": "feedback_moderation_items",
@@ -247,7 +247,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 673,
+      "line": 674,
       "method": "GET",
       "path": "/v1/feedback/moderation/items/{feedback_id}",
       "handler": "feedback_moderation_get",
@@ -256,7 +256,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 679,
+      "line": 680,
       "method": "GET",
       "path": "/v1/feedback/moderation/items/{feedback_id}/audit",
       "handler": "feedback_moderation_audit",
@@ -265,7 +265,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 689,
+      "line": 690,
       "method": "POST",
       "path": "/v1/feedback/moderation/items/{feedback_id}/{action}",
       "handler": "feedback_moderate",
@@ -274,7 +274,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 697,
+      "line": 698,
       "method": "GET",
       "path": "/v1/feedback/moderation/publisher-status",
       "handler": "feedback_publisher_status",
@@ -283,7 +283,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 711,
+      "line": 712,
       "method": "POST",
       "path": "/internal/feedback-publications/heartbeat",
       "handler": "feedback_publisher_heartbeat",
@@ -292,7 +292,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 717,
+      "line": 718,
       "method": "POST",
       "path": "/internal/feedback-publications/claim",
       "handler": "feedback_publication_claim",
@@ -301,7 +301,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 723,
+      "line": 724,
       "method": "POST",
       "path": "/internal/feedback-publications/{event_id}/complete",
       "handler": "feedback_publication_complete",
@@ -310,7 +310,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 729,
+      "line": 730,
       "method": "POST",
       "path": "/internal/feedback-publications/{event_id}/retry",
       "handler": "feedback_publication_retry",
@@ -319,7 +319,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 743,
+      "line": 744,
       "method": "POST",
       "path": "/internal/feedback-hub/heartbeat",
       "handler": "feedback_hub_heartbeat",
@@ -328,7 +328,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 749,
+      "line": 750,
       "method": "POST",
       "path": "/internal/feedback-hub/claim",
       "handler": "feedback_hub_claim",
@@ -337,7 +337,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 755,
+      "line": 756,
       "method": "POST",
       "path": "/internal/feedback-hub/{event_id}/complete",
       "handler": "feedback_hub_complete",
@@ -346,7 +346,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 761,
+      "line": 762,
       "method": "POST",
       "path": "/internal/feedback-hub/{event_id}/retry",
       "handler": "feedback_hub_retry",
@@ -355,7 +355,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 767,
+      "line": 768,
       "method": "GET",
       "path": "/internal/feedback-hub/status-candidates",
       "handler": "feedback_hub_status_candidates",
@@ -364,7 +364,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 773,
+      "line": 774,
       "method": "POST",
       "path": "/internal/feedback-hub/{event_id}/status",
       "handler": "feedback_hub_status",
@@ -373,7 +373,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 779,
+      "line": 780,
       "method": "GET",
       "path": "/v1/operations/overview",
       "handler": "operations_overview",
@@ -382,7 +382,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 788,
+      "line": 789,
       "method": "PUT",
       "path": "/v1/operations/budget",
       "handler": "operations_budget_update",
@@ -391,7 +391,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 799,
+      "line": 800,
       "method": "GET",
       "path": "/v1/plugin-center",
       "handler": "plugin_center_projection",
@@ -400,7 +400,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 806,
+      "line": 807,
       "method": "GET",
       "path": "/v1/plugin-center/plugins/{plugin_id}",
       "handler": "plugin_center_detail",
@@ -409,7 +409,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 813,
+      "line": 814,
       "method": "POST",
       "path": "/v1/plugin-center/changes",
       "handler": "plugin_center_change",
@@ -418,7 +418,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 822,
+      "line": 823,
       "method": "POST",
       "path": "/v1/plugin-center/qualifications",
       "handler": "plugin_center_qualification",
@@ -427,7 +427,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 831,
+      "line": 832,
       "method": "GET",
       "path": "/internal/plugin-center/requests/{request_id}",
       "handler": "plugin_deployment_input",
@@ -436,7 +436,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 838,
+      "line": 839,
       "method": "POST",
       "path": "/internal/plugin-center/requests/{request_id}/result",
       "handler": "plugin_deployment_result",
@@ -445,7 +445,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 845,
+      "line": 846,
       "method": "GET",
       "path": "/v1/data/daily",
       "handler": "daily_data",
@@ -454,7 +454,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 897,
+      "line": 898,
       "method": "POST",
       "path": "/v1/data/research/valuation",
       "handler": "research_valuation",
@@ -463,7 +463,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 909,
+      "line": 910,
       "method": "POST",
       "path": "/v1/data/research/daily",
       "handler": "research_daily",
@@ -472,7 +472,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 923,
+      "line": 924,
       "method": "GET",
       "path": "/v1/data/research/session-context",
       "handler": "research_market_session_context",
@@ -481,7 +481,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 930,
+      "line": 931,
       "method": "POST",
       "path": "/v1/data/research/fundamentals",
       "handler": "research_fundamentals",
@@ -490,7 +490,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1068,
+      "line": 1069,
       "method": "GET",
       "path": "/v1/data-center/status",
       "handler": "data_center_status",
@@ -499,7 +499,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1181,
+      "line": 1182,
       "method": "GET",
       "path": "/v1/data-sync/automation",
       "handler": "get_market_sync_automation",
@@ -508,7 +508,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1187,
+      "line": 1188,
       "method": "PUT",
       "path": "/v1/data-sync/automation/config",
       "handler": "update_market_sync_automation",
@@ -517,7 +517,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1195,
+      "line": 1196,
       "method": "POST",
       "path": "/v1/data-sync/automation/run-now",
       "handler": "run_market_sync_automation_now",
@@ -526,7 +526,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1206,
+      "line": 1207,
       "method": "GET",
       "path": "/v1/data-sync/automation/run-now/{request_id}",
       "handler": "get_market_sync_automation_run",
@@ -535,7 +535,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1214,
+      "line": 1215,
       "method": "POST",
       "path": "/v1/data-sources/tushare/credentials",
       "handler": "create_tushare_credential",
@@ -544,7 +544,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1230,
+      "line": 1231,
       "method": "PUT",
       "path": "/v1/data-sources/tushare/credentials/{credential_id}",
       "handler": "update_tushare_credential",
@@ -553,7 +553,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1249,
+      "line": 1250,
       "method": "POST",
       "path": "/v1/data-sources/tushare/credentials/{credential_id}/revoke",
       "handler": "revoke_tushare_credential",
@@ -562,7 +562,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1270,
+      "line": 1271,
       "method": "POST",
       "path": "/v1/data-sources/tushare/test",
       "handler": "test_tushare_connection",
@@ -571,7 +571,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1311,
+      "line": 1312,
       "method": "POST",
       "path": "/v1/data-sync/jobs",
       "handler": "create_data_sync_job",
@@ -580,7 +580,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1436,
+      "line": 1437,
       "method": "POST",
       "path": "/v1/agent/data-demands",
       "handler": "create_agent_data_demand",
@@ -589,7 +589,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1466,
+      "line": 1467,
       "method": "GET",
       "path": "/v1/agent/data-demands/{demand_id}",
       "handler": "get_agent_data_demand",
@@ -598,7 +598,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1475,
+      "line": 1476,
       "method": "GET",
       "path": "/v1/agent/data-demand-notifications",
       "handler": "get_agent_data_demand_notifications",
@@ -607,7 +607,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1501,
+      "line": 1502,
       "method": "GET",
       "path": "/v1/agent/research-context",
       "handler": "get_agent_research_context",
@@ -616,7 +616,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1509,
+      "line": 1510,
       "method": "GET",
       "path": "/v1/data-sync/jobs",
       "handler": "list_data_sync_jobs",
@@ -625,7 +625,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1515,
+      "line": 1516,
       "method": "GET",
       "path": "/v1/data-sync/jobs/{job_id}",
       "handler": "get_data_sync_job",
@@ -634,7 +634,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1521,
+      "line": 1522,
       "method": "GET",
       "path": "/v1/data-center/coverage",
       "handler": "get_data_coverage",
@@ -643,7 +643,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1538,
+      "line": 1539,
       "method": "POST",
       "path": "/v1/data-center/readiness",
       "handler": "query_data_readiness",
@@ -652,7 +652,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1620,
+      "line": 1621,
       "method": "POST",
       "path": "/v1/data-sync/security-master/jobs",
       "handler": "create_security_master_sync_job",
@@ -661,7 +661,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1641,
+      "line": 1642,
       "method": "GET",
       "path": "/v1/data-sync/security-master/jobs/{job_id}",
       "handler": "get_security_master_sync_job",
@@ -670,7 +670,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1647,
+      "line": 1648,
       "method": "GET",
       "path": "/v1/data-center/securities",
       "handler": "list_security_master",
@@ -679,7 +679,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1941,
+      "line": 1942,
       "method": "GET",
       "path": "/v1/research/submissions/reconcile",
       "handler": "reconcile_research_submission",
@@ -688,7 +688,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1952,
+      "line": 1953,
       "method": "POST",
       "path": "/v1/research/submission-watches",
       "handler": "register_research_submission_watch",
@@ -697,7 +697,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1958,
+      "line": 1959,
       "method": "GET",
       "path": "/v1/research/submission-watches/{watch_id}",
       "handler": "get_research_submission_watch",
@@ -706,7 +706,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1964,
+      "line": 1965,
       "method": "GET",
       "path": "/v1/product/research/submission-watches/{conversation_id}",
       "handler": "list_research_submission_watches",
@@ -715,7 +715,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1970,
+      "line": 1971,
       "method": "POST",
       "path": "/internal/research-receipts/{conversation_id}/reconcile",
       "handler": "consume_research_submission_watches",
@@ -724,7 +724,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1979,
+      "line": 1980,
       "method": "POST",
       "path": "/v1/research/tasks",
       "handler": "create_research_task",
@@ -733,7 +733,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 1991,
+      "line": 1992,
       "method": "GET",
       "path": "/v1/research/tasks/{task_id}",
       "handler": "get_research_task",
@@ -742,7 +742,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2004,
+      "line": 2005,
       "method": "GET",
       "path": "/v1/research/tasks/{task_id}/handoff",
       "handler": "get_research_task_handoff",
@@ -751,7 +751,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2010,
+      "line": 2011,
       "method": "GET",
       "path": "/v1/research/tasks/{task_id}/continuation-permission",
       "handler": "get_research_continuation_permission",
@@ -760,7 +760,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2016,
+      "line": 2017,
       "method": "POST",
       "path": "/v1/research/tasks/{task_id}/continuation-permission",
       "handler": "create_research_continuation_permission",
@@ -769,7 +769,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2022,
+      "line": 2023,
       "method": "POST",
       "path": "/v1/research/tasks/{task_id}/continuation-permission/revoke",
       "handler": "revoke_research_continuation_permission",
@@ -778,7 +778,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2032,
+      "line": 2033,
       "method": "GET",
       "path": "/v1/research/tasks",
       "handler": "list_research_tasks",
@@ -787,7 +787,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2038,
+      "line": 2039,
       "method": "POST",
       "path": "/v1/research/tasks/{task_id}/transitions",
       "handler": "transition_research_task",
@@ -796,7 +796,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2043,
+      "line": 2044,
       "method": "POST",
       "path": "/v1/research/experiments",
       "handler": "create_experiment",
@@ -805,7 +805,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2052,
+      "line": 2053,
       "method": "GET",
       "path": "/v1/research/experiments/{experiment_id}",
       "handler": "get_experiment",
@@ -814,7 +814,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2065,
+      "line": 2066,
       "method": "GET",
       "path": "/v1/research/experiments",
       "handler": "list_experiments",
@@ -823,7 +823,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2071,
+      "line": 2072,
       "method": "POST",
       "path": "/v1/research/experiments/{experiment_id}/transitions",
       "handler": "transition_experiment",
@@ -832,7 +832,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2076,
+      "line": 2077,
       "method": "POST",
       "path": "/v1/research/artifacts",
       "handler": "create_artifact",
@@ -841,7 +841,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2089,
+      "line": 2090,
       "method": "POST",
       "path": "/v1/research/web-evidence",
       "handler": "create_web_research_evidence",
@@ -850,7 +850,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2113,
+      "line": 2114,
       "method": "POST",
       "path": "/v1/research/web-evidence-records",
       "handler": "create_web_research_evidence_record",
@@ -859,7 +859,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2131,
+      "line": 2132,
       "method": "GET",
       "path": "/v1/research/artifacts/{artifact_id}",
       "handler": "get_artifact",
@@ -868,7 +868,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2144,
+      "line": 2145,
       "method": "GET",
       "path": "/v1/research/artifacts",
       "handler": "list_artifacts",
@@ -877,7 +877,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2150,
+      "line": 2151,
       "method": "POST",
       "path": "/v1/research/factors/compute",
       "handler": "compute_research_factor",
@@ -886,7 +886,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2200,
+      "line": 2187,
       "method": "POST",
       "path": "/internal/domain-validation/schema-rejection",
       "handler": "record_domain_schema_rejection",
@@ -895,7 +895,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2210,
+      "line": 2197,
       "method": "POST",
       "path": "/v1/research/strategies/validate",
       "handler": "validate_strategy_draft",
@@ -904,7 +904,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2253,
+      "line": 2240,
       "method": "POST",
       "path": "/v1/research/strategies/versions",
       "handler": "create_strategy_version",
@@ -913,7 +913,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2308,
+      "line": 2287,
       "method": "POST",
       "path": "/v1/research/strategies/approvals",
       "handler": "create_strategy_approval",
@@ -922,7 +922,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2386,
+      "line": 2365,
       "method": "GET",
       "path": "/v1/research/strategies/versions/{artifact_id}/export",
       "handler": "export_strategy_version_artifact",
@@ -931,7 +931,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2476,
+      "line": 2455,
       "method": "GET",
       "path": "/v1/research/ml/capabilities",
       "handler": "get_ml_capabilities",
@@ -940,7 +940,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2504,
+      "line": 2483,
       "method": "GET",
       "path": "/v1/research/ml/options",
       "handler": "get_ml_options",
@@ -949,7 +949,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2510,
+      "line": 2489,
       "method": "GET",
       "path": "/v1/research/ml/studies",
       "handler": "list_ml_studies",
@@ -958,7 +958,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2524,
+      "line": 2503,
       "method": "GET",
       "path": "/v1/research/ml/studies/{strategy_artifact_id}",
       "handler": "get_ml_study",
@@ -967,7 +967,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2607,
+      "line": 2586,
       "method": "POST",
       "path": "/v1/research/ml/studies/{strategy_artifact_id}/lifecycle",
       "handler": "update_ml_study_lifecycle",
@@ -976,7 +976,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2623,
+      "line": 2602,
       "method": "DELETE",
       "path": "/v1/research/ml/studies/{strategy_artifact_id}",
       "handler": "delete_ml_study",
@@ -985,7 +985,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2636,
+      "line": 2615,
       "method": "GET",
       "path": "/v1/research/ml/workspace",
       "handler": "get_ml_agent_workspace",
@@ -994,7 +994,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2665,
+      "line": 2644,
       "method": "POST",
       "path": "/v1/research/ml/strategies/versions",
       "handler": "create_ml_strategy_version",
@@ -1003,7 +1003,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2704,
+      "line": 2679,
       "method": "POST",
       "path": "/v1/research/ml/strategies/approvals",
       "handler": "create_ml_strategy_approval",
@@ -1012,7 +1012,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2772,
+      "line": 2747,
       "method": "POST",
       "path": "/v1/research/ml/training-runs",
       "handler": "create_ml_training_run",
@@ -1021,7 +1021,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2875,
+      "line": 2850,
       "method": "POST",
       "path": "/v1/research/ml/training-submissions",
       "handler": "register_ml_training_submission",
@@ -1030,7 +1030,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2889,
+      "line": 2864,
       "method": "GET",
       "path": "/v1/research/ml/training-submissions/reconcile",
       "handler": "get_ml_training_submission",
@@ -1039,7 +1039,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2897,
+      "line": 2872,
       "method": "GET",
       "path": "/v1/research/ml/training-runs",
       "handler": "list_ml_training_runs",
@@ -1048,7 +1048,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2909,
+      "line": 2884,
       "method": "GET",
       "path": "/v1/research/ml/training-runs/reconcile",
       "handler": "get_ml_training_run_by_idempotency",
@@ -1057,7 +1057,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2921,
+      "line": 2896,
       "method": "GET",
       "path": "/v1/research/ml/training-runs/{training_run_id}",
       "handler": "get_ml_training_run",
@@ -1066,7 +1066,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2930,
+      "line": 2905,
       "method": "POST",
       "path": "/v1/research/ml/training-runs/{training_run_id}/cancel",
       "handler": "cancel_ml_training_run",
@@ -1075,7 +1075,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 2939,
+      "line": 2914,
       "method": "POST",
       "path": "/v1/research/ml/prediction-runs",
       "handler": "create_ml_prediction_run",
@@ -1084,7 +1084,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3093,
+      "line": 3068,
       "method": "GET",
       "path": "/v1/research/ml/prediction-runs",
       "handler": "list_ml_prediction_runs",
@@ -1093,7 +1093,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3105,
+      "line": 3080,
       "method": "GET",
       "path": "/v1/research/ml/prediction-runs/{prediction_run_id}",
       "handler": "get_ml_prediction_run",
@@ -1102,7 +1102,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3123,
+      "line": 3098,
       "method": "GET",
       "path": "/v1/research/ml/prediction-runs/{prediction_run_id}/rows",
       "handler": "get_ml_prediction_rows",
@@ -1111,7 +1111,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3173,
+      "line": 3148,
       "method": "GET",
       "path": "/v1/research/strategies",
       "handler": "list_strategy_artifacts",
@@ -1120,7 +1120,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3188,
+      "line": 3163,
       "method": "GET",
       "path": "/v1/research/strategies/versions/{artifact_id}/approval",
       "handler": "get_strategy_version_approval",
@@ -1129,7 +1129,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3207,
+      "line": 3182,
       "method": "GET",
       "path": "/v1/research/task-options",
       "handler": "list_research_task_options",
@@ -1138,7 +1138,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3217,
+      "line": 3192,
       "method": "POST",
       "path": "/v1/research/strategies/drafts",
       "handler": "save_strategy_draft",
@@ -1147,7 +1147,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3256,
+      "line": 3231,
       "method": "DELETE",
       "path": "/v1/research/strategies/drafts/{artifact_id}",
       "handler": "delete_strategy_draft",
@@ -1156,7 +1156,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3280,
+      "line": 3255,
       "method": "GET",
       "path": "/v1/research/strategies/{strategy_id}/versions",
       "handler": "strategy_version_history",
@@ -1165,7 +1165,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3309,
+      "line": 3284,
       "method": "GET",
       "path": "/v1/research/strategies/{strategy_id}/backtest-count",
       "handler": "strategy_backtest_count",
@@ -1174,7 +1174,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3334,
+      "line": 3309,
       "method": "POST",
       "path": "/v1/research/artifacts/{artifact_id}/transitions",
       "handler": "transition_artifact",
@@ -1183,7 +1183,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3459,
+      "line": 3434,
       "method": "POST",
       "path": "/v1/research/signal-snapshots",
       "handler": "create_signal_snapshot",
@@ -1192,7 +1192,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3533,
+      "line": 3498,
       "method": "GET",
       "path": "/v1/research/signal-snapshots/{artifact_id}",
       "handler": "get_signal_snapshot",
@@ -1201,7 +1201,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3546,
+      "line": 3511,
       "method": "GET",
       "path": "/v1/research/signal-snapshots",
       "handler": "list_signal_snapshots",
@@ -1210,7 +1210,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3700,
+      "line": 3665,
       "method": "POST",
       "path": "/v1/research/signal-producer/jobs",
       "handler": "create_signal_producer_job",
@@ -1219,7 +1219,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3720,
+      "line": 3685,
       "method": "GET",
       "path": "/v1/research/signal-producer/jobs",
       "handler": "list_signal_producer_jobs",
@@ -1228,7 +1228,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3730,
+      "line": 3695,
       "method": "GET",
       "path": "/v1/research/signal-producer/jobs/{job_id}",
       "handler": "get_signal_producer_job",
@@ -1237,7 +1237,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3816,
+      "line": 3781,
       "method": "POST",
       "path": "/v1/research/backtest-tasks/prepare",
       "handler": "prepare_backtest_task",
@@ -1246,7 +1246,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3841,
+      "line": 3806,
       "method": "POST",
       "path": "/v1/research/backtest-tasks",
       "handler": "create_backtest_task",
@@ -1255,7 +1255,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3854,
+      "line": 3819,
       "method": "GET",
       "path": "/v1/research/backtest-tasks/reconcile",
       "handler": "reconcile_backtest_task_submission",
@@ -1264,7 +1264,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3877,
+      "line": 3842,
       "method": "GET",
       "path": "/v1/research/backtest-tasks/{backtest_task_id}",
       "handler": "get_backtest_task",
@@ -1273,7 +1273,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3901,
+      "line": 3866,
       "method": "POST",
       "path": "/v1/research/backtest-tasks/{backtest_task_id}/execute",
       "handler": "execute_backtest_task",
@@ -1282,7 +1282,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 3983,
+      "line": 3948,
       "method": "POST",
       "path": "/v1/research/backtest-tasks/{backtest_task_id}/cancel",
       "handler": "cancel_backtest_task",
@@ -1291,7 +1291,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4029,
+      "line": 3994,
       "method": "POST",
       "path": "/v1/research/backtests",
       "handler": "create_backtest_job",
@@ -1300,7 +1300,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4086,
+      "line": 4051,
       "method": "GET",
       "path": "/v1/research/backtests/options",
       "handler": "backtest_options",
@@ -1309,7 +1309,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4145,
+      "line": 4110,
       "method": "GET",
       "path": "/v1/research/backtests/catalog",
       "handler": "list_backtest_catalog",
@@ -1318,7 +1318,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4156,
+      "line": 4121,
       "method": "GET",
       "path": "/v1/research/backtests/reconcile",
       "handler": "reconcile_backtest_submission",
@@ -1327,7 +1327,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4170,
+      "line": 4135,
       "method": "GET",
       "path": "/v1/research/backtests/{job_id}",
       "handler": "get_backtest_job",
@@ -1336,7 +1336,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4183,
+      "line": 4148,
       "method": "GET",
       "path": "/v1/research/backtests/{job_id}/summary",
       "handler": "get_backtest_job_summary",
@@ -1345,7 +1345,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4196,
+      "line": 4161,
       "method": "GET",
       "path": "/v1/research/backtests/{job_id}/manifest",
       "handler": "get_backtest_job_manifest",
@@ -1354,7 +1354,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4209,
+      "line": 4174,
       "method": "GET",
       "path": "/v1/research/backtests/{job_id}/result",
       "handler": "get_backtest_result",
@@ -1363,7 +1363,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4264,
+      "line": 4229,
       "method": "GET",
       "path": "/v1/research/backtests/{job_id}/analysis",
       "handler": "get_backtest_analysis",
@@ -1372,7 +1372,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4296,
+      "line": 4261,
       "method": "GET",
       "path": "/v1/research/backtests",
       "handler": "list_backtest_jobs",
@@ -1381,7 +1381,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4302,
+      "line": 4267,
       "method": "POST",
       "path": "/v1/research/backtests/{job_id}/run",
       "handler": "run_backtest_job",
@@ -1390,7 +1390,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4319,
+      "line": 4284,
       "method": "POST",
       "path": "/v1/research/backtests/{job_id}/cancel",
       "handler": "cancel_backtest_job",
@@ -1399,7 +1399,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4334,
+      "line": 4299,
       "method": "DELETE",
       "path": "/v1/research/backtests/{job_id}",
       "handler": "delete_backtest_job",
@@ -1408,7 +1408,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4369,
+      "line": 4334,
       "method": "GET",
       "path": "/v1/agents/roles",
       "handler": "get_agent_roles",
@@ -1417,7 +1417,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4376,
+      "line": 4341,
       "method": "POST",
       "path": "/v1/agents/runs",
       "handler": "start_agent_run",
@@ -1426,7 +1426,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4392,
+      "line": 4357,
       "method": "GET",
       "path": "/v1/agents/runs/registration-receipt",
       "handler": "get_agent_registration_receipt",
@@ -1435,7 +1435,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4398,
+      "line": 4363,
       "method": "POST",
       "path": "/v1/agents/authorize",
       "handler": "authorize_agent_action",
@@ -1444,7 +1444,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4436,
+      "line": 4401,
       "method": "POST",
       "path": "/v1/agents/audit",
       "handler": "record_agent_audit",
@@ -1453,7 +1453,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4446,
+      "line": 4411,
       "method": "GET",
       "path": "/v1/agents/runs/{run_id}/audit",
       "handler": "get_agent_audit",
@@ -1462,7 +1462,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4452,
+      "line": 4417,
       "method": "POST",
       "path": "/v1/agents/approvals",
       "handler": "create_agent_approval",
@@ -1471,7 +1471,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4464,
+      "line": 4429,
       "method": "GET",
       "path": "/v1/agents/approvals/{approval_id}",
       "handler": "get_agent_approval",
@@ -1480,7 +1480,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4473,
+      "line": 4438,
       "method": "GET",
       "path": "/v1/agents/approvals",
       "handler": "list_agent_approvals",
@@ -1489,7 +1489,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4483,
+      "line": 4448,
       "method": "POST",
       "path": "/v1/agents/approvals/{approval_id}/decision",
       "handler": "decide_agent_approval",
@@ -1498,7 +1498,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4495,
+      "line": 4460,
       "method": "POST",
       "path": "/v1/agents/approvals/{approval_id}/continuation",
       "handler": "update_agent_approval_continuation",
@@ -1507,7 +1507,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4510,
+      "line": 4475,
       "method": "POST",
       "path": "/v1/learning/runs",
       "handler": "start_learning_run",
@@ -1516,7 +1516,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4526,
+      "line": 4491,
       "method": "GET",
       "path": "/v1/learning/runs/{run_id}",
       "handler": "get_learning_run",
@@ -1525,7 +1525,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4535,
+      "line": 4500,
       "method": "POST",
       "path": "/v1/learning/runs/{run_id}/iterations",
       "handler": "record_learning_iteration",
@@ -1534,7 +1534,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4552,
+      "line": 4517,
       "method": "GET",
       "path": "/v1/learning/runs/{run_id}/iterations",
       "handler": "list_learning_iterations",
@@ -1543,7 +1543,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4561,
+      "line": 4526,
       "method": "POST",
       "path": "/v1/learning/runs/{run_id}/review",
       "handler": "review_learning_run",
@@ -1552,7 +1552,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4577,
+      "line": 4542,
       "method": "POST",
       "path": "/v1/learning/signals",
       "handler": "create_evaluation_signal",
@@ -1561,7 +1561,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4592,
+      "line": 4557,
       "method": "GET",
       "path": "/v1/learning/signals/{signal_id}",
       "handler": "get_evaluation_signal",
@@ -1570,7 +1570,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4601,
+      "line": 4566,
       "method": "POST",
       "path": "/v1/learning/experiments/compare",
       "handler": "compare_experiments",
@@ -1579,7 +1579,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4615,
+      "line": 4580,
       "method": "POST",
       "path": "/v1/learning/lessons",
       "handler": "propose_lesson",
@@ -1588,7 +1588,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4631,
+      "line": 4596,
       "method": "GET",
       "path": "/v1/learning/lessons/{lesson_id}",
       "handler": "get_lesson",
@@ -1597,7 +1597,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4640,
+      "line": 4605,
       "method": "POST",
       "path": "/v1/learning/lessons/{lesson_id}/review",
       "handler": "review_lesson",
@@ -1606,7 +1606,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4656,
+      "line": 4621,
       "method": "POST",
       "path": "/v1/engineering/tasks",
       "handler": "create_engineering_task",
@@ -1615,7 +1615,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4672,
+      "line": 4637,
       "method": "GET",
       "path": "/v1/engineering/tasks",
       "handler": "list_engineering_tasks",
@@ -1624,7 +1624,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4680,
+      "line": 4645,
       "method": "GET",
       "path": "/v1/engineering/tasks/{task_id}",
       "handler": "get_engineering_task",
@@ -1633,7 +1633,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4689,
+      "line": 4654,
       "method": "POST",
       "path": "/v1/engineering/tasks/{task_id}/transitions",
       "handler": "transition_engineering_task",
@@ -1642,7 +1642,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4705,
+      "line": 4670,
       "method": "POST",
       "path": "/v1/engineering/tasks/{task_id}/evidence",
       "handler": "report_engineering_evidence",
@@ -1651,7 +1651,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4721,
+      "line": 4686,
       "method": "POST",
       "path": "/v1/engineering/tasks/{task_id}/merge",
       "handler": "record_human_engineering_merge",
@@ -1660,7 +1660,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4737,
+      "line": 4702,
       "method": "POST",
       "path": "/v1/paper/accounts",
       "handler": "create_paper_account",
@@ -1669,7 +1669,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4746,
+      "line": 4711,
       "method": "GET",
       "path": "/v1/paper/accounts/{account_id}",
       "handler": "get_paper_account",
@@ -1678,7 +1678,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4755,
+      "line": 4720,
       "method": "GET",
       "path": "/v1/paper/accounts",
       "handler": "list_paper_accounts",
@@ -1687,7 +1687,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4761,
+      "line": 4726,
       "method": "DELETE",
       "path": "/v1/paper/accounts/{account_id}",
       "handler": "delete_paper_account",
@@ -1696,7 +1696,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4774,
+      "line": 4739,
       "method": "POST",
       "path": "/v1/paper/pools",
       "handler": "create_stock_pool",
@@ -1705,7 +1705,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4783,
+      "line": 4748,
       "method": "GET",
       "path": "/v1/paper/index-pools/catalog",
       "handler": "list_index_pool_catalog",
@@ -1714,7 +1714,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4790,
+      "line": 4755,
       "method": "POST",
       "path": "/v1/paper/index-pools",
       "handler": "create_index_pool",
@@ -1723,7 +1723,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4798,
+      "line": 4763,
       "method": "GET",
       "path": "/v1/paper/index-pools/reconcile",
       "handler": "reconcile_index_pool_creation",
@@ -1732,7 +1732,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4806,
+      "line": 4771,
       "method": "POST",
       "path": "/v1/paper/dynamic-pools/preview",
       "handler": "preview_dynamic_pool",
@@ -1741,7 +1741,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4814,
+      "line": 4779,
       "method": "POST",
       "path": "/v1/paper/dynamic-pools",
       "handler": "create_dynamic_pool",
@@ -1750,7 +1750,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4822,
+      "line": 4787,
       "method": "POST",
       "path": "/v1/paper/producer-imports",
       "handler": "import_stock_pool_producer",
@@ -1759,7 +1759,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4830,
+      "line": 4795,
       "method": "GET",
       "path": "/v1/paper/pools/{pool_id}/producer",
       "handler": "get_stock_pool_producer",
@@ -1768,7 +1768,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4838,
+      "line": 4803,
       "method": "GET",
       "path": "/v1/paper/pools/{pool_id}/materializations",
       "handler": "list_stock_pool_materializations",
@@ -1777,7 +1777,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4849,
+      "line": 4814,
       "method": "PUT",
       "path": "/v1/paper/pools/{pool_id}/producer",
       "handler": "update_stock_pool_producer",
@@ -1786,7 +1786,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4857,
+      "line": 4822,
       "method": "POST",
       "path": "/v1/paper/pools/{pool_id}/materializations",
       "handler": "refresh_stock_pool_producer",
@@ -1795,7 +1795,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4865,
+      "line": 4830,
       "method": "GET",
       "path": "/v1/paper/pools/{pool_id}",
       "handler": "get_stock_pool",
@@ -1804,7 +1804,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4875,
+      "line": 4840,
       "method": "GET",
       "path": "/v1/paper/pools/{pool_id}/members",
       "handler": "list_stock_pool_members",
@@ -1813,7 +1813,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4889,
+      "line": 4854,
       "method": "GET",
       "path": "/v1/paper/pools",
       "handler": "list_stock_pools",
@@ -1822,7 +1822,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4910,
+      "line": 4875,
       "method": "GET",
       "path": "/v1/paper/pools/{pool_id}/readiness",
       "handler": "get_stock_pool_readiness",
@@ -1831,7 +1831,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4925,
+      "line": 4890,
       "method": "PATCH",
       "path": "/v1/paper/pools/{pool_id}/metadata",
       "handler": "update_stock_pool_metadata",
@@ -1840,7 +1840,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4933,
+      "line": 4898,
       "method": "PUT",
       "path": "/v1/paper/pools/{pool_id}/snapshot",
       "handler": "replace_stock_pool_snapshot",
@@ -1849,7 +1849,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4941,
+      "line": 4906,
       "method": "GET",
       "path": "/v1/paper/pools/{pool_id}/snapshots",
       "handler": "list_stock_pool_snapshots",
@@ -1858,7 +1858,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4949,
+      "line": 4914,
       "method": "GET",
       "path": "/v1/paper/pools/{pool_id}/snapshot-diff",
       "handler": "diff_stock_pool_snapshots",
@@ -1867,7 +1867,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4959,
+      "line": 4924,
       "method": "GET",
       "path": "/v1/paper/pools/{pool_id}/snapshots/{snapshot_id}",
       "handler": "get_stock_pool_snapshot",
@@ -1876,7 +1876,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4970,
+      "line": 4935,
       "method": "GET",
       "path": "/v1/paper/pools/{pool_id}/as-of/{trade_date}",
       "handler": "get_stock_pool_as_of",
@@ -1885,7 +1885,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4978,
+      "line": 4943,
       "method": "PATCH",
       "path": "/v1/paper/pools/{pool_id}/lifecycle",
       "handler": "update_stock_pool_lifecycle",
@@ -1894,7 +1894,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4986,
+      "line": 4951,
       "method": "DELETE",
       "path": "/v1/paper/pools/{pool_id}",
       "handler": "delete_stock_pool",
@@ -1903,7 +1903,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 4999,
+      "line": 4964,
       "method": "GET",
       "path": "/v1/paper/pools/{pool_id}/references",
       "handler": "list_stock_pool_references",
@@ -1912,7 +1912,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5007,
+      "line": 4972,
       "method": "POST",
       "path": "/v1/paper/orders",
       "handler": "submit_paper_order",
@@ -1921,7 +1921,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5016,
+      "line": 4981,
       "method": "GET",
       "path": "/v1/paper/accounts/{account_id}/orders",
       "handler": "list_paper_orders",
@@ -1930,7 +1930,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5025,
+      "line": 4990,
       "method": "GET",
       "path": "/v1/paper/accounts/{account_id}/orders/{order_id}",
       "handler": "get_paper_order",
@@ -1939,7 +1939,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5033,
+      "line": 4998,
       "method": "GET",
       "path": "/v1/paper/accounts/{account_id}/positions",
       "handler": "list_paper_positions",
@@ -1948,7 +1948,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5042,
+      "line": 5007,
       "method": "GET",
       "path": "/v1/paper/accounts/{account_id}/fills",
       "handler": "list_paper_fills",
@@ -1957,7 +1957,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5051,
+      "line": 5016,
       "method": "GET",
       "path": "/v1/paper/accounts/{account_id}/ledger",
       "handler": "list_paper_ledger",
@@ -1966,7 +1966,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5059,
+      "line": 5024,
       "method": "GET",
       "path": "/v1/paper/accounts/{account_id}/snapshots",
       "handler": "list_paper_account_snapshots",
@@ -1975,7 +1975,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5067,
+      "line": 5032,
       "method": "POST",
       "path": "/v1/paper/accounts/{account_id}/settlements",
       "handler": "settle_paper_account",
@@ -1984,7 +1984,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5076,
+      "line": 5041,
       "method": "GET",
       "path": "/v1/paper/accounts/{account_id}/controls",
       "handler": "get_paper_account_controls",
@@ -1993,7 +1993,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5084,
+      "line": 5049,
       "method": "PUT",
       "path": "/v1/paper/accounts/{account_id}/controls",
       "handler": "update_paper_account_controls",
@@ -2002,7 +2002,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5093,
+      "line": 5058,
       "method": "PUT",
       "path": "/v1/paper/accounts/{account_id}/binding",
       "handler": "rebind_paper_account",
@@ -2011,7 +2011,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5102,
+      "line": 5067,
       "method": "GET",
       "path": "/v1/paper/accounts/{account_id}/export",
       "handler": "export_paper_account",
@@ -2020,7 +2020,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5110,
+      "line": 5075,
       "method": "POST",
       "path": "/v1/paper/accounts/import",
       "handler": "import_paper_account",
@@ -2029,7 +2029,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5120,
+      "line": 5085,
       "method": "POST",
       "path": "/v1/auth/login",
       "handler": "login",
@@ -2038,7 +2038,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5125,
+      "line": 5090,
       "method": "POST",
       "path": "/v1/auth/logout",
       "handler": "logout",
@@ -2047,7 +2047,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5133,
+      "line": 5098,
       "method": "GET",
       "path": "/v1/auth/session",
       "handler": "get_session",
@@ -2056,7 +2056,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5141,
+      "line": 5106,
       "method": "POST",
       "path": "/v1/users",
       "handler": "create_user",
@@ -2065,7 +2065,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5147,
+      "line": 5112,
       "method": "GET",
       "path": "/v1/users",
       "handler": "list_users",
@@ -2074,7 +2074,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5153,
+      "line": 5118,
       "method": "POST",
       "path": "/v1/users/{user_id}/disable",
       "handler": "disable_user",
@@ -2083,7 +2083,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5159,
+      "line": 5124,
       "method": "PUT",
       "path": "/v1/users/{user_id}/profile",
       "handler": "update_user_profile",
@@ -2092,7 +2092,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5167,
+      "line": 5132,
       "method": "GET",
       "path": "/v1/users/{user_id}/ui-preferences",
       "handler": "get_user_ui_preferences",
@@ -2101,7 +2101,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5175,
+      "line": 5140,
       "method": "PUT",
       "path": "/v1/users/{user_id}/ui-preferences",
       "handler": "update_user_ui_preferences",
@@ -2110,7 +2110,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5215,
+      "line": 5180,
       "method": "GET",
       "path": "/v1/users/model-catalog",
       "handler": "get_model_catalog",
@@ -2119,7 +2119,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5227,
+      "line": 5192,
       "method": "GET",
       "path": "/v1/users/model-credentials",
       "handler": "list_model_credentials",
@@ -2128,7 +2128,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5236,
+      "line": 5201,
       "method": "POST",
       "path": "/v1/users/model-credentials",
       "handler": "create_model_credential",
@@ -2137,7 +2137,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5246,
+      "line": 5211,
       "method": "PUT",
       "path": "/v1/users/model-credentials/{credential_id}",
       "handler": "update_model_credential",
@@ -2146,7 +2146,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5261,
+      "line": 5226,
       "method": "POST",
       "path": "/v1/users/model-credentials/{credential_id}/revoke",
       "handler": "revoke_model_credential",
@@ -2155,7 +2155,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5277,
+      "line": 5242,
       "method": "GET",
       "path": "/v1/users/model-profiles",
       "handler": "list_model_profiles",
@@ -2164,7 +2164,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5285,
+      "line": 5250,
       "method": "POST",
       "path": "/v1/users/model-profiles",
       "handler": "create_model_profile",
@@ -2173,7 +2173,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5294,
+      "line": 5259,
       "method": "POST",
       "path": "/v1/users/model-profiles/{profile_id}/delete",
       "handler": "delete_model_profile",
@@ -2182,7 +2182,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5308,
+      "line": 5273,
       "method": "GET",
       "path": "/v1/users/model-bindings",
       "handler": "list_model_bindings",
@@ -2191,7 +2191,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5316,
+      "line": 5281,
       "method": "PUT",
       "path": "/v1/users/model-bindings/{agent_id}",
       "handler": "put_model_binding",
@@ -2200,7 +2200,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5331,
+      "line": 5296,
       "method": "GET",
       "path": "/v1/users/model-credential-audit",
       "handler": "list_model_credential_audit",
@@ -2209,7 +2209,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5340,
+      "line": 5305,
       "method": "POST",
       "path": "/internal/credentials/model-resolution",
       "handler": "resolve_model_credential",
@@ -2218,7 +2218,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5371,
+      "line": 5336,
       "method": "GET",
       "path": "/v1/users/agent-policy",
       "handler": "get_user_agent_policy",
@@ -2227,7 +2227,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5382,
+      "line": 5347,
       "method": "PUT",
       "path": "/v1/users/agent-policy",
       "handler": "update_user_agent_policy",
@@ -2236,7 +2236,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5388,
+      "line": 5353,
       "method": "POST",
       "path": "/v1/users/agent-policy/rules",
       "handler": "create_user_agent_policy_rule",
@@ -2245,7 +2245,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5398,
+      "line": 5363,
       "method": "PUT",
       "path": "/v1/users/agent-policy/rules/{rule_id}",
       "handler": "update_user_agent_policy_rule",
@@ -2254,7 +2254,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5413,
+      "line": 5378,
       "method": "POST",
       "path": "/v1/users/agent-policy/rules/{rule_id}/delete",
       "handler": "delete_user_agent_policy_rule",
@@ -2263,7 +2263,7 @@
     {
       "kind": "route",
       "file": "services/backend/app/main.py",
-      "line": 5428,
+      "line": 5393,
       "method": "POST",
       "path": "/v1/users/agent-policy/presets/{preset_id}/apply",
       "handler": "apply_user_agent_policy_preset",
@@ -4072,567 +4072,567 @@
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 667,
+      "line": 668,
       "name": "byq_health",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 675,
+      "line": 676,
       "name": "byq_product_help_query",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 683,
+      "line": 684,
       "name": "byq_feedback_options",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 688,
+      "line": 689,
       "name": "byq_feedback_list",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 697,
+      "line": 698,
       "name": "byq_feedback_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 702,
+      "line": 703,
       "name": "byq_feedback_create_draft",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 707,
+      "line": 708,
       "name": "byq_feedback_update_draft",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 714,
+      "line": 715,
       "name": "byq_feedback_preview",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 719,
+      "line": 720,
       "name": "byq_feedback_submit",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 727,
+      "line": 728,
       "name": "byq_workflow_card_propose",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 736,
+      "line": 737,
       "name": "byq_index_pool_catalog",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 743,
+      "line": 744,
       "name": "byq_index_pool_create",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 753,
+      "line": 754,
       "name": "byq_index_pool_status",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 769,
+      "line": 770,
       "name": "byq_pool_list",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 774,
+      "line": 775,
       "name": "byq_pool_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 779,
+      "line": 780,
       "name": "byq_pool_create",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 788,
+      "line": 789,
       "name": "byq_pool_snapshot_replace",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 797,
+      "line": 798,
       "name": "byq_pool_history",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 802,
+      "line": 803,
       "name": "byq_pool_lifecycle",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 809,
+      "line": 810,
       "name": "byq_paper_account_list",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 814,
+      "line": 815,
       "name": "byq_paper_account_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 819,
+      "line": 820,
       "name": "byq_paper_order_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 824,
+      "line": 825,
       "name": "byq_paper_snapshot_list",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 829,
+      "line": 830,
       "name": "byq_agent_context",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 837,
+      "line": 838,
       "name": "byq_agent_roles",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 845,
+      "line": 846,
       "name": "byq_agent_run_start",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 858,
+      "line": 859,
       "name": "byq_agent_authorize",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 871,
+      "line": 872,
       "name": "byq_agent_audit",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 886,
+      "line": 887,
       "name": "byq_agent_audit_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 894,
+      "line": 895,
       "name": "byq_agent_approval_request",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 909,
+      "line": 910,
       "name": "byq_agent_approval_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 917,
+      "line": 918,
       "name": "byq_agent_approval_decide",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 929,
+      "line": 930,
       "name": "byq_market_session_context",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 937,
+      "line": 938,
       "name": "byq_data_demand_create",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 957,
+      "line": 958,
       "name": "byq_data_demand_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 965,
+      "line": 966,
       "name": "byq_market_daily",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 978,
+      "line": 979,
       "name": "byq_market_valuation",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 994,
+      "line": 995,
       "name": "byq_market_fundamentals",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1008,
+      "line": 1009,
       "name": "byq_backtest_task_prepare",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1026,
+      "line": 1027,
       "name": "byq_backtest_task_create",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1045,
+      "line": 1046,
       "name": "byq_backtest_task_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1054,
+      "line": 1055,
       "name": "byq_backtest_task_execute",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1062,
+      "line": 1063,
       "name": "byq_backtest_task_cancel",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1070,
+      "line": 1071,
       "name": "byq_backtest_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1079,
+      "line": 1080,
       "name": "byq_backtest_analysis_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1092,
+      "line": 1093,
       "name": "byq_ml_capabilities",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1097,
+      "line": 1098,
       "name": "byq_ml_workspace_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1102,
+      "line": 1103,
       "name": "byq_ml_studies",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1112,
+      "line": 1113,
       "name": "byq_ml_study_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1119,
+      "line": 1120,
       "name": "byq_ml_strategy_create",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1124,
+      "line": 1125,
       "name": "byq_ml_strategy_approve",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1135,
+      "line": 1136,
       "name": "byq_ml_training_create",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1143,
+      "line": 1144,
       "name": "byq_ml_training_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1151,
+      "line": 1152,
       "name": "byq_ml_training_cancel",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1158,
+      "line": 1159,
       "name": "byq_ml_prediction_create",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1173,
+      "line": 1174,
       "name": "byq_ml_prediction_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1180,
+      "line": 1181,
       "name": "byq_signal_snapshot_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1188,
+      "line": 1189,
       "name": "byq_factor_compute",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1238,
+      "line": 1197,
       "name": "byq_strategy_draft_save",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1252,
+      "line": 1211,
       "name": "byq_strategy_draft_delete",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1260,
+      "line": 1219,
       "name": "byq_strategy_validate",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1268,
+      "line": 1227,
       "name": "byq_strategy_version_create",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1282,
+      "line": 1241,
       "name": "byq_strategy_approve",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1300,
+      "line": 1259,
       "name": "byq_strategy_export",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1308,
+      "line": 1267,
       "name": "byq_research_task_create",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1322,
+      "line": 1281,
       "name": "byq_research_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1336,
+      "line": 1295,
       "name": "byq_research_transition",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1357,
+      "line": 1316,
       "name": "byq_experiment_create",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1371,
+      "line": 1330,
       "name": "byq_artifact_create",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1387,
+      "line": 1346,
       "name": "byq_web_evidence_create",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1403,
+      "line": 1362,
       "name": "byq_learning_run_start",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1424,
+      "line": 1383,
       "name": "byq_learning_run_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1432,
+      "line": 1391,
       "name": "byq_learning_iteration_record",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1449,
+      "line": 1408,
       "name": "byq_learning_iteration_list",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1457,
+      "line": 1416,
       "name": "byq_learning_run_review",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1469,
+      "line": 1428,
       "name": "byq_evaluation_signal_create",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1486,
+      "line": 1445,
       "name": "byq_evaluation_signal_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1494,
+      "line": 1453,
       "name": "byq_experiment_compare",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1507,
+      "line": 1466,
       "name": "byq_lesson_propose",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1521,
+      "line": 1480,
       "name": "byq_lesson_get",
       "audit_status": "NEEDS_EVIDENCE"
     },
     {
       "kind": "mcp_tool",
       "file": "services/mcp/src/server.ts",
-      "line": 1529,
+      "line": 1488,
       "name": "byq_lesson_review",
       "audit_status": "NEEDS_EVIDENCE"
     },

@@ -12,7 +12,7 @@ import math
 import re
 
 
-ACTIONS = frozenset({"byq_strategy_validate", "byq_ml_strategy_create"})
+ACTIONS = frozenset({"byq_strategy_validate", "byq_ml_strategy_create", "byq_factor_compute"})
 MAX_INPUT_BYTES = 256 * 1024
 MAX_NODES = 8192
 MAX_DEPTH = 24
@@ -30,13 +30,19 @@ def _text(value: object, maximum: int = 128) -> str:
     return value
 
 
-def _canonical(value: object) -> bytes:
+def _limits(action=None):
+    # Factor snapshots contain bounded tabular rows, unlike strategy definitions.
+    return (4 * 1024 * 1024, 131072) if action == "byq_factor_compute" else (MAX_INPUT_BYTES, MAX_NODES)
+
+
+def _canonical(value: object, *, action=None) -> bytes:
+    max_bytes, max_nodes = _limits(action)
     nodes = 0
 
     def visit(item, depth):
         nonlocal nodes
         nodes += 1
-        if nodes > MAX_NODES or depth > MAX_DEPTH:
+        if nodes > max_nodes or depth > MAX_DEPTH:
             raise ValueError("private call input exceeds structural bound")
         if item is None:
             return ["null"]
@@ -61,16 +67,16 @@ def _canonical(value: object) -> bytes:
         raw = json.dumps(visit(value, 0), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     except (OverflowError, UnicodeError, RecursionError) as exc:
         raise ValueError("private call input cannot be represented safely") from exc
-    if len(raw) > MAX_INPUT_BYTES:
+    if len(raw) > max_bytes:
         raise ValueError("private call input exceeds byte bound")
     return raw
 
 
-def parse_observed_arguments(arguments: object) -> dict:
+def parse_observed_arguments(arguments: object, *, action=None) -> dict:
     if not isinstance(arguments, str):
         raise ValueError("official call arguments must be JSON text")
     try:
-        if len(arguments.encode("utf-8")) > MAX_INPUT_BYTES:
+        if len(arguments.encode("utf-8")) > _limits(action)[0]:
             raise ValueError("official call arguments exceed byte bound")
         def pairs(items):
             result = {}
@@ -85,7 +91,7 @@ def parse_observed_arguments(arguments: object) -> dict:
         raise ValueError("official call arguments cannot be represented safely") from exc
     if not isinstance(value, dict):
         raise ValueError("official call arguments must be an object")
-    _canonical(value)
+    _canonical(value, action=action)
     return value
 
 
@@ -99,16 +105,20 @@ def request_evidence(action: str, payload: object, *, trace_id: str) -> dict:
         raise ValueError("unsupported domain call")
     required = {"task_id", "agent_run_id", "idempotency_key", "strategy"}
     allowed = required | {"experiment_id", "trace_id"}
+    if action == "byq_factor_compute":
+        required = {"task_id", "agent_run_id", "idempotency_key", "as_of_date", "factor",
+                    "securities", "sessions", "bars", "universe_snapshots", "sources"}
+        allowed = required | {"experiment_id", "trace_id", "statuses"}
     if not required <= payload.keys() or payload.keys() - allowed:
         raise ValueError("exact domain call references required")
     task, run, key = (_text(payload[name]) for name in ("task_id", "agent_run_id", "idempotency_key"))
     trace = _text(trace_id)
     effective = {**payload, "trace_id": trace}
-    request_hash = hashlib.sha256(_canonical([action, effective])).hexdigest()
+    request_hash = hashlib.sha256(_canonical([action, effective], action=action)).hexdigest()
     # Run/key are replay identities, not progress. Changing child or key cannot
     # turn the exact same failed strategy input into a correction.
     content = {name: value for name, value in effective.items() if name not in {"agent_run_id", "idempotency_key"}}
-    input_hash = hashlib.sha256(_canonical([action, content])).hexdigest()
+    input_hash = hashlib.sha256(_canonical([action, content], action=action)).hexdigest()
     return {"action": action, "task_id": task, "agent_run_id": run, "idempotency_key": key,
             "request_sha256": request_hash, "input_sha256": input_hash}
 
