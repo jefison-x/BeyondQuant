@@ -40,3 +40,28 @@ test('account and order acknowledgements recover after refresh without a second 
   const account=await page.evaluate(async id=>(await fetch('/api/product/paper/accounts/'+id,{credentials:'include'})).json(),accountId);
   expect(Number(account.account.cash)).toBe(495);expect(accountWrites).toBe(1);expect(orderWrites).toBe(1);
 });
+
+test('account import acknowledgement is recovered without importing twice',async({page})=>{
+  await page.goto('/login');await page.getByLabel('用户名').fill('h5-browser');await page.getByLabel('密码').fill('test-password-123');
+  await page.getByRole('button',{name:'进入'}).click();await expect(page).toHaveURL(/\/agent$/);
+  const bundle = await page.evaluate(async()=>{
+    const id = Date.now().toString();
+    const create = await fetch('/api/product/paper/accounts',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},
+      body:JSON.stringify({name:'Import recovery '+id,cash:1500,idempotency_key:'import-source-'+id})});
+    if(create.status!==201) throw Error('create fixture failed');
+    const account = (await create.json()).account;
+    const response=await fetch('/api/product/paper/accounts/'+account.account_id+'/export',{credentials:'include'});
+    if(!response.ok) throw Error('export fixture failed');return (await response.json()).bundle;
+  });
+  await page.goto('/paper-trading');let importedId='',writes=0;
+  page.on('request',r=>{if(r.method()==='POST' && r.url().endsWith('/paper/accounts/import'))writes++;});
+  await page.route('**/api/product/paper/accounts/import',async route=>{
+    const response=await route.fetch();expect(response.status()).toBe(201);importedId=(await response.json()).account.account_id;await route.abort('failed');
+  });
+  await page.locator('input[type=file]').setInputFiles({name:'account.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(bundle))});
+  await expect(page.getByText('有一笔模拟账户操作尚未确认',{exact:true})).toBeVisible();await page.reload();
+  const receipt=page.waitForResponse(r=>r.url().includes('/paper/receipts?'));
+  await page.getByRole('button',{name:'核对原模拟操作',exact:true}).click();
+  const body=await(await receipt).json();expect(body.account_id).toBe(importedId);expect(body.operation).toBe('import');
+  await expect(page.getByText('有一笔模拟账户操作尚未确认',{exact:true})).toHaveCount(0);expect(writes).toBe(1);
+});

@@ -836,7 +836,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     "byq_paper_account_get",
     { description: "Read one owner-scoped Paper Trading account projection.", inputSchema: z.union([
       z.object({account_id:z.string()}).strict(),
-      z.object({operation:z.literal('create'),idempotency_key:z.string().min(1).max(128)}).strict(),
+      z.object({operation:z.enum(['create','import']),idempotency_key:z.string().min(1).max(128)}).strict(),
       z.object({operation:z.enum(['order','settlement','controls','rebind','delete']),account_id:z.string(),idempotency_key:z.string().min(1).max(128)}).strict(),
     ]) },
     (args) => { const context = poolContext(); return context ? ('operation' in args ? fetchByqPaperReceipt(BACKEND_URL,args,context) : fetchByqPaperAccount(BACKEND_URL, args.account_id, context)) : agentContextUnavailable(); },

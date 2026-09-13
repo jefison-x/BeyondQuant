@@ -4,7 +4,7 @@ import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   sendPaperCommand, reconcilePaperCommand, PaperCommandRejected, type PaperCommand, exportPaperAccount, getPaperAccount, getPaperControls,
-  getPaperOrder, importPaperAccount, listPaperAccounts, listPaperFills,
+  getPaperOrder, listPaperAccounts, listPaperFills,
   listPaperLedger, listPaperOrders, listPaperPositions, listPaperSnapshots,
   listStockPools,
 } from "@/api/paper";
@@ -269,8 +269,9 @@ async function onImportFile(event: Event) {
   const input = event.target as HTMLInputElement; const file = input.files?.[0]; if (!file) return;
   busy.value = "import";
   try {
+    if(file.size > 4*1024*1024) throw Error("账户资产包不能超过4 MiB，请缩小导入范围");
     const parsed = JSON.parse(await file.text()) as Record<string, unknown>;
-    const body = await importPaperAccount((parsed.bundle as Record<string, unknown>) ?? parsed, auth.token);
+    const body = await executeCommand({operation:"import",payload:{bundle:(parsed.bundle as Record<string, unknown>) ?? parsed}});
     await loadAccounts(body.account.account_id); ElMessage.success("账户资产包已校验并导入为新账户");
   } catch (exc) { error.value = exc instanceof Error ? exc.message : "导入失败"; }
   finally { busy.value = ""; input.value = ""; }

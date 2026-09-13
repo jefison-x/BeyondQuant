@@ -308,11 +308,11 @@ export async function reconcilePoolCreation(kind: PoolCreationKind, key: string,
   return value;
 }
 
-export type PaperCommand = {operation:'create'|'order'|'settlement'|'controls'|'rebind'|'delete';key:string;account_id?:string;payload:Record<string,unknown>};
+export type PaperCommand = {operation:'create'|'import'|'order'|'settlement'|'controls'|'rebind'|'delete';key:string;account_id?:string;payload:Record<string,unknown>};
 export class PaperCommandRejected extends Error {}
 export async function sendPaperCommand(command:PaperCommand,token:string) {
   const suffix = {settlement:'settlements',controls:'controls',rebind:'binding',delete:''};
-  const path = command.operation === 'create' ? '/accounts' : command.operation === 'order' ? '/orders'
+  const path = command.operation === 'create' ? '/accounts' : command.operation === 'import' ? '/accounts/import' : command.operation === 'order' ? '/orders'
     : '/accounts/'+encodeURIComponent(command.account_id!)+(suffix[command.operation] ? '/'+suffix[command.operation] : '');
   let value:any;
   try {

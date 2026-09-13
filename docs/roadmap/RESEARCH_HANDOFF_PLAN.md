@@ -118,3 +118,5 @@ H4 模拟账户并发资金校验及换绑/订单原键恢复已修复，
 H4 模拟账户六类命令原回执及页面刷新恢复通过；账户创建、下单连续两次丢回执后
 只读找回原结果，未重复扣款，见[PAPER-COMMAND-RECOVERY](../evidence/research-handoff-h4/PAPER-COMMAND-RECOVERY.md)。
 账户导入、剩余接口映射和完整H5模型研究继续。
+
+H4账户导入已补原键事务回执、摘要键及真实浏览器刷新恢复，见[PAPER-IMPORT-RECOVERY](../evidence/research-handoff-h4/PAPER-IMPORT-RECOVERY.md)。

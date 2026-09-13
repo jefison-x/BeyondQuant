@@ -729,11 +729,11 @@ class PaperTradingStore(PgStoreMixin):
         return self.get_account(account_id, trusted_owner=owner)
 
     def reconcile_command(self, operation, key, *, account_id=None, trusted_owner, trusted_workspace):
-        actions = {"create":"account_created", "controls":"controls_updated", "rebind":"universe_rebound", "delete":"account_deleted", "settlement":"settled"}
+        actions = {"create":"account_created", "import":"account_imported", "controls":"controls_updated", "rebind":"universe_rebound", "delete":"account_deleted", "settlement":"settled"}
         if operation not in {*actions,"order"}:
             raise ValueError("unsupported paper receipt operation")
         key = _idempotency(key)
-        identity = None if operation == "create" else _id(account_id,prefix="paper_account")
+        identity = None if operation in {"create","import"} else _id(account_id,prefix="paper_account")
         params = {"owner":trusted_owner,"workspace":trusted_workspace,"key":key,"account":identity}
         if operation == "order":
             row = self._fetch_one("""SELECT o.* FROM paper_orders o JOIN paper_accounts a USING(account_id)
@@ -1926,7 +1926,8 @@ class PaperTradingStore(PgStoreMixin):
 
     def import_bundle(
         self, payload: object, *, trusted_owner: str | None = None,
-        trusted_actor: str | None = None,
+        trusted_actor: str | None = None, trusted_workspace: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("paper account bundle must be an object")
@@ -1973,9 +1974,8 @@ class PaperTradingStore(PgStoreMixin):
             raise ValueError("paper account bundle account sections are invalid")
         source_name = _text(account_data.get("name"), field="name", max_length=96)
         name = f"{source_name} · 导入 {bundle_sha256[:8]}"
-        if self._fetch_one("SELECT account_id FROM paper_accounts WHERE owner_principal = :owner AND name = :name",
-                           {"owner": owner, "name": name}) is not None:
-            raise PaperTradingConflict("paper account name already exists; import never overwrites")
+        key = _idempotency(idempotency_key or ("paper-import-" + bundle_sha256))
+        request_hash = _hash({"bundle_sha256":bundle_sha256,"workspace":trusted_workspace})
         initial_cash = _money(account_data.get("initial_cash"), "initial_cash", positive=True)
         cash = _money(account_data.get("cash"), "cash")
         equity = _money(account_data.get("equity"), "equity")
@@ -1995,14 +1995,27 @@ class PaperTradingStore(PgStoreMixin):
         account_id = _new_id("paper_account")
         now = _now()
         with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:identity,0))",
+                    {"identity":"paper-import|"+owner+"|"+key})
+            prior = fetch_one(connection, "SELECT * FROM paper_account_audit WHERE owner_principal=:owner AND idempotency_key=:key",
+                              {"owner":owner,"key":key})
+            if prior is not None:
+                if prior["action"] != "account_imported" or prior["request_hash"] != request_hash:
+                    raise PaperTradingConflict("import idempotency key was reused")
+                return {"imported":True,"account":self.get_account(prior["account_id"],trusted_owner=owner),"bundle_sha256":bundle_sha256}
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:identity,0))",
+                    {"identity":"paper-name|"+owner+"|"+name})
+            if fetch_one(connection,"SELECT account_id FROM paper_accounts WHERE owner_principal=:owner AND name=:name",{"owner":owner,"name":name}):
+                raise PaperTradingConflict("paper account name already exists; import never overwrites")
             execute(connection, """INSERT INTO paper_accounts
-                    (account_id, owner_principal, name, cash, initial_cash, equity,
+                    (account_id, owner_principal, workspace_id, name, cash, initial_cash, equity,
                      realized_pnl, currency, status, last_settlement_date,
                      bound_pool_id, bound_snapshot_id, created_at, updated_at, version)
-                    VALUES (:account_id, :owner, :name, :cash, :initial_cash, :equity,
+                    VALUES (:account_id, :owner, :workspace, :name, :cash, :initial_cash, :equity,
                             :realized, 'CNY', 'active', :last_settlement_date,
                             :pool_id, :snapshot_id, :at, :at, 1)""",
-                    {"account_id": account_id, "owner": owner, "name": name, "cash": cash,
+                    {"account_id": account_id, "owner": owner, "workspace":trusted_workspace, "name": name, "cash": cash,
                      "initial_cash": initial_cash, "equity": equity, "realized": realized,
                      "last_settlement_date": account_data.get("last_settlement_date"),
                      "pool_id": pool_id, "snapshot_id": snapshot_id, "at": now})
@@ -2162,6 +2175,11 @@ class PaperTradingStore(PgStoreMixin):
                     {"transfer_id": _new_id("paper_transfer"), "account_id": account_id,
                      "owner": owner, "sha": bundle_sha256,
                      "details": {"actor_principal": actor}, "at": now})
+            execute(connection, """INSERT INTO paper_account_audit
+                (audit_id,account_id,owner_principal,actor_principal,action,idempotency_key,request_hash,details_json,created_at)
+                VALUES (:id,:account,:owner,:actor,'account_imported',:key,:hash,:details,:now)""",
+                {"id":_new_id("paper_audit"),"account":account_id,"owner":owner,"actor":actor,"key":key,"hash":request_hash,
+                 "details":{"bundle_sha256":bundle_sha256},"now":now})
         return {"imported": True, "account": self.get_account(account_id, trusted_owner=owner),
                 "bundle_sha256": bundle_sha256}
 

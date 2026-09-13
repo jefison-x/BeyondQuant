@@ -5103,11 +5103,12 @@ def export_paper_account(account_id: str, request: Request) -> dict[str, object]
 
 @app.post("/v1/paper/accounts/import", status_code=201)
 def import_paper_account(payload: dict[str, Any], request: Request) -> dict[str, object]:
-    context = _required_agent_context(request, payload)
+    context = _required_agent_context(request, payload, include_workspace=True)
     bundle = payload.get("bundle", payload)
     return _paper_call(lambda: paper_store.import_bundle(
         bundle, trusted_owner=context["owner_principal"],
-        trusted_actor=context["actor_principal"],
+        trusted_actor=context["actor_principal"], trusted_workspace=context["workspace_id"],
+        idempotency_key=payload.get("idempotency_key"),
     ))
 
 
