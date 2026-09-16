@@ -349,6 +349,6 @@ export async function fetchByqBacktestTaskLookup(
       backtest_task_id: receipt.backtest_task_id, signal_producer_job_id: receipt.signal_producer_job_id,
       signal_status: receipt.signal_status,
     }, next_action: "Read the recovered backtest_task_id for current state; confirmation grants no execution permission." }
-    : { retryable: false, next_action: "Preserve the original task and key. Query this identity within the task budget; do not resubmit or infer absence from a list." }),
+    : { retryable: false, next_action: "Preserve the original task and key. This lookup only recovers an execution whose response was not observed; if the approved create was never submitted, execute it once with this exact original key. Do not infer absence from a list." }),
   }, false);
 }

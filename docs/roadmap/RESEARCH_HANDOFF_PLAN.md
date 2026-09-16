@@ -219,3 +219,10 @@ Worker/Sandbox（6）与 8 个人工面；H5 完整研究仍待做。
 `check-reliability-review.py` 报 **reviewed=560、verified=560、unreviewed=0、manual_pending=[]、errors=[]、
 complete=true**。H4 逐接口台账至此完整；H5 真实完整研究仍未开始。
 证据见 [ASSET-IMPORT-IDEMPOTENCY](../evidence/research-handoff-h4/ASSET-IMPORT-IDEMPOTENCY.md)。
+
+2026-09-17：**H5 真实三轮研究验收通过**。在模型可用的隔离栈上用真实付费模型完成同一原任务三轮
+规则策略回测（+3.35%/+1.26%/0%），保存 validated 报告并按最高收益选优，人工创建并绑定模拟账户；
+`verify_completion` 在真实持久对象上通过，见
+[LIVE-RESEARCH](../evidence/research-handoff-h5/LIVE-RESEARCH.md)。
+为使回合真正闭环，修复了审批续接的瞬时新根竞争重试、批准后续接顺序合同、策略执行合同与合成数据夹具；
+构建版本推进至 `post-u8.115`。H1–H5 全部完成；发布与部署仍按维护者独立授权执行。

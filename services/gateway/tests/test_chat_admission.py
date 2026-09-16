@@ -68,6 +68,34 @@ def test_approval_continuation_rehydrates_exact_session_after_adapter_restart(mo
     assert prompts[1][1]["idempotency_key"] == "approval-continuation-approval"
 
 
+def test_approval_continuation_retries_transient_new_root_conflict(monkeypatch):
+    monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: {"messages": []})
+    monkeypatch.delenv("BYQ_CHAT_ADMISSION_FILE", raising=False)
+    session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="synthetic"))
+    monkeypatch.setattr(main, "_trusted_agent_headers", lambda _: {})
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    monkeypatch.setattr(main.time, "sleep", lambda _delay: None)
+    states, calls = [], []
+
+    def backend(method, path, payload, **kwargs):
+        states.append(payload["status"])
+        return {"approval": {"continuation_changed": True, "continuation_status": payload["status"],
+                             "continuation_attempt": 1}}
+
+    def adapter(*args, **kwargs):
+        calls.append(1)
+        if len(calls) < 3:
+            conflict = main.HTTPException(status_code=409, detail="runtime session is not available for this operation")
+            conflict.adapter_conflict_detail = "previous runtime process cleanup is not complete"
+            raise conflict
+        return {"accepted": True, "run_id": "one-run"}
+
+    monkeypatch.setattr(main, "_backend_request", backend)
+    monkeypatch.setattr(main, "_adapter_post", adapter)
+    assert main.continue_approval_conversation(None, "conversation", "approval", "approved", "action") == {"status": "submitted"}
+    assert states == ["submitting", "submitted"] and len(calls) == 3
+
+
 def test_approval_continuation_preserves_unknown_receipts_without_resubmission(monkeypatch):
     monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: {"messages": []})
     monkeypatch.delenv("BYQ_CHAT_ADMISSION_FILE", raising=False)

@@ -1081,7 +1081,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_backtest_task_get",
     {
-      description: "Read derived task state by backtest_task_id OR recover a signal-backed creation receipt using the original task_id and idempotency_key. Choose exactly one identity. Unknown never permits resubmission; a confirmed receipt provides the ID for a subsequent state read.",
+      description: "Read derived task state by backtest_task_id OR recover a signal-backed creation receipt using the original task_id and idempotency_key. Choose exactly one identity. This lookup only recovers an execution whose response was not observed; if the approved create was never submitted, execute it once with this exact original key. Unknown never permits duplicate resubmission; a confirmed receipt provides the ID for a subsequent state read.",
       inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_(?:ml_)?[0-9a-f]{32}$/).optional(),
         task_id: z.string().min(1).optional(), idempotency_key: z.string().trim().min(1).max(128).optional() },
     },

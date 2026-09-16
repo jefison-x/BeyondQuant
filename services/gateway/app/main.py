@@ -667,6 +667,17 @@ def _adapter_post(path: str, *, payload: dict[str, object] | None = None, timeou
         detail = "runtime adapter rejected the request"
         if status == 409:
             detail = "runtime session is not available for this operation"
+            # Keep the private adapter reason off the product response, but
+            # retain it so a transient new-root race can be retried instead of
+            # being reported as a terminal continuation failure.
+            try:
+                rejected_conflict = exc.response.json()
+            except ValueError:
+                rejected_conflict = None
+            if isinstance(rejected_conflict, dict) and isinstance(rejected_conflict.get("detail"), str):
+                error = HTTPException(status_code=status, detail=detail)
+                error.adapter_conflict_detail = rejected_conflict["detail"]
+                raise error from exc
         elif status == 503:
             detail = "product model is unavailable"
             prefix = "/internal/runtime/sessions/"
@@ -1012,6 +1023,20 @@ def _replace_lost_runtime_session(session: ProductSession) -> ProductSession:
     )
 
 
+TRANSIENT_ROOT_CONFLICTS = (
+    "previous runtime process cleanup is not complete",
+    "new root requires a fresh public conversation projection",
+    "session closed during initialization",
+    "is still initializing",
+    "cannot accept a prompt in state running",
+)
+
+
+def _transient_root_conflict(error: HTTPException) -> bool:
+    detail = getattr(error, "adapter_conflict_detail", None)
+    return isinstance(detail, str) and any(marker in detail for marker in TRANSIENT_ROOT_CONFLICTS)
+
+
 def continue_approval_conversation(
     request: Request, conversation_id: str, approval_id: str, decision: str, action: str,
 ) -> dict[str, str]:
@@ -1056,6 +1081,10 @@ def _continue_approval_conversation(
             f"First execute the already approved action {action}; use its exact bound resource, "
             "do not request approval for the same action again, avoid duplicate writes, and report "
             "the authoritative domain outcome before proceeding. "
+            "If approval was requested before the action was ever submitted, the action is not yet "
+            "executed: submit it now with its original idempotency key. The original-key lookup "
+            "recovers an execution whose response was not observed; an absent receipt is not proof "
+            "that an unexecuted approved action was already performed. "
             "Then re-read the original research task through BeyondQuant MCP, using only the "
             "exact task/artifact lineage of this approval and the original conversation goal. "
             "Never substitute the latest task or infer missing bindings. Review the full objective, "
@@ -1076,17 +1105,39 @@ def _continue_approval_conversation(
     prompt_attempted = False
     try:
         session = _product_session(request, conversation_id)
-        payload = {"content": instruction, "require_model_key": True,
-                   "idempotency_key": f"approval-continuation-{approval_id}",
-                   **_runtime_recovery_payload(session)}
-        try:
-            prompt_attempted = True
-            receipt = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
-        except HTTPException as exc:
-            if exc.status_code != 404:
+
+        def continuation_payload() -> dict[str, object]:
+            return {"content": instruction, "require_model_key": True,
+                    "idempotency_key": f"approval-continuation-{approval_id}",
+                    **_runtime_recovery_payload(session)}
+
+        payload = continuation_payload()
+        receipt = None
+        conflict: HTTPException | None = None
+        # A new DSH root can briefly reject its first prompt while the previous
+        # root's process is still being released. The same original idempotency
+        # key is reused, so a bounded retry cannot execute the turn twice.
+        for delay in (0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0):
+            if delay:
+                time.sleep(delay)
+            try:
+                prompt_attempted = True
+                receipt = _adapter_post(
+                    f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
+                break
+            except HTTPException as exc:
+                if exc.status_code == 404:
+                    session = _replace_lost_runtime_session(session)
+                    payload = continuation_payload()
+                    continue
+                if exc.status_code == 409 and _transient_root_conflict(exc):
+                    conflict = exc
+                    continue
                 raise
-            session = _replace_lost_runtime_session(session)
-            receipt = _adapter_post(f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
+        if receipt is None:
+            if conflict is not None:
+                raise conflict
+            raise HTTPException(status_code=502, detail="continuation prompt was not accepted")
         if not isinstance(receipt, dict) or receipt.get("accepted") is not True or not _valid_prompt_run_id(receipt.get("run_id")):
             raise HTTPException(status_code=502, detail="continuation receipt is unconfirmed")
     except HTTPException as error:

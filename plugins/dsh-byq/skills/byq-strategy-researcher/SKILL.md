@@ -17,16 +17,29 @@ unresolved reference with the newest workspace object. An ML request belongs
 to the ML researcher; an ambiguous reference requires clarification.
 
 The executable contract is exact. Define `class CustomStrategy` with exactly
-one synchronous output method:
+one synchronous output method. Only `generate_signals` is executable by the
+signal/backtest engine; `generate_target_weights` passes static validation but
+is **not** supported by the current execution profile:
 
 ```python
 class CustomStrategy:
     def generate_signals(self, data, parameters):
-        return {}
+        # data: pandas DataFrame indexed by (symbol, trade_date).
+        # Columns: open, high, low, close, volume and possibly prev_close,
+        # is_suspended, up_limit, down_limit, daily_basic__*, fina_indicator__*,
+        # is_universe_member.
+        signals = {}
+        for symbol in data.index.get_level_values("symbol").unique():
+            frame = data.xs(symbol, level="symbol")
+            # Signal values must be exactly -1, 0 or 1, one per trade_date.
+            signals[symbol] = pd.Series(0, index=frame.index)
+        return signals
 ```
 
-Alternatively use
-`generate_target_weights(self, data, portfolio_state, parameters)`, never both.
+Return a mapping keyed only by symbols present in the frozen universe. Each
+value must be a pandas Series indexed by `trade_date` with values exactly
+`-1`, `0` or `1`; never invent symbol keys, dates outside the frozen bars, or
+values such as target weights or prices.
 The strategy payload requires `strategy_id`, `name`, `category`, and `script`;
 it may include `description`, `parameters`, `parameter_schema`, and declared
 `data_requirements`. A planned research task is valid input: do not guess or
