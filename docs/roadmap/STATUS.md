@@ -22,7 +22,15 @@
 - 长研究维护：维护者已接受[ADR-0072](../architecture/adr/ADR-0072-long-running-research-checkpoints.md)，
   取消根/子默认总时长硬终止，新增15分钟检查，新后台期限随许可最长24小时；旧许可/预算/取消保留。
   [执行与验收记录](LONG_RESEARCH_EXECUTION_CHANGE.md)独立记录本地验证，生产不由此自动更新。
-- 下一 Product 阶段：**未授权**。必须由维护者明确选择并授权，且继续遵守一阶段一工作树/Draft PR 的合并门禁。
+- H 系列研究连续性整改：H1–H5 全部完成并合并（PR #280/#281）；H4 逐接口台账 `complete=true`，
+  H5 真实三轮研究在隔离栈通过 `verify_completion`；生产已部署 `dsh-0.1.2rc1-post-u8.115`。
+  见[研究交接计划](RESEARCH_HANDOFF_PLAN.md)与[H5 记录](../evidence/research-handoff-h5/LIVE-RESEARCH.md)。
+  这是维护，不是新的 Product Phase；Phase 97 仍为当前已完成 Product 阶段。
+- 下一 Product 阶段：**Phase 98（0.10 前置资格与数据基准合同）已授权**（维护者 2026-09-17）。
+  依据 [ADR-0074](../architecture/adr/ADR-0074-data-baseline-and-qualification-boundaries.md)，交付
+  [数据基准合同](V1_DATA_BASELINE_CONTRACT.md)、[HIST 历史关系资格调查](V1_HIST_DATA_QUALIFICATION.md) 与
+  [深度学习环境资格调查](V1_DEEP_LEARNING_ENVIRONMENT_QUALIFICATION.md)；不实现数据扩容、不引入 HIST、
+  不授权 GPU/有限调参/新 Worker 拓扑。继续遵守一阶段一工作树/Draft PR 的合并门禁。
 - 版本规划：维护者已接受 [ADR-0071](../architecture/adr/ADR-0071-v1-machine-learning-release-plan.md) 与
   [0.9.x → 1.0 路线](VERSION_PLAN.md)。1.0 须在约定主流机器学习模块及研究闭环开发、运行稳定后发布，
   包括 HIST 的历史关系资格和最终候选至少14天观察；仅当前整改完成不足以发布1.0。
