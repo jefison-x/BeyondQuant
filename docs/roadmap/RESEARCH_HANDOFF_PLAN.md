@@ -142,3 +142,80 @@ H4 研究短事务等待与网页同原键并发已修复，研究GET台账补�
 H5 三轮研究的固定验收合同和反例门禁已起草，见[COMPLETE-RESEARCH-CONTRACT](../evidence/research-handoff-h5/COMPLETE-RESEARCH-CONTRACT.md)。未执行真实模型，不计作完成。
 
 H4 MCP入口畸形请求进程退出及请求体漏拦截已修复，并纠正`.87`网页公开回执合同，完整MCP测试通过，见[MCP-TRANSPORT](../evidence/research-handoff-h4/MCP-TRANSPORT.md)。其他工具/人工入口与H5继续。
+
+2026-09-16：策略投影两条 Gateway 只读转发入口完成具名核对（422/5xx/超时错误合同与 limit/offset 透传），
+新增路由级反例测试，台账 116→118/560，见[STRATEGY-PROJECTION-GATEWAY](../evidence/research-handoff-h4/STRATEGY-PROJECTION-GATEWAY.md)。
+仅登记这两条转发，其余 Gateway/人工入口与 H5 继续。
+
+2026-09-16：ML 研究对象三条 Gateway 入口（详情读取、生命周期、删除）完成具名核对：
+投影字段白名单、lifecycle 允许列表与原键、删除的执行事实守卫，见[ML-STUDY-GATEWAY](../evidence/research-handoff-h4/ML-STUDY-GATEWAY.md)。台账 118→121/560；其余入口与 H5 继续。
+
+2026-09-16：策略导出、版本审批、策略目录三条 Gateway 只读入口完成具名核对（含非法 lifecycle 在
+Gateway 即 422 的本地校验），台账 121→124/560，见[STRATEGY-PROJECTION-GATEWAY](../evidence/research-handoff-h4/STRATEGY-PROJECTION-GATEWAY.md)。其余入口与 H5 继续。
+
+2026-09-16：策略族剩余七条 Gateway 写入口（草稿保存/删除、校验、版本创建、审批创建、ML 策略建版/审批）
+完成具名核对，覆盖原键透传、reviewer 注入、`_ml_command` 服务端 nonce 与领域准入错误合同，
+台账 124→131/560，见[STRATEGY-COMMAND-GATEWAY](../evidence/research-handoff-h4/STRATEGY-COMMAND-GATEWAY.md)。
+策略 Gateway 族至此闭合；其他族与 H5 继续。
+
+2026-09-16：回测族十条 Gateway 入口（选项/目录/详情/结果/清单/分析六读 + 提交/运行/取消/删除四写）
+完成具名核对，覆盖有界投影、`projection=summary`、原键提交与写未知恢复，台账 131→141/560，
+见[BACKTEST-GATEWAY](../evidence/research-handoff-h4/BACKTEST-GATEWAY.md)。其他族与 H5 继续。
+
+2026-09-16：ML 研究族十一条 Gateway 入口（能力/选项/目录/工作区/回执核对/训练/预测读取 + 训练/取消/预测命令）
+完成具名核对，覆盖训练提交登记→超时原键 reconcile、字段白名单与服务端 nonce，台账 141→152/560，
+见[ML-RESEARCH-GATEWAY](../evidence/research-handoff-h4/ML-RESEARCH-GATEWAY.md)。
+
+2026-09-16：研究任务族十一条 Gateway 入口（实体/制品/交接/任务/回执/续接许可/实验/选项读取 +
+续接许可创建/撤销、任务创建）完成具名核对，覆盖 owner 注入、确认头与同站校验、原键规范化，
+台账 152→163/560。证据沿用 [H2](../evidence/research-handoff-h2/AUDIT.md)、
+[H3](../evidence/research-handoff-h3/AUDIT.md) 记录与 Gateway 业务代理测试。其他族与 H5 继续。
+
+2026-09-16：数据中心族 19 条、信号/因子/审批 9 条、产品反馈 15 条、模拟交易/股票池 41 条、
+概览/操作/插件 12 条 Gateway 入口完成具名核对；证据见
+[DATA-CENTER-GATEWAY](../evidence/research-handoff-h4/DATA-CENTER-GATEWAY.md)、
+[SIGNAL-APPROVAL-GATEWAY](../evidence/research-handoff-h4/SIGNAL-APPROVAL-GATEWAY.md)、
+[FEEDBACK-GATEWAY](../evidence/research-handoff-h4/FEEDBACK-GATEWAY.md)、
+[PAPER-GATEWAY](../evidence/research-handoff-h4/PAPER-GATEWAY.md)、
+[ASSETS-PLUGIN-GATEWAY](../evidence/research-handoff-h4/ASSETS-PLUGIN-GATEWAY.md)。台账 163→259/560。
+
+2026-09-16：源码审查发现 `product_assets_import` 每次导入使用随机 nonce，相同 bundle 重复提交会创建
+新副本，原键核对合同存疑。按 H4 纪律**不登记**该入口，保持 `NEEDS_EVIDENCE`，待真实反例确认后再修复或
+明确合同；不将其作为已确认 bug 计数。其他族与 H5 继续。
+
+2026-09-16：会话/回合/内部运行时 19 条 Gateway 入口完成具名核对（持久消息原键、运行时丢失重建、
+未确认回执判定、SSE 续播），台账 259→278/560，见
+[GATEWAY-SESSION](../evidence/research-handoff-h4/GATEWAY-SESSION.md)。
+至此 Gateway 层仅剩 `product_assets_import` 未登记，其余转入 Backend（195）、MCP 工具（80）、
+Worker/Sandbox（6）与 8 个人工面；H5 完整研究仍待做。
+
+2026-09-16：转入 Backend 领域接口，完成 ML 20、模拟交易/股票池/信号 49、回测/回测任务 19、
+研究核心 8、会话目录与续接 18、反馈 4、运维/插件 6、数据 27 共 151 条具名核对，
+台账 278→429/560。证据见
+[ML-BACKEND](../evidence/research-handoff-h4/ML-BACKEND.md)、
+[PAPER-BACKEND](../evidence/research-handoff-h4/PAPER-BACKEND.md)、
+[BACKTEST-BACKEND](../evidence/research-handoff-h4/BACKTEST-BACKEND.md)、
+[RESEARCH-CORE](../evidence/research-handoff-h4/RESEARCH-CORE.md)、
+[CONVERSATION-CONTINUATION-BACKEND](../evidence/research-handoff-h4/CONVERSATION-CONTINUATION-BACKEND.md)、
+[DATA-BACKEND](../evidence/research-handoff-h4/DATA-BACKEND.md)。
+剩余：Backend Agent/学习/工程/策略/Web证据约 54 条、MCP 工具 80、Worker/Sandbox 6、人工面 8，
+以及 H5 完整研究。
+
+2026-09-16：完成 Backend 剩余 44 条（Agent/学习/工程/策略/Web证据/因子/插件/健康）、
+全部 80 个 MCP 工具、4 个 Worker 与 signal-sandbox 2 个入口，台账 429→559/560。
+仅 `product_assets_import` 保持 `NEEDS_EVIDENCE`（重放幂等合同待确认），另 8 个人工面待审。
+证据见 [BACKEND-REMAINING](../evidence/research-handoff-h4/BACKEND-REMAINING.md)、
+[MCP-TOOLS](../evidence/research-handoff-h4/MCP-TOOLS.md)、
+[WORKERS-SANDBOX](../evidence/research-handoff-h4/WORKERS-SANDBOX.md)。
+台账 `complete=false`：`product_assets_import` 与 8 个人工面未关闭；H5 完整研究仍待做。
+
+2026-09-16：8 个人工面（Cloudflare/本地发布者、反馈中继、Hub http/cron/DO/管理台、DSH 运行时回调）
+已具名登记，`manual_pending` 清空，见 [MANUAL-SURFACES](../evidence/research-handoff-h4/MANUAL-SURFACES.md)。
+台账 559/560、`manual_pending=[]`、`errors=[]`，仅 `product_assets_import` 未关闭（`complete=false`）。
+`framework_middleware_callbacks` 代表文件为解释性选择，待维护者确认。
+
+2026-09-16：修复 `product_assets_import` 重放幂等（owner|manifest_sha256 确定性原键；账户/生产器导入补原键；
+后端生产器导入接受可选原键并复用回执），新增真实 PostgreSQL 与 Gateway 反例测试；
+`check-reliability-review.py` 报 **reviewed=560、verified=560、unreviewed=0、manual_pending=[]、errors=[]、
+complete=true**。H4 逐接口台账至此完整；H5 真实完整研究仍未开始。
+证据见 [ASSET-IMPORT-IDEMPOTENCY](../evidence/research-handoff-h4/ASSET-IMPORT-IDEMPOTENCY.md)。

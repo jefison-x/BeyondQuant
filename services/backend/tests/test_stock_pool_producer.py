@@ -6,7 +6,11 @@ from decimal import Decimal
 import pytest
 
 from app.paper_trading import PaperTradingStore
-from app.stock_pool_producer import StockPoolProducerNotFound, StockPoolProducerStore
+from app.stock_pool_producer import (
+    StockPoolProducerConflict,
+    StockPoolProducerNotFound,
+    StockPoolProducerStore,
+)
 from tests.workspace_helpers import trusted_agent_context
 
 
@@ -235,3 +239,38 @@ def test_historical_scope_rejects_stale_snapshot_at_create_and_materialize():
     assert result.get('snapshot_id') is None
     assert store.paper_store.get_pool(created['pool']['pool_id'], trusted_owner='historical-window')['current_snapshot_id'] is None
     store.close()
+
+
+def test_producer_import_retry_reuses_original_pool_and_rejects_conflicting_input():
+    headers = trusted_agent_context('import-review')
+    paper = PaperTradingStore()
+    store = StockPoolProducerStore(paper_store=paper)
+    context = {'trusted_owner': 'import-review', 'trusted_workspace': headers['x-byq-workspace-id']}
+    payload = {
+        'name': '动量池', 'description': None, 'producer_kind': 'dynamic',
+        'definition': {'base_universe': {'kind': 'security_master'}, 'top_n': 5, 'cadence': 'daily'},
+        'idempotency_key': 'import-producer-1',
+    }
+    first = store.import_inactive_definition(payload, **context)
+    assert first['pool']['status'] == 'inactive'
+    replay = store.import_inactive_definition(payload, **context)
+    assert replay['pool']['pool_id'] == first['pool']['pool_id']
+    assert replay['producer']['definition_id'] == first['producer']['definition_id']
+    assert store.reconcile_creation(
+        'dynamic', 'import-producer-1', **context,
+    )['pool']['pool_id'] == first['pool']['pool_id']
+
+    other = store.import_inactive_definition(
+        {**payload, 'idempotency_key': 'import-producer-2'}, **context,
+    )
+    assert other['pool']['pool_id'] != first['pool']['pool_id']
+
+    with pytest.raises(StockPoolProducerConflict):
+        store.import_inactive_definition({**payload, 'name': '其他池'}, **context)
+
+    legacy = store.import_inactive_definition(
+        {key: value for key, value in payload.items() if key != 'idempotency_key'}, **context,
+    )
+    assert legacy['pool']['pool_id'] not in {first['pool']['pool_id'], other['pool']['pool_id']}
+    store.close()
+    paper.close()

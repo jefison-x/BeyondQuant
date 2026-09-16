@@ -363,7 +363,9 @@ class StockPoolProducerStore(PgStoreMixin):
         self, payload: object, *, trusted_owner: str, trusted_workspace: str,
     ) -> dict[str, object]:
         """Restore portable intent only; imported authority and snapshots are never trusted."""
-        if not isinstance(payload, dict) or set(payload) != {"name", "description", "producer_kind", "definition"}:
+        if not isinstance(payload, dict) or set(payload) - {"idempotency_key"} != {
+            "name", "description", "producer_kind", "definition",
+        }:
             raise ValueError("producer import must contain name, description, producer_kind and definition")
         owner, workspace = _text(trusted_owner, "owner_principal"), _text(trusted_workspace, "workspace_id")
         name = _text(payload.get("name"), "name")
@@ -387,8 +389,29 @@ class StockPoolProducerStore(PgStoreMixin):
             schema, schedule = "stock-pool-producer.v1", {"cadence": "on_validated_import"}
         else:
             raise ValueError("producer_kind must be index or dynamic")
+        supplied_key = payload.get("idempotency_key")
+        key = _text(supplied_key, "idempotency_key") if supplied_key not in {None, ""} else None
+        request_hash = _hash({
+            "name": name, "description": description, "producer_kind": kind, "definition": definition,
+        })
         pool_id, definition_id, now = _new_id("stock_pool"), _new_id("stock_pool_definition"), _now()
         with self._transaction() as connection:
+            if key is not None:
+                execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                        {"scope": f"producer-import|{workspace}|{owner}|{key}"})
+                previous = fetch_one(connection, """SELECT * FROM stock_pool_producer_idempotency
+                    WHERE workspace_id=:workspace AND owner_principal=:owner AND idempotency_key=:key""",
+                    {"workspace": workspace, "owner": owner, "key": key})
+                if previous:
+                    if previous["request_hash"] != request_hash:
+                        raise StockPoolProducerConflict("idempotency key was already used with different input")
+                    pool = fetch_one(connection, "SELECT pool_id FROM stock_pools WHERE pool_id=:pool",
+                                     {"pool": previous["pool_id"]})
+                    if pool is None:
+                        raise StockPoolProducerConflict("idempotent pool result is unavailable")
+                    return {"pool": self.paper_store.get_pool(previous["pool_id"], trusted_owner=owner),
+                            "producer": self.get_definition(previous["pool_id"], trusted_owner=owner,
+                                                            trusted_workspace=workspace)}
             execute(connection, """INSERT INTO stock_pools
                 (pool_id,workspace_id,owner_principal,name,pool_type,description,weights_json,symbols_json,
                  version,provenance_json,created_at,updated_at,status,metadata_version)
@@ -405,6 +428,12 @@ class StockPoolProducerStore(PgStoreMixin):
                 {"definition_id": definition_id, "pool": pool_id, "workspace": workspace, "owner": owner,
                  "kind": kind, "schema": schema, "definition": definition, "schedule": schedule,
                  "fingerprint": _hash(definition), "now": now})
+            if key is not None:
+                execute(connection, """INSERT INTO stock_pool_producer_idempotency
+                    (workspace_id,owner_principal,idempotency_key,request_hash,pool_id,run_id,created_at)
+                    VALUES (:workspace,:owner,:key,:hash,:pool,NULL,:now)""",
+                    {"workspace": workspace, "owner": owner, "key": key, "hash": request_hash,
+                     "pool": pool_id, "now": now})
         return {"pool": self.paper_store.get_pool(pool_id, trusted_owner=owner),
                 "producer": self.get_definition(pool_id, trusted_owner=owner, trusted_workspace=workspace)}
 

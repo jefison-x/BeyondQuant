@@ -872,6 +872,81 @@ def test_product_assets_export_and_import_are_owner_scoped(monkeypatch) -> None:
     assert imported.json()["source_owner_reused"] is False
 
 
+def test_product_asset_import_reuses_stable_keys_on_retry(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    calls: list[dict[str, object]] = []
+
+    class FakeResponse:
+        def __init__(self, body: dict[str, object]) -> None:
+            self.body = body
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self.body
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        calls.append({"method": method, "url": url, "json": kwargs.get("json")})
+        if url.endswith("/v1/research/tasks"):
+            return FakeResponse({"task_id": "task_import_1"})
+        if url.endswith("/v1/research/strategies/validate"):
+            return FakeResponse({"artifact": {"artifact_id": "artifact_draft_1"}})
+        if url.endswith("/v1/research/strategies/versions"):
+            return FakeResponse({"strategy_version": {"version_id": "version-portable-1"}})
+        if url.endswith("/v1/research/artifacts"):
+            return FakeResponse({"artifact_id": "artifact_archive_1"})
+        return FakeResponse({})
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    unsigned = {
+        "schema_version": "byq-workspace-assets-v2",
+        "manifest_algorithm": "byq-semantic-json-v1",
+        "exported_at": "2026-09-16T00:00:00+00:00",
+        "owner_principal": "product-user",
+        "assets": {
+            "strategies": [{
+                "kind": "strategy_version",
+                "export": {"schema_version": "strategy-version-v1", "version_id": "version-portable-1",
+                           "snapshot": {"strategy_id": "portable_one"}},
+            }],
+            "backtests": [{"kind": "backtest_archive", "archive": {}}],
+            "pools": [
+                {"pool_id": "stock_pool_1", "name": "沪深300", "pool_type": "custom",
+                 "symbols": ["000001.SZ"]},
+                {"pool_id": "stock_pool_2", "name": "动量池", "pool_type": "dynamic",
+                 "portable_producer": {"producer_kind": "dynamic",
+                                       "definition": {"base_universe": {"kind": "security_master"},
+                                                      "top_n": 5, "cadence": "daily"}}},
+            ],
+            "paper_accounts": [],
+        },
+    }
+    bundle = {**unsigned, "manifest_sha256": product_api._semantic_json_digest(unsigned)}
+    client = TestClient(main.app)
+    auth = {"Authorization": "Bearer product-test-token"}
+
+    first = client.post("/api/product/settings/assets/import", headers=auth, json=bundle)
+    first_calls = [call["json"] for call in calls if call["method"] == "POST"]
+    calls.clear()
+    second = client.post("/api/product/settings/assets/import", headers=auth, json=bundle)
+    second_calls = [call["json"] for call in calls if call["method"] == "POST"]
+
+    assert first.status_code == 200 and second.status_code == 200
+    assert first_calls == second_calls
+    keyed = [
+        (payload.get("idempotency_key"), payload.get("trace_id"))
+        for payload in first_calls if isinstance(payload, dict)
+    ]
+    assert all(key is not None for key, _ in keyed)
+    assert len({key for key, _ in keyed}) == len(keyed)
+    assert any(
+        isinstance(payload, dict) and str(payload.get("idempotency_key", "")).startswith("import-producer-")
+        for payload in first_calls
+    )
+
+
 def test_product_asset_manifest_survives_browser_number_round_trip() -> None:
     document = {
         "schema_version": "byq-workspace-assets-v2",
@@ -1052,6 +1127,64 @@ def test_product_strategy_draft_and_projection_routes_forward_owner_headers(monk
         assert response.status_code == 200
         assert captured["url"].endswith(f"/{suffix}?limit=50&offset=1000")
         assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+
+def test_product_strategy_projection_read_failures_stay_explicit(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    client = TestClient(main.app)
+    auth = {"Authorization": "Bearer product-test-token"}
+
+    def failure(status: int, detail: str):
+        def fake_request(method: str, url: str, **kwargs) -> httpx.Response:
+            return httpx.Response(status, json={"detail": detail}, request=httpx.Request(method, url))
+        return fake_request
+
+    monkeypatch.setattr(product_api.httpx, "request", failure(422, "strategy_id has invalid format"))
+    for suffix in ("versions", "backtest-count"):
+        response = client.get(f"/api/product/strategies/1bad/{suffix}", headers=auth)
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "product_domain_rejected"
+        assert response.json()["error"]["message"] == "strategy_id has invalid format"
+
+    monkeypatch.setattr(product_api.httpx, "request", failure(503, "research storage is unavailable"))
+    for suffix in ("versions", "backtest-count"):
+        response = client.get(f"/api/product/strategies/MomentumStrategy/{suffix}", headers=auth)
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "backend_unavailable"
+
+    def timeout(method: str, url: str, **kwargs) -> httpx.Response:
+        raise httpx.ReadTimeout("synthetic timeout")
+
+    monkeypatch.setattr(product_api.httpx, "request", timeout)
+    for suffix in ("versions", "backtest-count"):
+        response = client.get(f"/api/product/strategies/MomentumStrategy/{suffix}", headers=auth)
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "backend_unavailable"
+
+
+def test_product_strategy_catalog_forwards_lifecycle_and_rejects_unknown_view(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+
+    captured: dict[str, object] = {}
+
+    def fake_request(method: str, url: str, **kwargs) -> httpx.Response:
+        captured.update(method=method, url=url, headers=kwargs.get("headers", {}))
+        return httpx.Response(200, json={"strategies": [], "total": 0}, request=httpx.Request(method, url))
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    auth = {"Authorization": "Bearer product-test-token"}
+
+    response = client.get("/api/product/strategies?lifecycle=all&limit=20&offset=40", headers=auth)
+    assert response.status_code == 200
+    assert captured["url"].endswith("/v1/research/strategies?lifecycle=all&limit=20&offset=40")
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+    invalid = client.get("/api/product/strategies?lifecycle=deleted", headers=auth)
+    assert invalid.status_code == 422
+    assert invalid.json()["error"]["code"] == "product_strategy_view_invalid"
 
 
 def test_product_stock_pool_create_forwards_owner_headers(monkeypatch) -> None:

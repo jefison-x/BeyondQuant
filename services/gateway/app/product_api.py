@@ -1931,7 +1931,9 @@ def product_assets_import(request: Request, payload: dict[str, object]) -> dict[
     imported_strategies = 0
     imported_backtests = 0
     errors: list[dict[str, str]] = []
-    import_nonce = uuid.uuid4().hex[:16]
+    # Deterministic per (owner, bundle) so a retried identical import reuses the
+    # original keys and reconciles to the original objects instead of duplicating.
+    import_nonce = hashlib.sha256(f"{principal.subject}|{manifest_digest}".encode()).hexdigest()[:16]
 
     strategies = assets.get("strategies", [])
     backtests = assets.get("backtests", [])
@@ -2045,6 +2047,7 @@ def product_assets_import(request: Request, payload: dict[str, object]) -> dict[
                 _backend_request("POST", "/v1/paper/producer-imports", {
                     "name": clean_pool["name"], "description": clean_pool.get("description"),
                     "producer_kind": pool_type, "definition": portable.get("definition"),
+                    "idempotency_key": f"import-producer-{import_nonce}-{index}",
                 }, headers=headers)
             else:
                 custom = {key: value for key, value in clean_pool.items() if key != "portable_producer"}
@@ -2056,11 +2059,14 @@ def product_assets_import(request: Request, payload: dict[str, object]) -> dict[
     accounts = assets.get("paper_accounts", [])
     if not isinstance(accounts, list):
         accounts = []
-    for account in accounts:
+    for index, account in enumerate(accounts):
         try:
             if not isinstance(account, dict):
                 raise ValueError("paper account bundle must be an object")
-            _backend_request("POST", "/v1/paper/accounts/import", {"bundle": account}, headers=headers)
+            _backend_request("POST", "/v1/paper/accounts/import", {
+                "bundle": account,
+                "idempotency_key": f"import-account-{import_nonce}-{index}",
+            }, headers=headers)
             imported_accounts += 1
         except (ProductError, ValueError) as exc:
             errors.append({"kind": "paper_account", "message": str(exc)})
