@@ -852,3 +852,20 @@ IP 不持久化，window/lock 到期 alarm 清理废弃状态。v2 HttpOnly sess
 owner isolation、Backtest task/MCP projection、frontend 单元与 production build、真实 Product API Chrome desktop/mobile、
 same-origin Network、Community checklist、architecture/full CI。不得增加第二 Backtest workflow、浏览器直连 Backend、DSH 数据库
 访问、Community ORM/Agent runtime 或 VectorBT/BaoStock/AKShare compatibility。
+
+## Data Baseline and Qualification（Phase 98）
+
+### Phase 98 — 0.10 prerequisite qualification and frozen data baseline（`IN_PROGRESS`）
+
+依据 [ADR-0074](../architecture/adr/ADR-0074-data-baseline-and-qualification-boundaries.md) 与
+[VERSION_PLAN](VERSION_PLAN.md)，在实施 0.10 数据扩容与任何模型前，先冻结可测的数据基准合同并完成
+HIST 历史关系可行性调查与深度学习环境资格调查。交付物：
+
+- [V1_DATA_BASELINE_CONTRACT](V1_DATA_BASELINE_CONTRACT.md)：标的/区间/口径/时点来源/单位/许可/摘要；
+- [V1_HIST_DATA_QUALIFICATION](V1_HIST_DATA_QUALIFICATION.md)：历史行业/概念关系来源、可见性与缺口；
+- [V1_DEEP_LEARNING_ENVIRONMENT_QUALIFICATION](V1_DEEP_LEARNING_ENVIRONMENT_QUALIFICATION.md)：候选
+  Python/PyTorch、模型格式、CPU/GPU profile、镜像大小、耗时与峰值内存。
+
+验收：三份文档存在且结论明确区分 `proven`/`not_measured`/`blocked`；不得以“包可安装”或当前关系回填
+历史冒充支持；不实现数据扩容、不引入 HIST、不授权 GPU/有限调参/新 Worker 拓扑、不改运行能力。
+无法证明来源/单位/时点/许可/完整性者登记 `blocked`，由维护者修订 ADR-0071/VERSION_PLAN。
