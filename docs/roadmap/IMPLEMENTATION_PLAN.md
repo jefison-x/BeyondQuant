@@ -869,3 +869,15 @@ HIST 历史关系可行性调查与深度学习环境资格调查。交付物：
 验收：三份文档存在且结论明确区分 `proven`/`not_measured`/`blocked`；不得以“包可安装”或当前关系回填
 历史冒充支持；不实现数据扩容、不引入 HIST、不授权 GPU/有限调参/新 Worker 拓扑、不改运行能力。
 无法证明来源/单位/时点/许可/完整性者登记 `blocked`，由维护者修订 ADR-0071/VERSION_PLAN。
+
+### Phase 99 — Execute 0.10 qualification investigations（`COMPLETE`）
+
+执行 Phase 98/ADR-0074 的两项调查：
+
+- 深度学习环境 CPU profile 实测（隔离 `python:3.11-slim` + `torch 2.14.0+cpu`）：MLP/LSTM 训练与
+  推理耗时、峰值 RSS 352.8 MB、torch 安装 773 MB；GPU/故障矩阵/数值容差仍 `not_measured`。
+- HIST 历史关系来源只读核对：本机无 Community 仓库/容器/卷，无法取得样本，
+  `V1_HIST_DATA_QUALIFICATION` 维持 `blocked`，不做替代或回填。
+
+证据见 [QUALIFICATION-EXECUTION](../evidence/phase-99/QUALIFICATION-EXECUTION.md)。不实现数据扩容、
+不引入 HIST、不授权 GPU/有限调参/新 Worker 拓扑、不改运行能力。HIST 解除阻塞需维护者提供只读导出/连接。
