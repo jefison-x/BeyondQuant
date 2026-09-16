@@ -1,7 +1,12 @@
 # HIST 历史关系数据资格调查（0.10 前置）
 
-Status: Draft / partial — 依据 [ADR-0074](../architecture/adr/ADR-0074-data-baseline-and-qualification-boundaries.md)。
+Status: **blocked**（Phase 99 只读核对后确认当前无可用来源）— 依据
+[ADR-0074](../architecture/adr/ADR-0074-data-baseline-and-qualification-boundaries.md)。
 结论用于决定 ML-12（HIST）是否具备可证明的历史关系数据；未证明前保持 `blocked`。
+
+Phase 99 只读核对：本机无 `BeyondQuant-community` 目录、无 Community/Legacy 容器或卷，
+与 S3 记录（未收到只读导出）一致 → 无法取得历史行业/概念 membership 样本。解除阻塞需
+维护者提供只读逻辑导出或可用只读连接。见 [Phase 99 证据](../evidence/phase-99/QUALIFICATION-EXECUTION.md)。
 
 ## 需求
 

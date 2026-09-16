@@ -1,7 +1,17 @@
 # 深度学习环境资格调查（0.10 前置）
 
-Status: Draft / not_measured — 依据 [ADR-0074](../architecture/adr/ADR-0074-data-baseline-and-qualification-boundaries.md)。
-用于决定 0.13（MLP/LSTM/GRU/TCN）与 0.14（小型 Transformer）的运行环境；未实测前不宣称支持。
+Status: Draft / partial（CPU 已实测，GPU 与故障矩阵 `not_measured`）— 依据
+[ADR-0074](../architecture/adr/ADR-0074-data-baseline-and-qualification-boundaries.md)。
+用于决定 0.13（MLP/LSTM/GRU/TCN）与 0.14（小型 Transformer）的运行环境；未实测项不宣称支持。
+
+## 已实测（Phase 99，2026-09-17）
+
+隔离 `python:3.11-slim` + `torch 2.14.0+cpu`，2 线程，合成输入，固定种子：
+
+- MLP 训练 0.1296 s / 推理 0.0003 s；LSTM(seq20,hid32) 训练 0.8824 s / 推理 0.0067 s；
+  峰值 RSS 352.8 MB；torch 安装 773 MB，site-packages 合计 908 MB。
+- 详见 [Phase 99 证据](../evidence/phase-99/QUALIFICATION-EXECUTION.md)。
+- 仍 `not_measured`：GPU profile、真实规模训练、取消/重启/迟到故障矩阵、数值容差、镜像 digest/SBOM。
 
 ## 需求
 

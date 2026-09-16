@@ -31,6 +31,10 @@
   [数据基准合同](V1_DATA_BASELINE_CONTRACT.md)、[HIST 历史关系资格调查](V1_HIST_DATA_QUALIFICATION.md) 与
   [深度学习环境资格调查](V1_DEEP_LEARNING_ENVIRONMENT_QUALIFICATION.md)；不实现数据扩容、不引入 HIST、
   不授权 GPU/有限调参/新 Worker 拓扑。继续遵守一阶段一工作树/Draft PR 的合并门禁。
+- Phase 99（0.10 资格调查执行）已完成：深度学习 CPU profile 实测（`torch 2.14.0+cpu`，MLP/LSTM
+  训练与推理耗时、峰值 RSS 352.8 MB、torch 安装 773 MB，GPU/故障矩阵/容差 `not_measured`）；
+  HIST 历史关系来源只读核对确认本机无可用来源，维持 `blocked`。见
+  [资格执行证据](../evidence/phase-99/QUALIFICATION-EXECUTION.md)。不实现数据扩容、不引入 HIST。
 - 版本规划：维护者已接受 [ADR-0071](../architecture/adr/ADR-0071-v1-machine-learning-release-plan.md) 与
   [0.9.x → 1.0 路线](VERSION_PLAN.md)。1.0 须在约定主流机器学习模块及研究闭环开发、运行稳定后发布，
   包括 HIST 的历史关系资格和最终候选至少14天观察；仅当前整改完成不足以发布1.0。
