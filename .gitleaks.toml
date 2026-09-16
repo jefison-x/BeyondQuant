@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic, non-secret fixtures used by tests and evidence scripts."
+paths = [
+  '''apps/frontend/src/api/credentialSubmission\.spec\.ts''',
+  '''scripts/evidence/h4-strategy-pagination-fixture\.py''',
+  '''services/backend/tests/test_credential_receipts\.py''',
+]
