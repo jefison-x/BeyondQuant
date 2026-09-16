@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -518,6 +519,58 @@ class MarketReadinessStore(PgStoreMixin):
                       content_sha256=excluded.content_sha256,updated_at=excluded.updated_at""", row)
         return len(bars)
 
+    def has_verified_index_month(self, index_symbol: str, period: str, *, through_date=None, _connection=None) -> bool:
+        """Reuse a closed month only with intact persisted snapshot evidence."""
+        from calendar import monthrange
+        from zoneinfo import ZoneInfo
+        first = datetime.strptime(period + "01", "%Y%m%d")
+        last = first.replace(day=monthrange(first.year, first.month)[1]).date()
+        through = last
+        if through_date is not None:
+            through = datetime.strptime(through_date, "%Y%m%d").date()
+            if through.strftime("%Y%m") != period:
+                raise ValueError("index verification cutoff must be inside requested month")
+        params = {"symbol":index_symbol, "period":period}
+        with (self._transaction() if _connection is None else nullcontext(_connection)) as connection:
+            if _connection is None:
+                execute(connection, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            markers = execute(connection, """SELECT * FROM market_index_weight_completeness
+                WHERE index_symbol=:symbol AND period=:period""", params)
+            if not markers or not markers[0]["row_count"]:
+                return False
+            marker = markers[0]
+            provenance = marker["provenance_json"]
+            if not isinstance(provenance, dict) or provenance.get("provider") != "tushare" or provenance.get("endpoint") != "index_weight":
+                raise ValueError("cached index month has unproven source")
+            try:
+                retrieved = datetime.fromisoformat(str(provenance["retrieved_at"]).replace("Z", "+00:00"))
+            except (ValueError, KeyError) as error:
+                raise ValueError("cached index month has unproven retrieval time") from error
+            if retrieved.tzinfo is None:
+                raise ValueError("cached index month has unproven retrieval timezone")
+            if retrieved.astimezone(ZoneInfo("Asia/Shanghai")).date() <= through:
+                return False  # The fetch must postdate the requested complete day.
+            rows = execute(connection, """SELECT * FROM market_index_weights
+                WHERE index_symbol=:symbol AND substring(snapshot_date,1,6)=:period
+                ORDER BY snapshot_date,constituent_symbol LIMIT 50001""", params)
+            snapshots = execute(connection, """SELECT * FROM market_index_weight_snapshots
+                WHERE index_symbol=:symbol AND substring(snapshot_date,1,6)=:period
+                ORDER BY snapshot_date LIMIT 32""", params)
+            if len(rows) > 50000 or len(rows) != marker["row_count"]:
+                raise ValueError("cached index month row integrity mismatch")
+            dates = {row["snapshot_date"] for row in rows}
+            if dates != {item["snapshot_date"] for item in snapshots}:
+                raise ValueError("cached index month snapshot evidence mismatch")
+            for snapshot in snapshots:
+                members = [row for row in rows if row["snapshot_date"] == snapshot["snapshot_date"]]
+                if (snapshot["status"] != "verified" or snapshot["provenance_json"] != provenance
+                        or any(row["data_source"] != "tushare" or row["provenance_json"] != provenance for row in members)):
+                    raise ValueError("cached index month provenance mismatch")
+                verified = self._verified_index_snapshot(index_symbol, snapshot["snapshot_date"], members, provenance)
+                if any(snapshot[key] != verified[key] for key in ("content_sha256", "member_count", "weight_sum")):
+                    raise ValueError("cached index month content integrity mismatch")
+            return True
+
     def import_index_weights(
         self, index_symbol: str, period: str, weights: list[object], provenance: dict[str, object],
     ) -> int:
@@ -802,6 +855,9 @@ class MarketReadinessStore(PgStoreMixin):
         }
 
     def assess(self, requirement: dict[str, object]) -> dict[str, object]:
+        from .index_snapshot_demand import INDEX_SNAPSHOT_REQUIREMENT, assess_index_snapshot
+        if requirement.get("schema_version") == INDEX_SNAPSHOT_REQUIREMENT:
+            return assess_index_snapshot(self, requirement)
         if requirement.get("schema_version") not in {SCHEMA_VERSION, RESEARCH_SCHEMA_VERSION, LEGACY_SCHEMA_VERSION}:
             raise ValueError("unsupported market data requirement")
         requires_research_inputs = requirement.get("schema_version") in {SCHEMA_VERSION, RESEARCH_SCHEMA_VERSION}

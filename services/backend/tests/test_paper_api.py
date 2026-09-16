@@ -83,7 +83,7 @@ def test_stock_pool_snapshot_and_lifecycle_api(monkeypatch) -> None:
     store = PaperTradingStore()
     monkeypatch.setattr(main, "paper_store", store)
     client = TestClient(main.app)
-    created = client.post("/v1/paper/pools", headers=headers, json={"name": "核心池", "symbols": ["000001.SZ"]})
+    created = client.post("/v1/paper/pools", headers=headers, json={"idempotency_key": "test-pool-86", "name": "核心池", "symbols": ["000001.SZ"]})
     assert created.status_code == 201
     pool = created.json()["pool"]
     replaced = client.put(f"/v1/paper/pools/{pool['pool_id']}/snapshot", headers=headers, json={

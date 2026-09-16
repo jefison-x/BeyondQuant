@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
+import { isWriteRequest, unknownArtifactWriteResult } from "./write-outcome.js";
 import { safeDomainAdmission } from "./domain-admission.js";
 
 const BACKEND_TIMEOUT_MS = 8000;
@@ -100,16 +100,16 @@ async function requestStrategy(
       headers: { "content-type": "application/json", ...(init.headers ?? {}) },
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
-    if (isWriteRequest(init) && response.status >= 500) return unknownWriteResult(init);
+    if (isWriteRequest(init) && response.status >= 500) return unknownArtifactWriteResult(init);
     let payload: unknown;
     try {
       payload = await response.json();
     } catch {
-      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
+      if (isWriteRequest(init) && response.ok) return unknownArtifactWriteResult(init);
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
-      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
+      if (isWriteRequest(init) && response.ok) return unknownArtifactWriteResult(init);
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (!response.ok) {
@@ -134,7 +134,7 @@ async function requestStrategy(
     }
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
-    if (isWriteRequest(init)) return unknownWriteResult(init);
+    if (isWriteRequest(init)) return unknownArtifactWriteResult(init);
     return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
   }
 }
@@ -152,17 +152,26 @@ export function fetchByqStrategyDraftSave(
   );
 }
 
-export function fetchByqStrategyDraftDelete(
+export async function fetchByqStrategyDraftDelete(
   backendUrl: string,
   artifactId: string,
   fetcher: Fetcher = fetch,
 ): Promise<ByqStrategyResult> {
-  return requestStrategy(
+  const response = await requestStrategy(
     backendUrl,
     `/v1/research/strategies/drafts/${encodeURIComponent(artifactId)}`,
     { method: "DELETE" },
     fetcher,
   );
+  const payload = JSON.parse(response.content[0].text);
+  if (payload.status === "outcome_unknown" && /^artifact_[0-9a-f]{32}$/.test(artifactId)) {
+    payload.reconciliation = { tool: "byq_research_get", arguments: {
+      entity_type: "artifact", entity_id: artifactId,
+    } };
+    payload.next_action = "Read this exact original draft and inspect its status. Do not infer deletion from a missing list entry or retry with another artifact identity.";
+    return result(payload, false);
+  }
+  return response;
 }
 
 export function fetchByqStrategyValidate(

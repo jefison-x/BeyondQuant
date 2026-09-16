@@ -50,7 +50,7 @@ class FakeDemandAutomation(FakeAutomation):
         super().__init__()
         self.requests: list[dict[str, object]] = []
 
-    def request_data_repair(self, *, requirement: dict[str, object], requested_by: str) -> dict[str, object]:
+    def request_data_repair(self, *, requirement: dict[str, object], requested_by: str, _connection=None) -> dict[str, object]:
         self.requests.append(requirement)
         return {"request_id": f"repair_{len(self.requests)}", "status": "completed"}
 

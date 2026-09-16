@@ -197,3 +197,50 @@ def test_web_evidence_write_failure_rolls_back_created_task(monkeypatch) -> None
     assert response.status_code == 422
     assert store.list_tasks(owner_principal="alice") == {"tasks": []}
     store.close()
+
+
+def test_web_record_original_keys_recover_after_store_restart(monkeypatch):
+    import hashlib
+    context = trusted_agent_context('web-receipt-owner')
+    client = TestClient(main.app)
+    store = ResearchStore()
+    monkeypatch.setattr(main, 'research_store', store)
+    key = 'original-web-receipt-key'
+    content = evidence_fixture()
+    for source in content['sources']:
+        source.pop('source_id')
+    content['claims'][0]['source_indexes'] = [0]
+    content['claims'][0].pop('source_ids')
+    response = client.post('/v1/research/web-evidence-records', headers=context, json={
+        'task': {'title': 'Receipt', 'objective': 'Restore original web evidence'},
+        'content': content, 'lineage': [], 'idempotency_key': key,
+    })
+    assert response.status_code == 201, response.text
+    original = response.json()
+    assert original['idempotency_key'] == key
+    assert 'idempotency_key' not in original['task']
+    assert 'idempotency_key' not in original['artifact']
+    store.close()
+    replacement = ResearchStore()
+    monkeypatch.setattr(main, 'research_store', replacement)
+    def forbidden(*args, **kwargs):
+        pytest.fail('receipt recovery cannot write or infer from a list')
+    for name in ('create_web_evidence_record', 'create_task', 'create_artifact', 'list_tasks', 'list_artifacts'):
+        monkeypatch.setattr(replacement, name, forbidden)
+    digest = hashlib.sha256(key.encode()).hexdigest()[:32]
+    path = '/v1/research/submissions/reconcile'
+    task_query = {'entity_type': 'research_task', 'idempotency_key': f'web-record-task:{digest}'}
+    task = client.get(path, headers=context, params=task_query)
+    assert task.status_code == 200, task.text
+    assert task.json()['status'] == 'confirmed'
+    assert task.json()['entity']['task_id'] == original['task']['task_id']
+    artifact = client.get(path, headers=context, params={
+        'entity_type': 'artifact', 'idempotency_key': f'web-record-artifact:{digest}',
+        'task_id': task.json()['entity']['task_id'],
+    })
+    assert artifact.status_code == 200, artifact.text
+    assert artifact.json()['status'] == 'confirmed'
+    assert artifact.json()['entity'] == original['artifact']
+    foreign = trusted_agent_context('web-receipt-other')
+    assert client.get(path, headers=foreign, params=task_query).json()['status'] == 'outcome_unknown'
+    replacement.close()

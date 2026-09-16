@@ -73,10 +73,14 @@ def main() -> int:
             repair = automation.claim_data_repair()
             if repair is not None:
                 try:
+                    # A verified frozen demand needs neither credentials nor another fetch.
+                    if readiness.assess(dict(repair["requirement_json"])).get("state") == "ready":
+                        automation.complete_data_repair(str(repair["request_id"]))
+                        continue
                     provider = provider_factory()
                     cursor = datetime.strptime(str(repair["start_date"]), "%Y%m%d")
                     end = datetime.strptime(str(repair["end_date"]), "%Y%m%d")
-                    while cursor <= end:
+                    while cursor <= end and repair["requirement_json"].get("kind") != "index_snapshot":
                         chunk_end = min(end, cursor + timedelta(days=400))
                         automation.refresh_calendar(
                             provider, start_date=cursor.strftime("%Y%m%d"),

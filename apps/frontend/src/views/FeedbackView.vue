@@ -4,11 +4,49 @@ import { useRoute, useRouter } from "vue-router";
 import { Close, Plus } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  createFeedback, getFeedback, getFeedbackOptions, listFeedback, previewFeedback,
-  submitFeedback, updateFeedback, withdrawFeedback,
+  getFeedback, getFeedbackOptions, listFeedback, previewFeedback,
+  sendFeedbackCommand, reconcileFeedbackCommand, type FeedbackCommand,
 } from "@/api/feedback";
 import type { FeedbackPublicationPreview, ProductFeedbackContent, ProductFeedbackDetail, ProductFeedbackOptions, ProductFeedbackSummary } from "@/api/types";
 
+import { useAuthStore } from '@/stores/auth';
+import { ProductApiError } from '@/api/client';
+import { beginFeedbackSubmission, readFeedbackSubmission, finishFeedbackSubmission } from '@/api/feedbackSubmission';
+const auth = useAuthStore();
+const pending = ref<FeedbackCommand|null>(null);
+function commandScope() {
+  if(!auth.user) throw Error('请先登录');
+  return JSON.stringify([auth.user.subject,auth.user.workspace.workspace_id]);
+}
+async function executeCommand(input:Omit<FeedbackCommand,'key'>) {
+  const scope = commandScope(), previous = readFeedbackSubmission(scope);
+  const command = beginFeedbackSubmission(scope,input);
+  pending.value = command;
+  try {
+    const result = await sendFeedbackCommand(command);
+    if(scope !== commandScope()) throw Error('工作区已切换，请在原工作区核对');
+    finishFeedbackSubmission(scope,command.key); pending.value = null;
+    return result;
+  } catch(cause) {
+    if(!previous && cause instanceof ProductApiError && [400,401,403,404,422].includes(cause.status)) {
+      finishFeedbackSubmission(scope,command.key); pending.value = null;
+    }
+    throw cause;
+  }
+}
+async function recoverCommand(retry=false) {
+  if(!pending.value) return;
+  saving.value = true;
+  try {
+    const scope = commandScope(), command = pending.value;
+    const result = retry ? {state:'confirmed' as const,...await executeCommand({operation:command.operation,feedback_id:command.feedback_id,payload:command.payload})} : await reconcileFeedbackCommand(command);
+    if(scope !== commandScope()) throw Error('工作区已切换，请在原工作区核对');
+    if(result.state === 'not_found') { error.value = '尚未找到原回执，请稍后再次核对；请勿新建替代反馈。'; return; }
+    finishFeedbackSubmission(scope,command.key); pending.value = null; error.value = '';
+    await selectItem(result.feedback); await loadList();
+  } catch(cause) { error.value = message(cause); }
+  finally { saving.value = false; }
+}
 const route = useRoute();
 const router = useRouter();
 const isMobile = ref(false);
@@ -86,6 +124,10 @@ async function loadList() {
   finally { listLoading.value = false; }
 }
 async function bootstrap() {
+  if(auth.user) {
+    try { pending.value = readFeedbackSubmission(commandScope()); }
+    catch(cause) { ElMessage.error(message(cause)); }
+  }
   loading.value = true; error.value = "";
   try {
     const [choices, page] = await Promise.all([
@@ -105,9 +147,11 @@ function editDraft() { if (selected.value?.status === "draft") { resetForm(selec
 async function save() {
   saving.value = true;
   try {
-    const result = selected.value ? await updateFeedback(selected.value, content()) : await createFeedback(content());
-    selected.value = result.feedback; editorOpen.value = false; await loadList(); ElMessage.success("草稿已保存");
-  } catch (exc) { ElMessage.error(message(exc)); } finally { saving.value = false; }
+    const result = await executeCommand(selected.value
+      ? {operation:'update',feedback_id:selected.value.feedback_id,payload:{content:content(),expected_version:selected.value.version}}
+      : {operation:'create',payload:{...content()}});
+    await selectItem(result.feedback); editorOpen.value = false; await loadList(); ElMessage.success("草稿已保存");
+  } catch (exc) { if(pending.value) editorOpen.value = false; ElMessage.error(message(exc)); } finally { saving.value = false; }
 }
 async function buildPreview() {
   if (!selected.value) return;
@@ -118,7 +162,7 @@ async function confirmSubmit() {
   if (!selected.value || !preview.value) return;
   try {
     await ElMessageBox.confirm(preview.value.disclosure, "确认提交公开候选快照", { confirmButtonText: "我已检查并提交", cancelButtonText: "继续修改", type: "warning" });
-    const result = await submitFeedback(selected.value, preview.value.preview_hash);
+    const result = await executeCommand({operation:"submit",feedback_id:selected.value.feedback_id,payload:{expected_version:selected.value.version,preview_hash:preview.value.preview_hash,disclosure_confirmed:true}});
     await selectItem(result.feedback); preview.value = null; await loadList(); ElMessage.success("反馈已提交审核");
   } catch (exc) { if (!dismissed(exc)) ElMessage.error(message(exc)); }
 }
@@ -126,7 +170,7 @@ async function withdraw() {
   if (!selected.value) return;
   try {
     await ElMessageBox.confirm("撤回后此反馈不会继续审核，确定撤回？", "撤回反馈", { confirmButtonText: "确定撤回", cancelButtonText: "取消" });
-    const result = await withdrawFeedback(selected.value); await selectItem(result.feedback); await loadList(); ElMessage.success("反馈已撤回");
+    const result = await executeCommand({operation:"withdraw",feedback_id:selected.value.feedback_id,payload:{expected_version:selected.value.version}}); await selectItem(result.feedback); await loadList(); ElMessage.success("反馈已撤回");
   } catch (exc) { if (!dismissed(exc)) ElMessage.error(message(exc)); }
 }
 
@@ -141,6 +185,12 @@ onBeforeUnmount(() => { window.removeEventListener("resize", resize); listContro
 <template>
   <el-dialog :model-value="true" :fullscreen="isMobile" :show-close="false" append-to-body class="feedback-dialog" width="min(1180px, 94vw)" @close="close">
     <template #header="{ titleId }"><header class="feedback-header"><div><span>产品共建</span><h1 :id="titleId">反馈与建议</h1><p>先预览将提交的公开候选内容，再由你明确确认</p></div><el-button circle aria-label="关闭反馈与建议" @click="close"><el-icon><Close /></el-icon></el-button></header></template>
+    <el-alert v-if="pending" title="有一笔反馈操作尚未确认" type="warning" :closable="false">
+      <p>原请求已保留，刷新后可以核对，避免重复创建或提交。</p>
+      <el-button :disabled="saving" @click="recoverCommand()">核对原反馈请求</el-button>
+      <el-button :disabled="saving" @click="recoverCommand(true)">使用原反馈请求重试</el-button>
+    </el-alert>
+    <p v-if="error && options" role="alert">{{ error }}</p>
     <div v-if="loading" class="state" aria-live="polite">正在加载反馈工作区…</div>
     <div v-else-if="error && !options" class="state error" role="alert">{{ error }} <el-button link @click="bootstrap">重试</el-button></div>
     <div v-else class="feedback-workspace">

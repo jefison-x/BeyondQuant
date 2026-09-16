@@ -36,6 +36,7 @@ interface FeedbackRow {
 }
 
 interface OutboxRow {
+  create_started: number;
   event_id: string;
   receipt_id: string;
   snapshot_json: string;
@@ -390,6 +391,7 @@ export class FeedbackGate extends DurableObject<HubEnv> {
     const operation = String(body.operation ?? "");
     if (operation === "moderate") return this.moderate(body);
     if (operation === "claim") return this.claim(body);
+    if (operation === "begin-create") return this.beginCreate(body);
     if (operation === "complete") return this.complete(body);
     if (operation === "retry") return this.retry(body);
     return jsonResponse({ detail: "operation is invalid" }, 422);
@@ -445,6 +447,29 @@ export class FeedbackGate extends DurableObject<HubEnv> {
     const result = await this.env.DB.batch(statements);
     if ((result[0]?.meta.changes ?? 0) !== 1) return jsonResponse({ detail: "feedback state changed" }, 409);
     return jsonResponse(statusProjection({ ...row, status: target }));
+  }
+
+  private async beginCreate(body: Record<string, unknown>): Promise<Response> {
+    const eventId = body.event_id;
+    const worker = body.worker_id;
+    const fence = body.lease_fence;
+    if (typeof eventId !== "string" || !OUTBOX_EVENT.test(eventId)
+        || typeof worker !== "string" || worker.length < 3 || worker.length > 80
+        || typeof fence !== "number" || !Number.isInteger(fence) || fence < 1) {
+      return jsonResponse({ detail: "create permit request is invalid" }, 422);
+    }
+    const now = new Date().toISOString();
+    const row = await this.env.DB.prepare("SELECT * FROM central_feedback_outbox WHERE event_id=?")
+      .bind(eventId).first<OutboxRow>();
+    if (!row) return jsonResponse({ detail: "publication not found" }, 404);
+    if (row.state !== "publishing" || row.lease_owner !== worker || row.lease_fence !== fence
+        || !row.lease_expires_at || row.lease_expires_at <= now) {
+      return jsonResponse({ detail: "publication lease is stale" }, 409);
+    }
+    const changed = await this.env.DB.prepare(`UPDATE central_feedback_outbox SET create_started=1
+      WHERE event_id=? AND create_started=0 AND state='publishing' AND lease_owner=? AND lease_fence=?
+      AND lease_expires_at>?`).bind(eventId, worker, fence, now).run();
+    return jsonResponse({ schema_version: "feedback-publisher-create-permit.v1", allowed: changed.meta.changes === 1 });
   }
 
   private async claim(body: Record<string, unknown>): Promise<Response> {
@@ -641,6 +666,7 @@ async function publisherMutation(request: Request, env: HubEnv, eventId: string,
   const values = body as Record<string, unknown>;
   const allowed: Record<string, readonly string[]> = {
     claim: ["worker_id", "lease_seconds"],
+    "begin-create": ["worker_id", "lease_fence"],
     complete: ["worker_id", "lease_fence", "repository", "issue_number", "html_url", "provider_identity"],
     retry: ["worker_id", "lease_fence", "error_category", "retry_after_seconds"]
   };
@@ -712,7 +738,7 @@ async function route(request: Request, env: HubEnv): Promise<Response> {
     if (body.configured !== true || body.repository !== REPOSITORY) return jsonResponse({ detail: "publisher destination is not fixed repository" }, 409);
     return jsonResponse({ schema_version: "feedback-publisher-heartbeat.v1", accepted: true, configured: true });
   }
-  const publisherMatch = url.pathname.match(/^\/internal\/feedback-publications\/(feedback_outbox_[0-9a-f]{32})\/(claim|complete|retry)$/);
+  const publisherMatch = url.pathname.match(/^\/internal\/feedback-publications\/(feedback_outbox_[0-9a-f]{32})\/(claim|begin-create|complete|retry)$/);
   if (publisherMatch && request.method === "POST") {
     if (!publisherAuthenticated(request, env)) return jsonResponse({ detail: "publisher authentication failed" }, 401);
     return publisherMutation(request, env, publisherMatch[1]!, publisherMatch[2]!);

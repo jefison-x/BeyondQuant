@@ -1,5 +1,7 @@
 # BeyondQuant Implementation Plan
 
+研究流程连续性维护：见[下一阶段整改目标](RESEARCH_HANDOFF_PLAN.md)，先完成审批后原目标交接，再补持久交接与授权续接连接；不推进 Product Phase。
+
 这是 autonomous development 的 repository roadmap。普通 phase branch 只能实现当前 phase；后续 phases 是 planning constraints，不授权提前构建 Product scope。
 
 明确指定的维护/bugfix/CI/依赖资格任务按 ADR-0059 与 DEVELOPMENT_WORKFLOW 的独立通道执行，

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
-  fetchByqPoolCreate,
+  fetchByqPoolCreate, fetchByqPoolGet, fetchByqPoolCreationReconcile,
   fetchByqIndexPoolCatalog, fetchByqIndexPoolCreate, fetchByqIndexPoolStatus, fetchByqIndexPoolReconcile,
   fetchByqPoolHistory,
   fetchByqPoolLifecycle,
@@ -78,3 +78,17 @@ for (const status of [404, 503]) {
   });
   assert.equal(JSON.parse(value.content[0].text).status, "outcome_unknown");
 }
+
+const originalPool = 'stock_pool_'+'a'.repeat(32);
+const otherPool = 'stock_pool_'+'b'.repeat(32);
+const respond = (payload:unknown) => async () => new Response(JSON.stringify(payload));
+assert.equal((await fetchByqPoolGet('http://backend', originalPool, context, respond({pool:{pool_id:otherPool}}))).isError, true);
+assert.equal((await fetchByqPoolGet('http://backend', originalPool, context, respond({pool:{pool_id:originalPool}}))).isError, false);
+for (const payload of [{state:'confirmed',pool:{}}, {state:'confirmed',pool:{pool_id:originalPool},run:{pool_id:otherPool}}, {state:'not_found',pool:{pool_id:originalPool}}]) {
+  assert.equal((await fetchByqPoolCreationReconcile('http://backend','custom','original',context,respond(payload))).isError,true);
+}
+assert.equal((await fetchByqPoolCreationReconcile('http://backend','custom','original',context,respond({state:'not_found'}))).isError,false);
+const lost = JSON.parse((await fetchByqPoolCreate('http://backend',{idempotency_key:'original'},context,respond({pool:{}}))).content[0].text);
+assert.equal(lost.status,'outcome_unknown');
+assert.deepEqual(lost.reconciliation,{tool:'byq_pool_get',arguments:{creation_kind:'custom',idempotency_key:'original'}});
+console.log('Pool exact identity and original-key recovery contract PASS');

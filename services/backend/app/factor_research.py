@@ -47,22 +47,39 @@ _SNAPSHOT_FIELDS = {"snapshot_date", "symbols"}
 class FactorValidationError(ValueError):
     """Raised when a factor input violates a BYQ-owned domain invariant."""
 
+    def __init__(self, message, *, field="request", code="invalid_input"):
+        super().__init__(message)
+        fields = {"request", "as_of_date", "factor", "factor.name", "factor.version", "factor.lookback",
+                  "securities", "sessions", "statuses", "bars", "universe_snapshots", "sources"}
+        codes = {"invalid_input", "object_required", "unknown_fields", "text_required", "date_format",
+                 "unsupported_value", "out_of_range"}
+        self.field = field if field in fields else "request"
+        self.code = code if code in codes else "invalid_input"
+
+    def public_problem(self):
+        result = {"schema_version": "factor-validation-problem.v1", "field": self.field,
+                  "code": self.code, "repair_limit": 1, "next_action": "correct_once"}
+        if self.field == "factor.name" and self.code == "unsupported_value":
+            result["allowed_values"] = ["daily_return", "momentum"]
+        return result
+
+
 
 def _object(value: object, field: str) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise FactorValidationError(f"{field} must be an object")
+        raise FactorValidationError(f"{field} must be an object", field=field, code="object_required")
     return value
 
 
 def _fields(value: dict[str, Any], allowed: set[str], field: str) -> None:
     unknown = sorted(set(value) - allowed)
     if unknown:
-        raise FactorValidationError(f"{field} has unknown fields: {', '.join(unknown)}")
+        raise FactorValidationError(f"{field} has unknown fields: {', '.join(unknown)}", field=field, code="unknown_fields")
 
 
 def _text(value: object, field: str, maximum: int = 256) -> str:
     if not isinstance(value, str) or not value.strip():
-        raise FactorValidationError(f"{field} must be a non-empty string")
+        raise FactorValidationError(f"{field} must be a non-empty string", field=field, code="text_required")
     result = value.strip()
     if len(result) > maximum:
         raise FactorValidationError(f"{field} exceeds {maximum} characters")
@@ -72,11 +89,11 @@ def _text(value: object, field: str, maximum: int = 256) -> str:
 def _date(value: object, field: str) -> str:
     result = _text(value, field, 8)
     if not _DATE_PATTERN.fullmatch(result):
-        raise FactorValidationError(f"{field} must use YYYYMMDD")
+        raise FactorValidationError(f"{field} must use YYYYMMDD", field=field, code="date_format")
     try:
         datetime.strptime(result, "%Y%m%d")
     except ValueError as error:
-        raise FactorValidationError(f"{field} is not a calendar date") from error
+        raise FactorValidationError(f"{field} is not a calendar date", field=field, code="date_format") from error
     return result
 
 
@@ -223,13 +240,13 @@ def _factor(value: object) -> dict[str, Any]:
     _fields(row, allowed, "factor")
     name = _text(row.get("name"), "factor.name", 32).lower()
     if name not in _FACTOR_NAMES:
-        raise FactorValidationError("factor.name must be daily_return or momentum")
+        raise FactorValidationError("factor.name must be daily_return or momentum", field="factor.name", code="unsupported_value")
     version = _text(row.get("version"), "factor.version", 32)
     lookback = row.get("lookback", 1)
     if isinstance(lookback, bool) or not isinstance(lookback, int) or not 1 <= lookback <= 252:
-        raise FactorValidationError("factor.lookback must be an integer between 1 and 252")
+        raise FactorValidationError("factor.lookback must be an integer between 1 and 252", field="factor.lookback", code="out_of_range")
     if name == "daily_return" and lookback != 1:
-        raise FactorValidationError("daily_return requires lookback=1")
+        raise FactorValidationError("daily_return requires lookback=1", field="factor.lookback", code="unsupported_value")
     return {"name": name, "version": version, "lookback": lookback}
 
 

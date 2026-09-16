@@ -33,6 +33,32 @@ function errorStatus(status: number): string {
   return "backtest_unavailable";
 }
 
+function unknownBacktestWrite(path:string,init:RequestInit):ByqBacktestResult {
+  const response = unknownWriteResult(init), value = JSON.parse(response.content[0].text);
+  let request:any = {};try {request=JSON.parse(String(init.body ?? '{}'));} catch { /* keep original unknown */ }
+  const job=path.match(/^\/v1\/research\/backtests\/(backtest_[0-9a-f]{32})\/(?:run|cancel)$/);
+  const task=path.match(/^\/v1\/research\/backtest-tasks\/(backtesttask_(?:ml_)?[0-9a-f]{32})\/(?:execute|cancel)$/);
+  if(job) value.reconciliation={tool:'byq_backtest_get',arguments:{job_id:job[1]}};
+  else if(task) value.reconciliation={tool:'byq_backtest_task_get',arguments:{backtest_task_id:task[1]}};
+  else if(['/v1/research/backtests','/v1/research/backtest-tasks'].includes(path)
+    && /^task_[0-9a-f]{32}$/.test(request.task_id ?? '') && typeof value.idempotency_key === 'string') {
+    value.reconciliation={tool:path.endsWith('/backtests')?'byq_backtest_get':'byq_backtest_task_get',
+      arguments:{task_id:request.task_id,idempotency_key:value.idempotency_key}};
+  }
+  return result(value,false);
+}
+
+function exactBacktestResponse(path:string,value:Record<string,any>):boolean {
+  const job=path.match(/^\/v1\/research\/backtests\/(backtest_[0-9a-f]{32})\/(summary|analysis|run|cancel)(?:\?|$)/);
+  if(job) return job[2] === 'analysis' ? value.job_id === job[1] && value.analysis?.schema_version === 'backtest-analysis.v1'
+    : value.job?.job_id === job[1];
+  const task=path.match(/^\/v1\/research\/backtest-tasks\/(backtesttask_(?:ml_)?[0-9a-f]{32})(?:\/(?:execute|cancel))?$/);
+  if(task) return value.task?.backtest_task_id === task[1];
+  const snapshot=path.match(/^\/v1\/research\/signal-snapshots\/(artifact_[0-9a-f]{32})$/);
+  if(snapshot) return value.snapshot?.artifact_id === snapshot[1] && value.snapshot?.kind === 'signal_snapshot';
+  return true;
+}
+
 async function requestBacktest(
   backendUrl: string,
   path: string,
@@ -45,16 +71,16 @@ async function requestBacktest(
       headers: { "content-type": "application/json", ...(init.headers ?? {}) },
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
-    if (isWriteRequest(init) && response.status >= 500) return unknownWriteResult(init);
+    if (isWriteRequest(init) && response.status >= 500) return unknownBacktestWrite(path,init);
     let payload: unknown;
     try {
       payload = await response.json();
     } catch {
-      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
+      if (isWriteRequest(init) && response.ok) return unknownBacktestWrite(path,init);
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
-      if (isWriteRequest(init) && response.ok) return unknownWriteResult(init);
+      if (isWriteRequest(init) && response.ok) return unknownBacktestWrite(path,init);
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (!response.ok) {
@@ -65,9 +91,11 @@ async function requestBacktest(
         true,
       );
     }
+    if(!exactBacktestResponse(path,payload as Record<string,any>)) return isWriteRequest(init)
+      ? unknownBacktestWrite(path,init) : result({service:'beyondquant-mcp',status:'error',backend:{status:'invalid_response'}},true);
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
-    if (isWriteRequest(init)) return unknownWriteResult(init);
+    if (isWriteRequest(init)) return unknownBacktestWrite(path,init);
     return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
   }
 }
@@ -321,6 +349,6 @@ export async function fetchByqBacktestTaskLookup(
       backtest_task_id: receipt.backtest_task_id, signal_producer_job_id: receipt.signal_producer_job_id,
       signal_status: receipt.signal_status,
     }, next_action: "Read the recovered backtest_task_id for current state; confirmation grants no execution permission." }
-    : { retryable: false, next_action: "Preserve the original task and key. Query this identity within the task budget; do not resubmit or infer absence from a list." }),
+    : { retryable: false, next_action: "Preserve the original task and key. This lookup only recovers an execution whose response was not observed; if the approved create was never submitted, execute it once with this exact original key. Do not infer absence from a list." }),
   }, false);
 }

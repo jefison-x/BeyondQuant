@@ -6,13 +6,13 @@ async function login(page: Page) {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ user: { subject: "testuser" }, session_id: "session-test" }),
+      body: JSON.stringify({ user: { subject: "testuser", workspace: {workspace_id:"workspace-test-user",display_name:"测试个人工作区"} }, session_id: "session-test" }),
       headers: { "set-cookie": "byq_session=session-test; Path=/; HttpOnly; SameSite=Lax" },
     }),
   );
   await page.route("**/api/auth/me", (route) =>
     meAuthenticated
-      ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ subject: "testuser", display_name: "量化小周" }) })
+      ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ subject: "testuser", workspace: {workspace_id:"workspace-test-user",display_name:"测试个人工作区"}, display_name: "量化小周" }) })
       : (meAuthenticated = true, route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { message: "unauthenticated" } }) })),
   );
   await page.goto("/login");
@@ -28,13 +28,13 @@ async function loginAsAdmin(page: Page) {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ user: { subject: "admin", role: "admin" }, session_id: "session-admin" }),
+      body: JSON.stringify({ user: { subject: "admin", role: "admin", workspace: {workspace_id:"workspace-test-admin",display_name:"测试管理员工作区"} }, session_id: "session-admin" }),
       headers: { "set-cookie": "byq_session=session-admin; Path=/; HttpOnly; SameSite=Lax" },
     }),
   );
   await page.route("**/api/auth/me", (route) =>
     meAuthenticated
-      ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ subject: "admin", role: "admin" }) })
+      ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ subject: "admin", role: "admin", workspace: {workspace_id:"workspace-test-admin",display_name:"测试管理员工作区"} }) })
       : (meAuthenticated = true, route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { message: "unauthenticated" } }) })),
   );
   await page.goto("/login");
@@ -498,7 +498,7 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
       }),
     }),
   );
-  await page.route("**/api/product/strategies/MomentumStrategy/versions", (route) =>
+  await page.route("**/api/product/strategies/MomentumStrategy/versions?limit=50&offset=0", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -637,7 +637,7 @@ test("my space pages render profile, models, assets, and agent policy", async ({
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ profile: { subject: "testuser", display_name: "老李", preferences: "低波动", default_prompt: "先给结论", role: "user", status: "active" } }),
+      body: JSON.stringify({ profile: { subject: "testuser", workspace: {workspace_id:"workspace-test-user",display_name:"测试个人工作区"}, display_name: "老李", preferences: "低波动", default_prompt: "先给结论", role: "user", status: "active" } }),
     }),
   );
   await page.route("**/api/product/settings/models", (route) =>
@@ -752,33 +752,33 @@ test("paper trading and stock pool pages render", async ({ page }) => {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ accounts: paperAccountDeleted ? [] : [{ account_id: "paper_account_1", name: "sim", cash: 100000, status: "active" }] }),
+      body: JSON.stringify({ accounts: paperAccountDeleted ? [] : [{ account_id: "paper_account_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", name: "sim", cash: 100000, status: "active" }] }),
     }),
   );
-  await page.route("**/api/product/paper/accounts/paper_account_1/positions", (route) =>
+  await page.route("**/api/product/paper/accounts/paper_account_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/positions", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ positions: [] }) }),
   );
-  await page.route("**/api/product/paper/accounts/paper_account_1/orders", (route) =>
+  await page.route("**/api/product/paper/accounts/paper_account_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/orders", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ orders: [] }) }),
   );
-  await page.route("**/api/product/paper/accounts/paper_account_1/fills", (route) =>
+  await page.route("**/api/product/paper/accounts/paper_account_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/fills", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ fills: [] }) }),
   );
-  await page.route("**/api/product/paper/accounts/paper_account_1/ledger", (route) =>
+  await page.route("**/api/product/paper/accounts/paper_account_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/ledger", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ledger: [] }) }),
   );
-  await page.route("**/api/product/paper/accounts/paper_account_1/snapshots", (route) =>
+  await page.route("**/api/product/paper/accounts/paper_account_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/snapshots", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ snapshots: [] }) }),
   );
-  await page.route("**/api/product/paper/accounts/paper_account_1/controls", (route) =>
+  await page.route("**/api/product/paper/accounts/paper_account_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/controls", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ controls: { kill_switch_engaged: false, max_order_notional: null, version: 1 } }) }),
   );
-  await page.route("**/api/product/paper/accounts/paper_account_1", (route) => {
+  await page.route("**/api/product/paper/accounts/paper_account_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", (route) => {
     if (route.request().method() === "DELETE") {
       paperAccountDeleted = true;
-      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ account_id: "paper_account_1", deleted: true }) });
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ account_id: "paper_account_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", deleted: true }) });
     }
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ account: { account_id: "paper_account_1", name: "sim", cash: 100000, equity: 100000, version: 1, status: "active" } }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ account: { account_id: "paper_account_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", name: "sim", cash: 100000, equity: 100000, version: 1, status: "active" } }) });
   });
   await openNav(page, "模拟操盘");
   await expect(page.getByRole("heading", { name: "模拟账户与交易监督" })).toBeVisible();
@@ -845,7 +845,7 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ profile: { subject: "testuser", display_name: "老李", preferences: "低波动", default_prompt: "先给结论", role: "user", status: "active" } }),
+      body: JSON.stringify({ profile: { subject: "testuser", workspace: {workspace_id:"workspace-test-user",display_name:"测试个人工作区"}, display_name: "老李", preferences: "低波动", default_prompt: "先给结论", role: "user", status: "active" } }),
     }),
   );
   await mockAdminOps(page);
@@ -976,7 +976,7 @@ test("durable profile edits require confirmation before navigation", async ({ pa
   await page.route("**/api/product/profile", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ profile: { subject: "testuser", display_name: "研究员", preferences: "", default_prompt: "", role: "user", status: "active" } }),
+    body: JSON.stringify({ profile: { subject: "testuser", workspace: {workspace_id:"workspace-test-user",display_name:"测试个人工作区"}, display_name: "研究员", preferences: "", default_prompt: "", role: "user", status: "active" } }),
   }));
   await mockResearchLists(page);
   await login(page);

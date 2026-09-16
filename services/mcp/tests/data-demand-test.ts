@@ -45,3 +45,21 @@ assert.match(forbidden.content[0].text, /data_demand_forbidden/);
 assert.doesNotMatch(forbidden.content[0].text, /var\/lib|token/i);
 
 console.log("Data-demand MCP translation PASS: bounded create/get/inbox and safe errors");
+
+let writes = 0;
+const lost = await fetchByqDataDemandCreate('http://backend', { idempotency_key:'original' }, async () => {
+  writes++; throw new Error('private lost reply');
+});
+assert.equal(writes, 1);
+assert.deepEqual(JSON.parse(lost.content[0].text).reconciliation, {
+  tool:'byq_data_demand_get', arguments:{idempotency_key:'original'},
+});
+const recovered = await fetchByqDataDemandGet('http://backend', {idempotency_key:'original'}, async (url, init) => {
+  assert.equal(init?.method, 'GET');
+  assert.equal(url, 'http://backend/v1/agent/data-demands/by-key/original');
+  return Response.json({state:'confirmed', demand:{schema_version:'data-demand.v1', demand_id:'datademand_'+'a'.repeat(32)}});
+});
+assert.equal(recovered.isError, false);
+const mismatched = await fetchByqDataDemandGet('http://backend', 'datademand_'+'a'.repeat(32), async () =>
+  Response.json({demand:{schema_version:'data-demand.v1', demand_id:'datademand_'+'b'.repeat(32)}}));
+assert.equal(mismatched.isError, true);

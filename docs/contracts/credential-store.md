@@ -101,3 +101,11 @@ OpenCode Go/Zen 的 provider family 只用于 credential/profile ownership。Bac
 - MCP 和 DSH tools/events；
 - WorkflowTrace 和 business audit projections；
 - exception messages、metrics labels、logs、fixtures 和 exported assets。
+
+## 模型配置原命令回执
+
+模型绑定及档案删除在业务事务内追加 `model_command_receipts`，以 owner、闭合 operation、
+资源 ID 和原 expected_version 为唯一命令身份，记录目标 profile、actor、提交版本与删除触发的解绑版本。
+只读核对还必须匹配目标 profile。保留版本冲突规则，不因重试自动采用新版本。回执失败必须回滚
+业务写入及解绑；过去没有此记录的操作不从当前状态补造回执。Product 页面写前保存无密钥的原命令，
+按原身份只读恢复；MCP/DSH 不增加模型配置写权限。

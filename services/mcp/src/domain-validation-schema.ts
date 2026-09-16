@@ -90,6 +90,57 @@ const v2RegimeMlStrategySchema = z.object({
 });
 
 export const domainValidationSchemas = {
+  byq_strategy_version_create: z.object({
+    task_id: z.string(),
+    experiment_id: z.string().optional(),
+    draft_artifact_id: z.string(),
+    trace_id: z.string(),
+    idempotency_key: z.string(),
+    agent_run_id: z.string().min(1).max(128),
+  }).strict(),
+  byq_factor_compute: z.object({
+    task_id: z.string(),
+    experiment_id: z.string().optional(),
+    trace_id: z.string(),
+    idempotency_key: z.string(),
+    as_of_date: z.string(),
+    factor: z.object({
+      name: z.enum(["daily_return", "momentum"]),
+      version: z.string(),
+      lookback: z.number().int().min(1).max(252),
+    }),
+    securities: z.array(z.object({
+      symbol: z.string(),
+      exchange: z.string().optional(),
+      asset_type: z.enum(["stock", "etf"]),
+      list_date: z.string().nullable().optional(),
+      delist_date: z.string().nullable().optional(),
+    })),
+    sessions: z.array(z.object({ trade_date: z.string(), is_open: z.boolean() })),
+    statuses: z.array(z.object({
+      symbol: z.string(),
+      trade_date: z.string(),
+      state: z.enum(["trading", "suspended"]),
+      reason: z.string().nullable().optional(),
+    })).optional(),
+    bars: z.array(z.object({
+      symbol: z.string(),
+      trade_date: z.string(),
+      open: z.number(),
+      high: z.number(),
+      low: z.number(),
+      close: z.number(),
+    })),
+    universe_snapshots: z.array(z.object({ snapshot_date: z.string(), symbols: z.array(z.string()) })),
+    sources: z.array(z.object({
+      provider: z.string(),
+      endpoint: z.string(),
+      request_fingerprint: z.string(),
+      dataset_id: z.string(),
+      announcement_date: z.string().nullable().optional(),
+      effective_date: z.string().nullable().optional(),
+    })),
+  }).extend({ agent_run_id: z.string().min(1).max(128) }).strict(),
   byq_strategy_validate: strategyValidationInputSchema.extend({ agent_run_id: z.string().min(1).max(128) }),
   byq_ml_strategy_create: z.object({
     task_id: z.string(), experiment_id: z.string().optional(), idempotency_key: z.string().min(1).max(128),

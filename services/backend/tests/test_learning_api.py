@@ -55,6 +55,11 @@ def test_learning_api_requires_context_and_stops_at_human_gate(monkeypatch, tmp_
     run = started.json()["run"]
     assert run["owner_principal"] == "alice"
     assert run["status"] == "active"
+    assert client.get("/v1/learning/receipts", params={"kind":"run","task_id":task["task_id"],"idempotency_key":"run-api-1"}).status_code == 401
+    receipt = client.get("/v1/learning/receipts", headers=context,
+        params={"kind":"run","task_id":task["task_id"],"idempotency_key":"run-api-1"})
+    assert receipt.status_code == 200, receipt.text
+    assert receipt.json()["run"]["learning_run_id"] == run["learning_run_id"]
 
     iterated = client.post(
         f"/v1/learning/runs/{run['learning_run_id']}/iterations",

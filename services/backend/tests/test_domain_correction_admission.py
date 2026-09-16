@@ -61,6 +61,8 @@ def test_failed_input_new_key_never_runs_and_one_repair_survives_restart(observe
 @pytest.mark.parametrize("action,path", [
     ("byq_strategy_validate", "/v1/research/strategies/validate"),
     ("byq_ml_strategy_create", "/v1/research/ml/strategies/versions"),
+    ("byq_factor_compute", "/v1/research/factors/compute"),
+    ("byq_strategy_version_create", "/v1/research/strategies/versions"),
 ])
 def test_cancel_waits_for_inflight_atomic_artifact_commit(observed, monkeypatch, action, path):
     from threading import Event
@@ -79,6 +81,21 @@ def test_cancel_waits_for_inflight_atomic_artifact_commit(observed, monkeypatch,
     payload = {"task_id": evidence["task_id"], "agent_run_id": evidence["agent_run_id"],
         "idempotency_key": "inflight-commit", "trace_id": "trace-test",
         "strategy": strategy_payload() if action == "byq_strategy_validate" else valid_strategy()}
+    if action == "byq_factor_compute":
+        from test_factor_research import factor_payload
+        payload.pop("strategy")
+        payload = factor_payload(**payload)
+    baseline_artifacts = 0
+    if action == "byq_strategy_version_create":
+        human = {**ctx, "x-byq-actor-principal": "alice"}
+        draft = TestClient(main.app).post("/v1/research/strategies/validate", headers=human, json={
+            "task_id": evidence["task_id"], "trace_id": "trace-test", "idempotency_key": "human-draft",
+            "strategy": strategy_payload(),
+        })
+        assert draft.status_code == 201, draft.text
+        payload.pop("strategy")
+        payload["draft_artifact_id"] = draft.json()["artifact"]["artifact_id"]
+        baseline_artifacts = 1
     store.consume_domain_call_evidence({**evidence,
         **request_evidence(action, payload, trace_id="trace-test"), "sequence": 3}, **scope)
     headers = {**ctx, "x-byq-root-run-id": evidence["root_run_id"]}
@@ -101,7 +118,7 @@ def test_cancel_waits_for_inflight_atomic_artifact_commit(observed, monkeypatch,
             try:
                 assert written.wait(10), "domain operation never reached its commit boundary"
                 # Another connection cannot observe an uncommitted Artifact.
-                assert store._fetch_one("SELECT count(*) AS n FROM artifacts")["n"] == 0
+                assert store._fetch_one("SELECT count(*) AS n FROM artifacts")["n"] == baseline_artifacts
                 cancel = executor.submit(apply, terminal_store, ctx, evidence["root_run_id"],
                     outcome="cancelled", sequence=5)
                 deadline = time.monotonic() + 5
@@ -121,7 +138,7 @@ def test_cancel_waits_for_inflight_atomic_artifact_commit(observed, monkeypatch,
             response = write.result(timeout=10)
             assert response.status_code == 201, response.text
             cancel.result(timeout=10)
-        assert store._fetch_one("SELECT count(*) AS n FROM artifacts")["n"] == 1
+        assert store._fetch_one("SELECT count(*) AS n FROM artifacts")["n"] == baseline_artifacts + 1
         receipt = store._fetch_one("SELECT result_json FROM agent_domain_call_claims")["result_json"]
         assert receipt == {"state": "succeeded", "result": response.json()}
         assert store._fetch_one("SELECT status FROM agent_runtime_turns")["status"] == "cancelled"

@@ -39,6 +39,21 @@ async function requestPaper(
     if (!response.ok) {
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "paper_rejected", http_status: response.status } }, true);
     }
+    const value = payload as Record<string,any>;
+    const exact = path.match(/^\/v1\/paper\/accounts\/([^/?]+)(?:\/orders\/([^/?]+))?$/);
+    if(exact) {
+      const object = exact[2] ? value.order : value.account;
+      if(!object || object.account_id !== decodeURIComponent(exact[1]) || (exact[2] && object.order_id !== decodeURIComponent(exact[2])))
+        return result({status:'error',backend:{status:'invalid_response'}},true);
+    }
+    if(path.startsWith('/v1/paper/receipts?')) {
+      const params = new URLSearchParams(path.split('?')[1]);
+      const absent = value.state === 'not_found' && Object.keys(value).length === 1;
+      const valid = value.state === 'confirmed' && value.operation === params.get('operation') && /^paper_account_[0-9a-f]{32}$/.test(value.account_id ?? '')
+        && (!params.get('account_id') || value.account_id === params.get('account_id'))
+        && (value.operation !== 'order' || (value.order?.account_id === value.account_id && /^paper_order_[0-9a-f]{32}$/.test(value.order?.order_id ?? '')));
+      if(!absent && !valid) return result({status:'error',backend:{status:'invalid_response'}},true);
+    }
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
     return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
@@ -53,3 +68,9 @@ export const fetchByqPaperOrder = (backendUrl: string, accountId: string, orderI
   requestPaper(backendUrl, `/v1/paper/accounts/${encodeURIComponent(accountId)}/orders/${encodeURIComponent(orderId)}`, context, fetcher);
 export const fetchByqPaperSnapshots = (backendUrl: string, accountId: string, context: PaperContext, fetcher: Fetcher = fetch) =>
   requestPaper(backendUrl, `/v1/paper/accounts/${encodeURIComponent(accountId)}/snapshots`, context, fetcher);
+
+export function fetchByqPaperReceipt(backendUrl:string,args:{operation:string;idempotency_key:string;account_id?:string},context:PaperContext,fetcher:Fetcher=fetch) {
+  const params = new URLSearchParams({operation:args.operation,idempotency_key:args.idempotency_key});
+  if(args.account_id) params.set('account_id',args.account_id);
+  return requestPaper(backendUrl,'/v1/paper/receipts?'+params,context,fetcher);
+}

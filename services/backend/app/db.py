@@ -24,6 +24,7 @@ from psycopg.types.json import Jsonb
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 
 DEFAULT_DATABASE_URL = os.getenv(
@@ -117,6 +118,35 @@ def ensure_column(connection: Connection, table: str, column: str, definition: s
 def schema_bootstrap_lock(connection: Connection) -> None:
     """Serialize DDL transactions, including store-specific column upgrades."""
     connection.execute(text("SELECT pg_advisory_xact_lock(hashtextextended('byq-schema-bootstrap.v1',0))"))
+
+
+METADATA_LOCK_WAIT_SECONDS = 2
+METADATA_STATEMENT_SECONDS = 5
+
+
+@contextmanager
+def bounded_metadata_transaction(
+    engine: Engine, lock: Any, *, error_type: type[Exception], error_message: str,
+    passthrough: tuple[type[Exception], ...] = (),
+) -> Iterator[Connection]:
+    """Bound short storage contention, preserving each domain's error contract.
+
+    Does not set an Agent duration, retry a write, or own business invariants.
+    Commit failures are mapped only after the engine context rolls back.
+    """
+    if not lock.acquire(timeout=METADATA_LOCK_WAIT_SECONDS):
+        raise error_type(error_message)
+    try:
+        with engine.begin() as connection:
+            execute(connection, f"SET LOCAL lock_timeout = '{METADATA_LOCK_WAIT_SECONDS}s'")
+            execute(connection, f"SET LOCAL statement_timeout = '{METADATA_STATEMENT_SECONDS}s'")
+            yield connection
+    except passthrough:
+        raise
+    except SQLAlchemyError as error:
+        raise error_type(error_message) from error
+    finally:
+        lock.release()
 
 
 class PgStoreMixin:

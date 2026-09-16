@@ -52,7 +52,7 @@ baseline = call('POST', '/api/product/backtests', {'task_id': task,
     'bars': seed['bars'], 'signals': [], 'execution': {'initial_capital': 1000000, 'lot_size': 100}}, expected=202)
 baseline = call('POST', f"/api/product/backtests/{baseline['job']['job_id']}/run", {})['job']
 assert baseline['status'] == 'completed'
-pool = call('POST', '/api/product/paper/pools', {'name': 'F6 frozen fixture pool', 'pool_type': 'custom',
+pool = call('POST', '/api/product/paper/pools', {'name': 'F6 frozen fixture pool', 'pool_type': 'custom', 'idempotency_key': 'f6-frozen-fixture-pool',
     'description': 'Explicit synthetic integration inputs', 'symbols': ['000001.SZ', '600000.SH']}, expected=201)['pool']
 ml = {'schema_version': 'ml-strategy-version.v2', 'name': 'F6 LightGBM task continuation',
     'feature_set': {'id': 'price-volume-basic-v1', 'parameters': {}},

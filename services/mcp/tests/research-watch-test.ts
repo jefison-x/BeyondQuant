@@ -49,3 +49,27 @@ const state=await fetchByqResearchLookup('http://backend',{entity_type:'research
 });
 assert.equal(state.isError,false);
 console.log('Research durable watch PASS: pre-admission, unknown, restart, no repeated write and exact receipt reads');
+
+for (const entity_type of ['research_task', 'experiment', 'artifact'] as const) {
+  const field = {research_task:'task_id',experiment:'experiment_id',artifact:'artifact_id'}[entity_type];
+  for (const returnedId of [undefined, null, 42, 'other', 'original']) {
+    let calls = 0;
+    const response = await fetchByqResearchLookup('http://backend', {
+      entity_type, entity_id:'original',
+    }, async (_url, init) => {
+      calls++;
+      assert.equal(init?.method, 'GET');
+      return json({[field]:returnedId});
+    });
+    assert.equal(calls,1);
+    assert.equal(response.isError,returnedId !== 'original', `${entity_type}: exact returned ID ${returnedId}`);
+  }
+}
+const mismatched = await fetchByqResearchTaskCreate('http://backend',payload,async (url,init) => {
+  if (url.endsWith('/submission-watches')) return json({...watch,status:'confirmed',entity_id:id,registration_created:false});
+  assert.equal(init?.method,'GET');
+  return json({task_id:'task_'+'c'.repeat(32),objective:'Wrong task'});
+});
+assert.equal(mismatched.isError,true);
+assert.doesNotMatch(mismatched.content[0].text,/Wrong task/);
+console.log('Exact research reads PASS: all three entity identities and confirmed-watch readback');

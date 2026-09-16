@@ -2,9 +2,9 @@ import { expect, test, type Page } from "@playwright/test";
 
 async function login(page: Page, admin = false) {
   let authenticated = false;
-  await page.route("**/api/auth/login", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ user: { subject: admin ? "admin" : "owner", role: admin ? "admin" : "user" }, session_id: "session-feedback" }) }));
+  await page.route("**/api/auth/login", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ user: { subject: admin ? "admin" : "owner", role: admin ? "admin" : "user", workspace: {workspace_id:"workspace-feedback-test"} }, session_id: "session-feedback" }) }));
   await page.route("**/api/auth/me", (route) => authenticated
-    ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ subject: admin ? "admin" : "owner", role: admin ? "admin" : "user" }) })
+    ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ subject: admin ? "admin" : "owner", role: admin ? "admin" : "user", workspace: {workspace_id:"workspace-feedback-test"} }) })
     : (authenticated = true, route.fulfill({ status: 401, contentType: "application/json", body: "{}" })));
   await page.goto("/login");
   await page.getByLabel("用户名").fill(admin ? "admin" : "owner");

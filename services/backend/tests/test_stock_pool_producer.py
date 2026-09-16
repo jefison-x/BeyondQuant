@@ -6,7 +6,11 @@ from decimal import Decimal
 import pytest
 
 from app.paper_trading import PaperTradingStore
-from app.stock_pool_producer import StockPoolProducerNotFound, StockPoolProducerStore
+from app.stock_pool_producer import (
+    StockPoolProducerConflict,
+    StockPoolProducerNotFound,
+    StockPoolProducerStore,
+)
 from tests.workspace_helpers import trusted_agent_context
 
 
@@ -214,3 +218,59 @@ def test_validated_index_import_compensation_is_bounded_restart_safe_and_frozen(
             restarted.close()
     finally:
         store.close()
+
+
+def test_historical_scope_rejects_stale_snapshot_at_create_and_materialize():
+    headers = trusted_agent_context('historical-window')
+    store = StockPoolProducerStore()
+    _seed_index(store)
+    context = {'trusted_owner':'historical-window', 'trusted_workspace':headers['x-byq-workspace-id']}
+    with pytest.raises(StockPoolProducerNotFound):
+        store.create_index_pool({'index_symbol':'000300.SH', 'requested_as_of':'20240630',
+            'tracking_mode':'historical_snapshot', 'idempotency_key':'stale'}, **context)
+    created = store.create_index_pool({'index_symbol':'000300.SH', 'requested_as_of':'20240131',
+        'tracking_mode':'historical_snapshot', 'idempotency_key':'initial'}, **context)
+    # Simulate loss of the in-window cache before worker execution, retaining only old data.
+    store._execute("UPDATE market_index_weight_snapshots SET snapshot_date=replace(snapshot_date,'2024','2023')")
+    store._execute("UPDATE market_index_weights SET snapshot_date=replace(snapshot_date,'2024','2023')")
+    run = store.claim_next_run(worker_id='historical-window')
+    result = store.materialize_claimed(run, worker_id='historical-window')
+    assert result['status'] == 'waiting_for_data'
+    assert result.get('snapshot_id') is None
+    assert store.paper_store.get_pool(created['pool']['pool_id'], trusted_owner='historical-window')['current_snapshot_id'] is None
+    store.close()
+
+
+def test_producer_import_retry_reuses_original_pool_and_rejects_conflicting_input():
+    headers = trusted_agent_context('import-review')
+    paper = PaperTradingStore()
+    store = StockPoolProducerStore(paper_store=paper)
+    context = {'trusted_owner': 'import-review', 'trusted_workspace': headers['x-byq-workspace-id']}
+    payload = {
+        'name': '动量池', 'description': None, 'producer_kind': 'dynamic',
+        'definition': {'base_universe': {'kind': 'security_master'}, 'top_n': 5, 'cadence': 'daily'},
+        'idempotency_key': 'import-producer-1',
+    }
+    first = store.import_inactive_definition(payload, **context)
+    assert first['pool']['status'] == 'inactive'
+    replay = store.import_inactive_definition(payload, **context)
+    assert replay['pool']['pool_id'] == first['pool']['pool_id']
+    assert replay['producer']['definition_id'] == first['producer']['definition_id']
+    assert store.reconcile_creation(
+        'dynamic', 'import-producer-1', **context,
+    )['pool']['pool_id'] == first['pool']['pool_id']
+
+    other = store.import_inactive_definition(
+        {**payload, 'idempotency_key': 'import-producer-2'}, **context,
+    )
+    assert other['pool']['pool_id'] != first['pool']['pool_id']
+
+    with pytest.raises(StockPoolProducerConflict):
+        store.import_inactive_definition({**payload, 'name': '其他池'}, **context)
+
+    legacy = store.import_inactive_definition(
+        {key: value for key, value in payload.items() if key != 'idempotency_key'}, **context,
+    )
+    assert legacy['pool']['pool_id'] not in {first['pool']['pool_id'], other['pool']['pool_id']}
+    store.close()
+    paper.close()

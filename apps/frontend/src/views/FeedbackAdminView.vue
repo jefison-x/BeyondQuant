@@ -1,9 +1,32 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { getFeedbackAudit, getFeedbackModeration, getFeedbackPublisherStatus, listFeedbackModeration, moderateFeedback } from "@/api/feedback";
+import { getFeedbackAudit, getFeedbackModeration, getFeedbackPublisherStatus, listFeedbackModeration, sendFeedbackModerationCommand, reconcileFeedbackModerationCommand, type FeedbackModerationCommand } from "@/api/feedback";
 import type { FeedbackAuditPage, FeedbackModerationItem, FeedbackPublisherStatus } from "@/api/types";
 
+import { useAuthStore } from '@/stores/auth';
+import { ProductApiError } from '@/api/client';
+import { beginModerationSubmission,readModerationSubmission,finishModerationSubmission } from '@/api/feedbackModerationSubmission';
+const auth=useAuthStore();
+const pending=ref<FeedbackModerationCommand|null>(null);
+const saving=ref(false);
+function commandScope() {
+  if(!auth.user) throw Error('请先登录');
+  return JSON.stringify([auth.user.subject,auth.user.workspace.workspace_id]);
+}
+async function recoverCommand(retry=false) {
+  if(!pending.value || saving.value) return;
+  saving.value=true;
+  try {
+    const scope=commandScope(),command=pending.value;
+    const result=retry ? {state:'confirmed' as const,...await sendFeedbackModerationCommand(command)} : await reconcileFeedbackModerationCommand(command);
+    if(scope!==commandScope()) throw Error('登录身份已切换，请在原身份下核对');
+    if(result.state==='not_found') { error.value='尚未找到原审核回执，可稍后核对或重试原请求。';return; }
+    finishModerationSubmission(scope,command.key);pending.value=null;error.value='';
+    selected.value=result.feedback;await load();
+  } catch(exc) { error.value=detail(exc); }
+  finally { saving.value=false; }
+}
 const items = ref<FeedbackModerationItem[]>([]);
 const selected = ref<FeedbackModerationItem | null>(null);
 const publisher = ref<FeedbackPublisherStatus | null>(null);
@@ -30,6 +53,7 @@ async function load() {
 }
 async function bootstrap() {
   try {
+    pending.value=readModerationSubmission(commandScope());
     const [page, status] = await Promise.all([
       listFeedbackModeration({ status: filters.status, category: filters.category, query: filters.query, limit: filters.limit, offset: 0 }),
       getFeedbackPublisherStatus(),
@@ -48,9 +72,12 @@ async function loadAudit(offset = 0) {
   catch (exc) { ElMessage.error(detail(exc)); }
 }
 async function act(action: "triage" | "accept" | "reject" | "duplicate") {
-  if (!selected.value) return;
+  if (!selected.value || saving.value || pending.value) return;
+  saving.value=true;
+  const original=selected.value;
   const title = { triage: "标记已分诊", accept: "采纳并进入发布队列", reject: "不采纳", duplicate: "标记为重复" }[action];
   try {
+    const scope=commandScope();
     const rationale = await ElMessageBox.prompt("填写审核理由（会进入审计记录）", title, {
       confirmButtonText: "确定", cancelButtonText: "取消",
       inputPattern: /.{2,}/, inputErrorMessage: "至少填写 2 个字符",
@@ -60,10 +87,24 @@ async function act(action: "triage" | "accept" | "reject" | "duplicate") {
       confirmButtonText: "确定", cancelButtonText: "取消",
       inputPattern: /^feedback_[0-9a-f]{32}$/, inputErrorMessage: "反馈编号格式不正确",
     })).value;
-    selected.value = (await moderateFeedback(selected.value, action, rationale.value, canonical)).feedback;
+    if(scope!==commandScope()) throw Error('登录身份已切换，请重新审核');
+    const command=beginModerationSubmission(scope,{action,feedback_id:original.feedback_id,
+      payload:{expected_version:original.version,rationale:rationale.value,...(action==='duplicate'?{canonical_feedback_id:canonical}:{})}});
+    pending.value=command;
+    try {
+      const result=await sendFeedbackModerationCommand(command);
+      if(scope!==commandScope()) throw Error('登录身份已切换，请在原身份下核对');
+      finishModerationSubmission(scope,command.key);pending.value=null;selected.value=result.feedback;
+    } catch(exc) {
+      if(exc instanceof ProductApiError && [400,401,403,404,422].includes(exc.status)) {
+        finishModerationSubmission(scope,command.key);pending.value=null;
+      }
+      throw exc;
+    }
     await Promise.all([load(), getFeedbackPublisherStatus().then((value) => { publisher.value = value; })]);
     ElMessage.success(`${title}完成`);
-  } catch (exc) { if (!dismissed(exc)) ElMessage.error(detail(exc)); }
+  } catch (exc) { if (!dismissed(exc)) { error.value=detail(exc);ElMessage.error(detail(exc)); } }
+  finally { saving.value=false; }
 }
 watch(() => [filters.status, filters.category, filters.query], () => { filters.page = 1; clearTimeout(timer); timer = window.setTimeout(() => void load(), 250); });
 watch(() => filters.page, () => void load());
@@ -73,6 +114,10 @@ onBeforeUnmount(() => { catalogueController?.abort(); detailController?.abort();
 
 <template>
   <div class="admin-feedback">
+    <el-alert v-if="pending" type="warning" :closable="false" title="上一笔审核结果待确认">
+      <el-button :loading="saving" @click="recoverCommand(false)">核对原审核请求</el-button>
+      <el-button :disabled="saving" @click="recoverCommand(true)">重试原审核请求</el-button>
+    </el-alert>
     <el-alert v-if="publisher" :type="publisher.configured && publisher.status==='ready' ? 'success' : 'warning'" :closable="false" show-icon>
       <template #title>{{ publisher.configured ? `GitHub 发布服务：${publisher.status === 'ready' ? '就绪' : '状态陈旧'}` : "GitHub 发布服务未配置" }}</template>
       <p>{{ publisher.configured ? `目标仓库 ${publisher.repository}；队列 ${publisher.queue.queued}，重试 ${publisher.queue.retry_wait}。` : "反馈审核功能可正常使用；采纳项会安全排队，部署管理员配置平台凭据后自动发布。普通用户无需配置。" }}</p>
@@ -87,7 +132,7 @@ onBeforeUnmount(() => { catalogueController?.abort(); detailController?.abort();
       </section>
       <section class="moderation-detail">
         <p v-if="!selected" class="empty">选择一条反馈查看经用户确认的公开候选快照</p>
-        <template v-else><div class="title"><div><el-tag effect="plain">{{ statusLabels[selected.status] }}</el-tag><h3>{{ selected.title }}</h3><p>{{ selected.feedback_id }} · 版本 {{ selected.version }}</p></div></div><dl><template v-for="(value,key) in selected.submitted_snapshot.public_content" :key="key"><dt>{{ key }}</dt><dd><pre>{{ typeof value === 'string' ? value : JSON.stringify(value, null, 2) }}</pre></dd></template></dl><div class="actions"><el-button v-if="selected.status==='submitted'" type="primary" @click="act('triage')">完成分诊</el-button><template v-if="selected.status==='triaged'"><el-button type="success" @click="act('accept')">采纳</el-button><el-button @click="act('duplicate')">标记重复</el-button><el-button type="danger" plain @click="act('reject')">不采纳</el-button></template><a v-if="selected.github_issue" :href="selected.github_issue.html_url" target="_blank" rel="noopener noreferrer">GitHub Issue #{{ selected.github_issue.issue_number }}</a></div><el-button link @click="loadAudit(0)">加载审计记录</el-button><div v-if="audit" class="audit"><div v-for="row in audit.audit" :key="row.audit_id"><strong>{{ row.action }}</strong><span>{{ row.from_status || '创建' }} → {{ row.to_status }}</span><small>{{ row.rationale || '无补充理由' }} · {{ new Date(row.created_at).toLocaleString() }}</small></div><el-button v-if="audit.has_more" link @click="loadAudit(audit.offset + audit.limit)">下一页审计</el-button></div></template>
+        <template v-else><div class="title"><div><el-tag effect="plain">{{ statusLabels[selected.status] }}</el-tag><h3>{{ selected.title }}</h3><p>{{ selected.feedback_id }} · 版本 {{ selected.version }}</p></div></div><dl><template v-for="(value,key) in selected.submitted_snapshot.public_content" :key="key"><dt>{{ key }}</dt><dd><pre>{{ typeof value === 'string' ? value : JSON.stringify(value, null, 2) }}</pre></dd></template></dl><div class="actions"><el-button v-if="selected.status==='submitted'" type="primary" :disabled="saving || !!pending" @click="act('triage')">完成分诊</el-button><template v-if="selected.status==='triaged'"><el-button type="success" :disabled="saving || !!pending" @click="act('accept')">采纳</el-button><el-button :disabled="saving || !!pending" @click="act('duplicate')">标记重复</el-button><el-button type="danger" plain :disabled="saving || !!pending" @click="act('reject')">不采纳</el-button></template><a v-if="selected.github_issue" :href="selected.github_issue.html_url" target="_blank" rel="noopener noreferrer">GitHub Issue #{{ selected.github_issue.issue_number }}</a></div><el-button link @click="loadAudit(0)">加载审计记录</el-button><div v-if="audit" class="audit"><div v-for="row in audit.audit" :key="row.audit_id"><strong>{{ row.action }}</strong><span>{{ row.from_status || '创建' }} → {{ row.to_status }}</span><small>{{ row.rationale || '无补充理由' }} · {{ new Date(row.created_at).toLocaleString() }}</small></div><el-button v-if="audit.has_more" link @click="loadAudit(audit.offset + audit.limit)">下一页审计</el-button></div></template>
       </section>
     </div>
   </div>

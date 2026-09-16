@@ -167,8 +167,9 @@ export function deleteStrategyDraft(artifactId: string, token: string): Promise<
   return request(`/strategies/drafts/${encodeURIComponent(artifactId)}`, token, { method: "DELETE" });
 }
 
-export function getStrategyVersions(strategyId: string, token: string): Promise<Record<string, unknown>> {
-  return request(`/strategies/${encodeURIComponent(strategyId)}/versions`, token);
+export function getStrategyVersions(strategyId: string, token: string, page?: { limit: number; offset: number }): Promise<Record<string, unknown>> {
+  const query = page ? `?${new URLSearchParams({ limit: String(page.limit), offset: String(page.offset) })}` : "";
+  return request(`/strategies/${encodeURIComponent(strategyId)}/versions${query}`, token);
 }
 
 export function getStrategyBacktestCount(strategyId: string, token: string): Promise<Record<string, unknown>> {

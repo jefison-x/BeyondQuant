@@ -23,7 +23,7 @@ from packages.contracts.conversation_rehydration import (
 )
 from packages.contracts.conversation_recovery import normalize_recovery
 from packages.contracts.agent_run_lifecycle import registration_fingerprint, lifecycle_receipt, project_lifecycle_event
-from packages.contracts.domain_call_admission import request_evidence
+from packages.contracts.domain_call_admission import ACTIONS as DOMAIN_CALL_ACTIONS, request_evidence
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
 from .child_lease import ChildLease
@@ -1235,8 +1235,8 @@ class RuntimeAdapter:
                     record, run, observation,
                 )
                 if self._root_scoped and source_run is run and runtime_activity:
-                    if observation.kind == "tool.call" and observation.tool_name in {
-                            "mcp__byq__byq_strategy_validate", "mcp__byq__byq_ml_strategy_create"}:
+                    if (observation.kind == "tool.call"
+                            and observation.tool_name in {f"mcp__byq__{action}" for action in DOMAIN_CALL_ACTIONS}):
                         if (len(run.domain_calls) >= 1024
                                 or record.journal is not None and len(record.journal.state["calls"]) >= 1024):
                             run.domain_stop_code = "domain-call-retention-bound"

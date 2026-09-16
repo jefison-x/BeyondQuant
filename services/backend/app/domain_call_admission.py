@@ -10,6 +10,7 @@ class DomainValidationRejected(ValueError):
     """Only a trusted domain/schema validator may classify a repairable failure."""
 
     def __init__(self, message, *, validation_error=None):
+        from .factor_research import FactorValidationError
         from .ml_validation import MLValidationError
         from .strategy_artifact import StrategyValidationError
         super().__init__(message)
@@ -17,6 +18,9 @@ class DomainValidationRejected(ValueError):
         self.validation = (MLValidationError("", field=validation_error.field,
             code=validation_error.code).public_problem()
             if isinstance(validation_error, MLValidationError) else None)
+        if isinstance(validation_error, FactorValidationError):
+            self.validation = FactorValidationError("", field=validation_error.field,
+                code=validation_error.code).public_problem()
         if isinstance(validation_error, StrategyValidationError):
             self.validation = StrategyValidationError("", field=validation_error.field,
                 code=validation_error.code).public_problem()

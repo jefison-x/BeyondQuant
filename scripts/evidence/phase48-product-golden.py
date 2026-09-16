@@ -190,14 +190,14 @@ def main() -> None:
     pool = owner.product(
         "POST",
         "/paper/pools",
-        {"name": f"Phase 48 golden pool {suffix}", "pool_type": "custom", "symbols": ["000001.SZ"]},
+        {"idempotency_key": f"phase48-pool-{suffix}", "name": f"Phase 48 golden pool {suffix}", "pool_type": "custom", "symbols": ["000001.SZ"]},
     )["pool"]
     pool_id = str(pool["pool_id"])
     snapshot_id = str(pool["snapshot"]["snapshot_id"])
     paper = owner.product(
         "POST",
         "/paper/accounts",
-        {"name": f"Phase 52 isolated account {suffix}", "cash": 100000},
+        {"idempotency_key":f"phase52-account-{suffix}","name": f"Phase 52 isolated account {suffix}", "cash": 100000},
     )["account"]
     paper_account_id = str(paper["account_id"])
 

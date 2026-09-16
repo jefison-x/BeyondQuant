@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { fetchByqFeedbackCreate, fetchByqFeedbackPreview, fetchByqFeedbackSubmit } from "../src/feedback.js";
+import { fetchByqFeedbackReceipt, fetchByqFeedbackGet, fetchByqFeedbackCreate, fetchByqFeedbackPreview, fetchByqFeedbackSubmit } from "../src/feedback.js";
 
 const calls: Array<{ url: string; init?: RequestInit }> = [];
 const fakeFetch = async (url: string, init?: RequestInit) => {
@@ -16,3 +16,10 @@ const denied = await fetchByqFeedbackSubmit("http://backend", "feedback_" + "a".
 assert.equal(denied.isError, true);
 assert.equal(JSON.parse(denied.content[0].text).backend.status, "feedback_forbidden");
 console.log("Feedback MCP contract PASS: owner-only create, preview and approval-bound submit");
+
+const identity = 'feedback_'+'a'.repeat(32);
+const unknown = await fetchByqFeedbackCreate('http://backend',{idempotency_key:'original'},async()=>{throw Error('private')});
+assert.deepEqual(JSON.parse(unknown.content[0].text).reconciliation,{tool:'byq_feedback_get',arguments:{operation:'create',idempotency_key:'original'}});
+assert.equal((await fetchByqFeedbackGet('http://backend',identity,async()=>new Response(JSON.stringify({feedback:{feedback_id:'feedback_'+'b'.repeat(32)}})))).isError,true);
+assert.equal((await fetchByqFeedbackReceipt('http://backend',{operation:'update',feedback_id:identity,idempotency_key:'original'},async()=>new Response(JSON.stringify({state:'confirmed',feedback:{feedback_id:'feedback_'+'b'.repeat(32)}})))).isError,true);
+console.log('Feedback original command identity and mismatch refusal PASS');

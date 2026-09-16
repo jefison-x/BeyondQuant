@@ -3,9 +3,9 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  createDynamicStockPool,
-  createIndexStockPool,
-  createStockPool,
+  PoolCreationRejected,
+  submitPoolCreation,
+  reconcilePoolCreation,
   deleteStockPool,
   diffStockPoolSnapshots,
   getStockPoolAsOf,
@@ -30,14 +30,42 @@ import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogIte
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import { statusLabel } from "@/display";
+import IndexSnapshotPreparation from "@/components/IndexSnapshotPreparation.vue";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 import ManagementActionBar from "@/components/layout/ManagementActionBar.vue";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { useUnsavedChanges } from "@/composables/useUnsavedChanges";
+import { beginPoolSubmission, readPoolSubmission, finishPoolSubmission, type PoolSubmission } from "@/api/poolSubmission";
 import { createRequestId } from "@/utils/requestId";
 import { useFilteredPagination } from "@/composables/useFilteredPagination";
 
 const auth = useAuthStore();
+const pendingCreation = ref<PoolSubmission | null>(null);
+function creationScope() {
+  if (!auth.user?.workspace?.workspace_id) throw new Error("请先登录并选择工作区");
+  return JSON.stringify([auth.user.subject, auth.user.workspace.workspace_id]);
+}
+async function recoverCreation(retry = false) {
+  if (!pendingCreation.value || busy.value) return;
+  busy.value = true; error.value = "";
+  try {
+    const original = pendingCreation.value;
+    const scope = creationScope();
+    const result = retry
+      ? {state:"confirmed", ...(await submitPoolCreation(original.kind, {...original.payload, idempotency_key:original.key}, auth.token))}
+      : await reconcilePoolCreation(original.kind, original.key, auth.token);
+    if (result.state !== "confirmed" || !("pool" in result)) { error.value = "尚未确认原提交，可使用原请求重试；不要更换提交键。"; return; }
+    if (creationScope() !== scope) throw new Error("工作区已改变，请重新核对原请求。");
+    finishPoolSubmission(scope, original.key);
+    pendingCreation.value = null;
+    selected.value = result.pool;
+    showCreate.value = false;
+    await loadPools();
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : "原请求未确认";
+  }
+  finally { busy.value = false; }
+}
 const route = useRoute();
 const router = useRouter();
 const loading = ref(true);
@@ -212,6 +240,7 @@ async function loadIndexCatalog() {
 }
 
 async function submit() {
+  let hadPrevious = false;
   error.value = "";
   if (poolType.value === "index" && indexTrackingMode.value === "historical_snapshot" && !requestedAsOf.value) {
     ElMessage.warning("固定历史快照必须选择截至日期");
@@ -248,28 +277,27 @@ async function submit() {
       return;
     }
     if (poolType.value === "index" && !indexCatalog.value.some(
-      (item) => item.index_symbol === indexSymbol.value && item.selectable,
+      (item) => item.index_symbol === indexSymbol.value && (indexTrackingMode.value === "historical_snapshot" || item.selectable),
     )) {
       ElMessage.warning("该指数尚无已验证的完整权重快照");
       return;
     }
-    const created = poolType.value === "index"
-      ? await createIndexStockPool({
-          index_symbol: indexSymbol.value,
-          tracking_mode: indexTrackingMode.value,
-          name: name.value.trim() || undefined,
-          description: description.value.trim() || undefined,
-          requested_as_of: requestedAsOf.value?.replaceAll("-", "") || undefined,
-        }, auth.token)
-      : poolType.value === "dynamic"
-        ? await createDynamicStockPool({
-            name: name.value.trim(), description: description.value.trim() || undefined,
-            rule: buildDynamicRule(), requested_as_of: requestedAsOf.value?.replaceAll("-", "") || undefined,
-            activate: dynamicActivate.value,
-          }, auth.token)
-        : await createStockPool(name.value.trim(), symbols, auth.token, {
-          poolType: "custom", description: description.value.trim() || undefined, weights,
-        });
+    const today = new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()).replaceAll("-", "");
+    const payload = poolType.value === "index" ? {
+      index_symbol:indexSymbol.value, tracking_mode:indexTrackingMode.value, name:name.value.trim() || undefined,
+      description:description.value.trim() || undefined, requested_as_of:requestedAsOf.value?.replaceAll("-", "") || today,
+    } : poolType.value === "dynamic" ? {
+      name:name.value.trim(), description:description.value.trim() || undefined, rule:buildDynamicRule(),
+      requested_as_of:requestedAsOf.value?.replaceAll("-", "") || today, activate:dynamicActivate.value,
+    } : {name:name.value.trim(), pool_type:"custom", description:description.value.trim() || null, symbols, weights};
+    const scope = creationScope();
+    hadPrevious = readPoolSubmission(scope) !== null;
+    pendingCreation.value = beginPoolSubmission(scope, poolType.value, payload);
+    const original = pendingCreation.value;
+    const created = await submitPoolCreation(original.kind, {...original.payload, idempotency_key:original.key}, auth.token);
+    if (creationScope() !== scope) throw new Error("工作区已改变，请重新核对原请求。");
+    finishPoolSubmission(scope, original.key);
+    pendingCreation.value = null;
     selected.value = created.pool;
     showCreate.value = false;
     ElMessage.success(poolType.value === "custom" ? "股票池已创建" : `${poolType.value === "index" ? "指数" : "动态"}池已创建，正在生成成分快照`);
@@ -283,6 +311,10 @@ async function submit() {
     poolType.value = "custom";
     await loadPools();
   } catch (exc) {
+    if (!hadPrevious && exc instanceof PoolCreationRejected && pendingCreation.value) {
+      finishPoolSubmission(creationScope(), pendingCreation.value.key); pendingCreation.value = null;
+    }
+    if (pendingCreation.value) showCreate.value = false;
     error.value = exc instanceof Error ? exc.message : "创建失败";
   } finally {
     busy.value = false;
@@ -523,11 +555,22 @@ function returnToConversation() {
   void router.push({ path: "/agent", query: session ? { session } : {} });
 }
 
-onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
+onMounted(async () => {
+  if (auth.user) {
+    try { pendingCreation.value = readPoolSubmission(creationScope()); }
+    catch (cause) { error.value = cause instanceof Error ? cause.message : "原提交记录未确认"; }
+  }
+  await Promise.all([loadPools(), loadIndexCatalog()]);
+});
 </script>
 
 <template>
   <section class="stock-page">
+    <el-alert v-if="pendingCreation" title="有一笔股票池创建尚未确认" type="warning" :closable="false">
+      <p>{{ pendingCreation.payload.name || pendingCreation.payload.index_symbol }} · 原请求保留，刷新页面后仍可核对。</p>
+      <el-button :disabled="busy" @click="recoverCreation()">核对原创建请求</el-button>
+      <el-button :disabled="busy" @click="recoverCreation(true)">使用原请求重试</el-button>
+    </el-alert>
     <el-dialog v-model="showCreate" title="创建版本化股票池" width="min(680px, 94vw)">
       <p class="dialog-intro">自建池由你维护成员；指数池和动态池由可信 Data Worker 生成不可变快照。</p>
       <el-form label-position="top">
@@ -562,7 +605,7 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
                 :key="item.index_symbol"
                 :label="`${item.name}（${item.index_symbol}）`"
                 :value="item.index_symbol"
-                :disabled="!item.selectable"
+                :disabled="!item.selectable && indexTrackingMode !== 'historical_snapshot'"
               >
                 <span>{{ item.name }}（{{ item.index_symbol }}）</span>
                 <small class="catalog-option-meta">
@@ -584,6 +627,8 @@ onMounted(async () => Promise.all([loadPools(), loadIndexCatalog()]));
           <el-form-item :label="indexTrackingMode === 'historical_snapshot' ? '截至日期（必选）' : '首次截至日期（可选）'">
             <el-date-picker v-model="requestedAsOf" value-format="YYYY-MM-DD" :placeholder="indexTrackingMode === 'historical_snapshot' ? '选择历史截至日期' : '默认使用当前日期前最新完整快照'" />
           </el-form-item>
+          <IndexSnapshotPreparation v-if="indexTrackingMode === 'historical_snapshot'"
+            :index-symbol="indexSymbol" :requested-as-of="requestedAsOf" @ready="loadIndexCatalog" />
           <el-alert
             v-if="availableIndexCount < indexCatalog.length"
             :title="`当前 ${availableIndexCount}/${indexCatalog.length} 个指数具备已验证快照；其余指数将在数据中心可信同步完成后开放。`"

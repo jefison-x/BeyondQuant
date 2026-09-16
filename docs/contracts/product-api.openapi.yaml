@@ -41,6 +41,14 @@ paths:
     get: {summary: 返回 the bounded dashboard projection., responses: *okResponses}
   /api/product/data/status:
     get: {summary: 返回 provider and migration status without credentials., responses: *okResponses}
+  /api/product/data-center/demands:
+    post: {summary: 原子提交管理员工作区的有界数据需求或历史指数单次快照准备., responses: *acceptedResponses}
+  /api/product/data-center/demands/by-key/{idempotency_key}:
+    parameters: [{name: idempotency_key, in: path, required: true, schema: {type: string}}]
+    get: {summary: 按当前owner和workspace原提交键只读核对数据需求., responses: *okResponses}
+  /api/product/data-center/demands/{demand_id}:
+    parameters: [{name: demand_id, in: path, required: true, schema: {type: string}}]
+    get: {summary: 获取原数据需求的权威准备进度., responses: *okResponses}
   /api/product/data-center/status:
     get: {summary: 返回 Tushare source metadata, sync history, and observed PostgreSQL coverage without secrets., responses: *okResponses}
   /api/product/data-center/automation:
@@ -83,6 +91,14 @@ paths:
   /api/product/feedback/items:
     get: {summary: 筛选并分页返回当前 personal workspace 的反馈摘要。, responses: *okResponses}
     post: {summary: 创建 owner-scoped feedback draft 和首个不可变 revision。, responses: *createdResponses}
+  /api/product/feedback/receipts:
+    get:
+      summary: 按当前工作区与原执行者核对反馈原命令回执。
+      parameters:
+        - {name: operation, in: query, required: true, schema: {type: string, enum: [create, update, submit, withdraw]}}
+        - {name: idempotency_key, in: query, required: true, schema: {type: string}}
+        - {name: feedback_id, in: query, schema: {type: string}}
+      responses: *okResponses
   /api/product/feedback/items/{feedback_id}:
     parameters: [{$ref: "#/components/parameters/FeedbackId"}]
     get: {summary: 按需返回一个 owner-scoped feedback detail。, responses: *okResponses}
@@ -99,6 +115,14 @@ paths:
   /api/product/feedback/items/{feedback_id}/withdraw:
     parameters: [{$ref: "#/components/parameters/FeedbackId"}]
     post: {summary: 在分诊前撤回已提交反馈，不硬删除 revision/audit。, responses: *okResponses}
+  /api/product/feedback/moderation/receipts:
+    get:
+      summary: 管理员按原执行者、审核动作与请求键只读核对原回执。
+      parameters:
+        - {name: feedback_id, in: query, required: true, schema: {type: string}}
+        - {name: action, in: query, required: true, schema: {type: string, enum: [triage, accept, reject, duplicate]}}
+        - {name: idempotency_key, in: query, required: true, schema: {type: string}}
+      responses: *okResponses
   /api/product/feedback/moderation/items:
     get: {summary: 管理员专用分页 submitted-snapshot inbox；不读取 workspace drafts 或用户身份。, responses: *okResponses}
   /api/product/feedback/moderation/items/{feedback_id}:
@@ -133,6 +157,13 @@ paths:
       - $ref: "#/components/parameters/EntityType"
       - $ref: "#/components/parameters/EntityId"
     get: {summary: 获取 one owner-scoped research entity., responses: *okResponses}
+  /api/product/research/tasks/{task_id}/handoff:
+    parameters:
+      - {name: task_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: 从持久业务事实只读核对原任务交接；不授予续接权限或改写任务状态。
+      security: [{sessionCookie: []}]
+      responses: *okResponses
   /api/product/research/tasks/{task_id}/continuation-permission:
     parameters:
       - {name: task_id, in: path, required: true, schema: {type: string}}
@@ -341,29 +372,80 @@ paths:
     get: {summary: 返回 user settings capability status., responses: *okResponses}
   /api/product/settings/models:
     get: {summary: 返回 a secret-free model capability projection., responses: *okResponses}
+  /api/product/settings/models/credentials/receipts:
+    get:
+      summary: 只读核对原凭据写入的标识和提交版本，不返回密钥或密文。
+      parameters:
+        - {name: operation, in: query, required: true, schema: {type: string, enum: [create, update, revoke]}}
+        - {name: request_id, in: query, required: true, schema: {type: string}}
+        - {name: credential_id, in: query, schema: {type: string}, description: Required for update and revoke.}
+      responses: *okResponses
   /api/product/settings/models/credentials:
     post: {summary: 创建 an owner-scoped write-only model credential., responses: *createdResponses}
   /api/product/settings/models/credentials/{credential_id}:
     put: {summary: 替换 metadata or the write-only secret with optimistic concurrency., responses: *okResponses}
   /api/product/settings/models/credentials/{credential_id}/revoke:
     post: {summary: 撤销 an owner-scoped credential and disable dependent bindings., responses: *okResponses}
+  /api/product/settings/models/profiles/receipts:
+    get:
+      summary: Read the original model profile creation by its owner-scoped unique key
+      parameters:
+        - {name: key_name, in: query, required: true, schema: {type: string, maxLength: 64}}
+      responses:
+        "200": {description: Original immutable profile configuration and ID or not_found}
   /api/product/settings/models/profiles:
     post: {summary: 创建 an owner-scoped model profile from the reviewed catalogue., responses: *createdResponses}
+  /api/product/settings/models/commands/receipts:
+    get:
+      summary: Read the original model binding or profile deletion version
+      parameters:
+        - {name: operation, in: query, required: true, schema: {type: string, enum: [binding, delete_profile]}}
+        - {name: resource_id, in: query, required: true, schema: {type: string}}
+        - {name: expected_version, in: query, required: true, schema: {type: integer, minimum: 0}}
+        - {name: profile_id, in: query, schema: {type: string}}
+      responses: *okResponses
   /api/product/settings/models/profiles/{profile_id}/delete:
     post: {summary: 软删除 a model profile and unbind it., responses: *okResponses}
   /api/product/settings/models/bindings/{agent_id}:
     put: {summary: 绑定 or unbind one BYQ Agent preset to an owner-scoped model profile., responses: *okResponses}
+  /api/product/settings/agent-policy/receipts:
+    get:
+      summary: Read the original committed personal policy command without repeating it
+      parameters:
+        - {name: operation, in: query, required: true, schema: {type: string, enum: [settings, rule_create, rule_update, rule_delete, preset]}}
+        - {name: request_id, in: query, required: true, schema: {type: string, maxLength: 128}}
+        - {name: resource_id, in: query, schema: {type: string}}
+      responses: *okResponses
   /api/product/settings/agent-policy:
     get: {summary: 返回 platform and personal agent policy., responses: *okResponses}
-    put: {summary: 更新 personal agent policy., responses: *okResponses}
+    put:
+      summary: 更新 personal agent policy.
+      requestBody: &policyCommandBody
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [request_id], properties: {request_id: {type: string, minLength: 1, maxLength: 128}}}
+      responses: *okResponses
   /api/product/settings/agent-policy/rules:
-    post: {summary: 创建 an owner-scoped Agent authorization rule., responses: *createdResponses}
+    post:
+      summary: 创建 an owner-scoped Agent authorization rule.
+      requestBody: *policyCommandBody
+      responses: *createdResponses
   /api/product/settings/agent-policy/rules/{rule_id}:
-    put: {summary: 更新 an owner-scoped Agent authorization rule with optimistic concurrency., responses: *okResponses}
+    put:
+      summary: 更新 an owner-scoped Agent authorization rule with optimistic concurrency.
+      requestBody: *policyCommandBody
+      responses: *okResponses
   /api/product/settings/agent-policy/rules/{rule_id}/delete:
-    post: {summary: 删除 an owner-scoped Agent authorization rule., responses: *okResponses}
+    post:
+      summary: 删除 an owner-scoped Agent authorization rule.
+      requestBody: *policyCommandBody
+      responses: *okResponses
   /api/product/settings/agent-policy/presets/{preset_id}/apply:
-    post: {summary: 替换 personal policy settings and rules from a BYQ preset., responses: *okResponses}
+    post:
+      summary: 替换 personal policy settings and rules from a BYQ preset.
+      requestBody: *policyCommandBody
+      responses: *okResponses
   /api/product/settings/assets:
     get: {summary: 返回 owner-scoped workspace assets., responses: *okResponses}
   /api/product/settings/assets/export:
@@ -377,6 +459,14 @@ paths:
     parameters: [{$ref: "#/components/parameters/UserId"}]
     post: {summary: 禁用 one user as an authenticated administrator., responses: *okResponses}
 
+  /api/product/paper/receipts:
+    get:
+      summary: 按原操作键读取当前用户及工作区的模拟账户提交回执，不产生写入。
+      parameters:
+        - {name: operation, in: query, required: true, schema: {type: string, enum: [create, import, order, settlement, controls, rebind, delete]}}
+        - {name: idempotency_key, in: query, required: true, schema: {type: string}}
+        - {name: account_id, in: query, schema: {type: string}, description: Required for operations other than create and import.}
+      responses: *okResponses
   /api/product/paper/accounts:
     get: {summary: 列出 owner-scoped paper accounts., responses: *okResponses}
     post: {summary: 创建 an owner-scoped paper account., responses: *createdResponses}
@@ -396,6 +486,13 @@ paths:
     post: {summary: 以 point-in-time inputs 预览 closed dynamic rule；结果不构成权威快照., responses: *okResponses}
   /api/product/paper/dynamic-pools:
     post: {summary: 创建 owner-scoped dynamic pool definition and optionally enqueue trusted materialization., responses: *createdResponses}
+  /api/product/paper/pools/reconcile:
+    get:
+      summary: 按原创建键核对当前用户和工作区内的股票池回执。
+      parameters:
+        - {name: kind, in: query, required: true, schema: {type: string, enum: [custom, index, dynamic]}}
+        - {name: idempotency_key, in: query, required: true, schema: {type: string}}
+      responses: *okResponses
   /api/product/paper/pools/{pool_id}:
     parameters: [{$ref: "#/components/parameters/PoolId"}]
     get:

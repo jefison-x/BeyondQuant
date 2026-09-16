@@ -54,7 +54,7 @@ def test_orchestrator_candidates_to_pool_to_validated_strategy_version(
 
     created_pool = client.post(
         "/v1/paper/pools",
-        json={
+        json={"idempotency_key": "test-pool-55",
             "name": "Phase 58 银行候选池",
             "description": "Frozen candidates supported by current research evidence.",
             "pool_type": "custom",

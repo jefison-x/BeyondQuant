@@ -125,6 +125,14 @@ def test_feedback_moderation_requires_admin_session_and_never_forwards_workspace
     assert response.status_code == 200
     forwarded = calls[0]["headers"]
     assert forwarded == {"x-byq-actor-principal": "moderator", "x-byq-actor-role": "admin"}
+    receipt_path = "/api/product/feedback/moderation/receipts?feedback_id=feedback_" + "a" * 32 + "&action=triage&idempotency_key=original"
+    current["role"] = "user"
+    assert browser.get(receipt_path).status_code == 403
+    assert len(calls) == 1
+    current["role"] = "admin"
+    assert browser.get(receipt_path).status_code == 200
+    assert calls[-1]["method"] == "GET" and calls[-1]["headers"] == forwarded
+    assert calls[-1]["path"].startswith("/v1/feedback/moderation/receipts?")
 
 
 def test_ml_workspace_projects_safe_artifacts_and_owner_context(monkeypatch) -> None:
@@ -864,6 +872,81 @@ def test_product_assets_export_and_import_are_owner_scoped(monkeypatch) -> None:
     assert imported.json()["source_owner_reused"] is False
 
 
+def test_product_asset_import_reuses_stable_keys_on_retry(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    calls: list[dict[str, object]] = []
+
+    class FakeResponse:
+        def __init__(self, body: dict[str, object]) -> None:
+            self.body = body
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self.body
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        calls.append({"method": method, "url": url, "json": kwargs.get("json")})
+        if url.endswith("/v1/research/tasks"):
+            return FakeResponse({"task_id": "task_import_1"})
+        if url.endswith("/v1/research/strategies/validate"):
+            return FakeResponse({"artifact": {"artifact_id": "artifact_draft_1"}})
+        if url.endswith("/v1/research/strategies/versions"):
+            return FakeResponse({"strategy_version": {"version_id": "version-portable-1"}})
+        if url.endswith("/v1/research/artifacts"):
+            return FakeResponse({"artifact_id": "artifact_archive_1"})
+        return FakeResponse({})
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    unsigned = {
+        "schema_version": "byq-workspace-assets-v2",
+        "manifest_algorithm": "byq-semantic-json-v1",
+        "exported_at": "2026-09-16T00:00:00+00:00",
+        "owner_principal": "product-user",
+        "assets": {
+            "strategies": [{
+                "kind": "strategy_version",
+                "export": {"schema_version": "strategy-version-v1", "version_id": "version-portable-1",
+                           "snapshot": {"strategy_id": "portable_one"}},
+            }],
+            "backtests": [{"kind": "backtest_archive", "archive": {}}],
+            "pools": [
+                {"pool_id": "stock_pool_1", "name": "沪深300", "pool_type": "custom",
+                 "symbols": ["000001.SZ"]},
+                {"pool_id": "stock_pool_2", "name": "动量池", "pool_type": "dynamic",
+                 "portable_producer": {"producer_kind": "dynamic",
+                                       "definition": {"base_universe": {"kind": "security_master"},
+                                                      "top_n": 5, "cadence": "daily"}}},
+            ],
+            "paper_accounts": [],
+        },
+    }
+    bundle = {**unsigned, "manifest_sha256": product_api._semantic_json_digest(unsigned)}
+    client = TestClient(main.app)
+    auth = {"Authorization": "Bearer product-test-token"}
+
+    first = client.post("/api/product/settings/assets/import", headers=auth, json=bundle)
+    first_calls = [call["json"] for call in calls if call["method"] == "POST"]
+    calls.clear()
+    second = client.post("/api/product/settings/assets/import", headers=auth, json=bundle)
+    second_calls = [call["json"] for call in calls if call["method"] == "POST"]
+
+    assert first.status_code == 200 and second.status_code == 200
+    assert first_calls == second_calls
+    keyed = [
+        (payload.get("idempotency_key"), payload.get("trace_id"))
+        for payload in first_calls if isinstance(payload, dict)
+    ]
+    assert all(key is not None for key, _ in keyed)
+    assert len({key for key, _ in keyed}) == len(keyed)
+    assert any(
+        isinstance(payload, dict) and str(payload.get("idempotency_key", "")).startswith("import-producer-")
+        for payload in first_calls
+    )
+
+
 def test_product_asset_manifest_survives_browser_number_round_trip() -> None:
     document = {
         "schema_version": "byq-workspace-assets-v2",
@@ -1005,9 +1088,9 @@ def test_product_strategy_draft_and_projection_routes_forward_owner_headers(monk
         captured["headers"] = kwargs.get("headers", {})
         if url.endswith("/v1/research/strategies/drafts"):
             return FakeResponse({"artifact": {"artifact_id": "artifact_draft_1", "kind": "strategy_draft"}})
-        if url.endswith("/strategies/MomentumStrategy/versions"):
+        if url.endswith("/strategies/MomentumStrategy/versions?limit=1000&offset=0"):
             return FakeResponse({"strategy_id": "MomentumStrategy", "versions": [{"artifact_id": "artifact_version_1"}]})
-        if url.endswith("/strategies/MomentumStrategy/backtest-count"):
+        if url.endswith("/strategies/MomentumStrategy/backtest-count?limit=1000&offset=0"):
             return FakeResponse({"strategy_id": "MomentumStrategy", "version_count": 1, "backtest_count": 2})
         return FakeResponse({"artifact": {"artifact_id": "artifact_draft_1", "status": "superseded"}})
 
@@ -1038,6 +1121,70 @@ def test_product_strategy_draft_and_projection_routes_forward_owner_headers(monk
     assert counts.status_code == 200
     assert counts.json()["backtest_count"] == 2
     assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+    for suffix in ("versions", "backtest-count"):
+        response = client.get(f"/api/product/strategies/MomentumStrategy/{suffix}?limit=50&offset=1000", headers=auth)
+        assert response.status_code == 200
+        assert captured["url"].endswith(f"/{suffix}?limit=50&offset=1000")
+        assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+
+def test_product_strategy_projection_read_failures_stay_explicit(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    client = TestClient(main.app)
+    auth = {"Authorization": "Bearer product-test-token"}
+
+    def failure(status: int, detail: str):
+        def fake_request(method: str, url: str, **kwargs) -> httpx.Response:
+            return httpx.Response(status, json={"detail": detail}, request=httpx.Request(method, url))
+        return fake_request
+
+    monkeypatch.setattr(product_api.httpx, "request", failure(422, "strategy_id has invalid format"))
+    for suffix in ("versions", "backtest-count"):
+        response = client.get(f"/api/product/strategies/1bad/{suffix}", headers=auth)
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "product_domain_rejected"
+        assert response.json()["error"]["message"] == "strategy_id has invalid format"
+
+    monkeypatch.setattr(product_api.httpx, "request", failure(503, "research storage is unavailable"))
+    for suffix in ("versions", "backtest-count"):
+        response = client.get(f"/api/product/strategies/MomentumStrategy/{suffix}", headers=auth)
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "backend_unavailable"
+
+    def timeout(method: str, url: str, **kwargs) -> httpx.Response:
+        raise httpx.ReadTimeout("synthetic timeout")
+
+    monkeypatch.setattr(product_api.httpx, "request", timeout)
+    for suffix in ("versions", "backtest-count"):
+        response = client.get(f"/api/product/strategies/MomentumStrategy/{suffix}", headers=auth)
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "backend_unavailable"
+
+
+def test_product_strategy_catalog_forwards_lifecycle_and_rejects_unknown_view(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+
+    captured: dict[str, object] = {}
+
+    def fake_request(method: str, url: str, **kwargs) -> httpx.Response:
+        captured.update(method=method, url=url, headers=kwargs.get("headers", {}))
+        return httpx.Response(200, json={"strategies": [], "total": 0}, request=httpx.Request(method, url))
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    auth = {"Authorization": "Bearer product-test-token"}
+
+    response = client.get("/api/product/strategies?lifecycle=all&limit=20&offset=40", headers=auth)
+    assert response.status_code == 200
+    assert captured["url"].endswith("/v1/research/strategies?lifecycle=all&limit=20&offset=40")
+    assert captured["headers"]["x-byq-owner-principal"] == "product-user"
+
+    invalid = client.get("/api/product/strategies?lifecycle=deleted", headers=auth)
+    assert invalid.status_code == 422
+    assert invalid.json()["error"]["code"] == "product_strategy_view_invalid"
 
 
 def test_product_stock_pool_create_forwards_owner_headers(monkeypatch) -> None:
@@ -1294,6 +1441,7 @@ def test_product_agent_policy_get_and_update(monkeypatch) -> None:
         if "/v1/agents/approvals?status=pending&limit=1&offset=0" in url:
             return FakeResponse({"approvals": [], "pending_count": 0, "total": 0})
         if method == "PUT":
+            assert kwargs["json"]["request_id"] == "gateway-policy-test"
             return FakeResponse({"policy": {"owner_principal": "product-user", "automation_enabled": False, "paused": True, "default_decision_mode": "manual"}})
         return FakeResponse({"policy": {"owner_principal": "product-user", "automation_enabled": True, "default_decision_mode": "manual"}})
 
@@ -1307,7 +1455,7 @@ def test_product_agent_policy_get_and_update(monkeypatch) -> None:
     updated = client.put(
         "/api/product/settings/agent-policy",
         headers=auth,
-        json={"automation_enabled": False, "paused": True},
+        json={"automation_enabled": False, "paused": True,"request_id":"gateway-policy-test"},
     )
     assert updated.status_code == 200
     assert updated.json()["personal_policy"]["paused"] is True
@@ -1587,3 +1735,39 @@ def test_product_research_task_creation_owns_identity_fields(monkeypatch) -> Non
     assert captured["json"]["idempotency_key"] != original_request["idempotency_key"]
     for invalid_key in ("tiny", "bad key with spaces", "界" * 12, "x" * 97):
         assert client.post("/api/product/research/tasks", headers={**stable_headers, "x-idempotency-key": invalid_key.encode("utf-8")}, json=body).status_code == 422
+
+
+def test_handoff_uses_authenticated_product_read_boundary(monkeypatch):
+    monkeypatch.setattr(product_api, 'PRODUCT_TOKEN', 'product-test-token')
+    calls = []
+    monkeypatch.setattr(product_api, '_backend_request', lambda method, path, **kwargs:
+                        calls.append((method, path, kwargs)) or {'state': 'needs_permission'})
+    client = TestClient(main.app)
+    path = '/api/product/research/tasks/task_one/handoff'
+    assert client.get(path).status_code == 401
+    assert calls == []
+    result = client.get(path, headers={'Authorization': 'Bearer product-test-token'})
+    assert result.status_code == 200
+    assert calls[0][0:2] == ('GET', '/v1/research/tasks/task_one/handoff')
+
+
+def test_historical_demand_product_route_preserves_admin_gate_and_original_key(monkeypatch):
+    captured = []
+    monkeypatch.setattr(product_api, "_product_principal", lambda request: None)
+    user = {"username":"admin", "role":"admin", "_workspace":{"workspace_id":"workspace_admin"}}
+    monkeypatch.setattr(product_api, "resolve_user", lambda request: user)
+    def backend(method, path, *args, **kwargs):
+        captured.append((method, path, kwargs["headers"]))
+        return {"state":"not_found"}
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    client = TestClient(main.app)
+    client.cookies.set(product_api.SESSION_COOKIE, "synthetic")
+    assert client.post("/api/product/data-center/demands", json={}).status_code == 202
+    assert captured[-1][1] == "/v1/agent/data-demands"
+    assert captured[-1][2]["x-byq-workspace-id"] == "workspace_admin"
+    assert client.get("/api/product/data-center/demands/by-key/index-snapshot-v1:000300.SH:20210815").status_code == 200
+    assert captured[-1][0] == "GET" and "/by-key/" in captured[-1][1]
+    user["role"] = "user"
+    count = len(captured)
+    assert client.post("/api/product/data-center/demands", json={}).status_code == 403
+    assert len(captured) == count

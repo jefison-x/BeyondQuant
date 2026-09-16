@@ -20,7 +20,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.mark.parametrize("action", ["byq_strategy_validate", "byq_ml_strategy_create"])
+@pytest.mark.parametrize("action", ["byq_strategy_validate", "byq_ml_strategy_create", "byq_factor_compute", "byq_strategy_version_create"])
 @pytest.mark.parametrize("root_scoped,stop_on_error,cycles", [(False, False, 0), (True, False, 0), (True, True, 0),
     (False, False, 20), (True, False, 20)])
 def test_wire_identity_across_roots(monkeypatch, action, root_scoped, stop_on_error, cycles):
@@ -53,6 +53,14 @@ def test_wire_identity_across_roots(monkeypatch, action, root_scoped, stop_on_er
         return {"children": len(family) - 1, "rss_kib": sum(rows.get(pid, (0, 0))[1] for pid in family)}
     arguments = {"task_id": "task_synthetic", "agent_run_id": "agent_synthetic",
                  "idempotency_key": "synthetic-same-key", "strategy": {"label": "合成"}}
+    if action == "byq_factor_compute":
+        arguments.pop("strategy")
+        arguments.update({"as_of_date":"20260901", "factor":{"name":"momentum","version":"1","lookback":2},
+            "securities":[], "sessions":[], "bars":[], "universe_snapshots":[], "sources":[]})
+
+    if action == "byq_strategy_version_create":
+        arguments.pop("strategy")
+        arguments["draft_artifact_id"] = "artifact_synthetic"
 
     class Mcp(BaseHTTPRequestHandler):
         def log_message(self, *args):

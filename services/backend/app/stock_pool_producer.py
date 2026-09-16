@@ -211,17 +211,36 @@ class StockPoolProducerStore(PgStoreMixin):
             "offset": offset,
         }
 
-    def reconcile_index_creation(self, key: str, *, trusted_owner: str, trusted_workspace: str) -> dict[str, object]:
+    def reconcile_creation(self, kind, key, *, trusted_owner, trusted_workspace):
+        if kind not in {"custom", "index", "dynamic"}:
+            raise ValueError("unsupported stock pool creation kind")
         identity = _text(key, "idempotency_key")
-        row = self._fetch_one("""SELECT k.pool_id,k.run_id FROM stock_pool_producer_idempotency k
-            JOIN stock_pool_producer_definitions d ON d.pool_id=k.pool_id
-            WHERE k.workspace_id=:workspace AND k.owner_principal=:owner AND k.idempotency_key=:key
-              AND d.producer_kind='index'""",
-            {"workspace": trusted_workspace, "owner": trusted_owner, "key": identity})
+        params = {"kind":kind, "key":identity, "owner":trusted_owner, "workspace":trusted_workspace}
+        if kind == "custom":
+            row = self._fetch_one("""SELECT p.pool_id,NULL AS run_id FROM stock_pool_write_idempotency k
+                JOIN stock_pools p ON p.pool_id=k.result_id
+                WHERE k.owner_principal=:owner AND k.idempotency_key=:key AND k.action='create'
+                  AND p.owner_principal=:owner AND p.workspace_id=:workspace AND p.pool_type=:kind""", params)
+        else:
+            row = self._fetch_one("""SELECT p.pool_id,k.run_id FROM stock_pool_producer_idempotency k
+                JOIN stock_pools p ON p.pool_id=k.pool_id
+                JOIN stock_pool_producer_definitions d ON d.pool_id=p.pool_id
+                WHERE k.workspace_id=:workspace AND k.owner_principal=:owner AND k.idempotency_key=:key
+                  AND p.owner_principal=:owner AND p.workspace_id=:workspace AND p.pool_type=:kind
+                  AND d.producer_kind=:kind AND d.owner_principal=:owner AND d.workspace_id=:workspace""", params)
         if row is None:
+            return {"state":"not_found"}
+        pool = self.paper_store.get_pool(row["pool_id"], trusted_owner=trusted_owner)
+        run = self.get_run(row["run_id"], trusted_owner=trusted_owner, trusted_workspace=trusted_workspace) if row["run_id"] else None
+        if run is not None and run["pool_id"] != pool["pool_id"]:
+            raise StockPoolProducerConflict("creation receipt run does not belong to its pool")
+        return {"state":"confirmed", "pool":pool, "run":run}
+
+    def reconcile_index_creation(self, key: str, *, trusted_owner: str, trusted_workspace: str) -> dict[str, object]:
+        receipt = self.reconcile_creation("index", key, trusted_owner=trusted_owner, trusted_workspace=trusted_workspace)
+        if receipt["state"] != "confirmed":
             raise StockPoolProducerNotFound("index creation receipt is not yet confirmed")
-        return {"pool": self.paper_store.get_pool(row["pool_id"], trusted_owner=trusted_owner),
-                "run": self.get_run(row["run_id"], trusted_owner=trusted_owner, trusted_workspace=trusted_workspace)}
+        return {"pool":receipt["pool"], "run":receipt["run"]}
 
     def create_index_pool(
         self, payload: object, *, trusted_owner: str, trusted_workspace: str,
@@ -280,10 +299,11 @@ class StockPoolProducerStore(PgStoreMixin):
                         "run": self.get_run(previous["run_id"], trusted_owner=owner, trusted_workspace=workspace)}
             catalogue = fetch_one(connection, """SELECT MAX(snapshot_date) AS latest_snapshot_date
                 FROM market_index_weight_snapshots
-                WHERE index_symbol=:symbol AND status='verified' AND snapshot_date<=:requested""",
-                {"symbol": symbol, "requested": requested_as_of})
+                WHERE index_symbol=:symbol AND status='verified' AND snapshot_date<=:requested AND snapshot_date>=:earliest""",
+                {"symbol": symbol, "requested": requested_as_of, "earliest":
+                    index_snapshot_scope(symbol, requested_as_of)["start_date"] if mode == "historical_snapshot" else "00000000"})
             if catalogue is None or not catalogue.get("latest_snapshot_date"):
-                raise StockPoolProducerNotFound("no validated index weights exist at or before requested_as_of")
+                raise StockPoolProducerNotFound("no validated index weights exist within the requested snapshot scope")
             pool_id = _new_id("stock_pool")
             definition_id = _new_id("stock_pool_definition")
             run_id = _new_id("stock_pool_run")
@@ -343,7 +363,9 @@ class StockPoolProducerStore(PgStoreMixin):
         self, payload: object, *, trusted_owner: str, trusted_workspace: str,
     ) -> dict[str, object]:
         """Restore portable intent only; imported authority and snapshots are never trusted."""
-        if not isinstance(payload, dict) or set(payload) != {"name", "description", "producer_kind", "definition"}:
+        if not isinstance(payload, dict) or set(payload) - {"idempotency_key"} != {
+            "name", "description", "producer_kind", "definition",
+        }:
             raise ValueError("producer import must contain name, description, producer_kind and definition")
         owner, workspace = _text(trusted_owner, "owner_principal"), _text(trusted_workspace, "workspace_id")
         name = _text(payload.get("name"), "name")
@@ -367,8 +389,29 @@ class StockPoolProducerStore(PgStoreMixin):
             schema, schedule = "stock-pool-producer.v1", {"cadence": "on_validated_import"}
         else:
             raise ValueError("producer_kind must be index or dynamic")
+        supplied_key = payload.get("idempotency_key")
+        key = _text(supplied_key, "idempotency_key") if supplied_key not in {None, ""} else None
+        request_hash = _hash({
+            "name": name, "description": description, "producer_kind": kind, "definition": definition,
+        })
         pool_id, definition_id, now = _new_id("stock_pool"), _new_id("stock_pool_definition"), _now()
         with self._transaction() as connection:
+            if key is not None:
+                execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                        {"scope": f"producer-import|{workspace}|{owner}|{key}"})
+                previous = fetch_one(connection, """SELECT * FROM stock_pool_producer_idempotency
+                    WHERE workspace_id=:workspace AND owner_principal=:owner AND idempotency_key=:key""",
+                    {"workspace": workspace, "owner": owner, "key": key})
+                if previous:
+                    if previous["request_hash"] != request_hash:
+                        raise StockPoolProducerConflict("idempotency key was already used with different input")
+                    pool = fetch_one(connection, "SELECT pool_id FROM stock_pools WHERE pool_id=:pool",
+                                     {"pool": previous["pool_id"]})
+                    if pool is None:
+                        raise StockPoolProducerConflict("idempotent pool result is unavailable")
+                    return {"pool": self.paper_store.get_pool(previous["pool_id"], trusted_owner=owner),
+                            "producer": self.get_definition(previous["pool_id"], trusted_owner=owner,
+                                                            trusted_workspace=workspace)}
             execute(connection, """INSERT INTO stock_pools
                 (pool_id,workspace_id,owner_principal,name,pool_type,description,weights_json,symbols_json,
                  version,provenance_json,created_at,updated_at,status,metadata_version)
@@ -385,6 +428,12 @@ class StockPoolProducerStore(PgStoreMixin):
                 {"definition_id": definition_id, "pool": pool_id, "workspace": workspace, "owner": owner,
                  "kind": kind, "schema": schema, "definition": definition, "schedule": schedule,
                  "fingerprint": _hash(definition), "now": now})
+            if key is not None:
+                execute(connection, """INSERT INTO stock_pool_producer_idempotency
+                    (workspace_id,owner_principal,idempotency_key,request_hash,pool_id,run_id,created_at)
+                    VALUES (:workspace,:owner,:key,:hash,:pool,NULL,:now)""",
+                    {"workspace": workspace, "owner": owner, "key": key, "hash": request_hash,
+                     "pool": pool_id, "now": now})
         return {"pool": self.paper_store.get_pool(pool_id, trusted_owner=owner),
                 "producer": self.get_definition(pool_id, trusted_owner=owner, trusted_workspace=workspace)}
 
@@ -415,6 +464,9 @@ class StockPoolProducerStore(PgStoreMixin):
         })
         now = _now()
         with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                    {"scope": f"index-create|{workspace}|{owner}|{key}"})
             previous = fetch_one(connection, """SELECT * FROM stock_pool_producer_idempotency
                 WHERE workspace_id=:workspace AND owner_principal=:owner AND idempotency_key=:key""",
                 {"workspace": workspace, "owner": owner, "key": key})
@@ -836,14 +888,16 @@ class StockPoolProducerStore(PgStoreMixin):
                 symbol = str(definition["definition_json"]["index_symbol"])
                 latest = fetch_one(connection, """SELECT MAX(snapshot_date) AS snapshot_date
                     FROM market_index_weight_snapshots
-                    WHERE index_symbol=:symbol AND status='verified' AND snapshot_date<=:requested""",
-                    {"symbol": symbol, "requested": locked["requested_as_of"]})
+                    WHERE index_symbol=:symbol AND status='verified' AND snapshot_date<=:requested AND snapshot_date>=:earliest""",
+                    {"symbol": symbol, "requested": locked["requested_as_of"], "earliest":
+                        index_snapshot_scope(symbol, locked["requested_as_of"])["start_date"]
+                        if definition["definition_json"].get("tracking_mode") == "historical_snapshot" else "00000000"})
                 if latest is None or not latest.get("snapshot_date"):
                     execute(connection, """UPDATE stock_pool_materialization_runs SET status='waiting_for_data',
-                        error_code='index_weights_missing',error_message='请求日期前没有已验证的指数权重',
+                        error_code='index_weights_missing',error_message='请求范围内没有已验证的指数权重',
                         lease_owner=NULL,lease_expires_at=NULL,finished_at=now() WHERE run_id=:run""", {"run": run_id})
                     waiting = {**locked, "status": "waiting_for_data", "error_code": "index_weights_missing",
-                               "error_message": "请求日期前没有已验证的指数权重", "lease_owner": None,
+                               "error_message": "请求范围内没有已验证的指数权重", "lease_owner": None,
                                "lease_expires_at": None, "finished_at": _now()}
                     return self._public_run(waiting)
                 snapshot_date = str(latest["snapshot_date"])

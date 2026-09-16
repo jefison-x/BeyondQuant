@@ -1,0 +1,27 @@
+import { test, expect } from '@playwright/test';
+import { createHash } from 'node:crypto';
+test.skip(process.env.BYQ_H5_EVIDENCE !== '1', 'isolated synthetic Product stack required');
+test('strategy history reaches version 1001 through real Product pagination', async ({page}) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/login');
+  await page.getByLabel('用户名').fill('h5-browser');
+  await page.getByLabel('密码').fill('test-password-123');
+  await page.getByRole('button', {name:'进入'}).click();
+  await expect(page).toHaveURL(/\/agent$/);
+  const artifact = 'artifact_' + createHash('md5').update('h107-1005').digest('hex');
+  const first = page.waitForResponse(r => r.url().includes('/H107Pagination/versions?'));
+  await page.goto('/strategy?artifact='+artifact);
+  const initial = await (await first).json();
+  expect(initial.total).toBe(1005);
+  expect(initial.versions).toHaveLength(50);
+  const pager = page.getByLabel('策略版本历史分页');
+  await expect(pager).toBeVisible();
+  const last = page.waitForResponse(r => r.url().includes('/H107Pagination/versions?limit=50&offset=1000'));
+  await pager.getByText('21', {exact:true}).click();
+  const tail = await (await last).json();
+  expect(tail.total).toBe(1005);
+  expect(tail.versions).toHaveLength(5);
+  await expect(page.getByText('synthetic-1', {exact:true})).toBeVisible();
+  expect(errors).toEqual([]);
+});

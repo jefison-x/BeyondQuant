@@ -421,12 +421,16 @@ check_backend() {
     if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
         -e PYTHONDONTWRITEBYTECODE=1 \
         -v "$REPO_ROOT/workers/feedback-publisher:/publisher:ro" -w /publisher \
+        -v "$REPO_ROOT/workers/feedback_http_deadline.py:/opt/byq-worker-http/feedback_http_deadline.py:ro" \
+        -e PYTHONPATH=/opt/byq-worker-http:/app \
         "$(ci_image backend)" python -m pytest -q -p no:cacheprovider tests; then
       ok "feedback publisher fake-GitHub tests"; else bad "feedback publisher fake-GitHub tests"; fi
   fi
   if [ -d "$REPO_ROOT/workers/feedback-hub-relay/tests" ]; then
     if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
         -e PYTHONDONTWRITEBYTECODE=1 -v "$REPO_ROOT/workers/feedback-hub-relay:/relay:ro" -w /relay \
+        -v "$REPO_ROOT/workers/feedback_http_deadline.py:/opt/byq-worker-http/feedback_http_deadline.py:ro" \
+        -e PYTHONPATH=/opt/byq-worker-http:/app \
         "$(ci_image backend)" python -m pytest -q -p no:cacheprovider tests; then
       ok "feedback hub relay tests"; else bad "feedback hub relay tests"; fi
   fi

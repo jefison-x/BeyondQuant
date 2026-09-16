@@ -12,10 +12,11 @@ from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from .db import PgStoreMixin, ensure_column, execute, fetch_one
+from .db import bounded_metadata_transaction, PgStoreMixin, ensure_column, execute, fetch_one
 from .db import schema_bootstrap_lock
 from .web_research import normalize_web_research_evidence, validate_web_research_evidence
 from .research_continuation import ResearchContinuationMixin
+from .research_handoff import ResearchHandoffMixin
 from .research_receipts import ResearchReceiptMixin, SCHEMA_DDL as RECEIPT_SCHEMA_DDL
 
 
@@ -245,7 +246,7 @@ def _row_dict(row: dict[str, Any]) -> dict[str, object]:
     return dict(row)
 
 
-class ResearchStore(ResearchReceiptMixin, ResearchContinuationMixin, PgStoreMixin):
+class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinuationMixin, PgStoreMixin):
     """Backend-owned durable repository for Phase 9 business entities (ADR-0016 PG)."""
 
     SCHEMA_DDL: list[str] = [
@@ -328,6 +329,13 @@ class ResearchStore(ResearchReceiptMixin, ResearchContinuationMixin, PgStoreMixi
         """
         CREATE INDEX IF NOT EXISTS artifacts_kind ON artifacts(kind)
         """,
+        """CREATE TABLE IF NOT EXISTS artifact_submission_receipts (
+            task_id TEXT NOT NULL REFERENCES research_tasks(task_id),
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            artifact_id TEXT NOT NULL REFERENCES artifacts(artifact_id),
+            PRIMARY KEY(task_id, idempotency_key)
+        )""",
         """
         CREATE TABLE IF NOT EXISTS research_transitions (
             entity_type TEXT NOT NULL,
@@ -346,6 +354,18 @@ class ResearchStore(ResearchReceiptMixin, ResearchContinuationMixin, PgStoreMixi
             super().__init__(database_url)
         except SQLAlchemyError as error:
             raise ResearchPersistenceError("research storage is unavailable") from error
+
+    def _transaction(self):
+        return bounded_metadata_transaction(self.engine, self._lock,
+            error_type=ResearchPersistenceError, error_message="research storage is unavailable")
+
+    def _execute(self, sql, params=None):
+        with self._transaction() as connection:
+            return execute(connection, sql, params)
+
+    def _fetch_one(self, sql, params=None):
+        with self._transaction() as connection:
+            return fetch_one(connection, sql, params)
 
     def bootstrap_schema(self) -> None:
         super().bootstrap_schema()
@@ -436,6 +456,9 @@ class ResearchStore(ResearchReceiptMixin, ResearchContinuationMixin, PgStoreMixi
         task_hash = _hash_request(task_data)
 
         with self._transaction() as connection:
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {
+                "scope": f"research-task|{owner}|{task_data['idempotency_key']}",
+            })
             task_row = fetch_one(
                 connection,
                 "SELECT * FROM research_tasks WHERE owner_principal = :owner_principal AND idempotency_key = :idempotency_key",
@@ -481,6 +504,9 @@ class ResearchStore(ResearchReceiptMixin, ResearchContinuationMixin, PgStoreMixi
             )
             artifact_data["lineage"] = artifact_lineage
             artifact_hash = _hash_request(artifact_data)
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {
+                "scope": f"research-artifact|{task_row['task_id']}|{artifact_data['idempotency_key']}",
+            })
             artifact_row = fetch_one(
                 connection,
                 "SELECT * FROM artifacts WHERE task_id = :task_id AND idempotency_key = :idempotency_key",
@@ -515,6 +541,7 @@ class ResearchStore(ResearchReceiptMixin, ResearchContinuationMixin, PgStoreMixi
             assert artifact_row is not None
             return {
                 "record_status": "saved",
+                "idempotency_key": record_key,
                 "source_count": len(content["sources"]),  # type: ignore[arg-type]
                 "task": self._task_row(task_row),
                 "artifact": self._artifact_row(artifact_row),
@@ -555,6 +582,11 @@ class ResearchStore(ResearchReceiptMixin, ResearchContinuationMixin, PgStoreMixi
             f"SELECT * FROM {table} WHERE owner_principal=:owner AND workspace_id=:workspace"
             f" AND idempotency_key=:key{parent_filter}", parameters,
         )
+        if row is None and entity_type == "artifact":
+            row = self._fetch_one("""SELECT a.* FROM artifact_submission_receipts r
+                JOIN artifacts a ON a.artifact_id=r.artifact_id AND a.task_id=r.task_id
+                WHERE r.task_id=:task_id AND r.idempotency_key=:key
+                  AND a.owner_principal=:owner AND a.workspace_id=:workspace""", parameters)
         result = {"schema_version": "research-submission-reconciliation.v1",
                   "entity_type": entity_type, "idempotency_key": key,
                   "status": "confirmed" if row is not None else "outcome_unknown"}
@@ -696,6 +728,11 @@ class ResearchStore(ResearchReceiptMixin, ResearchContinuationMixin, PgStoreMixi
                 if existing["request_hash"] != request_hash:
                     raise IdempotencyConflict("artifact idempotency key was reused")
                 return self._artifact_row(existing)
+            alias = fetch_one(connection, """SELECT artifact_id FROM artifact_submission_receipts
+                WHERE task_id=:task AND idempotency_key=:key""",
+                {"task":data["task_id"], "key":data["idempotency_key"]})
+            if alias is not None:
+                raise IdempotencyConflict("artifact key belongs to a content-addressed submission")
             if trusted_owner is not None:
                 # Only closed domain reference kinds confer a verified association.
                 tables = {"research_task": ("research_tasks", "task_id"),
@@ -752,6 +789,46 @@ class ResearchStore(ResearchReceiptMixin, ResearchContinuationMixin, PgStoreMixi
                 return self._artifact_row(fetch_one(connection,
                     "SELECT * FROM artifacts WHERE artifact_id=:id", {"id": artifact_id}))
         return self.get_artifact(artifact_id)
+
+    def create_content_addressed_artifact(self, payload, *, trusted_owner, trusted_workspace, _connection=None):
+        """Keep a receipt for every key even when immutable version content is reused."""
+        data = self._artifact_payload(payload)
+        if data["kind"] not in {"strategy_version", "ml_strategy_version", "signal_snapshot"}:
+            raise ValueError("closed content-addressed Artifact producer required")
+        request_hash = _hash_request(data)
+        params = {"task":data["task_id"], "key":data["idempotency_key"]}
+        with (nullcontext(_connection) if _connection is not None else self._transaction()) as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                {"scope":f"research-artifact|{params['task']}|{params['key']}"})
+            task = fetch_one(connection, "SELECT * FROM research_tasks WHERE task_id=:task", params)
+            if task is None or task["owner_principal"] != trusted_owner or task["workspace_id"] != trusted_workspace:
+                raise ResearchNotFound("research task not found")
+            existing = fetch_one(connection, "SELECT * FROM artifacts WHERE task_id=:task AND idempotency_key=:key", params)
+            if existing is not None:
+                return self.create_artifact(payload, trusted_owner=trusted_owner,
+                    trusted_workspace=trusted_workspace, _connection=connection)
+            receipt = fetch_one(connection, "SELECT * FROM artifact_submission_receipts WHERE task_id=:task AND idempotency_key=:key", params)
+            if receipt is not None:
+                if receipt["request_hash"] != request_hash:
+                    raise IdempotencyConflict("content-addressed artifact idempotency key was reused")
+                return self._artifact_row(fetch_one(connection,
+                    "SELECT * FROM artifacts WHERE artifact_id=:id AND task_id=:task",
+                    {"id":receipt["artifact_id"], "task":params["task"]}))
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                {"scope":f"artifact-content|{params['task']}|{data['kind']}|{data['content_sha256']}"})
+            original = fetch_one(connection, """SELECT * FROM artifacts WHERE task_id=:task
+                AND kind=:kind AND content_sha256=:hash ORDER BY created_at,artifact_id LIMIT 1""",
+                {"task":params["task"], "kind":data["kind"], "hash":data["content_sha256"]})
+            if original is None:
+                return self.create_artifact(payload, trusted_owner=trusted_owner,
+                    trusted_workspace=trusted_workspace, _connection=connection)
+            if original["experiment_id"] != data["experiment_id"]:
+                raise IdempotencyConflict("content-addressed artifact belongs to a different experiment")
+            execute(connection, """INSERT INTO artifact_submission_receipts
+                (task_id,idempotency_key,request_hash,artifact_id) VALUES (:task,:key,:hash,:id)""",
+                {**params, "hash":request_hash, "id":original["artifact_id"]})
+            return self._artifact_row(original)
 
     def get_artifact(self, artifact_id: object) -> dict[str, object]:
         artifact_id = _identifier(artifact_id, field="artifact_id")
@@ -1321,6 +1398,25 @@ class ResearchStore(ResearchReceiptMixin, ResearchContinuationMixin, PgStoreMixi
             {"owner": owner_principal, "strategy_id": strategy_id, "limit": limit},
         )
         return [self._artifact_row(row) for row in rows]
+
+    def strategy_version_page(self, *, owner_principal: str, strategy_id: str,
+                              limit: int = 1000, offset: int = 0) -> dict[str, object]:
+        if (isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000
+                or isinstance(offset, bool) or not isinstance(offset, int) or offset < 0):
+            raise ValueError("invalid strategy version pagination")
+        row = self._fetch_one(
+            """WITH versions AS (
+                SELECT artifact_id, status, content->>'version_id' AS version_id,
+                       content->>'source_fingerprint' AS source_fingerprint, created_at
+                FROM artifacts WHERE owner_principal=:owner AND kind='strategy_version'
+                  AND content->>'strategy_id'=:strategy
+            ), page AS (SELECT * FROM versions ORDER BY created_at DESC, artifact_id DESC
+                        LIMIT :limit OFFSET :offset)
+            SELECT (SELECT COUNT(*) FROM versions) AS total,
+                   COALESCE((SELECT jsonb_agg(to_jsonb(page) ORDER BY created_at DESC, artifact_id DESC)
+                             FROM page), '[]'::jsonb) AS versions""",
+            {"owner": owner_principal, "strategy": strategy_id, "limit": limit, "offset": offset})
+        return {**row, "limit": limit, "offset": offset}
 
     def list_strategy_approvals(
         self, *, owner_principal: str, limit: int = 10_000

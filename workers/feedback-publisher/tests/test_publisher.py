@@ -138,7 +138,7 @@ def test_non_default_origin_and_arbitrary_repository_fail_closed(monkeypatch) ->
 
 def test_ambiguous_create_is_retried_then_reconciled_without_second_create(monkeypatch) -> None:
     calls = []
-    monkeypatch.setattr(publisher, "_backend", lambda _config, path, payload: calls.append((path, payload)) or {})
+    monkeypatch.setattr(publisher, "_backend", lambda _config, path, payload: calls.append((path, payload)) or {"schema_version":"feedback-publisher-create-permit.v1","allowed":True})
 
     class AmbiguousThenExisting:
         def __init__(self):
@@ -198,3 +198,70 @@ def test_unknown_receipt_never_creates_from_partial_catalog(monkeypatch, scenari
     assert calls[-1][0].endswith("/complete" if scenario == "later_match" else "/retry")
     if scenario != "later_match":
         assert calls[-1][1]["error_category"] == ("reconciliation_conflict" if scenario == "cross_page_conflict" else "provider_unavailable")
+
+
+def test_unknown_create_and_invisible_catalog_never_issue_second_post(monkeypatch):
+    calls=[];granted=False
+    def backend(_config,path,payload):
+        nonlocal granted
+        calls.append((path,payload))
+        if path.endswith('/begin-create'):
+            allowed=not granted;granted=True
+            return {'schema_version':'feedback-publisher-create-permit.v1','allowed':allowed}
+        return {}
+    class DelayedVisibility:
+        creates=0
+        def reconcile(self,_event):return None
+        def create(self,_event):
+            self.creates+=1
+            raise publisher.PublisherError('transport_ambiguous')
+    monkeypatch.setattr(publisher,'_backend',backend)
+    github=DelayedVisibility();cfg=config(publisher.SAFE_ORIGIN)
+    publisher.process_event(cfg,github,event())
+    publisher.process_event(cfg,github,{**event(),'lease_fence':2})
+    assert github.creates==1
+    assert calls[-1][1]['error_category']=='transport_ambiguous'
+
+
+@pytest.mark.parametrize("redirect_status", [301, 302, 303, 307, 308])
+def test_http_redirect_cannot_forward_credentials(redirect_status):
+    import pytest
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    received = []
+    class Sink(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_GET(self):
+            received.append(dict(self.headers))
+            self.send_response(200); self.end_headers(); self.wfile.write(b'{}')
+    sink = ThreadingHTTPServer(('127.0.0.1', 0), Sink)
+    class Redirect(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_GET(self):
+            self.send_response(redirect_status)
+            self.send_header('Location', f'http://127.0.0.1:{sink.server_port}/untrusted')
+            self.end_headers()
+    source = ThreadingHTTPServer(('127.0.0.1', 0), Redirect)
+    threads = [threading.Thread(target=server.serve_forever, daemon=True) for server in (sink, source)]
+    for thread in threads: thread.start()
+    try:
+        with pytest.raises(publisher.PublisherError) as rejected:
+            publisher._json_request(f'http://127.0.0.1:{source.server_port}/receipt',
+                headers={'Authorization':'Bearer synthetic-redirect-token',
+                         'x-byq-feedback-hub-relay-token':'synthetic-service-token'})
+        assert rejected.value.category == 'transport_ambiguous'
+        assert received == [], 'redirect target must receive neither request nor credential'
+    finally:
+        for server in (source, sink): server.shutdown(); server.server_close()
+        for thread in threads: thread.join(timeout=2)
+
+
+@pytest.mark.parametrize('provider_id', [True, -1, 1.5, '123', {'id':123}, [123]])
+def test_malformed_issue_identity_cannot_complete(monkeypatch, provider_id):
+    calls = []
+    monkeypatch.setattr(publisher, '_backend', lambda *args, **kwargs: calls.append((args, kwargs)))
+    with pytest.raises(publisher.PublisherError) as caught:
+        publisher._complete(config('http://127.0.0.1'), event(), {
+            'number': 1, 'id': provider_id, 'html_url':'https://github.com/jefison-x/BeyondQuant/issues/1'})
+    assert caught.value.category == 'transport_ambiguous'
+    assert calls == []

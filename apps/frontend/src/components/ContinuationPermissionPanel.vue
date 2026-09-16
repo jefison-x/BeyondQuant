@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { confirmContinuationPermission, getContinuationPermission, revokeContinuationPermission,
   type ContinuationPermissionView } from '@/api/research';
 import { formatChinaTime } from '@/time';
+import { createRequestId } from '@/utils/requestId';
 
 const props = defineProps<{ taskId: string; artifacts: Array<Record<string, unknown>> }>();
 const view = ref<ContinuationPermissionView | null>(null);
@@ -12,7 +13,7 @@ const tokenLimit = ref<number | undefined>();
 const selected = ref<string[]>([]);
 const confirmed = ref(false);
 let generation = 0;
-let key = crypto.randomUUID();
+let key = createRequestId();
 const eligible = computed(() => props.artifacts.filter(a => a.task_id === props.taskId && a.status === 'validated'));
 const reasons: Record<string, string> = {
   permission_missing: '尚未授权后台续接。',
@@ -23,7 +24,7 @@ const reasons: Record<string, string> = {
   budget_enforcement_unqualified: '后台预算执行尚未通过完整验证，当前不会自动继续。',
   continuation_result_unconfirmed: '上次执行结果尚未确认，已预留额度不会自动返还。',
   model_or_executor_unqualified: '所选模型暂不支持已验证的后台预算控制，请在原对话中手动继续。',
-  waiting_for_event: '正在等待本任务的训练、预测、信号或回测结果；有结果后按许可检查下一步。',
+  waiting_for_event: '尚未确认续接已排队；系统会核对原任务交接及业务完成记录，再按许可检查下一步。',
   budget_exhausted: '后台 token 额度或回合额度不足，自动续接已停止。',
   continuation_needs_attention: '后台回合已结束，但研究目标尚未确认完成，请查看原对话中的进展或阻塞原因。',
 };
@@ -65,7 +66,7 @@ function revoke() {
 }
 watch(() => props.taskId, () => {
   generation++; view.value = null; busy.value = false; error.value = '';
-  selected.value = []; tokenLimit.value = undefined; confirmed.value = false; key = crypto.randomUUID();
+  selected.value = []; tokenLimit.value = undefined; confirmed.value = false; key = createRequestId();
   void refresh();
 }, { immediate: true });
 </script>
@@ -85,6 +86,7 @@ watch(() => props.taskId, () => {
       <el-button v-if="!view.permission.revoked_at" :disabled="busy" type="danger" plain @click="revoke">撤销后台续接许可</el-button>
     </template>
     <el-form v-else-if="view" label-position="top" @submit.prevent="submit">
+      <p>新许可允许在交接条件满足时接续原任务，并在策略审批动作或业务作业完成后继续核对；每个新动作仍单独检查权限。</p>
       <el-form-item label="任务累计 token 额度（必须明确填写）">
         <p>采用保守 token 上界记账，每次模型请求至少预留 1,056,768 token；后台不使用联网搜索。</p>
         <el-input-number aria-label="任务累计 token 额度" v-model="tokenLimit" :min="1" :max="Number.MAX_SAFE_INTEGER" :precision="0" :disabled="busy" />
@@ -97,7 +99,7 @@ watch(() => props.taskId, () => {
         </el-select>
         <p v-if="!eligible.length">当前列表没有本任务的已验证资产，请先在原研究对话中准备资产。</p>
       </el-form-item>
-      <el-checkbox v-model="confirmed" :disabled="busy">我确认上述任务、资产、额度与有效期；已保存许可不代表后台执行已启用。</el-checkbox>
+      <el-checkbox v-model="confirmed" :disabled="busy">我确认上述任务、资产、额度与有效期，并允许按上述条件续接；实际执行仍须通过准入检查。</el-checkbox>
       <div><el-button native-type="submit" type="primary" :disabled="busy || !confirmed">保存续接许可</el-button></div>
     </el-form>
     <el-button :disabled="busy" @click="refresh">刷新许可状态</el-button>

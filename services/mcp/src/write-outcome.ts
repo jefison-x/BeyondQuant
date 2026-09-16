@@ -13,3 +13,18 @@ export function unknownWriteResult(init: RequestInit) {
   };
   return { content: [{ type: "text" as const, text: JSON.stringify(payload) }], isError: false };
 }
+
+/** Artifact-producing writes can use the existing exact original-key read tool. */
+export function unknownArtifactWriteResult(init: RequestInit) {
+  const response = unknownWriteResult(init);
+  const body = JSON.parse(response.content[0].text);
+  let taskId: unknown;
+  try { taskId = typeof init.body === 'string' ? JSON.parse(init.body)?.task_id : undefined; } catch { /* no raw input */ }
+  if (typeof taskId === 'string' && /^task_[0-9a-f]{32}$/.test(taskId)
+      && typeof body.idempotency_key === 'string') {
+    body.reconciliation = { tool:'byq_research_get', arguments:{
+      entity_type:'artifact', task_id:taskId, idempotency_key:body.idempotency_key,
+    } };
+  }
+  return { content:[{type:'text' as const,text:JSON.stringify(body)}], isError:false };
+}

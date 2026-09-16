@@ -350,6 +350,14 @@ describe("Cloudflare central feedback Hub", () => {
     });
     expect(claim.status).toBe(200);
     const event = await claim.json<PublicationEvent>();
+    const permitPath = `/internal/feedback-publications/${outbox!.event_id}/begin-create`;
+    const permitRequest = { method: "POST", headers: publisherHeaders(),
+      body: JSON.stringify({ worker_id: "test-worker", lease_fence: event.lease_fence }) };
+    expect((await call(permitPath, { method: "POST", body: permitRequest.body })).status).toBe(401);
+    const permits = await Promise.all([call(permitPath, permitRequest), call(permitPath, permitRequest)]);
+    const allowed = await Promise.all(permits.map((response) => response.json<{ allowed: boolean }>()));
+    expect(allowed.map((value) => value.allowed).sort()).toEqual([false, true]);
+    expect(await (await call(permitPath, permitRequest)).json()).toMatchObject({ allowed: false });
     const complete = await call(`/internal/feedback-publications/${outbox!.event_id}/complete`, {
       method: "POST",
       headers: publisherHeaders(),
@@ -437,7 +445,7 @@ describe("isolated Cloudflare GitHub publisher", () => {
     expect(wrapped.length).toBeGreaterThan(4);
   });
 
-  it.each(["empty", "later_match", "exhausted", "later_error", "cross_page_conflict"])("reconciles bounded catalog before publication: %s", async (scenario) => {
+  it.each(["empty", "permit_denied", "later_match", "exhausted", "later_error", "cross_page_conflict", "malformed_success", "redirect_error"])("reconciles bounded catalog before publication: %s", async (scenario) => {
     const value = await envelope();
     const event: PublicationEvent = {
       event_id: `feedback_outbox_${hexId()}`,
@@ -462,15 +470,23 @@ describe("isolated Cloudflare GitHub publisher", () => {
     const pem = `-----BEGIN PRIVATE KEY-----\n${btoa(String.fromCharCode(...der))}\n-----END PRIVATE KEY-----`;
     const hubCalls: string[] = [];
     const hubBinding = {
-      async fetch(input: RequestInfo | URL): Promise<Response> {
+      async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+        expect(init?.redirect).toBe("error");
+        if (String(input).endsWith("/retry") && ["malformed_success", "redirect_error"].includes(scenario)) {
+          expect(JSON.parse(String(init?.body)).error_category).toBe("transport_ambiguous");
+        }
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         hubCalls.push(url);
         if (url.endsWith("/claim")) return new Response(JSON.stringify(event), { status: 200 });
+        if (url.endsWith("/begin-create")) return new Response(JSON.stringify({
+          schema_version: "feedback-publisher-create-permit.v1", allowed: scenario !== "permit_denied"
+        }), { status: 200 });
         return new Response(JSON.stringify({ status: "published" }), { status: 200 });
       }
     };
     const githubCalls: string[] = [];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      expect(init?.redirect).toBe("error");
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       githubCalls.push(url);
       if (url.includes("/app/installations/")) {
@@ -479,7 +495,7 @@ describe("isolated Cloudflare GitHub publisher", () => {
       if (url.includes("?state=all")) {
         const page = Number(new URL(url).searchParams.get("page"));
         const match = { id: 8001, number: 77, html_url: "https://github.com/jefison-x/BeyondQuant/issues/77", body: marker(event) };
-        if (scenario === "empty") return new Response("[]", { status: 200 });
+        if (["empty", "permit_denied", "malformed_success", "redirect_error"].includes(scenario)) return new Response("[]", { status: 200 });
         if (page > 1 && scenario === "later_error") return new Response("{}", { status: 503 });
         const rows = page === 1 || scenario === "exhausted"
           ? Array.from({ length: 100 }, (_, index) => ({ id: page * 100 + index, body: "unrelated" }))
@@ -487,6 +503,8 @@ describe("isolated Cloudflare GitHub publisher", () => {
         if (page === 1 && scenario === "cross_page_conflict") rows[0] = match;
         return new Response(JSON.stringify(rows), { status: 200 });
       }
+      if (scenario === "redirect_error") throw new TypeError("synthetic redirect refused");
+      if (scenario === "malformed_success") return new Response(JSON.stringify({ id: true, number: 77, html_url: "wrong" }), { status: 201 });
       return new Response(JSON.stringify({
         id: 8001, number: 77, html_url: "https://github.com/jefison-x/BeyondQuant/issues/77"
       }), { status: 201 });
@@ -515,11 +533,11 @@ describe("isolated Cloudflare GitHub publisher", () => {
     expect(hubCalls.some((url) => url.endsWith("/complete"))).toBe(completed);
     expect(hubCalls.some((url) => url.endsWith("/retry"))).toBe(!completed);
     const issueCalls = githubCalls.filter((url) => url.includes("/repos/"));
-    const pages = scenario === "empty" ? 1 : scenario === "exhausted" ? 5 : 2;
+    const pages = ["empty", "permit_denied", "malformed_success", "redirect_error"].includes(scenario) ? 1 : scenario === "exhausted" ? 5 : 2;
     expect(issueCalls.filter((url) => url.includes("?state=all"))).toEqual(
       Array.from({ length: pages }, (_, i) => `https://api.github.com/repos/jefison-x/BeyondQuant/issues?state=all&per_page=100&page=${i + 1}`)
     );
-    expect(issueCalls.filter((url) => !url.includes("?")).length).toBe(scenario === "empty" ? 1 : 0);
+    expect(issueCalls.filter((url) => !url.includes("?")).length).toBe(["empty", "malformed_success", "redirect_error"].includes(scenario) ? 1 : 0);
     expect(githubCalls.some((url) => url.includes("/pulls") || url.includes("/contents"))).toBe(false);
   });
 });

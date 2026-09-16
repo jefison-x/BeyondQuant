@@ -6,5 +6,7 @@ RUN pip install --no-cache-dir cryptography==50.0.1 \
     && useradd --system --uid 10006 --gid byq-publisher --no-create-home --shell /usr/sbin/nologin byq-publisher
 COPY workers/feedback-publisher/publisher.py ./publisher.py
 
+COPY workers/feedback_http_deadline.py ./feedback_http_deadline.py
+
 USER 10006:10006
 CMD ["python", "publisher.py"]

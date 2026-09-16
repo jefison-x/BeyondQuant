@@ -59,3 +59,18 @@ it.each([900, 7200, 86400])('shows the saved permission deadline %s without exte
   expect(confirm).not.toHaveBeenCalled();
   wrapper.unmount();
 });
+
+
+it('opens the permission form on HTTP origins without randomUUID', async () => {
+  vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(7) });
+  try {
+    const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: 'task-one', artifacts: [] } });
+    await flushPromises();
+    expect(wrapper.text()).toContain('新许可允许在交接条件满足时接续原任务');
+    expect(wrapper.text()).toContain('尚未授权');
+    expect(confirm).not.toHaveBeenCalled();
+    wrapper.unmount();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

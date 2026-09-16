@@ -57,7 +57,7 @@ def test_user_policy_endpoints_are_owner_scoped(monkeypatch) -> None:
     updated = client.put(
         "/v1/users/agent-policy",
         headers=headers,
-        json={"automation_enabled": True, "default_decision_mode": "auto_deny"},
+        json={"automation_enabled": True, "default_decision_mode": "auto_deny", "request_id":"policy-settings-test"},
     )
     assert updated.status_code == 200
     assert updated.json()["policy"]["automation_enabled"] is True
@@ -173,6 +173,7 @@ def test_policy_rule_product_endpoints(monkeypatch) -> None:
         "/v1/users/agent-policy/rules",
         headers=headers,
         json={
+            "request_id":"policy-rule-create-test",
             "name": "拒绝执行",
             "description": "",
             "action": "byq_backtest_run",
@@ -190,7 +191,7 @@ def test_policy_rule_product_endpoints(monkeypatch) -> None:
     deleted = client.post(
         f"/v1/users/agent-policy/rules/{rule['rule_id']}/delete",
         headers=headers,
-        json={"expected_version": rule["version"]},
+        json={"expected_version": rule["version"],"request_id":"policy-rule-delete-test"},
     )
     assert deleted.status_code == 200
     store.close()

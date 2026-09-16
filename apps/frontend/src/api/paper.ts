@@ -1,6 +1,9 @@
 import type { DynamicStockPoolPreview, DynamicStockPoolRule, IndexPoolCatalogItem, PaperAccount, PaperControls, PaperLedgerEntry, PaperOrder, PaperSnapshot, StockPool, StockPoolMaterializationRun, StockPoolMember, StockPoolProducerDefinition, StockPoolReadiness, StockPoolSnapshot, StockPoolSnapshotDiff } from "./types";
 import { createRequestId } from "@/utils/requestId";
 
+class PaperRequestError extends Error { constructor(public status: number, message: string) { super(message); } }
+export class PoolCreationRejected extends Error {}
+
 const ROOT = "/api/product/paper";
 
 async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
@@ -14,13 +17,13 @@ async function request<T>(path: string, token: string, init: RequestInit = {}): 
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: { message?: string }; detail?: string };
-    throw new Error(body.error?.message ?? body.detail ?? "paper request failed");
+    throw new PaperRequestError(response.status, body.error?.message ?? body.detail ?? "paper request failed");
   }
   return (await response.json()) as T;
 }
 
-export function createPaperAccount(name: string, cash: number, token: string): Promise<{ account: PaperAccount }> {
-  return request("/accounts", token, { method: "POST", body: JSON.stringify({ name, cash }) });
+export function createPaperAccount(name: string, cash: number, token: string, idempotencyKey = createRequestId()): Promise<{ account: PaperAccount }> {
+  return request("/accounts", token, { method: "POST", body: JSON.stringify({ name, cash, idempotency_key:idempotencyKey }) });
 }
 
 export function getPaperAccount(accountId: string, token: string): Promise<{ account: PaperAccount }> {
@@ -50,13 +53,14 @@ export function createStockPool(
   name: string,
   symbols: string[],
   token: string,
-  options: { poolType?: string; description?: string; weights?: Record<string, number> } = {},
+  options: { poolType?: string; description?: string; weights?: Record<string, number>; idempotencyKey?: string } = {},
 ): Promise<{ pool: StockPool }> {
   return request("/pools", token, {
     method: "POST",
     body: JSON.stringify({
       name,
       symbols,
+      idempotency_key: options.idempotencyKey ?? createRequestId(),
       pool_type: options.poolType ?? "custom",
       description: options.description ?? null,
       weights: options.weights ?? {},
@@ -282,4 +286,56 @@ export function exportPaperAccount(accountId: string, token: string): Promise<{ 
 
 export function importPaperAccount(bundle: Record<string, unknown>, token: string): Promise<{ imported: boolean; account: PaperAccount }> {
   return request("/accounts/import", token, { method: "POST", body: JSON.stringify({ bundle }) });
+}
+
+
+export type PoolCreationKind = "custom" | "index" | "dynamic";
+export async function submitPoolCreation(kind: PoolCreationKind, payload: Record<string, unknown>, token: string): Promise<{pool: StockPool}> {
+  const path = kind === "custom" ? "/pools" : kind === "index" ? "/index-pools" : "/dynamic-pools";
+  let value: {pool:StockPool};
+  try { value = await request<{pool:StockPool}>(path, token, {method:"POST", body:JSON.stringify(payload)}); }
+  catch (error) {
+    if (error instanceof PaperRequestError && [400,401,403,404,422].includes(error.status)) throw new PoolCreationRejected(error.message);
+    throw error;
+  }
+  if (!/^stock_pool_[0-9a-f]{32}$/.test(value.pool?.pool_id ?? "") || value.pool.pool_type !== kind) throw new Error("创建回执未确认，请按原请求核对。");
+  return value;
+}
+export async function reconcilePoolCreation(kind: PoolCreationKind, key: string, token: string): Promise<{state:"not_found"} | {state:"confirmed"; pool:StockPool}> {
+  const value = await request<any>(`/pools/reconcile?kind=${encodeURIComponent(kind)}&idempotency_key=${encodeURIComponent(key)}`, token);
+  if (value.state === "not_found" && Object.keys(value).length === 1) return value;
+  if (value.state !== "confirmed" || !/^stock_pool_[0-9a-f]{32}$/.test(value.pool?.pool_id ?? "") || value.pool.pool_type !== kind) throw new Error("原请求回执无法确认。");
+  return value;
+}
+
+export type PaperCommand = {operation:'create'|'import'|'order'|'settlement'|'controls'|'rebind'|'delete';key:string;account_id?:string;payload:Record<string,unknown>};
+export class PaperCommandRejected extends Error {}
+export async function sendPaperCommand(command:PaperCommand,token:string) {
+  const suffix = {settlement:'settlements',controls:'controls',rebind:'binding',delete:''};
+  const path = command.operation === 'create' ? '/accounts' : command.operation === 'import' ? '/accounts/import' : command.operation === 'order' ? '/orders'
+    : '/accounts/'+encodeURIComponent(command.account_id!)+(suffix[command.operation] ? '/'+suffix[command.operation] : '');
+  let value:any;
+  try {
+    value = await request<any>(path,token,{method:command.operation === 'delete'?'DELETE':['controls','rebind'].includes(command.operation)?'PUT':'POST',
+      signal:AbortSignal.timeout(15000),body:JSON.stringify({...command.payload,idempotency_key:command.key})});
+  } catch(cause) {
+    if(cause instanceof PaperRequestError && [400,401,403,404,422].includes(cause.status)) throw new PaperCommandRejected(cause.message);
+    throw cause;
+  }
+  const object = command.operation === 'order' ? value.order : command.operation === 'settlement' ? value.snapshot
+    : command.operation === 'controls' ? value.controls : command.operation === 'delete' ? value : value.account;
+  if(!/^paper_account_[0-9a-f]{32}$/.test(object?.account_id ?? '') || (command.account_id && object.account_id !== command.account_id)
+    || (command.operation === 'order' && (!/^paper_order_[0-9a-f]{32}$/.test(object.order_id ?? '') || !['filled','blocked'].includes(object.status)))
+    || (command.operation === 'settlement' && !/^paper_snapshot_[0-9a-f]{64}$/.test(object.snapshot_id ?? ''))
+    || (command.operation === 'delete' && value.deleted !== true)) throw Error('模拟账户操作回执未确认，请核对原请求');
+  return value;
+}
+export async function reconcilePaperCommand(command:PaperCommand,token:string) {
+  const params = new URLSearchParams({operation:command.operation,idempotency_key:command.key});
+  if(command.account_id) params.set('account_id',command.account_id);
+  const value = await request<any>('/receipts?'+params,token,{signal:AbortSignal.timeout(15000)});
+  if(value.state === 'not_found' && Object.keys(value).length === 1) return value;
+  if(value.state !== 'confirmed' || value.operation !== command.operation || !/^paper_account_[0-9a-f]{32}$/.test(value.account_id ?? '')
+    || (command.account_id && value.account_id !== command.account_id)) throw Error('原模拟账户操作核对结果不完整');
+  return value;
 }

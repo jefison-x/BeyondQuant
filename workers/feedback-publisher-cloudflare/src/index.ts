@@ -107,9 +107,49 @@ export function classifyGitHubStatus(status: number, headers = new Headers()): P
   return new PublisherError(category, Number.isFinite(parsed) ? Math.min(Math.max(parsed, 5), 3600) : 30);
 }
 
+/** Bound headers and body together; an unknown response never renews a create permit. */
+export async function boundedResponse(
+  request: (signal: AbortSignal) => Promise<Response>, maxBytes: number, timeoutMs = 12_000,
+): Promise<Response> {
+  const controller = new AbortController();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new PublisherError("transport_ambiguous"));
+    }, timeoutMs);
+  });
+  try {
+    const response = await Promise.race([request(controller.signal), deadline]);
+    reader = response.body?.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    if (reader) while (true) {
+      const next = await Promise.race([reader.read(), deadline]);
+      if (next.done) break;
+      size += next.value.byteLength;
+      if (size > maxBytes) throw new PublisherError("transport_ambiguous");
+      chunks.push(next.value);
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    return new Response(response.body === null ? null : bytes, {
+      status: response.status, statusText: response.statusText, headers: response.headers,
+    });
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+    void reader?.cancel().catch(() => undefined);
+  }
+}
+
 async function githubRequest(env: PublisherEnv, path: string, init: RequestInit = {}, expected = 200): Promise<unknown> {
-  const response = await fetch(`https://api.github.com${path}`, {
+  const response = await boundedResponse(signal => fetch(`https://api.github.com${path}`, {
     ...init,
+    redirect: "error",
+    signal,
     headers: {
       accept: "application/vnd.github+json",
       "content-type": "application/json",
@@ -117,7 +157,7 @@ async function githubRequest(env: PublisherEnv, path: string, init: RequestInit 
       "x-github-api-version": "2022-11-28",
       ...(init.headers ?? {})
     }
-  });
+  }), 8 * 1024 * 1024);
   if (response.status !== expected) throw classifyGitHubStatus(response.status, response.headers);
   return response.status === 204 ? {} : response.json();
 }
@@ -166,14 +206,16 @@ export function render(event: PublicationEvent): { title: string; body: string }
 }
 
 async function hubRequest(env: PublisherEnv, path: string, payload: unknown): Promise<Response> {
-  return env.HUB.fetch(`https://byq-feedback-hub${path}`, {
+  return boundedResponse(signal => env.HUB.fetch(`https://byq-feedback-hub${path}`, {
+    redirect: "error",
+    signal,
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-byq-feedback-publisher-token": env.BYQ_FEEDBACK_PUBLISHER_TOKEN
     },
     body: JSON.stringify(payload)
-  });
+  }), 512 * 1024);
 }
 
 async function claim(env: PublisherEnv, eventId: string, workerId: string): Promise<PublicationEvent | null> {
@@ -186,7 +228,7 @@ async function claim(env: PublisherEnv, eventId: string, workerId: string): Prom
   return response.json<PublicationEvent>();
 }
 
-async function reconcileOrCreate(env: PublisherEnv, event: PublicationEvent): Promise<GitHubIssue> {
+async function reconcileOrCreate(env: PublisherEnv, event: PublicationEvent, workerId: string): Promise<GitHubIssue> {
   const token = await installationToken(env);
   const base = `/repos/${REPOSITORY}/issues`;
   const headers = { authorization: `Bearer ${token}` };
@@ -204,6 +246,14 @@ async function reconcileOrCreate(env: PublisherEnv, event: PublicationEvent): Pr
       break;
     }
     if (page === 5) throw new PublisherError("provider_unavailable");
+  }
+  const permission = await hubRequest(env, `/internal/feedback-publications/${event.event_id}/begin-create`, {
+    worker_id: workerId, lease_fence: event.lease_fence
+  });
+  if (!permission.ok) throw new PublisherError("hub_unavailable");
+  const permit = await permission.json<{ schema_version?: string; allowed?: boolean }>();
+  if (permit.schema_version !== "feedback-publisher-create-permit.v1" || permit.allowed !== true) {
+    throw new PublisherError("transport_ambiguous");
   }
   return githubRequest(env, base, { method: "POST", headers, body: JSON.stringify(render(event)) }, 201) as Promise<GitHubIssue>;
 }
@@ -227,11 +277,12 @@ async function processMessage(message: Message<QueueEnvelope>, env: PublisherEnv
     return;
   }
   try {
-    const issue = await reconcileOrCreate(env, event);
+    const issue = await reconcileOrCreate(env, event, workerId);
     const number = issue.number;
     const expectedUrl = `https://github.com/${REPOSITORY}/issues/${number}`;
-    if (!Number.isInteger(number) || number < 1 || issue.html_url !== expectedUrl || !issue.id) {
-      throw new PublisherError("validation_rejected");
+    if (!Number.isSafeInteger(number) || number < 1 || issue.html_url !== expectedUrl
+        || !Number.isSafeInteger(issue.id) || Number(issue.id) < 1) {
+      throw new PublisherError("transport_ambiguous");
     }
     const result = await hubRequest(env, `/internal/feedback-publications/${event.event_id}/complete`, {
       worker_id: workerId,
