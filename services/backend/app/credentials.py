@@ -8,6 +8,8 @@ import hmac
 import json
 import os
 import re
+import urllib.error
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -38,6 +40,28 @@ MODEL_PROVIDERS: tuple[dict[str, str], ...] = (
     },
 )
 _MODEL_PROVIDER_IDS = {item["provider"] for item in MODEL_PROVIDERS}
+# OpenAI-compatible model-list endpoints per credential provider. Only these
+# closed providers may be queried; discovery never leaves the BYQ boundary.
+_MODEL_PROVIDER_BASE_URLS = {
+    "deepseek": "https://api.deepseek.com",
+    "opencode-go": "https://opencode.ai/zen/go/v1",
+    "opencode-zen": "https://opencode.ai/zen/v1",
+}
+_MODEL_DISCOVERY_TIMEOUT_SECONDS = 8.0
+MAX_DISCOVERED_MODELS = 200
+
+
+def _default_model_list_fetch(url: str, token: str, timeout: float) -> tuple[int, bytes]:
+    request = urllib.request.Request(
+        url, headers={"authorization": f"Bearer {token}"}, method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.status, response.read()
+    except urllib.error.HTTPError as error:
+        return error.code, error.read()
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        raise CredentialUnavailable("model provider is unavailable") from error
 MODEL_CATALOG: tuple[dict[str, object], ...] = (
     {
         "provider": "deepseek",
@@ -642,6 +666,73 @@ class CredentialStore(PgStoreMixin):
         if row is None or not self._can_access(row, owner_principal, actor_role):
             raise CredentialNotFound("credential not found")
         return self._public_credential(row)
+
+    def discover_models(
+        self,
+        credential_id: object,
+        *,
+        owner: object,
+        actor_role: str = "user",
+        fetch: "Any" = None,
+    ) -> dict[str, object]:
+        """Refresh the provider's live model list for one active credential.
+
+        The decrypted secret is used only for the bounded outbound call and is
+        never returned. Unknown providers and provider errors fail closed.
+        """
+        credential_id = _identifier(credential_id, field="credential_id", prefix="cred")
+        owner_principal = _principal(owner)
+        row = self._fetch_one(
+            "SELECT * FROM credentials WHERE credential_id = :credential_id",
+            {"credential_id": credential_id},
+        )
+        if row is None or not self._can_access(row, owner_principal, actor_role):
+            raise CredentialNotFound("credential not found")
+        if row.get("status") != "active" or row.get("purpose") != "model_api_key":
+            raise CredentialUnavailable("model credential is unavailable")
+        provider = str(row.get("provider"))
+        base_url = _MODEL_PROVIDER_BASE_URLS.get(provider)
+        if base_url is None:
+            raise CredentialUnavailable("model provider is unavailable")
+        if not self.cipher.configured:
+            raise CredentialUnavailable("credential encryption is unavailable")
+        secret = self.cipher.decrypt(
+            {
+                "envelope_version": row["envelope_version"],
+                "key_id": row["envelope_key_id"],
+                "nonce": row["envelope_nonce"],
+                "ciphertext": row["envelope_ciphertext"],
+            },
+            aad=_aad(credential_id, str(row.get("purpose")), provider,
+                     str(row.get("scope")), owner_principal),
+        )
+        fetcher = fetch or _default_model_list_fetch
+        status, body = fetcher(base_url + "/models", secret, _MODEL_DISCOVERY_TIMEOUT_SECONDS)
+        if status != 200:
+            raise CredentialUnavailable("model provider is unavailable")
+        try:
+            payload = json.loads(body)
+        except (TypeError, ValueError) as error:
+            raise CredentialUnavailable("model provider returned an invalid response") from error
+        entries = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(entries, list):
+            raise CredentialUnavailable("model provider returned an invalid response")
+        models: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for item in entries[:MAX_DISCOVERED_MODELS]:
+            if not isinstance(item, dict):
+                continue
+            model = item.get("id")
+            if not isinstance(model, str) or not model.strip():
+                continue
+            model = model.strip()
+            if len(model) > 128 or model in seen:
+                continue
+            seen.add(model)
+            models.append({"model": model, "display_name": model, "reasoning_supported": False})
+        if not models:
+            raise CredentialUnavailable("model provider returned no models")
+        return {"provider": provider, "models": models}
 
     def update_credential(
         self,

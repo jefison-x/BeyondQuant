@@ -900,3 +900,18 @@ HIST 历史关系可行性调查与深度学习环境资格调查。交付物：
 
 每个切片独立 worktree/Draft PR；不得以“接口可调用/单次拉取成功”代替完整覆盖、时点、单位、许可与摘要证据；
 不得支持分钟/实时/港股/特色数据；不改运行能力或生产状态除非另有部署授权。
+
+## Dynamic Model Catalogue（Phase 101）
+
+### Phase 101 — Credential-driven dynamic model catalogue and continuation qualification (`IN_PROGRESS`)
+
+依据 [ADR-0075](../architecture/adr/ADR-0075-dynamic-model-catalogue-and-credential-discovery.md)，让建档案按凭据自动刷新 provider 可用模型，并允许新发现模型用于后台续接。
+
+- **P101-A（本切片）**：ADR-0075；Backend `GET /v1/users/model-credentials/{credential_id}/models`
+  发现接口（解密凭据→封闭 provider `{base}/models`→有界/去重/失败闭合、密钥不回显）+ 测试。
+- **P101-B**：档案创建/更新以发现结果校验 `model`；`resolve_model()` 不再仅认静态 `_CATALOG`。
+- **P101-C**：`runtime.py` 后台续接资格从单一 `deepseek-v4-flash` 放宽为“同 provider、凭据 active、
+  发现通过”的模型，并补资格/回退测试。
+- **P101-D**：Product Gateway 转发 + 前端“选中凭据→刷新模型”。
+
+边界：不外泄密钥、不引入新 SDK、未知 provider/失败闭合；每切片独立 worktree/Draft PR。
