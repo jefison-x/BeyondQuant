@@ -128,6 +128,12 @@ class ReleasePipelineTests(unittest.TestCase):
                     images.publish(directory, 'none')
                 docker.assert_not_called()
 
+    def test_explicit_release_tag_accepts_stable_beta_and_rc_only(self):
+        for tag in ('v0.9.0', 'v0.9.0-beta', 'v0.9.0-beta.1', 'v1.0.0-rc.1'):
+            self.assertIsNotNone(manifest.VERSION_TAG.fullmatch(tag), tag)
+        for tag in ('v0.9', 'v0.9.0-beta-x', 'v0.9.0-preview', 'latest', '0.9.0-beta', 'v0.9.0+build'):
+            self.assertIsNone(manifest.VERSION_TAG.fullmatch(tag), tag)
+
     def test_promotion_rejects_existing_other_digest_before_any_mutation(self):
         result = subprocess.CompletedProcess([], 0, json.dumps({'digest': 'sha256:' + '0' * 64}), '')
         with patch.object(manifest.subprocess, 'run', return_value=result) as run:

@@ -8,6 +8,9 @@ import subprocess
 
 from images import DIGEST, SERVICES
 
+# Explicit release tags only: stable version, or a pre-release beta/RC suffix.
+VERSION_TAG = re.compile(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-(?:beta|rc)(?:\.[0-9]+)?)?')
+
 
 def validate(manifest):
     if (manifest.get('schema') != 'byq-release.v1' or manifest.get('profile') != 'full'
@@ -93,8 +96,8 @@ def main():
             json.dump(overlay, output, indent=2)
             output.write('\n')
     else:
-        if not args.tag or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[0-9]+)?', args.tag):
-            raise ValueError('explicit version or RC tag required')
+        if not args.tag or not VERSION_TAG.fullmatch(args.tag):
+            raise ValueError('explicit version, beta or RC tag required')
         promote(manifest, args.tag)
 
 
