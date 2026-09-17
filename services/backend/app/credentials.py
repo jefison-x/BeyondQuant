@@ -49,11 +49,42 @@ _MODEL_PROVIDER_BASE_URLS = {
 }
 _MODEL_DISCOVERY_TIMEOUT_SECONDS = 8.0
 MAX_DISCOVERED_MODELS = 200
+# Discovered models carry no transport family, so BYQ maps known model families
+# to the closed DSH runtime providers. Unmapped models stay unsupported.
+_MODEL_RUNTIME_PREFIXES: dict[str, tuple[tuple[str, str], ...]] = {
+    "deepseek": (("", "deepseek-official"),),
+    "opencode-go": (
+        ("gpt-", "opencode-go-responses"), ("grok-", "opencode-go-responses"),
+        ("deepseek-", "opencode-go-chat"), ("glm-", "opencode-go-chat"),
+        ("kimi-", "opencode-go-chat"), ("minimax-", "opencode-go-messages"),
+        ("qwen", "opencode-go-messages"),
+    ),
+    "opencode-zen": (
+        ("gpt-", "opencode-zen-responses"), ("grok-", "opencode-zen-responses"),
+        ("claude-", "opencode-zen-messages"), ("qwen", "opencode-zen-messages"),
+        ("deepseek-", "opencode-zen-chat"), ("minimax-", "opencode-zen-messages"),
+    ),
+}
+
+
+def _runtime_provider_for(provider: str, model: str) -> str | None:
+    for prefix, runtime in _MODEL_RUNTIME_PREFIXES.get(provider, ()):
+        if prefix == "" or model.startswith(prefix):
+            return runtime
+    return None
+
+
+# Some providers sit behind bot protection that rejects the default urllib
+# signature, so discovery sends an explicit bounded client identity.
+_MODEL_DISCOVERY_HEADERS = {
+    "user-agent": "beyondquant-model-discovery/1.0",
+    "accept": "application/json",
+}
 
 
 def _default_model_list_fetch(url: str, token: str, timeout: float) -> tuple[int, bytes]:
     request = urllib.request.Request(
-        url, headers={"authorization": f"Bearer {token}"}, method="GET",
+        url, headers={"authorization": f"Bearer {token}", **_MODEL_DISCOVERY_HEADERS}, method="GET",
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -729,7 +760,11 @@ class CredentialStore(PgStoreMixin):
             if len(model) > 128 or model in seen:
                 continue
             seen.add(model)
-            models.append({"model": model, "display_name": model, "reasoning_supported": False})
+            runtime = _runtime_provider_for(provider, model)
+            models.append({
+                "model": model, "display_name": model, "reasoning_supported": False,
+                "runtime_provider": runtime, "supported": runtime is not None,
+            })
         if not models:
             raise CredentialUnavailable("model provider returned no models")
         return {"provider": provider, "models": models}
