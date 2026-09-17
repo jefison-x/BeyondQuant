@@ -881,3 +881,22 @@ HIST 历史关系可行性调查与深度学习环境资格调查。交付物：
 
 证据见 [QUALIFICATION-EXECUTION](../evidence/phase-99/QUALIFICATION-EXECUTION.md)。不实现数据扩容、
 不引入 HIST、不授权 GPU/有限调参/新 Worker 拓扑、不改运行能力。HIST 解除阻塞需维护者提供只读导出/连接。
+
+## Data Center Comprehensiveness（Phase 100）
+
+### Phase 100 — 0.10 data baseline implementation (`IN_PROGRESS`)
+
+依据 ADR-0074、[V1_DATA_BASELINE_CONTRACT](V1_DATA_BASELINE_CONTRACT.md) 与维护者的 Tushare 6000 分账号，
+在 BYQ Data Plane 内（仅 Tushare，不使用 Community）实现有限、可测、可复现的数据全面性。拆分为可独立验收的切片：
+
+1. **P100-A 基金数据**：`fund_basic`/`fund_nav`/`fund_daily`/`fund_share`/`fund_div`/`fund_adj`/`fund_portfolio`
+   的 provider 合同、存储、readiness 与覆盖审计（ETF 场内 + 场外基金）。
+2. **P100-B 指数每日指标**：`index_dailybasic` 合同、存储与 readiness。
+3. **P100-C 行业关系（申万）**：`index_classify`/`index_member_all` 合同与时点可见性实测；可证则接入，
+   否则登记 blocked。
+4. **P100-D 概念关系（同花顺）**：`ths_index`/`ths_member`；因 `in_date/out_date` 官方“暂无”，
+   必须先证明历史可见性再接入，否则维持 blocked。
+5. **P100-E Product 呈现**：Data Center 覆盖/质量/就绪的 UI/小巴可见与可操作（不改边界）。
+
+每个切片独立 worktree/Draft PR；不得以“接口可调用/单次拉取成功”代替完整覆盖、时点、单位、许可与摘要证据；
+不得支持分钟/实时/港股/特色数据；不改运行能力或生产状态除非另有部署授权。
