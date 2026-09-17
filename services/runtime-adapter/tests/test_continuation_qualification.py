@@ -8,7 +8,11 @@ from app import runtime
     ('0', 'synthetic', 'deepseek-official', 'deepseek-v4-flash', '0.1.2rc1', False),
     ('1', '', 'deepseek-official', 'deepseek-v4-flash', '0.1.2rc1', False),
     ('1', 'synthetic', 'other', 'deepseek-v4-flash', '0.1.2rc1', False),
-    ('1', 'synthetic', 'deepseek-official', 'other', '0.1.2rc1', False),
+    ('1', 'synthetic', 'deepseek-official', 'other', '0.1.2rc1', True),
+    ('1', 'synthetic', 'opencode-go-chat', 'kimi-k3-experimental', '0.1.2rc1', True),
+    ('1', 'synthetic', 'opencode-go-messages', 'minimax-m3', '0.1.2rc1', True),
+    ('1', 'synthetic', 'opencode-zen-responses', 'gpt-5.6-luna', '0.1.2rc1', True),
+    ('1', 'synthetic', 'opencode-go-chat', '', '0.1.2rc1', False),
     ('1', 'synthetic', 'deepseek-official', 'deepseek-v4-flash', '0.1.1rc1', False),
 ])
 def test_qualification_prevents_reserving_for_unusable_credentials_or_routes(monkeypatch, enabled, key, provider, model, version, expected):
