@@ -13,6 +13,8 @@ from app.credentials import (
     CredentialNotFound,
     CredentialStore,
     CredentialUnavailable,
+    _default_model_list_fetch,
+    _runtime_provider_for,
 )
 from tests.workspace_helpers import trusted_agent_context
 
@@ -363,6 +365,8 @@ def test_discover_models_refreshes_provider_list_without_leaking_secret() -> Non
     assert calls[0][1] == "sk-discover-secret-abcd"
     assert [item["model"] for item in result["models"]] == ["deepseek-flash", "deepseek-v4.1-flash"]
     assert result["provider"] == "deepseek"
+    assert all(item["supported"] and item["runtime_provider"] == "deepseek-official"
+               for item in result["models"])
     assert "sk-discover-secret-abcd" not in json.dumps(result)
     store.close()
 
@@ -388,3 +392,38 @@ def test_discover_models_fails_closed_and_is_owner_scoped() -> None:
     with pytest.raises(CredentialNotFound):
         store.discover_models(identity, owner="bob", fetch=fetch)
     store.close()
+
+
+def test_runtime_provider_mapping_is_closed() -> None:
+    assert _runtime_provider_for("deepseek", "deepseek-v4.1-flash") == "deepseek-official"
+    assert _runtime_provider_for("opencode-go", "kimi-k3") == "opencode-go-chat"
+    assert _runtime_provider_for("opencode-go", "minimax-m3") == "opencode-go-messages"
+    assert _runtime_provider_for("opencode-zen", "claude-opus-5") == "opencode-zen-messages"
+    assert _runtime_provider_for("opencode-go", "unknown-model") is None
+    assert _runtime_provider_for("unknown-provider", "x") is None
+
+
+def test_discovery_request_sends_bounded_client_identity(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        status = 200
+        def read(self) -> bytes:
+            return b'{"data":[{"id":"deepseek-v4-flash"}]}'
+        def __enter__(self) -> "FakeResponse":
+            return self
+        def __exit__(self, *args: object) -> bool:
+            return False
+
+    def fake_urlopen(request, timeout):
+        captured["headers"] = {key.lower(): value for key, value in request.header_items()}
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    import app.credentials as credentials
+    monkeypatch.setattr(credentials.urllib.request, "urlopen", fake_urlopen)
+    status, body = _default_model_list_fetch("https://api.deepseek.com/models", "secret-token", 3.0)
+    assert status == 200 and b"deepseek-v4-flash" in body
+    assert captured["timeout"] == 3.0
+    assert captured["headers"]["authorization"] == "Bearer secret-token"
+    assert captured["headers"].get("user-agent")
