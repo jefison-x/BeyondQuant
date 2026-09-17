@@ -153,6 +153,7 @@
         baseURL: https://opencode.ai/zen/go/v1
         models:
           - id: deepseek-v4-flash
+          - id: deepseek-v4.1-flash
           - id: deepseek-v4-pro
           - id: glm-5.3
           - id: kimi-k3

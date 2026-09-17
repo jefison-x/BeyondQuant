@@ -1,6 +1,6 @@
 {
   "base_profile": "sdk",
-  "composition_hash": "sha256:3eef3d742d3343003d876d50284cc8b540e3a03ccbcddb6303abb706110b4fcc",
+  "composition_hash": "sha256:7440fb5f84ca7c6180fb4deefbb52c972e17f267c6f9a3cd3ae29d3940eb860e",
   "delegate_background_mode": "one-shot",
   "delegate_max_depth": 1,
   "delegates": [
@@ -37,7 +37,7 @@
     "server": "byq"
   },
   "patch": "plugins/dsh-byq/profiles/root-scoped/dsh-0.1.2rc1/byq-product.yml",
-  "patch_sha256": "sha256:3eef3d742d3343003d876d50284cc8b540e3a03ccbcddb6303abb706110b4fcc",
+  "patch_sha256": "sha256:7440fb5f84ca7c6180fb4deefbb52c972e17f267c6f9a3cd3ae29d3940eb860e",
   "permission_mode": "read-only",
   "process_ownership": "one-per-root-turn",
   "profile": "byq-product-candidate",
@@ -49,6 +49,6 @@
     "root": "/opt/dsh/bundles/dsh-byq/skills",
     "watch": false
   },
-  "source_composition_hash": "sha256:7896626a01577a0b07d33540e69ae149748718ddd8fc9363fbd822100797f498",
+  "source_composition_hash": "sha256:c9b6e790f86dbc8e0bb871440954eaa71d1f02d1d3d335072bcea53a6bb857d3",
   "telemetry": "disabled"
 }
