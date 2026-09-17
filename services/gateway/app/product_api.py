@@ -1738,6 +1738,36 @@ def product_model_profile_delete(
     )
 
 
+@router.post("/settings/models/profiles/{profile_id}/disable")
+def product_model_profile_disable(
+    profile_id: str,
+    request: Request,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "POST",
+        f"/v1/users/model-profiles/{profile_id}/disable",
+        payload,
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.post("/settings/models/profiles/{profile_id}/enable")
+def product_model_profile_enable(
+    profile_id: str,
+    request: Request,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "POST",
+        f"/v1/users/model-profiles/{profile_id}/enable",
+        payload,
+        headers=_trusted_agent_headers(request),
+    )
+
+
 @router.put("/settings/models/bindings/{agent_id}")
 def product_model_binding_update(
     agent_id: str,

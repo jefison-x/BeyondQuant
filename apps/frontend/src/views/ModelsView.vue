@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  createModelCredential, createModelProfile, deleteModelProfile, getModelSettings,
+  createModelCredential, createModelProfile, deleteModelProfile, disableModelProfile, enableModelProfile, getModelSettings,
   revokeModelCredential, updateModelBinding, updateModelCredential, reconcileModelCredential, SettingsRequestError, getModelProfileReceipt, getModelCommandReceipt, discoverModelCredentialModels,
 } from "@/api/settings";
 import type { ModelCredential, ModelProfile, ModelSettings } from "@/api/types";
@@ -210,9 +210,15 @@ async function executeModelCommand(input:ModelCommand){
     if(command.operation==='binding'){
       const {binding}=await updateModelBinding(command.resource_id,command.profile_id,command.expected_version);
       if(binding.agent_id!==command.resource_id || binding.profile_id!==command.profile_id || binding.version!==command.expected_version+1)throw Error('绑定回执不一致，请核对原操作');
-    }else{
+    }else if(command.operation==='delete_profile'){
       const {profile}=await deleteModelProfile(command.resource_id,command.expected_version);
       if(profile.profile_id!==command.resource_id || profile.status!=='deleted' || profile.version!==command.expected_version+1)throw Error('删除回执不一致，请核对原操作');
+    }else{
+      const {profile}=command.operation==='disable_profile'
+        ?await disableModelProfile(command.resource_id,command.expected_version)
+        :await enableModelProfile(command.resource_id,command.expected_version);
+      const expectedStatus=command.operation==='disable_profile'?'disabled':'active';
+      if(profile.profile_id!==command.resource_id || profile.status!==expectedStatus || profile.version!==command.expected_version+1)throw Error('状态回执不一致，请核对原操作');
     }
     if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
     finishModelCommand(scope,command);pendingModelCommand.value=null;
@@ -239,6 +245,24 @@ async function removeProfile(item: ModelProfile) {
   } catch (exc) { if (exc !== "cancel" && exc !== "close") ElMessage.error(exc instanceof Error ? exc.message : "删除失败"); }
   finally{busy.value=false;}
 }
+async function setProfileStatus(item: ModelProfile, operation: "disable_profile" | "enable_profile") {
+  const disable = operation === "disable_profile";
+  try {
+    await ElMessageBox.confirm(
+      disable ? "停用档案会将关联 Agent 恢复为系统默认，档案仍会保留。" : "启用档案不会自动重新绑定 Agent。",
+      disable ? "停用模型档案" : "启用模型档案",
+      { type: "warning" },
+    );
+    busy.value=true;
+    await executeModelCommand({operation,resource_id:item.profile_id,profile_id:item.profile_id,expected_version:item.version});
+    ElMessage.success(disable ? "档案已停用" : "档案已启用");
+    await load();
+  } catch (exc) { if (exc !== "cancel" && exc !== "close") ElMessage.error(exc instanceof Error ? exc.message : (disable ? "停用失败" : "启用失败")); }
+  finally{busy.value=false;}
+}
+function profileStatusLabel(status: string) {
+  return ({ active: "启用", disabled: "禁用", deleted: "已删除" } as Record<string, string>)[status] ?? status;
+}
 async function bind(agentId: string, profileId: string | null, version: number) {
   busy.value = true;
   try {
@@ -249,7 +273,7 @@ async function bind(agentId: string, profileId: string | null, version: number) 
 }
 
 function actionLabel(value: unknown) {
-  return ({ created: "创建", secret_replaced: "替换密钥", enabled: "启用", disabled: "停用", revoked: "撤销", revoked_noop: "确认已撤销" } as Record<string, string>)[String(value)] ?? String(value ?? "-");
+  return ({ created: "创建", secret_replaced: "替换密钥", enabled: "启用", disabled: "停用", revoked: "撤销", revoked_noop: "确认已撤销", disable_profile: "停用档案", enable_profile: "启用档案" } as Record<string, string>)[String(value)] ?? String(value ?? "-");
 }
 </script>
 
@@ -291,8 +315,9 @@ function actionLabel(value: unknown) {
           <el-table-column label="厂商" min-width="130"><template #default="scope">{{ providerName(scope.row.provider) }}</template></el-table-column>
           <el-table-column prop="model" label="模型" min-width="170" />
           <el-table-column prop="temperature" label="温度" width="80" />
+          <el-table-column label="状态" width="100"><template #default="scope"><el-tag :type="scope.row.status === 'active' ? 'success' : scope.row.status === 'deleted' ? 'danger' : 'info'">{{ profileStatusLabel(scope.row.status) }}</el-tag></template></el-table-column>
           <el-table-column label="可用" width="90"><template #default="scope"><el-tag :type="scope.row.available ? 'success' : 'danger'">{{ scope.row.available ? "可用" : "不可用" }}</el-tag></template></el-table-column>
-          <el-table-column label="操作" width="100"><template #default="scope"><el-button link type="danger" :disabled="scope.row.status === 'deleted'" @click="removeProfile(scope.row)">删除</el-button></template></el-table-column>
+          <el-table-column label="操作" width="180"><template #default="scope"><el-button v-if="scope.row.status === 'active'" link type="warning" @click="setProfileStatus(scope.row, 'disable_profile')">禁用</el-button><el-button v-else-if="scope.row.status === 'disabled'" link type="success" @click="setProfileStatus(scope.row, 'enable_profile')">启用</el-button><el-button v-if="scope.row.status !== 'deleted'" link type="danger" @click="removeProfile(scope.row)">删除</el-button></template></el-table-column>
         </el-table>
         </ListFilterPagination>
       </el-card>

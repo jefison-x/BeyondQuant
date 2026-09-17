@@ -759,6 +759,53 @@ def test_product_model_credential_models_forward_owner_context(monkeypatch) -> N
     assert "secret" not in response.text.lower()
 
 
+def test_product_model_profile_lifecycle_routes_forward_owner_context(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    profile_id = "profile_" + "a" * 32
+    seen: list[dict[str, object]] = []
+
+    class FakeResponse:
+        def __init__(self, status: str) -> None:
+            self.status = status
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"profile": {"profile_id": profile_id, "status": self.status, "version": 2}}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        status = "disabled" if str(url).endswith("/disable") else "active"
+        seen.append({"method": method, "url": url, "headers": kwargs.get("headers") or {},
+                     "json": kwargs.get("json")})
+        return FakeResponse(status)
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    auth = {"Authorization": "Bearer product-test-token"}
+    disabled = client.post(
+        f"/api/product/settings/models/profiles/{profile_id}/disable",
+        headers=auth,
+        json={"expected_version": 1},
+    )
+    enabled = client.post(
+        f"/api/product/settings/models/profiles/{profile_id}/enable",
+        headers=auth,
+        json={"expected_version": 2},
+    )
+    assert disabled.status_code == 200 and enabled.status_code == 200
+    assert disabled.json()["profile"]["status"] == "disabled"
+    assert enabled.json()["profile"]["status"] == "active"
+    assert seen[0]["method"] == "POST"
+    assert str(seen[0]["url"]).endswith(f"/v1/users/model-profiles/{profile_id}/disable")
+    assert str(seen[1]["url"]).endswith(f"/v1/users/model-profiles/{profile_id}/enable")
+    assert seen[0]["json"] == {"expected_version": 1}
+    assert seen[1]["json"] == {"expected_version": 2}
+    assert all(entry["headers"]["x-byq-owner-principal"] == "product-user" for entry in seen)
+    assert "secret" not in disabled.text.lower() and "secret" not in enabled.text.lower()
+
+
 def test_product_model_mutations_keep_secret_write_only(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")

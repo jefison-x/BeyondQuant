@@ -403,15 +403,19 @@ paths:
     post: {summary: 创建 an owner-scoped model profile from the reviewed catalogue., responses: *createdResponses}
   /api/product/settings/models/commands/receipts:
     get:
-      summary: Read the original model binding or profile deletion version
+      summary: Read the original model binding, profile deletion or profile status version
       parameters:
-        - {name: operation, in: query, required: true, schema: {type: string, enum: [binding, delete_profile]}}
+        - {name: operation, in: query, required: true, schema: {type: string, enum: [binding, delete_profile, disable_profile, enable_profile]}}
         - {name: resource_id, in: query, required: true, schema: {type: string}}
         - {name: expected_version, in: query, required: true, schema: {type: integer, minimum: 0}}
         - {name: profile_id, in: query, schema: {type: string}}
       responses: *okResponses
   /api/product/settings/models/profiles/{profile_id}/delete:
     post: {summary: 软删除 a model profile and unbind it., responses: *okResponses}
+  /api/product/settings/models/profiles/{profile_id}/disable:
+    post: {summary: 停用 a model profile, auto-unbind dependent agents, and keep the row., responses: *okResponses}
+  /api/product/settings/models/profiles/{profile_id}/enable:
+    post: {summary: 启用 a disabled model profile without rebinding agents., responses: *okResponses}
   /api/product/settings/models/bindings/{agent_id}:
     put: {summary: 绑定 or unbind one BYQ Agent preset to an owner-scoped model profile., responses: *okResponses}
   /api/product/settings/agent-policy/receipts:

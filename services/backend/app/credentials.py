@@ -229,6 +229,39 @@ MODEL_CATALOG: tuple[dict[str, object], ...] = (
     },
 )
 _CATALOG = {(str(item["provider"]), str(item["model"])): item for item in MODEL_CATALOG}
+# Authoritative per-runtime-provider model allowlist (ADR-0076). The DSH pi-ai
+# runtime only accepts the explicit per-provider model lists in
+# plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml (and the versioned
+# profile under plugins/dsh-byq/profiles/). BYQ discovery and profile creation
+# fail closed against this table so a provider prefix heuristic can never offer
+# a model the runtime would reject. ``deepseek-official`` has no explicit
+# composition model list; its allowlist is the static catalogue for the
+# ``deepseek`` credential provider. The drift test in
+# tests/test_credentials.py asserts this equals the composition lists.
+RUNTIME_MODEL_ALLOWLIST: dict[str, tuple[str, ...]] = {
+    "deepseek-official": tuple(
+        str(item["model"]) for item in MODEL_CATALOG if item["provider"] == "deepseek"
+    ),
+    "opencode-go-responses": ("gpt-5.6-luna", "grok-4.6"),
+    "opencode-go-chat": ("deepseek-v4-flash", "deepseek-v4-pro", "glm-5.3", "kimi-k3"),
+    "opencode-go-messages": ("minimax-m3", "qwen3.8-max"),
+    "opencode-zen-responses": ("gpt-5.6-sol", "gpt-5.6-terra", "grok-4.6"),
+    "opencode-zen-chat": ("deepseek-v4-flash", "minimax-m3"),
+    "opencode-zen-messages": ("claude-opus-5", "claude-sonnet-5", "qwen3.7-max"),
+}
+_PROFILE_STATUS_OPERATIONS = {
+    "disable_profile": "disabled",
+    "enable_profile": "active",
+}
+
+
+def _runtime_model_supported(runtime_provider: str | None, model: str) -> bool:
+    """True only when the runtime provider accepts the exact model id."""
+    return runtime_provider is not None and model in RUNTIME_MODEL_ALLOWLIST.get(
+        runtime_provider, ()
+    )
+
+
 _PRINCIPAL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$")
 _ID = re.compile(r"^(?:cred|profile)_[0-9a-f]{32}$")
 _KEY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
@@ -513,6 +546,17 @@ class CredentialStore(PgStoreMixin):
             created_at TIMESTAMPTZ NOT NULL,
             PRIMARY KEY(owner_principal,operation,resource_id,expected_version)
         )""",
+        """CREATE TABLE IF NOT EXISTS model_profile_status_receipts (
+            owner_principal TEXT NOT NULL,
+            operation TEXT NOT NULL CHECK(operation IN ('disable_profile','enable_profile')),
+            resource_id TEXT NOT NULL,
+            expected_version INTEGER NOT NULL CHECK(expected_version >= 1),
+            committed_version INTEGER NOT NULL,
+            actor_principal TEXT NOT NULL,
+            effect_json JSONB NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY(owner_principal,operation,resource_id,expected_version)
+        )""",
     ]
 
     def __init__(
@@ -772,7 +816,8 @@ class CredentialStore(PgStoreMixin):
             runtime = _runtime_provider_for(provider, model)
             models.append({
                 "model": model, "display_name": model, "reasoning_supported": False,
-                "runtime_provider": runtime, "supported": runtime is not None,
+                "runtime_provider": runtime,
+                "supported": _runtime_model_supported(runtime, model),
             })
         if not models:
             raise CredentialUnavailable("model provider returned no models")
@@ -1058,9 +1103,14 @@ class CredentialStore(PgStoreMixin):
         catalog = _CATALOG.get((provider, model))
         if catalog is None:
             # ADR-0075: models discovered for this credential are selectable
-            # even without a static catalogue entry; unknown models fail closed.
-            if self._discovered_runtime_provider(credential_id, model) is None:
+            # even without a static catalogue entry; ADR-0076 additionally
+            # requires the runtime provider to accept that exact model id, so a
+            # stale discovery row cannot offer a model the DSH runtime rejects.
+            runtime = self._discovered_runtime_provider(credential_id, model)
+            if runtime is None:
                 raise ValueError("model profile is not in the BYQ catalogue")
+            if not _runtime_model_supported(runtime, model):
+                raise ValueError("discovered model is not in the runtime allowlist")
             reasoning_supported = False
         else:
             reasoning_supported = bool(catalog["reasoning_supported"])
@@ -1149,23 +1199,42 @@ class CredentialStore(PgStoreMixin):
             {"owner":owner,"operation":operation,"resource":resource_id,"expected":expected_version,
              "profile":profile_id,"version":committed_version,"actor":actor,"effect":effect,"created":_now()})
 
+    def _record_profile_status_receipt(self, connection, *, owner, actor, operation, resource_id, expected_version, committed_version, effect):
+        execute(connection,"""INSERT INTO model_profile_status_receipts
+            (owner_principal,operation,resource_id,expected_version,committed_version,actor_principal,effect_json,created_at)
+            VALUES (:owner,:operation,:resource,:expected,:version,:actor,:effect,:created)""",
+            {"owner":owner,"operation":operation,"resource":resource_id,"expected":expected_version,
+             "version":committed_version,"actor":actor,"effect":effect,"created":_now()})
+
     def reconcile_model_command(self, owner, operation, resource_id, expected_version, profile_id=None):
         owner=_principal(owner)
         if isinstance(expected_version,bool) or not isinstance(expected_version,int) or expected_version<0:
             raise ValueError("expected_version must be a non-negative integer")
-        if operation=='binding':
+        if operation in _PROFILE_STATUS_OPERATIONS:
+            resource_id=_identifier(resource_id,field="profile_id",prefix="profile")
+            if profile_id is not None or expected_version<1:raise ValueError("invalid profile status identity")
+            profile_id=resource_id
+            row=self._fetch_one("""SELECT committed_version FROM model_profile_status_receipts
+                WHERE owner_principal=:owner AND operation=:operation AND resource_id=:resource
+                  AND expected_version=:expected""",
+                {"owner":owner,"operation":operation,"resource":resource_id,"expected":expected_version})
+        elif operation=='binding':
             resource_id=_text(resource_id,field="agent_id",maximum=64)
             if resource_id not in _AGENT_IDS:raise ValueError("agent_id is not bindable")
             profile_id=None if profile_id is None else _identifier(profile_id,field="profile_id",prefix="profile")
+            row=self._fetch_one("""SELECT committed_version FROM model_command_receipts
+                WHERE owner_principal=:owner AND operation=:operation AND resource_id=:resource
+                  AND expected_version=:expected AND profile_id IS NOT DISTINCT FROM CAST(:profile AS TEXT)""",
+                {"owner":owner,"operation":operation,"resource":resource_id,"expected":expected_version,"profile":profile_id})
         elif operation=='delete_profile':
             resource_id=_identifier(resource_id,field="profile_id",prefix="profile")
             if profile_id is not None or expected_version<1:raise ValueError("invalid profile deletion identity")
             profile_id=resource_id
+            row=self._fetch_one("""SELECT committed_version FROM model_command_receipts
+                WHERE owner_principal=:owner AND operation=:operation AND resource_id=:resource
+                  AND expected_version=:expected AND profile_id IS NOT DISTINCT FROM CAST(:profile AS TEXT)""",
+                {"owner":owner,"operation":operation,"resource":resource_id,"expected":expected_version,"profile":profile_id})
         else:raise ValueError("unsupported model command")
-        row=self._fetch_one("""SELECT committed_version FROM model_command_receipts
-            WHERE owner_principal=:owner AND operation=:operation AND resource_id=:resource
-              AND expected_version=:expected AND profile_id IS NOT DISTINCT FROM CAST(:profile AS TEXT)""",
-            {"owner":owner,"operation":operation,"resource":resource_id,"expected":expected_version,"profile":profile_id})
         if row is None:return {"state":"not_found"}
         return {"state":"confirmed","operation":operation,"resource_id":resource_id,"expected_version":expected_version,
                 "profile_id":profile_id,"committed_version":row["committed_version"]}
@@ -1212,6 +1281,127 @@ class CredentialStore(PgStoreMixin):
                 resource_id=profile_id,expected_version=expected,profile_id=profile_id,committed_version=committed["version"],effect={"unbound_agents":unbound})
         committed["credential_status"]=None  # Deleted profiles are unavailable regardless of credential state.
         return self._public_profile(committed)
+
+    def disable_profile(
+        self,
+        profile_id: object,
+        owner: object,
+        *,
+        expected_version: object,
+        actor: object | None = None,
+    ) -> dict[str, object]:
+        """Move an active profile to ``disabled`` and auto-unbind its agents (ADR-0076)."""
+        return self._transition_profile_status(
+            "disable_profile", profile_id, owner, expected_version=expected_version, actor=actor,
+        )
+
+    def enable_profile(
+        self,
+        profile_id: object,
+        owner: object,
+        *,
+        expected_version: object,
+        actor: object | None = None,
+    ) -> dict[str, object]:
+        """Move a disabled profile back to ``active`` without rebinding agents (ADR-0076)."""
+        return self._transition_profile_status(
+            "enable_profile", profile_id, owner, expected_version=expected_version, actor=actor,
+        )
+
+    def _transition_profile_status(
+        self,
+        operation: str,
+        profile_id: object,
+        owner: object,
+        *,
+        expected_version: object,
+        actor: object | None = None,
+    ) -> dict[str, object]:
+        if operation not in _PROFILE_STATUS_OPERATIONS:
+            raise ValueError("unsupported model profile status operation")
+        target_status = _PROFILE_STATUS_OPERATIONS[operation]
+        profile_id = _identifier(profile_id, field="profile_id", prefix="profile")
+        owner_principal = _principal(owner)
+        expected = _expected_version(expected_version)
+        actor_principal = _principal(owner_principal if actor is None else actor, field="actor_principal")
+        with self._transaction() as connection:
+            row = fetch_one(
+                connection,
+                """SELECT * FROM model_profiles
+                   WHERE profile_id = :profile_id AND owner_principal = :owner
+                   FOR UPDATE""",
+                {"profile_id": profile_id, "owner": owner_principal},
+            )
+            if row is None:
+                raise CredentialNotFound("model profile not found")
+            # Idempotent retry: the same operation+expected_version already
+            # committed, so return the current row without bumping again.
+            receipt = fetch_one(
+                connection,
+                """SELECT committed_version FROM model_profile_status_receipts
+                   WHERE owner_principal = :owner AND operation = :operation
+                     AND resource_id = :resource AND expected_version = :expected""",
+                {"owner": owner_principal, "operation": operation,
+                 "resource": profile_id, "expected": expected},
+            )
+            if receipt is not None:
+                current = fetch_one(
+                    connection,
+                    """SELECT p.*, c.status AS credential_status
+                       FROM model_profiles p JOIN credentials c USING(credential_id)
+                       WHERE p.profile_id = :profile_id""",
+                    {"profile_id": profile_id},
+                )
+                return self._public_profile(current)
+            if row["status"] == "deleted":
+                raise CredentialConflict("deleted model profile is terminal")
+            if row["version"] != expected:
+                raise CredentialConflict("model profile version conflict")
+            if operation == "disable_profile" and row["status"] != "active":
+                raise CredentialConflict("model profile is not active")
+            if operation == "enable_profile" and row["status"] != "disabled":
+                raise CredentialConflict("model profile is not disabled")
+            now = _now()
+            unbound: list[dict[str, object]] = []
+            if operation == "disable_profile":
+                unbound = execute(
+                    connection,
+                    """UPDATE agent_model_bindings SET profile_id = NULL,
+                       version = version + 1, updated_at = :updated_at
+                       WHERE owner_principal = :owner AND profile_id = :profile_id
+                       RETURNING agent_id, version""",
+                    {"owner": owner_principal, "profile_id": profile_id, "updated_at": now},
+                )
+            committed = fetch_one(
+                connection,
+                """UPDATE model_profiles SET status = :status, version = version + 1,
+                   updated_at = :updated_at WHERE profile_id = :profile_id RETURNING *""",
+                {"status": target_status, "profile_id": profile_id, "updated_at": now},
+            )
+            effect = {"unbound_agents": unbound}
+            self._record_profile_status_receipt(
+                connection, owner=owner_principal, actor=actor_principal, operation=operation,
+                resource_id=profile_id, expected_version=expected,
+                committed_version=committed["version"], effect=effect,
+            )
+            self._audit(
+                connection,
+                credential_id=str(row["credential_id"]),
+                scope="user",
+                owner=owner_principal,
+                actor=actor_principal,
+                action=operation,
+                request_id=f"{operation}:{profile_id}:{expected}",
+                prior_version=expected,
+                new_version=committed["version"],
+            )
+        current = self._fetch_one(
+            """SELECT p.*, c.status AS credential_status
+               FROM model_profiles p JOIN credentials c USING(credential_id)
+               WHERE p.profile_id = :profile_id""",
+            {"profile_id": profile_id},
+        )
+        return self._public_profile(current)
 
     def list_bindings(self, owner: object) -> list[dict[str, object]]:
         owner_principal = _principal(owner)

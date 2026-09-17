@@ -916,5 +916,11 @@ HIST 历史关系可行性调查与深度学习环境资格调查。交付物：
   （deepseek-official 与六个 opencode 路由），并补资格/回退测试。
 - **P101-D（已完成，#291）**：Product Gateway 转发 + 前端“选中凭据→刷新模型”；真实浏览器经 Product API 验收，
   不可用凭据闭合失败并保留已审阅静态目录。
+- **P101-E（本切片，#待定）**：依据 [ADR-0076](../architecture/adr/ADR-0076-model-profile-lifecycle-and-runtime-allowlist.md)
+  收紧运行时边界并修正档案生命周期：Backend 新增 `RUNTIME_MODEL_ALLOWLIST`（Backend 副本须逐项等于
+  composition 与版本化 profile，drift 测试守门），发现与建档案失败闭合；新增
+  `disable_profile`/`enable_profile`（`active ⇄ disabled`，`deleted` legacy 终态，disable 自动解绑、
+  enable 不重绑，幂等 + 审计 + additive `model_profile_status_receipts`），Gateway/Product API、前端
+  禁用/启用动作与状态列同步。不修改既有 `model_command_receipts` 约束，不硬删除任何行。
 
 边界：不外泄密钥、不引入新 SDK、未知 provider/失败闭合；每切片独立 worktree/Draft PR。

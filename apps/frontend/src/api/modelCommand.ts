@@ -1,4 +1,4 @@
-export type ModelCommand={operation:'binding'|'delete_profile';resource_id:string;expected_version:number;profile_id:string|null};
+export type ModelCommand={operation:'binding'|'delete_profile'|'disable_profile'|'enable_profile';resource_id:string;expected_version:number;profile_id:string|null};
 const storageKey=(scope:string)=>'byq.model-command.v1:'+scope;
 function normalize(value:unknown):ModelCommand {
   if(!value || typeof value!=='object' || Array.isArray(value))throw Error('原模型操作记录无效');
@@ -9,6 +9,8 @@ function normalize(value:unknown):ModelCommand {
     if(v.resource_id!=='byq-product' || (v.profile_id!==null && !/^profile_[0-9a-f]{32}$/.test(v.profile_id)))throw Error('原模型绑定记录无效');
   }else if(v.operation==='delete_profile'){
     if(v.expected_version<1 || !/^profile_[0-9a-f]{32}$/.test(v.resource_id) || v.profile_id!==v.resource_id)throw Error('原模型删除记录无效');
+  }else if(v.operation==='disable_profile'||v.operation==='enable_profile'){
+    if(v.expected_version<1 || !/^profile_[0-9a-f]{32}$/.test(v.resource_id) || v.profile_id!==v.resource_id)throw Error('原模型状态记录无效');
   }else throw Error('不支持的模型操作');
   return {operation:v.operation,resource_id:v.resource_id,expected_version:v.expected_version,profile_id:v.profile_id};
 }
