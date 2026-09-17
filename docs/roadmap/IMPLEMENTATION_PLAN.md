@@ -903,15 +903,18 @@ HIST 历史关系可行性调查与深度学习环境资格调查。交付物：
 
 ## Dynamic Model Catalogue（Phase 101）
 
-### Phase 101 — Credential-driven dynamic model catalogue and continuation qualification (`IN_PROGRESS`)
+### Phase 101 — Credential-driven dynamic model catalogue and continuation qualification (`COMPLETE`)
 
-依据 [ADR-0075](../architecture/adr/ADR-0075-dynamic-model-catalogue-and-credential-discovery.md)，让建档案按凭据自动刷新 provider 可用模型，并允许新发现模型用于后台续接。
+依据 [ADR-0075](../architecture/adr/ADR-0075-dynamic-model-catalogue-and-credential-discovery.md)，让建档案按凭据自动刷新 provider 可用模型，并允许新发现模型用于后台续接。验收证据见
+[docs/evidence/phase-101d](../evidence/phase-101d/README.md)。
 
-- **P101-A（本切片）**：ADR-0075；Backend `GET /v1/users/model-credentials/{credential_id}/models`
-  发现接口（解密凭据→封闭 provider `{base}/models`→有界/去重/失败闭合、密钥不回显）+ 测试。
-- **P101-B**：档案创建/更新以发现结果校验 `model`；`resolve_model()` 不再仅认静态 `_CATALOG`。
-- **P101-C**：`runtime.py` 后台续接资格从单一 `deepseek-v4-flash` 放宽为“同 provider、凭据 active、
-  发现通过”的模型，并补资格/回退测试。
-- **P101-D**：Product Gateway 转发 + 前端“选中凭据→刷新模型”。
+- **P101-A（已完成，#287/#288）**：ADR-0075；Backend `GET /v1/users/model-credentials/{credential_id}/models`
+  发现接口（解密凭据→封闭 provider `{base}/models`→有界/去重/失败闭合、密钥不回显）+ 有界客户端标识与传输族映射 + 测试。
+- **P101-B（已完成，#289）**：档案创建以发现结果校验 `model`；`resolve_model()` 不再仅认静态 `_CATALOG`；
+  `credential_discovered_models` 持久化已支持模型。
+- **P101-C（已完成，#290）**：`runtime.py` 后台续接资格从单一 `deepseek-v4-flash` 放宽为封闭 provider 路由
+  （deepseek-official 与六个 opencode 路由），并补资格/回退测试。
+- **P101-D（已完成，#291）**：Product Gateway 转发 + 前端“选中凭据→刷新模型”；真实浏览器经 Product API 验收，
+  不可用凭据闭合失败并保留已审阅静态目录。
 
 边界：不外泄密钥、不引入新 SDK、未知 provider/失败闭合；每切片独立 worktree/Draft PR。
