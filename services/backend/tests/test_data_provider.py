@@ -6,6 +6,9 @@ import pytest
 
 from app.data_provider import (
     DailyRequest,
+    FundBasicRequest,
+    FundDailyRequest,
+    FundNavRequest,
     ProviderAuthorizationError,
     ProviderCredentialsMissing,
     ProviderProtocolError,
@@ -562,3 +565,53 @@ def test_declared_research_input_contracts_are_bounded_and_point_in_time() -> No
     assert transport.calls[3][1]["params"] == {
         "ts_code": "000001.SZ", "start_date": "20230101", "end_date": "20241231",
     }
+
+
+def test_fund_catalogue_nav_and_daily_translate_and_scan_the_request() -> None:
+    transport = FakeTransport([
+        TransportResponse(200, envelope(
+            [["510330.SH", "沪深300ETF", "华夏基金", None, "指数型", None, None, "20121204", None,
+              None, None, None, None, None, None, None, None, None, "L", None, None, None, None, None, "E"]],
+            fields=["ts_code", "name", "management", "custodian", "fund_type", "found_date",
+                    "due_date", "list_date", "issue_date", "delist_date", "issue_amount",
+                    "m_fee", "c_fee", "duration_year", "p_value", "min_amount", "exp_return",
+                    "benchmark", "status", "invest_type", "type", "trustee", "purc_startdate",
+                    "redm_startdate", "market"],
+        )),
+        TransportResponse(200, envelope(
+            [["001753.OF", None, "20240329", 1.2345, 2.5, None, None, None, 1.9]],
+            fields=["ts_code", "ann_date", "nav_date", "unit_nav", "accum_nav", "accum_div",
+                    "net_asset", "total_netasset", "adj_nav"],
+        )),
+        TransportResponse(200, envelope(
+            [["510330.SH", "20240102", 3.5, 3.6, 3.4, 3.55, None, None, None, 100000, 355000]],
+            fields=["ts_code", "trade_date", "open", "high", "low", "close", "pre_close",
+                    "change", "pct_chg", "vol", "amount"],
+        )),
+    ])
+    instance = provider(transport)
+
+    catalogue = instance.fetch_fund_basic()
+    assert catalogue.rows[0].ts_code == "510330.SH" and catalogue.rows[0].market == "E"
+    nav = instance.fetch_fund_nav(FundNavRequest(ts_code="001753.OF", start_date="20240101", end_date="20240331"))
+    assert nav.rows[0].unit_nav == 1.2345 and nav.rows[0].nav_date == "20240329"
+    daily = instance.fetch_fund_daily(FundDailyRequest("510330.SH", "20240102", "20240102"))
+    assert daily.bars[0].close == 3.55
+    assert [call[1]["api_name"] for call in transport.calls] == ["fund_basic", "fund_nav", "fund_daily"]
+    assert transport.calls[0][1]["params"] == {"market": "E"}
+    assert "fixture-token" not in catalogue.provenance.request_fingerprint
+
+
+def test_fund_requests_reject_unbounded_or_invalid_input() -> None:
+    with pytest.raises(ValueError):
+        FundBasicRequest(market="X").normalized()
+    with pytest.raises(ValueError):
+        FundNavRequest().normalized()
+    with pytest.raises(ValueError):
+        FundDailyRequest("510330.SH", "20250101", "20230101").normalized()
+    with pytest.raises(ValueError):
+        FundDailyRequest("510330.SH", "20230101", "20250101").normalized()
+    with pytest.raises(ValueError):
+        FundDailyRequest("BADCODE", "20240101", "20240102").normalized()
+    with pytest.raises(ValueError):
+        FundNavRequest(market="X", nav_date="20240102").normalized()

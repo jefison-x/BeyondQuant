@@ -78,6 +78,27 @@ MAX_INDEX_DAILY_ROWS = 500
 MAX_INDEX_WEIGHT_ROWS = 2_000
 MAX_FINANCIAL_INDICATOR_ROWS = 100
 MAX_QUARANTINED_SECURITY_MASTER_ROWS = 100
+FUND_BASIC_FIELDS = (
+    "ts_code", "name", "management", "custodian", "fund_type", "found_date",
+    "due_date", "list_date", "issue_date", "delist_date", "issue_amount",
+    "m_fee", "c_fee", "duration_year", "p_value", "min_amount", "exp_return",
+    "benchmark", "status", "invest_type", "type", "trustee", "purc_startdate",
+    "redm_startdate", "market",
+)
+FUND_NAV_FIELDS = (
+    "ts_code", "ann_date", "nav_date", "unit_nav", "accum_nav", "accum_div",
+    "net_asset", "total_netasset", "adj_nav",
+)
+FUND_DAILY_FIELDS = (
+    "ts_code", "trade_date", "open", "high", "low", "close", "pre_close",
+    "change", "pct_chg", "vol", "amount",
+)
+MAX_FUND_BASIC_ROWS = 15_000
+MAX_FUND_NAV_ROWS = 10_000
+MAX_FUND_DAILY_ROWS = 5_000
+_MAX_FUND_RANGE_DAYS = 400
+_FUND_SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(?:SH|SZ|OF)$")
+_FUND_MARKETS = {"E", "O"}
 _SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 _INDEX_SYMBOL_PATTERN = re.compile(r"^[0-9A-Z]{6,12}\.(?:SH|SZ|CSI)$")
 _TUSHARE_HISTORICAL_ALIAS_PATTERN = re.compile(r"^T[0-9]{6}\.(?:SH|SZ|BJ)$")
@@ -881,6 +902,218 @@ class _CacheEntry:
     provenance: Provenance
 
 
+@dataclass(frozen=True)
+class FundBasicRequest:
+    """Closed request for the ETF (E) or off-exchange (O) fund catalogue."""
+
+    market: str = "E"
+    status: str | None = None
+
+    def normalized(self) -> "FundBasicRequest":
+        market = str(self.market).strip().upper()
+        if market not in _FUND_MARKETS:
+            raise ValueError("fund market must be E or O")
+        status = None if self.status is None else str(self.status).strip().upper()
+        if status is not None and status not in {"D", "I", "L"}:
+            raise ValueError("fund status must be D, I or L")
+        return FundBasicRequest(market, status)
+
+    def provider_params(self) -> dict[str, str]:
+        params = {"market": self.market}
+        if self.status is not None:
+            params["status"] = self.status
+        return params
+
+
+@dataclass(frozen=True)
+class FundNavRequest:
+    """Bounded fund net-asset-value request for on/off-exchange funds."""
+
+    ts_code: str | None = None
+    nav_date: str | None = None
+    market: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+
+    def normalized(self) -> "FundNavRequest":
+        ts_code = None
+        if self.ts_code is not None and str(self.ts_code).strip():
+            ts_code = str(self.ts_code).strip().upper()
+            if not _FUND_SYMBOL_PATTERN.fullmatch(ts_code):
+                raise ValueError("fund ts_code has invalid format")
+        nav_date = _validate_date(self.nav_date, "nav_date")
+        start = _validate_date(self.start_date, "start_date")
+        end = _validate_date(self.end_date, "end_date")
+        if start is not None and end is not None and start > end:
+            raise ValueError("start_date must not be after end_date")
+        market = None if self.market is None else str(self.market).strip().upper()
+        if market is not None and market not in _FUND_MARKETS:
+            raise ValueError("fund market must be E or O")
+        if ts_code is None and nav_date is None and not (start is not None and end is not None):
+            raise ValueError("fund nav requires ts_code, nav_date or a bounded date range")
+        return FundNavRequest(ts_code, nav_date, market, start, end)
+
+    def provider_params(self) -> dict[str, str]:
+        params: dict[str, str] = {}
+        for key in ("ts_code", "nav_date", "market", "start_date", "end_date"):
+            value = getattr(self, key)
+            if value is not None:
+                params[key] = value
+        return params
+
+
+@dataclass(frozen=True)
+class FundDailyRequest:
+    """Bounded ETF on-exchange daily-bar request for one fund."""
+
+    ts_code: str
+    start_date: str
+    end_date: str
+
+    def normalized(self) -> "FundDailyRequest":
+        ts_code = str(self.ts_code).strip().upper()
+        if not _FUND_SYMBOL_PATTERN.fullmatch(ts_code):
+            raise ValueError("fund ts_code has invalid format")
+        start = _validate_date(self.start_date, "start_date")
+        end = _validate_date(self.end_date, "end_date")
+        assert start is not None and end is not None
+        if start > end or (datetime.strptime(end, "%Y%m%d") - datetime.strptime(start, "%Y%m%d")).days > _MAX_FUND_RANGE_DAYS:
+            raise ValueError("fund daily range must be ordered and at most 401 days")
+        return FundDailyRequest(ts_code, start, end)
+
+
+def _fund_values(fields: list[str], row: list[Any], contract: tuple[str, ...], label: str) -> dict[str, Any]:
+    try:
+        values = dict(zip(fields, row, strict=True))
+    except ValueError as error:
+        raise ProviderProtocolError(f"provider {label} row does not match its fields") from error
+    if any(field not in values for field in contract):
+        raise ProviderProtocolError(f"provider response omitted {label} fields")
+    return values
+
+
+@dataclass(frozen=True)
+class FundBasicItem:
+    ts_code: str
+    name: str
+    fund_type: str | None
+    market: str
+    status: str | None
+    list_date: str | None
+    delist_date: str | None
+    management: str | None
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "FundBasicItem":
+        values = _fund_values(fields, row, FUND_BASIC_FIELDS, "fund-basic")
+        ts_code = _bounded_provider_text(values["ts_code"], "ts_code", required=True)
+        assert ts_code is not None
+        if not _FUND_SYMBOL_PATTERN.fullmatch(ts_code):
+            raise ProviderProtocolError("provider returned an invalid fund ts_code")
+        market = _bounded_provider_text(values["market"], "market", required=True)
+        assert market is not None
+        if market not in _FUND_MARKETS:
+            raise ProviderProtocolError("provider returned an invalid fund market")
+        try:
+            list_date = _optional_provider_date(values.get("list_date"), "list_date")
+            delist_date = _optional_provider_date(values.get("delist_date"), "delist_date")
+        except ValueError as error:
+            raise ProviderProtocolError("provider returned an invalid fund date") from error
+        return cls(
+            ts_code, _bounded_provider_text(values["name"], "name", required=True),  # type: ignore[arg-type]
+            _bounded_provider_text(values.get("fund_type"), "fund_type"), market,
+            _bounded_provider_text(values.get("status"), "status"), list_date, delist_date,
+            _bounded_provider_text(values.get("management"), "management"),
+        )
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "ts_code": self.ts_code, "name": self.name, "fund_type": self.fund_type,
+            "market": self.market, "status": self.status, "list_date": self.list_date,
+            "delist_date": self.delist_date, "management": self.management,
+        }
+
+
+@dataclass(frozen=True)
+class FundNavRow:
+    ts_code: str
+    nav_date: str
+    unit_nav: float | None
+    accum_nav: float | None
+    adj_nav: float | None
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "FundNavRow":
+        values = _fund_values(fields, row, FUND_NAV_FIELDS, "fund-nav")
+        ts_code = _bounded_provider_text(values["ts_code"], "ts_code", required=True)
+        assert ts_code is not None
+        if not _FUND_SYMBOL_PATTERN.fullmatch(ts_code):
+            raise ProviderProtocolError("provider returned an invalid fund ts_code")
+        nav_date = _provider_date(values["nav_date"], "nav_date")
+        unit = _number(values.get("unit_nav"))
+        accum = _number(values.get("accum_nav"))
+        adj = _number(values.get("adj_nav"))
+        for value in (unit, accum, adj):
+            if value is not None and not math.isfinite(value):
+                raise ProviderProtocolError("provider returned a non-finite fund nav")
+        return cls(ts_code, nav_date, unit, accum, adj)
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "ts_code": self.ts_code, "nav_date": self.nav_date,
+            "unit_nav": self.unit_nav, "accum_nav": self.accum_nav, "adj_nav": self.adj_nav,
+        }
+
+
+@dataclass(frozen=True)
+class FundDailyBar:
+    ts_code: str
+    trade_date: str
+    open: float | None
+    high: float | None
+    low: float | None
+    close: float | None
+    vol: float | None
+    amount: float | None
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "FundDailyBar":
+        values = _fund_values(fields, row, FUND_DAILY_FIELDS, "fund-daily")
+        ts_code = _bounded_provider_text(values["ts_code"], "ts_code", required=True)
+        assert ts_code is not None
+        if not _FUND_SYMBOL_PATTERN.fullmatch(ts_code):
+            raise ProviderProtocolError("provider returned an invalid fund ts_code")
+        trade_date = _provider_date(values["trade_date"], "trade_date")
+        rendered = _finite_values(values, ("open", "high", "low", "close", "vol", "amount"))
+        return cls(ts_code, trade_date, rendered["open"], rendered["high"], rendered["low"],
+                   rendered["close"], rendered["vol"], rendered["amount"])
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "ts_code": self.ts_code, "trade_date": self.trade_date, "open": self.open,
+            "high": self.high, "low": self.low, "close": self.close, "vol": self.vol,
+            "amount": self.amount,
+        }
+
+
+@dataclass(frozen=True)
+class FundBasicResult:
+    rows: tuple[FundBasicItem, ...]
+    provenance: Provenance
+
+
+@dataclass(frozen=True)
+class FundNavResult:
+    rows: tuple[FundNavRow, ...]
+    provenance: Provenance
+
+
+@dataclass(frozen=True)
+class FundDailyResult:
+    bars: tuple[FundDailyBar, ...]
+    provenance: Provenance
+
+
 class TushareProvider:
     """Tushare adapter behind the BYQ-owned provider contract."""
 
@@ -1408,3 +1641,47 @@ class TushareProvider:
             self._cache.move_to_end(fingerprint)
             while len(self._cache) > self._config.cache_max_entries:
                 self._cache.popitem(last=False)
+
+    def fetch_fund_basic(self, request: FundBasicRequest | None = None) -> FundBasicResult:
+        normalized = (request or FundBasicRequest()).normalized()
+        fields, rows, provenance = self._fetch_bounded_dataset(
+            "fund_basic", normalized.provider_params(), FUND_BASIC_FIELDS, MAX_FUND_BASIC_ROWS,
+        )
+        items = tuple(FundBasicItem.from_row(fields, row) for row in rows)
+        if any(item.market != normalized.market for item in items):
+            raise ProviderProtocolError("provider returned fund catalogue rows outside the request")
+        if len({item.ts_code for item in items}) != len(items):
+            raise ProviderProtocolError("provider returned duplicate fund catalogue rows")
+        return FundBasicResult(tuple(sorted(items, key=lambda item: item.ts_code)), provenance)
+
+    def fetch_fund_nav(self, request: FundNavRequest) -> FundNavResult:
+        normalized = request.normalized()
+        fields, rows, provenance = self._fetch_bounded_dataset(
+            "fund_nav", normalized.provider_params(), FUND_NAV_FIELDS, MAX_FUND_NAV_ROWS,
+        )
+        items = tuple(FundNavRow.from_row(fields, row) for row in rows)
+        if normalized.ts_code is not None and any(item.ts_code != normalized.ts_code for item in items):
+            raise ProviderProtocolError("provider returned fund nav for another fund")
+        if normalized.nav_date is not None and any(item.nav_date != normalized.nav_date for item in items):
+            raise ProviderProtocolError("provider returned fund nav outside the request")
+        if normalized.start_date is not None and normalized.end_date is not None and any(
+                not normalized.start_date <= item.nav_date <= normalized.end_date for item in items):
+            raise ProviderProtocolError("provider returned fund nav outside the request")
+        if len({(item.ts_code, item.nav_date) for item in items}) != len(items):
+            raise ProviderProtocolError("provider returned duplicate fund nav rows")
+        return FundNavResult(tuple(sorted(items, key=lambda item: (item.nav_date, item.ts_code))), provenance)
+
+    def fetch_fund_daily(self, request: FundDailyRequest) -> FundDailyResult:
+        normalized = request.normalized()
+        fields, rows, provenance = self._fetch_bounded_dataset(
+            "fund_daily",
+            {"ts_code": normalized.ts_code, "start_date": normalized.start_date, "end_date": normalized.end_date},
+            FUND_DAILY_FIELDS, MAX_FUND_DAILY_ROWS,
+        )
+        bars = tuple(FundDailyBar.from_row(fields, row) for row in rows)
+        if any(item.ts_code != normalized.ts_code
+               or not normalized.start_date <= item.trade_date <= normalized.end_date for item in bars):
+            raise ProviderProtocolError("provider returned fund daily data outside the request")
+        if len({item.trade_date for item in bars}) != len(bars):
+            raise ProviderProtocolError("provider returned duplicate fund-daily rows")
+        return FundDailyResult(tuple(sorted(bars, key=lambda item: item.trade_date)), provenance)
