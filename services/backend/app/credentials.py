@@ -823,6 +823,10 @@ class CredentialStore(PgStoreMixin):
             raise CredentialUnavailable("model provider returned no models")
         discovered_at = _now()
         with self._transaction() as connection:
+            # Full refresh for this credential: drop every prior row first so
+            # stale models that are no longer in the runtime allowlist cannot
+            # survive a re-run. Only supported (allowlisted) rows are re-inserted
+            # below, so a non-allowlisted discovery result is never selectable.
             execute(
                 connection,
                 "DELETE FROM credential_discovered_models WHERE credential_id = :credential_id",
@@ -1528,6 +1532,16 @@ class CredentialStore(PgStoreMixin):
             if discovered is None:
                 raise CredentialUnavailable("selected model is unavailable")
             runtime_provider = discovered
+        # ADR-0076: resolution is the authoritative fail-closed gate. A static
+        # catalogue entry is not automatically trusted, and a stale discovery
+        # row may predate the current composition, so both branches must pass
+        # the same runtime allowlist the DSH runtime enforces. This keeps a
+        # bound profile from reaching DSH session creation with a model the
+        # runtime rejects.
+        if not _runtime_model_supported(runtime_provider, str(row["model"])):
+            raise CredentialUnavailable(
+                "selected model is not available for the configured runtime"
+            )
         secret = self.cipher.decrypt(
             {
                 "envelope_version": row["envelope_version"],
