@@ -3,8 +3,8 @@
 Phase 101（Credential-driven dynamic model catalogue and continuation qualification）实现并验收完成：
 建档案按凭据自动刷新 provider 可用模型，新发现模型可用于后台续接，浏览器只经 Gateway/Product API。
 
-依据 [ADR-0075](../architecture/adr/ADR-0075-dynamic-model-catalogue-and-credential-discovery.md) 与
-[IMPLEMENTATION_PLAN Phase 101](../roadmap/IMPLEMENTATION_PLAN.md)。切片 PR：#287、#288（P101-A）、#289（P101-B）、
+依据 [ADR-0075](../../architecture/adr/ADR-0075-dynamic-model-catalogue-and-credential-discovery.md) 与
+[IMPLEMENTATION_PLAN Phase 101](../../roadmap/IMPLEMENTATION_PLAN.md)。切片 PR：#287、#288（P101-A）、#289（P101-B）、
 #290（P101-C）、#291（P101-D）。
 
 从合并后的 `origin/main` 工作树验证：
