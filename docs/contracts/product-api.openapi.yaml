@@ -386,6 +386,12 @@ paths:
     put: {summary: 替换 metadata or the write-only secret with optimistic concurrency., responses: *okResponses}
   /api/product/settings/models/credentials/{credential_id}/revoke:
     post: {summary: 撤销 an owner-scoped credential and disable dependent bindings., responses: *okResponses}
+  /api/product/settings/models/credentials/{credential_id}/models:
+    get:
+      summary: 用已存凭据刷新 provider 的可用模型列表，不返回密钥或密文。
+      parameters:
+        - {name: credential_id, in: path, required: true, schema: {type: string}}
+      responses: *okResponses
   /api/product/settings/models/profiles/receipts:
     get:
       summary: Read the original model profile creation by its owner-scoped unique key

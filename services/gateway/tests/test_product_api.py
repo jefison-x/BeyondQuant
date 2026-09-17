@@ -727,6 +727,38 @@ def test_product_model_settings_are_secret_free(monkeypatch) -> None:
     assert "secret" not in response.text.lower()
 
 
+def test_product_model_credential_models_forward_owner_context(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    seen: dict[str, object] = {}
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+        def json(self) -> dict[str, object]:
+            return {"provider": "opencode-go", "models": [
+                {"model": "kimi-k3", "display_name": "kimi-k3", "reasoning_supported": False,
+                 "runtime_provider": "opencode-go-chat", "supported": True},
+            ]}
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        seen["method"] = method
+        seen["url"] = url
+        seen["headers"] = kwargs.get("headers") or {}
+        return FakeResponse()
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    response = client.get(
+        "/api/product/settings/models/credentials/cred_0123456789abcdef0123456789abcdef/models",
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+    assert response.status_code == 200
+    assert seen["method"] == "GET"
+    assert str(seen["url"]).endswith(
+        "/v1/users/model-credentials/cred_0123456789abcdef0123456789abcdef/models"
+    )
+    assert seen["headers"]["x-byq-owner-principal"] == "product-user"
+    assert "secret" not in response.text.lower()
+
+
 def test_product_model_mutations_keep_secret_write_only(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")

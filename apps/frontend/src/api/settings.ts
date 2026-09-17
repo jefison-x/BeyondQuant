@@ -55,6 +55,10 @@ export function revokeModelCredential(credentialId: string, payload: Record<stri
   return request(`/settings/models/credentials/${credentialId}/revoke`, { method: "POST", body: JSON.stringify(payload) });
 }
 
+export function discoverModelCredentialModels(credentialId: string): Promise<{ provider: string; models: Array<{ model: string; display_name: string; reasoning_supported: boolean; runtime_provider: string | null; supported: boolean }> }> {
+  return request(`/settings/models/credentials/${credentialId}/models`);
+}
+
 export function createModelProfile(payload: Record<string, unknown>): Promise<{ profile: Record<string, unknown> }> {
   return request("/settings/models/profiles", { method: "POST", body: JSON.stringify(payload) });
 }
