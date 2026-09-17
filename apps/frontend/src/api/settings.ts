@@ -67,6 +67,14 @@ export function deleteModelProfile(profileId: string, expectedVersion: number): 
   return request(`/settings/models/profiles/${profileId}/delete`, { method: "POST", body: JSON.stringify({ expected_version: expectedVersion }) });
 }
 
+export function disableModelProfile(profileId: string, expectedVersion: number): Promise<{ profile: Record<string, unknown> }> {
+  return request(`/settings/models/profiles/${profileId}/disable`, { method: "POST", body: JSON.stringify({ expected_version: expectedVersion }) });
+}
+
+export function enableModelProfile(profileId: string, expectedVersion: number): Promise<{ profile: Record<string, unknown> }> {
+  return request(`/settings/models/profiles/${profileId}/enable`, { method: "POST", body: JSON.stringify({ expected_version: expectedVersion }) });
+}
+
 export function updateModelBinding(agentId: string, profileId: string | null, expectedVersion: number): Promise<{ binding: Record<string, unknown> }> {
   return request(`/settings/models/bindings/${agentId}`, { method: "PUT", body: JSON.stringify({ profile_id: profileId, expected_version: expectedVersion }) });
 }

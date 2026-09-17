@@ -14,3 +14,16 @@ it('fails before dispatch on unavailable persistence',()=>{
  const spy=vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw Error('storage denied');});
  try{expect(()=>beginModelCommand('alice',command)).toThrow('storage denied');}finally{spy.mockRestore();}
 });
+it('accepts profile disable and enable commands with the same receipt contract',()=>{
+ const profileId='profile_'+'b'.repeat(32);
+ for(const operation of ['disable_profile','enable_profile'] as const){
+  const statusCommand={operation,resource_id:profileId,expected_version:2,profile_id:profileId};
+  const original=beginModelCommand('alice',statusCommand);
+  expect(readModelCommand('alice')).toEqual(statusCommand);
+  expect(()=>beginModelCommand('alice',{...statusCommand,expected_version:3})).toThrow();
+  const receipt={...statusCommand,state:'confirmed',committed_version:3};
+  expect(confirmModelCommand(receipt,original)).toBe(true);
+  expect(()=>confirmModelCommand({...receipt,operation:operation==='disable_profile'?'enable_profile':'disable_profile'},original)).toThrow();
+  finishModelCommand('alice',original);expect(readModelCommand('alice')).toBeNull();
+ }
+});

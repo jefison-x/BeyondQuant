@@ -7,6 +7,8 @@ import {
   getModelSettings,
   getProfile,
   discoverModelCredentialModels,
+  disableModelProfile,
+  enableModelProfile,
   importAssets,
   updateAppearance,
   updateAgentPolicy,
@@ -75,6 +77,26 @@ describe("settings api client", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/settings/models/credentials/cred_0123456789abcdef0123456789abcdef/models",
       expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
+  it("issues profile disable and enable commands through the product API", async () => {
+    const profileId = "profile_" + "a".repeat(32);
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ profile: { profile_id: profileId, status: "disabled", version: 2 } }), { status: 200 })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await disableModelProfile(profileId, 1);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/product/settings/models/profiles/${profileId}/disable`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ expected_version: 1 }) }),
+    );
+
+    await enableModelProfile(profileId, 2);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/product/settings/models/profiles/${profileId}/enable`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ expected_version: 2 }) }),
     );
   });
 

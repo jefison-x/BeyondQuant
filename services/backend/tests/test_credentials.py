@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from app import main
 from app.credentials import (
+    MODEL_CATALOG,
+    RUNTIME_MODEL_ALLOWLIST,
     CredentialCipher,
     CredentialConflict,
     CredentialNotFound,
@@ -357,16 +361,16 @@ def test_discover_models_refreshes_provider_list_without_leaking_secret() -> Non
     def fetch(url, token, timeout):
         calls.append((url, token, timeout))
         return 200, json.dumps({"data": [
-            {"id": "deepseek-flash"}, {"id": "deepseek-v4.1-flash"}, {"id": "deepseek-flash"},
+            {"id": "deepseek-v4-flash"}, {"id": "deepseek-v4.1-flash"}, {"id": "deepseek-v4-flash"},
         ]}).encode()
 
     result = store.discover_models(credential["credential_id"], owner="alice", fetch=fetch)
     assert calls[0][0] == "https://api.deepseek.com/models"
     assert calls[0][1] == "sk-discover-secret-abcd"
-    assert [item["model"] for item in result["models"]] == ["deepseek-flash", "deepseek-v4.1-flash"]
+    assert [item["model"] for item in result["models"]] == ["deepseek-v4-flash", "deepseek-v4.1-flash"]
     assert result["provider"] == "deepseek"
-    assert all(item["supported"] and item["runtime_provider"] == "deepseek-official"
-               for item in result["models"])
+    assert all(item["runtime_provider"] == "deepseek-official" for item in result["models"])
+    assert [item["supported"] for item in result["models"]] == [True, False]
     assert "sk-discover-secret-abcd" not in json.dumps(result)
     store.close()
 
@@ -439,12 +443,20 @@ def test_discovered_models_are_selectable_and_unknown_models_fail_closed() -> No
 
     def fetch(url, token, timeout):
         return 200, json.dumps({"data": [
+            {"id": "kimi-k3"},
             {"id": "kimi-k3-experimental"},
             {"id": "mystery-model"},
         ]}).encode()
 
     result = store.discover_models(credential["credential_id"], owner="alice", fetch=fetch)
-    assert [item["supported"] for item in result["models"]] == [True, False]
+    # Allowlisted models are supported; unknown prefixes and unlisted ids are not.
+    assert [item["supported"] for item in result["models"]] == [True, False, False]
+    # Only the allowlisted model is persisted as a selectable discovery row.
+    discovered = store._execute(
+        "SELECT model FROM credential_discovered_models WHERE credential_id = :credential_id",
+        {"credential_id": credential["credential_id"]},
+    )
+    assert [row["model"] for row in discovered] == ["kimi-k3"]
 
     profile = store.create_profile(
         "alice",
@@ -453,13 +465,13 @@ def test_discovered_models_are_selectable_and_unknown_models_fail_closed() -> No
             "key_name": "go-discovered",
             "display_name": "Discovered",
             "provider": "opencode-go",
-            "model": "kimi-k3-experimental",
+            "model": "kimi-k3",
         },
     )
     store.bind("alice", "byq-product", profile["profile_id"])
     resolution = store.resolve_model("alice", "byq-product")
     assert resolution["provider"] == "opencode-go-chat"
-    assert resolution["model"] == "kimi-k3-experimental"
+    assert resolution["model"] == "kimi-k3"
 
     with pytest.raises(ValueError, match="BYQ catalogue"):
         store.create_profile(
@@ -469,7 +481,7 @@ def test_discovered_models_are_selectable_and_unknown_models_fail_closed() -> No
                 "key_name": "go-unsupported",
                 "display_name": "Unsupported",
                 "provider": "opencode-go",
-                "model": "mystery-model",
+                "model": "kimi-k3-experimental",
             },
         )
     with pytest.raises(ValueError, match="BYQ catalogue"):
@@ -484,3 +496,167 @@ def test_discovered_models_are_selectable_and_unknown_models_fail_closed() -> No
             },
         )
     store.close()
+
+
+def test_create_profile_rejects_discovered_model_outside_runtime_allowlist() -> None:
+    store = _store()
+    credential = store.create_credential(
+        "alice",
+        _credential_payload("go-drift-secret-abcd", provider="opencode-go"),
+        actor="alice",
+    )
+    # Simulate a stale discovery row written before the composition changed: the
+    # prefix maps to a runtime route, but the runtime rejects the exact model id.
+    store._execute(
+        """INSERT INTO credential_discovered_models
+           (credential_id, model, runtime_provider, discovered_at)
+           VALUES (:credential_id, :model, :runtime_provider, :discovered_at)""",
+        {
+            "credential_id": credential["credential_id"],
+            "model": "deepseek-v4.1-flash",
+            "runtime_provider": "opencode-go-chat",
+            "discovered_at": "2026-09-17T00:00:00+00:00",
+        },
+    )
+    with pytest.raises(ValueError, match="runtime allowlist"):
+        store.create_profile(
+            "alice",
+            {
+                "credential_id": credential["credential_id"],
+                "key_name": "go-drift",
+                "display_name": "Drift",
+                "provider": "opencode-go",
+                "model": "deepseek-v4.1-flash",
+            },
+        )
+    store.close()
+
+
+def test_profile_disable_enable_lifecycle_is_idempotent_and_owner_scoped() -> None:
+    store = _store()
+    credential = store.create_credential("alice", _credential_payload(), actor="alice")
+    profile = store.create_profile(
+        "alice",
+        {
+            "credential_id": credential["credential_id"],
+            "key_name": "lifecycle-profile",
+            "display_name": "生命周期",
+            "provider": "deepseek",
+            "model": "deepseek-v4-flash",
+        },
+    )
+    assert store.bind("alice", "byq-product", profile["profile_id"])["version"] == 1
+
+    disabled = store.disable_profile(
+        profile["profile_id"], "alice", expected_version=1, actor="alice",
+    )
+    assert disabled["status"] == "disabled"
+    assert disabled["version"] == 2
+    assert disabled["available"] is False
+    unbound = store.list_bindings("alice")[0]
+    assert unbound["profile_id"] is None and unbound["version"] == 2
+    assert {
+        row["profile_id"]: row["status"] for row in store.list_profiles("alice")
+    }[profile["profile_id"]] == "disabled"
+    replay = store.disable_profile(
+        profile["profile_id"], "alice", expected_version=1, actor="alice",
+    )
+    assert replay["status"] == "disabled" and replay["version"] == 2
+    assert store.reconcile_model_command(
+        "alice", "disable_profile", profile["profile_id"], 1,
+    ) == {
+        "state": "confirmed", "operation": "disable_profile",
+        "resource_id": profile["profile_id"], "expected_version": 1,
+        "profile_id": profile["profile_id"], "committed_version": 2,
+    }
+    with pytest.raises(CredentialNotFound):
+        store.disable_profile(profile["profile_id"], "bob", expected_version=1)
+    with pytest.raises(CredentialConflict):
+        store.disable_profile(profile["profile_id"], "alice", expected_version=1 + 1)
+    with pytest.raises(CredentialConflict):
+        store.enable_profile(profile["profile_id"], "alice", expected_version=1, actor="alice")
+
+    enabled = store.enable_profile(
+        profile["profile_id"], "alice", expected_version=2, actor="alice",
+    )
+    assert enabled["status"] == "active" and enabled["version"] == 3
+    assert store.list_bindings("alice")[0]["profile_id"] is None  # enable does not rebind
+    replay_enable = store.enable_profile(
+        profile["profile_id"], "alice", expected_version=2, actor="alice",
+    )
+    assert replay_enable["status"] == "active" and replay_enable["version"] == 3
+    assert store.bind(
+        "alice", "byq-product", profile["profile_id"], expected_version=2,
+    )["profile_id"] == profile["profile_id"]
+
+    deleted = store.delete_profile(profile["profile_id"], "alice", expected_version=3)
+    assert deleted["status"] == "deleted"
+    with pytest.raises(CredentialConflict, match="deleted"):
+        store.enable_profile(profile["profile_id"], "alice", expected_version=4)
+    with pytest.raises(CredentialConflict, match="deleted"):
+        store.disable_profile(profile["profile_id"], "alice", expected_version=4)
+
+    actions = [event["action"] for event in store.list_audit("alice")]
+    assert "disable_profile" in actions and "enable_profile" in actions
+    rows = store._execute(
+        """SELECT operation, expected_version, committed_version
+           FROM model_profile_status_receipts WHERE owner_principal = 'alice'
+           ORDER BY expected_version"""
+    )
+    assert [
+        (row["operation"], row["expected_version"], row["committed_version"]) for row in rows
+    ] == [("disable_profile", 1, 2), ("enable_profile", 2, 3)]
+    store.close()
+
+
+def _repository_root() -> Path:
+    candidates: list[Path] = []
+    env_root = os.environ.get("BYQ_REPO_ROOT")
+    if env_root:
+        candidates.append(Path(env_root))
+    candidates.extend(Path(__file__).resolve().parents)
+    candidates.append(Path.cwd())
+    for candidate in candidates:
+        if (candidate / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").is_file():
+            return candidate
+    pytest.skip("DSH composition is not available in this test environment")
+
+
+def _load_cordis_document(path: Path):
+    class CordisLoader(yaml.SafeLoader):
+        pass
+
+    CordisLoader.add_constructor("tag:yaml.org,2002:js", lambda loader, node: None)
+    return yaml.load(path.read_text(encoding="utf-8"), Loader=CordisLoader)
+
+
+def _llm_provider_models(document: object, entry_id: str) -> dict[str, tuple[str, ...]]:
+    for entry in document if isinstance(document, list) else []:
+        if isinstance(entry, dict) and entry.get("id") == entry_id:
+            providers = entry["config"]["providers"]
+            return {
+                name: tuple(model["id"] for model in config["models"])
+                for name, config in providers.items()
+            }
+    raise AssertionError(f"DSH composition entry {entry_id!r} not found")
+
+
+def test_runtime_model_allowlist_matches_dsh_composition() -> None:
+    root = _repository_root()
+    composition_models = _llm_provider_models(
+        _load_cordis_document(root / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml"),
+        "llm-opencode",
+    )
+    patch_models = _llm_provider_models(
+        _load_cordis_document(
+            root / "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml"
+        ),
+        "llm-pi-ai",
+    )
+    assert composition_models == patch_models
+    for runtime, models in composition_models.items():
+        assert RUNTIME_MODEL_ALLOWLIST[runtime] == models, runtime
+    assert RUNTIME_MODEL_ALLOWLIST["deepseek-official"] == tuple(
+        item["model"] for item in MODEL_CATALOG if item["provider"] == "deepseek"
+    )
+    assert set(RUNTIME_MODEL_ALLOWLIST) == set(composition_models) | {"deepseek-official"}
