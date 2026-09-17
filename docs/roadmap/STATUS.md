@@ -35,6 +35,10 @@
   训练与推理耗时、峰值 RSS 352.8 MB、torch 安装 773 MB，GPU/故障矩阵/容差 `not_measured`）；
   HIST 历史关系来源只读核对确认本机无可用来源，维持 `blocked`。见
   [资格执行证据](../evidence/phase-99/QUALIFICATION-EXECUTION.md)。不实现数据扩容、不引入 HIST。
+- Phase 101（凭据驱动动态模型目录与后台续接资格）已完成：依据 [ADR-0075](../architecture/adr/ADR-0075-dynamic-model-catalogue-and-credential-discovery.md)，
+  Backend 发现接口、已发现模型的档案创建/解析、后台续接封闭 provider 路由、Gateway 转发与前端“选中凭据→刷新模型”均已实现；
+  真实浏览器经 Gateway/Product API 验收（真实 DeepSeek 凭据发现成功、不可用凭据闭合失败并保留已审阅静态目录）。
+  验收证据位于 [docs/evidence/phase-101d](../evidence/phase-101d/README.md)。Phase 100 数据基准仍在进行中。
 - 版本规划：维护者已接受 [ADR-0071](../architecture/adr/ADR-0071-v1-machine-learning-release-plan.md) 与
   [0.9.x → 1.0 路线](VERSION_PLAN.md)。1.0 须在约定主流机器学习模块及研究闭环开发、运行稳定后发布，
   包括 HIST 的历史关系资格和最终候选至少14天观察；仅当前整改完成不足以发布1.0。
