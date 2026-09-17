@@ -52,6 +52,19 @@ _OPENCODE_PROVIDERS = frozenset({
     "opencode-zen-messages",
 })
 
+# ADR-0075: any credential-backed model on a closed DSH runtime provider may be
+# used for background continuation. The Backend resolver has already enforced an
+# active credential and a discovered/supported model, so the adapter only has to
+# reject unknown routes here.
+_CONTINUATION_PROVIDERS = frozenset({"deepseek-official", *_OPENCODE_PROVIDERS})
+
+
+def _continuation_route_qualified(model_resolution: dict, provider: str, model: str) -> bool:
+    resolved_provider = str(model_resolution.get("provider") or provider)
+    resolved_model = model_resolution.get("model", model)
+    return (resolved_provider in _CONTINUATION_PROVIDERS
+        and isinstance(resolved_model, str) and bool(resolved_model.strip()))
+
 
 class SessionStatus:
     STARTING: ClassVar[str] = "starting"
@@ -499,8 +512,7 @@ class RuntimeAdapter:
                     owner=record.owner_principal, workspace=record.workspace_id)
                 if idempotency_key != budget['reservation_id']:
                     raise ValueError('continuation requires its original reservation key')
-                if (record.model_resolution.get('provider', self._provider), record.model_resolution.get('model', self._model)) != (
-                        'deepseek-official', 'deepseek-v4-flash'):
+                if not _continuation_route_qualified(record.model_resolution, self._provider, self._model):
                     raise ValueError('selected continuation model is unqualified')
             if record.status not in SessionStatus.PROMPTABLE or record.active_run is not None:
                 raise SessionConflict(
@@ -1047,8 +1059,7 @@ class RuntimeAdapter:
         return (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') == '1' and self._root_scoped
             and self._compatibility.family == 'dsh-0.1.2' and exact
             and bool(record.model_resolution.get('api_key'))
-            and (record.model_resolution.get('provider', self._provider), record.model_resolution.get('model', self._model))
-                == ('deepseek-official', 'deepseek-v4-flash'))
+            and _continuation_route_qualified(record.model_resolution, self._provider, self._model))
 
     def _budget_receipt(self, record: RuntimeSession) -> dict:
         reservation = record.continuation_budget
@@ -1136,7 +1147,8 @@ class RuntimeAdapter:
         composition = self._composition
         if continuation_budget is not None:
             composition, _ = create_guard_patch(composition, session_root, continuation_budget)
-            environment['DEEPSEEK_BASE_URL'] = 'https://api.deepseek.com'
+            if str(model_resolution.get('provider') or self._provider) == 'deepseek-official':
+                environment['DEEPSEEK_BASE_URL'] = 'https://api.deepseek.com'
         return self._compatibility.build_harness(
             provider=str(model_resolution.get("provider") or self._provider),
             model=str(model_resolution.get("model") or self._model),
