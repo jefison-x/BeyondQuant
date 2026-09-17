@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   createModelCredential, createModelProfile, deleteModelProfile, getModelSettings,
-  revokeModelCredential, updateModelBinding, updateModelCredential, reconcileModelCredential, SettingsRequestError, getModelProfileReceipt, getModelCommandReceipt,
+  revokeModelCredential, updateModelBinding, updateModelCredential, reconcileModelCredential, SettingsRequestError, getModelProfileReceipt, getModelCommandReceipt, discoverModelCredentialModels,
 } from "@/api/settings";
 import type { ModelCredential, ModelProfile, ModelSettings } from "@/api/types";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
@@ -53,8 +53,15 @@ const profileForm = reactive({ credential_id: "", key_name: "", display_name: ""
 
 const activeCredentials = computed(() => (settings.value?.credential_items ?? []).filter((item) => item.status === "active"));
 const modelsForProvider = computed(() => (settings.value?.models ?? []).filter((item) => item.provider === profileForm.provider));
+const discoveredModels = ref<Array<{ model: string; display_name: string; reasoning_supported: boolean; runtime_provider: string | null; supported: boolean }>>([]);
+const discovering = ref(false);
+const profileModelOptions = computed(() => {
+  const supported = discoveredModels.value.filter((item) => item.supported);
+  if (!supported.length) return modelsForProvider.value.map((item) => ({ model: item.model, display_name: item.display_name, reasoning_supported: item.reasoning_supported }));
+  return supported.map((item) => ({ model: item.model, display_name: item.display_name, reasoning_supported: item.reasoning_supported }));
+});
+const selectedProfileModel = computed(() => profileModelOptions.value.find((item) => item.model === profileForm.model));
 const availableProfiles = computed(() => (settings.value?.profiles ?? []).filter((item) => item.available));
-const selectedModel = computed(() => settings.value?.models.find((item) => item.provider === profileForm.provider && item.model === profileForm.model));
 const selectedProvider = computed(() => settings.value?.providers.find((item) => item.provider === credentialForm.provider));
 const credentialPages = useFilteredPagination(computed(() => settings.value?.credential_items ?? []), (item) => `${item.label} ${item.provider} ${item.status}`, 15);
 const profilePages = useFilteredPagination(computed(() => settings.value?.profiles ?? []), (item) => `${item.display_name} ${item.provider} ${item.model} ${item.status}`, 15);
@@ -74,6 +81,25 @@ async function load() {
   try { settings.value = await getModelSettings(); }
   catch (exc) { error.value = exc instanceof Error ? exc.message : "加载个人模型失败"; }
   finally { loading.value = false; }
+}
+
+async function refreshModels(notify = true) {
+  const credentialId = profileForm.credential_id;
+  if (!credentialId) return;
+  discovering.value = true;
+  try {
+    const result = await discoverModelCredentialModels(credentialId);
+    if (credentialId !== profileForm.credential_id) return;
+    discoveredModels.value = result.models ?? [];
+    if (!profileModelOptions.value.some((item) => item.model === profileForm.model)) {
+      profileForm.model = profileModelOptions.value[0]?.model ?? "";
+      profileForm.reasoning_enabled = false;
+    }
+    if (notify) ElMessage.success(`已刷新 ${profileModelOptions.value.length} 个可用模型`);
+  } catch (exc) {
+    discoveredModels.value = [];
+    if (notify) ElMessage.error(exc instanceof Error ? exc.message : "刷新模型失败");
+  } finally { discovering.value = false; }
 }
 
 onMounted(async()=>{try{pendingCredential.value=readCredentialWrite(credentialScope());pendingProfile.value=readProfileSubmission(credentialScope());pendingModelCommand.value=readModelCommand(credentialScope());}catch(cause){error.value=cause instanceof Error?cause.message:'原凭据操作无法读取';return;}await load();});
@@ -170,10 +196,12 @@ watch(() => profileForm.credential_id, credentialId => {
   const credential = activeCredentials.value.find((item) => item.credential_id === credentialId);
   if (!credential) return;
   profileForm.provider = credential.provider;
+  discoveredModels.value = [];
   if (!modelsForProvider.value.some((item) => item.model === profileForm.model)) {
     profileForm.model = modelsForProvider.value[0]?.model ?? "";
     profileForm.reasoning_enabled = false;
   }
+  void refreshModels(false);
 });
 
 async function executeModelCommand(input:ModelCommand){
@@ -289,7 +317,7 @@ function actionLabel(value: unknown) {
     </el-dialog>
 
     <el-dialog v-model="profileDialog" title="新建模型档案" width="min(560px, 92vw)" destroy-on-close>
-      <el-form label-position="top"><el-form-item label="档案名称"><el-input v-model="profileForm.display_name" /></el-form-item><el-form-item label="唯一键"><el-input v-model="profileForm.key_name" placeholder="research-fast" /></el-form-item><el-form-item label="凭据"><el-select v-model="profileForm.credential_id" class="full"><el-option v-for="item in activeCredentials" :key="item.credential_id" :label="`${providerName(item.provider)} · ${item.label} · ${item.masked}`" :value="item.credential_id" /></el-select></el-form-item><el-form-item label="模型"><el-select v-model="profileForm.model" class="full"><el-option v-for="model in modelsForProvider" :key="`${model.provider}:${model.model}`" :label="model.display_name" :value="model.model" /></el-select></el-form-item><el-form-item label="温度"><el-slider v-model="profileForm.temperature" :min="0" :max="2" :step="0.1" show-input /></el-form-item><el-form-item label="推理模式"><el-switch v-model="profileForm.reasoning_enabled" :disabled="!selectedModel?.reasoning_supported" /></el-form-item></el-form>
+      <el-form label-position="top"><el-form-item label="档案名称"><el-input v-model="profileForm.display_name" /></el-form-item><el-form-item label="唯一键"><el-input v-model="profileForm.key_name" placeholder="research-fast" /></el-form-item><el-form-item label="凭据"><el-select v-model="profileForm.credential_id" class="full"><el-option v-for="item in activeCredentials" :key="item.credential_id" :label="`${providerName(item.provider)} · ${item.label} · ${item.masked}`" :value="item.credential_id" /></el-select></el-form-item><el-form-item label="模型"><div class="model-row"><el-select v-model="profileForm.model" class="full"><el-option v-for="model in profileModelOptions" :key="model.model" :label="model.display_name" :value="model.model" /></el-select><el-button :loading="discovering" @click="refreshModels()">刷新模型</el-button></div></el-form-item><el-form-item label="温度"><el-slider v-model="profileForm.temperature" :min="0" :max="2" :step="0.1" show-input /></el-form-item><el-form-item label="推理模式"><el-switch v-model="profileForm.reasoning_enabled" :disabled="!selectedProfileModel?.reasoning_supported" /></el-form-item></el-form>
       <template #footer><el-button @click="profileDialog = false">取消</el-button><el-button type="primary" :loading="busy" @click="saveProfile()">创建档案</el-button></template>
     </el-dialog>
   </section>
@@ -303,5 +331,6 @@ function actionLabel(value: unknown) {
 .binding-row .el-select { min-width: 280px; }
 .muted { color: var(--byq-text-muted); font-size: 12px; margin: .3rem 0 0; }
 .full { width: 100%; }
+.model-row { align-items: center; display: flex; gap: .5rem; width: 100%; }
 @media (max-width: 640px) { .card-header, .binding-row { align-items: flex-start; flex-direction: column; } .binding-row .el-select { min-width: 0; width: 100%; } }
 </style>

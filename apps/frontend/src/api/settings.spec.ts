@@ -6,6 +6,7 @@ import {
   getAssetSummary,
   getModelSettings,
   getProfile,
+  discoverModelCredentialModels,
   importAssets,
   updateAppearance,
   updateAgentPolicy,
@@ -62,6 +63,19 @@ describe("settings api client", () => {
     expect(models.configured).toBe(false);
     expect(JSON.stringify(models)).not.toContain("token");
     expect(JSON.stringify(models)).not.toContain("secret");
+  });
+
+  it("refreshes credential models through the product API only", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ provider: "opencode-go", models: [{ model: "kimi-k3", display_name: "kimi-k3", reasoning_supported: false, runtime_provider: "opencode-go-chat", supported: true }] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await discoverModelCredentialModels("cred_0123456789abcdef0123456789abcdef");
+    expect(result.models[0].runtime_provider).toBe("opencode-go-chat");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/settings/models/credentials/cred_0123456789abcdef0123456789abcdef/models",
+      expect.objectContaining({ credentials: "include" }),
+    );
   });
 
   it("loads owner-scoped asset summary and policy status", async () => {
