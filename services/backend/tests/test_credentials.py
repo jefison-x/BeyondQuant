@@ -532,6 +532,141 @@ def test_create_profile_rejects_discovered_model_outside_runtime_allowlist() -> 
     store.close()
 
 
+def test_resolve_model_fails_closed_for_discovered_model_outside_runtime_allowlist() -> None:
+    store = _store()
+    credential = store.create_credential(
+        "alice",
+        _credential_payload("go-resolve-drift-secret-abcd", provider="opencode-go"),
+        actor="alice",
+    )
+    # Regression case: a profile bound before the runtime allowlist existed,
+    # backed by a discovered-but-not-allowlisted model (provider opencode-go,
+    # model deepseek-v4.1-flash). create_profile rejects this today, so insert
+    # the legacy profile row directly to prove resolution is also fail-closed.
+    store._execute(
+        """INSERT INTO credential_discovered_models
+           (credential_id, model, runtime_provider, discovered_at)
+           VALUES (:credential_id, :model, :runtime_provider, :discovered_at)""",
+        {
+            "credential_id": credential["credential_id"],
+            "model": "deepseek-v4.1-flash",
+            "runtime_provider": "opencode-go-chat",
+            "discovered_at": "2026-09-17T00:00:00+00:00",
+        },
+    )
+    profile_id = "profile_" + "a" * 32
+    store._execute(
+        """INSERT INTO model_profiles
+           (profile_id, owner_principal, credential_id, key_name, display_name,
+            provider, model, temperature, reasoning_enabled, status, version,
+            created_at, updated_at)
+           VALUES (:profile_id, 'alice', :credential_id, 'go-legacy-drift',
+                   'Legacy drift', 'opencode-go', 'deepseek-v4.1-flash', 0.2,
+                   FALSE, 'active', 1, :created_at, :updated_at)""",
+        {
+            "profile_id": profile_id,
+            "credential_id": credential["credential_id"],
+            "created_at": "2026-09-17T00:00:00+00:00",
+            "updated_at": "2026-09-17T00:00:00+00:00",
+        },
+    )
+    store.bind("alice", "byq-product", profile_id)
+
+    with pytest.raises(CredentialUnavailable) as failure:
+        store.resolve_model("alice", "byq-product")
+    # Stable, distinct from the "selected model is unavailable" missing-row error.
+    assert str(failure.value) == "selected model is not available for the configured runtime"
+    store.close()
+
+
+def test_discovery_rerun_purges_stale_non_allowlisted_rows() -> None:
+    store = _store()
+    credential = store.create_credential(
+        "alice",
+        _credential_payload("go-purge-secret-abcd", provider="opencode-go"),
+        actor="alice",
+    )
+    store._execute(
+        """INSERT INTO credential_discovered_models
+           (credential_id, model, runtime_provider, discovered_at)
+           VALUES (:credential_id, :model, :runtime_provider, :discovered_at)""",
+        {
+            "credential_id": credential["credential_id"],
+            "model": "deepseek-v4.1-flash",
+            "runtime_provider": "opencode-go-chat",
+            "discovered_at": "2026-09-17T00:00:00+00:00",
+        },
+    )
+
+    def fetch(url, token, timeout):
+        return 200, json.dumps({"data": [
+            {"id": "deepseek-v4.1-flash"},
+            {"id": "deepseek-v4-pro"},
+        ]}).encode()
+
+    result = store.discover_models(credential["credential_id"], owner="alice", fetch=fetch)
+    assert [item["supported"] for item in result["models"]] == [False, True]
+    discovered = store._execute(
+        "SELECT model FROM credential_discovered_models WHERE credential_id = :credential_id",
+        {"credential_id": credential["credential_id"]},
+    )
+    assert [row["model"] for row in discovered] == ["deepseek-v4-pro"]
+    store.close()
+
+
+def test_resolve_model_accepts_allowlisted_opencode_go_pair() -> None:
+    store = _store()
+    credential = store.create_credential(
+        "alice",
+        _credential_payload("go-allowlisted-secret-abcd", provider="opencode-go"),
+        actor="alice",
+    )
+    profile = store.create_profile(
+        "alice",
+        {
+            "credential_id": credential["credential_id"],
+            "key_name": "go-allowlisted",
+            "display_name": "Allowlisted",
+            "provider": "opencode-go",
+            "model": "deepseek-v4-flash",
+        },
+    )
+    store.bind("alice", "byq-product", profile["profile_id"])
+    resolution = store.resolve_model("alice", "byq-product")
+    assert resolution["provider"] == "opencode-go-chat"
+    assert resolution["model"] == "deepseek-v4-flash"
+    assert resolution["api_key"] == "go-allowlisted-secret-abcd"
+    store.close()
+
+
+def test_resolve_model_static_catalogue_pair_must_be_allowlisted(monkeypatch) -> None:
+    import app.credentials as credentials
+
+    store = _store()
+    credential = store.create_credential(
+        "alice",
+        _credential_payload("go-static-secret-abcd", provider="opencode-go"),
+        actor="alice",
+    )
+    profile = store.create_profile(
+        "alice",
+        {
+            "credential_id": credential["credential_id"],
+            "key_name": "go-static",
+            "display_name": "Static",
+            "provider": "opencode-go",
+            "model": "deepseek-v4-pro",
+        },
+    )
+    store.bind("alice", "byq-product", profile["profile_id"])
+    monkeypatch.setitem(
+        credentials.RUNTIME_MODEL_ALLOWLIST, "opencode-go-chat", ("deepseek-v4-flash",),
+    )
+    with pytest.raises(CredentialUnavailable, match="not available for the configured runtime"):
+        store.resolve_model("alice", "byq-product")
+    store.close()
+
+
 def test_profile_disable_enable_lifecycle_is_idempotent_and_owner_scoped() -> None:
     store = _store()
     credential = store.create_credential("alice", _credential_payload(), actor="alice")
