@@ -427,3 +427,60 @@ def test_discovery_request_sends_bounded_client_identity(monkeypatch) -> None:
     assert captured["timeout"] == 3.0
     assert captured["headers"]["authorization"] == "Bearer secret-token"
     assert captured["headers"].get("user-agent")
+
+
+def test_discovered_models_are_selectable_and_unknown_models_fail_closed() -> None:
+    store = _store()
+    credential = store.create_credential(
+        "alice",
+        _credential_payload("go-discovered-secret-abcd", provider="opencode-go"),
+        actor="alice",
+    )
+
+    def fetch(url, token, timeout):
+        return 200, json.dumps({"data": [
+            {"id": "kimi-k3-experimental"},
+            {"id": "mystery-model"},
+        ]}).encode()
+
+    result = store.discover_models(credential["credential_id"], owner="alice", fetch=fetch)
+    assert [item["supported"] for item in result["models"]] == [True, False]
+
+    profile = store.create_profile(
+        "alice",
+        {
+            "credential_id": credential["credential_id"],
+            "key_name": "go-discovered",
+            "display_name": "Discovered",
+            "provider": "opencode-go",
+            "model": "kimi-k3-experimental",
+        },
+    )
+    store.bind("alice", "byq-product", profile["profile_id"])
+    resolution = store.resolve_model("alice", "byq-product")
+    assert resolution["provider"] == "opencode-go-chat"
+    assert resolution["model"] == "kimi-k3-experimental"
+
+    with pytest.raises(ValueError, match="BYQ catalogue"):
+        store.create_profile(
+            "alice",
+            {
+                "credential_id": credential["credential_id"],
+                "key_name": "go-unsupported",
+                "display_name": "Unsupported",
+                "provider": "opencode-go",
+                "model": "mystery-model",
+            },
+        )
+    with pytest.raises(ValueError, match="BYQ catalogue"):
+        store.create_profile(
+            "alice",
+            {
+                "credential_id": credential["credential_id"],
+                "key_name": "go-never-discovered",
+                "display_name": "Never discovered",
+                "provider": "opencode-go",
+                "model": "kimi-k9",
+            },
+        )
+    store.close()

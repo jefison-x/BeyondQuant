@@ -492,6 +492,15 @@ class CredentialStore(PgStoreMixin):
             PRIMARY KEY(owner_principal, agent_id)
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS credential_discovered_models (
+            credential_id TEXT NOT NULL REFERENCES credentials(credential_id),
+            model TEXT NOT NULL,
+            runtime_provider TEXT NOT NULL,
+            discovered_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (credential_id, model)
+        )
+        """,
         """CREATE TABLE IF NOT EXISTS model_command_receipts (
             owner_principal TEXT NOT NULL,
             operation TEXT NOT NULL CHECK(operation IN ('binding','delete_profile')),
@@ -767,7 +776,37 @@ class CredentialStore(PgStoreMixin):
             })
         if not models:
             raise CredentialUnavailable("model provider returned no models")
+        discovered_at = _now()
+        with self._transaction() as connection:
+            execute(
+                connection,
+                "DELETE FROM credential_discovered_models WHERE credential_id = :credential_id",
+                {"credential_id": credential_id},
+            )
+            for item in models:
+                if not item["supported"]:
+                    continue
+                execute(
+                    connection,
+                    """INSERT INTO credential_discovered_models
+                       (credential_id, model, runtime_provider, discovered_at)
+                       VALUES (:credential_id, :model, :runtime_provider, :discovered_at)""",
+                    {
+                        "credential_id": credential_id,
+                        "model": item["model"],
+                        "runtime_provider": item["runtime_provider"],
+                        "discovered_at": discovered_at,
+                    },
+                )
         return {"provider": provider, "models": models}
+
+    def _discovered_runtime_provider(self, credential_id: str, model: str) -> str | None:
+        row = self._fetch_one(
+            """SELECT runtime_provider FROM credential_discovered_models
+               WHERE credential_id = :credential_id AND model = :model""",
+            {"credential_id": credential_id, "model": model},
+        )
+        return str(row["runtime_provider"]) if row is not None else None
 
     def update_credential(
         self,
@@ -1003,22 +1042,6 @@ class CredentialStore(PgStoreMixin):
         display_name = _text(payload.get("display_name"), field="display_name", maximum=120)
         provider = _text(payload.get("provider"), field="provider", maximum=32)
         model = _text(payload.get("model"), field="model", maximum=96)
-        catalog = _CATALOG.get((provider, model))
-        if catalog is None:
-            raise ValueError("model profile is not in the BYQ catalogue")
-        temperature = payload.get("temperature", 0.2)
-        if isinstance(temperature, bool) or not isinstance(temperature, (int, float)):
-            raise ValueError("temperature must be numeric")
-        temperature = float(temperature)
-        if temperature < 0 or temperature > 2:
-            raise ValueError("temperature must be between 0 and 2")
-        reasoning_enabled = _optional_bool(
-            payload.get("reasoning_enabled"),
-            field="reasoning_enabled",
-            default=False,
-        )
-        if reasoning_enabled and not catalog["reasoning_supported"]:
-            raise ValueError("selected model does not support reasoning mode")
         credential = self._fetch_one(
             "SELECT * FROM credentials WHERE credential_id = :credential_id",
             {"credential_id": credential_id},
@@ -1032,6 +1055,28 @@ class CredentialStore(PgStoreMixin):
             or credential["status"] != "active"
         ):
             raise CredentialNotFound("active model credential not found")
+        catalog = _CATALOG.get((provider, model))
+        if catalog is None:
+            # ADR-0075: models discovered for this credential are selectable
+            # even without a static catalogue entry; unknown models fail closed.
+            if self._discovered_runtime_provider(credential_id, model) is None:
+                raise ValueError("model profile is not in the BYQ catalogue")
+            reasoning_supported = False
+        else:
+            reasoning_supported = bool(catalog["reasoning_supported"])
+        temperature = payload.get("temperature", 0.2)
+        if isinstance(temperature, bool) or not isinstance(temperature, (int, float)):
+            raise ValueError("temperature must be numeric")
+        temperature = float(temperature)
+        if temperature < 0 or temperature > 2:
+            raise ValueError("temperature must be between 0 and 2")
+        reasoning_enabled = _optional_bool(
+            payload.get("reasoning_enabled"),
+            field="reasoning_enabled",
+            default=False,
+        )
+        if reasoning_enabled and not reasoning_supported:
+            raise ValueError("selected model does not support reasoning mode")
         profile_id = _new_id("profile")
         now = _now()
         try:
@@ -1284,8 +1329,15 @@ class CredentialStore(PgStoreMixin):
         ):
             raise CredentialUnavailable("selected model binding is unavailable")
         catalog = _CATALOG.get((str(row["provider"]), str(row["model"])))
-        if catalog is None:
-            raise CredentialUnavailable("selected model is unavailable")
+        if catalog is not None:
+            runtime_provider = str(catalog["runtime_provider"])
+        else:
+            discovered = self._discovered_runtime_provider(
+                str(row["credential_id"]), str(row["model"]),
+            )
+            if discovered is None:
+                raise CredentialUnavailable("selected model is unavailable")
+            runtime_provider = discovered
         secret = self.cipher.decrypt(
             {
                 "envelope_version": row["envelope_version"],
@@ -1303,7 +1355,7 @@ class CredentialStore(PgStoreMixin):
         )
         return {
             "source": "user_binding",
-            "provider": catalog["runtime_provider"],
+            "provider": runtime_provider,
             "model": row["model"],
             "temperature": row["temperature"],
             "reasoning_enabled": bool(row["reasoning_enabled"]),
