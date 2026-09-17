@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -59,7 +60,7 @@ def _bar(trade_date: str, close: float) -> dict[str, object]:
     }
 
 
-def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(monkeypatch, tmp_path) -> None:
+def _seed_ready_signal_fixture(monkeypatch, tmp_path) -> SimpleNamespace:
     research = ResearchStore()
     paper = PaperTradingStore()
     market = MarketDataStore()
@@ -134,6 +135,19 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
              corporate_action_row_count,content_sha256,provenance_json,verified_at)
             VALUES (:date,TRUE,TRUE,1,0,:sha,'{}',now())""",
             {"date": date, "sha": f"supplement-{date}"})
+    return SimpleNamespace(
+        research=research, paper=paper, market=market, jobs=jobs, readiness=readiness,
+        automation=automation, securities=securities, backtests=backtests, client=client,
+        task=task, version=version, pool=pool,
+    )
+
+
+def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(monkeypatch, tmp_path) -> None:
+    fixture = _seed_ready_signal_fixture(monkeypatch, tmp_path)
+    research, paper, market = fixture.research, fixture.paper, fixture.market
+    jobs, readiness = fixture.jobs, fixture.readiness
+    client, task, version, pool = fixture.client, fixture.task, fixture.version, fixture.pool
+    backtests = fixture.backtests
     request = {
         "task_id": task["task_id"],
         "strategy_version_artifact_id": version["artifact"]["artifact_id"],
@@ -225,3 +239,60 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
     paper.close()
     research.close()
     backtests.close()
+
+
+def test_promote_waiting_signal_jobs_fails_over_cap_job_and_continues(monkeypatch, tmp_path) -> None:
+    fixture = _seed_ready_signal_fixture(monkeypatch, tmp_path)
+    client, jobs, readiness = fixture.client, fixture.jobs, fixture.readiness
+    automation, task, version, pool = fixture.automation, fixture.task, fixture.version, fixture.pool
+
+    symbols = [f"{index:06d}.SZ" for index in range(2000)]
+    over_cap = readiness.requirement(
+        symbols=symbols, start_date="2026-03-01", end_date="2026-03-31",
+        membership_fingerprint="over-cap-fixture", security_master_snapshot_id="sms_fixture",
+    )
+    for day in range(1, 27):
+        trade_date = f"202603{day:02d}"
+        automation._execute("""INSERT INTO market_trading_sessions
+            (trade_date,exchange,is_open,data_source,request_fingerprint,retrieved_at,content_sha256,updated_at)
+            VALUES (:date,'SSE',TRUE,'tushare','cal-over',now(),:sha,now())""",
+            {"date": trade_date, "sha": f"cal-over-{trade_date}"})
+    with pytest.raises(ValueError, match="symbol-session cells"):
+        readiness.assess(over_cap)
+
+    offending = jobs.create_waiting(
+        owner_principal="signal-owner", task_id=task["task_id"], experiment_id=None,
+        strategy_version_artifact_id=version["artifact"]["artifact_id"],
+        stock_pool_snapshot_id=pool["snapshot"]["snapshot_id"],
+        preparation={"strategy_version_artifact_id": str(version["artifact"]["artifact_id"])},
+        requirement=over_cap, readiness={"state": "unknown", "missing": []},
+        trace_id="signal-trace", idempotency_key="signal-job-over-cap",
+    )
+    jobs._execute("UPDATE signal_producer_jobs SET created_at=:early WHERE job_id=:id",
+                  {"early": "2000-01-01T00:00:00+00:00", "id": offending["job_id"]})
+
+    valid = client.post("/v1/research/signal-producer/jobs", json={
+        "task_id": task["task_id"],
+        "strategy_version_artifact_id": version["artifact"]["artifact_id"],
+        "stock_pool_snapshot_id": pool["snapshot"]["snapshot_id"],
+        "start_date": "2026-01-05", "end_date": "2026-01-06",
+        "parameters": {"lookback": 2}, "execution": {"lot_size": 100, "max_runtime_seconds": 5},
+        "order_quantity": 100, "trace_id": "signal-trace", "idempotency_key": "signal-job-valid",
+    })
+    assert valid.status_code == 202, valid.text
+    valid_job_id = valid.json()["job"]["job_id"]
+
+    assert promote_waiting_signal_jobs(jobs, readiness) == 1
+
+    rejected = jobs.get(offending["job_id"], trusted_owner="signal-owner")
+    assert rejected["status"] == "failed"
+    assert rejected["error_code"] == "market_requirement_exceeded"
+    assert rejected["error_detail"]
+    promoted = jobs.get(valid_job_id, trusted_owner="signal-owner")
+    assert promoted["status"] == "queued"
+
+    jobs.close()
+    fixture.market.close()
+    fixture.paper.close()
+    fixture.research.close()
+    fixture.backtests.close()
