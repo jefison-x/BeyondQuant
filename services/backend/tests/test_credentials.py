@@ -513,7 +513,7 @@ def test_create_profile_rejects_discovered_model_outside_runtime_allowlist() -> 
            VALUES (:credential_id, :model, :runtime_provider, :discovered_at)""",
         {
             "credential_id": credential["credential_id"],
-            "model": "deepseek-v4.1-flash",
+            "model": "deepseek-v4-flash-vision-exp",
             "runtime_provider": "opencode-go-chat",
             "discovered_at": "2026-09-17T00:00:00+00:00",
         },
@@ -526,7 +526,7 @@ def test_create_profile_rejects_discovered_model_outside_runtime_allowlist() -> 
                 "key_name": "go-drift",
                 "display_name": "Drift",
                 "provider": "opencode-go",
-                "model": "deepseek-v4.1-flash",
+                "model": "deepseek-v4-flash-vision-exp",
             },
         )
     store.close()
@@ -541,7 +541,7 @@ def test_resolve_model_fails_closed_for_discovered_model_outside_runtime_allowli
     )
     # Regression case: a profile bound before the runtime allowlist existed,
     # backed by a discovered-but-not-allowlisted model (provider opencode-go,
-    # model deepseek-v4.1-flash). create_profile rejects this today, so insert
+    # model deepseek-v4-flash-vision-exp). create_profile rejects this today, so insert
     # the legacy profile row directly to prove resolution is also fail-closed.
     store._execute(
         """INSERT INTO credential_discovered_models
@@ -549,7 +549,7 @@ def test_resolve_model_fails_closed_for_discovered_model_outside_runtime_allowli
            VALUES (:credential_id, :model, :runtime_provider, :discovered_at)""",
         {
             "credential_id": credential["credential_id"],
-            "model": "deepseek-v4.1-flash",
+            "model": "deepseek-v4-flash-vision-exp",
             "runtime_provider": "opencode-go-chat",
             "discovered_at": "2026-09-17T00:00:00+00:00",
         },
@@ -561,7 +561,7 @@ def test_resolve_model_fails_closed_for_discovered_model_outside_runtime_allowli
             provider, model, temperature, reasoning_enabled, status, version,
             created_at, updated_at)
            VALUES (:profile_id, 'alice', :credential_id, 'go-legacy-drift',
-                   'Legacy drift', 'opencode-go', 'deepseek-v4.1-flash', 0.2,
+                   'Legacy drift', 'opencode-go', 'deepseek-v4-flash-vision-exp', 0.2,
                    FALSE, 'active', 1, :created_at, :updated_at)""",
         {
             "profile_id": profile_id,
@@ -592,7 +592,7 @@ def test_discovery_rerun_purges_stale_non_allowlisted_rows() -> None:
            VALUES (:credential_id, :model, :runtime_provider, :discovered_at)""",
         {
             "credential_id": credential["credential_id"],
-            "model": "deepseek-v4.1-flash",
+            "model": "deepseek-v4-flash-vision-exp",
             "runtime_provider": "opencode-go-chat",
             "discovered_at": "2026-09-17T00:00:00+00:00",
         },
@@ -600,7 +600,7 @@ def test_discovery_rerun_purges_stale_non_allowlisted_rows() -> None:
 
     def fetch(url, token, timeout):
         return 200, json.dumps({"data": [
-            {"id": "deepseek-v4.1-flash"},
+            {"id": "deepseek-v4-flash-vision-exp"},
             {"id": "deepseek-v4-pro"},
         ]}).encode()
 

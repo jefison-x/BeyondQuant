@@ -243,7 +243,7 @@ RUNTIME_MODEL_ALLOWLIST: dict[str, tuple[str, ...]] = {
         str(item["model"]) for item in MODEL_CATALOG if item["provider"] == "deepseek"
     ),
     "opencode-go-responses": ("gpt-5.6-luna", "grok-4.6"),
-    "opencode-go-chat": ("deepseek-v4-flash", "deepseek-v4-pro", "glm-5.3", "kimi-k3"),
+    "opencode-go-chat": ("deepseek-v4-flash", "deepseek-v4.1-flash", "deepseek-v4-pro", "glm-5.3", "kimi-k3"),
     "opencode-go-messages": ("minimax-m3", "qwen3.8-max"),
     "opencode-zen-responses": ("gpt-5.6-sol", "gpt-5.6-terra", "grok-4.6"),
     "opencode-zen-chat": ("deepseek-v4-flash", "minimax-m3"),
