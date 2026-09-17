@@ -343,3 +343,48 @@ def test_backend_model_routes_never_echo_secret_and_resolver_is_private(monkeypa
     assert hidden.status_code == 200
     assert hidden.json()["credentials"] == []
     store.close()
+
+
+def test_discover_models_refreshes_provider_list_without_leaking_secret() -> None:
+    store = _store()
+    payload = _credential_payload("sk-discover-secret-abcd")
+    payload["idempotency_key"] = "discover-deepseek-1"
+    credential = store.create_credential("alice", payload, actor="alice")
+    calls = []
+
+    def fetch(url, token, timeout):
+        calls.append((url, token, timeout))
+        return 200, json.dumps({"data": [
+            {"id": "deepseek-flash"}, {"id": "deepseek-v4.1-flash"}, {"id": "deepseek-flash"},
+        ]}).encode()
+
+    result = store.discover_models(credential["credential_id"], owner="alice", fetch=fetch)
+    assert calls[0][0] == "https://api.deepseek.com/models"
+    assert calls[0][1] == "sk-discover-secret-abcd"
+    assert [item["model"] for item in result["models"]] == ["deepseek-flash", "deepseek-v4.1-flash"]
+    assert result["provider"] == "deepseek"
+    assert "sk-discover-secret-abcd" not in json.dumps(result)
+    store.close()
+
+
+def test_discover_models_fails_closed_and_is_owner_scoped() -> None:
+    store = _store()
+    payload = _credential_payload("sk-discover-secret-efgh", provider="opencode-go")
+    payload["idempotency_key"] = "discover-opencode-1"
+    credential = store.create_credential("alice", payload, actor="alice")
+    identity = credential["credential_id"]
+
+    for response in ((500, b"{}"), (200, b"not-json"), (200, b'{"data": []}')):
+        with pytest.raises(CredentialUnavailable):
+            store.discover_models(identity, owner="alice", fetch=lambda *a, r=response: r)
+    captured = {}
+
+    def fetch(url, token, timeout):
+        captured["url"] = url
+        return 200, json.dumps({"data": [{"id": "deepseek-v4-pro"}]}).encode()
+
+    store.discover_models(identity, owner="alice", fetch=fetch)
+    assert captured["url"] == "https://opencode.ai/zen/go/v1/models"
+    with pytest.raises(CredentialNotFound):
+        store.discover_models(identity, owner="bob", fetch=fetch)
+    store.close()

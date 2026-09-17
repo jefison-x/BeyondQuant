@@ -5218,6 +5218,14 @@ def list_model_credentials(request: Request) -> dict[str, object]:
     })
 
 
+@app.get("/v1/users/model-credentials/{credential_id}/models")
+def discover_model_credential_models(credential_id: str, request: Request) -> dict[str, object]:
+    """Refresh the provider's live model list for one owner-active credential."""
+    context = _required_agent_context(request)
+    return _credential_call(lambda: credential_store.discover_models(
+        credential_id, owner=context["owner_principal"]))
+
+
 @app.get("/v1/users/model-credentials/receipts")
 def reconcile_model_credential(request: Request, operation: str, request_id: str, credential_id: str | None = None) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
