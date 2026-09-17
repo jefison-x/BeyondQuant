@@ -510,6 +510,18 @@ class SignalJobStore(PgStoreMixin):
             )
         return self.get(job_id)
 
+    def fail_waiting(self, job_id: str, error_code: str, error_detail: str) -> None:
+        """Terminalize a waiting job whose frozen requirement can never be prepared."""
+        if _ERROR_CODE.fullmatch(error_code) is None:
+            raise ValueError("error_code has invalid format")
+        detail = str(error_detail).strip()[:500] or "signal preparation failed"
+        self._execute(
+            """UPDATE signal_producer_jobs SET status = 'failed', error_code = :error_code,
+                      error_detail = :error_detail, finished_at = :now, updated_at = :now
+               WHERE job_id = :job_id AND status = 'waiting_for_data'""",
+            {"job_id": job_id, "error_code": error_code, "error_detail": detail, "now": _now()},
+        )
+
     def cancel(self, job_id: object, *, trusted_owner: str) -> dict[str, object]:
         """Cancel preparation before trusted signal execution has started."""
         identity = _identifier(job_id, "job_id")
@@ -573,7 +585,15 @@ def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object, a
         preparation = row.get("preparation_json")
         if not isinstance(requirement, dict) or not isinstance(preparation, dict):
             continue
-        assessment = readiness_store.assess(requirement)
+        try:
+            assessment = readiness_store.assess(requirement)
+        except ValueError as error:
+            if "symbol-session cells" not in str(error):
+                raise
+            jobs.fail_waiting(
+                str(row["job_id"]), "market_requirement_exceeded", str(error),
+            )
+            continue
         jobs.update_readiness(str(row["job_id"]), assessment)
         if assessment.get("state") != "ready":
             if automation_store is not None:
