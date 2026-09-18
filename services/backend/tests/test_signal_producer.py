@@ -655,24 +655,30 @@ def test_columnar_document_yields_identical_snapshot_identity_to_legacy_rows() -
     assert signal_snapshot_content_sha256(columnar_snapshot) == signal_snapshot_content_sha256(legacy_snapshot)
 
 
-def _large_ready_input(symbols: int = 300, sessions: int = 727) -> dict[str, object]:
+def _large_ready_input(
+    symbols: int = 300, sessions: int = 727, *, limits: bool = True,
+) -> dict[str, object]:
     bars: list[dict[str, object]] = []
     research: list[dict[str, object]] = []
     multipliers: list[float] = []
     for symbol_index in range(symbols):
         symbol = f"{symbol_index:06d}.SZ"
+        previous = 10.0
         for session in range(sessions):
-            trade_date = f"2023-{1 + session // 28:02d}-{1 + session % 28:02d}"
-            close = round(10.0 + (session % 20) * 0.01, 2)
-            raw = {
+            trade_date = (date(2023, 1, 2) + timedelta(days=session)).isoformat()
+            close = 10.0
+            raw: dict[str, object] = {
                 "symbol": symbol, "trade_date": trade_date, "open": close, "high": close,
-                "low": close, "close": close, "prev_close": close, "volume": 1000,
-                "is_suspended": False, "up_limit": round(close * 1.1, 2),
-                "down_limit": round(close * 0.9, 2),
+                "low": close, "close": close, "prev_close": previous, "volume": 0,
+                "is_suspended": False,
             }
+            if limits:
+                raw["up_limit"] = round(close * 1.1, 2)
+                raw["down_limit"] = round(close * 0.9, 2)
             bars.append(raw)
             research.append(dict(raw))
             multipliers.append(1.0)
+            previous = close
     return {
         "bars": bars, "research_bars": research, "research_multipliers": multipliers,
         "research_view_sha256": "r" * 64, "corporate_actions": [], "benchmark": [], "declared": {},
@@ -714,6 +720,51 @@ def test_promotion_builds_columnar_frame_without_size_failure(monkeypatch, tmp_p
     ).encode("utf-8")
     assert len(encoded) < 32 * 1024 * 1024
     print(f"\npromoted job document={len(encoded) / 1024 / 1024:.2f}MiB")
+
+    fixture.jobs.close()
+    fixture.market.close()
+    fixture.paper.close()
+    fixture.research.close()
+    fixture.backtests.close()
+
+
+def test_promoted_aggregate_job_produces_snapshot_beyond_retired_bound(monkeypatch, tmp_path) -> None:
+    fixture = _seed_ready_signal_fixture(monkeypatch, tmp_path)
+    symbols = [f"{index:06d}.SZ" for index in range(300)]
+    snapshot_id = _create_symbol_pool(fixture, symbols=symbols, key="aggregate-produce-pool")
+    created = fixture.client.post("/v1/research/signal-producer/jobs", json=_signal_request(
+        fixture, snapshot_id=snapshot_id, start="2026-01-05", end="2026-01-06",
+        key="aggregate-produce-job",
+    ))
+    assert created.status_code == 202, created.text
+    job_id = created.json()["job"]["job_id"]
+
+    large = _large_ready_input(limits=False)
+    monkeypatch.setattr(
+        fixture.readiness, "assess",
+        lambda requirement: {"state": "ready", "ready_input_sha256": "a" * 64},
+    )
+    monkeypatch.setattr(
+        fixture.readiness, "build_ready_input", lambda requirement, **kwargs: large,
+    )
+    monkeypatch.setattr(
+        fixture.readiness, "build_partitioned_ready_input", lambda requirements, **kwargs: large,
+    )
+    assert promote_waiting_signal_jobs(fixture.jobs, fixture.readiness) == 1
+
+    def executor(payload: dict[str, object], timeout_seconds: float) -> dict[str, object]:
+        return {
+            "schema_version": "byq-signal-sandbox-response-v1",
+            "signals": [{"symbol": symbols[0], "trade_date": "2023-01-02", "signal": 1}],
+        }
+
+    completed = SignalProducerCoordinator(
+        fixture.jobs, fixture.research, CallableSandboxExecutor(executor)
+    ).run_next()
+    assert completed is not None and completed["status"] == "completed", completed
+    artifact = fixture.research.get_artifact(completed["result_artifact_id"])
+    assert len(artifact["content"]["bars"]) == 300 * 727
+    assert artifact["content"]["signals"][0]["symbol"] == symbols[0]
 
     fixture.jobs.close()
     fixture.market.close()

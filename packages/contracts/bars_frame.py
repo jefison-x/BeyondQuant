@@ -45,6 +45,15 @@ from typing import Any
 
 BARS_FRAME_SCHEMA_VERSION = "bars_frame.v1"
 
+# ADR-0047: the retired 50,000 "symbol-session cells" bound is an invariant of
+# one independently assessable readiness partition, not of an aggregate frozen
+# panel. The backend admits an aggregate research view only through
+# ``MarketReadinessStore.build_partitioned_ready_input(row_limit=AGGREGATE_ROW_LIMIT)``
+# (``services/backend/app/market_readiness.py``), so the data-readiness builder,
+# the signal sandbox and backtest/snapshot normalization share this one
+# framework-neutral definition instead of re-declaring the literal.
+AGGREGATE_ROW_LIMIT = 2_000_001
+
 _ADJUSTED_FIELDS = ("open", "high", "low", "close", "prev_close", "up_limit", "down_limit")
 
 

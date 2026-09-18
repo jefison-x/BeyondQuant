@@ -4,14 +4,18 @@ import os
 
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import text
 
 from app.backtest import (
+    AGGREGATE_ROW_LIMIT,
+    MAX_BARS,
+    MAX_SIGNALS,
     BacktestConflict,
     BacktestJobStore,
+    BacktestResourceExceeded,
     BacktestWorker,
     LocalObjectStore,
     ObjectIntegrityError,
@@ -19,6 +23,7 @@ from app.backtest import (
     membership_fingerprint,
     normalize_backtest_request,
     normalize_backtest_name,
+    normalize_signal_snapshot,
     run_native_backtest,
 )
 from app.db import run_ddl
@@ -469,3 +474,96 @@ def test_job_worker_is_idempotent_bounded_and_stores_result_by_reference(tmp_pat
     assert objects.delete_if_unreferenced(object_reference, live_references=[], actor_scope="owner", owner_scope="owner")
     research.close()
     jobs.close()
+
+
+def _aggregate_snapshot_bars(
+    symbols: int = 300, sessions: int = 727, *, limits: bool = False,
+) -> tuple[list[str], list[dict[str, object]]]:
+    symbol_list = [f"{index:06d}.SZ" for index in range(symbols)]
+    rows: list[dict[str, object]] = []
+    for symbol in symbol_list:
+        close = 10.0
+        for session in range(sessions):
+            trade_date = (date(2023, 1, 2) + timedelta(days=session)).isoformat()
+            row: dict[str, object] = {
+                "symbol": symbol, "trade_date": trade_date, "open": close, "high": close,
+                "low": close, "close": close, "prev_close": close, "volume": 0,
+                "is_suspended": False,
+            }
+            if limits:
+                row["up_limit"] = round(close * 1.1, 2)
+                row["down_limit"] = round(close * 0.9, 2)
+            rows.append(row)
+    return symbol_list, rows
+
+
+def test_signal_snapshot_accepts_adr_0047_aggregate_beyond_retired_bound() -> None:
+    symbols, aggregate_bars = _aggregate_snapshot_bars()
+    assert len(aggregate_bars) == 300 * 727 == 218_100 > 50_000
+    payload = {
+        "universe": {
+            "universe_id": "aggregate-universe",
+            "version_id": "aggregate-v1",
+            "membership_fingerprint": membership_fingerprint(symbols),
+            "symbols": symbols,
+        },
+        "bars": aggregate_bars,
+        "signals": [],
+        "execution": {},
+        "corporate_actions": [],
+        "benchmark": [],
+        "source": {},
+    }
+    first = normalize_signal_snapshot(
+        payload,
+        strategy_version_artifact_id="artifact_" + "a" * 32,
+        strategy_version_id="version_aggregate",
+    )
+    repeat = normalize_signal_snapshot(
+        payload,
+        strategy_version_artifact_id="artifact_" + "a" * 32,
+        strategy_version_id="version_aggregate",
+    )
+    assert len(first["bars"]) == 218_100
+    assert first["source"]["content_sha256"] == repeat["source"]["content_sha256"]
+
+
+def test_adr_0047_row_bounds_are_shared_and_fail_closed_when_oversized(monkeypatch) -> None:
+    assert MAX_BARS == MAX_SIGNALS == AGGREGATE_ROW_LIMIT == 2_000_001
+
+    monkeypatch.setattr("app.backtest.MAX_BARS", 2)
+    over_bars = [
+        {"symbol": SYMBOL, "trade_date": f"2026-01-{day:02d}", "open": 10.0,
+         "high": 10.0, "low": 10.0, "close": 10.0}
+        for day in range(1, 4)
+    ]
+    with pytest.raises(BacktestResourceExceeded, match="bars exceeds 2 rows"):
+        normalize_signal_snapshot(
+            {
+                "universe": {**universe(), "symbols": [SYMBOL]},
+                "bars": over_bars,
+                "signals": [],
+                "execution": {},
+                "source": {},
+            },
+            strategy_version_artifact_id="artifact_" + "a" * 32,
+            strategy_version_id="version_oversized",
+        )
+
+    monkeypatch.setattr("app.backtest.MAX_SIGNALS", 1)
+    monkeypatch.setattr("app.backtest.MAX_BARS", AGGREGATE_ROW_LIMIT)
+    with pytest.raises(BacktestResourceExceeded, match="signals exceeds 1 rows"):
+        normalize_signal_snapshot(
+            {
+                "universe": {**universe(), "symbols": [SYMBOL]},
+                "bars": bars(),
+                "signals": [
+                    {"symbol": SYMBOL, "trade_date": "2026-01-05", "side": "buy"},
+                    {"symbol": SYMBOL, "trade_date": "2026-01-06", "side": "sell"},
+                ],
+                "execution": {},
+                "source": {},
+            },
+            strategy_version_artifact_id="artifact_" + "a" * 32,
+            strategy_version_id="version_oversized",
+        )

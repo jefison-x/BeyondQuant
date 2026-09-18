@@ -958,3 +958,17 @@ while the raw execution panel is preserved for the immutable signal snapshot. Le
 remain decodable by both the sandbox runner and the coordinator. Both `MAX_JOB_BYTES` and
 `MAX_REQUEST_BYTES` stay at 32 MiB and the credential-free sandbox resource envelope is unchanged. No
 Accepted ADR text is changed.
+
+## Maintenance — ADR-0047 aggregate bound in snapshot/backtest normalization
+
+After the columnar encoding fix, a promoted 300-symbol × ~727-session aggregate still failed at
+`services/backend/app/backtest.py` with `BacktestResourceExceeded: bars exceeds 50000 rows`. `MAX_BARS`
+and `MAX_SIGNALS` had kept the retired ADR-0028 single-partition "50,000 symbol-session cells" cap even
+though ADR-0047 decoupled that cap from aggregates. Both now reference the shared
+`AGGREGATE_ROW_LIMIT = 2_000_001` in `packages/contracts/bars_frame.py` (the same documented constant the
+sandbox runner and `build_partitioned_ready_input(row_limit=...)` use), so one source of truth covers the
+data-readiness builder, the signal sandbox, and signal-snapshot/backtest normalization. The per-partition
+`MAX_REQUIRED_CELLS`/`market_plan` 50,000-cell invariant, the 32 MiB object/transport caps
+(`MAX_JOB_BYTES`/`MAX_REQUEST_BYTES`/`MAX_RESULT_BYTES`/`MAX_SNAPSHOT_BYTES`), the MCP schema, Gateway and
+frontend are unchanged; genuinely oversized input still fails closed with a stable
+`bars exceeds ...`/`signals exceeds ...` message. No Accepted ADR text is changed.

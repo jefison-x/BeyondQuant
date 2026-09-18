@@ -23,6 +23,8 @@ from typing import Any, Iterable
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from packages.contracts.bars_frame import AGGREGATE_ROW_LIMIT
+
 from .db import PgStoreMixin, execute, fetch_one, bounded_metadata_transaction
 
 
@@ -34,8 +36,12 @@ ANALYSIS_SECTIONS = (
     "summary", "chart", "trades", "blocked_trades", "corporate_action_events",
     "daily_positions", "daily_returns", "equity_curve", "logs",
 )
-MAX_BARS = 50_000
-MAX_SIGNALS = 50_000
+# ADR-0047: a frozen aggregate panel may exceed the retired 50,000
+# symbol-session cell bound of one readiness partition. The backtest and
+# signal-snapshot boundaries accept the same admissible aggregate as the
+# data-readiness builder and the signal sandbox (``AGGREGATE_ROW_LIMIT``).
+MAX_BARS = AGGREGATE_ROW_LIMIT
+MAX_SIGNALS = AGGREGATE_ROW_LIMIT
 MAX_ACTIONS = 10_000
 MAX_BENCHMARK_BARS = 5_000
 MAX_RESULT_BYTES = 32 * 1024 * 1024

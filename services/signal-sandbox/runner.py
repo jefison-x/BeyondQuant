@@ -11,17 +11,18 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from bars_frame import frame_research_rows, is_bars_frame
+from bars_frame import AGGREGATE_ROW_LIMIT, frame_research_rows, is_bars_frame
 
 
 # ADR-0047 decoupled the retired per-partition "50,000 symbol-session cells"
-# cap from the aggregate research view. The backend admits an aggregate only
-# through ``market_readiness.build_partitioned_ready_input(row_limit=2_000_001)``,
+# cap from the aggregate research view. ``AGGREGATE_ROW_LIMIT`` is the shared
+# framework-neutral bound (``packages/contracts/bars_frame.py``) that the
+# backend admits through
+# ``market_readiness.build_partitioned_ready_input(row_limit=AGGREGATE_ROW_LIMIT)``,
 # so the sandbox accepts the same admissible maximum instead of the old cell cap.
 # ``MAX_REQUEST_BYTES`` (32 MiB, server.py) stays the framed transport bound; these
 # are the secondary in-child DoS bounds, and a full aggregate panel can yield at
 # most one signal row per symbol-session.
-AGGREGATE_ROW_LIMIT = 2_000_001
 MAX_BARS_ROWS = AGGREGATE_ROW_LIMIT
 MAX_SIGNALS = AGGREGATE_ROW_LIMIT
 ALLOWED_IMPORTS = {"collections", "math", "numpy", "pandas", "statistics", "typing"}

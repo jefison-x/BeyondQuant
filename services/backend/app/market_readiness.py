@@ -12,6 +12,8 @@ from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from packages.contracts.bars_frame import AGGREGATE_ROW_LIMIT
+
 from .data_provider import DAILY_BASIC_FIELDS, FINANCIAL_INDICATOR_FIELDS
 from .db import PgStoreMixin, execute
 
@@ -23,6 +25,9 @@ REQUIRED_DATASETS = (
     "stock_daily", "trading_status", "price_limits", "adjustment_factors",
     "corporate_actions",
 )
+# ADR-0047: this bounds one independently assessable/retryable readiness
+# partition, not an aggregate preparation. Aggregates are admitted only through
+# ``build_partitioned_ready_input`` with ``AGGREGATE_ROW_LIMIT``.
 MAX_REQUIRED_CELLS = 50_000
 MAX_AGENT_RESEARCH_SYMBOLS = 20
 _CANONICAL_A_SHARE = re.compile(r"^(?:[03]\d{5}\.SZ|6\d{5}\.SH)$")
@@ -1103,7 +1108,7 @@ class MarketReadinessStore(PgStoreMixin):
     def list_ready_bars(
         self, requirement: dict[str, object], *, row_limit: int = MAX_REQUIRED_CELLS + 1,
     ) -> list[dict[str, Any]]:
-        if not 1 <= row_limit <= 2_000_001:
+        if not 1 <= row_limit <= AGGREGATE_ROW_LIMIT:
             raise ValueError("ready input row limit is invalid")
         return self._execute(
             """SELECT b.symbol, b.trade_date, b.open, b.high, b.low, b.close,
@@ -1272,7 +1277,7 @@ class MarketReadinessStore(PgStoreMixin):
                 "declared": declared, "research_view_sha256": identity}
 
     def build_partitioned_ready_input(
-        self, requirements: list[dict[str, object]], *, row_limit: int = 2_000_001,
+        self, requirements: list[dict[str, object]], *, row_limit: int = AGGREGATE_ROW_LIMIT,
     ) -> dict[str, object]:
         """Build one continuous research view after bounded partitions are verified."""
         if not requirements or len(requirements) > 32:
