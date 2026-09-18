@@ -39,6 +39,15 @@ claim。adapter 现将该条件（`JournalIdentityMismatch`）显式映射为 `S
 journal/lock/session dir/gateway trace 到时间戳归档并记录 sha256 与原始路径 manifest），只读列出
 `product_conversations` 供 operator 决策，不删除任何 domain row，也不自动清理数据库。
 
+数据就绪自动续接维护（feat，构建修订 `dsh-0.1.2rc1-post-u8.136`）：生产观察到信号 job 在
+`waiting_for_data` 完成后无人唤醒原会话，因为 F6 任务绑定续接要求用户显式确认的
+`continuation_permission`，而生产任务没有该许可。按 [ADR-0077](../architecture/adr/ADR-0077-data-ready-auto-continuation.md)
+（Proposed），在既有任务绑定续接合同内新增数据就绪事件：`signal_producer_jobs` 为 `completed`
+且产出 `validated signal_snapshot` 时，经既有 `ready-v1:` 事件身份、`continuation_budget` 账本、
+`/internal/task-continuation/...` 接口、Gateway `TaskContinuationDelivery`、adapter prompt 与
+`continuation_scope.py` MCP 准入生成至多一个有界续接回合；失败/取消、未验证快照、外owner/外工作区/
+无关会话都不触发。该切片只新增触发器，不改数据面、sandbox、模型许可或无关服务；不推进 Product Phase。
+
 从 Phase 9 起，永久 migration source of truth 为 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`。实现 phase 前必须先检查、分类其 Community candidates。可在 BYQ-owned contracts 中重新实现 provider/engine-independent semantics，但不得复制 Community runtime、storage、provider 或 engine architecture。BaoStock、AKShare、VectorBT、PydanticAI 和 Hermes 保持排除，除非未来 Accepted ADR 明确反转。
 
 所有 phases 遵循 `docs/DEVELOPMENT_WORKFLOW.md`：只执行 `STATUS.md` 指定的 next phase；每 phase 使用 isolated worktree/branch/PR；contract/test 优先；保持 Product/Agent/Quant/Data/Engineering boundaries；CI 与 evidence 完成后才进入 merge gate。

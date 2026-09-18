@@ -37,7 +37,7 @@ def authorize(store, reservation_id, payload, context):
             raise ValueError('continuation reservation is unavailable')
         task, conversation = store._continuation_task(connection, match['task_id'], context, human=False)
         receipt = next(r for r in task['continuation_budget'] if r['reservation_id'] == reservation_id)
-        if (store._permission_blocked_reason(task, conversation) is not None
+        if (store._continuation_blocked_reason(task, conversation, receipt) is not None
                 or context['session_id'] != conversation['runtime_session_id']
                 or context['trace_id'] != conversation['trace_id']
                 or receipt['status'] not in {'outcome_unknown', 'accepted'}
@@ -156,8 +156,14 @@ class Scope:
             raise ValueError('continuation cannot access another task')
         if table == 'artifacts':
             if row['kind'] in {'strategy_version', 'ml_strategy_version'}:
-                confirmed = self.task['continuation_permission']['confirmed_artifacts']
-                if not any(r['artifact_id'] == identity and r['content_sha256'] == row['content_sha256'] for r in confirmed):
+                # A budgeted grant binds exact confirmed strategy lineage. A
+                # data-ready receipt has no inferred grant, so the exact
+                # original-task ownership check above is the only constraint.
+                permission = self.task.get('continuation_permission') or {}
+                confirmed = permission.get('confirmed_artifacts') or []
+                if confirmed and not any(
+                        r['artifact_id'] == identity and r['content_sha256'] == row['content_sha256']
+                        for r in confirmed):
                     raise ValueError('continuation strategy lineage was not confirmed')
             self.walk(row.get('lineage') or [])
         for key in ('ml_strategy_artifact_id', 'strategy_version_artifact_id'):

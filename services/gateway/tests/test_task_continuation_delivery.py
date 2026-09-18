@@ -71,6 +71,19 @@ def test_dispatch_then_lost_ack_only_reconciles_exact_original(monkeypatch):
     assert writes[-1][1]['run_id'] == 'c'*32
 
 
+def test_data_ready_intent_uses_the_existing_dispatch_path(monkeypatch):
+    context, intent, writes, _, prompts, _, _ = fixture(monkeypatch)
+    intent['receipt']['grant_kind'] = 'data_ready'
+    intent['receipt']['instruction'] = 'Data-ready original task continuation only.'
+    main._consume_admitted_task_continuation(context)
+    assert [kind for kind, _ in writes] == ['dispatch', 'receipt']
+    assert len(prompts) == 1
+    assert prompts[0]['content'] == 'Data-ready original task continuation only.'
+    assert prompts[0]['idempotency_key'] == intent['reservation']['reservation_id']
+    assert prompts[0]['continuation_budget'] == intent['reservation']
+    assert writes[0][1] == {'reservation_id': intent['reservation']['reservation_id']}
+
+
 def test_unknown_never_resubmits_or_refunds(monkeypatch):
     context, intent, writes, _, prompts, _, _ = fixture(monkeypatch)
     intent['receipt']['status'] = 'outcome_unknown'
