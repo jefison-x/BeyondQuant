@@ -30,7 +30,7 @@ from .child_lease import ChildLease
 from .normalization import close_public_activities
 from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_release
 from .identifiers import contained_session_path, validate_identifier
-from .lifecycle_journal import LifecycleJournal, JournalBusy
+from .lifecycle_journal import JournalIdentityMismatch, LifecycleJournal, JournalBusy
 from .continuation_budget import persist_settlement, recovered_settlement, validate_reservation, create_guard_patch, read_guard
 from .normalization import NormalizationState, normalize_runtime_observation
 
@@ -41,6 +41,17 @@ class SessionConflict(RuntimeError):
 
 class ModelCredentialUnavailable(RuntimeError):
     """A model-keyed Product turn was requested without its provider secret."""
+
+
+class StaleSessionLease(RuntimeError):
+    """Durable evidence exists but its lease was issued by a prior host boot.
+
+    The journal is intact, the session is known, yet it can never be claimed
+    again because ``boot_id`` changed. This is an operator-visible condition,
+    not an unknown session (404) and not a storage failure (503).
+    """
+
+    code: ClassVar[str] = "stale_session_lease"
 
 
 _OPENCODE_PROVIDERS = frozenset({
@@ -425,6 +436,8 @@ class RuntimeAdapter:
                          "workspace_id": workspace_id}, create=True)
                 except JournalBusy as exc:
                     raise SessionConflict("runtime evidence is owned by another executor") from exc
+                except JournalIdentityMismatch as exc:
+                    raise StaleSessionLease(f"stale session lease: {session_id}") from exc
                 initial_sequence = max(initial_sequence, journal.state["sequence"])
                 if journal.state["sequence"]:
                     runtime_session_id = f"resume-{uuid.uuid4().hex}"
@@ -1106,6 +1119,8 @@ class RuntimeAdapter:
             lost_root = state["open_root"]
             try:
                 journal = LifecycleJournal.claim(evidence_root, context)
+            except JournalIdentityMismatch as exc:
+                raise StaleSessionLease(f"stale session lease: {session_id}") from exc
             except (JournalBusy, FileNotFoundError, OSError, ValueError):
                 raise KeyError(f"unknown BYQ session: {session_id}") from None
             if initial_sequence and initial_sequence != journal.state["sequence"]:

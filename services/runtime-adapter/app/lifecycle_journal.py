@@ -25,6 +25,15 @@ class JournalBusy(RuntimeError):
     pass
 
 
+class JournalIdentityMismatch(ValueError):
+    """The stored lease was issued by a different host boot/executor identity.
+
+    ``boot_id`` changes on every host reboot, so a journal written before a
+    reboot can never be re-claimed. This is an explicit, stable condition and
+    must not be collapsed into "unknown session" or a generic server fault.
+    """
+
+
 class LifecycleJournal:
     @staticmethod
     def _context(context):
@@ -77,7 +86,7 @@ class LifecycleJournal:
             if obj.path.exists():
                 obj.state = cls.read(obj.path)
                 if obj.state["context"] != context or obj.state["lease_identity"] != obj.lease_identity:
-                    raise ValueError("journal identity mismatch")
+                    raise JournalIdentityMismatch("journal identity mismatch")
                 if obj.state["open_root"] is not None:
                     # Acquiring the SAME never-unlinked kernel lock is required;
                     # neither a 404 nor a PID/time comparison authorizes this.

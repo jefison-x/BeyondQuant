@@ -257,3 +257,104 @@ def test_unknown_session_still_raises_clean_keyerror(adapter: RuntimeAdapter) ->
             restarted.subscribe("never-existed")
     finally:
         restarted.close()
+
+
+def _rewrite_lease_identity(runtime: RuntimeAdapter, session_id: str, lease_identity: str) -> None:
+    """Simulate a journal written under a different host boot identity."""
+
+    path = runtime._session_root / "byq-lifecycle-evidence" / f"{session_id}.json"
+    envelope = json.loads(path.read_text(encoding="utf-8"))
+    envelope["state"]["lease_identity"] = lease_identity
+    encoded = json.dumps(envelope["state"], sort_keys=True, separators=(",", ":")).encode()
+    envelope["sha256"] = hashlib.sha256(encoded).hexdigest()
+    path.write_text(json.dumps(envelope, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+
+
+def _stale_session(adapter: RuntimeAdapter, session_id: str) -> int:
+    FakeHarness.allow_run.set()
+    adapter.create_session(session_id, f"{session_id}-trace", "alice", "workspace_alice")
+    first = adapter.submit_prompt(session_id, "first synthetic turn")
+    wait_for_status(adapter, session_id, SessionStatus.IDLE)
+    record = adapter._get(session_id)
+    durable = record.sequence
+    adapter.acknowledge_terminal(session_id, record.terminal_receipts[first])
+    _simulate_process_death(adapter)
+    # 2026-09-10 host reboot: the stored lease can never match this boot again.
+    _rewrite_lease_identity(adapter, session_id, "f" * 64)
+    return durable
+
+
+def test_stale_lease_is_explicit_and_distinct_from_unknown(adapter: RuntimeAdapter) -> None:
+    from app.runtime import StaleSessionLease
+
+    durable = _stale_session(adapter, "stale-1")
+    restarted = RuntimeAdapter(adapter._compatibility)
+    try:
+        with pytest.raises(StaleSessionLease) as stale:
+            restarted.submit_prompt("stale-1", "second synthetic turn")
+        assert stale.value.code == "stale_session_lease"
+        with pytest.raises(StaleSessionLease):
+            restarted.create_session(
+                "stale-1", "stale-1-trace", "alice", "workspace_alice", durable, [],
+            )
+        # A genuinely unknown session stays a clean 404 (KeyError), not 409.
+        with pytest.raises(KeyError):
+            restarted.submit_prompt("never-existed", "synthetic")
+    finally:
+        restarted.close()
+        adapter.close()
+
+
+def test_valid_session_rehydrates_while_a_stale_one_is_rejected(adapter: RuntimeAdapter) -> None:
+    from app.runtime import StaleSessionLease
+
+    FakeHarness.allow_run.set()
+    try:
+        adapter.create_session("valid-1", "valid-1-trace", "alice", "workspace_alice")
+        first = adapter.submit_prompt("valid-1", "first synthetic turn")
+        wait_for_status(adapter, "valid-1", SessionStatus.IDLE)
+        durable = adapter._get("valid-1").sequence
+        adapter.acknowledge_terminal("valid-1", adapter._get("valid-1").terminal_receipts[first])
+        _stale_session(adapter, "stale-2")
+
+        restarted = RuntimeAdapter(adapter._compatibility)
+        try:
+            accepted = restarted.submit_prompt("valid-1", "second synthetic turn")
+            assert accepted
+            wait_for_status(restarted, "valid-1", SessionStatus.IDLE)
+            assert restarted._get("valid-1").sequence >= durable
+            with pytest.raises(StaleSessionLease):
+                restarted.submit_prompt("stale-2", "second synthetic turn")
+        finally:
+            restarted.close()
+    finally:
+        adapter.close()
+
+
+def test_http_stale_lease_is_409_with_stable_code(adapter: RuntimeAdapter, monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+    from app import main
+
+    durable = _stale_session(adapter, "stale-http")
+    restarted = RuntimeAdapter(adapter._compatibility)
+    monkeypatch.setattr(main, "adapter", restarted)
+    client = TestClient(main.app, raise_server_exceptions=False)
+    try:
+        prompt = client.post("/internal/runtime/sessions/stale-http/prompt",
+                             json={"content": "second synthetic turn"})
+        assert prompt.status_code == 409
+        assert prompt.json()["code"] == "stale_session_lease"
+
+        created = client.post("/internal/runtime/sessions", json={
+            "session_id": "stale-http", "trace_id": "stale-http-trace",
+            "owner_principal": "alice", "workspace_id": "workspace_alice",
+            "initial_sequence": durable,
+        })
+        assert created.status_code == 409
+        assert created.json()["code"] == "stale_session_lease"
+
+        unknown = client.get("/internal/runtime/sessions/never-existed/events")
+        assert unknown.status_code == 404
+    finally:
+        restarted.close()
+        adapter.close()
