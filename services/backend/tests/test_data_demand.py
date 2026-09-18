@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.data_demand import DataDemandConflict, DataDemandNotFound, DataDemandStore
+from app.market_plan import partition_market_requirements
 from app.paper_trading import PaperTradingStore
 from app.user_auth import UserAuthStore
 from app.workspace_tenancy import WorkspaceTenancyStore
@@ -151,7 +152,8 @@ def test_five_year_300_symbol_scope_is_partitioned_below_atomic_cell_bound(monke
             return {**values, "projected_cells": weekdays * len(values["symbols"])}
 
     monkeypatch.setattr(main, "market_readiness_store", PartitionReadiness())
-    partitions = main._partition_market_requirements(
+    partitions = partition_market_requirements(
+        main.market_readiness_store,
         symbols=[f"{index:06d}.SZ" for index in range(1, 301)],
         start=datetime(2022, 1, 1), end=datetime(2026, 12, 31),
         membership_fingerprint_value="membership-test",

@@ -53,6 +53,11 @@ from .conversation_catalog import (
 )
 from .market_data import MarketDataPersistenceError, MarketDataStore
 from .market_readiness import MarketReadinessPersistenceError, MarketReadinessStore
+from .market_plan import (
+    aggregate_market_readiness,
+    build_requirement_plan,
+    partition_market_requirements,
+)
 from .signal_producer import (
     SignalJobStore,
     SignalProducerConflict,
@@ -1362,30 +1367,6 @@ _DEMAND_DECLARED_FIELDS = {"benchmark", "index_universe", "daily_basic", "fundam
 _DEMAND_INDEX = re.compile(r"^\d{6}\.(?:SH|SZ)$")
 
 
-def _partition_market_requirements(
-    *, symbols: list[str], start: datetime, end: datetime,
-    membership_fingerprint_value: str, security_master_snapshot_id: str,
-    declared: dict[str, object],
-) -> list[dict[str, object]]:
-    """Create bounded atomic readiness units for one aggregate frozen scope."""
-    requirements: list[dict[str, object]] = []
-    cursor = start
-    max_chunk_days = min(180, max(1, int(50_000 / len(symbols) * 1.25)))
-    while cursor <= end:
-        chunk_end = min(end, cursor + timedelta(days=max_chunk_days - 1))
-        requirements.append(market_readiness_store.requirement(
-            symbols=symbols, start_date=cursor.strftime("%Y%m%d"),
-            end_date=chunk_end.strftime("%Y%m%d"),
-            membership_fingerprint=membership_fingerprint_value,
-            security_master_snapshot_id=security_master_snapshot_id,
-            data_requirements=declared,
-        ))
-        cursor = chunk_end + timedelta(days=1)
-    if not requirements or len(requirements) > 32:
-        raise ValueError("market data preparation partition plan exceeds 32 units")
-    return requirements
-
-
 def _ml_pool_market_scope(
     pool: dict[str, object], pool_snapshot: dict[str, object],
 ) -> tuple[dict[str, object], str]:
@@ -1442,8 +1423,8 @@ def _data_demand_requirements(payload: dict[str, Any], context: dict[str, str]) 
     latest = security_master_store.latest_snapshot()
     if latest is None:
         raise ValueError("security master must be synchronized before requesting data")
-    requirements = _partition_market_requirements(
-        symbols=symbols, start=start, end=end,
+    requirements = partition_market_requirements(
+        market_readiness_store, symbols=symbols, start=start, end=end,
         membership_fingerprint_value=membership_fingerprint(symbols),
         security_master_snapshot_id=str(latest["snapshot_id"]), declared=declared,
     )
@@ -2826,8 +2807,8 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
             # Freeze enough pre-development calendar history for the 60-session
             # regime warmup. The feature/label windows remain those in strategy.
             requirement_start -= timedelta(days=120)
-        requirements = _partition_market_requirements(
-            symbols=symbols,
+        requirements = partition_market_requirements(
+            market_readiness_store, symbols=symbols,
             start=requirement_start,
             end=datetime.strptime(data_end.replace("-", ""), "%Y%m%d"),
             membership_fingerprint_value=str(pool_snapshot["membership_fingerprint"]),
@@ -3581,17 +3562,32 @@ def _prepare_signal_producer(
     if master_snapshot is None:
         raise ValueError("security master must be synchronized before backtest data preparation")
     fingerprint = membership_fingerprint(symbols)
-    requirement = market_readiness_store.requirement(
-        symbols=symbols,
-        start_date=start_date,
-        end_date=end_date,
-        membership_fingerprint=fingerprint,
-        security_master_snapshot_id=str(master_snapshot["snapshot_id"]),
-        data_requirements=(
-            strategy_snapshot.get("data_requirements")
-            if isinstance(strategy_snapshot.get("data_requirements"), dict) else {}
-        ),
+    declared = (
+        strategy_snapshot.get("data_requirements")
+        if isinstance(strategy_snapshot.get("data_requirements"), dict) else {}
     )
+    plan_start = datetime.strptime(start_date.replace("-", ""), "%Y%m%d")
+    plan_end = datetime.strptime(end_date.replace("-", ""), "%Y%m%d")
+    requirements = partition_market_requirements(
+        market_readiness_store,
+        symbols=symbols, start=plan_start, end=plan_end,
+        membership_fingerprint_value=fingerprint,
+        security_master_snapshot_id=str(master_snapshot["snapshot_id"]),
+        declared=declared,
+    )
+    # Backward-compatible aggregate requirement key: one partition when the
+    # scope already fits, otherwise a full-window aggregate that is never
+    # assessed directly (each partition is assessed independently).
+    requirement = (
+        requirements[0] if len(requirements) == 1
+        else market_readiness_store.requirement(
+            symbols=symbols, start_date=start_date, end_date=end_date,
+            membership_fingerprint=fingerprint,
+            security_master_snapshot_id=str(master_snapshot["snapshot_id"]),
+            data_requirements=declared,
+        )
+    )
+    requirement_plan = build_requirement_plan(requirements)
     members = security_master_store._execute(
         """SELECT symbol FROM security_master_snapshot_members
            WHERE snapshot_id=:snapshot AND symbol IN (SELECT jsonb_array_elements_text(:symbols))""",
@@ -3599,14 +3595,29 @@ def _prepare_signal_producer(
     )
     if {str(row["symbol"]) for row in members} != set(symbols):
         raise ValueError("stock pool contains symbols absent from the frozen security master")
-    readiness = market_readiness_store.assess(requirement) if assess_readiness else {"state": "unknown", "missing": []}
+    assessments: list[dict[str, object]] = []
+    if assess_readiness:
+        assessments = [market_readiness_store.assess(item) for item in requirements]
+        readiness = (
+            assessments[0] if len(assessments) == 1 else aggregate_market_readiness(assessments)
+        )
+    else:
+        readiness = {"state": "unknown", "missing": []}
     if assess_readiness and readiness["state"] != "ready":
-        if any(item.get("dataset") == "security_lifecycle" for item in readiness["missing"]):
+        if any(
+            item.get("dataset") == "security_lifecycle"
+            for assessment in assessments
+            for item in assessment.get("missing", [])
+            if isinstance(item, dict)
+        ):
             raise ValueError("stock pool contains symbols absent from the frozen security master")
         if request_repair:
-            market_automation_store.request_data_repair(
-                requirement=requirement, requested_by=f"signal:{owner_principal}"
-            )
+            for item, assessment in zip(requirements, assessments):
+                if assessment.get("state") == "ready":
+                    continue
+                market_automation_store.request_data_repair(
+                    requirement=item, requested_by=f"signal:{owner_principal}"
+                )
     preparation = {
         "strategy_version_artifact_id": str(version["artifact_id"]),
         "strategy_version_id": str(version_content["version_id"]),
@@ -3626,6 +3637,8 @@ def _prepare_signal_producer(
         "pool_snapshot": pool_snapshot,
         "preparation": preparation,
         "requirement": requirement,
+        "requirement_plan": requirement_plan,
+        "requirements": requirements,
         "readiness": readiness,
     }
 

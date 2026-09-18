@@ -727,6 +727,14 @@ Worker 按配置的 Tushare 2,000 积分预算保守节流。新增由现有持�
 真实 Product API/Chrome 桌面与移动端流程，以及 Community 功能清单。Browser 不得调用 Backend、MCP、
 DSH、PostgreSQL 或 Tushare；Data Worker 仍是唯一 Provider caller。
 
+Post-Phase 82 信号/回测分片收口（维护，不新增阶段）：`signal_producer_jobs` 的 signal/backtest
+准备链已与 ML 一样接入 ADR-0047。共享确定性分片规划器（`services/backend/app/market_plan.py`）
+由 data demand、ML training 和 signal/backtest prepare 复用；aggregate readiness 只从各分片
+assessment 派生，每个未就绪分片各自产生既有 repair 请求，仅当全部分片 ready 时 Worker 才用
+`build_partitioned_ready_input` 冻结连续 ready input。计划持久化为 `requirement_plan_json`
+（含稳定的 `requirement_plan_sha256` 与逐分片 requirement 身份）；无计划的历史 job 保持原单
+requirement 行为。`MAX_REQUIRED_CELLS`、MCP schema、Gateway 路由与前端均未变更。
+
 ## Extensible Machine Learning Program（Phase 83–86）
 
 详细合同和逐阶段 gate 位于 `MACHINE_LEARNING_EXTENSIBILITY_PLAN.md`，架构边界由 ADR-0048 固定。
