@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import uuid
 import os
@@ -11,6 +12,26 @@ from datetime import datetime, timedelta, timezone
 
 from .db import execute, fetch_one
 from .research_handoff_events import handoff_events, handoff_ready
+
+logger = logging.getLogger("byq.research.continuation")
+
+# Data-ready continuations reuse the task-bound budget ledger, dispatch and
+# MCP-admission seam. They are bounded to one conservative model turn per
+# produced signal snapshot and never require an inferred user token grant.
+DATA_READY_EVENT_PREFIX = "ready-v1:"
+DATA_READY_TOKEN_LIMIT = 1048576 + 8192
+DATA_READY_MAX_TURNS = 8
+DATA_READY_TURN_TIMEOUT_SECONDS = 900
+
+
+def _event_key(event: dict) -> str:
+    """Deterministic at-most-once identity for a domain continuation event."""
+    digest = hashlib.sha256(json.dumps(event, sort_keys=True).encode()).hexdigest()
+    if event.get('data_ready'):
+        return DATA_READY_EVENT_PREFIX + digest
+    if event.get('kind') in {'permission_handoff', 'approval_handoff'}:
+        return 'handoff-v1:' + digest
+    return digest
 
 
 def _positive(value: object, name: str, maximum: int) -> int:
@@ -88,6 +109,31 @@ class ResearchContinuationMixin:
         if datetime.fromisoformat(ledger['expires_at']) <= datetime.now(timezone.utc):
             return 'permission_expired'
         return None
+
+    @staticmethod
+    def _data_ready_blocked_reason(task, conversation):
+        """Data-ready turns are bounded by task/conversation lifecycle only.
+
+        They never authorize a domain action; every next action still needs its
+        own approval, and the reservation carries no inferred user token grant.
+        """
+        if task['status'] in {'completed', 'cancelled', 'failed'}:
+            return 'task_terminal'
+        if conversation['status'] != 'active':
+            return 'conversation_inactive'
+        return None
+
+    @staticmethod
+    def _continuation_blocked_reason(task, conversation, receipt=None):
+        """Single admission gate for both budgeted and data-ready receipts."""
+        if receipt is not None and receipt.get('grant_kind') == 'data_ready':
+            reason = ResearchContinuationMixin._data_ready_blocked_reason(task, conversation)
+            if reason is not None:
+                return reason
+            if datetime.fromisoformat(receipt['expires_at']) <= datetime.now(timezone.utc):
+                return 'permission_expired'
+            return None
+        return ResearchContinuationMixin._permission_blocked_reason(task, conversation)
 
     @staticmethod
     def _continuation_view(task, conversation):
@@ -236,6 +282,52 @@ class ResearchContinuationMixin:
                 {'budget': [*rows, receipt], 'task': task_id})
             return receipt
 
+    def reserve_data_ready_budget(self, task_id: str, *, trusted_context: dict,
+            event_key: str, input_sha256: str, instruction: str | None = None,
+            _connection=None) -> dict:
+        """Reserve one bounded data-ready turn without an inferred token grant.
+
+        This is only reachable from the closed task-bound scan below, after a
+        validated signal snapshot exists. It authorizes no domain action; the
+        normal MCP admission and per-action approvals still apply.
+        """
+        from .research import IdempotencyConflict
+        if not isinstance(event_key, str) or not event_key.startswith(DATA_READY_EVENT_PREFIX):
+            raise ValueError('invalid data-ready event identity')
+        if not isinstance(input_sha256, str) or re.fullmatch(r'[0-9a-f]{64}', input_sha256) is None:
+            raise ValueError('invalid continuation input digest')
+        if instruction is not None and (not isinstance(instruction, str) or len(instruction) > 8000
+                or hashlib.sha256(instruction.encode()).hexdigest() != input_sha256):
+            raise ValueError('continuation instruction digest mismatch')
+        with self._transaction() if _connection is None else nullcontext(_connection) as connection:
+            task, conversation = self._continuation_task(connection, task_id, trusted_context, human=False)
+            rows = task.get('continuation_budget') or []
+            for row in rows:
+                if row['event_key'] == event_key:
+                    if (row['input_sha256'], row['token_limit'], row.get('grant_kind')) != (
+                            input_sha256, DATA_READY_TOKEN_LIMIT, 'data_ready'):
+                        raise IdempotencyConflict('continuation event input conflicts')
+                    return row
+            if self._data_ready_blocked_reason(task, conversation) is not None:
+                raise ValueError('data-ready continuation is inactive')
+            if any(row['status'] != 'settled' for row in rows):
+                raise ValueError('previous continuation result is unconfirmed')
+            if len(rows) >= DATA_READY_MAX_TURNS:
+                raise ValueError('continuation budget exhausted')
+            now = datetime.now(timezone.utc)
+            receipt = {'reservation_id': 'continuation_' + uuid.uuid4().hex,
+                'grant_kind': 'data_ready', 'grant_version': None, 'event_key': event_key,
+                'input_sha256': input_sha256, 'token_limit': DATA_READY_TOKEN_LIMIT,
+                'status': 'reserved', 'run_id': None, 'charged_tokens': None,
+                'settlement_sha256': None, 'created_at': now.isoformat(), 'instruction': instruction,
+                'dispatch_attempts': 0, 'next_attempt_at': now.isoformat(),
+                'expires_at': (now + timedelta(seconds=DATA_READY_TURN_TIMEOUT_SECONDS)).isoformat()}
+            execute(connection, 'UPDATE research_tasks SET continuation_budget = :budget, continuation_blocked_reason=NULL WHERE task_id = :task',
+                {'budget': [*rows, receipt], 'task': task_id})
+            logger.info("data-ready continuation enqueued: task=%s event=%s reservation=%s",
+                task_id, event_key, receipt['reservation_id'])
+            return receipt
+
     def claim_conversation_continuation(self, conversation_id: str, *, trusted_context: dict, admit: bool = True) -> dict:
         """Project durable terminal domain rows into one original-task intent.
 
@@ -246,16 +338,21 @@ class ResearchContinuationMixin:
             return {'status': 'blocked', 'reason': 'budget_enforcement_unqualified'}
         owner, workspace = trusted_context.get('owner_principal'), trusted_context.get('workspace_id')
         with self._transaction() as connection:
-            tasks = execute(connection, '''SELECT task_id FROM research_tasks
-                WHERE conversation_id=:conversation AND owner_principal=:owner AND workspace_id=:workspace
-                  AND continuation_permission IS NOT NULL
-                ORDER BY EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(continuation_budget, '[]'::jsonb)) r WHERE r->>'status' != 'settled') DESC, continuation_checked_at NULLS FIRST,task_id LIMIT 64''',
+            tasks = execute(connection, '''SELECT t.task_id FROM research_tasks t
+                WHERE t.conversation_id=:conversation AND t.owner_principal=:owner AND t.workspace_id=:workspace
+                  AND (t.continuation_permission IS NOT NULL OR EXISTS (
+                        SELECT 1 FROM signal_producer_jobs j JOIN artifacts a ON a.artifact_id=j.result_artifact_id
+                        WHERE j.task_id=t.task_id AND j.owner_principal=:owner AND j.workspace_id=:workspace
+                          AND j.status='completed' AND a.task_id=j.task_id
+                          AND a.owner_principal=j.owner_principal AND a.workspace_id=j.workspace_id
+                          AND a.kind='signal_snapshot' AND a.status='validated'))
+                ORDER BY EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(t.continuation_budget, '[]'::jsonb)) r WHERE r->>'status' != 'settled') DESC, t.continuation_checked_at NULLS FIRST,t.task_id LIMIT 64''',
                 {'conversation': conversation_id, 'owner': owner, 'workspace': workspace})
             for selected in tasks:
                 task, conversation = self._continuation_task(connection, selected['task_id'], trusted_context, human=False)
                 execute(connection, 'UPDATE research_tasks SET continuation_checked_at=now() WHERE task_id=:task',
                     {'task': task['task_id']})
-                permission = task['continuation_permission']
+                permission = task.get('continuation_permission')
                 ledger = task.get('continuation_budget') or []
                 pending = next((r for r in ledger if r['status'] != 'settled' and r.get('instruction')), None)
                 if pending is not None:
@@ -268,8 +365,9 @@ class ResearchContinuationMixin:
                     # Receipt watches are bounded independently from dispatch.
                     # Expired/unknown liabilities remain charged indefinitely;
                     # stopping automatic reconciliation never means zero spend.
-                    if (now >= datetime.fromisoformat(permission['expires_at'])
-                            or pending.get('reconcile_attempts', 0) >= 256):
+                    permission_expired = (permission is not None
+                        and now >= datetime.fromisoformat(permission['expires_at']))
+                    if permission_expired or pending.get('reconcile_attempts', 0) >= 256:
                         continue
                     if now < datetime.fromisoformat(pending.get('next_reconcile_at', pending['created_at'])):
                         return {'status': 'waiting'}
@@ -279,45 +377,86 @@ class ResearchContinuationMixin:
                     execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
                         {'budget': ledger, 'task': task['task_id']})
                     return self._continuation_intent(task, conversation, pending)
-                if self._permission_blocked_reason(task, conversation) is not None:
-                    continue
-                if task.get('continuation_blocked_reason') == 'continuation_needs_attention':
-                    continue
-                if len(ledger) >= permission['max_turns']:
-                    continue
-                remaining = permission['token_limit'] - sum(r['charged_tokens'] for r in ledger if r['status'] == 'settled')
-                if remaining < 1048576 + 8192:
-                    continue
-                params = {'task': task['task_id'], 'owner': owner, 'workspace': workspace,
-                    'since': permission['created_at'], 'artifacts': permission['confirmed_artifact_ids']}
+                budgeted = permission is not None
+                if budgeted:
+                    if self._permission_blocked_reason(task, conversation) is not None:
+                        continue
+                    if task.get('continuation_blocked_reason') == 'continuation_needs_attention':
+                        continue
+                    if len(ledger) >= permission['max_turns']:
+                        continue
+                    remaining = permission['token_limit'] - sum(r['charged_tokens'] for r in ledger if r['status'] == 'settled')
+                    if remaining < 1048576 + 8192:
+                        continue
+                    params = {'task': task['task_id'], 'owner': owner, 'workspace': workspace,
+                        'since': permission['created_at'], 'artifacts': permission['confirmed_artifact_ids']}
+                else:
+                    if self._data_ready_blocked_reason(task, conversation) is not None:
+                        continue
+                    if len(ledger) >= DATA_READY_MAX_TURNS:
+                        continue
+                    params = {'task': task['task_id'], 'owner': owner, 'workspace': workspace,
+                        'since': None, 'artifacts': []}
                 events = []
-                for table, identity, artifact in (
-                    ('ml_training_runs', 'training_run_id', 'ml_strategy_artifact_id'),
-                    ('ml_prediction_runs', 'prediction_run_id', 'ml_strategy_artifact_id'),
-                    ('signal_producer_jobs', 'job_id', 'strategy_version_artifact_id'),
-                    ('backtest_jobs', 'job_id', 'strategy_version_artifact_id'),
-                ):
-                    # Table/column choices are a closed constant set. Exact
-                    # confirmed strategy lineage is required for every event.
-                    rows = execute(connection, f'''SELECT {identity} AS identity, status, updated_at
-                        FROM {table} WHERE task_id=:task AND owner_principal=:owner AND workspace_id=:workspace
-                          AND {artifact} IN (SELECT jsonb_array_elements_text(CAST(:artifacts AS JSONB)))
-                          AND status IN ('completed','failed','cancelled') AND updated_at >= CAST(:since AS TIMESTAMPTZ)
-                        ORDER BY updated_at,{identity} LIMIT 64''', params)
-                    events.extend({'kind': table, **row} for row in rows)
+                if budgeted:
+                    for table, identity, artifact in (
+                        ('ml_training_runs', 'training_run_id', 'ml_strategy_artifact_id'),
+                        ('ml_prediction_runs', 'prediction_run_id', 'ml_strategy_artifact_id'),
+                        ('backtest_jobs', 'job_id', 'strategy_version_artifact_id'),
+                    ):
+                        # Table/column choices are a closed constant set. Exact
+                        # confirmed strategy lineage is required for every event.
+                        rows = execute(connection, f'''SELECT {identity} AS identity, status, updated_at
+                            FROM {table} WHERE task_id=:task AND owner_principal=:owner AND workspace_id=:workspace
+                              AND {artifact} IN (SELECT jsonb_array_elements_text(CAST(:artifacts AS JSONB)))
+                              AND status IN ('completed','failed','cancelled') AND updated_at >= CAST(:since AS TIMESTAMPTZ)
+                            ORDER BY updated_at,{identity} LIMIT 64''', params)
+                        events.extend({'kind': table, **row} for row in rows)
+                # Data-ready signal jobs are the one terminal-ready outcome that
+                # wakes the conversation: the job completed AND its produced
+                # signal_snapshot artifact is validated. Failures never wake.
+                ready_rows = execute(connection, '''SELECT j.job_id AS identity, 'completed' AS status,
+                        j.updated_at, j.result_artifact_id
+                    FROM signal_producer_jobs j JOIN artifacts a ON a.artifact_id=j.result_artifact_id
+                    WHERE j.task_id=:task AND j.owner_principal=:owner AND j.workspace_id=:workspace
+                      AND j.status='completed' AND a.task_id=j.task_id
+                      AND a.owner_principal=j.owner_principal AND a.workspace_id=j.workspace_id
+                      AND a.kind='signal_snapshot' AND a.status='validated'
+                      AND (CAST(:since AS TIMESTAMPTZ) IS NULL OR j.updated_at >= CAST(:since AS TIMESTAMPTZ))
+                    ORDER BY j.updated_at, j.job_id LIMIT 64''', params)
+                events.extend({'kind': 'signal_producer_jobs', 'data_ready': True, **row} for row in ready_rows)
                 unseen = [event for event in events if not any(
-                    row['event_key'] == hashlib.sha256(json.dumps(event, sort_keys=True).encode()).hexdigest()
-                    for row in ledger)]
-                if not unseen:
+                    row['event_key'] == _event_key(event) for row in ledger)]
+                if not unseen and budgeted:
                     events = handoff_events(connection, task, conversation)
                 for event in sorted(events, key=lambda e: (e['updated_at'], e['kind'], e['identity'])):
-                    event_key = hashlib.sha256(json.dumps(event, sort_keys=True).encode()).hexdigest()
-                    if event['kind'] in {'permission_handoff', 'approval_handoff'}:
-                        event_key = 'handoff-v1:' + event_key
+                    event_key = _event_key(event)
                     if any(r['event_key'] == event_key for r in ledger):
+                        if event.get('data_ready'):
+                            logger.debug("data-ready continuation already reserved: task=%s event=%s",
+                                task['task_id'], event_key)
                         continue
                     if not admit:
                         return {'status': 'eligible', 'task_id': task['task_id']}
+                    if event.get('data_ready') and not budgeted:
+                        instruction = ('BYQ trusted task continuation. Resume only the original research goal for task '
+                            + task['task_id'] + '. The signal/data preparation this task waited on is now ready: '
+                            'signal_producer_job ' + str(event['identity']) + ' completed with immutable validated '
+                            'signal_snapshot ' + str(event['result_artifact_id']) + '. Re-read this exact task and its '
+                            'progress through BeyondQuant MCP (byq_research_get / byq_backtest_task_get). Reconcile the '
+                            'exact original object before any write. Apply current authorization to each prediction, '
+                            'signal, backtest and comparison action separately. A prior strategy or action approval is '
+                            'not blanket authorization. If approval is needed, persist/request it and explain the '
+                            'blocker. The injected identity is authoritative. Workspace/conversation-wide context and '
+                            'notification inbox calls (including byq_agent_context) are unavailable in this task-bound '
+                            'turn; read only the exact task. Background web search is unavailable. Preserve the original '
+                            'goal; update its durable progress and exact evidence. A completed model turn does not mean '
+                            'the research goal is complete. Do not create a new task or choose a different workspace object.')
+                        receipt = self.reserve_data_ready_budget(task['task_id'], trusted_context=trusted_context,
+                            event_key=event_key,
+                            input_sha256=hashlib.sha256(instruction.encode()).hexdigest(),
+                            instruction=instruction, _connection=connection)
+                        return self._continuation_intent(task, conversation, receipt)
                     instruction = ('BYQ trusted task continuation. Resume only the original research goal for task '
                         + task['task_id'] + '. Re-read this exact task and its progress through BeyondQuant MCP. '
                         'The confirmed strategy lineage is ' + json.dumps(permission['confirmed_artifact_ids']) + '. '
@@ -354,7 +493,7 @@ class ResearchContinuationMixin:
             row = next((r for r in rows if r['reservation_id'] == reservation_id), None)
             now = datetime.now(timezone.utc)
             if (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1' or row is None or row['status'] != 'reserved'
-                    or self._permission_blocked_reason(task, conversation) is not None
+                    or self._continuation_blocked_reason(task, conversation, row) is not None
                     or datetime.fromisoformat(row['expires_at']) <= now
                     or datetime.fromisoformat(row['next_attempt_at']) > now or row['dispatch_attempts'] >= 8):
                 return {'dispatch': False}
@@ -375,7 +514,7 @@ class ResearchContinuationMixin:
     def _continuation_intent(task: dict, conversation: dict, receipt: dict) -> dict:
         return {'status': 'intent', 'task_id': task['task_id'], 'conversation_id': task['conversation_id'],
             'session_id': conversation['runtime_session_id'], 'trace_id': conversation['trace_id'],
-            'may_dispatch': ResearchContinuationMixin._permission_blocked_reason(task, conversation) is None
+            'may_dispatch': ResearchContinuationMixin._continuation_blocked_reason(task, conversation, receipt) is None
                 and datetime.fromisoformat(receipt['expires_at']) > datetime.now(timezone.utc),
             'receipt': receipt, 'reservation': {'schema_version': 'task-continuation-reservation.v1',
                 'reservation_id': receipt['reservation_id'], 'task_id': task['task_id'],

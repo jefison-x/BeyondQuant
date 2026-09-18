@@ -30,9 +30,17 @@ def test_terminal_notification_claim_and_dispatch_are_durable_and_once(monkeypat
         assert store.claim_conversation_continuation(conversation['conversation_id'], trusted_context=context)['status'] == 'waiting'
         response = client.post('/v1/research/backtest-tasks', json=payload)
         assert response.status_code == 202, response.text
-        # A synthetic terminal failure row is the notification fixture. This
-        # test does not claim that a Worker executed a real strategy.
-        jobs._execute("UPDATE signal_producer_jobs SET status='failed',updated_at=now() WHERE task_id=:task", {'task': task})
+        # A synthetic terminal-ready row is the notification fixture: the job
+        # completed and its produced signal_snapshot is validated. This test
+        # does not claim that a Worker executed a real strategy.
+        signal_job = jobs._fetch_one("""SELECT job_id FROM signal_producer_jobs
+            WHERE task_id=:task ORDER BY created_at DESC LIMIT 1""", {'task': task})
+        snapshot = store.create_artifact({'task_id': task, 'kind': 'signal_snapshot',
+            'content': {'synthetic': 'terminal-notification'}, 'lineage': [],
+            'trace_id': context['trace_id'], 'idempotency_key': 'terminal-notification-snapshot'})
+        store.transition('artifact', snapshot['artifact_id'], 'validated', 'terminal-notification-validate')
+        jobs._execute("""UPDATE signal_producer_jobs SET status='completed', result_artifact_id=:artifact,
+            updated_at=now() WHERE job_id=:job""", {'artifact': snapshot['artifact_id'], 'job': signal_job['job_id']})
         assert store.claim_conversation_continuation(conversation['conversation_id'],
             trusted_context=context, admit=False)['status'] == 'eligible'
         with ThreadPoolExecutor(max_workers=2) as pool:

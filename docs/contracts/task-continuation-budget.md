@@ -23,6 +23,23 @@ validated 制品身份/内容哈希；同键同输入不延长有效期，不提
 预留，`budget_exhausted` 与 `continuation_needs_attention` 分别说明额度或执行阻塞。
 模型 completed 不能据此写任务 completed，原研究完成证据及领域 job 校验仍为权威。
 
+## 数据就绪自动续接（ADR-0077 Proposed）
+
+除用户确认的 `continuation_permission` 预算许可外，同一任务续接合同还承载一种**数据就绪**事件：
+当 `signal_producer_jobs` 为 `completed` 且其产出的 `signal_snapshot` artifact 为 `validated` 时，
+按 conversation/owner/workspace 的既有封闭扫描生成至多一个 `ready-v1:` 事件。
+
+- 事件身份绑定 `(job, result_artifact, status, updated_at)`；同一事件已存在账本时不再预留，
+  任务行锁保证并发 `peek/claim`、进程重启、重复投递最多一次。
+- 该事件无需预先的用户 token 许可，但严格有界：每任务最多 8 个数据就绪回合、每回合保守上界
+  `1048576+8192` token、900 秒期限、最多一个未结算预留，并遵循 `BYQ_F6_EXECUTOR_ENABLED`
+  与 Runtime 续接资格。它只是服务端自有回合，不授权任何领域动作。
+- 复用既有 `continuation_budget` 账本、`/internal/task-continuation/...` 接口、
+  Gateway `TaskContinuationDelivery` 与 adapter prompt 路径；`continuation_scope.py` 继续对
+  续接回合内的 MCP 工具执行原任务范围准入。外owner/外工作区/无关会话不产生事件。
+- `failed`/`cancelled` 的 signal job 不产生数据就绪事件；`completed` 但没有已验证快照也不触发。
+- 已有 `continuation_permission` 的任务仍在用户许可的 token/回合额度内预留同一就绪事件，行为不变。
+
 ## 持久通知、MCP 和恢复
 
 Backend 精确查询原 owner/workspace/conversation/task 及已确认策略 lineage 的训练、预测、

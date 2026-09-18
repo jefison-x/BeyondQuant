@@ -33,6 +33,9 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
 - ADR-0064 允许持久化最小 BYQ 执行证据，并仅在原执行者失效可证明时恢复收尾；不恢复模型或研究。
 - ADR-0074 定义 0.10 的数据基准与资格调查边界：先冻结数据基准合同，HIST 只做调查、深度只做环境资格，
   不实现数据扩容、不引入 HIST、不授权 GPU/有限调参/新 Worker 拓扑。
+- ADR-0077（Proposed）在既有任务绑定续接合同内增加数据就绪自动续接：`completed` signal job 且
+  产出 `validated signal_snapshot` 时经既有事件身份/账本/Gateway 消费者生成至多一个有界续接回合；
+  不改数据面、sandbox、模型许可或无关服务，待维护者接受后成为当前规范。
 
 - ADR-0020 定义 Phase 34 的 Stock Pool identity、不可变 snapshot、lifecycle 和
   cross-domain reference 边界。
