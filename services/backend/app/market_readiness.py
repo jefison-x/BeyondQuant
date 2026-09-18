@@ -1141,6 +1141,7 @@ class MarketReadinessStore(PgStoreMixin):
             anchors[str(row["symbol"])] = float(row.get("adj_factor") or 1.0)
         raw_bars: list[dict[str, object]] = []
         research_bars: list[dict[str, object]] = []
+        research_multipliers: list[float] = []
         for row in rows:
             symbol = str(row["symbol"])
             date = str(row["trade_date"])
@@ -1164,6 +1165,7 @@ class MarketReadinessStore(PgStoreMixin):
             for field in daily_basic_fields:
                 adjusted[f"daily_basic__{field}"] = basic_values.get(field)
             research_bars.append(adjusted)
+            research_multipliers.append(multiplier)
         actions = self._execute(
             """SELECT symbol, end_date, announcement_date, implementation_announcement_date,
                       record_date, ex_date, pay_date, share_listing_date,
@@ -1264,6 +1266,7 @@ class MarketReadinessStore(PgStoreMixin):
             for row in rows
         ]
         return {"bars": raw_bars, "research_bars": research_bars,
+                "research_multipliers": research_multipliers,
                 "adjustment_factors": adjustment_factors,
                 "corporate_actions": normalized_actions, "benchmark": benchmark,
                 "declared": declared, "research_view_sha256": identity}

@@ -7,6 +7,7 @@ WORKDIR /app
 
 COPY services/backend/pyproject.toml ./
 COPY services/backend/app ./app
+COPY packages/contracts ./packages/contracts
 COPY workers/signal/worker.py ./worker.py
 
 RUN pip install --no-cache-dir . \

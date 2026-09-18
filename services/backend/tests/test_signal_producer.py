@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from datetime import date, timedelta
 from types import SimpleNamespace
@@ -8,7 +9,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
-from app.backtest import BacktestJobStore, LocalObjectStore
+from app.backtest import (
+    BacktestJobStore, LocalObjectStore, membership_fingerprint, signal_snapshot_content_sha256,
+)
 from app.backtest_task import task_id_from_signal_job
 from app.market_data import MarketDataStore
 from app.market_automation import MarketAutomationStore
@@ -17,8 +20,10 @@ from app.paper_trading import PaperTradingStore
 from app.research import ResearchStore
 from app.security_master import SecurityMasterStore
 from app.signal_producer import (
-    CallableSandboxExecutor, SignalJobStore, SignalProducerCoordinator, promote_waiting_signal_jobs,
+    CallableSandboxExecutor, SignalJobStore, SignalProducerCoordinator, prepare_signal_job_input,
+    promote_waiting_signal_jobs,
 )
+from packages.contracts.bars_frame import frame_raw_rows, frame_research_rows
 from tests.workspace_helpers import trusted_agent_context
 
 
@@ -188,7 +193,10 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
     def fake_sandbox(payload: dict[str, object], timeout: float) -> dict[str, object]:
         assert timeout == 5.0
         assert "database" not in str(payload).lower()
-        assert set(payload["bars"][0]) <= {
+        assert payload["bars"]["schema_version"] == "bars_frame.v1"
+        assert payload["bars"]["basis"] == "research"
+        rows = frame_research_rows(payload["bars"])
+        assert set(rows[0]) <= {
             "symbol", "trade_date", "open", "high", "low", "close", "prev_close",
             "volume", "is_suspended", "up_limit", "down_limit",
         }
@@ -505,11 +513,14 @@ def test_partitioned_job_promotes_only_after_all_partitions_are_ready(monkeypatc
     document = fixture.jobs._fetch_one(
         "SELECT input_json FROM signal_producer_jobs WHERE job_id=:id", {"id": job["job_id"]}
     )["input_json"]
-    bar_dates = {bar["trade_date"] for bar in document["bars"]}
+    assert "bars_frame" in document
+    assert "bars" not in document and "research_bars" not in document
+    raw_rows = frame_raw_rows(document["bars_frame"])
+    bar_dates = {bar["trade_date"] for bar in raw_rows}
     assert bar_dates == {
         "2026-02-02", "2026-02-03", "2026-07-01", "2026-07-02",
     }
-    assert len(document["research_bars"]) == len(document["bars"])
+    assert len(document["bars_frame"]["research_fields"]) == len(document["bars_frame"]["bars_fields"])
     assert document["data_readiness"]["requirement_plan_sha256"] == plan["requirement_plan_sha256"]
     assert document["data_readiness"]["ready_input_sha256"] == job["readiness"]["ready_input_sha256"]
     expected = fixture.readiness.build_partitioned_ready_input(plan["requirements"])
@@ -556,6 +567,153 @@ def test_partitioned_job_with_mid_window_delisting_promotes(monkeypatch, tmp_pat
     assert job["status"] == "queued"
     assert job["readiness"]["state"] == "ready"
     assert job["readiness"]["ready_partitions"] == 2
+
+    fixture.jobs.close()
+    fixture.market.close()
+    fixture.paper.close()
+    fixture.research.close()
+    fixture.backtests.close()
+
+
+def test_prepare_signal_job_input_is_deterministic_and_content_addressed() -> None:
+    def build(*, reverse: bool) -> dict[str, object]:
+        rows = [
+            (f"{symbol:06d}.SZ", f"2026-01-{session:02d}")
+            for symbol in range(3) for session in range(1, 5)
+        ]
+        if reverse:
+            rows = list(reversed(rows))
+        bars: list[dict[str, object]] = []
+        research: list[dict[str, object]] = []
+        multipliers: list[float] = []
+        for index, (symbol, trade_date) in enumerate(rows):
+            close = round(10.0 + int(symbol[:6]) + int(trade_date[-2:]) * 0.1, 2)
+            raw = {
+                "symbol": symbol, "trade_date": trade_date, "open": close, "high": close,
+                "low": close, "close": close, "prev_close": close, "volume": 1000,
+                "is_suspended": False, "up_limit": round(close * 1.1, 2),
+                "down_limit": round(close * 0.9, 2),
+            }
+            factor = 1.05
+            adjusted = dict(raw)
+            for field in ("open", "high", "low", "close", "prev_close", "up_limit", "down_limit"):
+                adjusted[field] = round(float(adjusted[field]) * factor, 8)
+            bars.append(raw)
+            research.append(adjusted)
+            multipliers.append(factor)
+        return prepare_signal_job_input(
+            strategy_version_artifact_id="artifact_strategy_1", strategy_version_id="version_1",
+            source_fingerprint="f" * 64,
+            script="class CustomStrategy:\n    def generate_signals(self, data, parameters=None):\n        return {}\n",
+            stock_pool_snapshot_id="pool_snapshot_1", stock_pool_id="pool_1",
+            membership_fingerprint="m" * 64, symbols=sorted({row[0] for row in rows}),
+            bars=bars, parameters={"lookback": 2},
+            execution={"lot_size": 100, "max_runtime_seconds": 5}, order_quantity=100,
+            research_bars=research, research_multipliers=multipliers,
+        )
+
+    first = build(reverse=False)
+    second = build(reverse=True)
+    assert first["input_sha256"] == second["input_sha256"]
+
+
+def test_columnar_document_yields_identical_snapshot_identity_to_legacy_rows() -> None:
+    bars = [
+        {
+            "symbol": SYMBOL, "trade_date": trade_date, "open": close, "high": close,
+            "low": close, "close": close, "prev_close": previous, "volume": 1000,
+            "is_suspended": False, "up_limit": round(close * 1.1, 2),
+            "down_limit": round(close * 0.9, 2),
+        }
+        for trade_date, close, previous in (("2026-01-05", 10.0, 10.0), ("2026-01-06", 11.0, 10.0))
+    ]
+    multipliers = [1.0, 1.0]
+    research = [dict(row) for row in bars]
+    document = prepare_signal_job_input(
+        strategy_version_artifact_id="artifact_" + "a" * 32, strategy_version_id="version_1",
+        source_fingerprint="f" * 64,
+        script="class CustomStrategy:\n    def generate_signals(self, data, parameters=None):\n        return {}\n",
+        stock_pool_snapshot_id="pool_snapshot_1", stock_pool_id="pool_1",
+        membership_fingerprint=membership_fingerprint([SYMBOL]), symbols=[SYMBOL], bars=bars,
+        parameters={"lookback": 2}, execution={"lot_size": 100, "max_runtime_seconds": 5},
+        order_quantity=100, research_bars=research, research_multipliers=multipliers,
+    )
+    legacy = dict(document)
+    legacy.pop("bars_frame")
+    legacy["bars"] = bars
+    legacy["research_bars"] = research
+
+    def executor(payload: dict[str, object], timeout_seconds: float) -> dict[str, object]:
+        return {
+            "schema_version": "byq-signal-sandbox-response-v1",
+            "signals": [{"symbol": SYMBOL, "trade_date": "2026-01-06", "signal": 1}],
+        }
+
+    coordinator = SignalProducerCoordinator(None, None, CallableSandboxExecutor(executor))
+    columnar_snapshot = coordinator._produce({"input": document})
+    legacy_snapshot = coordinator._produce({"input": legacy})
+    assert signal_snapshot_content_sha256(columnar_snapshot) == signal_snapshot_content_sha256(legacy_snapshot)
+
+
+def _large_ready_input(symbols: int = 300, sessions: int = 727) -> dict[str, object]:
+    bars: list[dict[str, object]] = []
+    research: list[dict[str, object]] = []
+    multipliers: list[float] = []
+    for symbol_index in range(symbols):
+        symbol = f"{symbol_index:06d}.SZ"
+        for session in range(sessions):
+            trade_date = f"2023-{1 + session // 28:02d}-{1 + session % 28:02d}"
+            close = round(10.0 + (session % 20) * 0.01, 2)
+            raw = {
+                "symbol": symbol, "trade_date": trade_date, "open": close, "high": close,
+                "low": close, "close": close, "prev_close": close, "volume": 1000,
+                "is_suspended": False, "up_limit": round(close * 1.1, 2),
+                "down_limit": round(close * 0.9, 2),
+            }
+            bars.append(raw)
+            research.append(dict(raw))
+            multipliers.append(1.0)
+    return {
+        "bars": bars, "research_bars": research, "research_multipliers": multipliers,
+        "research_view_sha256": "r" * 64, "corporate_actions": [], "benchmark": [], "declared": {},
+    }
+
+
+def test_promotion_builds_columnar_frame_without_size_failure(monkeypatch, tmp_path) -> None:
+    fixture = _seed_ready_signal_fixture(monkeypatch, tmp_path)
+    request = _signal_request(
+        fixture, snapshot_id=fixture.pool["snapshot"]["snapshot_id"],
+        start="2026-01-05", end="2026-01-06", key="large-frame-job",
+    )
+    created = fixture.client.post("/v1/research/signal-producer/jobs", json=request)
+    assert created.status_code == 202, created.text
+    job_id = created.json()["job"]["job_id"]
+
+    large = _large_ready_input()
+    monkeypatch.setattr(
+        fixture.readiness, "assess",
+        lambda requirement: {"state": "ready", "ready_input_sha256": "a" * 64},
+    )
+    monkeypatch.setattr(
+        fixture.readiness, "build_ready_input", lambda requirement, **kwargs: large,
+    )
+
+    assert promote_waiting_signal_jobs(fixture.jobs, fixture.readiness) == 1
+    job = fixture.jobs.get(job_id, trusted_owner="signal-owner")
+    assert job["status"] == "queued"
+    assert job["input"]["bar_count"] == 300 * 727
+
+    document = fixture.jobs._fetch_one(
+        "SELECT input_json FROM signal_producer_jobs WHERE job_id=:id", {"id": job_id}
+    )["input_json"]
+    assert document["bars_frame"]["schema_version"] == "bars_frame.v1"
+    assert "bars" not in document and "research_bars" not in document
+    assert len(frame_raw_rows(document["bars_frame"])) == 300 * 727
+    encoded = json.dumps(
+        document, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    assert len(encoded) < 32 * 1024 * 1024
+    print(f"\npromoted job document={len(encoded) / 1024 / 1024:.2f}MiB")
 
     fixture.jobs.close()
     fixture.market.close()

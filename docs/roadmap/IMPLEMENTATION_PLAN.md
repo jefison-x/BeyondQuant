@@ -944,3 +944,17 @@ exclusive: a session is not applicable when `trade_date < list_date`, or when `d
 `missing`; symbols without `delist_date` and sessions strictly before `list_date` are unchanged. This
 matches the lifecycle semantics already used by stock-pool selection (`delist_date > :date`). No Accepted
 ADR text is changed.
+
+## Maintenance — Bounded signal sandbox input encoding (ADR-0023)
+
+Promoting a frozen signal/backtest job for a 300-symbol × ~727-session panel overflowed ADR-0023's
+32 MiB `MAX_JOB_BYTES`/`MAX_REQUEST_BYTES` envelope because `prepare_signal_job_input` embedded the raw
+execution bars and the adjusted research bars as two full lists of per-row mappings, while the sandbox
+consumes only the research view. The frozen panel is now stored once as a deterministic `bars_frame.v1`
+columnar frame (`packages/contracts/bars_frame.py`): canonical symbol/date index lists, per-field primitive
+arrays, finite floats, and the per-row adjustment multiplier that reconstructs the adjusted research view
+exactly. The coordinator (ADR-0029 decision 4) materializes the research frame for the sandbox request,
+while the raw execution panel is preserved for the immutable signal snapshot. Legacy row-dict documents
+remain decodable by both the sandbox runner and the coordinator. Both `MAX_JOB_BYTES` and
+`MAX_REQUEST_BYTES` stay at 32 MiB and the credential-free sandbox resource envelope is unchanged. No
+Accepted ADR text is changed.

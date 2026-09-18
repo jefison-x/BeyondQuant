@@ -11,8 +11,19 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from bars_frame import frame_research_rows, is_bars_frame
 
-MAX_SIGNALS = 50_000
+
+# ADR-0047 decoupled the retired per-partition "50,000 symbol-session cells"
+# cap from the aggregate research view. The backend admits an aggregate only
+# through ``market_readiness.build_partitioned_ready_input(row_limit=2_000_001)``,
+# so the sandbox accepts the same admissible maximum instead of the old cell cap.
+# ``MAX_REQUEST_BYTES`` (32 MiB, server.py) stays the framed transport bound; these
+# are the secondary in-child DoS bounds, and a full aggregate panel can yield at
+# most one signal row per symbol-session.
+AGGREGATE_ROW_LIMIT = 2_000_001
+MAX_BARS_ROWS = AGGREGATE_ROW_LIMIT
+MAX_SIGNALS = AGGREGATE_ROW_LIMIT
 ALLOWED_IMPORTS = {"collections", "math", "numpy", "pandas", "statistics", "typing"}
 FORBIDDEN_CALLS = {
     "breakpoint", "compile", "eval", "exec", "getattr", "globals", "input", "locals",
@@ -109,8 +120,12 @@ def validate_source(source: object) -> str:
 
 
 def build_data(bars: object, declared: object) -> pd.DataFrame:
-    if not isinstance(bars, list) or not bars or len(bars) > 50_000:
-        raise ProtocolError("invalid_input", "bars must be a bounded non-empty list")
+    if is_bars_frame(bars):
+        # bars_frame.v1 columnar document (ADR-0023 bounded input); decode to the
+        # canonical row mappings the strategy contract consumes.
+        bars = frame_research_rows(bars)
+    if not isinstance(bars, list) or not bars or len(bars) > MAX_BARS_ROWS:
+        raise ProtocolError("invalid_input", "bars exceed the admissible aggregate row bound")
     frame = pd.DataFrame(bars)
     required = {"symbol", "trade_date", "open", "high", "low", "close", "volume"}
     if not isinstance(declared, dict):
@@ -164,7 +179,7 @@ def normalize_output(value: object, data: pd.DataFrame) -> list[dict[str, object
             seen.add(key)
             rows.append({"symbol": symbol, "trade_date": key[1], "signal": int(numeric)})
             if len(rows) > MAX_SIGNALS:
-                raise ProtocolError("invalid_output", "signal output exceeds 50000 rows")
+                raise ProtocolError("invalid_output", "signal output exceeds the admissible aggregate row bound")
     return sorted(rows, key=lambda row: (str(row["trade_date"]), str(row["symbol"])))
 
 

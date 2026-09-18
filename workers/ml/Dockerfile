@@ -11,6 +11,7 @@ RUN apt-get update \
 
 COPY services/backend/pyproject.toml ./
 COPY services/backend/app ./app
+COPY packages/contracts ./packages/contracts
 COPY workers/ml/worker.py ./worker.py
 
 RUN pip install --no-cache-dir . \

@@ -18,4 +18,4 @@ dependencies = [
 ]
 
 [tool.setuptools]
-py-modules = ["server", "runner"]
+py-modules = ["server", "runner", "bars_frame"]

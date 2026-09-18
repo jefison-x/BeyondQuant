@@ -12,6 +12,7 @@ WORKDIR /opt/byq-signal-sandbox
 COPY services/signal-sandbox/pyproject.toml ./
 COPY services/signal-sandbox/server.py ./server.py
 COPY services/signal-sandbox/runner.py ./runner.py
+COPY packages/contracts/bars_frame.py ./bars_frame.py
 
 RUN pip install --no-cache-dir . \
     && groupadd --system --gid 10002 sandbox \
