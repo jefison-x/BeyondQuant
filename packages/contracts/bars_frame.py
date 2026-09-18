@@ -15,7 +15,9 @@ the frozen bar panel:
 ``basis``
     ``"raw"`` means the ``columns`` hold the raw execution panel and every
     adjusted field is materialized as ``round(raw * multiplier, 8)``; ``"research"``
-    means ``columns`` already hold the adjusted research view the strategy sees.
+    means ``columns`` already hold the adjusted research view the strategy sees;
+    ``"snapshot"`` means ``columns`` hold a frozen execution panel with no
+    adjustment multiplier (the authoritative immutable snapshot bars).
 ``symbols`` / ``dates``
     Canonically sorted unique symbols and ISO trade dates.
 ``symbol_index`` / ``date_index``
@@ -44,6 +46,15 @@ import math
 from typing import Any
 
 BARS_FRAME_SCHEMA_VERSION = "bars_frame.v1"
+
+# ADR-0047: the retired 50,000 "symbol-session cells" bound is an invariant of
+# one independently assessable readiness partition, not of an aggregate frozen
+# panel. The backend admits an aggregate research view only through
+# ``MarketReadinessStore.build_partitioned_ready_input(row_limit=AGGREGATE_ROW_LIMIT)``
+# (``services/backend/app/market_readiness.py``), so the data-readiness builder,
+# the signal sandbox and backtest/snapshot normalization share this one
+# framework-neutral definition instead of re-declaring the literal.
+AGGREGATE_ROW_LIMIT = 2_000_001
 
 _ADJUSTED_FIELDS = ("open", "high", "low", "close", "prev_close", "up_limit", "down_limit")
 
@@ -87,10 +98,11 @@ def encode_bars_frame(
     builder's order. When ``basis == "raw"`` the raw panel is stored and the
     per-row ``multipliers`` are preserved so the research view is reconstructed
     deterministically; the encoder verifies the reconstruction exactly matches
-    ``research_bars`` before accepting the frame.
+    ``research_bars`` before accepting the frame. ``basis == "snapshot"`` stores
+    ``bars`` directly without an adjustment multiplier.
     """
-    if basis not in {"raw", "research"}:
-        raise ValueError("bars frame basis must be raw or research")
+    if basis not in {"raw", "research", "snapshot"}:
+        raise ValueError("bars frame basis must be raw, research or snapshot")
     if len(bars) != len(research_bars):
         raise ValueError("bars frame raw and research panels must have equal length")
     rows = list(bars)
@@ -116,6 +128,8 @@ def encode_bars_frame(
         for index in order:
             if basis == "research":
                 value = research_rows[index].get(field)
+            elif basis == "snapshot":
+                value = rows[index].get(field)
             elif field in _ADJUSTED_FIELDS:
                 value = rows[index].get(field)
             else:
@@ -165,10 +179,20 @@ def encode_research_frame(rows: list[dict[str, object]]) -> dict[str, object]:
     return encode_bars_frame(bars=rows, research_bars=rows, basis="research")
 
 
+def encode_snapshot_bars(bars: list[dict[str, object]]) -> dict[str, object]:
+    """Losslessly encode a frozen signal-snapshot execution panel.
+
+    Reuses ``bars_frame.v1`` so the immutable snapshot stores the 300 x 727
+    production panel columnar instead of repeating every field name per row,
+    which keeps the artifact inside the unchanged 32 MiB object bounds.
+    """
+    return encode_bars_frame(bars=bars, research_bars=bars, basis="snapshot")
+
+
 def _validated(frame: object) -> tuple[dict[str, object], int]:
     if not isinstance(frame, dict) or frame.get("schema_version") != BARS_FRAME_SCHEMA_VERSION:
         raise ValueError("unsupported bars frame schema")
-    if frame.get("basis") not in {"raw", "research"}:
+    if frame.get("basis") not in {"raw", "research", "snapshot"}:
         raise ValueError("bars frame basis is invalid")
     symbols = frame.get("symbols")
     dates = frame.get("dates")
@@ -214,16 +238,20 @@ def decode_bars_frame(frame: object, *, basis: str | None = None) -> list[dict[s
     """Expand a frame back to canonical row mappings for the requested panel."""
     validated, count = _validated(frame)
     target = validated["basis"] if basis is None else basis
-    if target not in {"raw", "research"}:
-        raise ValueError("bars frame decode basis must be raw or research")
+    if target not in {"raw", "research", "snapshot"}:
+        raise ValueError("bars frame decode basis must be raw, research or snapshot")
     if target == "raw" and validated["basis"] != "raw":
         raise ValueError("raw panel is unavailable for a research frame")
+    if target == "research" and validated["basis"] == "snapshot":
+        raise ValueError("research panel is unavailable for a snapshot frame")
+    if target == "snapshot" and validated["basis"] != "snapshot":
+        raise ValueError("snapshot panel is unavailable for this frame")
     symbols = validated["symbols"]
     dates = validated["dates"]
     symbol_index = validated["symbol_index"]
     date_index = validated["date_index"]
     columns = validated["columns"]
-    fields = validated["bars_fields"] if target == "raw" else validated["research_fields"]
+    fields = validated["bars_fields"] if target in {"raw", "snapshot"} else validated["research_fields"]
     if not isinstance(fields, list):
         raise ValueError("bars frame panel fields are invalid")
     rows: list[dict[str, object]] = []
@@ -254,6 +282,11 @@ def frame_research_rows(frame: object) -> list[dict[str, object]]:
 def frame_raw_rows(frame: object) -> list[dict[str, object]]:
     """Return the raw execution panel preserved for the signal snapshot."""
     return decode_bars_frame(frame, basis="raw")
+
+
+def frame_snapshot_rows(frame: object) -> list[dict[str, object]]:
+    """Return the frozen execution panel stored in a snapshot bars frame."""
+    return decode_bars_frame(frame, basis="snapshot")
 
 
 def is_bars_frame(value: Any) -> bool:

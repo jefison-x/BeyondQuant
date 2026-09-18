@@ -958,3 +958,31 @@ while the raw execution panel is preserved for the immutable signal snapshot. Le
 remain decodable by both the sandbox runner and the coordinator. Both `MAX_JOB_BYTES` and
 `MAX_REQUEST_BYTES` stay at 32 MiB and the credential-free sandbox resource envelope is unchanged. No
 Accepted ADR text is changed.
+
+## Maintenance — ADR-0047 aggregate bound in snapshot/backtest normalization
+
+After the columnar encoding fix, a promoted 300-symbol × ~727-session aggregate still failed at
+`services/backend/app/backtest.py` with `BacktestResourceExceeded: bars exceeds 50000 rows`. `MAX_BARS`
+and `MAX_SIGNALS` had kept the retired ADR-0028 single-partition "50,000 symbol-session cells" cap even
+though ADR-0047 decoupled that cap from aggregates. Both now reference the shared
+`AGGREGATE_ROW_LIMIT = 2_000_001` in `packages/contracts/bars_frame.py` (the same documented constant the
+sandbox runner and `build_partitioned_ready_input(row_limit=...)` use), so one source of truth covers the
+data-readiness builder, the signal sandbox, and signal-snapshot/backtest normalization. The per-partition
+`MAX_REQUIRED_CELLS`/`market_plan` 50,000-cell invariant, the 32 MiB object/transport caps
+(`MAX_JOB_BYTES`/`MAX_REQUEST_BYTES`/`MAX_RESULT_BYTES`/`MAX_SNAPSHOT_BYTES`), the MCP schema, Gateway and
+frontend are unchanged; genuinely oversized input still fails closed with a stable
+`bars exceeds ...`/`signals exceeds ...` message. No Accepted ADR text is changed.
+
+## Maintenance — Columnar immutable signal snapshot (ADR-0017/ADR-0023)
+
+A real production `signal_snapshot` for 300 symbols × 727 sessions with the full `market-data-requirement.v3`
+field set serialized to ~41 MiB, dominated by the row-mapping `bars` panel, and exceeded the unchanged
+32 MiB `MAX_SNAPSHOT_BYTES`/`MAX_ARTIFACT_JSON_BYTES` object bounds even after the `MAX_BARS` alignment.
+`normalize_signal_snapshot` now stores the frozen execution panel once with the same deterministic
+`bars_frame.v1` columnar encoding used for the sandbox/job document (`basis="snapshot"`, no adjustment
+multiplier), so the 300×727 aggregate serializes to ~14.2 MiB inside the existing caps. `signal-snapshot-v2`
+is the current shape; `snapshot_bars` decodes both v2 frames and legacy v1 row lists. Encoding is canonical
+across row order and the content-addressed identity is unchanged for identical logical input; corrupt or
+oversized frames and rows fail closed with the stable `bars exceeds ...`/frame-shape errors. The 32 MiB
+caps, sandbox resource envelope, MCP schema, Gateway and frontend are unchanged. No Accepted ADR text is
+changed.

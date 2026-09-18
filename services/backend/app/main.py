@@ -96,6 +96,7 @@ from .backtest import (
     normalize_execution_profile,
     project_backtest_summary,
     signal_snapshot_content_sha256,
+    snapshot_bars,
     membership_fingerprint,
 )
 from .backtest_task import (
@@ -3313,9 +3314,10 @@ def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
             raise ValueError("signal snapshot strategy reference is invalid")
         if snapshot_strategy.get("strategy_version_artifact_id") != request.get("strategy_version_artifact_id"):
             raise ValueError("signal snapshot does not match the selected strategy version")
-        for key in ("universe", "bars", "signals", "execution", "corporate_actions"):
+        for key in ("universe", "signals", "execution", "corporate_actions"):
             if key not in snapshot_content:
                 raise ValueError(f"signal snapshot content is missing {key}")
+        snapshot_bars_value = snapshot_bars(snapshot_content)
     version_artifact = research_store.get_artifact(request.get("strategy_version_artifact_id"))
     if version_artifact["kind"] not in {"strategy_version", "ml_strategy_version"}:
         raise ValueError("strategy_version_artifact_id must reference a supported strategy version")
@@ -3380,7 +3382,7 @@ def _validated_backtest_request(payload: dict[str, Any]) -> dict[str, object]:
             strategy_version_artifact_id=version_artifact["artifact_id"],
             approval_artifact_id=approval_artifact["artifact_id"],
             universe=snapshot_content["universe"],
-            bars=snapshot_content["bars"],
+            bars=snapshot_bars_value,
             signals=snapshot_content["signals"],
             corporate_actions=snapshot_content["corporate_actions"],
             benchmark=snapshot_content.get("benchmark", []),

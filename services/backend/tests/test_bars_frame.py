@@ -11,9 +11,11 @@ from packages.contracts.bars_frame import (
     decode_bars_frame,
     encode_bars_frame,
     encode_research_frame,
+    encode_snapshot_bars,
     frame_raw_rows,
     frame_research_rows,
     frame_row_count,
+    frame_snapshot_rows,
     is_bars_frame,
 )
 
@@ -142,3 +144,25 @@ def test_legacy_document_shape_is_not_mistaken_for_a_frame() -> None:
     assert not is_bars_frame([{"symbol": "000001.SZ"}])
     assert not is_bars_frame({"schema_version": "byq-signal-sandbox-request-v1"})
     assert is_bars_frame(encode_research_frame(_panel(1, 1)[1]))
+
+
+def test_snapshot_frame_round_trips_without_adjustment_multiplier() -> None:
+    bars, _, _ = _panel(3, 6)
+    shuffled = list(range(len(bars)))
+    random.Random(11).shuffle(shuffled)
+    frame = encode_snapshot_bars([bars[index] for index in shuffled])
+    assert frame["schema_version"] == BARS_FRAME_SCHEMA_VERSION
+    assert frame["basis"] == "snapshot"
+    assert "adjustment_multiplier" not in frame
+    assert frame_row_count(frame) == len(bars)
+    assert frame_snapshot_rows(frame) == sorted(
+        bars, key=lambda row: (row["symbol"], row["trade_date"]),
+    )
+    assert frame["symbols"] == sorted({row["symbol"] for row in bars})
+    assert frame["dates"] == sorted({row["trade_date"] for row in bars})
+    with pytest.raises(ValueError):
+        frame_raw_rows(frame)
+    with pytest.raises(ValueError):
+        frame_research_rows(frame)
+    with pytest.raises(ValueError):
+        decode_bars_frame(encode_research_frame(_panel(1, 1)[1]), basis="snapshot")
