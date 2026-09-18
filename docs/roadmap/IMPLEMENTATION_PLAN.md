@@ -31,6 +31,14 @@ factor 证据的不一致 `prev_close` 仍 fail closed。`normalize_signal_snaps
 identity 仍确定性。`SignalProducerCoordinator.run_next` 与 signal worker 现结构化记录异常类型、消息与
 traceback（不含 secrets 或完整 payload），存储的 `error_detail` 保持安全稳定。不修改 Accepted ADR 文本。
 
+Stale-lease 显式化与可逆归档（fix，构建修订 `dsh-0.1.2rc1-post-u8.135`）：host reboot 会改变
+`/proc/sys/kernel/random/boot_id`，使 reboot 前写入的 lifecycle journal `lease_identity` 永远无法重新
+claim。adapter 现将该条件（`JournalIdentityMismatch`）显式映射为 `StaleSessionLease`，经 HTTP
+`409` + machine code `stale_session_lease` 返回，区别于未知会话（404）与真实存储故障（503），且不
+再落入 503；新增可逆运维脚本 `scripts/ops/archive_stale_sessions.py`（默认 audit，`--apply` 时 MOVE
+journal/lock/session dir/gateway trace 到时间戳归档并记录 sha256 与原始路径 manifest），只读列出
+`product_conversations` 供 operator 决策，不删除任何 domain row，也不自动清理数据库。
+
 从 Phase 9 起，永久 migration source of truth 为 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`。实现 phase 前必须先检查、分类其 Community candidates。可在 BYQ-owned contracts 中重新实现 provider/engine-independent semantics，但不得复制 Community runtime、storage、provider 或 engine architecture。BaoStock、AKShare、VectorBT、PydanticAI 和 Hermes 保持排除，除非未来 Accepted ADR 明确反转。
 
 所有 phases 遵循 `docs/DEVELOPMENT_WORKFLOW.md`：只执行 `STATUS.md` 指定的 next phase；每 phase 使用 isolated worktree/branch/PR；contract/test 优先；保持 Product/Agent/Quant/Data/Engineering boundaries；CI 与 evidence 完成后才进入 merge gate。
