@@ -359,6 +359,139 @@ def test_agent_research_read_rejects_unbounded_or_unknown_input() -> None:
         )
 
 
+def _seed_ready_symbol_session(
+    store: MarketReadinessStore, symbol: str, trade_date: str, *, close: float = 10.0,
+) -> None:
+    store._execute("""INSERT INTO market_daily_bars
+        (symbol,trade_date,open,high,low,close,adjust,asset_type,data_source,
+         content_sha256,provenance_json,imported_at)
+        VALUES (:symbol,:date,:close,:close,:close,:close,'none','stock','tushare',:sha,'{}',now())""",
+        {"symbol": symbol, "date": trade_date, "close": close, "sha": f"bar-{symbol}-{trade_date}"})
+    store._execute("""INSERT INTO market_daily_status
+        (symbol,trade_date,is_suspended,pre_close,up_limit,down_limit,data_source,
+         provenance_json,content_sha256,updated_at)
+        VALUES (:symbol,:date,FALSE,:pre,:up,:down,'tushare','{}',:sha,now())""",
+        {"symbol": symbol, "date": trade_date, "pre": close - 0.5, "up": close * 1.1,
+         "down": close * 0.9, "sha": f"status-{symbol}-{trade_date}"})
+    store._execute("""INSERT INTO market_adjustment_factors
+        (symbol,trade_date,adj_factor,data_source,provenance_json,content_sha256,updated_at)
+        VALUES (:symbol,:date,1,'tushare','{}',:sha,now())""",
+        {"symbol": symbol, "date": trade_date, "sha": f"factor-{symbol}-{trade_date}"})
+
+
+def _seed_complete_session_supplements(store: MarketReadinessStore, trade_dates: list[str]) -> None:
+    for trade_date in trade_dates:
+        store._execute("""INSERT INTO market_session_supplement_completeness
+            (trade_date,adjustment_complete,corporate_actions_complete,factor_row_count,
+             corporate_action_row_count,content_sha256,provenance_json,verified_at)
+            VALUES (:date,TRUE,TRUE,1,0,:sha,'{}',now())""",
+            {"date": trade_date, "sha": f"supplement-{trade_date}"})
+
+
+def test_delist_date_and_later_sessions_are_not_required_for_delisted_symbol() -> None:
+    store = MarketReadinessStore()
+    store._execute("""INSERT INTO security_master_snapshots
+        (snapshot_id,provider,endpoint,dataset_id,request_fingerprint,statuses_json,row_count,
+         retrieved_at,requested_by) VALUES ('sms_delist_exclusive','tushare','stock_basic',
+         'delist_dataset','delist_request','[\"L\",\"D\"]',2,now(),'test')""")
+    store._execute("""INSERT INTO security_master_snapshot_members
+        (snapshot_id,symbol,local_symbol,name,exchange,list_status,list_date,delist_date,
+         asset_type,content_sha256)
+        VALUES ('sms_delist_exclusive','000001.SZ','000001','Live','SZSE','L','20240102',NULL,
+                'stock','member-live'),
+               ('sms_delist_exclusive','600837.SH','600837','Delisted','SSE','D','20230101',
+                '20240103','stock','member-delisted')""")
+    sessions = ["20240102", "20240103", "20240104"]
+    store._execute("""INSERT INTO market_trading_sessions
+        (trade_date,exchange,is_open,data_source,request_fingerprint,retrieved_at,content_sha256,updated_at)
+        VALUES ('20240102','SSE',TRUE,'tushare','cal',now(),'c2',now()),
+               ('20240103','SSE',TRUE,'tushare','cal',now(),'c3',now()),
+               ('20240104','SSE',TRUE,'tushare','cal',now(),'c4',now())""")
+    _seed_complete_session_supplements(store, sessions)
+    for trade_date in sessions:
+        _seed_ready_symbol_session(store, "000001.SZ", trade_date)
+    _seed_ready_symbol_session(store, "600837.SH", "20240102")
+
+    requirement = store.requirement(
+        symbols=["000001.SZ", "600837.SH"], start_date="2024-01-02", end_date="2024-01-04",
+        membership_fingerprint="d" * 64, security_master_snapshot_id="sms_delist_exclusive",
+    )
+
+    assessment = store.assess(requirement)
+
+    assert assessment["state"] == "ready"
+    assert assessment["missing"] == []
+    assert assessment["repair_plan"] == {"session_supplements": [], "full_sessions": []}
+    assert not any(
+        item["symbol"] == "600837.SH" and str(item["trade_date"]) >= "20240103"
+        for item in assessment["missing"]
+    )
+    store.close()
+
+
+def test_delisted_symbol_session_before_delist_date_is_still_required() -> None:
+    store = MarketReadinessStore()
+    store._execute("""INSERT INTO security_master_snapshots
+        (snapshot_id,provider,endpoint,dataset_id,request_fingerprint,statuses_json,row_count,
+         retrieved_at,requested_by) VALUES ('sms_delist_hole','tushare','stock_basic',
+         'delist_hole_dataset','delist_hole_request','[\"D\"]',1,now(),'test')""")
+    store._execute("""INSERT INTO security_master_snapshot_members
+        (snapshot_id,symbol,local_symbol,name,exchange,list_status,list_date,delist_date,
+         asset_type,content_sha256)
+        VALUES ('sms_delist_hole','600837.SH','600837','Delisted','SSE','D','20230101',
+                '20240103','stock','member-hole')""")
+    store._execute("""INSERT INTO market_trading_sessions
+        (trade_date,exchange,is_open,data_source,request_fingerprint,retrieved_at,content_sha256,updated_at)
+        VALUES ('20240102','SSE',TRUE,'tushare','cal',now(),'h2',now()),
+               ('20240103','SSE',TRUE,'tushare','cal',now(),'h3',now())""")
+    _seed_complete_session_supplements(store, ["20240102", "20240103"])
+
+    requirement = store.requirement(
+        symbols=["600837.SH"], start_date="2024-01-02", end_date="2024-01-03",
+        membership_fingerprint="e" * 64, security_master_snapshot_id="sms_delist_hole",
+    )
+
+    assessment = store.assess(requirement)
+
+    assert assessment["state"] == "missing"
+    assert assessment["missing_trade_dates"] == ["20240102"]
+    assert assessment["missing_by_dataset"] == {"trading_status": 1}
+    assert {item["trade_date"] for item in assessment["missing"]} == {"20240102"}
+    store.close()
+
+
+def test_symbol_without_delist_date_keeps_pre_list_boundary_and_full_coverage() -> None:
+    store = MarketReadinessStore()
+    store._execute("""INSERT INTO security_master_snapshots
+        (snapshot_id,provider,endpoint,dataset_id,request_fingerprint,statuses_json,row_count,
+         retrieved_at,requested_by) VALUES ('sms_no_delist','tushare','stock_basic',
+         'no_delist_dataset','no_delist_request','[\"L\"]',1,now(),'test')""")
+    store._execute("""INSERT INTO security_master_snapshot_members
+        (snapshot_id,symbol,local_symbol,name,exchange,list_status,list_date,delist_date,
+         asset_type,content_sha256)
+        VALUES ('sms_no_delist','000001.SZ','000001','Live','SZSE','L','20240102',NULL,
+                'stock','member-no-delist')""")
+    store._execute("""INSERT INTO market_trading_sessions
+        (trade_date,exchange,is_open,data_source,request_fingerprint,retrieved_at,content_sha256,updated_at)
+        VALUES ('20240101','SSE',TRUE,'tushare','cal',now(),'n1',now()),
+               ('20240102','SSE',TRUE,'tushare','cal',now(),'n2',now()),
+               ('20240103','SSE',TRUE,'tushare','cal',now(),'n3',now())""")
+    _seed_complete_session_supplements(store, ["20240101", "20240102", "20240103"])
+
+    requirement = store.requirement(
+        symbols=["000001.SZ"], start_date="2024-01-01", end_date="2024-01-03",
+        membership_fingerprint="f" * 64, security_master_snapshot_id="sms_no_delist",
+    )
+
+    assessment = store.assess(requirement)
+
+    assert assessment["state"] == "missing"
+    assert assessment["missing_trade_dates"] == ["20240102", "20240103"]
+    assert assessment["missing_by_dataset"] == {"trading_status": 2}
+    assert not any(item["trade_date"] == "20240101" for item in assessment["missing"])
+    store.close()
+
+
 def test_agent_research_marks_null_requested_fields_unusable() -> None:
     store = MarketReadinessStore()
     store._execute("""INSERT INTO market_daily_basic

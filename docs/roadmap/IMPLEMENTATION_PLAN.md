@@ -932,3 +932,15 @@ HIST 历史关系可行性调查与深度学习环境资格调查。交付物：
   禁用/启用动作与状态列同步。不修改既有 `model_command_receipts` 约束，不硬删除任何行。
 
 边界：不外泄密钥、不引入新 SDK、未知 provider/失败闭合；每切片独立 worktree/Draft PR。
+
+## Maintenance — Delist-boundary coverage correction (ADR-0028)
+
+ADR-0028 point 2 evaluates coverage over each symbol's frozen listing lifecycle. The market-readiness
+applicability filter in `services/backend/app/market_readiness.py` previously treated `delist_date` as an
+applicable session (`trade_date > delist_date`), so a mid-window delisting's delist date was required
+without bar/status proof and permanently blocked readiness and partition promotion. The boundary is now
+exclusive: a session is not applicable when `trade_date < list_date`, or when `delist_date` is present and
+`trade_date >= delist_date`. Bars/status on or after `delist_date` are never required and never appear in
+`missing`; symbols without `delist_date` and sessions strictly before `list_date` are unchanged. This
+matches the lifecycle semantics already used by stock-pool selection (`delist_date > :date`). No Accepted
+ADR text is changed.
