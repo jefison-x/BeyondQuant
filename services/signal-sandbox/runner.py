@@ -11,6 +11,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from bars_frame import frame_research_rows, is_bars_frame
+
 
 MAX_SIGNALS = 50_000
 ALLOWED_IMPORTS = {"collections", "math", "numpy", "pandas", "statistics", "typing"}
@@ -109,6 +111,10 @@ def validate_source(source: object) -> str:
 
 
 def build_data(bars: object, declared: object) -> pd.DataFrame:
+    if is_bars_frame(bars):
+        # bars_frame.v1 columnar document (ADR-0023 bounded input); decode to the
+        # canonical row mappings the strategy contract consumes.
+        bars = frame_research_rows(bars)
     if not isinstance(bars, list) or not bars or len(bars) > 50_000:
         raise ProtocolError("invalid_input", "bars must be a bounded non-empty list")
     frame = pd.DataFrame(bars)

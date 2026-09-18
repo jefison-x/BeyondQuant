@@ -13,6 +13,11 @@ from typing import Any, Protocol
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from packages.contracts.bars_frame import (
+    encode_bars_frame, encode_research_frame, frame_raw_rows, frame_research_rows, frame_row_count,
+    is_bars_frame,
+)
+
 from .backtest import normalize_signal_snapshot, signal_snapshot_content_sha256
 from .db import PgStoreMixin, execute, fetch_one
 from .market_plan import aggregate_market_readiness
@@ -110,11 +115,20 @@ def prepare_signal_job_input(
     order_quantity: int,
     data_readiness: dict[str, object] | None = None,
     research_bars: list[dict[str, object]] | None = None,
+    research_multipliers: list[float] | None = None,
     corporate_actions: list[dict[str, object]] | None = None,
     benchmark: list[dict[str, object]] | None = None,
     declared: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """Build the secret-free immutable document handed to the coordinator."""
+    """Build the secret-free immutable document handed to the coordinator.
+
+    The frozen bar panel is stored once as a deterministic ``bars_frame.v1``
+    columnar encoding (ADR-0023 bounded input): the raw execution panel plus the
+    per-row adjustment multiplier from which the adjusted research view is
+    reconstructed. This replaces the redundant ``bars``/``research_bars`` row
+    lists that overflowed the 32 MiB envelope.
+    """
+    research = research_bars if research_bars is not None else bars
     document: dict[str, object] = {
         "schema_version": SIGNAL_JOB_SCHEMA_VERSION,
         "profile": EXECUTION_PROFILE,
@@ -131,8 +145,9 @@ def prepare_signal_job_input(
             "membership_fingerprint": membership_fingerprint,
             "symbols": sorted(symbols),
         },
-        "bars": bars,
-        "research_bars": research_bars if research_bars is not None else bars,
+        "bars_frame": encode_bars_frame(
+            bars=list(bars), research_bars=list(research), multipliers=research_multipliers,
+        ),
         "corporate_actions": corporate_actions or [],
         "benchmark": benchmark or [],
         "declared": declared or {},
@@ -563,7 +578,12 @@ class SignalJobStore(PgStoreMixin):
         value = dict(row)
         input_document = value.pop("input_json", None) or {}
         universe = input_document.get("universe", {}) if isinstance(input_document, dict) else {}
-        bars = input_document.get("bars", []) if isinstance(input_document, dict) else []
+        bars_frame = input_document.get("bars_frame") if isinstance(input_document, dict) else None
+        if is_bars_frame(bars_frame):
+            bar_count = frame_row_count(bars_frame)
+        else:
+            bars = input_document.get("bars", []) if isinstance(input_document, dict) else []
+            bar_count = len(bars) if isinstance(bars, list) else 0
         value.pop("request_hash", None)
         value.pop("submission_hash", None)
         value.pop("preparation_json", None)
@@ -575,7 +595,7 @@ class SignalJobStore(PgStoreMixin):
             "profile": input_document.get("profile") if isinstance(input_document, dict) else None,
             "runtime_lock": input_document.get("runtime_lock") if isinstance(input_document, dict) else None,
             "symbol_count": len(universe.get("symbols", [])) if isinstance(universe, dict) else 0,
-            "bar_count": len(bars) if isinstance(bars, list) else 0,
+            "bar_count": bar_count,
         }
         return value
 
@@ -669,6 +689,7 @@ def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object, a
             order_quantity=int(preparation["order_quantity"]),
             data_readiness=data_readiness,
             research_bars=list(ready_input["research_bars"]),
+            research_multipliers=list(ready_input["research_multipliers"]),
             corporate_actions=list(ready_input["corporate_actions"]),
             benchmark=list(ready_input.get("benchmark", [])),
             declared=dict(ready_input.get("declared", {})),
@@ -733,12 +754,21 @@ class SignalProducerCoordinator:
             )
         execution = input_document.get("execution")
         timeout = float(execution.get("max_runtime_seconds", 10.0)) if isinstance(execution, dict) else 10.0
+        bars_frame = input_document.get("bars_frame")
+        if is_bars_frame(bars_frame):
+            raw_bars = frame_raw_rows(bars_frame)
+            sandbox_bars = encode_research_frame(frame_research_rows(bars_frame))
+        else:
+            raw_bars = input_document.get("bars")
+            if not isinstance(raw_bars, list):
+                raise ValueError("signal job input bars are unavailable")
+            sandbox_bars = input_document.get("research_bars", raw_bars)
         sandbox_payload = {
             "schema_version": "byq-signal-sandbox-request-v1",
             "profile": input_document["profile"],
             "runtime_lock": input_document["runtime_lock"],
             "strategy": input_document["strategy"],
-            "bars": input_document.get("research_bars", input_document["bars"]),
+            "bars": sandbox_bars,
             "declared": input_document.get("declared", {}),
             "parameters": input_document["parameters"],
         }
@@ -768,7 +798,7 @@ class SignalProducerCoordinator:
         return normalize_signal_snapshot(
             {
                 "universe": input_document["universe"],
-                "bars": input_document["bars"],
+                "bars": raw_bars,
                 "signals": signals,
                 "execution": input_document["execution"],
                 "corporate_actions": input_document.get("corporate_actions", []),

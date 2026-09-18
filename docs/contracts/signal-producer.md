@@ -18,6 +18,10 @@ Trusted coordinator claim PostgreSQL jobs，并通过 internal-only sandbox netw
 
 `CustomStrategy.generate_signals(data, parameters)` 接收以 `(symbol, trade_date)` 为 index 的 canonical bars Pandas DataFrame；必须返回 canonical symbols 到 date-indexed Pandas Series 的 mapping，且值只能是 `-1`、`0`、`1`。Unknown/duplicate symbols/dates、non-finite values、oversized output、timeouts 和 unsupported imports 均以 stable codes fail closed。
 
+## Bounded bar input
+
+Job document 与 `byq-signal-sandbox-request-v1` 通过版本化、确定性的 `bars_frame.v1` columnar 编码传输冻结 bar panel（`packages/contracts/bars_frame.py`）：canonical `symbols`/`dates` 加上逐行 `symbol_index`/`date_index`、每个 field 一个 primitive array、finite float，以及 raw execution panel 到 adjusted research view 的逐行 `adjustment_multiplier`。Coordinator 依据 ADR-0029 decision 4 从冻结 raw frame 重建 research view 后发送给 sandbox；immutable snapshot 保留 raw execution bars。Legacy row-dict documents 仍可解码，编码顺序固定且 `input_sha256` 覆盖该 frame，因此 identical logical input 得到稳定 hash 和 identical signals。`MAX_JOB_BYTES` 与 `MAX_REQUEST_BYTES` 均保持 32 MiB，未放宽 ADR-0023 isolation/resource envelope。
+
 Coordinator 丢弃 hold rows、应用显式 order quantity，再通过 ADR-0017 `normalize_signal_snapshot` 重新校验全部 output，之后创建或复用 validated、content-addressed `signal_snapshot` Artifact。Producer completion 既不批准也不启动 backtest。
 
 ## Isolation guarantees
