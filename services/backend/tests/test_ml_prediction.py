@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main as backend_main
-from app.backtest import LocalObjectStore
+from app.backtest import LocalObjectStore, snapshot_bars
 from app.ml_prediction import (
     MLPredictionCoordinator,
     MLPredictionRunStore,
@@ -244,7 +244,7 @@ def test_signal_skips_unfunded_lot_and_keeps_affordable_selection() -> None:
         ("000002.SZ", 1, 45_400),
     ]
     assert all(row["symbol"] != "000001.SZ" for row in signal["signals"])
-    assert {row["symbol"] for row in signal["bars"]} == {"000002.SZ"}
+    assert {row["symbol"] for row in snapshot_bars(signal)} == {"000002.SZ"}
     assert signal["source"]["selection_constraints"] == {"unfunded_lots_skipped": 1}
 
 

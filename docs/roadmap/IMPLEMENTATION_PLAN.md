@@ -972,3 +972,17 @@ data-readiness builder, the signal sandbox, and signal-snapshot/backtest normali
 (`MAX_JOB_BYTES`/`MAX_REQUEST_BYTES`/`MAX_RESULT_BYTES`/`MAX_SNAPSHOT_BYTES`), the MCP schema, Gateway and
 frontend are unchanged; genuinely oversized input still fails closed with a stable
 `bars exceeds ...`/`signals exceeds ...` message. No Accepted ADR text is changed.
+
+## Maintenance — Columnar immutable signal snapshot (ADR-0017/ADR-0023)
+
+A real production `signal_snapshot` for 300 symbols × 727 sessions with the full `market-data-requirement.v3`
+field set serialized to ~41 MiB, dominated by the row-mapping `bars` panel, and exceeded the unchanged
+32 MiB `MAX_SNAPSHOT_BYTES`/`MAX_ARTIFACT_JSON_BYTES` object bounds even after the `MAX_BARS` alignment.
+`normalize_signal_snapshot` now stores the frozen execution panel once with the same deterministic
+`bars_frame.v1` columnar encoding used for the sandbox/job document (`basis="snapshot"`, no adjustment
+multiplier), so the 300×727 aggregate serializes to ~14.2 MiB inside the existing caps. `signal-snapshot-v2`
+is the current shape; `snapshot_bars` decodes both v2 frames and legacy v1 row lists. Encoding is canonical
+across row order and the content-addressed identity is unchanged for identical logical input; corrupt or
+oversized frames and rows fail closed with the stable `bars exceeds ...`/frame-shape errors. The 32 MiB
+caps, sandbox resource envelope, MCP schema, Gateway and frontend are unchanged. No Accepted ADR text is
+changed.

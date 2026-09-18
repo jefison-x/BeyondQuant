@@ -13,6 +13,7 @@ from app.backtest import (
     AGGREGATE_ROW_LIMIT,
     MAX_BARS,
     MAX_SIGNALS,
+    MAX_SNAPSHOT_BYTES,
     BacktestConflict,
     BacktestJobStore,
     BacktestResourceExceeded,
@@ -25,13 +26,22 @@ from app.backtest import (
     normalize_backtest_name,
     normalize_signal_snapshot,
     run_native_backtest,
+    signal_snapshot_content_sha256,
+    snapshot_bars,
 )
 from app.db import run_ddl
 from app.research import ResearchStore
 from app.strategy_artifact import prepare_strategy, strategy_version_content
+from packages.contracts.bars_frame import encode_snapshot_bars
 
 
 SYMBOL = "000001.SZ"
+
+
+def _canonical_bytes(value: object) -> bytes:
+    return json.dumps(
+        value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
 
 
 def universe() -> dict[str, object]:
@@ -476,30 +486,126 @@ def test_job_worker_is_idempotent_bounded_and_stores_result_by_reference(tmp_pat
     jobs.close()
 
 
-def _aggregate_snapshot_bars(
-    symbols: int = 300, sessions: int = 727, *, limits: bool = False,
+def _production_snapshot_bars(
+    symbols: int = 300, sessions: int = 727, *, reverse: bool = False,
 ) -> tuple[list[str], list[dict[str, object]]]:
+    """Mirror the full ``build_ready_input`` production field set.
+
+    ``market-data-requirement.v3`` freezes stock_daily/trading_status/price_limits
+    fields, so every row carries the adjusted OHLC, previous close, exact
+    suspension flag and the up/down price limits.
+    """
     symbol_list = [f"{index:06d}.SZ" for index in range(symbols)]
+    trade_dates: list[str] = []
+    cursor = date(2023, 1, 2)
+    while len(trade_dates) < sessions:
+        if cursor.weekday() < 5:
+            trade_dates.append(cursor.isoformat())
+        cursor += timedelta(days=1)
     rows: list[dict[str, object]] = []
-    for symbol in symbol_list:
-        close = 10.0
-        for session in range(sessions):
-            trade_date = (date(2023, 1, 2) + timedelta(days=session)).isoformat()
-            row: dict[str, object] = {
-                "symbol": symbol, "trade_date": trade_date, "open": close, "high": close,
-                "low": close, "close": close, "prev_close": close, "volume": 0,
-                "is_suspended": False,
-            }
-            if limits:
-                row["up_limit"] = round(close * 1.1, 2)
-                row["down_limit"] = round(close * 0.9, 2)
-            rows.append(row)
+    for symbol_index, symbol in enumerate(symbol_list):
+        previous = round(10.0 + symbol_index * 0.01, 2)
+        for session, trade_date in enumerate(trade_dates):
+            close = round(10.0 + symbol_index * 0.01 + (session % 40) * 0.03, 2)
+            rows.append({
+                "symbol": symbol, "trade_date": trade_date,
+                "open": close, "high": round(close * 1.03, 2), "low": round(close * 0.97, 2),
+                "close": close, "prev_close": previous, "volume": 12_345_600 + session,
+                "is_suspended": session % 997 == 0,
+                "up_limit": round(close * 1.1, 2), "down_limit": round(close * 0.9, 2),
+            })
+            previous = close
+    if reverse:
+        rows = list(reversed(rows))
     return symbol_list, rows
 
 
-def test_signal_snapshot_accepts_adr_0047_aggregate_beyond_retired_bound() -> None:
-    symbols, aggregate_bars = _aggregate_snapshot_bars()
-    assert len(aggregate_bars) == 300 * 727 == 218_100 > 50_000
+def _production_snapshot_payload(
+    symbols: list[str], rows: list[dict[str, object]],
+) -> dict[str, object]:
+    signal_dates = sorted({str(row["trade_date"]) for row in rows})[:3]
+    return {
+        "universe": {
+            "universe_id": "production-universe",
+            "version_id": "pool-snapshot-production",
+            "membership_fingerprint": membership_fingerprint(symbols),
+            "symbols": symbols,
+        },
+        "bars": rows,
+        "signals": [
+            {"symbol": symbol, "trade_date": trade_date, "side": "buy" if index % 2 else "sell"}
+            for index, symbol in enumerate(symbols)
+            for trade_date in signal_dates
+        ],
+        "execution": {"initial_capital": 1_000_000.0, "lot_size": 100},
+        "corporate_actions": [
+            {"symbol": symbol, "end_date": "2022-12-31", "ex_date": "2023-06-15",
+             "cash_dividend_per_share": 0.35, "share_ratio": 0.0}
+            for symbol in symbols
+        ],
+        "benchmark": [
+            {"symbol": "000300.CSI", "trade_date": trade_date, "open": 4000.0,
+             "high": 4040.0, "low": 3960.0, "close": 4020.0, "prev_close": 4000.0,
+             "volume": 1_000_000_000, "amount": 2_000_000_000.0}
+            for trade_date in sorted({str(row["trade_date"]) for row in rows})[:727]
+        ],
+        "source": {
+            "producer": "byq-signal-python-v1",
+            "data_readiness": {
+                "requirement_sha256": "a" * 64, "ready_input_sha256": "b" * 64,
+                "research_view_sha256": "c" * 64,
+            },
+        },
+    }
+
+
+def test_production_snapshot_fits_unchanged_object_bounds() -> None:
+    symbols, rows = _production_snapshot_bars()
+    assert len(rows) == 300 * 727 == 218_100 > 50_000
+    document = normalize_signal_snapshot(
+        _production_snapshot_payload(symbols, rows),
+        strategy_version_artifact_id="artifact_" + "a" * 32,
+        strategy_version_id="version_production",
+    )
+    assert "bars_frame" in document and "bars" not in document
+    assert document["bars_frame"]["schema_version"] == "bars_frame.v1"
+    assert document["bars_frame"]["basis"] == "snapshot"
+    decoded = snapshot_bars(document)
+    assert len(decoded) == 218_100
+    encoded = _canonical_bytes(document)
+    assert len(encoded) < MAX_SNAPSHOT_BYTES
+    assert len(encoded) < 32 * 1024 * 1024
+    print(f"\nproduction snapshot={len(encoded) / 1024 / 1024:.2f}MiB rows={len(decoded)}")
+
+
+def test_snapshot_bars_decodes_legacy_and_rejects_corrupt_or_oversized(monkeypatch) -> None:
+    legacy_rows = bars()
+    assert snapshot_bars({"bars": legacy_rows}) == legacy_rows
+
+    corrupt = {
+        "bars_frame": {
+            "schema_version": "bars_frame.v1", "basis": "snapshot",
+            "symbols": [SYMBOL], "dates": ["2026-01-05"],
+            "symbol_index": [0, 0], "date_index": [0, 0],
+            "bars_fields": ["close"], "research_fields": ["close"],
+            "columns": {"close": [10.0]},
+        }
+    }
+    with pytest.raises(ValueError, match="misaligned"):
+        snapshot_bars(corrupt)
+
+    frames = encode_snapshot_bars([
+        {"symbol": SYMBOL, "trade_date": f"2026-01-{day:02d}", "open": 10.0, "high": 10.0,
+         "low": 10.0, "close": 10.0, "prev_close": 10.0, "volume": 0, "is_suspended": False}
+        for day in range(1, 3)
+    ])
+    monkeypatch.setattr("app.backtest.MAX_BARS", 1)
+    with pytest.raises(BacktestResourceExceeded, match="bars exceeds 1 rows"):
+        snapshot_bars({"bars_frame": frames})
+
+
+def test_snapshot_accepts_adr_0047_aggregate_beyond_retired_bound() -> None:
+    symbols, aggregate_bars = _production_snapshot_bars(symbols=40, sessions=60)
     payload = {
         "universe": {
             "universe_id": "aggregate-universe",
@@ -524,8 +630,25 @@ def test_signal_snapshot_accepts_adr_0047_aggregate_beyond_retired_bound() -> No
         strategy_version_artifact_id="artifact_" + "a" * 32,
         strategy_version_id="version_aggregate",
     )
-    assert len(first["bars"]) == 218_100
+    assert len(snapshot_bars(first)) == 40 * 60
     assert first["source"]["content_sha256"] == repeat["source"]["content_sha256"]
+
+
+def test_snapshot_identity_is_deterministic_across_row_order() -> None:
+    symbols, rows = _production_snapshot_bars(symbols=12, sessions=20)
+    forward = normalize_signal_snapshot(
+        _production_snapshot_payload(symbols, rows),
+        strategy_version_artifact_id="artifact_" + "a" * 32,
+        strategy_version_id="version_order",
+    )
+    reversed_document = normalize_signal_snapshot(
+        _production_snapshot_payload(symbols, list(reversed(rows))),
+        strategy_version_artifact_id="artifact_" + "a" * 32,
+        strategy_version_id="version_order",
+    )
+    assert forward["source"]["content_sha256"] == reversed_document["source"]["content_sha256"]
+    assert signal_snapshot_content_sha256(forward) == signal_snapshot_content_sha256(reversed_document)
+    assert snapshot_bars(forward) == snapshot_bars(reversed_document)
 
 
 def test_adr_0047_row_bounds_are_shared_and_fail_closed_when_oversized(monkeypatch) -> None:

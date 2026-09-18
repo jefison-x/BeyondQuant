@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from app import main
 from app.backtest import (
     BacktestJobStore, LocalObjectStore, membership_fingerprint, signal_snapshot_content_sha256,
+    snapshot_bars,
 )
 from app.backtest_task import task_id_from_signal_job
 from app.market_data import MarketDataStore
@@ -739,7 +740,7 @@ def test_promoted_aggregate_job_produces_snapshot_beyond_retired_bound(monkeypat
     assert created.status_code == 202, created.text
     job_id = created.json()["job"]["job_id"]
 
-    large = _large_ready_input(limits=False)
+    large = _large_ready_input(limits=True)
     monkeypatch.setattr(
         fixture.readiness, "assess",
         lambda requirement: {"state": "ready", "ready_input_sha256": "a" * 64},
@@ -763,7 +764,9 @@ def test_promoted_aggregate_job_produces_snapshot_beyond_retired_bound(monkeypat
     ).run_next()
     assert completed is not None and completed["status"] == "completed", completed
     artifact = fixture.research.get_artifact(completed["result_artifact_id"])
-    assert len(artifact["content"]["bars"]) == 300 * 727
+    assert artifact["content"]["bars_frame"]["basis"] == "snapshot"
+    assert "bars" not in artifact["content"]
+    assert len(snapshot_bars(artifact["content"])) == 300 * 727
     assert artifact["content"]["signals"][0]["symbol"] == symbols[0]
 
     fixture.jobs.close()

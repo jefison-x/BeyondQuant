@@ -23,7 +23,13 @@ from typing import Any, Iterable
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from packages.contracts.bars_frame import AGGREGATE_ROW_LIMIT
+from packages.contracts.bars_frame import (
+    AGGREGATE_ROW_LIMIT,
+    encode_snapshot_bars,
+    frame_row_count,
+    frame_snapshot_rows,
+    is_bars_frame,
+)
 
 from .db import PgStoreMixin, execute, fetch_one, bounded_metadata_transaction
 
@@ -45,7 +51,7 @@ MAX_SIGNALS = AGGREGATE_ROW_LIMIT
 MAX_ACTIONS = 10_000
 MAX_BENCHMARK_BARS = 5_000
 MAX_RESULT_BYTES = 32 * 1024 * 1024
-SIGNAL_SNAPSHOT_SCHEMA_VERSION = "signal-snapshot-v1"
+SIGNAL_SNAPSHOT_SCHEMA_VERSION = "signal-snapshot-v2"
 MAX_SNAPSHOT_BYTES = MAX_RESULT_BYTES
 MAX_LOG_ENTRIES = 500
 JOB_ID_PATTERN = re.compile(r"^backtest_[0-9a-f]{32}$")
@@ -711,7 +717,11 @@ def normalize_signal_snapshot(
             "strategy_version_id": version_id,
         },
         "universe": universe,
-        "bars": bars,
+        # The frozen execution panel is stored once as a deterministic
+        # ``bars_frame.v1`` columnar document instead of repeating every field
+        # name on every row. This keeps the 300 x 727 ADR-0047 aggregate inside
+        # the unchanged 32 MiB object bounds while preserving the exact rows.
+        "bars_frame": encode_snapshot_bars(bars),
         "signals": signals,
         "corporate_actions": actions,
         "benchmark": benchmark,
@@ -728,6 +738,30 @@ def normalize_signal_snapshot(
         raise BacktestResourceExceeded("signal snapshot exceeds object size limit")
     document["source"]["content_sha256"] = _sha256(encoded)
     return document
+
+
+def snapshot_bars(content: object) -> list[dict[str, object]]:
+    """Decode the frozen execution panel from a v1 or v2 signal snapshot.
+
+    ``signal-snapshot-v2`` stores the panel as a ``bars_frame.v1`` document;
+    ``signal-snapshot-v1`` stored it as a row list. Both are decoded to the
+    canonical ``(trade_date, symbol)`` order the normalizer produces so
+    backtest input identity is reproducible regardless of stored shape.
+    """
+    if not isinstance(content, dict):
+        raise ValueError("signal snapshot content is invalid")
+    frame = content.get("bars_frame")
+    if is_bars_frame(frame):
+        if frame_row_count(frame) > MAX_BARS:
+            raise BacktestResourceExceeded(f"bars exceeds {MAX_BARS} rows")
+        rows = frame_snapshot_rows(frame)
+        return sorted(rows, key=lambda row: (str(row["trade_date"]), str(row["symbol"])))
+    bars = content.get("bars")
+    if isinstance(bars, list):
+        if len(bars) > MAX_BARS:
+            raise BacktestResourceExceeded(f"bars exceeds {MAX_BARS} rows")
+        return bars
+    raise ValueError("signal snapshot bars are unavailable")
 
 
 def signal_snapshot_content_sha256(document: dict[str, object]) -> str:
