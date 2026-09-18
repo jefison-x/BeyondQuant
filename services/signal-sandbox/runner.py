@@ -137,7 +137,10 @@ def build_data(bars: object, declared: object) -> pd.DataFrame:
     }
     if declared.get("index_universe"):
         extra.add("is_universe_member")
-    if set(frame.columns) - (required | {"prev_close", "is_suspended", "up_limit", "down_limit"} | extra) or not required.issubset(frame.columns):
+    frozen_columns = {
+        "prev_close", "is_suspended", "up_limit", "down_limit", "adjustment_factor",
+    }
+    if set(frame.columns) - (required | frozen_columns | extra) or not required.issubset(frame.columns):
         raise ProtocolError("invalid_input", "bar columns do not match the signal profile")
     frame["trade_date"] = pd.to_datetime(frame["trade_date"], format="%Y-%m-%d", errors="raise")
     frame = frame.sort_values(["symbol", "trade_date"], kind="stable")

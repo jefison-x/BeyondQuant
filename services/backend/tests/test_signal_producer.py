@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import date, timedelta
 from types import SimpleNamespace
@@ -10,8 +11,8 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.backtest import (
-    BacktestJobStore, LocalObjectStore, membership_fingerprint, signal_snapshot_content_sha256,
-    snapshot_bars,
+    BacktestJobStore, LocalObjectStore, membership_fingerprint, normalize_signal_snapshot,
+    signal_snapshot_content_sha256, snapshot_bars,
 )
 from app.backtest_task import task_id_from_signal_job
 from app.market_data import MarketDataStore
@@ -199,7 +200,7 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
         rows = frame_research_rows(payload["bars"])
         assert set(rows[0]) <= {
             "symbol", "trade_date", "open", "high", "low", "close", "prev_close",
-            "volume", "is_suspended", "up_limit", "down_limit",
+            "volume", "is_suspended", "up_limit", "down_limit", "adjustment_factor",
         }
         return {
             "schema_version": "byq-signal-sandbox-response-v1",
@@ -392,6 +393,42 @@ def _seed_ready_cells(fixture: SimpleNamespace, *, symbols: list[str], open_date
             }])
 
 
+def _seed_ex_dividend_cells(
+    fixture: SimpleNamespace, *, symbol: str, sessions: dict[str, dict[str, float]],
+) -> None:
+    """Seed frozen status/factor/bar rows for one symbol across an ex-dividend step."""
+    for trade_date, values in sorted(sessions.items()):
+        close = float(values["close"])
+        fixture.readiness._execute(
+            """INSERT INTO market_session_supplement_completeness
+               (trade_date,adjustment_complete,corporate_actions_complete,factor_row_count,
+                corporate_action_row_count,content_sha256,provenance_json,verified_at)
+               VALUES (:date,TRUE,TRUE,1,0,:sha,'{}',now())""",
+            {"date": trade_date, "sha": f"supplement-{trade_date}"},
+        )
+        fixture.readiness._execute(
+            """INSERT INTO market_daily_status
+               (symbol,trade_date,is_suspended,pre_close,up_limit,down_limit,data_source,
+                provenance_json,content_sha256,updated_at)
+               VALUES (:symbol,:date,FALSE,:pre,:up,:down,'tushare','{}',:sha,now())""",
+            {"symbol": symbol, "date": trade_date, "pre": values["prev_close"],
+             "up": close * 1.1, "down": close * 0.9, "sha": f"status-{symbol}-{trade_date}"},
+        )
+        fixture.readiness._execute(
+            """INSERT INTO market_adjustment_factors
+               (symbol,trade_date,adj_factor,data_source,provenance_json,content_sha256,updated_at)
+               VALUES (:symbol,:date,:factor,'tushare','{}',:sha,now())""",
+            {"symbol": symbol, "date": trade_date, "factor": values["adjustment_factor"],
+             "sha": f"factor-{symbol}-{trade_date}"},
+        )
+        fixture.market.import_bars([{
+            "symbol": symbol, "trade_date": trade_date,
+            "open": close, "high": close, "low": close, "close": close,
+            "volume": 1000, "amount": close * 1000, "asset_type": "stock",
+            "data_source": "tushare", "provenance": {"source": "fixture"},
+        }])
+
+
 def _signal_request(
     fixture: SimpleNamespace, *, snapshot_id: str, start: str, end: str, key: str,
 ) -> dict[str, object]:
@@ -534,6 +571,151 @@ def test_partitioned_job_promotes_only_after_all_partitions_are_ready(monkeypatc
     fixture.backtests.close()
 
 
+def test_partitioned_ex_dividend_prev_close_with_adjustment_factor_produces_snapshot(
+    monkeypatch, tmp_path,
+) -> None:
+    fixture = _seed_ready_signal_fixture(monkeypatch, tmp_path)
+    symbol = "600025.SH"
+    snapshot_id = _create_symbol_pool(fixture, symbols=[symbol], key="ex-div-factor-pool")
+    open_dates = {date(2026, 6, 26), date(2026, 6, 29), date(2026, 7, 1)}
+    _seed_calendar_window(
+        fixture, start=date(2026, 1, 1), end=date(2026, 9, 30), open_dates=open_dates,
+    )
+    _seed_ex_dividend_cells(fixture, symbol=symbol, sessions={
+        "20260626": {"close": 9.01, "prev_close": 9.00, "adjustment_factor": 1.2316},
+        "20260629": {"close": 8.81, "prev_close": 8.81, "adjustment_factor": 1.2596},
+        "20260701": {"close": 8.90, "prev_close": 8.81, "adjustment_factor": 1.2596},
+    })
+
+    created = fixture.client.post("/v1/research/signal-producer/jobs", json=_signal_request(
+        fixture, snapshot_id=snapshot_id, start="2026-01-01", end="2026-09-30",
+        key="ex-div-factor-job",
+    ))
+    assert created.status_code == 202, created.text
+    job = created.json()["job"]
+    assert job["requirement_plan"]["partition_count"] == 2
+
+    assert promote_waiting_signal_jobs(fixture.jobs, fixture.readiness) == 1
+    job = fixture.jobs.get(job["job_id"], trusted_owner="signal-owner")
+    assert job["status"] == "queued"
+    plan_sha256 = job["requirement_plan"]["requirement_plan_sha256"]
+
+    document = fixture.jobs._fetch_one(
+        "SELECT input_json FROM signal_producer_jobs WHERE job_id=:id", {"id": job["job_id"]}
+    )["input_json"]
+    raw_rows = frame_raw_rows(document["bars_frame"])
+    factors = {row["trade_date"]: row["adjustment_factor"] for row in raw_rows}
+    assert factors == {"2026-06-26": 1.2316, "2026-06-29": 1.2596, "2026-07-01": 1.2596}
+    assert document["data_readiness"]["requirement_plan_sha256"] == plan_sha256
+
+    def executor(payload: dict[str, object], timeout_seconds: float) -> dict[str, object]:
+        return {
+            "schema_version": "byq-signal-sandbox-response-v1",
+            "signals": [{"symbol": symbol, "trade_date": "2026-07-01", "signal": 1}],
+        }
+
+    completed = SignalProducerCoordinator(
+        fixture.jobs, fixture.research, CallableSandboxExecutor(executor)
+    ).run_next()
+    assert completed is not None and completed["status"] == "completed", completed
+    artifact = fixture.research.get_artifact(completed["result_artifact_id"])
+    assert artifact["status"] == "validated"
+    assert artifact["content"]["signals"] == [
+        {"symbol": symbol, "trade_date": "2026-07-01", "direction": 1, "quantity": 100}
+    ]
+    assert artifact["content"]["source"]["data_readiness"]["requirement_plan_sha256"] == plan_sha256
+    snapshot_factors = {row["trade_date"]: row["adjustment_factor"] for row in snapshot_bars(artifact["content"])}
+    assert snapshot_factors == factors
+
+    fixture.jobs.close()
+    fixture.market.close()
+    fixture.paper.close()
+    fixture.research.close()
+    fixture.backtests.close()
+
+
+def test_snapshot_data_readiness_accepts_requirement_plan_sha256_deterministically() -> None:
+    payload = {
+        "universe": {
+            "universe_id": "plan-hash-universe",
+            "version_id": "plan-hash-v1",
+            "membership_fingerprint": membership_fingerprint([SYMBOL]),
+            "symbols": [SYMBOL],
+        },
+        "bars": [
+            {"symbol": SYMBOL, "trade_date": "2026-01-05", "open": 10.0, "high": 10.0,
+             "low": 10.0, "close": 10.0, "prev_close": 10.0},
+            {"symbol": SYMBOL, "trade_date": "2026-01-06", "open": 11.0, "high": 11.0,
+             "low": 11.0, "close": 11.0, "prev_close": 10.0},
+        ],
+        "signals": [],
+        "execution": {},
+        "source": {
+            "producer": "byq-signal-python-v1",
+            "data_readiness": {
+                "requirement_sha256": "a" * 64, "ready_input_sha256": "b" * 64,
+                "research_view_sha256": "c" * 64, "requirement_plan_sha256": "d" * 64,
+            },
+        },
+    }
+    first = normalize_signal_snapshot(
+        payload, strategy_version_artifact_id="artifact_" + "a" * 32,
+        strategy_version_id="version_plan_hash",
+    )
+    second = normalize_signal_snapshot(
+        payload, strategy_version_artifact_id="artifact_" + "a" * 32,
+        strategy_version_id="version_plan_hash",
+    )
+    assert first["source"]["data_readiness"]["requirement_plan_sha256"] == "d" * 64
+    assert first["source"]["content_sha256"] == second["source"]["content_sha256"]
+
+    unknown = json.loads(json.dumps(payload))
+    unknown["source"]["data_readiness"]["unexpected_key"] = "x"
+    with pytest.raises(ValueError, match="unknown fields"):
+        normalize_signal_snapshot(
+            unknown, strategy_version_artifact_id="artifact_" + "a" * 32,
+            strategy_version_id="version_plan_hash",
+        )
+
+
+def test_coordinator_failure_persists_detail_and_logs_traceback(caplog) -> None:
+    class _FailingJobs:
+        def __init__(self) -> None:
+            self.failed: tuple[str, str, str] | None = None
+
+        def claim_next(self) -> dict[str, object]:
+            return {
+                "job_id": "signaljob_failure_fixture", "task_id": "task_fixture",
+                "input": {"profile": "byq-signal-python-v1"},
+            }
+
+        def fail(self, job_id: str, code: str, detail: str) -> dict[str, object]:
+            self.failed = (job_id, code, detail)
+            return {"job_id": job_id, "status": "failed", "error_code": code, "error_detail": detail}
+
+    jobs = _FailingJobs()
+    coordinator = SignalProducerCoordinator(
+        jobs, None, CallableSandboxExecutor(lambda payload, timeout_seconds: {}),
+    )
+    with caplog.at_level(logging.ERROR, logger="app.signal_producer"):
+        result = coordinator.run_next()
+
+    assert result is not None and result["status"] == "failed"
+    assert jobs.failed is not None
+    job_id, code, detail = jobs.failed
+    assert job_id == "signaljob_failure_fixture"
+    assert code == "signal_execution_failed"
+    assert detail == "signal production failed (ValueError)"
+    records = [record for record in caplog.records if record.name == "app.signal_producer"]
+    assert any(record.exc_info is not None for record in records)
+    messages = [record.getMessage() for record in records]
+    assert any(
+        "signal job signaljob_failure_fixture production failed" in message for message in messages
+    )
+    assert any("error_type=ValueError" in message for message in messages)
+    assert any("bars are unavailable" in message for message in messages)
+
+
 def test_partitioned_job_with_mid_window_delisting_promotes(monkeypatch, tmp_path) -> None:
     fixture = _seed_ready_signal_fixture(monkeypatch, tmp_path)
     symbols = ["600020.SH", "600021.SH"]
@@ -671,7 +853,7 @@ def _large_ready_input(
             raw: dict[str, object] = {
                 "symbol": symbol, "trade_date": trade_date, "open": close, "high": close,
                 "low": close, "close": close, "prev_close": previous, "volume": 0,
-                "is_suspended": False,
+                "is_suspended": False, "adjustment_factor": 1.0,
             }
             if limits:
                 raw["up_limit"] = round(close * 1.1, 2)

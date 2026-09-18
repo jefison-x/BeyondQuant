@@ -4,6 +4,7 @@ import io
 import json
 
 import pandas as pd
+import pytest
 
 import runner
 from bars_frame import encode_bars_frame, encode_research_frame, is_bars_frame
@@ -89,6 +90,23 @@ def test_raw_frame_materializes_the_research_view() -> None:
     legacy = runner.build_data(research, DECLARED)
     decoded = runner.build_data(raw_frame, DECLARED)
     pd.testing.assert_frame_equal(legacy, decoded, check_like=True)
+
+
+def test_research_frame_accepts_absolute_adjustment_factor_column() -> None:
+    _, research, _ = _panel()
+    for row in research:
+        row["adjustment_factor"] = 1.25
+    frame = runner.build_data(encode_research_frame(research), DECLARED)
+    assert "adjustment_factor" in frame.columns
+    assert frame["adjustment_factor"].tolist() == [1.25] * len(frame)
+
+
+def test_research_frame_still_rejects_unknown_bar_columns() -> None:
+    _, research, _ = _panel()
+    for row in research:
+        row["unexpected_column"] = 1.0
+    with pytest.raises(runner.ProtocolError, match="bar columns do not match"):
+        runner.build_data(encode_research_frame(research), DECLARED)
 
 
 def test_end_to_end_signals_identical_for_legacy_and_columnar_documents(monkeypatch) -> None:

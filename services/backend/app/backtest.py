@@ -670,6 +670,7 @@ def normalize_signal_snapshot(
         raise ValueError("source.data_readiness must be an object")
     _reject_unknown(data_readiness, {
         "requirement_sha256", "ready_input_sha256", "research_view_sha256",
+        "requirement_plan_sha256",
     }, field="source.data_readiness")
     normalized_readiness = {}
     for key, value in data_readiness.items():

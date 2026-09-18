@@ -1157,6 +1157,11 @@ class MarketReadinessStore(PgStoreMixin):
                 "prev_close": row.get("pre_close"), "volume": row.get("volume") or 0,
                 "is_suspended": bool(row.get("is_suspended")),
                 "up_limit": row.get("up_limit"), "down_limit": row.get("down_limit"),
+                # ADR-0028: carry the frozen absolute adjustment factor (the same
+                # persisted ``adj_factor`` used to derive the adjusted research
+                # prices) so snapshot normalization can distinguish a legitimate
+                # ex-dividend ``prev_close`` step from an inconsistent row.
+                "adjustment_factor": row.get("adj_factor"),
             }
             raw_bars.append(raw)
             multiplier = 1.0 if legacy else float(row["adj_factor"]) / anchors[symbol]

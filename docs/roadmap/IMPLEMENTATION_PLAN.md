@@ -22,6 +22,15 @@ release/recreate 事件产生 false gap。`TraceConflict` 不弱化，真实 gap
 rehydrate 后的首个 prompt 绑定新的私有 DSH generation，`agent.run.registration` 继续投递，因而新回合
 产生已绑定 run 而不是停留 `pending_binding`。
 
+信号生产修复合集（fix，构建修订 `dsh-0.1.2rc1-post-u8.134`）：`build_ready_input` 的 raw 与 research
+bars 现在携带持久化的绝对 `adjustment_factor`（同一 `adj_factor` 来源），并维持 `bars_frame.v1` 的
+`bars_fields`/`research_fields` 对等，使 `_normalize_bars` 能区分合法除权除息的 `prev_close` 跳变与
+真正不一致的行；signal sandbox 的 bar profile 同步接受该 frozen 列（未知列仍 fail closed），缺少
+factor 证据的不一致 `prev_close` 仍 fail closed。`normalize_signal_snapshot` 的
+`source.data_readiness` 允许 `requirement_plan_sha256`（promotion 已写入的 provenance），snapshot
+identity 仍确定性。`SignalProducerCoordinator.run_next` 与 signal worker 现结构化记录异常类型、消息与
+traceback（不含 secrets 或完整 payload），存储的 `error_detail` 保持安全稳定。不修改 Accepted ADR 文本。
+
 从 Phase 9 起，永久 migration source of truth 为 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`。实现 phase 前必须先检查、分类其 Community candidates。可在 BYQ-owned contracts 中重新实现 provider/engine-independent semantics，但不得复制 Community runtime、storage、provider 或 engine architecture。BaoStock、AKShare、VectorBT、PydanticAI 和 Hermes 保持排除，除非未来 Accepted ADR 明确反转。
 
 所有 phases 遵循 `docs/DEVELOPMENT_WORKFLOW.md`：只执行 `STATUS.md` 指定的 next phase；每 phase 使用 isolated worktree/branch/PR；contract/test 优先；保持 Product/Agent/Quant/Data/Engineering boundaries；CI 与 evidence 完成后才进入 merge gate。
