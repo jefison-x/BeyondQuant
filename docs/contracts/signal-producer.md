@@ -22,6 +22,8 @@ Trusted coordinator claim PostgreSQL jobs，并通过 internal-only sandbox netw
 
 Job document 与 `byq-signal-sandbox-request-v1` 通过版本化、确定性的 `bars_frame.v1` columnar 编码传输冻结 bar panel（`packages/contracts/bars_frame.py`）：canonical `symbols`/`dates` 加上逐行 `symbol_index`/`date_index`、每个 field 一个 primitive array、finite float，以及 raw execution panel 到 adjusted research view 的逐行 `adjustment_multiplier`。Coordinator 依据 ADR-0029 decision 4 从冻结 raw frame 重建 research view 后发送给 sandbox；immutable snapshot 保留 raw execution bars。Legacy row-dict documents 仍可解码，编码顺序固定且 `input_sha256` 覆盖该 frame，因此 identical logical input 得到稳定 hash 和 identical signals。`MAX_JOB_BYTES` 与 `MAX_REQUEST_BYTES` 均保持 32 MiB，未放宽 ADR-0023 isolation/resource envelope。
 
+Sandbox 的 bar input 与 signal output 上限不再是已退役的 ADR-0028 单分区 50,000 symbol-session cells；ADR-0047 已将其与 aggregate 解耦。32 MiB framed transport bound（`MAX_REQUEST_BYTES`）仍是硬性上限，in-child 则接受 backend 允许的最大 aggregate panel：`build_partitioned_ready_input(row_limit=2_000_001)` 所定义的 aggregate row limit，并保留同值 DoS bound 与稳定 `invalid_input`/`invalid_output` 错误。
+
 Coordinator 丢弃 hold rows、应用显式 order quantity，再通过 ADR-0017 `normalize_signal_snapshot` 重新校验全部 output，之后创建或复用 validated、content-addressed `signal_snapshot` Artifact。Producer completion 既不批准也不启动 backtest。
 
 ## Isolation guarantees

@@ -101,3 +101,50 @@ def test_end_to_end_signals_identical_for_legacy_and_columnar_documents(monkeypa
     assert legacy_response["ok"] is True
     assert legacy_response["signals"]
     assert legacy_response == research_frame_response == raw_frame_response
+
+
+def _aggregate_panel(symbols: int = 300, sessions: int = 727) -> list[dict[str, object]]:
+    from datetime import date, timedelta
+
+    dates: list[str] = []
+    cursor = date(2023, 1, 2)
+    while len(dates) < sessions:
+        if cursor.weekday() < 5:
+            dates.append(cursor.isoformat())
+        cursor += timedelta(days=1)
+    rows: list[dict[str, object]] = []
+    for symbol_index in range(symbols):
+        symbol = f"{symbol_index:06d}.SZ"
+        for trade_date in dates:
+            rows.append({
+                "symbol": symbol, "trade_date": trade_date, "open": 10.0, "high": 10.0,
+                "low": 10.0, "close": 10.0, "volume": 1000,
+            })
+    return rows
+
+
+def test_aggregate_300x727_columnar_frame_is_accepted_end_to_end(monkeypatch) -> None:
+    rows = _aggregate_panel()
+    assert len(rows) == 300 * 727
+    parameters = {"symbols": [f"{index:06d}.SZ" for index in range(300)]}
+    request = _request(encode_research_frame(rows))
+    request["parameters"] = parameters
+    response = _run(monkeypatch, request)
+    assert response["ok"] is True, response
+    assert len(response["signals"]) == 300 * 727
+
+
+def test_oversized_bars_input_fails_closed(monkeypatch) -> None:
+    _, research, _ = _panel()
+    monkeypatch.setattr(runner, "MAX_BARS_ROWS", 3)
+    response = _run(monkeypatch, _request(encode_research_frame(research)))
+    assert response["ok"] is False
+    assert response["error_code"] == "invalid_input"
+
+
+def test_oversized_output_fails_closed(monkeypatch) -> None:
+    _, research, _ = _panel()
+    monkeypatch.setattr(runner, "MAX_SIGNALS", 3)
+    response = _run(monkeypatch, _request(research))
+    assert response["ok"] is False
+    assert response["error_code"] == "invalid_output"
