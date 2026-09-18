@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import signal
 import time
@@ -13,6 +14,8 @@ from app.research import ResearchStore
 from app.market_readiness import MarketReadinessStore
 from app.market_automation import MarketAutomationStore
 from app.signal_producer import SignalJobStore, SignalProducerCoordinator, promote_waiting_signal_jobs
+
+logger = logging.getLogger("byq.signal.worker")
 
 
 class SandboxFailure(RuntimeError):
@@ -52,6 +55,10 @@ class HttpSandboxExecutor:
 
 
 def main() -> int:
+    logging.basicConfig(
+        level=os.environ.get("BYQ_LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
     jobs = SignalJobStore.from_env()
     research = ResearchStore.from_env()
     readiness = MarketReadinessStore.from_env()
@@ -72,9 +79,22 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     try:
         while running:
-            promote_waiting_signal_jobs(jobs, readiness, automation)
-            if coordinator.run_next() is None:
+            promoted = promote_waiting_signal_jobs(jobs, readiness, automation)
+            if promoted:
+                logger.info("promoted %d signal job(s)", promoted)
+            outcome = coordinator.run_next()
+            if outcome is None:
                 time.sleep(poll)
+            elif outcome.get("status") == "failed":
+                logger.warning(
+                    "signal job %s failed: error_code=%s detail=%s",
+                    outcome.get("job_id"), outcome.get("error_code"), outcome.get("error_detail"),
+                )
+            elif outcome.get("status") == "completed":
+                logger.info(
+                    "signal job %s completed: artifact=%s",
+                    outcome.get("job_id"), outcome.get("result_artifact_id"),
+                )
     finally:
         automation.close()
         readiness.close()

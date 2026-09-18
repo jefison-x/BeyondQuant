@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import uuid
 from collections.abc import Callable
@@ -34,6 +35,8 @@ _SECRET_FRAGMENTS = (
     "token", "password", "secret", "apikey", "accesskey", "privatekey",
     "credential", "authorization",
 )
+
+logger = logging.getLogger(__name__)
 
 
 class SignalProducerError(RuntimeError):
@@ -638,12 +641,17 @@ def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object, a
             continue
         requirements = _job_requirements(requirement, plan)
         if requirements is None:
+            logger.debug("signal job %s skipped: no frozen readiness requirement", row["job_id"])
             continue
         try:
             assessments = [readiness_store.assess(item) for item in requirements]
         except ValueError as error:
             if "symbol-session cells" not in str(error):
                 raise
+            logger.warning(
+                "signal job %s failed preparation: requirement exceeds the partition bound: %s",
+                row["job_id"], error,
+            )
             jobs.fail_waiting(
                 str(row["job_id"]), "market_requirement_exceeded", str(error),
             )
@@ -654,6 +662,11 @@ def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object, a
         )
         jobs.update_readiness(str(row["job_id"]), assessment)
         if assessment.get("state") != "ready":
+            logger.info(
+                "signal job %s stays waiting_for_data: state=%s ready_partitions=%s/%s",
+                row["job_id"], assessment.get("state"),
+                assessment.get("ready_partitions"), len(requirements),
+            )
             if automation_store is not None:
                 for item, partition_assessment in zip(requirements, assessments):
                     if partition_assessment.get("state") == "ready":
@@ -695,6 +708,10 @@ def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object, a
             declared=dict(ready_input.get("declared", {})),
         )
         jobs.promote_ready(str(row["job_id"]), document, str(assessment["ready_input_sha256"]))
+        logger.info(
+            "signal job %s promoted to queued: partitions=%s bars=%s",
+            row["job_id"], len(requirements), len(bars),
+        )
         promoted += 1
     return promoted
 
@@ -741,7 +758,15 @@ class SignalProducerCoordinator:
             code = getattr(error, "error_code", "signal_execution_failed")
             if not isinstance(code, str) or _ERROR_CODE.fullmatch(code) is None:
                 code = "signal_execution_failed"
-            detail = str(error) if hasattr(error, "error_code") else "signal production failed"
+            detail = (
+                str(error) if hasattr(error, "error_code")
+                else f"signal production failed ({type(error).__name__})"
+            )
+            logger.error(
+                "signal job %s production failed: error_type=%s error_code=%s message=%s",
+                job_id, type(error).__name__, code, error,
+                exc_info=True,
+            )
             return self.jobs.fail(job_id, code, detail)
 
     def _produce(self, job: dict[str, object]) -> dict[str, object]:

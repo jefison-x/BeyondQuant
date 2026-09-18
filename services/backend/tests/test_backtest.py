@@ -405,6 +405,28 @@ def test_prev_close_adjustment_accepts_a_frozen_factor_change_only() -> None:
     assert payload["manifest"]["bars"][1]["prev_close"] == 9.8
 
 
+def test_snapshot_prev_close_inconsistency_without_factor_evidence_fails_closed() -> None:
+    inconsistent = [
+        {"symbol": SYMBOL, "trade_date": "2026-01-05", "open": 10.0, "high": 10.0,
+         "low": 10.0, "close": 10.0, "prev_close": 10.0},
+        {"symbol": SYMBOL, "trade_date": "2026-01-06", "open": 11.0, "high": 11.0,
+         "low": 11.0, "close": 11.0, "prev_close": 9.0},
+    ]
+    for bars_value in (
+        inconsistent,
+        [dict(row, adjustment_factor=1.0) for row in inconsistent],
+    ):
+        with pytest.raises(ValueError, match="prev_close is inconsistent"):
+            normalize_signal_snapshot(
+                {
+                    "universe": universe(), "bars": bars_value, "signals": [],
+                    "execution": {}, "source": {},
+                },
+                strategy_version_artifact_id="artifact_" + "a" * 32,
+                strategy_version_id="version_prev_close",
+            )
+
+
 @pytest.mark.skipif(
     not os.environ.get("BYQ_DATABASE_URL"),
     reason="BYQ_DATABASE_URL is not set",
