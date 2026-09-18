@@ -12,6 +12,16 @@
 独立维护规划：[DSH 0.1.2rc1 升级与可维护性改造](DSH_012RC1_UPGRADE_PLAN.md) 定义 U0–U8，
 目前仅为待实施方案，不占用下一 Product Phase，不改变当前 Runtime baseline，也不授权自动生产升级。
 
+Restart 存活维护（fix，构建修订 `dsh-0.1.2rc1-post-u8.133`）：runtime-adapter 容器在部署时重建后，
+内存 `_sessions` 丢失但 `DSH_SESSION_ROOT` 上的 BYQ lifecycle journal 与 DSH session root 仍在。
+`_rehydrate` 现在按需、幂等地从该 BYQ evidence 重建会话记录，`_get` 与 prompt/events/subscribe
+不再对已有磁盘会话返回 `unknown BYQ session`；真正未知的会话仍返回干净的 404/KeyError。Gateway
+以持久 WorkflowTrace 的 last sequence 作为 append authority：重绑路径调用 `TraceStore.reopen`
+并把该序列用于调适 adapter public sequence，使续写从 persisted+1 连续，避免因非持久
+release/recreate 事件产生 false gap。`TraceConflict` 不弱化，真实 gap/backwards/reused 仍 fail closed。
+rehydrate 后的首个 prompt 绑定新的私有 DSH generation，`agent.run.registration` 继续投递，因而新回合
+产生已绑定 run 而不是停留 `pending_binding`。
+
 从 Phase 9 起，永久 migration source of truth 为 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`。实现 phase 前必须先检查、分类其 Community candidates。可在 BYQ-owned contracts 中重新实现 provider/engine-independent semantics，但不得复制 Community runtime、storage、provider 或 engine architecture。BaoStock、AKShare、VectorBT、PydanticAI 和 Hermes 保持排除，除非未来 Accepted ADR 明确反转。
 
 所有 phases 遵循 `docs/DEVELOPMENT_WORKFLOW.md`：只执行 `STATUS.md` 指定的 next phase；每 phase 使用 isolated worktree/branch/PR；contract/test 优先；保持 Product/Agent/Quant/Data/Engineering boundaries；CI 与 evidence 完成后才进入 merge gate。

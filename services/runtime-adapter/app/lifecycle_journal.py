@@ -277,6 +277,36 @@ class LifecycleJournal:
         self._save(state)
         self.state = state
 
+    def rebase(self, sequence):
+        """Reconcile the durable public sequence with the Gateway trace.
+
+        A restart can leave the journal ahead of the Gateway trace: the Runtime
+        kept emitting while no collector persisted the projection. Durable
+        evidence the Gateway never persisted is re-anchored immediately after
+        ``sequence`` so replay is gap-free; the old numbers are free because the
+        Gateway never stored them. A terminal receipt the Gateway already
+        persisted binds its exact sequence and can never be renumbered.
+        """
+
+        if type(sequence) is not int or sequence < 0:
+            raise ValueError("invalid rebase sequence")
+        state = copy.deepcopy(self.state)
+        acknowledged = {
+            receipt["sequence"] for receipt in state["terminal_acks"].values()
+            if type(receipt.get("sequence")) is int
+        }
+        tail = [event for event in state["events"] if event["sequence"] > sequence]
+        if any(event["sequence"] in acknowledged for event in tail):
+            raise ValueError("cannot rebase below acknowledged journal evidence")
+        cursor = sequence
+        for event in state["events"]:
+            if event["sequence"] > sequence:
+                cursor += 1
+                event["sequence"] = cursor
+        state["sequence"] = max(sequence, cursor)
+        self._save(state)
+        self.state = state
+
     def acknowledge_terminal(self, receipt):
         root = receipt.get("root_run_id") if isinstance(receipt, dict) else None
         if not isinstance(root, str):

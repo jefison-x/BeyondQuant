@@ -388,8 +388,20 @@ class RuntimeAdapter:
         validate_identifier(trace_id, field="trace_id")
         if isinstance(initial_sequence, bool) or not isinstance(initial_sequence, int) or initial_sequence < 0:
             raise ValueError("initial_sequence must be a non-negative integer")
+        with self._lock:
+            if session_id in self._sessions:
+                raise SessionConflict(f"BYQ session already exists: {session_id}")
         context = normalize_conversation_context([] if conversation_context is None else conversation_context)
         recovery = normalize_recovery(conversation_recovery, session_id, trace_id)
+        # A Gateway restart re-issues create for a durable BYQ session whose DSH
+        # process was recreated. Rebind the on-disk session instead of claiming
+        # a second journal over the same append-only identity.
+        durable_evidence = self._session_root / "byq-lifecycle-evidence" / f"{session_id}.json"
+        if initial_sequence and durable_evidence.is_file():
+            return self._rebind_session(
+                session_id, trace_id, owner_principal, workspace_id,
+                initial_sequence, context, recovery,
+            )
         # The official rc.1 JSON-RPC carrier creates sessions but exposes no
         # persisted-session resume operation. Never recreate a released DSH
         # session over its append-only identity; use a fresh private generation
@@ -479,6 +491,14 @@ class RuntimeAdapter:
         continuation_budget: object = None,
     ) -> str:
         record = self._get(session_id)
+        if not record.model_resolution:
+            with record.lock:
+                if not record.model_resolution:
+                    record.model_resolution = self._resolve_model(
+                        owner_principal=record.owner_principal,
+                        session_id=record.session_id,
+                        trace_id=record.trace_id,
+                    )
         with record.lock:
             identity_content = content if continuation_budget is None else json.dumps(
                 {'content': content, 'reservation': continuation_budget}, sort_keys=True, separators=(',', ':'))
@@ -560,6 +580,9 @@ class RuntimeAdapter:
                 record.continuation_budget = budget
                 record.budget_journal = contained_session_path(self._session_root, private_session) / 'continuation-budget.jsonl' if budget else None
                 record.budget_run_id = root_id if budget else None
+            # A rehydrated session has no owned process yet; bind one now while
+            # the admitted turn is fenced by the session lock.
+            self._ensure_harness(record)
             now = time.monotonic()
             run = ActiveRun(run_id=record.process_root_id if self._root_scoped else uuid.uuid4().hex,
                             started_at=now, last_runtime_activity_at=now)
@@ -613,7 +636,7 @@ class RuntimeAdapter:
 
     def reconcile_prompt(self, session_id: str, idempotency_key: str, content_sha256: str) -> dict[str, object]:
         try:
-            record = self._get(session_id)
+            record = self._get(session_id, rehydrate=False)
         except KeyError:
             validate_identifier(session_id, field="session_id")
             try:
@@ -813,7 +836,7 @@ class RuntimeAdapter:
                     "more": len(state["calls"]) > after_sequence + len(rows), "idle": state["open_root"] is None}
 
         try:
-            record = self._get(context["session_id"])
+            record = self._get(context["session_id"], rehydrate=False)
         except KeyError:
             journal = LifecycleJournal.claim(self._session_root / "byq-lifecycle-evidence", context)
             try:
@@ -832,7 +855,7 @@ class RuntimeAdapter:
         the previous BYQ root has been durably closed, including across restart.
         """
         try:
-            record = self._get(session_id)
+            record = self._get(session_id, rehydrate=False)
         except KeyError:
             validate_identifier(session_id, field="session_id")
             root_path = self._session_root / "byq-lifecycle-evidence"
@@ -966,7 +989,8 @@ class RuntimeAdapter:
                 self._emit(record, "session.closed", "runtime-adapter", {"reason": "released"})
         finally:
             try:
-                self._compatibility.close(record.harness)
+                if record.harness is not None:
+                    self._compatibility.close(record.harness)
             finally:
                 if record.journal:
                     record.journal.close()
@@ -1031,7 +1055,8 @@ class RuntimeAdapter:
                 failure = exc
             finally:
                 try:
-                    self._compatibility.close(record.harness)
+                    if record.harness is not None:
+                        self._compatibility.close(record.harness)
                 except Exception as exc:
                     failure = exc
                 finally:
@@ -1043,12 +1068,151 @@ class RuntimeAdapter:
         if failure is not None:
             raise failure
 
-    def _get(self, session_id: str) -> RuntimeSession:
+    def _get(self, session_id: str, *, rehydrate: bool = True) -> RuntimeSession:
         with self._lock:
             record = self._sessions.get(session_id)
-        if record is None:
+        if record is not None:
+            return record
+        if not rehydrate:
             raise KeyError(f"unknown BYQ session: {session_id}")
-        return record
+        return self._rehydrate(session_id)
+
+    def _rehydrate(self, session_id: str, initial_sequence: int = 0) -> RuntimeSession:
+        """Rebind one durable BYQ session after a process restart.
+
+        Container recreation empties the in-memory map while the BYQ lifecycle
+        journal and DSH session root remain on disk. Rehydrating on demand is
+        idempotent and reads only BYQ evidence; raw DSH state is never parsed.
+        The caller's persisted Gateway sequence reconciles the reserved public
+        sequence so a rebind cannot manufacture a WorkflowTrace gap.
+        """
+
+        validate_identifier(session_id, field="session_id")
+        if isinstance(initial_sequence, bool) or not isinstance(initial_sequence, int) or initial_sequence < 0:
+            raise ValueError("initial_sequence must be a non-negative integer")
+        with self._lock:
+            existing = self._sessions.get(session_id)
+            if existing is not None:
+                return existing
+            evidence_root = self._session_root / "byq-lifecycle-evidence"
+            try:
+                state = LifecycleJournal.read(evidence_root / f"{session_id}.json")
+            except (FileNotFoundError, OSError, ValueError):
+                raise KeyError(f"unknown BYQ session: {session_id}") from None
+            context = state["context"]
+            if context["session_id"] != session_id:
+                raise KeyError(f"unknown BYQ session: {session_id}")
+            # Capture a lost open root before claim appends its terminal.
+            lost_root = state["open_root"]
+            try:
+                journal = LifecycleJournal.claim(evidence_root, context)
+            except (JournalBusy, FileNotFoundError, OSError, ValueError):
+                raise KeyError(f"unknown BYQ session: {session_id}") from None
+            if initial_sequence and initial_sequence != journal.state["sequence"]:
+                # The Gateway trace is the append authority. Unpersisted
+                # durable evidence is re-anchored at persisted+1 so replay is
+                # gap-free; a Gateway that is ahead reserves the sequence. A
+                # terminal the Gateway already persisted pins its exact
+                # sequence and cannot be rebased, so keep the durable value.
+                try:
+                    journal.rebase(initial_sequence)
+                except ValueError:
+                    pass
+            record = RuntimeSession(
+                session_id=session_id,
+                trace_id=context["trace_id"],
+                harness=None,
+                runtime_session_id=f"resume-{uuid.uuid4().hex}",
+                owner_principal=context["owner"],
+                workspace_id=context["workspace_id"],
+                sequence=journal.state["sequence"],
+                journal=journal,
+                history=list(journal.state["events"]),
+            )
+            if isinstance(lost_root, dict):
+                record.status = SessionStatus.FAILED
+                record.interrupted_run_id = lost_root.get("root_run_id")
+            else:
+                record.status = SessionStatus.READY
+            for event in record.history:
+                terminal = project_lifecycle_event(event, session_id, record.trace_id)
+                if terminal and terminal["outcome"] != "active":
+                    root = terminal["root_run_id"]
+                    record.terminal_receipts.setdefault(root, lifecycle_receipt(terminal))
+                    if root not in journal.state["terminal_acks"]:
+                        record.pending_terminal_receipts.add(root)
+            self._sessions[session_id] = record
+            return record
+
+    def _ensure_harness(self, record: RuntimeSession) -> None:
+        """Bind a fresh private DSH generation to a rehydrated record.
+
+        Called under ``record.lock`` immediately before a prompt. The stable
+        public BYQ identity is never reused as an append-only DSH session.
+        """
+
+        if record.harness is not None:
+            return
+        if not record.model_resolution:
+            record.model_resolution = self._resolve_model(
+                owner_principal=record.owner_principal,
+                session_id=record.session_id,
+                trace_id=record.trace_id,
+            )
+        runtime_generation = f"generation-{uuid.uuid4().hex}"
+        process_root_id = uuid.uuid4().hex if self._root_scoped else ""
+        harness = self._build_harness(
+            record.session_id,
+            contained_session_path(self._session_root, record.runtime_session_id),
+            trace_id=record.trace_id,
+            owner_principal=record.owner_principal,
+            workspace_id=record.workspace_id,
+            model_resolution=record.model_resolution,
+            runtime_generation=runtime_generation,
+            root_run_id=process_root_id,
+        )
+        self._compatibility.start(harness)
+        record.harness = harness
+        record.runtime_generation = runtime_generation
+        record.process_root_id = process_root_id
+        record.process_used = False
+        record.process_closed = False
+
+    def _rebind_session(
+        self, session_id: str, trace_id: str, owner_principal: str | None,
+        workspace_id: str | None, initial_sequence: int,
+        context: list[ConversationContextMessage], recovery: dict | None,
+    ) -> dict[str, Any]:
+        """Idempotently rebind a durable on-disk session after a restart."""
+
+        record = self._rehydrate(session_id, initial_sequence)
+        try:
+            with record.lock:
+                if record.trace_id != trace_id:
+                    raise SessionConflict(f"durable BYQ session trace conflicts: {session_id}")
+                if owner_principal is not None and record.owner_principal != owner_principal:
+                    raise SessionConflict(f"durable BYQ session owner conflicts: {session_id}")
+                if workspace_id is not None and record.workspace_id != workspace_id:
+                    raise SessionConflict(f"durable BYQ session workspace conflicts: {session_id}")
+                record.pending_conversation_context = context
+                record.pending_conversation_recovery = recovery
+                self._ensure_harness(record)
+                record.status = SessionStatus.READY
+                record.interrupted_run_id = None
+                self._emit(record, "session.ready", "runtime-adapter", {"status": "ready"})
+            return self.describe_session(record)
+        except BaseException:
+            with record.lock:
+                if record.journal is not None:
+                    record.journal.close()
+            with self._lock:
+                if self._sessions.get(session_id) is record:
+                    del self._sessions[session_id]
+            try:
+                if record.harness is not None:
+                    self._compatibility.close(record.harness)
+            finally:
+                raise
 
     def continuation_qualified(self, record: RuntimeSession) -> bool:
         try:
@@ -1087,7 +1251,7 @@ class RuntimeAdapter:
             except (OSError, ValueError, TypeError, KeyError):
                 return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
         try:
-            record = self._get(session_id)
+            record = self._get(session_id, rehydrate=False)
         except KeyError:
             return recover()
         with record.lock:
