@@ -8,6 +8,29 @@ const INPUT_CEILING = 1048576;
 const OUTPUT_CEILING = 393216;
 const MAX_CALLS = 256;
 
+// Qualified continuation routes. This mirrors the single Backend authority,
+// RUNTIME_MODEL_ALLOWLIST in services/backend/app/credentials.py (ADR-0075 /
+// ADR-0076): deepseek-official plus the six closed opencode-* DSH runtime
+// providers, each with the exact model ids the DSH composition accepts.
+// tests/architecture/test_architecture.py parses this table together with
+// plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml and fails CI on any
+// divergence, so the guard can never silently drift stricter (blocking an
+// admitted route) or looser (admitting an unconfigured route) than admission.
+export const QUALIFIED_CONTINUATION_ROUTES = {
+  "deepseek-official": ["deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"],
+  "opencode-go-responses": ["gpt-5.6-luna", "grok-4.6"],
+  "opencode-go-chat": ["deepseek-v4-flash", "deepseek-v4.1-flash", "deepseek-v4-pro", "glm-5.3", "kimi-k3"],
+  "opencode-go-messages": ["minimax-m3", "qwen3.8-max"],
+  "opencode-zen-responses": ["gpt-5.6-sol", "gpt-5.6-terra", "grok-4.6"],
+  "opencode-zen-chat": ["deepseek-v4-flash", "minimax-m3"],
+  "opencode-zen-messages": ["claude-opus-5", "claude-sonnet-5", "qwen3.7-max"],
+};
+
+export function continuationRouteQualified(provider, model) {
+  const models = QUALIFIED_CONTINUATION_ROUTES[provider];
+  return Array.isArray(models) && typeof model === 'string' && models.includes(model);
+}
+
 function positive(value) {
   return Number.isSafeInteger(value) && value > 0;
 }
@@ -28,9 +51,11 @@ export function createBudgetGate(config, append, now = Date.now, monotonic = () 
     if (failed || now() >= config.expiresAt || monotonic() - started >= lifetime) {
       throw new Error('BYQ_CONTINUATION_BUDGET_CLOSED');
     }
-    // This ceiling is a candidate for the official text-only DeepSeek route.
-    // Other routes and model aliases require separate provider qualification.
-    if (options.provider !== 'deepseek-official' || options.model !== 'deepseek-v4-flash'
+    // The route must be one admission already qualified (ADR-0075): an exact
+    // (provider, model) pair from the Backend runtime allowlist. Unknown
+    // providers, a known route with an unlisted model, and the official route
+    // with an unknown model all fail closed before any budget is charged.
+    if (!continuationRouteQualified(options.provider, options.model)
         || !positive(options.maxTokens) || options.maxTokens > OUTPUT_CEILING) {
       throw new Error('BYQ_CONTINUATION_ROUTE_UNQUALIFIED');
     }

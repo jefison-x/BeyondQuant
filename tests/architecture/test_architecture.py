@@ -30,6 +30,53 @@ def dsh_service_block() -> str:
     return service_block("dsh", "compose.dsh-web.yml")
 
 
+def composition_llm_provider_models(contents: str) -> dict[str, list[str]]:
+    """Read the closed opencode runtime providers from the generated Product composition.
+
+    The repository intentionally does not depend on a YAML parser in the
+    architecture lane, so this is a strict, fail-closed reader of the exact
+    generated shape rather than a general YAML implementation.
+    """
+    lines = contents.splitlines()
+    try:
+        start = lines.index("- id: llm-opencode")
+    except ValueError as error:
+        raise AssertionError("composition llm-opencode entry is required") from error
+    providers_index = None
+    for index in range(start + 1, len(lines)):
+        if lines[index].startswith("- "):
+            break
+        if lines[index] == "    providers:":
+            providers_index = index
+            break
+    if providers_index is None:
+        raise AssertionError("composition llm-opencode providers are required")
+    providers: dict[str, list[str]] = {}
+    current: str | None = None
+    in_models = False
+    for line in lines[providers_index + 1:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if line.startswith("- "):
+            break
+        indent = len(line) - len(line.lstrip(" "))
+        if indent <= 4:
+            break
+        if indent == 6 and line.rstrip().endswith(":"):
+            current = stripped[:-1]
+            providers[current] = []
+            in_models = False
+        elif indent == 8 and stripped == "models:":
+            in_models = True
+        elif indent == 8:
+            in_models = False
+        elif indent == 10 and in_models and stripped.startswith("- id:"):
+            assert current is not None
+            providers[current].append(stripped[len("- id:"):].strip())
+    return providers
+
+
 class ArchitectureBoundaryTests(unittest.TestCase):
     def test_frontend_proxy_does_not_buffer_workflow_sse(self) -> None:
         nginx = (ROOT / "apps/frontend/nginx.conf").read_text()
@@ -1114,6 +1161,38 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("failOnStartupError: true", composition)
         self.assertNotIn("postgres", composition.lower())
         self.assertNotIn("redis", composition.lower())
+
+    def test_continuation_budget_guard_routes_match_dsh_composition(self) -> None:
+        # ADR-0077 auto-continuation must admit exactly the routes admission
+        # (ADR-0075/ADR-0076) already qualified. The guard table is the JS
+        # mirror of the Backend RUNTIME_MODEL_ALLOWLIST; this drift test ties
+        # every opencode route and model to the generated composition so a
+        # composition change cannot leave the guard silently stricter or
+        # looser than the model the Backend already admitted.
+        guard = (ROOT / "plugins/dsh-byq/runtime/byq-continuation-budget.js").read_text()
+        routes = {
+            match.group(1): tuple(json.loads(match.group(2)))
+            for match in re.finditer(r'(?m)^  "([A-Za-z0-9-]+)": (\[[^\]]*\]),$', guard)
+        }
+        self.assertEqual(set(routes), {
+            "deepseek-official", "opencode-go-responses", "opencode-go-chat",
+            "opencode-go-messages", "opencode-zen-responses", "opencode-zen-chat",
+            "opencode-zen-messages",
+        })
+        composition = composition_llm_provider_models(
+            (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
+        )
+        self.assertEqual(
+            {provider: list(models) for provider, models in routes.items()
+             if provider != "deepseek-official"},
+            composition,
+        )
+        # deepseek-official has no explicit composition list; its allowlist is
+        # the static deepseek catalogue the Backend also resolves against.
+        self.assertEqual(
+            list(routes["deepseek-official"]),
+            ["deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"],
+        )
 
     def test_phase13_roles_use_official_dsh_seams_and_bounded_capabilities(self) -> None:
         composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()

@@ -1,10 +1,58 @@
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
-import { createBudgetGate } from './byq-continuation-budget.js';
+import {
+  QUALIFIED_CONTINUATION_ROUTES,
+  continuationRouteQualified,
+  createBudgetGate,
+} from './byq-continuation-budget.js';
 
 const request = { provider: 'deepseek-official', model: 'deepseek-v4-flash', maxTokens: 8 };
 const ceiling = 1048576 + 8;
 const config = { tokenLimit: ceiling, expiresAt: 1000, reservationId: 'reservation-synthetic' };
+
+// The composition is present in the repository and in the architecture lane,
+// but the runtime helper container mounts only this directory. When it is
+// absent the authoritative composition drift assertion lives in
+// tests/architecture/test_architecture.py.
+const compositionUrl = new URL('../compositions/byq-product-sdk.cordis.yml', import.meta.url);
+const compositionAvailable = existsSync(compositionUrl);
+
+function compositionProviderModels(source) {
+  const lines = source.split('\n');
+  const start = lines.indexOf('- id: llm-opencode');
+  assert.notEqual(start, -1, 'composition llm-opencode entry is required');
+  let providersIndex = -1;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (lines[index].startsWith('- ')) break;
+    if (lines[index] === '    providers:') {
+      providersIndex = index;
+      break;
+    }
+  }
+  assert.notEqual(providersIndex, -1, 'composition llm-opencode providers are required');
+  const providers = {};
+  let current = null;
+  let inModels = false;
+  for (const line of lines.slice(providersIndex + 1)) {
+    if (line.trim() === '') continue;
+    if (line.startsWith('- ')) break;
+    const indent = line.length - line.trimStart().length;
+    if (indent <= 4) break;
+    if (indent === 6 && line.trimEnd().endsWith(':')) {
+      current = line.trim().slice(0, -1);
+      providers[current] = [];
+      inModels = false;
+    } else if (indent === 8 && line.trim() === 'models:') {
+      inModels = true;
+    } else if (indent === 8) {
+      inModels = false;
+    } else if (indent === 10 && inModels && line.trim().startsWith('- id:')) {
+      providers[current].push(line.trim().slice('- id:'.length).trim());
+    }
+  }
+  return providers;
+}
 
 test('exact ceiling admits once; one-token shortage refuses before storage', () => {
   const records = [];
@@ -46,12 +94,50 @@ test('invalid allowances and unsupported route/output reject', () => {
     assert.throws(() => createBudgetGate({ ...config, tokenLimit }, () => {}), /INVALID/);
   }
   const gate = createBudgetGate(config, () => assert.fail('unqualified'), () => 1, () => 1);
-  for (const change of [{ provider: 'opencode-go-chat' }, { model: 'unknown' },
+  for (const change of [{ provider: 'unqualified-provider' }, { model: 'unknown' },
     { maxTokens: undefined }, { maxTokens: true }, { maxTokens: 393217 }]) {
     assert.throws(() => gate({ ...request, ...change }), /UNQUALIFIED/);
   }
 });
 
+test('every allowlisted route and model is qualified, including discovered models', () => {
+  for (const [provider, models] of Object.entries(QUALIFIED_CONTINUATION_ROUTES)) {
+    for (const model of models) {
+      assert.equal(continuationRouteQualified(provider, model), true, `${provider}/${model}`);
+    }
+  }
+  // The production admin profile is opencode-go / deepseek-v4.1-flash; the
+  // backend maps it to the opencode-go-chat runtime route that DSH exposes.
+  assert.equal(continuationRouteQualified('opencode-go-chat', 'deepseek-v4.1-flash'), true);
+  assert.equal(continuationRouteQualified('opencode-go-messages', 'minimax-m3'), true);
+  assert.equal(continuationRouteQualified('opencode-zen-messages', 'claude-opus-5'), true);
+});
+
+test('an unlisted model on a known route and an unknown provider are unqualified', () => {
+  assert.equal(continuationRouteQualified('opencode-go-chat', 'kimi-k3-experimental'), false);
+  assert.equal(continuationRouteQualified('opencode-zen-chat', 'deepseek-v4.1-flash'), false);
+  assert.equal(continuationRouteQualified('deepseek-official', 'deepseek-v4.1-flash'), false);
+  assert.equal(continuationRouteQualified('unqualified-provider', 'deepseek-v4-flash'), false);
+  assert.equal(continuationRouteQualified('opencode-go-chat', ''), false);
+  assert.equal(continuationRouteQualified('opencode-go-chat', undefined), false);
+});
+
+test('the gate blocks a non-allowlisted model on an opencode route with the stable error', () => {
+  const gate = createBudgetGate(config, () => assert.fail('must not persist unqualified route'), () => 1, () => 1);
+  assert.throws(
+    () => gate({ provider: 'opencode-go-chat', model: 'kimi-k3-experimental', maxTokens: 8 }),
+    error => error.message === 'BYQ_CONTINUATION_ROUTE_UNQUALIFIED',
+  );
+});
+
+test('an admitted opencode continuation charges the same conservative ceiling', () => {
+  const records = [];
+  const gate = createBudgetGate(config, r => records.push(r), () => 1, () => 1);
+  const record = gate({ provider: 'opencode-go-chat', model: 'deepseek-v4.1-flash', maxTokens: 8 });
+  assert.deepEqual(record, { reservation_id: 'reservation-synthetic', call: 1,
+    reserved_tokens: ceiling, charged_ceiling: ceiling });
+  assert.equal(records.length, 1);
+});
 
 test('long reservation passes fifteen minutes but rollback cannot extend its deadline', () => {
   let wall = 1000, elapsed = 0;
@@ -74,3 +160,11 @@ test('an existing short reservation still stops at its original monotonic deadli
   elapsed = 900000; wall = 1;
   assert.throws(() => gate(request), /CLOSED/);
 });
+
+test('qualified opencode routes mirror the DSH product composition allowlist',
+  { skip: compositionAvailable ? false : 'DSH composition is not mounted in this environment' }, () => {
+    const composition = compositionProviderModels(readFileSync(compositionUrl, 'utf8'));
+    const opencode = Object.fromEntries(Object.entries(QUALIFIED_CONTINUATION_ROUTES)
+      .filter(([provider]) => provider !== 'deepseek-official'));
+    assert.deepEqual(opencode, composition);
+  });
