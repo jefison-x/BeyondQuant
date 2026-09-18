@@ -19,6 +19,7 @@ from app.credentials import (
     CredentialStore,
     CredentialUnavailable,
     _default_model_list_fetch,
+    _MODEL_RUNTIME_PREFIXES,
     _runtime_provider_for,
 )
 from tests.workspace_helpers import trusted_agent_context
@@ -777,6 +778,28 @@ def _llm_provider_models(document: object, entry_id: str) -> dict[str, tuple[str
     raise AssertionError(f"DSH composition entry {entry_id!r} not found")
 
 
+def _guard_display_provider_routes(guard: str) -> dict[str, tuple[tuple[str, str], ...]]:
+    """Parse the guard's JS display-provider -> runtime-route prefix table."""
+    start = guard.index("export const DISPLAY_PROVIDER_RUNTIME_ROUTES = {")
+    block = guard[start:]
+    block = block[: block.index("\n};")]
+    routes: dict[str, list[tuple[str, str]]] = {}
+    current = ""
+    for line in block.splitlines()[1:]:
+        if not line.strip() or line == "  ],":
+            continue
+        provider = re.fullmatch(r'  "([A-Za-z0-9-]+)": \[', line)
+        if provider:
+            current = provider.group(1)
+            routes[current] = []
+            continue
+        entry = re.fullmatch(r'    \["([^"]*)", "([A-Za-z0-9-]+)"\],', line)
+        if entry is None or current not in routes:
+            raise AssertionError(f"unparsed guard mapping line: {line!r}")
+        routes[current].append((entry.group(1), entry.group(2)))
+    return {provider: tuple(entries) for provider, entries in routes.items()}
+
+
 def test_runtime_model_allowlist_matches_dsh_composition() -> None:
     root = _repository_root()
     composition_models = _llm_provider_models(
@@ -808,6 +831,37 @@ def test_continuation_budget_guard_matches_runtime_model_allowlist() -> None:
     guard = (root / "plugins/dsh-byq/runtime/byq-continuation-budget.js").read_text()
     routes = {
         match.group(1): tuple(json.loads(match.group(2)))
-        for match in re.finditer(r'(?m)^  "([A-Za-z0-9-]+)": (\[[^\]]*\]),$', guard)
+        for match in re.finditer(r'(?m)^  "([A-Za-z0-9-]+)": (\[[^\]\n]*\]),$', guard)
     }
     assert routes == {runtime: tuple(models) for runtime, models in RUNTIME_MODEL_ALLOWLIST.items()}
+    # The guard also mirrors the Backend display-provider -> runtime-route
+    # mapping (_MODEL_RUNTIME_PREFIXES); it must resolve the same route for the
+    # same (provider, model) pair, and every target must be one of the runtime
+    # routes the allowlist (and therefore the DSH composition) already admits.
+    display_routes = _guard_display_provider_routes(guard)
+    assert display_routes == _MODEL_RUNTIME_PREFIXES
+    for provider, prefixes in display_routes.items():
+        for _prefix, runtime in prefixes:
+            assert runtime in RUNTIME_MODEL_ALLOWLIST, (provider, runtime)
+    # The guard's normalization must return exactly the route the Backend's
+    # prefix resolver returns for the same (display provider, model), so it can
+    # never silently evaluate a different runtime authority.
+    for item in MODEL_CATALOG:
+        provider = str(item["provider"])
+        model = str(item["model"])
+        assert display_routes[provider], provider
+        resolved = next((runtime for prefix, runtime in display_routes[provider]
+                         if prefix == "" or model.startswith(prefix)), None)
+        assert resolved == _runtime_provider_for(provider, model), (provider, model)
+
+    def guard_admits(provider: str, model: str) -> bool:
+        runtime = next((route for prefix, route in display_routes.get(provider, ())
+                        if prefix == "" or model.startswith(prefix)), None)
+        return runtime is not None and model in RUNTIME_MODEL_ALLOWLIST[runtime]
+
+    # The production admin profile (opencode-go / deepseek-v4.1-flash) is now
+    # admitted via normalization, while an unmapped model stays blocked.
+    assert guard_admits("opencode-go", "deepseek-v4.1-flash")
+    assert guard_admits("opencode-zen", "claude-opus-5")
+    assert not guard_admits("opencode-go", "kimi-k3-experimental")
+    assert not guard_admits("opencode-go", "claude-opus-5")

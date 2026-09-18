@@ -26,8 +26,65 @@ export const QUALIFIED_CONTINUATION_ROUTES = {
   "opencode-zen-messages": ["claude-opus-5", "claude-sonnet-5", "qwen3.7-max"],
 };
 
+// Display/credential provider -> DSH runtime route by model prefix. The
+// Backend owns this exact semantics in services/backend/app/credentials.py
+// (_MODEL_RUNTIME_PREFIXES / _runtime_provider_for): a model profile stores a
+// display provider such as "opencode-go", while DSH registers one route per
+// wire protocol (opencode-go-chat / -responses / -messages). The first entry
+// whose prefix is empty or is a prefix of the model id wins, exactly as the
+// Backend resolves it. services/backend/tests/test_credentials.py parses this
+// table and fails CI if it diverges from the Backend mapping, so the guard
+// admits the same (provider, model) pair the Backend already admitted without
+// keeping a second model list.
+export const DISPLAY_PROVIDER_RUNTIME_ROUTES = {
+  "deepseek": [
+    ["", "deepseek-official"],
+  ],
+  "opencode-go": [
+    ["gpt-", "opencode-go-responses"],
+    ["grok-", "opencode-go-responses"],
+    ["deepseek-", "opencode-go-chat"],
+    ["glm-", "opencode-go-chat"],
+    ["kimi-", "opencode-go-chat"],
+    ["minimax-", "opencode-go-messages"],
+    ["qwen", "opencode-go-messages"],
+  ],
+  "opencode-zen": [
+    ["gpt-", "opencode-zen-responses"],
+    ["grok-", "opencode-zen-responses"],
+    ["claude-", "opencode-zen-messages"],
+    ["qwen", "opencode-zen-messages"],
+    ["deepseek-", "opencode-zen-chat"],
+    ["minimax-", "opencode-zen-messages"],
+  ],
+};
+
+// Resolve the runtime route the guard should evaluate for one call. An
+// already-runtime provider is returned unchanged; a display provider is
+// normalized through the Backend mapping; an unknown provider resolves to
+// null so it can only fail closed.
+export function runtimeRouteFor(provider, model) {
+  if (Object.prototype.hasOwnProperty.call(QUALIFIED_CONTINUATION_ROUTES, provider)) {
+    return provider;
+  }
+  const prefixes = DISPLAY_PROVIDER_RUNTIME_ROUTES[provider];
+  if (!Array.isArray(prefixes) || typeof model !== 'string') {
+    return null;
+  }
+  for (const [prefix, runtime] of prefixes) {
+    if (prefix === '' || model.startsWith(prefix)) {
+      return runtime;
+    }
+  }
+  return null;
+}
+
 export function continuationRouteQualified(provider, model) {
-  const models = QUALIFIED_CONTINUATION_ROUTES[provider];
+  const runtime = runtimeRouteFor(provider, model);
+  if (runtime === null) {
+    return false;
+  }
+  const models = QUALIFIED_CONTINUATION_ROUTES[runtime];
   return Array.isArray(models) && typeof model === 'string' && models.includes(model);
 }
 

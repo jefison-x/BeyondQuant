@@ -67,6 +67,36 @@ def test_candidate_uses_only_public_sdk_configuration(tmp_path: Path) -> None:
     assert config.env["DSH_PERMISSION_MODE"] == "read-only"
     assert "launch_args_override" not in captured
     assert "cordis" not in captured
+    assert config.max_tokens is None
+
+
+def test_candidate_applies_continuation_output_cap_to_every_route(tmp_path: Path) -> None:
+    # ADR-0077: the llm/stream guard charges 1,048,576 + options.maxTokens and
+    # fails closed when the request carries no output cap. The SDK-level cap
+    # reaches every provider route, including the qualified opencode-* pi-ai
+    # routes that have no composition default.
+    executable = tmp_path / "dsh"
+    executable.write_text("candidate", encoding="utf-8")
+    patch = tmp_path / "candidate.patch.yml"
+    patch.write_text("profile: sdk\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def config_factory(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace(**kwargs)
+
+    compatibility = Dsh012Compatibility(
+        harness_factory=lambda *, config: config,
+        runtime_path_factory=lambda: executable,
+        config_factory=config_factory,
+    )
+    config = compatibility.build_harness(
+        provider="opencode-go-chat", model="deepseek-v4.1-flash", composition=patch,
+        session_root=tmp_path / "home", runtime_command=compatibility.runtime_command(tmp_path, "node"),
+        environment={"OPENCODE_API_KEY": "redacted"}, max_tokens=8192,
+    )
+    assert config.max_tokens == 8192
+    assert captured["max_tokens"] == 8192
 
 
 def test_candidate_normalizes_lifecycle_lineage_and_finish_reasons() -> None:

@@ -50,6 +50,7 @@ class RuntimeCompatibility(Protocol):
     def build_harness(
         self, *, provider: str, model: str, composition: Path, session_root: Path,
         runtime_command: tuple[str, ...], environment: dict[str, str],
+        max_tokens: int | None = None,
     ) -> Any: ...
 
     def start(self, harness: Any) -> None: ...
