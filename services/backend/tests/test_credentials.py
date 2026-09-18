@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -795,3 +796,18 @@ def test_runtime_model_allowlist_matches_dsh_composition() -> None:
         item["model"] for item in MODEL_CATALOG if item["provider"] == "deepseek"
     )
     assert set(RUNTIME_MODEL_ALLOWLIST) == set(composition_models) | {"deepseek-official"}
+
+
+def test_continuation_budget_guard_matches_runtime_model_allowlist() -> None:
+    # ADR-0077 auto-continuation loads the JS guard inside DSH, while admission
+    # resolves through the Backend. The guard's route table is the JS mirror of
+    # RUNTIME_MODEL_ALLOWLIST; this test keeps the two in lockstep so the guard
+    # can never block a genuinely admitted route (the production regression) or
+    # admit a route the Backend would reject.
+    root = _repository_root()
+    guard = (root / "plugins/dsh-byq/runtime/byq-continuation-budget.js").read_text()
+    routes = {
+        match.group(1): tuple(json.loads(match.group(2)))
+        for match in re.finditer(r'(?m)^  "([A-Za-z0-9-]+)": (\[[^\]]*\]),$', guard)
+    }
+    assert routes == {runtime: tuple(models) for runtime, models in RUNTIME_MODEL_ALLOWLIST.items()}

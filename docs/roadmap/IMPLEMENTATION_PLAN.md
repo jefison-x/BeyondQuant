@@ -48,6 +48,19 @@ journal/lock/session dir/gateway trace 到时间戳归档并记录 sha256 与原
 `continuation_scope.py` MCP 准入生成至多一个有界续接回合；失败/取消、未验证快照、外owner/外工作区/
 无关会话都不触发。该切片只新增触发器，不改数据面、sandbox、模型许可或无关服务；不推进 Product Phase。
 
+续接路由资格对齐维护（fix，构建修订 `dsh-0.1.2rc1-post-u8.137`）：生产复现数据就绪自动续接
+（ADR-0077）在 gateway 准入后仍被 `plugins/dsh-byq/runtime/byq-continuation-budget.js` 拒绝：
+guard 只接受硬编码的 `provider === 'deepseek-official' && model === 'deepseek-v4-flash'`，而准入
+（ADR-0075/ADR-0076）已按 Backend `RUNTIME_MODEL_ALLOWLIST` 对六个 `opencode-*` 运行时路由及其
+composition 模型白名单资格化，因此当前 `opencode-go / deepseek-v4.1-flash` 档案在 guard 处以
+`BYQ_CONTINUATION_ROUTE_UNQUALIFIED`（`call_count=0`）失败。guard 现查询与 Backend 权威白名单一致的
+`(provider, model)` 合格表（`deepseek-official` 及六个 `opencode-*` 路由，模型必须属于该路由白名单），
+未知 provider、已知路由的未白名单模型、官方路由的未知模型仍在记账前以原稳定错误闭合；预算上界、
+预留/调用计数与结算保持不变。`tests/architecture/test_architecture.py` 解析 composition 的
+`llm-opencode` 模型表并逐项断言与 guard 相等，Backend `test_credentials.py` 断言 guard 表等于
+`RUNTIME_MODEL_ALLOWLIST`，避免第二份列表静默漂移。不修改模型白名单内容、数据面或 sandbox；
+不改变 Accepted ADR 文本（ADR-0077 仍为 Proposed）。
+
 从 Phase 9 起，永久 migration source of truth 为 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`。实现 phase 前必须先检查、分类其 Community candidates。可在 BYQ-owned contracts 中重新实现 provider/engine-independent semantics，但不得复制 Community runtime、storage、provider 或 engine architecture。BaoStock、AKShare、VectorBT、PydanticAI 和 Hermes 保持排除，除非未来 Accepted ADR 明确反转。
 
 所有 phases 遵循 `docs/DEVELOPMENT_WORKFLOW.md`：只执行 `STATUS.md` 指定的 next phase；每 phase 使用 isolated worktree/branch/PR；contract/test 优先；保持 Product/Agent/Quant/Data/Engineering boundaries；CI 与 evidence 完成后才进入 merge gate。
