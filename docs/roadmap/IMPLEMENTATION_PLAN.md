@@ -12,6 +12,32 @@
 独立维护规划：[DSH 0.1.2rc1 升级与可维护性改造](DSH_012RC1_UPGRADE_PLAN.md) 定义 U0–U8，
 目前仅为待实施方案，不占用下一 Product Phase，不改变当前 Runtime baseline，也不授权自动生产升级。
 
+## Maintenance Round（2026-09-18/19）：ADR-0047 聚合边界、运行/续接连续性与只读归档
+
+本轮维护不推进 Product Phase。逐项构建修订与 PR 如下；详细记录见紧随其后的逐条维护段落，
+以及本文件末尾的“Post-Phase 82 信号/回测分片收口”与四个“Maintenance —”小节。
+
+1. **ADR-0047 聚合分片接入 signal/backtest 准备链**（构建修订 `dsh-0.1.2rc1-post-u8.129`，PR #298）：
+   共享确定性分片规划器，aggregate readiness 由逐分片 assessment 派生，`requirement_plan_json` 持久化。
+2. **delist-date 覆盖边界修正**（`…-post-u8.130`，PR #299）：`trade_date >= delist_date` 非适用，
+   对齐 ADR-0028 生命周期语义，不再永久阻塞 readiness。
+3. **signal sandbox 输入去重与列式编码**（`…-post-u8.131`，PR #300）：`bars_frame.v1` 单一冻结面板，
+   100.24→24.10 MiB，`AGGREGATE_ROW_LIMIT=2_000_001` 为单一事实来源。
+4. **snapshot/backtest 聚合边界对齐**（`…-post-u8.132`，PR #301）：`signal-snapshot-v2` 列式快照
+   （41.30→13.68 MiB），`backtest.py MAX_BARS/MAX_SIGNALS` 对齐 ADR-0047 聚合上限。
+5. **运行会话重启重建与 trace 连续**（`…-post-u8.133`，PR #302）。
+6. **ready bars 绝对 `adjustment_factor` 与 plan-hash readiness**（`…-post-u8.134`，PR #303）。
+7. **显式 stale-lease 与可逆陈旧会话归档**（`…-post-u8.135`，PR #304；生产已归档 15 个陈旧会话）。
+8. **数据就绪自动续接**（`…-post-u8.136`，PR #305；ADR-0077 **仍为 Proposed**，生产已运行）。
+9. **续接路由资格与 Backend allowlist 对齐**（`…-post-u8.137`，PR #306）。
+
+本轮另新增只读运维产物（构建修订 `dsh-0.1.2rc1-post-u8.138`）：
+[终态 signal job 归档审计](../operations/TERMINAL_SIGNAL_JOB_ARCHIVE.md) 与 `scripts/ops/archive_terminal_signal_jobs.py`
+（audit-first，`--apply` 仅落盘可逆 manifest，不写业务表；终态 job 归档需新增具名 ADR/domain action），
+以及 [重复沪深300股票池清单](../operations/HS300_DUPLICATE_POOLS.md)（仅提议，整合须经产品/domain 授权路径）。
+生产结果为 round-1 HS300 momentum+Kelly 回测完成（`backtest_83cab36a…` / `artifact_c62ab34f…`，
++25.49% vs +19.65%，最大回撤 33.83%），round-2 等待 `agent_approval_4e2ecb61eca74ec1a5c6721b5204f4f5`。
+
 Restart 存活维护（fix，构建修订 `dsh-0.1.2rc1-post-u8.133`）：runtime-adapter 容器在部署时重建后，
 内存 `_sessions` 丢失但 `DSH_SESSION_ROOT` 上的 BYQ lifecycle journal 与 DSH session root 仍在。
 `_rehydrate` 现在按需、幂等地从该 BYQ evidence 重建会话记录，`_get` 与 prompt/events/subscribe
@@ -776,7 +802,7 @@ Worker 按配置的 Tushare 2,000 积分预算保守节流。新增由现有持�
 真实 Product API/Chrome 桌面与移动端流程，以及 Community 功能清单。Browser 不得调用 Backend、MCP、
 DSH、PostgreSQL 或 Tushare；Data Worker 仍是唯一 Provider caller。
 
-Post-Phase 82 信号/回测分片收口（维护，不新增阶段）：`signal_producer_jobs` 的 signal/backtest
+Post-Phase 82 信号/回测分片收口（维护，不新增阶段；构建修订 `dsh-0.1.2rc1-post-u8.129`，PR #298）：`signal_producer_jobs` 的 signal/backtest
 准备链已与 ML 一样接入 ADR-0047。共享确定性分片规划器（`services/backend/app/market_plan.py`）
 由 data demand、ML training 和 signal/backtest prepare 复用；aggregate readiness 只从各分片
 assessment 派生，每个未就绪分片各自产生既有 repair 请求，仅当全部分片 ready 时 Worker 才用
@@ -982,7 +1008,7 @@ HIST 历史关系可行性调查与深度学习环境资格调查。交付物：
 
 边界：不外泄密钥、不引入新 SDK、未知 provider/失败闭合；每切片独立 worktree/Draft PR。
 
-## Maintenance — Delist-boundary coverage correction (ADR-0028)
+## Maintenance — Delist-boundary coverage correction (ADR-0028)（构建修订 `dsh-0.1.2rc1-post-u8.130`，PR #299）
 
 ADR-0028 point 2 evaluates coverage over each symbol's frozen listing lifecycle. The market-readiness
 applicability filter in `services/backend/app/market_readiness.py` previously treated `delist_date` as an
@@ -994,7 +1020,7 @@ exclusive: a session is not applicable when `trade_date < list_date`, or when `d
 matches the lifecycle semantics already used by stock-pool selection (`delist_date > :date`). No Accepted
 ADR text is changed.
 
-## Maintenance — Bounded signal sandbox input encoding (ADR-0023)
+## Maintenance — Bounded signal sandbox input encoding (ADR-0023)（构建修订 `dsh-0.1.2rc1-post-u8.131`，PR #300）
 
 Promoting a frozen signal/backtest job for a 300-symbol × ~727-session panel overflowed ADR-0023's
 32 MiB `MAX_JOB_BYTES`/`MAX_REQUEST_BYTES` envelope because `prepare_signal_job_input` embedded the raw
@@ -1008,7 +1034,7 @@ remain decodable by both the sandbox runner and the coordinator. Both `MAX_JOB_B
 `MAX_REQUEST_BYTES` stay at 32 MiB and the credential-free sandbox resource envelope is unchanged. No
 Accepted ADR text is changed.
 
-## Maintenance — ADR-0047 aggregate bound in snapshot/backtest normalization
+## Maintenance — ADR-0047 aggregate bound in snapshot/backtest normalization（构建修订 `dsh-0.1.2rc1-post-u8.132`，PR #301）
 
 After the columnar encoding fix, a promoted 300-symbol × ~727-session aggregate still failed at
 `services/backend/app/backtest.py` with `BacktestResourceExceeded: bars exceeds 50000 rows`. `MAX_BARS`
@@ -1022,7 +1048,7 @@ data-readiness builder, the signal sandbox, and signal-snapshot/backtest normali
 frontend are unchanged; genuinely oversized input still fails closed with a stable
 `bars exceeds ...`/`signals exceeds ...` message. No Accepted ADR text is changed.
 
-## Maintenance — Columnar immutable signal snapshot (ADR-0017/ADR-0023)
+## Maintenance — Columnar immutable signal snapshot (ADR-0017/ADR-0023)（构建修订 `dsh-0.1.2rc1-post-u8.132`，PR #301）
 
 A real production `signal_snapshot` for 300 symbols × 727 sessions with the full `market-data-requirement.v3`
 field set serialized to ~41 MiB, dominated by the row-mapping `bars` panel, and exceeded the unchanged

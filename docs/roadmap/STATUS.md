@@ -11,6 +11,44 @@
 专属要求，使用测试框架管理的真实浏览器即可；不依赖系统 Chrome 或个人浏览器调试连接。
 真实 Product API、业务断言及按影响要求的浏览器证据仍必须满足。以下历史工具记录不改写。
 
+## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19）
+
+本批次为维护，不推进 Product Phase。顶部机器 marker 仍保持最近完成的 Product Phase 97；
+Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 marker 相对本文当前叙述是滞后的——
+本次据实说明而不伪造 marker 迁移，也不把维护写成一个新 Product Phase。
+
+- **ADR-0047 五层数据/容量边界修复（构建修订 .129–.132）**：共享确定性分片规划器接入
+  signal/backtest 准备路径并持久化 `requirement_plan_json`；delist-date 边界改为
+  `trade_date >= delist_date` 非适用（对齐 ADR-0028 生命周期语义）；signal sandbox 输入去重并
+  改用列式 `bars_frame.v1`（100.24→24.10 MiB，`AGGREGATE_ROW_LIMIT=2_000_001`，`packages/contracts/bars_frame.py`
+  为单一事实来源）；不可变 snapshot 改用列式 `signal-snapshot-v2`（41.30→13.68 MiB），
+  `snapshot_bars` 兼容解码 v1/v2；`backtest.py` 的 `MAX_BARS`/`MAX_SIGNALS` 与 ADR-0047 聚合上限对齐。
+  全部 32 MiB transport/object envelope（`MAX_JOB_BYTES`/`MAX_REQUEST_BYTES`/`MAX_RESULT_BYTES`/`MAX_SNAPSHOT_BYTES`）
+  保持不变，未改任何 Accepted ADR 文本。
+- **信号生产完整性（构建修订 .134，PR #303）**：ready bars 现携带持久化绝对 `adjustment_factor`，
+  使合法除权除息的 `prev_close` 跳变不再被误判为不一致；`source.data_readiness` 接受
+  `requirement_plan_sha256`；signal worker/coordinator 以结构化 traceback 记录失败（不含 secrets 或完整 payload）。
+- **运行连续性（构建修订 .133/.135，PR #302/#304）**：runtime-adapter 重启后按需、幂等地从 BYQ lifecycle
+  journal 重建会话记录，Gateway 以持久 WorkflowTrace 的 last sequence 作为 append authority 续写；
+  reboot 导致的陈旧 lease 现显式映射为 HTTP `409` + `stale_session_lease`（区别于 404/503）。
+  新增可逆、audit-first、只读数据库的 `scripts/ops/archive_stale_sessions.py`；生产已归档 15 个陈旧会话，
+  未删除任何文件或 domain row。
+- **数据就绪自动续接（ADR-0077，仍为 Proposed；构建修订 .136/.137，PRs #305/#306）**：在既有任务绑定续接
+  合同内新增数据就绪事件，signal job `completed` 且产出 `validated signal_snapshot` 时经既有预算账本
+  生成至多一个有界续接回合。ADR-0077 仅对 ADR-0045 §3「默认下一回合投递」增加具名例外，**尚待维护者接受**，
+  不得标记 Accepted；生产当前已运行该实现。后续修复使 continuation guard 与 Backend 权威
+  `RUNTIME_MODEL_ALLOWLIST` 对齐（`deepseek-official` 及六个 `opencode-*` 路由），并以架构/Backend drift 测试守门。
+- **生产结果**：round-1 HS300 momentum+Kelly 回测完成——job `backtest_83cab36af0ec486d98b0a002c671b5da`、
+  result `artifact_c62ab34ffd61405d85bac30ea3ca08ed`，收益 +25.49% vs 基准 +19.65%，最大回撤 33.83%；
+  round-2 等待 `agent_approval_4e2ecb61eca74ec1a5c6721b5204f4f5`。
+- **本轮只新增只读/可逆运维产物，不改 domain 数据**：
+  [终态 signal job 归档审计](../operations/TERMINAL_SIGNAL_JOB_ARCHIVE.md) 与
+  `scripts/ops/archive_terminal_signal_jobs.py`（audit-first，`--apply` 仅落盘可逆 manifest，
+  绝不写业务表；终态 job 归档需新增具名 ADR/domain action）；
+  [重复沪深300股票池清单](../operations/HS300_DUPLICATE_POOLS.md)（仅提议，整合须经 owner 授权的
+  Product/`byq_pool_lifecycle` domain 路径，建议 `inactive` 而非不可逆 tombstone）。
+  详见 [实现计划](IMPLEMENTATION_PLAN.md) 本轮维护小节。
+
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、
   技术详情和小巴任务投影中分离。名称搜索保持服务端分页，缺省名称来自已验证策略，历史任务由 PostgreSQL 前向修复补齐，
   且名称不进入 immutable input/result identity 或 idempotency identity。
@@ -570,6 +608,10 @@ Post-Phase 90 Management Action Consistency Maintenance 依据 ADR-0050 将股�
 ## 当前授权边界
 
 - Phase 49-97 与相应 Accepted ADR/计划均已完成；下一阶段尚未授权。
+- 2026-09-19 维护收口（ADR-0047 聚合边界、运行/续接连续性与只读归档审计）已完成并记入本文与
+  [实现计划](IMPLEMENTATION_PLAN.md)；它是维护，不推进 Product Phase，也不改变上一条授权状态。
+- ADR-0077（数据就绪自动续接）仍为 **Proposed**，待维护者接受；生产当前运行其实现，
+  但不得据此标记 Accepted 或视为已接受规范。
 - Phase 82 与 ADR-0047 已完成；50,000 保持原子 readiness 分片上限，不是 Tushare
   额度或完整数据任务上限。
 - ADR-0044 授权的 Phase 75–79、ADR-0045 授权的 Phase 80、ADR-0046 授权的 Phase 81、
