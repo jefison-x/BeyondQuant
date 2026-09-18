@@ -8,6 +8,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+# ADR-0077 fixed per-turn output bound. The Backend reserves the same value in
+# DATA_READY_TOKEN_LIMIT = 1048576 + 8192 and the llm/stream guard charges
+# 1,048,576 + options.maxTokens, so the runtime must put this exact cap on the
+# request for every provider route. The candidate overlay below caps the
+# official deepseek adapter; the SDK-level cap carries the same bound to the
+# qualified opencode-* routes, whose pi-ai adapter has no composition default.
+CONTINUATION_MAX_OUTPUT_TOKENS = 8192
+
+
 def validate_reservation(value: object, *, owner: str, workspace: str) -> dict:
     fields = {'schema_version', 'reservation_id', 'task_id', 'owner', 'workspace_id', 'token_limit', 'expires_at'}
     if not isinstance(value, dict) or set(value) != fields or value['schema_version'] != 'task-continuation-reservation.v1':
@@ -38,7 +47,7 @@ def create_guard_patch(source: Path, root: Path, reservation: dict) -> tuple[Pat
     # No route is silently switched. The caller already checked the resolved
     # provider/model. Search's direct HTTP path is absent in this composition.
     overlay = '\n- id: web-search-deepseek\n  disabled: true\n- id: tool-web\n  disabled: true\n'
-    overlay += '- id: llm-deepseek\n  config:\n    maxTokens: 8192\n'
+    overlay += '- id: llm-deepseek\n  config:\n    maxTokens: ' + str(CONTINUATION_MAX_OUTPUT_TOKENS) + '\n'
     overlay += "- insert:\n    - id: byq-continuation-budget\n      name: 'file:///opt/byq/runtime/byq-continuation-budget.js'\n      config:\n"
     overlay += ''.join(f'        {key}: {json.dumps(value)}\n' for key, value in config.items())
     # This private invocation patch is Agent Plane state, never application

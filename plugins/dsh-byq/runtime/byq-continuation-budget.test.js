@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  DISPLAY_PROVIDER_RUNTIME_ROUTES,
   QUALIFIED_CONTINUATION_ROUTES,
   continuationRouteQualified,
   createBudgetGate,
+  runtimeRouteFor,
 } from './byq-continuation-budget.js';
 
 const request = { provider: 'deepseek-official', model: 'deepseek-v4-flash', maxTokens: 8 };
@@ -113,6 +115,44 @@ test('every allowlisted route and model is qualified, including discovered model
   assert.equal(continuationRouteQualified('opencode-zen-messages', 'claude-opus-5'), true);
 });
 
+test('display providers normalize to the exact runtime route the Backend admits', () => {
+  // Mirrors services/backend/app/credentials.py::_runtime_provider_for: the
+  // first empty or matching model prefix wins, so the guard evaluates the same
+  // runtime route the Backend resolved before admission.
+  assert.equal(runtimeRouteFor('opencode-go', 'deepseek-v4.1-flash'), 'opencode-go-chat');
+  assert.equal(runtimeRouteFor('opencode-go', 'deepseek-v4-flash'), 'opencode-go-chat');
+  assert.equal(runtimeRouteFor('opencode-go', 'gpt-5.6-luna'), 'opencode-go-responses');
+  assert.equal(runtimeRouteFor('opencode-go', 'grok-4.6'), 'opencode-go-responses');
+  assert.equal(runtimeRouteFor('opencode-go', 'minimax-m3'), 'opencode-go-messages');
+  assert.equal(runtimeRouteFor('opencode-go', 'qwen3.8-max'), 'opencode-go-messages');
+  assert.equal(runtimeRouteFor('opencode-zen', 'claude-opus-5'), 'opencode-zen-messages');
+  assert.equal(runtimeRouteFor('opencode-zen', 'deepseek-v4-flash'), 'opencode-zen-chat');
+  assert.equal(runtimeRouteFor('opencode-zen', 'gpt-5.6-sol'), 'opencode-zen-responses');
+  assert.equal(runtimeRouteFor('deepseek', 'deepseek-chat'), 'deepseek-official');
+  // A runtime route and an unknown provider resolve without inventing a route.
+  assert.equal(runtimeRouteFor('opencode-go-chat', 'deepseek-v4.1-flash'), 'opencode-go-chat');
+  assert.equal(runtimeRouteFor('deepseek-official', 'deepseek-v4-flash'), 'deepseek-official');
+  assert.equal(runtimeRouteFor('unqualified-provider', 'deepseek-v4-flash'), null);
+  assert.equal(runtimeRouteFor('opencode-go', undefined), null);
+  // Every normalization target is itself one of the qualified runtime routes,
+  // so the prefix map can never introduce a route outside the single allowlist.
+  for (const [provider, prefixes] of Object.entries(DISPLAY_PROVIDER_RUNTIME_ROUTES)) {
+    assert.ok(prefixes.length > 0, provider);
+    for (const [, runtime] of prefixes) {
+      assert.ok(runtime in QUALIFIED_CONTINUATION_ROUTES, `${provider} -> ${runtime}`);
+    }
+  }
+});
+
+test('a display provider and its runtime route are both admitted', () => {
+  assert.equal(continuationRouteQualified('opencode-go', 'deepseek-v4.1-flash'), true);
+  assert.equal(continuationRouteQualified('opencode-go-chat', 'deepseek-v4.1-flash'), true);
+  assert.equal(continuationRouteQualified('opencode-go', 'gpt-5.6-luna'), true);
+  assert.equal(continuationRouteQualified('opencode-go', 'minimax-m3'), true);
+  assert.equal(continuationRouteQualified('opencode-zen', 'claude-opus-5'), true);
+  assert.equal(continuationRouteQualified('deepseek', 'deepseek-v4-flash'), true);
+});
+
 test('an unlisted model on a known route and an unknown provider are unqualified', () => {
   assert.equal(continuationRouteQualified('opencode-go-chat', 'kimi-k3-experimental'), false);
   assert.equal(continuationRouteQualified('opencode-zen-chat', 'deepseek-v4.1-flash'), false);
@@ -120,6 +160,13 @@ test('an unlisted model on a known route and an unknown provider are unqualified
   assert.equal(continuationRouteQualified('unqualified-provider', 'deepseek-v4-flash'), false);
   assert.equal(continuationRouteQualified('opencode-go-chat', ''), false);
   assert.equal(continuationRouteQualified('opencode-go-chat', undefined), false);
+  // A display provider whose model maps to a route that does not list it, or
+  // whose model prefix the Backend cannot map at all, still fails closed.
+  assert.equal(continuationRouteQualified('opencode-go', 'kimi-k3-experimental'), false);
+  assert.equal(continuationRouteQualified('opencode-go', 'claude-opus-5'), false);
+  assert.equal(continuationRouteQualified('opencode-zen', 'deepseek-v4.1-flash'), false);
+  assert.equal(continuationRouteQualified('opencode-go', ''), false);
+  assert.equal(continuationRouteQualified('opencode-go', undefined), false);
 });
 
 test('the gate blocks a non-allowlisted model on an opencode route with the stable error', () => {
@@ -137,6 +184,19 @@ test('an admitted opencode continuation charges the same conservative ceiling', 
   assert.deepEqual(record, { reservation_id: 'reservation-synthetic', call: 1,
     reserved_tokens: ceiling, charged_ceiling: ceiling });
   assert.equal(records.length, 1);
+});
+
+test('the gate admits the production display provider without changing its accounting', () => {
+  const records = [];
+  const gate = createBudgetGate(config, r => records.push(r), () => 1, () => 1);
+  const record = gate({ provider: 'opencode-go', model: 'deepseek-v4.1-flash', maxTokens: 8 });
+  assert.deepEqual(record, { reservation_id: 'reservation-synthetic', call: 1,
+    reserved_tokens: ceiling, charged_ceiling: ceiling });
+  assert.equal(records.length, 1);
+  assert.throws(
+    () => gate({ provider: 'opencode-go', model: 'kimi-k3-experimental', maxTokens: 8 }),
+    error => error.message === 'BYQ_CONTINUATION_ROUTE_UNQUALIFIED',
+  );
 });
 
 test('long reservation passes fifteen minutes but rollback cannot extend its deadline', () => {

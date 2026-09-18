@@ -67,6 +67,7 @@ class Dsh012Compatibility:
     def build_harness(
         self, *, provider: str, model: str, composition: Path, session_root: Path,
         runtime_command: tuple[str, ...], environment: dict[str, str],
+        max_tokens: int | None = None,
     ) -> Any:
         patch = composition.expanduser().resolve()
         home = session_root.expanduser().resolve()
@@ -88,6 +89,7 @@ class Dsh012Compatibility:
         config = self._config_factory(
             provider=provider,
             model=model,
+            max_tokens=max_tokens,
             dsh_bin=runtime_command[0],
             profile="sdk",
             patches=(str(patch),),

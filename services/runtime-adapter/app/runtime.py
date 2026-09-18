@@ -31,7 +31,8 @@ from .normalization import close_public_activities
 from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_release
 from .identifiers import contained_session_path, validate_identifier
 from .lifecycle_journal import JournalIdentityMismatch, LifecycleJournal, JournalBusy
-from .continuation_budget import persist_settlement, recovered_settlement, validate_reservation, create_guard_patch, read_guard
+from .continuation_budget import (CONTINUATION_MAX_OUTPUT_TOKENS, persist_settlement,
+    recovered_settlement, validate_reservation, create_guard_patch, read_guard)
 from .normalization import NormalizationState, normalize_runtime_observation
 
 
@@ -1324,8 +1325,16 @@ class RuntimeAdapter:
             else:
                 raise ModelCredentialUnavailable("selected model provider is unavailable")
         composition = self._composition
+        max_tokens = None
         if continuation_budget is not None:
             composition, _ = create_guard_patch(composition, session_root, continuation_budget)
+            # ADR-0077: the guard charges 1,048,576 + options.maxTokens and
+            # fails closed when the request carries no output cap. The official
+            # deepseek route inherits a cap from its adapter overlay, but the
+            # qualified opencode-* pi-ai routes have no composition default, so
+            # the reserved per-turn cap is applied at the SDK request boundary
+            # for every continuation route.
+            max_tokens = CONTINUATION_MAX_OUTPUT_TOKENS
             if str(model_resolution.get('provider') or self._provider) == 'deepseek-official':
                 environment['DEEPSEEK_BASE_URL'] = 'https://api.deepseek.com'
         return self._compatibility.build_harness(
@@ -1335,6 +1344,7 @@ class RuntimeAdapter:
             session_root=session_root,
             runtime_command=self.runtime_command,
             environment=environment,
+            max_tokens=max_tokens,
         )
 
     def _resolve_model(
