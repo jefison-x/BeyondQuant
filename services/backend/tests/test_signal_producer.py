@@ -299,18 +299,21 @@ def test_promote_waiting_signal_jobs_fails_over_cap_job_and_continues(monkeypatc
     fixture.backtests.close()
 
 
-def _create_symbol_pool(fixture: SimpleNamespace, *, symbols: list[str], key: str) -> str:
+def _create_symbol_pool(
+    fixture: SimpleNamespace, *, symbols: list[str], key: str, delist_date: str | None = None,
+) -> str:
     pool = fixture.client.post("/v1/paper/pools", json={
         "idempotency_key": key, "name": f"Pool {key}", "pool_type": "custom", "symbols": symbols,
     }).json()["pool"]
     fixture.securities._execute(
         """INSERT INTO security_master_snapshot_members
-           (snapshot_id,symbol,local_symbol,name,exchange,list_status,list_date,asset_type,content_sha256)
+           (snapshot_id,symbol,local_symbol,name,exchange,list_status,list_date,delist_date,
+            asset_type,content_sha256)
            SELECT 'sms_fixture', symbol, split_part(symbol,'.',1), 'Fixture', 'SZSE', 'L',
-                  '19910101', 'stock', 'member-' || symbol
+                  '19910101', :delist_date, 'stock', 'member-' || symbol
            FROM jsonb_array_elements_text(:symbols) AS t(symbol)
            ON CONFLICT (snapshot_id, symbol) DO NOTHING""",
-        {"symbols": symbols},
+        {"symbols": symbols, "delist_date": delist_date},
     )
     return str(pool["snapshot"]["snapshot_id"])
 
@@ -511,6 +514,48 @@ def test_partitioned_job_promotes_only_after_all_partitions_are_ready(monkeypatc
     assert document["data_readiness"]["ready_input_sha256"] == job["readiness"]["ready_input_sha256"]
     expected = fixture.readiness.build_partitioned_ready_input(plan["requirements"])
     assert document["data_readiness"]["research_view_sha256"] == expected["research_view_sha256"]
+
+    fixture.jobs.close()
+    fixture.market.close()
+    fixture.paper.close()
+    fixture.research.close()
+    fixture.backtests.close()
+
+
+def test_partitioned_job_with_mid_window_delisting_promotes(monkeypatch, tmp_path) -> None:
+    fixture = _seed_ready_signal_fixture(monkeypatch, tmp_path)
+    symbols = ["600020.SH", "600021.SH"]
+    snapshot_id = _create_symbol_pool(
+        fixture, symbols=symbols, key="partition-delist-pool", delist_date="20260630",
+    )
+    first_open = {date(2026, 2, 2), date(2026, 2, 3)}
+    delist_open = {date(2026, 6, 30)}
+    _seed_calendar_window(
+        fixture, start=date(2026, 1, 1), end=date(2026, 9, 30),
+        open_dates=first_open | delist_open,
+    )
+    _seed_ready_cells(fixture, symbols=symbols, open_dates=first_open)
+    fixture.readiness._execute(
+        """INSERT INTO market_session_supplement_completeness
+           (trade_date,adjustment_complete,corporate_actions_complete,factor_row_count,
+            corporate_action_row_count,content_sha256,provenance_json,verified_at)
+           VALUES ('20260630',TRUE,TRUE,0,0,'supplement-delist','{}',now())"""
+    )
+
+    created = fixture.client.post("/v1/research/signal-producer/jobs", json=_signal_request(
+        fixture, snapshot_id=snapshot_id, start="2026-01-01", end="2026-09-30",
+        key="partition-delist-job",
+    ))
+    assert created.status_code == 202, created.text
+    job = created.json()["job"]
+    assert job["requirement_plan"]["partition_count"] == 2
+
+    assert promote_waiting_signal_jobs(fixture.jobs, fixture.readiness) == 1
+
+    job = fixture.jobs.get(job["job_id"], trusted_owner="signal-owner")
+    assert job["status"] == "queued"
+    assert job["readiness"]["state"] == "ready"
+    assert job["readiness"]["ready_partitions"] == 2
 
     fixture.jobs.close()
     fixture.market.close()

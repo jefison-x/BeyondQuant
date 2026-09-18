@@ -1017,7 +1017,10 @@ class MarketReadinessStore(PgStoreMixin):
                 missing.append({"symbol": symbol, "trade_date": "*", "dataset": "security_lifecycle"})
                 continue
             for trade_date in dates:
-                if trade_date < str(life["list_date"]) or (life.get("delist_date") and trade_date > str(life["delist_date"])):
+                delist_date = life.get("delist_date")
+                if trade_date < str(life["list_date"]) or (
+                    delist_date and trade_date >= str(delist_date)
+                ):
                     continue
                 status = status_map.get((symbol, trade_date))
                 supplement = supplements.get(trade_date)
