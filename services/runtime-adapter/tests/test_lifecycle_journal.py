@@ -1,3 +1,4 @@
+import copy
 import json
 import hashlib
 import subprocess
@@ -5,7 +6,12 @@ import sys
 
 import pytest
 
-from app.lifecycle_journal import LifecycleJournal, JournalBusy
+from app.lifecycle_journal import (
+    JournalBusy,
+    JournalIdentityMismatch,
+    LeaseReanchorConflict,
+    LifecycleJournal,
+)
 from app.contracts import make_workflow_trace_event, validate_workflow_trace_event
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
 
@@ -17,6 +23,17 @@ CTX = {"session_id": "journal-session", "trace_id": "journal-trace",
 def event(sequence, kind="session.started", **payload):
     return make_workflow_trace_event(session_id=CTX["session_id"], trace_id=CTX["trace_id"],
         sequence=sequence, kind=kind, source="runtime-adapter", payload={"run_id": "a" * 32, **payload})
+
+
+def _force_stored_lease(path, lease_identity):
+    """Simulate a journal written under a different host boot identity."""
+
+    envelope = json.loads(path.read_text(encoding="utf-8"))
+    envelope["state"]["lease_identity"] = lease_identity
+    encoded = json.dumps(envelope["state"], sort_keys=True, separators=(",", ":")).encode()
+    envelope["sha256"] = hashlib.sha256(encoded).hexdigest()
+    path.write_text(json.dumps(envelope, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    return envelope["sha256"]
 
 
 def test_terminal_ack_is_exact_durable_and_not_a_public_event(tmp_path):
@@ -208,3 +225,112 @@ def test_copy_or_missing_lock_is_not_evidence_of_original_executor_death(tmp_pat
     (source / "journal-session.lock").unlink()
     with pytest.raises(ValueError, match="identity"):
         LifecycleJournal.claim(source, CTX)
+
+
+def test_reanchor_lease_rebinds_current_boot_and_preserves_evidence(tmp_path):
+    journal = LifecycleJournal.claim(tmp_path, CTX, create=True)
+    try:
+        journal.observe(event(1), generation="one", prompt=("original-key", "b" * 64))
+        terminal = event(2, "session.result")
+        journal.observe(terminal, generation="one")
+        receipt = lifecycle_receipt(project_lifecycle_event(terminal, CTX["session_id"], CTX["trace_id"]))
+        journal.acknowledge_terminal(receipt)
+        current = journal.lease_identity
+        snapshot = copy.deepcopy(journal.state)
+        path = journal.path
+    finally:
+        journal.close()
+
+    prior_sha256 = _force_stored_lease(path, "f" * 64)
+    result = LifecycleJournal.reanchor_lease(
+        tmp_path, CTX["session_id"], expected_stored_lease="f" * 64)
+
+    assert result["status"] == "reanchored"
+    assert result["changed"] is True
+    assert result["previous_lease_identity"] == "f" * 64
+    assert result["current_lease_identity"] == current
+    assert result["previous_journal_sha256"] == prior_sha256
+    assert result["database_rows_modified"] is False
+    assert result["production_data_deleted"] is False
+    state = LifecycleJournal.read(path)
+    assert state["lease_identity"] == current
+    assert state == {**snapshot, "lease_identity": current}
+    for field in ("context", "sequence", "open_root", "events", "prompts", "terminal_acks", "calls"):
+        assert state[field] == snapshot[field]
+    with open(result["audit_path"], encoding="utf-8") as stream:
+        audit = json.load(stream)
+    assert audit["session_id"] == CTX["session_id"]
+    assert audit["previous_lease_identity"] == "f" * 64
+    assert audit["lease_identity"] == current
+    assert audit["previous_journal_sha256"] == prior_sha256
+    assert audit["journal_sha256"] == result["journal_sha256"]
+    assert audit["action"] == "reanchor_lease"
+    assert audit["reversible"] is True
+    assert audit["database_rows_modified"] is False
+    assert audit["production_data_deleted"] is False
+
+
+def test_reanchor_lease_is_idempotent_when_already_current(tmp_path):
+    journal = LifecycleJournal.claim(tmp_path, CTX, create=True)
+    journal.close()
+    result = LifecycleJournal.reanchor_lease(
+        tmp_path, CTX["session_id"], expected_stored_lease="f" * 64)
+    assert result["status"] == "current"
+    assert result["changed"] is False
+    assert result["audit_path"] is None
+    assert not (tmp_path / "reanchor-audit").exists()
+
+
+def test_reanchor_lease_fails_closed_on_expected_mismatch(tmp_path):
+    journal = LifecycleJournal.claim(tmp_path, CTX, create=True)
+    path = journal.path
+    journal.close()
+    _force_stored_lease(path, "f" * 64)
+    before = path.read_bytes()
+    with pytest.raises(LeaseReanchorConflict):
+        LifecycleJournal.reanchor_lease(
+            tmp_path, CTX["session_id"], expected_stored_lease="a" * 64)
+    assert path.read_bytes() == before
+    assert not (tmp_path / "reanchor-audit").exists()
+
+
+def test_reanchor_lease_refuses_unknown_invalid_and_live_sessions(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        LifecycleJournal.reanchor_lease(
+            tmp_path, "never-existed", expected_stored_lease="f" * 64)
+    journal = LifecycleJournal.claim(tmp_path, CTX, create=True)
+    try:
+        with pytest.raises(ValueError):
+            LifecycleJournal.reanchor_lease(
+                tmp_path, CTX["session_id"], expected_stored_lease="not-hex")
+        with pytest.raises(ValueError):
+            LifecycleJournal.reanchor_lease(
+                tmp_path, "../escape", expected_stored_lease="f" * 64)
+        # A live owner is refused before any expected/current comparison.
+        with pytest.raises(JournalBusy):
+            LifecycleJournal.reanchor_lease(
+                tmp_path, CTX["session_id"], expected_stored_lease="f" * 64)
+    finally:
+        journal.close()
+
+
+def test_reanchor_lease_simulation_reboot_then_claim_succeeds(tmp_path):
+    journal = LifecycleJournal.claim(tmp_path, CTX, create=True)
+    journal.observe(event(1), generation="one")
+    path = journal.path
+    journal.close()
+    # Simulate a prior host boot: stored lease can never be reproduced.
+    _force_stored_lease(path, "0" * 64)
+    with pytest.raises(JournalIdentityMismatch):
+        LifecycleJournal.claim(tmp_path, CTX)
+    result = LifecycleJournal.reanchor_lease(
+        tmp_path, CTX["session_id"], expected_stored_lease="0" * 64)
+    assert result["changed"] is True
+    recovered = LifecycleJournal.claim(tmp_path, CTX)
+    try:
+        assert recovered.state["lease_identity"] == recovered.lease_identity
+        # The open root is still provably closed on recovery; sequence advances.
+        assert recovered.state["sequence"] == 2
+        assert recovered.state["events"][0]["kind"] == "session.started"
+    finally:
+        recovered.close()

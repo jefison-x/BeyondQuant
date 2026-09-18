@@ -31,7 +31,9 @@ Enforced in `services/runtime-adapter/app/main.py` (global exception handler plu
 the create/resume routes) after `LifecycleJournal.claim` raises
 `JournalIdentityMismatch`, which `RuntimeAdapter._rehydrate` converts to
 `StaleSessionLease`. Callers should treat `409 stale_session_lease` as
-"archive this session", never as a retryable server error.
+"archive this session" or, when the conversation must keep its evidence and
+resume, "explicitly re-lease this session" (below) — never as a retryable
+server error.
 
 ## Reversible archive
 
@@ -83,6 +85,64 @@ path, archived path, size, sha256. The manifest also records
 
 Reversal is a manual copy back from the manifest's `original_path` /
 `archived_path` pairs; nothing is overwritten in place.
+
+## Explicit re-lease (ADR-0078)
+
+Archiving discards a session's ability to be resumed. When the conversation must
+be preserved, `scripts/ops/reanchor_session_lease.py` is the sanctioned
+post-reboot recovery defined by
+[ADR-0078](../architecture/adr/ADR-0078-explicit-session-lease-reanchor.md): it
+rewrites **only** the stored `lease_identity` to the current boot-derived
+identity and leaves `sequence`, `events`, `prompts`, `terminal_acks`, `calls`,
+`open_root` and `context` intact in the lifecycle journal.
+
+Audit only (default, no mutation; lists the selection):
+
+```sh
+python3 scripts/ops/reanchor_session_lease.py \
+  --session-root "$DSH_SESSION_ROOT" \
+  --trace-root "$BYQ_WORKFLOW_TRACE_ROOT" \
+  --session-id "$SESSION_ID"
+```
+
+Apply (explicit selection is required; there is no implicit mass re-lease):
+
+```sh
+python3 scripts/ops/reanchor_session_lease.py --apply \
+  --session-root "$DSH_SESSION_ROOT" \
+  --trace-root "$BYQ_WORKFLOW_TRACE_ROOT" \
+  --session-id "$SESSION_ID"
+```
+
+`--session-id` is repeatable; `--session-file` accepts one session id per line
+(`#` comments allowed). Output is written to
+`$DSH_SESSION_ROOT/byq-lease-reanchor/<timestamp>/audit.json` and
+`manifest.json`, recording each old/new lease identity and both journal sha256
+values. Re-running with the same timestamp reports `already_reanchored`. The
+adapter also commits a per-session audit under
+`$DSH_SESSION_ROOT/byq-lifecycle-evidence/reanchor-audit/`; the archive tool's
+top-level `*.json` enumeration ignores that subdirectory.
+
+Safety boundaries:
+
+* Only `stale` sessions are rewritten. A live owner (`active`), an already
+  current lease (no-op), or an `unprovable`/`archived` selection aborts the whole
+  run before any mutation.
+* The stored lease observed during inventory must still match at apply time; a
+  concurrently changed lease is a fail-closed conflict, never a blind overwrite.
+* The session's exclusive owner lock must be acquireable: a live runtime owner is
+  refused, so re-lease cannot create a second writer.
+* No files are deleted and no business/database rows are written. The Gateway
+  stores no lease-bound state — `TraceStore` is keyed by session id and ordered
+  by `sequence`, and the lifecycle delivery ledger stores only a cursor over
+  those sequences — so re-lease requires no Gateway cursor or ledger refresh.
+* If any executor identity other than `boot_id` changed (volume, lock inode,
+  token) or a concurrent writer exists, re-lease fails closed; investigate
+  instead of forcing it.
+
+The durable fix (a boot-independent lease identity with a monotonic executor
+epoch and explicit takeover) is proposed in ADR-0078 and is **not** implemented;
+until it is accepted, explicit re-lease is the supported recovery.
 
 ## Safety properties
 

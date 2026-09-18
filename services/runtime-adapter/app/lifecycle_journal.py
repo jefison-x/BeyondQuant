@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import datetime as dt
 import fcntl
 import hashlib
 import json
@@ -19,6 +20,12 @@ from packages.contracts.domain_call_admission import validate_call_evidence
 
 MAX_BYTES = 8 * 1024 * 1024
 MAX_PRIVATE_CALLS = 1024
+BOOT_ID_PATH = Path("/proc/sys/kernel/random/boot_id")
+REANCHOR_AUDIT_DIR = "reanchor-audit"
+REANCHOR_SCHEMA_VERSION = "byq-lifecycle-lease-reanchor.v1"
+_LEASE_HEX = re.compile(r"[0-9a-f]{64}")
+_TOKEN_HEX = re.compile(r"[0-9a-f]{32}")
+_LOCAL_FILESYSTEMS = {"ext2", "ext3", "ext4", "xfs", "btrfs", "overlay", "tmpfs"}
 
 
 class JournalBusy(RuntimeError):
@@ -34,6 +41,14 @@ class JournalIdentityMismatch(ValueError):
     """
 
 
+class LeaseReanchorConflict(ValueError):
+    """The stored lease identity is not the value the operator expected.
+
+    ADR-0078 re-lease fails closed on this conflict; it never blind-overwrites a
+    lease that changed between inventory and apply.
+    """
+
+
 class LifecycleJournal:
     @staticmethod
     def _context(context):
@@ -46,13 +61,8 @@ class LifecycleJournal:
             if not isinstance(value, str) or not value or value != value.strip() or len(value) > 128:
                 raise ValueError("invalid journal owner")
 
-    @classmethod
-    def claim(cls, root, context, *, create=False):
-        cls._context(context)
-        root = Path(root)
-        if root.is_symlink():
-            raise ValueError("journal directory cannot be a symlink")
-        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    @staticmethod
+    def _require_local_coherent_filesystem(root):
         mounts = []
         for line in Path("/proc/self/mountinfo").read_text().splitlines():
             before, after = line.split(" - ", 1)
@@ -60,8 +70,22 @@ class LifecycleJournal:
             resolved = str(root.resolve())
             if resolved == mount or resolved.startswith(mount.rstrip("/") + "/"):
                 mounts.append((len(mount), after.split()[0]))
-        if not mounts or max(mounts)[1] not in {"ext2", "ext3", "ext4", "xfs", "btrfs", "overlay", "tmpfs"}:
+        if not mounts or max(mounts)[1] not in _LOCAL_FILESYSTEMS:
             raise ValueError("recovery requires a local coherent filesystem")
+
+    @staticmethod
+    def _lease_identity(st_dev, st_ino, token):
+        boot = BOOT_ID_PATH.read_text().strip()
+        return hashlib.sha256(f"{boot}:{st_dev}:{st_ino}:{token}".encode()).hexdigest()
+
+    @classmethod
+    def claim(cls, root, context, *, create=False):
+        cls._context(context)
+        root = Path(root)
+        if root.is_symlink():
+            raise ValueError("journal directory cannot be a symlink")
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        cls._require_local_coherent_filesystem(root)
         obj = cls()
         obj.path = root / (context["session_id"] + ".json")
         if obj.path.is_symlink():
@@ -78,11 +102,10 @@ class LifecycleJournal:
                 token = uuid.uuid4().hex
                 os.write(obj.lock, token.encode())
                 os.fsync(obj.lock)
-            if re.fullmatch("[0-9a-f]{32}", token) is None and obj.path.exists():
+            if _TOKEN_HEX.fullmatch(token) is None and obj.path.exists():
                 raise ValueError("original owner lock identity is missing")
             stat = os.fstat(obj.lock)
-            boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
-            obj.lease_identity = hashlib.sha256(f"{boot}:{stat.st_dev}:{stat.st_ino}:{token}".encode()).hexdigest()
+            obj.lease_identity = cls._lease_identity(stat.st_dev, stat.st_ino, token)
             if obj.path.exists():
                 obj.state = cls.read(obj.path)
                 if obj.state["context"] != context or obj.state["lease_identity"] != obj.lease_identity:
@@ -106,8 +129,132 @@ class LifecycleJournal:
             obj.close()
             raise
 
+    @classmethod
+    def reanchor_lease(cls, root, session_id, *, expected_stored_lease):
+        """Explicitly re-bind a durable journal lease to this boot (ADR-0078).
+
+        Post-reboot recovery until a boot-independent lease design is accepted.
+        Under the journal's exclusive owner lock, ONLY ``lease_identity`` is
+        rewritten to the current boot-derived identity. ``sequence``, ``events``,
+        ``prompts``, ``terminal_acks``, ``calls``, ``open_root`` and ``context``
+        are preserved byte-for-byte as canonical JSON; no domain or database
+        state is touched.
+
+        Fails closed: a live owner (lock held), an unknown/malformed journal, an
+        invalid expected lease, or a stored lease that changed since inventory
+        all abort without mutating. A stored lease already equal to the current
+        one is an idempotent no-op. A per-session audit record (timestamp, old
+        and new lease, prior and new journal sha256) is committed atomically
+        beside the journal before the method returns.
+        """
+
+        validate_identifier(session_id, field="session_id")
+        if not isinstance(expected_stored_lease, str) or _LEASE_HEX.fullmatch(expected_stored_lease) is None:
+            raise ValueError("invalid expected lease identity")
+        root = Path(root)
+        if root.is_symlink():
+            raise ValueError("journal directory cannot be a symlink")
+        cls._require_local_coherent_filesystem(root)
+        path = root / (session_id + ".json")
+        lock_path = root / (session_id + ".lock")
+        if path.is_symlink() or lock_path.is_symlink():
+            raise ValueError("journal cannot be a symlink")
+        obj = cls()
+        obj.path = path
+        obj.lock = None
+        staged = None
+        saved = False
+        try:
+            try:
+                obj.lock = os.open(lock_path, os.O_RDWR | os.O_NOFOLLOW)
+            except FileNotFoundError:
+                raise FileNotFoundError("no durable runtime evidence") from None
+            try:
+                fcntl.flock(obj.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise JournalBusy("the original evidence owner is still present") from exc
+            token = os.read(obj.lock, 128).decode("ascii")
+            if _TOKEN_HEX.fullmatch(token) is None:
+                raise ValueError("original owner lock identity is missing")
+            if not path.exists():
+                raise FileNotFoundError("no durable runtime evidence")
+            stat = os.fstat(obj.lock)
+            current = cls._lease_identity(stat.st_dev, stat.st_ino, token)
+            envelope = cls._read_envelope(path)
+            state = cls._migrate(envelope)
+            stored = state["lease_identity"]
+            base = {
+                "session_id": session_id,
+                "previous_lease_identity": stored,
+                "current_lease_identity": current,
+                "database_rows_modified": False,
+                "production_data_deleted": False,
+            }
+            if stored == current:
+                return {**base, "status": "current", "changed": False,
+                        "previous_journal_sha256": None, "journal_sha256": None,
+                        "audit_path": None}
+            if stored != expected_stored_lease:
+                raise LeaseReanchorConflict(
+                    "stored lease identity does not match the expected value")
+            prior_sha256 = envelope["sha256"]
+            new_state = copy.deepcopy(state)
+            new_state["lease_identity"] = current
+            new_sha256 = hashlib.sha256(
+                json.dumps(new_state, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            audit = {
+                "schema_version": REANCHOR_SCHEMA_VERSION,
+                "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
+                "action": "reanchor_lease",
+                "session_id": session_id,
+                "previous_lease_identity": stored,
+                "lease_identity": current,
+                "previous_journal_sha256": prior_sha256,
+                "journal_sha256": new_sha256,
+                "preserved": ["context", "sequence", "open_root", "events", "prompts",
+                              "terminal_acks", "calls"],
+                "reversible": True,
+                "database_rows_modified": False,
+                "production_data_deleted": False,
+            }
+            staged, final = cls._stage_reanchor_audit(root, audit)
+            obj._save(new_state)
+            saved = True
+            cls._commit_reanchor_audit(staged, final)
+            staged = None
+            return {**base, "status": "reanchored", "changed": True,
+                    "previous_journal_sha256": prior_sha256, "journal_sha256": new_sha256,
+                    "audit_path": str(final)}
+        finally:
+            if staged is not None and not saved:
+                Path(staged).unlink(missing_ok=True)
+            obj.close()
+
     @staticmethod
-    def read(path):
+    def _stage_reanchor_audit(root, audit):
+        directory = root / REANCHOR_AUDIT_DIR
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        final = directory / f"{audit['session_id']}.{audit['timestamp']}.json"
+        if final.exists():
+            raise FileExistsError(f"reanchor audit already exists: {final}")
+        fd, name = tempfile.mkstemp(prefix=".reanchor-", dir=directory)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(audit, stream, sort_keys=True, separators=(",", ":"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        return name, final
+
+    @staticmethod
+    def _commit_reanchor_audit(staged, final):
+        os.replace(staged, final)
+        directory = os.open(Path(final).parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+
+    @staticmethod
+    def _read_envelope(path):
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
         with os.fdopen(fd, "rb") as stream:
             data = stream.read(MAX_BYTES + 1)
@@ -121,6 +268,11 @@ class LifecycleJournal:
         digest = hashlib.sha256(json.dumps(state, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if envelope["sha256"] != digest:
             raise ValueError("journal integrity mismatch")
+        return envelope
+
+    @staticmethod
+    def _migrate(envelope):
+        state = envelope["state"]
         # Verify historical bytes before the explicit, fail-closed migration.
         # A v1 journal proves no terminal acknowledgements, never implicit ACK.
         if envelope["schema_version"] == "byq-lifecycle-journal.v1":
@@ -132,6 +284,10 @@ class LifecycleJournal:
                 raise ValueError("invalid historical private evidence state")
             state["calls"] = []
         return LifecycleJournal.validate(state)
+
+    @staticmethod
+    def read(path):
+        return LifecycleJournal._migrate(LifecycleJournal._read_envelope(path))
 
     @staticmethod
     def validate(state):

@@ -87,6 +87,18 @@ composition 模型白名单资格化，因此当前 `opencode-go / deepseek-v4.1
 `RUNTIME_MODEL_ALLOWLIST`，避免第二份列表静默漂移。不修改模型白名单内容、数据面或 sandbox；
 不改变 Accepted ADR 文本（ADR-0077 仍为 Proposed）。
 
+显式可逆会话 lease re-anchor（fix，构建修订 `dsh-0.1.2rc1-post-u8.140`）：2026-09-19 host reboot
+改变了 `/proc/sys/kernel/random/boot_id`，使 reboot 前写入的全部 lifecycle journal 成为 stale，
+只能 `409 stale_session_lease` 或归档，无法恢复。按 [ADR-0078](../architecture/adr/ADR-0078-explicit-session-lease-reanchor.md)
+（Proposed）新增 `LifecycleJournal.reanchor_lease` 与 `scripts/ops/reanchor_session_lease.py`：
+在排他 owner lock 下原子地只重写 stored `lease_identity` 为当前 boot 身份，保留 sequence/events/
+prompts/terminal_acks/calls/context；stored 已 current 时幂等 no-op，`expected_stored_lease`
+不符或存在 live owner/未知 session 时 fail closed；写 per-session 审计与 `audit.json` +
+`manifest.json`（old/new lease、prior/new sha256、reversible、无 DB 写入、无删除），并只允许显式
+`--session-id`/`--session-file` 选择。Gateway 经核验不存储 lease-bound cursor/ledger，无需刷新。
+`409 stale_session_lease` 分类与 `archive_stale_sessions.py` 归档工具保持不变。ADR-0078 另提议
+以 boot 无关的稳定执行者身份 + 单调 epoch + 显式 takeover 作为持久修复，待维护者接受后方可实现。
+
 从 Phase 9 起，永久 migration source of truth 为 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`。实现 phase 前必须先检查、分类其 Community candidates。可在 BYQ-owned contracts 中重新实现 provider/engine-independent semantics，但不得复制 Community runtime、storage、provider 或 engine architecture。BaoStock、AKShare、VectorBT、PydanticAI 和 Hermes 保持排除，除非未来 Accepted ADR 明确反转。
 
 所有 phases 遵循 `docs/DEVELOPMENT_WORKFLOW.md`：只执行 `STATUS.md` 指定的 next phase；每 phase 使用 isolated worktree/branch/PR；contract/test 优先；保持 Product/Agent/Quant/Data/Engineering boundaries；CI 与 evidence 完成后才进入 merge gate。

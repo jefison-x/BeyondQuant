@@ -36,6 +36,10 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
 - ADR-0077（Proposed）在既有任务绑定续接合同内增加数据就绪自动续接：`completed` signal job 且
   产出 `validated signal_snapshot` 时经既有事件身份/账本/Gateway 消费者生成至多一个有界续接回合；
   不改数据面、sandbox、模型许可或无关服务，待维护者接受后成为当前规范。
+- ADR-0078（Proposed）定义 reboot 后对 stale lifecycle-journal lease 的显式、可审计、可逆
+  re-lease（只改 `lease_identity`，保留全部证据；fail closed；附审计/manifest），并提议以
+  boot 无关的稳定执行者身份 + 单调 epoch + 显式 takeover 作为持久修复；待维护者接受前，
+  显式 re-lease 是唯一受支持的 reboot 后恢复，`409 stale_session_lease` 分类与归档工具不变。
 
 - ADR-0020 定义 Phase 34 的 Stock Pool identity、不可变 snapshot、lifecycle 和
   cross-domain reference 边界。
