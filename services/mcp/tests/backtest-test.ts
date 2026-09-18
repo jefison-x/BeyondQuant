@@ -306,3 +306,35 @@ const { safeRequestValidation } = await import('../src/request-validation.js');
 assert.equal(safeRequestValidation({detail: 'password=secret-fixture /home/private'}), undefined);
 assert.equal(safeRequestValidation({detail: 'constructor'}), undefined);
 assert.match(safeRequestValidation({detail: 'input_snapshot.sources must be a non-empty list'})!.message, /request_fingerprint/);
+
+const scaleBlocker = safeRequestValidation({detail: 'market data requirement exceeds 50000 symbol-session cells'});
+assert.equal(scaleBlocker?.repair_limit, 0);
+assert.match(scaleBlocker!.message, /50000 symbol-session cells/);
+assert.match(scaleBlocker!.message, /bounded readiness partition/);
+assert.match(scaleBlocker!.message, /report/i);
+assert.match(scaleBlocker!.message, /do not resubmit/i);
+
+for (const [detail, expected] of [
+  ['start_date must not be after end_date', /start_date.*end_date/],
+  ['order_quantity must be aligned to execution.lot_size', /lot_size/],
+  ['stock pool must be active for signal production', /active/],
+  ['stock pool snapshot has no members', /no members/],
+  ['stock pool contains symbols absent from the frozen security master', /security master/],
+  ['execution_profile_unsupported: generate_target_weights is not supported', /target weights/],
+] as const) {
+  const hint = safeRequestValidation({detail});
+  assert.ok(hint, `expected a closed hint for: ${detail}`);
+  assert.equal(typeof hint!.message, 'string');
+  assert.ok(hint!.message.length > 0);
+  assert.match(hint!.message, expected);
+}
+assert.equal(safeRequestValidation({detail: 'market data requirement exceeds 50000 symbol-session cells token=secret-fixture'}), undefined);
+assert.equal(safeRequestValidation({detail: 'arbitrary unrecognized backend detail'}), undefined);
+
+const scaleInvalid = await fetchByqBacktestTaskPrepare('http://backend', taskRequest,
+  async () => new Response(JSON.stringify({detail: 'market data requirement exceeds 50000 symbol-session cells'}), {status: 422}));
+assert.equal(scaleInvalid.isError, true);
+const scaleValidation = JSON.parse(scaleInvalid.content[0].text).backend.validation;
+assert.equal(scaleValidation.repair_limit, 0);
+assert.match(scaleValidation.message, /bounded readiness partition/);
+console.log("Backtest preflight hint PASS: bounded 50000-cell blocker, domain rejection hints and closed-map safety");
