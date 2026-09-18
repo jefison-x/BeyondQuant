@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from .backtest import normalize_signal_snapshot, signal_snapshot_content_sha256
 from .db import PgStoreMixin, execute, fetch_one
+from .market_plan import aggregate_market_readiness
 from .research import ResearchStore
 
 
@@ -187,6 +188,7 @@ class SignalJobStore(PgStoreMixin):
         """ALTER TABLE signal_producer_jobs ALTER COLUMN input_sha256 DROP NOT NULL""",
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS preparation_json JSONB""",
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS requirement_json JSONB""",
+        """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS requirement_plan_json JSONB""",
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS readiness_json JSONB""",
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS ready_input_sha256 TEXT""",
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS submission_hash TEXT""",
@@ -308,6 +310,7 @@ class SignalJobStore(PgStoreMixin):
                 strategy_version_artifact_id=prepared["version"]["artifact_id"],
                 stock_pool_snapshot_id=prepared["pool_snapshot"]["snapshot_id"],
                 preparation=prepared["preparation"], requirement=prepared["requirement"],
+                requirement_plan=prepared.get("requirement_plan"),
                 readiness=prepared["readiness"], trace_id=trace_id, idempotency_key=key, connection=connection,
             )
             record_reference(connection, prepared["pool_snapshot"]["snapshot_id"], domain="signal_producer",
@@ -321,6 +324,7 @@ class SignalJobStore(PgStoreMixin):
         strategy_version_artifact_id: object, stock_pool_snapshot_id: object,
         preparation: dict[str, object], requirement: dict[str, object],
         readiness: dict[str, object], trace_id: object, idempotency_key: object,
+        requirement_plan: dict[str, object] | None = None,
         connection=None,
     ) -> dict[str, object]:
         owner = _text(owner_principal, "owner_principal", 128)
@@ -330,12 +334,17 @@ class SignalJobStore(PgStoreMixin):
         snapshot = _identifier(stock_pool_snapshot_id, "stock_pool_snapshot_id")
         trace = _text(trace_id, "trace_id", 128)
         idempotency = _text(idempotency_key, "idempotency_key", 128)
+        if requirement_plan is not None and not isinstance(requirement_plan, dict):
+            raise ValueError("signal requirement plan must be an object")
         _reject_secrets(preparation)
-        request_hash = hashlib.sha256(_canonical({
+        request_document: dict[str, object] = {
             "owner_principal": owner, "task_id": task, "experiment_id": experiment,
             "strategy_version_artifact_id": strategy, "stock_pool_snapshot_id": snapshot,
             "preparation": preparation, "requirement": requirement, "trace_id": trace,
-        })).hexdigest()
+        }
+        if requirement_plan is not None:
+            request_document["requirement_plan"] = requirement_plan
+        request_hash = hashlib.sha256(_canonical(request_document)).hexdigest()
         with (self._transaction() if connection is None else nullcontext(connection)) as connection:
             existing = fetch_one(connection, """SELECT * FROM signal_producer_jobs
                 WHERE owner_principal=:owner AND idempotency_key=:key""",
@@ -348,13 +357,14 @@ class SignalJobStore(PgStoreMixin):
             execute(connection, """INSERT INTO signal_producer_jobs
                 (job_id, owner_principal, task_id, experiment_id,
                  strategy_version_artifact_id, stock_pool_snapshot_id, status,
-                 preparation_json, requirement_json, readiness_json, trace_id,
+                 preparation_json, requirement_json, requirement_plan_json, readiness_json, trace_id,
                  idempotency_key, request_hash, created_at, updated_at)
                 VALUES (:job_id,:owner,:task,:experiment,:strategy,:snapshot,'waiting_for_data',
-                        :preparation,:requirement,:readiness,:trace,:key,:request_hash,:now,:now)""",
+                        :preparation,:requirement,:requirement_plan,:readiness,:trace,:key,:request_hash,:now,:now)""",
                 {"job_id": job_id, "owner": owner, "task": task, "experiment": experiment,
                  "strategy": strategy, "snapshot": snapshot, "preparation": preparation,
-                 "requirement": requirement, "readiness": readiness, "trace": trace,
+                 "requirement": requirement, "requirement_plan": requirement_plan,
+                 "readiness": readiness, "trace": trace,
                  "key": idempotency, "request_hash": request_hash, "now": now})
             return self._public_row(fetch_one(connection, "SELECT * FROM signal_producer_jobs WHERE job_id=:id", {"id": job_id}))
 
@@ -558,6 +568,7 @@ class SignalJobStore(PgStoreMixin):
         value.pop("submission_hash", None)
         value.pop("preparation_json", None)
         value["requirement"] = value.pop("requirement_json", None)
+        value["requirement_plan"] = value.pop("requirement_plan_json", None)
         value["readiness"] = value.pop("readiness_json", None)
         value["input"] = {
             "schema_version": input_document.get("schema_version") if isinstance(input_document, dict) else None,
@@ -577,16 +588,39 @@ class SignalJobStore(PgStoreMixin):
         return value
 
 
+def _job_requirements(
+    requirement: object, plan: object,
+) -> list[dict[str, object]] | None:
+    """Resolve a job's frozen readiness units without inventing a second engine."""
+    if isinstance(plan, dict):
+        raw = plan.get("requirements")
+        if isinstance(raw, list) and raw and all(isinstance(item, dict) for item in raw):
+            return [dict(item) for item in raw]
+        return None
+    if isinstance(requirement, dict):
+        return [requirement]
+    return None
+
+
 def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object, automation_store: object | None = None) -> int:
-    """Provider-free coordinator gate: only complete durable inputs become runnable."""
+    """Provider-free coordinator gate: only complete durable inputs become runnable.
+
+    Jobs created with an ADR-0047 partition plan assess every partition and
+    promote only when all are ready. Jobs without a plan keep the historical
+    single-requirement behaviour exactly.
+    """
     promoted = 0
     for row in jobs.list_waiting():
         requirement = row.get("requirement_json")
+        plan = row.get("requirement_plan_json")
         preparation = row.get("preparation_json")
-        if not isinstance(requirement, dict) or not isinstance(preparation, dict):
+        if not isinstance(preparation, dict):
+            continue
+        requirements = _job_requirements(requirement, plan)
+        if requirements is None:
             continue
         try:
-            assessment = readiness_store.assess(requirement)
+            assessments = [readiness_store.assess(item) for item in requirements]
         except ValueError as error:
             if "symbol-session cells" not in str(error):
                 raise
@@ -594,15 +628,34 @@ def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object, a
                 str(row["job_id"]), "market_requirement_exceeded", str(error),
             )
             continue
+        assessment = (
+            assessments[0] if len(assessments) == 1
+            else aggregate_market_readiness(assessments)
+        )
         jobs.update_readiness(str(row["job_id"]), assessment)
         if assessment.get("state") != "ready":
             if automation_store is not None:
-                automation_store.request_data_repair(
-                    requirement=requirement, requested_by=f"signal:{row['owner_principal']}", retry_terminal=False,
-                )
+                for item, partition_assessment in zip(requirements, assessments):
+                    if partition_assessment.get("state") == "ready":
+                        continue
+                    automation_store.request_data_repair(
+                        requirement=item, requested_by=f"signal:{row['owner_principal']}",
+                        retry_terminal=False,
+                    )
             continue
-        ready_input = readiness_store.build_ready_input(requirement)
+        ready_input = (
+            readiness_store.build_partitioned_ready_input(requirements)
+            if len(requirements) > 1 else readiness_store.build_ready_input(requirements[0])
+        )
         bars = list(ready_input["bars"])
+        aggregate_requirement = requirement if isinstance(requirement, dict) else requirements[0]
+        data_readiness = {
+            "requirement_sha256": aggregate_requirement["requirement_sha256"],
+            "ready_input_sha256": assessment["ready_input_sha256"],
+            "research_view_sha256": ready_input["research_view_sha256"],
+        }
+        if len(requirements) > 1 and isinstance(plan, dict):
+            data_readiness["requirement_plan_sha256"] = str(plan["requirement_plan_sha256"])
         document = prepare_signal_job_input(
             strategy_version_artifact_id=str(preparation["strategy_version_artifact_id"]),
             strategy_version_id=str(preparation["strategy_version_id"]),
@@ -614,11 +667,7 @@ def promote_waiting_signal_jobs(jobs: SignalJobStore, readiness_store: object, a
             symbols=list(preparation["symbols"]), bars=bars,
             parameters=dict(preparation["parameters"]), execution=dict(preparation["execution"]),
             order_quantity=int(preparation["order_quantity"]),
-            data_readiness={
-                "requirement_sha256": requirement["requirement_sha256"],
-                "ready_input_sha256": assessment["ready_input_sha256"],
-                "research_view_sha256": ready_input["research_view_sha256"],
-            },
+            data_readiness=data_readiness,
             research_bars=list(ready_input["research_bars"]),
             corporate_actions=list(ready_input["corporate_actions"]),
             benchmark=list(ready_input.get("benchmark", [])),

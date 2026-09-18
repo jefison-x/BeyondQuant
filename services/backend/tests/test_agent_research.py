@@ -349,6 +349,40 @@ def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> N
     store.close()
 
 
+def test_backtest_task_prepare_surfaces_partitioned_readiness(monkeypatch, tmp_path) -> None:
+    from test_signal_producer import (
+        _create_symbol_pool,
+        _seed_ready_signal_fixture,
+        _signal_request,
+    )
+
+    fixture = _seed_ready_signal_fixture(monkeypatch, tmp_path)
+    try:
+        snapshot_id = _create_symbol_pool(
+            fixture, symbols=["600100.SH", "600101.SH"], key="facade-partition-pool",
+        )
+        request = _signal_request(
+            fixture, snapshot_id=snapshot_id,
+            start="2026-01-01", end="2026-09-30", key="facade-partition-job",
+        )
+        response = fixture.client.post("/v1/research/backtest-tasks/prepare", json={
+            key: value for key, value in request.items()
+            if key not in {"trace_id", "idempotency_key"}
+        })
+        assert response.status_code == 200, response.text
+        readiness = response.json()["task"]["market_readiness"]
+        assert readiness["partition_count"] == 2
+        assert readiness["ready_partitions"] == 0
+        assert readiness["state"] != "ready"
+        assert "requirements" not in response.text
+    finally:
+        fixture.jobs.close()
+        fixture.market.close()
+        fixture.paper.close()
+        fixture.research.close()
+        fixture.backtests.close()
+
+
 @pytest.mark.parametrize('linked', [True, False])
 def test_legacy_mismatched_approval_cannot_launch_continuation(linked):
     from tests.workspace_helpers import trusted_agent_context

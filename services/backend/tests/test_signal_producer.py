@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -292,6 +293,263 @@ def test_promote_waiting_signal_jobs_fails_over_cap_job_and_continues(monkeypatc
     assert promoted["status"] == "queued"
 
     jobs.close()
+    fixture.market.close()
+    fixture.paper.close()
+    fixture.research.close()
+    fixture.backtests.close()
+
+
+def _create_symbol_pool(fixture: SimpleNamespace, *, symbols: list[str], key: str) -> str:
+    pool = fixture.client.post("/v1/paper/pools", json={
+        "idempotency_key": key, "name": f"Pool {key}", "pool_type": "custom", "symbols": symbols,
+    }).json()["pool"]
+    fixture.securities._execute(
+        """INSERT INTO security_master_snapshot_members
+           (snapshot_id,symbol,local_symbol,name,exchange,list_status,list_date,asset_type,content_sha256)
+           SELECT 'sms_fixture', symbol, split_part(symbol,'.',1), 'Fixture', 'SZSE', 'L',
+                  '19910101', 'stock', 'member-' || symbol
+           FROM jsonb_array_elements_text(:symbols) AS t(symbol)
+           ON CONFLICT (snapshot_id, symbol) DO NOTHING""",
+        {"symbols": symbols},
+    )
+    return str(pool["snapshot"]["snapshot_id"])
+
+
+def _seed_sparse_open_sessions(fixture: SimpleNamespace, *, start: date, end: date, step_days: int) -> int:
+    count, cursor = 0, start
+    while cursor <= end:
+        trade_date = cursor.strftime("%Y%m%d")
+        fixture.automation._execute(
+            """INSERT INTO market_trading_sessions
+               (trade_date,exchange,is_open,data_source,request_fingerprint,retrieved_at,content_sha256,updated_at)
+               VALUES (:date,'SSE',TRUE,'tushare','plan-cal',now(),:sha,now())
+               ON CONFLICT (trade_date) DO NOTHING""",
+            {"date": trade_date, "sha": f"plan-cal-{trade_date}"},
+        )
+        count += 1
+        cursor += timedelta(days=step_days)
+    return count
+
+
+def _seed_calendar_window(
+    fixture: SimpleNamespace, *, start: date, end: date, open_dates: set[date],
+) -> None:
+    cursor = start
+    while cursor <= end:
+        trade_date = cursor.strftime("%Y%m%d")
+        fixture.automation._execute(
+            """INSERT INTO market_trading_sessions
+               (trade_date,exchange,is_open,data_source,request_fingerprint,retrieved_at,content_sha256,updated_at)
+               VALUES (:date,'SSE',:open,'tushare','window-cal',now(),:sha,now())
+               ON CONFLICT (trade_date) DO UPDATE SET is_open=EXCLUDED.is_open""",
+            {"date": trade_date, "open": cursor in open_dates, "sha": f"window-cal-{trade_date}"},
+        )
+        cursor += timedelta(days=1)
+
+
+def _seed_ready_cells(fixture: SimpleNamespace, *, symbols: list[str], open_dates: set[date]) -> None:
+    for session in sorted(open_dates):
+        trade_date = session.strftime("%Y%m%d")
+        fixture.readiness._execute(
+            """INSERT INTO market_session_supplement_completeness
+               (trade_date,adjustment_complete,corporate_actions_complete,factor_row_count,
+                corporate_action_row_count,content_sha256,provenance_json,verified_at)
+               VALUES (:date,TRUE,TRUE,:n,0,:sha,'{}',now())""",
+            {"date": trade_date, "n": len(symbols), "sha": f"supplement-{trade_date}"},
+        )
+        for symbol in symbols:
+            close = 10.0
+            fixture.readiness._execute(
+                """INSERT INTO market_daily_status
+                   (symbol,trade_date,is_suspended,pre_close,up_limit,down_limit,data_source,
+                    provenance_json,content_sha256,updated_at)
+                   VALUES (:symbol,:date,FALSE,:pre,:up,:down,'tushare','{}',:sha,now())""",
+                {"symbol": symbol, "date": trade_date, "pre": close - 0.5, "up": close * 1.1,
+                 "down": close * .9, "sha": f"status-{symbol}-{trade_date}"},
+            )
+            fixture.readiness._execute(
+                """INSERT INTO market_adjustment_factors
+                   (symbol,trade_date,adj_factor,data_source,provenance_json,content_sha256,updated_at)
+                   VALUES (:symbol,:date,1,'tushare','{}',:sha,now())""",
+                {"symbol": symbol, "date": trade_date, "sha": f"factor-{symbol}-{trade_date}"},
+            )
+            fixture.market.import_bars([{
+                "symbol": symbol, "trade_date": trade_date, "open": close, "high": close,
+                "low": close, "close": close, "volume": 1000, "amount": close * 1000,
+                "asset_type": "stock", "data_source": "tushare", "provenance": {"source": "fixture"},
+            }])
+
+
+def _signal_request(
+    fixture: SimpleNamespace, *, snapshot_id: str, start: str, end: str, key: str,
+) -> dict[str, object]:
+    return {
+        "task_id": fixture.task["task_id"],
+        "strategy_version_artifact_id": fixture.version["artifact"]["artifact_id"],
+        "stock_pool_snapshot_id": snapshot_id,
+        "start_date": start, "end_date": end,
+        "parameters": {"lookback": 2}, "execution": {"lot_size": 100, "max_runtime_seconds": 5},
+        "order_quantity": 100, "trace_id": "signal-trace", "idempotency_key": key,
+    }
+
+
+def test_aggregate_scope_over_cell_bound_partitions_and_prepare_succeeds(monkeypatch, tmp_path) -> None:
+    fixture = _seed_ready_signal_fixture(monkeypatch, tmp_path)
+    symbols = [f"{index:06d}.SZ" for index in range(1, 301)]
+    snapshot_id = _create_symbol_pool(fixture, symbols=symbols, key="over-cap-plan-pool")
+    session_count = _seed_sparse_open_sessions(
+        fixture, start=date(2023, 9, 18), end=date(2026, 9, 17), step_days=6,
+    )
+    assert len(symbols) * session_count > 50_000
+
+    request = _signal_request(
+        fixture, snapshot_id=snapshot_id,
+        start="2023-09-18", end="2026-09-17", key="over-cap-plan-job",
+    )
+    prepared = main._prepare_signal_producer(
+        {key: value for key, value in request.items() if key != "idempotency_key"},
+        owner_principal="signal-owner", request_repair=False,
+    )
+    plan = prepared["requirement_plan"]
+    assert 1 < len(prepared["requirements"]) <= 32
+    assert plan["partition_count"] == len(prepared["requirements"])
+    assert plan["requirement_plan_sha256"]
+    assert prepared["readiness"]["partition_count"] == plan["partition_count"]
+    assert prepared["readiness"]["state"] != "ready"
+    with pytest.raises(ValueError, match="symbol-session cells"):
+        fixture.readiness.assess(prepared["requirement"])
+
+    repeated = main._prepare_signal_producer(
+        {key: value for key, value in request.items() if key != "idempotency_key"},
+        owner_principal="signal-owner", request_repair=False,
+    )
+    assert repeated["requirement_plan"]["requirement_plan_sha256"] == plan["requirement_plan_sha256"]
+    assert repeated["requirements"] == prepared["requirements"]
+
+    response = fixture.client.post("/v1/research/backtest-tasks/prepare", json={
+        key: value for key, value in request.items() if key not in {"trace_id", "idempotency_key"}
+    })
+    assert response.status_code == 200, response.text
+    readiness = response.json()["task"]["market_readiness"]
+    assert readiness["partition_count"] == plan["partition_count"]
+    assert readiness["state"] != "ready"
+
+    fixture.jobs.close()
+    fixture.market.close()
+    fixture.paper.close()
+    fixture.research.close()
+    fixture.backtests.close()
+
+
+def test_partitioned_job_repairs_each_not_ready_partition_without_promoting(monkeypatch, tmp_path) -> None:
+    fixture = _seed_ready_signal_fixture(monkeypatch, tmp_path)
+    symbols = ["600000.SH", "600001.SH"]
+    snapshot_id = _create_symbol_pool(fixture, symbols=symbols, key="partition-repair-pool")
+    first_open = {date(2026, 2, 2), date(2026, 2, 3)}
+    _seed_calendar_window(fixture, start=date(2026, 1, 1), end=date(2026, 6, 29), open_dates=first_open)
+    _seed_ready_cells(fixture, symbols=symbols, open_dates=first_open)
+
+    created = fixture.client.post("/v1/research/signal-producer/jobs", json=_signal_request(
+        fixture, snapshot_id=snapshot_id, start="2026-01-01", end="2026-09-30", key="partition-repair-job",
+    ))
+    assert created.status_code == 202, created.text
+    job = created.json()["job"]
+    assert job["requirement_plan"]["partition_count"] == 2
+
+    assert promote_waiting_signal_jobs(fixture.jobs, fixture.readiness, fixture.automation) == 0
+
+    job = fixture.jobs.get(job["job_id"], trusted_owner="signal-owner")
+    assert job["status"] == "waiting_for_data"
+    assert job["readiness"]["state"] != "ready"
+    assert job["readiness"]["partition_count"] == 2
+    repairs = fixture.automation._execute("SELECT requirement_json FROM market_data_repair_requests")
+    assert len(repairs) == 1
+    assert str(repairs[0]["requirement_json"]["start_date"]) == "20260630"
+
+    fixture.jobs.close()
+    fixture.market.close()
+    fixture.paper.close()
+    fixture.research.close()
+    fixture.backtests.close()
+
+
+def test_partitioned_job_promotes_only_after_all_partitions_are_ready(monkeypatch, tmp_path) -> None:
+    fixture = _seed_ready_signal_fixture(monkeypatch, tmp_path)
+    symbols = ["600010.SH", "600011.SH"]
+    snapshot_id = _create_symbol_pool(fixture, symbols=symbols, key="partition-ready-pool")
+    first_open = {date(2026, 2, 2), date(2026, 2, 3)}
+    second_open = {date(2026, 7, 1), date(2026, 7, 2)}
+    open_dates = first_open | second_open
+    _seed_calendar_window(
+        fixture, start=date(2026, 1, 1), end=date(2026, 9, 30), open_dates=open_dates,
+    )
+    _seed_ready_cells(fixture, symbols=symbols, open_dates=open_dates)
+
+    created = fixture.client.post("/v1/research/signal-producer/jobs", json=_signal_request(
+        fixture, snapshot_id=snapshot_id, start="2026-01-01", end="2026-09-30", key="partition-ready-job",
+    ))
+    assert created.status_code == 202, created.text
+    job = created.json()["job"]
+    plan = job["requirement_plan"]
+    assert plan["partition_count"] == 2
+
+    assert promote_waiting_signal_jobs(fixture.jobs, fixture.readiness) == 1
+    job = fixture.jobs.get(job["job_id"], trusted_owner="signal-owner")
+    assert job["status"] == "queued"
+    assert job["readiness"]["state"] == "ready"
+    assert job["readiness"]["ready_partitions"] == 2
+
+    document = fixture.jobs._fetch_one(
+        "SELECT input_json FROM signal_producer_jobs WHERE job_id=:id", {"id": job["job_id"]}
+    )["input_json"]
+    bar_dates = {bar["trade_date"] for bar in document["bars"]}
+    assert bar_dates == {
+        "2026-02-02", "2026-02-03", "2026-07-01", "2026-07-02",
+    }
+    assert len(document["research_bars"]) == len(document["bars"])
+    assert document["data_readiness"]["requirement_plan_sha256"] == plan["requirement_plan_sha256"]
+    assert document["data_readiness"]["ready_input_sha256"] == job["readiness"]["ready_input_sha256"]
+    expected = fixture.readiness.build_partitioned_ready_input(plan["requirements"])
+    assert document["data_readiness"]["research_view_sha256"] == expected["research_view_sha256"]
+
+    fixture.jobs.close()
+    fixture.market.close()
+    fixture.paper.close()
+    fixture.research.close()
+    fixture.backtests.close()
+
+
+def test_job_without_plan_keeps_single_requirement_behaviour(monkeypatch, tmp_path) -> None:
+    fixture = _seed_ready_signal_fixture(monkeypatch, tmp_path)
+    request = _signal_request(
+        fixture, snapshot_id=fixture.pool["snapshot"]["snapshot_id"],
+        start="2026-01-05", end="2026-01-06", key="legacy-no-plan-job",
+    )
+    prepared = main._prepare_signal_producer(
+        {key: value for key, value in request.items() if key != "idempotency_key"},
+        owner_principal="signal-owner", request_repair=False, assess_readiness=False,
+    )
+    job = fixture.jobs.create_waiting(
+        owner_principal="signal-owner", task_id=prepared["task"]["task_id"], experiment_id=None,
+        strategy_version_artifact_id=prepared["version"]["artifact_id"],
+        stock_pool_snapshot_id=prepared["pool_snapshot"]["snapshot_id"],
+        preparation=prepared["preparation"], requirement=prepared["requirement"],
+        readiness={"state": "unknown", "missing": []},
+        trace_id="signal-trace", idempotency_key="legacy-no-plan-job",
+    )
+    assert job["requirement_plan"] is None
+
+    assert promote_waiting_signal_jobs(fixture.jobs, fixture.readiness) == 1
+    job = fixture.jobs.get(job["job_id"], trusted_owner="signal-owner")
+    assert job["status"] == "queued"
+    assert job["readiness"]["state"] == "ready"
+    document = fixture.jobs._fetch_one(
+        "SELECT input_json FROM signal_producer_jobs WHERE job_id=:id", {"id": job["job_id"]}
+    )["input_json"]
+    assert document["data_readiness"]["requirement_sha256"] == prepared["requirement"]["requirement_sha256"]
+    assert "requirement_plan_sha256" not in document["data_readiness"]
+
+    fixture.jobs.close()
     fixture.market.close()
     fixture.paper.close()
     fixture.research.close()
