@@ -32,7 +32,7 @@ from .product_api import (
 )
 from .pooled_http import pooled_http as httpx
 from .user_session import ProductAuthError, resolve_principal, resolve_user
-from .trace_store import TraceStore
+from .trace_store import TraceConflict, TraceStore
 from .conversation_recovery import project_recovery
 from .workflow_projection import project_workflow_event
 from .agent_lifecycle_delivery import LifecycleDelivery
@@ -741,6 +741,10 @@ def _collect_trace(session: ProductSession) -> None:
 
     persisted = trace_store.read(session.session_id)
     cursor = max((event["sequence"] for event in persisted), default=0)
+    # A rebind after an idle release or restart must be able to append the
+    # Runtime's continuation at exactly persisted+1. Reopen the durable trace
+    # so a prior close cannot suppress the rehydrated stream.
+    trace_store.reopen(session.session_id)
     # Delivery to the conversation catalog is independent of SSE ingestion.
     # Retry the durable BYQ projection even if the adapter has lost this session
     # or no longer replays its old events. Backend deduplicates workflow_sequence.
@@ -777,7 +781,13 @@ def _collect_trace(session: ProductSession) -> None:
                             card_id,
                         ),
                     )
-                    trace_store.append(projected)
+                    try:
+                        trace_store.append(projected)
+                    except TraceConflict:
+                        # A real sequence violation is never masked. Stop this
+                        # projection and leave the durable trace intact for an
+                        # explicit rebind/recovery rather than crashing.
+                        return
                     cursor = sequence
                 except (ValueError, TypeError, json.JSONDecodeError):
                     # The adapter is the only producer. Invalid data is not

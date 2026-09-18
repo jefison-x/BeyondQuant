@@ -96,6 +96,36 @@ def test_terminal_is_not_overwritten_and_high_watermark_is_durable(tmp_path):
     journal.close()
 
 
+def test_rebase_reanchors_unpersisted_tail_and_pins_acknowledged_evidence(tmp_path):
+    journal = LifecycleJournal.claim(tmp_path, CTX, create=True)
+    journal.observe(event(1), generation="one")
+    terminal = event(5, "session.result")
+    journal.observe(terminal, generation="one")
+    receipt = lifecycle_receipt(project_lifecycle_event(terminal, CTX["session_id"], CTX["trace_id"]))
+    journal.acknowledge_terminal(receipt)
+    # A later turn emitted durable evidence the Gateway never persisted, plus a
+    # non-durable release/recreate slot.
+    journal.observe(event(20, "session.started", run_id="b" * 32), generation="two")
+    journal.observe(event(30, "session.result", run_id="b" * 32), generation="two")
+    journal.observe(event(33, "session.ready"), generation="two")
+    assert journal.state["sequence"] == 33
+
+    journal.rebase(10)
+    assert [row["sequence"] for row in journal.state["events"]] == [1, 5, 11, 12]
+    assert journal.state["sequence"] == 12
+    # The acknowledged receipt keeps its exact persisted sequence.
+    assert journal.state["terminal_acks"]["a" * 32] == receipt
+    # The Gateway can now append the re-anchored tail without a gap.
+    assert [row["sequence"] for row in journal.state["events"][2:]] == [11, 12]
+
+    # Acknowledged evidence can never be renumbered.
+    with pytest.raises(ValueError, match="acknowledged"):
+        journal.rebase(4)
+    path = journal.path
+    journal.close()
+    assert LifecycleJournal.read(path)["sequence"] == 12
+
+
 @pytest.mark.parametrize('kind,key,prefix', [
     ('agent.card.backtest_context', 'job_id', 'backtest_'),
     ('agent.card.approval', 'approval_id', 'agent_approval_'),

@@ -227,7 +227,7 @@ def continuation_budget_receipt(session_id: str, reservation_id: str) -> dict:
 @app.get('/internal/runtime/sessions/{session_id}/continuation-qualification')
 def continuation_qualification(session_id: str) -> dict:
     try:
-        record = adapter._get(session_id)
+        record = adapter._get(session_id, rehydrate=False)
     except KeyError:
         return {'qualified': False, 'reason': 'session_missing'}
     with record.lock:
