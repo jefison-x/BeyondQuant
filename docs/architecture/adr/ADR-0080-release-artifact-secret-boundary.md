@@ -1,7 +1,8 @@
 # ADR-0080：发布制品 secret 边界
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-19
+- Accepted: 2026-09-19
 - Scope: release/rollback overlay、resolved private config、retained-artifact copy、release manifest 与备份中的 secret 值；部署期 secret 注入来源与校验。不推进 Product Phase。
 - Relates: [ADR-0059](ADR-0059-development-governance-and-ci-integrity.md)（隔离工作树、合并/部署门禁、轻量升级流程）、[ADR-0062](ADR-0062-post-u8-reliability-boundaries.md)（Post-U8 维护边界）、[ADR-0070](ADR-0070-hosted-ci-and-image-release.md)（可信镜像发布与 digest 部署输入）。
 

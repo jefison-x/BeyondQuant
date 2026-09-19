@@ -33,10 +33,10 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   reboot 导致的陈旧 lease 现显式映射为 HTTP `409` + `stale_session_lease`（区别于 404/503）。
   新增可逆、audit-first、只读数据库的 `scripts/ops/archive_stale_sessions.py`；生产已归档 15 个陈旧会话，
   未删除任何文件或 domain row。
-- **数据就绪自动续接（ADR-0077，仍为 Proposed；构建修订 .136/.137，PRs #305/#306）**：在既有任务绑定续接
+- **数据就绪自动续接（ADR-0077，Accepted；构建修订 .136/.137，PRs #305/#306）**：在既有任务绑定续接
   合同内新增数据就绪事件，signal job `completed` 且产出 `validated signal_snapshot` 时经既有预算账本
-  生成至多一个有界续接回合。ADR-0077 仅对 ADR-0045 §3「默认下一回合投递」增加具名例外，**尚待维护者接受**，
-  不得标记 Accepted；生产当前已运行该实现。后续修复使 continuation guard 与 Backend 权威
+  生成至多一个有界续接回合。ADR-0077 仅对 ADR-0045 §3「默认下一回合投递」增加具名例外，已于
+  2026-09-19 获维护者接受并成为当前规范；生产当前已运行该实现。后续修复使 continuation guard 与 Backend 权威
   `RUNTIME_MODEL_ALLOWLIST` 对齐（`deepseek-official` 及六个 `opencode-*` 路由），并以架构/Backend drift 测试守门。
 - **生产结果**：round-1 HS300 momentum+Kelly 回测完成——job `backtest_83cab36af0ec486d98b0a002c671b5da`、
   result `artifact_c62ab34ffd61405d85bac30ea3ca08ed`，收益 +25.49% vs 基准 +19.65%，最大回撤 33.83%；
@@ -610,8 +610,8 @@ Post-Phase 90 Management Action Consistency Maintenance 依据 ADR-0050 将股�
 - Phase 49-97 与相应 Accepted ADR/计划均已完成；下一阶段尚未授权。
 - 2026-09-19 维护收口（ADR-0047 聚合边界、运行/续接连续性与只读归档审计）已完成并记入本文与
   [实现计划](IMPLEMENTATION_PLAN.md)；它是维护，不推进 Product Phase，也不改变上一条授权状态。
-- ADR-0077（数据就绪自动续接）仍为 **Proposed**，待维护者接受；生产当前运行其实现，
-  但不得据此标记 Accepted 或视为已接受规范。
+- ADR-0077（数据就绪自动续接）已于 2026-09-19 获维护者接受（Accepted）；生产当前运行其实现。
+- ADR-0078/0079/0080 已于 2026-09-19 获维护者接受（Accepted）。
 - Phase 82 与 ADR-0047 已完成；50,000 保持原子 readiness 分片上限，不是 Tushare
   额度或完整数据任务上限。
 - ADR-0044 授权的 Phase 75–79、ADR-0045 授权的 Phase 80、ADR-0046 授权的 Phase 81、
