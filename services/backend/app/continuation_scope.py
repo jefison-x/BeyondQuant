@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from .db import execute, fetch_one
+
+logger = logging.getLogger("byq.research.continuation.scope")
 
 TOOLS = frozenset({
     'byq_agent_roles', 'byq_agent_run_start', 'byq_agent_authorize',
@@ -59,8 +62,10 @@ def authorize(store, reservation_id, payload, context):
                 raise ValueError('continuation requires the original task identity')
             scope.walk(args)
         except ValueError:
-            execute(connection, "UPDATE research_tasks SET continuation_blocked_reason='continuation_needs_attention' WHERE task_id=:task",
-                {'task': task['task_id']})
+            execute(connection, "UPDATE research_tasks SET continuation_blocked_reason='continuation_needs_attention', continuation_blocked_event_key=:event WHERE task_id=:task",
+                {'event': receipt['event_key'], 'task': task['task_id']})
+            logger.info("continuation scope violation blocked its event: task=%s event=%s reservation=%s",
+                task['task_id'], receipt['event_key'], reservation_id)
             return {'schema_version': 'continuation-action-admission.v1', 'admitted': False,
                 'reservation_id': reservation_id, 'task_id': task['task_id']}
         # This trusted MCP request proves the root accepted the original

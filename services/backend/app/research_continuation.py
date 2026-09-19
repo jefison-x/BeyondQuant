@@ -22,6 +22,11 @@ DATA_READY_EVENT_PREFIX = "ready-v1:"
 DATA_READY_TOKEN_LIMIT = 1048576 + 8192
 DATA_READY_MAX_TURNS = 8
 DATA_READY_TURN_TIMEOUT_SECONDS = 900
+# A deliberate task-wide needs_attention block (``block_continuation``) records
+# this sentinel. A concrete ``ready-v1:``/other key scopes the block to that one
+# event; a NULL key is a legacy pre-scoping row whose event is recovered from
+# the settled ledger.
+TASK_WIDE_BLOCK_EVENT_KEY = '*'
 
 
 def _event_key(event: dict) -> str:
@@ -122,6 +127,32 @@ class ResearchContinuationMixin:
         if conversation['status'] != 'active':
             return 'conversation_inactive'
         return None
+
+    @staticmethod
+    def _event_blocked_by_needs_attention(task, event_key: str) -> bool:
+        """Whether a settled needs_attention block still governs this event.
+
+        The block is event-scoped: a task with a recorded blocked event only
+        withholds that exact event, so a new distinct data-ready event re-arms
+        automatic continuation. An explicit task-wide block
+        (``TASK_WIDE_BLOCK_EVENT_KEY``) governs every event. A NULL key is a
+        legacy row written before the block was event-scoped, so the offending
+        event is recovered from the most recent settled ``needs_attention``
+        reservation; without such durable evidence the block stays task-wide.
+        At-most-once is separately guaranteed by the settled ledger row, so an
+        absent blocked event never permits a duplicate of the same event.
+        """
+        if task.get('continuation_blocked_reason') != 'continuation_needs_attention':
+            return False
+        blocked = task.get('continuation_blocked_event_key')
+        if blocked == TASK_WIDE_BLOCK_EVENT_KEY:
+            return True
+        if blocked is None:
+            settled = [row for row in (task.get('continuation_budget') or [])
+                if row.get('status') == 'settled' and row.get('outcome') == 'needs_attention']
+            if settled:
+                blocked = settled[-1]['event_key']
+        return blocked is None or blocked == event_key
 
     @staticmethod
     def _continuation_blocked_reason(task, conversation, receipt=None):
@@ -278,7 +309,11 @@ class ResearchContinuationMixin:
                 'dispatch_attempts': 0, 'next_attempt_at': now.isoformat(),
                 'expires_at': min(datetime.fromisoformat(permission['expires_at']),
                     now + timedelta(seconds=permission['turn_timeout_seconds'])).isoformat()}
-            execute(connection, 'UPDATE research_tasks SET continuation_budget = :budget, continuation_blocked_reason=NULL WHERE task_id = :task',
+            if task.get('continuation_blocked_reason') is not None:
+                logger.info('continuation re-armed on reservation: task=%s reason=%s blocked_event=%s event=%s reservation=%s',
+                    task_id, task.get('continuation_blocked_reason'), task.get('continuation_blocked_event_key'),
+                    event_key, receipt['reservation_id'])
+            execute(connection, 'UPDATE research_tasks SET continuation_budget = :budget, continuation_blocked_reason=NULL, continuation_blocked_event_key=NULL WHERE task_id = :task',
                 {'budget': [*rows, receipt], 'task': task_id})
             return receipt
 
@@ -322,7 +357,11 @@ class ResearchContinuationMixin:
                 'settlement_sha256': None, 'created_at': now.isoformat(), 'instruction': instruction,
                 'dispatch_attempts': 0, 'next_attempt_at': now.isoformat(),
                 'expires_at': (now + timedelta(seconds=DATA_READY_TURN_TIMEOUT_SECONDS)).isoformat()}
-            execute(connection, 'UPDATE research_tasks SET continuation_budget = :budget, continuation_blocked_reason=NULL WHERE task_id = :task',
+            if task.get('continuation_blocked_reason') is not None:
+                logger.info('continuation re-armed on reservation: task=%s reason=%s blocked_event=%s event=%s reservation=%s',
+                    task_id, task.get('continuation_blocked_reason'), task.get('continuation_blocked_event_key'),
+                    event_key, receipt['reservation_id'])
+            execute(connection, 'UPDATE research_tasks SET continuation_budget = :budget, continuation_blocked_reason=NULL, continuation_blocked_event_key=NULL WHERE task_id = :task',
                 {'budget': [*rows, receipt], 'task': task_id})
             logger.info("data-ready continuation enqueued: task=%s event=%s reservation=%s",
                 task_id, event_key, receipt['reservation_id'])
@@ -381,8 +420,6 @@ class ResearchContinuationMixin:
                 if budgeted:
                     if self._permission_blocked_reason(task, conversation) is not None:
                         continue
-                    if task.get('continuation_blocked_reason') == 'continuation_needs_attention':
-                        continue
                     if len(ledger) >= permission['max_turns']:
                         continue
                     remaining = permission['token_limit'] - sum(r['charged_tokens'] for r in ledger if r['status'] == 'settled')
@@ -436,6 +473,15 @@ class ResearchContinuationMixin:
                             logger.debug("data-ready continuation already reserved: task=%s event=%s",
                                 task['task_id'], event_key)
                         continue
+                    if self._event_blocked_by_needs_attention(task, event_key):
+                        logger.info("continuation withheld by needs_attention block: task=%s reason=%s blocked_event=%s event=%s",
+                            task['task_id'], task.get('continuation_blocked_reason'),
+                            task.get('continuation_blocked_event_key'), event_key)
+                        continue
+                    if task.get('continuation_blocked_reason') == 'continuation_needs_attention':
+                        logger.info("continuation re-arming for distinct event: task=%s reason=%s blocked_event=%s new_event=%s",
+                            task['task_id'], task.get('continuation_blocked_reason'),
+                            task.get('continuation_blocked_event_key'), event_key)
                     if not admit:
                         return {'status': 'eligible', 'task_id': task['task_id']}
                     if event.get('data_ready') and not budgeted:
@@ -482,8 +528,10 @@ class ResearchContinuationMixin:
             raise ValueError('invalid continuation blocker')
         with self._transaction() as connection:
             self._continuation_task(connection, task_id, trusted_context, human=False)
-            execute(connection, 'UPDATE research_tasks SET continuation_blocked_reason=:reason WHERE task_id=:task',
-                {'reason': reason, 'task': task_id})
+            event_key = TASK_WIDE_BLOCK_EVENT_KEY if reason == 'continuation_needs_attention' else None
+            execute(connection, 'UPDATE research_tasks SET continuation_blocked_reason=:reason, continuation_blocked_event_key=:event WHERE task_id=:task',
+                {'reason': reason, 'event': event_key, 'task': task_id})
+            logger.info("continuation blocked: task=%s reason=%s event=%s", task_id, reason, event_key)
             return {'blocked_reason': reason}
 
     def claim_continuation_dispatch(self, task_id: str, reservation_id: str, *, trusted_context: dict) -> dict:
@@ -577,8 +625,10 @@ class ResearchContinuationMixin:
                     return row
                 row.update(status='settled', charged_tokens=charged_tokens, settlement_sha256=settlement_sha256, outcome=outcome)
                 if outcome == 'needs_attention':
-                    execute(connection, "UPDATE research_tasks SET continuation_blocked_reason='continuation_needs_attention' WHERE task_id=:task",
-                        {'task': task_id})
+                    execute(connection, "UPDATE research_tasks SET continuation_blocked_reason='continuation_needs_attention', continuation_blocked_event_key=:event WHERE task_id=:task",
+                        {'event': row['event_key'], 'task': task_id})
+                    logger.info("continuation settled needs_attention: task=%s event=%s reservation=%s",
+                        task_id, row['event_key'], reservation_id)
             execute(connection, 'UPDATE research_tasks SET continuation_budget = :budget WHERE task_id = :task',
                 {'budget': rows, 'task': task_id})
             return row

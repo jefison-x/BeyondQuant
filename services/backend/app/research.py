@@ -276,6 +276,7 @@ class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinua
         "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS continuation_budget JSONB",
         "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS continuation_checked_at TIMESTAMPTZ",
         "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS continuation_blocked_reason TEXT",
+        "ALTER TABLE research_tasks ADD COLUMN IF NOT EXISTS continuation_blocked_event_key TEXT",
         """CREATE INDEX IF NOT EXISTS research_continuation_scan ON research_tasks
             (conversation_id, owner_principal, continuation_checked_at, task_id)
             WHERE continuation_permission IS NOT NULL""",
@@ -1642,6 +1643,7 @@ class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinua
         result.pop("continuation_budget", None)
         result.pop("continuation_checked_at", None)
         result.pop("continuation_blocked_reason", None)
+        result.pop("continuation_blocked_event_key", None)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
         return result

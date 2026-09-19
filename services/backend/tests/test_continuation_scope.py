@@ -102,3 +102,20 @@ def test_watch_read_is_bound_to_original_task_not_merely_owner(foreign):
         assert reply['admitted'] is (not foreign)
     finally:
         store.close()
+
+
+def test_scope_violation_records_the_blocked_event_key_for_rearm():
+    store, task, context, _, receipt = setup()
+    try:
+        other = store.create_task({'owner_principal': context['owner_principal'], 'title': 'Other task',
+            'objective': 'Unrelated', 'trace_id': context['trace_id'], 'idempotency_key': 'blocked-other'},
+            trusted_context=context)
+        call = dict(tool='byq_research_transition', arguments={'entity_type': 'research_task',
+            'entity_id': other['task_id'], 'target_status': 'running'}, root_run_id='a'*32)
+        assert authorize(store, receipt['reservation_id'], call, context)['admitted'] is False
+        row = store._fetch_one('''SELECT continuation_blocked_reason, continuation_blocked_event_key
+            FROM research_tasks WHERE task_id=:task''', {'task': task})
+        assert row['continuation_blocked_reason'] == 'continuation_needs_attention'
+        assert row['continuation_blocked_event_key'] == receipt['event_key']
+    finally:
+        store.close()

@@ -113,6 +113,21 @@ Runtime Continuity R0/R1（feat/fix，构建修订 `dsh-0.1.2rc1-post-u8.141`）
 均 fail closed。`reanchor_session_lease.py` 降级为异常修复工具。不修改 Gateway trace、
 Backend/domain schema、MCP、workers、DSH 版本或 composition，不部署、不自动合并。
 
+数据就绪续接 needs_attention 重挂（fix，构建修订 `dsh-0.1.2rc1-post-u8.142`）：生产 round-2
+数据就绪续接回合结算为 `needs_attention` 后，`research_tasks.continuation_blocked_reason` 被写成
+`continuation_needs_attention`；原预算路径的按任务级 `continue` 使其永久阻止后续**不同**的
+`ready-v1:` 事件，因此即使新的 signal job 完成并产出新的 validated snapshot，也不再自动续接
+（ADR-0077 Proposed）。现按 [ADR-0077](../architecture/adr/ADR-0077-data-ready-auto-continuation.md)
+将阻塞改为**事件作用域**：新增持久列 `research_tasks.continuation_blocked_event_key`，在结算
+`needs_attention` 与 `continuation_scope` 范围违例时记录触发阻塞的确切事件键；
+`claim_conversation_continuation` 只在候选事件键等于被阻塞键时继续抑制，遇到新的不同事件即重新
+挂起并走既有 `continuation_budget` 预留。同一事件仍由已结算账本行保证 at-most-once，回合计仍受
+`DATA_READY_MAX_TURNS`/`max_turns`、token 预算与 900 秒期限约束；显式 `block_continuation` 写
+`*` 任务级哨兵继续阻止所有事件，授权撤销、任务/会话终态仍按原门禁阻止。部署前的历史行（事件键
+为空）从最近一条已结算 `needs_attention` 账本行恢复其事件键，使已阻塞的存量任务也能在新事件上
+重挂。新增结构化日志记录阻塞原因、重挂决策与新事件键；没有新增第二个续接引擎，也没有 worker
+SQL 写入。不改变 Accepted ADR 文本；ADR-0077 仍为 Proposed。
+
 从 Phase 9 起，永久 migration source of truth 为 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`。实现 phase 前必须先检查、分类其 Community candidates。可在 BYQ-owned contracts 中重新实现 provider/engine-independent semantics，但不得复制 Community runtime、storage、provider 或 engine architecture。BaoStock、AKShare、VectorBT、PydanticAI 和 Hermes 保持排除，除非未来 Accepted ADR 明确反转。
 
 所有 phases 遵循 `docs/DEVELOPMENT_WORKFLOW.md`：只执行 `STATUS.md` 指定的 next phase；每 phase 使用 isolated worktree/branch/PR；contract/test 优先；保持 Product/Agent/Quant/Data/Engineering boundaries；CI 与 evidence 完成后才进入 merge gate。

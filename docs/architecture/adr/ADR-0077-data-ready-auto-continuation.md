@@ -43,6 +43,27 @@ job 转为 `completed` 并产出 `signal_snapshot`，但没有任何机制唤醒
   因此本 ADR 为 Proposed，需维护者接受后才作为当前规范。预算受限的 F6 许可路径保持不变。
 - 数据就绪事件、失败可见性（handoff 投影与任务阶段）和逐动作审批边界均不改变。
 
+## Implementation notes (post-u8.142)
+
+`continuation_needs_attention` is an **event-scoped** block, not a task-lifetime
+block. When a reservation settles `needs_attention`, the backend records the
+exact blocking event key in `research_tasks.continuation_blocked_event_key`
+alongside `continuation_blocked_reason`. The closed continuation scan then
+suppresses only that exact event key; a later **distinct** `ready-v1:` event
+(new `signal_producer_job` and snapshot) re-arms the task and reserves a new
+bounded turn. At-most-once for the blocked event is still guaranteed
+independently by its settled `continuation_budget` row, and re-arm remains
+bounded by `DATA_READY_MAX_TURNS`/`max_turns`, the token budget, and the 900s
+reservation expiry. A deliberate task-wide block (`POST
+/internal/task-continuation/{task}/block` with reason
+`continuation_needs_attention`) records the `*` sentinel and suppresses every
+event. Legacy rows written before event scoping (empty key) recover their
+blocked event from the most recent settled `needs_attention` reservation.
+Authorization revocation and terminal task/conversation state continue to block
+independently of this field. The backend logs the block reason, the re-arm
+decision, and the new event key; no second continuation engine or worker SQL
+mutation is introduced.
+
 ## Migration / rollback
 
 无数据迁移。回退时移除数据就绪事件源或关闭 `BYQ_F6_EXECUTOR_ENABLED` 即恢复“下一回合投递”；
