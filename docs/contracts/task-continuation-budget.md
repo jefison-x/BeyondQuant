@@ -38,6 +38,11 @@ validated 制品身份/内容哈希；同键同输入不延长有效期，不提
   Gateway `TaskContinuationDelivery` 与 adapter prompt 路径；`continuation_scope.py` 继续对
   续接回合内的 MCP 工具执行原任务范围准入。外owner/外工作区/无关会话不产生事件。
 - `failed`/`cancelled` 的 signal job 不产生数据就绪事件；`completed` 但没有已验证快照也不触发。
+- `needs_attention` 阻塞按**事件身份**作用域：结算 `needs_attention` 时把确切事件键写入
+  `research_tasks.continuation_blocked_event_key`，封闭扫描只抑制该事件；新的不同 `ready-v1:` 事件
+  会重新挂起并重新预留一个受同样上限约束的回合。同一事件仍靠已结算账本行保证最多一次；
+  显式任务级阻塞写 `*` 哨兵阻止所有事件，历史空键从最近一条已结算 `needs_attention` 行恢复其事件键；
+  授权撤销、任务/会话终态仍按独立门禁阻止，不回退为任务级永久阻塞。
 - 续接模型资格与准入同源：guard 只接受 Backend `RUNTIME_MODEL_ALLOWLIST` 中该运行时路由白名单内的
   `(provider, model)`（deepseek-official 及六个 `opencode-*` 路由），未知路由、已知路由的未白名单模型
   与官方路由的未知模型都在记账前以 `BYQ_CONTINUATION_ROUTE_UNQUALIFIED` 闭合；该表由架构与 Backend
