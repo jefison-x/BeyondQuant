@@ -14,8 +14,10 @@ EVIDENCE = ROOT / "docs/evidence/d15"
 LEDGER = EVIDENCE / "compatibility-ledger.v1.json"
 RECON = EVIDENCE / "upgrade-recon.v1.json"
 FIXTURES = EVIDENCE / "fixtures/manifest.v1.json"
+TARGET_DECISION = EVIDENCE / "target-decision.v1.json"
 CANDIDATE = "dsh-0.1.5rc1"
 DEFAULT = "dsh-0.1.2rc1"
+TARGET_TAG = "dsh-v0.1.5-rc.1"
 
 
 class D15CandidateTests(unittest.TestCase):
@@ -25,9 +27,12 @@ class D15CandidateTests(unittest.TestCase):
         value = candidates[CANDIDATE]
         self.assertEqual(value["status"], "candidate-unqualified")
         self.assertEqual(value["production_default"], DEFAULT)
+        self.assertEqual(value["qualification_target"], TARGET_TAG)
+        self.assertEqual(value["target_npm_version"], "0.1.5-rc.1")
         self.assertEqual(value["qualification"]["state"], "not-qualified")
-        self.assertFalse(value["qualification"]["live_start_verified"])
+        self.assertTrue(value["qualification"]["live_start_verified"])
         self.assertFalse(value["qualification"]["native_resume_verified"])
+        self.assertIsNone(value["qualification"]["blocking_finding"])
         self.assertEqual(value["runtime"]["selector_env"], "BYQ_DSH_COMPATIBILITY_RELEASE")
         self.assertEqual(value["runtime"]["selector_value"], CANDIDATE)
         self.assertTrue(value["runtime"]["isolated"])
@@ -57,6 +62,9 @@ class D15CandidateTests(unittest.TestCase):
             lambda v: v["production_boundary"].update(database_changes="migrate"),
             lambda v: v["upstream"].update(source_commit="deadbeef"),
             lambda v: v["python"].update(sdk="0.1.5rc2"),
+            lambda v: v.update(target_npm_version="0.1.5-rc.2"),
+            lambda v: v.update(qualification_target="0.1.5-rc.2"),
+            lambda v: v.update(target_decision="docs/evidence/d15/missing.json"),
         )
         for mutate in mutations:
             with self.subTest(mutation=mutate):
@@ -107,13 +115,15 @@ class D15CandidateTests(unittest.TestCase):
         ledger = json.loads(LEDGER.read_text())
         self.assertEqual(ledger["baseline_release_id"], "dsh-0.1.2rc1")
         self.assertEqual(ledger["candidate_release_id"], CANDIDATE)
+        self.assertEqual(ledger["qualification_target"], TARGET_TAG)
+        self.assertEqual(ledger["target_npm_version"], "0.1.5-rc.1")
         self.assertEqual(ledger["requested_npm_version"], "0.1.5-rc.2")
         self.assertEqual(ledger["candidate_npm_version"], "0.1.5-rc.1")
         interfaces = ledger["interfaces"]
         self.assertGreaterEqual(len(interfaces), 25)
         expected = {"unchanged", "compatible", "changed", "removed", "new", "unknown-needs-probe"}
         self.assertTrue({item["status"] for item in interfaces} <= expected)
-        counts: dict[str, int] = {}
+        counts: dict[str, int] = {status: 0 for status in expected}
         for item in interfaces:
             counts[item["status"]] = counts.get(item["status"], 0) + 1
             self.assertTrue(item["byq_affected_files"] or item["change_class"] == ["no-change"]
@@ -121,15 +131,62 @@ class D15CandidateTests(unittest.TestCase):
         self.assertEqual(counts, ledger["counts"])
         self.assertGreaterEqual(counts.get("changed", 0), 1)
         self.assertGreaterEqual(counts.get("new", 0), 1)
+        self.assertEqual(counts.get("unknown-needs-probe", 0), 0)
+        self.assertTrue(ledger["probed"])
+
+    def test_target_decision_resolves_d15_f1_to_rc1(self) -> None:
+        decision = json.loads(TARGET_DECISION.read_text())
+        self.assertEqual(decision["qualification_target"], CANDIDATE)
+        self.assertEqual(decision["target_npm_version"], "0.1.5-rc.1")
+        self.assertEqual(decision["superseded_request"], "DSH 0.1.5-rc.2")
+        self.assertEqual(decision["finding"], "D15-0-F1")
+        self.assertEqual(decision["finding_resolution"], "RESOLVED_BY_MAINTAINER_DECISION")
+        self.assertIn("not-a-coherent-pairing", decision["rc2_disposition"])
+
+    def test_d15_1_build_and_probe_evidence(self) -> None:
+        build = json.loads((EVIDENCE / "d15-1/candidate-build.v1.json").read_text())
+        probe_file = EVIDENCE / "d15-1/candidate-start-probe.v1.json"
+        probe = json.loads(probe_file.read_text())
+        self.assertEqual(build["release_id"], CANDIDATE)
+        self.assertEqual(build["qualification_target"], TARGET_TAG)
+        self.assertTrue(build["isolated"])
+        self.assertFalse(build["image"]["registry_pushed"])
+        self.assertFalse(build["image"]["production_traffic"])
+        self.assertIn("0.1.5-rc.1", build["observed"]["runtime_version"])
+        for key in ("dockerfile", "requirements_lock", "probe"):
+            self.assertTrue((ROOT / build["build_inputs"][key]["path"]).is_file())
+        self.assertEqual(probe["sdk"], "0.1.5rc1")
+        self.assertEqual(probe["runtime_bin"], "0.1.5rc1")
+        self.assertEqual(probe["status"], "PASS")
+        self.assertEqual(probe["start_status"], "ready")
+        self.assertEqual(probe["final_status"], "idle")
+        self.assertTrue(probe["event_seq_contiguous"])
+        self.assertIn("tool/call", probe["event_types"])
+        self.assertIn("tool/result", probe["event_types"])
+        self.assertTrue(probe["message_tool_blocked"])
+
+    def test_production_default_selector_unchanged_after_candidate_build(self) -> None:
+        deployment = json.loads((ROOT / "config/dsh/deployment.json").read_text())
+        self.assertEqual(deployment["default_release"], DEFAULT)
+        self.assertEqual(deployment["candidate_releases"], [])
+        dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.dsh-0.1.5rc1-candidate").read_text()
+        self.assertIn("BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1", dockerfile)
+        production = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
+        self.assertIn("BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.2rc1", production)
+        self.assertNotIn("dsh-0.1.5rc1", production)
 
     def test_recon_records_the_unpaired_rc2_blocker(self) -> None:
         recon = json.loads(RECON.read_text())
         self.assertEqual(recon["baseline_release"], "dsh-0.1.2rc1")
         self.assertEqual(recon["requested_target"], "DSH 0.1.5-rc.2")
-        self.assertEqual(recon["coherent_candidate"], "dsh-v0.1.5-rc.1")
+        self.assertEqual(recon["qualification_target"], "DSH 0.1.5-rc.1")
+        self.assertEqual(recon["target_release_id"], CANDIDATE)
+        self.assertEqual(recon["target_npm_version"], "0.1.5-rc.1")
+        self.assertEqual(recon["coherent_candidate"], TARGET_TAG)
         finding = recon["finding"]
         self.assertEqual(finding["id"], "D15-0-F1")
         self.assertIn("0.1.5rc2", finding["statement"])
+        self.assertEqual(finding["resolution_status"], "RESOLVED_BY_MAINTAINER_DECISION")
         self.assertEqual(
             recon["artifacts"]["candidate_rc1"]["bundled_npm_version"], "0.1.5-rc.1")
         self.assertFalse(recon["pypi"]["deepseek-harness-sdk"]["present"]["0.1.5rc2"])

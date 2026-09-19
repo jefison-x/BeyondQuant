@@ -1,4 +1,4 @@
-# ADR-0081：DSH 0.1.5 native continuity adoption and the D15 stage
+# ADR-0081：DSH 0.1.5-rc.1 native continuity adoption and the D15 stage
 
 - Status: Proposed
 - Date: 2026-09-19
@@ -9,6 +9,8 @@
   不改变 R0/R1/R2 的已落地语义。
 - Decision scope: Runtime Continuity 阶段顺序（R3 冻结与重定义、D15 新增、R4/R6 重定义）；
   D15-0/D15-1 的候选隔离边界。不含生产默认 DSH 版本切换、不含数据库/Worker 变更。
+- Qualification target decision: `docs/evidence/d15/target-decision.v1.json`
+  （维护者决定目标为 coherent 配对 `dsh-v0.1.5-rc.1`；`0.1.5-rc.2` 无 Python 配对）。
 
 ## Context
 
@@ -22,7 +24,8 @@ ADR-0079 定义了 R0–R2 并预告 R3（Supervisor）与 R4（Terminal）为�
 冲突，也无法验证原生语义。因此先冻结 R3，增加 DSH 原生连续性资格阶段 D15。
 
 D15-0 审计确认请求的 `0.1.5-rc.2` 缺少匹配的 Python runtime（仅 `0.1.5rc1`，其 bundled
-npm 为 `0.1.5-rc.1`）。证据见 `docs/evidence/d15/`。
+npm 为 `0.1.5-rc.1`）。维护者据此决定 D15 的资格目标为 coherent 配对 `dsh-v0.1.5-rc.1`；
+rc.2 保留为 not-a-coherent-pairing。证据见 `docs/evidence/d15/`。
 
 ## Decision
 
@@ -66,16 +69,17 @@ session/tool/subagent 的第二持久化。
 
 ### 6. 决策相互独立
 
-“BYQ 兼容 DSH 0.1.5-rc.2”与“生产默认 = DSH 0.1.5-rc.2”是独立决策；D15-G Go 或 R6
+“BYQ 兼容 DSH 0.1.5-rc.1”与“生产默认 = DSH 0.1.5-rc.1”是独立决策；D15-G Go 或 R6
 完成都不隐含生产切换。
 
 ## Consequences
 
 - 连续性能力以 DSH 原生为准，BYQ 减少自建状态与故障面。
 - R3 推迟到 D15-G 之后，避免在未验证原生语义时重复实现。
-- 候选与生产严格隔离，但 D15-1 的完整镜像构建/live 资格依赖上游发布匹配的 Python runtime；
-  在 `0.1.5-rc.2` 无 Python 配对时，精确该版本不可作为 coherent 候选。
-- 由于 D15 改变 runtime build inputs，生产构建修订由 `post-u8.145` 推进到 `post-u8.146`。
+- 候选与生产严格隔离。D15-1 已构建/启动/探测 coherent rc.1 候选（隔离、无生产流量）；D15-2..D15-G
+  的 native 资格仍待执行。
+- 由于 D15 改变 runtime build inputs，生产构建修订由 `post-u8.145` 推进到 `post-u8.146`，
+  并在 D15-1 新增候选 Dockerfile/锁/探测后推进到 `post-u8.147`（历史清单与证据保留）。
 
 ## 接受后验收要求（D15）
 

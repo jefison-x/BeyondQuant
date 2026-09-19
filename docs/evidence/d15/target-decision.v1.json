@@ -1,0 +1,29 @@
+{
+  "schema_version": "byq-d15-target-decision.v1",
+  "decided_at": "2026-09-19",
+  "authority": "maintainer",
+  "decision": "The D15 qualification target is the coherent official pairing dsh-v0.1.5-rc.1 / Python deepseek-harness-sdk==0.1.5rc1 / bundled npm 0.1.5-rc.1.",
+  "baseline_release": "dsh-0.1.2rc1",
+  "qualification_target": "dsh-0.1.5rc1",
+  "target_python_sdk": "0.1.5rc1",
+  "target_python_runtime_bin": "0.1.5rc1",
+  "target_npm_version": "0.1.5-rc.1",
+  "target_source_tag": "dsh-v0.1.5-rc.1",
+  "target_source_commit": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e",
+  "superseded_request": "DSH 0.1.5-rc.2",
+  "finding": "D15-0-F1",
+  "finding_resolution": "RESOLVED_BY_MAINTAINER_DECISION",
+  "rationale": [
+    "No Python deepseek-harness-sdk/runtime-bin==0.1.5rc2 is published; an exact npm 0.1.5-rc.2 candidate would have to splice a non-bundled npm closure onto the shipped Python runtime.",
+    "runtime-bin==0.1.5rc1 bundles npm 0.1.5-rc.1, so rc.1 is the only coherent, officially paired runtime.",
+    "All D15 native-continuity surfaces (Session V3 migration, SessionHandle persistence, cross-process write lease, continuable subagent, persistent terminal) are present in the bundled rc.1 closure.",
+    "The upstream rc.2 GitHub release changes only feedback-dialog confirmation and delivered-file card layout, which are outside the BYQ-dependent runtime interfaces."
+  ],
+  "rc2_disposition": "0.1.5-rc.2 remains recorded as not-a-coherent-pairing (no matching Python runtime). It is revisited only if upstream publishes a matching Python runtime artifact.",
+  "not_authorized_by_this_decision": [
+    "production default runtime switch",
+    "immutable config/dsh/releases registry extension",
+    "production deployment or traffic"
+  ],
+  "recorded_by": "codex/phase-d15-1-rc1"
+}
