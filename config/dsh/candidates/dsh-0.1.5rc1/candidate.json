@@ -1,0 +1,53 @@
+{
+  "schema_version": "byq-dsh-candidate.v1",
+  "declaration_id": "dsh-0.1.5rc1",
+  "status": "candidate-unqualified",
+  "production_default": "dsh-0.1.2rc1",
+  "requested_npm_version": "0.1.5-rc.2",
+  "coherent_npm_version": "0.1.5-rc.1",
+  "upstream": {
+    "source_tag": "dsh-v0.1.5-rc.1",
+    "source_commit": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e",
+    "source_archive_sha256": "23af26a7f422f3d3ba7ce148492e2937af3fe5cc39e8f05dd109e12dadd8262c",
+    "source_manifest_sha256": "1a7b08779d4a2da50ec1d81837eeb43e913256d077add584cb154c221e12283c",
+    "bundled_package_count": 126,
+    "bundled_npm_version": "0.1.5-rc.1"
+  },
+  "python": {
+    "sdk": "0.1.5rc1",
+    "runtime_bin": "0.1.5rc1",
+    "sdk_wheel_sha256": "8d9897e97e8a95fd738cb2c3e2c563951d824e43847ec6f3b0fb172c0729b4d8",
+    "linux_x86_64_runtime_wheel_sha256": "ad877237382baff4628969a9ebdbfe38486d971b7987c032d0e29775759b5229",
+    "lock": "config/dsh/candidates/dsh-0.1.5rc1/python.lock"
+  },
+  "runtime": {
+    "entrypoint": "deepseek-harness-sdk-runtime-linux-x64",
+    "carrier_kind": "python-bundled-executable",
+    "profile": "byq-product-candidate",
+    "compatibility_module": "services/runtime-adapter/app/compat/dsh_015.py",
+    "selector_env": "BYQ_DSH_COMPATIBILITY_RELEASE",
+    "selector_value": "dsh-0.1.5rc1",
+    "session_root": "/var/lib/byq/dsh-sessions/dsh-0.1.5rc1",
+    "isolated": true
+  },
+  "production_boundary": {
+    "default_release_unchanged": true,
+    "default_env_unchanged": true,
+    "existing_artifacts_untouched": true,
+    "historical_evidence_untouched": true,
+    "database_changes": "none",
+    "worker_restarts": "none",
+    "rollback_release": "dsh-0.1.2rc1"
+  },
+  "qualification": {
+    "state": "not-qualified",
+    "live_start_verified": false,
+    "native_resume_verified": false,
+    "reason": "D15-1 isolates the candidate closure and selector; D15-2..D15-G live qualification not yet executed.",
+    "blocking_finding": "D15-0-F1"
+  },
+  "evidence": {
+    "ledger": "docs/evidence/d15/compatibility-ledger.v1.json",
+    "recon": "docs/evidence/d15/upgrade-recon.v1.json"
+  }
+}

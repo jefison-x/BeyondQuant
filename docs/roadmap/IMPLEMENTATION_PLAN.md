@@ -134,6 +134,25 @@ epoch fencing、`LifecycleJournal` 证据边界、prompt 幂等、at-most-once �
 不改 Gateway trace 模型、Backend/domain schema、MCP、workers、DSH 版本或续接预算。不含
 Supervisor（R3）与 Terminal（R4）。不部署、不自动合并。
 
+DSH 0.1.5 原生连续性资格阶段 D15（feat/docs，构建修订 `dsh-0.1.2rc1-post-u8.146`）：
+按 [ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Proposed）与
+[D15 阶段计划](DSH_015RC2_UPGRADE_PLAN.md)，将 Runtime Continuity 的下一个原生能力步骤
+插在 R2 之后、R3 之前：`R0 → R1 → R2 → D15 → R3 → R4 → R5 → R6 → 独立 Production Go/No-Go`。
+R3 冻结（非回滚）为 `PAUSED_PENDING_DSH_015_NATIVE_CONTINUITY_QUALIFICATION`：保留既有
+代码/测试/合同，暂停自建进程重启编排、会话重建、原生会话持久化替代、subagent 持久化与持久
+PTY/shell。D15-0 交付机器可读升级台账 `docs/evidence/d15/compatibility-ledger.v1.json` 与 recon
+（27 个 BYQ 依赖接口；changed 12/new 5/compatible 6/unknown 2/unchanged 2），记录 0.1.5 原生
+Session V2/V3 迁移、`SessionHandle`、跨进程写租约、continuable subagent 与 persistent terminal。
+D15-0 具名阻断：请求的 npm `0.1.5-rc.2` 无匹配 Python `0.1.5rc2`，bundled `runtime-bin==0.1.5rc1`
+内含 npm `0.1.5-rc.1`；D15-1 因此以 coherent 配对 `dsh-v0.1.5-rc.1` 隔离候选，不静默绕过。
+D15-1 交付独立候选声明 `config/dsh/candidates/dsh-0.1.5rc1/`、校验/selector
+`scripts/dsh/candidate_registry.py`、compat 边界 `services/runtime-adapter/app/compat/dsh_015.py`
+与 `compat` 路由；生产默认 `dsh-0.1.2rc1`、`compose.yml`、`Dockerfile.post-u8-candidate` 与
+既有 0.1.2 制品/证据不变，回滚目标 `dsh-0.1.2rc1`，无 DB/Worker 变更。D15-2..D15-G 仅提交
+测试计划、fixtures 与 acceptance criteria（`docs/evidence/d15/fixtures/manifest.v1.json`），
+不声称资格通过。D15 改变 runtime build inputs，故推进构建修订 `.145→.146`，历史 `.145`
+清单与全部证据保留。不部署、不自动合并。
+
 数据就绪续接 needs_attention 重挂（fix，构建修订 `dsh-0.1.2rc1-post-u8.142`）：生产 round-2
 数据就绪续接回合结算为 `needs_attention` 后，`research_tasks.continuation_blocked_reason` 被写成
 `continuation_needs_attention`；原预算路径的按任务级 `continue` 使其永久阻止后续**不同**的
