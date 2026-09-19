@@ -104,6 +104,26 @@
       ]
     },
     {
+      "id": "native_session_resume",
+      "status": "compatible",
+      "observed_status": "compatible",
+      "observed_evidence": "docs/evidence/d15/d15-3/native-resume-results.v1.json",
+      "summary": "Handle-based native session resume: a NEW runtime generation opens the SAME persisted DSH session through SessionPersistence.open(id, 'read'|'write') and reads/appends its contiguous log. SessionHandle.flush is the only durability barrier; SessionWriteLease (flock) fences concurrent writers and the kernel releases it on process death; readColdSessionLog reads a cold log without ownership. Qualified against every Runtime Continuity failure-matrix row.",
+      "evidence": [
+        "@deepseek-ai/dsh-session-persistence: SessionPersistence.create/open and SessionHandle read/append/flush/close",
+        "@deepseek-ai/dsh-session-persistence-jsonl: cross-process SessionWriteLease (flock) and SessionAlreadyOwnedError",
+        "@deepseek-ai/dsh-session-query: readColdSessionLog",
+        "docs/evidence/d15/d15-3/native-resume-results.v1.json: 8/8 persisted failure rows natively resumed with the same session id, preserved event log and contiguous sequence; a lost run is truthfully interrupted; an unmaterialized session is correctly not resumable and requires BYQ fallback"
+      ],
+      "byq_affected_files": [
+        "services/runtime-adapter/app/runtime.py"
+      ],
+      "change_class": [
+        "affects-R1-R2-contract",
+        "affects-R3-R4-design"
+      ]
+    },
+    {
       "id": "agent_loop_create_start_resume",
       "status": "changed",
       "summary": "Agent loop gains assistant-stream and inbox type surfaces plus system-prompt commit/decision inputs.",
@@ -428,7 +448,7 @@
   "counts": {
     "changed": 12,
     "new": 5,
-    "compatible": 8,
+    "compatible": 9,
     "removed": 0,
     "unknown-needs-probe": 0,
     "unchanged": 2
@@ -458,6 +478,13 @@
       "observed_status": "compatible",
       "evidence": "docs/evidence/d15/d15-2/migration-results.v1.json",
       "scope": "real 0.1.2-rc.1 v0 store plus released-v2 fixtures, migrated with sessionFormatV2ToV3 via the first-party catalog; read/resume/append/close/reopen and fail-closed refusals qualified"
+    },
+    {
+      "item": "native_session_resume",
+      "status": "probed",
+      "observed_status": "compatible",
+      "evidence": "docs/evidence/d15/d15-3/native-resume-results.v1.json",
+      "scope": "real 0.1.5-rc.1 session-persistence seam (SessionPersistence/SessionHandle/SessionWriteLease/readColdSessionLog) on an isolated Cordis context; one OS process per runtime generation; cross-process flock lease; no production traffic"
     }
   ],
   "not_yet_probed": [

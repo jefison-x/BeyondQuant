@@ -1,7 +1,8 @@
 # DSH 0.1.5-rc.1 Native Continuity Upgrade and Qualification (Stage D15)
 
 Status: **D15-0 done, D15-1 candidate built/started/probed, D15-2 session V3
-migration PASS, D15-3..D15-G not started**
+migration PASS, D15-3 native session resume PASS, D15-4..D15-G not started.
+`R3_RESUME = NO`.**
 Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003
 Evidence: `docs/evidence/d15/`
 Target decision: [`docs/evidence/d15/target-decision.v1.json`](../evidence/d15/target-decision.v1.json)
@@ -51,7 +52,7 @@ violate the "no second generic agent harness" rule.
 | D15-0 | Upgrade Recon | **DONE** |
 | D15-1 | Candidate Runtime Upgrade | **machinery + isolated build/start DONE; D15-2..D15-G pending** |
 | D15-2 | Session V3 Migration Qualification | **PASS** |
-| D15-3 | Native Session Resume Qualification | planned |
+| D15-3 | Native Session Resume Qualification | **PASS** |
 | D15-4 | Subagent/Fork Continuity Qualification | planned |
 | D15-5 | Persistent Terminal Qualification | planned |
 | D15-G | Architecture Go/No-Go | planned |
@@ -93,23 +94,45 @@ Evidence: [`docs/evidence/d15/d15-2/`](../evidence/d15/d15-2/README.md)
 the build-input inventory, so per repository rules the production build revision
 advances `post-u8.147` -> `post-u8.148` (no selector/deployment change).
 
-## 4. D15-3 — Native session resume
+## 4. D15-3 — Native session resume (PASS)
 
-Exercise every failure-matrix row (Browser disconnect / Frontend restart /
-Gateway restart / Adapter restart / DSH crash / RuntimeGeneration replacement /
-Host reboot / executor takeover) and classify:
+The isolated harness `scripts/d15/harness/native_resume_harness.mjs` drives the
+real 0.1.5-rc.1 session-persistence seam (`SessionPersistence.create/open`,
+`SessionHandle.read/append/flush/close`, cross-process `SessionWriteLease`
+`flock`, `readColdSessionLog`) with **one OS process per runtime generation**.
+`scripts/d15/native_resume_qualification.py` classifies every failure-matrix row
+through `packages/contracts/runtime_continuity.py::classify_generation_transition`.
 
-- `reattached` — live in-process generation reused;
-- `rehydrated via native DSH resume` — 0.1.5 session handle opened and loop
-  resumed natively;
-- `rehydrated via BYQ fallback` — native resume unavailable, existing
-  conversation-rehydration contract used;
-- `interrupted` — run terminated and truthfully marked.
+Result (2026-09-19): **PASS.** All eight failure rows show the DSH session
+persisted and natively resumable with the same session id, preserved event log
+and contiguous sequence:
 
-Internal diagnostic/evidence fields (e.g. `native_resume_used`,
-`byq_fallback_used`, `previous_generation_state`) may be added, but the public
-framework-neutral `fresh/reattached/rehydrated/interrupted` contract must not
-change and the DSH session id must never become the BYQ `AgentSession` identity.
+| failure row | continuity | mechanism |
+| --- | --- | --- |
+| Browser disconnect | `reattached` | live generation survives |
+| Frontend restart | `reattached` | live generation survives; concurrent read handle |
+| Gateway restart | `reattached` | live generation survives; cold read replay |
+| Adapter restart | `rehydrated` | native DSH resume (same session) |
+| DSH crash | `interrupted` | lost run truthfully marked; same session natively resumable |
+| RuntimeGeneration replacement | `rehydrated` | native DSH resume (same session) |
+| Host reboot | `rehydrated` | native DSH resume; kernel releases the flock lease |
+| executor takeover | `rehydrated` | flock fences the live writer, then native takeover |
+
+A native-unavailable control (a session that crashed before the `flush()`
+durability barrier) is correctly not resumable and requires BYQ conversation
+fallback. Conclusion: **native session resume is viable; R3 must not
+re-implement it** (it only owns invoking native attach/resume, epoch fencing,
+the BYQ fallback when native resume is unavailable, lifecycle observation and
+cleanup). The R3 freeze stands and `R3_RESUME = NO` until D15-G.
+
+Evidence: [`docs/evidence/d15/d15-3/`](../evidence/d15/d15-3/README.md)
+(`native-resume-observations.v1.json`, `native-resume-results.v1.json`).
+
+Internal diagnostic/evidence fields (`native_resume_used`,
+`byq_fallback_used`, `previous_generation_state`, `native_session_present`) are
+evidence-only: the public framework-neutral `fresh/reattached/rehydrated/
+interrupted` contract is unchanged and the DSH session id never becomes the BYQ
+`AgentSession` identity.
 
 ## 5. D15-4 — Subagent / fork continuity
 
@@ -180,3 +203,9 @@ are part of the build-input inventory, so per repository rules the revision
 advances `post-u8.147` -> `post-u8.148`. This is a rebuild identity bump only: no
 selector, `compose.yml`, `deployment.json` or 0.1.2 artifact/evidence change and
 no deployment.
+
+D15-3 adds a harness under `scripts/d15/`, tests, evidence and contract code
+under `packages/contracts`, all part of the build-input inventory, so the
+revision advances `post-u8.148` -> `post-u8.149`. Again a rebuild identity bump
+only: no selector, `compose.yml`, `deployment.json`, immutable release registry
+or 0.1.2 artifact/evidence change and no deployment.

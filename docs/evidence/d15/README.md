@@ -1,8 +1,9 @@
 # D15 — DSH 0.1.5-rc.1 Native Continuity Upgrade Evidence
 
 Status: **D15-0 complete; D15-1 candidate built, started and keylessly probed in
-isolation; D15-2 session V3 migration qualified (PASS); D15-3..D15-G not started.
-No native-resume/subagent/terminal/Go-No-Go pass claims.**
+isolation; D15-2 session V3 migration qualified (PASS); D15-3 native session
+resume qualified (PASS); D15-4..D15-G not started. No subagent/terminal/Go-No-Go
+pass claims. `R3_RESUME = NO`.**
 
 - Target decision: [`target-decision.v1.json`](target-decision.v1.json)
   (`dsh-v0.1.5-rc.1` / Python `0.1.5rc1` / bundled npm `0.1.5-rc.1`)
@@ -11,9 +12,10 @@ No native-resume/subagent/terminal/Go-No-Go pass claims.**
 - Candidate declaration: [`../../config/dsh/candidates/dsh-0.1.5rc1/candidate.json`](../../../config/dsh/candidates/dsh-0.1.5rc1/candidate.json)
 - D15-1 build/start/probe: [`d15-1/README.md`](d15-1/README.md)
 - D15-2 session migration qualification: [`d15-2/README.md`](d15-2/README.md)
+- D15-3 native session resume qualification: [`d15-3/README.md`](d15-3/README.md)
 - Qualification fixture specification: [`fixtures/manifest.v1.json`](fixtures/manifest.v1.json)
 - Realized fixture index (sha256): [`fixtures/sessions/index.v1.json`](fixtures/sessions/index.v1.json)
-- Acceptance-criteria matrix (D15-2 `PASS`, D15-3..D15-G `NOT_RUN`): [`acceptance-matrix.v1.json`](acceptance-matrix.v1.json)
+- Acceptance-criteria matrix (D15-2/D15-3 `PASS`, D15-4..D15-G `NOT_RUN`): [`acceptance-matrix.v1.json`](acceptance-matrix.v1.json)
 - Stage plan / acceptance criteria: [`../../roadmap/DSH_015RC1_UPGRADE_PLAN.md`](../../roadmap/DSH_015RC1_UPGRADE_PLAN.md)
 
 Production default remains `dsh-0.1.2rc1`. Nothing in this directory changes
@@ -32,7 +34,7 @@ interfaces. Status counts after the D15-1 keyless probe:
 | --- | --- |
 | changed | 12 |
 | new | 5 |
-| compatible | 8 |
+| compatible | 9 |
 | unknown-needs-probe | 0 |
 | unchanged | 2 |
 
@@ -124,3 +126,22 @@ The compatibility ledger's `session_format_v2_v3` interface now carries
 `observed_status: "compatible"` and the migration item is moved from
 `not_yet_probed` to `probed`. No native resume is claimed; `R3_RESUME = NO`
 until D15-G.
+
+## D15-3 — native session resume qualification
+
+A new runtime generation can resume the SAME persisted DSH session natively
+through the real 0.1.5-rc.1 session-persistence seam
+(`SessionPersistence.open` + `SessionHandle`, cross-process `flock`
+`SessionWriteLease`, `readColdSessionLog`). The isolated harness uses one OS
+process per runtime generation and covers all eight failure-matrix rows: 3
+`reattached` (browser/frontend/gateway, generation survives), 4
+`rehydrated` via native resume (adapter restart, generation replacement, host
+reboot, executor takeover), and 1 `interrupted` (DSH crash with a lost open run,
+still natively resumable). A native-unavailable control (a session that never
+reached the `flush()` barrier) is correctly not resumable and requires BYQ
+conversation fallback. Full table, real-vs-simulated detail and the
+native-vs-fallback conclusion: [`d15-3/README.md`](d15-3/README.md).
+
+The ledger's `native_session_resume` interface is `compatible` (probed). Native
+resume is viable enough that R3 must **not** re-implement it; the R3 freeze and
+`R3_RESUME = NO` remain until D15-G.

@@ -1,7 +1,7 @@
 {
   "schema_version": "byq-d15-acceptance-matrix.v1",
   "generated_at": "2026-09-19",
-  "notes": "Acceptance criteria for D15-2..D15-G. D15-2 is PASS with committed evidence; D15-3..D15-G remain NOT_RUN until a live candidate exists. No criteria may be marked PASS without committed evidence.",
+  "notes": "Acceptance criteria for D15-2..D15-G. D15-2 and D15-3 are PASS with committed evidence; D15-4..D15-G remain NOT_RUN until a live candidate exists. No criteria may be marked PASS without committed evidence. D15-3 PASS covers native session resume only; R3_RESUME stays NO until D15-G.",
   "result_vocabulary": ["NOT_RUN", "PASS", "FAIL", "BLOCKED"],
   "substages": [
     {
@@ -37,7 +37,7 @@
     {
       "id": "D15-3",
       "name": "Native Session Resume Qualification",
-      "result": "NOT_RUN",
+      "result": "PASS",
       "criteria": [
         "every failure-matrix row classified as reattached | rehydrated-native | rehydrated-byq-fallback | interrupted",
         "public fresh/reattached/rehydrated/interrupted contract unchanged",
@@ -46,7 +46,19 @@
         "native resume failure falls back without fabricating reattach",
         "zero stale lease across adapter/host restart"
       ],
+      "criterion_results": [
+        {"criterion": "every failure-matrix row classified as reattached | rehydrated-native | rehydrated-byq-fallback | interrupted", "result": "PASS", "evidence": "native-resume-results.v1.json rows: reattached 3 (browser/frontend/gateway), rehydrated-native 4 (adapter restart, generation replacement, host reboot, executor takeover), interrupted 1 (DSH crash with a lost run), rehydrated-byq-fallback 0 for the eight rows; a native-unavailable control rehydrates via BYQ fallback"},
+        {"criterion": "public fresh/reattached/rehydrated/interrupted contract unchanged", "result": "PASS", "evidence": "packages/contracts/runtime_continuity.py CONTINUITY_VERSION=runtime-continuity.v1 and STATUSES unchanged; summary.public_contract_unchanged=true; the manifest public_contract matches"},
+        {"criterion": "internal diagnostic fields are evidence-only and do not leak", "result": "PASS", "evidence": "classifier emits native_resume_used/byq_fallback_used/previous_generation_state/native_session_present in an internal diagnostics dict only; tests assert every decision uses a closed public status and the diagnostics keys are the manifest's internal-only fields"},
+        {"criterion": "DSH session id never becomes BYQ AgentSession identity", "result": "PASS", "evidence": "classify_generation_transition takes no identity; evidence records native_session_present as a boolean only; no DSH session id is projected as a BYQ identity"},
+        {"criterion": "native resume failure falls back without fabricating reattach", "result": "PASS", "evidence": "native-unavailable control: an unmaterialized session is invisible to stat/open (native_resume_available=false) and classifies as rehydrated with byq_fallback_used=true; a lost run classifies interrupted, never reattached"},
+        {"criterion": "zero stale lease across adapter/host restart", "result": "PASS", "evidence": "dsh-crash and host-reboot rows: SIGKILL of the lease holder releases the kernel flock; a new generation opens the same session (lease_released_on_process_death=true); executor-takeover shows SessionAlreadyOwnedError while the old executor lives"}
+      ],
       "failure_rows": ["Browser disconnect", "Frontend restart", "Gateway restart", "Adapter restart", "DSH crash", "RuntimeGeneration replacement", "Host reboot", "executor takeover"],
+      "evidence": [
+        "docs/evidence/d15/d15-3/native-resume-results.v1.json",
+        "docs/evidence/d15/d15-3/native-resume-observations.v1.json"
+      ],
       "evidence_path": "docs/evidence/d15/d15-3"
     },
     {

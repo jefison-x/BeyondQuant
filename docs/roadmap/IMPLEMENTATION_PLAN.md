@@ -134,7 +134,7 @@ epoch fencing、`LifecycleJournal` 证据边界、prompt 幂等、at-most-once �
 不改 Gateway trace 模型、Backend/domain schema、MCP、workers、DSH 版本或续接预算。不含
 Supervisor（R3）与 Terminal（R4）。不部署、不自动合并。
 
-DSH 0.1.5-rc.1 原生连续性资格阶段 D15（feat/docs，构建修订 `dsh-0.1.2rc1-post-u8.148`）：
+DSH 0.1.5-rc.1 原生连续性资格阶段 D15（feat/docs，构建修订 `dsh-0.1.2rc1-post-u8.149`）：
 按 [ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Proposed）与
 [D15 阶段计划](DSH_015RC1_UPGRADE_PLAN.md)，将 Runtime Continuity 的下一个原生能力步骤
 插在 R2 之后、R3 之前：`R0 → R1 → R2 → D15 → R3 → R4 → R5 → R6 → 独立 Production Go/No-Go`。
@@ -163,8 +163,24 @@ session fixtures（`docs/evidence/d15/fixtures/sessions/index.v1.json`，含 sha
 台账 `session_format_v2_v3` 增加 `observed_status=compatible` 并移出 `not_yet_probed`，
 acceptance-matrix D15-2 置 PASS，证据 `docs/evidence/d15/d15-2/`。D15-2 仅新增测试/证据/文档，
 但 `scripts/` 与 `tests/` 属于 BYQ build-input inventory，故按仓库规则构建修订推进
-`.147→.148`（仅重建身份，不改 selector/deployment）。D15-3..D15-G（native resume、subagent/fork、
-persistent terminal、Go/No-Go）仍为 PLANNED。不部署、不自动合并。
+`.147→.148`（仅重建身份，不改 selector/deployment）。D15-3 交付隔离 Node harness
+`scripts/d15/harness/native_resume_harness.mjs`（+ `native_resume_worker.mjs`/
+`native_resume_common.mjs`）与分类器 `scripts/d15/native_resume_qualification.py`
+（经 `packages/contracts/runtime_continuity.py::classify_generation_transition`）：以真实
+0.1.5-rc.1 session-persistence seam（`SessionPersistence.create/open`、`SessionHandle`
+read/append/flush/close、跨进程 `SessionWriteLease` flock、`readColdSessionLog`）驱动，
+每个 runtime generation 一个 OS 进程，覆盖 8 个 failure-matrix 行。结果 8/8 持久化行可由新
+generation 原生恢复同一 session（同 id、事件保留、序列连续）：browser/frontend/gateway 为
+`reattached`，adapter restart/generation replacement/host reboot/executor takeover 为
+`rehydrated` 原生恢复，DSH crash 为 `interrupted`（丢失 run 如实标记且仍可原生恢复）；native
+不可用对照（未过 `flush()` 的未物化 session）正确不可恢复并需 BYQ fallback。公开
+`fresh/reattached/rehydrated/interrupted` 合同不变，native/fallback 机制仅存于内部 evidence-only
+诊断字段，DSH session id 不成为 BYQ AgentSession 身份。结论：原生 session resume 可用、R3 不得
+重复实现；R3 冻结与 `R3_RESUME = NO` 不变直至 D15-G。台账 `native_session_resume` 置 compatible
+并移入 probed，acceptance-matrix D15-3 置 PASS，证据 `docs/evidence/d15/d15-3/`。D15-3 新增
+`scripts/`、`tests/`、`packages/contracts` 与证据均属 build-input inventory，故构建修订推进
+`.148→.149`（仅重建身份，不改 selector/deployment）。D15-4..D15-G（subagent/fork、persistent
+terminal、Go/No-Go）仍为 PLANNED。不部署、不自动合并。
 
 数据就绪续接 needs_attention 重挂（fix，构建修订 `dsh-0.1.2rc1-post-u8.142`）：生产 round-2
 数据就绪续接回合结算为 `needs_attention` 后，`research_tasks.continuation_blocked_reason` 被写成
