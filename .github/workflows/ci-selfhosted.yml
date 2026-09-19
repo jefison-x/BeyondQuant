@@ -57,7 +57,12 @@ jobs:
           echo "matrix=$(python3 scripts/ci/plan.py "${args[@]}")" >> "$GITHUB_OUTPUT"
 
   checks:
-    needs: plan
+    # Heavy lanes must not start until the fast plan selection and the trusted
+    # contribution authorization both succeed. A failed contribution or plan
+    # therefore skips the expensive matrix instead of running it for ~20
+    # minutes; local-ci still requires every planned lane to be success, and a
+    # skipped lane is not success, so the aggregate gate stays fail-closed.
+    needs: [plan, contribution]
     strategy:
       fail-fast: false
       max-parallel: 8
