@@ -700,7 +700,7 @@
     "tests/test_dsh_promotion.py": "sha256:23ebf793dcf68063d110d4f1bb64e0aceeb568438fb53ef7ba8db1389ea2787b",
     "tests/test_dsh_qualification.py": "sha256:7413ddd72896a61b580f5954436b77027ae28b312f61361254121149deb09f39",
     "tests/test_dsh_release.py": "sha256:fa2df16cb648902a0d920c6247ea708b206d2a429c5331095202a96cc5915d94",
-    "tests/test_dsh_release_secrets.py": "sha256:e09bd07f86ccdfdeb568e8c7e59cf406f2a77e9294868359a657da2f4c334317",
+    "tests/test_dsh_release_secrets.py": "sha256:98addca2ad9e9a8ce70463a1694573a77302c6b29a1632af24c61b70009e843d",
     "tests/test_dsh_retained_artifacts.py": "sha256:9cffee93def2b0d0ce83ddc42b1d1f97b06012e9523e6f8da80be1f65c62930a",
     "tests/test_dsh_retirement.py": "sha256:51ea057d38ea7ad5618d58f47fcade2be6e29e1319e3c35a55885b15987c8702",
     "tests/test_dsh_session_backup.py": "sha256:b9a8cb08b3e58298c3efdec70ae888bde0bfe879667d1cf3a795a631f455d6aa",
