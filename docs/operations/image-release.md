@@ -59,6 +59,41 @@ python3 scripts/release/manifest.py overlay \
 不能覆盖现有配置，未知 migration 分类阻止生成。该命令不重启服务。
 将生成的文件作为既有 operator target Compose 最后一层输入，保留现有 Env、卷和 admission 配置。
 
+### 发布制品 secret 边界（ADR-0080）
+
+Release 制品（attested manifest、`target.compose.json`、`target.resolved.private.json`、
+retained-artifact copy 与备份）MUST NOT 含明文 secret 值。operator 生成 overlay 时：
+
+1. 不要从 live 容器复制 secret 的 `Config.Env` 字面值；secret 键只保存 `${ENV_NAME}` 引用。
+2. 写出前对制品运行 guard，失败即停止：
+
+```bash
+python3 scripts/dsh/release_secrets.py check <release目录>/target.compose.json \
+  <release目录>/target.resolved.private.json
+```
+
+3. 若已有含字面值的制品，用净化/去密生成新文件（不覆盖旧制品）：
+
+```bash
+python3 scripts/dsh/release_secrets.py sanitize \
+  --input <旧>/target.compose.json --output <新>/target.compose.json
+python3 scripts/dsh/release_secrets.py redact \
+  --input <旧>/target.resolved.private.json --output <新>/target.resolved.private.json
+```
+
+4. 部署前用受保护来源（`0600` 宿主 `.env` 或 `--env-file`）验证每个引用都可解析；
+   缺失或为空即 fail closed，不得静默注入空值：
+
+```bash
+python3 scripts/dsh/release_secrets.py verify \
+  --input <release目录>/target.compose.json --env-file /home/jefison/projects/BeyondQuant/.env
+```
+
+5. 实际值由 Docker Compose 在 `compose up`/`config` 时从 `--project-directory` 下的
+   `.env`（或显式 `--env-file`）注入。既有含字面值的 release 目录/备份不改写，仅作
+   历史回滚；不得向前复制到新 release。`scripts/release/manifest.py` 的 attestation 与
+   digest 验证不变，因为它从不校验 env 值。
+
 常规发布按已接受的轻量流程：完成数据备份并校验可读/摘要，保存当前配置和实际旧镜像，必要时
 关闭入口排空并备份会话，然后仅对选定服务执行 `up -d --no-deps --no-build --pull never --wait`。
 核对实际 digest/image ID、健康、普通用户登录与既有会话后恢复入口；失败用保存的旧镜像/配置恢复。

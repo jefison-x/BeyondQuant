@@ -5,8 +5,12 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 from images import DIGEST, SERVICES
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.dsh.release_secrets import assert_no_plaintext_secrets  # noqa: E402
 
 # Explicit release tags only: stable version, or a pre-release beta/RC suffix.
 VERSION_TAG = re.compile(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-(?:beta|rc)(?:\.[0-9]+)?)?')
@@ -83,6 +87,7 @@ def main():
         if manifest['migration'] == 'operator-required':
             raise ValueError('migration review unresolved; prepare a reviewed release')
         overlay = {'services': {name: {'image': manifest['images'][name]['ref']} for name in services}}
+        assert_no_plaintext_secrets(overlay)
         # Validate registry content before producing operator input; never execute image commands.
         for name in services:
             image = manifest['images'][name]
