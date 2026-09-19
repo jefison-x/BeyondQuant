@@ -35,6 +35,8 @@ FIXED_INPUTS = (
     "services/mcp/Dockerfile", "services/mcp/package.json", "services/mcp/package-lock.json",
     "apps/frontend/Dockerfile", "apps/frontend/package.json", "apps/frontend/package-lock.json",
     "services/runtime-adapter/pyproject.toml", "services/runtime-adapter/requirements.candidate.lock",
+    "services/runtime-adapter/Dockerfile.dsh-0.1.5rc1-candidate",
+    "services/runtime-adapter/requirements.dsh-0.1.5rc1-candidate.lock",
     "config/dsh/archive/dsh-0.1.1rc1/package.json.archive",
     "config/dsh/archive/dsh-0.1.1rc1/package-lock.json.archive",
     "scripts/dsh/build_revision.py",
@@ -65,7 +67,7 @@ def selected_build_id(release):
         return RETIRED_BUILD  # Historical identity only; never a current build.
     if release not in RELEASES:
         raise ValueError("unregistered release")
-    return release + "-post-u8.146"
+    return release + "-post-u8.147"
 
 
 def identity(build_id):

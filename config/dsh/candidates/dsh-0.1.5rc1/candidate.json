@@ -3,6 +3,9 @@
   "declaration_id": "dsh-0.1.5rc1",
   "status": "candidate-unqualified",
   "production_default": "dsh-0.1.2rc1",
+  "qualification_target": "dsh-v0.1.5-rc.1",
+  "target_npm_version": "0.1.5-rc.1",
+  "target_decision": "docs/evidence/d15/target-decision.v1.json",
   "requested_npm_version": "0.1.5-rc.2",
   "coherent_npm_version": "0.1.5-rc.1",
   "upstream": {
@@ -41,10 +44,10 @@
   },
   "qualification": {
     "state": "not-qualified",
-    "live_start_verified": false,
+    "live_start_verified": true,
     "native_resume_verified": false,
-    "reason": "D15-1 isolates the candidate closure and selector; D15-2..D15-G live qualification not yet executed.",
-    "blocking_finding": "D15-0-F1"
+    "reason": "D15-1 built and keylessly started the isolated candidate (docs/evidence/d15/d15-1/); D15-2..D15-G native migration/resume/subagent/terminal qualification not yet executed.",
+    "blocking_finding": null
   },
   "evidence": {
     "ledger": "docs/evidence/d15/compatibility-ledger.v1.json",

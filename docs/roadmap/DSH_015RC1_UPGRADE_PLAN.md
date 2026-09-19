@@ -1,8 +1,9 @@
-# DSH 0.1.5 Native Continuity Upgrade and Qualification (Stage D15)
+# DSH 0.1.5-rc.1 Native Continuity Upgrade and Qualification (Stage D15)
 
-Status: **PLANNED — D15-0 done, D15-1 candidate machinery done, D15-2..D15-G not started**
+Status: **PLANNED — D15-0 done, D15-1 candidate built/started/probed, D15-2..D15-G not started**
 Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003
 Evidence: `docs/evidence/d15/`
+Target decision: [`docs/evidence/d15/target-decision.v1.json`](../evidence/d15/target-decision.v1.json)
 
 This stage supersedes the previously planned R3 supervisor implementation as the
 next Runtime Continuity step. It does **not** renumber or rewrite R0–R2. R3 is
@@ -19,8 +20,11 @@ frozen, not rolled back (ADR-0081).
 - R3 (`codex/phase-r3-supervisor`) has **no commits** beyond the R2 merge; the
   branch points at `6f5254b` and contains no supervisor code. R3 was never
   implemented.
-- Upstream: npm `@deepseek-ai/dsh-*@0.1.5-rc.2` exists, but no Python
-  `0.1.5rc2`; the bundled `runtime-bin==0.1.5rc1` contains npm `0.1.5-rc.1`.
+- Upstream: the maintainer set the qualification target to the coherent official
+  pairing `dsh-v0.1.5-rc.1` / Python `0.1.5rc1` / bundled npm `0.1.5-rc.1`
+  (`docs/evidence/d15/target-decision.v1.json`). The originally requested npm
+  `0.1.5-rc.2` has no PyPI Python `0.1.5rc2`; `runtime-bin==0.1.5rc1` bundles npm
+  `0.1.5-rc.1`, and rc.2 remains not-a-coherent-pairing.
 - 0.1.5 ships native Session V3 migration, handle-based session persistence,
   cross-process write leases, continuable subagents and persistent terminal
   tooling. See `docs/evidence/d15/compatibility-ledger.v1.json`.
@@ -44,7 +48,7 @@ violate the "no second generic agent harness" rule.
 | id | name | state |
 | --- | --- | --- |
 | D15-0 | Upgrade Recon | **DONE** |
-| D15-1 | Candidate Runtime Upgrade | **machinery DONE; live build/start pending upstream pairing** |
+| D15-1 | Candidate Runtime Upgrade | **machinery + isolated build/start DONE; D15-2..D15-G pending** |
 | D15-2 | Session V3 Migration Qualification | planned |
 | D15-3 | Native Session Resume Qualification | planned |
 | D15-4 | Subagent/Fork Continuity Qualification | planned |
@@ -126,12 +130,28 @@ imply production cutover either.
   AgentSession/RuntimeGeneration/DSH process/TerminalAttachment.
 - **R6 Full Runtime Continuity Qualification** (redefined).
 
-"BYQ compatible with DSH 0.1.5-rc.2" and "Production default = DSH 0.1.5-rc.2"
+"BYQ compatible with DSH 0.1.5-rc.1" and "Production default = DSH 0.1.5-rc.1"
 are independent decisions. Neither is granted here.
 
-## 9. Build revision
+## 9. D15-1 isolated build / start / probe
 
-D15 changes runtime build inputs (new candidate declaration, candidate registry
-script, compatibility module/route and tests). Per repository rules the
-production build revision advances `post-u8.145` → `post-u8.146`; the historical
-`.145` manifest and all existing evidence are retained.
+The coherent rc.1 candidate was built and started in isolation with no
+production traffic:
+
+- Candidate image `byq-d15-1-0.1.5rc1-candidate:local`
+  (`sha256:96bf63272b988c049656d20e2390e60e21711d2c498e8c9ccf8ccd2af849371f`)
+  from `services/runtime-adapter/Dockerfile.dsh-0.1.5rc1-candidate` +
+  `requirements.dsh-0.1.5rc1-candidate.lock` (exact 0.1.5rc1 wheels with hashes).
+- Keyless start + scripted-provider turn + tool call observed with contiguous
+  event sequence; profile/composition load with the BYQ product patch succeeded.
+- Evidence: `docs/evidence/d15/d15-1/candidate-build.v1.json`,
+  `docs/evidence/d15/d15-1/candidate-start-probe.v1.json`.
+- Production default selector, `compose.yml`, `deployment.json`, 0.1.2 artifacts
+  and all prior evidence are unchanged. Rollback remains `dsh-0.1.2rc1`.
+
+## 10. Build revision
+
+D15-1 adds runtime build inputs (candidate Dockerfile, candidate requirements
+lock and probe). Per repository rules the production build revision advances
+`post-u8.146` → `post-u8.147`; the historical `.146` and `.145` manifests and all
+existing evidence are retained.

@@ -3,6 +3,11 @@
   "generated_at": "2026-09-19",
   "baseline_release": "dsh-0.1.2rc1",
   "requested_target": "DSH 0.1.5-rc.2",
+  "qualification_target": "DSH 0.1.5-rc.1",
+  "target_release_id": "dsh-0.1.5rc1",
+  "target_npm_version": "0.1.5-rc.1",
+  "target_decision": "docs/evidence/d15/target-decision.v1.json",
+  "target_decision_status": "DECIDED_BY_MAINTAINER",
   "coherent_candidate": "dsh-v0.1.5-rc.1",
   "provenance": {
     "method": "read-only probe of PyPI JSON API, npm registry, GitHub releases API, downloaded wheel/bundled-executable inspection",
@@ -132,7 +137,24 @@
     "id": "D15-0-F1",
     "severity": "blocker-for-exact-target",
     "statement": "The requested npm closure @deepseek-ai/dsh-*@0.1.5-rc.2 exists, but no Python deepseek-harness-sdk/runtime-bin==0.1.5rc2 exists on PyPI. The Python runtime-bin 0.1.5rc1, when inspected, contains npm 0.1.5-rc.1 (233 occurrences; zero 0.1.5-rc.2). Therefore an exact '0.1.5-rc.2' BYQ candidate would have to mix the shipped Python runtime (npm 0.1.5-rc.1) with a separately-installed npm 0.1.5-rc.2 closure, which is not the official bundled pairing.",
-    "resolution": "D15-1 targets the coherent official pairing dsh-v0.1.5-rc.1 / Python 0.1.5rc1 / bundled npm 0.1.5-rc.1. The exact 0.1.5-rc.2 npm closure is recorded as upstream-unpaired and is not silently substituted."
+    "resolution": "D15-1 targets the coherent official pairing dsh-v0.1.5-rc.1 / Python 0.1.5rc1 / bundled npm 0.1.5-rc.1. The exact 0.1.5-rc.2 npm closure is recorded as upstream-unpaired and is not silently substituted.",
+    "resolution_status": "RESOLVED_BY_MAINTAINER_DECISION",
+    "decision": "docs/evidence/d15/target-decision.v1.json",
+    "rc2_disposition": "0.1.5-rc.2 remains not-a-coherent-pairing; revisited only if upstream publishes a matching Python runtime."
+  },
+  "probed_by_d15_1": {
+    "evidence": "docs/evidence/d15/d15-1/candidate-start-probe.v1.json",
+    "environment": "isolated candidate image, docker --network none, synthetic loopback MCP and scripted loopback provider, no real credential",
+    "resolved": [
+      "live DSH 0.1.5 process start (bundled runtime 0.1.5-rc.1), notification ordering and contiguous session event sequence",
+      "BYQ composition/profile load against the 0.1.5 closure",
+      "session event vocabulary including tool/call and tool/result data keys"
+    ],
+    "still_pending": [
+      "native session V2->V3 migration on real BYQ session fixtures (D15-2)",
+      "continuable subagent cold resume and settlement delivery (D15-4)",
+      "persistent terminal attach/rebind across host reboot (D15-5)"
+    ]
   },
   "python_sdk_api_diff": {
     "deepseek_harness/__init__.py": "identical",
