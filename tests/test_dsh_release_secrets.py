@@ -97,7 +97,7 @@ class GuardTests(unittest.TestCase):
             "services": {
                 "backend": {
                     "environment": {
-                        "TUSHARE_TOKEN": "0123456789abcdef0123456789abcdef",
+                        "TUSHARE_TOKEN": "b" * 32,
                         "BYQ_DATABASE_URL": "postgresql+psycopg://" + "example-user" + ":" + "example-password" + "@postgres:5432/example_db",
                         "BYQ_F6_EXECUTOR_ENABLED": "0",
                     }
