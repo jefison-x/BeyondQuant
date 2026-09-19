@@ -68,10 +68,13 @@ Status: maintenance execution plan，非 Product Phase，非永久授权。
    要求 `local-ci` 与 `contribution` 均 success。skipped 不计为 success。
    保留可信基线 contribution、token 隔离与 fork 限制；矩阵 `fail-fast: false`、
    每 lane cleanup 与诊断上传不变。
-3. 结构化 watcher：重写 `scripts/ci/watch-ci.py`，支持单次读取（`--once`）与有界
-   可恢复观察（`--budget-seconds`），绑定 PR/head/run/attempt；只在状态变化时输出；
-   对 429/5xx/timeout 做有限指数退避；403、未知、缺失、过期一律 BLOCKED/STALE
-   （退出码 3），绝不返回 PASS；失败时用有界脱敏日志。watcher 不是合并授权工具。
+3. 结构化 watcher：重写 `scripts/ci/watch-ci.py`，支持单次读取（`--once`，真正
+   单次、不 sleep、不重试）与有界可恢复观察（`--budget-seconds`，整次调用硬上限，
+   含 API 读与失败日志）。`--run-id` 只匹配格式正确且 owner/repo 一致的完整数字
+   路径段（避免 123 命中 12345）；`--run-attempt` 通过 Actions API 校验 head、workflow、
+   repo 与 attempt，过期/被取代的 attempt 不继承最新 rollup 或陈旧 green。只在状态
+   变化时输出；对 429/5xx/timeout 做有限指数退避；403、未知、缺失、过期一律
+   BLOCKED/STALE（退出码 3），绝不返回 PASS；失败时用有界脱敏日志。watcher 不是合并授权工具。
 4. 合同/负例测试：workflow 结构（依赖、聚合、取消/cleanup）、缺失矩阵/空计划
    必须失败、contribution API 失败/过期 head 失败、watcher 的 PASS/FAIL/PENDING/
    BLOCKED/STALE、退避与预算有界、单次读取不 sleep、仅在状态变化时输出。
