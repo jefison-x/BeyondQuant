@@ -311,15 +311,29 @@ def resolve(root: Path, *, deployment: DeploymentExecutor | None = None) -> Exec
                                 state_path(root), "existing")
 
 
+def assert_write_allowed_locked(root: Path, deployment_id: str, executor_epoch: int) -> None:
+    """Fail closed unless the authoritative epoch still matches this writer.
+
+    The caller MUST already hold the epoch lock (shared for a fenced write, or
+    the exclusive lock when the same critical section also mutates the epoch).
+    This lock-scoped primitive lets a caller validate and then persist under one
+    continuous lock hold, closing the check-then-write window in which a
+    takeover could otherwise complete. It never acquires the lock itself, so it
+    cannot self-deadlock against an already-held exclusive lock.
+    """
+
+    state = read_epoch_state(root)
+    if state is None:
+        raise ExecutorFenced("executor epoch state is missing; writer is fenced")
+    if state["deployment_id"] != deployment_id or state["executor_epoch"] != executor_epoch:
+        raise ExecutorFenced("executor epoch changed; writer is fenced")
+
+
 def assert_write_allowed(root: Path, deployment_id: str, executor_epoch: int) -> None:
     """Fail closed unless the authoritative epoch still matches this writer."""
 
     with epoch_lock(root, exclusive=False):
-        state = read_epoch_state(root)
-        if state is None:
-            raise ExecutorFenced("executor epoch state is missing; writer is fenced")
-        if state["deployment_id"] != deployment_id or state["executor_epoch"] != executor_epoch:
-            raise ExecutorFenced("executor epoch changed; writer is fenced")
+        assert_write_allowed_locked(root, deployment_id, executor_epoch)
 
 
 def takeover(

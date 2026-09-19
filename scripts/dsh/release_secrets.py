@@ -67,6 +67,21 @@ def is_reference(value: object) -> bool:
     return isinstance(value, str) and REFERENCE.fullmatch(value) is not None
 
 
+def is_safe_reference(value: object) -> bool:
+    """True only for a value-free reference: ``${NAME}`` or ``${NAME:-}``.
+
+    A reference that carries a non-empty default or message
+    (``${NAME:-plaintext}`` / ``${NAME:?plaintext}``) embeds literal text. Under
+    a secret key that text is a plaintext value and MUST NOT be accepted by the
+    guard; a bare reference and an empty default carry no value.
+    """
+
+    if not isinstance(value, str):
+        return False
+    match = REFERENCE.fullmatch(value)
+    return match is not None and not match.group(3)
+
+
 def reference(name: str) -> str:
     return "${" + name + "}"
 
@@ -74,7 +89,7 @@ def reference(name: str) -> str:
 def sanitize_value(name: str, value: Any) -> Any:
     if not isinstance(value, str) or not value:
         return value
-    if is_reference(value):
+    if is_safe_reference(value):
         return value
     if is_secret_key(name):
         return reference(name)
@@ -236,7 +251,7 @@ def _assert_no_plaintext_secrets(value: Any, *, secret_values: frozenset[str] = 
     if isinstance(value, dict):
         for key, nested in value.items():
             if is_secret_key(key) and isinstance(nested, str) and nested:
-                if nested != REDACTED and not is_reference(nested):
+                if nested != REDACTED and not is_safe_reference(nested):
                     raise SecretBoundaryError(
                         f"release artifact contains a plaintext value for secret key {key!r}"
                     )
@@ -247,6 +262,15 @@ def _assert_no_plaintext_secrets(value: Any, *, secret_values: frozenset[str] = 
     elif isinstance(value, str):
         if value and secret_values and value in secret_values:
             raise SecretBoundaryError("release artifact contains a known secret value")
+        # List-form Compose environment entries are ``KEY=VALUE`` strings; a
+        # secret key must not carry a literal (including a non-empty ``${K:-v}``
+        # default) any more than a dict-form environment value may.
+        entry_name, separator, entry_value = value.partition("=")
+        if (separator and is_secret_key(entry_name) and entry_value
+                and entry_value != REDACTED and not is_safe_reference(entry_value)):
+            raise SecretBoundaryError(
+                f"release artifact contains a plaintext value for secret key {entry_name!r}"
+            )
         _assert_clean_string(value, "value")
 
 

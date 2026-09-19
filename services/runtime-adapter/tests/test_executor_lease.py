@@ -10,6 +10,10 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
+from pathlib import Path
+import threading
+import time
 
 import pytest
 
@@ -227,3 +231,199 @@ def test_legacy_v3_journal_migrates_to_v4_preserving_all_evidence(tmp_path):
         assert again.state["sequence"] == snapshot["sequence"]
     finally:
         again.close()
+
+
+def _downgrade_to_legacy_v3(path):
+    envelope = json.loads(path.read_text(encoding="utf-8"))
+    del envelope["state"]["executor_identity"]
+    del envelope["state"]["executor_epoch"]
+    envelope["state"]["lease_identity"] = "f" * 64
+    envelope["schema_version"] = "byq-lifecycle-journal.v3"
+    encoded = json.dumps(envelope["state"], sort_keys=True, separators=(",", ":")).encode()
+    envelope["sha256"] = hashlib.sha256(encoded).hexdigest()
+    path.write_text(json.dumps(envelope, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+
+
+def test_takeover_cannot_interleave_between_validation_and_durable_write(tmp_path, monkeypatch):
+    """The epoch shared lock is held across validation AND persistence.
+
+    The durable replacement is held open while a concurrent takeover is
+    attempted. Pre-fix the shared check lock was already released before the
+    write, so the takeover completed inside the window and the mid-write
+    assertion failed. Post-fix the takeover blocks on the epoch lock until the
+    write is durable, then advances the epoch and fences the old writer.
+    """
+
+    ctx = context("lease-toctou")
+    journal = LifecycleJournal.claim(tmp_path, ctx, create=True)
+    entered = threading.Event()
+    release = threading.Event()
+    attempting = threading.Event()
+    takeover_done = threading.Event()
+    takeover_refused = threading.Event()
+    errors: list[BaseException] = []
+    original_replace = os.replace
+
+    def guarded_replace(src, dst, *args, **kwargs):
+        if Path(dst) == journal.path and not entered.is_set():
+            entered.set()
+            if not release.wait(timeout=10):
+                raise AssertionError("durable write was never released")
+        return original_replace(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "replace", guarded_replace)
+
+    def write():
+        try:
+            journal.observe(event(1, ctx), generation="generation-one")
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    def take():
+        attempting.set()
+        try:
+            LifecycleJournal.takeover_executor_epoch(
+                tmp_path, reason="concurrent takeover during evidence write")
+            takeover_done.set()
+        except ExecutorTakeoverBusy:
+            takeover_refused.set()
+        except BaseException as exc:  # pragma: no cover
+            errors.append(exc)
+
+    writer = threading.Thread(target=write)
+    taker = threading.Thread(target=take)
+    try:
+        writer.start()
+        assert entered.wait(timeout=10), "the write never reached os.replace"
+        taker.start()
+        assert attempting.wait(timeout=10)
+        time.sleep(0.5)
+        assert not takeover_done.is_set(), (
+            "takeover completed inside the validation->durable-write window")
+        release.set()
+        writer.join(timeout=10)
+        taker.join(timeout=10)
+        assert not writer.is_alive() and not taker.is_alive()
+        assert errors == []
+        # The takeover was refused while the fenced write held the epoch lock.
+        assert takeover_refused.is_set() and not takeover_done.is_set()
+        # Once the durable write released the lock the takeover wins exactly once.
+        winner = LifecycleJournal.takeover_executor_epoch(
+            tmp_path, reason="takeover after the fenced write becomes durable")
+        assert winner["executor_epoch"] == 2
+        # The evidence write completed BEFORE the takeover: the epoch change
+        # could not interleave with the fenced persistence.
+        persisted = LifecycleJournal.read(journal.path)
+        assert persisted["executor_epoch"] == 1
+        assert persisted["sequence"] == 1
+        with pytest.raises(JournalIdentityMismatch):
+            journal.observe(event(2, ctx, "session.result"), generation="generation-one")
+    finally:
+        release.set()
+        writer.join(timeout=10)
+        taker.join(timeout=10)
+        journal.close()
+
+
+def test_old_epoch_writer_is_fenced_after_takeover(tmp_path):
+    ctx = context("old-epoch-writer")
+    journal = LifecycleJournal.claim(tmp_path, ctx, create=True)
+    try:
+        LifecycleJournal.takeover_executor_epoch(
+            tmp_path, reason="replace executor while the old writer is still live")
+        # Both the direct persistence primitive and a normal observation fail
+        # closed; the stale writer can never re-establish ownership.
+        with pytest.raises(JournalIdentityMismatch):
+            journal._save(journal.state)
+        with pytest.raises(JournalIdentityMismatch):
+            journal.observe(event(1, ctx), generation="generation-one")
+    finally:
+        journal.close()
+
+
+def test_takeover_cannot_interleave_with_legacy_adoption(tmp_path, monkeypatch):
+    """A legacy v3 -> v4 adoption is also fenced and lock-scoped."""
+
+    ctx = context("legacy-toctou")
+    boot = LifecycleJournal.claim(tmp_path, ctx, create=True)
+    path = boot.path
+    boot.close()
+    _downgrade_to_legacy_v3(path)
+
+    entered = threading.Event()
+    release = threading.Event()
+    attempting = threading.Event()
+    takeover_done = threading.Event()
+    takeover_refused = threading.Event()
+    errors: list[BaseException] = []
+    holder: dict = {}
+    original_replace = os.replace
+
+    def guarded_replace(src, dst, *args, **kwargs):
+        if Path(dst) == path and not entered.is_set():
+            entered.set()
+            if not release.wait(timeout=10):
+                raise AssertionError("adoption write was never released")
+        return original_replace(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "replace", guarded_replace)
+
+    def adopt():
+        try:
+            holder["journal"] = LifecycleJournal.claim(tmp_path, ctx)
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    def take():
+        attempting.set()
+        try:
+            LifecycleJournal.takeover_executor_epoch(
+                tmp_path, reason="concurrent takeover during legacy adoption")
+            takeover_done.set()
+        except ExecutorTakeoverBusy:
+            takeover_refused.set()
+        except BaseException as exc:  # pragma: no cover
+            errors.append(exc)
+
+    adopter = threading.Thread(target=adopt)
+    taker = threading.Thread(target=take)
+    try:
+        adopter.start()
+        assert entered.wait(timeout=10), "the adoption never reached os.replace"
+        taker.start()
+        assert attempting.wait(timeout=10)
+        time.sleep(0.5)
+        assert not takeover_done.is_set(), (
+            "takeover completed inside the legacy adoption window")
+        release.set()
+        adopter.join(timeout=10)
+        taker.join(timeout=10)
+        assert not adopter.is_alive() and not taker.is_alive()
+        assert errors == []
+        assert takeover_refused.is_set() and not takeover_done.is_set()
+        winner = LifecycleJournal.takeover_executor_epoch(
+            tmp_path, reason="takeover after the legacy adoption becomes durable")
+        assert winner["executor_epoch"] == 2
+        assert LifecycleJournal.read(path)["executor_epoch"] == 1
+    finally:
+        release.set()
+        adopter.join(timeout=10)
+        taker.join(timeout=10)
+        if holder.get("journal") is not None:
+            holder["journal"].close()
+
+
+def test_reanchor_fails_closed_when_epoch_advances_after_resolve(tmp_path, monkeypatch):
+    ctx = context("reanchor-race")
+    journal = LifecycleJournal.claim(tmp_path, ctx, create=True)
+    journal.close()
+    stale = executor_identity.resolve(tmp_path)
+    stored = LifecycleJournal.read(tmp_path / f"{ctx['session_id']}.json")["lease_identity"]
+    LifecycleJournal.takeover_executor_epoch(
+        tmp_path, reason="advance the epoch after the repair resolved the identity")
+    monkeypatch.setattr(
+        LifecycleJournal, "_resolve_executor",
+        staticmethod(lambda root, executor=None: stale))
+    with pytest.raises(JournalIdentityMismatch):
+        LifecycleJournal.reanchor_lease(
+            tmp_path, ctx["session_id"], expected_stored_lease=stored)
