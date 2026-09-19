@@ -78,7 +78,9 @@ PASS=0
 FAIL=0
 # Low-noise, redacted-by-the-caller phase timing. This is measurement only: it
 # never changes selection, ordering or pass/fail, and the next required remote
-# verification produces the baseline without a dedicated Full run.
+# verification produces the baseline without a dedicated Full run. Nested helper
+# functions must print informational lines with plain printf, never step(), so a
+# sub-message cannot close and misattribute its enclosing phase.
 CI_START_EPOCH="$(date +%s)"
 PHASE_NAME=""
 PHASE_START_EPOCH=0
@@ -240,7 +242,7 @@ ensure_clean_postgres() {
   docker network inspect "$CI_PG_NET" >/dev/null 2>&1 || \
     docker network create --label "byq.ci.scope=$BYQ_CI_SCOPE" "$CI_PG_NET" >/dev/null
   if ! docker inspect "$CI_PG" >/dev/null 2>&1; then
-    step "postgres: creating clean CI instance ($CI_PG)"
+    printf '\n==> postgres: creating clean CI instance (%s)\n' "$CI_PG"
     docker volume create --label "byq.ci.scope=$BYQ_CI_SCOPE" "$CI_PG_VOL" >/dev/null
     docker run -d --name "$CI_PG" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" \
       -e POSTGRES_DB=byq_domain -e POSTGRES_USER=byq_app -e POSTGRES_PASSWORD=byq-app-dev \
@@ -257,7 +259,7 @@ ensure_clean_postgres() {
 ensure_ci_backend() {
   RESOURCES_TOUCHED=1
   if ! docker inspect "$CI_BACKEND" >/dev/null 2>&1; then
-    step "backend: starting live MCP contract dependency ($CI_BACKEND)"
+    printf '\n==> backend: starting live MCP contract dependency (%s)\n' "$CI_BACKEND"
     docker run -d --name "$CI_BACKEND" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" --network-alias backend \
       -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
       -e PYTHONDONTWRITEBYTECODE=1 \

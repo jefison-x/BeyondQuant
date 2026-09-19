@@ -16,7 +16,7 @@ SAMPLE = """\
 65.32s setup    tests/test_a.py::test_x
 12.10s call     tests/test_b.py::test_y
 1.20s teardown  tests/test_c.py::test_z
-793 passed, 3 skipped in 1227.02s
+793 passed, 3 skipped, 1 warning, 7 subtests passed in 1227.02s
 [byq-timing] phase="fresh session setup" seconds=7
 [byq-timing] phase="api_key=placeholder-not-a-secret" seconds=1
 [byq-timing] phase="backend: pytest against clean postgres" seconds=1230

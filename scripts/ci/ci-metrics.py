@@ -22,15 +22,11 @@ from pathlib import Path
 TIMING = re.compile(r'\[byq-timing\] phase="([^"]*)" seconds=(\d+)')
 TOTAL = re.compile(r"\[byq-timing\] total seconds=(\d+) exit=(\d+)")
 PLAN = re.compile(r"plan -> (.+)")
-PYTEST_SUMMARY = re.compile(
-    r"(\d+) passed"
-    r"(?:, (\d+) skipped)?"
-    r"(?:, (\d+) failed)?"
-    r"(?:, (\d+) error[s]?)?"
-    r"(?:, (\d+) deselected)?"
-    r" in ([\d.]+)s"
-)
+# pytest's final line can carry warnings/subtests between counts, e.g.
+# "793 passed, 3 skipped, 1 warning, 7 subtests passed in 1197.96s".
+PYTEST_SUMMARY = re.compile(r"(\d+) passed\b(.*?) in ([\d.]+)s")
 PYTEST_COLLECTED = re.compile(r"collected (\d+) items")
+COUNT = re.compile(r"(\d+) (skipped|failed|error[s]?|deselected|warning[s]?)")
 DURATION = re.compile(r"^\s*([\d.]+)s (setup|call|teardown)\s+(\S.*?)\s*$")
 IMAGE = re.compile(r"image identity -> service=(\S+) tag=(\S+) id=(\S+)")
 
@@ -79,16 +75,18 @@ def parse(text: str, redact) -> dict:
         summary = PYTEST_SUMMARY.search(line)
         if summary:
             passed = int(summary.group(1))
-            skipped = int(summary.group(2) or 0)
-            failed = int(summary.group(3) or 0)
-            errors = int(summary.group(4) or 0)
+            counts = {kind.rstrip("s"): int(number)
+                      for number, kind in COUNT.findall(summary.group(2))}
+            skipped = counts.get("skipped", 0)
+            failed = counts.get("failed", 0)
+            errors = counts.get("error", 0)
             tests.append({
                 "passed": passed,
                 "skipped": skipped,
                 "failed": failed,
                 "errors": errors,
                 "collected": collected if collected is not None else passed + skipped + failed + errors,
-                "duration_seconds": float(summary.group(6)),
+                "duration_seconds": float(summary.group(3)),
             })
             collected = None
             continue
