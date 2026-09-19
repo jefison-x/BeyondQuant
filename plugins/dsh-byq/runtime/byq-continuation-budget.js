@@ -4,8 +4,29 @@ import { openSync, writeSync, fsyncSync, closeSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { dirname } from 'node:path';
 
-const INPUT_CEILING = 1048576;
-const OUTPUT_CEILING = 393216;
+// Conservative per-call ceilings. Every admitted `llm/stream` call re-sends its
+// whole input, so the guard charges the input ceiling plus that call's output
+// bound. These values are the single source of truth mirrored by the Backend
+// reservation sizing (services/backend/app/research_continuation.py) and the
+// runtime-adapter output cap (services/runtime-adapter/app/continuation_budget.py);
+// tests/architecture/test_architecture.py fails CI on any divergence.
+export const CONTINUATION_INPUT_CEILING = 1048576;
+export const CONTINUATION_OUTPUT_CEILING = 393216;
+
+// A data-ready auto-continuation is a bounded tool-calling turn, not a single
+// model call: the first call returns tool calls and the next call resumes after
+// the tools ran. One reservation therefore covers a bounded number of calls for
+// one event, each charged the conservative per-call ceiling, for a fixed total
+// token budget. `DATA_READY_MAX_CALLS` is the per-turn call bound and
+// `DATA_READY_TOKEN_LIMIT` is the total budget the Backend reserves for the
+// event. `createBudgetGate` also enforces the call bound derived from that
+// total, so an exhausted reservation fails closed on either bound.
+export const DATA_READY_MAX_OUTPUT_TOKENS = 8192;
+export const DATA_READY_MAX_CALLS = 8;
+export const DATA_READY_CALL_CEILING = CONTINUATION_INPUT_CEILING + DATA_READY_MAX_OUTPUT_TOKENS;
+export const DATA_READY_TOKEN_LIMIT = DATA_READY_MAX_CALLS * DATA_READY_CALL_CEILING;
+
+// Absolute process-local safety cap, independent of any single reservation.
 const MAX_CALLS = 256;
 
 // Qualified continuation routes. This mirrors the single Backend authority,
@@ -101,6 +122,11 @@ export function createBudgetGate(config, append, now = Date.now, monotonic = () 
   // Capture the admitted remaining lifetime once; wall-clock rollback must
   // never extend this reservation, including after a long-running model call.
   const lifetime = Math.max(0, Math.min(86400000, config.expiresAt - now()));
+  // Strict per-reservation call bound. Every admitted call costs at least the
+  // input ceiling plus one output token, so the fixed total budget can never
+  // fund more than this many calls even before the absolute MAX_CALLS cap.
+  const maxCalls = Math.max(1, Math.min(MAX_CALLS,
+    Math.floor(config.tokenLimit / (CONTINUATION_INPUT_CEILING + 1))));
   let charged = 0;
   let calls = 0;
   let failed = false;
@@ -113,11 +139,11 @@ export function createBudgetGate(config, append, now = Date.now, monotonic = () 
     // providers, a known route with an unlisted model, and the official route
     // with an unknown model all fail closed before any budget is charged.
     if (!continuationRouteQualified(options.provider, options.model)
-        || !positive(options.maxTokens) || options.maxTokens > OUTPUT_CEILING) {
+        || !positive(options.maxTokens) || options.maxTokens > CONTINUATION_OUTPUT_CEILING) {
       throw new Error('BYQ_CONTINUATION_ROUTE_UNQUALIFIED');
     }
-    const ceiling = INPUT_CEILING + options.maxTokens;
-    if (calls >= MAX_CALLS || ceiling > config.tokenLimit - charged) {
+    const ceiling = CONTINUATION_INPUT_CEILING + options.maxTokens;
+    if (calls >= maxCalls || ceiling > config.tokenLimit - charged) {
       throw new Error('BYQ_CONTINUATION_BUDGET_EXHAUSTED');
     }
     const record = { reservation_id: config.reservationId, call: calls + 1,

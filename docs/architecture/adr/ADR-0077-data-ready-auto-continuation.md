@@ -64,6 +64,40 @@ independently of this field. The backend logs the block reason, the re-arm
 decision, and the new event key; no second continuation engine or worker SQL
 mutation is introduced.
 
+## Implementation notes (post-u8.143)
+
+The fixed per-turn budget must cover a **bounded tool-calling loop**, not one
+model call. A normal agent turn invokes `llm/stream` once per model round: the
+first call returns tool calls, the tools run, and a second call resumes with the
+results. The original reservation sized a data-ready turn for a single call
+(`DATA_READY_TOKEN_LIMIT = 1048576 + 8192`), and the guard charges the full
+conservative per-call ceiling (`1048576 + options.maxTokens`) on every call, so
+the first call exhausted the entire reservation and the second call failed
+closed with `BYQ_CONTINUATION_BUDGET_EXHAUSTED` (observed as
+`turn.completed reason=cancelled` / `session.failed code=model-run-failed`).
+
+The reservation now covers `DATA_READY_MAX_CALLS=8` conservative per-call
+ceilings: `DATA_READY_TOKEN_LIMIT = DATA_READY_MAX_CALLS *
+(1048576 + 8192)`. The guard (`plugins/dsh-byq/runtime/byq-continuation-budget.js`)
+exports `CONTINUATION_INPUT_CEILING`, `CONTINUATION_OUTPUT_CEILING`,
+`DATA_READY_MAX_CALLS`, `DATA_READY_MAX_OUTPUT_TOKENS` and
+`DATA_READY_TOKEN_LIMIT` as the single source of truth; the Backend
+(`services/backend/app/research_continuation.py`) reserves that same total and
+the runtime-adapter (`services/runtime-adapter/app/continuation_budget.py`)
+carries `CONTINUATION_MAX_OUTPUT_TOKENS = 8192`.
+`tests/architecture/test_architecture.py` asserts all three agree, so a change
+to one ceiling cannot silently drift from the others.
+
+Bounds are unchanged in kind, only sized for the loop: `createBudgetGate`
+enforces both a strict per-reservation call count (derived from the total budget
+and the minimum per-call charge, capped by the absolute `MAX_CALLS=256`) and the
+total token budget, and still charges each call before `next()`. A genuinely
+exhausted reservation fails closed with the stable
+`BYQ_CONTINUATION_BUDGET_EXHAUSTED`; the 900s expiry, the monotonic hard
+deadline, the route qualification and the at-most-once per event (settled
+`continuation_budget` row + task row lock) are unchanged. Single-call sized
+reservations and ordinary non-continuation turns are unaffected.
+
 ## Migration / rollback
 
 无数据迁移。回退时移除数据就绪事件源或关闭 `BYQ_F6_EXECUTOR_ENABLED` 即恢复“下一回合投递”；

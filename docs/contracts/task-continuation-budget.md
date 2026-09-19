@@ -31,9 +31,16 @@ validated 制品身份/内容哈希；同键同输入不延长有效期，不提
 
 - 事件身份绑定 `(job, result_artifact, status, updated_at)`；同一事件已存在账本时不再预留，
   任务行锁保证并发 `peek/claim`、进程重启、重复投递最多一次。
-- 该事件无需预先的用户 token 许可，但严格有界：每任务最多 8 个数据就绪回合、每回合保守上界
-  `1048576+8192` token、900 秒期限、最多一个未结算预留，并遵循 `BYQ_F6_EXECUTOR_ENABLED`
-  与 Runtime 续接资格。它只是服务端自有回合，不授权任何领域动作。
+- 该事件无需预先的用户 token 许可，但严格有界：每任务最多 8 个数据就绪回合。每个回合是一个
+  **有界工具调用循环**（首个模型调用返回工具调用，工具执行后再发起下一次模型调用），因此预留
+  最多 `DATA_READY_MAX_CALLS=8` 次模型调用：每次 `llm/stream` 仍保守记账输入上界
+  `DATA_READY_INPUT_CEILING=1048576` 加本次输出上限 `DATA_READY_MAX_OUTPUT_TOKENS=8192`，
+  合计 `DATA_READY_TOKEN_LIMIT=8*(1048576+8192)`。调用次数（`DATA_READY_MAX_CALLS`）与总
+  token 额度双向封顶，任一项超限都以稳定的 `BYQ_CONTINUATION_BUDGET_EXHAUSTED` 在调用 next
+  之前失败闭合；900 秒期限与“每事件最多一个未结算预留”不变。单次调用回合仍照常工作，普通
+  非续接回合不加载此 guard。上述常量以 guard 导出为唯一来源，Backend 预留与 runtime-adapter
+  输出上限随同更新，并由架构漂移测试断言三者一致。该固定上界遵循 `BYQ_F6_EXECUTOR_ENABLED`
+  与 Runtime 续接资格，只是服务端自有回合，不授权任何领域动作。
 - 复用既有 `continuation_budget` 账本、`/internal/task-continuation/...` 接口、
   Gateway `TaskContinuationDelivery` 与 adapter prompt 路径；`continuation_scope.py` 继续对
   续接回合内的 MCP 工具执行原任务范围准入。外owner/外工作区/无关会话不产生事件。

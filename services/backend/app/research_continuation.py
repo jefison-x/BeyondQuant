@@ -16,10 +16,21 @@ from .research_handoff_events import handoff_events, handoff_ready
 logger = logging.getLogger("byq.research.continuation")
 
 # Data-ready continuations reuse the task-bound budget ledger, dispatch and
-# MCP-admission seam. They are bounded to one conservative model turn per
-# produced signal snapshot and never require an inferred user token grant.
+# MCP-admission seam. One produced signal snapshot wakes one bounded
+# tool-calling turn: the first model call returns tool calls, and the next call
+# resumes after the tools ran, so the reservation must cover several model
+# calls. It never requires an inferred user token grant. The per-call input
+# ceiling, per-call output bound and max call count are the single source of
+# truth mirrored by the exported DATA_READY_* constants in
+# plugins/dsh-byq/runtime/byq-continuation-budget.js; the guard charges each call
+# `DATA_READY_INPUT_CEILING + options.maxTokens`, so the total budget is the max
+# call count times the conservative per-call ceiling. The cross-component drift
+# assertion lives in tests/architecture/test_architecture.py.
 DATA_READY_EVENT_PREFIX = "ready-v1:"
-DATA_READY_TOKEN_LIMIT = 1048576 + 8192
+DATA_READY_INPUT_CEILING = 1048576
+DATA_READY_MAX_OUTPUT_TOKENS = 8192
+DATA_READY_MAX_CALLS = 8
+DATA_READY_TOKEN_LIMIT = DATA_READY_MAX_CALLS * (DATA_READY_INPUT_CEILING + DATA_READY_MAX_OUTPUT_TOKENS)
 DATA_READY_MAX_TURNS = 8
 DATA_READY_TURN_TIMEOUT_SECONDS = 900
 # A deliberate task-wide needs_attention block (``block_continuation``) records
