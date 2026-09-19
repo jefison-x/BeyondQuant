@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -20,6 +21,37 @@ try:
     MODULE = importlib.import_module("reanchor_session_lease")
 finally:
     sys.path.remove(PATH)
+
+
+_IDENTITY_DIR: str | None = None
+_PREVIOUS_IDENTITY: str | None = None
+
+
+def setUpModule():
+    global _IDENTITY_DIR, _PREVIOUS_IDENTITY
+    _IDENTITY_DIR = tempfile.mkdtemp()
+    path = Path(_IDENTITY_DIR) / "deployment.identity.json"
+    path.write_text(json.dumps({
+        "schema_version": "dsh-deployment-identity.v1",
+        "default_release": "dsh-0.1.2rc1",
+        "python": {"sdk": "0.1.2rc1", "runtime_bin": "0.1.2rc1"},
+        "runtime_executor": {
+            "schema_version": "runtime-executor.v1",
+            "deployment_id": "byq-test-runtime",
+            "runtime_release": "dsh-0.1.2rc1",
+            "volume_identity": "byq-test-sessions",
+            "executor_epoch": 1,
+        },
+    }), encoding="utf-8")
+    _PREVIOUS_IDENTITY = os.environ.get("BYQ_DSH_RELEASE_IDENTITY")
+    os.environ["BYQ_DSH_RELEASE_IDENTITY"] = str(path)
+
+
+def tearDownModule():
+    if _PREVIOUS_IDENTITY is None:
+        os.environ.pop("BYQ_DSH_RELEASE_IDENTITY", None)
+    else:
+        os.environ["BYQ_DSH_RELEASE_IDENTITY"] = _PREVIOUS_IDENTITY
 
 
 def _write_journal(evidence_root: Path, session_id: str, *, lease_identity: str,
@@ -92,7 +124,7 @@ class ReanchorToolTests(unittest.TestCase):
         self.assertEqual(MODULE.main(argv), 0)
 
         after = _inventory(root, "stale-one")
-        self.assertEqual(after["classification"], "current")
+        self.assertEqual(after["classification"], "stable")
         self.assertNotEqual(after["stored_lease_identity"], stored)
 
         output = root / MODULE.DEFAULT_ARCHIVE_NAME / "20260919T000000Z"
@@ -135,14 +167,13 @@ class ReanchorToolTests(unittest.TestCase):
         self.assertEqual((evidence / "known.json").read_bytes(), before)
         self.assertFalse((root / MODULE.DEFAULT_ARCHIVE_NAME).exists())
 
-    def test_current_session_is_a_noop_and_archive_tool_is_unaffected(self):
+    def test_current_stable_session_is_a_noop_and_archive_tool_is_unaffected(self):
         root = Path(tempfile.mkdtemp())
         evidence = root / "byq-lifecycle-evidence"
-        lock = _write_lock(evidence, "current-one")
-        stat = lock.stat()
-        current = MODULE.archive.compute_lease_identity(
-            MODULE.archive.read_boot_id(), stat.st_dev, stat.st_ino, "a" * 32)
-        _write_journal(evidence, "current-one", lease_identity=current)
+        ctx = {"session_id": "current-one", "trace_id": "current-one-trace",
+               "owner": "alice", "workspace_id": "workspace_alice"}
+        journal = MODULE.LifecycleJournal.claim(evidence, ctx, create=True)
+        journal.close()
         before = (evidence / "current-one.json").read_bytes()
         self.assertEqual(MODULE.main([
             "--apply", "--session-root", str(root), "--trace-root", str(root / "gateway"),
@@ -158,7 +189,7 @@ class ReanchorToolTests(unittest.TestCase):
             archive_name="byq-stale-session-archive",
         )
         self.assertEqual([entry["session_id"] for entry in entries], ["current-one"])
-        self.assertEqual(entries[0]["classification"], "current")
+        self.assertEqual(entries[0]["classification"], "stable")
 
     def test_plan_refuses_active_or_unprovable_sessions(self):
         for classification in ("active", "unprovable", "archived"):
@@ -177,7 +208,7 @@ class ReanchorToolTests(unittest.TestCase):
             "--session-file", str(listing), "--timestamp", "20260919T000004Z",
         ]), 0)
         after = _inventory(root, "file-one")
-        self.assertEqual(after["classification"], "current")
+        self.assertEqual(after["classification"], "stable")
         self.assertNotEqual(after["stored_lease_identity"], stored)
 
     def test_gateway_stores_no_lease_bound_state(self):

@@ -1,34 +1,38 @@
 #!/usr/bin/env python3
-"""Explicitly re-anchor stale lifecycle-journal leases to the current boot.
+"""Exceptional explicit lifecycle-journal executor re-anchor (ADR-0079).
 
-A lifecycle journal stores ``lease_identity = sha256(boot_id:st_dev:st_ino:token)``
-where ``boot_id`` is ``/proc/sys/kernel/random/boot_id``. Because ``boot_id``
-changes on every host reboot, a durable session written before a reboot surfaces
-as ``409 stale_session_lease`` and can never be re-claimed. Until the durable
-boot-independent lease design in ADR-0078 is accepted, this operator tool is the
-sanctioned recovery: it rewrites ONLY the stored ``lease_identity`` and leaves
-the journal's sequence, events, prompts, terminal acknowledgements, private call
-evidence and context untouched.
+ADR-0079 replaced the boot-bound lease with a stable executor identity and a
+monotonic epoch, so normal process/container restart and host reboot never make
+a journal stale. This operator tool is now the EXCEPTIONAL repair path only:
+
+  * legacy v3 boot-bound journals that must be adopted onto the stable identity;
+  * executor identity corruption or disaster recovery;
+  * an explicit takeover that advanced the epoch and fenced old-epoch journals.
+
+It rewrites ONLY the executor binding (``executor_identity``/``executor_epoch``
+and the derived ``lease_identity``) and leaves the journal's sequence, events,
+prompts, terminal acknowledgements, private call evidence and context untouched.
+Legacy v3 journals are migrated to v4 in the same step.
 
 Invariants:
   * Audit-first: without ``--apply`` nothing is mutated.
   * Explicit selection: ``--apply`` requires one or more ``--session-id`` (or
-    ``--session-file`` lines); there is no implicit mass re-lease.
-  * Fail closed: only ``stale`` sessions are rewritten. An ``active`` (live
-    owner), ``current`` (no-op), ``unprovable`` or ``archived`` selection aborts
-    the whole run before any mutation. The stored lease observed during
-    inventory must still match at apply time, so a concurrently changed lease is
-    never blind-overwritten.
+    ``--session-file`` lines); there is no implicit mass re-anchor.
+  * Fail closed: only boot-stale (``stale``) and stable (``stable``) journals are
+    repairable. An ``active`` (live owner), ``current`` (no-op), ``unprovable``
+    or ``archived`` selection aborts the whole run before any mutation. The
+    stored lease observed during inventory must still match at apply time, so a
+    concurrently changed lease is never blind-overwritten.
   * Reversible: an ``audit.json`` plus ``manifest.json`` record every old and new
     lease identity and both journal sha256 values; the per-session audit is also
     committed beside the journal by the adapter.
   * No deletion, no domain mutation: this tool never removes files and never
     writes business/database rows.
-  * Idempotent: re-running after a completed re-lease is a no-op.
+  * Idempotent: re-running after a completed re-anchor is a no-op.
 
 The Gateway stores no lease-bound state: ``TraceStore`` is keyed by session id
 and ordered by ``sequence``, and the lifecycle delivery ledger stores only a
-cursor over those sequences. Re-leasing preserves the sequence, so no Gateway
+cursor over those sequences. Re-anchoring preserves the sequence, so no Gateway
 cursor or ledger needs to be refreshed.
 """
 
@@ -61,6 +65,7 @@ SCHEMA_VERSION = "byq-session-lease-reanchor.v1"
 DEFAULT_ARCHIVE_NAME = "byq-lease-reanchor"
 TIMESTAMP = re.compile(r"[0-9]{8}T[0-9]{6}Z")
 MUTABLE = "stale"
+STABLE = "stable"
 NOOP = "current"
 
 
@@ -124,22 +129,22 @@ def plan(entries: list[dict]) -> list[dict]:
 
     unsafe = [
         entry for entry in entries
-        if entry["classification"] not in {MUTABLE, NOOP}
+        if entry["classification"] not in {MUTABLE, STABLE, NOOP}
     ]
     if unsafe:
         detail = "; ".join(
             f"{entry['session_id']}={entry['classification']} ({entry['reason']})"
             for entry in unsafe
         )
-        raise ReanchorError(f"refusing to re-lease non-stale sessions: {detail}")
-    return [entry for entry in entries if entry["classification"] == MUTABLE]
+        raise ReanchorError(f"refusing to re-lease sessions that are not repairable: {detail}")
+    return [entry for entry in entries if entry["classification"] in {MUTABLE, STABLE}]
 
 
 def apply_reanchor(entries: list[dict], session_root: Path) -> tuple[list[dict], list[str]]:
-    """Re-lease exactly the stale entries via the adapter primitive.
+    """Re-anchor exactly the repairable entries via the adapter primitive.
 
     A per-session failure is recorded as ``error`` (never a blind overwrite) and
-    reported so the operator re-runs; already re-leased sessions are idempotent.
+    reported so the operator re-runs; already-current sessions are idempotent.
     """
 
     evidence_root = session_root / "byq-lifecycle-evidence"
@@ -237,7 +242,7 @@ def write_outputs(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true",
-                        help="rewrite stale leases to the current boot (default: audit only)")
+                        help="rewrite the stable executor binding (default: audit only)")
     parser.add_argument("--session-root", type=Path,
                         default=Path(os.environ.get("DSH_SESSION_ROOT", "/var/lib/byq/dsh-sessions")))
     parser.add_argument("--trace-root", type=Path,
@@ -274,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
             selected, session_root=session_root, trace_root=trace_root,
             boot_id=boot_id, archive_name=args.archive_name,
         )
-        stale = plan(entries)
+        repairable = plan(entries)
     except (ReanchorError, archive.ArchiveError) as exc:
         print(json.dumps({"error": str(exc), "database_rows_modified": False}))
         return 2
@@ -288,8 +293,10 @@ def main(argv: list[str] | None = None) -> int:
         "database_rows_modified": False,
         "counts": {
             "selected": len(entries),
-            "stale": len(stale),
+            "repairable": len(repairable),
+            "stale": sum(1 for e in entries if e["classification"] == MUTABLE),
             "current": sum(1 for e in entries if e["classification"] == NOOP),
+            "stable": sum(1 for e in entries if e["classification"] == STABLE),
             "unprovable": sum(1 for e in entries if e["classification"] == "unprovable"),
             "archived": sum(1 for e in entries if e["classification"] == "archived"),
         },
@@ -317,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        results, failures = apply_reanchor(stale, session_root)
+        results, failures = apply_reanchor(repairable, session_root)
         manifest = write_outputs(
             output_root, results=results, boot_id=boot_id, timestamp=timestamp,
             session_root=session_root, trace_root=trace_root,
