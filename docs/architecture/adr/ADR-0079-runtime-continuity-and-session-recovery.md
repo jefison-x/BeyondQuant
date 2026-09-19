@@ -1,11 +1,12 @@
 # ADR-0079：Runtime Continuity 与 Session Recovery
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-19
+- Accepted: 2026-09-19
 - Relates: ADR-0062（Post-U8 可靠性边界）、ADR-0064（Runtime 崩溃恢复的受限持久证据）、
   ADR-0078（Explicit Reversible Session-Lease Re-anchor）、ADR-0023（隔离信号生产者的
   执行者身份约束）、ADR-0059（开发权限与 CI 证据门禁）
-- Supersedes: 待接受后替代 ADR-0064「首版实现边界」中以 Linux `boot_id` 绑定执行者证据的
+- Supersedes: 已获维护者接受，替代 ADR-0064「首版实现边界」中以 Linux `boot_id` 绑定执行者证据的
   条款，以及 ADR-0078 §4「提议的持久设计修复」；不改写任何 Accepted ADR 文本。
 - Decision scope: runtime-adapter lifecycle journal 的稳定 executor identity、单调 epoch
   fencing、legacy v3 journal 迁移；`scripts/ops` 运维工具；docs/architecture 生命周期模型与
@@ -103,7 +104,7 @@ generation / root lifecycle / prompt identity / terminal receipt / domain-call e
 sequence。它 **MUST NOT** 演化为第二套 DSH session/context/tool persistence，不保存原始
 prompt、模型推理、密钥、工具私有状态或应用源码。
 
-### 5. R2 实现：durable session identity 与 RuntimeGeneration 分离（Proposed）
+### 5. R2 实现：durable session identity 与 RuntimeGeneration 分离
 
 R1 只稳定了 lease；R2 在 runtime-adapter 内将会话模型拆分为：
 

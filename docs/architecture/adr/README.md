@@ -33,25 +33,25 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
 - ADR-0064 允许持久化最小 BYQ 执行证据，并仅在原执行者失效可证明时恢复收尾；不恢复模型或研究。
 - ADR-0074 定义 0.10 的数据基准与资格调查边界：先冻结数据基准合同，HIST 只做调查、深度只做环境资格，
   不实现数据扩容、不引入 HIST、不授权 GPU/有限调参/新 Worker 拓扑。
-- ADR-0077（Proposed）在既有任务绑定续接合同内增加数据就绪自动续接：`completed` signal job 且
+- ADR-0077（Accepted）在既有任务绑定续接合同内增加数据就绪自动续接：`completed` signal job 且
   产出 `validated signal_snapshot` 时经既有事件身份/账本/Gateway 消费者生成至多一个有界续接回合；
-  不改数据面、sandbox、模型许可或无关服务，待维护者接受后成为当前规范。
-- ADR-0078（Proposed）定义 reboot 后对 stale lifecycle-journal lease 的显式、可审计、可逆
+  不改数据面、sandbox、模型许可或无关服务，已于 2026-09-19 获维护者接受并成为当前规范。
+- ADR-0078（Accepted）定义 reboot 后对 stale lifecycle-journal lease 的显式、可审计、可逆
   re-lease（只改 `lease_identity`，保留全部证据；fail closed；附审计/manifest），并提议以
-  boot 无关的稳定执行者身份 + 单调 epoch + 显式 takeover 作为持久修复；待维护者接受前，
-  显式 re-lease 是唯一受支持的 reboot 后恢复，`409 stale_session_lease` 分类与归档工具不变。
-- [ADR-0079](ADR-0079-runtime-continuity-and-session-recovery.md)（Proposed）定义 Runtime Continuity 六层生命周期（Conversation/AgentSession/Run/
+  boot 无关的稳定执行者身份 + 单调 epoch + 显式 takeover 作为持久修复；已于 2026-09-19
+  获维护者接受，`409 stale_session_lease` 分类与归档工具不变。
+- [ADR-0079](ADR-0079-runtime-continuity-and-session-recovery.md)（Accepted）定义 Runtime Continuity 六层生命周期（Conversation/AgentSession/Run/
   RuntimeGeneration/TerminalAttachment/DurableJob）与故障矩阵，并实现 R1：以稳定
   `deployment_id` + 卷拥有、可审计 takeover 的单调 `executor_epoch` 取代 boot-bound lease，
   v3→v4 journal 在首次受控 claim 迁移且保留全部证据；`reanchor` 保留为异常修复工具。
   Supervisor/Terminal/DurableJob 为后续阶段，见
   [故障矩阵](../RUNTIME_CONTINUITY_FAILURE_MATRIX.md)。
-- ADR-0080（Proposed）定义 release 制品 secret 边界：manifest、target/rollback overlay、
+- ADR-0080（Accepted）定义 release 制品 secret 边界：manifest、target/rollback overlay、
   resolved private config、retained-artifact copy 与备份 MUST NOT 含明文 secret 值，
   只保存 `${ENV_NAME}` 引用；真实值部署时从受保护、非仓库来源（`0600` 宿主 `.env`
   或等价 secrets 来源）注入，并由 `scripts/dsh/release_secrets.py` guard 与部署前
   `verify_injection` fail closed。既有 release 目录/备份不改写、不轮换 token、不改拓扑；
-  待维护者接受前不改变当前制品或部署方式。
+  已于 2026-09-19 获维护者接受。
 
 - ADR-0020 定义 Phase 34 的 Stock Pool identity、不可变 snapshot、lifecycle 和
   cross-domain reference 边界。

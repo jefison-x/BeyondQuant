@@ -1,9 +1,10 @@
 # ADR-0078：Explicit Reversible Session-Lease Re-anchor
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-19
+- Accepted: 2026-09-19
 - Relates: ADR-0064（Runtime 崩溃恢复的受限持久证据）、ADR-0062（Post-U8 可靠性边界）、ADR-0023（隔离信号生产者的执行者身份约束）、ADR-0059（开发权限与 CI 证据门禁）
-- Supersedes: 无。待接受后仅替代 ADR-0064「首版实现边界」中「主机重启…拒绝自动判定」的恢复操作层，不改变其自动恢复的 fail-closed 语义。
+- Supersedes: 无。已获维护者接受，仅替代 ADR-0064「首版实现边界」中「主机重启…拒绝自动判定」的恢复操作层，不改变其自动恢复的 fail-closed 语义。
 - Decision scope: runtime-adapter lifecycle journal 的 lease 身份恢复；`scripts/ops` 运维工具；不含 domain/DB 变更。
 
 ## Context
