@@ -44,7 +44,11 @@ Backend 镜像包含 Plugin Registry，MCP 可能包含 provenance projection，
 - 用只读检查核实 compose project、service、network、volume、bind port 与部署目录；不依赖历史猜测。
 - 输出只含版本、布尔健康、资源 identity、数量；不打印 `.env`、完整 `docker compose config` 或容器 Env。
 - U6 输出一份去密的部署 manifest，列出将修改的服务、镜像、配置 hash、会话 namespace 和回滚目标。
-- secrets 通过现有安全途径注入；不写进镜像、Git、证据或 PR。
+- secrets 通过现有安全途径注入；不写进镜像、Git、证据或 PR。依据
+  [ADR-0080](../architecture/adr/ADR-0080-release-artifact-secret-boundary.md)，release 制品
+  （target/rollback overlay、resolved private config、retained-artifact copy 与备份）MUST NOT 含明文
+  secret 值，只保存 `${ENV_NAME}` 引用；部署前用 `scripts/dsh/release_secrets.py verify` 从 `0600`
+  宿主 `.env` 校验引用可解析，缺失即 fail closed。既有含字面值的 release 目录/备份保持原样，仅作回滚。
 - SDK 默认继承环境；必须验证 candidate 实际看到的环境只含所需凭据和上下文，不能因新 home/profile 扩大凭据来源。
 
 ### 会话存储
