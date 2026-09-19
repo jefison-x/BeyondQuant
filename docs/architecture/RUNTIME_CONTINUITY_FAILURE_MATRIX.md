@@ -1,10 +1,11 @@
 # Runtime Continuity Failure Matrix
 
-- Status: Proposed future test matrix (ADR-0079)
+- Status: Proposed future test matrix (ADR-0079/ADR-0081)
 - Date: 2026-09-19
 - Scope: BYQ Runtime Continuity program (R0 lifecycle model; R1 executor lease;
-  R2 durable session identity vs ephemeral runtime generations)
-- Related: ADR-0062, ADR-0064, ADR-0078, ADR-0079, ADR-0023
+  R2 durable session identity vs ephemeral runtime generations; D15 native
+  continuity qualification)
+- Related: ADR-0062, ADR-0064, ADR-0078, ADR-0079, ADR-0081, ADR-0023
 
 本文档定义 Runtime Continuity 六个生命周期在故障下的期望行为，作为后续独立阶段
 （Supervisor / Terminal / DurableJob）的测试矩阵来源。**R0 只定义模型，R1 只实现
@@ -57,6 +58,11 @@ generation-1..N，generation 被替换是正常行为。
 - **后续阶段（本文档仅登记，不实现）**：Supervisor 生命周期与故障测试；TerminalAttachment
   的 ATTACHED/DETACHED/EXITED/INTERRUPTED 状态机、重连与输入回执；DurableJob 与
   Agent/Runtime/Terminal 的解耦与跨重启语义；Storage loss 的备份/恢复演练。
+- **R3 冻结（ADR-0081）**：Supervisor 阶段状态为
+  `PAUSED_PENDING_DSH_015_NATIVE_CONTINUITY_QUALIFICATION`。自建 DSH 进程重启编排、
+  会话重建、原生会话持久化替代、subagent 持久化与持久 PTY/shell 暂停，直至 D15-G。
+  这不是 R3 失败，而是 DSH 0.1.5 原生覆盖这些能力的前提。D15 的测试计划见
+  [D15 stage plan](../roadmap/DSH_015RC2_UPGRADE_PLAN.md)。
 - Gateway trace（`TraceStore`/`LifecycleDelivery`）已核验不依赖 lease（只按 session id +
   sequence）；R1 不修改 Gateway trace 模型。
 
@@ -73,3 +79,19 @@ R2 在 AgentSession/RuntimeGeneration 边界报告一个封闭、框架中立的
 
 generation 替换不改变 AgentSession identity、canonical sequence 或 lifecycle-journal 证据。
 Supervisor（R3）与 TerminalAttachment（R4）状态机仍是后续阶段。
+
+## 6. D15 原生连续性分类
+
+D15 在既有公开 `continuity` 合同（`fresh/reattached/rehydrated/interrupted`）之下，对每个
+故障矩阵行走查并允许增加**仅用于证据**的内部诊断字段，区分恢复机制：
+
+| 机制 | 公开 continuity | 内部诊断（evidence-only） | 说明 |
+| --- | --- | --- | --- |
+| 存活 in-process generation 复用 | `reattached` | `native_resume_used=false` | Path A；不新建进程 |
+| DSH 0.1.5 原生 session 句柄打开并恢复 loop | `rehydrated` | `native_resume_used=true` | Session V3/句柄持久化 |
+| 原生不可用，走既有 BYQ conversation rehydration | `rehydrated` | `byq_fallback_used=true` | 不伪装成 native |
+| run/generation 被终止 | `interrupted` | `previous_generation_state` | 新旧 generation 接续同一 durable session |
+
+不变式：内部诊断字段 MUST NOT 取代或泄漏进框架中立的公开 continuity 值；DSH session id
+MUST NOT 成为 BYQ `AgentSession` 身份。TerminalAttachment（R4）与 DurableJob（R5）状态机
+仍在 D15 之后。

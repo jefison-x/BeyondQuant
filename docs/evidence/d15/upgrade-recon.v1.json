@@ -1,0 +1,170 @@
+{
+  "schema_version": "byq-dsh-upgrade-recon.v1",
+  "generated_at": "2026-09-19",
+  "baseline_release": "dsh-0.1.2rc1",
+  "requested_target": "DSH 0.1.5-rc.2",
+  "coherent_candidate": "dsh-v0.1.5-rc.1",
+  "provenance": {
+    "method": "read-only probe of PyPI JSON API, npm registry, GitHub releases API, downloaded wheel/bundled-executable inspection",
+    "network": "2026-09-19",
+    "commands": [
+      "curl https://pypi.org/pypi/deepseek-harness-sdk/json",
+      "curl https://pypi.org/pypi/deepseek-harness-runtime-bin/json",
+      "npm view @deepseek-ai/dsh-mcp-client versions --json",
+      "npm pack @deepseek-ai/<pkg>@<version>",
+      "npm pack @deepseek-ai/dsh-<pkg>@0.1.2-rc.1|0.1.5-rc.2 (byte-level .d.ts diff)",
+      "grep -aoE '0\\.1\\.[0-9]+-rc\\.[0-9]+' <bundled> (version embedded in runtime-bin)"
+    ]
+  },
+  "pypi": {
+    "deepseek-harness-sdk": {
+      "versions": [
+        "0.0.0.dev0",
+        "0.1.0rc6",
+        "0.1.0rc7",
+        "0.1.1rc1",
+        "0.1.2a3",
+        "0.1.2rc1",
+        "0.1.5rc1"
+      ],
+      "present": {
+        "0.1.2rc1": true,
+        "0.1.5rc1": true,
+        "0.1.5rc2": false
+      },
+      "note": "0.1.5rc2 was NOT published on PyPI on 2026-09-19."
+    },
+    "deepseek-harness-runtime-bin": {
+      "versions": [
+        "0.0.0.dev0",
+        "0.1.0rc6",
+        "0.1.0rc7",
+        "0.1.1rc1",
+        "0.1.2a3",
+        "0.1.2rc1",
+        "0.1.5rc1"
+      ],
+      "present": {
+        "0.1.2rc1": true,
+        "0.1.5rc1": true,
+        "0.1.5rc2": false
+      }
+    }
+  },
+  "npm": {
+    "@deepseek-ai/dsh-* (e.g. dsh-mcp-client, dsh-llm-pi-ai)": {
+      "versions": [
+        "0.1.2-alpha.2",
+        "0.1.2-alpha.3",
+        "0.1.2-alpha.4",
+        "0.1.2-alpha.5",
+        "0.1.2-rc.1",
+        "0.1.3-alpha.2",
+        "0.1.5-alpha.1",
+        "0.1.5-alpha.2",
+        "0.1.5-rc.1",
+        "0.1.5-rc.2",
+        "0.1.6-alpha.1",
+        "0.1.6-alpha.2"
+      ],
+      "dist_tags": {
+        "latest": "0.0.1-rc.1",
+        "next": "0.1.5-rc.2",
+        "alpha": "0.1.6-alpha.2"
+      },
+      "present": {
+        "0.1.2-rc.1": true,
+        "0.1.5-rc.1": true,
+        "0.1.5-rc.2": true
+      }
+    }
+  },
+  "github_releases_observed": [
+    {
+      "tag": "dsh-v0.1.6-alpha.2",
+      "published_at": "2026-09-17T13:30:16Z"
+    },
+    {
+      "tag": "dsh-v0.1.6-alpha.1",
+      "published_at": "2026-09-15T04:57:57Z"
+    },
+    {
+      "tag": "dsh-v0.1.5-rc.2",
+      "published_at": "2026-09-10T15:09:34Z",
+      "summary": "feedback dialog confirmation and delivered-file card layout only"
+    },
+    {
+      "tag": "dsh-v0.1.5-rc.1",
+      "published_at": "2026-09-10T03:09:00Z"
+    },
+    {
+      "tag": "dsh-v0.1.2-rc.1",
+      "published_at": "2026-09-03T06:06:07Z"
+    }
+  ],
+  "artifacts": {
+    "baseline": {
+      "release_id": "dsh-0.1.2rc1",
+      "python_sdk": "0.1.2rc1",
+      "python_runtime_bin": "0.1.2rc1",
+      "sdk_wheel_sha256": "24689eec01e95233feb75ca08a0fe748b491e71682f80d2c04e6f9485f20488a",
+      "linux_x86_64_runtime_wheel_sha256": "670d8af06845cc2fc16738f1b030375321f3f8268837152aa3100e14a7b9887d",
+      "bundled_npm_version": "0.1.2-rc.1",
+      "source_tag": "dsh-v0.1.2-rc.1",
+      "source_commit": "a66e4702047846cdaa10c66c9d3df3951f5ea70d",
+      "bundled_package_count": 123
+    },
+    "candidate_rc1": {
+      "release_id": "dsh-0.1.5rc1",
+      "python_sdk": "0.1.5rc1",
+      "python_runtime_bin": "0.1.5rc1",
+      "sdk_wheel_sha256": "8d9897e97e8a95fd738cb2c3e2c563951d824e43847ec6f3b0fb172c0729b4d8",
+      "linux_x86_64_runtime_wheel_sha256": "ad877237382baff4628969a9ebdbfe38486d971b7987c032d0e29775759b5229",
+      "bundled_npm_version": "0.1.5-rc.1",
+      "source_tag": "dsh-v0.1.5-rc.1",
+      "source_commit": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e",
+      "source_archive_sha256": "23af26a7f422f3d3ba7ce148492e2937af3fe5cc39e8f05dd109e12dadd8262c",
+      "source_manifest_sha256": "1a7b08779d4a2da50ec1d81837eeb43e913256d077add584cb154c221e12283c",
+      "bundled_package_count": 126
+    }
+  },
+  "finding": {
+    "id": "D15-0-F1",
+    "severity": "blocker-for-exact-target",
+    "statement": "The requested npm closure @deepseek-ai/dsh-*@0.1.5-rc.2 exists, but no Python deepseek-harness-sdk/runtime-bin==0.1.5rc2 exists on PyPI. The Python runtime-bin 0.1.5rc1, when inspected, contains npm 0.1.5-rc.1 (233 occurrences; zero 0.1.5-rc.2). Therefore an exact '0.1.5-rc.2' BYQ candidate would have to mix the shipped Python runtime (npm 0.1.5-rc.1) with a separately-installed npm 0.1.5-rc.2 closure, which is not the official bundled pairing.",
+    "resolution": "D15-1 targets the coherent official pairing dsh-v0.1.5-rc.1 / Python 0.1.5rc1 / bundled npm 0.1.5-rc.1. The exact 0.1.5-rc.2 npm closure is recorded as upstream-unpaired and is not silently substituted."
+  },
+  "python_sdk_api_diff": {
+    "deepseek_harness/__init__.py": "identical",
+    "deepseek_harness/api.py": "identical",
+    "deepseek_harness/client.py": "identical",
+    "deepseek_harness/models.py": "identical",
+    "deepseek_harness/errors.py": "identical",
+    "conclusion": "Python SDK public surface is byte-identical between 0.1.2rc1 and 0.1.5rc1."
+  },
+  "bundled_closure_diff": {
+    "count_0_1_2": 238,
+    "count_0_1_5": 256,
+    "added": [
+      "dsh-api-workspace-files",
+      "dsh-chunked-list",
+      "dsh-client-file-upload",
+      "dsh-client-resources",
+      "dsh-client-ui-dockkit",
+      "dsh-client-ui-open-in-app",
+      "dsh-client-ui-sidebar-documentpreview",
+      "dsh-client-ui-sidebar-files",
+      "dsh-client-ui-sidebar-right",
+      "dsh-host-open-in-app",
+      "dsh-http-proxy",
+      "dsh-package-manifest",
+      "dsh-session-format",
+      "dsh-session-format-catalog",
+      "dsh-session-format-v0-to-v1",
+      "dsh-session-format-v1-to-v2",
+      "dsh-session-format-v2-to-v3",
+      "dsh-tool-present"
+    ],
+    "removed": []
+  }
+}

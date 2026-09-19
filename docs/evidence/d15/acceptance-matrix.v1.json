@@ -1,0 +1,79 @@
+{
+  "schema_version": "byq-d15-acceptance-matrix.v1",
+  "generated_at": "2026-09-19",
+  "notes": "Acceptance criteria for D15-2..D15-G. All results are NOT_RUN until a live candidate exists; no criteria may be marked PASS without committed evidence.",
+  "result_vocabulary": ["NOT_RUN", "PASS", "FAIL", "BLOCKED"],
+  "substages": [
+    {
+      "id": "D15-2",
+      "name": "Session V3 Migration Qualification",
+      "result": "NOT_RUN",
+      "criteria": [
+        "originals immutable; migrated copies separate and immutable once produced",
+        "0.1.2 historical -> migrate -> V3 -> read -> resume -> append -> close -> reopen succeeds",
+        "migration failure is never silently treated as a new session",
+        "event identity/order and terminal evidence preserved",
+        "fork inheritedEventCount/isSeeded preserved",
+        "downgrade feasibility explicitly recorded (even when not downgradable)",
+        "unknown/future format version fails closed with the documented refusal"
+      ],
+      "fixtures": ["F-NORMAL", "F-COMPLETED", "F-INTERRUPTED", "F-COMPACTED", "F-LARGE", "F-SUBAGENT", "F-CONTINUABLE", "F-FORKED", "F-OLD-LIFECYCLE"],
+      "evidence_path": "docs/evidence/d15/d15-2"
+    },
+    {
+      "id": "D15-3",
+      "name": "Native Session Resume Qualification",
+      "result": "NOT_RUN",
+      "criteria": [
+        "every failure-matrix row classified as reattached | rehydrated-native | rehydrated-byq-fallback | interrupted",
+        "public fresh/reattached/rehydrated/interrupted contract unchanged",
+        "internal diagnostic fields are evidence-only and do not leak",
+        "DSH session id never becomes BYQ AgentSession identity",
+        "native resume failure falls back without fabricating reattach",
+        "zero stale lease across adapter/host restart"
+      ],
+      "failure_rows": ["Browser disconnect", "Frontend restart", "Gateway restart", "Adapter restart", "DSH crash", "RuntimeGeneration replacement", "Host reboot", "executor takeover"],
+      "evidence_path": "docs/evidence/d15/d15-3"
+    },
+    {
+      "id": "D15-4",
+      "name": "Subagent/Fork Continuity Qualification",
+      "result": "NOT_RUN",
+      "criteria": [
+        "parent/child durable identity and lineage authorization verified",
+        "child session persistence and continuable descriptor verified",
+        "cold resume of a continuable child verified",
+        "fork lineage distinct from parent; inherited prefix preserved",
+        "model/provider, persona, reasoning effort and tool permissions/filter preserved",
+        "parent crash, child crash, adapter restart and host restart handled without second persistence"
+      ],
+      "evidence_path": "docs/evidence/d15/d15-4"
+    },
+    {
+      "id": "D15-5",
+      "name": "Persistent Terminal Qualification",
+      "result": "NOT_RUN",
+      "criteria": [
+        "PTY/process existence separated from attachment existence",
+        "I/O rebind separated from stable terminal identity",
+        "terminal decoupled from AgentSession lifecycle",
+        "BYQ owns TerminalAttachment identity/state/auth/reconnect; DSH owns PTY/shell/I/O",
+        "no false reattach after DSH runtime restart or host reboot"
+      ],
+      "terminal_faults": ["page refresh", "browser disconnect", "frontend restart", "gateway restart", "adapter restart", "DSH runtime restart", "host reboot"],
+      "evidence_path": "docs/evidence/d15/d15-5"
+    },
+    {
+      "id": "D15-G",
+      "name": "Architecture Go/No-Go",
+      "result": "NOT_RUN",
+      "criteria": [
+        "capability matrix over D15-2..D15-5 complete",
+        "Go/No-Go report committed; No-Go lists exact blockers",
+        "Go does not authorize production cutover",
+        "R3_RESUME assessed: YES only with completed D15-G and native-continuity evidence"
+      ],
+      "evidence_path": "docs/evidence/d15/d15-g"
+    }
+  ]
+}

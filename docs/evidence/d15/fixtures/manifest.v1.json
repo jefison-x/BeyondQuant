@@ -1,0 +1,46 @@
+{
+  "schema_version": "byq-d15-fixture-manifest.v1",
+  "generated_at": "2026-09-19",
+  "notes": "Fixture SPECIFICATIONS for D15-2..D15-G. No historical session artifact may be mutated; each fixture declares an immutable origin and a separate working copy.",
+  "immutability_rule": "originals are read-only and never overwritten; migrated/qualified copies are written under a D15 evidence working directory and are themselves immutable once produced",
+  "session_fixtures": [
+    {"id": "F-NORMAL", "category": "normal", "origin": "historical BYQ 0.1.2 session root (read-only copy)", "format": "v2", "expect": "migrate to v3, read, resume, append, close, reopen with contiguous seq"},
+    {"id": "F-COMPLETED", "category": "completed", "origin": "historical completed root-turn", "format": "v2", "expect": "migrate, reopen, append new root turn without rewriting history"},
+    {"id": "F-INTERRUPTED", "category": "interrupted", "origin": "historical hard-cancelled/crashed session", "format": "v2", "expect": "migration preserves interrupted terminal evidence; resume classifies interrupted then rehydrated"},
+    {"id": "F-COMPACTED", "category": "compacted", "origin": "historical compacted session", "format": "v2", "expect": "compaction events survive migration; projection order unchanged"},
+    {"id": "F-LARGE", "category": "large", "origin": "historical multi-megabyte session", "format": "v2", "expect": "streaming migration bounded; no full materialization blowup; verify in worker"},
+    {"id": "F-SUBAGENT", "category": "subagent", "origin": "historical one-shot subagent child", "format": "v2", "expect": "child identity and parent lineage preserved; child remains non-continuable if it was one-shot"},
+    {"id": "F-CONTINUABLE", "category": "continuable-subagent", "origin": "0.1.5 continuable child (produced in D15-4)", "format": "v3", "expect": "cold resume from persistence; settlement delivered to durable parent"},
+    {"id": "F-FORKED", "category": "forked", "origin": "historical forked session (inherited prefix)", "format": "v2", "expect": "inheritedEventCount/isSeeded preserved; fork lineage not conflated with parent"},
+    {"id": "F-OLD-LIFECYCLE", "category": "with-old-lifecycle-evidence", "origin": "session with BYQ executor lease/epoch evidence", "format": "v2", "expect": "migration does not touch BYQ lifecycle journal; AgentSession identity unchanged"}
+  ],
+  "failure_matrix_rows": [
+    {"fault": "Browser disconnect", "expected": {"continuity": "reattached", "terminal": "DETACHED"}},
+    {"fault": "Frontend restart", "expected": {"continuity": "reattached", "terminal": "DETACHED", "terminal_reconnect": true}},
+    {"fault": "Gateway restart", "expected": {"continuity": "reattached", "agent_session": "continued by persistent sequence"}},
+    {"fault": "Adapter restart", "expected": {"continuity": "rehydrated", "mechanism": "native-dsh-resume|byq-fallback", "generation": "replaced"}},
+    {"fault": "DSH crash", "expected": {"continuity": "interrupted->rehydrated", "root": "explicit settlement, no automatic model continuation"}},
+    {"fault": "RuntimeGeneration replacement", "expected": {"continuity": "rehydrated", "agent_session_identity": "unchanged"}},
+    {"fault": "Host reboot", "expected": {"continuity": "rehydrated", "mechanism": "native-dsh-resume|byq-fallback", "lease": "stable epoch, zero stale"}},
+    {"fault": "executor takeover", "expected": {"continuity": "rehydrated", "fencing": "old epoch fenced"}}
+  ],
+  "terminal_faults": [
+    {"fault": "page refresh", "expect": "attachment identity preserved; PTY untouched"},
+    {"fault": "browser disconnect", "expect": "PTY keeps running; attachment DETACHED"},
+    {"fault": "frontend restart", "expect": "reattach by stable TerminalAttachment id"},
+    {"fault": "gateway restart", "expect": "attachment re-established; PTY untouched"},
+    {"fault": "adapter restart", "expect": "I/O rebind; PTY existence and terminal identity preserved if DSH-native persistence holds"},
+    {"fault": "DSH runtime restart", "expect": "explicit INTERRUPTED unless DSH native persistence proven; never silently fabricate"},
+    {"fault": "host reboot", "expect": "EXITED or INTERRUPTED; no false reattach"}
+  ],
+  "authority_boundary": {
+    "byq_owns": ["TerminalAttachment identity", "attachment state", "authorization", "reconnect policy"],
+    "dsh_owns": ["PTY", "shell process", "terminal I/O"],
+    "must_not": ["expose DSH session id as BYQ AgentSession identity", "expose raw DSH event schema to browser"]
+  },
+  "continuity_diagnostics_internal": {
+    "public_contract": ["fresh", "reattached", "rehydrated", "interrupted"],
+    "internal_only_fields": ["native_resume_used", "byq_fallback_used", "previous_generation_state", "native_session_present"],
+    "rule": "internal fields are evidence-only and MUST NOT replace or leak into the framework-neutral continuity status"
+  }
+}
