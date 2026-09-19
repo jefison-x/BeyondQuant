@@ -218,10 +218,14 @@ class D15CandidateTests(unittest.TestCase):
         matrix = json.loads((EVIDENCE / "acceptance-matrix.v1.json").read_text())
         stages = {item["id"]: item for item in matrix["substages"]}
         self.assertEqual(list(stages), ["D15-2", "D15-3", "D15-4", "D15-5", "D15-G"])
+        self.assertEqual(stages["D15-2"]["result"], "PASS")
+        for stage_id in ("D15-3", "D15-4", "D15-5", "D15-G"):
+            self.assertEqual(stages[stage_id]["result"], "NOT_RUN")
         for stage in stages.values():
-            self.assertEqual(stage["result"], "NOT_RUN")
             self.assertTrue(stage["criteria"])
             self.assertTrue(stage["evidence_path"].startswith("docs/evidence/d15/"))
+        self.assertTrue(stages["D15-2"]["evidence"])
+        self.assertTrue(stages["D15-2"]["criterion_results"])
         self.assertEqual(
             stages["D15-3"]["failure_rows"],
             ["Browser disconnect", "Frontend restart", "Gateway restart", "Adapter restart",

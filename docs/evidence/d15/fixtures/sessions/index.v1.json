@@ -1,0 +1,117 @@
+{
+  "schema_version": "byq-d15-2-fixture-index.v1",
+  "target": "dsh-v0.1.5-rc.1 session migration qualification source fixtures",
+  "fixtures": [
+    {
+      "id": "f-normal",
+      "category": "normal",
+      "immutable": true,
+      "source_format": 0,
+      "rows": 32,
+      "bytes": 19631,
+      "sha256": "a17a722699915c7656d6c9be84e7ebe61fd31039257cbf2c1b1c2e694a0d16a1",
+      "sibling_files": [
+        {
+          "name": "session.origin.zstd",
+          "bytes": 6329,
+          "sha256": "54a461dcd5d6739f2ba0f6ed65ae02592ce63f75d0255374c26eacdb3a812706"
+        }
+      ],
+      "provenance": "REAL: produced by running the official DSH 0.1.2-rc.1 bundled runtime in isolation (keyless synthetic loopback provider + MCP) through the BYQ runtime adapter, then decompressing the released-v0 multi-frame zstd session log losslessly to raw JSONL."
+    },
+    {
+      "id": "f-completed",
+      "category": "completed",
+      "immutable": true,
+      "source_format": 2,
+      "rows": 9,
+      "bytes": 1238,
+      "sha256": "0111b3818da4852f6eef67806af88a857ca75cfd56c8ecca5214243b679a6ddb",
+      "sibling_files": [],
+      "provenance": "Constructed deterministically with the released DSH 0.1.5-rc.1 v2 physical codec; byte-accurate released-v2 format, not captured from a live 0.1.2 process."
+    },
+    {
+      "id": "f-interrupted",
+      "category": "interrupted",
+      "immutable": true,
+      "source_format": 2,
+      "rows": 7,
+      "bytes": 1175,
+      "sha256": "ee5d62addc69ba51c755a68d5fcf77a3ce51bcef86a6e4f0e1126a9ec4dc2156",
+      "sibling_files": [],
+      "provenance": "Constructed deterministically with the released DSH 0.1.5-rc.1 v2 physical codec; byte-accurate released-v2 format, not captured from a live 0.1.2 process."
+    },
+    {
+      "id": "f-compacted",
+      "category": "compacted",
+      "immutable": true,
+      "source_format": 2,
+      "rows": 19,
+      "bytes": 2717,
+      "sha256": "a5771a85fa71990c03451937a59b7e7515826c54763078cb97c5f81cfd33f71b",
+      "sibling_files": [],
+      "provenance": "Constructed deterministically with the released DSH 0.1.5-rc.1 v2 physical codec; byte-accurate released-v2 format, not captured from a live 0.1.2 process."
+    },
+    {
+      "id": "f-large",
+      "category": "large",
+      "immutable": true,
+      "source_format": 2,
+      "rows": 2801,
+      "bytes": 2046428,
+      "sha256": "cb1bb23a654fd7b993949765cfcec1b447da41a419e0bfd7cda8386356ffb23d",
+      "sibling_files": [],
+      "provenance": "Constructed deterministically with the released DSH 0.1.5-rc.1 v2 physical codec; byte-accurate released-v2 format, not captured from a live 0.1.2 process."
+    },
+    {
+      "id": "f-subagent",
+      "category": "subagent",
+      "immutable": true,
+      "source_format": 2,
+      "rows": 10,
+      "bytes": 1471,
+      "sha256": "236a042e2ad9bb5193aeca692fa9b1f3e2eb9f6fdce234ca81efbef80fdc3de4",
+      "sibling_files": [],
+      "provenance": "Constructed deterministically with the released DSH 0.1.5-rc.1 v2 physical codec; byte-accurate released-v2 format, not captured from a live 0.1.2 process."
+    },
+    {
+      "id": "f-continuable",
+      "category": "continuable-subagent",
+      "immutable": true,
+      "source_format": 3,
+      "rows": 11,
+      "bytes": 1995,
+      "sha256": "757bb3861aab2df630848dd5de440326e377a883c8ece35ccd5eb45387b99db0",
+      "sibling_files": [],
+      "provenance": "Constructed by running the real DSH 0.1.5-rc.1 session-format catalog migration over a v2 subagent base and re-encoding with the released v3 current codec; the continuable activation descriptor itself is deferred to D15-4."
+    },
+    {
+      "id": "f-forked",
+      "category": "forked",
+      "immutable": true,
+      "source_format": 2,
+      "rows": 17,
+      "bytes": 2417,
+      "sha256": "3b2c1646bb5e27eed93107c98ee6d178489dcaf9ccf5c9c9a62979a6512a078f",
+      "sibling_files": [],
+      "provenance": "Constructed deterministically with the released DSH 0.1.5-rc.1 v2 physical codec; byte-accurate released-v2 format, not captured from a live 0.1.2 process."
+    },
+    {
+      "id": "f-old-lifecycle",
+      "category": "with-old-lifecycle-evidence",
+      "immutable": true,
+      "source_format": 2,
+      "rows": 9,
+      "bytes": 1261,
+      "sha256": "496d3fce50ed845f4673a4f2d00b43724c24372f97aca1d97d4db49e68f6a646",
+      "sibling_files": [
+        {
+          "name": "byq-lifecycle-evidence.json",
+          "bytes": 449,
+          "sha256": "edd88af293864ef7725b065adbdba2030f5eb041fe4875a5052251bfca3b4405"
+        }
+      ],
+      "provenance": "Constructed deterministically with the released DSH 0.1.5-rc.1 v2 physical codec; byte-accurate released-v2 format, not captured from a live 0.1.2 process. Includes a synthetic BYQ lifecycle-evidence sibling file that the migration harness must not read or mutate."
+    }
+  ]
+}

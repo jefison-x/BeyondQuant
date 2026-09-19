@@ -46,7 +46,7 @@
     "state": "not-qualified",
     "live_start_verified": true,
     "native_resume_verified": false,
-    "reason": "D15-1 built and keylessly started the isolated candidate (docs/evidence/d15/d15-1/); D15-2..D15-G native migration/resume/subagent/terminal qualification not yet executed.",
+    "reason": "D15-1 built and keylessly started the isolated candidate (docs/evidence/d15/d15-1/); D15-2 qualified historical v0/v2 session migration, read/resume/append/close/reopen and fail-closed refusal (docs/evidence/d15/d15-2/). D15-3..D15-G native resume/subagent/terminal qualification not yet executed.",
     "blocking_finding": null
   },
   "evidence": {

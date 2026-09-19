@@ -76,10 +76,12 @@ session/tool/subagent 的第二持久化。
 
 - 连续性能力以 DSH 原生为准，BYQ 减少自建状态与故障面。
 - R3 推迟到 D15-G 之后，避免在未验证原生语义时重复实现。
-- 候选与生产严格隔离。D15-1 已构建/启动/探测 coherent rc.1 候选（隔离、无生产流量）；D15-2..D15-G
+- 候选与生产严格隔离。D15-1 已构建/启动/探测 coherent rc.1 候选（隔离、无生产流量）；D15-2
+  已完成 Session V3 迁移资格（PASS，证据 `docs/evidence/d15/d15-2/`）；D15-3..D15-G
   的 native 资格仍待执行。
 - 由于 D15 改变 runtime build inputs，生产构建修订由 `post-u8.145` 推进到 `post-u8.146`，
-  并在 D15-1 新增候选 Dockerfile/锁/探测后推进到 `post-u8.147`（历史清单与证据保留）。
+  并在 D15-1 新增候选 Dockerfile/锁/探测后推进到 `post-u8.147`，在 D15-2 新增
+  `scripts/`/`tests/` 下的迁移 harness 与 fixtures 后推进到 `post-u8.148`（历史清单与证据保留）。
 
 ## 接受后验收要求（D15）
 

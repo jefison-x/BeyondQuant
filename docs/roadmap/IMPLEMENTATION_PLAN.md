@@ -134,7 +134,7 @@ epoch fencing、`LifecycleJournal` 证据边界、prompt 幂等、at-most-once �
 不改 Gateway trace 模型、Backend/domain schema、MCP、workers、DSH 版本或续接预算。不含
 Supervisor（R3）与 Terminal（R4）。不部署、不自动合并。
 
-DSH 0.1.5-rc.1 原生连续性资格阶段 D15（feat/docs，构建修订 `dsh-0.1.2rc1-post-u8.147`）：
+DSH 0.1.5-rc.1 原生连续性资格阶段 D15（feat/docs，构建修订 `dsh-0.1.2rc1-post-u8.148`）：
 按 [ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Proposed）与
 [D15 阶段计划](DSH_015RC1_UPGRADE_PLAN.md)，将 Runtime Continuity 的下一个原生能力步骤
 插在 R2 之后、R3 之前：`R0 → R1 → R2 → D15 → R3 → R4 → R5 → R6 → 独立 Production Go/No-Go`。
@@ -152,9 +152,19 @@ compat 边界 `services/runtime-adapter/app/compat/dsh_015.py`，并新增候选
 turn + tool call（事件序列连续，含 `tool/call`/`tool/result`，BYQ profile patch 加载成功），证据
 `docs/evidence/d15/d15-1/`。生产默认 `dsh-0.1.2rc1`、`compose.yml`、`Dockerfile.post-u8-candidate`
 与既有 0.1.2 制品/证据不变，候选不 push 且在不可变 `config/dsh/releases` 注册表之外，回滚目标
-`dsh-0.1.2rc1`，无 DB/Worker 变更。D15-2..D15-G 仅提交测试计划、fixtures 与 acceptance criteria
-（`docs/evidence/d15/fixtures/manifest.v1.json`），不声称资格通过。D15 改变 runtime build inputs，
-故推进构建修订 `.145→.146`，D15-1 再推进 `.146→.147`，历史清单与全部证据保留。不部署、不自动合并。
+`dsh-0.1.2rc1`，无 DB/Worker 变更。D15 改变 runtime build inputs，故推进构建修订
+`.145→.146`，D15-1 再推进 `.146→.147`，历史清单与全部证据保留。D15-2 提交 9 个不可变
+session fixtures（`docs/evidence/d15/fixtures/sessions/index.v1.json`，含 sha256；`f-normal`
+为隔离运行官方 0.1.2-rc.1 runtime 产生的真实 v0 会话，其余为 released-v2 codec 确定性构造）
+与隔离 Node harness（`scripts/d15/harness/migration_harness.mjs`），经第一方
+`@deepseek-ai/dsh-session-format-catalog`（`sessionFormatV2ToV3`）执行
+`read → resume → append → close → reopen`，9/9 全阶段 pass、0 blocker、序列连续且 message id
+保留，`f-forked` inherited cut 保留，迁移后 v3 不可降级（9/9），fail-closed 拒绝不转为新会话；
+台账 `session_format_v2_v3` 增加 `observed_status=compatible` 并移出 `not_yet_probed`，
+acceptance-matrix D15-2 置 PASS，证据 `docs/evidence/d15/d15-2/`。D15-2 仅新增测试/证据/文档，
+但 `scripts/` 与 `tests/` 属于 BYQ build-input inventory，故按仓库规则构建修订推进
+`.147→.148`（仅重建身份，不改 selector/deployment）。D15-3..D15-G（native resume、subagent/fork、
+persistent terminal、Go/No-Go）仍为 PLANNED。不部署、不自动合并。
 
 数据就绪续接 needs_attention 重挂（fix，构建修订 `dsh-0.1.2rc1-post-u8.142`）：生产 round-2
 数据就绪续接回合结算为 `needs_attention` 后，`research_tasks.continuation_blocked_reason` 被写成

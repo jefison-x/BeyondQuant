@@ -1,7 +1,8 @@
 # D15 — DSH 0.1.5-rc.1 Native Continuity Upgrade Evidence
 
 Status: **D15-0 complete; D15-1 candidate built, started and keylessly probed in
-isolation; live qualification (D15-2..D15-G) not started. No pass claims.**
+isolation; D15-2 session V3 migration qualified (PASS); D15-3..D15-G not started.
+No native-resume/subagent/terminal/Go-No-Go pass claims.**
 
 - Target decision: [`target-decision.v1.json`](target-decision.v1.json)
   (`dsh-v0.1.5-rc.1` / Python `0.1.5rc1` / bundled npm `0.1.5-rc.1`)
@@ -9,8 +10,10 @@ isolation; live qualification (D15-2..D15-G) not started. No pass claims.**
 - Interface compatibility ledger: [`compatibility-ledger.v1.json`](compatibility-ledger.v1.json)
 - Candidate declaration: [`../../config/dsh/candidates/dsh-0.1.5rc1/candidate.json`](../../../config/dsh/candidates/dsh-0.1.5rc1/candidate.json)
 - D15-1 build/start/probe: [`d15-1/README.md`](d15-1/README.md)
+- D15-2 session migration qualification: [`d15-2/README.md`](d15-2/README.md)
 - Qualification fixture specification: [`fixtures/manifest.v1.json`](fixtures/manifest.v1.json)
-- Acceptance-criteria matrix (D15-2..D15-G, all `NOT_RUN`): [`acceptance-matrix.v1.json`](acceptance-matrix.v1.json)
+- Realized fixture index (sha256): [`fixtures/sessions/index.v1.json`](fixtures/sessions/index.v1.json)
+- Acceptance-criteria matrix (D15-2 `PASS`, D15-3..D15-G `NOT_RUN`): [`acceptance-matrix.v1.json`](acceptance-matrix.v1.json)
 - Stage plan / acceptance criteria: [`../../roadmap/DSH_015RC1_UPGRADE_PLAN.md`](../../roadmap/DSH_015RC1_UPGRADE_PLAN.md)
 
 Production default remains `dsh-0.1.2rc1`. Nothing in this directory changes
@@ -103,5 +106,21 @@ reached `ready`/`idle`, exposed the expected product roster and emitted a
 contiguous event sequence including `tool/call` and `tool/result`. Full evidence
 and boundaries: [`d15-1/README.md`](d15-1/README.md).
 
-The image is not pushed and not referenced by any production selector. No live
-native migration or resume claim is made; `R3_RESUME = NO` until D15-G.
+The image is not pushed and not referenced by any production selector.
+
+## D15-2 — session V3 migration qualification
+
+Nine immutable fixtures were committed under
+[`fixtures/sessions/`](fixtures/sessions/index.v1.json) and qualified against the
+real 0.1.5-rc.1 session-format catalog (`sessionFormatV2ToV3`). Eight migrate
+(v0/v2 -> v3) and one (`f-continuable`) is already current; all nine complete
+`read → resume → append → close → reopen` with contiguous sequences and
+preserved message ids. The migrated store is **not downgradable** by
+`0.1.2-rc.1`; fail-closed cases surface the documented refusal instead of
+converting to a new session. Full detail and provenance:
+[`d15-2/README.md`](d15-2/README.md).
+
+The compatibility ledger's `session_format_v2_v3` interface now carries
+`observed_status: "compatible"` and the migration item is moved from
+`not_yet_probed` to `probed`. No native resume is claimed; `R3_RESUME = NO`
+until D15-G.

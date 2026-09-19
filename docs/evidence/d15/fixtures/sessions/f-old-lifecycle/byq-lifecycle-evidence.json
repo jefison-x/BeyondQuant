@@ -1,0 +1,23 @@
+{
+  "schema_version": "byq-runtime-lifecycle-evidence.v1",
+  "session_id": "fx-old-lifecycle",
+  "trace_id": "fixture-trace-0001",
+  "owner": "fixture-owner",
+  "workspace_id": "fixture-workspace",
+  "executor_epoch": 7,
+  "sequence": 3,
+  "events": [
+    {
+      "kind": "session.ready",
+      "sequence": 1
+    },
+    {
+      "kind": "turn.started",
+      "sequence": 2
+    },
+    {
+      "kind": "turn.completed",
+      "sequence": 3
+    }
+  ]
+}
