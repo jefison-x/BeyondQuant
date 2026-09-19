@@ -113,6 +113,27 @@ Runtime Continuity R0/R1（feat/fix，构建修订 `dsh-0.1.2rc1-post-u8.141`）
 均 fail closed。`reanchor_session_lease.py` 降级为异常修复工具。不修改 Gateway trace、
 Backend/domain schema、MCP、workers、DSH 版本或 composition，不部署、不自动合并。
 
+Runtime Continuity R2：durable session identity 与 RuntimeGeneration 分离（feat，构建修订
+`dsh-0.1.2rc1-post-u8.145`）：按 [ADR-0079](../architecture/adr/ADR-0079-runtime-continuity-and-session-recovery.md)
+（Proposed）R2 将 `services/runtime-adapter/app/runtime.py` 的会话模型拆为 durable
+AgentSession record（`session_id`/`trace_id`/owner/workspace、canonical sequence、
+`executor_epoch`、status 与 journal evidence）与 ephemeral `RuntimeGeneration`（generation
+id、session id、epoch、private native session、started_at、state 及该代际的运行态）。替换
+generation（adapter restart、crash rebind、resume、root-scoped 新回合）建模为 NEW
+generation，不再当作 session failure；`session_id`、sequence 与 lifecycle-journal 证据不变。
+新增框架中立 `packages/contracts/runtime_continuity.py`，在 create/resume/rebind 结果中报告
+`fresh`/`reattached`/`rehydrated`/`interrupted`：Path A（in-process generation 存活）复用为
+`reattached`；Path B（generation 消失）新建 generation 并经既有 conversation
+recovery/rehydration 合同恢复为 `rehydrated`；被终止的 run/generation 如实报告
+`interrupted`，绝不伪造 reattach。continuity 经 Gateway `/v1/agent/sessions`（create）与
+`/v1/agent/sessions/{id}/resume` 响应暴露，只含封闭字符串，不含 generation/native session/
+process id，也不进入 WorkflowTrace。带界 per-session generation 历史写入
+`<evidence-root>/generation-ledger/<session_id>.json`（BYQ-owned、best-effort，仅 generation
+id/epoch/root/state/时间），不扩展 journal schema、不新增 PostgreSQL registry。保留 flock/
+epoch fencing、`LifecycleJournal` 证据边界、prompt 幂等、at-most-once 与全部既有恢复行为；
+不改 Gateway trace 模型、Backend/domain schema、MCP、workers、DSH 版本或续接预算。不含
+Supervisor（R3）与 Terminal（R4）。不部署、不自动合并。
+
 数据就绪续接 needs_attention 重挂（fix，构建修订 `dsh-0.1.2rc1-post-u8.142`）：生产 round-2
 数据就绪续接回合结算为 `needs_attention` 后，`research_tasks.continuation_blocked_reason` 被写成
 `continuation_needs_attention`；原预算路径的按任务级 `continue` 使其永久阻止后续**不同**的

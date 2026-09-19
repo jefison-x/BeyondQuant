@@ -103,6 +103,35 @@ generation / root lifecycle / prompt identity / terminal receipt / domain-call e
 sequence。它 **MUST NOT** 演化为第二套 DSH session/context/tool persistence，不保存原始
 prompt、模型推理、密钥、工具私有状态或应用源码。
 
+### 5. R2 实现：durable session identity 与 RuntimeGeneration 分离（Proposed）
+
+R1 只稳定了 lease；R2 在 runtime-adapter 内将会话模型拆分为：
+
+- **durable AgentSession record**（`RuntimeSession`）：`session_id` / `trace_id` / owner /
+  workspace、`last_sequence`（canonical sequence）、`executor_epoch`、`status`、
+  conversation linkage、prompt/terminal/domain-call evidence 与 journal 归属；
+- **RuntimeGeneration record**（`RuntimeGeneration`）：`generation_id`、`session_id`、
+  `executor_epoch`、private native session identity、`started_at`、`state`，以及仅属于该
+  代际的进程/运行态。
+
+替换 generation（adapter restart、crash 后 rebind、resume、root-scoped 新回合）一律建模为
+**新 generation**，绝不建模为 session failure；`session_id`、canonical sequence 与
+lifecycle-journal 证据保持不变。
+
+**continuity status**（`packages/contracts/runtime_continuity.py`，框架中立）：
+
+- `fresh`：全新 session；
+- `reattached`：原 in-process generation 仍存活并被复用（Path A）；
+- `rehydrated`：原 generation 已消失，创建新 generation 并按既有 conversation
+  recovery/rehydration 合同恢复公开上下文（Path B）；
+- `interrupted`：run/generation 被终止并如实标记 interrupted，再由新 generation 接续。
+
+continuity 只作为封闭字符串跨越 adapter/Gateway 响应边界；generation id、native session id
+与 process identity 不回传、不进入 WorkflowTrace。带界的 per-session generation 历史记录在
+`<evidence-root>/generation-ledger/<session_id>.json`（BYQ-owned、best-effort，仅保存
+generation id / executor epoch / root / state / 时间），不扩展 lifecycle journal schema，也不
+新增 PostgreSQL AgentSession registry。R2 不含 Supervisor 与 Terminal 状态机（R3/R4）。
+
 ## 与既有 ADR 的关系
 
 - **ADR-0062**：本文在其恢复与失败事实边界内实现；不改 900 秒/预算/续接授权语义。
@@ -140,3 +169,14 @@ prompt、模型推理、密钥、工具私有状态或应用源码。
 - re-anchor 工具在异常场景仍可用。
 - 失败矩阵登记为后续测试契约。R0/R1 证据见本 ADR 与
   [Runtime Continuity Failure Matrix](../RUNTIME_CONTINUITY_FAILURE_MATRIX.md)。
+
+### 接受后验收要求（R2）
+
+- fresh session 报告 `fresh`；存活 generation 的 resume 报告 `reattached` 且不新建进程。
+- 进程/容器重启后 generation 消失：报告 `rehydrated`，生成 NEW generation id，旧
+  generation 记入带界历史，`session_id`、sequence 与 journal 证据不变。
+- 崩溃中的 generation：旧 generation 被标记 `interrupted`，新 generation 接续同一 durable
+  session。
+- generation 替换不改变 durable session identity，也不丢失 evidence/sequence 与续接/re-lease
+  fencing 语义。
+- 既有 runtime-adapter 套件与架构测试保持通过。

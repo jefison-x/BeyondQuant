@@ -24,6 +24,7 @@ from packages.contracts.conversation_rehydration import (
 from packages.contracts.conversation_recovery import normalize_recovery
 from packages.contracts.agent_run_lifecycle import registration_fingerprint, lifecycle_receipt, project_lifecycle_event
 from packages.contracts.domain_call_admission import ACTIONS as DOMAIN_CALL_ACTIONS, request_evidence
+from packages.contracts import runtime_continuity as continuity
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
 from .child_lease import ChildLease
@@ -31,6 +32,7 @@ from .normalization import close_public_activities
 from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_release
 from .identifiers import contained_session_path, validate_identifier
 from .lifecycle_journal import JournalIdentityMismatch, LifecycleJournal, JournalBusy
+from . import generation_ledger
 from .continuation_budget import (CONTINUATION_MAX_OUTPUT_TOKENS, persist_settlement,
     recovered_settlement, validate_reservation, create_guard_patch, read_guard)
 from .normalization import NormalizationState, normalize_runtime_observation
@@ -115,39 +117,197 @@ class ActiveRun:
     watchdog_stop: threading.Event = field(default_factory=threading.Event, repr=False)
 
 
+class GenerationState:
+    STARTING: ClassVar[str] = "starting"
+    READY: ClassVar[str] = "ready"
+    RUNNING: ClassVar[str] = "running"
+    CLOSED: ClassVar[str] = "closed"
+    INTERRUPTED: ClassVar[str] = "interrupted"
+
+
 @dataclass(slots=True)
-class RuntimeSession:
+class RuntimeGeneration:
+    """Ephemeral DSH execution generation for one durable BYQ AgentSession.
+
+    A generation is disposable execution capacity, never session identity.
+    Replacing it (rebind after a crash, adapter restart, resume or a new
+    root-scoped turn) is normal; the durable session, its sequence and its
+    lifecycle-journal evidence survive unchanged.
+    """
+
+    generation_id: str
     session_id: str
-    trace_id: str
-    harness: Any
-    runtime_session_id: str
-    runtime_generation: str = field(default="", repr=False)
+    native_session_id: str
+    executor_epoch: int = 0
+    started_at: float = field(default_factory=time.time)
+    state: str = GenerationState.STARTING
     process_root_id: str = field(default="", repr=False)
+    harness: Any = field(default=None, repr=False)
     process_used: bool = field(default=False, repr=False)
     process_closed: bool = field(default=False, repr=False)
+    process_closing: bool = field(default=False, repr=False)
     continuation_budget: dict | None = field(default=None, repr=False)
     budget_journal: Path | None = field(default=None, repr=False)
     budget_run_id: str | None = field(default=None, repr=False)
-    budget_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
+    active_run: ActiveRun | None = None
+    normalization: NormalizationState = field(default_factory=NormalizationState)
+    usage_message_ids: set[str] = field(default_factory=set)
+
+    def describe(self) -> dict[str, Any]:
+        """Framework-neutral identity only; no DSH native/process schema."""
+
+        return {
+            "generation_id": self.generation_id,
+            "session_id": self.session_id,
+            "executor_epoch": self.executor_epoch,
+            "state": self.state,
+        }
+
+
+@dataclass(slots=True)
+class RuntimeSession:
+    """Durable logical AgentSession identity, independent of any generation."""
+
+    session_id: str
+    trace_id: str
     owner_principal: str | None = None
     workspace_id: str | None = None
     model_resolution: dict[str, object] = field(default_factory=dict, repr=False)
     pending_conversation_context: list[ConversationContextMessage] = field(default_factory=list, repr=False)
     pending_conversation_recovery: dict | None = field(default=None, repr=False)
     status: str = SessionStatus.STARTING
-    active_run: ActiveRun | None = None
     prompt_idempotency: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
     terminal_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
     pending_terminal_receipts: set[str] = field(default_factory=set, repr=False)
-    process_closing: bool = field(default=False, repr=False)
     journal: Any = field(default=None, repr=False)
+    # Continuation settlements outlive an individual generation, so this ledger
+    # stays on the durable session rather than on ephemeral execution state.
+    budget_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
     interrupted_run_id: str | None = None
     sequence: int = 0
-    normalization: NormalizationState = field(default_factory=NormalizationState)
-    usage_message_ids: set[str] = field(default_factory=set)
     history: list[WorkflowTraceEvent] = field(default_factory=list)
     subscribers: list[queue.Queue[WorkflowTraceEvent | None]] = field(default_factory=list)
     lock: threading.RLock = field(default_factory=threading.RLock)
+    executor_epoch: int = 0
+    continuity: str | None = None
+    current_generation: RuntimeGeneration | None = field(default=None, repr=False)
+    generations: list[RuntimeGeneration] = field(default_factory=list, repr=False)
+
+    def _generation(self) -> RuntimeGeneration:
+        """Return the active generation, creating an unbound placeholder."""
+
+        if self.current_generation is None:
+            self.current_generation = RuntimeGeneration(
+                generation_id=f"generation-{uuid.uuid4().hex}",
+                session_id=self.session_id,
+                native_session_id=f"resume-{uuid.uuid4().hex}",
+                executor_epoch=self.executor_epoch,
+            )
+        return self.current_generation
+
+    @property
+    def harness(self) -> Any:
+        return self.current_generation.harness if self.current_generation is not None else None
+
+    @harness.setter
+    def harness(self, value: Any) -> None:
+        self._generation().harness = value
+
+    @property
+    def runtime_session_id(self) -> str:
+        return self.current_generation.native_session_id if self.current_generation is not None else ""
+
+    @runtime_session_id.setter
+    def runtime_session_id(self, value: str) -> None:
+        self._generation().native_session_id = value
+
+    @property
+    def runtime_generation(self) -> str:
+        return self.current_generation.generation_id if self.current_generation is not None else ""
+
+    @runtime_generation.setter
+    def runtime_generation(self, value: str) -> None:
+        self._generation().generation_id = value
+
+    @property
+    def process_root_id(self) -> str:
+        return self.current_generation.process_root_id if self.current_generation is not None else ""
+
+    @process_root_id.setter
+    def process_root_id(self, value: str) -> None:
+        self._generation().process_root_id = value
+
+    @property
+    def process_used(self) -> bool:
+        return self.current_generation.process_used if self.current_generation is not None else False
+
+    @process_used.setter
+    def process_used(self, value: bool) -> None:
+        self._generation().process_used = value
+
+    @property
+    def process_closed(self) -> bool:
+        return self.current_generation.process_closed if self.current_generation is not None else False
+
+    @process_closed.setter
+    def process_closed(self, value: bool) -> None:
+        self._generation().process_closed = value
+
+    @property
+    def process_closing(self) -> bool:
+        return self.current_generation.process_closing if self.current_generation is not None else False
+
+    @process_closing.setter
+    def process_closing(self, value: bool) -> None:
+        self._generation().process_closing = value
+
+    @property
+    def continuation_budget(self) -> dict | None:
+        return self.current_generation.continuation_budget if self.current_generation is not None else None
+
+    @continuation_budget.setter
+    def continuation_budget(self, value: dict | None) -> None:
+        self._generation().continuation_budget = value
+
+    @property
+    def budget_journal(self) -> Path | None:
+        return self.current_generation.budget_journal if self.current_generation is not None else None
+
+    @budget_journal.setter
+    def budget_journal(self, value: Path | None) -> None:
+        self._generation().budget_journal = value
+
+    @property
+    def budget_run_id(self) -> str | None:
+        return self.current_generation.budget_run_id if self.current_generation is not None else None
+
+    @budget_run_id.setter
+    def budget_run_id(self, value: str | None) -> None:
+        self._generation().budget_run_id = value
+
+    @property
+    def active_run(self) -> ActiveRun | None:
+        return self.current_generation.active_run if self.current_generation is not None else None
+
+    @active_run.setter
+    def active_run(self, value: ActiveRun | None) -> None:
+        self._generation().active_run = value
+
+    @property
+    def normalization(self) -> NormalizationState:
+        return self._generation().normalization
+
+    @normalization.setter
+    def normalization(self, value: NormalizationState) -> None:
+        self._generation().normalization = value
+
+    @property
+    def usage_message_ids(self) -> set[str]:
+        return self._generation().usage_message_ids
+
+    @usage_message_ids.setter
+    def usage_message_ids(self, value: set[str]) -> None:
+        self._generation().usage_message_ids = value
 
 
 class RuntimeAdapter:
@@ -390,6 +550,72 @@ class RuntimeAdapter:
             "status": "matched" if matches else "mismatch",
         }
 
+    def _evidence_root(self) -> Path:
+        return self._session_root / "byq-lifecycle-evidence"
+
+    @staticmethod
+    def _executor_epoch(journal: Any) -> int:
+        epoch = getattr(getattr(journal, "executor", None), "executor_epoch", 0)
+        return epoch if isinstance(epoch, int) and epoch > 0 else 0
+
+    def _ledger_begin(self, record: RuntimeSession, generation: RuntimeGeneration,
+                      root_run_id: str | None) -> None:
+        try:
+            generation_ledger.begin(
+                self._evidence_root(), record.session_id,
+                generation_id=generation.generation_id,
+                executor_epoch=generation.executor_epoch,
+                root_run_id=root_run_id, started_at=generation.started_at,
+            )
+        except (OSError, TypeError, ValueError):
+            # Generation history is advisory continuity metadata. It must never
+            # make a run fail; the lifecycle journal remains the sole evidence.
+            pass
+
+    def _ledger_end(self, record: RuntimeSession, generation_id: str, state: str) -> None:
+        try:
+            generation_ledger.end(
+                self._evidence_root(), record.session_id,
+                generation_id=generation_id, state=state, ended_at=time.time(),
+            )
+        except (OSError, TypeError, ValueError):
+            pass
+
+    def _retire_generation(self, record: RuntimeSession, state: str) -> RuntimeGeneration | None:
+        """Retire the active generation without touching durable session state."""
+
+        generation = record.current_generation
+        if generation is None:
+            return None
+        generation.state = state
+        record.generations.append(generation)
+        record.current_generation = None
+        if len(record.generations) > 32:
+            del record.generations[:-32]
+        self._ledger_end(record, generation.generation_id, state)
+        return generation
+
+    def _install_generation(
+        self, record: RuntimeSession, *, native_session_id: str, executor_epoch: int,
+        process_root_id: str = "", root_run_id: str | None = None,
+        retired_state: str = GenerationState.CLOSED, generation_id: str | None = None,
+    ) -> RuntimeGeneration:
+        """Replace any active generation with a NEW one; identity is unchanged."""
+
+        self._retire_generation(record, retired_state)
+        generation = RuntimeGeneration(
+            generation_id=generation_id or f"generation-{uuid.uuid4().hex}",
+            session_id=record.session_id,
+            native_session_id=native_session_id,
+            executor_epoch=executor_epoch or record.executor_epoch,
+            process_root_id=process_root_id,
+            state=GenerationState.STARTING,
+        )
+        record.current_generation = generation
+        record.executor_epoch = generation.executor_epoch
+        self._ledger_begin(record, generation, root_run_id)
+        return generation
+
     def create_session(
         self, session_id: str, trace_id: str, owner_principal: str | None = None,
         workspace_id: str | None = None, initial_sequence: int = 0,
@@ -400,6 +626,7 @@ class RuntimeAdapter:
         validate_identifier(trace_id, field="trace_id")
         if isinstance(initial_sequence, bool) or not isinstance(initial_sequence, int) or initial_sequence < 0:
             raise ValueError("initial_sequence must be a non-negative integer")
+        requested_sequence = initial_sequence
         with self._lock:
             if session_id in self._sessions:
                 raise SessionConflict(f"BYQ session already exists: {session_id}")
@@ -457,10 +684,6 @@ class RuntimeAdapter:
             record = RuntimeSession(
                 session_id=session_id,
                 trace_id=trace_id,
-                harness=harness,
-                runtime_session_id=runtime_session_id,
-                runtime_generation=runtime_generation,
-                process_root_id=process_root_id,
                 owner_principal=owner_principal,
                 workspace_id=workspace_id,
                 model_resolution=model_resolution,
@@ -469,6 +692,17 @@ class RuntimeAdapter:
                 sequence=initial_sequence,
                 journal=journal,
                 history=[] if journal is None else list(journal.state["events"]),
+            )
+            self._install_generation(
+                record, native_session_id=runtime_session_id,
+                executor_epoch=self._executor_epoch(journal),
+                process_root_id=process_root_id, generation_id=runtime_generation,
+            )
+            record.harness = harness
+            record.continuity = (
+                continuity.REHYDRATED
+                if requested_sequence or (journal is not None and journal.state["sequence"])
+                else continuity.FRESH
             )
             for event in record.history:
                 terminal = project_lifecycle_event(event, session_id, trace_id)
@@ -483,6 +717,8 @@ class RuntimeAdapter:
             with record.lock:
                 if record.status != SessionStatus.STARTING:
                     raise SessionConflict("session closed during initialization")
+                if record.current_generation is not None:
+                    record.current_generation.state = GenerationState.READY
                 record.status = SessionStatus.READY
                 self._emit(record, "session.ready", "runtime-adapter", {"status": "ready"})
             return self.describe_session(record)
@@ -584,16 +820,20 @@ class RuntimeAdapter:
                     trace_id=record.trace_id, owner_principal=record.owner_principal,
                     workspace_id=record.workspace_id, model_resolution=record.model_resolution,
                     runtime_generation=generation, root_run_id=root_id, continuation_budget=budget)
-                record.harness = harness
-                record.runtime_session_id = private_session
-                record.runtime_generation = generation
-                record.process_root_id = root_id
-                record.process_closed = False
-                record.normalization = NormalizationState()
-                record.usage_message_ids.clear()
-                record.continuation_budget = budget
-                record.budget_journal = contained_session_path(self._session_root, private_session) / 'continuation-budget.jsonl' if budget else None
-                record.budget_run_id = root_id if budget else None
+                # A new root turn is a NEW generation for the same durable
+                # session. Retire the previous process generation; never reuse
+                # its native identity or transient normalization state.
+                self._install_generation(
+                    record, native_session_id=private_session,
+                    executor_epoch=record.executor_epoch, process_root_id=root_id,
+                    generation_id=generation, root_run_id=root_id,
+                )
+                installed = record.current_generation
+                installed.harness = harness
+                installed.continuation_budget = budget
+                installed.budget_journal = (contained_session_path(self._session_root, private_session)
+                    / 'continuation-budget.jsonl') if budget else None
+                installed.budget_run_id = root_id if budget else None
             # A rehydrated session has no owned process yet; bind one now while
             # the admitted turn is fenced by the session lock.
             self._ensure_harness(record)
@@ -606,6 +846,8 @@ class RuntimeAdapter:
             record.pending_conversation_context = []
             record.pending_conversation_recovery = None
             record.active_run = run
+            if record.current_generation is not None:
+                record.current_generation.state = GenerationState.RUNNING
             record.status = SessionStatus.RUNNING
             if idempotency_key is not None:
                 record.prompt_idempotency[idempotency_key] = (identity_content, run.run_id)
@@ -910,11 +1152,17 @@ class RuntimeAdapter:
         with record.lock:
             if record.process_closing:
                 raise SessionConflict("previous runtime process cleanup is not complete")
-            if record.status == SessionStatus.READY and record.active_run is None:
+            if (record.status == SessionStatus.READY and record.active_run is None
+                    and record.current_generation is not None and record.harness is not None):
+                # Path A: the original in-process runtime generation is still
+                # alive and is reused. Never manufacture a reattach when the
+                # harness is gone.
                 record.pending_conversation_context = context
                 record.pending_conversation_recovery = recovery
+                record.continuity = continuity.REATTACHED
                 return {**self.describe_session(record), "resumed_from_run_id": None}
-            if record.status not in {SessionStatus.INTERRUPTED, SessionStatus.FAILED} or record.active_run is not None:
+            if (record.status not in {SessionStatus.READY, SessionStatus.INTERRUPTED,
+                                      SessionStatus.FAILED} or record.active_run is not None):
                 raise SessionConflict(f"session {session_id} cannot be resumed")
             previous_status = record.status
             resumed_from_run_id = record.interrupted_run_id
@@ -963,10 +1211,21 @@ class RuntimeAdapter:
             if record.status != SessionStatus.STARTING:
                 self._compatibility.close(harness)
                 raise SessionConflict("session closed during resume initialization")
+            # Path B: the previous generation is gone. Create a NEW generation
+            # and truthfully report whether it replaces an interrupted run or a
+            # simply absent process. Durable identity/evidence is untouched.
+            record.continuity = (
+                continuity.INTERRUPTED if resumed_from_run_id is not None
+                else continuity.REHYDRATED
+            )
+            self._install_generation(
+                record, native_session_id=runtime_session_id,
+                executor_epoch=record.executor_epoch, process_root_id=process_root_id,
+                generation_id=runtime_generation,
+                retired_state=(GenerationState.INTERRUPTED if previous_status == SessionStatus.INTERRUPTED
+                               or resumed_from_run_id is not None else GenerationState.CLOSED),
+            )
             record.harness = harness
-            record.runtime_session_id = runtime_session_id
-            record.runtime_generation = runtime_generation
-            record.process_root_id = process_root_id
             record.process_used = False
             record.process_closed = False
             # ADR-0067: closing a process is not evidence that its domain
@@ -974,8 +1233,9 @@ class RuntimeAdapter:
             # may release the previous root's admission barrier.
             record.pending_conversation_context = context
             record.pending_conversation_recovery = recovery
-            record.normalization = NormalizationState()
             record.interrupted_run_id = None
+            if record.current_generation is not None:
+                record.current_generation.state = GenerationState.READY
             record.status = SessionStatus.READY
             self._emit(
                 record,
@@ -1047,6 +1307,9 @@ class RuntimeAdapter:
                 "process_ownership": "dedicated",
                 "persistence": "dsh-owned",
                 "owner_context": "configured" if record.owner_principal else "missing",
+                # ADR-0079 R2: report how continuity was established without
+                # exposing the ephemeral generation/native process identity.
+                "continuity": record.continuity,
             }
 
     def close(self) -> None:
@@ -1134,17 +1397,37 @@ class RuntimeAdapter:
                     journal.rebase(initial_sequence)
                 except ValueError:
                     pass
+            interrupted_generation = (
+                lost_root.get("generation") if isinstance(lost_root, dict) else None)
             record = RuntimeSession(
                 session_id=session_id,
                 trace_id=context["trace_id"],
-                harness=None,
-                runtime_session_id=f"resume-{uuid.uuid4().hex}",
                 owner_principal=context["owner"],
                 workspace_id=context["workspace_id"],
                 sequence=journal.state["sequence"],
                 journal=journal,
                 history=list(journal.state["events"]),
+                executor_epoch=self._executor_epoch(journal),
+                continuity=(continuity.INTERRUPTED if isinstance(lost_root, dict)
+                            else continuity.REHYDRATED),
             )
+            # Reconcile any generation left open by a previous process (the lost
+            # open root is truthfully marked interrupted) and load the bounded
+            # BYQ generation history. This never alters session identity,
+            # sequence or journal evidence.
+            try:
+                ledger_rows = generation_ledger.reconcile(
+                    evidence_root, session_id,
+                    interrupted_generation=interrupted_generation, ended_at=time.time(),
+                )
+            except (OSError, TypeError, ValueError):
+                ledger_rows = []
+            for row in ledger_rows:
+                record.generations.append(RuntimeGeneration(
+                    generation_id=row["generation_id"], session_id=session_id,
+                    native_session_id="", executor_epoch=row["executor_epoch"],
+                    started_at=row["started_at"], state=row["state"],
+                ))
             if isinstance(lost_root, dict):
                 record.status = SessionStatus.FAILED
                 record.interrupted_run_id = lost_root.get("root_run_id")
@@ -1175,11 +1458,12 @@ class RuntimeAdapter:
                 session_id=record.session_id,
                 trace_id=record.trace_id,
             )
+        native_session_id = record.runtime_session_id or f"resume-{uuid.uuid4().hex}"
         runtime_generation = f"generation-{uuid.uuid4().hex}"
         process_root_id = uuid.uuid4().hex if self._root_scoped else ""
         harness = self._build_harness(
             record.session_id,
-            contained_session_path(self._session_root, record.runtime_session_id),
+            contained_session_path(self._session_root, native_session_id),
             trace_id=record.trace_id,
             owner_principal=record.owner_principal,
             workspace_id=record.workspace_id,
@@ -1188,11 +1472,16 @@ class RuntimeAdapter:
             root_run_id=process_root_id,
         )
         self._compatibility.start(harness)
+        self._install_generation(
+            record, native_session_id=native_session_id,
+            executor_epoch=record.executor_epoch, process_root_id=process_root_id,
+            generation_id=runtime_generation,
+        )
         record.harness = harness
-        record.runtime_generation = runtime_generation
-        record.process_root_id = process_root_id
         record.process_used = False
         record.process_closed = False
+        if record.current_generation is not None:
+            record.current_generation.state = GenerationState.READY
 
     def _rebind_session(
         self, session_id: str, trace_id: str, owner_principal: str | None,
