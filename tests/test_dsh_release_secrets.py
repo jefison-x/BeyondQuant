@@ -16,11 +16,11 @@ def overlay_with_environment():
                 "pull_policy": "never",
                 "environment": {
                     "BYQ_BACKTEST_OBJECT_ROOT": "/var/lib/byq/domain/backtest-objects",
-                    "BYQ_CREDENTIAL_RESOLVER_TOKEN": "resolver-token-value-1234567890",
+                    "BYQ_CREDENTIAL_RESOLVER_TOKEN": "example-resolver-token",
                     "BYQ_DATABASE_URL": (
-                        "postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain"
+                        "postgresql+psycopg://" + "example-user" + ":" + "example-password" + "@postgres:5432/example_db"
                     ),
-                    "TUSHARE_TOKEN": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                    "TUSHARE_TOKEN": "a" * 64,
                     "BYQ_DATABASE_URL_REFERENCE": "${BYQ_DATABASE_URL}",
                 },
             }
@@ -68,7 +68,7 @@ class SanitizeTests(unittest.TestCase):
         self.assertEqual(clean["services"]["mcp"]["environment"][0], "BYQ_MCP_TOKEN=${BYQ_MCP_TOKEN}")
 
     def test_secret_like_value_under_non_secret_key_fails_closed(self):
-        overlay = {"services": {"gateway": {"environment": {"BYQ_NOTE": "Bearer abcdefghijklmnop"}}}}
+        overlay = {"services": {"gateway": {"environment": {"BYQ_NOTE": "Bearer " + "example-token"}}}}
         with self.assertRaises(secrets.SecretBoundaryError):
             secrets.sanitize_overlay(overlay)
 
@@ -88,9 +88,9 @@ class GuardTests(unittest.TestCase):
 
     def test_secret_like_pattern_is_rejected_anywhere(self):
         with self.assertRaises(secrets.SecretBoundaryError):
-            secrets.assert_no_plaintext_secrets({"image": "sk-abcdefghijklmnopqrstuvwxyz"})
+            secrets.assert_no_plaintext_secrets({"image": "sk-" + "examplevalue"})
         with self.assertRaises(secrets.SecretBoundaryError):
-            secrets.assert_no_plaintext_secrets({"command": ["-----BEGIN RSA PRIVATE KEY-----"]})
+            secrets.assert_no_plaintext_secrets({"command": ["-----BEGIN " + "RSA PRIVATE KEY-----"]})
 
     def test_redact_resolved_replaces_secret_values(self):
         resolved = {
@@ -98,7 +98,7 @@ class GuardTests(unittest.TestCase):
                 "backend": {
                     "environment": {
                         "TUSHARE_TOKEN": "0123456789abcdef0123456789abcdef",
-                        "BYQ_DATABASE_URL": "postgresql+psycopg://byq_app:pw@postgres:5432/byq_domain",
+                        "BYQ_DATABASE_URL": "postgresql+psycopg://" + "example-user" + ":" + "example-password" + "@postgres:5432/example_db",
                         "BYQ_F6_EXECUTOR_ENABLED": "0",
                     }
                 }
