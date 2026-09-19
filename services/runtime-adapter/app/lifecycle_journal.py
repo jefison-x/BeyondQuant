@@ -144,9 +144,11 @@ class LifecycleJournal:
                 if envelope["schema_version"] != JOURNAL_SCHEMA_VERSION:
                     # The first controlled claim of a legacy boot-bound journal
                     # adopts the stable executor identity exactly once, under
-                    # the exclusive owner lock, preserving all evidence.
+                    # the exclusive owner lock, preserving all evidence. The
+                    # fenced save also holds the epoch shared lock across
+                    # validation and persistence so a takeover cannot slip in.
                     state = cls._adopt_executor(state, obj.executor, obj.lease_identity)
-                    obj._save(state, fenced=False)
+                    obj._save(state)
                 elif (state.get("executor_identity") != obj.executor.deployment_id
                       or state.get("executor_epoch") != obj.executor.executor_epoch
                       or state["lease_identity"] != obj.lease_identity):
@@ -233,6 +235,16 @@ class LifecycleJournal:
             stat = os.fstat(obj.lock)
             current = cls._lease_identity(identity, stat.st_dev, stat.st_ino, token)
             with executor_identity.epoch_lock(root, exclusive=True):
+                # The identity was resolved before this exclusive lock. A
+                # takeover that completed in between advanced the authoritative
+                # epoch, so re-binding to the resolved identity would resurrect
+                # a stale epoch. Fail closed; the operator re-runs the repair.
+                authoritative = executor_identity.read_epoch_state(root)
+                if (authoritative is None
+                        or authoritative["deployment_id"] != identity.deployment_id
+                        or authoritative["executor_epoch"] != identity.executor_epoch):
+                    raise JournalIdentityMismatch(
+                        "executor epoch changed during lease re-anchor")
                 envelope = cls._read_envelope(path)
                 state = cls._migrate(envelope)
                 stored = state["lease_identity"]
@@ -274,7 +286,10 @@ class LifecycleJournal:
                     "production_data_deleted": False,
                 }
                 staged, final = cls._stage_reanchor_audit(root, audit)
-                obj._save(new_state, fenced=False)
+                # The exclusive epoch lock is already held for this whole
+                # critical section; tell _save not to re-acquire it. Re-taking
+                # the shared lock here would self-deadlock on flock.
+                obj._save(new_state, fenced=False, epoch_locked=True)
                 saved = True
                 cls._commit_reanchor_audit(staged, final)
                 staged = None
@@ -434,22 +449,44 @@ class LifecycleJournal:
                 raise ValueError("private call evidence has no matching journal root")
         return state
 
-    def _save(self, state, *, fenced=True):
+    def _save(self, state, *, fenced=True, epoch_locked=False):
         self.validate(state)
         if "executor_identity" not in state or "executor_epoch" not in state:
             raise ValueError("journal state lacks a stable executor identity")
-        if fenced:
-            try:
-                executor_identity.assert_write_allowed(
+        data = self._encode(state)
+        if epoch_locked:
+            # The caller already holds the epoch lock for a critical section
+            # that spans validation and persistence (the reanchor path holds the
+            # exclusive lock). Never re-acquire it here: a second flock on a
+            # different descriptor would self-deadlock.
+            if fenced:
+                executor_identity.assert_write_allowed_locked(
                     self.root, state["executor_identity"], state["executor_epoch"])
-            except ExecutorIdentityError as exc:
-                raise JournalIdentityMismatch(str(exc)) from exc
+            self._persist(data)
+            return
+        # Hold the epoch shared lock across BOTH the fence check and the whole
+        # durable write. A takeover needs the exclusive lock, so it can never
+        # complete between validation and os.replace/fsync; a takeover that
+        # already completed before we acquired the lock is caught here.
+        with executor_identity.epoch_lock(self.root, exclusive=False):
+            if fenced:
+                try:
+                    executor_identity.assert_write_allowed_locked(
+                        self.root, state["executor_identity"], state["executor_epoch"])
+                except ExecutorIdentityError as exc:
+                    raise JournalIdentityMismatch(str(exc)) from exc
+            self._persist(data)
+
+    def _encode(self, state):
         encoded = json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
         data = json.dumps({"schema_version": JOURNAL_SCHEMA_VERSION, "state": state,
                           "sha256": hashlib.sha256(encoded).hexdigest()},
                           sort_keys=True, separators=(",", ":")).encode()
         if len(data) > MAX_BYTES:
             raise ValueError("journal capacity reached; evidence must be retained")
+        return data
+
+    def _persist(self, data):
         fd, name = tempfile.mkstemp(prefix=".evidence-", dir=self.path.parent)
         try:
             with os.fdopen(fd, "wb") as stream:

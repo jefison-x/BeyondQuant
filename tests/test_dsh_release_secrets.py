@@ -169,5 +169,92 @@ class CliTests(unittest.TestCase):
             self.assertIn("secret key", report["reason"])
 
 
+class ReferenceDefaultTests(unittest.TestCase):
+    """A parameterized reference is not a safe reference under a secret key."""
+
+    def test_non_empty_default_under_secret_key_is_preserved_as_secret(self):
+        value = "${BYQ_PRODUCT_TOKEN:-review-placeholder-password}"
+        self.assertTrue(secrets.is_reference(value))
+        self.assertFalse(secrets.is_safe_reference(value))
+        self.assertEqual(
+            secrets.sanitize_value("BYQ_PRODUCT_TOKEN", value), "${BYQ_PRODUCT_TOKEN}"
+        )
+
+    def test_parameter_message_reference_is_preserved_as_secret(self):
+        value = "${BYQ_PRODUCT_TOKEN:?review-placeholder-password}"
+        self.assertFalse(secrets.is_safe_reference(value))
+        self.assertEqual(
+            secrets.sanitize_value("BYQ_PRODUCT_TOKEN", value), "${BYQ_PRODUCT_TOKEN}"
+        )
+
+    def test_dict_form_default_fails_closed(self):
+        artifact = {"services": {"backend": {"environment": {
+            "BYQ_PRODUCT_TOKEN": "${BYQ_PRODUCT_TOKEN:-review-placeholder-password}"}}}}
+        with self.assertRaisesRegex(secrets.SecretBoundaryError, "BYQ_PRODUCT_TOKEN"):
+            secrets.assert_no_plaintext_secrets(artifact)
+
+    def test_list_form_default_fails_closed(self):
+        artifact = {"services": {"mcp": {"environment": [
+            "BYQ_MCP_TOKEN=${BYQ_MCP_TOKEN:-fallback-secret}"]}}}
+        with self.assertRaisesRegex(secrets.SecretBoundaryError, "BYQ_MCP_TOKEN"):
+            secrets.assert_no_plaintext_secrets(artifact)
+
+    def test_list_form_sanitize_removes_default(self):
+        overlay = {"services": {"mcp": {"environment": [
+            "BYQ_MCP_TOKEN=${BYQ_MCP_TOKEN:-fallback-secret}",
+            "BYQ_BACKEND_URL=http://backend:8000"]}}}
+        clean = secrets.sanitize_overlay(overlay)
+        self.assertEqual(
+            clean["services"]["mcp"]["environment"],
+            ["BYQ_MCP_TOKEN=${BYQ_MCP_TOKEN}", "BYQ_BACKEND_URL=http://backend:8000"],
+        )
+
+    def test_mixed_dict_and_list_forms_sanitize_and_pass_guard(self):
+        overlay = {"services": {
+            "mixed": {"environment": {
+                "BYQ_MCP_TOKEN": "${BYQ_MCP_TOKEN:-fallback}",
+                "BYQ_PRODUCT_TOKEN": "${BYQ_PRODUCT_TOKEN}",
+                "BYQ_DATABASE_URL": "${BYQ_DATABASE_URL:-}",
+                "BYQ_BACKEND_URL": "${BYQ_BACKEND_URL:-http://backend:8000}",
+            }},
+            "listed": {"environment": [
+                "BYQ_CREDENTIAL_RESOLVER_TOKEN=${BYQ_CREDENTIAL_RESOLVER_TOKEN:-fallback}",
+            ]},
+        }}
+        clean = secrets.sanitize_overlay(overlay)
+        service = clean["services"]["mixed"]
+        self.assertEqual(service["environment"]["BYQ_MCP_TOKEN"], "${BYQ_MCP_TOKEN}")
+        self.assertEqual(service["environment"]["BYQ_PRODUCT_TOKEN"], "${BYQ_PRODUCT_TOKEN}")
+        # Empty default and bare references carry no plaintext value.
+        self.assertEqual(service["environment"]["BYQ_DATABASE_URL"], "${BYQ_DATABASE_URL:-}")
+        # A non-secret key may keep a parameterized (non-secret) default.
+        self.assertEqual(
+            service["environment"]["BYQ_BACKEND_URL"], "${BYQ_BACKEND_URL:-http://backend:8000}"
+        )
+        self.assertEqual(
+            clean["services"]["listed"]["environment"],
+            ["BYQ_CREDENTIAL_RESOLVER_TOKEN=${BYQ_CREDENTIAL_RESOLVER_TOKEN}"],
+        )
+        secrets.assert_no_plaintext_secrets(clean)
+
+    def test_bare_and_empty_default_references_are_safe(self):
+        for value in ("${BYQ_MCP_TOKEN}", "${BYQ_MCP_TOKEN:-}"):
+            self.assertTrue(secrets.is_safe_reference(value), value)
+            self.assertEqual(secrets.sanitize_value("BYQ_MCP_TOKEN", value), value)
+            secrets.assert_no_plaintext_secrets({"services": {"m": {"environment": {
+                "BYQ_MCP_TOKEN": value}}}})
+            secrets.assert_no_plaintext_secrets({"services": {"m": {"environment": [
+                f"BYQ_MCP_TOKEN={value}"]}}})
+
+    def test_redact_resolved_removes_non_empty_default(self):
+        resolved = {"services": {"backend": {"environment": {
+            "BYQ_MCP_TOKEN": "${BYQ_MCP_TOKEN:-fallback-secret}"}}}}
+        redacted = secrets.redact_resolved(resolved)
+        self.assertEqual(
+            redacted["services"]["backend"]["environment"]["BYQ_MCP_TOKEN"],
+            "${BYQ_MCP_TOKEN}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
