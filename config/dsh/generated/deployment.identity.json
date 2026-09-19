@@ -25,5 +25,12 @@
     "sdk": "0.1.2rc1",
     "sdk_wheel_sha256": "24689eec01e95233feb75ca08a0fe748b491e71682f80d2c04e6f9485f20488a"
   },
+  "runtime_executor": {
+    "deployment_id": "byq-product-runtime",
+    "executor_epoch": 1,
+    "runtime_release": "dsh-0.1.2rc1",
+    "schema_version": "runtime-executor.v1",
+    "volume_identity": "byq-dsh-sessions"
+  },
   "schema_version": "dsh-deployment-identity.v1"
 }

@@ -99,6 +99,20 @@ prompts/terminal_acks/calls/context；stored 已 current 时幂等 no-op，`expe
 `409 stale_session_lease` 分类与 `archive_stale_sessions.py` 归档工具保持不变。ADR-0078 另提议
 以 boot 无关的稳定执行者身份 + 单调 epoch + 显式 takeover 作为持久修复，待维护者接受后方可实现。
 
+Runtime Continuity R0/R1（feat/fix，构建修订 `dsh-0.1.2rc1-post-u8.141`）：R0 定义
+[ADR-0079](../architecture/adr/ADR-0079-runtime-continuity-and-session-recovery.md)（Proposed）
+六层生命周期与[故障矩阵](../architecture/RUNTIME_CONTINUITY_FAILURE_MATRIX.md)，并在
+`ARCHITECTURE.md` §K.1 固化四条不变式。R1 将 lifecycle-journal lease 从
+`sha256(boot_id:st_dev:st_ino:token)` 替换为
+`sha256(deployment_id:executor_epoch:lock_token)`：deployment-controlled
+`runtime-executor.v1` 记录（`config/dsh/generated/deployment.identity.json`）提供稳定
+`deployment_id`/`volume_identity`/`executor_epoch` floor，权威单调 epoch 存于卷拥有的
+`executor-state/executor-epoch.v1.json`，仅由显式、可审计的
+`scripts/ops/takeover_executor_epoch.py` 递增；journal v3→v4 在首次受控 claim 迁移并逐字段
+保留证据；写入在 epoch 共享锁下复核，takeover 排他递增，旧 epoch 写者与并发 takeover 失败方
+均 fail closed。`reanchor_session_lease.py` 降级为异常修复工具。不修改 Gateway trace、
+Backend/domain schema、MCP、workers、DSH 版本或 composition，不部署、不自动合并。
+
 从 Phase 9 起，永久 migration source of truth 为 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`。实现 phase 前必须先检查、分类其 Community candidates。可在 BYQ-owned contracts 中重新实现 provider/engine-independent semantics，但不得复制 Community runtime、storage、provider 或 engine architecture。BaoStock、AKShare、VectorBT、PydanticAI 和 Hermes 保持排除，除非未来 Accepted ADR 明确反转。
 
 所有 phases 遵循 `docs/DEVELOPMENT_WORKFLOW.md`：只执行 `STATUS.md` 指定的 next phase；每 phase 使用 isolated worktree/branch/PR；contract/test 优先；保持 Product/Agent/Quant/Data/Engineering boundaries；CI 与 evidence 完成后才进入 merge gate。

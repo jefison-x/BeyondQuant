@@ -260,6 +260,28 @@ execution capability 可以独立容器化：
 - optional browser worker
 - optional engineering agent
 
+### K.1 Runtime 连续性生命周期与不变式
+
+Runtime Continuity 区分六个生命周期：**Conversation**（durable）→ **AgentSession**
+（durable 逻辑连续性，不是进程）→ **Run**（每次输入/续接）→ **RuntimeGeneration**
+（临时代际，一个 AgentSession 可有 generation-1..N，替换是正常而非失败）→
+**TerminalAttachment**（独立；ATTACHED/DETACHED/EXITED/INTERRUPTED）→ **DurableJob**
+（独立于 Agent/Runtime/Terminal）。模型与故障矩阵见
+[ADR-0079](docs/architecture/adr/ADR-0079-runtime-continuity-and-session-recovery.md)
+与 [Runtime Continuity Failure Matrix](docs/architecture/RUNTIME_CONTINUITY_FAILURE_MATRIX.md)。
+
+不变式：
+
+1. Conversation identity MUST NOT depend on runtime process identity。
+2. Agent session identity MUST NOT depend on host boot identity；lifecycle-journal lease
+   MUST NOT 使用 `boot_id`、PID、hostname 或 container id。
+3. Terminal lifetime MUST NOT define conversation or durable-job lifetime。
+4. Durable domain jobs MUST survive Agent runtime replacement。
+
+`LifecycleJournal` 是 BYQ-owned execution evidence journal（ownership/generation/root
+lifecycle/prompt identity/terminal receipt/domain-call evidence/sequence），MUST NOT 演化为
+第二套 DSH session/context/tool persistence。
+
 ## L. Container 原则
 
 Phase 12 Backtest 使用 BYQ 自有的确定性 signal-snapshot engine。Backtest worker 可以

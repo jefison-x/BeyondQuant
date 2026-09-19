@@ -255,6 +255,17 @@ def render(*, historical_inputs: bool = False) -> str:
         "profile": selected["profile"],
         "candidate_releases": deployment["candidate_releases"],
         "descriptor_hash": digest(RELEASE_ROOT / f"{selected['release_id']}.json"),
+        # ADR-0079 runtime continuity: the stable, boot-independent executor
+        # identity. `executor_epoch` is only the initialization floor; the live
+        # monotonic epoch is volume-owned (see services/runtime-adapter
+        # /executor_identity.py) and only an explicit audited takeover changes it.
+        "runtime_executor": {
+            "schema_version": "runtime-executor.v1",
+            "deployment_id": "byq-product-runtime",
+            "runtime_release": selected["release_id"],
+            "volume_identity": "byq-dsh-sessions",
+            "executor_epoch": 1,
+        },
     }
     return json.dumps(output, indent=2, sort_keys=True) + "\n"
 

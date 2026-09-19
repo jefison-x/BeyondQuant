@@ -123,6 +123,34 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(entry["owner"], "alice")
         self.assertIn("boot", entry["reason"])
 
+    def test_stable_v4_journal_is_never_boot_stale(self):
+        root = Path(tempfile.mkdtemp())
+        evidence = root / "byq-lifecycle-evidence"
+        lock = _write_lock(evidence, "stable-one")
+        state = {
+            "context": {"session_id": "stable-one", "trace_id": "stable-one-trace",
+                        "owner": "alice", "workspace_id": "workspace_alice"},
+            "sequence": 3, "open_root": None, "events": [], "prompts": {},
+            "terminal_acks": {}, "calls": [], "lease_identity": "d" * 64,
+            "executor_identity": "byq-test-runtime", "executor_epoch": 1,
+        }
+        encoded = json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
+        (evidence / "stable-one.json").write_text(json.dumps({
+            "schema_version": "byq-lifecycle-journal.v4", "state": state,
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+        }, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+        self.assertIsNotNone(lock)
+        entry = MODULE.inventory_session(
+            "stable-one", evidence_root=evidence,
+            session_root=root, trace_root=root, boot_id="new-boot-id",
+        )
+        self.assertEqual(entry["classification"], "stable")
+        self.assertIn("reboot-independent", entry["reason"])
+        self.assertEqual(
+            MODULE.plan_archive([entry], archive_root=root / "archive" / "ts",
+                                gateway_archive_root=root / "gateway-archive" / "ts"),
+            [])
+
     def test_current_lease_is_unaffected(self):
         root = Path(tempfile.mkdtemp())
         evidence = root / "byq-lifecycle-evidence"

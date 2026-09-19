@@ -42,7 +42,9 @@ TOKEN_HEX = re.compile(r"[0-9a-f]{32}")
 SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 JOURNAL_SCHEMA_VERSIONS = frozenset({
     "byq-lifecycle-journal.v1", "byq-lifecycle-journal.v2", "byq-lifecycle-journal.v3",
+    "byq-lifecycle-journal.v4",
 })
+STABLE_EXECUTOR_KEYS = frozenset({"executor_identity", "executor_epoch"})
 CONVERSATION_QUERY = (
     "SELECT conversation_id, owner_principal, title, status, message_count, created_at, updated_at "
     "FROM product_conversations WHERE runtime_session_id = %s"
@@ -207,22 +209,34 @@ def inventory_session(
     if TOKEN_HEX.fullmatch(evidence["token"]) is None:
         entry["reason"] = "owner lock token is invalid"
         return entry
-    entry["current_lease_identity"] = compute_lease_identity(
-        boot_id, evidence["st_dev"], evidence["st_ino"], evidence["token"],
-    )
-    entry["classification"] = classify_lease(
-        entry["stored_lease_identity"], entry["current_lease_identity"],
-        lock_held=lock_is_held(lock_path),
-    )
-    if entry["classification"] == "stale":
-        entry["reason"] = (
-            "stored lease identity does not match the current boot identity "
-            "(host reboot changed /proc/sys/kernel/random/boot_id)"
+    # ADR-0079: a v4 journal carries a stable, boot-independent executor lease.
+    # It can never become boot-stale, so it is never a boot-reboot archive
+    # candidate; only an explicit takeover or repair changes its identity.
+    if STABLE_EXECUTOR_KEYS <= set(state):
+        entry["current_lease_identity"] = entry["stored_lease_identity"]
+        if lock_is_held(lock_path):
+            entry["classification"] = "active"
+            entry["reason"] = "stable executor lease owner lock is currently held by a live process"
+        else:
+            entry["classification"] = "stable"
+            entry["reason"] = "stable executor lease is reboot-independent (ADR-0079)"
+    else:
+        entry["current_lease_identity"] = compute_lease_identity(
+            boot_id, evidence["st_dev"], evidence["st_ino"], evidence["token"],
         )
-    elif entry["classification"] == "current":
-        entry["reason"] = "lease identity matches the current boot"
-    elif entry["classification"] == "active":
-        entry["reason"] = "owner lock is currently held by a live process"
+        entry["classification"] = classify_lease(
+            entry["stored_lease_identity"], entry["current_lease_identity"],
+            lock_held=lock_is_held(lock_path),
+        )
+        if entry["classification"] == "stale":
+            entry["reason"] = (
+                "stored lease identity does not match the current boot identity "
+                "(host reboot changed /proc/sys/kernel/random/boot_id)"
+            )
+        elif entry["classification"] == "current":
+            entry["reason"] = "lease identity matches the current boot"
+        elif entry["classification"] == "active":
+            entry["reason"] = "owner lock is currently held by a live process"
     candidate_dir = session_root / session_id
     if candidate_dir.is_dir() and not candidate_dir.is_symlink() and _contained(candidate_dir, session_root):
         entry["session_dir"] = str(candidate_dir)
@@ -494,6 +508,7 @@ def main(argv: list[str] | None = None) -> int:
             "total": len(entries),
             "stale": len(stale),
             "current": sum(1 for e in entries if e["classification"] == "current"),
+            "stable": sum(1 for e in entries if e["classification"] == "stable"),
             "active": sum(1 for e in entries if e["classification"] == "active"),
             "unprovable": sum(1 for e in entries if e["classification"] == "unprovable"),
             "archived": sum(1 for e in entries if e["classification"] == "archived"),

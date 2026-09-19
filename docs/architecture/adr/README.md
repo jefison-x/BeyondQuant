@@ -40,6 +40,12 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
   re-lease（只改 `lease_identity`，保留全部证据；fail closed；附审计/manifest），并提议以
   boot 无关的稳定执行者身份 + 单调 epoch + 显式 takeover 作为持久修复；待维护者接受前，
   显式 re-lease 是唯一受支持的 reboot 后恢复，`409 stale_session_lease` 分类与归档工具不变。
+- [ADR-0079](ADR-0079-runtime-continuity-and-session-recovery.md)（Proposed）定义 Runtime Continuity 六层生命周期（Conversation/AgentSession/Run/
+  RuntimeGeneration/TerminalAttachment/DurableJob）与故障矩阵，并实现 R1：以稳定
+  `deployment_id` + 卷拥有、可审计 takeover 的单调 `executor_epoch` 取代 boot-bound lease，
+  v3→v4 journal 在首次受控 claim 迁移且保留全部证据；`reanchor` 保留为异常修复工具。
+  Supervisor/Terminal/DurableJob 为后续阶段，见
+  [故障矩阵](../RUNTIME_CONTINUITY_FAILURE_MATRIX.md)。
 
 - ADR-0020 定义 Phase 34 的 Stock Pool identity、不可变 snapshot、lifecycle 和
   cross-domain reference 边界。
