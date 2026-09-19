@@ -2,6 +2,12 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  CONTINUATION_INPUT_CEILING,
+  CONTINUATION_OUTPUT_CEILING,
+  DATA_READY_CALL_CEILING,
+  DATA_READY_MAX_CALLS,
+  DATA_READY_MAX_OUTPUT_TOKENS,
+  DATA_READY_TOKEN_LIMIT,
   DISPLAY_PROVIDER_RUNTIME_ROUTES,
   QUALIFIED_CONTINUATION_ROUTES,
   continuationRouteQualified,
@@ -64,6 +70,46 @@ test('exact ceiling admits once; one-token shortage refuses before storage', () 
   assert.equal(records.length, 1);
   assert.throws(() => createBudgetGate({ ...config, tokenLimit: ceiling - 1 },
     () => assert.fail('must not persist'), () => 1, () => 1)(request), /EXHAUSTED/);
+});
+
+test('data-ready constants define a bounded multi-call budget', () => {
+  assert.equal(CONTINUATION_INPUT_CEILING, 1048576);
+  assert.equal(DATA_READY_MAX_OUTPUT_TOKENS, 8192);
+  assert.equal(DATA_READY_MAX_CALLS, 8);
+  assert.equal(DATA_READY_CALL_CEILING, CONTINUATION_INPUT_CEILING + DATA_READY_MAX_OUTPUT_TOKENS);
+  assert.equal(DATA_READY_TOKEN_LIMIT, DATA_READY_MAX_CALLS * DATA_READY_CALL_CEILING);
+  // The multi-call budget must exceed a single conservative per-call ceiling;
+  // a single-call-sized reservation is the exact production defect that
+  // blocked the second model call of a tool-calling turn.
+  assert.ok(DATA_READY_TOKEN_LIMIT > DATA_READY_CALL_CEILING);
+});
+
+test('a data-ready reservation completes a bounded multi-call turn then fails closed', () => {
+  const records = [];
+  const gate = createBudgetGate({ ...config, tokenLimit: DATA_READY_TOKEN_LIMIT },
+    r => records.push(r), () => 1, () => 1);
+  for (let call = 1; call <= DATA_READY_MAX_CALLS; call += 1) {
+    assert.equal(gate(request).call, call);
+  }
+  assert.throws(() => gate(request),
+    error => error.message === 'BYQ_CONTINUATION_BUDGET_EXHAUSTED');
+  assert.equal(records.length, DATA_READY_MAX_CALLS);
+  assert.equal(records.at(-1).charged_ceiling, DATA_READY_MAX_CALLS * ceiling);
+});
+
+test('the total token budget blocks large-output calls before the call bound', () => {
+  const records = [];
+  const gate = createBudgetGate({ ...config, tokenLimit: DATA_READY_TOKEN_LIMIT },
+    r => records.push(r), () => 1, () => 1);
+  const large = { ...request, maxTokens: CONTINUATION_OUTPUT_CEILING };
+  const affordable = Math.floor(
+    DATA_READY_TOKEN_LIMIT / (CONTINUATION_INPUT_CEILING + CONTINUATION_OUTPUT_CEILING));
+  assert.ok(affordable < DATA_READY_MAX_CALLS);
+  for (let call = 1; call <= affordable; call += 1) {
+    assert.equal(gate(large).call, call);
+  }
+  assert.throws(() => gate(large), /EXHAUSTED/);
+  assert.equal(records.length, affordable);
 });
 
 test('unknown calls retain full ceiling; concurrent intents cannot overspend', async () => {

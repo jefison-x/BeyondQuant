@@ -128,6 +128,20 @@ Backend/domain schema、MCP、workers、DSH 版本或 composition，不部署、
 重挂。新增结构化日志记录阻塞原因、重挂决策与新事件键；没有新增第二个续接引擎，也没有 worker
 SQL 写入。不改变 Accepted ADR 文本；ADR-0077 仍为 Proposed。
 
+数据就绪续接多调用预算（fix，构建修订 `dsh-0.1.2rc1-post-u8.144`）：生产 ADR-0077 数据就绪
+自动续接已能触发，但续接回合一旦需要第二次模型调用即失败（`turn.completed reason=cancelled`
+→ `session.failed code=model-run-failed`）。根因是预算记账：guard
+`plugins/dsh-byq/runtime/byq-continuation-budget.js` 每次 `llm/stream` 保守计入
+`1048576 + options.maxTokens`，而 Backend `DATA_READY_TOKEN_LIMIT` 仅按单次调用预留
+`1048576+8192`，首次调用即耗尽全部额度，第二次调用以 `BYQ_CONTINUATION_BUDGET_EXHAUSTED`
+闭合。现按 [ADR-0077](../architecture/adr/ADR-0077-data-ready-auto-continuation.md) 将数据就绪
+单回合扩为**有界多调用**：以 guard 导出常量为唯一来源，`DATA_READY_MAX_CALLS=8`、每调用输入
+上界 `1048576` 与输出上限 `8192`，合计 `DATA_READY_TOKEN_LIMIT=8*(1048576+8192)`；Backend 预留
+与 runtime-adapter `CONTINUATION_MAX_OUTPUT_TOKENS` 随同更新，架构漂移测试断言三者一致。guard
+同时强制预留级调用次数上限（由总预算与最小单次记账推导，并以 `MAX_CALLS=256` 绝对封顶）与总
+token 上限，任一项超限仍以稳定错误失败闭合；900 秒期限、单调硬截止、路由资格与每事件最多一次
+均不变。单次调用回合与普通非续接回合不受影响。不部署、不自动合并。
+
 从 Phase 9 起，永久 migration source of truth 为 `docs/migration/COMMUNITY_MIGRATION_INVENTORY.md`。实现 phase 前必须先检查、分类其 Community candidates。可在 BYQ-owned contracts 中重新实现 provider/engine-independent semantics，但不得复制 Community runtime、storage、provider 或 engine architecture。BaoStock、AKShare、VectorBT、PydanticAI 和 Hermes 保持排除，除非未来 Accepted ADR 明确反转。
 
 所有 phases 遵循 `docs/DEVELOPMENT_WORKFLOW.md`：只执行 `STATUS.md` 指定的 next phase；每 phase 使用 isolated worktree/branch/PR；contract/test 优先；保持 Product/Agent/Quant/Data/Engineering boundaries；CI 与 evidence 完成后才进入 merge gate。

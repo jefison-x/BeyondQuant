@@ -129,6 +129,30 @@ def test_ready_signal_job_enqueues_exactly_one_data_ready_continuation(monkeypat
         fixture['jobs'].close()
 
 
+def test_data_ready_budget_covers_a_bounded_multi_call_turn(monkeypatch, tmp_path):
+    from app.research_continuation import (DATA_READY_INPUT_CEILING, DATA_READY_MAX_CALLS,
+        DATA_READY_MAX_OUTPUT_TOKENS, DATA_READY_TOKEN_LIMIT)
+    per_call = DATA_READY_INPUT_CEILING + DATA_READY_MAX_OUTPUT_TOKENS
+    assert DATA_READY_MAX_CALLS >= 2
+    assert DATA_READY_TOKEN_LIMIT == DATA_READY_MAX_CALLS * per_call
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
+        fixture['conversation'], fixture['context'])
+    try:
+        intent = store.claim_conversation_continuation(conversation, trusted_context=context)
+        assert intent['status'] == 'intent'
+        receipt = intent['receipt']
+        assert receipt['grant_kind'] == 'data_ready'
+        assert receipt['token_limit'] == DATA_READY_TOKEN_LIMIT
+        # Two model calls -- the minimum a tool-calling turn needs -- each charge
+        # the conservative per-call ceiling and must fit inside the reservation.
+        assert intent['reservation']['token_limit'] >= 2 * per_call
+    finally:
+        fixture['store'].close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
 def test_duplicate_polls_and_restart_never_enqueue_a_second_turn(monkeypatch, tmp_path):
     fixture = setup_ready(monkeypatch, tmp_path)
     store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],

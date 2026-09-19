@@ -8,12 +8,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-# ADR-0077 fixed per-turn output bound. The Backend reserves the same value in
-# DATA_READY_TOKEN_LIMIT = 1048576 + 8192 and the llm/stream guard charges
-# 1,048,576 + options.maxTokens, so the runtime must put this exact cap on the
-# request for every provider route. The candidate overlay below caps the
-# official deepseek adapter; the SDK-level cap carries the same bound to the
-# qualified opencode-* routes, whose pi-ai adapter has no composition default.
+# ADR-0077 conservative per-call ceilings. The Backend reserves a bounded
+# multi-call turn in
+# DATA_READY_TOKEN_LIMIT = DATA_READY_MAX_CALLS * (1048576 + 8192) and the
+# llm/stream guard charges 1,048,576 + options.maxTokens per call, so the runtime
+# must put this exact output cap on the request for every provider route. The
+# candidate overlay below caps the official deepseek adapter; the SDK-level cap
+# carries the same bound to the qualified opencode-* routes, whose pi-ai adapter
+# has no composition default.
+CONTINUATION_INPUT_CEILING = 1048576
+CONTINUATION_OUTPUT_CEILING = 393216
 CONTINUATION_MAX_OUTPUT_TOKENS = 8192
 
 
@@ -86,7 +90,8 @@ def read_guard(journal: Path, reservation: dict, *, terminal: bool = False) -> d
         if (set(row) != {'reservation_id', 'call', 'reserved_tokens', 'charged_ceiling'}
                 or row['reservation_id'] != reservation['reservation_id'] or type(row['call']) is not int
                 or row['call'] != index or type(row['reserved_tokens']) is not int
-                or not 1048577 <= row['reserved_tokens'] <= 1048576 + 393216):
+                or not CONTINUATION_INPUT_CEILING + 1 <= row['reserved_tokens']
+                    <= CONTINUATION_INPUT_CEILING + CONTINUATION_OUTPUT_CEILING):
             raise ValueError('invalid continuation budget charge')
         charged += row['reserved_tokens']
         if type(row['charged_ceiling']) is not int or row['charged_ceiling'] != charged or charged > reservation['token_limit']:

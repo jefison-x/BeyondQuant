@@ -1225,6 +1225,52 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             for _prefix, runtime in prefixes:
                 self.assertIn(runtime, routes, (provider, runtime))
 
+    def test_continuation_budget_ceilings_agree_across_guard_backend_and_adapter(self) -> None:
+        # ADR-0077: a data-ready auto-continuation is a bounded tool-calling
+        # turn, so one reservation must cover DATA_READY_MAX_CALLS conservative
+        # per-call ceilings (the first call returns tool calls, the next resumes
+        # after the tools ran). The JS guard exports the single source of truth;
+        # the Backend reservation sizing and the runtime-adapter output cap must
+        # agree exactly or this drift test fails CI.
+        guard = (ROOT / "plugins/dsh-byq/runtime/byq-continuation-budget.js").read_text()
+        exports: dict[str, int] = {}
+        for name, expression in re.findall(
+                r"(?m)^export const ([A-Z0-9_]+) = ([^;]+);$", guard):
+            if not name.startswith(("CONTINUATION_", "DATA_READY_")):
+                continue
+            self.assertRegex(expression, r"^[A-Za-z0-9_ +*/()-]+$", (name, expression))
+            exports[name] = int(eval(expression, {"__builtins__": {}}, exports))  # noqa: S307
+        self.assertEqual(exports["CONTINUATION_INPUT_CEILING"], 1048576)
+        self.assertEqual(exports["CONTINUATION_OUTPUT_CEILING"], 393216)
+        self.assertEqual(exports["DATA_READY_MAX_OUTPUT_TOKENS"], 8192)
+        self.assertEqual(exports["DATA_READY_MAX_CALLS"], 8)
+        self.assertGreaterEqual(exports["DATA_READY_MAX_CALLS"], 2)
+        self.assertEqual(
+            exports["DATA_READY_TOKEN_LIMIT"],
+            exports["DATA_READY_MAX_CALLS"]
+            * (exports["CONTINUATION_INPUT_CEILING"] + exports["DATA_READY_MAX_OUTPUT_TOKENS"]),
+        )
+        self.assertGreater(exports["DATA_READY_TOKEN_LIMIT"],
+                           exports["CONTINUATION_INPUT_CEILING"] + exports["DATA_READY_MAX_OUTPUT_TOKENS"])
+        backend = (ROOT / "services/backend/app/research_continuation.py").read_text()
+        backend_constants = {
+            name: expression
+            for name, expression in re.findall(
+                r"(?m)^(DATA_READY_[A-Z_]+) = ([^\n]+)$", backend)
+        }
+        self.assertEqual(backend_constants["DATA_READY_INPUT_CEILING"],
+                         str(exports["CONTINUATION_INPUT_CEILING"]))
+        self.assertEqual(backend_constants["DATA_READY_MAX_OUTPUT_TOKENS"],
+                         str(exports["DATA_READY_MAX_OUTPUT_TOKENS"]))
+        self.assertEqual(backend_constants["DATA_READY_MAX_CALLS"],
+                         str(exports["DATA_READY_MAX_CALLS"]))
+        self.assertEqual(backend_constants["DATA_READY_TOKEN_LIMIT"].replace(" ", ""),
+                         "DATA_READY_MAX_CALLS*(DATA_READY_INPUT_CEILING+DATA_READY_MAX_OUTPUT_TOKENS)")
+        adapter = (ROOT / "services/runtime-adapter/app/continuation_budget.py").read_text()
+        self.assertIn(f"CONTINUATION_INPUT_CEILING = {exports['CONTINUATION_INPUT_CEILING']}", adapter)
+        self.assertIn(f"CONTINUATION_OUTPUT_CEILING = {exports['CONTINUATION_OUTPUT_CEILING']}", adapter)
+        self.assertIn(f"CONTINUATION_MAX_OUTPUT_TOKENS = {exports['DATA_READY_MAX_OUTPUT_TOKENS']}", adapter)
+
     def test_phase13_roles_use_official_dsh_seams_and_bounded_capabilities(self) -> None:
         composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
         self.assertIn("@deepseek-ai/dsh-skill-filesystem", composition)
