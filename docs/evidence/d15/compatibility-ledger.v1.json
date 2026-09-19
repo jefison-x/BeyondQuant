@@ -3,6 +3,9 @@
   "generated_at": "2026-09-19",
   "baseline_release_id": "dsh-0.1.2rc1",
   "candidate_release_id": "dsh-0.1.5rc1",
+  "qualification_target": "dsh-v0.1.5-rc.1",
+  "target_npm_version": "0.1.5-rc.1",
+  "target_decision": "docs/evidence/d15/target-decision.v1.json",
   "requested_npm_version": "0.1.5-rc.2",
   "candidate_npm_version": "0.1.5-rc.1",
   "status_values": [
@@ -198,17 +201,18 @@
     },
     {
       "id": "tool_event_schema",
-      "status": "unknown-needs-probe",
-      "summary": "Session event vocabulary validation added (validateSessionEventData, validateSurfaceMetadata); BYQ observe() event-type allowlist must be re-probed against the 0.1.5 event catalog.",
+      "status": "compatible",
+      "summary": "Session event vocabulary validation added (validateSessionEventData, validateSurfaceMetadata); the 0.1.5 event catalog was probed keylessly and the BYQ observe() allowlist handled every emitted event with a contiguous sequence.",
       "evidence": [
-        "@deepseek-ai/dsh-session surface.d.ts symbol additions"
+        "@deepseek-ai/dsh-session surface.d.ts symbol additions",
+        "docs/evidence/d15/d15-1/candidate-start-probe.v1.json: observed event types agent/inbox/spliced, assistant/message, request/context, request/header, session/title, step/start, step/end, system/message, tool/call, tool/result, turn/start, turn/end, user/message; seq contiguous 3..22",
+        "tool/call data keys arguments/callId/name/step/turn; tool/result data keys message/step/turn"
       ],
       "byq_affected_files": [
         "services/runtime-adapter/app/compat/dsh_012.py",
         "services/runtime-adapter/app/normalization.py"
       ],
       "change_class": [
-        "must-change",
         "test-only"
       ]
     },
@@ -255,10 +259,11 @@
     },
     {
       "id": "profile_schema",
-      "status": "unknown-needs-probe",
-      "summary": "BYQ sdk profile invocation patch only references pre-existing plugin ids, but new upstream packages (dsh-agent-presets, dsh-persona, dsh-plan-mode, dsh-message-feedback) change the composition surface and require a live probe.",
+      "status": "compatible",
+      "summary": "The carried-forward BYQ sdk profile invocation patch loaded against the 0.1.5 closure in keyless isolation and produced the expected product roster; no profile/patch schema change was required to start.",
       "evidence": [
-        "bundled closure added set; BYQ profile patch references agent-loop, session-title-llm, tool-* ids"
+        "bundled closure added set; BYQ profile patch references agent-loop, session-title-llm, tool-* ids",
+        "docs/evidence/d15/d15-1/candidate-start-probe.v1.json: start_status ready; tool roster 5 byq_delegate_* + skill + web_search + mcp__byq__byq_agent_run_start; shell/editor/filesystem/workflow tools absent"
       ],
       "byq_affected_files": [
         "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
@@ -266,7 +271,7 @@
         "scripts/dsh/candidate_profile.py"
       ],
       "change_class": [
-        "must-change"
+        "test-only"
       ]
     },
     {
@@ -419,15 +424,34 @@
   "counts": {
     "changed": 12,
     "new": 5,
-    "compatible": 6,
-    "unknown-needs-probe": 2,
+    "compatible": 8,
+    "removed": 0,
+    "unknown-needs-probe": 0,
     "unchanged": 2
   },
+  "probed": [
+    {
+      "item": "live_start_notifications_sequence",
+      "status": "probed",
+      "evidence": "docs/evidence/d15/d15-1/candidate-start-probe.v1.json",
+      "scope": "keyless, isolated, synthetic loopback MCP/provider; not a credentialed or production run"
+    },
+    {
+      "item": "composition_profile_load",
+      "status": "probed",
+      "evidence": "docs/evidence/d15/d15-1/candidate-start-probe.v1.json",
+      "scope": "0.1.2 BYQ profile patch carried forward onto the 0.1.5 closure"
+    },
+    {
+      "item": "session_event_vocabulary",
+      "status": "probed",
+      "evidence": "docs/evidence/d15/d15-1/candidate-start-probe.v1.json",
+      "scope": "includes tool/call and tool/result; contiguous seq"
+    }
+  ],
   "not_yet_probed": [
-    "Live DSH 0.1.5 process start, notification ordering and event/seq behavior",
     "Native session V2->V3 migration on real BYQ session fixtures",
     "Continuable subagent cold resume and settlement delivery",
-    "Persistent terminal attach/rebind across host reboot",
-    "Composition/profile load with the 0.1.5 closure and BYQ boundary plugins"
+    "Persistent terminal attach/rebind across host reboot"
   ]
 }
