@@ -46,6 +46,12 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
   v3→v4 journal 在首次受控 claim 迁移且保留全部证据；`reanchor` 保留为异常修复工具。
   Supervisor/Terminal/DurableJob 为后续阶段，见
   [故障矩阵](../RUNTIME_CONTINUITY_FAILURE_MATRIX.md)。
+- ADR-0080（Proposed）定义 release 制品 secret 边界：manifest、target/rollback overlay、
+  resolved private config、retained-artifact copy 与备份 MUST NOT 含明文 secret 值，
+  只保存 `${ENV_NAME}` 引用；真实值部署时从受保护、非仓库来源（`0600` 宿主 `.env`
+  或等价 secrets 来源）注入，并由 `scripts/dsh/release_secrets.py` guard 与部署前
+  `verify_injection` fail closed。既有 release 目录/备份不改写、不轮换 token、不改拓扑；
+  待维护者接受前不改变当前制品或部署方式。
 
 - ADR-0020 定义 Phase 34 的 Stock Pool identity、不可变 snapshot、lifecycle 和
   cross-domain reference 边界。
