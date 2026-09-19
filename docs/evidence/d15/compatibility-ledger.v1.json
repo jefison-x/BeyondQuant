@@ -1,0 +1,433 @@
+{
+  "schema_version": "byq-dsh-compatibility-ledger.v1",
+  "generated_at": "2026-09-19",
+  "baseline_release_id": "dsh-0.1.2rc1",
+  "candidate_release_id": "dsh-0.1.5rc1",
+  "requested_npm_version": "0.1.5-rc.2",
+  "candidate_npm_version": "0.1.5-rc.1",
+  "status_values": [
+    "unchanged",
+    "compatible",
+    "changed",
+    "removed",
+    "new",
+    "unknown-needs-probe"
+  ],
+  "change_classes": [
+    "must-change",
+    "test-only",
+    "affects-R1-R2-contract",
+    "affects-R3-R4-design",
+    "no-change"
+  ],
+  "interfaces": [
+    {
+      "id": "session_persistence",
+      "status": "changed",
+      "summary": "PersistenceCoordinator/write-behind/preparations removed; handle-based session storage contract added.",
+      "evidence": [
+        "@deepseek-ai/dsh-session-persistence 0.1.2-rc.1 -> 0.1.5-rc.2 .d.ts diff: -coordinator.d.ts -preparations.d.ts -write-behind.d.ts; +handle.d.ts +storage-contract.d.ts"
+      ],
+      "byq_affected_files": [
+        "services/runtime-adapter/app/runtime.py",
+        "services/runtime-adapter/app/compat/dsh_012.py",
+        "services/runtime-adapter/app/generation_ledger.py"
+      ],
+      "change_class": [
+        "must-change",
+        "affects-R1-R2-contract"
+      ]
+    },
+    {
+      "id": "session_handle",
+      "status": "new",
+      "summary": "SessionHandle (read/append/flush/close, AsyncDisposable) and SessionAccess 'read'|'write' become the single open-channel abstraction.",
+      "evidence": [
+        "@deepseek-ai/dsh-session-persistence/lib/types/handle.d.ts (new)"
+      ],
+      "byq_affected_files": [
+        "services/runtime-adapter/app/runtime.py",
+        "services/runtime-adapter/app/compat/dsh_012.py"
+      ],
+      "change_class": [
+        "affects-R1-R2-contract",
+        "affects-R3-R4-design"
+      ]
+    },
+    {
+      "id": "session_open_create_resume",
+      "status": "changed",
+      "summary": "SessionPersistenceCreateOptions/OpenOptions/ListOptions/StatOptions added; resume is now an explicit open with access mode.",
+      "evidence": [
+        "@deepseek-ai/dsh-session-persistence/lib/types/index.d.ts symbol diff"
+      ],
+      "byq_affected_files": [
+        "services/runtime-adapter/app/runtime.py"
+      ],
+      "change_class": [
+        "must-change",
+        "affects-R1-R2-contract"
+      ]
+    },
+    {
+      "id": "session_locking",
+      "status": "new",
+      "summary": "Cross-process kernel write lease: SessionWriteLease via flock(2) on session.lock (POSIX) / named semaphore (Windows); SessionAlreadyOwnedError.",
+      "evidence": [
+        "@deepseek-ai/dsh-session-persistence-jsonl/lib/types/lease.d.ts (new)"
+      ],
+      "byq_affected_files": [],
+      "change_class": [
+        "affects-R1-R2-contract",
+        "affects-R3-R4-design"
+      ]
+    },
+    {
+      "id": "session_format_v2_v3",
+      "status": "new",
+      "summary": "Native session format catalog with adjacent migrations v0->v1->v2->v3; SessionFormatUnsupportedError and sessionFormatVersionRefusal fail closed on unknown versions instead of corrupting.",
+      "evidence": [
+        "new packages dsh-session-format, -catalog, -v0-to-v1, -v1-to-v2, -v2-to-v3",
+        "@deepseek-ai/dsh-session-format-v2-to-v3/lib/types/migration.d.ts: sessionFormatV2ToV3"
+      ],
+      "byq_affected_files": [],
+      "change_class": [
+        "affects-R1-R2-contract",
+        "affects-R3-R4-design"
+      ]
+    },
+    {
+      "id": "agent_loop_create_start_resume",
+      "status": "changed",
+      "summary": "Agent loop gains assistant-stream and inbox type surfaces plus system-prompt commit/decision inputs.",
+      "evidence": [
+        "@deepseek-ai/dsh-agent-loop +assistant-stream.d.ts +inbox.d.ts; runtime-context.d.ts +SystemPromptCommit/DecisionInput/Projection"
+      ],
+      "byq_affected_files": [
+        "services/runtime-adapter/app/runtime.py"
+      ],
+      "change_class": [
+        "test-only",
+        "affects-R3-R4-design"
+      ]
+    },
+    {
+      "id": "agent_api",
+      "status": "changed",
+      "summary": "Agent exposes Inbox/InboxState/InboxWireState and AssistantStreamFrame; inbox.d.ts relocated.",
+      "evidence": [
+        "@deepseek-ai/dsh-agent -inbox.d.ts; runtime-types.d.ts +Inbox,+AssistantStreamFrame; types.d.ts +InboxState +InboxWireState"
+      ],
+      "byq_affected_files": [
+        "services/runtime-adapter/app/compat/dsh_012.py"
+      ],
+      "change_class": [
+        "test-only",
+        "affects-R3-R4-design"
+      ]
+    },
+    {
+      "id": "subagent_api",
+      "status": "changed",
+      "summary": "SubagentRuntime gains startContinuable/sendMessage/listChildren/listDescendants/interruptByParent/prompt; descriptor-seed removed.",
+      "evidence": [
+        "@deepseek-ai/dsh-subagent index.d.ts and type diff"
+      ],
+      "byq_affected_files": [
+        "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
+        "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
+        "services/runtime-adapter/app/compat/dsh_012.py"
+      ],
+      "change_class": [
+        "must-change",
+        "affects-R3-R4-design"
+      ]
+    },
+    {
+      "id": "continuable_subagent",
+      "status": "new",
+      "summary": "ContinuableActivationRegistry + Activation: durable continuable child with process-local residency epochs, serialized delivery, settlement and cold resume.",
+      "evidence": [
+        "@deepseek-ai/dsh-subagent/lib/types/continuation-activation.d.ts (new); continuation-messages.d.ts (new); inbox.d.ts (new)"
+      ],
+      "byq_affected_files": [],
+      "change_class": [
+        "affects-R3-R4-design"
+      ]
+    },
+    {
+      "id": "child_session_identity",
+      "status": "changed",
+      "summary": "Continuable child identity is the durable SessionId with recorded direct parentSession; lineage authorization rejects stale parents.",
+      "evidence": [
+        "Activation.childId/parentSession; authorizeLineage; child-agent.d.ts"
+      ],
+      "byq_affected_files": [],
+      "change_class": [
+        "affects-R3-R4-design",
+        "affects-R1-R2-contract"
+      ]
+    },
+    {
+      "id": "fork_lineage",
+      "status": "compatible",
+      "summary": "dsh-subagent-fork-in-process public .d.ts unchanged; session fork prefix is now explicit via SessionHandle.inheritedEventCount / header.isSeeded.",
+      "evidence": [
+        "@deepseek-ai/dsh-subagent-fork-in-process identical .d.ts; SessionHandle.inheritedEventCount added"
+      ],
+      "byq_affected_files": [],
+      "change_class": [
+        "no-change",
+        "affects-R3-R4-design"
+      ]
+    },
+    {
+      "id": "inbox",
+      "status": "changed",
+      "summary": "Agent SubagentInbox admission/close surface and Inbox state vocabulary added; queueSubagentPrompt removed.",
+      "evidence": [
+        "@deepseek-ai/dsh-subagent/lib/types/inbox.d.ts; @deepseek-ai/dsh-agent runtime-types.d.ts"
+      ],
+      "byq_affected_files": [
+        "services/runtime-adapter/app/runtime.py"
+      ],
+      "change_class": [
+        "must-change",
+        "affects-R3-R4-design"
+      ]
+    },
+    {
+      "id": "tool_event_schema",
+      "status": "unknown-needs-probe",
+      "summary": "Session event vocabulary validation added (validateSessionEventData, validateSurfaceMetadata); BYQ observe() event-type allowlist must be re-probed against the 0.1.5 event catalog.",
+      "evidence": [
+        "@deepseek-ai/dsh-session surface.d.ts symbol additions"
+      ],
+      "byq_affected_files": [
+        "services/runtime-adapter/app/compat/dsh_012.py",
+        "services/runtime-adapter/app/normalization.py"
+      ],
+      "change_class": [
+        "must-change",
+        "test-only"
+      ]
+    },
+    {
+      "id": "event_sequence",
+      "status": "compatible",
+      "summary": "Canonical integer event seq is retained (SessionHandle.read offset/seq; seq-ranges).",
+      "evidence": [
+        "SessionHandleReadResult.events SessionEvent[]; read(offset,length); seq-ranges.d.ts present in both"
+      ],
+      "byq_affected_files": [
+        "services/gateway/app"
+      ],
+      "change_class": [
+        "test-only",
+        "affects-R1-R2-contract"
+      ]
+    },
+    {
+      "id": "compaction",
+      "status": "unchanged",
+      "summary": "No public .d.ts/symbol change in dsh-compaction between 0.1.2-rc.1 and 0.1.5-rc.2.",
+      "evidence": [
+        "package diff: files+0 -0, symbols+0 -0"
+      ],
+      "byq_affected_files": [
+        "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml"
+      ],
+      "change_class": [
+        "no-change"
+      ]
+    },
+    {
+      "id": "spill",
+      "status": "unchanged",
+      "summary": "No public .d.ts/symbol change in dsh-spill.",
+      "evidence": [
+        "package diff: files+0 -0, symbols+0 -0"
+      ],
+      "byq_affected_files": [],
+      "change_class": [
+        "no-change"
+      ]
+    },
+    {
+      "id": "profile_schema",
+      "status": "unknown-needs-probe",
+      "summary": "BYQ sdk profile invocation patch only references pre-existing plugin ids, but new upstream packages (dsh-agent-presets, dsh-persona, dsh-plan-mode, dsh-message-feedback) change the composition surface and require a live probe.",
+      "evidence": [
+        "bundled closure added set; BYQ profile patch references agent-loop, session-title-llm, tool-* ids"
+      ],
+      "byq_affected_files": [
+        "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
+        "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
+        "scripts/dsh/candidate_profile.py"
+      ],
+      "change_class": [
+        "must-change"
+      ]
+    },
+    {
+      "id": "plugin_registration",
+      "status": "changed",
+      "summary": "Cordis closure gains cordis-plugin-hmr and cordis-plugin-logger-console in the bundled runtime; provider registration order/identity must be re-verified.",
+      "evidence": [
+        "bundled non-dsh @deepseek-ai closure diff"
+      ],
+      "byq_affected_files": [
+        "plugins/dsh-byq/cordis.patch.yml",
+        "config/dsh/generated/product-plugin-registry.json"
+      ],
+      "change_class": [
+        "test-only"
+      ]
+    },
+    {
+      "id": "sdk_runtime",
+      "status": "compatible",
+      "summary": "Python SDK package files are byte-identical; deepseek_harness_runtime still exposes bundled_runtime_path with the same naming. Bundled executable content changed (npm 0.1.2-rc.1 -> 0.1.5-rc.1).",
+      "evidence": [
+        "wheel file diff identical for all deepseek_harness/*.py; runtime-bin 0.1.5rc1 bundles npm 0.1.5-rc.1"
+      ],
+      "byq_affected_files": [
+        "services/runtime-adapter/app/compat/dsh_012.py",
+        "services/runtime-adapter/app/runtime.py",
+        "services/runtime-adapter/pyproject.toml"
+      ],
+      "change_class": [
+        "must-change",
+        "affects-R1-R2-contract"
+      ]
+    },
+    {
+      "id": "persistent_terminal_shell",
+      "status": "changed",
+      "summary": "dsh-terminal/dsh-terminal-bash public .d.ts unchanged, but 0.1.5 bundles dsh-tool-terminal, dsh-tool-bash-persistent, dsh-tool-pwsh-persistent and dsh-tmux-context; owner-scoped persistent PTY becomes a first-class capability.",
+      "evidence": [
+        "dsh-terminal identical .d.ts; bundled closure added dsh-tool-present; dsh-terminal present in both bundles"
+      ],
+      "byq_affected_files": [],
+      "change_class": [
+        "affects-R3-R4-design"
+      ]
+    },
+    {
+      "id": "background_job_tool_semantics",
+      "status": "compatible",
+      "summary": "dsh-jobs, dsh-jobs-local, dsh-tools public .d.ts unchanged; BYQ keeps tool-jobs disabled in the product profile.",
+      "evidence": [
+        "package diffs: files+0 -0, symbols+0 -0"
+      ],
+      "byq_affected_files": [
+        "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml"
+      ],
+      "change_class": [
+        "test-only"
+      ]
+    },
+    {
+      "id": "model_adapter_deepseek_v41_flash",
+      "status": "changed",
+      "summary": "dsh-llm-pi-ai adds thinking token budget catalog fields (PiAiThinkingTokenBudgetField, THINKING_TOKEN_BUDGET_FIELDS); dsh-llm adds SystemMessage/FileBlock/SystemPromptUpdate. DeepSeek V4.1 Flash route must be re-qualified with the new budget vocabulary.",
+      "evidence": [
+        "@deepseek-ai/dsh-llm-pi-ai catalog.d.ts additions; @deepseek-ai/dsh-llm message.d.ts/content.d.ts/types.d.ts additions"
+      ],
+      "byq_affected_files": [
+        "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
+        "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
+        "scripts/dsh/plugin_registry.py"
+      ],
+      "change_class": [
+        "must-change",
+        "test-only"
+      ]
+    },
+    {
+      "id": "provider_configuration",
+      "status": "changed",
+      "summary": "Provider/model catalogue and credentials surfaces change indirectly via dsh-llm-pi-ai thinking-budget and new credential/model packages; BYQ credential reference boundary must be re-probed keyless.",
+      "evidence": [
+        "dsh-llm-pi-ai symbol additions; bundled closure additions"
+      ],
+      "byq_affected_files": [
+        "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml"
+      ],
+      "change_class": [
+        "test-only"
+      ]
+    },
+    {
+      "id": "runtime_lifecycle",
+      "status": "compatible",
+      "summary": "dsh-sdk-jsonrpc-server and dsh-app-boot public surfaces show no .d.ts/symbol change in the sampled diff; lifecycle timing still requires a live start probe.",
+      "evidence": [
+        "sampled package diffs: files+0 -0, symbols+0 -0"
+      ],
+      "byq_affected_files": [
+        "services/runtime-adapter/app/runtime.py"
+      ],
+      "change_class": [
+        "test-only"
+      ]
+    },
+    {
+      "id": "process_ownership",
+      "status": "compatible",
+      "summary": "dsh-subprocess public .d.ts unchanged; BYQ's one-process-per-root-turn and one-per-session modes depend on runtime.py, not the subprocess package API.",
+      "evidence": [
+        "dsh-subprocess identical .d.ts"
+      ],
+      "byq_affected_files": [
+        "services/runtime-adapter/app/runtime.py"
+      ],
+      "change_class": [
+        "test-only",
+        "affects-R1-R2-contract"
+      ]
+    },
+    {
+      "id": "shutdown_flush_semantics",
+      "status": "changed",
+      "summary": "Durability is now only promised by SessionHandle.flush(); append is best-effort and write-behind was removed. Crash-survival of session logs depends on an explicit flush barrier.",
+      "evidence": [
+        "handle.d.ts flush() docs: 'the only operation that promises storage'; -write-behind.d.ts"
+      ],
+      "byq_affected_files": [
+        "services/runtime-adapter/app/runtime.py",
+        "services/runtime-adapter/app/generation_ledger.py"
+      ],
+      "change_class": [
+        "must-change",
+        "affects-R1-R2-contract"
+      ]
+    },
+    {
+      "id": "session_query_cold_read",
+      "status": "new",
+      "summary": "Session query can read a cold session log without resuming an Agent (readColdSessionLog) plus a prepared-session cache size knob.",
+      "evidence": [
+        "@deepseek-ai/dsh-session-query +cold-read.d.ts, +SESSION_QUERY_DEFAULT_PREPARED_SESSION_CACHE_SIZE, +readColdSessionLog"
+      ],
+      "byq_affected_files": [],
+      "change_class": [
+        "affects-R3-R4-design"
+      ]
+    }
+  ],
+  "counts": {
+    "changed": 12,
+    "new": 5,
+    "compatible": 6,
+    "unknown-needs-probe": 2,
+    "unchanged": 2
+  },
+  "not_yet_probed": [
+    "Live DSH 0.1.5 process start, notification ordering and event/seq behavior",
+    "Native session V2->V3 migration on real BYQ session fixtures",
+    "Continuable subagent cold resume and settlement delivery",
+    "Persistent terminal attach/rebind across host reboot",
+    "Composition/profile load with the 0.1.5 closure and BYQ boundary plugins"
+  ]
+}

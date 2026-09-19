@@ -49,6 +49,37 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   Product/`byq_pool_lifecycle` domain 路径，建议 `inactive` 而非不可逆 tombstone）。
   详见 [实现计划](IMPLEMENTATION_PLAN.md) 本轮维护小节。
 
+## Runtime Continuity D15：DSH 0.1.5 原生连续性资格（2026-09-19，维护）
+
+本批为维护，不推进 Product Phase。维护者要求重排 Runtime Continuity（R-series）路线并执行
+D15 前半段：完成 D15-0 升级 recon 与 D15-1 隔离候选，冻结 R3。依
+[ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Proposed）：
+
+- **R3 冻结（非回滚）**：状态 `PAUSED_PENDING_DSH_015_NATIVE_CONTINUITY_QUALIFICATION`。保留
+  既有 R3 代码/测试/文档与框架中立合同，不回滚 R1/R2；暂停自建 DSH 进程重启编排、会话重建、
+  原生会话持久化替代、subagent 持久化与持久 PTY/shell。R3 分支相对 `main` 无任何提交，从未实现。
+- **D15-0（DONE）**：机器可读台账 `docs/evidence/d15/compatibility-ledger.v1.json` 与
+  `upgrade-recon.v1.json`，按字节级 npm `.d.ts` diff 与 bundled Python runtime 检查，覆盖
+  27 个 BYQ 依赖接口（changed 12/new 5/compatible 6/unknown 2/unchanged 2）。确认 0.1.5 原生
+  Session V2/V3 迁移、`SessionHandle` 持久化、跨进程写租约、continuable subagent、persistent
+  terminal；Python SDK 公共文件与 0.1.2rc1 逐字节相同。
+- **D15-0 具名阻断**：请求的 npm `@deepseek-ai/dsh-*@0.1.5-rc.2` 无匹配 PyPI Python
+  `0.1.5rc2`；`runtime-bin==0.1.5rc1` 内含 npm `0.1.5-rc.1`。D15-1 以 coherent 配对
+  `dsh-v0.1.5-rc.1`/Python `0.1.5rc1`/npm `0.1.5-rc.1` 隔离候选，不静默拼接 npm rc.2。
+- **D15-1（机制 DONE，live 未执行）**：独立候选声明
+  `config/dsh/candidates/dsh-0.1.5rc1/`、校验/selector `scripts/dsh/candidate_registry.py`、
+  compat 边界 `services/runtime-adapter/app/compat/dsh_015.py` 与 `compat` 路由。候选在
+  不可变 `config/dsh/releases` 注册表之外，生产默认 `dsh-0.1.2rc1`、`compose.yml`、
+  既有 0.1.2 制品/证据不变，回滚目标 `dsh-0.1.2rc1`，无 DB/Worker 变更。未构建/启动候选镜像。
+- **D15-2..D15-G（PLANNED）**：仅提交测试计划、fixtures 与 acceptance criteria
+  （`docs/evidence/d15/fixtures/manifest.v1.json` 与
+  [D15 阶段计划](DSH_015RC2_UPGRADE_PLAN.md)），不声称资格通过。
+- **路线重排**：`R0 → R1 → R2 → D15 → R3 Thin Runtime Supervisor → R4 TerminalAttachment →
+  R5 DurableJob independence → R6 Full Runtime Continuity Qualification → 独立 Production
+  Go/No-Go`；R6 完成不隐含生产切换，“兼容 0.1.5-rc.2”与“生产默认 = 0.1.5-rc.2”为独立决策。
+- **构建修订**：D15 改变 runtime build inputs，推进 `post-u8.145 → post-u8.146`；历史 `.145`
+  清单与全部证据保留。不部署、不自动合并。`R3_RESUME = NO`，直至 D15-G 完成且有原生连续性证据。
+
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、
   技术详情和小巴任务投影中分离。名称搜索保持服务端分页，缺省名称来自已验证策略，历史任务由 PostgreSQL 前向修复补齐，
   且名称不进入 immutable input/result identity 或 idempotency identity。
