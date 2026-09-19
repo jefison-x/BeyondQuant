@@ -36,6 +36,20 @@ Status: maintenance execution plan，非 Product Phase，非永久授权。
 
 构建与缓存不是本样本的瓶颈（build 约 15s，镜像/buildx 缓存已存在）。
 
+### 第一批 CI-A 实测（run 35475291783，head `8cd0e22…`，attempt 1，success）
+
+- 总时长约 22m56s，与基线同量级。jobs：`backend` 1343s、`integration` 575s、
+  `frontend` 157s、`mcp` 73s、`runtime` 61s、`gateway` 44s、`architecture` 28s、
+  `docs` 17s、`plan` 8s、`contribution` 6s、`local-ci` 2s、`ci-gate` 4s。
+- backend lane（脱敏 `checks.log` 解析）：pytest `793 passed, 3 skipped` / collected 796
+  in 1247.96s；`[byq-timing]` 阶段 build 23s、backend 1268s。
+- integration lane phases：build 73s、candidate qualification 158s、smoke 200s、
+  F6 chain 101s；total 533s。
+- `--durations` 观察：backend 中 ≥1s 的 call 项合计 97.47s，≥1s 的 setup 项合计
+  5.32s（最大 setup 约 1.96s）。即逐测试 schema reset 的代价分散在大量 <1s 的 setup
+  中，而不是某个单点；CI-B 必须用更低阈值或聚合统计量化，top-20 不能单独证明。
+- 失败路径见上面的 `run 35444735879`。
+
 ## CI-A — 测量 + 低风险流程整改（本批，一个 PR）
 
 ### 变更
