@@ -1,0 +1,323 @@
+{
+  "schema_version": "byq-d15-3-native-resume-observations.v1",
+  "generated_at": "2026-09-19T21:35:29.226Z",
+  "target": {
+    "release_id": "dsh-0.1.5rc1",
+    "python_sdk": "0.1.5rc1",
+    "python_runtime_bin": "0.1.5rc1",
+    "bundled_npm_version": "0.1.5-rc.1",
+    "source_tag": "dsh-v0.1.5-rc.1",
+    "source_commit": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e"
+  },
+  "harness": {
+    "script": "scripts/d15/harness/native_resume_harness.mjs",
+    "worker": "scripts/d15/harness/native_resume_worker.mjs",
+    "package_versions": {
+      "@deepseek-ai/dsh-session": "0.1.5-rc.1",
+      "@deepseek-ai/dsh-session-persistence": "0.1.5-rc.1",
+      "@deepseek-ai/dsh-session-persistence-jsonl": "0.1.5-rc.1",
+      "@deepseek-ai/dsh-session-query": "0.1.5-rc.1",
+      "@deepseek-ai/cordis": "4.0.2"
+    },
+    "scope": "Real DSH 0.1.5-rc.1 session-persistence seam: SessionPersistence.create/open, SessionHandle.read/append/flush/close, cross-process SessionWriteLease (flock), readColdSessionLog. One OS process per runtime generation.",
+    "classification": "scripts/d15/native_resume_qualification.py (packages/contracts/runtime_continuity.py::classify_generation_transition)"
+  },
+  "failure_rows": [
+    {
+      "id": "browser-disconnect",
+      "fault": "Browser disconnect",
+      "generation": "survives",
+      "lost_run": false,
+      "dsh_session_persisted": true,
+      "native_resume_available": true,
+      "native_resume_same_session_id": true,
+      "native_resume_events_preserved": true,
+      "native_resume_sequence_contiguous": true,
+      "native_resume_event_count": 12,
+      "lease_contention_observed": false,
+      "lease_released_on_process_death": null,
+      "cold_read_interrupted_closers": null,
+      "open_turn_preserved": null,
+      "simulated": [
+        "browser WebSocket/HTTP transport drop (no browser exists in this isolated harness)"
+      ],
+      "real": [
+        "the surviving in-process runtime generation is the live SessionHandle",
+        "append + flush on the same handle after the disconnect",
+        "an independent read handle observes the persisted log"
+      ],
+      "byq_fallback_required_if_native_unavailable": "BYQ lifecycle-journal conversation rehydration plus a new private DSH session (runtime.py::_rehydrate + _ensure_harness); raw DSH state is never parsed and the DSH session id never becomes the BYQ AgentSession identity.",
+      "classification_input": {
+        "generation_survived": true,
+        "lost_run": false,
+        "native_session_persisted": true,
+        "native_resume_available": true,
+        "byq_fallback_available": true,
+        "previous_generation_state": "alive"
+      }
+    },
+    {
+      "id": "frontend-restart",
+      "fault": "Frontend restart",
+      "generation": "survives",
+      "lost_run": false,
+      "dsh_session_persisted": true,
+      "native_resume_available": true,
+      "native_resume_same_session_id": true,
+      "native_resume_events_preserved": true,
+      "native_resume_sequence_contiguous": true,
+      "native_resume_event_count": 12,
+      "lease_contention_observed": false,
+      "lease_released_on_process_death": null,
+      "cold_read_interrupted_closers": null,
+      "open_turn_preserved": null,
+      "simulated": [
+        "frontend SPA reload (no frontend exists in this isolated harness)"
+      ],
+      "real": [
+        "concurrent read handle over the same persisted session while the writer holds the lease",
+        "writer continues the same durable sequence after the restart"
+      ],
+      "byq_fallback_required_if_native_unavailable": "BYQ lifecycle-journal conversation rehydration plus a new private DSH session (runtime.py::_rehydrate + _ensure_harness); raw DSH state is never parsed and the DSH session id never becomes the BYQ AgentSession identity.",
+      "classification_input": {
+        "generation_survived": true,
+        "lost_run": false,
+        "native_session_persisted": true,
+        "native_resume_available": true,
+        "byq_fallback_available": true,
+        "previous_generation_state": "alive"
+      }
+    },
+    {
+      "id": "gateway-restart",
+      "fault": "Gateway restart",
+      "generation": "survives",
+      "lost_run": false,
+      "dsh_session_persisted": true,
+      "native_resume_available": true,
+      "native_resume_same_session_id": true,
+      "native_resume_events_preserved": true,
+      "native_resume_sequence_contiguous": true,
+      "native_resume_event_count": 12,
+      "lease_contention_observed": false,
+      "lease_released_on_process_death": null,
+      "cold_read_interrupted_closers": null,
+      "open_turn_preserved": null,
+      "simulated": [
+        "gateway process restart (no gateway exists in this isolated harness)"
+      ],
+      "real": [
+        "cold read of the durable DSH log through readColdSessionLog",
+        "runtime generation survives and continues the persisted sequence"
+      ],
+      "byq_fallback_required_if_native_unavailable": "BYQ lifecycle-journal conversation rehydration plus a new private DSH session (runtime.py::_rehydrate + _ensure_harness); raw DSH state is never parsed and the DSH session id never becomes the BYQ AgentSession identity.",
+      "classification_input": {
+        "generation_survived": true,
+        "lost_run": false,
+        "native_session_persisted": true,
+        "native_resume_available": true,
+        "byq_fallback_available": true,
+        "previous_generation_state": "alive"
+      }
+    },
+    {
+      "id": "adapter-restart",
+      "fault": "Adapter restart",
+      "generation": "replaced",
+      "lost_run": false,
+      "dsh_session_persisted": true,
+      "native_resume_available": true,
+      "native_resume_same_session_id": true,
+      "native_resume_events_preserved": true,
+      "native_resume_sequence_contiguous": true,
+      "native_resume_event_count": 12,
+      "lease_contention_observed": false,
+      "lease_released_on_process_death": null,
+      "cold_read_interrupted_closers": null,
+      "open_turn_preserved": null,
+      "simulated": [
+        "adapter process restart (the fresh Cordis backend instance models the new generation)"
+      ],
+      "real": [
+        "graceful handle close releases the write lease",
+        "SessionPersistence.open(id, \"write\") resumes the SAME persisted session",
+        "append + flush continue the durable sequence with no new session created"
+      ],
+      "byq_fallback_required_if_native_unavailable": "BYQ lifecycle-journal conversation rehydration plus a new private DSH session (runtime.py::_rehydrate + _ensure_harness); raw DSH state is never parsed and the DSH session id never becomes the BYQ AgentSession identity.",
+      "classification_input": {
+        "generation_survived": false,
+        "lost_run": false,
+        "native_session_persisted": true,
+        "native_resume_available": true,
+        "byq_fallback_available": true,
+        "previous_generation_state": "replaced"
+      }
+    },
+    {
+      "id": "dsh-crash",
+      "fault": "DSH crash",
+      "generation": "replaced",
+      "lost_run": true,
+      "dsh_session_persisted": true,
+      "native_resume_available": true,
+      "native_resume_same_session_id": true,
+      "native_resume_events_preserved": true,
+      "native_resume_sequence_contiguous": true,
+      "native_resume_event_count": 3,
+      "lease_contention_observed": false,
+      "lease_released_on_process_death": true,
+      "cold_read_interrupted_closers": 2,
+      "open_turn_preserved": true,
+      "simulated": [
+        "abrupt DSH process death while a root run was open (SIGKILL of the holder process)"
+      ],
+      "real": [
+        "flush durability barrier persisted the open turn before the crash",
+        "kernel flock release on process death",
+        "new generation opens the same session and reads the interrupted turn evidence",
+        "readColdSessionLog folds the open turn with synthetic interrupted closers (nothing written back)"
+      ],
+      "byq_fallback_required_if_native_unavailable": "BYQ lifecycle-journal conversation rehydration plus a new private DSH session (runtime.py::_rehydrate + _ensure_harness); raw DSH state is never parsed and the DSH session id never becomes the BYQ AgentSession identity.",
+      "classification_input": {
+        "generation_survived": false,
+        "lost_run": true,
+        "native_session_persisted": true,
+        "native_resume_available": true,
+        "byq_fallback_available": true,
+        "previous_generation_state": "interrupted"
+      }
+    },
+    {
+      "id": "runtime-generation-replacement",
+      "fault": "RuntimeGeneration replacement",
+      "generation": "replaced",
+      "lost_run": false,
+      "dsh_session_persisted": true,
+      "native_resume_available": true,
+      "native_resume_same_session_id": true,
+      "native_resume_events_preserved": true,
+      "native_resume_sequence_contiguous": true,
+      "native_resume_event_count": 12,
+      "lease_contention_observed": false,
+      "lease_released_on_process_death": null,
+      "cold_read_interrupted_closers": null,
+      "open_turn_preserved": null,
+      "simulated": [
+        "explicit generation rotation (new worker process == new generation)"
+      ],
+      "real": [
+        "generation-1 materializes and exits cleanly",
+        "generation-2 natively resumes the same durable session identity"
+      ],
+      "byq_fallback_required_if_native_unavailable": "BYQ lifecycle-journal conversation rehydration plus a new private DSH session (runtime.py::_rehydrate + _ensure_harness); raw DSH state is never parsed and the DSH session id never becomes the BYQ AgentSession identity.",
+      "classification_input": {
+        "generation_survived": false,
+        "lost_run": false,
+        "native_session_persisted": true,
+        "native_resume_available": true,
+        "byq_fallback_available": true,
+        "previous_generation_state": "replaced"
+      }
+    },
+    {
+      "id": "host-reboot",
+      "fault": "Host reboot",
+      "generation": "replaced",
+      "lost_run": false,
+      "dsh_session_persisted": true,
+      "native_resume_available": true,
+      "native_resume_same_session_id": true,
+      "native_resume_events_preserved": true,
+      "native_resume_sequence_contiguous": true,
+      "native_resume_event_count": 12,
+      "lease_contention_observed": false,
+      "lease_released_on_process_death": true,
+      "cold_read_interrupted_closers": null,
+      "open_turn_preserved": null,
+      "simulated": [
+        "host reboot: all processes killed without cleanup (SIGKILL of the holder process)"
+      ],
+      "real": [
+        "durable log survives process/host death",
+        "flock lease is released by the kernel, so there is no stale lease",
+        "a new generation natively resumes the same session"
+      ],
+      "byq_fallback_required_if_native_unavailable": "BYQ lifecycle-journal conversation rehydration plus a new private DSH session (runtime.py::_rehydrate + _ensure_harness); raw DSH state is never parsed and the DSH session id never becomes the BYQ AgentSession identity.",
+      "classification_input": {
+        "generation_survived": false,
+        "lost_run": false,
+        "native_session_persisted": true,
+        "native_resume_available": true,
+        "byq_fallback_available": true,
+        "previous_generation_state": "replaced"
+      }
+    },
+    {
+      "id": "executor-takeover",
+      "fault": "executor takeover",
+      "generation": "replaced",
+      "lost_run": false,
+      "dsh_session_persisted": true,
+      "native_resume_available": true,
+      "native_resume_same_session_id": true,
+      "native_resume_events_preserved": true,
+      "native_resume_sequence_contiguous": true,
+      "native_resume_event_count": 12,
+      "lease_contention_observed": true,
+      "lease_released_on_process_death": true,
+      "cold_read_interrupted_closers": null,
+      "open_turn_preserved": null,
+      "simulated": [
+        "executor identity rotation (a second worker process attempts the write lease)"
+      ],
+      "real": [
+        "a live writer is fenced by flock: SessionAlreadyOwnedError",
+        "after the old executor dies the lease is released and the new executor takes over natively"
+      ],
+      "byq_fallback_required_if_native_unavailable": "BYQ lifecycle-journal conversation rehydration plus a new private DSH session (runtime.py::_rehydrate + _ensure_harness); raw DSH state is never parsed and the DSH session id never becomes the BYQ AgentSession identity.",
+      "classification_input": {
+        "generation_survived": false,
+        "lost_run": false,
+        "native_session_persisted": true,
+        "native_resume_available": true,
+        "byq_fallback_available": true,
+        "previous_generation_state": "replaced"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "native-unavailable-control",
+      "fault": "Native resume unavailable control (unmaterialized session)",
+      "generation": "replaced",
+      "lost_run": false,
+      "dsh_session_persisted": false,
+      "native_resume_available": false,
+      "native_resume_same_session_id": null,
+      "native_resume_events_preserved": null,
+      "native_resume_sequence_contiguous": null,
+      "native_resume_event_count": null,
+      "lease_contention_observed": false,
+      "lease_released_on_process_death": null,
+      "cold_read_interrupted_closers": null,
+      "open_turn_preserved": null,
+      "simulated": [
+        "crash before the SessionHandle.flush() durability barrier (SIGKILL after create, no append/flush)"
+      ],
+      "real": [
+        "a session that never materialized is invisible to stat/open after the process dies",
+        "the refused open does not fabricate a successor session",
+        "native resume is therefore unavailable and BYQ conversation fallback is required"
+      ],
+      "byq_fallback_required_if_native_unavailable": "BYQ lifecycle-journal conversation rehydration plus a new private DSH session (runtime.py::_rehydrate + _ensure_harness); raw DSH state is never parsed and the DSH session id never becomes the BYQ AgentSession identity.",
+      "classification_input": {
+        "generation_survived": false,
+        "lost_run": false,
+        "native_session_persisted": false,
+        "native_resume_available": false,
+        "byq_fallback_available": true,
+        "previous_generation_state": "absent"
+      }
+    }
+  ]
+}

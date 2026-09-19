@@ -3,13 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "D15-2 Session V3 migration qualification harness using the real DSH 0.1.5-rc.1 session-format packages.",
+  "description": "D15 qualification harnesses using the real DSH 0.1.5-rc.1 session packages: D15-2 session V3 migration and D15-3 native session resume/persistence.",
   "dependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/dsh-session": "0.1.5-rc.1",
     "@deepseek-ai/dsh-session-format": "0.1.5-rc.1",
     "@deepseek-ai/dsh-session-format-catalog": "0.1.5-rc.1",
     "@deepseek-ai/dsh-session-format-v0-to-v1": "0.1.5-rc.1",
     "@deepseek-ai/dsh-session-format-v1-to-v2": "0.1.5-rc.1",
-    "@deepseek-ai/dsh-session-format-v2-to-v3": "0.1.5-rc.1"
+    "@deepseek-ai/dsh-session-format-v2-to-v3": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-session-persistence": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-scope": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-session-projection": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-session-projection-cache": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-session-query": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-session-title": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-tool-todo": "0.1.5-rc.1"
   }
 }

@@ -52,8 +52,8 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
 ## Runtime Continuity D15：DSH 0.1.5-rc.1 原生连续性资格（2026-09-19，维护）
 
 本批为维护，不推进 Product Phase。维护者要求重排 Runtime Continuity（R-series）路线并推进 D15：
-完成 D15-0 升级 recon、确定资格目标、构建/启动 D15-1 隔离候选并完成 D15-2 Session V3 迁移资格，
-冻结 R3。依
+完成 D15-0 升级 recon、确定资格目标、构建/启动 D15-1 隔离候选、完成 D15-2 Session V3 迁移资格，
+并完成 D15-3 原生会话恢复资格，冻结 R3。依
 [ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Proposed）：
 
 - **R3 冻结（非回滚）**：状态 `PAUSED_PENDING_DSH_015_NATIVE_CONTINUITY_QUALIFICATION`。保留
@@ -96,15 +96,34 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   `acceptance-matrix` D15-2 置 PASS，D15-3..D15-G 仍 NOT_RUN。D15-2 仅新增测试/证据/文档，
   但 `scripts/` 与 `tests/` 属于 BYQ build-input inventory，故按仓库规则构建修订推进
   `post-u8.147 → post-u8.148`（仅重建身份，不改 selector/deployment）。
-- **D15-3..D15-G（PLANNED）**：native session resume、subagent/fork continuity、
-  persistent terminal 与 architecture Go/No-Go 尚未执行；`R3_RESUME = NO`。
+- **D15-3（Native Session Resume Qualification PASS）**：隔离 Node harness
+  `scripts/d15/harness/native_resume_harness.mjs` 以真实 0.1.5-rc.1
+  session-persistence seam（`SessionPersistence.create/open`、`SessionHandle`
+  read/append/flush/close、跨进程 `SessionWriteLease` flock、`readColdSessionLog`）
+  驱动，**每个 runtime generation 一个 OS 进程**；`scripts/d15/native_resume_qualification.py`
+  经 `packages/contracts/runtime_continuity.py::classify_generation_transition`
+  对全部 8 个 failure-matrix 行分类。结果：8/8 持久化行均可被新 generation 原生恢复同一
+  session（同 id、事件日志保留、序列连续）：browser/frontend/gateway 为 `reattached`（generation
+  存活），adapter restart/generation replacement/host reboot/executor takeover 为 `rehydrated`
+  原生恢复，DSH crash 为 `interrupted`（丢失 run 如实标记且同 session 仍可原生恢复）；
+  native 不可用对照（未过 `flush()` 屏障的未物化 session）正确不可恢复并需 BYQ fallback。
+  结论：原生 session resume 可用，**R3 不得重复实现**；R3 仅保留调用原生 attach/resume、
+  epoch fencing、native 不可用时走 BYQ fallback、生命周期观察与清理。公开
+  `fresh/reattached/rehydrated/interrupted` 合同不变，native/fallback 机制仅存于内部
+  evidence-only 诊断字段（`native_resume_used`/`byq_fallback_used`/`previous_generation_state`/
+  `native_session_present`），DSH session id 不成为 BYQ AgentSession 身份。台账
+  `native_session_resume` 置 compatible 并移入 probed；acceptance-matrix D15-3 置 PASS；
+  证据 `docs/evidence/d15/d15-3/`。R3 冻结与 `R3_RESUME = NO` 不变，直至 D15-G。
+- **D15-4..D15-G（PLANNED）**：subagent/fork continuity、persistent terminal 与
+  architecture Go/No-Go 尚未执行；`R3_RESUME = NO`。
 - **路线重排**：`R0 → R1 → R2 → D15 → R3 Thin Runtime Supervisor → R4 TerminalAttachment →
   R5 DurableJob independence → R6 Full Runtime Continuity Qualification → 独立 Production
   Go/No-Go`；R6 完成不隐含生产切换，“兼容 0.1.5-rc.1”与“生产默认 = 0.1.5-rc.1”为独立决策。
 - **构建修订**：D15 改变 runtime build inputs，`.145→.146`，D15-1 新增候选 Dockerfile/锁/探测后
   推进 `post-u8.146 → post-u8.147`；D15-2 新增 `scripts/`/`tests/` 下的 harness 与 fixtures 后推进
-  `post-u8.147 → post-u8.148`（历史清单与全部证据保留）。不部署、不自动合并。
-  `R3_RESUME = NO`，直至 D15-G 完成且有原生连续性证据。
+  `post-u8.147 → post-u8.148`；D15-3 新增 `scripts/d15/` harness、`tests/`、`packages/contracts`
+  分类逻辑与证据后推进 `post-u8.148 → post-u8.149`（仅重建身份；历史清单与全部证据保留）。
+  不部署、不自动合并。`R3_RESUME = NO`，直至 D15-G 完成且有原生连续性证据。
 
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、
   技术详情和小巴任务投影中分离。名称搜索保持服务端分页，缺省名称来自已验证策略，历史任务由 PostgreSQL 前向修复补齐，
